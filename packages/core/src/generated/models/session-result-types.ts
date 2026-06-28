@@ -79,12 +79,23 @@ export interface ResearchResultData {
   citationsTotal: number;
 }
 
+/**
+ * A browser-driving turn (`/chrome` / `agon chrome`): the agentic ReAct brain answered using the user's own browser through the side panel. answer is the engine's reply; pageActivity is true when page tools actually ran (the panel was attached and acted on the page), false when no page tools ran this turn — either no panel was attached, or the brain answered in text without needing one.
+ */
 // @kern-source: session-result-types:60
+export interface ChromeResultData {
+  task: string;
+  answer: string;
+  engineId: string;
+  pageActivity: boolean;
+}
+
+// @kern-source: session-result-types:67
 export interface SessionResult {
-  type: 'brainstorm' | 'campfire' | 'tribunal' | 'forge' | 'think' | 'council' | 'synthesis' | 'nero' | 'review' | 'research';
+  type: 'brainstorm' | 'campfire' | 'tribunal' | 'forge' | 'think' | 'council' | 'synthesis' | 'nero' | 'review' | 'research' | 'chrome';
   timestamp: string;
   question: string;
   engines: string[];
   winner: string | null;
-  data: BrainstormResultData | CampfireResultData | TribunalResultData | ForgeResultData | ThinkResultData | CouncilResultData | SynthesisResultData | NeroResultData | ReviewResultData | ResearchResultData;
+  data: BrainstormResultData | CampfireResultData | TribunalResultData | ForgeResultData | ThinkResultData | CouncilResultData | SynthesisResultData | NeroResultData | ReviewResultData | ResearchResultData | ChromeResultData;
 }

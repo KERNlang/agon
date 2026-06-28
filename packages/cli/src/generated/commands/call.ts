@@ -39,21 +39,22 @@ export interface CallCommandOptions {
   oracleGate?: string;
   count?: string;
   engine?: string;
+  autoApprove?: boolean;
 }
 
-// @kern-source: call:36
+// @kern-source: call:37
 export interface BuiltCallCommands {
   cwd: string;
   commands: string[][];
 }
 
-// @kern-source: call:40
+// @kern-source: call:41
 export function textFlag(flag: string, value: string|undefined): string[] {
   const text = value?.trim();
   return text ? [flag, text] : [];
 }
 
-// @kern-source: call:46
+// @kern-source: call:47
 export function requireInput(workflow: string, input: string|undefined): string {
   const text = input?.trim();
   if (!text) {
@@ -62,7 +63,7 @@ export function requireInput(workflow: string, input: string|undefined): string 
   return text;
 }
 
-// @kern-source: call:55
+// @kern-source: call:56
 export function exitWithFailure(message: string): never {
   fail(message);
   process.exit(1);
@@ -72,7 +73,7 @@ export function exitWithFailure(message: string): never {
 /**
  * Enforce the HARD removedEngines denylist at the external-CLI boundary, BEFORE any --engines list is forwarded to a subcommand. Without this, an external CLI (Codex/Antigravity) that passes --engines a,b,<removed> would resurrect a hard-removed engine, since explicit -e lists bypass the registry's auto roster. Fails loudly (pre-run error) rather than silently dropping — silent roster rewrite is the trust hazard (Council batch-2 verdict).
  */
-// @kern-source: call:62
+// @kern-source: call:63
 export function assertNoRemovedEngines(enginesCsv: string|undefined): void {
   const text = enginesCsv?.trim();
   if (!text) return;
@@ -92,12 +93,12 @@ export function assertNoRemovedEngines(enginesCsv: string|undefined): void {
   }
 }
 
-// @kern-source: call:83
+// @kern-source: call:84
 export function normalizeCallWorkflow(workflow: string): string {
   return workflow.trim().toLowerCase().replace(/_/g, '-');
 }
 
-// @kern-source: call:88
+// @kern-source: call:89
 export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
   const workflow = normalizeCallWorkflow(opts.workflow);
   const cwd = opts.cwd?.trim() || process.cwd();
@@ -219,6 +220,19 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
       ...timeout,
       ...engines,
     ]);
+  } else if (workflow === 'chrome') {
+    // Drive the user's browser through a running agon (serve/REPL) the side panel is
+    // attached to, else a transient embedded bridge. Read-only page tools (read/
+    // screenshot) need no approval; --auto-approve lets a non-interactive external CLI
+    // perform page-changing actions (click/type) unattended — without it they're denied.
+    // --engine is the per-turn engine override (singular; chrome takes no --engines pool).
+    const task = requireInput(workflow, opts.input);
+    commands.push([
+      'chrome',
+      task,
+      ...(opts.autoApprove ? ['--auto-approve'] : []),
+      ...textFlag('--engine', opts.engine),
+    ]);
   } else if (workflow === 'review') {
     commands.push(['review', opts.input?.trim() || 'uncommitted', ...timeout, ...engines]);
   } else if (workflow === 'goal') {
@@ -264,18 +278,18 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
     commands.push(['forge', task, '--test', fitness, '--cwd', cwd, ...timeout, ...engines]);
     commands.push(['tribunal', `Review the pipeline result for: ${task}`, '--rounds', opts.rounds?.trim() || '1', ...tribunalMode, ...timeout, ...engines]);
   } else {
-    throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, pipeline, review, goal, doctor, or a team-* workflow.`);
+    throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, chrome, pipeline, review, goal, doctor, or a team-* workflow.`);
   }
 
   return { cwd, commands };
 }
 
-// @kern-source: call:261
+// @kern-source: call:275
 export function writeJsonl(event: Record<string,unknown>): void {
   process.stdout.write(`${JSON.stringify({ ...event, timestamp: new Date().toISOString() })}\n`);
 }
 
-// @kern-source: call:266
+// @kern-source: call:280
 export async function runCommand(command: string, args: string[], cwd: string, jsonl: boolean): Promise<number> {
   return new Promise((resolve) => {
     const startedAt = Date.now();
@@ -319,7 +333,7 @@ export async function runCommand(command: string, args: string[], cwd: string, j
   });
 }
 
-// @kern-source: call:310
+// @kern-source: call:324
 export const callCommand: any = defineCommand({
   meta: {
     name: 'call',
@@ -328,7 +342,7 @@ export const callCommand: any = defineCommand({
   args: {
     workflow: {
       type: 'positional',
-      description: 'Workflow: forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, conquer, pipeline, review, goal, doctor, or team-*',
+      description: 'Workflow: forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, chrome, pipeline, review, goal, doctor, or team-*',
       required: true,
     },
     input: {
@@ -445,7 +459,12 @@ export const callCommand: any = defineCommand({
     },
     engine: {
       type: 'string',
-      description: 'For research: force a specific engine to draft the answer (skips rating-based selection)',
+      description: 'For research/chrome: force a specific engine (research: draft the answer; chrome: per-turn engine override)',
+    },
+    'auto-approve': {
+      type: 'boolean',
+      description: 'For chrome: auto-approve page-changing actions (click/type) unattended — required for a non-interactive caller to act on the page (read-only tools never prompt)',
+      default: false,
     },
   },
   async run({ args }) {
@@ -480,6 +499,7 @@ export const callCommand: any = defineCommand({
         oracleGate: args.oracleGate,
         count: args.count,
         engine: args.engine,
+        autoApprove: args['auto-approve'],
       });
     } catch (err) {
       exitWithFailure(err instanceof Error ? err.message : String(err));

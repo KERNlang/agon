@@ -2,7 +2,9 @@
 
 import type { EngineAdapter, DispatchResult } from '@kernlang/agon-core';
 
-// @kern-source: seat-dispatch:10
+import { authFailureHint } from '@kernlang/agon-core';
+
+// @kern-source: seat-dispatch:11
 export interface SeatOutcome {
   engineId: string;
   ok: boolean;
@@ -13,13 +15,13 @@ export interface SeatOutcome {
   detail: string | null;
 }
 
-// @kern-source: seat-dispatch:19
+// @kern-source: seat-dispatch:20
 export const RETRY_MIN_TIMEOUT_SEC: number = 30;
 
 /**
  * null = usable response. timeout/empty/error are the transient-shaped failures worth one retry.
  */
-// @kern-source: seat-dispatch:21
+// @kern-source: seat-dispatch:22
 export function classifySeatFailure(result: DispatchResult): 'timeout' | 'empty' | 'error' | null {
   if (result.timedOut) return 'timeout';
   if (result.exitCode !== 0) return 'error';
@@ -30,9 +32,9 @@ export function classifySeatFailure(result: DispatchResult): 'timeout' | 'empty'
 /**
  * Dispatch one panel seat; on a transient failure (timeout/empty/error) retry ONCE with ~half the timeout (never longer than the first attempt). Never retries a user abort. opts.extract lets a mode keep its own text-extraction (e.g. tribunal's <think> salvage) — an extract throw counts as an 'empty' failure. The outcome note feeds the panel-health banner; detail preserves the underlying stderr/message so diagnosability survives the categorization.
  */
-// @kern-source: seat-dispatch:30
+// @kern-source: seat-dispatch:31
 export async function dispatchSeatWithRetry(adapter: EngineAdapter, opts: {engineId:string, engine:any, prompt:string, systemPrompt?:string, cwd:string, mode:string, timeout:number, outputDir:string, signal?:AbortSignal, extract?:(result:DispatchResult)=>string}): Promise<SeatOutcome> {
-  const attemptOnce = async (timeoutSec: number): Promise<{ failure: 'timeout' | 'empty' | 'error' | null; text: string; detail: string }> => {
+  const attemptOnce = async (timeoutSec: number): Promise<{ failure: 'timeout' | 'empty' | 'error' | null; text: string; detail: string; auth: boolean }> => {
     try {
       const result = await adapter.dispatch({
         engine: opts.engine,
@@ -46,19 +48,25 @@ export async function dispatchSeatWithRetry(adapter: EngineAdapter, opts: {engin
       } as any);
       const failure = classifySeatFailure(result);
       if (failure) {
+        // A 401 seat carries the exact recovery command (e.g. `agon login codex --force`) in its
+        // panel-health note instead of raw stderr — so `agon review`/brainstorm/tribunal no longer
+        // print an unexplained "API Error: 401". Non-auth failures keep their own detail (null hint).
+        const authHint = authFailureHint(opts.engine, { stderr: result.stderr, exitCode: result.exitCode, timedOut: result.timedOut });
         const detail = result.timedOut
           ? `timed out after ${timeoutSec}s`
-          : (String(result.stderr ?? '').trim().slice(0, 240) || (failure === 'empty' ? 'empty response (no visible output)' : `exit ${result.exitCode}`));
-        return { failure, text: '', detail };
+          : (authHint ?? (String(result.stderr ?? '').trim().slice(0, 240) || (failure === 'empty' ? 'empty response (no visible output)' : `exit ${result.exitCode}`)));
+        return { failure, text: '', detail, auth: !!authHint };
       }
-      if (!opts.extract) return { failure: null, text: String(result.stdout ?? ''), detail: '' };
+      if (!opts.extract) return { failure: null, text: String(result.stdout ?? ''), detail: '', auth: false };
       try {
-        return { failure: null, text: opts.extract(result), detail: '' };
+        return { failure: null, text: opts.extract(result), detail: '', auth: false };
       } catch (err) {
-        return { failure: 'empty', text: '', detail: err instanceof Error ? err.message : String(err) };
+        return { failure: 'empty', text: '', detail: err instanceof Error ? err.message : String(err), auth: false };
       }
     } catch (err) {
-      return { failure: 'error', text: '', detail: err instanceof Error ? err.message : String(err) };
+      const msg = err instanceof Error ? err.message : String(err);
+      const authHint = authFailureHint(opts.engine, { errorMessage: msg });
+      return { failure: 'error', text: '', detail: authHint ?? msg, auth: !!authHint };
     }
   };
 
@@ -75,6 +83,11 @@ export async function dispatchSeatWithRetry(adapter: EngineAdapter, opts: {engin
   if (opts.signal?.aborted) {
     return { engineId: opts.engineId, ok: false, text: '', attempts: 1, failure: first.failure, note: `${opts.engineId} aborted`, detail: first.detail };
   }
+  // An AUTH failure (401 / invalid key / expired token) can NOT recover by retrying — surface the
+  // exact credential fix on the first attempt instead of burning a second doomed dispatch (~30s+).
+  if (first.auth) {
+    return { engineId: opts.engineId, ok: false, text: '', attempts: 1, failure: first.failure, note: `${opts.engineId} auth failed — ${first.detail}`, detail: first.detail };
+  }
   // Half the original wall clock, floored at 30s, but NEVER longer than the
   // first attempt — for sub-60s callers a "retry" must not raise the budget.
   const retryTimeout = Math.min(opts.timeout, Math.max(RETRY_MIN_TIMEOUT_SEC, Math.floor(opts.timeout / 2)));
@@ -88,7 +101,7 @@ export async function dispatchSeatWithRetry(adapter: EngineAdapter, opts: {engin
 /**
  * Fold seat outcomes into the structured panel-health record + the one-line banner every surface must print when degraded ('panel degraded: codex timeout → retried OK; zai empty → dropped (5/6 responded)').
  */
-// @kern-source: seat-dispatch:86
+// @kern-source: seat-dispatch:98
 export function buildPanelHealth(outcomes: SeatOutcome[]): { requested: number; responded: number; degraded: boolean; notes: string[]; banner: string | null } {
   const requested = outcomes.length;
   const responded = outcomes.filter((o) => o.ok).length;

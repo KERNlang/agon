@@ -1,7 +1,7 @@
 import from="node:fs" names="writeFileSync,mkdirSync"
 import from="node:path" names="join,dirname"
 import from="@kernlang/agon-core" names="EngineAdapter,EngineDefinition,DispatchOptions,DispatchResult,AgentDispatchResult" types=true
-import from="@kernlang/agon-core" names="EngineRegistry,spawnWithTimeout,spawnStream,EngineNotFoundError,readOnlyDiff,diffLineCount,apiDispatch,apiStreamDispatch,companionDispatch,runHooks,hooksFailed,runApiAgentLoop,sessionContext,resolveWorkingDir,engineHealth,classifyDispatchFailure"
+import from="@kernlang/agon-core" names="EngineRegistry,spawnWithTimeout,spawnStream,EngineNotFoundError,readOnlyDiff,diffLineCount,apiDispatch,apiDispatchTools,apiDispatchToolsHistory,attachVisionToMessages,apiStreamDispatch,companionDispatch,runHooks,hooksFailed,runApiAgentLoop,sessionContext,resolveWorkingDir,engineHealth,classifyDispatchFailure"
 import from="./adapter-helpers.js" names="buildCommand,checkEnvVars,resolveModel,stripStreamJson,usesStreamJson,recordDispatchHealth,shouldUseCompanionForAgent,shouldUseClaudePty,runClaudePtyDispatch,runClaudePtyStreamDispatch,resolveClaudePtyExtraArgs,computeEngineIsolation"
 
 service name=CliAdapter implements=EngineAdapter
@@ -42,7 +42,13 @@ service name=CliAdapter implements=EngineAdapter
             let name=projectCtx value="sessionContext.get(options.cwd || resolveWorkingDir())"
             if cond="projectCtx"
               assign target="sysPrompt" value="[sysPrompt ?? '', `## PROJECT CONTEXT\\n${projectCtx}`].filter(Boolean).join('\\n\\n')"
-          let name=result value="await apiDispatch(apiConfig, options.prompt, options.timeout, options.signal, sysPrompt)"
+          comment raw="// NATIVE function-calling when the caller lent tool specs (the browser brain's ReAct loop). With a reconstructed conversation history (Phase 2) → apiDispatchToolsHistory (structured assistant/tool thread, prompt-cacheable); with tools but no history → apiDispatchTools (single prompt); otherwise plain text-only apiDispatch. Any structured call lands in result.parts. CLI/companion paths above never reach here, so they keep the in-prompt text-marker protocol untouched."
+          comment raw="// Base thread for the native tools path: the reconstructed history if the caller sent one, else a single user-prompt turn synthesised so a tools+images dispatch NEVER silently drops the image when no explicit thread was passed (the browser brain always sends a thread; this closes the trap for any future caller). NOTE: synth is its OWN let — an inline `messages ?? (cond ? x : null)` mis-compiles via KERN's ?? / ternary precedence into `(messages ?? cond) ? x : null`, which would DISCARD a real thread."
+          let name=synthMessages value="options.tools && options.tools.length && options.images && options.images.length ? [{ role: 'user', content: options.prompt }] : null"
+          let name=baseMessages value="options.messages ?? synthMessages"
+          comment raw="// VISION: splice a browser screenshot into the thread's last user turn so a vision-capable API engine (kimi/minimax) actually SEES the page. attachVisionToMessages is a no-op when the engine lacks the 'vision' capability (e.g. zai-coding silently ignores images) or there are no images, so non-vision turns are byte-identical."
+          let name=apiMessages value="baseMessages && options.images && options.images.length ? attachVisionToMessages(baseMessages, options.images.map((i) => i.path), options.engine.capabilities?.includes('vision') === true) : baseMessages"
+          let name=result value="apiMessages && options.tools && options.tools.length ? await apiDispatchToolsHistory(apiConfig, apiMessages, options.timeout, options.signal, options.tools, sysPrompt) : (options.tools && options.tools.length ? await apiDispatchTools(apiConfig, options.prompt, options.timeout, options.signal, options.tools, sysPrompt) : await apiDispatch(apiConfig, options.prompt, options.timeout, options.signal, sysPrompt))"
           let name=outputPath value="join(options.outputDir, `${options.engine.id}-output.txt`)"
           do value="mkdirSync(dirname(outputPath), { recursive: true })"
           do value="writeFileSync(outputPath, result.stdout)"
@@ -61,7 +67,7 @@ service name=CliAdapter implements=EngineAdapter
       let name=iso value="computeEngineIsolation(options.engine, { isolation: options.isolation, cwd: options.cwd })"
       comment raw="// Subscription path: drive interactive `claude` TUI via pty when opted-in (AGON_CLAUDE_PTY=1)."
       comment raw="// Avoids `claude -p` (SDK credits). If kern-engines peer deps are missing, falls through."
-      if cond="shouldUseClaudePty(options.engine)"
+      if cond="shouldUseClaudePty(options.engine, options.cwd)"
         let name=ptyResult value="await runClaudePtyDispatch(options.prompt, options.timeout, options.signal, 'exec', options.cwd, options.systemPrompt, iso.env, resolveClaudePtyExtraArgs(options.engine, options.cwd))"
         if cond="!ptyResult.unavailable"
           let name=outputPath value="join(options.outputDir, `${options.engine.id}-output.txt`)"
@@ -116,7 +122,7 @@ service name=CliAdapter implements=EngineAdapter
       const iso = computeEngineIsolation(options.engine, { isolation: options.isolation, cwd: options.cwd });
       // Subscription pty path for claude — yields response deltas, returns final result.
       // Falls through if peer deps missing (unavailable:true).
-      if (shouldUseClaudePty(options.engine)) {
+      if (shouldUseClaudePty(options.engine, options.cwd)) {
         const gen = runClaudePtyStreamDispatch(options.prompt, options.timeout, options.signal, 'exec', options.cwd, options.systemPrompt, iso.env, resolveClaudePtyExtraArgs(options.engine, options.cwd));
         let last: DispatchResult | undefined;
         while (true) {
@@ -145,6 +151,10 @@ service name=CliAdapter implements=EngineAdapter
         if (options.engine.api && process.env[options.engine.api.apiKeyEnv]) {
           const resolvedModel = resolveModel(options.engine, options.cwd);
           const apiConfig = { ...options.engine.api, ...(resolvedModel ? { model: resolvedModel } : {}), ...(options.maxTokens ? { maxTokens: options.maxTokens } : {}) };
+          // NOTE: this STREAMING API fallback is prompt-only — it carries neither native tools nor
+          // vision images (no current caller streams those: the browser brain uses the non-stream
+          // dispatch() above, and image chat goes through session-resume). If a future caller needs
+          // streamed tools/vision, route it through apiStreamDispatchWithHistory like dispatch() does.
           const gen = apiStreamDispatch(apiConfig, options.prompt, options.timeout, options.signal, options.systemPrompt);
           let result: DispatchResult;
           while (true) {
@@ -216,7 +226,7 @@ service name=CliAdapter implements=EngineAdapter
       let name=iso value="computeEngineIsolation(options.engine, { isolation: options.isolation, cwd: options.cwd })"
       comment raw="// Subscription pty path for claude (agent mode: tools + bypassed perms)."
       comment raw="// We still diff the cwd before/after so callers get filesChanged/diffLines."
-      if cond="shouldUseClaudePty(options.engine)"
+      if cond="shouldUseClaudePty(options.engine, options.cwd)"
         let name=ptyStart value="Date.now()"
         let name=ptyBaseline value="readOnlyDiff(options.cwd)"
         let name=ptyResult value="await runClaudePtyDispatch(options.prompt, options.timeout, options.signal, 'agent', options.cwd, options.systemPrompt, iso.env, resolveClaudePtyExtraArgs(options.engine, options.cwd))"
@@ -352,7 +362,7 @@ service name=CliAdapter implements=EngineAdapter
       // workspace-pure isolation, resolved once for every agent-stream path below.
       const iso = computeEngineIsolation(options.engine, { isolation: options.isolation, cwd: options.cwd });
       // Subscription pty path for claude (agent mode). Same diff capture as dispatchAgent.
-      if (shouldUseClaudePty(options.engine)) {
+      if (shouldUseClaudePty(options.engine, options.cwd)) {
         const baselineDiff = readOnlyDiff(options.cwd);
         const gen = runClaudePtyStreamDispatch(options.prompt, options.timeout, options.signal, 'agent', options.cwd, options.systemPrompt, iso.env, resolveClaudePtyExtraArgs(options.engine, options.cwd));
         let last: DispatchResult & { unavailable?: boolean } | undefined;

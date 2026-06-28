@@ -425,7 +425,110 @@ describe('Dispatch routing helpers', () => {
         type: 'success',
         message: expect.stringContaining('Transcript has 14 entries'),
       }));
+      // a live "Compacting…" spinner runs during the work and is always stopped
+      expect(cb.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'spinner-start', message: expect.stringContaining('Compacting') }));
+      expect(cb.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'spinner-stop' }));
       expect(loadConversation()?.messageHistory[0]?.content).toBe('persist this transcript snapshot');
+    } finally {
+      try { clearConversation(); } catch {}
+      if (previousHome === undefined) delete process.env.AGON_HOME;
+      else process.env.AGON_HOME = previousHome;
+      rmSync(testHome, { recursive: true, force: true });
+    }
+  });
+
+  it('/compact shows a live spinner and a completion summary on the in-place (API-brain) path', async () => {
+    const previousHome = process.env.AGON_HOME;
+    const testHome = mkdtempSync(join(tmpdir(), 'agon-compact-inplace-'));
+    process.env.AGON_HOME = testHome;
+    try {
+      const compact = vi.fn(async () => ({ ok: true, method: 'llm', beforeTokens: 90000, afterTokens: 30000, limit: 100000 }));
+      const setCesarSession = vi.fn();
+      const cb: any = {
+        dispatch: vi.fn(),
+        ctx: {
+          chatSession: { id: 'chat-x', startedAt: new Date().toISOString(), messages: [] },
+          config: { cesarEngine: 'claude' },
+          cesarSession: { engineId: 'claude', compact },
+          setCesarSession,
+          cesarMemory: { clearSession: vi.fn() },
+          activeEngines: () => [],
+          registry: { availableIds: () => ['claude'] },
+        },
+        commandRegistry: null,
+        eventBus: { emit: vi.fn().mockResolvedValue(undefined) },
+        runAsJob: vi.fn(),
+        setMode: vi.fn(),
+        setPendingImages: vi.fn(),
+        setChatSession: vi.fn(),
+        exit: vi.fn(),
+        allImages: [],
+        allSlashCommands: [],
+        dynamicSkills: [],
+        loadedExtensions: [],
+        mode: 'chat',
+      };
+
+      const result = await dispatchIntent({ type: 'compact' }, '/compact', cb);
+
+      expect(result).toEqual({ handled: true, ranAsJob: false });
+      expect(compact).toHaveBeenCalledTimes(1);
+      // live "Compacting…" spinner runs during the summarization, then stops
+      expect(cb.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'spinner-start', message: expect.stringContaining('Compacting') }));
+      expect(cb.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'spinner-stop' }));
+      // the completion "nice show": a success summary + a refreshed context gauge
+      expect(cb.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'success', message: expect.stringContaining('Context compacted') }));
+      expect(cb.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'context-usage' }));
+      expect(cb.setMode).toHaveBeenCalledWith('chat');
+      // in-place keeps the brain warm — no reboot/clear
+      expect(setCesarSession).not.toHaveBeenCalledWith(null);
+    } finally {
+      if (previousHome === undefined) delete process.env.AGON_HOME;
+      else process.env.AGON_HOME = previousHome;
+      rmSync(testHome, { recursive: true, force: true });
+    }
+  });
+
+  it('/compact always stops the spinner via the finally net even if a later step throws', async () => {
+    const previousHome = process.env.AGON_HOME;
+    const testHome = mkdtempSync(join(tmpdir(), 'agon-compact-finally-'));
+    process.env.AGON_HOME = testHome;
+    try {
+      saveConversation([{ role: 'user', content: 'snapshot' }], 'claude');
+      // Fallback path (no in-place compact fn). setCesarSession throws AFTER the
+      // spinner started and BEFORE the explicit stop, so ONLY the finally net can
+      // clear it — proving the spinner can never be left spinning.
+      const cb: any = {
+        dispatch: vi.fn(),
+        ctx: {
+          chatSession: { id: 'c', startedAt: new Date().toISOString(), messages: [] },
+          config: { cesarEngine: 'claude' },
+          cesarSession: { engineId: 'claude', close: vi.fn() },
+          setCesarSession: vi.fn(() => { throw new Error('setCesarSession boom'); }),
+          cesarMemory: { clearSession: vi.fn() },
+          activeEngines: () => [],
+          registry: { availableIds: () => ['claude'] },
+        },
+        commandRegistry: null,
+        eventBus: { emit: vi.fn().mockResolvedValue(undefined) },
+        runAsJob: vi.fn(),
+        setMode: vi.fn(),
+        setPendingImages: vi.fn(),
+        setChatSession: vi.fn(),
+        exit: vi.fn(),
+        allImages: [],
+        allSlashCommands: [],
+        dynamicSkills: [],
+        loadedExtensions: [],
+        mode: 'chat',
+      };
+
+      // The throw may or may not propagate out of dispatchIntent; either way the
+      // spinner MUST have been stopped by the finally net.
+      try { await dispatchIntent({ type: 'compact' }, '/compact', cb); } catch { /* expected */ }
+
+      expect(cb.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'spinner-start', message: expect.stringContaining('Compacting') }));
+      expect(cb.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'spinner-stop' }));
     } finally {
       try { clearConversation(); } catch {}
       if (previousHome === undefined) delete process.env.AGON_HOME;

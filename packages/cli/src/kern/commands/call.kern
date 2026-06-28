@@ -32,6 +32,7 @@ interface name=CallCommandOptions export=true
   field name=oracleGate type=string optional=true
   field name=count type=string optional=true
   field name=engine type=string optional=true
+  field name=autoApprove type=boolean optional=true
 
 interface name=BuiltCallCommands export=true
   field name=cwd type=string
@@ -207,6 +208,19 @@ fn name=buildCallCommands params="opts:CallCommandOptions" returns="BuiltCallCom
         ...timeout,
         ...engines,
       ]);
+    } else if (workflow === 'chrome') {
+      // Drive the user's browser through a running agon (serve/REPL) the side panel is
+      // attached to, else a transient embedded bridge. Read-only page tools (read/
+      // screenshot) need no approval; --auto-approve lets a non-interactive external CLI
+      // perform page-changing actions (click/type) unattended — without it they're denied.
+      // --engine is the per-turn engine override (singular; chrome takes no --engines pool).
+      const task = requireInput(workflow, opts.input);
+      commands.push([
+        'chrome',
+        task,
+        ...(opts.autoApprove ? ['--auto-approve'] : []),
+        ...textFlag('--engine', opts.engine),
+      ]);
     } else if (workflow === 'review') {
       commands.push(['review', opts.input?.trim() || 'uncommitted', ...timeout, ...engines]);
     } else if (workflow === 'goal') {
@@ -252,7 +266,7 @@ fn name=buildCallCommands params="opts:CallCommandOptions" returns="BuiltCallCom
       commands.push(['forge', task, '--test', fitness, '--cwd', cwd, ...timeout, ...engines]);
       commands.push(['tribunal', `Review the pipeline result for: ${task}`, '--rounds', opts.rounds?.trim() || '1', ...tribunalMode, ...timeout, ...engines]);
     } else {
-      throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, pipeline, review, goal, doctor, or a team-* workflow.`);
+      throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, chrome, pipeline, review, goal, doctor, or a team-* workflow.`);
     }
 
     return { cwd, commands };
@@ -317,7 +331,7 @@ const name=callCommand type="any"
       args: {
         workflow: {
           type: 'positional',
-          description: 'Workflow: forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, conquer, pipeline, review, goal, doctor, or team-*',
+          description: 'Workflow: forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, chrome, pipeline, review, goal, doctor, or team-*',
           required: true,
         },
         input: {
@@ -434,7 +448,12 @@ const name=callCommand type="any"
         },
         engine: {
           type: 'string',
-          description: 'For research: force a specific engine to draft the answer (skips rating-based selection)',
+          description: 'For research/chrome: force a specific engine (research: draft the answer; chrome: per-turn engine override)',
+        },
+        'auto-approve': {
+          type: 'boolean',
+          description: 'For chrome: auto-approve page-changing actions (click/type) unattended — required for a non-interactive caller to act on the page (read-only tools never prompt)',
+          default: false,
         },
       },
       async run({ args }) {
@@ -469,6 +488,7 @@ const name=callCommand type="any"
             oracleGate: args.oracleGate,
             count: args.count,
             engine: args.engine,
+            autoApprove: args['auto-approve'],
           });
         } catch (err) {
           exitWithFailure(err instanceof Error ? err.message : String(err));

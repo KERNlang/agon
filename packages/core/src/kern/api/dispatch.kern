@@ -296,6 +296,38 @@ fn name=apiStreamDispatch generator=true async=true params="config:ApiConfig, pr
     do value="messages.push({ role: 'user', content: prompt })"
     return value="yield * apiStreamDispatchWithHistory(config, messages, timeout, signal)"
 
+fn name=apiDispatchToolsHistory async=true params="config:ApiConfig, messages:Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, timeout:number, signal?:AbortSignal, tools?:Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>, systemPrompt?:string" returns="Promise<DispatchResult>"
+  handler <<<
+    // Non-streaming NATIVE function-calling over a FULL message history. Phase 2: the browser
+    // brain reconstructs a proper assistant/tool thread each step (instead of re-sending a flat
+    // text transcript as one user prompt), so the model attends to a real tool conversation and
+    // the stable prefix can be prompt-cached. Optionally prepends a system message. Drains the
+    // streaming dispatch to its final DispatchResult (any structured tool_call lands in .parts)
+    // and disposes the underlying SSE stream if we exit early via a throw from gen.next() (the
+    // inner generator normally catches its own errors and RETURNS, so the happy path falls out
+    // of the loop and return() is a no-op on the finished generator).
+    const full = systemPrompt ? [{ role: 'system', content: systemPrompt }, ...messages] : messages;
+    const gen = apiStreamDispatchWithHistory(config, full, timeout, signal, tools);
+    try {
+      while (true) {
+        const next = await gen.next();
+        if (next.done) return next.value;
+      }
+    } finally {
+      try { await gen.return(undefined as unknown as DispatchResult); } catch { /* best-effort disposal */ }
+    }
+  >>>
+
+fn name=apiDispatchTools async=true params="config:ApiConfig, prompt:string, timeout:number, signal?:AbortSignal, tools?:Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>, systemPrompt?:string" returns="Promise<DispatchResult>"
+  handler <<<
+    // Single-prompt convenience over apiDispatchToolsHistory, for callers with no conversation
+    // thread (Phase 1 path): one user message + optional system. The browser brain instead passes
+    // a full reconstructed history via apiDispatchToolsHistory (Phase 2). Trailing optional args are
+    // (tools?, systemPrompt?) — the SAME order as apiDispatchToolsHistory and apiStreamDispatchWithHistory,
+    // so the three tool-aware dispatchers never silently swap systemPrompt and tools.
+    return apiDispatchToolsHistory(config, [{ role: 'user', content: prompt }], timeout, signal, tools, systemPrompt);
+  >>>
+
 // Rate-limit the format mismatch hint: once we've surfaced it for a given host
 // within a process lifetime, further stalls/errors from the same host return
 // the bare error without tacking on the same hint every turn (just noise).

@@ -1,0 +1,363 @@
+// ── AgonServe — the loopback HTTP bridge (Agon Everywhere, agon-serve MVP) ─────
+//
+// The first external-client interface. A browser extension or Electron desktop
+// attaches to ONE Agon session over loopback HTTP: POST /send drives a turn
+// through a BrainClient and appends each BrainEvent to the session's event
+// ledger; GET /events is a Server-Sent-Events stream that tails that ledger
+// (via getSessionHost().subscribe) so EVERY attached client mirrors the same
+// live session — reads fan out, writes serialize (the Phase-0 rule).
+//
+// SECURITY (the council's model, designed in — see go-live hardening):
+//   • Loopback-only bind (127.0.0.1) — no non-local host can reach it.
+//   • Per-instance bearer token (randomUUID), constant-time compared — defeats
+//     other LOCAL processes. NOTE: any local process holding the token can talk
+//     to the bridge; the token is the trust boundary among local processes.
+//   • Browser-Origin allowlist + CORS preflight — a browser always attaches an
+//     Origin and sends an OPTIONS preflight (Authorization + JSON are non-simple);
+//     a disallowed Origin is refused and never gets Access-Control-Allow-Origin.
+//   • Per-frame token+origin PROVENANCE appended to the ledger on every /send —
+//     the earliest tripwire for a loopback exfiltration attempt.
+//
+// SCOPE (MVP): one session per AgonServe instance (mirrors the daemon's
+// one-process-one-session model); SSE (not raw WS) for the stream — dependency-
+// free and enough for fan-out (a browser consumes it via fetch+ReadableStream so
+// it can attach the Authorization header EventSource can't). Multi-session and a
+// WS upgrade are later, behind the same wire. The brain is injected (the daemon
+// hands in a HeadlessTurnBrainClient).
+
+import from="@kernlang/agon-core" names="BrainClient,CapabilitySpec" types=true
+import from="@kernlang/agon-core" names="getSessionHost,eventLogAppend,eventLogFlush,MAX_DISPATCH_IMAGES,MAX_DISPATCH_IMAGE_BYTES"
+import from="node:http" names="createServer"
+import from="node:http" names="IncomingMessage,ServerResponse,Server" types=true
+import from="node:crypto" names="randomUUID,timingSafeEqual"
+
+comment raw="// /send may carry inline base64 images for the frontend-inspector path. Size the"
+comment raw="// body cap to the SAME contract the brain enforces (up to MAX_DISPATCH_IMAGES"
+comment raw="// images, each up to MAX_DISPATCH_IMAGE_BYTES raw → ×4/3 base64) plus 1 MiB JSON"
+comment raw="// slack — so a legitimate multi-image turn isn't rejected at 413 before the"
+comment raw="// per-image caps in decodeDataUrlToImageFile run, while still bounding a hostile body."
+const name=MAX_SEND_BODY_BYTES type=number value={{ Math.ceil((MAX_DISPATCH_IMAGES * MAX_DISPATCH_IMAGE_BYTES * 4) / 3) + 1024 * 1024 }} export=true
+
+service name=AgonServe
+  doc "Loopback HTTP bridge fronting ONE Agon session. start() binds 127.0.0.1 and returns { url, token }; clients pass `Authorization: Bearer <token>`. Routes: OPTIONS (CORS preflight); POST /attach → { sessionId, lastSeq }; POST /send → drive a BrainClient turn, append events to the ledger, return the BrainTurnResult; GET /events?from=N → SSE tail of the ledger (multi-client fan-out); POST /cancel → BrainClient.cancel; POST /approval → BrainClient.provideApproval; POST /answer → BrainClient.provideAnswer (the user's reply to a mid-turn question-request)."
+  field name=brain type=BrainClient private=true
+  field name=sessionId type=string private=true
+  field name=token type=string private=true
+  field name=allowedOrigins type="string[]" private=true
+  field name=engines type="string[]" private=true
+  field name=defaultEngineId type=string private=true
+  field name=server type="Server|null" private=true
+  field name=port type=number private=true
+  field name=turnCounter type=number private=true
+  field name=turnTail type="Promise<void>" private=true
+  field name=sse type="Set<{ res: ServerResponse, ping: ReturnType<typeof setInterval>, unsubscribe: () => void }>" private=true
+
+  constructor params="opts:{ brain: BrainClient, sessionId: string, allowedOrigins?: string[], engines?: string[], engineId?: string }"
+    handler lang="kern"
+      assign target="this.brain" value="opts.brain"
+      assign target="this.sessionId" value="opts.sessionId"
+      assign target="this.token" value="randomUUID()"
+      assign target="this.allowedOrigins" value="opts.allowedOrigins ?? []"
+      assign target="this.engines" value="opts.engines ?? []"
+      assign target="this.defaultEngineId" value="opts.engineId ?? ''"
+      assign target="this.server" value="null"
+      assign target="this.port" value="0"
+      assign target="this.turnCounter" value="0"
+      assign target="this.turnTail" value="Promise.resolve()"
+      assign target="this.sse" value="new Set()"
+
+  method name=start params="port?:number" returns="Promise<{ url: string, token: string }>" async=true
+    doc "Bind a loopback HTTP server (127.0.0.1) on `port` (0 = ephemeral). Disables the request timeout so SSE streams aren't culled. Returns the URL + bearer token the caller hands to the client out-of-band."
+    handler <<<
+      const server = createServer((req, res) => { this.handle(req, res).catch(() => { /* handler is self-contained */ }); });
+      server.requestTimeout = 0; // long-lived SSE connections must not be culled
+      this.server = server;
+      await new Promise<void>((resolve, reject) => {
+        const onErr = (err: Error) => reject(err);
+        server.once('error', onErr);
+        server.listen(port ?? 0, '127.0.0.1', () => { server.off('error', onErr); resolve(); });
+      });
+      const addr = server.address();
+      this.port = (addr && typeof addr === 'object') ? addr.port : (port ?? 0);
+      return { url: `http://127.0.0.1:${this.port}`, token: this.token };
+    >>>
+
+  method name=close returns="Promise<void>" async=true
+    doc "Stop the bridge: proactively end every active SSE stream (so server.close() doesn't hang on keep-alive sockets), then close the server with a defensive 2s timeout."
+    handler <<<
+      const server = this.server;
+      this.server = null;
+      // Iterate a COPY: conn.res.end() can fire a 'close' that deletes conn from
+      // this.sse, mutating the Set mid-iteration.
+      for (const conn of [...this.sse]) {
+        try { clearInterval(conn.ping); conn.unsubscribe(); conn.res.end(); } catch { /* best-effort */ }
+      }
+      this.sse.clear();
+      if (!server) return;
+      await new Promise<void>((resolve) => {
+        let settled = false;
+        const finish = () => { if (settled) return; settled = true; resolve(); };
+        server.close((err) => { if (err) console.warn(`[agon-serve] close: ${err.message}`); finish(); });
+        const t = setTimeout(finish, 2000); // never let a stuck socket hold shutdown forever
+        if (typeof (t as { unref?: () => void }).unref === 'function') (t as { unref: () => void }).unref();
+      });
+    >>>
+
+  method name=corsHeaders params="origin:string" returns="Record<string, string>" private=true
+    doc "CORS headers for a request. Access-Control-Allow-Origin is echoed ONLY for an allowlisted Origin; Vary: Origin keeps an intermediate cache from serving one Origin's decision to another."
+    handler <<<
+      const h: Record<string, string> = {
+        'Vary': 'Origin',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'authorization, content-type',
+      };
+      if (origin && this.allowedOrigins.includes(origin)) h['Access-Control-Allow-Origin'] = origin;
+      return h;
+    >>>
+
+  method name=authOk params="req:IncomingMessage" returns="boolean" private=true
+    handler <<<
+      const auth = req.headers['authorization'];
+      if (typeof auth !== 'string') return false;
+      const a = Buffer.from(auth);
+      const b = Buffer.from(`Bearer ${this.token}`);
+      if (a.length !== b.length || !timingSafeEqual(a, b)) return false; // constant-time
+      const origin = req.headers['origin'];
+      if (typeof origin === 'string' && origin.length > 0 && !this.allowedOrigins.includes(origin)) return false;
+      return true;
+    >>>
+
+  method name=handle params="req:IncomingMessage, res:ServerResponse" returns="Promise<void>" async=true private=true
+    handler <<<
+      const origin = typeof req.headers['origin'] === 'string' ? req.headers['origin'] : '';
+      req.on('error', () => { /* client aborted the request — nothing to do */ });
+      res.on('error', () => { /* socket error on the response — nothing to do */ });
+      try {
+        const method = req.method ?? 'GET';
+        // CORS preflight: answered BEFORE auth (a preflight carries no Authorization).
+        if (method === 'OPTIONS') {
+          if (origin && !this.allowedOrigins.includes(origin)) { res.writeHead(403); res.end(); return; }
+          res.writeHead(204, this.corsHeaders(origin)); res.end(); return;
+        }
+        if (!this.authOk(req)) { this.sendJson(res, 401, { error: 'unauthorized' }, origin); return; }
+        const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+        const path = url.pathname;
+        if (method === 'POST' && path === '/attach') {
+          // engines + the current default let a client render an engine selector and
+          // drive a per-turn engine via /send { engineId } (the brain validates + falls back).
+          this.sendJson(res, 200, { sessionId: this.sessionId, lastSeq: getSessionHost().latestSeq(this.sessionId), engines: this.engines, engineId: this.defaultEngineId }, origin);
+          return;
+        }
+        if (method === 'GET' && path === '/events') {
+          this.streamEvents(req, res, Math.max(0, Number(url.searchParams.get('from') ?? '0') || 0), origin);
+          return;
+        }
+        if (method === 'POST' && path === '/send') { await this.handleSend(req, res, origin); return; }
+        if (method === 'POST' && path === '/cancel') { await this.handleCancel(req, res, origin); return; }
+        // Agent tool-loop control plane — these call the brain DIRECTLY (never chained
+        // on turnTail), so a capability-request the live turn is awaiting can be answered
+        // while handleSend still holds the per-session write lock (no deadlock).
+        if (method === 'POST' && path === '/register-capability') { await this.handleRegisterCapability(req, res, origin); return; }
+        if (method === 'POST' && path === '/unregister-capability') { await this.handleUnregisterCapability(req, res, origin); return; }
+        if (method === 'POST' && path === '/capability-result') { await this.handleCapabilityResult(req, res, origin); return; }
+        if (method === 'POST' && path === '/approval') { await this.handleApproval(req, res, origin); return; }
+        if (method === 'POST' && path === '/answer') { await this.handleAnswer(req, res, origin); return; }
+        this.sendJson(res, 404, { error: 'not found' }, origin);
+      } catch (err) {
+        // Never double-write: if the response already started (e.g. an SSE replay
+        // threw after writeHead), just end it instead of crashing on headers-sent.
+        if (res.headersSent) { try { res.end(); } catch { /* gone */ } return; }
+        const msg = err instanceof Error ? err.message : String(err);
+        const status = msg.includes('too large') ? 413 : msg.includes('invalid JSON') ? 400 : 500;
+        this.sendJson(res, status, { error: msg }, origin);
+      }
+    >>>
+
+  method name=streamEvents params="req:IncomingMessage, res:ServerResponse, from:number, origin:string" returns="void" private=true
+    doc "Server-Sent-Events tail of the session ledger: replay from `from`, then subscribe for live events (the poll re-reads the persisted ledger from lastSeq, so an event appended between replay and subscribe is not missed). One LoggedEvent per `data:` frame; a 15s comment ping keeps it warm. Registered in `sse` so close() can end it; torn down on req/res close or error."
+    handler <<<
+      res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive', ...this.corsHeaders(origin) });
+      const host = getSessionHost();
+      let lastSeq = from;
+      for (const entry of host.replay(this.sessionId, from)) {
+        lastSeq = Math.max(lastSeq, entry.seq);
+        try { res.write(`data: ${JSON.stringify(entry)}\n\n`); } catch { /* client gone */ }
+      }
+      const unsubscribe = host.subscribe(this.sessionId, lastSeq, (entry) => {
+        try { res.write(`data: ${JSON.stringify(entry)}\n\n`); } catch { /* gone */ }
+      });
+      const ping = setInterval(() => { try { res.write(`: ping\n\n`); } catch { /* gone */ } }, 15000);
+      if (typeof (ping as { unref?: () => void }).unref === 'function') (ping as { unref: () => void }).unref();
+      const conn = { res, ping, unsubscribe };
+      this.sse.add(conn);
+      let done = false;
+      const cleanup = () => {
+        if (done) return;
+        done = true;
+        clearInterval(ping);
+        unsubscribe();
+        this.sse.delete(conn);
+        try { res.end(); } catch { /* gone */ }
+      };
+      req.on('close', cleanup);
+      req.on('error', cleanup);
+      res.on('close', cleanup);
+      res.on('error', cleanup);
+    >>>
+
+  method name=handleSend params="req:IncomingMessage, res:ServerResponse, origin:string" returns="Promise<void>" async=true private=true
+    doc "Drive ONE turn. Serialized per session (single-writer) by chaining on turnTail. Appends a provenance frame (clientId+origin) then every BrainEvent to the ledger so SSE subscribers see the turn live; the 200 is replied only AFTER the terminal BrainTurnResult is reached and the ledger is flushed."
+    handler <<<
+      const body = await this.readJson(req);
+      const input = typeof body.input === 'string' ? body.input : '';
+      if (!input) { this.sendJson(res, 400, { error: 'missing input' }, origin); return; }
+      const clientId = typeof body.clientId === 'string' ? body.clientId : 'http';
+      const images = Array.isArray(body.images) ? (body.images as unknown[]).filter((x): x is string => typeof x === 'string') : undefined;
+      // Optional per-turn engine override (the brain validates against its registry and
+      // falls back to the session's bound engine on an unknown id).
+      const engineId = (typeof body.engineId === 'string' && body.engineId) ? body.engineId : undefined;
+      const turnId = `${this.sessionId}-${++this.turnCounter}`;
+      // Serialize sends per session: wait my turn, then publish the tail for the next.
+      const prev = this.turnTail;
+      let release: () => void = () => {};
+      this.turnTail = new Promise<void>((r) => { release = r; });
+      try {
+        await prev;
+        eventLogAppend(this.sessionId, { kind: 'provenance', clientId, origin, turnId }, { kind: 'bridge' });
+        const gen = this.brain.runTurn({ sessionId: this.sessionId, turnId, clientId, input, images, engineId });
+        let r = await gen.next();
+        while (!r.done) {
+          eventLogAppend(this.sessionId, r.value, { kind: 'bridge' });
+          // A capability/approval request must reach the client NOW — the turn is about
+          // to block awaiting the reply, so flush past the ~50ms coalesce window instead
+          // of letting the round-trip stall on the timer.
+          const k = (r.value as { kind?: string }).kind;
+          if (k === 'capability-request' || k === 'approval-request' || k === 'question-request') eventLogFlush(this.sessionId);
+          r = await gen.next();
+        }
+        eventLogFlush(this.sessionId);
+        this.sendJson(res, 200, { turnId, result: r.value }, origin);
+      } finally {
+        release();
+      }
+    >>>
+
+  method name=handleCancel params="req:IncomingMessage, res:ServerResponse, origin:string" returns="Promise<void>" async=true private=true
+    handler <<<
+      const body = await this.readJson(req);
+      const turnId = typeof body.turnId === 'string' ? body.turnId : '';
+      if (!turnId) { this.sendJson(res, 400, { error: 'missing turnId' }, origin); return; }
+      const clientId = typeof body.clientId === 'string' ? body.clientId : 'http';
+      const ack = await this.brain.cancel({ sessionId: this.sessionId, turnId, clientId });
+      this.sendJson(res, 200, ack, origin);
+    >>>
+
+  method name=handleRegisterCapability params="req:IncomingMessage, res:ServerResponse, origin:string" returns="Promise<void>" async=true private=true
+    doc "A client lends the brain a tool: { clientId, spec }. The spec is client-supplied (untrusted) — validated for a string name + boolean isReadOnly before it reaches the brain; the brain stores it for capability routing."
+    handler <<<
+      const body = await this.readJson(req);
+      const clientId = typeof body.clientId === 'string' ? body.clientId : 'http';
+      const spec = body.spec as { name?: unknown; description?: unknown; inputSchema?: unknown; isReadOnly?: unknown; isDestructive?: unknown } | undefined;
+      if (!spec || typeof spec !== 'object' || typeof spec.name !== 'string' || typeof spec.description !== 'string') {
+        this.sendJson(res, 400, { error: 'invalid capability spec (need string name + description)' }, origin);
+        return;
+      }
+      const clean: CapabilitySpec = {
+        name: spec.name,
+        description: spec.description,
+        inputSchema: (spec.inputSchema && typeof spec.inputSchema === 'object') ? spec.inputSchema as Record<string, unknown> : {},
+        isReadOnly: spec.isReadOnly === true,
+        isDestructive: spec.isDestructive === true,
+      };
+      // Bound a single tool spec: its name/description/inputSchema are serialized into
+      // EVERY subsequent dispatch's system prompt, so an unbounded spec would inflate the
+      // token cost of the whole turn. 4 KiB is generous for a real tool, tiny for an attack.
+      if (JSON.stringify(clean).length > 4096) {
+        this.sendJson(res, 400, { error: 'capability spec too large (max 4096 bytes)' }, origin);
+        return;
+      }
+      const ack = await this.brain.registerCapability({ sessionId: this.sessionId, clientId, spec: clean });
+      this.sendJson(res, 200, ack, origin);
+    >>>
+
+  method name=handleUnregisterCapability params="req:IncomingMessage, res:ServerResponse, origin:string" returns="Promise<void>" async=true private=true
+    handler <<<
+      const body = await this.readJson(req);
+      const name = typeof body.name === 'string' ? body.name : '';
+      if (!name) { this.sendJson(res, 400, { error: 'missing name' }, origin); return; }
+      const clientId = typeof body.clientId === 'string' ? body.clientId : 'http';
+      const ack = await this.brain.unregisterCapability({ sessionId: this.sessionId, clientId, name });
+      this.sendJson(res, 200, ack, origin);
+    >>>
+
+  method name=handleCapabilityResult params="req:IncomingMessage, res:ServerResponse, origin:string" returns="Promise<void>" async=true private=true
+    doc "The client's reply to a capability-request — resolves the turn the brain has suspended on this requestId. NOT chained on turnTail, so it lands while handleSend still owns the write lock."
+    handler <<<
+      const body = await this.readJson(req);
+      const requestId = typeof body.requestId === 'string' ? body.requestId : '';
+      if (!requestId) { this.sendJson(res, 400, { error: 'missing requestId' }, origin); return; }
+      const clientId = typeof body.clientId === 'string' ? body.clientId : 'http';
+      const ok = body.ok === true;
+      const output = typeof body.output === 'string' ? body.output : undefined;
+      const error = typeof body.error === 'string' ? body.error : undefined;
+      const ack = await this.brain.provideCapabilityResult({ sessionId: this.sessionId, requestId, clientId, ok, output, error });
+      this.sendJson(res, 200, ack, origin);
+    >>>
+
+  method name=handleApproval params="req:IncomingMessage, res:ServerResponse, origin:string" returns="Promise<void>" async=true private=true
+    doc "The user's decision on an approval-request: { requestId, decision } where decision ∈ approve|approve-session|deny|deny-session|abort. Validated before reaching the brain; resolves the gated turn by requestId."
+    handler <<<
+      const body = await this.readJson(req);
+      const requestId = typeof body.requestId === 'string' ? body.requestId : '';
+      const decision = typeof body.decision === 'string' ? body.decision : '';
+      const allowed = ['approve', 'approve-session', 'deny', 'deny-session', 'abort'];
+      if (!requestId || !allowed.includes(decision)) { this.sendJson(res, 400, { error: 'missing requestId or invalid decision' }, origin); return; }
+      const clientId = typeof body.clientId === 'string' ? body.clientId : 'http';
+      const ack = await this.brain.provideApproval({ sessionId: this.sessionId, requestId, clientId, decision: decision as 'approve' | 'approve-session' | 'deny' | 'deny-session' | 'abort' });
+      this.sendJson(res, 200, ack, origin);
+    >>>
+
+  method name=handleAnswer params="req:IncomingMessage, res:ServerResponse, origin:string" returns="Promise<void>" async=true private=true
+    doc "The user's answer to a mid-turn question-request: { requestId, answer }. Resolves the paused turn by requestId via BrainClient.provideAnswer (host-only arbitration enforced in the brain). A missing requestId is a 400; a non-string answer is coerced to '' so the turn always un-pauses rather than hangs."
+    handler <<<
+      const body = await this.readJson(req);
+      const requestId = typeof body.requestId === 'string' ? body.requestId : '';
+      if (!requestId) { this.sendJson(res, 400, { error: 'missing requestId' }, origin); return; }
+      const answer = typeof body.answer === 'string' ? body.answer : '';
+      const clientId = typeof body.clientId === 'string' ? body.clientId : 'http';
+      const ack = await this.brain.provideAnswer({ sessionId: this.sessionId, requestId, clientId, answer });
+      this.sendJson(res, 200, ack, origin);
+    >>>
+
+  method name=readJson params="req:IncomingMessage" returns="Promise<Record<string, unknown>>" async=true private=true
+    doc "Read + parse a JSON request body, capped at MAX_SEND_BODY_BYTES. Text turns are tiny, but /send may carry inline base64 images (browser screenshots) for the frontend-inspector path — the cap is sized to the brain's image contract (MAX_DISPATCH_IMAGES × MAX_DISPATCH_IMAGE_BYTES, base64-expanded, + slack) so a legitimate multi-image turn isn't 413'd before the per-image caps in decodeDataUrlToImageFile run, while still bounding a hostile/oversize body. Throws 'request body too large' (→413) or 'invalid JSON body' (→400), both mapped by handle()."
+    handler <<<
+      const chunks: Buffer[] = [];
+      let size = 0;
+      for await (const chunk of req) {
+        const buf = typeof chunk === 'string' ? Buffer.from(chunk) : (chunk as Buffer);
+        size += buf.length;
+        if (size > MAX_SEND_BODY_BYTES) throw new Error('request body too large');
+        chunks.push(buf);
+      }
+      if (chunks.length === 0) return {};
+      try {
+        const parsed = JSON.parse(Buffer.concat(chunks).toString('utf-8'));
+        return (parsed && typeof parsed === 'object') ? parsed as Record<string, unknown> : {};
+      } catch {
+        throw new Error('invalid JSON body');
+      }
+    >>>
+
+  method name=sendJson params="res:ServerResponse, status:number, body:unknown, origin:string" returns="void" private=true
+    handler <<<
+      if (res.headersSent) { try { res.end(); } catch { /* gone */ } return; }
+      res.writeHead(status, { 'Content-Type': 'application/json', ...this.corsHeaders(origin) });
+      res.end(JSON.stringify(body));
+    >>>
+
+fn name=createAgonServe params="opts:{ brain: BrainClient, sessionId: string, allowedOrigins?: string[], engines?: string[], engineId?: string }" returns="AgonServe" export=true
+  doc "Factory: build the loopback bridge for a session given an opened BrainClient and the session id."
+  handler <<<
+    return new AgonServe(opts);
+  >>>

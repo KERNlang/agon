@@ -6,6 +6,7 @@
 // (brainstorm/tribunal/council) dispatches seats through here.
 
 import from="@kernlang/agon-core" names="EngineAdapter,DispatchResult" types=true
+import from="@kernlang/agon-core" names="authFailureHint"
 
 interface name=SeatOutcome export=true
   field name=engineId type=string
@@ -30,7 +31,7 @@ fn name=classifySeatFailure params="result:DispatchResult" returns="'timeout' | 
 fn name=dispatchSeatWithRetry async=true params="adapter:EngineAdapter, opts:{engineId:string, engine:any, prompt:string, systemPrompt?:string, cwd:string, mode:string, timeout:number, outputDir:string, signal?:AbortSignal, extract?:(result:DispatchResult)=>string}" returns="Promise<SeatOutcome>" export=true
   doc "Dispatch one panel seat; on a transient failure (timeout/empty/error) retry ONCE with ~half the timeout (never longer than the first attempt). Never retries a user abort. opts.extract lets a mode keep its own text-extraction (e.g. tribunal's <think> salvage) — an extract throw counts as an 'empty' failure. The outcome note feeds the panel-health banner; detail preserves the underlying stderr/message so diagnosability survives the categorization."
   handler <<<
-    const attemptOnce = async (timeoutSec: number): Promise<{ failure: 'timeout' | 'empty' | 'error' | null; text: string; detail: string }> => {
+    const attemptOnce = async (timeoutSec: number): Promise<{ failure: 'timeout' | 'empty' | 'error' | null; text: string; detail: string; auth: boolean }> => {
       try {
         const result = await adapter.dispatch({
           engine: opts.engine,
@@ -44,19 +45,25 @@ fn name=dispatchSeatWithRetry async=true params="adapter:EngineAdapter, opts:{en
         } as any);
         const failure = classifySeatFailure(result);
         if (failure) {
+          // A 401 seat carries the exact recovery command (e.g. `agon login codex --force`) in its
+          // panel-health note instead of raw stderr — so `agon review`/brainstorm/tribunal no longer
+          // print an unexplained "API Error: 401". Non-auth failures keep their own detail (null hint).
+          const authHint = authFailureHint(opts.engine, { stderr: result.stderr, exitCode: result.exitCode, timedOut: result.timedOut });
           const detail = result.timedOut
             ? `timed out after ${timeoutSec}s`
-            : (String(result.stderr ?? '').trim().slice(0, 240) || (failure === 'empty' ? 'empty response (no visible output)' : `exit ${result.exitCode}`));
-          return { failure, text: '', detail };
+            : (authHint ?? (String(result.stderr ?? '').trim().slice(0, 240) || (failure === 'empty' ? 'empty response (no visible output)' : `exit ${result.exitCode}`)));
+          return { failure, text: '', detail, auth: !!authHint };
         }
-        if (!opts.extract) return { failure: null, text: String(result.stdout ?? ''), detail: '' };
+        if (!opts.extract) return { failure: null, text: String(result.stdout ?? ''), detail: '', auth: false };
         try {
-          return { failure: null, text: opts.extract(result), detail: '' };
+          return { failure: null, text: opts.extract(result), detail: '', auth: false };
         } catch (err) {
-          return { failure: 'empty', text: '', detail: err instanceof Error ? err.message : String(err) };
+          return { failure: 'empty', text: '', detail: err instanceof Error ? err.message : String(err), auth: false };
         }
       } catch (err) {
-        return { failure: 'error', text: '', detail: err instanceof Error ? err.message : String(err) };
+        const msg = err instanceof Error ? err.message : String(err);
+        const authHint = authFailureHint(opts.engine, { errorMessage: msg });
+        return { failure: 'error', text: '', detail: authHint ?? msg, auth: !!authHint };
       }
     };
 
@@ -72,6 +79,11 @@ fn name=dispatchSeatWithRetry async=true params="adapter:EngineAdapter, opts:{en
     // A user abort is a decision, not flake — respect it immediately.
     if (opts.signal?.aborted) {
       return { engineId: opts.engineId, ok: false, text: '', attempts: 1, failure: first.failure, note: `${opts.engineId} aborted`, detail: first.detail };
+    }
+    // An AUTH failure (401 / invalid key / expired token) can NOT recover by retrying — surface the
+    // exact credential fix on the first attempt instead of burning a second doomed dispatch (~30s+).
+    if (first.auth) {
+      return { engineId: opts.engineId, ok: false, text: '', attempts: 1, failure: first.failure, note: `${opts.engineId} auth failed — ${first.detail}`, detail: first.detail };
     }
     // Half the original wall clock, floored at 30s, but NEVER longer than the
     // first attempt — for sub-60s callers a "retry" must not raise the budget.

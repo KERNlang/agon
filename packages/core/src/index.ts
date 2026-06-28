@@ -164,8 +164,10 @@ export type { ChatMessage as StoredChatMessage, ChatSession } from './chat-store
 export {
   isImagePath, mimeFromExt, resolveImagePath,
   buildImageAttachment, extractImagesFromInput, normalizeDroppedPath,
-  encodeImagesForDispatch, visionSupportNote,
+  encodeImagesForDispatch, attachVisionToMessages, visionSupportNote,
+  decodeDataUrlToImageFile, sniffImageMime, MAX_DISPATCH_IMAGES, MAX_DISPATCH_IMAGE_BYTES,
 } from './image.js';
+export type { DataUrlImageResult } from './image.js';
 // ── Agon Rooms — multi-party room ledger (file-first; CLI/MCP/daemon are adapters) ──
 export {
   roomsDir, roomDir, createRoom, listRooms, roomExists, closeRoom, isRoomClosed,
@@ -197,9 +199,17 @@ export {
   parseDaemonRequest, parseDaemonResponse, splitFrames,
 } from './generated/sessions/daemon-protocol.js';
 export type { DaemonRequest, DaemonResponse } from './generated/sessions/daemon-protocol.js';
+// ── BrainClient — daemon↔brain boundary for the Agon Everywhere bridge (client/server split M4) ──
+export { conservativeControlCapabilities } from './generated/sessions/brain-client.js';
+export type {
+  BrainClient, BrainClientConfig, BrainEvent, BrainTurnRequest, BrainTurnResult,
+  ControlAck, ControlCapabilities, ClientRef, ApprovalResponse, AnswerResponse,
+  SteerRequest, CancelRequest, CapabilitySpec, CapabilityRegistration,
+  CapabilityUnregister, CapabilityResult, BrainHealth,
+} from './generated/sessions/brain-client.js';
 export { logFlow, readFlows, analyzeFlows, FLOWS_DIR, FRICTION_TAGS } from './flow.js';
 export type { FlowRecord, FlowTelemetry, FlowFeedback, FlowModeMeta, FlowAnalysis, ModeStats } from './flow.js';
-export { apiDispatch, apiStreamDispatch, apiStreamDispatchWithHistory } from './api-dispatch.js';
+export { apiDispatch, apiDispatchTools, apiDispatchToolsHistory, apiStreamDispatch, apiStreamDispatchWithHistory } from './api-dispatch.js';
 export type { ApiConfig } from './api-dispatch.js';
 export { companionDispatch } from './companion-dispatch.js';
 export type { CompanionResult } from './companion-dispatch.js';
@@ -216,6 +226,7 @@ export {
 export type {
   PersistentSession, PersistentSessionConfig, SessionChunk, SessionSendOptions,
 } from './persistent-session.js';
+export { claudeBrainUsesPty } from './generated/sessions/claude-backend.js';
 export { StreamBridge, createStreamBridge } from './generated/cesar/stream-bridge.js';
 export type { EngineSwitch } from './generated/cesar/stream-bridge.js';
 export {
@@ -317,11 +328,11 @@ export { initExtensions, loadExtensions, discoverExtensionDirs, buildExtensionCo
 export { registerBuiltinCommands } from './builtin-commands.js';
 export { EventBus, bridgeShellHooks } from './event-bus.js';
 export type { EventPayload, EventListener } from './event-bus.js';
-export { EngineHealth, engineHealth, classifyDispatchFailure } from './engine-health.js';
+export { EngineHealth, engineHealth, classifyDispatchFailure, authFailureHint, authLoginHint } from './engine-health.js';
 export type { EngineHealthRecord } from './engine-health.js';
 export type { ValidatedEngineDefinition } from './schemas/engine-schema.js';
 export { sessionContext } from './session-context.js';
-export type { SessionResult, BrainstormResultData, CampfireResultData, TribunalResultData, ForgeResultData, ThinkResultData, CouncilResultData, SynthesisResultData, NeroResultData, ReviewResultData, ResearchResultData } from './generated/models/session-result-types.js';
+export type { SessionResult, BrainstormResultData, CampfireResultData, TribunalResultData, ForgeResultData, ThinkResultData, CouncilResultData, SynthesisResultData, NeroResultData, ReviewResultData, ResearchResultData, ChromeResultData } from './generated/models/session-result-types.js';
 export {
   splitPromptBlocks, mergeBlocksByRole,
 } from './prompt-builder.js';

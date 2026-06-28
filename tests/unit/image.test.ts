@@ -11,6 +11,7 @@ import {
   extractImagesFromInput,
   normalizeDroppedPath,
   encodeImagesForDispatch,
+  attachVisionToMessages,
   visionSupportNote,
 } from '../../packages/core/src/image.js';
 import { buildCommand } from '../../packages/adapter-cli/src/generated/adapter-helpers.js';
@@ -387,6 +388,75 @@ describe('encodeImagesForDispatch', () => {
   });
 });
 
+
+// ── attachVisionToMessages — splice screenshots into the native thread ──
+
+describe('attachVisionToMessages', () => {
+  let dir: string;
+  const mkPng = (name = 'shot.png', bytes = 8): string => {
+    const p = join(dir, name);
+    writeFileSync(p, Buffer.alloc(bytes, 0x41));
+    return p;
+  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const thread = (): any[] => [
+    { role: 'user', content: 'goal' },
+    { role: 'assistant', content: '', tool_calls: [{ id: 'call_0', type: 'function', function: { name: 'screenshot', arguments: '{}' } }] },
+    { role: 'tool', tool_call_id: 'call_0', content: '(screenshot captured)' },
+    { role: 'user', content: 'continue' },
+  ];
+
+  beforeEach(() => { dir = join(tmpdir(), `agon-vis-${Math.random().toString(36).slice(2)}`); mkdirSync(dir, { recursive: true }); });
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  it('is a no-op when the engine lacks vision (image never sent, thread byte-identical)', () => {
+    const m = thread();
+    expect(attachVisionToMessages(m, [mkPng()], false)).toBe(m);
+  });
+
+  it('is a no-op when there are no image paths', () => {
+    const m = thread();
+    expect(attachVisionToMessages(m, [], true)).toBe(m);
+  });
+
+  it('splices the image part into the LAST user message for a vision engine, preserving its text', () => {
+    const m = thread();
+    const out = attachVisionToMessages(m, [mkPng()], true);
+    expect(out).not.toBe(m);            // cloned
+    expect(m[3].content).toBe('continue'); // original not mutated
+    const parts = out[out.length - 1].content as Array<{ type: string; text?: string; image?: string }>;
+    expect(Array.isArray(parts)).toBe(true);
+    expect(parts[0]).toMatchObject({ type: 'text', text: 'continue' }); // prior text kept
+    expect(parts.some((p) => p.type === 'image' && String(p.image).startsWith('data:image/png;base64,'))).toBe(true);
+  });
+
+  it('appends a user message carrying the image when the thread has no user turn', () => {
+    const out = attachVisionToMessages([{ role: 'assistant', content: 'hi' }], [mkPng()], true);
+    const last = out[out.length - 1];
+    expect(last.role).toBe('user');
+    expect(Array.isArray(last.content)).toBe(true);
+  });
+
+  it('OMITS an empty text part for a screenshot-only user turn (providers reject empty text)', () => {
+    const out = attachVisionToMessages([{ role: 'user', content: '' }], [mkPng()], true);
+    const parts = out[0].content as Array<{ type: string }>;
+    expect(parts.every((p) => p.type === 'image')).toBe(true); // no { type:'text', text:'' }
+    expect(parts).toHaveLength(1);
+  });
+
+  it('PRESERVES existing array parts (no data loss when content already has parts)', () => {
+    const existing = [
+      { type: 'text', text: 'hi' },
+      { type: 'image', image: 'data:image/png;base64,EXISTING', mediaType: 'image/png' },
+    ];
+    const out = attachVisionToMessages([{ role: 'user', content: existing }], [mkPng()], true);
+    const parts = out[0].content as Array<{ type: string; text?: string; image?: string }>;
+    expect(parts).toHaveLength(3); // both originals kept + the new one appended
+    expect(parts[0]).toMatchObject({ type: 'text', text: 'hi' });
+    expect(parts.filter((p) => p.type === 'image')).toHaveLength(2);
+    expect(parts.some((p) => p.image === 'data:image/png;base64,EXISTING')).toBe(true); // original image not stripped
+  });
+});
 
 // ── visionSupportNote ───────────────────────────────────────────────
 

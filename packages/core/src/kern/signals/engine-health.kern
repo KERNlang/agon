@@ -2,6 +2,8 @@
 // Auth-failed / unreachable / timed-out engines are recorded once and skipped
 // by forge preflight + Cesar fallback. Resets on process restart.
 
+import from="../models/types.js" names="EngineDefinition" types=true
+
 interface name=EngineHealthRecord
   field name=engineId type=string
   field name=status type="'ok'|'auth-failed'|'unreachable'|'binary-missing'|'timeout'|'failed'"
@@ -72,3 +74,28 @@ fn name=classifyDispatchFailure params="signal:{stderr?:string, exitCode?:number
     if cond="/enotfound|econnrefused|econnreset|getaddrinfo|network (is )?unreachable|fetch failed|connect (etimedout|timeout)/.test(haystack)"
       return value="'unreachable'"
     return value="'failed'"
+
+fn name=authLoginHint params="engine:EngineDefinition" returns=string export=true
+  doc "The actionable recovery instruction for an engine that failed to authenticate, derived from its OWN metadata so it is generic across CLI + API engines (no per-engine special-casing). A CLI engine with an isolated config dir + a login subcommand (claude/codex — has isolationHints.configEnv + loginArgs) → `agon login <id> --force`. The --force matters: a 401 AFTER a present authMarker means the marker is STALE, so plain `agon login` (which short-circuits when the marker exists) would skip the re-login the user actually needs. An API-only engine (no isolated dir, just an api block — kimi/minimax/zai) → set its apiKeyEnv (or `agon provider`). Anything else → `agon doctor`."
+  handler <<<
+    // CLI isolation takes precedence: a hybrid engine declaring BOTH an isolated config dir and an
+    // api block authenticates via its CLI login (`agon login`), not a raw API key. `engine` is
+    // optional-chained throughout so an undefined engine (e.g. seat-dispatch's `any`-typed opts.engine)
+    // degrades to the generic `agon doctor` hint instead of throwing inside auth-error handling.
+    const hints = engine?.isolationHints;
+    if (engine && hints?.configEnv && hints.loginArgs && hints.loginArgs.length > 0) {
+      return `run \`agon login ${engine.id} --force\` to re-authenticate its isolated config dir`;
+    }
+    const keyEnv = engine?.api?.apiKeyEnv;
+    if (keyEnv) {
+      return `set a valid \`${keyEnv}\` (or run \`agon provider\`) — its API key looks missing or invalid`;
+    }
+    return `run \`agon doctor\` to diagnose its credentials`;
+  >>>
+
+fn name=authFailureHint params="engine:EngineDefinition, signal:{stderr?:string, exitCode?:number, errorMessage?:string, timedOut?:boolean}" returns="string | null" export=true
+  doc "If a dispatch-failure signal is an AUTH failure (per classifyDispatchFailure — 401 / invalid key / token expired / unauthorized), return the engine-specific recovery instruction (authLoginHint); otherwise null. The single generic hook EVERY dispatch surface (browser panel, panel seat, REPL Cesar) calls so a 401 never reaches the user as a bare 'no answer' / 'exit 1' / raw stderr — it always carries the exact next command. Returns null on timeouts/network/other failures so the caller keeps its own detail."
+  handler <<<
+    if (classifyDispatchFailure(signal) !== 'auth-failed') return null;
+    return authLoginHint(engine);
+  >>>

@@ -1,0 +1,142 @@
+// ── Embedded "chrome bridge" — the loopback the browser panel attaches to ─────
+//
+// `/chrome` drives the browser the same way `agon serve` does — through a loopback
+// bridge the extension's side panel attaches to (it registers page tools, executes
+// capability-requests, shows nothing the user didn't ask for). The difference: the
+// REPL HOSTS the bridge itself, so the panel auto-connects to your live agon and you
+// never run a separate `agon serve` terminal.
+//
+// ensureChromeBridge resolves a bridge to drive in this order:
+//   1. REUSE — if a live `agon serve`/chrome bridge is already up (its 0600 connection
+//      file responds to /attach), drive THAT; the panel is already on it.
+//   2. EMBED — otherwise build one in-process (buildServeRuntime: the same agentic brain
+//      `agon serve` uses) on an ephemeral loopback port, write its 0600 connection file
+//      (which the extension's native-messaging host hands the panel on auto-connect), and
+//      keep it alive for the REPL session.
+//
+// The brain is the agentic ReAct brain, NOT Cesar — so a browser turn can never write to
+// the live Cesar session (the split-brain reservation `agon serve --session` documents).
+// `/chrome`'s RESULT is fed back to Cesar instead (see handlers/chrome.kern).
+
+import from="@kernlang/agon-core" names="loadConfig,agonPath"
+import from="node:fs" names="readFileSync,readdirSync,existsSync"
+import from="node:path" names="join"
+import from="../commands/serve.js" names="buildServeRuntime,resolveServeEngine,writeServeConnectionFile,removeServeConnectionFile"
+import from="../commands/drive.js" names="listServeConnections"
+import from="../commands/serve.js" names="ServeRuntime" types=true
+
+// ── Origin allowlist for the embedded bridge ──────────────────────────────────
+
+fn name=resolveChromeOrigins params="cwd:string" returns="string[]" export=true
+  doc "Resolve the browser Origin(s) the embedded bridge must allow so the panel (which sends a chrome-extension:// Origin) isn't refused. Order: (1) config.chromeExtensionOrigin, (2) the allowedOrigins of any existing serve connection file (the user already configured this when they set up `agon serve`), (3) empty — the caller then warns that the panel can't attach until an origin is set. Pure-ish (reads config + the serve dir); exported for the unit test."
+  handler <<<
+    // Only ever allow a browser-EXTENSION origin (chrome-/moz-extension://…) — never a
+    // wildcard or an http(s) origin. A stale/planted serve file with allowedOrigins:['*'] or
+    // ['http://evil'] must NOT be adopted (it would let an attacker page attach to the embedded
+    // bridge and read its bearer token). The config value gets the same check.
+    const isExtensionOrigin = (o: unknown): o is string =>
+      typeof o === 'string' && /^(chrome|moz)-extension:\/\/[a-z0-9]+\/?$/i.test(o.trim());
+
+    const config = loadConfig(cwd) as { chromeExtensionOrigin?: string };
+    if (isExtensionOrigin(config.chromeExtensionOrigin)) return [config.chromeExtensionOrigin.trim()];
+
+    const dir = agonPath('serve');
+    if (existsSync(dir)) {
+      try {
+        for (const f of readdirSync(dir).filter((n) => n.endsWith('.json'))) {
+          try {
+            const raw = JSON.parse(readFileSync(join(dir, f), 'utf-8')) as { allowedOrigins?: unknown };
+            const valid = (Array.isArray(raw.allowedOrigins) ? raw.allowedOrigins : []).filter(isExtensionOrigin).map((o) => o.trim());
+            if (valid.length > 0) return valid;
+          } catch { /* skip unreadable */ }
+        }
+      } catch { /* dir vanished */ }
+    }
+    return [];
+  >>>
+
+// ── Reuse-or-embed ────────────────────────────────────────────────────────────
+
+interface name=ChromeBridge export=true
+  doc "A bridge `/chrome` can drive: its loopback url + bearer token + session id, whether we EMBEDDED it (vs reused a running serve), and the Origin allowlist (empty on an embedded bridge = the panel can't attach yet)."
+  field name=url type=string
+  field name=token type=string
+  field name=sessionId type=string
+  field name=embedded type=boolean
+  field name=origins type="string[]"
+
+// Module singletons (mutable holders — a bare `const` can't be reassigned): one embedded
+// runtime per REPL process, started lazily and reused across `/chrome` calls; torn down on exit.
+const name=_chromeHolder export=false type="{ current: { runtime: ServeRuntime; bridge: ChromeBridge } | null; starting: Promise<ChromeBridge> | null }" value={{ ({ current: null, starting: null }) }}
+const name=_exitHooked export=false type="{ done: boolean }" value={{ ({ done: false }) }}
+
+fn name=probeLiveBridge returns="Promise<ChromeBridge | null>" async=true export=false
+  doc "Find a running bridge to reuse: probe each 0600 serve connection file's /attach (newest first) and return the first that answers 200 — that's a live serve/chrome bridge the panel is likely already attached to. Null if none respond (all stale or none running)."
+  handler <<<
+    const conns = [...listServeConnections(agonPath('serve'))].sort(
+      (a, b) => (Date.parse(b.startedAt) || 0) - (Date.parse(a.startedAt) || 0),
+    );
+    for (const c of conns) {
+      try {
+        // Bounded probe — a port that's open but unresponsive must not hang `/chrome`.
+        const res = await fetch(`${c.url.replace(/\/+$/, '')}/attach`, { method: 'POST', headers: { 'Authorization': `Bearer ${c.token}` }, signal: AbortSignal.timeout(2000) });
+        if (!res.ok) continue;
+        // Confirm it's actually OUR bridge, not a foreign process that grabbed a reused port:
+        // the /attach body's sessionId must match the connection file's.
+        const body = await res.json().catch(() => null) as { sessionId?: string } | null;
+        if (!body || body.sessionId !== c.sessionId) continue;
+        return { url: c.url.replace(/\/+$/, ''), token: c.token, sessionId: c.sessionId, embedded: false, origins: [] };
+      } catch { /* dead/unresponsive port — try the next */ }
+    }
+    return null;
+  >>>
+
+fn name=ensureChromeBridge params="cwd:string" returns="Promise<ChromeBridge>" async=true export=true
+  doc "Resolve the bridge to drive: reuse a live one if present, else the already-embedded one, else embed a fresh in-process bridge (buildServeRuntime + start on an ephemeral port + write the 0600 connection file the panel auto-connects through) and keep it for the REPL session. The embedded bridge's brain is the agentic ReAct brain — never Cesar — so a browser turn cannot write to the live session."
+  handler <<<
+    const live = await probeLiveBridge();
+    if (live) return live;
+    if (_chromeHolder.current) return _chromeHolder.current.bridge;
+    // Re-entrancy: two concurrent /chrome turns must await the SAME embed, never start a second
+    // loopback server. The check + assign below has no await between them, so it's atomic.
+    if (_chromeHolder.starting) return _chromeHolder.starting;
+
+    const startP = (async (): Promise<ChromeBridge> => {
+      const origins = resolveChromeOrigins(cwd);
+      const engineId = resolveServeEngine(undefined, cwd);
+      const runtime = await buildServeRuntime({ engineId, cwd, allowedOrigins: origins });
+      const started = await runtime.serve.start(0);
+      writeServeConnectionFile(runtime.sessionId, started.url, started.token, engineId, origins);
+
+      const bridge: ChromeBridge = { url: started.url.replace(/\/+$/, ''), token: started.token, sessionId: runtime.sessionId, embedded: true, origins };
+      _chromeHolder.current = { runtime, bridge };
+
+      if (!_exitHooked.done) {
+        _exitHooked.done = true;
+        // SYNCHRONOUS best-effort cleanup only — drop the 0600 connection file so a dead token
+        // never lingers. We do NOT hook SIGINT/SIGTERM: the REPL owns those (Ctrl-C = cancel the
+        // turn, not kill the bridge), and an async server.close() can't complete in an 'exit'
+        // handler anyway (the OS reclaims the loopback socket on exit). The REPL's own teardown
+        // calls closeChromeBridge() for the graceful async path.
+        process.once('exit', () => {
+          const held = _chromeHolder.current;
+          if (held) { try { removeServeConnectionFile(held.runtime.sessionId); } catch { /* best-effort */ } }
+        });
+      }
+      return bridge;
+    })();
+    _chromeHolder.starting = startP;
+    try { return await startP; }
+    finally { _chromeHolder.starting = null; }
+  >>>
+
+fn name=closeChromeBridge returns="Promise<void>" async=true export=true
+  doc "Tear down the embedded bridge (if any): close the loopback server, the brain (aborting any in-flight turn), and remove its 0600 connection file. Idempotent; safe to call on REPL exit."
+  handler <<<
+    const held = _chromeHolder.current;
+    if (!held) return;
+    _chromeHolder.current = null;
+    try { await held.runtime.serve.close(); } catch { /* may never have bound */ }
+    try { await held.runtime.brain.close(); } catch { /* best-effort */ }
+    try { removeServeConnectionFile(held.runtime.sessionId); } catch { /* best-effort */ }
+  >>>

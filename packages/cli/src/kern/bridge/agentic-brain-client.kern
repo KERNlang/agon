@@ -1,0 +1,1017 @@
+// ── AgenticTurnBrainClient — the v2 BrainClient: an autonomous tool-loop ──────
+//
+// Where HeadlessTurnBrainClient (the v1 "ask" brain) does ONE engine dispatch per
+// turn and declares clientCapabilities:'unsupported', THIS brain implements the
+// agent tool-loop the contract (brain-client.kern) always anticipated: a CLIENT
+// (the browser extension) lends the brain tools via registerCapability, and the
+// brain — mid-turn — autonomously pulls them. It runs a bounded ReAct loop over the
+// SAME adapter.dispatch({mode:'exec'}) path:
+//
+//   dispatch(engine, transcript) → parse a __AGON_TOOL__ {name,input} sentinel
+//     → yield a capability-request BrainEvent (the daemon/SSE routes it to the
+//       owning client) → await provideCapabilityResult → feed the result back into
+//       the transcript → dispatch again … until the engine answers with no tool
+//       call, or a step/abort/timeout limit trips.
+//
+// Destructive tools (CapabilitySpec.isDestructive) first yield an approval-request
+// and await provideApproval — the load-bearing "ask before acting" gate (the panel
+// toggle decides whether the client auto-approves). approve-session / deny-session
+// are remembered per turn-brain so the agent isn't gated twice for the same tool.
+//
+// This is ENGINE-AGNOSTIC: any text engine that can emit the sentinel drives the
+// loop (claude/codex are reliable; the parse is forgiving — fences/prose around the
+// JSON are tolerated, a missing/garbled sentinel reads as a final answer). It is a
+// NEW brain behind the UNCHANGED BrainClient interface — no protocol/client break,
+// exactly the swap the contract promised. The fuller headless-Cesar brain (routing,
+// confidence gate, steering) remains the deferred swap; this is the focused agent.
+
+import from="@kernlang/agon-core" names="BrainClient,BrainClientConfig,BrainEvent,BrainTurnRequest,BrainTurnResult,ControlAck,ControlCapabilities,ClientRef,ApprovalResponse,AnswerResponse,SteerRequest,CancelRequest,CapabilityRegistration,CapabilityUnregister,CapabilityResult,CapabilitySpec,BrainHealth,EngineAdapter,EngineRegistry" types=true
+import from="@kernlang/agon-core" names="buildImageAttachment,decodeDataUrlToImageFile,MAX_DISPATCH_IMAGES,authFailureHint"
+import from="@kernlang/agon-adapter-cli" names="createCliAdapter"
+import from="node:path" names="join"
+import from="node:os" names="tmpdir"
+import from="node:fs" names="rmSync"
+import from="node:crypto" names="randomUUID"
+
+const name=AGENT_TOOL_MARKER type=string value={{ '__AGON_TOOL__' }} export=true
+// A turn ends when the GOAL is met (a genuine final answer), the agent is blocked, or it is
+// detected STUCK (MAX_NO_PROGRESS_STEPS consecutive replies that don't advance) — NOT at a fixed
+// step count. MAX_AGENT_STEPS is only a far safety backstop so a pathological loop can't run
+// forever; it should rarely be reached (a real multi-site task — review a PR across many files,
+// drive several pages — wants room, not a tight ceiling; the smart STUCK guards below, not this
+// backstop, are what stop a flail early, so this can be generous without letting a loop run away).
+const name=MAX_AGENT_STEPS type=number value={{ 60 }} export=true
+const name=MAX_NO_PROGRESS_STEPS type=number value={{ 3 }} export=true
+// A FAILED tool call (e.g. navigate → "invalid url", a bad selector) changes nothing, so it is
+// progress-NEUTRAL above (it neither advances nor resets the no-progress budget). But a model
+// that keeps emitting malformed inputs — varying the bad args each time so the identical-repeat
+// guard never trips — would otherwise flail all the way to MAX_AGENT_STEPS. This caps CONSECUTIVE
+// failures: a few retries to self-correct, then the turn stops with the last error surfaced.
+const name=MAX_CONSECUTIVE_TOOL_FAILURES type=number value={{ 4 }} export=true
+const name=CAPABILITY_RESULT_TIMEOUT_MS type=number value={{ 60_000 }}
+const name=APPROVAL_TIMEOUT_MS type=number value={{ 180_000 }}
+// A mid-turn QUESTION to the user (the engine deferred/asked) pauses the turn until the panel
+// answers. On no-answer the turn does NOT dead-end — it falls back to the autonomous nudge — so a
+// moderate window (matching approval) is right: long enough for a human, short enough that a
+// non-interactive client doesn't stall the whole turn for minutes before proceeding on its own.
+const name=QUESTION_TIMEOUT_MS type=number value={{ 180_000 }}
+// Cap mid-turn questions per turn so a malfunctioning engine can't pester the user in a loop; past
+// the cap a further deferral falls through to the autonomous nudge instead of asking again.
+const name=MAX_USER_QUESTIONS type=number value={{ 6 }}
+
+// ── Pure helpers (exported for unit tests) ───────────────────────────────────
+
+fn name=parseAgentToolCall params="stdout:string" returns="{ name: string; input: Record<string, unknown> } | null" export=true
+  doc "Extract an agent tool call from an engine's stdout: locate the AGENT_TOOL_MARKER and parse the first balanced {…} JSON object after it. Forgiving — surrounding prose or a ```code fence``` is tolerated, and a missing/garbled sentinel returns null (the caller treats null as a final prose answer). Returns null unless the object has a string `name`; a non-object `input` defaults to {}."
+  handler <<<
+    const idx = stdout.indexOf(AGENT_TOOL_MARKER);
+    if (idx === -1) return null;
+    const after = stdout.slice(idx + AGENT_TOOL_MARKER.length);
+    const start = after.indexOf('{');
+    if (start === -1) return null;
+    let depth = 0;
+    let end = -1;
+    let inStr = false;
+    let esc = false;
+    for (let i = start; i < after.length; i++) {
+      const c = after[i];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (c === '\\') esc = true;
+        else if (c === '"') inStr = false;
+        continue;
+      }
+      if (c === '"') inStr = true;
+      else if (c === '{') depth++;
+      else if (c === '}') { depth--; if (depth === 0) { end = i; break; } }
+    }
+    if (end === -1) return null;
+    try {
+      const obj = JSON.parse(after.slice(start, end + 1)) as { name?: unknown; input?: unknown };
+      if (obj && typeof obj.name === 'string') {
+        const input = (obj.input && typeof obj.input === 'object') ? obj.input as Record<string, unknown> : {};
+        return { name: obj.name, input };
+      }
+    } catch { return null; }
+    return null;
+  >>>
+
+fn name=extractNativeToolCall params="parts?:Array<{kind:string,toolName?:string,args?:Record<string,unknown>}>" returns="{ name: string; input: Record<string, unknown> } | null" export=true
+  doc "Pull the FIRST native tool call out of a DispatchResult.parts array. API-capable engines emit a structured tool_call part (via native function-calling) instead of typing the __AGON_TOOL__ text marker; this returns the SAME {name,input} shape as parseAgentToolCall so the ReAct loop is transport-agnostic. Returns only the first call by design: the loop is sequential AND stateless (each step re-sends the transcript as a fresh single-turn, never continuing the native message thread), so a model that emits parallel calls in one response has its extras harmlessly re-decided on the next step — no dangling-tool-result is ever owed. Null when there is no tool_call part (a prose-only final answer, or a CLI engine whose result has no parts)."
+  handler <<<
+    if (!parts || parts.length === 0) return null;
+    for (const p of parts) {
+      if (p && p.kind === 'tool_call' && typeof p.toolName === 'string' && p.toolName) {
+        const input = (p.args && typeof p.args === 'object') ? p.args as Record<string, unknown> : {};
+        return { name: p.toolName, input };
+      }
+    }
+    return null;
+  >>>
+
+fn name=toolFieldNames params="schema:unknown" returns="string[]" export=true
+  doc "The declared argument names of a tool's inputSchema — used to PROTECT a tool that legitimately takes an `input` argument from unwrapToolInputEnvelope. Handles BOTH the lent shorthand ({url:'string'} → ['url']) and a real JSON Schema ({type:'object',properties:{input:{…}}} → ['input']). Empty for a missing/empty/non-object schema (then the unwrap is unconstrained — correct for agon's tools, none of which declare `input`)."
+  handler <<<
+    if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return [];
+    const obj = schema as Record<string, unknown>;
+    // A real schema is identified by type==='object' (same rule as normalizeToolSchema) — then its
+    // fields are its `properties` keys; otherwise it's shorthand and the top-level keys ARE the fields
+    // (so a shorthand field literally named `properties` is reported as the field 'properties').
+    if (obj.type === 'object') return (obj.properties && typeof obj.properties === 'object') ? Object.keys(obj.properties as Record<string, unknown>) : [];
+    return Object.keys(obj); // shorthand — the keys ARE the field names
+  >>>
+
+fn name=unwrapToolInputEnvelope params="call:{ name: string; input: Record<string, unknown> } | null, knownFields?:string[]" returns="{ name: string; input: Record<string, unknown> } | null" export=true
+  doc "Forgiving fix for the {name,input} marker protocol leaking into the ARGS: coding-plan engines, on a hard/long turn, wrap the REAL args in a SECOND `input` key — navigate({input:{url:…}}) instead of navigate({url:…}), click({input:{selector:…}}) instead of click({selector:…}) — so the handler reads input.url/input.selector = undefined and EVERY navigate/click fails ('invalid url' / 'needs a string selector'). Observed live on minimax/kimi (they answer via the text marker, not native calls, so the function-schema never constrains them). This unwraps a LONE object-valued `input` key (bounded depth, so a triple-wrap also resolves). agon's page tools (readPage/click/type/selectOption/navigate/scroll) have NO `input` field, so a real call (its sole/other keys are url/selector/text/…) is returned untouched — only the redundant envelope is stripped. SAFETY: if the target tool LEGITIMATELY declares an `input` argument (knownFields includes 'input'), the envelope is NOT stripped, so a future/third-party tool whose real sole arg is named `input` is never corrupted. A null call (final prose answer) passes through."
+  handler <<<
+    if (!call) return call;
+    if (knownFields && knownFields.indexOf('input') !== -1) return call; // the tool REALLY takes an `input` arg — never strip it
+    let input = call.input as Record<string, unknown>;
+    let guard = 0;
+    while (guard < 3 && input && typeof input === 'object' && !Array.isArray(input) && Object.keys(input).length === 1 && Object.prototype.hasOwnProperty.call(input, 'input') && input.input && typeof input.input === 'object' && !Array.isArray(input.input)) {
+      input = input.input as Record<string, unknown>;
+      guard++;
+    }
+    return { name: call.name, input };
+  >>>
+
+const name=TOOL_NAME_RE type="RegExp" value={{ /^[a-zA-Z0-9_-]{1,64}$/ }}
+
+fn name=sanitizeSchemaNode params="value:unknown, depth?:number" returns="unknown" export=true
+  doc "Deep-copy a per-property schema value, dropping prototype-pollution keys (__proto__/constructor/prototype) at EVERY level, so an object-valued inputSchema lent by a (future/third-party) capability can't smuggle a polluting key into the native function-calling tool definition. normalizeToolSchema's TOP-LEVEL guard only skips these at depth 0; this closes the nested case (kimi review 0.85). Depth-bounded (6) so a pathological deep/cyclic structure can't blow the stack. Non-objects pass through unchanged; arrays are mapped element-wise. Agon's own tools lend STRING-valued shorthand (this branch never fires for them), so this is purely defensive depth for object-valued schemas."
+  handler <<<
+    const d = depth ?? 0;
+    if (d > 6 || !value || typeof value !== 'object') return value;
+    if (Array.isArray(value)) return value.map((x) => sanitizeSchemaNode(x, d + 1));
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
+      out[k] = sanitizeSchemaNode(v, d + 1);
+    }
+    return out;
+  >>>
+
+fn name=normalizeToolSchema params="raw:unknown" returns="Record<string, unknown>" export=true
+  doc "Coerce a client-lent inputSchema into a VALID JSON Schema for native function-calling. Agon's page tools lend a SHORTHAND ({ url: 'string' }, { selector: 'string', text: 'string' }, {}), NOT a JSON Schema — passing that straight through as an OpenAI/Anthropic function `parameters` gives the provider no real arg contract: the model can't see that the arg is `url`, so it falls back to the prompt's {name,input} marker envelope and emits { input: '<url>' } → the handler reads input.url = undefined → 'invalid url', forever. (The marker-based CLI engines dodge this — they read the schema from the prose; only the NATIVE path needs a real schema.) So: pass through anything that ALREADY looks like a JSON Schema (declares `type` or `properties`); otherwise treat each key as a property whose value names its type ('string'|'number'|'boolean', default 'string'). `required` is left empty on purpose — the shorthand doesn't say which args are mandatory, and over-constraining would break optional-arg tools like scroll. Declaring typed properties is what fixes the flail; requiredness is a nicety we can't infer."
+  handler <<<
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { type: 'object', properties: {} };
+    const obj = raw as Record<string, unknown>;
+    // Already a JSON Schema for the args object — pass through as-is (a future tool may lend a real
+    // one). Detect ONLY by `type === 'object'`: that is THE requirement for an object schema, and it
+    // is unambiguous. Keying off `type`/`properties` PRESENCE false-positives a shorthand whose field
+    // is literally named 'type' or 'properties' — e.g. { type:'string', value:'string' } or a tool
+    // taking a `properties` object arg — so a real schema MUST say type:'object'.
+    if (obj.type === 'object') return obj;
+    // Shorthand → JSON Schema. A value that is a STRING names the field's JSON type; a value that is
+    // an OBJECT is already a per-property schema (e.g. { url:{type:'string',format:'uri'} }) and is
+    // kept verbatim so its constraints (format/enum/…) survive to native function-calling.
+    const VALID_TYPES = ['string', 'number', 'integer', 'boolean', 'array', 'object', 'null'];
+    const properties: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue; // never assign a prototype-pollution vector
+      if (v && typeof v === 'object' && !Array.isArray(v)) { properties[k] = sanitizeSchemaNode(v); continue; } // a per-property schema object — kept (constraints survive), but deep-stripped of prototype-pollution keys (an ARRAY is neither a type-name nor a schema → falls through to string)
+      properties[k] = { type: (typeof v === 'string' && VALID_TYPES.includes(v)) ? v : 'string' };
+    }
+    return { type: 'object', properties };
+  >>>
+
+fn name=capsToNativeTools params="specs:CapabilitySpec[]" returns="Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>" export=true
+  doc "Convert client-lent capability specs to the OpenAI-function tool shape the API dispatch path expects, so an API-capable engine can call them via NATIVE function-calling. The spec.inputSchema is NORMALIZED into a valid JSON Schema (normalizeToolSchema) — the lent shorthand ({ url:'string' }) is NOT a JSON Schema, and passing it through verbatim left the model with no arg contract (it then emitted { input:<url> } and the navigate handler rejected it as 'invalid url'). SKIPS any spec whose name violates the providers' function-name constraint (^[a-zA-Z0-9_-]{1,64}$): a single malformed name would otherwise make the provider REJECT the entire tools[] array and break native calling for EVERY tool that turn. A skipped tool still works via the in-prompt marker path (the prompt lists it and parseAgentToolCall matches by name), so coverage degrades gracefully for that one tool instead of poisoning the whole request. Agon's own page tools (readPage/click/type/selectOption/scroll) all satisfy the constraint, so nothing is skipped in practice."
+  handler <<<
+    const tools: Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}> = [];
+    for (const s of specs) {
+      if (!s || typeof s.name !== 'string' || !TOOL_NAME_RE.test(s.name)) continue;
+      tools.push({
+        type: 'function',
+        function: {
+          name: s.name,
+          description: typeof s.description === 'string' ? s.description : '',
+          parameters: normalizeToolSchema(s.inputSchema),
+        },
+      });
+    }
+    return tools;
+  >>>
+
+fn name=buildAgentSystemPrompt params="tools:CapabilitySpec[], base?:string, native?:boolean" returns="string" export=true
+  doc "The agent's system prompt: the act protocol plus the catalog of client-lent capabilities. Read-only vs destructive is surfaced so the engine knows which actions trigger the user's approval gate. TRANSPORT-AWARE via `native`: an API-only engine (no CLI binary — kimi/minimax/zai) is dispatched with REAL native function-calling tools, so it gets a NATIVE-call protocol ('CALL the tool') and must NOT be told to type the `__AGON_TOOL__` text marker — that competing text instruction is exactly why native calling stayed dormant (the model obeyed the louder marker prompt and emitted text, so it then narrated-and-stopped). A CLI/marker engine (claude/codex/agy, default native=false) keeps the strict one-line marker protocol. The proactive/autonomous/long-page guidance is transport-agnostic and shared."
+  handler <<<
+    const lines: string[] = [];
+    if (base && base.trim().length > 0) { lines.push(base.trim(), ''); }
+    lines.push(
+      "You are Agon, an AI agent operating INSIDE the user's web browser via a side panel.",
+      'You can inspect and act on the page the user is viewing, using ONLY the tools below.',
+      '',
+      'TOOLS:',
+    );
+    if (tools.length === 0) {
+      lines.push('  (none registered — answer from your own knowledge.)');
+    } else {
+      for (const t of tools) {
+        // Label by isReadOnly (fail-safe): anything NOT explicitly read-only ACTS and is
+        // gated — matching the runTurn gate, so the engine never sees a mutating tool as "read-only".
+        const tag = t.isReadOnly ? '(read-only)' : '(ACTS on the page — the user must approve)';
+        lines.push(`- ${t.name} ${tag}: ${t.description}`);
+        lines.push(`    input: ${JSON.stringify(t.inputSchema).slice(0, 800)}`);
+      }
+    }
+    // HOW TO ACT — transport-specific. A native (API) engine is given REAL function-calling tools by
+    // the adapter, so it must be told to CALL them, NOT to type the __AGON_TOOL__ text marker (telling
+    // it BOTH is why native calling was dormant: it obeyed the explicit text instruction, emitted a
+    // marker as prose, and then narrated-and-stopped). A marker engine keeps the strict one-line form.
+    const howToAct: string[] = native ? [
+      'HOW TO ACT: the tools above are available to you as REAL function-calling tools. To act, CALL',
+      'the appropriate tool directly through your function/tool-calling interface — do NOT write the',
+      'call as text, JSON, or a code block, and do NOT merely describe it. One tool call per step:',
+      'you receive its result, then call the next tool.',
+      '',
+      'CRITICAL: Do NOT narrate ("Let me…", "I will…", "I\'m going to…") and then stop — narration',
+      'alone does NOTHING; only an actual tool CALL acts. If you intend to act, CALL THE TOOL NOW.',
+      'Read the page before acting on it. Never fabricate a result or claim an action you did not',
+      'take. Reply in prose ONLY when giving the user your FINAL answer (make no tool call that turn).',
+    ] : [
+      'HOW TO ACT — this is strict. To use a tool, your reply MUST be EXACTLY one line,',
+      'the tool call, and NOTHING ELSE (no preamble, no explanation):',
+      `${AGENT_TOOL_MARKER} {"name":"<toolName>","input":{ ... }}`,
+      '',
+      `Example — read the page:   ${AGENT_TOOL_MARKER} {"name":"readPage","input":{}}`,
+      `Example — click a button:  ${AGENT_TOOL_MARKER} {"name":"click","input":{"selector":"#submit"}}`,
+      `Example — go to a url:     ${AGENT_TOOL_MARKER} {"name":"navigate","input":{"url":"https://example.com"}}`,
+      'Put the tool\'s fields DIRECTLY in "input" — do NOT wrap them in a SECOND "input" (write',
+      '"input":{"url":"…"}, never "input":{"input":{"url":"…"}}). A bad shape fails the whole action.',
+      '',
+      'CRITICAL: Do NOT narrate ("Let me…", "I will…", "I\'m going to…") and then stop —',
+      'narration alone does NOTHING; only a tool line acts. If you intend to act, EMIT THE',
+      'TOOL LINE NOW. One tool per step — you then get its result and may call another tool.',
+      'Read the page before acting on it. Never fabricate a result or claim an action you',
+      'did not take. Reply in prose ONLY when giving the user your FINAL answer (no tool line).',
+    ];
+    lines.push('', ...howToAct, '');
+    lines.push(
+      'BE PROACTIVE — take initiative. When the user asks you to DO something on the web —',
+      'search for / find / look up something, open or navigate to a site, fill a field, click —',
+      'ACT by calling tools; the user wants it DONE, not described, and does NOT want to spell',
+      'out each step. Drive it yourself across multiple steps (read → act → read → act) until',
+      'the goal is reached. Need a site you are not on? navigate there, then readPage, then act.',
+      'This holds in EVERY language: a request written in German/French/etc. STILL requires a tool',
+      'call — never answer a "do X" request with only a prose promise to do it.',
+      '',
+      'AUTONOMOUS — finish the job yourself. Do NOT ask the user how to proceed, for permission, or',
+      'to choose between options, and do NOT end a turn with "How would you like me to proceed?" or a',
+      'menu of choices. DECIDE the most reasonable next step and DO it. The user approves each',
+      'page-changing action through a SEPARATE prompt, so you never need to ask for permission in',
+      'prose — just call the tool. Keep going (read → act → read → act) until the task is genuinely',
+      'COMPLETE, then give a final answer that contains the RESULT (e.g. the actual jobs you found,',
+      'with why each fits). Stop to ask ONLY if you are truly blocked — a login, a captcha, or a',
+      'genuinely ambiguous irreversible choice.',
+      '',
+      'WORKING A LONG PAGE — be an autopilot, not a flail: go TOP-TO-BOTTOM. Read the current',
+      'section, take any action it needs, then SCROLL DOWN one screenful and repeat until scroll',
+      'reports the BOTTOM. NEVER readPage or screenshot the SAME view twice in a row — it reveals',
+      'nothing new; SCROLL first. Do NOT re-click a control you already clicked (e.g. a toggle).',
+      'Keep a brief running tally of what you have handled so you know when the task is complete.',
+    );
+    // MULTI-TAB — only when the client lent the workspace tools (an older extension hasn't). Frames the
+    // mental model so the engine actually USES the tabs instead of cramming everything into one page.
+    const hasMultiTab = tools.some((t) => t.name === 'openTab' || t.name === 'switchTab');
+    if (hasMultiTab) {
+      lines.push(
+        '',
+        'MULTI-TAB WORKSPACE — you have your OWN set of tabs (an "Agon" group), SEPARATE from the',
+        "user's tabs. readPage/click/type/navigate/scroll always act on your FOCUSED tab. To work",
+        'several pages at once — compare results, keep a reference open, research across sources —',
+        'openTab to open another page (it becomes focused), switchTab(tabId) to move between them, and',
+        'listTabs to see what you have open; closeTab when done. navigate changes the CURRENT tab;',
+        'openTab makes a NEW one. Prefer real tabs over losing context by navigating away and back.',
+      );
+    }
+    return lines.join('\n');
+  >>>
+
+fn name=renderAgentTranscript params="userInput:string, steps:Array<{ name: string; input: Record<string, unknown>; output: string }>" returns="string" export=true
+  doc "The growing ReAct transcript re-sent to the (stateless, exec-mode) engine each step. The user's request is framed as a standing GOAL (restated every step so a stateless engine never loses sight of it) plus the progress so far, ending with: you are NOT done until the goal is met — act, or give the RESULT."
+  handler <<<
+    // Frame the request as the GOAL the agent must ACHIEVE, not a one-off question. Re-sent every
+    // step (the engine is stateless in exec mode), so it keeps pursuing the goal to completion
+    // instead of doing one thing and stopping.
+    const lines: string[] = [`YOUR GOAL — keep working until this is fully achieved, then report the result: ${userInput}`, ''];
+    if (steps.length === 0) {
+      lines.push('Nothing done yet. Take the FIRST action toward the goal now (a tool call). Answer directly only if the goal is already met.');
+      return lines.join('\n');
+    }
+    lines.push('Progress so far (most recent last):');
+    for (const s of steps) {
+      lines.push(`> ${s.name}(${JSON.stringify(s.input)})`);
+      lines.push(`< ${s.output}`);
+    }
+    lines.push('', 'You are NOT done until the GOAL above is fully achieved. If it is not yet met, call the next tool to make progress. Give your final answer ONLY when the goal is met — and make it the actual RESULT (e.g. the matching jobs and why each fits), never a question back to the user.');
+    return lines.join('\n');
+  >>>
+
+const name=AGENT_MSG_KEEP_FULL type=number value={{ 4 }} export=true
+const name=AGENT_MSG_TRIM_HEAD type=number value={{ 240 }} export=true
+
+fn name=safeStringifyArgs params="input:unknown" returns="string" export=false
+  doc "JSON.stringify a tool call's input, defaulting to {} on any throw — guards renderAgentMessages so one circular/unserializable input can never crash the whole message reconstruction (and thus the turn)."
+  handler <<<
+    try { return JSON.stringify(input ?? {}); } catch { return '{}'; }
+  >>>
+
+fn name=renderAgentMessages params="userInput:string, steps:Array<{ name: string; input: Record<string, unknown>; output: string }>" returns="Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>" export=true
+  doc "Phase 2: reconstruct the ReAct progress as a NATIVE OpenAI message thread for the API+tools path — user(goal), then per executed step an assistant{tool_calls} + tool{result} PAIR (a 'reminder' step becomes a user instruction). The model attends to a real tool conversation (vs the flat user-prompt transcript renderAgentTranscript builds for CLI engines), and the stable prefix is prompt-cacheable. BOUNDS context: only the last AGENT_MSG_KEEP_FULL tool results stay verbatim; older ones truncate to a short head — this is what keeps a long browse from bloating to the step backstop. Tool-call ids are synthetic+contiguous (call_<i>), all convertMessagesForSdk needs to pair each assistant call with its result. The system prompt is NOT included here — the adapter prepends the project-context one."
+  handler <<<
+    const messages: Array<{role:string, content:any, tool_calls?:any[], tool_call_id?:string}> = [];
+    messages.push({ role: 'user', content: `YOUR GOAL — keep working until this is fully achieved, then report the result: ${userInput}` });
+    if (steps.length === 0) {
+      messages.push({ role: 'user', content: 'Nothing done yet. Take the FIRST action toward the goal now (a tool call). Answer directly only if the goal is already met.' });
+      return messages;
+    }
+    // Step indices of real tool calls (reminders excluded); only the last AGENT_MSG_KEEP_FULL keep
+    // their full output, so the conversation stays bounded as the browse grows.
+    const toolIdx: number[] = [];
+    for (let i = 0; i < steps.length; i++) { if (steps[i].name !== 'reminder') toolIdx.push(i); }
+    const keepFrom = toolIdx.length > AGENT_MSG_KEEP_FULL ? toolIdx[toolIdx.length - AGENT_MSG_KEEP_FULL] : 0;
+    for (let i = 0; i < steps.length; i++) {
+      const s = steps[i];
+      if (s.name === 'reminder') { messages.push({ role: 'user', content: s.output }); continue; }
+      const id = `call_${i}`;
+      messages.push({ role: 'assistant', content: '', tool_calls: [{ id, type: 'function', function: { name: s.name, arguments: safeStringifyArgs(s.input) } }] });
+      const out = (i >= keepFrom || s.output.length <= AGENT_MSG_TRIM_HEAD)
+        ? s.output
+        : `${s.output.slice(0, AGENT_MSG_TRIM_HEAD)} …[trimmed ${s.output.length - AGENT_MSG_TRIM_HEAD} chars of an earlier result — re-read or scroll if you need it again]`;
+      messages.push({ role: 'tool', tool_call_id: id, content: out });
+    }
+    messages.push({ role: 'user', content: 'You are NOT done until the GOAL is met. Call the next tool to make progress, or give the final RESULT (never a question back to the user).' });
+    return messages;
+  >>>
+
+fn name=looksLikeActionIntent params="text:string" returns="boolean" export=true
+  doc "True when an engine's reply DESCRIBES an action ('Let me navigate…', 'Ich suche…') but emitted no tool call — a short intent preamble, not a final answer — so the loop can NUDGE it to actually emit the tool line (the common weak-engine failure: the brain says it will act, then stops). Covers English + German narration, the panel's two languages; other languages degrade to no-nudge (the proactivity system prompt still pushes the model to act in any language — this is only the backstop). Bounded to short replies so a real prose answer that mentions 'review'/'search' isn't misread as narration."
+  handler <<<
+    const s = text.trim();
+    if (s.length === 0 || s.length >= 500) return false; // a substantive reply is a real answer, not a preamble
+    const head = s.slice(0, 200).toLowerCase();
+    if (/\blet me know\b/.test(head)) return false; // a sign-off, not an action
+    // English: a first-person "about to act" opener AND an action verb. Verb stems anchor at
+    // the word START only (no trailing \b), so a stem matches its inflections (navigat→navigate).
+    const enIntent = /\b(let me|i'?ll|i will|i'?m going to|i am going to|let's|now i'?ll|going to)\b/.test(head);
+    const enVerb = /\b(navigat|go to|open|fill|select|read|review|look at|check|press|scroll|click|type|search|find|brows)/.test(head);
+    // German: a first-person SELF-action ("ich suche/navigiere/öffne…", "starte ich"). Listed as
+    // explicit "ich <verb>" pairs (not a bare adverb or a stem) so opinion phrasing like
+    // "ich finde X gut" (I think X is good) and "jetzt sieht …" (now … looks) are NOT misread as
+    // intent. ASCII-anchored before "ich", which sidesteps the \b-vs-umlaut problem (\b fails
+    // before 'ö', so a bare "\böffne" never matched).
+    const deAction = /\b(ich\s+(werde|möchte|gehe|navigiere|klicke|tippe|öffne|lese|suche|scrolle|wähle|prüfe|fülle|drücke|starte|beginne|rufe|schaue)|starte ich|beginne ich|lass mich)\b/.test(head);
+    return (enIntent && enVerb) || deAction;
+  >>>
+
+fn name=looksLikeDeferral params="text:string" returns="boolean" export=true
+  doc "True when the engine, instead of acting, ASKS the user how to proceed / for permission / to pick an option ('How would you like me to proceed?', 'Which option would you like?', 'Soll ich…?'). The classic non-agentic stall: it hands the wheel back to the user. The loop nudges it to decide and continue (the user still approves each page-changing action via the SEPARATE gate, so the agent never needs to ask in prose). Kept to strong, unambiguous phrases (EN + DE) so a completed answer that merely ends 'let me know if you want more' is NOT misread as a stall."
+  handler <<<
+    const t = text.toLowerCase();
+    return /(how would you like me to proceed|how (should|shall|do) (i|we) proceed|which (one|option)( would you| do you want| should i)|would you like me to\b|do you want me to\b|let me know which|wie soll ich (fortfahren|vorgehen|weitermachen)|möchtest du, dass ich|soll ich\b.*\?|welche (option|möglichkeit))/.test(t);
+  >>>
+
+fn name=describeAgentAction params="name:string, input:Record<string, unknown>" returns="string" export=true
+  doc "A compact, human-readable one-liner for the approval popup's `command` field — what the agent is about to do."
+  handler <<<
+    let arg = '';
+    try { arg = JSON.stringify(input); } catch { arg = '{…}'; }
+    if (arg.length > 160) arg = arg.slice(0, 157) + '…';
+    return `${name}(${arg})`;
+  >>>
+
+// ── The agentic brain ────────────────────────────────────────────────────────
+
+service name=AgenticTurnBrainClient implements=BrainClient
+  doc "v2 BrainClient: a bounded ReAct tool-loop over one engine, with client-lent capabilities (registerCapability) the brain pulls mid-turn via capability-request, and a per-action approval gate for destructive tools. Construct with the daemon's EngineRegistry; open() binds engine/cwd; runTurn() drives the loop; provideCapabilityResult/provideApproval answer the *-request events by requestId."
+  field name=registry type=EngineRegistry private=true
+  field name=adapter type=EngineAdapter private=true
+  field name=engineId type=string private=true
+  field name=cwd type=string private=true
+  field name=systemPrompt type="string|undefined" private=true
+  field name=startedAtMs type=number private=true
+  field name=activeTurnId type="string|null" private=true
+  field name=aborts type="Map<string, AbortController>" private=true
+  field name=caps type="Map<string, { clientId: string; spec: CapabilitySpec }>" private=true
+  field name=pendingCaps type="Map<string, { clientId: string; resolve: (r: CapabilityResult) => void }>" private=true
+  field name=pendingApprovals type="Map<string, { clientId: string; resolve: (decision: string) => void }>" private=true
+  field name=pendingAnswers type="Map<string, { clientId: string; resolve: (answer: string) => void }>" private=true
+  field name=approvedSession type="Set<string>" private=true
+  field name=deniedSession type="Set<string>" private=true
+  field name=controlCapabilities type=ControlCapabilities
+
+  constructor params="registry:EngineRegistry"
+    handler lang="kern"
+      assign target="this.registry" value="registry"
+      assign target="this.adapter" value="createCliAdapter(registry)"
+      assign target="this.engineId" value="'claude'"
+      assign target="this.cwd" value="process.cwd()"
+      assign target="this.systemPrompt" value="undefined"
+      assign target="this.startedAtMs" value="Date.now()"
+      assign target="this.activeTurnId" value="null"
+      assign target="this.aborts" value="new Map()"
+      assign target="this.caps" value="new Map()"
+      assign target="this.pendingCaps" value="new Map()"
+      assign target="this.pendingApprovals" value="new Map()"
+      assign target="this.pendingAnswers" value="new Map()"
+      assign target="this.approvedSession" value="new Set()"
+      assign target="this.deniedSession" value="new Set()"
+      assign target="this.controlCapabilities" value="{ concurrentTurns: 'per-session-serialized', concurrentSteering: 'unsupported', approvalArbitration: 'host-only', questionArbitration: 'host-only', clientCapabilities: 'supported', cancellation: 'per-turn' }"
+      assign target="this.open" value="this.open.bind(this)"
+      assign target="this.runTurn" value="this.runTurn.bind(this)"
+      assign target="this.steer" value="this.steer.bind(this)"
+      assign target="this.provideApproval" value="this.provideApproval.bind(this)"
+      assign target="this.provideAnswer" value="this.provideAnswer.bind(this)"
+      assign target="this.registerCapability" value="this.registerCapability.bind(this)"
+      assign target="this.unregisterCapability" value="this.unregisterCapability.bind(this)"
+      assign target="this.provideCapabilityResult" value="this.provideCapabilityResult.bind(this)"
+      assign target="this.cancel" value="this.cancel.bind(this)"
+      assign target="this.notifyClientAttached" value="this.notifyClientAttached.bind(this)"
+      assign target="this.notifyClientDetached" value="this.notifyClientDetached.bind(this)"
+      assign target="this.health" value="this.health.bind(this)"
+      assign target="this.close" value="this.close.bind(this)"
+
+  method name=open params="config:BrainClientConfig" returns="Promise<void>" async=true
+    doc "Bind the session: which engine answers, the cwd dispatches run in, and an optional system prompt prepended to the agent protocol prompt."
+    handler <<<
+      this.engineId = config.engineId;
+      this.cwd = config.cwd;
+      this.systemPrompt = config.systemPrompt;
+    >>>
+
+  method name=waitForCapabilityResult params="requestId:string, ownerClientId:string, signal:AbortSignal" returns="Promise<CapabilityResult>" async=true private=true
+    doc "Suspend the turn until the OWNING client (ownerClientId — the one that registered the tool) POSTs its CapabilityResult; provideCapabilityResult resolves the pending entry by requestId only when the reply's clientId matches. Rejects on the turn's abort or after CAPABILITY_RESULT_TIMEOUT_MS so a closed/unresponsive panel can never hang the brain."
+    handler <<<
+      return new Promise<CapabilityResult>((resolve, reject) => {
+        if (signal.aborted) { reject(new Error('aborted')); return; }
+        let timer: ReturnType<typeof setTimeout>;
+        const onAbort = () => { this.pendingCaps.delete(requestId); clearTimeout(timer); reject(new Error('aborted')); };
+        timer = setTimeout(() => { this.pendingCaps.delete(requestId); signal.removeEventListener('abort', onAbort); reject(new Error('timeout')); }, CAPABILITY_RESULT_TIMEOUT_MS);
+        signal.addEventListener('abort', onAbort, { once: true });
+        this.pendingCaps.set(requestId, { clientId: ownerClientId, resolve: (r: CapabilityResult) => { clearTimeout(timer); signal.removeEventListener('abort', onAbort); resolve(r); } });
+      });
+    >>>
+
+  method name=waitForApproval params="requestId:string, ownerClientId:string, signal:AbortSignal" returns="Promise<string>" async=true private=true
+    doc "Suspend the turn until the OWNING client (ownerClientId — the turn's submitter, the host for v1) answers the approval-request; provideApproval resolves by requestId only when the reply's clientId matches (host-only arbitration). Rejects on abort; on APPROVAL_TIMEOUT_MS resolves to 'deny' (a no-answer is a safe no, not a hang)."
+    handler <<<
+      return new Promise<string>((resolve, reject) => {
+        if (signal.aborted) { reject(new Error('aborted')); return; }
+        let timer: ReturnType<typeof setTimeout>;
+        const onAbort = () => { this.pendingApprovals.delete(requestId); clearTimeout(timer); reject(new Error('aborted')); };
+        timer = setTimeout(() => { this.pendingApprovals.delete(requestId); signal.removeEventListener('abort', onAbort); resolve('deny'); }, APPROVAL_TIMEOUT_MS);
+        signal.addEventListener('abort', onAbort, { once: true });
+        this.pendingApprovals.set(requestId, { clientId: ownerClientId, resolve: (decision: string) => { clearTimeout(timer); signal.removeEventListener('abort', onAbort); resolve(decision); } });
+      });
+    >>>
+
+  method name=waitForUserAnswer params="requestId:string, ownerClientId:string, signal:AbortSignal" returns="Promise<string>" async=true private=true
+    doc "Suspend the turn until the OWNING client (the turn's submitter — host-only arbitration) answers the question-request; provideAnswer resolves by requestId only when the reply's clientId matches. Rejects on abort OR on QUESTION_TIMEOUT_MS (unlike approval there is no safe default answer — the caller treats a rejection as 'the question went unanswered' and surfaces it as the turn's result rather than hanging)."
+    handler <<<
+      return new Promise<string>((resolve, reject) => {
+        if (signal.aborted) { reject(new Error('aborted')); return; }
+        let timer: ReturnType<typeof setTimeout>;
+        const onAbort = () => { this.pendingAnswers.delete(requestId); clearTimeout(timer); reject(new Error('aborted')); };
+        timer = setTimeout(() => { this.pendingAnswers.delete(requestId); signal.removeEventListener('abort', onAbort); reject(new Error('timeout')); }, QUESTION_TIMEOUT_MS);
+        signal.addEventListener('abort', onAbort, { once: true });
+        this.pendingAnswers.set(requestId, { clientId: ownerClientId, resolve: (answer: string) => { clearTimeout(timer); signal.removeEventListener('abort', onAbort); resolve(answer); } });
+      });
+    >>>
+
+  method name=runTurn params="req:BrainTurnRequest" returns="BrainEvent, BrainTurnResult, void" async=true stream=true
+    doc "Run the bounded ReAct tool-loop for one turn, streaming BrainEvents (thinking notices, tool start/done, capability-request + approval-request, and the final engine answer); the BrainTurnResult is the generator RETURN value. Single-writer: rejects a concurrent turn. Cancellable per turn via the AbortController."
+    handler <<<
+      // KERN-GAP: kern-review (undefined-reference) — in a raw `<<<` stream handler a
+      // `yield { ...objectLiteral }` is mis-parsed (its keys flagged undeclared).
+      // Workaround used throughout: assign each BrainEvent to a typed const, yield it.
+      const turnEngineId = (req.engineId && this.registry.listIds().includes(req.engineId)) ? req.engineId : this.engineId;
+      if (this.activeTurnId !== null) {
+        const reason = `brain busy with turn ${this.activeTurnId} (single-writer)`;
+        const busy: BrainEvent = { kind: 'notice', level: 'error', message: reason };
+        yield busy;
+        return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
+      }
+      this.activeTurnId = req.turnId;
+      const ctrl = new AbortController();
+      this.aborts.set(req.turnId, ctrl);
+      const safeTurn = req.turnId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 200) || 'turn';
+      const turnDir = join(tmpdir(), 'agon-brain-turns', safeTurn);
+      try {
+        const engine = this.registry.get(turnEngineId);
+        // Step-0 vision: a screenshot the user attached to the turn (frontend-inspector).
+        // A screenshot the AGENT later captures (a 'data:' capability result) is decoded
+        // and shown on the NEXT dispatch so the agent can actually SEE what it grabbed.
+        type Att = NonNullable<ReturnType<typeof buildImageAttachment>>;
+        let nextImages: Att[] = [];
+        const allImages = req.images ?? [];
+        const rawImages = allImages.slice(0, MAX_DISPATCH_IMAGES);
+        if (allImages.length > rawImages.length) {
+          const capped: BrainEvent = { kind: 'notice', level: 'warning', message: `only the first ${MAX_DISPATCH_IMAGES} of ${allImages.length} images are used` };
+          yield capped;
+        }
+        for (let i = 0; i < rawImages.length; i++) {
+          const raw = rawImages[i];
+          if (raw.startsWith('data:')) {
+            const decoded = decodeDataUrlToImageFile(raw, turnDir, i);
+            if (decoded.path) { const att = buildImageAttachment(decoded.path, this.cwd); if (att) nextImages.push(att); }
+            else if (decoded.reason) { const skip: BrainEvent = { kind: 'notice', level: 'warning', message: `image skipped: ${decoded.reason}` }; yield skip; }
+          } else {
+            const att = buildImageAttachment(raw, this.cwd); if (att) nextImages.push(att);
+          }
+        }
+
+        const tools = [...this.caps.values()].map((c) => c.spec);
+        // NATIVE function-calling specs, offered on EVERY dispatch. The adapter uses them only on
+        // the API path (binary-less engines: the coding-plan models) and ignores them on the CLI
+        // path — so claude/codex keep the text-marker protocol while API-only engines get reliable
+        // structured tool calls. The system prompt still lists the marker format for the CLI case.
+        const nativeTools = capsToNativeTools(tools);
+        // Will this turn's engine ACTUALLY dispatch via NATIVE function-calling? Two conditions:
+        //  1. the dispatch resolves to the adapter's API path. We mirror the adapter's REAL predicate
+        //     EXACTLY (adapter.kern dispatch): no USABLE binary — `engine.binary ? findBinary(engine) :
+        //     null` being null (none declared, OR declared-but-absent-from-PATH) — AND an api block with
+        //     its key present. Deriving native mode from the static `!engine.binary` alone misfired for a
+        //     binary-DECLARING engine whose binary isn't installed: the adapter dispatches it via native
+        //     API tools, yet we'd still send the marker prompt + marker nudges (codex review 0.92). Using
+        //     findBinary + key-present also fixes the empty-`api`-object case (no apiKeyEnv → no key → not
+        //     native), and claude/codex/agy with their binary installed resolve to a usable binary → CLI.
+        //  2. tools were actually offered — with zero registered tools the adapter sends none, so telling
+        //     the model to "CALL your function-calling tools" would point at nothing; fall back to the
+        //     (equally moot, but non-contradictory) marker/no-tools prompt instead.
+        // Drives BOTH the system prompt (native-call vs marker protocol) and the nudge phrasing below.
+        const binaryPath = engine.binary ? this.registry.findBinary(engine) : null;
+        const usesApiDispatch = !binaryPath && !!(engine.api && process.env[engine.api.apiKeyEnv]);
+        const usesNativeFc = usesApiDispatch && nativeTools.length > 0;
+        const sysPrompt = buildAgentSystemPrompt(tools, this.systemPrompt, usesNativeFc);
+        // How to tell the engine to ACT, in its own protocol — reused by every nudge/deferral reminder so
+        // a native engine is never told to type the (now-suppressed) __AGON_TOOL__ marker. (The nudges
+        // only fire when tools.length>0, so usesNativeFc there is equivalent to isApiEngine.)
+        const actInstruction = usesNativeFc
+          ? 'CALL the appropriate tool now through your function/tool-calling interface (an actual tool call — do not describe it in prose)'
+          : `make your NEXT reply EXACTLY one ${AGENT_TOOL_MARKER} {"name":...,"input":...} line and nothing else`;
+        const actNextStep = usesNativeFc ? 'call the next tool' : `a ${AGENT_TOOL_MARKER} tool line`;
+        const steps: Array<{ name: string; input: Record<string, unknown>; output: string }> = [];
+        let imgSeq = rawImages.length;
+        let noProgress = 0;      // CONSECUTIVE replies that didn't advance (narration / deferral / identical-repeat); reset on real progress
+        let consecutiveFailures = 0; // CONSECUTIVE tool calls that ERRORED (malformed input, bad selector, invalid url) — caps a varying-bad-args flail the identical-repeat guard misses
+        let questionsAsked = 0;  // mid-turn questions surfaced to the user this turn (bounded by MAX_USER_QUESTIONS)
+        let lastCallKey = '';    // the previous executed tool call (name+input) — an identical repeat is a LOOP, not progress
+        let selectionRegrounded = false; // one-shot guard: after a click/type/selectOption couldn't find its target we re-ground ONCE (read the page, hand the engine the real `sel=` selectors); reset on any successful action so each fresh miss earns one re-ground
+        const lastReadOutputs = new Map<string, string>(); // last text output per read-only tool CALL (keyed by name+input) — an identical repeat means the agent is re-viewing the SAME screen (the screenshot↔readPage flail the consecutive-repeat check misses)
+
+        for (let step = 0; step < MAX_AGENT_STEPS; step++) {
+          if (ctrl.signal.aborted) break;
+          const thinking: BrainEvent = { kind: 'notice', level: 'info', message: `${turnEngineId} thinking… (step ${step + 1}/${MAX_AGENT_STEPS})` };
+          yield thinking;
+          const prompt = renderAgentTranscript(req.input, steps);
+          const dispatchImages = nextImages.length > 0 ? nextImages : undefined;
+          nextImages = []; // images are shown once, on the dispatch right after capture
+          // Native API+tools path uses the reconstructed message thread (Phase 2); built only when
+          // there are tools to offer (CLI engines ignore `messages` and use `prompt`). Bounded, so
+          // a long browse stays small instead of re-sending an ever-growing flat transcript.
+          const nativeMessages = nativeTools.length > 0 ? renderAgentMessages(req.input, steps) : undefined;
+          const result = await this.adapter.dispatch({
+            engine, prompt, cwd: this.cwd, mode: 'exec', timeout: 120,
+            outputDir: turnDir, signal: ctrl.signal, systemPrompt: sysPrompt, images: dispatchImages,
+            tools: nativeTools, messages: nativeMessages,
+          });
+          const stdout = (result.stdout || '').trim();
+          // Transport-agnostic call extraction: an API engine returns the call as a STRUCTURED
+          // part (native function-calling) — prefer it; fall back to parsing the __AGON_TOOL__
+          // text marker for CLI engines. Extracted BEFORE the no-answer guard so a NATIVE
+          // tool-only turn is never misread as "no answer" when its stdout is empty: emptiness
+          // means no-answer ONLY when there is also no structured call. (Does not rely on the
+          // streaming layer echoing a <tool> marker into stdout — that coupling was implicit.)
+          const rawCall = extractNativeToolCall(result.parts) ?? parseAgentToolCall(stdout);
+          // Pass the target tool's declared fields so the envelope-unwrap never strips a tool that
+          // REALLY takes an `input` arg (agon's tools don't, so this is unconstrained for them).
+          const capForCall = rawCall ? this.caps.get(rawCall.name) : undefined;
+          const knownFields = capForCall ? toolFieldNames(capForCall.spec.inputSchema) : undefined;
+          const call = unwrapToolInputEnvelope(rawCall, knownFields);
+          if (result.exitCode !== 0 || result.timedOut || (stdout.length === 0 && !call)) {
+            // Auth-aware failure surfacing: a 401 (claude's isolated config dir is stale / never logged
+            // in, or an API engine's key is missing) must reach the panel as the EXACT fix command, not
+            // a bare "produced no answer". This is the browser-panel arm of the generic auth checker —
+            // it's why the user no longer sees an unexplained 1-minute "thinking" hang.
+            const authHint = ctrl.signal.aborted ? null
+              : authFailureHint(engine, { stderr: result.stderr, exitCode: result.exitCode, timedOut: result.timedOut });
+            const baseReason = ctrl.signal.aborted ? 'cancelled by client'
+              : result.timedOut ? `${turnEngineId} timed out`
+              : `${turnEngineId} produced no answer (exit ${result.exitCode})`;
+            const reason = authHint ? `${baseReason} — ${authHint}` : baseReason;
+            const note: BrainEvent = { kind: 'notice', level: ctrl.signal.aborted ? 'warning' : 'error', message: reason };
+            yield note;
+            return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
+          }
+
+          if (!call) {
+            // No tool call. Two NON-AGENTIC stalls get a bounded nudge to keep going instead of
+            // ending the turn: (1) NARRATION — it described an action but emitted no tool line;
+            // (2) DEFERRAL — it asked the user how to proceed / for permission / to pick an option
+            // instead of just doing the task (the classic "How would you like me to proceed?").
+            // The budget is CONSECUTIVE-no-progress (reset after every real tool call below), so a
+            // long, genuinely-advancing browse is never killed for an occasional stall.
+            const isDeferral = looksLikeDeferral(stdout);
+            const isNarration = looksLikeActionIntent(stdout);
+            // DEFERRAL → ASK THE USER (not just nudge): the engine posed a question instead of acting,
+            // and there is a human on the panel. Surface the question (question-request), PAUSE the
+            // turn for their typed answer, then CONTINUE with it injected — so an engine that wants a
+            // human go-ahead (e.g. "post /kern wrong on all 18?") gets one instead of dead-ending or
+            // being force-nudged. Bounded by MAX_USER_QUESTIONS; past the cap a deferral falls through
+            // to the autonomous nudge below.
+            if (tools.length > 0 && isDeferral && questionsAsked < MAX_USER_QUESTIONS) {
+              questionsAsked++;
+              const qId = randomUUID();
+              // Register the pending-answer listener BEFORE yielding the question: waitForUserAnswer's
+              // executor runs synchronously on this call, so a fast client's /answer can never arrive
+              // before the entry exists (the race that would reject a quick reply as 'no pending').
+              const answerP = this.waitForUserAnswer(qId, req.clientId, ctrl.signal);
+              const qEvt: BrainEvent = { kind: 'question-request', requestId: qId, prompt: stdout.slice(0, 2000) };
+              yield qEvt;
+              let answer = '';
+              let answered = true;
+              try { answer = await answerP; }
+              catch (err) { answered = false; }
+              if (answered) {
+                noProgress = 0; // the user's answer is new information — real progress
+                steps.push({ name: 'reminder', input: {}, output: `You asked the user, and they answered: "${answer.slice(0, 600)}". Proceed using this answer — take the next action now (${actNextStep}), and do not ask again unless you are truly blocked.` });
+                continue;
+              }
+              // Not answered. Abort → cancel the turn. TIMEOUT (no client answered — e.g. a
+              // non-interactive client that ignores question-request) → fall through to the autonomous
+              // nudge below, preserving the pre-feature behavior instead of dead-ending the turn.
+              if (ctrl.signal.aborted) {
+                const reason = 'cancelled by client';
+                const cancelled: BrainEvent = { kind: 'notice', level: 'warning', message: reason };
+                yield cancelled;
+                return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
+              }
+              // else: timed out → no continue/return; control falls through to the nudge block.
+            }
+            if (tools.length > 0 && noProgress < MAX_NO_PROGRESS_STEPS && (isNarration || isDeferral)) {
+              noProgress++;
+              const why = isDeferral
+                ? 'the engine asked how to proceed instead of acting — telling it to decide and continue'
+                : 'the engine described an action but sent no tool call — asking it to actually act';
+              const nudge: BrainEvent = { kind: 'notice', level: 'warning', message: why };
+              yield nudge;
+              const reminder = isDeferral
+                ? `You asked the user how to proceed, but you are an AUTONOMOUS agent — do NOT ask for direction, permission, or which option to pick. DECIDE the most reasonable next step yourself and DO it: ${actInstruction}. The user already approves each page-changing action through a SEPARATE prompt, so you never need to ask in prose. Give a final prose answer only once the task is actually COMPLETE, or if you are truly blocked (e.g. a login is required).`
+                : `You said: "${stdout.trim().slice(0, 160)}" — but you took NO action, so nothing happened. To act, ${actInstruction}. If you are truly finished, give your final prose answer.`;
+              steps.push({ name: 'reminder', input: {}, output: reminder });
+              continue;
+            }
+            // Otherwise it's the engine's final answer.
+            const ans: BrainEvent = { kind: 'engine', engineId: turnEngineId, content: stdout };
+            yield ans;
+            return { turnId: req.turnId, delegated: false, responded: true, engineId: turnEngineId };
+          }
+
+          // A valid tool call. Distinguish genuine PROGRESS (a new, distinct action) from a LOOP
+          // (the identical action repeated back-to-back). Repeating the same call advances nothing,
+          // spins the turn, and re-fires the SAME approval prompt at the user — so treat it as
+          // no-progress: don't re-execute it, nudge the engine to do something different, and give
+          // up if it keeps looping. A DISTINCT call resets the budget (real progress).
+          const callKey = `${call.name}:${JSON.stringify(call.input)}`;
+          if (callKey === lastCallKey) {
+            noProgress++;
+            const loopNote: BrainEvent = { kind: 'notice', level: 'warning', message: 'the engine repeated the same action — nudging it to try something different' };
+            yield loopNote;
+            if (noProgress >= MAX_NO_PROGRESS_STEPS) {
+              const reason = 'stuck: the engine repeated the same action without making progress';
+              const stuck: BrainEvent = { kind: 'notice', level: 'error', message: reason };
+              yield stuck;
+              return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
+            }
+            steps.push({ name: 'reminder', input: {}, output: `You just requested the IDENTICAL action again (${call.name}); repeating it changes nothing. Do something DIFFERENT — a different tool, selector, or url — or, if the task is COMPLETE, give your final answer with the result.` });
+            continue; // do NOT re-execute / re-prompt the user for the same approval
+          }
+          // noProgress is reset by PROGRESS, decided AFTER execution below (a mutating action, or a
+          // read that reveals NEW content) — NOT merely by issuing a distinct call. Otherwise an
+          // agent alternating read-only tools over an UNCHANGING view resets the budget every step
+          // and spins to the step backstop (the exact screenshot↔readPage flail we saw).
+          lastCallKey = callKey;
+
+          const cap = this.caps.get(call.name);
+          if (!cap) {
+            const avail = [...this.caps.keys()].join(', ') || '(none)';
+            steps.push({ name: call.name, input: call.input, output: `ERROR: no tool "${call.name}". Available tools: ${avail}.` });
+            // An unknown tool is a FAILURE too — count it toward the streak so a model emitting a
+            // run of VARYING bad tool names (each a distinct callKey, so the loop guard misses it)
+            // can't burn all MAX_AGENT_STEPS before we notice.
+            consecutiveFailures++;
+            if (consecutiveFailures >= MAX_CONSECUTIVE_TOOL_FAILURES) {
+              const reason = `stuck: ${consecutiveFailures} tool calls in a row failed — the agent kept calling unknown/invalid tools (last: "${call.name}")`;
+              const stuck: BrainEvent = { kind: 'notice', level: 'error', message: reason };
+              yield stuck;
+              return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
+            }
+            continue;
+          }
+
+          const running: BrainEvent = { kind: 'tool', engineId: turnEngineId, tool: call.name, status: 'running', input: describeAgentAction(call.name, call.input) };
+          yield running;
+
+          // Approval gate — FAIL-SAFE: gate anything that is not EXPLICITLY read-only
+          // (a tool the client mis-/under-declares still asks, never silently acts).
+          // Skipped only once the user approved this tool for the session.
+          if (!cap.spec.isReadOnly && !this.approvedSession.has(call.name)) {
+            if (this.deniedSession.has(call.name)) {
+              const denied: BrainEvent = { kind: 'tool', engineId: turnEngineId, tool: call.name, status: 'error', output: 'denied for this session' };
+              yield denied;
+              steps.push({ name: call.name, input: call.input, output: 'DENIED by the user for this session — do not retry this tool; try another approach or tell the user.' });
+              continue;
+            }
+            const apId = randomUUID();
+            // targetClientId = the turn submitter: the brain awaits THIS client's approval
+            // (host-only arbitration), so naming it lets every other SSE-subscribed client
+            // (e.g. the browser panel for an `agon drive` turn) skip rendering the prompt.
+            const ask: BrainEvent = { kind: 'approval-request', requestId: apId, tool: call.name, command: describeAgentAction(call.name, call.input), reason: cap.spec.description, targetClientId: req.clientId };
+            yield ask;
+            let decision: string;
+            try { decision = await this.waitForApproval(apId, req.clientId, ctrl.signal); }
+            catch {
+              const reason = 'cancelled by client';
+              const note: BrainEvent = { kind: 'notice', level: 'warning', message: reason };
+              yield note;
+              return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
+            }
+            if (decision === 'abort') {
+              const reason = 'the user aborted the turn at an approval prompt';
+              const note: BrainEvent = { kind: 'notice', level: 'warning', message: reason };
+              yield note;
+              return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
+            }
+            if (decision === 'approve-session') this.approvedSession.add(call.name);
+            if (decision === 'deny' || decision === 'deny-session') {
+              if (decision === 'deny-session') this.deniedSession.add(call.name);
+              const denied: BrainEvent = { kind: 'tool', engineId: turnEngineId, tool: call.name, status: 'error', output: 'denied by the user' };
+              yield denied;
+              steps.push({ name: call.name, input: call.input, output: 'DENIED by the user — do not retry; try another approach or explain what you would have done.' });
+              continue;
+            }
+            // 'approve' / 'approve-session' fall through to execution.
+          }
+
+          // Execute: pull the capability from the owning client.
+          const reqId = randomUUID();
+          const capReq: BrainEvent = { kind: 'capability-request', requestId: reqId, capability: call.name, input: call.input, targetClientId: cap.clientId };
+          yield capReq;
+          let capRes: CapabilityResult;
+          try { capRes = await this.waitForCapabilityResult(reqId, cap.clientId, ctrl.signal); }
+          catch (err) {
+            const aborted = ctrl.signal.aborted;
+            const failNote: BrainEvent = { kind: 'tool', engineId: turnEngineId, tool: call.name, status: 'error', output: aborted ? 'cancelled' : 'the browser did not respond' };
+            yield failNote;
+            const reason = aborted ? 'cancelled by client' : `tool "${call.name}" timed out (the browser client did not respond)`;
+            const note: BrainEvent = { kind: 'notice', level: aborted ? 'warning' : 'error', message: reason };
+            yield note;
+            return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
+          }
+
+          const rawOut = capRes.ok ? (capRes.output ?? '(no output)') : `ERROR: ${capRes.error ?? 'the tool failed'}`;
+          // A 'data:' image result (e.g. an agent screenshot) is decoded and shown to
+          // the engine on the next dispatch as vision, not dumped into the text transcript.
+          let transcriptOut = rawOut;
+          if (capRes.ok && rawOut.startsWith('data:')) {
+            const decoded = decodeDataUrlToImageFile(rawOut, turnDir, imgSeq++);
+            if (decoded.path) {
+              const att = buildImageAttachment(decoded.path, this.cwd);
+              if (att) { nextImages = [att]; transcriptOut = '(screenshot captured — it is attached to your view this step)'; }
+              else transcriptOut = '(screenshot captured but could not be attached)';
+            } else {
+              transcriptOut = `(screenshot could not be read${decoded.reason ? `: ${decoded.reason}` : ''})`;
+            }
+          }
+          // Progress accounting — decide whether this executed call ADVANCED the task, so the turn
+          // stops when the agent is spinning instead of running to the step backstop:
+          //  - a MUTATING tool = an action = progress (and the page may have changed, so the prior
+          //    read snapshots are stale and must be dropped, else a later read that coincidentally
+          //    matches a PRE-mutation read is wrongly flagged);
+          //  - a read-only tool that returns NEW text = progress (it revealed something);
+          //  - a read-only tool that returns the IDENTICAL text as last time = a RE-VIEW: no
+          //    progress — tag it NO CHANGE and count it toward the stuck budget;
+          //  - an opaque 'data:' screenshot is progress-NEUTRAL (we can't compare images): it
+          //    neither advances nor resets, so a screenshot↔readPage flail still trips on the
+          //    readPage side (the readPage re-reads accumulate while screenshots don't reset them).
+          let noChange = false;
+          if (!cap.spec.isReadOnly && capRes.ok) {
+            noProgress = 0;            // a SUCCESSFUL action was taken (a FAILED click/type/navigate changed nothing → neutral, not progress)
+            lastReadOutputs.clear();   // the page may have changed — forget stale read snapshots
+            selectionRegrounded = false; // a successful action clears the one-shot re-ground guard — the next fresh miss earns its own
+          } else if (cap.spec.isReadOnly && capRes.ok && !rawOut.startsWith('data:')) {
+            // Key by tool+input (callKey), NOT name: the same read with the same input returning the
+            // same text is a genuine re-view; the SAME tool with a DIFFERENT input is a different
+            // read, not a stall (so it must not be misflagged as NO CHANGE).
+            // Store a BOUNDED fingerprint, not the full read text: with MAX_AGENT_STEPS=60 a long
+            // multi-URL browse could otherwise retain dozens of full readPage excerpts. Length-prefixed
+            // so two reads sharing a 2 KB prefix but differing in total size still compare as distinct.
+            const fp = rawOut.length + ':' + rawOut.slice(0, 2000);
+            if (lastReadOutputs.get(callKey) === fp) noChange = true;
+            else noProgress = 0;       // new content revealed = progress
+            // Cap the snapshot count too (not just per-entry size): a 60-step browse over many
+            // distinct urls would otherwise retain a fingerprint per read. Evict the oldest (Map keeps
+            // insertion order) — re-viewing an evicted screen just won't be flagged NO CHANGE, a safe
+            // degradation (the step backstop still bounds it).
+            if (!lastReadOutputs.has(callKey) && lastReadOutputs.size >= 32) {
+              const oldest = lastReadOutputs.keys().next().value;
+              if (oldest !== undefined) lastReadOutputs.delete(oldest);
+            }
+            lastReadOutputs.set(callKey, fp);
+          } // else: screenshot / failed read / failed action → leave noProgress unchanged (neutral)
+          // Failure streak — tracked SEPARATELY from noProgress: a failed action is progress-neutral
+          // there (it didn't re-view a stale screen), but an unbroken run of failures is its own
+          // stuck signal that varying-bad-args evades (every callKey differs, so the loop guard misses).
+          if (capRes.ok) consecutiveFailures = 0;
+          else consecutiveFailures++;
+          if (noChange) {
+            noProgress++;
+            // PREPEND (not append) so the note survives the 4000-char transcript slice below.
+            transcriptOut = `[NO CHANGE: this ${call.name} returned the SAME content as before — you are NOT making progress. Do not ${call.name} or screenshot the same view again; SCROLL to new content (the scroll tool) or take an action that advances the goal.]\n\n${transcriptOut}`;
+            const reviewNote: BrainEvent = { kind: 'notice', level: 'warning', message: 'the engine re-viewed the same screen without scrolling/acting — nudging it to make progress' };
+            yield reviewNote;
+          }
+          const done: BrainEvent = { kind: 'tool', engineId: turnEngineId, tool: call.name, status: capRes.ok ? 'done' : 'error', output: transcriptOut.slice(0, 400) };
+          yield done;
+          steps.push({ name: call.name, input: call.input, output: transcriptOut.slice(0, 4000) });
+          // B — agon-guided selection recovery: when a click/type/selectOption couldn't FIND its
+          // target (a weaker engine emitting a Playwright `:has-text()` / a stale selector), don't
+          // leave it to blind-retry. Re-ground ONCE per miss: read the page OURSELVES and hand the
+          // engine the page's real interactive elements — each with its exact `sel=` selector — so its
+          // retry uses a valid selector instead of guessing. (The in-extension resolver already handles
+          // the common `:has-text` case in-page; this catches the harder misses — wrong/absent element,
+          // needs scroll — and is bounded to one read per miss, reset on the next successful action.)
+          const isSelectMiss = !capRes.ok
+            && (call.name === 'click' || call.name === 'type' || call.name === 'selectOption')
+            && /no element matches|no result from the page|not found|could not find/i.test(capRes.error ?? '');
+          if (isSelectMiss && !selectionRegrounded && this.caps.has('readPage')) {
+            // Burn the one-shot UP FRONT: even if this read fails we still inject text guidance below
+            // (a real benefit), and burning early stops a slow/unresponsive readPage from being retried
+            // on every subsequent miss — each wait is bounded, and the failure streak still ends the turn.
+            selectionRegrounded = true;
+            const readCap = this.caps.get('readPage')!;
+            const rgId = randomUUID();
+            // Surface the auto-read as a normal tool (running → done) so the panel's step counter / toasts
+            // see a complete tool lifecycle, not an orphan capability-request with no completion marker.
+            const rgRunning: BrainEvent = { kind: 'tool', engineId: turnEngineId, tool: 'readPage', status: 'running', input: 'recovering the right selector — re-reading the page' };
+            yield rgRunning;
+            const rgReq: BrainEvent = { kind: 'capability-request', requestId: rgId, capability: 'readPage', input: {}, targetClientId: readCap.clientId };
+            yield rgReq;
+            let rg: CapabilityResult | null = null;
+            try { rg = await this.waitForCapabilityResult(rgId, readCap.clientId, ctrl.signal); }
+            catch {
+              if (ctrl.signal.aborted) {
+                const cancelled: BrainEvent = { kind: 'notice', level: 'warning', message: 'cancelled by client' };
+                yield cancelled;
+                return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason: 'cancelled by client' };
+              }
+              // Non-abort (timeout / internal error): rg stays null → the text-only reminder below still guides the engine.
+            }
+            const ground = rg && rg.ok && rg.output ? rg.output.slice(0, 3000) : '';
+            const rgDone: BrainEvent = { kind: 'tool', engineId: turnEngineId, tool: 'readPage', status: ground ? 'done' : 'error', output: ground ? 're-grounded — handed the engine the page\'s real selectors' : 're-ground read failed; sent text guidance instead' };
+            yield rgDone;
+            // ALWAYS inject a reminder (never silently fall through, even on a read timeout): the real
+            // `sel=` list when the read succeeded, else text-only guidance to readPage + drop Playwright selectors.
+            steps.push({ name: 'reminder', input: {}, output: ground
+              ? `Your ${call.name} target was not found. This tool takes a PLAIN CSS selector or one of the exact \`sel=\` selectors below — NOT Playwright/jQuery selectors (:has-text(), :contains(), text=). Here is the page RIGHT NOW; pick the \`sel=\` whose label matches your intent and retry the ${call.name}. If nothing here matches, the element may be off-screen — scroll, then readPage again.\n\n${ground}`
+              : `Your ${call.name} target was not found, and the page could not be re-read just now. This tool takes a PLAIN CSS selector or an exact \`sel=\` selector from readPage — NOT Playwright/jQuery selectors (:has-text(), :contains(), text=). Call readPage to get the exact selectors, then retry the ${call.name}.` });
+            continue;
+          }
+          if (noChange && noProgress >= MAX_NO_PROGRESS_STEPS) {
+            const reason = 'stuck: the engine kept re-viewing the same screen without scrolling or acting';
+            const stuck: BrainEvent = { kind: 'notice', level: 'error', message: reason };
+            yield stuck;
+            return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
+          }
+          if (!capRes.ok && consecutiveFailures >= MAX_CONSECUTIVE_TOOL_FAILURES) {
+            const reason = `stuck: ${consecutiveFailures} tool calls in a row failed — the inputs look malformed (last error: ${(capRes.error ?? 'the tool failed').slice(0, 120)})`;
+            const stuck: BrainEvent = { kind: 'notice', level: 'error', message: reason };
+            yield stuck;
+            return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
+          }
+        }
+
+        if (ctrl.signal.aborted) {
+          const reason = 'cancelled by client';
+          const cancelled: BrainEvent = { kind: 'notice', level: 'warning', message: reason };
+          yield cancelled;
+          return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
+        }
+        const reason = `hit the ${MAX_AGENT_STEPS}-step safety backstop without finishing — the task may be too large for one turn, or the agent kept working without converging`;
+        const limit: BrainEvent = { kind: 'notice', level: 'warning', message: reason };
+        yield limit;
+        return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
+      } catch (err) {
+        if (ctrl.signal.aborted) {
+          const reason = 'cancelled by client';
+          const cancelled: BrainEvent = { kind: 'notice', level: 'warning', message: reason };
+          yield cancelled;
+          return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
+        }
+        const reason = `turn failed: ${err instanceof Error ? err.message : String(err)}`;
+        const failed: BrainEvent = { kind: 'notice', level: 'error', message: reason };
+        yield failed;
+        return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
+      } finally {
+        this.aborts.delete(req.turnId);
+        if (this.activeTurnId === req.turnId) this.activeTurnId = null;
+        try { rmSync(turnDir, { recursive: true, force: true }); } catch { /* best-effort scratch cleanup */ }
+      }
+    >>>
+
+  method name=cancel params="req:CancelRequest" returns="Promise<ControlAck>" async=true
+    doc "Abort an in-flight turn by turnId — also rejects any capability/approval the loop is awaiting, so a cancel breaks the loop immediately."
+    handler <<<
+      const ctrl = this.aborts.get(req.turnId);
+      if (!ctrl) return { status: 'rejected', reason: `no active turn ${req.turnId}` };
+      ctrl.abort();
+      return { status: 'accepted' };
+    >>>
+
+  method name=registerCapability params="reg:CapabilityRegistration" returns="Promise<ControlAck>" async=true
+    doc "A client lends the brain a tool. Stored by name with its owning clientId so a capability-request can be routed back. Re-registering a name replaces it (the latest client wins)."
+    handler <<<
+      this.caps.set(reg.spec.name, { clientId: reg.clientId, spec: reg.spec });
+      return { status: 'accepted' };
+    >>>
+
+  method name=unregisterCapability params="req:CapabilityUnregister" returns="Promise<ControlAck>" async=true
+    doc "Ownership-checked: a client may only unregister a tool IT registered, so one attached client can't strip another's capabilities."
+    handler <<<
+      const existing = this.caps.get(req.name);
+      if (existing && existing.clientId !== req.clientId) return { status: 'rejected', reason: `capability "${req.name}" is owned by another client` };
+      this.caps.delete(req.name);
+      return { status: 'accepted' };
+    >>>
+
+  method name=provideCapabilityResult params="res:CapabilityResult" returns="Promise<ControlAck>" async=true
+    doc "A client's reply to a capability-request — resolves the pending turn await by requestId, but ONLY when the reply's clientId matches the client the request was routed to. A mismatched clientId is rejected WITHOUT consuming the pending entry, so a second token-holding client can't spoof another's tool result. Stale/duplicate requestId is also rejected."
+    handler <<<
+      const pending = this.pendingCaps.get(res.requestId);
+      if (!pending) return { status: 'rejected', reason: `no pending capability request ${res.requestId}` };
+      if (res.clientId !== pending.clientId) return { status: 'rejected', reason: `capability ${res.requestId} is owned by another client` };
+      this.pendingCaps.delete(res.requestId);
+      pending.resolve(res);
+      return { status: 'accepted' };
+    >>>
+
+  method name=provideApproval params="res:ApprovalResponse" returns="Promise<ControlAck>" async=true
+    doc "The user's decision on an approval-request — resolves the pending gate by requestId, but ONLY from the client that submitted the turn (host-only arbitration enforced, not just declared). A mismatched clientId is rejected without consuming the gate, so one client can't approve another's destructive action. Stale/duplicate requestId is rejected."
+    handler <<<
+      const pending = this.pendingApprovals.get(res.requestId);
+      if (!pending) return { status: 'rejected', reason: `no pending approval ${res.requestId}` };
+      if (res.clientId !== pending.clientId) return { status: 'rejected', reason: `approval ${res.requestId} belongs to another client` };
+      this.pendingApprovals.delete(res.requestId);
+      pending.resolve(res.decision);
+      return { status: 'accepted' };
+    >>>
+
+  method name=steer params="_req:SteerRequest" returns="Promise<ControlAck>" async=true
+    handler <<<
+      return { status: 'unsupported', reason: 'agent v2 has no mid-turn steering yet (controlCapabilities.concurrentSteering)' };
+    >>>
+
+  method name=provideAnswer params="res:AnswerResponse" returns="Promise<ControlAck>" async=true
+    doc "The user's answer to a mid-turn question-request — resolves the paused turn by requestId, but ONLY from the client that submitted the turn (host-only arbitration enforced, not just declared). A mismatched clientId is rejected without consuming the pending entry; a stale/duplicate requestId is rejected."
+    handler <<<
+      const pending = this.pendingAnswers.get(res.requestId);
+      if (!pending) return { status: 'rejected', reason: `no pending question ${res.requestId}` };
+      if (res.clientId !== pending.clientId) return { status: 'rejected', reason: `question ${res.requestId} belongs to another client` };
+      this.pendingAnswers.delete(res.requestId);
+      pending.resolve(typeof res.answer === 'string' ? res.answer : '');
+      return { status: 'accepted' };
+    >>>
+
+  method name=notifyClientAttached params="_sessionId:string, _client:ClientRef" returns="void"
+    handler <<<
+      /* capabilities are (re)registered explicitly by the client on attach; nothing to pre-track */
+    >>>
+
+  method name=notifyClientDetached params="_sessionId:string, clientId:string" returns="void"
+    doc "Drop the detached client's lent tools so a closed panel leaves no phantom capabilities the brain might try to pull."
+    handler <<<
+      for (const [name, c] of [...this.caps]) { if (c.clientId === clientId) this.caps.delete(name); }
+    >>>
+
+  method name=health returns="Promise<BrainHealth>" async=true
+    handler <<<
+      return { alive: true, engineId: this.engineId, pid: null, activeTurnId: this.activeTurnId, queuedTurns: 0, uptimeMs: Date.now() - this.startedAtMs };
+    >>>
+
+  method name=close returns="Promise<void>" async=true
+    doc "Best-effort teardown: abort all in-flight turns (which rejects their pending capability/approval awaits) and clear state."
+    handler <<<
+      for (const ctrl of this.aborts.values()) ctrl.abort();
+      this.aborts.clear();
+      this.pendingCaps.clear();
+      this.pendingApprovals.clear();
+      this.pendingAnswers.clear();
+      this.activeTurnId = null;
+    >>>
+
+fn name=createAgenticTurnBrainClient params="registry:EngineRegistry" returns="BrainClient" export=true
+  doc "Factory mirroring createHeadlessTurnBrainClient: build the v2 agentic tool-loop BrainClient from the daemon's EngineRegistry."
+  handler <<<
+    return new AgenticTurnBrainClient(registry);
+  >>>

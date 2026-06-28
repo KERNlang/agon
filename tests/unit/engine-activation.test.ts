@@ -10,7 +10,7 @@ const kimiPathEnvKey = 'KIMI-CODE_PATH';
 const tempDirs: string[] = [];
 const savedAgonHome = process.env.AGON_HOME;
 
-function makeEngine(id: string): EngineDefinition {
+function makeEngine(id: string, apiKeyEnv = envKey): EngineDefinition {
   return {
     schemaVersion: 3,
     id,
@@ -19,7 +19,7 @@ function makeEngine(id: string): EngineDefinition {
     tier: 'user',
     timeout: 30,
     exec: { args: [] },
-    api: { baseUrl: 'https://example.invalid/v1', apiKeyEnv: envKey, model: id, format: 'openai' },
+    api: { baseUrl: 'https://example.invalid/v1', apiKeyEnv, model: id, format: 'openai' },
   };
 }
 
@@ -111,6 +111,121 @@ describe('engine activation', () => {
     ]);
   });
 
+  it('preserves explicit engine order and ignores unknown configured ids', () => {
+    process.env[envKey] = 'test';
+    const registry = new EngineRegistry();
+    registry.register(makeEngine('claude'));
+    registry.register(makeEngine('codex'));
+    registry.register(makeEngine('api-sonnet'));
+
+    expect(registry.activeIds(makeConfig({
+      engineActivationMode: 'explicit',
+      forgeEnabledEngines: ['api-sonnet', 'missing-engine', 'codex'],
+    }))).toEqual(['api-sonnet', 'codex']);
+  });
+
+  it('dedupes duplicate explicit engine ids without changing first-seen order', () => {
+    process.env[envKey] = 'test';
+    const registry = new EngineRegistry();
+    registry.register(makeEngine('claude'));
+    registry.register(makeEngine('codex'));
+    registry.register(makeEngine('kimi'));
+
+    expect(registry.activeIds(makeConfig({
+      engineActivationMode: 'explicit',
+      forgeEnabledEngines: ['codex', 'kimi', 'codex', 'claude', 'kimi'],
+    }))).toEqual(['codex', 'kimi', 'claude']);
+  });
+
+  it('resolves explicit engine aliases before matching active engines', () => {
+    process.env[envKey] = 'test';
+    const registry = new EngineRegistry();
+    registry.register(makeEngine('claude'));
+    registry.register(makeEngine('kimi-for-coding'));
+
+    expect(registry.activeIds(makeConfig({
+      engineActivationMode: 'explicit',
+      forgeEnabledEngines: ['kimi', 'claude'],
+    }))).toEqual(['kimi-for-coding', 'claude']);
+  });
+
+  it('returns no engines for an empty explicit engine list', () => {
+    process.env[envKey] = 'test';
+    const registry = new EngineRegistry();
+    registry.register(makeEngine('claude'));
+    registry.register(makeEngine('codex'));
+
+    expect(registry.activeIds(makeConfig({
+      engineActivationMode: 'explicit',
+      forgeEnabledEngines: [],
+    }))).toEqual([]);
+  });
+
+  it('drops explicit aliases that resolve to unavailable engines', () => {
+    process.env[envKey] = 'test';
+    const registry = new EngineRegistry();
+    registry.register(makeEngine('claude'));
+    registry.register(makeEngine('kimi-for-coding', 'AGON_TEST_MISSING_ENGINE_KEY'));
+
+    expect(registry.activeIds(makeConfig({
+      engineActivationMode: 'explicit',
+      forgeEnabledEngines: ['kimi', 'claude'],
+    }))).toEqual(['claude']);
+  });
+
+  it('resolves hidden and removed aliases before filtering active engines', () => {
+    process.env[envKey] = 'test';
+    const registry = new EngineRegistry();
+    registry.register(makeEngine('claude'));
+    registry.register(makeEngine('kimi-for-coding'));
+    registry.register(makeEngine('codex'));
+
+    expect(registry.activeIds(makeConfig({
+      engineActivationMode: 'explicit',
+      forgeEnabledEngines: ['kimi', 'claude', 'codex'],
+      hiddenEngines: ['kimi'],
+      removedEngines: ['cod'],
+    }))).toEqual(['claude']);
+  });
+
+  it('expands ambiguous hidden and removed aliases so filters fail closed', () => {
+    process.env[envKey] = 'test';
+    const registry = new EngineRegistry();
+    registry.register(makeEngine('claude'));
+    registry.register(makeEngine('kimi-for-coding'));
+    registry.register(makeEngine('kimi-other', 'AGON_TEST_MISSING_ENGINE_KEY'));
+
+    expect(registry.activeIds(makeConfig({
+      engineActivationMode: 'explicit',
+      forgeEnabledEngines: ['kimi', 'claude'],
+      hiddenEngines: ['kimi'],
+    }))).toEqual(['claude']);
+  });
+
+  it('resolves explicit aliases against available engines, not unavailable registry entries', () => {
+    process.env[envKey] = 'test';
+    const registry = new EngineRegistry();
+    registry.register(makeEngine('kimi-for-coding'));
+    registry.register(makeEngine('kimi-other', 'AGON_TEST_MISSING_ENGINE_KEY'));
+
+    expect(registry.activeIds(makeConfig({
+      engineActivationMode: 'explicit',
+      forgeEnabledEngines: ['kimi'],
+    }))).toEqual(['kimi-for-coding']);
+  });
+
+  it('drops ambiguous explicit config aliases when multiple available engines match', () => {
+    process.env[envKey] = 'test';
+    const registry = new EngineRegistry();
+    registry.register(makeEngine('kimi-for-coding'));
+    registry.register(makeEngine('kimi-other'));
+
+    expect(registry.activeIds(makeConfig({
+      engineActivationMode: 'explicit',
+      forgeEnabledEngines: ['kimi'],
+    }))).toEqual([]);
+  });
+
   it('removes hidden engines from auto and explicit routing', () => {
     process.env[envKey] = 'test';
     const registry = new EngineRegistry();
@@ -174,6 +289,37 @@ describe('engine activation', () => {
     expect(dedup.active).toEqual(['claude']);
     expect(dedup.removed).toEqual(['gemini']);
 
+    const aliasedRemoved = registry.partitionRoster(['gemini'], makeConfig({
+      removedEngines: ['gem'],
+    }));
+    expect(aliasedRemoved.active).toEqual([]);
+    expect(aliasedRemoved.removed).toEqual(['gemini']);
+
+    registry.register(makeEngine('gemma', 'AGON_TEST_MISSING_ENGINE_KEY'));
+    const ambiguousRemoved = registry.partitionRoster(['gemini'], makeConfig({
+      removedEngines: ['gem'],
+    }));
+    expect(ambiguousRemoved.active).toEqual([]);
+    expect(ambiguousRemoved.removed).toEqual(['gemini']);
+
+    const removedAliasRequest = registry.partitionRoster(['gem'], makeConfig({
+      removedEngines: ['gem'],
+    }));
+    expect(removedAliasRequest.active).toEqual([]);
+    expect(removedAliasRequest.removed).toEqual(['gemini']);
+
+    const aliasWithUnavailableSibling = registry.partitionRoster(['gem'], makeConfig({
+      removedEngines: [],
+    }));
+    expect(aliasWithUnavailableSibling.active).toEqual(['gemini']);
+    expect(aliasWithUnavailableSibling.removed).toEqual([]);
+
+    const removedUnavailableSibling = registry.partitionRoster(['gem'], makeConfig({
+      removedEngines: ['gemma'],
+    }));
+    expect(removedUnavailableSibling.active).toEqual(['gemini']);
+    expect(removedUnavailableSibling.removed).toEqual([]);
+
     // null request → the automatic roster (which already excludes hidden +
     // removed), with an empty removed list.
     const auto = registry.partitionRoster(null, makeConfig({
@@ -183,6 +329,34 @@ describe('engine activation', () => {
     }));
     expect(auto.active).toEqual(['claude']);
     expect(auto.removed).toEqual([]);
+  });
+
+  it('reports canonical removed ids for ambiguous removed aliases', () => {
+    process.env[envKey] = 'test';
+    const registry = new EngineRegistry();
+    registry.register(makeEngine('gemini'));
+    registry.register(makeEngine('gemma'));
+
+    const part = registry.partitionRoster(['gem'], makeConfig({
+      removedEngines: ['gemma'],
+    }));
+    expect(part.active).toEqual([]);
+    expect(part.removed).toEqual(['gemma']);
+  });
+
+  it('partitionRoster falls back to registered aliases and dedupes canonical ids', () => {
+    process.env[envKey] = 'test';
+    const registry = new EngineRegistry();
+    registry.register(makeEngine('kimi-for-coding', 'AGON_TEST_MISSING_ENGINE_KEY'));
+    registry.register(makeEngine('claude'));
+
+    const unavailableAlias = registry.partitionRoster(['kimi'], makeConfig({}));
+    expect(unavailableAlias.active).toEqual(['kimi-for-coding']);
+    expect(unavailableAlias.removed).toEqual([]);
+
+    const mixed = registry.partitionRoster(['claude', 'claude'], makeConfig({}));
+    expect(mixed.active).toEqual(['claude']);
+    expect(mixed.removed).toEqual([]);
   });
 
   it('restricts fallback candidates to the active engine list', () => {

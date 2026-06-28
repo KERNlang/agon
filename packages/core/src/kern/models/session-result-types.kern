@@ -57,10 +57,17 @@ interface name=ResearchResultData export=true
   field name=citationsVerified type=number
   field name=citationsTotal type=number
 
+interface name=ChromeResultData export=true
+  doc "A browser-driving turn (`/chrome` / `agon chrome`): the agentic ReAct brain answered using the user's own browser through the side panel. answer is the engine's reply; pageActivity is true when page tools actually ran (the panel was attached and acted on the page), false when no page tools ran this turn — either no panel was attached, or the brain answered in text without needing one."
+  field name=task type=string
+  field name=answer type=string
+  field name=engineId type=string
+  field name=pageActivity type=boolean
+
 interface name=SessionResult export=true
-  field name=type type="'brainstorm' | 'campfire' | 'tribunal' | 'forge' | 'think' | 'council' | 'synthesis' | 'nero' | 'review' | 'research'"
+  field name=type type="'brainstorm' | 'campfire' | 'tribunal' | 'forge' | 'think' | 'council' | 'synthesis' | 'nero' | 'review' | 'research' | 'chrome'"
   field name=timestamp type=string
   field name=question type=string
   field name=engines type="string[]"
   field name=winner type="string | null"
-  field name=data type="BrainstormResultData | CampfireResultData | TribunalResultData | ForgeResultData | ThinkResultData | CouncilResultData | SynthesisResultData | NeroResultData | ReviewResultData | ResearchResultData"
+  field name=data type="BrainstormResultData | CampfireResultData | TribunalResultData | ForgeResultData | ThinkResultData | CouncilResultData | SynthesisResultData | NeroResultData | ReviewResultData | ResearchResultData | ChromeResultData"

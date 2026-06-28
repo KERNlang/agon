@@ -108,6 +108,15 @@ describe('agent prompt + transcript helpers', () => {
     expect(p.startsWith('BASE-PROMPT')).toBe(true);
     expect(p).toContain('none registered');
   });
+  it('buildAgentSystemPrompt adds the MULTI-TAB section only when the workspace tools are lent', () => {
+    // An older extension lends only single-page tools → no multi-tab framing.
+    expect(buildAgentSystemPrompt([readSpec(), actSpec()])).not.toContain('MULTI-TAB WORKSPACE');
+    // Phase-2 extension lends openTab/switchTab → the brain is told it has a tab group.
+    const p = buildAgentSystemPrompt([readSpec(), actSpec('openTab'), readSpec('switchTab')]);
+    expect(p).toContain('MULTI-TAB WORKSPACE');
+    expect(p).toContain('openTab');
+    expect(p).toContain('switchTab');
+  });
   it('renderAgentTranscript frames the request as a GOAL and shows the running tool history', () => {
     expect(renderAgentTranscript('hello', [])).toContain('Nothing done yet');
     const t = renderAgentTranscript('hello', [{ name: 'readPage', input: {}, output: 'PAGE' }]);

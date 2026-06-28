@@ -46,11 +46,14 @@
   <!-- Top accent -->
   <rect y="0" width="800" height="3" rx="1.5" fill="url(#accent)"/>
 
-  <!-- AGON wordmark -->
-  <text x="400" y="68" text-anchor="middle" font-family="'SF Mono','Fira Code','JetBrains Mono',monospace" font-size="58" font-weight="800" letter-spacing="18" fill="url(#text-grad)">AGON</text>
+  <!-- Laurel mark — "Cesar's Kranz" — serves as the leading "A" -->
+  <svg x="284" y="0" width="88" height="88" viewBox="0 0 128 128" overflow="visible"><defs><linearGradient id="gh" x1="0" y1="14" x2="0" y2="120" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ffc24d"/><stop offset=".5" stop-color="#ff7a2c"/><stop offset="1" stop-color="#e83f24"/></linearGradient></defs><g transform="translate(64 65) scale(1.10) translate(-64 -65)"><path d="M64,119 Q4,94 34,26" fill="none" stroke="url(#gh)" stroke-width="3.2" stroke-linecap="round"/><ellipse cx="38.5" cy="95.6" rx="9.5" ry="4" fill="url(#gh)" transform="rotate(-158.8 38.5 95.6)"/><ellipse cx="32.7" cy="86.2" rx="9.5" ry="4" fill="url(#gh)" transform="rotate(-144.2 32.7 86.2)"/><ellipse cx="29.5" cy="75.5" rx="9.5" ry="4" fill="url(#gh)" transform="rotate(-129.7 29.5 75.5)"/><ellipse cx="28.8" cy="63.4" rx="9.5" ry="4" fill="url(#gh)" transform="rotate(-117.1 28.8 63.4)"/><ellipse cx="30.9" cy="49.7" rx="9.5" ry="4" fill="url(#gh)" transform="rotate(-106.8 30.9 49.7)"/><ellipse cx="35.7" cy="34.4" rx="9.5" ry="4" fill="url(#gh)" transform="rotate(-98.8 35.7 34.4)"/><path d="M64,119 Q124,94 94,26" fill="none" stroke="url(#gh)" stroke-width="3.2" stroke-linecap="round"/><ellipse cx="89.5" cy="95.6" rx="9.5" ry="4" fill="url(#gh)" transform="rotate(-21.2 89.5 95.6)"/><ellipse cx="95.3" cy="86.2" rx="9.5" ry="4" fill="url(#gh)" transform="rotate(-35.8 95.3 86.2)"/><ellipse cx="98.5" cy="75.5" rx="9.5" ry="4" fill="url(#gh)" transform="rotate(-50.3 98.5 75.5)"/><ellipse cx="99.2" cy="63.4" rx="9.5" ry="4" fill="url(#gh)" transform="rotate(-62.9 99.2 63.4)"/><ellipse cx="97.1" cy="49.7" rx="9.5" ry="4" fill="url(#gh)" transform="rotate(-73.2 97.1 49.7)"/><ellipse cx="92.3" cy="34.4" rx="9.5" ry="4" fill="url(#gh)" transform="rotate(-81.2 92.3 34.4)"/><circle cx="64" cy="118" r="4.8" fill="url(#gh)"/><g fill="url(#gh)" transform="translate(64 71) scale(0.60) translate(-64 -62)"><polygon points="61,20 68,20 35,103 23,103"/><polygon points="65,20 77,20 109,103 95,103"/><rect x="42" y="80" width="46" height="7"/><rect x="14" y="100" width="29" height="8" rx="2"/><rect x="88" y="100" width="31" height="8" rx="2"/><rect x="57" y="17" width="14" height="5" rx="1.5"/></g></g></svg>
+
+  <!-- "GON" — lighter weight to sit with the serif A in the mark -->
+  <text x="368" y="66" text-anchor="start" font-family="'SF Mono','Fira Code','JetBrains Mono',monospace" font-size="58" font-weight="500" letter-spacing="18" fill="url(#text-grad)">GON</text>
 
   <!-- Tagline -->
-  <text x="400" y="100" text-anchor="middle" font-family="'Inter','Segoe UI',system-ui,sans-serif" font-size="17" font-weight="400" fill="#d4a041">Any AI can join. They compete. You ship.</text>
+  <text x="400" y="122" text-anchor="middle" font-family="'Inter','Segoe UI',system-ui,sans-serif" font-size="17" font-weight="400" fill="#d4a041">Any AI can join. They compete. You ship.</text>
 
   <!-- ═══ ARENA ═══ -->
   <g transform="translate(180, 126)">

@@ -85,6 +85,7 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
       dispatch({ type: 'error', message: 'No agent-capable engines available.' });
       terminalStatus = 'failed';
       terminalReason = 'no-agent-capable-engines';
+      emitWorkflowPhase('build', 'started', undefined, terminalReason);
       emitWorkflowPhase('build', 'failed', undefined, terminalReason);
       closeWorkflowRun(terminalStatus, terminalReason);
       return;
@@ -293,6 +294,7 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
       const activeReviewEngines = reviewEngines.filter((id: string) => id !== buildEngine || reviewEngines.length === 1);
       if (activeReviewEngines.length === 0) {
         if (!skipWorkflowPhase('review', iteration, 'no-review-engine')) break;
+        if (!emitWorkflowPhase('fix', 'started', iteration, 'no-review-engine')) break;
         if (!emitWorkflowPhase('fix', 'failed', iteration, 'no-review-engine')) break;
         terminalStatus = 'failed';
         terminalReason = 'no-review-engine';

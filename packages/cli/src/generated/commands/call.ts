@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 
 import { defineCommand } from 'citty';
 
-import { EngineRegistry, loadConfig, getCoreWorkflowRegistry, compileWorkflowSpec, verifyWorkflowExecutionPlanFlow, verifyWorkflowRunFlow, throwWorkflowConformance, createWorkflowRun, appendWorkflowPhaseEvent } from '@kernlang/agon-core';
+import { EngineRegistry, loadConfig, getCoreWorkflowRegistry, compileWorkflowSpec, verifyWorkflowExecutionPlanFlow, verifyWorkflowRunFlow, throwWorkflowConformance, createWorkflowIssue, createWorkflowRun, appendWorkflowPhaseEvent } from '@kernlang/agon-core';
 
 import type { WorkflowConformanceIssue, WorkflowRun } from '@kernlang/agon-core';
 
@@ -538,6 +538,12 @@ export const callCommand: any = defineCommand({
       const registry = getCoreWorkflowRegistry();
       const spec = registry.require(`${built.workflowMeta.workflowId}@${built.workflowMeta.version}`);
       const plan = compileWorkflowSpec(spec);
+      const planPhaseIds = new Set(plan.phases.map((phase) => phase.id));
+      const commandPhaseIssues = built.commands
+        .map((commandArgs) => commandArgs[0])
+        .filter((phaseId) => !planPhaseIds.has(phaseId))
+        .map((phaseId) => createWorkflowIssue('missing-node', `Workflow call command "${phaseId}" is not a phase in ${spec.id}@${spec.version}`, 'commands'));
+      if (commandPhaseIssues.length > 0) throwWorkflowConformance(commandPhaseIssues, 'Workflow call command sequence does not match the certified workflow plan');
       workflowRun = createWorkflowRun(plan, `call-${Date.now()}-${Math.random().toString(36).slice(2)}`);
       writeJsonl({ type: 'workflow-run-start', workflowId: spec.id, runId: workflowRun.id, planId: plan.logicalPlanId });
     }

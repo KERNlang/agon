@@ -116,6 +116,12 @@ export function verifyWorkflowRunFlow(run: WorkflowRun): WorkflowConformanceIssu
       issues.push(createWorkflowIssue('invalid-phase', `Phase "${phaseId}" exceeded iteration limit (${count} > ${limit})`, `phases[${entry.index}]`));
     }
   }
+  for (const [phaseId, count] of startedCounts) {
+    if (count > 1 && !iterationLimits.has(phaseId)) {
+      const entry = planPhaseMap.get(phaseId)!;
+      issues.push(createWorkflowIssue('invalid-phase', `Phase "${phaseId}" repeated without an iteration limit`, `phases[${entry.index}]`));
+    }
+  }
 
   if (run.status === 'completed') {
     for (const [phaseId, entry] of planPhaseMap) {

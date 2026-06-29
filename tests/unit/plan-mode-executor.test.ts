@@ -1,5 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { existsSync } from 'node:fs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const { handleCesarBrainMock, runDelegateMock, runForgeMock } = vi.hoisted(() => ({
   handleCesarBrainMock: vi.fn(),
@@ -54,10 +56,25 @@ const selfStep = {
 } as any;
 
 describe('plan-mode self executor', () => {
+  let originalAgonHome: string | undefined;
+  let tempHome: string;
+
   beforeEach(() => {
+    originalAgonHome = process.env.AGON_HOME;
+    tempHome = mkdtempSync(join(tmpdir(), 'agon-plan-mode-'));
+    process.env.AGON_HOME = tempHome;
     handleCesarBrainMock.mockReset();
     runDelegateMock.mockReset();
     runForgeMock.mockReset();
+  });
+
+  afterEach(() => {
+    if (originalAgonHome === undefined) {
+      delete process.env.AGON_HOME;
+    } else {
+      process.env.AGON_HOME = originalAgonHome;
+    }
+    rmSync(tempHome, { recursive: true, force: true });
   });
 
   it('executes self steps through Cesar brain when live dispatch is available', async () => {

@@ -1,6 +1,7 @@
 import from="node:child_process" names="spawn"
 import from="citty" names="defineCommand"
-import from="@kernlang/agon-core" names="EngineRegistry,loadConfig"
+import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,getCoreWorkflowRegistry,compileWorkflowSpec,verifyWorkflowExecutionPlanFlow,verifyWorkflowRunFlow,throwWorkflowConformance,createWorkflowRun,appendWorkflowPhaseEvent"
+import from="@kernlang/agon-core" names="WorkflowConformanceIssue,WorkflowRun" types=true
 import from="../blocks/output-format.js" names="fail,info"
 import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
 
@@ -34,9 +35,15 @@ interface name=CallCommandOptions export=true
   field name=engine type=string optional=true
   field name=autoApprove type=boolean optional=true
 
+interface name=WorkflowCallMeta export=true
+  field name=workflowId type=string
+  field name=version type=string
+  field name=planId type=string
+
 interface name=BuiltCallCommands export=true
   field name=cwd type=string
   field name=commands type="string[][]"
+  field name=workflowMeta type=WorkflowCallMeta optional=true
 
 fn name=textFlag params="flag:string, value:string|undefined" returns="string[]"
   handler <<<
@@ -262,9 +269,16 @@ fn name=buildCallCommands params="opts:CallCommandOptions" returns="BuiltCallCom
     } else if (workflow === 'pipeline') {
       const task = requireInput(workflow, opts.input);
       const fitness = opts.fitnessCmd?.trim() || 'true';
+      // Resolve, compile, and verify the certified workflow spec before building commands.
+      const registry = getCoreWorkflowRegistry();
+      const spec = registry.require('agon.brainstorm-forge-tribunal@v1');
+      const plan = compileWorkflowSpec(spec);
+      const flowIssues: WorkflowConformanceIssue[] = verifyWorkflowExecutionPlanFlow(plan);
+      if (flowIssues.length > 0) throwWorkflowConformance(flowIssues, 'agon.brainstorm-forge-tribunal@v1 flow verification failed');
       commands.push(['brainstorm', task, ...timeout, ...engines]);
       commands.push(['forge', task, '--test', fitness, '--cwd', cwd, ...timeout, ...engines]);
       commands.push(['tribunal', `Review the pipeline result for: ${task}`, '--rounds', opts.rounds?.trim() || '1', ...tribunalMode, ...timeout, ...engines]);
+      return { cwd, commands, workflowMeta: { workflowId: spec.id, version: spec.version, planId: plan.logicalPlanId } };
     } else {
       throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, chrome, pipeline, review, goal, doctor, or a team-* workflow.`);
     }
@@ -277,12 +291,12 @@ fn name=writeJsonl params="event:Record<string,unknown>" returns="void"
     process.stdout.write(`${JSON.stringify({ ...event, timestamp: new Date().toISOString() })}\n`);
   >>>
 
-fn name=runCommand async=true params="command:string, args:string[], cwd:string, jsonl:boolean" returns="Promise<number>"
+fn name=runCommand async=true params="command:string, args:string[], cwd:string, jsonl:boolean, workflowMeta?:WorkflowCallMeta" returns="Promise<number>"
   handler <<<
     return new Promise((resolve) => {
       const startedAt = Date.now();
       if (jsonl) {
-        writeJsonl({ type: 'agon.call.command.start', command: [command, ...args], cwd });
+        writeJsonl({ type: 'agon.call.command.start', command: [command, ...args], cwd, workflow: workflowMeta });
       }
 
       const child = spawn(command, args, {
@@ -502,17 +516,47 @@ const name=callCommand type="any"
         if (!args.jsonl) {
           info(`Agon call: ${built.commands.map((cmd) => cmd[0]).join(' -> ')}`);
         } else {
-          writeJsonl({ type: 'agon.call.start', commands: built.commands, cwd: built.cwd });
+          writeJsonl({ type: 'agon.call.start', commands: built.commands, cwd: built.cwd, workflow: built.workflowMeta });
+        }
+
+        let workflowRun: WorkflowRun | null = null;
+        if (args.jsonl && built.workflowMeta) {
+          const registry = getCoreWorkflowRegistry();
+          const spec = registry.require(`${built.workflowMeta.workflowId}@${built.workflowMeta.version}`);
+          const plan = compileWorkflowSpec(spec);
+          workflowRun = createWorkflowRun(plan, `call-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+          writeJsonl({ type: 'workflow-run-start', workflowId: spec.id, runId: workflowRun.id, planId: plan.logicalPlanId });
         }
 
         for (const commandArgs of built.commands) {
-          const exitCode = await runCommand(process.execPath, [script, ...commandArgs], built.cwd, args.jsonl);
+          const phaseId = workflowRun ? commandArgs[0] : '';
+          if (workflowRun && phaseId) {
+            workflowRun = appendWorkflowPhaseEvent(workflowRun, phaseId, 'started');
+            writeJsonl({ type: 'workflow-phase-started', workflowId: workflowRun.workflowId, runId: workflowRun.id, phaseId, status: workflowRun.status });
+          }
+          const exitCode = await runCommand(process.execPath, [script, ...commandArgs], built.cwd, args.jsonl, built.workflowMeta);
           if (exitCode !== 0) {
+            if (workflowRun && phaseId) {
+              workflowRun = appendWorkflowPhaseEvent(workflowRun, phaseId, 'failed', `exit ${exitCode}`);
+              const issues = verifyWorkflowRunFlow(workflowRun);
+              writeJsonl({ type: 'workflow-phase-failed', workflowId: workflowRun.workflowId, runId: workflowRun.id, phaseId, status: workflowRun.status, exitCode });
+              if (issues.length > 0) writeJsonl({ type: 'workflow-run-conformance-failed', workflowId: workflowRun.workflowId, runId: workflowRun.id, issues });
+              writeJsonl({ type: 'workflow-run-completed', workflowId: workflowRun.workflowId, runId: workflowRun.id, planId: workflowRun.plan.logicalPlanId, status: 'failed', workflowStatus: workflowRun.status });
+            }
             if (args.jsonl) writeJsonl({ type: 'agon.call.done', ok: false, exitCode });
             process.exit(exitCode);
           }
+          if (workflowRun && phaseId) {
+            workflowRun = appendWorkflowPhaseEvent(workflowRun, phaseId, 'completed');
+            writeJsonl({ type: 'workflow-phase-completed', workflowId: workflowRun.workflowId, runId: workflowRun.id, phaseId, status: workflowRun.status });
+          }
         }
 
+        if (workflowRun) {
+          const issues = verifyWorkflowRunFlow(workflowRun);
+          if (issues.length > 0) writeJsonl({ type: 'workflow-run-conformance-failed', workflowId: workflowRun.workflowId, runId: workflowRun.id, issues });
+          writeJsonl({ type: 'workflow-run-completed', workflowId: workflowRun.workflowId, runId: workflowRun.id, planId: workflowRun.plan.logicalPlanId, status: workflowRun.status, workflowStatus: workflowRun.status });
+        }
         if (args.jsonl) writeJsonl({ type: 'agon.call.done', ok: true, exitCode: 0 });
       },
     })

@@ -218,6 +218,7 @@ export { workflowGraphFromSpec, validateWorkflowGraphSpec, assertValidWorkflowGr
 export { validateWorkflowPluginAdmission, admitWorkflowPlugin } from './generated/workflows/plugins.js';
 export { WorkflowRegistry } from './generated/workflows/registry.js';
 export { verifyWorkflowExecutionPlanFlow, verifyWorkflowRunFlow } from './generated/workflows/flow-verification.js';
+export { AGON_BUILD_REVIEW_FIX_SPEC, AGON_BRAINSTORM_FORGE_TRIBUNAL_SPEC, getCoreWorkflowRegistry, compileAndVerifyCoreWorkflowSpec } from './generated/workflows/core-specs.js';
 export type {
   WorkflowCapabilitySpec, WorkflowMutationPolicy, WorkflowMutationLevel,
   WorkflowPhaseSpec, WorkflowSpec, WorkflowGraphNodeSpec, WorkflowGraphEdgeSpec,

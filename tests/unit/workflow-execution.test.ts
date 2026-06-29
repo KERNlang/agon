@@ -104,6 +104,40 @@ describe('workflow execution runs', () => {
     expect(run.currentPhaseId).toBeNull();
   });
 
+  it('allows a phase to close again after it is reopened for a bounded loop', () => {
+    const plan = compileWorkflowSpec({
+      id: 'bounded-loop',
+      version: '1.0.0',
+      phases: [{ id: 'inspect' }],
+    });
+
+    let run = createWorkflowRun(plan, 'run-7');
+    run = appendWorkflowPhaseEvent(run, 'inspect', 'started', undefined, { iterationLimit: 2 });
+    run = appendWorkflowPhaseEvent(run, 'inspect', 'completed', undefined, { deferCompletion: true });
+    run = appendWorkflowPhaseEvent(run, 'inspect', 'started', undefined, { iterationLimit: 2 });
+    run = appendWorkflowPhaseEvent(run, 'inspect', 'completed');
+
+    expect(run.status).toBe('completed');
+    expect(run.events.filter((event) => event.phaseId === 'inspect' && event.type === 'completed')).toHaveLength(2);
+  });
+
+  it('rejects starting a reopened phase twice while it is active', () => {
+    const plan = compileWorkflowSpec({
+      id: 'bounded-loop-active',
+      version: '1.0.0',
+      phases: [{ id: 'inspect' }],
+    });
+
+    let run = createWorkflowRun(plan, 'run-8');
+    run = appendWorkflowPhaseEvent(run, 'inspect', 'started');
+    run = appendWorkflowPhaseEvent(run, 'inspect', 'completed', undefined, { deferCompletion: true });
+    run = appendWorkflowPhaseEvent(run, 'inspect', 'started');
+
+    expect(() => appendWorkflowPhaseEvent(run, 'inspect', 'started')).toThrow(
+      /Workflow phase event failed conformance/,
+    );
+  });
+
   it('can cancel non-terminal runs', () => {
     const plan = compileWorkflowSpec({
       id: 'cancelable',

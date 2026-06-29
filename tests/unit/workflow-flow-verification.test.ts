@@ -192,6 +192,28 @@ describe('verifyWorkflowRunFlow', () => {
     expect(issues.some((issue) => issue.message.includes('2 > 1'))).toBe(true);
   });
 
+  it('reports repeated phase cycles without an iteration limit', () => {
+    const plan = compileWorkflowSpec({
+      id: 'loop-unbounded',
+      version: '1.0.0',
+      phases: [{ id: 'iterate' }],
+    });
+    const baseEvent = { runId: 'run-unbounded-loop', workflowId: 'loop-unbounded', phaseId: 'iterate' };
+    const run: WorkflowRun = {
+      ...createWorkflowRun(plan, 'run-unbounded-loop'),
+      status: 'running',
+      events: [
+        { ...baseEvent, type: 'started', at: '2026-01-01T00:00:00Z' },
+        { ...baseEvent, type: 'completed', at: '2026-01-01T00:00:01Z' },
+        { ...baseEvent, type: 'started', at: '2026-01-01T00:00:02Z' },
+        { ...baseEvent, type: 'completed', at: '2026-01-01T00:00:03Z' },
+      ],
+    };
+
+    const issues = verifyWorkflowRunFlow(run);
+    expect(issues.some((issue) => issue.message.includes('repeated without an iteration limit'))).toBe(true);
+  });
+
   it('returns structured conformance issues with codes and paths', () => {
     const plan = compileWorkflowSpec({
       id: 'structured',

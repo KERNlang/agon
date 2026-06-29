@@ -31,17 +31,24 @@ fn name=appendWorkflowPhaseEvent params="run:WorkflowRun,phaseId:string,type:Wor
     const closedEvents = run.events.filter((item) => successfulClosureTypes.has(item.type));
     const closedPhaseIds = new Set(closedEvents.map((item) => item.phaseId));
     const startedPhaseIds = new Set(run.events.filter((item) => item.type === 'started').map((item) => item.phaseId));
+    const activeBeforeEvent = new Set<string>();
+    for (const item of run.events) {
+      if (item.type === 'started') activeBeforeEvent.add(item.phaseId);
+      if (closureTypes.has(item.type)) activeBeforeEvent.delete(item.phaseId);
+    }
     if ((type === 'started' || type === 'completed' || type === 'skipped') && !(planPhase.dependsOn ?? []).every((dep) => closedPhaseIds.has(dep))) {
       throwWorkflowConformance([createWorkflowIssue('invalid-phase', `Workflow phase "${phaseId}" cannot advance before dependencies close`, 'phaseId')], 'Workflow phase event failed conformance');
     }
-    if (type === 'started' && startedPhaseIds.has(phaseId) && !closedPhaseIds.has(phaseId)) {
+    if (type === 'started' && activeBeforeEvent.has(phaseId)) {
       throwWorkflowConformance([createWorkflowIssue('duplicate-id', `Workflow phase "${phaseId}" is already started`, 'phaseId')], 'Workflow phase event failed conformance');
     }
-    if ((type === 'completed' || type === 'skipped') && !startedPhaseIds.has(phaseId)) {
-      throwWorkflowConformance([createWorkflowIssue('invalid-phase', `Workflow phase "${phaseId}" cannot close before it starts`, 'phaseId')], 'Workflow phase event failed conformance');
-    }
-    if ((type === 'completed' || type === 'skipped') && closedPhaseIds.has(phaseId)) {
-      throwWorkflowConformance([createWorkflowIssue('duplicate-id', `Workflow phase "${phaseId}" is already closed`, 'phaseId')], 'Workflow phase event failed conformance');
+    if ((type === 'completed' || type === 'skipped') && !activeBeforeEvent.has(phaseId)) {
+      if (!startedPhaseIds.has(phaseId)) {
+        throwWorkflowConformance([createWorkflowIssue('invalid-phase', `Workflow phase "${phaseId}" cannot close before it starts`, 'phaseId')], 'Workflow phase event failed conformance');
+      }
+      if (closedPhaseIds.has(phaseId)) {
+        throwWorkflowConformance([createWorkflowIssue('duplicate-id', `Workflow phase "${phaseId}" is already closed`, 'phaseId')], 'Workflow phase event failed conformance');
+      }
     }
     const event: WorkflowPhaseEvent = {
       runId: run.id,
@@ -56,6 +63,7 @@ fn name=appendWorkflowPhaseEvent params="run:WorkflowRun,phaseId:string,type:Wor
     const completedPhaseIds = new Set(events.filter((item) => item.type === 'completed' || item.type === 'skipped').map((item) => item.phaseId));
     const closedPhaseIdsAfterEvent = new Set(events.filter((item) => closureTypes.has(item.type)).map((item) => item.phaseId));
     const allPhasesClosed = run.plan.phases.length > 0 && run.plan.phases.every((phase) => completedPhaseIds.has(phase.id));
+    const deferCompletion = event.data?.deferCompletion === true;
     const activePhaseSet = new Set<string>();
     for (const item of events) {
       if (item.type === 'started') activePhaseSet.add(item.phaseId);
@@ -69,7 +77,7 @@ fn name=appendWorkflowPhaseEvent params="run:WorkflowRun,phaseId:string,type:Wor
       : type === 'started' || type === 'queued'
         ? 'running'
       : allPhasesClosed
-        ? 'completed'
+        ? deferCompletion ? 'running' : 'completed'
         : type === 'completed' || type === 'skipped'
           ? 'running'
           : run.status;

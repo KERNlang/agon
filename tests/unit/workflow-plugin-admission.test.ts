@@ -27,6 +27,27 @@ describe('workflow plugin admission', () => {
     expect(result).toEqual({ accepted: true, issues: [] });
   });
 
+  it('rejects self-declared core plugins unless the caller allows core source', () => {
+    const selfDeclared = validateWorkflowPluginAdmission({
+      id: 'fake-core-observer',
+      source: 'core',
+      phases: [{ id: 'observe' }],
+    });
+
+    expect(selfDeclared.accepted).toBe(false);
+    expect(selfDeclared.issues.map((issue) => issue.code)).toContain('plugin-denied');
+  });
+
+  it('accepts first-party core plugins when the caller allows core source', () => {
+    const result = validateWorkflowPluginAdmission({
+      id: 'core-observer',
+      source: 'core',
+      phases: [{ id: 'observe' }],
+    }, { allowCoreSource: true });
+
+    expect(result).toEqual({ accepted: true, issues: [] });
+  });
+
   it('rejects reserved aliases, duplicate plugin ids, and mutation privileges by default', () => {
     const result = validateWorkflowPluginAdmission({
       id: 'mutator',

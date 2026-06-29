@@ -131,12 +131,13 @@ export interface WorkflowPluginSpec {
 // @kern-source: specs:96
 export interface WorkflowPluginAdmissionOptions {
   allowMutations?: boolean;
+  allowCoreSource?: boolean;
   maxMutationLevel?: WorkflowMutationLevel;
   existingPluginIds?: string[];
   existingAliases?: string[];
 }
 
-// @kern-source: specs:102
+// @kern-source: specs:103
 export interface WorkflowPluginAdmissionResult {
   accepted: boolean;
   issues: WorkflowConformanceIssue[];

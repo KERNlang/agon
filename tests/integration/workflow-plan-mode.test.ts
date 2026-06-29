@@ -3,15 +3,24 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { getCoreWorkflowRegistry, compileWorkflowSpec, verifyWorkflowExecutionPlanFlow } from '../../packages/core/src/index.js';
+import { getCoreWorkflowRegistry, compileWorkflowSpec, verifyWorkflowExecutionPlanFlow, appendWorkflowPhaseEvent as actualAppendWorkflowPhaseEvent } from '../../packages/core/src/index.js';
 
-const { handleCesarBrainMock, runDelegateMock, runForgeMock, runBrainstormMock, runTribunalMock } = vi.hoisted(() => ({
+const { handleCesarBrainMock, runDelegateMock, runForgeMock, runBrainstormMock, runTribunalMock, appendWorkflowPhaseEventMock } = vi.hoisted(() => ({
   handleCesarBrainMock: vi.fn(),
   runDelegateMock: vi.fn(),
   runForgeMock: vi.fn(),
   runBrainstormMock: vi.fn(),
   runTribunalMock: vi.fn(),
+  appendWorkflowPhaseEventMock: vi.fn(),
 }));
+
+vi.mock('@kernlang/agon-core', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@kernlang/agon-core')>();
+  return {
+    ...actual,
+    appendWorkflowPhaseEvent: appendWorkflowPhaseEventMock,
+  };
+});
 
 vi.mock('../../packages/cli/src/generated/cesar/brain.js', () => ({
   handleCesarBrain: handleCesarBrainMock,
@@ -63,6 +72,8 @@ describe('workflow-plan-mode — agon.brainstorm-forge-tribunal@v1 wiring', () =
     runForgeMock.mockReset();
     runBrainstormMock.mockReset();
     runTribunalMock.mockReset();
+    appendWorkflowPhaseEventMock.mockReset();
+    appendWorkflowPhaseEventMock.mockImplementation((...args: Parameters<typeof actualAppendWorkflowPhaseEvent>) => actualAppendWorkflowPhaseEvent(...args));
   });
 
   afterEach(() => {
@@ -286,5 +297,36 @@ describe('workflow-plan-mode — agon.brainstorm-forge-tribunal@v1 wiring', () =
     expect(runDone).toBeDefined();
     expect(runDone.status).toBe('failed');
     expect(runDone.reason).toBe('forge-produced-no-winner');
+  });
+
+  it('plan-mode pipeline closes the workflow run when phase tracking violates conformance', async () => {
+    const conformanceError = Object.assign(new Error('phase tracking failed'), {
+      issues: [{ code: 'invalid-phase', message: 'phase tracking failed', path: 'phaseId' }],
+    });
+    appendWorkflowPhaseEventMock.mockImplementationOnce(() => {
+      throw conformanceError;
+    });
+
+    const events: any[] = [];
+    const dispatch = (event: any) => events.push(event);
+    const executors = buildStepExecutors(makeCtx(), dispatch);
+
+    const result = await executors.pipeline.execute(
+      { id: 'ps', type: 'pipeline', description: 'task', fitnessCmd: 'true', state: 'pending' } as any,
+      {},
+    );
+
+    expect(result.result.status).toBe('failure');
+    expect(result.result.error).toBe('workflow-conformance-failed');
+    expect(runBrainstormMock).not.toHaveBeenCalled();
+    const conformanceFailed = events.find((e) => e.type === 'workflow-run-conformance-failed');
+    expect(conformanceFailed).toBeDefined();
+    expect(conformanceFailed.issues).toEqual(conformanceError.issues);
+    const runDone = events.find((e) => e.type === 'workflow-run-completed');
+    expect(runDone).toMatchObject({
+      status: 'failed',
+      reason: 'workflow-conformance-failed',
+      workflowStatus: 'failed',
+    });
   });
 });

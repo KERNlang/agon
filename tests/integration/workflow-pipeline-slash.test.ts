@@ -305,6 +305,7 @@ describe('workflow-pipeline-slash — agon.build-review-fix@v1 wiring', () => {
     expect(runCompleted).toMatchObject({
       status: 'failed',
       reason: 'workflow-conformance-failed',
+      workflowStatus: 'failed',
     });
     expect(dispatchMock).not.toHaveBeenCalled();
     expect(events.some((e) => e.type === 'success')).toBe(false);

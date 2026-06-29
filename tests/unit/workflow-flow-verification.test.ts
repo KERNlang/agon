@@ -214,6 +214,37 @@ describe('verifyWorkflowRunFlow', () => {
     expect(issues.some((issue) => issue.message.includes('repeated without an iteration limit'))).toBe(true);
   });
 
+  it('allows a bounded build-review-fix-review loop when every reopened phase carries an iteration limit', () => {
+    const plan = compileWorkflowSpec({
+      id: 'build-review-fix-loop',
+      version: '1.0.0',
+      phases: [
+        { id: 'build' },
+        { id: 'review', dependsOn: ['build'] },
+        { id: 'fix', dependsOn: ['review'] },
+      ],
+    });
+    const base = { runId: 'run-build-review-fix-loop', workflowId: 'build-review-fix-loop' };
+    const run: WorkflowRun = {
+      ...createWorkflowRun(plan, 'run-build-review-fix-loop'),
+      status: 'completed',
+      events: [
+        { ...base, phaseId: 'build', type: 'started', at: '2026-01-01T00:00:00Z', data: { iterationLimit: 3 } },
+        { ...base, phaseId: 'build', type: 'completed', at: '2026-01-01T00:00:01Z' },
+        { ...base, phaseId: 'review', type: 'started', at: '2026-01-01T00:00:02Z', data: { iterationLimit: 3 } },
+        { ...base, phaseId: 'review', type: 'completed', at: '2026-01-01T00:00:03Z', data: { deferCompletion: true } },
+        { ...base, phaseId: 'fix', type: 'started', at: '2026-01-01T00:00:04Z', data: { iterationLimit: 3 } },
+        { ...base, phaseId: 'fix', type: 'completed', at: '2026-01-01T00:00:05Z', data: { deferCompletion: true } },
+        { ...base, phaseId: 'review', type: 'started', at: '2026-01-01T00:00:06Z', data: { iterationLimit: 3 } },
+        { ...base, phaseId: 'review', type: 'completed', at: '2026-01-01T00:00:07Z' },
+        { ...base, phaseId: 'fix', type: 'started', at: '2026-01-01T00:00:08Z', data: { iterationLimit: 3 } },
+        { ...base, phaseId: 'fix', type: 'skipped', at: '2026-01-01T00:00:09Z' },
+      ],
+    };
+
+    expect(verifyWorkflowRunFlow(run)).toEqual([]);
+  });
+
   it('returns structured conformance issues with codes and paths', () => {
     const plan = compileWorkflowSpec({
       id: 'structured',

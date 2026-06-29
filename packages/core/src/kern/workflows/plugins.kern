@@ -7,7 +7,8 @@ fn name=validateWorkflowPluginAdmission params="plugin:WorkflowPluginSpec,option
   handler <<<
     const issues: WorkflowConformanceIssue[] = [];
     if (!plugin.id) issues.push(createWorkflowIssue('plugin-denied', 'Workflow plugin id is required', 'id'));
-    if ((plugin.trustedAdapter !== true && plugin.source !== 'trusted-adapter') || plugin.source === 'untrusted') {
+    const trustedSource = plugin.source === 'trusted-adapter' || (plugin.source === 'core' && options?.allowCoreSource === true);
+    if ((plugin.trustedAdapter !== true && !trustedSource) || plugin.source === 'untrusted') {
       issues.push(createWorkflowIssue('plugin-denied', `Workflow plugin "${plugin.id}" is not a trusted adapter`, 'trustedAdapter'));
     }
     if (['help', 'run', 'workflow', 'workflows', 'kern', 'core', 'plugin', 'plugins', 'new', 'delete', 'list', 'default'].includes(normalizeWorkflowAlias(plugin.id))) {

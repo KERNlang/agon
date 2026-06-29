@@ -75,7 +75,7 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
         dispatch({ type: 'workflow-run-conformance-failed', workflowId: spec.id, runId, issues } as any);
       }
       workflowRunClosed = true;
-      dispatch({ type: 'workflow-run-completed', workflowId: spec.id, runId, planId: plan.logicalPlanId, status, reason, workflowStatus: workflowRun.status } as any);
+      dispatch({ type: 'workflow-run-completed', workflowId: spec.id, runId, planId: plan.logicalPlanId, status, reason, workflowStatus: workflowTrackingFailed ? status : workflowRun.status } as any);
     };
 
     dispatch({ type: 'workflow-run-start', workflowId: spec.id, runId, planId: plan.logicalPlanId } as any);

@@ -12,7 +12,8 @@ import { workflowGraphFromSpec, validateWorkflowGraphSpec } from './graph.js';
 export function validateWorkflowPluginAdmission(plugin: WorkflowPluginSpec, options?: WorkflowPluginAdmissionOptions): WorkflowPluginAdmissionResult {
   const issues: WorkflowConformanceIssue[] = [];
   if (!plugin.id) issues.push(createWorkflowIssue('plugin-denied', 'Workflow plugin id is required', 'id'));
-  if ((plugin.trustedAdapter !== true && plugin.source !== 'trusted-adapter') || plugin.source === 'untrusted') {
+  const trustedSource = plugin.source === 'trusted-adapter' || (plugin.source === 'core' && options?.allowCoreSource === true);
+  if ((plugin.trustedAdapter !== true && !trustedSource) || plugin.source === 'untrusted') {
     issues.push(createWorkflowIssue('plugin-denied', `Workflow plugin "${plugin.id}" is not a trusted adapter`, 'trustedAdapter'));
   }
   if (['help', 'run', 'workflow', 'workflows', 'kern', 'core', 'plugin', 'plugins', 'new', 'delete', 'list', 'default'].includes(normalizeWorkflowAlias(plugin.id))) {
@@ -94,7 +95,7 @@ export function validateWorkflowPluginAdmission(plugin: WorkflowPluginSpec, opti
   return { accepted: issues.length === 0, issues };
 }
 
-// @kern-source: plugins:92
+// @kern-source: plugins:93
 export function admitWorkflowPlugin(plugin: WorkflowPluginSpec, options?: WorkflowPluginAdmissionOptions): WorkflowPluginSpec {
   const result = validateWorkflowPluginAdmission(plugin, options);
   if (!result.accepted) throwWorkflowConformance(result.issues, 'Workflow plugin admission rejected the plugin');

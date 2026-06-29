@@ -31,10 +31,17 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
     let workflowRunClosed = false;
     let terminalStatus: 'completed' | 'failed' | 'cancelled' = 'completed';
     let terminalReason = '';
+    let workflowTrackingFailed = false;
     const maxIterations = 3;
     let workflowRun: WorkflowRun = createWorkflowRun(plan, runId);
+    const workflowIssuesFromError = (err: unknown): WorkflowConformanceIssue[] => {
+      const issues = (err as { issues?: WorkflowConformanceIssue[] } | null)?.issues;
+      if (Array.isArray(issues)) return issues;
+      return [{ code: 'invalid-phase', message: err instanceof Error ? err.message : String(err), path: 'workflowRun' }];
+    };
     const workflowUiType = (type: WorkflowPhaseEventType) => `workflow-phase-${type === 'started' ? 'started' : type === 'completed' ? 'completed' : type}`;
     const emitWorkflowPhase = (phaseId: string, type: WorkflowPhaseEventType, iteration?: number, reason = '', extraData?: Record<string, unknown>) => {
+      if (workflowTrackingFailed) return false;
       const data: Record<string, unknown> = {};
       if (typeof iteration === 'number' && iteration > 0) {
         data.iteration = iteration;
@@ -42,13 +49,24 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
       }
       if (reason) data.reason = reason;
       if (extraData) Object.assign(data, extraData);
-      workflowRun = appendWorkflowPhaseEvent(workflowRun, phaseId, type, reason || undefined, Object.keys(data).length > 0 ? data : undefined);
+      try {
+        workflowRun = appendWorkflowPhaseEvent(workflowRun, phaseId, type, reason || undefined, Object.keys(data).length > 0 ? data : undefined);
+      } catch (err) {
+        workflowTrackingFailed = true;
+        terminalStatus = 'failed';
+        terminalReason = 'workflow-conformance-failed';
+        dispatch({ type: 'workflow-run-conformance-failed', workflowId: spec.id, runId, issues: workflowIssuesFromError(err) } as any);
+        dispatch({ type: 'error', message: `Workflow tracking failed: ${err instanceof Error ? err.message : String(err)}` });
+        closeWorkflowRun(terminalStatus, terminalReason);
+        return false;
+      }
       dispatch({ type: workflowUiType(type), workflowId: spec.id, runId, phaseId, iteration, reason, status: workflowRun.status } as any);
+      return true;
     };
     const phaseHasSuccessfulClosure = (phaseId: string) => workflowRun.events.some((event) => event.phaseId === phaseId && (event.type === 'completed' || event.type === 'skipped'));
     const skipWorkflowPhase = (phaseId: string, iteration: number, reason: string) => {
-      emitWorkflowPhase(phaseId, 'started', iteration, reason);
-      emitWorkflowPhase(phaseId, 'skipped', iteration, reason);
+      if (!emitWorkflowPhase(phaseId, 'started', iteration, reason)) return false;
+      return emitWorkflowPhase(phaseId, 'skipped', iteration, reason);
     };
     const closeWorkflowRun = (status: 'completed' | 'failed' | 'cancelled', reason = '') => {
       if (workflowRunClosed) return;
@@ -122,7 +140,7 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
 
       // ── Step 1: Build ──
       const buildPhaseId = pendingFixPhase ? 'fix' : 'build';
-      emitWorkflowPhase(buildPhaseId, 'started', iteration);
+      if (!emitWorkflowPhase(buildPhaseId, 'started', iteration)) break;
       const buildColor = (ENGINE_COLORS as Record<string, number>)[buildEngine] ?? 124;
       dispatch({ type: 'spinner-start', message: `[${iteration}/${maxIterations}] ${buildEngine} building…`, color: buildColor });
 
@@ -173,7 +191,10 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
       }
 
       if (buildPhaseId !== 'fix') {
-        emitWorkflowPhase(buildPhaseId, 'completed', iteration);
+        if (!emitWorkflowPhase(buildPhaseId, 'completed', iteration)) {
+          dispatch({ type: 'spinner-stop' });
+          break;
+        }
       }
       pendingFixPhase = false;
       dispatch({ type: 'spinner-stop' });
@@ -192,10 +213,10 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
       if (!diff || lines === 0) {
         dispatch({ type: 'warning', message: `[${iteration}] ${buildEngine} made no changes.` });
         if (buildPhaseId === 'fix') {
-          emitWorkflowPhase('fix', 'completed', iteration);
+          if (!emitWorkflowPhase('fix', 'completed', iteration)) break;
         } else {
-          skipWorkflowPhase('review', iteration, 'no-changes');
-          skipWorkflowPhase('fix', iteration, 'no-changes');
+          if (!skipWorkflowPhase('review', iteration, 'no-changes')) break;
+          if (!skipWorkflowPhase('fix', iteration, 'no-changes')) break;
         }
         terminalStatus = 'completed';
         terminalReason = 'no-changes';
@@ -221,11 +242,11 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
             pendingFitnessFailure = false;
             lastFitnessPassed = true;
             if (buildPhaseId === 'fix') {
-              emitWorkflowPhase('fix', 'completed', iteration, '', { deferCompletion: true });
+              if (!emitWorkflowPhase('fix', 'completed', iteration, '', { deferCompletion: true })) break;
               lastReviewFeedback = '';
             } else {
-              skipWorkflowPhase('review', iteration, 'fitness-passed');
-              skipWorkflowPhase('fix', iteration, 'fitness-passed');
+              if (!skipWorkflowPhase('review', iteration, 'fitness-passed')) break;
+              if (!skipWorkflowPhase('fix', iteration, 'fitness-passed')) break;
               terminalStatus = 'completed';
               terminalReason = 'fitness-passed';
               break;
@@ -249,10 +270,10 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
         }
         if (fitnessFailedThisIteration && iteration >= maxIterations) {
           if (buildPhaseId === 'fix') {
-            emitWorkflowPhase('fix', 'failed', iteration, 'fitness-exhausted');
+            if (!emitWorkflowPhase('fix', 'failed', iteration, 'fitness-exhausted')) break;
           } else {
-            skipWorkflowPhase('review', iteration, 'fitness-failed-at-iteration-limit');
-            emitWorkflowPhase('fix', 'failed', iteration, 'fitness-exhausted');
+            if (!skipWorkflowPhase('review', iteration, 'fitness-failed-at-iteration-limit')) break;
+            if (!emitWorkflowPhase('fix', 'failed', iteration, 'fitness-exhausted')) break;
           }
           terminalStatus = 'failed';
           terminalReason = 'fitness-exhausted';
@@ -262,23 +283,23 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
 
       if (buildPhaseId === 'fix') {
         if (fitnessFailedThisIteration) {
-          emitWorkflowPhase('fix', 'completed', iteration, 'fitness-failed-before-review', { deferCompletion: true });
+          if (!emitWorkflowPhase('fix', 'completed', iteration, 'fitness-failed-before-review', { deferCompletion: true })) break;
         } else if (!fitnessCmd) {
-          emitWorkflowPhase('fix', 'completed', iteration, '', { deferCompletion: true });
+          if (!emitWorkflowPhase('fix', 'completed', iteration, '', { deferCompletion: true })) break;
         }
       }
 
       // ── Step 3: Review (one or more engines, in parallel) ──
       const activeReviewEngines = reviewEngines.filter((id: string) => id !== buildEngine || reviewEngines.length === 1);
       if (activeReviewEngines.length === 0) {
-        skipWorkflowPhase('review', iteration, 'no-review-engine');
-        emitWorkflowPhase('fix', 'failed', iteration, 'no-review-engine');
+        if (!skipWorkflowPhase('review', iteration, 'no-review-engine')) break;
+        if (!emitWorkflowPhase('fix', 'failed', iteration, 'no-review-engine')) break;
         terminalStatus = 'failed';
         terminalReason = 'no-review-engine';
         break;
       }
 
-      emitWorkflowPhase('review', 'started', iteration);
+      if (!emitWorkflowPhase('review', 'started', iteration)) break;
       dispatch({ type: 'spinner-start', message: `[${iteration}] ${activeReviewEngines.join(', ')} reviewing in parallel…`, color: 214 });
 
       const critiquePrompt = buildCritiquePrompt({
@@ -349,13 +370,13 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
         if (completedReviews === 0) {
           dispatch({ type: 'warning', message: `[${iteration}] No review output returned — accepting build as-is.` });
           if (pendingFitnessFailure) {
-            emitWorkflowPhase('review', 'failed', iteration, 'no-review-output-after-fitness-failure');
+            if (!emitWorkflowPhase('review', 'failed', iteration, 'no-review-output-after-fitness-failure')) break;
             terminalStatus = 'failed';
             terminalReason = 'no-review-output-after-fitness-failure';
             break;
           }
-          emitWorkflowPhase('review', 'completed', iteration);
-          skipWorkflowPhase('fix', iteration, 'no-review-output');
+          if (!emitWorkflowPhase('review', 'completed', iteration)) break;
+          if (!skipWorkflowPhase('fix', iteration, 'no-review-output')) break;
           terminalStatus = 'completed';
           terminalReason = 'no-review-output';
           break;
@@ -366,18 +387,18 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
           if (pendingFitnessFailure) {
             dispatch({ type: 'info', message: `[${iteration}] Fitness still requires a fix iteration.` });
             if (iteration >= maxIterations) {
-              emitWorkflowPhase('review', 'failed', iteration, 'fitness-exhausted');
+              if (!emitWorkflowPhase('review', 'failed', iteration, 'fitness-exhausted')) break;
               terminalStatus = 'failed';
               terminalReason = 'fitness-exhausted';
               break;
             }
-            emitWorkflowPhase('review', 'completed', iteration, '', { deferCompletion: true });
+            if (!emitWorkflowPhase('review', 'completed', iteration, '', { deferCompletion: true })) break;
             pendingFixPhase = true;
             continue;
           }
-          emitWorkflowPhase('review', 'completed', iteration);
+          if (!emitWorkflowPhase('review', 'completed', iteration)) break;
           if (!phaseHasSuccessfulClosure('fix')) {
-            skipWorkflowPhase('fix', iteration, 'no-blocking-review-issues');
+            if (!skipWorkflowPhase('fix', iteration, 'no-blocking-review-issues')) break;
           }
           terminalStatus = 'completed';
           terminalReason = 'review-approved';
@@ -387,18 +408,18 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
         dispatch({ type: 'info', message: `[${iteration}] Review found blocking issues — fixing…` });
         lastReviewFeedback = [lastReviewFeedback, blockingFeedback.join('\n\n---\n\n')].filter(Boolean).join('\n\n---\n\n');
         if (iteration >= maxIterations) {
-          emitWorkflowPhase('review', 'failed', iteration, 'review-blocked-at-iteration-limit');
+          if (!emitWorkflowPhase('review', 'failed', iteration, 'review-blocked-at-iteration-limit')) break;
           terminalStatus = 'failed';
           terminalReason = 'review-blocked-at-iteration-limit';
           break;
         }
-        emitWorkflowPhase('review', 'completed', iteration, '', { deferCompletion: true });
+        if (!emitWorkflowPhase('review', 'completed', iteration, '', { deferCompletion: true })) break;
         pendingFixPhase = true;
         // Continue to next iteration with review feedback
       } catch (err) {
         dispatch({ type: 'spinner-stop' });
         dispatch({ type: 'warning', message: `[${iteration}] Review failed: ${err instanceof Error ? err.message : String(err)} — accepting build as-is.` });
-        emitWorkflowPhase('review', 'failed', iteration, 'review-failed');
+        if (!emitWorkflowPhase('review', 'failed', iteration, 'review-failed')) break;
         terminalStatus = 'failed';
         terminalReason = 'review-failed';
         break;

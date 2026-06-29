@@ -541,19 +541,41 @@ export const callCommand: any = defineCommand({
       workflowRun = createWorkflowRun(plan, `call-${Date.now()}-${Math.random().toString(36).slice(2)}`);
       writeJsonl({ type: 'workflow-run-start', workflowId: spec.id, runId: workflowRun.id, planId: plan.logicalPlanId });
     }
+    const workflowIssuesFromError = (err: unknown): WorkflowConformanceIssue[] => {
+      const issues = (err as { issues?: WorkflowConformanceIssue[] } | null)?.issues;
+      if (Array.isArray(issues)) return issues;
+      return [{ code: 'invalid-phase', message: err instanceof Error ? err.message : String(err), path: 'workflowRun' }];
+    };
+    const writeWorkflowTrackingFailure = (err: unknown, exitCode = 1) => {
+      if (!workflowRun) return;
+      const issues = workflowIssuesFromError(err);
+      writeJsonl({ type: 'workflow-run-conformance-failed', workflowId: workflowRun.workflowId, runId: workflowRun.id, issues });
+      writeJsonl({ type: 'workflow-run-completed', workflowId: workflowRun.workflowId, runId: workflowRun.id, planId: workflowRun.plan.logicalPlanId, status: 'failed', workflowStatus: workflowRun.status });
+      writeJsonl({ type: 'agon.call.done', ok: false, exitCode, error: err instanceof Error ? err.message : String(err) });
+    };
+    const appendTrackedWorkflowPhase = (phaseId: string, type: 'started' | 'completed' | 'failed', reason = '', extra: Record<string, unknown> = {}, exitCode = 1) => {
+      if (!workflowRun) return true;
+      try {
+        workflowRun = appendWorkflowPhaseEvent(workflowRun, phaseId, type, reason || undefined);
+      } catch (err) {
+        writeWorkflowTrackingFailure(err, exitCode);
+        return false;
+      }
+      const eventType = type === 'started' ? 'workflow-phase-started' : type === 'completed' ? 'workflow-phase-completed' : 'workflow-phase-failed';
+      writeJsonl({ type: eventType, workflowId: workflowRun.workflowId, runId: workflowRun.id, phaseId, status: workflowRun.status, ...extra });
+      return true;
+    };
 
     for (const commandArgs of built.commands) {
       const phaseId = workflowRun ? commandArgs[0] : '';
       if (workflowRun && phaseId) {
-        workflowRun = appendWorkflowPhaseEvent(workflowRun, phaseId, 'started');
-        writeJsonl({ type: 'workflow-phase-started', workflowId: workflowRun.workflowId, runId: workflowRun.id, phaseId, status: workflowRun.status });
+        if (!appendTrackedWorkflowPhase(phaseId, 'started')) process.exit(1);
       }
       const exitCode = await runCommand(process.execPath, [script, ...commandArgs], built.cwd, args.jsonl, built.workflowMeta);
       if (exitCode !== 0) {
         if (workflowRun && phaseId) {
-          workflowRun = appendWorkflowPhaseEvent(workflowRun, phaseId, 'failed', `exit ${exitCode}`);
+          if (!appendTrackedWorkflowPhase(phaseId, 'failed', `exit ${exitCode}`, { exitCode }, exitCode)) process.exit(exitCode);
           const issues = verifyWorkflowRunFlow(workflowRun);
-          writeJsonl({ type: 'workflow-phase-failed', workflowId: workflowRun.workflowId, runId: workflowRun.id, phaseId, status: workflowRun.status, exitCode });
           if (issues.length > 0) writeJsonl({ type: 'workflow-run-conformance-failed', workflowId: workflowRun.workflowId, runId: workflowRun.id, issues });
           writeJsonl({ type: 'workflow-run-completed', workflowId: workflowRun.workflowId, runId: workflowRun.id, planId: workflowRun.plan.logicalPlanId, status: 'failed', workflowStatus: workflowRun.status });
         }
@@ -561,8 +583,7 @@ export const callCommand: any = defineCommand({
         process.exit(exitCode);
       }
       if (workflowRun && phaseId) {
-        workflowRun = appendWorkflowPhaseEvent(workflowRun, phaseId, 'completed');
-        writeJsonl({ type: 'workflow-phase-completed', workflowId: workflowRun.workflowId, runId: workflowRun.id, phaseId, status: workflowRun.status });
+        if (!appendTrackedWorkflowPhase(phaseId, 'completed')) process.exit(1);
       }
     }
 

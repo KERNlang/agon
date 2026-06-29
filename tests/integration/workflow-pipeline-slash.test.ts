@@ -1,14 +1,15 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-import { getCoreWorkflowRegistry, compileWorkflowSpec, verifyWorkflowExecutionPlanFlow } from '../../packages/core/src/index.js';
+import { getCoreWorkflowRegistry, compileWorkflowSpec, verifyWorkflowExecutionPlanFlow, appendWorkflowPhaseEvent as actualAppendWorkflowPhaseEvent } from '../../packages/core/src/index.js';
 
-const { dispatchAgentMock, dispatchMock, readOnlyDiffMock, diffLineCountMock, diffFileCountMock, spawnWithTimeoutMock } = vi.hoisted(() => ({
+const { dispatchAgentMock, dispatchMock, readOnlyDiffMock, diffLineCountMock, diffFileCountMock, spawnWithTimeoutMock, appendWorkflowPhaseEventMock } = vi.hoisted(() => ({
   dispatchAgentMock: vi.fn(),
   dispatchMock: vi.fn(),
   readOnlyDiffMock: vi.fn(),
   diffLineCountMock: vi.fn(),
   diffFileCountMock: vi.fn(),
   spawnWithTimeoutMock: vi.fn(),
+  appendWorkflowPhaseEventMock: vi.fn(),
 }));
 
 vi.mock('@kernlang/agon-core', async (importOriginal) => {
@@ -25,6 +26,7 @@ vi.mock('@kernlang/agon-core', async (importOriginal) => {
     appendMessage: vi.fn(),
     tracker: { record: vi.fn() },
     spawnWithTimeout: spawnWithTimeoutMock,
+    appendWorkflowPhaseEvent: appendWorkflowPhaseEventMock,
     RUNS_DIR: '/tmp/runs',
   };
 });
@@ -45,6 +47,8 @@ describe('workflow-pipeline-slash — agon.build-review-fix@v1 wiring', () => {
     diffFileCountMock.mockReset();
     spawnWithTimeoutMock.mockReset();
     spawnWithTimeoutMock.mockResolvedValue({ exitCode: 0, stdout: '', stderr: '' });
+    appendWorkflowPhaseEventMock.mockReset();
+    appendWorkflowPhaseEventMock.mockImplementation((...args: Parameters<typeof actualAppendWorkflowPhaseEvent>) => actualAppendWorkflowPhaseEvent(...args));
   });
 
   it('certified agon.build-review-fix@v1 spec is resolvable', () => {
@@ -263,5 +267,46 @@ describe('workflow-pipeline-slash — agon.build-review-fix@v1 wiring', () => {
       workflowStatus: 'completed',
     });
     expect(events.some((e) => e.type === 'workflow-phase-failed')).toBe(false);
+  });
+
+  it('emits terminal workflow failure when phase tracking violates conformance', async () => {
+    readOnlyDiffMock.mockReturnValue('diff --git a/foo.ts b/foo.ts\n+line');
+    diffLineCountMock.mockReturnValue(1);
+    diffFileCountMock.mockReturnValue(1);
+    const conformanceError = Object.assign(new Error('phase cannot advance'), {
+      issues: [{ code: 'invalid-phase', message: 'phase cannot advance', path: 'phaseId' }],
+    });
+    appendWorkflowPhaseEventMock.mockImplementationOnce(() => {
+      throw conformanceError;
+    });
+
+    const events: any[] = [];
+    const dispatch = (event: any) => events.push(event);
+    const ctx = {
+      registry: {
+        agentCapableIds: () => ['claude', 'kimi'],
+        get: () => ({ id: 'claude', timeout: 60 }),
+        resolveId: (id: string) => id,
+      },
+      config: {},
+      adapter: {
+        dispatch: dispatchMock.mockResolvedValue({ stdout: '[]' }),
+      },
+      chatSession: { messages: [] },
+      setActiveAbort: vi.fn(),
+    } as any;
+
+    await expect(handlePipeline('add logging', dispatch, ctx, undefined, { quiet: true })).resolves.toBeUndefined();
+
+    const conformanceFailed = events.find((e) => e.type === 'workflow-run-conformance-failed');
+    expect(conformanceFailed).toBeDefined();
+    expect(conformanceFailed.issues).toEqual(conformanceError.issues);
+    const runCompleted = events.find((e) => e.type === 'workflow-run-completed');
+    expect(runCompleted).toMatchObject({
+      status: 'failed',
+      reason: 'workflow-conformance-failed',
+    });
+    expect(dispatchMock).not.toHaveBeenCalled();
+    expect(events.some((e) => e.type === 'success')).toBe(false);
   });
 });

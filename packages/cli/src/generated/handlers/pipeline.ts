@@ -108,9 +108,11 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
     let lastReviewFeedback = '';
     let pendingFitnessFailure = false;
     let pendingFixPhase = false;
+    let lastFitnessPassed = false;
 
     while (iteration < maxIterations) {
       iteration++;
+      lastFitnessPassed = false;
       if (abort.signal.aborted) {
         terminalStatus = 'cancelled';
         terminalReason = 'aborted-before-iteration';
@@ -217,6 +219,7 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
           if (fitnessResult.exitCode === 0) {
             dispatch({ type: 'success', message: `[${iteration}] Fitness passed!` });
             pendingFitnessFailure = false;
+            lastFitnessPassed = true;
             if (buildPhaseId === 'fix') {
               emitWorkflowPhase('fix', 'completed', iteration, '', { deferCompletion: true });
               lastReviewFeedback = '';
@@ -408,8 +411,8 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
     const finalFiles = diffFileCount(cwd);
 
     // Check if fitness passed on last iteration
-    let fitnessPassed = false;
-    if (fitnessCmd && finalLines > 0) {
+    let fitnessPassed = !fitnessCmd || lastFitnessPassed;
+    if (terminalStatus === 'completed' && fitnessCmd && finalLines > 0 && !lastFitnessPassed) {
       try {
         const finalFitness = await spawnWithTimeout({
           command: '/bin/sh',

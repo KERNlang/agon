@@ -487,6 +487,15 @@ export function createPipelineTool(): ToolHandler {
     maxResultSizeChars: 500,
     isReadOnly: false,
     isConcurrencySafe: false,
+    metadata: {
+      workflow: {
+        id: 'agon.build-review-fix',
+        version: 'v1',
+        alias: 'agon.build-review-fix@v1',
+        phases: ['build', 'review', 'fix'],
+        conformance: 'core-workflow-registry',
+      },
+    },
   };
 
   const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null => {

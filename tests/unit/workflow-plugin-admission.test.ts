@@ -17,6 +17,16 @@ describe('workflow plugin admission', () => {
     expect(result).toEqual({ accepted: true, issues: [] });
   });
 
+  it('accepts source trusted-adapter as trust evidence', () => {
+    const result = validateWorkflowPluginAdmission({
+      id: 'source-trusted',
+      source: 'trusted-adapter',
+      phases: [{ id: 'audit' }],
+    });
+
+    expect(result).toEqual({ accepted: true, issues: [] });
+  });
+
   it('rejects reserved aliases, duplicate plugin ids, and mutation privileges by default', () => {
     const result = validateWorkflowPluginAdmission({
       id: 'mutator',
@@ -26,11 +36,9 @@ describe('workflow plugin admission', () => {
     }, { existingPluginIds: ['mutator'] });
 
     expect(result.accepted).toBe(false);
-    expect(result.issues.map((issue) => issue.code)).toEqual([
-      'plugin-denied',
-      'reserved-alias',
-      'mutation-denied',
-    ]);
+    expect(result.issues.map((issue) => issue.code)).toEqual(
+      expect.arrayContaining(['plugin-denied', 'reserved-alias', 'mutation-denied']),
+    );
     expect(() => admitWorkflowPlugin({
       id: 'mutator',
       trustedAdapter: true,

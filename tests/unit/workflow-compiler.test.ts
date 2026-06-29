@@ -118,4 +118,30 @@ describe('compileWorkflowSpec', () => {
       }),
     ).toThrow(/Workflow spec failed conformance/);
   });
+
+  it('rejects reserved workflow ids and plugin mutation above parent policy', () => {
+    expect(() =>
+      compileWorkflowSpec({
+        id: 'run',
+        version: '1.0.0',
+        phases: [{ id: 'inspect' }],
+      }),
+    ).toThrow(/Workflow spec failed conformance/);
+
+    expect(() =>
+      compileWorkflowSpec({
+        id: 'plugin-parent-policy',
+        version: '1.0.0',
+        mutationPolicy: { allow: true, maxLevel: 'workspace', capabilities: ['patch-write'] },
+        plugins: [{
+          id: 'trusted',
+          source: 'trusted-adapter',
+          capabilities: [{ id: 'patch-write', mutations: ['process'] }],
+          mutationPolicy: { allow: true, maxLevel: 'process', capabilities: ['patch-write'] },
+          phases: [{ id: 'plugin-step', requires: ['patch-write'], mutation: 'process' }],
+        }],
+        phases: [{ id: 'plugin-step', pluginId: 'trusted' }],
+      }),
+    ).toThrow(/Workflow spec failed conformance/);
+  });
 });

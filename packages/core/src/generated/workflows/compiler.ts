@@ -4,7 +4,7 @@ import type { WorkflowSpec, WorkflowExecutionPlan, WorkflowMutationPolicy, Workf
 
 import { workflowGraphFromSpec, validateWorkflowGraphSpec } from './graph.js';
 
-import { validateWorkflowAliases } from './alias-policy.js';
+import { RESERVED_WORKFLOW_ALIASES, normalizeWorkflowAlias, validateWorkflowAliases } from './alias-policy.js';
 
 import { createWorkflowIssue, throwWorkflowConformance } from './conformance.js';
 
@@ -24,6 +24,7 @@ export function mutationRank(level: WorkflowMutationLevel): number {
 export function compileWorkflowSpec(spec: WorkflowSpec): WorkflowExecutionPlan {
   const issues: WorkflowConformanceIssue[] = [];
   if (!spec.id) issues.push(createWorkflowIssue('invalid-registry', 'Workflow id is required', 'id'));
+  if (RESERVED_WORKFLOW_ALIASES.includes(normalizeWorkflowAlias(spec.id))) issues.push(createWorkflowIssue('reserved-alias', `Workflow id "${spec.id}" is reserved`, 'id'));
   if (!spec.version) issues.push(createWorkflowIssue('invalid-registry', 'Workflow version is required', 'version'));
   const phases = Array.isArray(spec.phases) ? spec.phases : [];
   if (phases.length === 0) issues.push(createWorkflowIssue('invalid-registry', 'Workflow spec must define at least one phase', 'phases'));
@@ -60,7 +61,7 @@ export function compileWorkflowSpec(spec: WorkflowSpec): WorkflowExecutionPlan {
       const first = (spec.plugins ?? []).findIndex((candidate) => candidate.id === plugin.id);
       if (first !== index) issues.push(createWorkflowIssue('duplicate-id', `Workflow plugin "${plugin.id}" is duplicated`, `plugins[${index}].id`));
     }
-    const admission = validateWorkflowPluginAdmission(plugin, { allowMutations: policy.allow });
+    const admission = validateWorkflowPluginAdmission(plugin, { allowMutations: policy.allow, maxMutationLevel: maxMutation });
     for (const issue of admission.issues) issues.push({ ...issue, path: issue.path ? `plugins[${index}].${issue.path}` : `plugins[${index}]` });
   }
   for (const [index, phase] of phases.entries()) {

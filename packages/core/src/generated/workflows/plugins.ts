@@ -12,8 +12,11 @@ import { workflowGraphFromSpec, validateWorkflowGraphSpec } from './graph.js';
 export function validateWorkflowPluginAdmission(plugin: WorkflowPluginSpec, options?: WorkflowPluginAdmissionOptions): WorkflowPluginAdmissionResult {
   const issues: WorkflowConformanceIssue[] = [];
   if (!plugin.id) issues.push(createWorkflowIssue('plugin-denied', 'Workflow plugin id is required', 'id'));
-  if (plugin.trustedAdapter !== true || plugin.source === 'untrusted') {
+  if ((plugin.trustedAdapter !== true && plugin.source !== 'trusted-adapter') || plugin.source === 'untrusted') {
     issues.push(createWorkflowIssue('plugin-denied', `Workflow plugin "${plugin.id}" is not a trusted adapter`, 'trustedAdapter'));
+  }
+  if (['help', 'run', 'workflow', 'workflows', 'kern', 'core', 'plugin', 'plugins', 'new', 'delete', 'list', 'default'].includes(normalizeWorkflowAlias(plugin.id))) {
+    issues.push(createWorkflowIssue('reserved-alias', `Workflow plugin id "${plugin.id}" is reserved`, 'id'));
   }
   if ((options?.existingPluginIds ?? []).includes(plugin.id)) issues.push(createWorkflowIssue('plugin-denied', `Workflow plugin "${plugin.id}" is already admitted`, 'id'));
   issues.push(...validateWorkflowAliases(plugin.aliases ?? [], 'aliases'));
@@ -65,6 +68,7 @@ export function validateWorkflowPluginAdmission(plugin: WorkflowPluginSpec, opti
     issues.push(createWorkflowIssue('invalid-registry', `Workflow plugin mutation policy maxLevel "${plugin.mutationPolicy.maxLevel}" is invalid`, 'mutationPolicy.maxLevel'));
   }
   const maxMutation = plugin.mutationPolicy?.maxLevel ?? 'none';
+  const parentMaxMutation = options?.maxMutationLevel ?? maxMutation;
   const mutationRank = (level: string): number => ({ none: 0, workspace: 1, network: 2, process: 3 } as Record<string, number>)[level] ?? -1;
   const policyCapabilities = new Set(plugin.mutationPolicy?.capabilities ?? []);
   for (const capability of plugin.mutationPolicy?.capabilities ?? []) {
@@ -74,6 +78,9 @@ export function validateWorkflowPluginAdmission(plugin: WorkflowPluginSpec, opti
     const mutation = phase.mutation ?? 'none';
     if (mutation !== 'none' && plugin.mutationPolicy?.allow === true && mutationRank(mutation) > mutationRank(maxMutation)) {
       issues.push(createWorkflowIssue('mutation-denied', `Workflow plugin phase "${phase.id}" exceeds max mutation "${maxMutation}"`, `phases[${index}].mutation`));
+    }
+    if (mutation !== 'none' && mutationRank(mutation) > mutationRank(parentMaxMutation)) {
+      issues.push(createWorkflowIssue('mutation-denied', `Workflow plugin phase "${phase.id}" exceeds parent max mutation "${parentMaxMutation}"`, `phases[${index}].mutation`));
     }
     if (mutation !== 'none' && policyCapabilities.size > 0 && !(phase.requires ?? []).some((required) => policyCapabilities.has(required))) {
       issues.push(createWorkflowIssue('mutation-denied', `Workflow plugin phase "${phase.id}" mutates without an allowed mutation capability`, `phases[${index}].requires`));
@@ -87,7 +94,7 @@ export function validateWorkflowPluginAdmission(plugin: WorkflowPluginSpec, opti
   return { accepted: issues.length === 0, issues };
 }
 
-// @kern-source: plugins:85
+// @kern-source: plugins:92
 export function admitWorkflowPlugin(plugin: WorkflowPluginSpec, options?: WorkflowPluginAdmissionOptions): WorkflowPluginSpec {
   const result = validateWorkflowPluginAdmission(plugin, options);
   if (!result.accepted) throwWorkflowConformance(result.issues, 'Workflow plugin admission rejected the plugin');

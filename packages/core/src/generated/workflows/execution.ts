@@ -29,7 +29,9 @@ export function appendWorkflowPhaseEvent(run: WorkflowRun, phaseId: string, type
     throwWorkflowConformance([createWorkflowIssue('missing-node', `Workflow phase "${phaseId}" is not part of execution plan`, 'phaseId')], 'Workflow phase event failed conformance');
   }
   const planPhase = run.plan.phases.find((phase) => phase.id === phaseId)!;
-  const closedEvents = run.events.filter((item) => item.type === 'completed' || item.type === 'skipped');
+  const closureTypes = new Set(['completed', 'skipped', 'failed', 'blocked', 'cancelled']);
+  const successfulClosureTypes = new Set(['completed', 'skipped']);
+  const closedEvents = run.events.filter((item) => successfulClosureTypes.has(item.type));
   const closedPhaseIds = new Set(closedEvents.map((item) => item.phaseId));
   const startedPhaseIds = new Set(run.events.filter((item) => item.type === 'started').map((item) => item.phaseId));
   if ((type === 'started' || type === 'completed' || type === 'skipped') && !(planPhase.dependsOn ?? []).every((dep) => closedPhaseIds.has(dep))) {
@@ -55,18 +57,23 @@ export function appendWorkflowPhaseEvent(run: WorkflowRun, phaseId: string, type
   };
   const events = [...run.events, event];
   const completedPhaseIds = new Set(events.filter((item) => item.type === 'completed' || item.type === 'skipped').map((item) => item.phaseId));
+  const closedPhaseIdsAfterEvent = new Set(events.filter((item) => closureTypes.has(item.type)).map((item) => item.phaseId));
   const allPhasesClosed = run.plan.phases.length > 0 && run.plan.phases.every((phase) => completedPhaseIds.has(phase.id));
-  const activePhaseIds = events
-    .filter((item) => item.type === 'started')
-    .map((item) => item.phaseId)
-    .filter((id) => !events.some((item) => item.phaseId === id && (item.type === 'completed' || item.type === 'skipped' || item.type === 'failed' || item.type === 'blocked' || item.type === 'cancelled')));
+  const activePhaseSet = new Set<string>();
+  for (const item of events) {
+    if (item.type === 'started') activePhaseSet.add(item.phaseId);
+    if (closureTypes.has(item.type)) activePhaseSet.delete(item.phaseId);
+  }
+  const activePhaseIds = [...activePhaseSet];
   const status: WorkflowRunStatus = type === 'failed' || type === 'blocked'
     ? 'failed'
     : type === 'cancelled'
       ? 'cancelled'
+    : type === 'started' || type === 'queued'
+      ? 'running'
     : allPhasesClosed
       ? 'completed'
-      : type === 'started' || type === 'queued' || type === 'completed' || type === 'skipped'
+      : type === 'completed' || type === 'skipped'
         ? 'running'
         : run.status;
   return {
@@ -79,7 +86,7 @@ export function appendWorkflowPhaseEvent(run: WorkflowRun, phaseId: string, type
   };
 }
 
-// @kern-source: execution:79
+// @kern-source: execution:86
 export function cancelWorkflowRun(run: WorkflowRun, reason?: string, at?: string): WorkflowRun {
   if (run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled') return run;
   const finishedAt = at ?? new Date().toISOString();

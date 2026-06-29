@@ -1,6 +1,7 @@
 import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,readdirSync"
 import from="node:path" names="join,resolve"
 import from="node:os" names="homedir"
+import from="node:crypto" names="createHash"
 
 fn name=getFlowsDir returns=string export=false
   handler <<<
@@ -38,6 +39,11 @@ interface name=FlowModeMeta
   field name=scoutCount type=number optional=true
   field name=cesarConfidence type=number optional=true
 
+interface name=FlowWorkflowIdentity
+  field name=workflowId type=string optional=true
+  field name=runId type=string optional=true
+  field name=runStatus type=string optional=true
+
 interface name=FlowRecord
   field name=id type=string
   field name=schemaVersion type=1
@@ -49,13 +55,17 @@ interface name=FlowRecord
   field name=telemetry type=FlowTelemetry
   field name=feedback type=FlowFeedback optional=true
   field name=modeMeta type=FlowModeMeta optional=true
+  field name=workflowRun type=FlowWorkflowIdentity optional=true
 
 fn name=ensureFlowsDir params="" returns=void export=false expr={{ mkdirSync(getFlowsDir(), { recursive: true }); }}
 
 fn name=logFlow params="record:FlowRecord" returns=string
   handler lang="kern"
     do value="ensureFlowsDir()"
-    fmt name=filename template="flow-${record.id}.json"
+    let name=rawId value="String(record.id)"
+    let name=safeId value="rawId.replace(/[^A-Za-z0-9._-]/g, '_').replace(/\\.\\.+/g, '_').slice(0, 80) || 'flow'"
+    let name=idHash value="createHash('sha256').update(rawId).digest('hex').slice(0, 16)"
+    fmt name=filename template="flow-${safeId}-${idHash}.json"
     let name=filepath value="join(getFlowsDir(), filename)"
     do value="writeFileSync(filepath, JSON.stringify(record, null, 2))"
     return value="filepath"

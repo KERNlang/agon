@@ -95,6 +95,7 @@ interface name=WorkflowPluginSpec export=true
 
 interface name=WorkflowPluginAdmissionOptions export=true
   field name=allowMutations type=boolean optional=true
+  field name=maxMutationLevel type=WorkflowMutationLevel optional=true
   field name=existingPluginIds type="string[]" optional=true
   field name=existingAliases type="string[]" optional=true
 

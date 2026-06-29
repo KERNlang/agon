@@ -1,6 +1,6 @@
 import from="./specs.js" names="WorkflowSpec,WorkflowExecutionPlan,WorkflowMutationPolicy,WorkflowMutationLevel,WorkflowConformanceIssue" types=true
 import from="./graph.js" names="workflowGraphFromSpec,validateWorkflowGraphSpec"
-import from="./alias-policy.js" names="validateWorkflowAliases"
+import from="./alias-policy.js" names="RESERVED_WORKFLOW_ALIASES,normalizeWorkflowAlias,validateWorkflowAliases"
 import from="./conformance.js" names="createWorkflowIssue,throwWorkflowConformance"
 import from="./plugins.js" names="validateWorkflowPluginAdmission"
 
@@ -17,6 +17,7 @@ fn name=compileWorkflowSpec params="spec:WorkflowSpec" returns=WorkflowExecution
   handler <<<
     const issues: WorkflowConformanceIssue[] = [];
     if (!spec.id) issues.push(createWorkflowIssue('invalid-registry', 'Workflow id is required', 'id'));
+    if (RESERVED_WORKFLOW_ALIASES.includes(normalizeWorkflowAlias(spec.id))) issues.push(createWorkflowIssue('reserved-alias', `Workflow id "${spec.id}" is reserved`, 'id'));
     if (!spec.version) issues.push(createWorkflowIssue('invalid-registry', 'Workflow version is required', 'version'));
     const phases = Array.isArray(spec.phases) ? spec.phases : [];
     if (phases.length === 0) issues.push(createWorkflowIssue('invalid-registry', 'Workflow spec must define at least one phase', 'phases'));
@@ -53,7 +54,7 @@ fn name=compileWorkflowSpec params="spec:WorkflowSpec" returns=WorkflowExecution
         const first = (spec.plugins ?? []).findIndex((candidate) => candidate.id === plugin.id);
         if (first !== index) issues.push(createWorkflowIssue('duplicate-id', `Workflow plugin "${plugin.id}" is duplicated`, `plugins[${index}].id`));
       }
-      const admission = validateWorkflowPluginAdmission(plugin, { allowMutations: policy.allow });
+      const admission = validateWorkflowPluginAdmission(plugin, { allowMutations: policy.allow, maxMutationLevel: maxMutation });
       for (const issue of admission.issues) issues.push({ ...issue, path: issue.path ? `plugins[${index}].${issue.path}` : `plugins[${index}]` });
     }
     for (const [index, phase] of phases.entries()) {

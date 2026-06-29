@@ -208,7 +208,7 @@ export type {
   CapabilityUnregister, CapabilityResult, BrainHealth,
 } from './generated/sessions/brain-client.js';
 export { logFlow, readFlows, analyzeFlows, FLOWS_DIR, FRICTION_TAGS } from './flow.js';
-export type { FlowRecord, FlowTelemetry, FlowFeedback, FlowModeMeta, FlowAnalysis, ModeStats } from './flow.js';
+export type { FlowRecord, FlowTelemetry, FlowFeedback, FlowModeMeta, FlowWorkflowIdentity, FlowAnalysis, ModeStats } from './flow.js';
 // ── Full Vertical Workflow Kernel V1 ──
 export { RESERVED_WORKFLOW_ALIASES, normalizeWorkflowAlias, validateWorkflowAliases, assertWorkflowAliasesAllowed } from './generated/workflows/alias-policy.js';
 export { compileWorkflowSpec, defaultWorkflowMutationPolicy, mutationRank } from './generated/workflows/compiler.js';
@@ -217,7 +217,7 @@ export { createWorkflowRun, appendWorkflowPhaseEvent, cancelWorkflowRun } from '
 export { workflowGraphFromSpec, validateWorkflowGraphSpec, assertValidWorkflowGraphSpec } from './generated/workflows/graph.js';
 export { validateWorkflowPluginAdmission, admitWorkflowPlugin } from './generated/workflows/plugins.js';
 export { WorkflowRegistry } from './generated/workflows/registry.js';
-export { verifyWorkflowExecutionPlanFlow } from './generated/workflows/flow-verification.js';
+export { verifyWorkflowExecutionPlanFlow, verifyWorkflowRunFlow } from './generated/workflows/flow-verification.js';
 export type {
   WorkflowCapabilitySpec, WorkflowMutationPolicy, WorkflowMutationLevel,
   WorkflowPhaseSpec, WorkflowSpec, WorkflowGraphNodeSpec, WorkflowGraphEdgeSpec,

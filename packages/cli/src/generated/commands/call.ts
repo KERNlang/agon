@@ -562,7 +562,7 @@ export const callCommand: any = defineCommand({
     const appendTrackedWorkflowPhase = (phaseId: string, type: 'started' | 'completed' | 'failed', reason = '', extra: Record<string, unknown> = {}, exitCode = 1) => {
       if (!workflowRun) return true;
       try {
-        workflowRun = appendWorkflowPhaseEvent(workflowRun, phaseId, type, reason || undefined);
+        workflowRun = appendWorkflowPhaseEvent(workflowRun, phaseId, type, reason || undefined, Object.keys(extra).length > 0 ? extra : undefined);
       } catch (err) {
         writeWorkflowTrackingFailure(err, exitCode);
         return false;
@@ -596,7 +596,8 @@ export const callCommand: any = defineCommand({
     if (workflowRun) {
       const issues = verifyWorkflowRunFlow(workflowRun);
       if (issues.length > 0) writeJsonl({ type: 'workflow-run-conformance-failed', workflowId: workflowRun.workflowId, runId: workflowRun.id, issues });
-      writeJsonl({ type: 'workflow-run-completed', workflowId: workflowRun.workflowId, runId: workflowRun.id, planId: workflowRun.plan.logicalPlanId, status: workflowRun.status, workflowStatus: workflowRun.status });
+      const terminalStatus = issues.length > 0 || workflowRun.status !== 'completed' ? 'failed' : 'completed';
+      writeJsonl({ type: 'workflow-run-completed', workflowId: workflowRun.workflowId, runId: workflowRun.id, planId: workflowRun.plan.logicalPlanId, status: terminalStatus, workflowStatus: workflowRun.status });
     }
     if (args.jsonl) writeJsonl({ type: 'agon.call.done', ok: true, exitCode: 0 });
   },

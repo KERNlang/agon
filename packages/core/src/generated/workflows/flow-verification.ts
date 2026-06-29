@@ -85,6 +85,8 @@ export function verifyWorkflowRunFlow(run: WorkflowRun): WorkflowConformanceIssu
           iterationLimits.set(event.phaseId, current === undefined ? limit : Math.min(current, limit));
         }
         open.add(event.phaseId);
+        closed.delete(event.phaseId);
+        successfulClosed.delete(event.phaseId);
         startedCounts.set(event.phaseId, (startedCounts.get(event.phaseId) ?? 0) + 1);
       }
     } else if (terminalTypes.has(event.type)) {
@@ -128,6 +130,10 @@ export function verifyWorkflowRunFlow(run: WorkflowRun): WorkflowConformanceIssu
       if (!successfulClosed.has(phaseId)) {
         issues.push(createWorkflowIssue('missing-node', `Completed run is missing closure event for phase "${phaseId}"`, `phases[${entry.index}]`));
       }
+    }
+    for (const phaseId of open) {
+      const entry = planPhaseMap.get(phaseId)!;
+      issues.push(createWorkflowIssue('invalid-phase', `Completed run still has open phase "${phaseId}"`, `phases[${entry.index}]`));
     }
   }
 

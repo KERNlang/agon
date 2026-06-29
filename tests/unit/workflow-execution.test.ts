@@ -138,6 +138,31 @@ describe('workflow execution runs', () => {
     );
   });
 
+  it('rejects starting a dependent phase while its dependency is reopened', () => {
+    const plan = compileWorkflowSpec({
+      id: 'reopened-dependency',
+      version: '1.0.0',
+      phases: [
+        { id: 'build' },
+        { id: 'review', dependsOn: ['build'] },
+        { id: 'fix', dependsOn: ['review'] },
+      ],
+    });
+
+    let run = createWorkflowRun(plan, 'run-9');
+    run = appendWorkflowPhaseEvent(run, 'build', 'started', undefined, { iterationLimit: 3 });
+    run = appendWorkflowPhaseEvent(run, 'build', 'completed');
+    run = appendWorkflowPhaseEvent(run, 'review', 'started', undefined, { iterationLimit: 3 });
+    run = appendWorkflowPhaseEvent(run, 'review', 'completed', undefined, { deferCompletion: true });
+    run = appendWorkflowPhaseEvent(run, 'fix', 'started', undefined, { iterationLimit: 3 });
+    run = appendWorkflowPhaseEvent(run, 'fix', 'completed', undefined, { deferCompletion: true });
+    run = appendWorkflowPhaseEvent(run, 'review', 'started', undefined, { iterationLimit: 3 });
+
+    expect(() => appendWorkflowPhaseEvent(run, 'fix', 'started', undefined, { iterationLimit: 3 })).toThrow(
+      /Workflow phase event failed conformance/,
+    );
+  });
+
   it('can cancel non-terminal runs', () => {
     const plan = compileWorkflowSpec({
       id: 'cancelable',

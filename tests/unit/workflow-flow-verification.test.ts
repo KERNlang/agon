@@ -214,6 +214,28 @@ describe('verifyWorkflowRunFlow', () => {
     expect(issues.some((issue) => issue.message.includes('repeated without an iteration limit'))).toBe(true);
   });
 
+  it('reports completed runs with reopened phases that are still open', () => {
+    const plan = compileWorkflowSpec({
+      id: 'completed-open-loop',
+      version: '1.0.0',
+      phases: [{ id: 'iterate' }],
+    });
+    const baseEvent = { runId: 'run-open-loop', workflowId: 'completed-open-loop', phaseId: 'iterate' };
+    const run: WorkflowRun = {
+      ...createWorkflowRun(plan, 'run-open-loop'),
+      status: 'completed',
+      events: [
+        { ...baseEvent, type: 'started', at: '2026-01-01T00:00:00Z', data: { iterationLimit: 2 } },
+        { ...baseEvent, type: 'completed', at: '2026-01-01T00:00:01Z', data: { deferCompletion: true } },
+        { ...baseEvent, type: 'started', at: '2026-01-01T00:00:02Z', data: { iterationLimit: 2 } },
+      ],
+    };
+
+    const issues = verifyWorkflowRunFlow(run);
+    expect(issues.some((issue) => issue.message.includes('still has open phase "iterate"'))).toBe(true);
+    expect(issues.some((issue) => issue.message.includes('missing closure event for phase "iterate"'))).toBe(true);
+  });
+
   it('allows a bounded build-review-fix-review loop when every reopened phase carries an iteration limit', () => {
     const plan = compileWorkflowSpec({
       id: 'build-review-fix-loop',

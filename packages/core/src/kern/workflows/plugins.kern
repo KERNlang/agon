@@ -1,0 +1,90 @@
+import from="./specs.js" names="WorkflowPluginSpec,WorkflowPluginAdmissionOptions,WorkflowPluginAdmissionResult,WorkflowConformanceIssue" types=true
+import from="./alias-policy.js" names="validateWorkflowAliases,normalizeWorkflowAlias"
+import from="./conformance.js" names="createWorkflowIssue,throwWorkflowConformance"
+import from="./graph.js" names="workflowGraphFromSpec,validateWorkflowGraphSpec"
+
+fn name=validateWorkflowPluginAdmission params="plugin:WorkflowPluginSpec,options?:WorkflowPluginAdmissionOptions" returns=WorkflowPluginAdmissionResult export=true
+  handler <<<
+    const issues: WorkflowConformanceIssue[] = [];
+    if (!plugin.id) issues.push(createWorkflowIssue('plugin-denied', 'Workflow plugin id is required', 'id'));
+    if (plugin.trustedAdapter !== true || plugin.source === 'untrusted') {
+      issues.push(createWorkflowIssue('plugin-denied', `Workflow plugin "${plugin.id}" is not a trusted adapter`, 'trustedAdapter'));
+    }
+    if ((options?.existingPluginIds ?? []).includes(plugin.id)) issues.push(createWorkflowIssue('plugin-denied', `Workflow plugin "${plugin.id}" is already admitted`, 'id'));
+    issues.push(...validateWorkflowAliases(plugin.aliases ?? [], 'aliases'));
+    const existingAliases = new Set((options?.existingAliases ?? []).map(normalizeWorkflowAlias));
+    for (const alias of plugin.aliases ?? []) {
+      const normalized = normalizeWorkflowAlias(alias);
+      if (existingAliases.has(normalized)) issues.push(createWorkflowIssue('duplicate-alias', `Workflow plugin alias "${normalized}" is already claimed`, 'aliases'));
+    }
+    const allowedMutations = new Set<string>(['none', 'workspace', 'network', 'process']);
+    const capabilities = plugin.capabilities ?? [];
+    const capabilityIds = new Set<string>();
+    capabilities.forEach((capability, index) => {
+      if (capabilityIds.has(capability.id)) issues.push(createWorkflowIssue('duplicate-id', `Workflow plugin capability "${capability.id}" is duplicated`, `capabilities[${index}].id`));
+      capabilityIds.add(capability.id);
+      for (const mutation of capability.mutations ?? []) {
+        if (!allowedMutations.has(mutation)) issues.push(createWorkflowIssue('invalid-phase', `Workflow plugin capability "${capability.id}" declares invalid mutation "${mutation}"`, `capabilities[${index}].mutations`));
+      }
+    });
+    const phaseIds = new Set<string>();
+    for (const [index, phase] of (plugin.phases ?? []).entries()) {
+      if (!phase.id) issues.push(createWorkflowIssue('invalid-phase', 'Workflow plugin phase id is required', `phases[${index}].id`));
+      if (phaseIds.has(phase.id)) issues.push(createWorkflowIssue('duplicate-id', `Workflow plugin phase "${phase.id}" is duplicated`, `phases[${index}].id`));
+      phaseIds.add(phase.id);
+      for (const required of phase.requires ?? []) {
+        if (!capabilityIds.has(required)) issues.push(createWorkflowIssue('unknown-capability', `Workflow plugin phase "${phase.id}" requires unknown capability "${required}"`, `phases[${index}].requires`));
+      }
+      const mutation = phase.mutation ?? 'none';
+      if (!allowedMutations.has(mutation)) {
+        issues.push(createWorkflowIssue('invalid-phase', `Workflow plugin phase "${phase.id}" uses invalid mutation level "${mutation}"`, `phases[${index}].mutation`));
+        continue;
+      }
+      if (mutation !== 'none') {
+        const requiredCapabilities = capabilities.filter((capability) => (phase.requires ?? []).includes(capability.id));
+        const constrainedCapabilities = requiredCapabilities.filter((capability) => Array.isArray(capability.mutations));
+        if (constrainedCapabilities.some((capability) => !(capability.mutations ?? []).includes(mutation))) {
+          issues.push(createWorkflowIssue('mutation-denied', `Workflow plugin phase "${phase.id}" exceeds declared capability mutation levels`, `phases[${index}].mutation`));
+        }
+      }
+    }
+    if ((plugin.phases ?? []).length > 0) {
+      issues.push(...validateWorkflowGraphSpec(workflowGraphFromSpec({
+        id: plugin.id,
+        version: 'plugin',
+        phases: plugin.phases ?? [],
+        capabilities,
+      })));
+    }
+    if (plugin.mutationPolicy?.maxLevel && !allowedMutations.has(plugin.mutationPolicy.maxLevel)) {
+      issues.push(createWorkflowIssue('invalid-registry', `Workflow plugin mutation policy maxLevel "${plugin.mutationPolicy.maxLevel}" is invalid`, 'mutationPolicy.maxLevel'));
+    }
+    const maxMutation = plugin.mutationPolicy?.maxLevel ?? 'none';
+    const mutationRank = (level: string): number => ({ none: 0, workspace: 1, network: 2, process: 3 } as Record<string, number>)[level] ?? -1;
+    const policyCapabilities = new Set(plugin.mutationPolicy?.capabilities ?? []);
+    for (const capability of plugin.mutationPolicy?.capabilities ?? []) {
+      if (!capabilityIds.has(capability)) issues.push(createWorkflowIssue('unknown-capability', `Workflow plugin mutation policy references unknown capability "${capability}"`, 'mutationPolicy.capabilities'));
+    }
+    for (const [index, phase] of (plugin.phases ?? []).entries()) {
+      const mutation = phase.mutation ?? 'none';
+      if (mutation !== 'none' && plugin.mutationPolicy?.allow === true && mutationRank(mutation) > mutationRank(maxMutation)) {
+        issues.push(createWorkflowIssue('mutation-denied', `Workflow plugin phase "${phase.id}" exceeds max mutation "${maxMutation}"`, `phases[${index}].mutation`));
+      }
+      if (mutation !== 'none' && policyCapabilities.size > 0 && !(phase.requires ?? []).some((required) => policyCapabilities.has(required))) {
+        issues.push(createWorkflowIssue('mutation-denied', `Workflow plugin phase "${phase.id}" mutates without an allowed mutation capability`, `phases[${index}].requires`));
+      }
+    }
+    const mutatingPhase = (plugin.phases ?? []).find((phase) => (phase.mutation ?? 'none') !== 'none');
+    const mutatingPolicy = plugin.mutationPolicy?.allow === true;
+    if ((mutatingPhase || mutatingPolicy) && options?.allowMutations !== true) {
+      issues.push(createWorkflowIssue('mutation-denied', `Workflow plugin "${plugin.id}" requests mutation privileges`, mutatingPhase ? 'phases' : 'mutationPolicy'));
+    }
+    return { accepted: issues.length === 0, issues };
+  >>>
+
+fn name=admitWorkflowPlugin params="plugin:WorkflowPluginSpec,options?:WorkflowPluginAdmissionOptions" returns=WorkflowPluginSpec export=true
+  handler <<<
+    const result = validateWorkflowPluginAdmission(plugin, options);
+    if (!result.accepted) throwWorkflowConformance(result.issues, 'Workflow plugin admission rejected the plugin');
+    return plugin;
+  >>>

@@ -1,0 +1,63 @@
+import from="./specs.js" names="WorkflowSpec,WorkflowConformanceIssue" types=true
+import from="./alias-policy.js" names="normalizeWorkflowAlias,validateWorkflowAliases"
+import from="./conformance.js" names="createWorkflowIssue,throwWorkflowConformance"
+import from="./compiler.js" names="compileWorkflowSpec"
+
+service name=WorkflowRegistry export=true
+  field name=specs type="Map<string, WorkflowSpec>" private=true
+  field name=aliases type="Map<string, string>" private=true
+
+  constructor params="specs?:WorkflowSpec[]"
+    handler <<<
+      this.specs = new Map<string, WorkflowSpec>();
+      this.aliases = new Map<string, string>();
+      for (const spec of specs ?? []) this.register(spec);
+    >>>
+
+  method name=register params="spec:WorkflowSpec" returns=WorkflowSpec
+    handler <<<
+      const issues: WorkflowConformanceIssue[] = [];
+      if (!spec.id) issues.push(createWorkflowIssue('invalid-registry', 'Workflow id is required', 'id'));
+      const normalizedId = normalizeWorkflowAlias(spec.id);
+      if (this.specs.has(normalizedId)) issues.push(createWorkflowIssue('duplicate-id', `Workflow id "${spec.id}" is already registered`, 'id'));
+      if (this.aliases.has(normalizedId)) issues.push(createWorkflowIssue('duplicate-alias', `Workflow id "${spec.id}" collides with a registered alias`, 'id'));
+      issues.push(...validateWorkflowAliases(spec.aliases ?? [], 'aliases'));
+      for (const alias of spec.aliases ?? []) {
+        const normalized = normalizeWorkflowAlias(alias);
+        if (this.specs.has(normalized)) {
+          issues.push(createWorkflowIssue('duplicate-alias', `Workflow alias "${normalized}" collides with a registered id`, 'aliases'));
+        }
+        const owner = this.aliases.get(normalized);
+        if (owner && owner !== normalizedId) {
+          issues.push(createWorkflowIssue('duplicate-alias', `Workflow alias "${normalized}" is already registered to "${owner}"`, 'aliases'));
+        }
+      }
+      if (issues.length > 0) throwWorkflowConformance(issues, 'Workflow registry rejected the spec');
+      compileWorkflowSpec(spec);
+      this.specs.set(normalizedId, spec);
+      for (const alias of spec.aliases ?? []) this.aliases.set(normalizeWorkflowAlias(alias), normalizedId);
+      return spec;
+    >>>
+
+  method name=resolve params="idOrAlias:string" returns="WorkflowSpec|undefined"
+    handler <<<
+      const key = normalizeWorkflowAlias(idOrAlias);
+      return this.specs.get(key) ?? this.specs.get(this.aliases.get(key) ?? '');
+    >>>
+
+  method name=require params="idOrAlias:string" returns=WorkflowSpec
+    handler <<<
+      const spec = this.resolve(idOrAlias);
+      if (!spec) throwWorkflowConformance([createWorkflowIssue('invalid-registry', `Workflow "${idOrAlias}" is not registered`)], 'Workflow not found');
+      return spec;
+    >>>
+
+  method name=has params="idOrAlias:string" returns=boolean
+    handler <<<
+      return this.resolve(idOrAlias) !== undefined;
+    >>>
+
+  method name=list params="" returns="WorkflowSpec[]"
+    handler <<<
+      return [...this.specs.values()].sort((a, b) => a.id.localeCompare(b.id));
+    >>>

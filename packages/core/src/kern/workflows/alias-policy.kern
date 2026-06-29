@@ -1,0 +1,38 @@
+import from="./specs.js" names="WorkflowConformanceIssue" types=true
+import from="./conformance.js" names="createWorkflowIssue,throwWorkflowConformance"
+
+const name=RESERVED_WORKFLOW_ALIASES type="readonly string[]" export=true value={{ ['help', 'run', 'workflow', 'workflows', 'kern', 'core', 'plugin', 'plugins', 'new', 'delete', 'list', 'default'] }}
+  doc "Aliases reserved by the core workflow shell and registry namespace. Workflow specs and plugins cannot claim these names."
+
+fn name=normalizeWorkflowAlias params="alias:string" returns=string export=true
+  handler lang="kern"
+    return value="String(alias ?? '').trim().toLowerCase()"
+
+fn name=validateWorkflowAliases params="aliases:string[],pathPrefix?:string" returns="WorkflowConformanceIssue[]" export=true
+  handler <<<
+    const issues: WorkflowConformanceIssue[] = [];
+    const seen = new Map<string, number>();
+    aliases.forEach((raw, index) => {
+      const alias = normalizeWorkflowAlias(raw);
+      const path = `${pathPrefix ?? 'aliases'}[${index}]`;
+      if (!alias) {
+        issues.push(createWorkflowIssue('invalid-registry', 'Workflow alias cannot be empty', path));
+        return;
+      }
+      if (RESERVED_WORKFLOW_ALIASES.includes(alias)) {
+        issues.push(createWorkflowIssue('reserved-alias', `Workflow alias "${alias}" is reserved`, path));
+      }
+      const first = seen.get(alias);
+      if (first !== undefined) {
+        issues.push(createWorkflowIssue('duplicate-alias', `Workflow alias "${alias}" duplicates aliases[${first}]`, path));
+      }
+      seen.set(alias, first ?? index);
+    });
+    return issues;
+  >>>
+
+fn name=assertWorkflowAliasesAllowed params="aliases:string[],pathPrefix?:string" returns=void export=true
+  handler <<<
+    const issues = validateWorkflowAliases(aliases, pathPrefix);
+    if (issues.length > 0) throwWorkflowConformance(issues, 'Workflow alias policy rejected the spec');
+  >>>

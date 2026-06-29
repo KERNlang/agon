@@ -209,6 +209,23 @@ export type {
 } from './generated/sessions/brain-client.js';
 export { logFlow, readFlows, analyzeFlows, FLOWS_DIR, FRICTION_TAGS } from './flow.js';
 export type { FlowRecord, FlowTelemetry, FlowFeedback, FlowModeMeta, FlowAnalysis, ModeStats } from './flow.js';
+// ── Full Vertical Workflow Kernel V1 ──
+export { RESERVED_WORKFLOW_ALIASES, normalizeWorkflowAlias, validateWorkflowAliases, assertWorkflowAliasesAllowed } from './generated/workflows/alias-policy.js';
+export { compileWorkflowSpec, defaultWorkflowMutationPolicy, mutationRank } from './generated/workflows/compiler.js';
+export { createWorkflowIssue, createWorkflowConformanceError, throwWorkflowConformance, hasWorkflowConformanceErrors } from './generated/workflows/conformance.js';
+export { createWorkflowRun, appendWorkflowPhaseEvent, cancelWorkflowRun } from './generated/workflows/execution.js';
+export { workflowGraphFromSpec, validateWorkflowGraphSpec, assertValidWorkflowGraphSpec } from './generated/workflows/graph.js';
+export { validateWorkflowPluginAdmission, admitWorkflowPlugin } from './generated/workflows/plugins.js';
+export { WorkflowRegistry } from './generated/workflows/registry.js';
+export { verifyWorkflowExecutionPlanFlow } from './generated/workflows/flow-verification.js';
+export type {
+  WorkflowCapabilitySpec, WorkflowMutationPolicy, WorkflowMutationLevel,
+  WorkflowPhaseSpec, WorkflowSpec, WorkflowGraphNodeSpec, WorkflowGraphEdgeSpec,
+  WorkflowGraphSpec, WorkflowExecutionPlanPhase, WorkflowExecutionPlan,
+  WorkflowPhaseEvent, WorkflowPhaseEventType, WorkflowRun, WorkflowRunStatus,
+  WorkflowConformanceIssue, WorkflowConformanceCode, WorkflowPluginSpec,
+  WorkflowPluginAdmissionOptions, WorkflowPluginAdmissionResult,
+} from './generated/workflows/specs.js';
 export { apiDispatch, apiDispatchTools, apiDispatchToolsHistory, apiStreamDispatch, apiStreamDispatchWithHistory } from './api-dispatch.js';
 export type { ApiConfig } from './api-dispatch.js';
 export { companionDispatch } from './companion-dispatch.js';

@@ -1,0 +1,18 @@
+import from="./specs.js" names="WorkflowExecutionPlan,WorkflowConformanceIssue" types=true
+import from="./conformance.js" names="createWorkflowIssue"
+
+fn name=verifyWorkflowExecutionPlanFlow params="plan:WorkflowExecutionPlan" returns="WorkflowConformanceIssue[]" export=true
+  handler <<<
+    const issues: WorkflowConformanceIssue[] = [];
+    const completed = new Set<string>();
+    const ordinals = new Set<number>();
+    for (const phase of plan.phases) {
+      if (ordinals.has(phase.ordinal)) issues.push(createWorkflowIssue('duplicate-id', `Workflow execution ordinal "${phase.ordinal}" is duplicated`, 'phases'));
+      ordinals.add(phase.ordinal);
+      for (const dep of phase.dependsOn) {
+        if (!completed.has(dep)) issues.push(createWorkflowIssue('missing-node', `Workflow phase "${phase.id}" is scheduled before dependency "${dep}"`, 'phases'));
+      }
+      completed.add(phase.id);
+    }
+    return issues;
+  >>>

@@ -578,7 +578,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
         if (Array.isArray(issues)) return issues;
         return [{ code: 'invalid-phase', message: err instanceof Error ? err.message : String(err), path: 'workflowRun' }];
       };
-      const pipelineTrackingFailureResult = () => {
+      const pipelineTrackingFailureResult = (): { result: CesarStepResult } => {
         const after = snapshotTokens();
         return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: pipelineContext ? `Partial pipeline (brainstorm done): ${pipelineContext.slice(0, 200)}` : '', error: 'workflow-conformance-failed' } };
       };

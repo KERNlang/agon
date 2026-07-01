@@ -12,6 +12,7 @@ export type {
   FlowTelemetry,
   FlowFeedback,
   FlowModeMeta,
+  FlowWorkflowIdentity,
   FlowAnalysis,
   ModeStats,
 } from './generated/signals/flow.js';

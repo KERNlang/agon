@@ -1,0 +1,65 @@
+import from="./specs.js" names="WorkflowSpec,WorkflowExecutionPlan,WorkflowConformanceIssue" types=true
+import from="./registry.js" names="WorkflowRegistry"
+import from="./compiler.js" names="compileWorkflowSpec"
+import from="./flow-verification.js" names="verifyWorkflowExecutionPlanFlow"
+import from="./conformance.js" names="throwWorkflowConformance"
+
+const name=AGON_BUILD_REVIEW_FIX_SPEC type=WorkflowSpec export=true
+  handler <<<
+    ({
+      id: 'agon.build-review-fix',
+      version: 'v1',
+      description: 'Certified in-session build → review → fix pipeline',
+      aliases: ['agon.build-review-fix@v1'],
+      capabilities: [
+        { id: 'workspace-write', description: 'May edit files in the active workspace', mutations: ['workspace', 'process'] },
+        { id: 'process-exec', description: 'May execute local verification and agent commands', mutations: ['process'] },
+        { id: 'ai-review', description: 'May dispatch AI review engines', mutations: ['process'] },
+      ],
+      mutationPolicy: { allow: true, maxLevel: 'process', capabilities: ['workspace-write', 'process-exec', 'ai-review'] },
+      phases: [
+        { id: 'build', label: 'Build', requires: ['workspace-write', 'process-exec'], mutation: 'process' },
+        { id: 'review', label: 'Review', dependsOn: ['build'], requires: ['ai-review', 'process-exec'], mutation: 'process' },
+        { id: 'fix', label: 'Fix', dependsOn: ['review'], requires: ['workspace-write', 'process-exec'], mutation: 'process' },
+      ],
+    } as WorkflowSpec)
+  >>>
+
+const name=AGON_BRAINSTORM_FORGE_TRIBUNAL_SPEC type=WorkflowSpec export=true
+  handler <<<
+    ({
+      id: 'agon.brainstorm-forge-tribunal',
+      version: 'v1',
+      description: 'Certified multi-AI brainstorm → forge → tribunal pipeline',
+      aliases: ['agon.brainstorm-forge-tribunal@v1'],
+      capabilities: [
+        { id: 'ai-orchestration', description: 'May dispatch multiple AI engines', mutations: ['process'] },
+        { id: 'workspace-write', description: 'Forge may edit files in the active workspace', mutations: ['workspace', 'process'] },
+        { id: 'process-exec', description: 'May execute local commands and verification', mutations: ['process'] },
+      ],
+      mutationPolicy: { allow: true, maxLevel: 'process', capabilities: ['ai-orchestration', 'workspace-write', 'process-exec'] },
+      phases: [
+        { id: 'brainstorm', label: 'Brainstorm', requires: ['ai-orchestration', 'process-exec'], mutation: 'process' },
+        { id: 'forge', label: 'Forge', dependsOn: ['brainstorm'], requires: ['ai-orchestration', 'workspace-write', 'process-exec'], mutation: 'process' },
+        { id: 'tribunal', label: 'Tribunal', dependsOn: ['forge'], requires: ['ai-orchestration', 'process-exec'], mutation: 'process' },
+      ],
+    } as WorkflowSpec)
+  >>>
+
+fn name=getCoreWorkflowRegistry params="" returns=WorkflowRegistry export=true
+  handler <<<
+    const registry = new WorkflowRegistry();
+    registry.register(AGON_BUILD_REVIEW_FIX_SPEC);
+    registry.register(AGON_BRAINSTORM_FORGE_TRIBUNAL_SPEC);
+    return registry;
+  >>>
+
+fn name=compileAndVerifyCoreWorkflowSpec params="idOrAlias:string" returns=WorkflowExecutionPlan export=true
+  handler <<<
+    const registry = getCoreWorkflowRegistry();
+    const spec = registry.require(idOrAlias);
+    const plan = compileWorkflowSpec(spec);
+    const issues: WorkflowConformanceIssue[] = verifyWorkflowExecutionPlanFlow(plan);
+    if (issues.length > 0) throwWorkflowConformance(issues, `Core workflow "${idOrAlias}" failed flow verification`);
+    return plan;
+  >>>

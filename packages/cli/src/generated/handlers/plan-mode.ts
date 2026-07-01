@@ -4,9 +4,9 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 
 import { join, dirname } from 'node:path';
 
-import { createCesarPlan, formatCesarPlanMarkdown, sanitizePlanSteps, resolveWorkingDir, RUNS_DIR, tracker, readPatchFromPath, applyPatchToTree, cesarPlanMarkdownPath, saveCesarPlan, cancelCesarPlan, exitCesarPlan, spawnWithTimeout } from '@kernlang/agon-core';
+import { createCesarPlan, formatCesarPlanMarkdown, sanitizePlanSteps, resolveWorkingDir, RUNS_DIR, tracker, readPatchFromPath, applyPatchToTree, cesarPlanMarkdownPath, saveCesarPlan, cancelCesarPlan, exitCesarPlan, spawnWithTimeout, getCoreWorkflowRegistry, compileWorkflowSpec, verifyWorkflowExecutionPlanFlow, verifyWorkflowRunFlow, throwWorkflowConformance, createWorkflowRun, appendWorkflowPhaseEvent } from '@kernlang/agon-core';
 
-import type { CesarPlan, CesarPlanStep, CesarStepResult, StepExecutor } from '@kernlang/agon-core';
+import type { CesarPlan, CesarPlanStep, CesarStepResult, StepExecutor, WorkflowConformanceIssue, WorkflowPhaseEventType, WorkflowRun } from '@kernlang/agon-core';
 
 import { runForge, runBrainstorm, runTribunal, runCampfire, runDelegate } from '@kernlang/agon-forge';
 
@@ -105,7 +105,8 @@ export function handleExitPlanMode(reason: string, dispatch: Dispatch|null, ctx:
 // @kern-source: plan-mode:93
 export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch): Record<string,StepExecutor> {
   const cwd = resolveWorkingDir();
-  const outputDir = join(RUNS_DIR, `plan-exec-${Date.now()}`);
+  const runsRoot = process.env.AGON_HOME?.trim() ? join(process.env.AGON_HOME.trim(), 'runs') : RUNS_DIR;
+  const outputDir = join(runsRoot, `plan-exec-${Date.now()}`);
   mkdirSync(outputDir, { recursive: true });
 
   const wrap = (fn: (step: CesarPlanStep, context: Record<string,string|undefined>, signal?: AbortSignal) => Promise<{result: CesarStepResult, contextExport?: string}>): StepExecutor => ({ execute: fn });
@@ -552,6 +553,14 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
 
     pipeline: wrap(async (step, context, signal) => {
       // Pipeline = brainstorm → forge → tribunal chain
+      // Resolve, compile, and verify the certified workflow spec before executing.
+      const pipelineRegistry = getCoreWorkflowRegistry();
+      const pipelineSpec = pipelineRegistry.require('agon.brainstorm-forge-tribunal@v1');
+      const pipelinePlan = compileWorkflowSpec(pipelineSpec);
+      const pipelineFlowIssues: WorkflowConformanceIssue[] = verifyWorkflowExecutionPlanFlow(pipelinePlan);
+      if (pipelineFlowIssues.length > 0) throwWorkflowConformance(pipelineFlowIssues, 'agon.brainstorm-forge-tribunal@v1 flow verification failed');
+      const pipelineRunId = `plan-pipeline-${step.id}-${Date.now()}`;
+
       const startTime = Date.now();
       const before = snapshotTokens();
       const task = buildContext(step, context);
@@ -560,12 +569,56 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       const dispatch = getPlanDispatch();
       const engineStatus: Record<string,string> = {};
       let progressInterval: any = null;
+      let pipelineRunClosed = false;
+      let pipelineTrackingFailed = false;
+      let currentWorkflowPhase = '';
+      let pipelineWorkflowRun: WorkflowRun = createWorkflowRun(pipelinePlan, pipelineRunId);
+      const pipelineIssuesFromError = (err: unknown): WorkflowConformanceIssue[] => {
+        const issues = (err as { issues?: WorkflowConformanceIssue[] } | null)?.issues;
+        if (Array.isArray(issues)) return issues;
+        return [{ code: 'invalid-phase', message: err instanceof Error ? err.message : String(err), path: 'workflowRun' }];
+      };
+      const pipelineTrackingFailureResult = (): { result: CesarStepResult } => {
+        const after = snapshotTokens();
+        return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: pipelineContext ? `Partial pipeline (brainstorm done): ${pipelineContext.slice(0, 200)}` : '', error: 'workflow-conformance-failed' } };
+      };
+      const pipelineUiType = (type: WorkflowPhaseEventType) => `workflow-phase-${type === 'started' ? 'started' : type === 'completed' ? 'completed' : type}`;
+      const emitPipelinePhase = (phaseId: string, type: WorkflowPhaseEventType, reason = '') => {
+        if (pipelineTrackingFailed) return false;
+        try {
+          pipelineWorkflowRun = appendWorkflowPhaseEvent(pipelineWorkflowRun, phaseId, type, reason || undefined, reason ? { reason } : undefined);
+        } catch (err) {
+          pipelineTrackingFailed = true;
+          dispatch?.({ type: 'workflow-run-conformance-failed', workflowId: pipelineSpec.id, runId: pipelineRunId, issues: pipelineIssuesFromError(err) } as any);
+          dispatch?.({ type: 'error', message: `Workflow tracking failed: ${err instanceof Error ? err.message : String(err)}` } as any);
+          closePipelineRun('failed', 'workflow-conformance-failed');
+          return false;
+        }
+        dispatch?.({ type: pipelineUiType(type), workflowId: pipelineSpec.id, runId: pipelineRunId, phaseId, reason, status: pipelineWorkflowRun.status } as any);
+        return true;
+      };
+      const closePipelineRun = (status: 'completed' | 'failed' | 'cancelled', reason = '') => {
+        if (pipelineRunClosed) return;
+        const issues = verifyWorkflowRunFlow(pipelineWorkflowRun);
+        if (issues.length > 0) {
+          dispatch?.({ type: 'workflow-run-conformance-failed', workflowId: pipelineSpec.id, runId: pipelineRunId, issues } as any);
+        }
+        pipelineRunClosed = true;
+        dispatch?.({ type: 'workflow-run-completed', workflowId: pipelineSpec.id, runId: pipelineRunId, planId: pipelinePlan.logicalPlanId, status, reason, workflowStatus: pipelineTrackingFailed ? status : pipelineWorkflowRun.status } as any);
+      };
+      dispatch?.({ type: 'workflow-run-start', workflowId: pipelineSpec.id, runId: pipelineRunId, planId: pipelinePlan.logicalPlanId } as any);
       try {
         // 1. Brainstorm — get approach bids
+        currentWorkflowPhase = 'brainstorm';
+        if (!emitPipelinePhase('brainstorm', 'started')) return pipelineTrackingFailureResult();
         const bsResult = await runBrainstorm({ question: task, engines, registry: ctx.registry, adapter: ctx.adapter, timeout: 120, outputDir: join(outputDir, step.id, 'brainstorm'), signal });
+        if (!emitPipelinePhase('brainstorm', 'completed')) return pipelineTrackingFailureResult();
+        currentWorkflowPhase = '';
         pipelineContext = bsResult.response;
 
         // 2. Forge — compete on implementation
+        currentWorkflowPhase = 'forge';
+        if (!emitPipelinePhase('forge', 'started')) return pipelineTrackingFailureResult();
         const forgeTask = `${task}\n\nBrainstorm winner approach:\n${pipelineContext}`;
         progressInterval = startPlanForgeProgress(dispatch, engines, engineStatus, startTime);
         const manifest = await runForge(
@@ -579,20 +632,35 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
           dispatch?.({ type: 'progress-clear' } as any);
         }
         if (!manifest.winner) {
+          if (!emitPipelinePhase('forge', 'failed', 'forge-produced-no-winner')) return pipelineTrackingFailureResult();
+          currentWorkflowPhase = '';
+          closePipelineRun('failed', 'forge-produced-no-winner');
           const after = snapshotTokens();
           return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: 'Pipeline forge step: no winner', error: 'Forge produced no winner' } };
         }
+        if (!emitPipelinePhase('forge', 'completed')) return pipelineTrackingFailureResult();
+        currentWorkflowPhase = '';
 
         // 3. Tribunal — review the forge winner
+        currentWorkflowPhase = 'tribunal';
+        if (!emitPipelinePhase('tribunal', 'started')) return pipelineTrackingFailureResult();
         const tribunalQ = `Review the implementation from forge winner ${manifest.winner} for: ${task}`;
         const tResult = await runTribunal({ question: tribunalQ, engines: engines.slice(0, 3), rounds: 2, registry: ctx.registry, adapter: ctx.adapter, timeout: 120, outputDir: join(outputDir, step.id, 'tribunal'), signal });
+        if (!emitPipelinePhase('tribunal', 'completed')) return pipelineTrackingFailureResult();
+        currentWorkflowPhase = '';
+        closePipelineRun('completed');
 
         const after = snapshotTokens();
         return {
-          result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: `Pipeline: brainstorm → forge (${manifest.winner}) → tribunal\n${tResult.summary}` },
+          result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: `[workflow:${pipelineSpec.id}] Pipeline: brainstorm → forge (${manifest.winner}) → tribunal\n${tResult.summary}` },
           contextExport: `Pipeline result: forge winner ${manifest.winner}. Tribunal: ${tResult.summary.slice(0, 300)}`,
         };
       } catch (err) {
+        if (currentWorkflowPhase && !pipelineTrackingFailed) {
+          emitPipelinePhase(currentWorkflowPhase, signal?.aborted ? 'cancelled' : 'failed', signal?.aborted ? 'aborted' : (err instanceof Error ? err.message : String(err)));
+          currentWorkflowPhase = '';
+        }
+        closePipelineRun(signal?.aborted ? 'cancelled' : 'failed', signal?.aborted ? 'aborted' : (err instanceof Error ? err.message : String(err)));
         const after = snapshotTokens();
         return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: pipelineContext ? `Partial pipeline (brainstorm done): ${pipelineContext.slice(0, 200)}` : '', error: err instanceof Error ? err.message : String(err) } };
       } finally {

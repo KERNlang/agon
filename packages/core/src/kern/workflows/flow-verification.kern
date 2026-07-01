@@ -1,0 +1,138 @@
+import from="./specs.js" names="WorkflowExecutionPlan,WorkflowRun,WorkflowConformanceIssue" types=true
+import from="./conformance.js" names="createWorkflowIssue"
+
+fn name=verifyWorkflowExecutionPlanFlow params="plan:WorkflowExecutionPlan" returns="WorkflowConformanceIssue[]" export=true
+  handler <<<
+    const issues: WorkflowConformanceIssue[] = [];
+    const completed = new Set<string>();
+    const ordinals = new Set<number>();
+    const phaseIds = new Set(plan.phases.map((phase) => phase.id));
+    for (const phase of plan.phases) {
+      if (ordinals.has(phase.ordinal)) issues.push(createWorkflowIssue('duplicate-id', `Workflow execution ordinal "${phase.ordinal}" is duplicated`, 'phases'));
+      ordinals.add(phase.ordinal);
+      for (const dep of phase.dependsOn ?? []) {
+        if (!phaseIds.has(dep)) {
+          issues.push(createWorkflowIssue('missing-node', `Workflow phase "${phase.id}" depends on unknown phase "${dep}"`, 'phases'));
+          continue;
+        }
+        if (!completed.has(dep)) issues.push(createWorkflowIssue('missing-node', `Workflow phase "${phase.id}" is scheduled before dependency "${dep}"`, 'phases'));
+      }
+      completed.add(phase.id);
+    }
+    return issues;
+  >>>
+
+fn name=verifyWorkflowRunFlow params="run:WorkflowRun" returns="WorkflowConformanceIssue[]" export=true
+  handler <<<
+    const issues: WorkflowConformanceIssue[] = [];
+    const planPhaseMap = new Map(run.plan.phases.map((phase, index) => [phase.id, { phase, index }]));
+    const knownPhaseIds = new Set(planPhaseMap.keys());
+    const open = new Set<string>();
+    const closed = new Set<string>();
+    const successfulClosed = new Set<string>();
+    const iterationLimits = new Map<string, number>();
+    const startedCounts = new Map<string, number>();
+    const rejectedStarts = new Set<string>();
+    const terminalTypes = new Set(['completed', 'skipped', 'failed', 'blocked', 'cancelled']);
+    const successfulTerminalTypes = new Set(['completed', 'skipped']);
+
+    if (run.workflowId !== run.plan.workflowId) {
+      issues.push(createWorkflowIssue('invalid-phase', `Workflow run "${run.id}" workflowId "${run.workflowId}" does not match plan workflow "${run.plan.workflowId}"`, 'workflowId'));
+    }
+
+    for (let i = 0; i < run.events.length; i++) {
+      const event = run.events[i];
+      const path = `events[${i}]`;
+
+      let isolated = true;
+      if (event.runId !== run.id) {
+        issues.push(createWorkflowIssue('invalid-phase', `Event ${i} runId "${event.runId}" does not belong to run "${run.id}"`, `${path}.runId`));
+        isolated = false;
+      }
+      if (event.workflowId !== run.workflowId) {
+        issues.push(createWorkflowIssue('invalid-phase', `Event ${i} workflowId "${event.workflowId}" does not match run workflow "${run.workflowId}"`, `${path}.workflowId`));
+        isolated = false;
+      }
+      if (!isolated) continue;
+      if (!knownPhaseIds.has(event.phaseId)) {
+        issues.push(createWorkflowIssue('missing-node', `Event ${i} references unknown phase "${event.phaseId}"`, `${path}.phaseId`));
+        continue;
+      }
+
+      const entry = planPhaseMap.get(event.phaseId)!;
+
+      if (event.type === 'started') {
+        let dependenciesClosed = true;
+        for (const dep of entry.phase.dependsOn ?? []) {
+          if (!successfulClosed.has(dep)) {
+            dependenciesClosed = false;
+            issues.push(createWorkflowIssue('invalid-phase', `Phase "${event.phaseId}" cannot start before dependency "${dep}" closes`, `${path}.phaseId`));
+          }
+        }
+        if (!dependenciesClosed) {
+          rejectedStarts.add(event.phaseId);
+          continue;
+        }
+        if (open.has(event.phaseId)) {
+          issues.push(createWorkflowIssue('duplicate-id', `Phase "${event.phaseId}" is already started at event ${i}`, `${path}.phaseId`));
+        } else {
+          const limit = event.data?.iterationLimit ?? event.data?.maxIterations;
+          if (typeof limit === 'number') {
+            const current = iterationLimits.get(event.phaseId);
+            iterationLimits.set(event.phaseId, current === undefined ? limit : Math.min(current, limit));
+          }
+          open.add(event.phaseId);
+          closed.delete(event.phaseId);
+          successfulClosed.delete(event.phaseId);
+          startedCounts.set(event.phaseId, (startedCounts.get(event.phaseId) ?? 0) + 1);
+        }
+      } else if (terminalTypes.has(event.type)) {
+        if (!open.has(event.phaseId)) {
+          if ((event.type === 'completed' || event.type === 'skipped') && !(startedCounts.get(event.phaseId) ?? 0)) {
+            if (!rejectedStarts.has(event.phaseId)) issues.push(createWorkflowIssue('invalid-phase', `Phase "${event.phaseId}" cannot close before it starts`, `${path}.phaseId`));
+          } else if (closed.has(event.phaseId)) {
+            issues.push(createWorkflowIssue('duplicate-id', `Phase "${event.phaseId}" is already closed`, `${path}.phaseId`));
+          } else if (event.type === 'failed' || event.type === 'blocked' || event.type === 'cancelled') {
+            closed.add(event.phaseId);
+          }
+        } else {
+          open.delete(event.phaseId);
+          closed.add(event.phaseId);
+          if (successfulTerminalTypes.has(event.type)) successfulClosed.add(event.phaseId);
+        }
+        for (const dep of entry.phase.dependsOn ?? []) {
+          if (!successfulClosed.has(dep)) {
+            issues.push(createWorkflowIssue('invalid-phase', `Phase "${event.phaseId}" cannot close before dependency "${dep}" closes`, `${path}.phaseId`));
+          }
+        }
+      }
+    }
+
+    for (const [phaseId, limit] of iterationLimits) {
+      const count = startedCounts.get(phaseId) ?? 0;
+      if (count > limit) {
+        const entry = planPhaseMap.get(phaseId)!;
+        issues.push(createWorkflowIssue('invalid-phase', `Phase "${phaseId}" exceeded iteration limit (${count} > ${limit})`, `phases[${entry.index}]`));
+      }
+    }
+    for (const [phaseId, count] of startedCounts) {
+      if (count > 1 && !iterationLimits.has(phaseId)) {
+        const entry = planPhaseMap.get(phaseId)!;
+        issues.push(createWorkflowIssue('invalid-phase', `Phase "${phaseId}" repeated without an iteration limit`, `phases[${entry.index}]`));
+      }
+    }
+
+    if (run.status === 'completed') {
+      for (const [phaseId, entry] of planPhaseMap) {
+        if (!successfulClosed.has(phaseId)) {
+          issues.push(createWorkflowIssue('missing-node', `Completed run is missing closure event for phase "${phaseId}"`, `phases[${entry.index}]`));
+        }
+      }
+      for (const phaseId of open) {
+        const entry = planPhaseMap.get(phaseId)!;
+        issues.push(createWorkflowIssue('invalid-phase', `Completed run still has open phase "${phaseId}"`, `phases[${entry.index}]`));
+      }
+    }
+
+    return issues;
+  >>>

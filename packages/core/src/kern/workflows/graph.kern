@@ -1,0 +1,56 @@
+import from="./specs.js" names="WorkflowGraphSpec,WorkflowSpec,WorkflowConformanceIssue" types=true
+import from="./conformance.js" names="createWorkflowIssue,throwWorkflowConformance"
+
+fn name=workflowGraphFromSpec params="spec:WorkflowSpec" returns=WorkflowGraphSpec export=true
+  handler <<<
+    return {
+      nodes: spec.phases.map((phase) => ({ id: phase.id, phaseId: phase.id })),
+      edges: spec.phases.flatMap((phase) => (phase.dependsOn ?? []).map((dep) => ({ from: dep, to: phase.id }))),
+    };
+  >>>
+
+fn name=validateWorkflowGraphSpec params="graph:WorkflowGraphSpec" returns="WorkflowConformanceIssue[]" export=true
+  handler <<<
+    const issues: WorkflowConformanceIssue[] = [];
+    const nodes = new Set<string>();
+    graph.nodes.forEach((node, index) => {
+      if (!node.id) issues.push(createWorkflowIssue('missing-node', 'Workflow graph node id is required', `nodes[${index}].id`));
+      if (nodes.has(node.id)) issues.push(createWorkflowIssue('duplicate-id', `Workflow graph node "${node.id}" is duplicated`, `nodes[${index}].id`));
+      nodes.add(node.id);
+    });
+    graph.edges.forEach((edge, index) => {
+      if (!nodes.has(edge.from)) issues.push(createWorkflowIssue('missing-node', `Workflow graph edge source "${edge.from}" is missing`, `edges[${index}].from`));
+      if (!nodes.has(edge.to)) issues.push(createWorkflowIssue('missing-node', `Workflow graph edge target "${edge.to}" is missing`, `edges[${index}].to`));
+    });
+    if (issues.length > 0) return issues;
+
+    const outgoing = new Map<string, string[]>();
+    for (const node of graph.nodes) outgoing.set(node.id, []);
+    for (const edge of graph.edges) outgoing.get(edge.from)!.push(edge.to);
+    const visiting = new Set<string>();
+    const visited = new Set<string>();
+    const visit = (id: string): boolean => {
+      if (visiting.has(id)) return true;
+      if (visited.has(id)) return false;
+      visiting.add(id);
+      for (const next of outgoing.get(id) ?? []) {
+        if (visit(next)) return true;
+      }
+      visiting.delete(id);
+      visited.add(id);
+      return false;
+    };
+    for (const node of graph.nodes) {
+      if (visit(node.id)) {
+        issues.push(createWorkflowIssue('cycle', `Workflow graph contains a cycle involving "${node.id}"`, 'edges'));
+        break;
+      }
+    }
+    return issues;
+  >>>
+
+fn name=assertValidWorkflowGraphSpec params="graph:WorkflowGraphSpec" returns=void export=true
+  handler <<<
+    const issues = validateWorkflowGraphSpec(graph);
+    if (issues.length > 0) throwWorkflowConformance(issues, 'Workflow graph is invalid');
+  >>>

@@ -6,20 +6,22 @@ import { join, resolve } from 'node:path';
 
 import { homedir } from 'node:os';
 
-// @kern-source: flow:5
+import { createHash } from 'node:crypto';
+
+// @kern-source: flow:6
 function getFlowsDir(): string {
   const override = process.env.AGON_HOME?.trim();
   const home = override ? resolve(override) : join(homedir(), '.agon');
   return join(home, 'flows');
 }
 
-// @kern-source: flow:12
+// @kern-source: flow:13
 export const FLOWS_DIR: string = getFlowsDir();
 
-// @kern-source: flow:14
+// @kern-source: flow:15
 export const FRICTION_TAGS: readonly string[] = ['slow', 'wrong-mode', 'engine-error', 'unclear-output', 'timeout', 'context-lost', 'other'] as const;
 
-// @kern-source: flow:16
+// @kern-source: flow:17
 export interface FlowTelemetry {
   engines: string[];
   durationMs: number;
@@ -27,7 +29,7 @@ export interface FlowTelemetry {
   touchedFileCount?: number;
 }
 
-// @kern-source: flow:22
+// @kern-source: flow:23
 export interface FlowFeedback {
   satisfactionRating: number;
   goalMet: 'yes'|'no'|'partly';
@@ -36,7 +38,7 @@ export interface FlowFeedback {
   notes?: string;
 }
 
-// @kern-source: flow:29
+// @kern-source: flow:30
 export interface FlowModeMeta {
   forgeId?: string;
   winnerEngine?: string;
@@ -50,7 +52,14 @@ export interface FlowModeMeta {
   cesarConfidence?: number;
 }
 
-// @kern-source: flow:41
+// @kern-source: flow:42
+export interface FlowWorkflowIdentity {
+  workflowId?: string;
+  runId?: string;
+  runStatus?: string;
+}
+
+// @kern-source: flow:47
 export interface FlowRecord {
   id: string;
   schemaVersion: 1;
@@ -62,23 +71,27 @@ export interface FlowRecord {
   telemetry: FlowTelemetry;
   feedback?: FlowFeedback;
   modeMeta?: FlowModeMeta;
+  workflowRun?: FlowWorkflowIdentity;
 }
 
-// @kern-source: flow:53
+// @kern-source: flow:60
 function ensureFlowsDir(): void {
   mkdirSync(getFlowsDir(), { recursive: true });
 }
 
-// @kern-source: flow:55
+// @kern-source: flow:62
 export function logFlow(record: FlowRecord): string {
   ensureFlowsDir();
-  const filename = `flow-${record.id}.json`;
+  const rawId = String(record.id);
+  const safeId = rawId.replace(/[^A-Za-z0-9._-]/g, '_').replace(/\.\.+/g, '_').slice(0, 80) || 'flow';
+  const idHash = createHash('sha256').update(rawId).digest('hex').slice(0, 16);
+  const filename = `flow-${safeId}-${idHash}.json`;
   const filepath = join(getFlowsDir(), filename);
   writeFileSync(filepath, JSON.stringify(record, null, 2));
   return filepath;
 }
 
-// @kern-source: flow:63
+// @kern-source: flow:73
 export function readFlows(limit?: number): FlowRecord[] {
   ensureFlowsDir();
   let files: string[];
@@ -106,7 +119,7 @@ export function readFlows(limit?: number): FlowRecord[] {
   return records;
 }
 
-// @kern-source: flow:91
+// @kern-source: flow:101
 export interface ModeStats {
   mode: string;
   count: number;
@@ -117,7 +130,7 @@ export interface ModeStats {
   followupRate: number;
 }
 
-// @kern-source: flow:100
+// @kern-source: flow:110
 export interface FlowAnalysis {
   totalFlows: number;
   byMode: ModeStats[];
@@ -125,7 +138,7 @@ export interface FlowAnalysis {
   periodDays: number;
 }
 
-// @kern-source: flow:106
+// @kern-source: flow:116
 export function analyzeFlows(days?: number): FlowAnalysis {
   const periodDays = days ?? 30;
   const cutoff = new Date(Date.now() - periodDays * 86400_000).toISOString();

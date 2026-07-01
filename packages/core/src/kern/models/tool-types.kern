@@ -80,6 +80,7 @@ interface name=ToolDefinition
   field name=isReadOnly type=boolean
   field name=isConcurrencySafe type=boolean
   field name=isDestructive type=boolean optional=true
+  field name=metadata type="Record<string,unknown>" optional=true
 
 interface name=ToolHandler
   field name=definition type=ToolDefinition

@@ -1,0 +1,22 @@
+import from="./specs.js" names="WorkflowConformanceIssue,WorkflowConformanceCode" types=true
+
+fn name=createWorkflowIssue params="code:WorkflowConformanceCode,message:string,path?:string" returns=WorkflowConformanceIssue export=true
+  handler lang="kern"
+    return value="{ code, message, path }"
+
+fn name=createWorkflowConformanceError params="issues:WorkflowConformanceIssue[],message?:string" returns=Error export=true
+  handler <<<
+    const err = new Error(message ?? issues.map((i) => i.message).join('; '));
+    err.name = 'WorkflowConformanceError';
+    (err as Error & { issues: WorkflowConformanceIssue[] }).issues = issues;
+    return err;
+  >>>
+
+fn name=throwWorkflowConformance params="issues:WorkflowConformanceIssue[],message?:string" returns=never export=true
+  handler <<<
+    throw createWorkflowConformanceError(issues, message);
+  >>>
+
+fn name=hasWorkflowConformanceErrors params="issues:WorkflowConformanceIssue[]" returns=boolean export=true
+  handler lang="kern"
+    return value="issues.length > 0"

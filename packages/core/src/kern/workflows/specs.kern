@@ -1,0 +1,105 @@
+type name=WorkflowMutationLevel values="none|workspace|network|process"
+type name=WorkflowPhaseEventType values="queued|started|completed|failed|skipped|blocked|cancelled"
+type name=WorkflowRunStatus values="pending|running|completed|failed|cancelled"
+type name=WorkflowConformanceCode values="duplicate-id|missing-node|cycle|reserved-alias|duplicate-alias|unknown-capability|mutation-denied|plugin-denied|invalid-phase|invalid-registry"
+
+interface name=WorkflowCapabilitySpec export=true
+  field name=id type=string
+  field name=description type=string optional=true
+  field name=mutations type="WorkflowMutationLevel[]" optional=true
+
+interface name=WorkflowMutationPolicy export=true
+  field name=allow type=boolean
+  field name=maxLevel type=WorkflowMutationLevel optional=true
+  field name=capabilities type="string[]" optional=true
+
+interface name=WorkflowPhaseSpec export=true
+  field name=id type=string
+  field name=label type=string optional=true
+  field name=dependsOn type="string[]" optional=true
+  field name=requires type="string[]" optional=true
+  field name=mutation type=WorkflowMutationLevel optional=true
+  field name=pluginId type=string optional=true
+  field name=meta type="Record<string,unknown>" optional=true
+
+interface name=WorkflowSpec export=true
+  field name=id type=string
+  field name=version type=string
+  field name=description type=string optional=true
+  field name=aliases type="string[]" optional=true
+  field name=capabilities type="WorkflowCapabilitySpec[]" optional=true
+  field name=mutationPolicy type=WorkflowMutationPolicy optional=true
+  field name=phases type="WorkflowPhaseSpec[]"
+  field name=plugins type="WorkflowPluginSpec[]" optional=true
+
+interface name=WorkflowGraphNodeSpec export=true
+  field name=id type=string
+  field name=phaseId type=string optional=true
+
+interface name=WorkflowGraphEdgeSpec export=true
+  field name=from type=string
+  field name=to type=string
+
+interface name=WorkflowGraphSpec export=true
+  field name=nodes type="WorkflowGraphNodeSpec[]"
+  field name=edges type="WorkflowGraphEdgeSpec[]"
+
+interface name=WorkflowExecutionPlanPhase export=true
+  field name=id type=string
+  field name=ordinal type=number
+  field name=dependsOn type="string[]"
+  field name=requires type="string[]"
+  field name=mutation type=WorkflowMutationLevel
+  field name=pluginId type=string optional=true
+
+interface name=WorkflowExecutionPlan export=true
+  field name=workflowId type=string
+  field name=version type=string
+  field name=logicalPlanId type=string
+  field name=phases type="WorkflowExecutionPlanPhase[]"
+  field name=capabilityPolicy type="WorkflowCapabilitySpec[]"
+  field name=mutationPolicy type=WorkflowMutationPolicy
+
+interface name=WorkflowPhaseEvent export=true
+  field name=runId type=string
+  field name=workflowId type=string
+  field name=phaseId type=string
+  field name=type type=WorkflowPhaseEventType
+  field name=at type=string
+  field name=message type=string optional=true
+  field name=data type="Record<string,unknown>" optional=true
+
+interface name=WorkflowRun export=true
+  field name=id type=string
+  field name=workflowId type=string
+  field name=plan type=WorkflowExecutionPlan
+  field name=status type=WorkflowRunStatus
+  field name=currentPhaseId type="string|null"
+  field name=events type="WorkflowPhaseEvent[]"
+  field name=startedAt type=string optional=true
+  field name=finishedAt type=string optional=true
+
+interface name=WorkflowConformanceIssue export=true
+  field name=code type=WorkflowConformanceCode
+  field name=message type=string
+  field name=path type=string optional=true
+
+interface name=WorkflowPluginSpec export=true
+  field name=id type=string
+  field name=trustedAdapter type=boolean optional=true
+  field name=source type="'core'|'trusted-adapter'|'untrusted'" optional=true
+  field name=aliases type="string[]" optional=true
+  field name=capabilities type="WorkflowCapabilitySpec[]" optional=true
+  field name=phases type="WorkflowPhaseSpec[]" optional=true
+  field name=mutationPolicy type=WorkflowMutationPolicy optional=true
+
+interface name=WorkflowPluginAdmissionOptions export=true
+  field name=allowMutations type=boolean optional=true
+  field name=allowCoreSource type=boolean optional=true
+  field name=maxMutationLevel type=WorkflowMutationLevel optional=true
+  field name=existingPluginIds type="string[]" optional=true
+  field name=existingAliases type="string[]" optional=true
+
+interface name=WorkflowPluginAdmissionResult export=true
+  field name=accepted type=boolean
+  field name=issues type="WorkflowConformanceIssue[]"

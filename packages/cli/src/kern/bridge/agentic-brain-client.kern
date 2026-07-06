@@ -26,11 +26,11 @@
 // confidence gate, steering) remains the deferred swap; this is the focused agent.
 
 import from="@kernlang/agon-core" names="BrainClient,BrainClientConfig,BrainEvent,BrainTurnRequest,BrainTurnResult,ControlAck,ControlCapabilities,ClientRef,ApprovalResponse,AnswerResponse,SteerRequest,CancelRequest,CapabilityRegistration,CapabilityUnregister,CapabilityResult,CapabilitySpec,BrainHealth,EngineAdapter,EngineRegistry" types=true
-import from="@kernlang/agon-core" names="buildImageAttachment,decodeDataUrlToImageFile,MAX_DISPATCH_IMAGES,authFailureHint"
+import from="@kernlang/agon-core" names="buildImageAttachment,decodeDataUrlToImageFile,parseImageDimensions,MAX_DISPATCH_IMAGES,authFailureHint"
 import from="@kernlang/agon-adapter-cli" names="createCliAdapter"
 import from="node:path" names="join"
 import from="node:os" names="tmpdir"
-import from="node:fs" names="rmSync"
+import from="node:fs" names="rmSync,readFileSync"
 import from="node:crypto" names="randomUUID"
 
 const name=AGENT_TOOL_MARKER type=string value={{ '__AGON_TOOL__' }} export=true
@@ -247,6 +247,19 @@ fn name=buildAgentSystemPrompt params="tools:CapabilitySpec[], base?:string, nat
       'did not take. Reply in prose ONLY when giving the user your FINAL answer (no tool line).',
     ];
     lines.push('', ...howToAct, '');
+    const hasPixelTools = tools.some((t) => t.name === 'screenshot' || t.name === 'clickAt');
+    if (hasPixelTools) {
+      lines.push(
+        'COMPUTER USE:',
+        'Prefer readPage and exact sel= selectors for page actions.',
+        'Use screenshot only when selectors fail or the page is canvas-like/selector-hostile.',
+        'After screenshot, reason over pixels, then use clickAt(x,y) only if that tool exists.',
+        'clickAt coordinates are CSS pixels from the viewport top-left.',
+        'NEVER guess coordinates without a fresh screenshot of the current view.',
+        'Re-screenshot after any action that changes layout or scroll.',
+        '',
+      );
+    }
     lines.push(
       'BE PROACTIVE — take initiative. When the user asks you to DO something on the web —',
       'search for / find / look up something, open or navigate to a site, fill a field, click —',
@@ -778,7 +791,13 @@ service name=AgenticTurnBrainClient implements=BrainClient
             const decoded = decodeDataUrlToImageFile(rawOut, turnDir, imgSeq++);
             if (decoded.path) {
               const att = buildImageAttachment(decoded.path, this.cwd);
-              if (att) { nextImages = [att]; transcriptOut = '(screenshot captured — it is attached to your view this step)'; }
+              if (att) {
+                nextImages = [att];
+                const dims = parseImageDimensions(readFileSync(decoded.path));
+                transcriptOut = dims
+                  ? `(screenshot captured — ${dims.width}x${dims.height} px, coordinates are CSS pixels with origin at the viewport top-left — it is attached to your view this step)`
+                  : '(screenshot captured — it is attached to your view this step)';
+              }
               else transcriptOut = '(screenshot captured but could not be attached)';
             } else {
               transcriptOut = `(screenshot could not be read${decoded.reason ? `: ${decoded.reason}` : ''})`;

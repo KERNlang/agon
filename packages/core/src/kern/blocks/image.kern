@@ -66,6 +66,45 @@ fn name=sniffImageMime params="buf:Buffer" returns="string|null" export=true
     return null;
   >>>
 
+interface name=ImageDimensions export=true
+  doc "Pixel dimensions parsed from decoded image bytes."
+  field name=width type=number
+  field name=height type=number
+
+fn name=parseImageDimensions params="buf:Buffer" returns="ImageDimensions|null" export=true
+  doc "Parse pixel dimensions from decoded image bytes without rasterizing. Supports PNG (IHDR width/height) and JPEG SOF0/SOF1/SOF2 frame headers; returns null for unsupported or truncated data."
+  handler <<<
+    if (buf.length >= 24
+      && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47
+      && buf[12] === 0x49 && buf[13] === 0x48 && buf[14] === 0x44 && buf[15] === 0x52) {
+      const width = buf.readUInt32BE(16);
+      const height = buf.readUInt32BE(20);
+      return width > 0 && height > 0 ? { width, height } : null;
+    }
+
+    if (buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8) return null;
+    let pos = 2;
+    while (pos + 3 < buf.length) {
+      if (buf[pos] !== 0xff) { pos++; continue; }
+      while (pos < buf.length && buf[pos] === 0xff) pos++;
+      if (pos >= buf.length) return null;
+      const marker = buf[pos++];
+      if (marker === 0xd9 || marker === 0xda) return null;
+      if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+      if (pos + 1 >= buf.length) return null;
+      const segmentLength = buf.readUInt16BE(pos);
+      if (segmentLength < 2 || pos + segmentLength > buf.length) return null;
+      if (marker === 0xc0 || marker === 0xc1 || marker === 0xc2) {
+        if (segmentLength < 7) return null;
+        const height = buf.readUInt16BE(pos + 3);
+        const width = buf.readUInt16BE(pos + 5);
+        return width > 0 && height > 0 ? { width, height } : null;
+      }
+      pos += segmentLength;
+    }
+    return null;
+  >>>
+
 interface name=DataUrlImageResult export=true
   doc "Outcome of decoding a base64 data-URL image into a turn-scratch file: either a written file `path`, or a human-readable `reason` it was rejected (surfaced to the user as a notice)."
   field name=path type=string optional=true

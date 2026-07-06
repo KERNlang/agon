@@ -81,9 +81,54 @@ export function sniffImageMime(buf: Buffer): string|null {
 }
 
 /**
- * Outcome of decoding a base64 data-URL image into a turn-scratch file: either a written file `path`, or a human-readable `reason` it was rejected (surfaced to the user as a notice).
+ * Pixel dimensions parsed from decoded image bytes.
  */
 // @kern-source: image:69
+export interface ImageDimensions {
+  width: number;
+  height: number;
+}
+
+/**
+ * Parse pixel dimensions from decoded image bytes without rasterizing. Supports PNG (IHDR width/height) and JPEG SOF0/SOF1/SOF2 frame headers; returns null for unsupported or truncated data.
+ */
+// @kern-source: image:74
+export function parseImageDimensions(buf: Buffer): ImageDimensions|null {
+  if (buf.length >= 24
+    && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47
+    && buf[12] === 0x49 && buf[13] === 0x48 && buf[14] === 0x44 && buf[15] === 0x52) {
+    const width = buf.readUInt32BE(16);
+    const height = buf.readUInt32BE(20);
+    return width > 0 && height > 0 ? { width, height } : null;
+  }
+
+  if (buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8) return null;
+  let pos = 2;
+  while (pos + 3 < buf.length) {
+    if (buf[pos] !== 0xff) { pos++; continue; }
+    while (pos < buf.length && buf[pos] === 0xff) pos++;
+    if (pos >= buf.length) return null;
+    const marker = buf[pos++];
+    if (marker === 0xd9 || marker === 0xda) return null;
+    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+    if (pos + 1 >= buf.length) return null;
+    const segmentLength = buf.readUInt16BE(pos);
+    if (segmentLength < 2 || pos + segmentLength > buf.length) return null;
+    if (marker === 0xc0 || marker === 0xc1 || marker === 0xc2) {
+      if (segmentLength < 7) return null;
+      const height = buf.readUInt16BE(pos + 3);
+      const width = buf.readUInt16BE(pos + 5);
+      return width > 0 && height > 0 ? { width, height } : null;
+    }
+    pos += segmentLength;
+  }
+  return null;
+}
+
+/**
+ * Outcome of decoding a base64 data-URL image into a turn-scratch file: either a written file `path`, or a human-readable `reason` it was rejected (surfaced to the user as a notice).
+ */
+// @kern-source: image:108
 export interface DataUrlImageResult {
   path?: string;
   reason?: string;
@@ -92,7 +137,7 @@ export interface DataUrlImageResult {
 /**
  * Decode a `data:<mime>;base64,...` image (e.g. a browser screenshot) into a real file under `dir` so the path-based image pipeline consumes it unchanged. The security gate for browser-supplied bytes over the loopback bridge: the MIME must be in DISPATCH_VISION_MIME; a base64-LENGTH pre-check rejects oversize BEFORE allocating (no heap spike); decoded bytes must be <= MAX_DISPATCH_IMAGE_BYTES; and the magic bytes must match an allowlisted image type AND the declared MIME (sniffImageMime) — so non-image / oversize / mislabelled content can't slip through. The filename is a fixed basename inside `dir` (no traversal). Returns { path } on success or { reason } on rejection.
  */
-// @kern-source: image:74
+// @kern-source: image:113
 export function decodeDataUrlToImageFile(dataUrl: string, dir: string, index: number): DataUrlImageResult {
   const m = DATA_URL_IMAGE_REGEX.exec(dataUrl.trim());
   if (!m) return { reason: 'not a base64 image data URL' };
@@ -126,7 +171,7 @@ export function decodeDataUrlToImageFile(dataUrl: string, dir: string, index: nu
 /**
  * Normalise a path as a terminal emits it on drag-drop: strip one layer of matching quotes, decode a file:// URI (%20 → space), then unescape shell backslash escapes (\ space → space, \( → ( …). A plain typed path has no quotes/backslashes so it passes through untouched. macOS Terminal/iTerm drop screenshots — whose default names contain spaces — in one of the escaped/quoted/file:// forms, all of which the bare path detector would otherwise miss.
  */
-// @kern-source: image:106
+// @kern-source: image:145
 export function normalizeDroppedPath(raw: string): string {
   let p = raw.trim();
   const sq = p.startsWith("'") && p.endsWith("'");
@@ -152,7 +197,7 @@ export function normalizeDroppedPath(raw: string): string {
 /**
  * Pull image paths out of composer input. Handles the four shapes a terminal produces on drag-drop — plain, backslash-escaped spaces, single/double-quoted, and file:// URIs — plus an explicit /img <path> command. Detected paths are normalised + stripped from the returned text so they aren't duplicated into the prompt; the pixels reach a vision engine via buildCommand's --image flag (non-vision engines get a text fallback).
  */
-// @kern-source: image:130
+// @kern-source: image:169
 export function extractImagesFromInput(input: string, cwd: string): {text:string, images:ImageAttachment[]} {
   const images: ImageAttachment[] = [];
 
@@ -223,7 +268,7 @@ export function extractImagesFromInput(input: string, cwd: string): {text:string
 /**
  * Single source of truth for turn-local image encoding: read each path to base64, enforcing a count cap, a per-image byte cap, a MIME allowlist, and a regular-file check. Rejections land in `skipped` with a human-readable reason. The two formatters below shape this for the AI-SDK (API engines) and Anthropic content blocks (claude stream-json). base64 is for the live request ONLY — never persist it into message history.
  */
-// @kern-source: image:199
+// @kern-source: image:238
 export function encodeImagesRaw(paths: string[], maxBytes?: number, maxImages?: number): {images:Array<{data:string,mediaType:string}>, skipped:string[]} {
   const lim = maxBytes ?? MAX_DISPATCH_IMAGE_BYTES;
   const cap = maxImages ?? MAX_DISPATCH_IMAGES;
@@ -254,7 +299,7 @@ export function encodeImagesRaw(paths: string[], maxBytes?: number, maxImages?: 
 /**
  * AI-SDK ImagePart shape for OpenAI-compatible / Anthropic API engines (used by session-resume → apiStreamDispatchWithHistory). The image field is a full data: URL — explicit + standard, so the SDK never has to guess base64-vs-URL — and mediaType is set redundantly for providers that read it.
  */
-// @kern-source: image:228
+// @kern-source: image:267
 export function encodeImagesForDispatch(paths: string[], maxBytes?: number, maxImages?: number): {parts:Array<{type:'image',image:string,mediaType:string}>, skipped:string[]} {
   const { images, skipped } = encodeImagesRaw(paths, maxBytes, maxImages);
   return {
@@ -266,7 +311,7 @@ export function encodeImagesForDispatch(paths: string[], maxBytes?: number, maxI
 /**
  * Splice screenshot/image parts into a NATIVE message thread for the API+tools path (the browser brain driving a page). Gated on hasVision — a non-vision engine is left untouched so it never receives an image its endpoint would ignore/reject (zai-coding silently drops images; kimi/minimax see them). Encodes the file paths via encodeImagesForDispatch and attaches the AI-SDK ImageParts to the LAST user message (turning its string content into a [text, ...images] array), exactly as session-resume splices a turn's images. Returns the messages unchanged when there is no vision, no path, or nothing encodes. Pure: clones rather than mutating the caller's array.
  */
-// @kern-source: image:239
+// @kern-source: image:278
 export function attachVisionToMessages(messages: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, imagePaths: string[], hasVision: boolean): Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}> {
   if (!hasVision || !imagePaths || imagePaths.length === 0) return messages;
   const enc = encodeImagesForDispatch(imagePaths);
@@ -299,7 +344,7 @@ export function attachVisionToMessages(messages: Array<{role:string,content:any,
 /**
  * One-line attach-time warning when the given engine cannot see images, or null when it can. The 'vision' capability here means 'this engine ends up seeing the image SOMEHOW': via API image parts (session-resume), via an imageFlag on CLI dispatch (claude/codex), or — deliberately — via the adapter's path-label fallback when the binary is an agentic CLI that reads the file itself (agy, verified 2026-06-11). So capability-without-imageFlag on a CLI engine is NOT a false negative; do not require imageFlag here. Two warning tiers: an API-only engine without vision truly never receives the image (session-resume drops it), while a CLI engine without the capability gets the file path and MAY still read it. Shown at /img attach, on the composer image chip, and on drag-drop submit — so the user learns BEFORE the turn, not from a status line after.
  */
-// @kern-source: image:270
+// @kern-source: image:309
 export function visionSupportNote(engine: any): string|null {
   if (!engine) return null;
   if (engine.capabilities?.includes('vision')) return null;

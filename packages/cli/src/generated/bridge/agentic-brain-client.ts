@@ -793,9 +793,12 @@ export class AgenticTurnBrainClient implements BrainClient {
             const att = buildImageAttachment(decoded.path, this.cwd);
             if (att) {
               nextImages = [att];
-              const dims = parseImageDimensions(readFileSync(decoded.path));
+              // Dimensions are cosmetic grounding help — a scratch-file read race
+              // must never crash the turn.
+              let dims: ReturnType<typeof parseImageDimensions> = null;
+              try { dims = parseImageDimensions(readFileSync(decoded.path)); } catch { dims = null; }
               transcriptOut = dims
-                ? `(screenshot captured — ${dims.width}x${dims.height} px, coordinates are CSS pixels with origin at the viewport top-left — it is attached to your view this step)`
+                ? `(screenshot captured — ${dims.width}x${dims.height} px; these image pixels ARE the coordinate space for coordinate tools like clickAt, origin at the top-left — it is attached to your view this step)`
                 : '(screenshot captured — it is attached to your view this step)';
             }
             else transcriptOut = '(screenshot captured but could not be attached)';
@@ -1014,7 +1017,7 @@ export class AgenticTurnBrainClient implements BrainClient {
 /**
  * Factory mirroring createHeadlessTurnBrainClient: build the v2 agentic tool-loop BrainClient from the daemon's EngineRegistry.
  */
-// @kern-source: agentic-brain-client:1032
+// @kern-source: agentic-brain-client:1035
 export function createAgenticTurnBrainClient(registry: EngineRegistry): BrainClient {
   return new AgenticTurnBrainClient(registry);
 }

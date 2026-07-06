@@ -97,7 +97,7 @@ describe('AgenticTurnBrainClient screenshot transcript', () => {
     expect(dispatches.length).toBeGreaterThanOrEqual(2);
     const secondPrompt = dispatches[1].prompt;
     expect(secondPrompt).toContain('screenshot captured — 1280x800 px');
-    expect(secondPrompt).toContain('coordinates are CSS pixels with origin at the viewport top-left');
+    expect(secondPrompt).toContain('these image pixels ARE the coordinate space');
     expect(events).toContainEqual(expect.objectContaining({
       kind: 'tool',
       tool: 'screenshot',

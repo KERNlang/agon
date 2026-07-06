@@ -36,6 +36,7 @@ import { serveCommand } from './commands/serve.js';
 import { driveCommand } from './commands/drive.js';
 import { chromeCommand } from './commands/chrome.js';
 import { extCommand } from './commands/ext.js';
+import { browserHostCommand } from './commands/browser-host.js';
 import { loginCommand } from './commands/login.js';
 import { updateCommand } from './commands/update.js';
 import { startRepl } from './repl.js';
@@ -235,6 +236,7 @@ const main = defineCommand({
     drive: driveCommand,
     chrome: chromeCommand,
     ext: extCommand,
+    'browser-host': browserHostCommand,
     login: loginCommand,
     update: updateCommand,
     upgrade: updateCommand,

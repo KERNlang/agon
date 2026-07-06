@@ -98,7 +98,7 @@ export function serveDir(): string {
 }
 
 /**
- * Path to a session's connection file ($AGON_HOME/serve/<sessionId>.json). Holds { url, token, sessionId, engineId, allowedOrigins, startedAt } at mode 0600 — what a browser extension / Electron host reads to attach without scraping stdout.
+ * Path to a session's connection file ($AGON_HOME/serve/<sessionId>.json). Holds { url, token, sessionId, engineId, allowedOrigins, pid, startedAt } at mode 0600 — what a browser extension / Electron host reads to attach without scraping stdout.
  */
 // @kern-source: serve:111
 export function serveConnectionPath(sessionId: string): string {
@@ -106,14 +106,14 @@ export function serveConnectionPath(sessionId: string): string {
 }
 
 /**
- * Write the 0600 connection file (created with mode 0600 so the bearer token is never briefly world-readable) and return its path. The durable source of truth for the client handoff; the stdout banner is a convenience echo. Best-effort dir create + belt-and-suspenders chmod.
+ * Write the 0600 connection file (created with mode 0600 so the bearer token is never briefly world-readable) and return its path. The durable source of truth for the client handoff; the stdout banner is a convenience echo. Best-effort dir create + belt-and-suspenders chmod. Records `pid` (this serve process's own pid) so a broker — e.g. the browser-host pairing launcher — can prove the serve is still alive before reusing its token, and skip a stale file left by a crashed serve.
  */
 // @kern-source: serve:114
 export function writeServeConnectionFile(sessionId: string, url: string, token: string, engineId: string, allowedOrigins: string[]): string {
   const dir = serveDir();
   mkdirSync(dir, { recursive: true });
   const path = serveConnectionPath(sessionId);
-  const body = { url, token, sessionId, engineId, allowedOrigins, startedAt: new Date().toISOString() };
+  const body = { url, token, sessionId, engineId, allowedOrigins, pid: process.pid, startedAt: new Date().toISOString() };
   writeFileSync(path, JSON.stringify(body, null, 2) + '\n', { mode: 0o600 });
   try { chmodSync(path, 0o600); } catch { /* best-effort on exotic fs */ }
   return path;

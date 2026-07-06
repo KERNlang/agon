@@ -19,7 +19,10 @@ export default defineConfig({
   // server in keeps `npm i -g @kernlang/agon` self-contained — Cesar spawns the
   // bundled copy (see resolveAgonMcpServerPath) instead of an unpublished
   // @kernlang/agon-mcp dependency. Both entries inline agon-core and share chunks.
-  entry: { index: 'src/index.ts', 'mcp/index': '../mcp/src/index.ts' },
+  // A third entry: the Chrome native-messaging pairing host launcher, emitted to
+  // dist/browser-host.js. The com.kernlang.agon manifest's `path` points here;
+  // Chrome execs it directly (banner shebang + `browser-host install` chmod +x).
+  entry: { index: 'src/index.ts', 'mcp/index': '../mcp/src/index.ts', 'browser-host': 'src/browser-host-entry.ts' },
   format: ['esm'],
   dts: false,
   sourcemap: true,

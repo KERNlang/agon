@@ -252,7 +252,9 @@ fn name=buildAgentSystemPrompt params="tools:CapabilitySpec[], base?:string, nat
       lines.push(
         'COMPUTER USE:',
         'Prefer readPage and exact sel= selectors for page actions.',
-        'Use screenshot only when selectors fail or the page is canvas-like/selector-hostile.',
+        'Selectors must be COPIED VERBATIM from a sel= in your LATEST readPage — NEVER invent or guess a selector, not even an "obvious" one like button.Reply or [aria-label=...].',
+        'If a selector misses ONCE, do not try selector variants: readPage again, or screenshot and clickAt what you see.',
+        'Use screenshot when selectors fail or the page is canvas-like/selector-hostile.',
         'After screenshot, reason over pixels, then use clickAt(x,y) only if that tool exists.',
         'clickAt coordinates are CSS pixels from the viewport top-left.',
         'NEVER guess coordinates without a fresh screenshot of the current view.',

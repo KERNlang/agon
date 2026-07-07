@@ -1,0 +1,230 @@
+// ── browser-host — native-messaging PAIRING broker (Agon Everywhere, zero-paste) ─
+//
+// The PURE half of `agon browser-host`. Chrome launches a tiny stdio host (the
+// dist launcher entry) via a native-messaging manifest; the extension sends ONE
+// verb — `pair` — and the host either reuses a live `agon serve` or spawns one and
+// hands back {url, token}. This module is everything that can be unit-tested with
+// NO real fs / process: the Chrome native-messaging frame codec (4-byte LE length
+// prefix + UTF-8 JSON, 64 KiB cap), strict `pair` schema + origin validation, the
+// per-platform manifest path/content, connection-file (0600) parsing + stale
+// detection, and the deps-INJECTED `runPair` state machine (reuse vs spawn vs
+// error). The effectful shell (real fs/spawn/lock, the launcher loop, the
+// install/uninstall/status/stop CLI) lives in ../commands/browser-host.kern and
+// supplies the PairDeps.
+//
+// SECURITY: the host is a BROKER, never a command runner. `pair` is the only verb;
+// the spawn command is fixed server-side (`agon serve --origin <installedOrigin>`);
+// the requester's `origin` is validated against the origin the host was INSTALLED
+// for (defense in depth beyond Chrome's allowed_origins); an oversized/ malformed
+// frame is unrecoverable (length-prefixed framing has no delimiter to resync on),
+// so the launcher tears down rather than spinning on a poisoned header.
+
+import from="node:path" names="join"
+
+// ── Constants (the wire contract) ─────────────────────────────────────────────
+
+const name=HOST_NAME type="string" value={{ 'com.kernlang.agon' }} export=true
+  doc "The Chrome native-messaging host name both sides build to."
+
+const name=HOST_DESCRIPTION type="string" value={{ 'Agon native-messaging host — pairs the browser extension with a local `agon serve` (zero paste).' }} export=true
+
+const name=MAX_FRAME_BYTES type=number value={{ 64 * 1024 }} export=true
+  doc "Max native-messaging frame payload (Chrome's own host→extension cap is 1 MiB; the extension→host cap is 64 KiB. A `pair` frame is tiny, so 64 KiB is generous and bounds a hostile sender)."
+
+const name=PROTOCOL type=number value={{ 1 }} export=true
+  doc "The wire protocol version. A request MUST carry protocol:1; every response echoes it."
+
+const name=EXTENSION_ORIGIN_RE type=any value={{ /^chrome-extension:\/\/[a-p]{32}$/ }} export=true
+  doc "A well-formed Chrome extension Origin (no trailing slash): chrome-extension://<32 chars a–p>."
+
+// ── Native-messaging frame codec ──────────────────────────────────────────────
+
+fn name=encodeFrame params="obj:unknown" returns="Buffer" export=true
+  doc "Encode a value as ONE Chrome native-messaging frame: 4-byte little-endian length prefix + UTF-8 JSON. Throws 'frame too large' if the JSON payload exceeds MAX_FRAME_BYTES (a response is always tiny, so this only fires on a bug)."
+  handler <<<
+    const json = Buffer.from(JSON.stringify(obj), 'utf8');
+    if (json.length > MAX_FRAME_BYTES) throw new Error(`frame too large (${json.length} > ${MAX_FRAME_BYTES} bytes)`);
+    const len = Buffer.allocUnsafe(4);
+    len.writeUInt32LE(json.length, 0);
+    return Buffer.concat([len, json]);
+  >>>
+
+interface name=FrameParse export=true
+  doc "Result of pulling complete native-messaging frames out of a buffer: each complete frame's UTF-8 payload, the leftover bytes (a partial next frame to keep for the next chunk), and overflow=true when a length-prefix exceeds MAX_FRAME_BYTES."
+  field name=frames type="string[]"
+  field name=rest type=Buffer
+  field name=overflow type=boolean
+
+fn name=decodeFrames params="inbuf:Buffer" returns="FrameParse" export=true
+  doc "Pull complete 4-byte-LE-length-prefixed frames out of inbuf. Returns each frame's UTF-8 payload, the leftover bytes (a partial trailing frame — the length-prefix and/or payload split across chunks; caller re-parses rest+nextChunk), and overflow=true if a length-prefix exceeds MAX_FRAME_BYTES. An overflow is UNRECOVERABLE (length-prefixed framing has no delimiter to resync on) — the caller MUST tear down rather than spin on the poisoned header. Frames decoded BEFORE the oversized one are still returned."
+  handler <<<
+    const frames: string[] = [];
+    let buf = inbuf;
+    let overflow = false;
+    for (;;) {
+      if (buf.length < 4) break; // partial length prefix — wait for more
+      const len = buf.readUInt32LE(0);
+      if (len > MAX_FRAME_BYTES) { overflow = true; break; }
+      if (buf.length < 4 + len) break; // partial payload — wait for the rest
+      frames.push(buf.subarray(4, 4 + len).toString('utf8'));
+      buf = buf.subarray(4 + len);
+    }
+    return { frames, rest: buf, overflow };
+  >>>
+
+// ── `pair` schema + origin validation ─────────────────────────────────────────
+
+fn name=isExtensionOrigin params="origin:string" returns="boolean" export=true
+  doc "True iff origin is a well-formed chrome-extension Origin with NO trailing slash. Chrome's manifest allowed_origins carry a trailing slash; the `pair` request field and serve's --origin do NOT — this validates the latter form."
+  handler <<<
+    return typeof origin === 'string' && EXTENSION_ORIGIN_RE.test(origin);
+  >>>
+
+interface name=PairValidation export=true
+  doc "Outcome of validating a decoded frame as a `pair` request against the installed origin. ok=true carries the validated origin; ok=false carries a human-readable error for the {ok:false} response."
+  field name=ok type=boolean
+  field name=origin type=string optional=true
+  field name=error type=string optional=true
+
+fn name=validatePair params="msg:unknown, installedOrigin:string" returns="PairValidation" export=true
+  doc "Strict schema + origin validation of an already-JSON-parsed frame. Order of checks yields the most specific error: protocol gate → known verb (`pair`) → well-formed origin → origin matches the origin the host was installed for (defense in depth beyond Chrome's allowed_origins). A non-object, wrong protocol, unknown cmd, malformed origin, or origin mismatch each returns ok:false with a distinct reason; only a fully valid `pair` returns ok:true."
+  handler <<<
+    if (!msg || typeof msg !== 'object') return { ok: false, error: 'malformed request' };
+    const m = msg as { cmd?: unknown; origin?: unknown; protocol?: unknown };
+    if (m.protocol !== PROTOCOL) return { ok: false, error: `unsupported protocol (need ${PROTOCOL})` };
+    if (m.cmd !== 'pair') return { ok: false, error: 'unknown cmd' };
+    if (typeof m.origin !== 'string' || !isExtensionOrigin(m.origin)) return { ok: false, error: 'invalid origin' };
+    if (m.origin !== installedOrigin) return { ok: false, error: 'origin not permitted' };
+    return { ok: true, origin: m.origin };
+  >>>
+
+// ── Native-messaging manifest (per-platform path + content) ───────────────────
+
+fn name=nativeHostDir params="platform:string, home:string, browser:string" returns="string|undefined" export=true
+  doc "The NativeMessagingHosts directory for a (platform, browser) pair, or undefined when unsupported. macOS: Google/Chrome + Chromium under Application Support. Linux: ~/.config/google-chrome (browser 'chrome') + ~/.config/chromium. Windows returns undefined — the host is registered via an HKCU registry key there (documented in `browser-host install` help, not yet implemented)."
+  handler <<<
+    const b = browser.trim().toLowerCase();
+    if (platform === 'darwin') {
+      const base = `${home}/Library/Application Support`;
+      if (b === 'chrome') return `${base}/Google/Chrome/NativeMessagingHosts`;
+      if (b === 'chromium') return `${base}/Chromium/NativeMessagingHosts`;
+      return undefined;
+    }
+    if (platform === 'linux') {
+      if (b === 'chrome') return `${home}/.config/google-chrome/NativeMessagingHosts`;
+      if (b === 'chromium') return `${home}/.config/chromium/NativeMessagingHosts`;
+      return undefined;
+    }
+    return undefined;
+  >>>
+
+fn name=manifestPath params="dir:string" returns="string" export=true expr={{ return join(dir, `${HOST_NAME}.json`); }}
+  doc "The manifest file path inside a NativeMessagingHosts directory: <dir>/com.kernlang.agon.json."
+
+interface name=HostManifest export=true
+  doc "The Chrome native-messaging manifest written by `browser-host install`. allowed_origins carries EXACTLY ONE entry — the installed extension Origin with a trailing slash (Chrome's required form)."
+  field name=name type=string
+  field name=description type=string
+  field name=path type=string
+  field name=type type=string
+  field name=allowed_origins type="string[]"
+
+fn name=buildHostManifest params="launcherPath:string, origin:string" returns="HostManifest" export=true
+  doc "Build the native-messaging manifest content. `path` is the absolute path to the host launcher (a node entry in the CLI dist). `origin` is the extension Origin WITHOUT a trailing slash (as validated by isExtensionOrigin); allowed_origins normalizes to EXACTLY ONE entry with the trailing slash Chrome requires (a stray trailing slash on the input is collapsed, never doubled)."
+  handler <<<
+    const bare = origin.replace(/\/+$/, '');
+    return {
+      name: HOST_NAME,
+      description: HOST_DESCRIPTION,
+      path: launcherPath,
+      type: 'stdio',
+      allowed_origins: [`${bare}/`],
+    };
+  >>>
+
+// ── Connection-file (0600) parsing + stale detection ──────────────────────────
+
+interface name=ServeConnRecord export=true
+  doc "A parsed `agon serve` 0600 connection file (what runServe writes under $AGON_HOME/serve/<sessionId>.json). The fields the pairing broker needs: the url + bearer token to hand the extension, the owning serve's pid (added so the host can prove the process is still alive), the origin allowlist the serve was started with, and the session id."
+  field name=url type=string
+  field name=token type=string
+  field name=sessionId type=string
+  field name=pid type=number
+  field name=allowedOrigins type="string[]"
+
+fn name=parseConnRecord params="json:string" returns="ServeConnRecord|null" export=true
+  doc "Parse + validate a serve connection file's JSON. Returns null (never throws) on invalid JSON or a missing/ill-typed required field (url/token/sessionId strings, pid a positive number, allowedOrigins an array of strings) — a malformed or legacy (pid-less) file is simply not reusable rather than a crash."
+  handler <<<
+    let obj: unknown;
+    try { obj = JSON.parse(json); } catch { return null; }
+    if (!obj || typeof obj !== 'object') return null;
+    const o = obj as Record<string, unknown>;
+    if (typeof o.url !== 'string' || typeof o.token !== 'string' || typeof o.sessionId !== 'string') return null;
+    if (typeof o.pid !== 'number' || !Number.isInteger(o.pid) || o.pid <= 0) return null;
+    if (!Array.isArray(o.allowedOrigins) || !o.allowedOrigins.every((x) => typeof x === 'string')) return null;
+    return { url: o.url, token: o.token, sessionId: o.sessionId, pid: o.pid, allowedOrigins: o.allowedOrigins as string[] };
+  >>>
+
+fn name=originCovered params="allowedOrigins:string[], origin:string" returns="boolean" export=true
+  doc "True iff a serve started with `allowedOrigins` would accept a browser attaching from `origin` — i.e. the requester's Origin is in the serve's allowlist. Matches AgonServe's own allowlist check (exact membership; serve stores origins without a trailing slash, same form as the `pair` request)."
+  handler <<<
+    return allowedOrigins.includes(origin);
+  >>>
+
+fn name=findReusableServe params="records:ServeConnRecord[], origin:string, isAlive:(pid:number) => boolean" returns="ServeConnRecord|null" export=true
+  doc "Pick a live, origin-covering serve to REUSE, or null if none. A record is reusable iff its recorded pid is alive AND its allowlist covers the requester's origin (stale-connection-file guard: a serve that died without cleaning up its file is skipped, never handed a dead token). First match wins — deterministic given the input order."
+  handler <<<
+    for (const r of records) {
+      if (isAlive(r.pid) && originCovered(r.allowedOrigins, origin)) return r;
+    }
+    return null;
+  >>>
+
+// ── The pair state machine (deps-injected: reuse vs spawn vs error) ───────────
+
+interface name=PairResponse export=true
+  doc "The single wire response to a `pair` request. ok:true → {url, token, started} (started=true iff the host had to spawn a serve); ok:false → {error}. protocol always echoes PROTOCOL."
+  field name=ok type=boolean
+  field name=url type=string optional=true
+  field name=token type=string optional=true
+  field name=started type=boolean optional=true
+  field name=error type=string optional=true
+  field name=protocol type=number
+
+interface name=PairDeps export=true
+  doc "The effectful surface runPair needs, injected so the state machine is unit-testable with the process/file layer faked. installedOrigin is the origin the host was installed for; acquireLock returns a release fn (or null if it could not take the exclusive spawn-or-reuse lock); listServeRecords reads + parses the serve/ connection files; isAlive probes a pid; spawnServe launches a detached `agon serve --origin <origin>` and returns its pid; waitForServe polls for that pid's connection file (up to ~15s) and resolves it or null on timeout; recordOwner persists host-owned metadata so `stop` can later kill only serves the host spawned."
+  field name=installedOrigin type=string
+  field name=acquireLock type="() => (() => void) | null"
+  field name=listServeRecords type="() => ServeConnRecord[]"
+  field name=isAlive type="(pid:number) => boolean"
+  field name=spawnServe type="(origin:string) => number"
+  field name=waitForServe type="(pid:number) => Promise<ServeConnRecord | null>"
+  field name=recordOwner type="(rec:ServeConnRecord) => void"
+
+fn name=runPair params="msg:unknown, deps:PairDeps" returns="Promise<PairResponse>" async=true export=true
+  doc "The pair state machine. Validate the frame (protocol/verb/origin) — an invalid request returns {ok:false} WITHOUT touching the lock or spawning. Otherwise take the exclusive lock (so two panels racing `pair` can't double-spawn) and, under it: REUSE a live origin-covering serve if one exists (started:false); else SPAWN a detached `agon serve --origin <origin>`, wait for its 0600 connection file, record host-owner metadata, and reply (started:true). A failed lock → {ok:false, busy}; a serve that never wrote its file → {ok:false}. The lock is always released. Pure given deps — the test fakes every effect."
+  handler <<<
+    const v = validatePair(msg, deps.installedOrigin);
+    if (!v.ok || !v.origin) return { ok: false, error: v.error ?? 'invalid request', protocol: PROTOCOL };
+    const origin = v.origin;
+
+    const release = deps.acquireLock();
+    if (!release) return { ok: false, error: 'another pairing is in progress', protocol: PROTOCOL };
+    try {
+      // Re-scan UNDER the lock: a concurrent pair that just spawned a serve has
+      // already written its connection file, so we reuse it instead of double-spawning.
+      const reuse = findReusableServe(deps.listServeRecords(), origin, deps.isAlive);
+      if (reuse) return { ok: true, url: reuse.url, token: reuse.token, started: false, protocol: PROTOCOL };
+
+      const pid = deps.spawnServe(origin);
+      // Fast-fail a failed spawn instead of polling the full waitForServe timeout
+      // for a pid that will never appear.
+      if (!(pid > 0)) return { ok: false, error: 'failed to spawn agon serve', protocol: PROTOCOL };
+      const rec = await deps.waitForServe(pid);
+      if (!rec) return { ok: false, error: 'agon serve did not become ready in time', protocol: PROTOCOL };
+      deps.recordOwner(rec);
+      return { ok: true, url: rec.url, token: rec.token, started: true, protocol: PROTOCOL };
+    } finally {
+      release();
+    }
+  >>>

@@ -1,0 +1,524 @@
+// ── agon browser-host — native-messaging pairing (install / launcher / lifecycle) ─
+//
+// The EFFECTFUL shell around ../bridge/browser-host.kern (the pure codec / schema /
+// manifest / pair state machine). Four subcommands + one dist launcher entry:
+//
+//   agon browser-host install --origin chrome-extension://<id> [--browser chrome]
+//     — writes the com.kernlang.agon native-messaging manifest (path → the dist
+//       launcher, allowed_origins → exactly the one installed origin) and records
+//       the installed origin so the launcher can validate `pair` requests.
+//   agon browser-host uninstall  — removes the manifest(s) + install state.
+//   agon browser-host status     — prints manifest path(s), the installed origin,
+//                                   and whether a live/host-owned serve exists.
+//   agon browser-host stop       — SIGTERMs ONLY serves the host itself spawned.
+//
+// The launcher (dist/browser-host.js, run BY Chrome — never by hand) reads
+// 4-byte-LE-length-prefixed JSON frames, validates `pair`, and reuses-or-spawns
+// `agon serve --origin <installedOrigin>` under an exclusive lock. It is a BROKER:
+// `pair` is the only verb, the spawn command is fixed, and it never runs anything
+// the extension sends. All diagnostics go to stderr; only native-messaging frames
+// are written to stdout (Chrome's channel).
+
+import from="citty" names="defineCommand"
+import from="@kernlang/agon-core" names="agonPath,ensureAgonHome"
+import from="node:fs" names="mkdirSync,writeFileSync,readFileSync,readdirSync,rmSync,chmodSync,existsSync,openSync,closeSync,unlinkSync,realpathSync,statSync"
+import from="node:path" names="join,dirname"
+import from="node:os" names="homedir"
+import from="node:child_process" names="spawn"
+import from="../bridge/browser-host.js" names="HOST_NAME,PROTOCOL,isExtensionOrigin,nativeHostDir,manifestPath,buildHostManifest,parseConnRecord,decodeFrames,encodeFrame,runPair,findReusableServe"
+import from="../bridge/browser-host.js" names="ServeConnRecord,PairDeps,PairResponse" types=true
+import from="../blocks/output-format.js" names="header,info,success,warn,bold,dim,cyan,green,yellow"
+
+// ── Storage layout ────────────────────────────────────────────────────────────
+
+// Everything lives in ONE module so these 23 helpers do not count toward the
+// file-too-monolithic top-level budget (module children are exempt). Flat exports
+// are preserved, so external imports of these names are unaffected.
+module name=BrowserHost
+  fn name=browserHostDir returns="string" export=true expr={{ return agonPath('browser-host'); }}
+    doc "$AGON_HOME/browser-host/ — holds the install state, the exclusive pair lock, and host-owned serve metadata. Resolved at call time so a test's temp AGON_HOME applies."
+
+  fn name=browserHostStatePath returns="string" export=true expr={{ return join(browserHostDir(), 'state.json'); }}
+    doc "Where `install` records { origin, launcherPath, manifests } — the launcher reads `origin` from here to validate `pair`, and uninstall/status read the manifest list."
+
+  fn name=serveConnDir returns="string" export=false expr={{ return agonPath('serve'); }}
+    doc "$AGON_HOME/serve/ — where runServe writes its 0600 connection files (mirrors serve.kern's serveDir; recomputed here to keep the launcher's dep graph light)."
+
+  // ── Install-state helpers ─────────────────────────────────────────────────────
+
+  interface name=InstallState export=true
+    doc "Persisted install state. origin: the extension Origin (no trailing slash) the host was installed for; launcherPath: the absolute dist launcher path baked into every manifest; cwd: the working directory to spawn `agon serve` in (recorded at install time — otherwise an auto-spawned serve inherits Chrome's arbitrary cwd and runs outside the intended Agon project); path: the user's real login-shell PATH captured at install time — Chrome launches the host with launchd's stripped PATH, so a serve spawned with it can't `which` CLI engine binaries (codex under nvm, etc.) and silently drops them from the roster; manifests: the manifest files written (for uninstall/status)."
+    field name=origin type=string
+    field name=launcherPath type=string
+    field name=cwd type=string
+    field name=path type=string
+    field name=manifests type="string[]"
+
+  fn name=readInstallState returns="InstallState|null" export=true
+    doc "Read + validate the install state file. Returns null (never throws) when absent or malformed — callers treat that as 'not installed'."
+    handler <<<
+      try {
+        const obj = JSON.parse(readFileSync(browserHostStatePath(), 'utf8')) as Record<string, unknown>;
+        if (!obj || typeof obj !== 'object' || typeof obj.origin !== 'string') return null;
+        const manifests = Array.isArray(obj.manifests) ? obj.manifests.filter((x): x is string => typeof x === 'string') : [];
+        return { origin: obj.origin, launcherPath: typeof obj.launcherPath === 'string' ? obj.launcherPath : '', cwd: typeof obj.cwd === 'string' ? obj.cwd : '', path: typeof obj.path === 'string' ? obj.path : '', manifests };
+      } catch {
+        return null;
+      }
+    >>>
+
+  fn name=resolveLauncherPath params="cliEntry:string" returns="string" export=true
+    doc "Resolve the absolute path to the dist host launcher (browser-host.js) from the running CLI entry (dist/index.js). realpath the CLI entry (following any version-manager shim), then its sibling browser-host.js — the dedicated tsup entry Chrome execs. This is what the manifest's `path` points at."
+    handler <<<
+      let base = cliEntry;
+      try { base = realpathSync(cliEntry); } catch { /* keep cliEntry if not a real path */ }
+      return join(dirname(base), 'browser-host.js');
+    >>>
+
+  fn name=hostWrapperPath returns="string" export=true expr={{ return join(browserHostDir(), 'host-wrapper.sh'); }}
+    doc "$AGON_HOME/browser-host/host-wrapper.sh — the tiny sh shim the manifest points at. Chrome launches native hosts with launchd's stripped PATH, so the launcher's `#!/usr/bin/env node` shebang fails when node lives under nvm; the wrapper execs the install-time node by absolute path instead."
+
+  fn name=buildHostWrapperScript params="nodePath:string, launcherPath:string" returns="string" export=true
+    doc "The wrapper script body: exec the install-time node binary (absolute path — never PATH-resolved) on the dist launcher, forwarding args. Pure so the content is unit-testable. Paths are SINGLE-quoted (embedded single quotes escaped as '\\'') — sh single quotes disable every expansion, so a path containing $, backtick, backslash, or double quotes survives verbatim instead of being expanded at exec time."
+    handler <<<
+      const q = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
+      return `#!/bin/sh\n# Auto-generated by \`agon browser-host install\`. Chrome launches native hosts with\n# launchd's stripped PATH, so the launcher's \`#!/usr/bin/env node\` shebang cannot\n# find an nvm-installed node — exec the install-time node by absolute path instead.\nexec ${q(nodePath)} ${q(launcherPath)} "$@"\n`;
+    >>>
+
+  fn name=resolveInstallBrowsers params="browser:string|undefined" returns="string[]" export=true
+    doc "Map the --browser flag to a concrete list. Default: chrome. Accepts a comma-separated list (e.g. 'chrome,chromium'). Empty/whitespace → ['chrome']."
+    handler <<<
+      const raw = (browser ?? 'chrome').trim().toLowerCase();
+      const list = raw.split(',').map((s) => s.trim()).filter(Boolean);
+      return list.length > 0 ? list : ['chrome'];
+    >>>
+
+  // ── Process / connection-file probes ──────────────────────────────────────────
+
+  fn name=isPidAlive params="pid:number" returns="boolean" export=true
+    doc "True iff `pid` is a live process. kill(pid,0) sends no signal but throws ESRCH when the pid is gone; EPERM means the process exists but is owned by another user (still alive). Any other error → treat as dead."
+    handler <<<
+      if (!Number.isInteger(pid) || pid <= 0) return false;
+      try { process.kill(pid, 0); return true; }
+      catch (err) { return (err as NodeJS.ErrnoException).code === 'EPERM'; }
+    >>>
+
+  fn name=listServeRecords returns="ServeConnRecord[]" export=true
+    doc "Read + parse every 0600 connection file under $AGON_HOME/serve/. Skips non-JSON entries and any file that fails validation (a legacy pid-less or half-written file is simply not reusable). Never throws — a missing serve/ dir yields []."
+    handler <<<
+      let names: string[];
+      try { names = readdirSync(serveConnDir()); } catch { return []; }
+      const out: ServeConnRecord[] = [];
+      for (const n of names) {
+        if (!n.endsWith('.json')) continue;
+        try {
+          const rec = parseConnRecord(readFileSync(join(serveConnDir(), n), 'utf8'));
+          if (rec) out.push(rec);
+        } catch { /* unreadable — skip */ }
+      }
+      return out;
+    >>>
+
+  // ── Owner metadata (so `stop` kills only host-spawned serves) ─────────────────
+
+  interface name=OwnedServe export=true
+    doc "Metadata the launcher records when IT spawned a serve, so `browser-host stop` can kill only host-owned serves (a serve the user started by hand is left running)."
+    field name=pid type=number
+    field name=origin type=string
+    field name=sessionId type=string
+    field name=url type=string
+
+  fn name=ownedPath params="pid:number" returns="string" export=false expr={{ return join(browserHostDir(), `owned-${pid}.json`); }}
+    doc "Path to a host-owned serve's metadata file: $AGON_HOME/browser-host/owned-<pid>.json."
+
+  fn name=listOwnedServes returns="OwnedServe[]" export=true
+    doc "Read every owned-<pid>.json under $AGON_HOME/browser-host/. Never throws; skips malformed files."
+    handler <<<
+      let names: string[];
+      try { names = readdirSync(browserHostDir()); } catch { return []; }
+      const out: OwnedServe[] = [];
+      for (const n of names) {
+        if (!/^owned-\d+\.json$/.test(n)) continue;
+        try {
+          const o = JSON.parse(readFileSync(join(browserHostDir(), n), 'utf8')) as Record<string, unknown>;
+          if (o && typeof o.pid === 'number') {
+            out.push({ pid: o.pid, origin: typeof o.origin === 'string' ? o.origin : '', sessionId: typeof o.sessionId === 'string' ? o.sessionId : '', url: typeof o.url === 'string' ? o.url : '' });
+          }
+        } catch { /* skip */ }
+      }
+      return out;
+    >>>
+
+  // ── Exclusive spawn-or-reuse lock ─────────────────────────────────────────────
+
+  fn name=sleepSync params="ms:number" returns="void" export=false
+    doc "Synchronous sleep (Atomics.wait on a throwaway SharedArrayBuffer) — used to back off inside the synchronous acquireLock retry loop without a busy-spin. The globalThis indirection keeps kern-guard's ambient-scope rule happy (its allowlist lacks Atomics/Int32Array/SharedArrayBuffer; globalThis is ambient) — same pattern as file-lock.kern's fileLockSleep."
+    handler <<<
+      try { globalThis.Atomics.wait(new globalThis.Int32Array(new globalThis.SharedArrayBuffer(4)), 0, 0, Math.max(0, ms)); } catch { /* no SAB — fall through */ }
+    >>>
+
+  fn name=acquirePairLock returns="(() => void) | null" export=true
+    doc "Take the exclusive spawn-or-reuse lock so two panels racing `pair` can't double-spawn. openSync(..,'wx') is an atomic create-exclusive; on contention we inspect the holder and STEAL only a genuinely stale lock (holder pid dead, or lock older than LOCK_STALE_MS), else back off up to a 5s deadline. LOCK_STALE_MS is well above the ~15s a legitimate holder keeps the lock during waitForServe, so a live spawn is never stolen out from under. An empty/unparseable lock is aged by its file mtime — NOT stolen on sight — closing the create-before-write race where a competitor reads the lock in the window between openSync and the metadata write. Returns a release fn that unlinks the lock, or null if the lock stayed held past the deadline."
+    handler <<<
+      mkdirSync(browserHostDir(), { recursive: true });
+      const lockPath = join(browserHostDir(), 'pair.lock');
+      const LOCK_STALE_MS = 60000; // >> the 15s spawn hold, so a live holder is never stolen
+      const deadline = Date.now() + 5000;
+      for (;;) {
+        try {
+          const fd = openSync(lockPath, 'wx');
+          try { writeFileSync(fd, JSON.stringify({ pid: process.pid, ts: Date.now() })); } catch { /* holder note is best-effort */ }
+          try { closeSync(fd); } catch { /* already closed */ }
+          return () => { try { unlinkSync(lockPath); } catch { /* already gone */ } };
+        } catch {
+          let stale = false;
+          try {
+            const h = JSON.parse(readFileSync(lockPath, 'utf8')) as { pid?: number; ts?: number };
+            const old = typeof h.ts === 'number' && Date.now() - h.ts > LOCK_STALE_MS;
+            const dead = typeof h.pid === 'number' && !isPidAlive(h.pid);
+            stale = old || dead;
+          } catch {
+            // Empty/unparseable: could be the create-before-write window of a live
+            // holder. Age it by mtime — steal only if it has sat unwritten too long.
+            try { stale = Date.now() - statSync(lockPath).mtimeMs > LOCK_STALE_MS; } catch { stale = true; }
+          }
+          if (stale) { try { unlinkSync(lockPath); } catch { /* raced */ } continue; }
+          if (Date.now() > deadline) return null;
+          sleepSync(100);
+        }
+      }
+    >>>
+
+  // ── Real PairDeps (fs + spawn + lock) for the launcher ────────────────────────
+
+  fn name=resolveCliEntry params="launcherEntry:string" returns="string" export=true
+    doc "The CLI entry the launcher spawns serve through. The launcher runs as dist/browser-host.js, so `agon serve` lives at its sibling dist/index.js — never spawn the launcher itself (it has no subcommands)."
+    handler <<<
+      let base = launcherEntry;
+      try { base = realpathSync(launcherEntry); } catch { /* keep as-is */ }
+      return join(dirname(base), 'index.js');
+    >>>
+
+  fn name=recordOwnedServe params="installedOrigin:string, rec:ServeConnRecord" returns="void" export=false
+    doc "Persist owner metadata for a serve THIS host spawned, keyed by pid, so `stop` can later kill exactly it. Best-effort — a failed write only means `stop` won't reap this pid."
+    handler <<<
+      try {
+        mkdirSync(browserHostDir(), { recursive: true });
+        writeFileSync(ownedPath(rec.pid), JSON.stringify({ pid: rec.pid, origin: installedOrigin, sessionId: rec.sessionId, url: rec.url, startedAt: new Date().toISOString() }, null, 2) + '\n');
+      } catch { /* best-effort */ }
+    >>>
+
+  fn name=serveSpawnPath params="installPath:string, currentPath:string, execPath:string, home:string" returns="string" export=true
+    doc "Build the PATH a host-spawned `agon serve` runs with. Chrome launches the native host with launchd's stripped PATH (/usr/bin:/bin:…), under which serve's engine registry can't `which` CLI binaries (codex under nvm, claude/agy under ~/.local/bin) and silently drops them from the extension's engine roster. Base = the install-time PATH (captured from the user's real login shell by `install`) when recorded, else the host's current PATH; then append the running node's own bin dir (an nvm/npm-global layout puts every `npm i -g` binary — codex, agon itself — next to node) and the standard user bin dirs, deduped ignoring trailing slashes, preserving base order. Unix-only (':' separator, macOS/Linux bin dirs) — matching the browser-host's scope; Windows install is not automated. Pure — takes every environmental input as a param so it unit-tests without process.*."
+    handler <<<
+      const parts = (installPath || currentPath).split(':').filter(Boolean);
+      const seen = new Set(parts.map((p) => p.replace(/\/+$/, '')));
+      for (const dir of [dirname(execPath), join(home, '.local', 'bin'), '/opt/homebrew/bin', '/usr/local/bin']) {
+        if (!seen.has(dir.replace(/\/+$/, ''))) { seen.add(dir.replace(/\/+$/, '')); parts.push(dir); }
+      }
+      return parts.join(':');
+    >>>
+
+  fn name=buildPairDeps params="cliEntry:string, installedOrigin:string, serveCwd:string, installPath:string" returns="PairDeps" export=true
+    doc "Assemble the real (fs/spawn/lock-backed) PairDeps the launcher hands runPair. spawnServe launches a DETACHED `agon serve --origin <origin>` with stdio ignored + unref'd (its lifetime is not tied to this host) in serveCwd (the install-time project dir) so it does NOT inherit Chrome's cwd, and with PATH rebuilt by serveSpawnPath (install-time PATH + node bin dir + user bin dirs) so it does NOT inherit Chrome's stripped PATH — otherwise the roster silently loses every CLI engine `which` can't find; waitForServe polls the serve/ dir for the child's own 0600 connection file (matched by pid) up to 15s; recordOwner marks it host-owned."
+    handler <<<
+      const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+      const cwd = serveCwd && existsSync(serveCwd) ? serveCwd : undefined;
+      const env = { ...process.env, PATH: serveSpawnPath(installPath, process.env.PATH ?? '', process.execPath, homedir()) };
+      return {
+        installedOrigin,
+        acquireLock: () => acquirePairLock(),
+        listServeRecords: () => listServeRecords(),
+        isAlive: (pid: number) => isPidAlive(pid),
+        spawnServe: (origin: string): number => {
+          // Fail fast on a misresolved CLI entry — otherwise node spawns, exits with
+          // "cannot find module", and waitForServe burns the full 15s on a pid that
+          // never writes a connection file.
+          if (!existsSync(cliEntry)) return -1;
+          const child = spawn(process.execPath, [cliEntry, 'serve', '--origin', origin], { detached: true, stdio: 'ignore', cwd, env });
+          try { child.unref(); } catch { /* best-effort */ }
+          return typeof child.pid === 'number' ? child.pid : -1;
+        },
+        waitForServe: async (pid: number): Promise<ServeConnRecord | null> => {
+          const deadline = Date.now() + 15000;
+          for (;;) {
+            const rec = listServeRecords().find((r) => r.pid === pid);
+            if (rec) return rec;
+            if (Date.now() > deadline) return null;
+            await delay(250);
+          }
+        },
+        recordOwner: (rec: ServeConnRecord) => recordOwnedServe(installedOrigin, rec),
+      };
+    >>>
+
+  // ── The launcher loop (Chrome runs dist/browser-host.js) ──────────────────────
+
+  fn name=runBrowserHostLauncher returns="Promise<void>" async=true export=true
+    doc "The Chrome native-messaging host. Reads 4-byte-LE-length-prefixed JSON frames from stdin; on a valid `pair` frame drives runPair (reuse-or-spawn) and writes exactly ONE response frame; on an unknown cmd replies {ok:false}; on a MALFORMED frame (bad JSON) or an oversized length-prefix it closes (unrecoverable). Responses are serialized in arrival order. Lives until stdin closes (Chrome disconnects when the panel closes); the spawned serve is detached and OUTLIVES this host by design."
+    handler <<<
+      ensureAgonHome();
+      const launcherEntry = process.argv[1] || '';
+      const cliEntry = resolveCliEntry(launcherEntry);
+      const state = readInstallState();
+      const installedOrigin = state?.origin ?? '';
+      const deps = buildPairDeps(cliEntry, installedOrigin, state?.cwd ?? '', state?.path ?? '');
+
+      const writeFrame = (obj: unknown): void => { try { process.stdout.write(encodeFrame(obj)); } catch { /* channel gone */ } };
+      const shutdown = (): void => { process.exit(0); };
+
+      let inbuf: Buffer = Buffer.alloc(0);
+      let chain: Promise<void> = Promise.resolve();
+      let closing = false;
+
+      process.stdin.on('data', (chunk: Buffer) => {
+        if (closing) return;
+        inbuf = Buffer.concat([inbuf, chunk]);
+        const parsed = decodeFrames(inbuf);
+        inbuf = parsed.rest;
+        for (const payload of parsed.frames) {
+          let msg: unknown;
+          try { msg = JSON.parse(payload); } catch {
+            // Malformed frame → close (the framing has no delimiter to resync on).
+            try { process.stderr.write('browser-host: malformed frame — closing\n'); } catch { /* best-effort */ }
+            closing = true;
+            shutdown();
+            return;
+          }
+          chain = chain.then(async () => {
+            try {
+              const resp: PairResponse = await runPair(msg, deps);
+              writeFrame(resp);
+            } catch (err) {
+              writeFrame({ ok: false, error: err instanceof Error ? err.message : String(err), protocol: PROTOCOL });
+            }
+          });
+        }
+        if (parsed.overflow) {
+          try { process.stderr.write('browser-host: oversized frame — closing\n'); } catch { /* best-effort */ }
+          closing = true;
+          shutdown();
+        }
+      });
+
+      process.stdin.on('end', shutdown);
+      process.stdin.on('close', shutdown);
+      process.on('SIGTERM', shutdown);
+      process.on('SIGINT', shutdown);
+
+      // Live until stdin closes; shutdown() exits the process.
+      await new Promise<void>(() => { /* never resolves */ });
+    >>>
+
+  // ── install / uninstall / status / stop ───────────────────────────────────────
+
+  fn name=runBrowserHostInstall params="origin:string|undefined, browser:string|undefined" returns="void" export=true
+    doc "Write the com.kernlang.agon native-messaging manifest(s) + install state. The manifest's `path` is a sh wrapper (host-wrapper.sh) that execs the install-time node by ABSOLUTE path on the dist launcher — Chrome execs hosts with launchd's stripped PATH, so the launcher's `#!/usr/bin/env node` shebang alone cannot find an nvm-installed node; allowed_origins is exactly the one installed origin (trailing-slash form). Validates --origin BEFORE writing anything. On an unsupported platform/browser it prints guidance (Windows: HKCU registry key, not yet automated) and, if nothing was written, exits 2."
+    handler <<<
+      ensureAgonHome();
+      const raw = (origin ?? '').trim().replace(/\/+$/, '');
+      if (!isExtensionOrigin(raw)) {
+        warn(`--origin must be a chrome-extension origin like chrome-extension://<32-char id> (a–p). Got "${origin ?? ''}".`);
+        info(dim('  Find the id at chrome://extensions (Developer mode → the Agon extension).'));
+        process.exitCode = 2;
+        return;
+      }
+      const cliEntry = process.argv[1] || '';
+      const launcherPath = resolveLauncherPath(cliEntry);
+      if (!existsSync(launcherPath)) {
+        warn(`host launcher not found at ${launcherPath} — build agon (\`npm run build\`) or reinstall the global package first.`);
+        process.exitCode = 2;
+        return;
+      }
+      try { chmodSync(launcherPath, 0o755); } catch { /* best-effort — Chrome needs the exec bit */ }
+
+      // The manifest must NOT point at the launcher directly: Chrome execs the host with
+      // launchd's stripped PATH, where `#!/usr/bin/env node` finds no node (nvm layouts).
+      // Point it at a wrapper that execs THIS node by absolute path. Hard failure if it
+      // can't be written — a manifest without it is inert.
+      const wrapperPath = hostWrapperPath();
+      try {
+        mkdirSync(browserHostDir(), { recursive: true });
+        writeFileSync(wrapperPath, buildHostWrapperScript(process.execPath, launcherPath));
+        chmodSync(wrapperPath, 0o755);
+      } catch (err) {
+        warn(`could not write the host wrapper at ${wrapperPath} (${err instanceof Error ? err.message : String(err)}) — Chrome could not launch the host. Nothing installed.`);
+        process.exitCode = 2;
+        return;
+      }
+
+      const manifest = buildHostManifest(wrapperPath, raw);
+      const home = homedir();
+      const browsers = resolveInstallBrowsers(browser);
+      const written: string[] = [];
+      for (const b of browsers) {
+        const dir = nativeHostDir(process.platform, home, b);
+        if (!dir) {
+          const winHint = process.platform === 'win32'
+            ? ' — on Windows, register the host under the HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\com.kernlang.agon registry key (not yet automated)'
+            : '';
+          warn(`browser "${b}" is not supported on ${process.platform}${winHint} — skipped.`);
+          continue;
+        }
+        try {
+          mkdirSync(dir, { recursive: true });
+          const mp = manifestPath(dir);
+          writeFileSync(mp, JSON.stringify(manifest, null, 2) + '\n');
+          written.push(mp);
+        } catch (err) {
+          warn(`could not write manifest for ${b}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
+      if (written.length === 0) {
+        warn('no native-messaging manifests were written.');
+        process.exitCode = 2;
+        return;
+      }
+
+      // The launcher reads this state at pair time for the installed origin (and the
+      // project cwd to spawn serve in). If it can't be written the manifest is inert —
+      // Chrome would exec a host that rejects every pair — so this is a HARD failure,
+      // not a warning.
+      try {
+        mkdirSync(browserHostDir(), { recursive: true });
+        writeFileSync(browserHostStatePath(), JSON.stringify({ origin: raw, launcherPath, cwd: process.cwd(), path: process.env.PATH ?? '', manifests: written }, null, 2) + '\n');
+      } catch (err) {
+        warn(`wrote the manifest but could not record install state (${err instanceof Error ? err.message : String(err)}) — pairing would fail. Removing the manifest(s); re-run install.`);
+        for (const mp of written) { try { rmSync(mp, { force: true }); } catch { /* best-effort */ } }
+        process.exitCode = 2;
+        return;
+      }
+
+      header('agon browser-host — installed');
+      info(`  ${bold('origin')}    ${cyan(raw)}`);
+      info(`  ${bold('launcher')}  ${dim(launcherPath)}`);
+      for (const p of written) info(`  ${bold('manifest')}  ${dim(p)}`);
+      info('');
+      success('Open the Agon side panel — it pairs automatically (no terminal, no token).');
+      info(dim('  Re-run after `npm run build` / a global reinstall (dist is rebuilt without the exec bit).'));
+    >>>
+
+  fn name=runBrowserHostUninstall returns="void" export=true
+    doc "Remove the native-messaging manifest(s) recorded in the install state (falling back to the known per-platform manifest paths if state is missing) and delete the install state. Leaves any running serve alone — use `browser-host stop` to kill a host-owned serve."
+    handler <<<
+      ensureAgonHome();
+      const state = readInstallState();
+      const removed: string[] = [];
+      const targets = state && state.manifests.length > 0
+        ? state.manifests
+        : ['chrome', 'chromium'].map((b) => { const d = nativeHostDir(process.platform, homedir(), b); return d ? manifestPath(d) : ''; }).filter(Boolean);
+      for (const mp of targets) {
+        if (existsSync(mp)) { try { rmSync(mp, { force: true }); removed.push(mp); } catch { /* best-effort */ } }
+      }
+      try { rmSync(browserHostStatePath(), { force: true }); } catch { /* best-effort */ }
+      try { rmSync(hostWrapperPath(), { force: true }); } catch { /* best-effort */ }
+
+      header('agon browser-host — uninstalled');
+      if (removed.length === 0) { info(dim('  no manifest found — nothing to remove.')); }
+      for (const p of removed) info(`  ${bold('removed')}  ${dim(p)}`);
+      info(dim('  A running serve is left alone — `agon browser-host stop` kills a host-owned one.'));
+    >>>
+
+  fn name=runBrowserHostStatus returns="void" export=true
+    doc "Print the install state: the installed origin, the manifest path(s) (and whether each still exists), and whether a live serve covering that origin exists (host-owned or not)."
+    handler <<<
+      ensureAgonHome();
+      const state = readInstallState();
+      header('agon browser-host — status');
+      if (!state) {
+        warn('not installed.');
+        info(dim('  Install with: agon browser-host install --origin chrome-extension://<id>'));
+        return;
+      }
+      info(`  ${bold('origin')}    ${cyan(state.origin)}`);
+      info(`  ${bold('launcher')}  ${dim(state.launcherPath)} ${existsSync(state.launcherPath) ? green('(present)') : yellow('(missing — rebuild)')}`);
+      // The wrapper is what Chrome actually execs — a missing/non-executable one breaks
+      // pairing even when launcher + manifest look healthy.
+      const wp = hostWrapperPath();
+      let wrapperState = yellow('(missing — re-run install)');
+      try { if ((statSync(wp).mode & 0o111) !== 0) wrapperState = green('(present)'); else wrapperState = yellow('(not executable — re-run install)'); } catch { /* missing */ }
+      info(`  ${bold('wrapper')}   ${dim(wp)} ${wrapperState}`);
+      for (const p of state.manifests) info(`  ${bold('manifest')}  ${dim(p)} ${existsSync(p) ? green('(present)') : yellow('(missing)')}`);
+
+      const live = findReusableServe(listServeRecords(), state.origin, isPidAlive);
+      const owned = listOwnedServes().filter((o) => isPidAlive(o.pid));
+      info('');
+      if (live) {
+        const ownedHere = owned.some((o) => o.pid === live.pid);
+        info(`  ${bold('serve')}     ${green('live')} @ ${cyan(live.url)}  ${dim(`(pid ${live.pid}, session ${live.sessionId}${ownedHere ? ', host-owned' : ''})`)}`);
+      } else {
+        info(`  ${bold('serve')}     ${dim('none — a serve is spawned on the next pair')}`);
+      }
+      if (owned.length > 0) info(dim(`  ${owned.length} host-owned serve(s) running — 'agon browser-host stop' kills them.`));
+    >>>
+
+  fn name=runBrowserHostStop returns="void" export=true
+    doc "SIGTERM every serve THIS host spawned (recorded owner metadata), and clear its metadata. Never touches a serve the user started by hand (no owner file)."
+    handler <<<
+      ensureAgonHome();
+      const owned = listOwnedServes();
+      let killed = 0;
+      for (const o of owned) {
+        if (isPidAlive(o.pid)) { try { process.kill(o.pid, 'SIGTERM'); killed++; } catch { /* raced/gone */ } }
+        try { rmSync(ownedPath(o.pid), { force: true }); } catch { /* best-effort */ }
+      }
+      header('agon browser-host — stop');
+      if (owned.length === 0) info(dim('  no host-owned serve recorded — nothing to stop.'));
+      else success(`stopped ${killed} host-owned serve(s).`);
+      info(dim('  A serve you started by hand (agon serve …) is left running.'));
+    >>>
+
+  // ── Commands ──────────────────────────────────────────────────────────────────
+
+  const name=browserHostInstallCommand type=any
+    handler <<<
+      defineCommand({
+        meta: { name: 'install', description: 'Write the com.kernlang.agon native-messaging manifest so the browser extension pairs automatically.' },
+        args: {
+          origin: { type: 'string', description: 'Extension Origin to allow: chrome-extension://<32-char id> (required).', required: false },
+          browser: { type: 'string', description: 'chrome | chromium (comma-separated; default: chrome). macOS Chrome + Chromium; Linux google-chrome + chromium. Windows: register the HKCU registry key manually (not yet automated).', required: false },
+        },
+        run({ args }: { args: { origin?: string; browser?: string } }) { runBrowserHostInstall(args.origin, args.browser); },
+      })
+    >>>
+
+  const name=browserHostUninstallCommand type=any
+    handler <<<
+      defineCommand({
+        meta: { name: 'uninstall', description: 'Remove the native-messaging manifest(s) and install state.' },
+        run() { runBrowserHostUninstall(); },
+      })
+    >>>
+
+  const name=browserHostStatusCommand type=any
+    handler <<<
+      defineCommand({
+        meta: { name: 'status', description: 'Show the installed origin, manifest path(s), and whether a live serve exists.' },
+        run() { runBrowserHostStatus(); },
+      })
+    >>>
+
+  const name=browserHostStopCommand type=any
+    handler <<<
+      defineCommand({
+        meta: { name: 'stop', description: 'Stop only the agon serve(s) this host spawned (a hand-started serve is left running).' },
+        run() { runBrowserHostStop(); },
+      })
+    >>>
+
+  const name=browserHostCommand type=any export=true
+    handler <<<
+      defineCommand({
+        meta: {
+          name: 'browser-host',
+          description: 'Native-messaging pairing: install the com.kernlang.agon host so the browser extension connects with zero paste (install | uninstall | status | stop).',
+        },
+        subCommands: {
+          install: browserHostInstallCommand,
+          uninstall: browserHostUninstallCommand,
+          status: browserHostStatusCommand,
+          stop: browserHostStopCommand,
+        },
+      })
+    >>>

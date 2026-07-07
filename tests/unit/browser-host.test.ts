@@ -433,8 +433,13 @@ describe('browser-host — runBrowserHostInstall (writes manifest + state)', () 
         expect(manifest.name).toBe('com.kernlang.agon');
         expect(manifest.type).toBe('stdio');
         expect(manifest.allowed_origins).toEqual([`${VALID_ORIGIN}/`]);
-        // path is the realpath'd sibling launcher (realpathSync collapses macOS /var → /private/var symlinks).
-        expect(manifest.path).toBe(join(realpathSync(dist), 'browser-host.js'));
+        // The manifest points at the sh wrapper, not the launcher: Chrome execs hosts with a
+        // stripped PATH where `#!/usr/bin/env node` can't find an nvm node. The wrapper execs
+        // the install-time node by absolute path on the realpath'd launcher.
+        expect(manifest.path).toBe(join(agonHome, 'browser-host', 'host-wrapper.sh'));
+        const wrapper = readFileSync(manifest.path, 'utf-8');
+        expect(wrapper).toContain(`exec "${process.execPath}" "${join(realpathSync(dist), 'browser-host.js')}" "$@"`);
+        expect(statSync(manifest.path).mode & 0o111).not.toBe(0);
         // Install state records the origin + manifest list.
         const state = JSON.parse(readFileSync(join(agonHome, 'browser-host', 'state.json'), 'utf-8'));
         expect(state.origin).toBe(VALID_ORIGIN);

@@ -31,6 +31,7 @@ import {
   isPidAlive,
   runBrowserHostInstall,
   serveSpawnPath,
+  buildHostWrapperScript,
 } from '../../packages/cli/src/generated/commands/browser-host.js';
 
 const VALID_ID = 'abcdefghijklmnopabcdefghijklmnop';
@@ -388,6 +389,14 @@ describe('browser-host — command helpers', () => {
     const parts = out.split(':');
     expect(parts.filter((p) => p.replace(/\/+$/, '') === '/usr/local/bin')).toHaveLength(1);
   });
+
+  it('buildHostWrapperScript: single-quotes paths so $, backticks, spaces, and quotes never expand at exec time', () => {
+    const nasty = "/Users/o'brien/Application Support/$HOME/`whoami`/node";
+    const script = buildHostWrapperScript(nasty, '/opt/agon dist/browser-host.js');
+    expect(script.startsWith('#!/bin/sh\n')).toBe(true);
+    // Embedded single quote escaped via the '\'' idiom; everything else inert inside single quotes.
+    expect(script).toContain(`exec '/Users/o'\\''brien/Application Support/$HOME/\`whoami\`/node' '/opt/agon dist/browser-host.js' "$@"`);
+  });
 });
 
 describe('browser-host — runBrowserHostInstall (writes manifest + state)', () => {
@@ -438,7 +447,7 @@ describe('browser-host — runBrowserHostInstall (writes manifest + state)', () 
         // the install-time node by absolute path on the realpath'd launcher.
         expect(manifest.path).toBe(join(agonHome, 'browser-host', 'host-wrapper.sh'));
         const wrapper = readFileSync(manifest.path, 'utf-8');
-        expect(wrapper).toContain(`exec "${process.execPath}" "${join(realpathSync(dist), 'browser-host.js')}" "$@"`);
+        expect(wrapper).toContain(`exec '${process.execPath}' '${join(realpathSync(dist), 'browser-host.js')}' "$@"`);
         expect(statSync(manifest.path).mode & 0o111).not.toBe(0);
         // Install state records the origin + manifest list.
         const state = JSON.parse(readFileSync(join(agonHome, 'browser-host', 'state.json'), 'utf-8'));

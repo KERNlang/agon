@@ -12,6 +12,7 @@
   "versionCmd": ["--version"],
   "isLocal": false,
   "tier": "builtin",
+  "capabilities": ["vision"],
   "installHint": "curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash",
   "timeout": 180,
 

@@ -11,8 +11,9 @@ export {
   attachVisionToMessages,
   visionSupportNote,
   decodeDataUrlToImageFile,
+  parseImageDimensions,
   sniffImageMime,
   MAX_DISPATCH_IMAGES,
   MAX_DISPATCH_IMAGE_BYTES,
 } from './generated/blocks/image.js';
-export type { DataUrlImageResult } from './generated/blocks/image.js';
+export type { DataUrlImageResult, ImageDimensions } from './generated/blocks/image.js';

@@ -1,7 +1,7 @@
 import { describe, expect, it, afterEach } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { EngineRegistry } from '../../packages/core/src/engine-registry.js';
 import type { AgonConfig, EngineDefinition } from '../../packages/core/src/generated/models/types.js';
 
@@ -373,6 +373,21 @@ describe('engine activation', () => {
 
     expect(registry.getFallbackChain('api-sonnet', 'bugfix', active)).toEqual(['codex']);
     expect(registry.getFallbackChain('api-sonnet', 'bugfix', active)).not.toContain('claude');
+  });
+
+  it("findBinary falls back to node's own bin dir when which fails and searchPaths miss (stripped-PATH native host / cron)", () => {
+    // The running node binary is the one file guaranteed to exist in dirname(process.execPath).
+    const engine = makeKimiCodeEngine({ id: 'stripped-env-probe', binary: basename(process.execPath), searchPaths: [] });
+    const registry = new EngineRegistry();
+    registry.register(engine);
+
+    const prevPath = process.env.PATH;
+    process.env.PATH = ''; // simulate Chrome's/launchd's stripped environment — `which` can't help
+    try {
+      expect(registry.findBinary(registry.get('stripped-env-probe'))).toBe(join(dirname(process.execPath), basename(process.execPath)));
+    } finally {
+      if (prevPath === undefined) delete process.env.PATH; else process.env.PATH = prevPath;
+    }
   });
 
   it('keeps kimi-code active by default when the kimi binary is discoverable', () => {

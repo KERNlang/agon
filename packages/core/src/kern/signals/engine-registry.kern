@@ -194,8 +194,12 @@ service name=EngineRegistry
       } catch {
         // 'which' not finding a binary is expected — no warning needed
       }
-      for (const rawPath of (engine.searchPaths ?? [])) {
-        const expanded = rawPath.replace('${HOME}', homedir());
+      // Implicit last search path: the running node's own bin dir. Under nvm/npm-global
+      // layouts every `npm i -g` binary (codex, agon, …) sits next to node — so a process
+      // launched with a stripped PATH (Chrome native host, cron, launchd) still resolves
+      // CLI engines its own runtime was installed alongside.
+      const searchDirs = [...(engine.searchPaths ?? []).map((p: string) => p.replace('${HOME}', homedir())), dirname(process.execPath)];
+      for (const expanded of searchDirs) {
         const fullPath = join(expanded, engine.binary);
         if (existsSync(fullPath)) { this.binaryCache.set(engine.id, fullPath); return fullPath; }
       }

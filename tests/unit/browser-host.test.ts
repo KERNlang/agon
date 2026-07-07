@@ -30,6 +30,7 @@ import {
   resolveCliEntry,
   isPidAlive,
   runBrowserHostInstall,
+  serveSpawnPath,
 } from '../../packages/cli/src/generated/commands/browser-host.js';
 
 const VALID_ID = 'abcdefghijklmnopabcdefghijklmnop';
@@ -354,6 +355,39 @@ describe('browser-host — command helpers', () => {
     expect(isPidAlive(0)).toBe(false);
     expect(isPidAlive(-1)).toBe(false);
   });
+
+  it("serveSpawnPath: install-time PATH wins over the host's stripped PATH and gains node + user bin dirs", () => {
+    const out = serveSpawnPath(
+      '/Users/u/.nvm/versions/node/v22/bin:/usr/bin:/bin',
+      '/usr/bin:/bin:/usr/sbin:/sbin',
+      '/Users/u/.nvm/versions/node/v22/bin/node',
+      '/Users/u',
+    );
+    const parts = out.split(':');
+    // Base order preserved: the install-time PATH leads.
+    expect(parts[0]).toBe('/Users/u/.nvm/versions/node/v22/bin');
+    // node's own bin dir was already present — not duplicated.
+    expect(parts.filter((p) => p === '/Users/u/.nvm/versions/node/v22/bin')).toHaveLength(1);
+    expect(parts).toContain('/Users/u/.local/bin');
+    expect(parts).toContain('/opt/homebrew/bin');
+    expect(parts).toContain('/usr/local/bin');
+    // Chrome's stripped PATH was ignored entirely (its extra sbin dirs don't leak in).
+    expect(parts).not.toContain('/usr/sbin');
+  });
+
+  it("serveSpawnPath: no install-time PATH recorded → falls back to the current PATH, still appends node's bin dir", () => {
+    const out = serveSpawnPath('', '/usr/bin:/bin', '/opt/node/bin/node', '/Users/u');
+    const parts = out.split(':');
+    expect(parts[0]).toBe('/usr/bin');
+    expect(parts).toContain('/opt/node/bin');
+    expect(parts).toContain('/Users/u/.local/bin');
+  });
+
+  it('serveSpawnPath: dedup ignores trailing slashes (a /usr/local/bin/ base entry blocks the appended /usr/local/bin)', () => {
+    const out = serveSpawnPath('/usr/local/bin/:/usr/bin', '', '/opt/node/bin/node', '/Users/u');
+    const parts = out.split(':');
+    expect(parts.filter((p) => p.replace(/\/+$/, '') === '/usr/local/bin')).toHaveLength(1);
+  });
 });
 
 describe('browser-host — runBrowserHostInstall (writes manifest + state)', () => {
@@ -384,9 +418,12 @@ describe('browser-host — runBrowserHostInstall (writes manifest + state)', () 
       const prevAgonHome = process.env.AGON_HOME;
       const prevArgv1 = process.argv[1];
       const prevExit = process.exitCode;
+      const prevPath = process.env.PATH;
       process.env.HOME = home;
       process.env.AGON_HOME = agonHome;
       process.argv[1] = join(dist, 'index.js');
+      // Sentinel PATH so the state assertion exercises the real capture, not a tautology.
+      process.env.PATH = `/tmp/fake-login-path:${prevPath ?? ''}`;
       try {
         runBrowserHostInstall(VALID_ORIGIN, 'chrome');
         const dir = nativeHostDir(process.platform, home, 'chrome')!;
@@ -404,6 +441,9 @@ describe('browser-host — runBrowserHostInstall (writes manifest + state)', () 
         expect(state.manifests).toContain(mp);
         // cwd is recorded so an auto-spawned serve runs in the project dir, not Chrome's cwd.
         expect(state.cwd).toBe(process.cwd());
+        // PATH is recorded so an auto-spawned serve resolves CLI engine binaries the
+        // way the user's login shell does, not with Chrome's stripped launchd PATH.
+        expect(state.path).toBe(`/tmp/fake-login-path:${prevPath ?? ''}`);
         // The launcher was chmod'd executable so Chrome can exec it.
         expect(statSync(join(dist, 'browser-host.js')).mode & 0o111).not.toBe(0);
       } finally {
@@ -411,6 +451,7 @@ describe('browser-host — runBrowserHostInstall (writes manifest + state)', () 
         process.argv[1] = prevArgv1;
         if (prevHome === undefined) delete process.env.HOME; else process.env.HOME = prevHome;
         if (prevAgonHome === undefined) delete process.env.AGON_HOME; else process.env.AGON_HOME = prevAgonHome;
+        if (prevPath === undefined) delete process.env.PATH; else process.env.PATH = prevPath;
       }
     },
   );

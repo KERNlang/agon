@@ -32,6 +32,9 @@ import {
   runBrowserHostInstall,
   serveSpawnPath,
   buildHostWrapperScript,
+  readInstallState,
+  listOwnedServes,
+  browserHostStatePath,
 } from '../../packages/cli/src/generated/commands/browser-host.js';
 
 const VALID_ID = 'abcdefghijklmnopabcdefghijklmnop';
@@ -104,32 +107,41 @@ describe('browser-host — pair schema + origin validation', () => {
   });
 
   it('validatePair: a well-formed pair to the installed origin is ok', () => {
-    const v = validatePair({ cmd: 'pair', origin: VALID_ORIGIN, protocol: 1 }, VALID_ORIGIN);
+    const v = validatePair({ cmd: 'pair', origin: VALID_ORIGIN, protocol: 1 }, [VALID_ORIGIN]);
     expect(v).toEqual({ ok: true, origin: VALID_ORIGIN });
   });
 
   it('validatePair: wrong protocol → error before anything else', () => {
-    expect(validatePair({ cmd: 'pair', origin: VALID_ORIGIN, protocol: 2 }, VALID_ORIGIN)).toMatchObject({ ok: false });
-    expect(validatePair({ cmd: 'pair', origin: VALID_ORIGIN }, VALID_ORIGIN).error).toMatch(/protocol/);
+    expect(validatePair({ cmd: 'pair', origin: VALID_ORIGIN, protocol: 2 }, [VALID_ORIGIN])).toMatchObject({ ok: false });
+    expect(validatePair({ cmd: 'pair', origin: VALID_ORIGIN }, [VALID_ORIGIN]).error).toMatch(/protocol/);
   });
 
   it('validatePair: unknown cmd → {ok:false, error:"unknown cmd"}', () => {
-    expect(validatePair({ cmd: 'nuke', origin: VALID_ORIGIN, protocol: 1 }, VALID_ORIGIN)).toEqual({ ok: false, error: 'unknown cmd' });
+    expect(validatePair({ cmd: 'nuke', origin: VALID_ORIGIN, protocol: 1 }, [VALID_ORIGIN])).toEqual({ ok: false, error: 'unknown cmd' });
   });
 
   it('validatePair: malformed origin field → invalid origin', () => {
-    expect(validatePair({ cmd: 'pair', origin: 'https://x', protocol: 1 }, VALID_ORIGIN).error).toMatch(/invalid origin/);
-    expect(validatePair({ cmd: 'pair', protocol: 1 }, VALID_ORIGIN).error).toMatch(/invalid origin/);
+    expect(validatePair({ cmd: 'pair', origin: 'https://x', protocol: 1 }, [VALID_ORIGIN]).error).toMatch(/invalid origin/);
+    expect(validatePair({ cmd: 'pair', protocol: 1 }, [VALID_ORIGIN]).error).toMatch(/invalid origin/);
   });
 
-  it('validatePair: a valid origin that is NOT the installed one → origin not permitted', () => {
+  it('validatePair: a valid origin that is NOT in the installed allowlist → origin not permitted', () => {
     const other = 'chrome-extension://ponmlkjihgfedcbaponmlkjihgfedcba';
-    expect(validatePair({ cmd: 'pair', origin: other, protocol: 1 }, VALID_ORIGIN).error).toMatch(/not permitted/);
+    expect(validatePair({ cmd: 'pair', origin: other, protocol: 1 }, [VALID_ORIGIN]).error).toMatch(/not permitted/);
   });
 
   it('validatePair: a non-object frame → malformed request', () => {
-    expect(validatePair(null, VALID_ORIGIN).error).toMatch(/malformed/);
-    expect(validatePair('pair', VALID_ORIGIN).error).toMatch(/malformed/);
+    expect(validatePair(null, [VALID_ORIGIN]).error).toMatch(/malformed/);
+    expect(validatePair('pair', [VALID_ORIGIN]).error).toMatch(/malformed/);
+  });
+
+  it('validatePair: a MULTI-origin allowlist accepts a pair from any member (dev id + a second/store id)', () => {
+    const secondOrigin = 'chrome-extension://ponmlkjihgfedcbaponmlkjihgfedcba';
+    const allowlist = [VALID_ORIGIN, secondOrigin];
+    expect(validatePair({ cmd: 'pair', origin: VALID_ORIGIN, protocol: 1 }, allowlist)).toEqual({ ok: true, origin: VALID_ORIGIN });
+    expect(validatePair({ cmd: 'pair', origin: secondOrigin, protocol: 1 }, allowlist)).toEqual({ ok: true, origin: secondOrigin });
+    const thirdOrigin = 'chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    expect(validatePair({ cmd: 'pair', origin: thirdOrigin, protocol: 1 }, allowlist).error).toMatch(/not permitted/);
   });
 });
 
@@ -157,8 +169,8 @@ describe('browser-host — manifest path + content per platform', () => {
     expect(HOST_NAME).toBe('com.kernlang.agon');
   });
 
-  it('buildHostManifest: exact wire shape, exactly one allowed_origins with a trailing slash', () => {
-    const m = buildHostManifest('/abs/dist/browser-host.js', VALID_ORIGIN);
+  it('buildHostManifest: exact wire shape, exactly one allowed_origins with a trailing slash (single-id install)', () => {
+    const m = buildHostManifest('/abs/dist/browser-host.js', [VALID_ORIGIN]);
     expect(m.name).toBe('com.kernlang.agon');
     expect(m.type).toBe('stdio');
     expect(m.path).toBe('/abs/dist/browser-host.js');
@@ -168,8 +180,14 @@ describe('browser-host — manifest path + content per platform', () => {
   });
 
   it('buildHostManifest: collapses a stray trailing slash rather than doubling it', () => {
-    const m = buildHostManifest('/x', `${VALID_ORIGIN}/`);
+    const m = buildHostManifest('/x', [`${VALID_ORIGIN}/`]);
     expect(m.allowed_origins).toEqual([`${VALID_ORIGIN}/`]);
+  });
+
+  it('buildHostManifest: multiple origins (dev id + a second/store id) each get a trailing slash', () => {
+    const secondOrigin = 'chrome-extension://ponmlkjihgfedcbaponmlkjihgfedcba';
+    const m = buildHostManifest('/x', [VALID_ORIGIN, secondOrigin]);
+    expect(m.allowed_origins).toEqual([`${VALID_ORIGIN}/`, `${secondOrigin}/`]);
   });
 });
 
@@ -218,7 +236,7 @@ describe('browser-host — connection-file parsing + stale/reuse logic', () => {
 
 function baseDeps(over: Partial<PairDeps> = {}): PairDeps {
   return {
-    installedOrigin: VALID_ORIGIN,
+    installedOrigins: [VALID_ORIGIN],
     acquireLock: () => () => {},
     listServeRecords: () => [],
     isAlive: () => true,
@@ -257,6 +275,20 @@ describe('browser-host — pair state machine (reuse vs spawn vs error)', () => 
     expect(spawnedOrigins).toEqual([VALID_ORIGIN]); // fixed spawn command, our origin only
     expect(owned).toHaveLength(1);
     expect(owned[0].pid).toBe(9999);
+  });
+
+  it('SPAWN: a MULTI-origin install (dev id + a second/store id) accepts + spawns for the second id', async () => {
+    const secondOrigin = 'chrome-extension://ponmlkjihgfedcbaponmlkjihgfedcba';
+    const spawnedOrigins: string[] = [];
+    const deps = baseDeps({
+      installedOrigins: [VALID_ORIGIN, secondOrigin],
+      listServeRecords: () => [],
+      spawnServe: (o) => { spawnedOrigins.push(o); return 9999; },
+      waitForServe: async () => ({ url: 'http://127.0.0.1:5001', token: 'fresh2', sessionId: 'serve-new2', pid: 9999, allowedOrigins: [secondOrigin] }),
+    });
+    const resp = await runPair({ cmd: 'pair', origin: secondOrigin, protocol: 1 }, deps);
+    expect(resp).toMatchObject({ ok: true, token: 'fresh2', started: true, protocol: 1 });
+    expect(spawnedOrigins).toEqual([secondOrigin]); // spawned with the ONE origin that actually paired, not the whole allowlist
   });
 
   it('ERROR: invalid origin never touches the lock or spawns', async () => {
@@ -449,9 +481,9 @@ describe('browser-host — runBrowserHostInstall (writes manifest + state)', () 
         const wrapper = readFileSync(manifest.path, 'utf-8');
         expect(wrapper).toContain(`exec '${process.execPath}' '${join(realpathSync(dist), 'browser-host.js')}' "$@"`);
         expect(statSync(manifest.path).mode & 0o111).not.toBe(0);
-        // Install state records the origin + manifest list.
+        // Install state records the origin(s) + manifest list.
         const state = JSON.parse(readFileSync(join(agonHome, 'browser-host', 'state.json'), 'utf-8'));
-        expect(state.origin).toBe(VALID_ORIGIN);
+        expect(state.origins).toEqual([VALID_ORIGIN]);
         expect(state.manifests).toContain(mp);
         // cwd is recorded so an auto-spawned serve runs in the project dir, not Chrome's cwd.
         expect(state.cwd).toBe(process.cwd());
@@ -469,4 +501,104 @@ describe('browser-host — runBrowserHostInstall (writes manifest + state)', () 
       }
     },
   );
+
+  it.skipIf(process.platform !== 'darwin' && process.platform !== 'linux')(
+    'unions AGON_EXTENSION_IDS with --origin, dedupes, and skips a malformed entry',
+    () => {
+      const home = mkdtempSync(join(tmpdir(), 'agon-bh-multi-install-'));
+      const agonHome = mkdtempSync(join(tmpdir(), 'agon-bh-multi-home-'));
+      const dist = join(agonHome, 'dist');
+      mkdirSync(dist, { recursive: true });
+      writeFileSync(join(dist, 'index.js'), '// cli');
+      writeFileSync(join(dist, 'browser-host.js'), '// launcher');
+
+      const SECOND_ID = 'ponmlkjihgfedcbaponmlkjihgfedcba'; // stands in for a published Chrome-Web-Store id
+      const prevHome = process.env.HOME;
+      const prevAgonHome = process.env.AGON_HOME;
+      const prevArgv1 = process.argv[1];
+      const prevExit = process.exitCode;
+      const prevEnv = process.env.AGON_EXTENSION_IDS;
+      process.env.HOME = home;
+      process.env.AGON_HOME = agonHome;
+      process.argv[1] = join(dist, 'index.js');
+      // VALID_ID repeated (dedupe against --origin) + one malformed entry (skipped, not a crash).
+      process.env.AGON_EXTENSION_IDS = `${SECOND_ID},${VALID_ID},not-a-valid-entry`;
+      try {
+        runBrowserHostInstall(VALID_ORIGIN, 'chrome');
+        expect(process.exitCode).not.toBe(2);
+        const dir = nativeHostDir(process.platform, home, 'chrome')!;
+        const mp = manifestPath(dir);
+        const manifest = JSON.parse(readFileSync(mp, 'utf-8'));
+        expect(manifest.allowed_origins).toEqual([`${VALID_ORIGIN}/`, `chrome-extension://${SECOND_ID}/`]);
+        const state = JSON.parse(readFileSync(join(agonHome, 'browser-host', 'state.json'), 'utf-8'));
+        expect(state.origins).toEqual([VALID_ORIGIN, `chrome-extension://${SECOND_ID}`]);
+      } finally {
+        process.exitCode = prevExit;
+        process.argv[1] = prevArgv1;
+        if (prevHome === undefined) delete process.env.HOME; else process.env.HOME = prevHome;
+        if (prevAgonHome === undefined) delete process.env.AGON_HOME; else process.env.AGON_HOME = prevAgonHome;
+        if (prevEnv === undefined) delete process.env.AGON_EXTENSION_IDS; else process.env.AGON_EXTENSION_IDS = prevEnv;
+      }
+    },
+  );
+});
+
+// ── Legacy single-`origin` state files (pre-multi-ID rollout path) ─────────────
+// Every user who installed before the multi-ID change has `{ origin: "..." }` (singular) in
+// state.json and owned-<pid>.json — these MUST keep reading as a one-element `origins` array,
+// or the rollout uninstalls everyone. Each test writes into an isolated AGON_HOME and restores.
+
+describe('browser-host — legacy single-origin state compatibility', () => {
+  function withTempAgonHome<T>(fn: (home: string) => T): T {
+    const prev = process.env.AGON_HOME;
+    const home = mkdtempSync(join(tmpdir(), 'agon-legacy-state-'));
+    process.env.AGON_HOME = home;
+    try { return fn(home); }
+    finally { if (prev === undefined) delete process.env.AGON_HOME; else process.env.AGON_HOME = prev; }
+  }
+
+  it('readInstallState wraps a legacy `origin` (singular) into a one-element origins array', () => {
+    withTempAgonHome(() => {
+      mkdirSync(join(browserHostStatePath(), '..'), { recursive: true });
+      writeFileSync(browserHostStatePath(), JSON.stringify({
+        origin: VALID_ORIGIN, // pre-multi-ID field name
+        launcherPath: '/opt/agon/dist/browser-host.js',
+        cwd: '/Users/someone/project',
+        path: '/usr/local/bin:/usr/bin',
+        manifests: ['/tmp/host.json'],
+      }));
+      const state = readInstallState();
+      expect(state).not.toBeNull();
+      expect(state!.origins).toEqual([VALID_ORIGIN]);
+      expect(state!.launcherPath).toBe('/opt/agon/dist/browser-host.js');
+    });
+  });
+
+  it('readInstallState prefers a modern `origins` array and still returns null when both are absent', () => {
+    withTempAgonHome(() => {
+      mkdirSync(join(browserHostStatePath(), '..'), { recursive: true });
+      const second = `chrome-extension://${'p'.repeat(32)}`;
+      writeFileSync(browserHostStatePath(), JSON.stringify({ origins: [VALID_ORIGIN, second], launcherPath: '', cwd: '', path: '', manifests: [] }));
+      expect(readInstallState()!.origins).toEqual([VALID_ORIGIN, second]);
+      writeFileSync(browserHostStatePath(), JSON.stringify({ launcherPath: '/x', cwd: '', path: '', manifests: [] })); // neither field
+      expect(readInstallState()).toBeNull();
+    });
+  });
+
+  it('listOwnedServes wraps a legacy `origin` (singular) owner file into origins[]', () => {
+    withTempAgonHome(() => {
+      const dir = join(browserHostStatePath(), '..');
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'owned-12345.json'), JSON.stringify({
+        pid: 12345,
+        origin: VALID_ORIGIN, // pre-multi-ID field name
+        sessionId: 's-1',
+        url: 'http://127.0.0.1:8787',
+      }));
+      const owned = listOwnedServes();
+      expect(owned).toHaveLength(1);
+      expect(owned[0].origins).toEqual([VALID_ORIGIN]);
+      expect(owned[0].pid).toBe(12345);
+    });
+  });
 });

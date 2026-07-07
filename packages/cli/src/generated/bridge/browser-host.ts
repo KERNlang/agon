@@ -79,7 +79,7 @@ export function isExtensionOrigin(origin: string): boolean {
 }
 
 /**
- * Outcome of validating a decoded frame as a `pair` request against the installed origin. ok=true carries the validated origin; ok=false carries a human-readable error for the {ok:false} response.
+ * Outcome of validating a decoded frame as a `pair` request against the installed origin allowlist. ok=true carries the validated origin; ok=false carries a human-readable error for the {ok:false} response.
  */
 // @kern-source: browser-host:83
 export interface PairValidation {
@@ -89,16 +89,16 @@ export interface PairValidation {
 }
 
 /**
- * Strict schema + origin validation of an already-JSON-parsed frame. Order of checks yields the most specific error: protocol gate → known verb (`pair`) → well-formed origin → origin matches the origin the host was installed for (defense in depth beyond Chrome's allowed_origins). A non-object, wrong protocol, unknown cmd, malformed origin, or origin mismatch each returns ok:false with a distinct reason; only a fully valid `pair` returns ok:true.
+ * Strict schema + origin validation of an already-JSON-parsed frame. Order of checks yields the most specific error: protocol gate → known verb (`pair`) → well-formed origin → origin is a MEMBER of the origins the host was installed for (defense in depth beyond Chrome's allowed_origins — installedOrigins carries more than one entry once a second extension id, e.g. a published Chrome-Web-Store id, is configured). A non-object, wrong protocol, unknown cmd, malformed origin, or origin not in the allowlist each returns ok:false with a distinct reason; only a fully valid `pair` returns ok:true.
  */
 // @kern-source: browser-host:89
-export function validatePair(msg: unknown, installedOrigin: string): PairValidation {
+export function validatePair(msg: unknown, installedOrigins: string[]): PairValidation {
   if (!msg || typeof msg !== 'object') return { ok: false, error: 'malformed request' };
   const m = msg as { cmd?: unknown; origin?: unknown; protocol?: unknown };
   if (m.protocol !== PROTOCOL) return { ok: false, error: `unsupported protocol (need ${PROTOCOL})` };
   if (m.cmd !== 'pair') return { ok: false, error: 'unknown cmd' };
   if (typeof m.origin !== 'string' || !isExtensionOrigin(m.origin)) return { ok: false, error: 'invalid origin' };
-  if (m.origin !== installedOrigin) return { ok: false, error: 'origin not permitted' };
+  if (!installedOrigins.includes(m.origin)) return { ok: false, error: 'origin not permitted' };
   return { ok: true, origin: m.origin };
 }
 
@@ -131,7 +131,7 @@ export function manifestPath(dir: string): string {
 }
 
 /**
- * The Chrome native-messaging manifest written by `browser-host install`. allowed_origins carries EXACTLY ONE entry — the installed extension Origin with a trailing slash (Chrome's required form).
+ * The Chrome native-messaging manifest written by `browser-host install`. allowed_origins carries one entry per configured extension Origin (dev id, plus any extras from AGON_EXTENSION_IDS / config browserExtensionIds — e.g. the published Chrome-Web-Store id), each with a trailing slash (Chrome's required form).
  */
 // @kern-source: browser-host:124
 export interface HostManifest {
@@ -143,24 +143,23 @@ export interface HostManifest {
 }
 
 /**
- * Build the native-messaging manifest content. `path` is the absolute path to the host launcher (a node entry in the CLI dist). `origin` is the extension Origin WITHOUT a trailing slash (as validated by isExtensionOrigin); allowed_origins normalizes to EXACTLY ONE entry with the trailing slash Chrome requires (a stray trailing slash on the input is collapsed, never doubled).
+ * Build the native-messaging manifest content. `path` is the absolute path to the host launcher (a node entry in the CLI dist). `origins` are extension Origins WITHOUT a trailing slash (as validated by isExtensionOrigin); allowed_origins normalizes to one entry per origin with the trailing slash Chrome requires (a stray trailing slash on an input entry is collapsed, never doubled). A single-element array reproduces the pre-multi-ID manifest byte-for-byte.
  */
 // @kern-source: browser-host:132
-export function buildHostManifest(launcherPath: string, origin: string): HostManifest {
-  const bare = origin.replace(/\/+$/, '');
+export function buildHostManifest(launcherPath: string, origins: string[]): HostManifest {
   return {
     name: HOST_NAME,
     description: HOST_DESCRIPTION,
     path: launcherPath,
     type: 'stdio',
-    allowed_origins: [`${bare}/`],
+    allowed_origins: origins.map((o) => `${o.replace(/\/+$/, '')}/`),
   };
 }
 
 /**
  * A parsed `agon serve` 0600 connection file (what runServe writes under $AGON_HOME/serve/<sessionId>.json). The fields the pairing broker needs: the url + bearer token to hand the extension, the owning serve's pid (added so the host can prove the process is still alive), the origin allowlist the serve was started with, and the session id.
  */
-// @kern-source: browser-host:147
+// @kern-source: browser-host:146
 export interface ServeConnRecord {
   url: string;
   token: string;
@@ -172,7 +171,7 @@ export interface ServeConnRecord {
 /**
  * Parse + validate a serve connection file's JSON. Returns null (never throws) on invalid JSON or a missing/ill-typed required field (url/token/sessionId strings, pid a positive number, allowedOrigins an array of strings) — a malformed or legacy (pid-less) file is simply not reusable rather than a crash.
  */
-// @kern-source: browser-host:155
+// @kern-source: browser-host:154
 export function parseConnRecord(json: string): ServeConnRecord|null {
   let obj: unknown;
   try { obj = JSON.parse(json); } catch { return null; }
@@ -187,7 +186,7 @@ export function parseConnRecord(json: string): ServeConnRecord|null {
 /**
  * True iff a serve started with `allowedOrigins` would accept a browser attaching from `origin` — i.e. the requester's Origin is in the serve's allowlist. Matches AgonServe's own allowlist check (exact membership; serve stores origins without a trailing slash, same form as the `pair` request).
  */
-// @kern-source: browser-host:168
+// @kern-source: browser-host:167
 export function originCovered(allowedOrigins: string[], origin: string): boolean {
   return allowedOrigins.includes(origin);
 }
@@ -195,7 +194,7 @@ export function originCovered(allowedOrigins: string[], origin: string): boolean
 /**
  * Pick a live, origin-covering serve to REUSE, or null if none. A record is reusable iff its recorded pid is alive AND its allowlist covers the requester's origin (stale-connection-file guard: a serve that died without cleaning up its file is skipped, never handed a dead token). First match wins — deterministic given the input order.
  */
-// @kern-source: browser-host:174
+// @kern-source: browser-host:173
 export function findReusableServe(records: ServeConnRecord[], origin: string, isAlive: (pid:number) => boolean): ServeConnRecord|null {
   for (const r of records) {
     if (isAlive(r.pid) && originCovered(r.allowedOrigins, origin)) return r;
@@ -206,7 +205,7 @@ export function findReusableServe(records: ServeConnRecord[], origin: string, is
 /**
  * The single wire response to a `pair` request. ok:true → {url, token, started} (started=true iff the host had to spawn a serve); ok:false → {error}. protocol always echoes PROTOCOL.
  */
-// @kern-source: browser-host:185
+// @kern-source: browser-host:184
 export interface PairResponse {
   ok: boolean;
   url?: string;
@@ -217,11 +216,11 @@ export interface PairResponse {
 }
 
 /**
- * The effectful surface runPair needs, injected so the state machine is unit-testable with the process/file layer faked. installedOrigin is the origin the host was installed for; acquireLock returns a release fn (or null if it could not take the exclusive spawn-or-reuse lock); listServeRecords reads + parses the serve/ connection files; isAlive probes a pid; spawnServe launches a detached `agon serve --origin <origin>` and returns its pid; waitForServe polls for that pid's connection file (up to ~15s) and resolves it or null on timeout; recordOwner persists host-owned metadata so `stop` can later kill only serves the host spawned.
+ * The effectful surface runPair needs, injected so the state machine is unit-testable with the process/file layer faked. installedOrigins is the set of origins the host was installed for (dev id + any AGON_EXTENSION_IDS/config extras — a `pair` from ANY member is accepted); acquireLock returns a release fn (or null if it could not take the exclusive spawn-or-reuse lock); listServeRecords reads + parses the serve/ connection files; isAlive probes a pid; spawnServe launches a detached `agon serve --origin <origin>` (the ONE origin the validated request actually claimed) and returns its pid; waitForServe polls for that pid's connection file (up to ~15s) and resolves it or null on timeout; recordOwner persists host-owned metadata so `stop` can later kill only serves the host spawned.
  */
-// @kern-source: browser-host:194
+// @kern-source: browser-host:193
 export interface PairDeps {
-  installedOrigin: string;
+  installedOrigins: string[];
   acquireLock: () => (() => void) | null;
   listServeRecords: () => ServeConnRecord[];
   isAlive: (pid:number) => boolean;
@@ -233,9 +232,9 @@ export interface PairDeps {
 /**
  * The pair state machine. Validate the frame (protocol/verb/origin) — an invalid request returns {ok:false} WITHOUT touching the lock or spawning. Otherwise take the exclusive lock (so two panels racing `pair` can't double-spawn) and, under it: REUSE a live origin-covering serve if one exists (started:false); else SPAWN a detached `agon serve --origin <origin>`, wait for its 0600 connection file, record host-owner metadata, and reply (started:true). A failed lock → {ok:false, busy}; a serve that never wrote its file → {ok:false}. The lock is always released. Pure given deps — the test fakes every effect.
  */
-// @kern-source: browser-host:204
+// @kern-source: browser-host:203
 export async function runPair(msg: unknown, deps: PairDeps): Promise<PairResponse> {
-  const v = validatePair(msg, deps.installedOrigin);
+  const v = validatePair(msg, deps.installedOrigins);
   if (!v.ok || !v.origin) return { ok: false, error: v.error ?? 'invalid request', protocol: PROTOCOL };
   const origin = v.origin;
 

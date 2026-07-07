@@ -1,0 +1,58 @@
+// ── extension-origins — shared multi-extension-ID allowlist resolution ────────
+//
+// Chrome Web Store publishing assigns a DIFFERENT extension id than the local
+// dev-key id baked into this repo (unpacked, key.pem-signed). Both the
+// native-messaging manifest's allowed_origins and `agon serve`'s HTTP Origin
+// allowlist need to accept EITHER id (dev + published) so the published
+// extension works with zero code changes once its id is known — the store id
+// is just added via env or config, never a source edit.
+//
+// `resolveAgonExtensionOrigins` is the single place that UNIONS a caller's
+// base id(s) (e.g. `agon ext install`'s default/--id, or `browser-host
+// install`'s --origin) with the always-available env/config extras, so both
+// install paths (and the pairing launcher) stay in sync without duplicating
+// the union logic. A malformed entry is dropped into `invalid` instead of
+// throwing — a typo'd env var must never break pairing for the good ids.
+
+const name=AGON_DEV_EXTENSION_ID type="string" value={{ 'gekhacageioplmjhdgapelpepdmphfeo' }} export=true
+  doc "The unpacked dev-key extension id baked into this repo (key.pem). `agon ext install`'s default target when --id is omitted."
+
+const name=EXTENSION_ID_RE type=any value={{ /^[a-p]{32}$/ }} export=true
+  doc "A bare Chrome extension id: exactly 32 characters a-p (no chrome-extension:// prefix)."
+
+fn name=normalizeExtensionOriginEntry params="raw:string" returns="string|undefined" export=true
+  doc "Accepts a bare 32-char extension id OR a full chrome-extension://<id> origin (a trailing slash is tolerated) and returns the canonical chrome-extension://<id> origin (no trailing slash), or undefined if malformed. Used to parse both AGON_EXTENSION_IDS env entries and config browserExtensionIds entries, which may be given in either form."
+  handler <<<
+    const s = raw.trim();
+    if (!s) return undefined;
+    if (EXTENSION_ID_RE.test(s)) return `chrome-extension://${s}`;
+    const bare = s.replace(/\/+$/, '');
+    const m = /^chrome-extension:\/\/([a-p]{32})$/.exec(bare);
+    return m ? `chrome-extension://${m[1]}` : undefined;
+  >>>
+
+fn name=splitCommaList params="raw:string|undefined" returns="string[]" export=true
+  doc "Split a comma-separated env-var-shaped string into trimmed, non-empty parts. Returns [] for undefined/blank — AGON_EXTENSION_IDS is optional."
+  handler <<<
+    return (raw ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  >>>
+
+interface name=ExtensionOriginsResult export=true
+  doc "Result of resolving the full multi-extension-id allowlist. `origins` is the deduped, validated chrome-extension:// origin list (order: base ids first, then env, then config — first occurrence wins on dedupe). `invalid` lists the raw entries that failed validation (env/config typos) so the caller can warn without crashing the install/pairing path."
+  field name=origins type="string[]"
+  field name=invalid type="string[]"
+
+fn name=resolveAgonExtensionOrigins params="opts:{ base: string[], envRaw?: string, configIds?: string[] }" returns="ExtensionOriginsResult" export=true
+  doc "Union `opts.base` (the caller's already-resolved primary id(s) — e.g. the dev default, or an explicit --id/--origin) with AGON_EXTENSION_IDS env entries (comma-separated, each a bare id or a full origin) and config browserExtensionIds entries, normalizing every candidate to a chrome-extension:// origin and deduping. Never throws — a malformed candidate is dropped into `invalid` instead of failing the whole install. When no env/config extras are set, `origins` is exactly `base` normalized (so a plain install with no AGON_EXTENSION_IDS/browserExtensionIds is byte-for-byte the pre-multi-ID behavior)."
+  handler <<<
+    const candidates = [...opts.base, ...splitCommaList(opts.envRaw), ...(opts.configIds ?? [])];
+    const seen = new Set<string>();
+    const origins: string[] = [];
+    const invalid: string[] = [];
+    for (const c of candidates) {
+      const norm = normalizeExtensionOriginEntry(c);
+      if (!norm) { if (c && c.trim()) invalid.push(c.trim()); continue; }
+      if (!seen.has(norm)) { seen.add(norm); origins.push(norm); }
+    }
+    return { origins, invalid };
+  >>>

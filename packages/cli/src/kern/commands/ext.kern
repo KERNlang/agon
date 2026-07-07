@@ -23,16 +23,19 @@
 // never forwarded to Chrome's channel.
 
 import from="citty" names="defineCommand"
-import from="@kernlang/agon-core" names="agonPath"
+import from="@kernlang/agon-core" names="agonPath,loadConfig"
 import from="node:fs" names="mkdirSync,writeFileSync,chmodSync,realpathSync"
 import from="node:path" names="join"
 import from="node:os" names="homedir"
 import from="node:child_process" names="spawn"
 import from="node:child_process" names="ChildProcess" types=true
 import from="../blocks/output-format.js" names="header,info,success,warn,bold,dim,cyan"
+import from="../lib/extension-origins.js" names="AGON_DEV_EXTENSION_ID,resolveAgonExtensionOrigins"
 
 // The published Agon extension id (manifest "key" pins this). Default install target.
-const name=AGON_EXTENSION_ID type="string" value={{ 'gekhacageioplmjhdgapelpepdmphfeo' }}
+// The literal itself lives in lib/extension-origins.kern (shared with browser-host);
+// re-exported under this pre-existing name so nothing importing it breaks.
+const name=AGON_EXTENSION_ID type="string" value={{ AGON_DEV_EXTENSION_ID }}
 const name=AGON_NATIVE_HOST_NAME type="string" value={{ 'io.kern.agon' }}
 const name=AGON_CONNECTION_PREFIX type="string" value={{ '__AGON_CONNECTION__ ' }}
 
@@ -63,24 +66,26 @@ fn name=validExtensionId params="id:string" returns="boolean" export=true
     return /^[a-p]{32}$/.test(id);
   >>>
 
-fn name=hostWrapperScript params="node:string, cliEntry:string, extId:string" returns="string" export=true
-  doc "The POSIX wrapper script Chrome's manifest points at. Bakes the installed extension id into the host invocation as `--origin chrome-extension://<id>` so the spawned serve allows exactly this id (custom/unpacked included); `\"$@\"` preserves Chrome's appended args (caller origin, window handle). Caller must pass a validExtensionId(extId)."
+fn name=hostWrapperScript params="node:string, cliEntry:string, extIds:string[]" returns="string" export=true
+  doc "The POSIX wrapper script Chrome's manifest points at. Bakes the installed extension id(s) into the host invocation as `--origin chrome-extension://<id>[,chrome-extension://<id2>...]` (comma-joined — `agon serve --origin` already accepts a comma-separated list) so the spawned serve allows every configured id (dev + Chrome-Web-Store once published; custom/unpacked included); `\"$@\"` preserves Chrome's appended args (caller origin, window handle). Caller must pass only validExtensionId(id)-checked ids; a single-element array reproduces the pre-multi-ID wrapper byte-for-byte."
   handler <<<
     // Single-quote the paths: in /bin/sh, `$`/backticks/`$(…)` STILL expand inside
     // DOUBLE quotes, so a node/CLI path containing them could be expanded or executed
     // when Chrome launches the host. Single quotes suppress all expansion; an embedded
-    // ' is closed-escaped-reopened ('\''). extId is validExtensionId()-checked, so the
-    // double-quoted origin is metachar-free.
+    // ' is closed-escaped-reopened ('\''). Every id is validExtensionId()-checked by the
+    // caller, so the double-quoted, comma-joined origin list is metachar-free.
     const shq = (s: string): string => `'${s.replace(/'/g, "'\\''")}'`;
-    return `#!/bin/sh\nexec ${shq(node)} ${shq(cliEntry)} ext native-host --origin "chrome-extension://${extId}" "$@"\n`;
+    const origins = extIds.map((id) => `chrome-extension://${id}`).join(',');
+    return `#!/bin/sh\nexec ${shq(node)} ${shq(cliEntry)} ext native-host --origin "${origins}" "$@"\n`;
   >>>
 
-fn name=resolveHostOrigin params="argv:string[]" returns="string" export=true
-  doc "The chrome-extension Origin the native host tells `agon serve` to allow. `ext install` bakes the installed id into the wrapper as `--origin chrome-extension://<id>`; read THAT (Chrome appends the caller origin + window handle after our args, which we ignore) and accept it only if well-formed, else fall back to the default published id. This is what lets a custom/unpacked `ext install --id X` actually connect (without it the host always pinned the default id, so any non-default id was rejected by the bridge)."
+fn name=resolveHostOrigins params="argv:string[]" returns="string[]" export=true
+  doc "The chrome-extension Origin(s) the native host tells `agon serve` to allow. `ext install` bakes the installed id(s) into the wrapper as `--origin chrome-extension://<id>[,chrome-extension://<id2>...]`; read THAT (Chrome appends the caller origin + window handle after our args, which we ignore), split on comma, and keep only well-formed origins — falling back to the default published id if none survive. This is what lets a custom/unpacked `ext install --id X` (and, once configured, the published Chrome-Web-Store id alongside the dev id) actually connect."
   handler <<<
     const i = argv.indexOf('--origin');
     const baked = i >= 0 ? argv[i + 1] : undefined;
-    return baked && /^chrome-extension:\/\/[a-p]{32}$/.test(baked) ? baked : `chrome-extension://${AGON_EXTENSION_ID}`;
+    const parsed = (baked ?? '').split(',').map((s) => s.trim()).filter((s) => /^chrome-extension:\/\/[a-p]{32}$/.test(s));
+    return parsed.length > 0 ? parsed : [`chrome-extension://${AGON_EXTENSION_ID}`];
   >>>
 
 interface name=NativeFrameParse export=true
@@ -124,6 +129,20 @@ fn name=runExtInstall params="id:string|undefined, browser:string|undefined" ret
       process.exitCode = 2;
       return;
     }
+    // Union extId with AGON_EXTENSION_IDS env + config browserExtensionIds — so once
+    // the Chrome-Web-Store id is known it's added via env/config alone, no code change,
+    // and (with no extras configured) this is byte-for-byte the old single-id install.
+    const cfg = loadConfig(process.cwd()) as { browserExtensionIds?: string[] };
+    const resolvedOrigins = resolveAgonExtensionOrigins({
+      base: [`chrome-extension://${extId}`],
+      envRaw: process.env.AGON_EXTENSION_IDS,
+      configIds: cfg.browserExtensionIds ?? [],
+    });
+    for (const bad of resolvedOrigins.invalid) {
+      warn(`ignoring malformed extension id/origin "${bad}" (AGON_EXTENSION_IDS / config browserExtensionIds).`);
+    }
+    const extIds = resolvedOrigins.origins.map((o) => o.replace(/^chrome-extension:\/\//, ''));
+
     const node = process.execPath;
     let cliEntry = process.argv[1] || '';
     try { cliEntry = realpathSync(cliEntry); } catch { /* keep argv[1] if it is not a real path */ }
@@ -132,17 +151,17 @@ fn name=runExtInstall params="id:string|undefined, browser:string|undefined" ret
     const wrapperDir = agonPath('native-host');
     mkdirSync(wrapperDir, { recursive: true });
     const wrapperPath = join(wrapperDir, 'agon-chrome-host');
-    const wrapper = hostWrapperScript(node, cliEntry, extId);
+    const wrapper = hostWrapperScript(node, cliEntry, extIds);
     writeFileSync(wrapperPath, wrapper, { mode: 0o755 });
     try { chmodSync(wrapperPath, 0o755); } catch { /* best-effort */ }
 
-    // 2) Native-messaging manifest, allowed_origins pinned to the extension id.
+    // 2) Native-messaging manifest, allowed_origins covering every configured extension id.
     const manifest = {
       name: AGON_NATIVE_HOST_NAME,
       description: 'Agon native-messaging host — auto-launches `agon serve` for the browser extension.',
       path: wrapperPath,
       type: 'stdio',
-      allowed_origins: [`chrome-extension://${extId}/`],
+      allowed_origins: extIds.map((eid) => `chrome-extension://${eid}/`),
     };
 
     const home = homedir();
@@ -168,7 +187,7 @@ fn name=runExtInstall params="id:string|undefined, browser:string|undefined" ret
     }
 
     header('agon ext — native host installed');
-    info(`  ${bold('extension')}  ${cyan(`chrome-extension://${extId}`)}`);
+    info(`  ${bold('extension')}  ${cyan(extIds.map((eid) => `chrome-extension://${eid}`).join(', '))}`);
     info(`  ${bold('wrapper')}    ${dim(wrapperPath)}`);
     for (const p of written) info(`  ${bold('manifest')}   ${dim(p)}`);
     info('');
@@ -181,9 +200,11 @@ fn name=runExtInstall params="id:string|undefined, browser:string|undefined" ret
 fn name=runExtNativeHost returns="Promise<void>" async=true export=true
   doc "The Chrome native-messaging host. Reads 4-byte-length-prefixed JSON frames from stdin, writes the same framing to stdout. Protocol is TINY + hardcoded: {type:'ping'}→{type:'pong'}; {type:'connect'}→spawn `agon serve --emit-connection`, read its one connection line, reply {type:'connected',url,token,sessionId,engineId}. The spawned serve's stdout is captured (never echoed to Chrome's channel); its stderr is inherited for debugging. Resolves never — the process lives until stdin closes (panel/port disconnect), on which the spawned serve is SIGTERM'd."
   handler <<<
-    // The extension Origin allowed on the spawned bridge — read from the --origin the
-    // install-time wrapper baked in, so a custom/unpacked id connects (see resolveHostOrigin).
-    const EXT_ORIGIN = resolveHostOrigin(process.argv);
+    // The extension Origin(s) allowed on the spawned bridge — read from the --origin the
+    // install-time wrapper baked in (dev id, plus any AGON_EXTENSION_IDS/config extras
+    // unioned in at install time), so a custom/unpacked id — or the published Chrome-Web-
+    // Store id once configured — connects (see resolveHostOrigins).
+    const EXT_ORIGINS = resolveHostOrigins(process.argv);
     const cliEntry = process.argv[1] || '';
     let serveChild: ChildProcess | null = null;
     let connectSeq = 0; // generation token — a newer connect invalidates an older child's frames
@@ -205,7 +226,7 @@ fn name=runExtNativeHost returns="Promise<void>" async=true export=true
     const handleConnect = (): void => {
       const myGen = ++connectSeq; // a later connect supersedes this child + its reply
       killServe(); // Phase 1: one fresh bridge per connect
-      const child = spawn(process.execPath, [cliEntry, 'serve', '--origin', EXT_ORIGIN, '--emit-connection'], {
+      const child = spawn(process.execPath, [cliEntry, 'serve', '--origin', EXT_ORIGINS.join(','), '--emit-connection'], {
         stdio: ['ignore', 'pipe', 'inherit'],
       });
       serveChild = child;

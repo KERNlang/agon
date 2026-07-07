@@ -77,6 +77,10 @@ describe('gatherReviewFileContext (repo grounding)', () => {
     execFileSync('git', ['init'], { cwd: d, stdio: 'ignore' });
     execFileSync('git', ['config', 'user.email', 'agon-test@example.test'], { cwd: d, stdio: 'ignore' });
     execFileSync('git', ['config', 'user.name', 'Agon Test'], { cwd: d, stdio: 'ignore' });
+    // Neutralize the developer's global excludes: a ~/.gitignore_global ignoring *.bin
+    // drops src/new.bin from `ls-files --others --exclude-standard` and fails this test
+    // on that machine only. Repo-local core.excludesFile overrides the global one.
+    execFileSync('git', ['config', 'core.excludesFile', process.platform === 'win32' ? 'NUL' : '/dev/null'], { cwd: d, stdio: 'ignore' });
     execFileSync('git', ['add', 'src/foo.ts', 'src/generated/foo.ts'], { cwd: d, stdio: 'ignore' });
     execFileSync('git', ['commit', '-m', 'base'], { cwd: d, stdio: 'ignore' });
 

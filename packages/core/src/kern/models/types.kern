@@ -328,6 +328,8 @@ config name=AgonConfig
     doc "When true, append 'Co-authored-by: Agon AI <agon@local>' to commits where Agon generated the commit message. Set to false to disable."
   field name=commitCoAuthor type=string default="agon (KERN) <292465531+KERN-Agon@users.noreply.github.com>"
     doc "Co-Authored-By identity for commits agon creates — and the SINGLE opt-out switch for agon's whole attribution block (mirrors Claude Code's includeCoAuthoredBy): when set (the default), agon-made commits end with a '⚔️ Forged by [Agon](…)' paragraph + this Co-Authored-By trailer, and agon-written PR bodies end with the same Forged-by line (rendered with the AGON logo image). Set to \"\" to disable ALL of it (machine-wide in ~/.agon/config.json or per-project in .agon.json). The default email is the KERN-Agon GitHub account's noreply address, so GitHub renders agon as a real co-author avatar + contributor; override with your own bot account's <id>+<login>@users.noreply.github.com to credit a different account."
+  field name=browserExtensionIds type="string[]" optional=true
+    doc "Extra Chrome extension ids (or full chrome-extension://<id> origins) `agon ext install` / `agon browser-host install` allow ALONGSIDE the baked dev id — e.g. the Chrome Web Store id once the extension is published, so the store build pairs without a code change. Each entry is either a bare 32-char a-p id or a full chrome-extension:// origin; a malformed entry is skipped with a warning, never a crash. AGON_EXTENSION_IDS (comma-separated) is the env-var equivalent, unioned with this list."
 
 
 interface name=ScoutBid

@@ -162,3 +162,49 @@ describe('AgonServe — loopback HTTP bridge', () => {
     expect(buf).toContain('echo:sse-probe');
   });
 });
+
+// Multi-extension-ID allowlist: `agon serve --origin a,b` (or the browser-host/ext
+// pairing paths, once they union the dev id with a configured second/store id) passes
+// AgonServe TWO allowed origins. allowedOrigins is already a plain array checked via
+// .includes — this locks in that BOTH members are accepted, not just the first.
+describe('AgonServe — multi-origin allowlist (dev id + a second/store id)', () => {
+  let url: string;
+  let token: string;
+  let serve: ReturnType<typeof createAgonServe>;
+  const DEV_ORIGIN = 'chrome-extension://gekhacageioplmjhdgapelpepdmphfeo';
+  const STORE_ORIGIN = 'chrome-extension://ponmlkjihgfedcbaponmlkjihgfedcba';
+
+  beforeAll(async () => {
+    serve = createAgonServe({ brain: fakeBrain(), sessionId: 'sess-multi-origin', allowedOrigins: [DEV_ORIGIN, STORE_ORIGIN] });
+    const started = await serve.start();
+    url = started.url;
+    token = started.token;
+  });
+  afterAll(async () => { await serve.close(); });
+
+  const authed = (extra: Record<string, string> = {}) => ({ Authorization: `Bearer ${token}`, ...extra });
+
+  it('accepts the first configured origin (dev id)', async () => {
+    const r = await fetch(`${url}/attach`, { method: 'POST', headers: authed({ Origin: DEV_ORIGIN }) });
+    expect(r.status).toBe(200);
+  });
+
+  it('ALSO accepts the second configured origin (e.g. a published Chrome-Web-Store id)', async () => {
+    const r = await fetch(`${url}/attach`, { method: 'POST', headers: authed({ Origin: STORE_ORIGIN }) });
+    expect(r.status).toBe(200);
+  });
+
+  it('still rejects an origin that is in neither allowed entry', async () => {
+    const r = await fetch(`${url}/attach`, { method: 'POST', headers: authed({ Origin: 'chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }) });
+    expect(r.status).toBe(401);
+  });
+
+  it('CORS preflight succeeds for either allowed origin', async () => {
+    const r1 = await fetch(`${url}/send`, { method: 'OPTIONS', headers: { Origin: DEV_ORIGIN, 'Access-Control-Request-Method': 'POST' } });
+    expect(r1.status).toBe(204);
+    expect(r1.headers.get('access-control-allow-origin')).toBe(DEV_ORIGIN);
+    const r2 = await fetch(`${url}/send`, { method: 'OPTIONS', headers: { Origin: STORE_ORIGIN, 'Access-Control-Request-Method': 'POST' } });
+    expect(r2.status).toBe(204);
+    expect(r2.headers.get('access-control-allow-origin')).toBe(STORE_ORIGIN);
+  });
+});

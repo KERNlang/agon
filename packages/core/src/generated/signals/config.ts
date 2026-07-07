@@ -95,6 +95,7 @@ export function loadConfig(cwd?: string): Required<AgonConfig> {
   if (!Array.isArray((merged as any).forgeEnabledEngines)) (merged as any).forgeEnabledEngines = [];
   if (!Array.isArray((merged as any).hiddenEngines)) (merged as any).hiddenEngines = [];
   if (!Array.isArray((merged as any).removedEngines)) (merged as any).removedEngines = [];
+  if (!Array.isArray((merged as any).browserExtensionIds)) (merged as any).browserExtensionIds = [];
   if (!['auto', 'explicit'].includes(String((merged as any).engineActivationMode))) (merged as any).engineActivationMode = 'auto';
   if (!merged.hooks || typeof merged.hooks === 'string') (merged as any).hooks = {};
   if (!merged.allowedCommands || typeof merged.allowedCommands === 'string') (merged as any).allowedCommands = [];
@@ -134,12 +135,12 @@ export function loadConfig(cwd?: string): Required<AgonConfig> {
   return merged;
 }
 
-// @kern-source: config:110
+// @kern-source: config:111
 export function configGet(key: keyof AgonConfig, cwd?: string): Required<AgonConfig>[keyof AgonConfig] {
   return loadConfig(cwd)[key];
 }
 
-// @kern-source: config:112
+// @kern-source: config:113
 export function configSet(key: keyof AgonConfig, value: AgonConfig[keyof AgonConfig]): void {
   if (!(key in DEFAULT_AGON_CONFIG)) {
     throw new ConfigError(`Unknown config key: ${String(key)}`);
@@ -171,7 +172,7 @@ export function configSet(key: keyof AgonConfig, value: AgonConfig[keyof AgonCon
 /**
  * Remove stale run directories beyond retention limit. Fresh dirs are protected so active forge/plan worktrees are never deleted mid-run.
  */
-// @kern-source: config:141
+// @kern-source: config:142
 export function pruneRuns(): void {
   // Review #10: dynamic runs dir via agonPath() — otherwise the frozen
   // RUNS_DIR const would prune the real ~/.agon/runs even in tests that
@@ -200,7 +201,7 @@ export function pruneRuns(): void {
   } catch { /* dir doesn't exist yet — not critical */ }
 }
 
-// @kern-source: config:171
+// @kern-source: config:172
 export function ensureAgonHome(): void {
   mkdirSync(getAgonHome(), { recursive: true });
   mkdirSync(agonPath('runs'), { recursive: true });

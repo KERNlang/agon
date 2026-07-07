@@ -11,7 +11,7 @@ import {
   resolveInstallBrowsers,
   validExtensionId,
   hostWrapperScript,
-  resolveHostOrigin,
+  resolveHostOrigins,
   parseNativeFrames,
   runExtInstall,
   AGON_EXTENSION_ID,
@@ -58,31 +58,46 @@ describe('agon ext — extension-id validation (shell + manifest safety)', () =>
   });
 });
 
-describe('agon ext — host wrapper bakes the installed origin (C1)', () => {
-  it('hostWrapperScript embeds --origin chrome-extension://<id> and keeps "$@"', () => {
-    const w = hostWrapperScript('/abs/node', '/abs/cli.js', CUSTOM_ID);
+describe('agon ext — host wrapper bakes the installed origin(s) (C1)', () => {
+  it('hostWrapperScript embeds --origin chrome-extension://<id> and keeps "$@" (single id)', () => {
+    const w = hostWrapperScript('/abs/node', '/abs/cli.js', [CUSTOM_ID]);
     expect(w).toContain(`ext native-host --origin "chrome-extension://${CUSTOM_ID}"`);
     expect(w.trimEnd().endsWith('"$@"')).toBe(true);
     expect(w.startsWith('#!/bin/sh')).toBe(true);
+  });
+
+  it('hostWrapperScript comma-joins multiple ids (dev + a second/store id)', () => {
+    const w = hostWrapperScript('/abs/node', '/abs/cli.js', [AGON_EXTENSION_ID, CUSTOM_ID]);
+    expect(w).toContain(`ext native-host --origin "chrome-extension://${AGON_EXTENSION_ID},chrome-extension://${CUSTOM_ID}"`);
   });
 });
 
 describe('agon ext — native-host origin resolution (C1, the token boundary)', () => {
   it('honors the baked --origin so a custom/unpacked id is allowed', () => {
     const argv = ['node', 'cli.js', 'ext', 'native-host', '--origin', `chrome-extension://${CUSTOM_ID}`, `chrome-extension://${CUSTOM_ID}/`];
-    expect(resolveHostOrigin(argv)).toBe(`chrome-extension://${CUSTOM_ID}`);
+    expect(resolveHostOrigins(argv)).toEqual([`chrome-extension://${CUSTOM_ID}`]);
+  });
+
+  it('splits a comma-joined baked --origin into every configured id', () => {
+    const argv = ['node', 'cli.js', 'ext', 'native-host', '--origin', `chrome-extension://${AGON_EXTENSION_ID},chrome-extension://${CUSTOM_ID}`];
+    expect(resolveHostOrigins(argv)).toEqual([`chrome-extension://${AGON_EXTENSION_ID}`, `chrome-extension://${CUSTOM_ID}`]);
   });
 
   it('falls back to the default published id when --origin is absent or junk', () => {
-    expect(resolveHostOrigin(['node', 'cli.js', 'ext', 'native-host'])).toBe(`chrome-extension://${AGON_EXTENSION_ID}`);
-    expect(resolveHostOrigin(['node', 'cli.js', 'ext', 'native-host', '--origin', 'https://evil.example'])).toBe(`chrome-extension://${AGON_EXTENSION_ID}`);
-    expect(resolveHostOrigin(['node', 'cli.js', 'ext', 'native-host', '--origin'])).toBe(`chrome-extension://${AGON_EXTENSION_ID}`);
+    expect(resolveHostOrigins(['node', 'cli.js', 'ext', 'native-host'])).toEqual([`chrome-extension://${AGON_EXTENSION_ID}`]);
+    expect(resolveHostOrigins(['node', 'cli.js', 'ext', 'native-host', '--origin', 'https://evil.example'])).toEqual([`chrome-extension://${AGON_EXTENSION_ID}`]);
+    expect(resolveHostOrigins(['node', 'cli.js', 'ext', 'native-host', '--origin'])).toEqual([`chrome-extension://${AGON_EXTENSION_ID}`]);
+  });
+
+  it('drops a malformed entry from a comma list but keeps the well-formed ones', () => {
+    const argv = ['node', 'cli.js', 'ext', 'native-host', '--origin', `chrome-extension://${CUSTOM_ID},not-an-origin`];
+    expect(resolveHostOrigins(argv)).toEqual([`chrome-extension://${CUSTOM_ID}`]);
   });
 
   it('ignores Chrome\'s own appended caller-origin arg (reads only our baked flag)', () => {
     // Chrome appends the caller origin (with trailing slash) AFTER the wrapper args.
     const argv = ['node', 'cli.js', 'ext', 'native-host', '--origin', `chrome-extension://${AGON_EXTENSION_ID}`, `chrome-extension://${CUSTOM_ID}/`, '--parent-window=42'];
-    expect(resolveHostOrigin(argv)).toBe(`chrome-extension://${AGON_EXTENSION_ID}`);
+    expect(resolveHostOrigins(argv)).toEqual([`chrome-extension://${AGON_EXTENSION_ID}`]);
   });
 });
 
@@ -172,6 +187,30 @@ describe('agon ext — runExtInstall (darwin only; CI on linux skips the FS writ
     } finally {
       process.exitCode = prevExit;
       if (prevHome === undefined) delete process.env.HOME; else process.env.HOME = prevHome;
+    }
+  });
+
+  it.skipIf(process.platform !== 'darwin')('unions AGON_EXTENSION_IDS with the installed id, dedupes, and skips a malformed entry', () => {
+    const home = mkdtempSync(join(tmpdir(), 'agon-ext-multi-install-'));
+    const SECOND_ID = 'ponmlkjihgfedcbaponmlkjihgfedcba'; // stands in for a published Chrome-Web-Store id
+    const prevHome = process.env.HOME;
+    const prevExit = process.exitCode;
+    const prevEnv = process.env.AGON_EXTENSION_IDS;
+    process.env.HOME = home;
+    // SECOND_ID once, CUSTOM_ID repeated (dedupe against --id), and one malformed entry (skipped, not a crash).
+    process.env.AGON_EXTENSION_IDS = `${SECOND_ID},${CUSTOM_ID},not-a-valid-entry`;
+    try {
+      runExtInstall(CUSTOM_ID, 'chrome');
+      expect(process.exitCode).not.toBe(2);
+      const manifestPath = join(browserNativeHostDir(home, 'chrome')!, 'io.kern.agon.json');
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+      expect(manifest.allowed_origins).toEqual([`chrome-extension://${CUSTOM_ID}/`, `chrome-extension://${SECOND_ID}/`]);
+      const wrapper = readFileSync(manifest.path, 'utf-8');
+      expect(wrapper).toContain(`--origin "chrome-extension://${CUSTOM_ID},chrome-extension://${SECOND_ID}"`);
+    } finally {
+      process.exitCode = prevExit;
+      if (prevHome === undefined) delete process.env.HOME; else process.env.HOME = prevHome;
+      if (prevEnv === undefined) delete process.env.AGON_EXTENSION_IDS; else process.env.AGON_EXTENSION_IDS = prevEnv;
     }
   });
 });

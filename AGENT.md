@@ -41,7 +41,7 @@ agon call <workflow> "<input>" [flags]
 
 Example workflows: `forge`, `brainstorm`, `synthesis`, `tribunal`, `campfire`, `pipeline`, `review`, `goal`, and `team-*`.
 
-Do not use `qwen`, `opencode`/Kimi, or `ollama` for Agon orchestration unless the user explicitly asks for one of them. Prefer known-good engines such as `claude`, `codex`, and `agy` when pinning engines.
+Excluded engines for Agon orchestration (never use unless the user explicitly asks): `qwen`, `opencode`, `ollama`, and vanilla `minimax`. When a multi-engine mode is dispatched, use the FULL usable roster — currently `claude`, `codex`, `agy`, plus the kimi (`kimi-for-coding-*`), minimax (`minimax-coding-plan-*`), and zai (`zai-coding-plan-*`) coding-plan engines. The coding-plan id suffixes drift; re-resolve via `agon engine list` before pinning. Canonical doctrine: `~/.agon/AGON.md`.
 
 ### Agon Mode Guide
 

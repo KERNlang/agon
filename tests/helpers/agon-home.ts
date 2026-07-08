@@ -13,7 +13,15 @@ export function cleanupTestAgonHome(dir?: string): void {
   if (dir) {
     rmSync(dir, { recursive: true, force: true });
   }
-  delete process.env.AGON_HOME;
+  // Restore the suite-wide temp baseline from tests/setup.ts rather than
+  // deleting AGON_HOME outright — deleting it would point every later test
+  // in this worker back at the developer's REAL ~/.agon store.
+  const baseline = process.env.AGON_TEST_HOME_BASELINE;
+  if (baseline) {
+    process.env.AGON_HOME = baseline;
+  } else {
+    delete process.env.AGON_HOME;
+  }
 }
 
 export function agonHomePath(...parts: string[]): string {

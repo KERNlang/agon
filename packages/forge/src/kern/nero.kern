@@ -12,7 +12,7 @@
 // pool so Nero never grades its own homework.
 
 import from="@kernlang/agon-core" names="EngineAdapter,RatingRecord" types=true
-import from="@kernlang/agon-core" names="EngineRegistry,getRatings,pickTopRatedEngine,resolveWorkingDir,seedNewEnginesFromRegistry"
+import from="@kernlang/agon-core" names="EngineRegistry,getRatings,loadConfig,pickTopRatedEngine,resolveWorkingDir,seedNewEnginesFromRegistry"
 import from="./health-check.js" names="preflightHealthFilter"
 
 interface name=NeroOptions
@@ -30,13 +30,15 @@ interface name=NeroOptions
   field name=cwd type="string | undefined" optional=true
   field name=signal type="AbortSignal | undefined" optional=true
   field name=ratings type="RatingRecord | undefined" optional=true doc="Injectable ratings for deterministic critic-cascade tests; defaults to getRatings() (the on-disk Glicko store)."
+  field name=explorationRate type="number | undefined" optional=true doc="ε for ε-greedy critic selection (see applyNeroExploration). Defaults to the neroExplorationRate config key (0.2). Pass 0 in tests that assert the exploit-only cascade order."
+  field name=rng type="(() => number) | undefined" optional=true doc="Injectable random source for the exploration draw — deterministic tests inject a stub; defaults to Math.random."
   field name=retryBackoffMs type="number | undefined" optional=true doc="Base backoff (ms) between same-critic retries; multiplied by the attempt number. Defaults to 1200. Set 0 in tests to skip the sleep."
   field name=onStatus type="((msg: string) => void) | undefined" optional=true doc="Best-effort progress callback for retry/down-pass narration (e.g. 'codex empty — retrying (2/2)', 'down-passing to kimi'). The CLI routes it to stderr; the REPL dispatches an info event."
 
 interface name=NeroResult
   field name=ok type=boolean
   field name=engineId type=string
-  field name=reason type="'top-rated' | 'random' | 'forced' | 'none'"
+  field name=reason type="'top-rated' | 'random' | 'forced' | 'exploration' | 'none'"
   field name=scope type="'forge' | 'brainstorm' | 'tribunal' | 'critique' | 'global' | null"
   field name=verdict type="'flawed' | 'proceed-with-caution' | 'sound' | 'unknown'"
   field name=challengeConfidence type="number | null"
@@ -121,6 +123,21 @@ fn name=rankNeroCritics params="engineIds:string[], ratings:RatingRecord, opts?:
     return ranked;
   >>>
 
+fn name=applyNeroExploration params="ranked:Array<{ engineId: string; reason: 'top-rated' | 'random' | 'forced' | 'exploration' | 'none'; scope: 'forge' | 'brainstorm' | 'tribunal' | 'critique' | 'global' | null }>, epsilon:number, rng:() => number" returns="{ ranked: Array<{ engineId: string; reason: 'top-rated' | 'random' | 'forced' | 'exploration' | 'none'; scope: 'forge' | 'brainstorm' | 'tribunal' | 'critique' | 'global' | null }>; explored: boolean; topEngineId: string }" export=true
+  doc "ε-greedy exploration over Nero's critic cascade. Pure (rng injected) — exported for testing. With probability ε the FIRST critic is drawn uniformly from the #2/#3-ranked eligible critics instead of the top pick; the displaced critics keep their cascade order behind it, so down-pass behavior is unchanged. This breaks the rich-get-richer loop where the #1 critic gets every critique match and #2/#3 never earn rating to contest the spot. Fewer than 2 eligible critics, ε<=0, or an rng draw >= ε leaves the cascade untouched. ε is clamped to [0,1]; the promoted pick is annotated reason='exploration' so callers can report it."
+  handler <<<
+    const topEngineId = ranked.length > 0 ? ranked[0].engineId : '';
+    const eps = Math.min(1, Math.max(0, epsilon));
+    if (!(eps > 0) || ranked.length < 2) return { ranked, explored: false, topEngineId };
+    if (rng() >= eps) return { ranked, explored: false, topEngineId };
+    // Explore: uniform draw over the #2/#3-ranked critics (slice caps at what exists).
+    const challengers = ranked.slice(1, 3);
+    const idx = Math.min(challengers.length - 1, Math.max(0, Math.floor(rng() * challengers.length)));
+    const pick = { ...challengers[idx], reason: 'exploration' as const };
+    const rest = ranked.filter((r) => r.engineId !== pick.engineId);
+    return { ranked: [pick, ...rest], explored: true, topEngineId };
+  >>>
+
 fn name=runNero async=true params="opts:NeroOptions" returns="Promise<NeroResult>" export=true
   doc "Run an adversarial challenge with self-healing dispatch. Builds the critic cascade (forced engine -> single critic; else top-rated critique/tribunal/global, author excluded), then for each critic RETRIES on a transient miss (empty / timed-out / verdict-less) up to MAX_ATTEMPTS with escalating backoff, and DOWN-PASSES to the next-best critic when one is genuinely unusable. This replaces the old one-shot dispatch that dead-ended on a single empty response — so `--engine codex` is no longer needed as a manual band-aid (it stays as a deliberate override). A valid result = clean exit (exit 0, not timed out) + non-empty + parseable verdict, mirroring the original verdict gate."
   handler <<<
@@ -150,11 +167,24 @@ fn name=runNero async=true params="opts:NeroOptions" returns="Promise<NeroResult
     if (forced && opts.engines.includes(forced) && !__engines.includes(forced)) {
       return { ok: false, engineId: forced, reason: 'none', scope: null, verdict: 'unknown', challengeConfidence: null, challengeText: `Requested Nero critic '${forced}' is quarantined this session (auth-failed/unreachable). Restore with 'agon engine add <id>' or pick another --engine.`, outputDir: opts.outputDir };
     }
-    let ranked: Array<{ engineId: string; reason: 'top-rated' | 'random' | 'forced' | 'none'; scope: 'forge' | 'brainstorm' | 'tribunal' | 'critique' | 'global' | null }>;
+    let ranked: Array<{ engineId: string; reason: 'top-rated' | 'random' | 'forced' | 'exploration' | 'none'; scope: 'forge' | 'brainstorm' | 'tribunal' | 'critique' | 'global' | null }>;
     if (forced && __engines.includes(forced)) {
       ranked = [{ engineId: forced, reason: 'forced', scope: null }];
     } else {
-      ranked = rankNeroCritics(__engines, ratings, { exclude: opts.exclude });
+      // Capture the cascade in its own narrow type (no 'forced') so it matches
+      // applyNeroExploration's parameter — `ranked` is declared wider (it also
+      // carries the 'forced' single-critic case) and can't be passed directly.
+      const baseRanked = rankNeroCritics(__engines, ratings, { exclude: opts.exclude });
+      // ε-greedy exploration: occasionally let the #2/#3-ranked critic take the
+      // match so challengers keep earning critique rating (config: neroExplorationRate).
+      const eps = typeof opts.explorationRate === 'number'
+        ? opts.explorationRate
+        : Number(loadConfig(opts.cwd).neroExplorationRate ?? 0.2);
+      const exploration = applyNeroExploration(baseRanked, eps, opts.rng ?? Math.random);
+      ranked = exploration.ranked;
+      if (exploration.explored) {
+        opts.onStatus?.(`Nero: exploration pick (ε=${Math.min(1, Math.max(0, eps))}) — challenging with ${ranked[0].engineId} instead of top-rated ${exploration.topEngineId}`);
+      }
     }
 
     if (ranked.length === 0) {

@@ -190,7 +190,9 @@ const name=neroCommand type=any
           ? `forced`
           : result.reason === 'random'
             ? `random — no rating yet`
-            : `top-rated via ${result.scope}`;
+            : result.reason === 'exploration'
+              ? `exploration (ε) via ${result.scope}`
+              : `top-rated via ${result.scope}`;
 
         if (quiet) {
           console.log(`${verdictGlyph(result.verdict)} ${result.verdict.toUpperCase()} — ${result.engineId} (${pick})${result.challengeConfidence != null ? ` · Nero ${result.challengeConfidence}%` : ''}`);

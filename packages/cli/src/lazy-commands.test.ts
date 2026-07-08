@@ -24,6 +24,7 @@ const EXPECTED_COMMAND_NAMES = [
   'team-tribunal',
   'leaderboard',
   'history',
+  'ratings',
   'room',
   'provenance',
   'engine',
@@ -84,8 +85,8 @@ describe('lazySubCommands', () => {
     }
   });
 
-  it('only commands with real nested subCommands (models, ext, browser-host) expose a subCommands field', () => {
-    const withSubCommands = new Set(['models', 'ext', 'browser-host']);
+  it('only commands with real nested subCommands (models, ext, browser-host, ratings) expose a subCommands field', () => {
+    const withSubCommands = new Set(['models', 'ext', 'browser-host', 'ratings']);
     for (const [key, entry] of Object.entries(lazySubCommands)) {
       const canonical = key === 'wt' ? 'worktree' : key === 'upgrade' ? 'update' : key;
       const hasField = 'subCommands' in (entry as object) && (entry as { subCommands?: unknown }).subCommands !== undefined;
@@ -146,6 +147,7 @@ describe('lazySubCommands — full parity with the real command modules', () => 
     'team-tribunal': [() => import('./commands/team-tribunal.js'), 'teamTribunalCommand'],
     leaderboard: [() => import('./commands/leaderboard.js'), 'leaderboardCommand'],
     history: [() => import('./commands/history.js'), 'historyCommand'],
+    ratings: [() => import('./commands/ratings.js'), 'ratingsCommand'],
     room: [() => import('./commands/room.js'), 'roomCommand'],
     provenance: [() => import('./commands/provenance.js'), 'provenanceCommand'],
     engine: [() => import('./commands/engine.js'), 'engineCommand'],

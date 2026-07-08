@@ -326,6 +326,10 @@ config name=AgonConfig
     doc "Max estimated USD cost for a single plan step below which speculation (scout+parallel agents) is skipped. Tasks cheaper than this go solo."
   field name=speculativeEloSpreadThreshold type=number default=15
     doc "Min ELO spread between top two engines for a task class. Below this, engines are too close to call — speculation is worthwhile. Above it, the leader is clear enough to skip speculation."
+  field name=neroExplorationRate type=number default=0.2
+    doc "ε for Nero's ε-greedy critic selection. With this probability the critic is drawn uniformly from the #2/#3-ranked eligible critics instead of the top-rated one, so challengers keep getting critique matches to contest the #1 spot (breaks the rich-get-richer loop where the top critic plays every match and nobody else can catch up). 0 = always exploit the top pick; clamped to [0,1]. Forced --engine picks and pools with fewer than 2 eligible critics are never explored."
+  field name=ratingsPurgeKeepEngines type="string[]" default="[]"
+    doc "Extra engine ids `agon ratings purge-unknown` must NEVER remove, even when they no longer correspond to a registered engine definition — e.g. legacy real engines (gemini before the agy rename) or old drifted version-suffixed ids (kimi-for-coding-k2p6) whose match history you want to keep. Unioned with the command's --keep flag."
   field name=autoCredit type=boolean default=true
     doc "When true, append 'Co-authored-by: Agon AI <agon@local>' to commits where Agon generated the commit message. Set to false to disable."
   field name=commitCoAuthor type=string default="agon (KERN) <292465531+KERN-Agon@users.noreply.github.com>"

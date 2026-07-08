@@ -134,6 +134,10 @@ const history = lazyCommand(() => import('./commands/history.js'), 'historyComma
   name: 'history',
   description: 'Browse past forge runs',
 });
+const ratings = lazyCommand(() => import('./commands/ratings.js'), 'ratingsCommand', {
+  name: 'ratings',
+  description: 'Maintain the Glicko ratings + forge-run history store (purge-unknown)',
+}, { hasSubCommands: true });
 const room = lazyCommand(() => import('./commands/room.js'), 'roomCommand', {
   name: 'room',
   description: 'Shared multi-party chat room any CLI can join',
@@ -273,6 +277,7 @@ export const lazySubCommands: SubCommandsDef = {
   'team-tribunal': teamTribunal,
   leaderboard,
   history,
+  ratings,
   room,
   provenance,
   engine,

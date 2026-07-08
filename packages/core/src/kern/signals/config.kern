@@ -40,6 +40,31 @@ const name=LOCAL_CONFIG_NAME type=string value={{ '.agon.json' }}
 
 const name=LOCAL_PRIVATE_CONFIG_NAME type=string value={{ '.agon.local.json' }}
 
+// ── loadConfig() memoization ────────────────────────────────────────
+// loadConfig() has 46 call sites and previously did up to 3
+// readFileSync+JSON.parse+merge on EVERY call with zero caching (the REPL
+// even carries a local memo patch around this in surfaces/app.kern working
+// around exactly this cost). The cache below is keyed by (cwd, and the
+// mtime of each of the 3 config files — a missing file counts as mtime 0):
+// stat-ing 3 small files is the accepted cost; skipping the parse + merge +
+// permission-dedup work when nothing changed is the win. Any direct write
+// to one of the 3 files changes its mtime and naturally invalidates the
+// cache on the next call; invalidateConfigCache() is a defense-in-depth
+// belt-and-suspenders for the (rare, filesystem-dependent) case where a
+// write lands within the same mtime tick as the read that follows it.
+const name=_configMemoCache type="Map<string, { globalMtime: number; localMtime: number; localPrivateMtime: number; result: Required<AgonConfig> }>" value={{ new Map() }}
+
+fn name=_statMtimeOrZero params="path:string" returns=number export=false
+  handler <<<
+    try { return statSync(path).mtimeMs; } catch { return 0; }
+  >>>
+
+fn name=invalidateConfigCache returns=void
+  doc "Clear the loadConfig() memoization cache. Call this after any direct write to config.json / .agon.json / .agon.local.json that doesn't already go through configSet — the mtime-keyed cache would normally self-invalidate on the next loadConfig() call anyway (the file's mtime changes), but this guards against a write landing within the same mtime tick as a subsequent read."
+  handler <<<
+    _configMemoCache.clear();
+  >>>
+
 fn name=loadConfig params="cwd?:string" returns="Required<AgonConfig>"
   handler <<<
     function readJsonSafe<T>(path: string): T | null {
@@ -55,14 +80,31 @@ fn name=loadConfig params="cwd?:string" returns="Required<AgonConfig>"
     // The GLOBAL_CONFIG_PATH const is frozen at module load time and would
     // point at the real ~/.agon even after process.env.AGON_HOME is set.
     const globalConfigPath = agonPath('config.json');
+    const localPath = cwd ? join(cwd, LOCAL_CONFIG_NAME) : null;
+    const localPrivatePath = cwd ? join(cwd, LOCAL_PRIVATE_CONFIG_NAME) : null;
+
+    // Keyed on the resolved paths themselves (not just cwd) — globalConfigPath
+    // already varies with AGON_HOME, so this keeps two different homes (e.g.
+    // parallel test runs) from ever sharing a cache slot even when cwd is the
+    // same or omitted in both.
+    const cacheKey = `${globalConfigPath}|${localPath ?? ''}|${localPrivatePath ?? ''}`;
+    const globalMtime = _statMtimeOrZero(globalConfigPath);
+    const localMtime = localPath ? _statMtimeOrZero(localPath) : 0;
+    const localPrivateMtime = localPrivatePath ? _statMtimeOrZero(localPrivatePath) : 0;
+    const memoed = _configMemoCache.get(cacheKey);
+    if (
+      memoed &&
+      memoed.globalMtime === globalMtime &&
+      memoed.localMtime === localMtime &&
+      memoed.localPrivateMtime === localPrivateMtime
+    ) {
+      return memoed.result;
+    }
+
     const global = readJsonSafe<Partial<AgonConfig>>(globalConfigPath) ?? {};
-    const local = cwd
-      ? readJsonSafe<Partial<AgonConfig>>(join(cwd, LOCAL_CONFIG_NAME)) ?? {}
-      : {};
+    const local = localPath ? readJsonSafe<Partial<AgonConfig>>(localPath) ?? {} : {};
     // .agon.local.json — gitignored personal overrides (debug, engine prefs)
-    const localPrivate = cwd
-      ? readJsonSafe<Partial<AgonConfig>>(join(cwd, LOCAL_PRIVATE_CONFIG_NAME)) ?? {}
-      : {};
+    const localPrivate = localPrivatePath ? readJsonSafe<Partial<AgonConfig>>(localPrivatePath) ?? {} : {};
     const merged = { ...DEFAULT_AGON_CONFIG, ...global, ...local, ...localPrivate } as Required<AgonConfig>;
     // Compiler can't emit object/array defaults for Record types — ensure correct runtime types
     if (!Array.isArray((merged as any).forgeEnabledEngines)) (merged as any).forgeEnabledEngines = [];
@@ -105,6 +147,7 @@ fn name=loadConfig params="cwd?:string" returns="Required<AgonConfig>"
       allow: dedup([...g.allow, ...l.allow, ...lp.allow]),
       deny: dedup([...g.deny, ...l.deny, ...lp.deny]),
     };
+    _configMemoCache.set(cacheKey, { globalMtime, localMtime, localPrivateMtime, result: merged });
     return merged;
   >>>
 
@@ -137,6 +180,7 @@ fn name=configSet params="key:keyof AgonConfig,value:AgonConfig[keyof AgonConfig
       writeFileSync(tmpPath, JSON.stringify(existing, null, 2) + '\n');
       renameSync(tmpPath, globalConfigPath);
     });
+    invalidateConfigCache();
   >>>
 
 fn name=pruneRuns returns=void

@@ -4,9 +4,9 @@ import { defineCommand } from 'citty';
 
 import { basename } from 'node:path';
 
-import { ensureAgonHome, createRoom, listRooms, roomExists, closeRoom, isRoomClosed, appendEvent, readEvents, parseMentions, slugifyRoomId, recordPresence, removePresence, listPresence, advanceReadCursor, getReadCursor, getUnreadState, listUnreadStates, listRoomLocks, claimRoomLock, releaseRoomLock, expiredLocksHeldBy, acquireTurnLease, releaseTurnLease, readActiveLease, detectTrigger, evaluateStop, createRunDir, EngineRegistry, drainRoom, createRoomWaker } from '@kernlang/agon-core';
+import { ensureAgonHome, createRoom, listRooms, roomExists, closeRoom, isRoomClosed, appendEvent, readEvents, parseMentions, slugifyRoomId, recordPresence, removePresence, listPresence, advanceReadCursor, getReadCursor, getUnreadState, listUnreadStates, listRoomLocks, claimRoomLock, releaseRoomLock, expiredLocksHeldBy, acquireTurnLease, releaseTurnLease, readActiveLease, detectTrigger, evaluateStop, createRunDir, EngineRegistry, drainRoom, createRoomWaker, foldTasks, pickNextTask, postTask, claimTask, postTaskResult, postTaskStop, shouldStopWork } from '@kernlang/agon-core';
 
-import type { RoomActor, RoomEvent, PresenceEntry, RoomLockState, RoomUnreadState, AutoConfig, AutoState, TailCursor } from '@kernlang/agon-core';
+import type { RoomActor, RoomEvent, PresenceEntry, RoomLockState, RoomUnreadState, AutoConfig, AutoState, TailCursor, RoomTaskState, WorkConfig, WorkState } from '@kernlang/agon-core';
 
 import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
@@ -47,12 +47,28 @@ export function renderEvent(ev: RoomEvent): string {
   if (ev.kind === 'post') {
     return `${seq} ${stamp} ${who}: ${ev.body}`;
   }
+  if (ev.kind === 'task') {
+    const id = ev.task?.taskId ?? '?';
+    const tgt = ev.task?.target ? dim(` →@${ev.task.target}`) : '';
+    const spec = ev.body.length > 80 ? ev.body.slice(0, 80) + '…' : ev.body;
+    return `${seq} ${stamp} ${who} ${bold('TASK ' + id)}${tgt} ${dim('(open)')}: ${spec}`;
+  }
+  if (ev.kind === 'claim') {
+    const verb = typeof ev.task?.claimOfSeq === 'number' ? 'reclaimed' : 'claimed';
+    return `${seq} ${stamp} ${who} ${dim(verb + ' TASK ' + (ev.task?.taskId ?? '?'))}`;
+  }
+  if (ev.kind === 'result') {
+    const status = ev.task?.status === 'failed' ? red('failed') : green('done');
+    const out = ev.body.length > 80 ? ev.body.slice(0, 80) + '…' : ev.body;
+    return `${seq} ${stamp} ${who} ${dim('TASK ' + (ev.task?.taskId ?? '?'))} ${status}: ${out}`;
+  }
+  if (ev.kind === 'task-stop') return `${seq} ${stamp} ${dim('* work stopped by ' + ev.actor.callsign + (ev.body ? ': ' + ev.body : ''))}`;
   if (ev.kind === 'join') return `${seq} ${stamp} ${dim('* ' + ev.actor.callsign + ' joined')}`;
   if (ev.kind === 'leave' || ev.kind === 'room-closed') return `${seq} ${stamp} ${dim('* ' + ev.actor.callsign + ' left')}`;
   return `${seq} ${stamp} ${dim('* ' + ev.kind + ' by ' + ev.actor.callsign)}`;
 }
 
-// @kern-source: room:47
+// @kern-source: room:63
 export const roomCommand: any = defineCommand({
   meta: {
     name: 'room',
@@ -61,7 +77,7 @@ export const roomCommand: any = defineCommand({
   args: {
     action: {
       type: 'positional',
-      description: 'create | join | post | read | tail | auto | who | lock | release | leave | close | list',
+      description: 'create | join | post | read | tail | auto | who | lock | release | task | work | stop | leave | close | list',
       required: true,
     },
     room: {
@@ -90,6 +106,8 @@ export const roomCommand: any = defineCommand({
     resource: { type: 'string', alias: 'r', description: 'lock/release: resource name (e.g. a file, branch, or task id)' },
     ttl: { type: 'string', description: 'lock: lease TTL in minutes (default 30)', default: '30' },
     steal: { type: 'boolean', description: 'lock: take over an EXPIRED lock (audited — writes a lock-steal event mentioning the stale holder)' },
+    for: { type: 'string', description: 'task: target a specific worker callsign (untargeted tasks any worker may claim)' },
+    'task-timeout': { type: 'string', description: 'work: per-task engine dispatch timeout in seconds (default 600)', default: '600' },
   },
   async run({ args }) {
     ensureAgonHome();
@@ -321,12 +339,13 @@ export const roomCommand: any = defineCommand({
         const present: PresenceEntry[] = listPresence(roomId);
         const unreadByCallsign = new Map<string, RoomUnreadState>(listUnreadStates(roomId).map((u) => [u.callsign, u]));
         const locks: RoomLockState[] = listRoomLocks(roomId);
+        const tasks: RoomTaskState[] = foldTasks(readEvents(roomId, 0, 0), Date.now());
         if (args.json) {
           const members = present.map((p) => ({ ...p, ...(unreadByCallsign.get(p.callsign) ?? { lastReadSeq: p.lastReadSeq, headSeq: p.lastReadSeq, unreadCount: 0, mentionCount: 0 }) }));
-          console.log(JSON.stringify({ room: roomId, members, locks }));
+          console.log(JSON.stringify({ room: roomId, members, locks, tasks }));
           return;
         }
-        if (present.length === 0 && locks.length === 0) { info(dim('Nobody here yet.')); return; }
+        if (present.length === 0 && locks.length === 0 && tasks.length === 0) { info(dim('Nobody here yet.')); return; }
         header(`Who's in ${roomId}`);
         table(['Callsign', 'Status', 'CLI', 'Last seen', 'Unread', '@You'], present.map((p) => {
           const u = unreadByCallsign.get(p.callsign);
@@ -348,6 +367,16 @@ export const roomCommand: any = defineCommand({
             l.holder,
             l.status === 'active' ? green('active') : red('EXPIRED'),
             new Date(l.expiresAt).toLocaleTimeString(),
+          ]));
+        }
+        if (tasks.length > 0) {
+          header('Tasks');
+          table(['Task', 'Status', 'Target', 'Worker', 'Spec'], tasks.map((t) => [
+            bold(t.taskId),
+            t.status === 'open' ? green('open') : t.status === 'claimed' ? dim('claimed') : t.status === 'done' ? green('done') : red('failed'),
+            t.target ?? dim('any'),
+            t.claimedBy ?? dim('—'),
+            t.spec.length > 60 ? t.spec.slice(0, 60) + '…' : t.spec,
           ]));
         }
         return;
@@ -374,6 +403,125 @@ export const roomCommand: any = defineCommand({
         success(`#${r.event.seq} released ${bold(r.event.lock?.resource ?? resource)}`);
         return;
       }
+      case 'task': {
+        if (!roomExists(roomId)) { fail(`No room "${roomId}". Create/join it first.`); return; }
+        if (isRoomClosed(roomId)) { fail(`Room "${roomId}" is closed.`); return; }
+        const extras = Array.isArray((args as any)._) ? (args as any)._.slice(2).map(String) : [];
+        const spec = String(args.text ?? '') || extras.join(' ');
+        if (!spec.trim()) { fail('A task needs a spec. Use -m "do X" or: agon room task <room> "do X"'); return; }
+        const target = args.for ? String(args.for).toLowerCase() : null;
+        const ev = postTask(roomId, actor, spec, target, repoHint);
+        recordPresence(roomId, actor, ev.seq, false);
+        success(`#${ev.seq} task ${bold(ev.task?.taskId ?? '?')} posted${target ? dim(' →@' + target) : ''}`);
+        info(dim(`Run a worker:  agon room work ${roomId} --engine <id> --as <callsign>`));
+        return;
+      }
+      case 'stop': {
+        if (!roomExists(roomId)) { fail(`No room "${roomId}".`); return; }
+        const extras = Array.isArray((args as any)._) ? (args as any)._.slice(2).map(String) : [];
+        const reason = String(args.text ?? '') || extras.join(' ') || 'work stop requested';
+        const ev = postTaskStop(roomId, actor, reason, repoHint);
+        success(`#${ev.seq} work-stop posted to ${bold(roomId)} ${dim('(workers halt on their next wake)')}`);
+        return;
+      }
+      case 'work': {
+        const dryRun = !!args['dry-run'];
+        if (!dryRun && !actor.engineId) { fail('work needs --engine <id> (or --dry-run to test the loop without an engine).'); return; }
+        createRoom(roomName); // ensure the room exists
+        if (isRoomClosed(roomId)) { fail(`Room "${roomId}" is closed.`); return; }
+        const registry = new EngineRegistry();
+        registry.load(resolveBuiltinEnginesDir());
+        const adapter = createCliAdapter(registry);
+        const taskTimeoutSec = Math.min(3600, Math.max(10, parseInt(String(args['task-timeout'] ?? '600'), 10) || 600));
+        let engine: any = null;
+        if (!dryRun) {
+          try { engine = registry.get(actor.engineId as string); }
+          catch { fail(`Unknown engine "${actor.engineId}". Run: agon engine list`); return; }
+        }
+        const workCfg: WorkConfig = {
+          callsign: actor.callsign,
+          maxWallMs: Math.min(1440, Math.max(1, parseInt(String(args['max-minutes'] ?? '10'), 10) || 10)) * 60000,
+          leaseTtlMs: Math.max(10, parseInt(String(args['lease-ttl'] ?? '60'), 10) || 60) * 1000,
+          taskTimeoutMs: taskTimeoutSec * 1000,
+        };
+        const watchdogMs = Math.max(250, parseInt(String(args['poll-ms'] ?? '5000'), 10) || 5000);
+        const waker = createRoomWaker(roomId, watchdogMs, (m) => info(dim(m)));
+        let cursor: TailCursor = { offset: 0, partial: '' };
+        let all: RoomEvent[] = [];
+        const pump = () => {
+          const d = drainRoom(roomId, cursor);
+          cursor = d.cursor;
+          if (d.reset) all = d.events.slice(); else all.push(...d.events);
+        };
+
+        let cleanedUp = false;
+        const cleanup = () => {
+          if (cleanedUp) return;
+          cleanedUp = true;
+          try { waker.close(); } catch { /* best-effort */ }
+          try { appendEvent(roomId, { kind: 'leave', actor, body: '', mentions: [], replyTo: null, repoHint, auto: true }); } catch { /* best-effort */ }
+          try { removePresence(roomId, actor.callsign); } catch { /* best-effort */ }
+        };
+        const onSigint = () => { cleanup(); process.exit(0); };
+        process.once('SIGINT', onSigint);
+
+        try {
+          recordPresence(roomId, actor, 0, true);
+          appendEvent(roomId, { kind: 'join', actor, body: '', mentions: [], replyTo: null, repoHint, auto: true });
+          header(`Worker ${bold(actor.callsign)} in ${bold(roomId)} ${dim('(' + (dryRun ? 'dry-run' : actor.engineId) + ', ≤' + (workCfg.maxWallMs / 60000) + 'm — Ctrl+C to stop)')}`);
+
+          const st: WorkState = { startedAtMs: Date.now(), tasksHandled: 0 };
+          for (;;) {
+            pump();
+            if (isRoomClosed(roomId)) { info(dim('worker stopped: room closed')); break; }
+            const stop = shouldStopWork(st, workCfg, all);
+            if (stop.stop) { info(dim(`worker stopped: ${stop.reason}`)); break; }
+            const board = foldTasks(all, Date.now());
+            const next = pickNextTask(board, actor.callsign);
+            if (!next) { await waker.wait(); continue; }
+            const claim = claimTask(roomId, actor, next.taskId, workCfg.leaseTtlMs, repoHint);
+            if (!claim.ok) { await waker.wait(); continue; } // lost the race or targeted elsewhere
+            info(dim(`▸ claimed TASK ${next.taskId}: ${next.spec.slice(0, 80)}`));
+            // Backpressure: one task at a time — the loop fully finishes this
+            // dispatch before it ever picks another. Renew the lease at half-TTL
+            // while the (possibly long) dispatch runs so a crash — not a slow
+            // task — is what frees it.
+            const renew = setInterval(() => {
+              try { claimTask(roomId, actor, next.taskId, workCfg.leaseTtlMs, repoHint); } catch { /* best-effort renew */ }
+            }, Math.max(1000, Math.floor(workCfg.leaseTtlMs / 2)));
+            let reply = '';
+            let ok = true;
+            let exit = 0;
+            try {
+              if (dryRun) {
+                reply = `(dry-run) ${actor.callsign} completed ${next.taskId}`;
+              } else {
+                const context = all.filter((e) => e.kind === 'post').slice(-8).map((e) => `${e.actor.callsign}: ${e.body}`).join('\n');
+                const prompt = `You are worker "${actor.callsign}" in an agon room. Complete this task and report concisely what you did.\n\nTASK ${next.taskId}:\n${next.spec}${context ? `\n\nRecent room context:\n${context}` : ''}`;
+                const { path: outputDir } = createRunDir({ mode: 'room-work', announce: false });
+                const result = await adapter.dispatch({ engine, prompt, cwd: process.cwd(), mode: 'exec', timeout: taskTimeoutSec, outputDir });
+                reply = (result.stdout || '').trim();
+                exit = typeof result.exitCode === 'number' ? result.exitCode : 0;
+                ok = exit === 0 && !result.timedOut && reply.length > 0;
+                if (result.timedOut && !reply) reply = `(engine timed out after ${taskTimeoutSec}s)`;
+              }
+            } catch (e: any) {
+              ok = false; exit = 1; reply = `error: ${e?.message ?? String(e)}`;
+            } finally {
+              clearInterval(renew);
+            }
+            if (!reply) { ok = false; reply = '(no output)'; }
+            const posted = postTaskResult(roomId, actor, next.taskId, reply, ok, exit, repoHint);
+            recordPresence(roomId, actor, posted.seq, true);
+            console.log(renderEvent(posted));
+            st.tasksHandled += 1;
+          }
+        } finally {
+          process.removeListener('SIGINT', onSigint);
+          cleanup();
+        }
+        return;
+      }
       case 'leave': {
         if (!roomExists(roomId)) { fail(`No room "${roomId}".`); return; }
         appendEvent(roomId, { kind: 'leave', actor, body: '', mentions: [], replyTo: null, repoHint });
@@ -389,7 +537,7 @@ export const roomCommand: any = defineCommand({
         return;
       }
       default:
-        fail(`Unknown action "${action}". Use: create | join | post | read | tail | auto | who | lock | release | leave | close | list`);
+        fail(`Unknown action "${action}". Use: create | join | post | read | tail | auto | who | lock | release | task | work | stop | leave | close | list`);
     }
   },
 });

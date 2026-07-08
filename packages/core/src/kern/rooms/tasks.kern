@@ -1,0 +1,169 @@
+// ── Agon Rooms — work mode (orchestrator → workers) ──
+// A task board is a pure fold of task/claim/result events on the SAME ledger the
+// transcript uses (the transcript stays the protocol). Latest event per taskId
+// wins. A CLAIMED task whose lease expired with no result folds BACK to open so a
+// crashed worker's task is picked up by another — the audit trail (claimedBy /
+// claimSeq) survives, and the reclaiming claim references the dead claim via
+// task.claimOfSeq. claimTask serializes through the SAME .lock seq allocator as
+// posts and lock claims, so two workers can never both win the same task.
+
+import from="./store.js" names="withRoomLock,appendEventHoldingLock,appendEvent,readEvents"
+import from="./types.js" names="RoomActor,RoomEvent,RoomTaskState,WorkConfig,WorkState,StopDecision" types=true
+
+fn name=shortTaskId returns="string"
+  doc "A short, url-safe random task id (6 chars of base36 randomness + a time tail) — human-quotable in chat, collision-safe within a room."
+  handler <<<
+    const rnd = Math.floor(Math.random() * 1e9).toString(36);
+    const tail = Date.now().toString(36).slice(-3);
+    return `${rnd}${tail}`.slice(0, 8);
+  >>>
+
+fn name=foldTasks params="events:RoomEvent[], nowMs:number" returns="RoomTaskState[]" export=true
+  doc "Fold task/claim/result events into the current task board (latest event per taskId wins). A claim sets claimed + lease; a result sets done|failed; a claimed task whose lease expired with no result folds BACK to open (crash recovery) while keeping claimedBy/claimSeq for the audit trail. task-stop is room-level and ignored here. Ordered by creation seq."
+  handler <<<
+    const board = new Map<string, RoomTaskState>();
+    for (const ev of events) {
+      if (!ev.task || typeof ev.task.taskId !== 'string') continue;
+      const id = ev.task.taskId;
+      if (ev.kind === 'task') {
+        board.set(id, {
+          taskId: id,
+          status: 'open',
+          spec: ev.body,
+          target: typeof ev.task.target === 'string' && ev.task.target ? ev.task.target : null,
+          createdBy: ev.actor.callsign,
+          createdAt: ev.createdAt,
+          seq: ev.seq,
+          claimedBy: null,
+          leaseExpiresAt: null,
+          result: null,
+        });
+        continue;
+      }
+      const t = board.get(id);
+      if (!t) continue; // claim/result for an unknown task — ignore
+      if (ev.kind === 'claim') {
+        t.status = 'claimed';
+        t.claimedBy = ev.actor.callsign;
+        t.claimSeq = ev.seq;
+        t.leaseExpiresAt = typeof ev.task.leaseExpiresAt === 'string' ? ev.task.leaseExpiresAt : null;
+        t.result = null;
+        if (typeof t.exitCode === 'number') delete t.exitCode;
+      } else if (ev.kind === 'result') {
+        t.status = ev.task.status === 'failed' ? 'failed' : 'done';
+        t.result = ev.body;
+        t.leaseExpiresAt = null;
+        if (typeof ev.task.exitCode === 'number') t.exitCode = ev.task.exitCode;
+      }
+    }
+    // Crash recovery: a claimed task whose lease has expired with no result is
+    // reclaimable — flip to open so pickNextTask offers it again. claimedBy /
+    // claimSeq stay so the next claim can reference the dead claim (claimOfSeq).
+    for (const t of board.values()) {
+      if (t.status === 'claimed' && t.leaseExpiresAt && new Date(t.leaseExpiresAt).getTime() <= nowMs) {
+        t.status = 'open';
+      }
+    }
+    return Array.from(board.values()).sort((a, b) => a.seq - b.seq);
+  >>>
+
+fn name=pickNextTask params="board:RoomTaskState[], callsign:string" returns="RoomTaskState | null" export=true
+  doc "Pure: the oldest OPEN task that is unclaimed and either untargeted or targeted at me. Returns null when nothing is workable. Ordering is by creation seq (oldest first) so the board drains FIFO."
+  handler <<<
+    const workable = board
+      .filter((t) => t.status === 'open' && (!t.target || t.target === callsign))
+      .sort((a, b) => a.seq - b.seq);
+    return workable.length > 0 ? workable[0] : null;
+  >>>
+
+fn name=postTask params="roomId:string, actor:RoomActor, spec:string, target:string | null, repoHint:string" returns="RoomEvent" export=true
+  doc "Post a new task to the room (kind: task, status open). Returns the event; ev.task.taskId is the generated short id the orchestrator hands to workers."
+  handler <<<
+    const taskId = shortTaskId();
+    const tgt = typeof target === 'string' && target.trim() ? target.trim().toLowerCase() : undefined;
+    return appendEvent(roomId, {
+      kind: 'task',
+      actor,
+      body: String(spec ?? ''),
+      mentions: tgt ? [tgt] : [],
+      replyTo: null,
+      repoHint,
+      task: { taskId, status: 'open', ...(tgt ? { target: tgt } : {}) },
+    });
+  >>>
+
+fn name=claimTask params="roomId:string, actor:RoomActor, taskId:string, leaseTtlMs:number, repoHint:string" returns="{ ok: boolean; event?: RoomEvent; reason?: string }" export=true
+  doc "Atomically claim (or renew/reclaim) a task: fold-check-append under ONE room-lock acquisition, exactly like claimRoomLock — so two workers can never both win. Refuses a done/failed task or one actively claimed by someone else; a same-holder claim RENEWS the lease; an expired claim by another is RECLAIMED with task.claimOfSeq referencing the dead claim; targeting is enforced."
+  handler <<<
+    const id = String(taskId ?? '').trim();
+    if (!id) return { ok: false, reason: 'claim needs a taskId' };
+    const ttlRaw = Number(leaseTtlMs);
+    const ttl = Math.max(1000, Number.isFinite(ttlRaw) && ttlRaw > 0 ? ttlRaw : 60_000);
+    let out: { ok: boolean; event?: RoomEvent; reason?: string } = { ok: false, reason: 'claim not attempted' };
+    withRoomLock(roomId, () => {
+      const now = Date.now();
+      const board = foldTasks(readEvents(roomId, 0, 0), now);
+      const t = board.find((x) => x.taskId === id);
+      if (!t) { out = { ok: false, reason: `no task "${id}"` }; return; }
+      if (t.status === 'done' || t.status === 'failed') { out = { ok: false, reason: `task "${id}" already ${t.status}` }; return; }
+      if (t.status === 'claimed' && t.claimedBy !== actor.callsign) {
+        out = { ok: false, reason: `task "${id}" claimed by ${t.claimedBy} until ${t.leaseExpiresAt}` };
+        return;
+      }
+      // Fresh, self-renew, or reclaim of an EXPIRED claim (foldTasks flips those
+      // back to 'open' while keeping claimedBy/claimSeq for the audit reference).
+      if (t.target && t.target !== actor.callsign) {
+        out = { ok: false, reason: `task "${id}" is targeted at ${t.target}, not you` };
+        return;
+      }
+      const leaseExpiresAt = new Date(now + ttl).toISOString();
+      const isReclaim = t.status === 'open' && t.claimedBy !== null && t.claimedBy !== actor.callsign && typeof t.claimSeq === 'number';
+      const event = appendEventHoldingLock(roomId, {
+        kind: 'claim',
+        actor,
+        body: isReclaim ? `RECLAIM ${id} (dead claim #${t.claimSeq})` : `CLAIM ${id}`,
+        mentions: isReclaim && t.claimedBy ? [t.claimedBy] : [],
+        replyTo: null,
+        repoHint,
+        task: { taskId: id, status: 'claimed', leaseExpiresAt, ...(isReclaim ? { claimOfSeq: t.claimSeq } : {}) },
+      });
+      out = { ok: true, event };
+    });
+    return out;
+  >>>
+
+fn name=postTaskResult params="roomId:string, actor:RoomActor, taskId:string, body:string, ok:boolean, exitCode:number, repoHint:string" returns="RoomEvent" export=true
+  doc "Post a task result (kind: result, status done|failed). Ends the task on the board and frees its lease."
+  handler <<<
+    return appendEvent(roomId, {
+      kind: 'result',
+      actor,
+      body: String(body ?? ''),
+      mentions: [],
+      replyTo: null,
+      repoHint,
+      auto: true,
+      task: { taskId: String(taskId), status: ok ? 'done' : 'failed', exitCode: Number.isFinite(exitCode) ? exitCode : (ok ? 0 : 1) },
+    });
+  >>>
+
+fn name=postTaskStop params="roomId:string, actor:RoomActor, reason:string, repoHint:string" returns="RoomEvent" export=true
+  doc "Post a work-stop signal (kind: task-stop). Every worker loop halts when it sees one."
+  handler <<<
+    return appendEvent(roomId, {
+      kind: 'task-stop',
+      actor,
+      body: String(reason ?? ''),
+      mentions: [],
+      replyTo: null,
+      repoHint,
+    });
+  >>>
+
+fn name=shouldStopWork params="state:WorkState, config:WorkConfig, events:RoomEvent[]" returns="StopDecision" export=true
+  doc "Pure: should the worker loop stop now? Hard caps first — max wall time, then any task-stop event on the ledger. Room-closed is checked by the loop itself (isRoomClosed), like auto mode."
+  handler <<<
+    if (Date.now() - state.startedAtMs >= config.maxWallMs) return { stop: true, reason: 'max-wall-time' };
+    if (events.some((e) => e.kind === 'task-stop')) return { stop: true, reason: 'task-stop' };
+    return { stop: false, reason: '' };
+  >>>

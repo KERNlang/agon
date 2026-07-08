@@ -1,0 +1,14 @@
+test name="Rooms work mode — task board + atomic claim + worker policy" target="../../../src/kern/rooms/tasks.kern"
+  it name="tasks source stays valid KERN"
+    expect no=schemaViolations
+    expect no=semanticViolations
+    expect no=codegenErrors
+
+  it name="task-board surface keeps its shape (behavior pinned in tests/unit/rooms-tasks.test.ts)"
+    expect node=fn name=foldTasks prop=returns is="RoomTaskState[]"
+    expect node=fn name=pickNextTask prop=returns is="RoomTaskState | null"
+    expect node=fn name=postTask prop=returns is=RoomEvent
+    expect node=fn name=claimTask prop=returns is="{ ok: boolean; event?: RoomEvent; reason?: string }"
+    expect node=fn name=postTaskResult prop=returns is=RoomEvent
+    expect node=fn name=postTaskStop prop=returns is=RoomEvent
+    expect node=fn name=shouldStopWork prop=returns is=StopDecision

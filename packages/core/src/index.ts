@@ -179,6 +179,7 @@ export { foldLocks, listRoomLocks, claimRoomLock, releaseRoomLock, expiredLocksH
 export { acquireTurnLease, releaseTurnLease, readActiveLease } from './generated/rooms/leases.js';
 export { detectTrigger, detectPingPong, evaluateStop } from './generated/rooms/auto-policy.js';
 export { drainNdjson, drainRoom, readTailOffset, writeTailOffset, createRoomWaker } from './generated/rooms/tail.js';
+export { foldTasks, pickNextTask, postTask, claimTask, postTaskResult, postTaskStop, shouldStopWork } from './generated/rooms/tasks.js';
 export type { RoomActor, RoomEvent, RoomMeta, PresenceEntry, RoomLockState, RoomUnreadState, TurnLease, AutoConfig, AutoState, StopDecision, TriggerDecision, TailCursor, TailDrain, RoomTaskState, WorkConfig, WorkState } from './generated/rooms/types.js';
 // ── EventLog — append-only per-session event ledger (client/server split M1) ──
 export {

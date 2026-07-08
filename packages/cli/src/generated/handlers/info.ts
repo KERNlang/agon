@@ -4,7 +4,7 @@ import { readdirSync, readFileSync, existsSync, rmSync } from 'node:fs';
 
 import { join } from 'node:path';
 
-import { ensureAgonHome, RUNS_DIR, getAgonHome, getRatings, tracker, loadConfig, configSet, DEFAULT_CONFIG, discoverEngines, addWorkspace, removeWorkspace, switchWorkspace, listWorkspaces, getActiveWorkspace, listChatSessions, loadChatSession, resolveWorkingDir } from '@kernlang/agon-core';
+import { ensureAgonHome, RUNS_DIR, getAgonHome, getRatings, tracker, loadConfig, configSet, DEFAULT_CONFIG, discoverEngines, addWorkspace, removeWorkspace, switchWorkspace, listWorkspaces, getActiveWorkspace, listChatSessions, loadChatSession, resolveWorkingDir, setSessionRoot } from '@kernlang/agon-core';
 
 import type { AgonConfig, ForgeManifest } from '@kernlang/agon-core';
 
@@ -827,6 +827,11 @@ export function handleWorkspace(action: string, dispatch: Dispatch, ctx: Handler
       if (!path) { dispatch({ type: 'error', message: 'Usage: /workspace switch <id>' }); return; }
       const ws = switchWorkspace(path);
       if (ws) {
+        // Ground THIS session at the switched-to workspace. switchWorkspace()
+        // only updates the persisted bookmark (~/.agon/workspaces.json); it is
+        // setSessionRoot() that actually moves resolveWorkingDir() — grounding
+        // never implicitly follows the persisted `active` field.
+        setSessionRoot(ws.path);
         dispatch({ type: 'success', message: `Active: ${ws.name} ${ws.path}` });
         // Invalidate Cesar session — it was booted with previous workspace context
         if (ctx.cesarSession) {

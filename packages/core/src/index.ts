@@ -62,7 +62,8 @@ export { buildCodebaseMap, collectSourceFiles, extractSymbols, clearCodebaseMapC
 export {
   addWorkspace, removeWorkspace, listWorkspaces,
   getActiveWorkspace, switchWorkspace, getWorkspace,
-  ensureCurrentWorkspace, snapshotWorkspace, resolveWorkingDir,
+  ensureCurrentWorkspace, snapshotWorkspace, snapshotPath, resolveWorkingDir,
+  setSessionRoot, _resetSessionRootForTests,
 } from './workspace.js';
 export type { Workspace, WorkspaceState } from './workspace.js';
 export type { ContextFormat } from './context-scanner.js';

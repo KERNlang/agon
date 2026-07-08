@@ -260,6 +260,9 @@ export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboar
       <Text> </Text>
       <Text italic color="#d4a041">{'     Any AI can join. They compete. You ship.'}</Text>
       <Text dimColor>{'     v'}{VERSION}{'  ·  Powered by '}<Text bold color="#fbbf24">{'KERNlang.dev'}</Text>{KERN_VERSION ? ` (KERN ${KERN_VERSION})` : ''}</Text>
+      {event.workspace && (
+        <Text dimColor>{'     workspace: '}{event.workspace.path}</Text>
+      )}
       <Text> </Text>
 
       <Box>
@@ -318,7 +321,7 @@ export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboar
   );
 }
 
-// @kern-source: engine:368
+// @kern-source: engine:371
 function TableView({ headers, rows }: { headers:string[]; rows:string[][] }) {
   const widths = headers.map((h: string, i: number) =>
     Math.max(h.length, ...rows.map((r: string[]) => (r[i] ?? '').length)) + 2,
@@ -342,7 +345,7 @@ function TableView({ headers, rows }: { headers:string[]; rows:string[][] }) {
   );
 }
 
-// @kern-source: engine:397
+// @kern-source: engine:400
 const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpanded }: { event:OutputEvent; mode:string; toolOutputExpanded?:boolean; thinkingExpanded?:boolean }) {
   switch (event.type) {
     case 'text': {
@@ -982,7 +985,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
 });
 export { OutputBlockView };
 
-// @kern-source: engine:1043
+// @kern-source: engine:1046
 const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:OutputBlock[] }) {
   const labelForTool = (raw: unknown) => {
     const toolKey = String(raw ?? '').toLowerCase();
@@ -1142,7 +1145,7 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
 });
 export { ToolCallGroup };
 
-// @kern-source: engine:1209
+// @kern-source: engine:1212
 const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputBlock[] }) {
   const round = (blocks[0]?.event as any)?.round ?? '?';
   const w = contentWidth(6);
@@ -1168,7 +1171,7 @@ const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputB
 });
 export { DebateGroup };
 
-// @kern-source: engine:1238
+// @kern-source: engine:1241
 const BidGroup = React.memo(function BidGroup({ blocks }: { blocks:OutputBlock[] }) {
   const w = contentWidth(6);
   return (

@@ -6,7 +6,7 @@ import { Box, Static, Text, render } from 'ink';
 // ── Core ───────────────────────────────────────────────
 import { ScrollBox, AlternateScreen } from '@kernlang/terminal/runtime';
 
-import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, seedChatSessionFromThread, loadOrCreateActiveThread, getRatings, getActiveWorkspace, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, getAuthKey, setAuthKey, getAgonHome, tracker, planCostEstimator, listCesarPlans, visionSupportNote } from '@kernlang/agon-core';
+import { EngineRegistry, loadConfig, ensureAgonHome, setSessionRoot, startChatSession, seedChatSessionFromThread, loadOrCreateActiveThread, getRatings, getActiveWorkspace, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, getAuthKey, setAuthKey, getAgonHome, tracker, planCostEstimator, listCesarPlans, visionSupportNote } from '@kernlang/agon-core';
 
 import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
@@ -2072,7 +2072,14 @@ export const _cesarSessionRef: { session: PersistentSession | null } = { session
 // @kern-source: app:1887
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
-  ensureCurrentWorkspace(process.cwd());
+  // Session-scoped grounding ONLY — deliberately does NOT call
+  // ensureCurrentWorkspace/addWorkspace here: a launch in a brand-new
+  // directory must ground this session at process.cwd() WITHOUT writing
+  // ~/.agon/workspaces.json (a CI/headless run in an ephemeral dir must not
+  // pollute the bookmark list, and two concurrent `agon` sessions must not
+  // race on the persisted `active` field). Explicit bookmarking is still
+  // available via `/workspace add`.
+  setSessionRoot(process.cwd());
   process.on('SIGINT', () => handleSigint(_cesarSessionRef));
   // Client/server split M1: flush any buffered EventLog batches on exit. The
   // coalesce timer is unref'd, so the final ~50ms window would otherwise be

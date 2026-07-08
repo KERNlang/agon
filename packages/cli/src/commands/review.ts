@@ -195,12 +195,14 @@ export const reviewCommand = defineCommand({
       // Flush a single labeled block so concurrent engines never interleave mid-line.
       const flush = (body: string[]) => { if (!quiet && body.length) console.log(`\n▸ Reviewer: ${bold(engineId)}\n${body.join('\n')}`); };
       // One dispatch attempt under its own wall clock. Pin the engine dispatch to
-      // the SAME cwd the diff came from (process.cwd()). Without this cwdOverride,
-      // runReviewCore falls back to resolveWorkingDir() = the active workspace — so
-      // `agon review` run from repo X dispatched every engine into the
-      // active-workspace repo (e.g. agon's own source) to gather file context,
-      // while reviewing X's diff. The reviewers "never saw the code" the diff
-      // referenced. Passing cwd keeps diff + engine context in one repo.
+      // the SAME cwd the diff came from (process.cwd()). This standalone `agon
+      // review` command never calls setSessionRoot(), so runReviewCore's
+      // resolveWorkingDir() fallback already resolves to process.cwd() here — but
+      // passing cwd explicitly keeps this call site correct by construction
+      // instead of relying on that default, and protects against the historical
+      // bug class (resolveWorkingDir() silently returning a DIFFERENT persisted
+      // workspace than process.cwd(), which used to send every reviewer into the
+      // wrong repo's file context while reviewing this repo's diff).
       const attempt = async (attemptTimeoutSec: number): Promise<
         { kind: 'ok'; result: Awaited<ReturnType<typeof runReviewCore>> } | { kind: 'timeout'; afterSec: number } | { kind: 'error'; message: string }
       > => {

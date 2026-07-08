@@ -302,10 +302,15 @@ function detectProjectType(cwd: string): string {
   if (existsSync(join(cwd, 'pyproject.toml'))) markers.push('python');
   if (existsSync(join(cwd, 'Cargo.toml'))) markers.push('rust');
   if (existsSync(join(cwd, 'go.mod'))) markers.push('go');
-  return markers.join(', ') || 'unknown';
+  // Honest fallback: say plainly that no recognized project markers were found,
+  // rather than a bare "unknown" that reads like a scan failure. Cesar's system
+  // prompt surfaces this verbatim as the project header, so it must be truthful
+  // about a directory with none of the markers we check for — not silently omit
+  // the project-type segment.
+  return markers.join(', ') || 'unrecognized project type';
 }
 
-// @kern-source: context-scanner:259
+// @kern-source: context-scanner:264
 export function scanProjectContext(cwd: string, extraContext?: string, format?: ContextFormat): string {
   const MAX_CHARS = 6000;
   const sections: string[] = [];
@@ -392,7 +397,7 @@ export function scanProjectContext(cwd: string, extraContext?: string, format?: 
   return result;
 }
 
-// @kern-source: context-scanner:346
+// @kern-source: context-scanner:351
 export interface SpineCacheEntry {
   fp: string;
   ts: number;
@@ -402,25 +407,25 @@ export interface SpineCacheEntry {
 /**
  * Memo lifetime for a cwd's kern-context spine. Bounds how stale the navigational map can get from uncommitted builder edits within a single HEAD (see KERN_SPINE_CACHE).
  */
-// @kern-source: context-scanner:351
+// @kern-source: context-scanner:356
 export const KERN_SPINE_TTL_MS: number = 5 * 60 * 1000;
 
 /**
  * Per-cwd memo for buildKernContextSpine. The spine is a whole-project ts-morph pass (seconds); conquer/goal drive the builder for many turns per run, so an un-memoized rebuild every turn would dominate wall-clock. Keyed by cwd; invalidated when HEAD moves or after KERN_SPINE_TTL_MS. Deliberately HEAD-only (NOT a working-tree fingerprint): the map is navigational structure that changes slowly versus line-edits, so reusing it across uncommitted edits is the intended trade — keying on a dirty fingerprint would invalidate every turn and defeat the memo. Stores Promise<string> so parallel dispatches share one spawn.
  */
-// @kern-source: context-scanner:354
+// @kern-source: context-scanner:359
 export const KERN_SPINE_CACHE: Map<string, SpineCacheEntry> = new Map();
 
 /**
  * cwds already warned about a genuine spine failure (under AGON_DEBUG) — keeps the best-effort fallback diagnosable without spamming a warning every turn.
  */
-// @kern-source: context-scanner:357
+// @kern-source: context-scanner:362
 export const KERN_SPINE_WARNED: Set<string> = new Set();
 
 /**
  * The actual spine build behind buildKernContextSpine's memo. Spawns the released `kern context` CLI and renders the compact <kern-map>. Never throws — returns '' on any failure (best-effort).
  */
-// @kern-source: context-scanner:360
+// @kern-source: context-scanner:365
 async function computeKernContextSpine(cwd: string): Promise<string> {
   const debugFail = (msg: string): void => {
     if (process.env.AGON_DEBUG && !KERN_SPINE_WARNED.has(cwd)) {
@@ -486,7 +491,7 @@ async function computeKernContextSpine(cwd: string): Promise<string> {
 /**
  * Compact <kern-map> cross-file usage spine for a target repo, rendered from the released `kern context` CLI (TypeScript sources). Prepended to a build engine's context (forge/conquer/goal) so it starts with whole-project structure — which symbols exist and who calls/uses each (blast radius) — instead of cold-reading files. Memoized per cwd by HEAD sha + a 5-min TTL so a multi-turn conquer/goal run pays the ts-morph pass once, not per turn; concurrent dispatches share one spawn. Best-effort: returns '' for non-TS targets, when the kern CLI isn't resolvable, on timeout, or on any error, so a build run is never blocked. AGON_NO_KERN_CONTEXT=1 disables; AGON_KERN_CONTEXT_TIMEOUT_MS / AGON_KERN_CONTEXT_BUDGET tune it.
  */
-// @kern-source: context-scanner:424
+// @kern-source: context-scanner:429
 export async function buildKernContextSpine(cwd: string): Promise<string> {
   if (process.env.AGON_NO_KERN_CONTEXT) return '';
   let fp = 'nogit';

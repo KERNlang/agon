@@ -7,10 +7,17 @@ import { setupTestAgonHome, cleanupTestAgonHome, agonHomePath } from '../helpers
 // Fix 3: loadConfig() previously did up to 3 readFileSync+JSON.parse+merge on
 // EVERY call (46 call sites, zero caching). It's now memoized in-process,
 // keyed by the resolved config paths + each file's mtime (missing file =
-// mtime 0) — same mtimes returns the cached result (and skips the
-// readFileSync calls entirely), a touched file forces a fresh read+merge,
-// and invalidateConfigCache() clears the memo outright (belt-and-suspenders
-// for a write landing within the same mtime tick as a following read).
+// mtime 0) — same mtimes serves from cache (skipping the readFileSync calls
+// entirely), a touched file forces a fresh read+merge, and
+// invalidateConfigCache() clears the memo outright (belt-and-suspenders for
+// a write landing within the same mtime tick as a following read).
+//
+// Contract (external review, fix 2): every call returns a FRESH object — a
+// structuredClone of the cached merge, never the cached instance itself.
+// Pre-memo, callers got a fresh object per call and some of the 46 call
+// sites mutate the result (permissions arrays, engineModels, hooks, …);
+// handing out the cached reference would let one caller's mutation poison
+// the process-global cache for every later caller.
 //
 // `readFileSync` is wrapped (not just spied) because vitest can't spy
 // directly on a frozen ESM module namespace ("Cannot redefine property");
@@ -29,7 +36,7 @@ afterEach(() => {
 });
 
 describe('loadConfig() memoization', () => {
-  it('returns the same result object (and does not re-read) when nothing changed', async () => {
+  it('serves from cache (no re-read) when nothing changed — as a fresh, equal object', async () => {
     home = setupTestAgonHome('config-memo-same');
     writeFileSync(agonHomePath('config.json'), JSON.stringify({ commitCoAuthor: 'v1' }));
 
@@ -40,8 +47,29 @@ describe('loadConfig() memoization', () => {
     vi.mocked(readFileSync).mockClear();
     const second = loadConfig();
 
-    expect(second).toBe(first); // same object reference — served from cache
+    expect(second).toEqual(first); // same content — served from cache…
+    expect(second).not.toBe(first); // …but a fresh clone, never the cached instance
     expect(readFileSync).not.toHaveBeenCalled();
+  });
+
+  it('a caller mutating the returned config cannot poison the cache for later callers', async () => {
+    home = setupTestAgonHome('config-memo-mutation');
+    writeFileSync(agonHomePath('config.json'), JSON.stringify({ permissions: { allow: ['Read(a)'] } }));
+
+    const { loadConfig } = await import('../../packages/core/src/config.js');
+    const first = loadConfig();
+    expect(first.permissions.allow).toEqual(['Read(a)']);
+
+    // Mutate the returned object the way real call sites do (push into a
+    // nested array, overwrite a record) — none of it may leak into the cache.
+    first.permissions.allow.push('Bash(rm -rf /)');
+    (first as { engineModels: Record<string, string> }).engineModels.claude = 'poisoned';
+    (first as { commitCoAuthor: string }).commitCoAuthor = 'poisoned';
+
+    const second = loadConfig(); // cache hit — same mtimes
+    expect(second.permissions.allow).toEqual(['Read(a)']);
+    expect((second as { engineModels: Record<string, string> }).engineModels.claude).toBeUndefined();
+    expect(second.commitCoAuthor).not.toBe('poisoned');
   });
 
   it('returns a fresh result once the global config file is touched (mtime changes)', async () => {
@@ -76,7 +104,7 @@ describe('loadConfig() memoization', () => {
 
     vi.mocked(readFileSync).mockClear();
     const second = loadConfig();
-    expect(second).toBe(first);
+    expect(second).toEqual(first);
     expect(readFileSync).not.toHaveBeenCalled();
   });
 
@@ -98,7 +126,7 @@ describe('loadConfig() memoization', () => {
     // unaffected by the project-scoped read above.
     vi.mocked(readFileSync).mockClear();
     const globalAgain = loadConfig();
-    expect(globalAgain).toBe(globalOnly);
+    expect(globalAgain).toEqual(globalOnly);
     expect(readFileSync).not.toHaveBeenCalled();
   });
 

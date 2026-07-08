@@ -116,7 +116,14 @@ export function loadConfig(cwd?: string): Required<AgonConfig> {
     memoed.localMtime === localMtime &&
     memoed.localPrivateMtime === localPrivateMtime
   ) {
-    return memoed.result;
+    // Return a CLONE, never the cached instance: pre-memo, every call built
+    // a fresh object, and callers among the 46 call sites mutate the result
+    // (permissions arrays, engineModels, hooks, …) — handing out the cached
+    // reference would let one caller's mutation poison the process-global
+    // cache for every later caller. structuredClone of a plain-JSON config
+    // is cheap next to the readFileSync+parse+merge+permission-dedup work
+    // this memo skips.
+    return structuredClone(memoed.result);
   }
 
   const global = readJsonSafe<Partial<AgonConfig>>(globalConfigPath) ?? {};
@@ -166,15 +173,18 @@ export function loadConfig(cwd?: string): Required<AgonConfig> {
     deny: dedup([...g.deny, ...l.deny, ...lp.deny]),
   };
   _configMemoCache.set(cacheKey, { globalMtime, localMtime, localPrivateMtime, result: merged });
-  return merged;
+  // Clone on the MISS path too — otherwise the first caller after a (re)read
+  // holds the very instance the cache stores, and its mutations would poison
+  // every later cache hit exactly like an unclosed hit path would.
+  return structuredClone(merged);
 }
 
-// @kern-source: config:154
+// @kern-source: config:164
 export function configGet(key: keyof AgonConfig, cwd?: string): Required<AgonConfig>[keyof AgonConfig] {
   return loadConfig(cwd)[key];
 }
 
-// @kern-source: config:156
+// @kern-source: config:166
 export function configSet(key: keyof AgonConfig, value: AgonConfig[keyof AgonConfig]): void {
   if (!(key in DEFAULT_AGON_CONFIG)) {
     throw new ConfigError(`Unknown config key: ${String(key)}`);
@@ -207,7 +217,7 @@ export function configSet(key: keyof AgonConfig, value: AgonConfig[keyof AgonCon
 /**
  * Remove stale run directories beyond retention limit. Fresh dirs are protected so active forge/plan worktrees are never deleted mid-run.
  */
-// @kern-source: config:186
+// @kern-source: config:196
 export function pruneRuns(): void {
   // Review #10: dynamic runs dir via agonPath() — otherwise the frozen
   // RUNS_DIR const would prune the real ~/.agon/runs even in tests that
@@ -236,7 +246,7 @@ export function pruneRuns(): void {
   } catch { /* dir doesn't exist yet — not critical */ }
 }
 
-// @kern-source: config:216
+// @kern-source: config:226
 export function ensureAgonHome(): void {
   mkdirSync(getAgonHome(), { recursive: true });
   mkdirSync(agonPath('runs'), { recursive: true });

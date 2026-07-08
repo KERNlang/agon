@@ -98,7 +98,14 @@ fn name=loadConfig params="cwd?:string" returns="Required<AgonConfig>"
       memoed.localMtime === localMtime &&
       memoed.localPrivateMtime === localPrivateMtime
     ) {
-      return memoed.result;
+      // Return a CLONE, never the cached instance: pre-memo, every call built
+      // a fresh object, and callers among the 46 call sites mutate the result
+      // (permissions arrays, engineModels, hooks, …) — handing out the cached
+      // reference would let one caller's mutation poison the process-global
+      // cache for every later caller. structuredClone of a plain-JSON config
+      // is cheap next to the readFileSync+parse+merge+permission-dedup work
+      // this memo skips.
+      return structuredClone(memoed.result);
     }
 
     const global = readJsonSafe<Partial<AgonConfig>>(globalConfigPath) ?? {};
@@ -148,7 +155,10 @@ fn name=loadConfig params="cwd?:string" returns="Required<AgonConfig>"
       deny: dedup([...g.deny, ...l.deny, ...lp.deny]),
     };
     _configMemoCache.set(cacheKey, { globalMtime, localMtime, localPrivateMtime, result: merged });
-    return merged;
+    // Clone on the MISS path too — otherwise the first caller after a (re)read
+    // holds the very instance the cache stores, and its mutations would poison
+    // every later cache hit exactly like an unclosed hit path would.
+    return structuredClone(merged);
   >>>
 
 fn name=configGet params="key:keyof AgonConfig,cwd?:string" returns="Required<AgonConfig>[keyof AgonConfig]" expr={{ return loadConfig(cwd)[key]; }}

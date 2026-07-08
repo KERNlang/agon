@@ -436,6 +436,7 @@ fn name=apiStreamDispatchWithHistory generator=true async=true params="config:Ap
       const iterator = result.fullStream[Symbol.asyncIterator]();
       let iterDone = false;
       let gotFirstChunk = false;
+      let chunkCount = 0;
 
       while (!iterDone) {
         const timeoutMs = gotFirstChunk ? IDLE_TIMEOUT : FIRST_CHUNK_TIMEOUT;
@@ -462,14 +463,33 @@ fn name=apiStreamDispatchWithHistory generator=true async=true params="config:Ap
                 return { exitCode: 1, stdout, stderr: `API first-chunk timeout (${timeoutMs / 1000}s). ${hint}`, durationMs: Date.now() - startTime, timedOut: true };
               }
             }
+            // No format-mismatch hint (or already past the first chunk) — this is a
+            // genuine stalled/hung stream. NEVER fall through to the success return
+            // below: a timeout must never be indistinguishable from a successful
+            // empty answer (the double-swallowed-error bug — see runReviewCore in
+            // review.kern, which used to re-report this as "parse-failure: empty or
+            // unusable response" instead of the real timeout).
+            clearTimeout(timer);
             controller.abort();
-            break;
+            const reasoningCharsSoFar = capturedParts.filter((p) => p.kind === 'reasoning').reduce((n, p: any) => n + p.text.length, 0) + currentReasoningBuf.length;
+            if (currentTextBuf) { capturedParts.push({ kind: 'text', text: currentTextBuf }); currentTextBuf = ''; }
+            if (currentReasoningBuf) { capturedParts.push({ kind: 'reasoning', text: currentReasoningBuf }); currentReasoningBuf = ''; }
+            const reasoningInfo = reasoningCharsSoFar > 0 ? `, ${reasoningCharsSoFar} reasoning chars` : '';
+            return {
+              exitCode: 124,
+              stdout,
+              stderr: `API stream ${phase} idle timeout after ${timeoutMs / 1000}s (received ${chunkCount} chunks, ${stdout.length} text chars${reasoningInfo})`,
+              durationMs: Date.now() - startTime,
+              timedOut: true,
+              parts: capturedParts,
+            };
           }
           throw err;
         }
 
         if (iterResult.done) { iterDone = true; break; }
         const part = iterResult.value;
+        chunkCount++;
 
         // Any productive event switches to tighter inter-chunk timeout
         if (!gotFirstChunk && (part.type === 'text-delta' || part.type === 'reasoning-delta' || part.type === 'tool-call')) {

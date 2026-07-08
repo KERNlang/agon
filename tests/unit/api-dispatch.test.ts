@@ -509,3 +509,82 @@ describe('apiStreamDispatchWithHistory reasoning visibility', () => {
     ]);
   });
 });
+
+// --- Fix A: idle-timeout paths must NEVER return a silent success ---
+// Regression coverage for the double-swallowed-error bug: a stalled SSE stream
+// (no format-mismatch hint) used to fall through to the success return
+// ({ exitCode: 0, stderr: '' }), making a hung engine indistinguishable from a
+// real empty answer. Both the inter-chunk and first-chunk idle-timeout paths
+// must now return directly with exitCode 124 / timedOut: true / a descriptive
+// stderr, and must preserve any partial stdout already streamed.
+describe('apiStreamDispatchWithHistory idle-timeout contract (Fix A)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.TEST_API_KEY = 'test-key';
+  });
+
+  it('returns exitCode 124 + timedOut on an inter-chunk idle timeout, preserving partial stdout', async () => {
+    // Yields one real chunk, then the generator's next .next() call never
+    // resolves — mirrors a stream that stalls mid-answer (the kimi/zai
+    // failure mode: reasoning phase goes silent for minutes).
+    async function* fullStream() {
+      yield { type: 'text-delta', text: 'partial answer' };
+      await new Promise<never>(() => { /* never resolves — simulates a stalled stream */ });
+    }
+
+    mockStreamText.mockReturnValueOnce({
+      fullStream: fullStream(),
+      usage: Promise.resolve({ inputTokens: 5, outputTokens: 2 }),
+    } as any);
+
+    const { chunks, result } = await collectApiStream(apiStreamDispatchWithHistory(
+      {
+        baseUrl: 'http://test', apiKeyEnv: 'TEST_API_KEY', model: 'test-model',
+        idleTimeoutMs: 50, firstChunkTimeoutMs: 50,
+      },
+      [{ role: 'user', content: 'continue' }],
+      30,
+    ));
+
+    expect(chunks.join('')).toBe('partial answer');
+    expect(result.exitCode).toBe(124);
+    expect(result.timedOut).toBe(true);
+    expect(result.stdout).toBe('partial answer');
+    expect(result.stderr).toMatch(/idle timeout/i);
+    expect(result.stderr).toContain('inter-chunk');
+    expect(result.stderr).toContain('0.05s');
+  });
+
+  it('returns exitCode 124 + timedOut on a first-chunk idle timeout with no format-mismatch hint', async () => {
+    // Never yields anything — mirrors a stream that never produces a first
+    // chunk (queuing / cold-start hang) on a host with no format mismatch
+    // (baseUrl does not look Anthropic-shaped, format left unset), so the
+    // hint path is skipped and this must still be a hard failure, not a
+    // silent success.
+    async function* fullStream(): AsyncGenerator<{ type: string; text: string }, void, void> {
+      await new Promise<never>(() => { /* never resolves — simulates no first chunk ever arriving */ });
+    }
+
+    mockStreamText.mockReturnValueOnce({
+      fullStream: fullStream(),
+      usage: Promise.resolve(undefined),
+    } as any);
+
+    const { chunks, result } = await collectApiStream(apiStreamDispatchWithHistory(
+      {
+        baseUrl: 'http://test', apiKeyEnv: 'TEST_API_KEY', model: 'test-model',
+        idleTimeoutMs: 50, firstChunkTimeoutMs: 50,
+      },
+      [{ role: 'user', content: 'continue' }],
+      30,
+    ));
+
+    expect(chunks).toEqual([]);
+    expect(result.exitCode).toBe(124);
+    expect(result.timedOut).toBe(true);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toMatch(/idle timeout/i);
+    expect(result.stderr).toContain('first-chunk');
+    expect(result.stderr).toContain('0.05s');
+  });
+});

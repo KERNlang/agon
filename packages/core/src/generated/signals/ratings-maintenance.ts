@@ -63,13 +63,14 @@ function pruneRatingIds(record: RatingRecord, removeIds: string[]): string[] {
 }
 
 /**
- * Run-record file names to purge: a forge-run manifest is removed when NONE of its engines is a kept (real) engine — i.e. every competitor was a test double. A manifest with an empty engines list (an aborted/unreachable fixture run) has zero kept engines and so is purged too. A manifest with even one real engine is KEPT untouched. Sorted.
+ * Run-record file names to purge: a forge-run manifest is removed when it HAS an engines array (hasEnginesField !== false) and NONE of its engines is a kept (real) engine — i.e. every competitor was a test double, including a declared-but-empty engines list (an aborted/unreachable fixture run). Malformed files or files without an engines array are NEVER purged (runs/ may hold non-forge records). A manifest with even one real engine is KEPT untouched. Sorted.
  */
 // @kern-source: ratings-maintenance:78
-export function computeRunManifestPurge(manifests: Array<{ file:string, engines:string[] }>, keepIds: string[]): string[] {
+export function computeRunManifestPurge(manifests: Array<{ file:string, engines:string[], hasEnginesField?:boolean }>, keepIds: string[]): string[] {
   const keep = new Set(keepIds);
   const out: string[] = [];
   for (const m of manifests) {
+    if (m.hasEnginesField === false) continue; // non-forge/malformed record — never purge
     const engines = Array.isArray(m.engines) ? m.engines : [];
     const hasReal = engines.some((e) => keep.has(e));
     if (!hasReal) out.push(m.file);
@@ -80,7 +81,7 @@ export function computeRunManifestPurge(manifests: Array<{ file:string, engines:
 /**
  * Outcome of an `agon ratings purge-unknown` invocation, for both --dry-run preview and the applied run.
  */
-// @kern-source: ratings-maintenance:93
+// @kern-source: ratings-maintenance:94
 export interface PurgeReport {
   dryRun: boolean;
   keepCount: number;
@@ -93,24 +94,28 @@ export interface PurgeReport {
 }
 
 /**
- * Scan ~/.agon/runs for *.json forge-run manifests, returning each file's declared engine ids. Best-effort: an unreadable/malformed manifest is reported with an empty engines list (so it counts as all-unknown and is purgeable) rather than crashing the scan. Resolves the runs dir via agonPath() at call time (AGON_HOME-aware).
+ * Scan ~/.agon/runs for *.json forge-run manifests, returning each file's declared engine ids plus a hasEnginesField validity flag. A manifest that is unreadable, malformed, or has no engines ARRAY is reported with hasEnginesField=false and is NEVER purgeable — runs/ may hold non-forge records (legacy Cesar plans etc.) that must not be touched. Resolves the runs dir via agonPath() at call time (AGON_HOME-aware).
  */
-// @kern-source: ratings-maintenance:106
-function readRunManifests(): Array<{ file:string, engines:string[] }> {
+// @kern-source: ratings-maintenance:107
+function readRunManifests(): Array<{ file:string, engines:string[], hasEnginesField:boolean }> {
   const dir = agonPath('runs');
   let names: string[];
   try { names = readdirSync(dir).filter((f) => f.endsWith('.json')); }
   catch { return []; }
-  const out: Array<{ file: string; engines: string[] }> = [];
+  const out: Array<{ file: string; engines: string[]; hasEnginesField: boolean }> = [];
   for (const file of names) {
     let engines: string[] = [];
+    let hasEnginesField = false;
     try {
       const m = JSON.parse(readFileSync(join(dir, file), 'utf-8'));
-      if (Array.isArray(m?.engines)) engines = m.engines.filter((e: unknown): e is string => typeof e === 'string');
+      if (Array.isArray(m?.engines)) {
+        hasEnginesField = true;
+        engines = m.engines.filter((e: unknown): e is string => typeof e === 'string');
+      }
     } catch {
-      // Malformed manifest — treat as zero real engines (purgeable).
+      // Malformed/non-forge record — hasEnginesField stays false: never purged.
     }
-    out.push({ file, engines });
+    out.push({ file, engines, hasEnginesField });
   }
   return out;
 }
@@ -118,7 +123,7 @@ function readRunManifests(): Array<{ file:string, engines:string[] }> {
 /**
  * Remove ratings + forge-run-history records for engine ids that are not real engines. Keep set = registryIds ∪ extraKeepIds (exact match). On --dry-run nothing is written — the report lists what WOULD go. On a real run: (1) a timestamped ratings.json.bak-<ts> copy is written, then the ratings rewrite runs under the cross-process ratings lock (same lock as every glicko update) reloading inside so a concurrent run isn't clobbered; (2) every purged run manifest is MOVED (not deleted) into a timestamped backup dir so a purge is fully reversible. Real engines — anything in the keep set — are never touched.
  */
-// @kern-source: ratings-maintenance:127
+// @kern-source: ratings-maintenance:132
 export function purgeUnknownEngineData(opts: { registryIds:string[]; extraKeepIds?:string[]; dryRun:boolean }): PurgeReport {
   const keepIds = Array.from(new Set([...(opts.registryIds ?? []), ...(opts.extraKeepIds ?? [])]));
   const keepCount = keepIds.length;
@@ -151,10 +156,12 @@ export function purgeUnknownEngineData(opts: { registryIds:string[]; extraKeepId
 
   // ── Ratings: backup then rewrite under the ratings lock (reload inside). ──
   let ratingsRemoved: string[] = [];
+  let ratingsUnknownLocked: string[] = [];
   withFileLock(ratingsFile + '.lock', () => {
     if (!existsSync(ratingsFile)) return;
     const record = loadRatings();
     const unknownNow = computeUnknownEngineIds(record, keepIds);
+    ratingsUnknownLocked = unknownNow;
     if (unknownNow.length === 0) return;
     copyFileSync(ratingsFile, join(ensureBackupDir(), 'ratings.json'));
     ratingsRemoved = pruneRatingIds(record, unknownNow);
@@ -174,7 +181,7 @@ export function purgeUnknownEngineData(opts: { registryIds:string[]; extraKeepId
 
   return {
     dryRun: false, keepCount, ratingsPath: ratingsFile,
-    ratingsUnknown, ratingsRemoved,
+    ratingsUnknown: ratingsUnknownLocked, ratingsRemoved,
     runsScanned, runsPurged, backupDir,
   };
 }

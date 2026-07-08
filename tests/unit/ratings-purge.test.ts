@@ -56,10 +56,10 @@ describe('computeUnknownEngineIds', () => {
 
 describe('computeRunManifestPurge', () => {
   const manifests = [
-    { file: 'a.json', engines: ['fast', 'slow'] },
-    { file: 'b.json', engines: ['claude', 'fast'] },
-    { file: 'c.json', engines: [] },
-    { file: 'd.json', engines: ['claude', 'codex'] },
+    { file: 'a.json', engines: ['fast', 'slow'], hasEnginesField: true },
+    { file: 'b.json', engines: ['claude', 'fast'], hasEnginesField: true },
+    { file: 'c.json', engines: [], hasEnginesField: true },
+    { file: 'd.json', engines: ['claude', 'codex'], hasEnginesField: true },
   ];
 
   it('purges only manifests with ZERO kept engines (all-fixture or empty rosters)', () => {
@@ -68,6 +68,20 @@ describe('computeRunManifestPurge', () => {
 
   it('a manifest with even one real engine is real match history and stays', () => {
     expect(computeRunManifestPurge(manifests, ['claude', 'codex'])).not.toContain('b.json');
+  });
+
+  it('malformed or non-forge records (no engines array) are NEVER purged', () => {
+    const mixed = [
+      ...manifests,
+      { file: 'legacy-cesar-plan.json', engines: [], hasEnginesField: false },
+      { file: 'corrupt.json', engines: [], hasEnginesField: false },
+    ];
+    const purged = computeRunManifestPurge(mixed, ['claude', 'codex']);
+    expect(purged).toEqual(['a.json', 'c.json']);
+  });
+
+  it('legacy callers without the validity flag keep the old behavior', () => {
+    expect(computeRunManifestPurge([{ file: 'x.json', engines: ['fast'] }], ['claude'])).toEqual(['x.json']);
   });
 });
 

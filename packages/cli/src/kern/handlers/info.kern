@@ -541,7 +541,7 @@ module name=InfoHandlers
           let parsed: unknown;
           if (typeof defaultVal === 'boolean') parsed = (intent as any).value === 'true';
           else if (typeof defaultVal === 'number') {
-            parsed = parseInt((intent as any).value, 10);
+            parsed = Number((intent as any).value);
             if (isNaN(parsed as number)) { dispatch({ type: 'error', message: `Invalid number: ${(intent as any).value}` }); return; }
           } else if (Array.isArray(defaultVal)) parsed = (intent as any).value.split(',').map((s: string) => s.trim());
           else parsed = (intent as any).value;

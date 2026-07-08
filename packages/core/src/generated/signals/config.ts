@@ -67,7 +67,23 @@ export const LOCAL_CONFIG_NAME: string = '.agon.json';
 // @kern-source: config:41
 export const LOCAL_PRIVATE_CONFIG_NAME: string = '.agon.local.json';
 
-// @kern-source: config:43
+// @kern-source: config:55
+export const _configMemoCache: Map<string, { globalMtime: number; localMtime: number; localPrivateMtime: number; result: Required<AgonConfig> }> = new Map();
+
+// @kern-source: config:57
+function _statMtimeOrZero(path: string): number {
+  try { return statSync(path).mtimeMs; } catch { return 0; }
+}
+
+/**
+ * Clear the loadConfig() memoization cache. Call this after any direct write to config.json / .agon.json / .agon.local.json that doesn't already go through configSet — the mtime-keyed cache would normally self-invalidate on the next loadConfig() call anyway (the file's mtime changes), but this guards against a write landing within the same mtime tick as a subsequent read.
+ */
+// @kern-source: config:62
+export function invalidateConfigCache(): void {
+  _configMemoCache.clear();
+}
+
+// @kern-source: config:68
 export function loadConfig(cwd?: string): Required<AgonConfig> {
   function readJsonSafe<T>(path: string): T | null {
     try { return JSON.parse(readFileSync(path, 'utf-8')) as T; }
@@ -82,14 +98,38 @@ export function loadConfig(cwd?: string): Required<AgonConfig> {
   // The GLOBAL_CONFIG_PATH const is frozen at module load time and would
   // point at the real ~/.agon even after process.env.AGON_HOME is set.
   const globalConfigPath = agonPath('config.json');
+  const localPath = cwd ? join(cwd, LOCAL_CONFIG_NAME) : null;
+  const localPrivatePath = cwd ? join(cwd, LOCAL_PRIVATE_CONFIG_NAME) : null;
+
+  // Keyed on the resolved paths themselves (not just cwd) — globalConfigPath
+  // already varies with AGON_HOME, so this keeps two different homes (e.g.
+  // parallel test runs) from ever sharing a cache slot even when cwd is the
+  // same or omitted in both.
+  const cacheKey = `${globalConfigPath}|${localPath ?? ''}|${localPrivatePath ?? ''}`;
+  const globalMtime = _statMtimeOrZero(globalConfigPath);
+  const localMtime = localPath ? _statMtimeOrZero(localPath) : 0;
+  const localPrivateMtime = localPrivatePath ? _statMtimeOrZero(localPrivatePath) : 0;
+  const memoed = _configMemoCache.get(cacheKey);
+  if (
+    memoed &&
+    memoed.globalMtime === globalMtime &&
+    memoed.localMtime === localMtime &&
+    memoed.localPrivateMtime === localPrivateMtime
+  ) {
+    // Return a CLONE, never the cached instance: pre-memo, every call built
+    // a fresh object, and callers among the 46 call sites mutate the result
+    // (permissions arrays, engineModels, hooks, …) — handing out the cached
+    // reference would let one caller's mutation poison the process-global
+    // cache for every later caller. structuredClone of a plain-JSON config
+    // is cheap next to the readFileSync+parse+merge+permission-dedup work
+    // this memo skips.
+    return structuredClone(memoed.result);
+  }
+
   const global = readJsonSafe<Partial<AgonConfig>>(globalConfigPath) ?? {};
-  const local = cwd
-    ? readJsonSafe<Partial<AgonConfig>>(join(cwd, LOCAL_CONFIG_NAME)) ?? {}
-    : {};
+  const local = localPath ? readJsonSafe<Partial<AgonConfig>>(localPath) ?? {} : {};
   // .agon.local.json — gitignored personal overrides (debug, engine prefs)
-  const localPrivate = cwd
-    ? readJsonSafe<Partial<AgonConfig>>(join(cwd, LOCAL_PRIVATE_CONFIG_NAME)) ?? {}
-    : {};
+  const localPrivate = localPrivatePath ? readJsonSafe<Partial<AgonConfig>>(localPrivatePath) ?? {} : {};
   const merged = { ...DEFAULT_AGON_CONFIG, ...global, ...local, ...localPrivate } as Required<AgonConfig>;
   // Compiler can't emit object/array defaults for Record types — ensure correct runtime types
   if (!Array.isArray((merged as any).forgeEnabledEngines)) (merged as any).forgeEnabledEngines = [];
@@ -132,15 +172,19 @@ export function loadConfig(cwd?: string): Required<AgonConfig> {
     allow: dedup([...g.allow, ...l.allow, ...lp.allow]),
     deny: dedup([...g.deny, ...l.deny, ...lp.deny]),
   };
-  return merged;
+  _configMemoCache.set(cacheKey, { globalMtime, localMtime, localPrivateMtime, result: merged });
+  // Clone on the MISS path too — otherwise the first caller after a (re)read
+  // holds the very instance the cache stores, and its mutations would poison
+  // every later cache hit exactly like an unclosed hit path would.
+  return structuredClone(merged);
 }
 
-// @kern-source: config:111
+// @kern-source: config:164
 export function configGet(key: keyof AgonConfig, cwd?: string): Required<AgonConfig>[keyof AgonConfig] {
   return loadConfig(cwd)[key];
 }
 
-// @kern-source: config:113
+// @kern-source: config:166
 export function configSet(key: keyof AgonConfig, value: AgonConfig[keyof AgonConfig]): void {
   if (!(key in DEFAULT_AGON_CONFIG)) {
     throw new ConfigError(`Unknown config key: ${String(key)}`);
@@ -167,12 +211,13 @@ export function configSet(key: keyof AgonConfig, value: AgonConfig[keyof AgonCon
     writeFileSync(tmpPath, JSON.stringify(existing, null, 2) + '\n');
     renameSync(tmpPath, globalConfigPath);
   });
+  invalidateConfigCache();
 }
 
 /**
  * Remove stale run directories beyond retention limit. Fresh dirs are protected so active forge/plan worktrees are never deleted mid-run.
  */
-// @kern-source: config:142
+// @kern-source: config:196
 export function pruneRuns(): void {
   // Review #10: dynamic runs dir via agonPath() — otherwise the frozen
   // RUNS_DIR const would prune the real ~/.agon/runs even in tests that
@@ -201,7 +246,7 @@ export function pruneRuns(): void {
   } catch { /* dir doesn't exist yet — not critical */ }
 }
 
-// @kern-source: config:172
+// @kern-source: config:226
 export function ensureAgonHome(): void {
   mkdirSync(getAgonHome(), { recursive: true });
   mkdirSync(agonPath('runs'), { recursive: true });

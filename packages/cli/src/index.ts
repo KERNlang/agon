@@ -1,47 +1,28 @@
 import { defineCommand, runMain } from 'citty';
-import { forgeCommand } from './commands/forge.js';
-import { brainstormCommand } from './commands/brainstorm.js';
-import { tribunalCommand } from './commands/tribunal.js';
-import { campfireCommand } from './commands/campfire.js';
-import { teamForgeCommand } from './commands/team-forge.js';
-import { teamBrainstormCommand } from './commands/team-brainstorm.js';
-import { teamTribunalCommand } from './commands/team-tribunal.js';
-import { leaderboardCommand } from './commands/leaderboard.js';
-import { historyCommand } from './commands/history.js';
-import { roomCommand } from './commands/room.js';
-import { provenanceCommand } from './commands/provenance.js';
-import { engineCommand } from './commands/engine.js';
-import { doctorCommand } from './commands/doctor.js';
-import { lastCommand } from './commands/last.js';
-import { modelsCommand } from './commands/models.js';
-import { configCommand } from './commands/config.js';
-import { providerCommand } from './commands/provider.js';
-import { reviewCommand } from './commands/review.js';
-import { callCommand } from './commands/call.js';
-import { agentGuideCommand } from './commands/agent-guide.js';
-import { installAgentPromptsCommand } from './commands/install-agent-prompts.js';
-import { goalCommand } from './commands/goal.js';
-import { synthesisCommand } from './commands/synthesis.js';
-import { askCommand } from './commands/ask.js';
-import { thinkCommand } from './commands/think.js';
-import { ragCommand } from './commands/rag.js';
-import { neroCommand } from './commands/nero.js';
-import { councilCommand } from './commands/council.js';
-import { researchCommand } from './commands/research.js';
-import { conquerCommand } from './commands/conquer.js';
-import { worktreeCommand } from './commands/worktree.js';
-import { attachCommand } from './commands/attach.js';
-import { daemonCommand } from './commands/daemon.js';
-import { serveCommand } from './commands/serve.js';
-import { driveCommand } from './commands/drive.js';
-import { chromeCommand } from './commands/chrome.js';
-import { extCommand } from './commands/ext.js';
-import { browserHostCommand } from './commands/browser-host.js';
-import { loginCommand } from './commands/login.js';
-import { updateCommand } from './commands/update.js';
-import { startRepl } from './repl.js';
-import { runOnboarding } from './onboarding.js';
+import { lazySubCommands } from './lazy-commands.js';
 import { loadConfig, loadAllAuthKeys, configSet, installKernStackTraceMapper } from '@kernlang/agon-core';
+
+// `repl.js` (the whole interactive Cesar/Ink surface, generated/surfaces/app.tsx
+// — ~2k lines pulling in React/Ink + the full tool/agent stack) and
+// `onboarding.js` (React/Ink + EngineRegistry + the adapter) were previously
+// STATIC imports here, so their module-eval cost landed on every invocation —
+// including `agon --help` and any one-shot subcommand — even though neither is
+// ever called outside the bare-REPL/`setup` paths below. Loaded lazily instead,
+// exactly like the subcommands in lazy-commands.ts.
+const importRepl = () => import('./repl.js').then((m) => m.startRepl);
+const importOnboarding = () => import('./onboarding.js').then((m) => m.runOnboarding);
+
+// A rejected dynamic import must be LOUD. When these were static imports, a
+// broken module was a top-level throw (stderr + non-zero exit); funneling an
+// import failure into the interactive paths' silent `.catch(() =>
+// process.exit(0))` would turn a broken install into a CLI that exits 0
+// printing nothing. Used for module LOADING failures only — a user
+// cancelling onboarding keeps the original quiet exit-0 behavior.
+function reportInteractiveLoadFailure(err: unknown): void {
+  const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
+  process.stderr.write(`[agon] failed to load the interactive UI module: ${detail}\n`);
+  process.exitCode = 1;
+}
 
 try {
   if (!process.env.AGON_NO_STACK_TRACE_MAPPER) {
@@ -197,50 +178,7 @@ const main = defineCommand({
     version: '0.2.1',
     description: 'Any AI can join. They compete. You ship.',
   },
-  subCommands: {
-    forge: forgeCommand,
-    brainstorm: brainstormCommand,
-    tribunal: tribunalCommand,
-    campfire: campfireCommand,
-    'team-forge': teamForgeCommand,
-    'team-brainstorm': teamBrainstormCommand,
-    'team-tribunal': teamTribunalCommand,
-    leaderboard: leaderboardCommand,
-    history: historyCommand,
-    room: roomCommand,
-    provenance: provenanceCommand,
-    engine: engineCommand,
-    doctor: doctorCommand,
-    last: lastCommand,
-    models: modelsCommand,
-    provider: providerCommand,
-    config: configCommand,
-    review: reviewCommand,
-    call: callCommand,
-    'agent-guide': agentGuideCommand,
-    'install-agent-prompts': installAgentPromptsCommand,
-    goal: goalCommand,
-    synthesis: synthesisCommand,
-    ask: askCommand,
-    think: thinkCommand,
-    rag: ragCommand,
-    nero: neroCommand,
-    council: councilCommand,
-    research: researchCommand,
-    conquer: conquerCommand,
-    worktree: worktreeCommand,
-    wt: worktreeCommand,
-    attach: attachCommand,
-    daemon: daemonCommand,
-    serve: serveCommand,
-    drive: driveCommand,
-    chrome: chromeCommand,
-    ext: extCommand,
-    'browser-host': browserHostCommand,
-    login: loginCommand,
-    update: updateCommand,
-    upgrade: updateCommand,
-  },
+  subCommands: lazySubCommands,
 });
 
 // Interactive REPL only when: no args at all AND stdin is a TTY
@@ -248,18 +186,28 @@ const noArgs = process.argv.length <= 2;
 const isTty = process.stdin.isTTY === true;
 const isSetup = process.argv[2] === 'setup';
 
+// Both interactive modules are loaded UP FRONT (before running either), so a
+// module-load failure hits the loud reporting catch while runtime rejections
+// from runOnboarding() itself (user cancel) keep the original quiet exit-0.
+function runOnboardingThenRepl(): void {
+  Promise.all([importOnboarding(), importRepl()]).then(
+    ([runOnboarding, startRepl]) => {
+      runOnboarding()
+        .then(() => startRepl())
+        .catch(() => process.exit(0));
+    },
+    reportInteractiveLoadFailure,
+  );
+}
+
 if (isSetup && isTty) {
-  runOnboarding()
-    .then(() => startRepl())
-    .catch(() => process.exit(0));
+  runOnboardingThenRepl();
 } else if (noArgs && isTty) {
   const config = loadConfig();
   if (!config.onboarded) {
-    runOnboarding()
-      .then(() => startRepl())
-      .catch(() => process.exit(0));
+    runOnboardingThenRepl();
   } else {
-    startRepl();
+    void importRepl().then((startRepl) => startRepl(), reportInteractiveLoadFailure);
   }
 } else {
   runMain(main);

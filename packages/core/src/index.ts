@@ -178,7 +178,8 @@ export { getUnreadState, listUnreadStates, isUnreadKind } from './generated/room
 export { foldLocks, listRoomLocks, claimRoomLock, releaseRoomLock, expiredLocksHeldBy } from './generated/rooms/locks.js';
 export { acquireTurnLease, releaseTurnLease, readActiveLease } from './generated/rooms/leases.js';
 export { detectTrigger, detectPingPong, evaluateStop } from './generated/rooms/auto-policy.js';
-export type { RoomActor, RoomEvent, RoomMeta, PresenceEntry, RoomLockState, RoomUnreadState, TurnLease, AutoConfig, AutoState, StopDecision, TriggerDecision } from './generated/rooms/types.js';
+export { drainNdjson, drainRoom, readTailOffset, writeTailOffset, createRoomWaker } from './generated/rooms/tail.js';
+export type { RoomActor, RoomEvent, RoomMeta, PresenceEntry, RoomLockState, RoomUnreadState, TurnLease, AutoConfig, AutoState, StopDecision, TriggerDecision, TailCursor, TailDrain, RoomTaskState, WorkConfig, WorkState } from './generated/rooms/types.js';
 // ── EventLog — append-only per-session event ledger (client/server split M1) ──
 export {
   append as eventLogAppend, flush as eventLogFlush, replay as eventLogReplay,

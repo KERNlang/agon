@@ -1,0 +1,12 @@
+test name="Rooms incremental tail — offset reads + fs.watch push" target="../../../src/kern/rooms/tail.kern"
+  it name="tail source stays valid KERN"
+    expect no=schemaViolations
+    expect no=semanticViolations
+    expect no=codegenErrors
+
+  it name="incremental-reader surface keeps its shape (behavior pinned in tests/unit/rooms-tail.test.ts)"
+    expect node=fn name=drainNdjson prop=returns is=TailDrain
+    expect node=fn name=drainRoom prop=returns is=TailDrain
+    expect node=fn name=readTailOffset prop=returns is=TailCursor
+    expect node=fn name=writeTailOffset prop=returns is=void
+    expect node=fn name=createRoomWaker prop=returns is="{ wait: () => Promise<string>; close: () => void }"

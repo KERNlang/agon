@@ -23,6 +23,7 @@ interface name=RoomEvent export=true
   field name=replyTo type="string | null"
   field name=auto type=boolean optional=true
   field name=lock type="{ resource: string; expiresAt: string; stolenFromSeq?: number }" optional=true
+  field name=task type="{ taskId: string; status?: 'open' | 'claimed' | 'done' | 'failed'; target?: string; leaseExpiresAt?: string; exitCode?: number; claimOfSeq?: number }" optional=true
 
 interface name=RoomMeta export=true
   field name=roomId type=string
@@ -93,3 +94,46 @@ interface name=TriggerDecision export=true
   field name=trigger type=boolean
   field name=triggerSeq type=number
   field name=reason type=string
+
+// ── Incremental tail (push + offset reads) ──
+// A consumer's read cursor over events.ndjson: `offset` is the byte high-water
+// mark (persisted per callsign); `partial` is the trailing torn line kept IN
+// MEMORY only. `reset` signals the file shrank (truncate/rotate) so the caller
+// rebuilds any accumulated view from scratch.
+interface name=TailCursor export=true
+  field name=offset type=number
+  field name=partial type=string
+
+interface name=TailDrain export=true
+  field name=events type="RoomEvent[]"
+  field name=cursor type=TailCursor
+  field name=reset type=boolean
+
+// ── Work mode (orchestrator → workers) ──
+// A task board is a pure fold of task/claim/result events (latest per taskId
+// wins). A claimed task whose lease expired with no result folds BACK to open
+// for crash recovery — the audit trail (claimedBy/claimSeq) stays intact.
+interface name=RoomTaskState export=true
+  field name=taskId type=string
+  field name=status type="'open' | 'claimed' | 'done' | 'failed'"
+  field name=spec type=string
+  field name=target type="string | null"
+  field name=createdBy type=string
+  field name=createdAt type=string
+  field name=seq type=number
+  field name=claimedBy type="string | null"
+  field name=claimSeq type=number optional=true
+  field name=leaseExpiresAt type="string | null"
+  field name=result type="string | null"
+  field name=exitCode type=number optional=true
+
+interface name=WorkConfig export=true
+  field name=callsign type=string
+  field name=maxWallMs type=number
+  field name=leaseTtlMs type=number
+  field name=taskTimeoutMs type=number
+
+interface name=WorkState export=true
+  field name=startedAtMs type=number
+  field name=tasksHandled type=number
+  field name=joinSeq type=number

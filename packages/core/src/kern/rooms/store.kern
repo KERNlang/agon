@@ -2,7 +2,7 @@
 // One dir per room under ~/.agon/rooms/<roomId>/. events.ndjson is canonical;
 // seq is allocated under an exclusive lock so concurrent CLIs never collide.
 
-import from="node:fs" names="mkdirSync,existsSync,readFileSync,writeFileSync,appendFileSync,readdirSync,openSync,closeSync,unlinkSync,statSync"
+import from="node:fs" names="mkdirSync,existsSync,readFileSync,writeFileSync,appendFileSync,readdirSync,openSync,closeSync,unlinkSync,statSync,writeSync"
 import from="node:path" names="join"
 import from="../utils/paths.js" names="runtimeAgonPath"
 import from="./types.js" names="RoomActor,RoomEvent,RoomMeta" types=true
@@ -10,6 +10,30 @@ import from="./types.js" names="RoomActor,RoomEvent,RoomMeta" types=true
 const name=LOCK_TIMEOUT_MS type=number value=2000
 
 const name=LOCK_STALE_MS type=number value=5000
+
+fn name=roomLockSleep params="ms:number" returns="void"
+  doc "Synchronous sleep that PARKS the thread instead of spinning: Atomics.wait on a throwaway SharedArrayBuffer is a real (0% CPU) sleep, allowed on Node's main thread. withRoomLock is a synchronous API (appendEvent/claim/lease callers are sync, and the pinned tests call them synchronously), so blocking is inherent — this just makes the rare contention wait idle, never a hot loop. globalThis indirection keeps kern-guard's ambient-scope allowlist happy (it lacks Atomics/Int32Array/SharedArrayBuffer; globalThis is ambient)."
+  handler <<<
+    if (ms <= 0) return;
+    try {
+      globalThis.Atomics.wait(new globalThis.Int32Array(new globalThis.SharedArrayBuffer(4)), 0, 0, ms);
+    } catch {
+      const until = Date.now() + ms;
+      while (Date.now() < until) { /* SharedArrayBuffer-less fallback */ }
+    }
+  >>>
+
+fn name=roomLockPidAlive params="pid:number" returns="boolean"
+  doc "process.kill(pid,0) probes existence without signalling: ESRCH => dead (reclaimable), EPERM => alive but another user's. A dead holder can never return, so its lock is safe to steal immediately."
+  handler <<<
+    if (!Number.isInteger(pid) || pid <= 0) return false;
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch (e) {
+      return (e as { code?: string }).code === 'EPERM';
+    }
+  >>>
 
 fn name=roomsDir returns="string" export=true expr={{ return runtimeAgonPath('rooms'); }}
 
@@ -91,24 +115,45 @@ fn name=parseMentions params="text:string" returns="string[]" export=true
   >>>
 
 fn name=withRoomLock params="roomId:string, work:() => void" returns="void" export=true
-  doc "Run work() while holding the room's exclusive .lock — used for atomic seq allocation AND turn-lease acquisition. Steals a stale lock after LOCK_STALE_MS; throws on timeout; always releases in finally. Hold it ONLY for fast file ops, never across a network/engine call."
+  doc "Run work() while holding the room's exclusive .lock — used for atomic seq allocation AND turn-lease acquisition. The lock file carries `pid\\ntimestamp`; a held lock is reclaimed when the owning pid is DEAD (immediate, safe) or its mtime is older than LOCK_STALE_MS (backstop for pid reuse). Contention waits with a jittered exponential backoff that PARKS the thread (Atomics.wait) — no CPU spin. Throws on timeout; always releases in finally. Hold it ONLY for fast file ops, never across a network/engine call. NOT reentrant."
   handler <<<
     mkdirSync(roomDir(roomId), { recursive: true });
     const lock = join(roomDir(roomId), '.lock');
     const deadline = Date.now() + LOCK_TIMEOUT_MS;
+    let backoff = 10;
     let fd: number | null = null;
     while (fd === null) {
       try {
         fd = openSync(lock, 'wx');
+        try { writeSync(fd, `${process.pid}\n${Date.now()}\n`); } catch { /* lock still held via the open fd */ }
       } catch (err: any) {
         if (err?.code !== 'EEXIST') throw err;
+        // Stale detection: a DEAD owning pid (authoritative on one host) OR an
+        // mtime past LOCK_STALE_MS (backstop for pid reuse). Either => reclaim.
+        let stale = false;
         try {
           const st = statSync(lock);
-          if (Date.now() - st.mtimeMs > LOCK_STALE_MS) { unlinkSync(lock); continue; }
-        } catch { continue; }
+          if (Date.now() - st.mtimeMs > LOCK_STALE_MS) {
+            stale = true;
+          } else {
+            // openSync('wx') and writeSync(pid) are TWO steps: a contender
+            // reading in that gap sees EMPTY content. An unparseable or
+            // non-positive owner must NEVER count as dead — only a VALID
+            // integer pid that fails the liveness probe marks the lock stale;
+            // empty/garbage content falls through to the mtime backstop alone.
+            // Otherwise a freshly held lock gets stolen mid-handshake → two
+            // holders in the critical section → duplicate seqs.
+            const owner = parseInt((readFileSync(lock, 'utf-8').split('\n')[0] || '').trim(), 10);
+            if (Number.isInteger(owner) && owner > 0 && owner !== process.pid && !roomLockPidAlive(owner)) stale = true;
+          }
+        } catch { continue; } // lock vanished between open and stat — retry the open now
+        if (stale) { try { unlinkSync(lock); } catch { /* already gone */ } continue; }
         if (Date.now() > deadline) throw new Error(`room lock timeout: ${roomId}`);
-        const spinUntil = Date.now() + 12;
-        while (Date.now() < spinUntil) { /* brief busy-wait */ }
+        // Jittered exponential backoff (10ms → 300ms) via a non-spinning sleep,
+        // clamped so the final wait never overshoots the deadline.
+        const jitter = Math.floor(Math.random() * backoff);
+        roomLockSleep(Math.max(1, Math.min(backoff + jitter, deadline - Date.now())));
+        backoff = Math.min(backoff * 2, 300);
       }
     }
     try { work(); } finally {
@@ -117,8 +162,8 @@ fn name=withRoomLock params="roomId:string, work:() => void" returns="void" expo
     }
   >>>
 
-fn name=appendEventHoldingLock params="roomId:string, input:{ kind: string; actor: RoomActor; body: string; mentions: string[]; replyTo: string | null; repoHint: string; auto?: boolean; lock?: { resource: string; expiresAt: string; stolenFromSeq?: number } }" returns="RoomEvent" export=true
-  doc "INTERNAL: append one event WITHOUT taking the room lock — the caller MUST already hold it (withRoomLock is not reentrant). Exists so check-then-append flows (lock claims) stay atomic under ONE lock acquisition."
+fn name=appendEventHoldingLock params="roomId:string, input:{ kind: string; actor: RoomActor; body: string; mentions: string[]; replyTo: string | null; repoHint: string; auto?: boolean; lock?: { resource: string; expiresAt: string; stolenFromSeq?: number }; task?: { taskId: string; status?: 'open' | 'claimed' | 'done' | 'failed'; target?: string; leaseExpiresAt?: string; exitCode?: number; claimOfSeq?: number } }" returns="RoomEvent" export=true
+  doc "INTERNAL: append one event WITHOUT taking the room lock — the caller MUST already hold it (withRoomLock is not reentrant). Exists so check-then-append flows (lock claims, task claims) stay atomic under ONE lock acquisition."
   handler <<<
     const meta = readMeta(roomId) ?? createRoom(roomId);
     const seq = meta.nextSeq;
@@ -135,6 +180,7 @@ fn name=appendEventHoldingLock params="roomId:string, input:{ kind: string; acto
       replyTo: input.replyTo,
       auto: input.auto === true,
       ...(input.lock ? { lock: input.lock } : {}),
+      ...(input.task ? { task: input.task } : {}),
     };
     appendFileSync(eventsPath(roomId), JSON.stringify(event) + '\n');
     meta.nextSeq = seq + 1;
@@ -142,7 +188,7 @@ fn name=appendEventHoldingLock params="roomId:string, input:{ kind: string; acto
     return event;
   >>>
 
-fn name=appendEvent params="roomId:string, input:{ kind: string; actor: RoomActor; body: string; mentions: string[]; replyTo: string | null; repoHint: string; auto?: boolean; lock?: { resource: string; expiresAt: string; stolenFromSeq?: number } }" returns="RoomEvent" export=true
+fn name=appendEvent params="roomId:string, input:{ kind: string; actor: RoomActor; body: string; mentions: string[]; replyTo: string | null; repoHint: string; auto?: boolean; lock?: { resource: string; expiresAt: string; stolenFromSeq?: number }; task?: { taskId: string; status?: 'open' | 'claimed' | 'done' | 'failed'; target?: string; leaseExpiresAt?: string; exitCode?: number; claimOfSeq?: number } }" returns="RoomEvent" export=true
   doc "Append one event under the room lock so seq is monotonic across concurrent CLIs. Set input.auto=true for posts generated by an auto-respond loop (lets the floor/stop logic tell agents from humans)."
   handler <<<
     let result: RoomEvent | null = null;

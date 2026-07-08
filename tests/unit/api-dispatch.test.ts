@@ -588,3 +588,64 @@ describe('apiStreamDispatchWithHistory idle-timeout contract (Fix A)', () => {
     expect(result.stderr).toContain('0.05s');
   });
 });
+
+// --- Fix C(a): finishReason capture from the fullStream 'finish' part ---
+// A reasoning model that spends its entire maxOutputTokens budget thinking
+// finishes CLEANLY (exit 0, no stderr) with zero text and finishReason
+// 'length'. The dispatch layer must surface that finishReason on the
+// DispatchResult so callers (runReviewCore) can name reasoning-exhaustion
+// instead of misreporting a generic empty response.
+describe('apiStreamDispatchWithHistory finishReason capture (Fix C)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.TEST_API_KEY = 'test-key';
+  });
+
+  it('captures finishReason=length from a reasoning-only stream that ends cleanly', async () => {
+    async function* fullStream() {
+      yield { type: 'reasoning-delta', delta: 'thinking hard about the diff...' };
+      yield { type: 'finish', finishReason: 'length', rawFinishReason: 'length', totalUsage: { inputTokens: 30000, outputTokens: 8192 } };
+    }
+
+    mockStreamText.mockReturnValueOnce({
+      fullStream: fullStream(),
+      usage: Promise.resolve({ inputTokens: 30000, outputTokens: 8192 }),
+    } as any);
+
+    const { chunks, result } = await collectApiStream(apiStreamDispatchWithHistory(
+      { baseUrl: 'http://test', apiKeyEnv: 'TEST_API_KEY', model: 'test-model' },
+      [{ role: 'user', content: 'review this' }],
+      30,
+    ));
+
+    expect(chunks).toEqual([]);
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe('');
+    expect(result.finishReason).toBe('length');
+    expect(result.parts).toEqual([
+      { kind: 'reasoning', text: 'thinking hard about the diff...' },
+    ]);
+  });
+
+  it('captures finishReason=stop on a normal completion', async () => {
+    async function* fullStream() {
+      yield { type: 'text-delta', text: 'the answer' };
+      yield { type: 'finish', finishReason: 'stop', rawFinishReason: 'stop', totalUsage: { inputTokens: 10, outputTokens: 3 } };
+    }
+
+    mockStreamText.mockReturnValueOnce({
+      fullStream: fullStream(),
+      usage: Promise.resolve({ inputTokens: 10, outputTokens: 3 }),
+    } as any);
+
+    const { result } = await collectApiStream(apiStreamDispatchWithHistory(
+      { baseUrl: 'http://test', apiKeyEnv: 'TEST_API_KEY', model: 'test-model' },
+      [{ role: 'user', content: 'q' }],
+      30,
+    ));
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe('the answer');
+    expect(result.finishReason).toBe('stop');
+  });
+});

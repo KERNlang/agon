@@ -463,6 +463,11 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
     let iterDone = false;
     let gotFirstChunk = false;
     let chunkCount = 0;
+    // AI SDK fullStream 'finish' part carries finishReason ('stop'|'length'|
+    // 'content-filter'|...). Surfaced on the success return so callers can name
+    // reasoning-exhaustion ('length' + empty stdout: the model spent its whole
+    // output budget thinking) instead of misreporting a generic empty response.
+    let finishReason: string | undefined;
 
     while (!iterDone) {
       const timeoutMs = gotFirstChunk ? IDLE_TIMEOUT : FIRST_CHUNK_TIMEOUT;
@@ -576,6 +581,15 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
           const hint = routingShaped ? formatMismatchHint(config) : null;
           return { exitCode: 1, stdout, stderr: hint ? `Stream error: ${errStr}\n${hint}` : `Stream error: ${errStr}`, durationMs: Date.now() - startTime, timedOut: false };
         }
+        case 'finish': {
+          // AI SDK TextStreamPart: { type: 'finish', finishReason, totalUsage }.
+          // 'length' means the model hit maxOutputTokens — with empty stdout that
+          // is reasoning exhaustion (all budget spent thinking), which callers
+          // must be able to name.
+          const fr = (part as any).finishReason;
+          if (typeof fr === 'string' && fr) finishReason = fr;
+          break;
+        }
       }
     }
 
@@ -598,7 +612,7 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
         };
       }
     } catch { /* usage tokens optional — extraction failure is non-critical */ }
-    return { exitCode: 0, stdout, stderr: '', durationMs: Date.now() - startTime, timedOut: false, usage, parts: capturedParts };
+    return { exitCode: 0, stdout, stderr: '', durationMs: Date.now() - startTime, timedOut: false, usage, parts: capturedParts, finishReason };
   } catch (err) {
     clearTimeout(timer);
     const durationMs = Date.now() - startTime;

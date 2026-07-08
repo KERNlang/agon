@@ -134,6 +134,8 @@ interface name=DispatchResult
     doc "promptTokens (AI SDK inputTokens) already INCLUDES cache read+write tokens, so promptTokens+completionTokens = the request's exact context occupancy. cachedInputTokens = the cache-read share, for display/cost."
   field name=parts type="Array<{kind:'text',text:string}|{kind:'reasoning',text:string}|{kind:'tool_call',toolName:string,toolCallId:string,args:Record<string,unknown>}>" optional=true
   doc "Structured parts captured at stream time. Enables compaction to fold over typed data instead of parsing strings."
+  field name=finishReason type=string optional=true
+    doc "AI SDK finishReason ('stop'|'length'|'content-filter'|'tool-calls'|'error'|'other'|'unknown') captured from the fullStream 'finish' part on API dispatches. 'length' with empty stdout = the model exhausted its output-token budget (typically all spent on reasoning) — callers use it to name that failure instead of misreporting a generic empty response. Absent on CLI/pty dispatch paths."
 
 interface name=AgentDispatchResult extends=DispatchResult
   field name=diff type=string

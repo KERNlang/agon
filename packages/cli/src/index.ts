@@ -12,6 +12,18 @@ import { loadConfig, loadAllAuthKeys, configSet, installKernStackTraceMapper } f
 const importRepl = () => import('./repl.js').then((m) => m.startRepl);
 const importOnboarding = () => import('./onboarding.js').then((m) => m.runOnboarding);
 
+// A rejected dynamic import must be LOUD. When these were static imports, a
+// broken module was a top-level throw (stderr + non-zero exit); funneling an
+// import failure into the interactive paths' silent `.catch(() =>
+// process.exit(0))` would turn a broken install into a CLI that exits 0
+// printing nothing. Used for module LOADING failures only — a user
+// cancelling onboarding keeps the original quiet exit-0 behavior.
+function reportInteractiveLoadFailure(err: unknown): void {
+  const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
+  process.stderr.write(`[agon] failed to load the interactive UI module: ${detail}\n`);
+  process.exitCode = 1;
+}
+
 try {
   if (!process.env.AGON_NO_STACK_TRACE_MAPPER) {
     installKernStackTraceMapper();
@@ -174,22 +186,28 @@ const noArgs = process.argv.length <= 2;
 const isTty = process.stdin.isTTY === true;
 const isSetup = process.argv[2] === 'setup';
 
+// Both interactive modules are loaded UP FRONT (before running either), so a
+// module-load failure hits the loud reporting catch while runtime rejections
+// from runOnboarding() itself (user cancel) keep the original quiet exit-0.
+function runOnboardingThenRepl(): void {
+  Promise.all([importOnboarding(), importRepl()]).then(
+    ([runOnboarding, startRepl]) => {
+      runOnboarding()
+        .then(() => startRepl())
+        .catch(() => process.exit(0));
+    },
+    reportInteractiveLoadFailure,
+  );
+}
+
 if (isSetup && isTty) {
-  importOnboarding()
-    .then((runOnboarding) => runOnboarding())
-    .then(() => importRepl())
-    .then((startRepl) => startRepl())
-    .catch(() => process.exit(0));
+  runOnboardingThenRepl();
 } else if (noArgs && isTty) {
   const config = loadConfig();
   if (!config.onboarded) {
-    importOnboarding()
-      .then((runOnboarding) => runOnboarding())
-      .then(() => importRepl())
-      .then((startRepl) => startRepl())
-      .catch(() => process.exit(0));
+    runOnboardingThenRepl();
   } else {
-    importRepl().then((startRepl) => startRepl());
+    importRepl().then((startRepl) => startRepl(), reportInteractiveLoadFailure);
   }
 } else {
   runMain(main);

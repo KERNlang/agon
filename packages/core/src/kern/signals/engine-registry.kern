@@ -1,4 +1,4 @@
-import from="node:fs" names="readdirSync,readFileSync,existsSync,statSync,accessSync,mkdirSync,writeFileSync,constants"
+import from="node:fs" names="readdirSync,readFileSync,existsSync,statSync,accessSync,mkdirSync,writeFileSync,renameSync,constants"
 import from="node:path" names="join,dirname,resolve,delimiter"
 import from="node:os" names="homedir"
 import from="node:crypto" names="createHash"
@@ -79,7 +79,16 @@ fn name=saveBinaryDiskCache params="pathHash:string, entries:Record<string, { pa
     try {
       const file = binaryCacheFile();
       mkdirSync(dirname(file), { recursive: true });
-      writeFileSync(file, JSON.stringify({ pathHash, entries }), 'utf-8');
+      // Atomic write: temp file in the same dir + rename, so concurrent agon
+      // processes resolving binaries can't interleave partial writes into a
+      // corrupt cache file. (A corrupt file IS tolerated — the reader treats
+      // it as empty — but last-writer-wins beats self-healing by re-scan.)
+      // The pid suffix keeps concurrent writers off each other's temp file;
+      // renameSync over the target is atomic on POSIX. Mirrors configSet's
+      // .tmp + renameSync pattern in config.kern.
+      const tmpPath = `${file}.${process.pid}.tmp`;
+      writeFileSync(tmpPath, JSON.stringify({ pathHash, entries }), 'utf-8');
+      renameSync(tmpPath, file);
     } catch {
       // Best-effort cache write; a failure here must never break binary resolution.
     }

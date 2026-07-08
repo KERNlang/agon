@@ -489,7 +489,13 @@ export const roomCommand: any = defineCommand({
             // dispatch before it ever picks another. Renew the lease at half-TTL
             // while the (possibly long) dispatch runs so a crash — not a slow
             // task — is what frees it.
+            const taskStartedAt = Date.now();
             const renew = setInterval(() => {
+              // Renewal is BOUNDED: a pathologically stuck dispatch (one that
+              // outlives even its own timeout + grace) must not keep the task
+              // claimed forever. Stop renewing — the lease then expires
+              // naturally and the task folds back to open for another worker.
+              if (Date.now() - taskStartedAt > workCfg.taskTimeoutMs + 30_000) { clearInterval(renew); return; }
               try { claimTask(roomId, actor, next.taskId, workCfg.leaseTtlMs, repoHint); } catch { /* best-effort renew */ }
             }, Math.max(1000, Math.floor(workCfg.leaseTtlMs / 2)));
             let reply = '';

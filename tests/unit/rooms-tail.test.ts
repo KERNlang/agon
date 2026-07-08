@@ -31,6 +31,22 @@ describe('drainNdjson — incremental reader', () => {
     expect(d3.events.map((e) => e.seq)).toEqual([2, 3]);
   });
 
+  it('advances the cursor by the bytes actually consumed, not blindly to the stat size', () => {
+    // Regression pin for the short-read skip: the returned offset must be
+    // provably initialOffset + bytesConsumed. On the normal (full-read) path
+    // that equals the byte length of what was written — assert the exact math
+    // so an `offset: size` regression fails immediately.
+    const p = join(home, 'events.ndjson');
+    const l1 = line(1, 'first');
+    writeFileSync(p, l1);
+    const d1 = drainNdjson(p, { offset: 0, partial: '' });
+    expect(d1.cursor.offset).toBe(Buffer.byteLength(l1)); // 0 + consumed
+    const l2 = line(2, 'second — with wide chars: äöü');
+    appendFileSync(p, l2);
+    const d2 = drainNdjson(p, d1.cursor);
+    expect(d2.cursor.offset).toBe(Buffer.byteLength(l1) + Buffer.byteLength(l2)); // prior offset + consumed
+  });
+
   it('buffers a torn final line, then completes it on the next drain', () => {
     const p = join(home, 'events.ndjson');
     const full = line(1, 'whole');

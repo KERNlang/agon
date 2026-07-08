@@ -51,7 +51,7 @@ export function writeTailOffset(roomId: string, callsign: string, offset: number
 }
 
 /**
- * Read the bytes in [offset..size) of an NDJSON file, parse the complete lines into RoomEvents, and buffer a torn final line into the returned cursor.partial. offset advances to the file size (the noop check is size===offset). A file smaller than offset (truncate/rotate) resets to 0 and sets reset=true so callers rebuild any accumulated view.
+ * Read the bytes in [offset..size) of an NDJSON file, parse the complete lines into RoomEvents, and buffer a torn final line into the returned cursor.partial. offset advances by the bytes actually CONSUMED — the file size on a full read, less on a short read so the unread tail is retried next drain. A file smaller than offset (truncate/rotate) resets to 0 and sets reset=true so callers rebuild any accumulated view.
  */
 // @kern-source: tail:47
 export function drainNdjson(path: string, cursor: TailCursor): TailDrain {
@@ -90,40 +90,58 @@ export function drainNdjson(path: string, cursor: TailCursor): TailDrain {
       if (typeof ev.seq === 'number') events.push(ev);
     } catch { /* skip malformed */ }
   }
-  return { events, cursor: { offset: size, partial: newPartial }, reset };
+  // Advance by the bytes actually CONSUMED, never blindly to the stat size:
+  // a short read (read < len) must leave the unread tail for the next drain
+  // instead of silently skipping it forever.
+  return { events, cursor: { offset: offset + read, partial: newPartial }, reset };
 }
 
 /**
  * drainNdjson over a room's events.ndjson — the convenience callers use to pull new events since their cursor.
  */
-// @kern-source: tail:88
+// @kern-source: tail:91
 export function drainRoom(roomId: string, cursor: TailCursor): TailDrain {
   return drainNdjson(eventsPath(roomId), cursor);
 }
 
 /**
- * A push-driven waker over the room directory. wait() resolves 'event' when the dir changes (an append, a lock/lease/presence write), 'watchdog' when the liveness timer elapses first, or 'close' when closed. Coalesces bursts (many fs events = one wake) and buffers a wake that arrives between waits so no change is missed. If fs.watch throws, it degrades to a DEGRADED_POLL_MS watchdog and warns once. Call close() to release the watcher (required for a process/test to exit).
+ * A push-driven waker over the room directory. wait() resolves 'event' when the dir changes (an append, a lock/lease/presence write), 'watchdog' when the liveness timer elapses first, or 'close' when closed. Coalesces bursts (many fs events = one wake) and buffers a wake that arrives between waits so no change is missed. If fs.watch throws at creation OR the watcher errors later (e.g. the watched dir is deleted), it degrades to a DEGRADED_POLL_MS watchdog and warns once — an FSWatcher 'error' with no listener is an uncaught exception that would crash the CLI. Call close() to release the watcher (required for a process/test to exit).
  */
-// @kern-source: tail:94
+// @kern-source: tail:97
 export function createRoomWaker(roomId: string, watchdogMs: number, onWarn: (msg: string) => void): { wait: () => Promise<string>; close: () => void } {
   const dir = roomDir(roomId);
   try { mkdirSync(dir, { recursive: true }); } catch { /* exists */ }
   let watcher: { close: () => void } | null = null;
   let signalled = false;               // an event arrived while nobody was waiting
   let closed = false;
+  let warned = false;
   const pending: ((reason: string) => void)[] = [];
   const fireAll = (reason: string) => {
     const entries = pending.slice();
     for (const e of entries) e(reason);
   };
+  const warnOnce = (msg: string) => {
+    if (warned) return;
+    warned = true;
+    try { onWarn?.(msg); } catch { /* ignore */ }
+  };
+  // Watcher death (error event) => degrade, don't crash: close+null the
+  // watcher so every SUBSEQUENT wait arms the degraded interval, and wake
+  // current waiters so their next wait() re-arms on it too.
+  const dropWatcher = (msg: string) => {
+    if (watcher) { try { watcher.close(); } catch { /* already dead */ } watcher = null; }
+    warnOnce(msg);
+    if (pending.length) fireAll('watchdog');
+  };
   try {
-    watcher = watch(dir, () => { if (pending.length) fireAll('event'); else signalled = true; });
-    try { (watcher as any).unref?.(); } catch { /* not all platforms expose unref */ }
+    const w = watch(dir, () => { if (pending.length) fireAll('event'); else signalled = true; });
+    try { (w as any).on?.('error', () => dropWatcher('room watcher failed — degrading to incremental poll')); } catch { /* non-emitter fake */ }
+    try { (w as any).unref?.(); } catch { /* not all platforms expose unref */ }
+    watcher = w;
   } catch {
     watcher = null;
-    try { onWarn?.('fs.watch unavailable — degrading to incremental poll'); } catch { /* ignore */ }
+    warnOnce('fs.watch unavailable — degrading to incremental poll');
   }
-  const interval = watcher ? Math.max(50, watchdogMs) : DEGRADED_POLL_MS;
   const wait = () => new Promise<string>((resolve) => {
     if (closed) { resolve('close'); return; }
     if (signalled) { signalled = false; resolve('event'); return; }
@@ -137,6 +155,9 @@ export function createRoomWaker(roomId: string, watchdogMs: number, onWarn: (msg
       resolve(reason);
     };
     pending.push(entry);
+    // Re-evaluated per wait(): after watcher death this switches to the
+    // degraded poll interval, keeping the loop live without fs.watch.
+    const interval = watcher ? Math.max(50, watchdogMs) : DEGRADED_POLL_MS;
     const timer = setTimeout(() => entry('watchdog'), interval);
   });
   const close = () => {

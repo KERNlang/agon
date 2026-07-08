@@ -243,12 +243,12 @@ const chrome = lazyCommand(() => import('./commands/chrome.js'), 'chromeCommand'
   description: 'Drive your browser from the terminal — reuses a running agon (serve/REPL) the side panel is on, or embeds a transient bridge (research, check a page design, navigate/read/screenshot)',
 });
 const ext = lazyCommand(() => import('./commands/ext.js'), 'extCommand', {
-  name: 'install',
-  description: 'Install the native-messaging host so the Agon browser extension auto-connects (macOS).',
+  name: 'ext',
+  description: 'Browser-extension integration: install the native-messaging host for zero-terminal auto-connect.',
 }, { hasSubCommands: true });
 const browserHost = lazyCommand(() => import('./commands/browser-host.js'), 'browserHostCommand', {
-  name: 'install',
-  description: 'Write the com.kernlang.agon native-messaging manifest so the browser extension pairs automatically.',
+  name: 'browser-host',
+  description: 'Native-messaging pairing: install the com.kernlang.agon host so the browser extension connects with zero paste (install | uninstall | status | stop).',
 }, { hasSubCommands: true });
 const login = lazyCommand(() => import('./commands/login.js'), 'loginCommand', {
   name: 'login',

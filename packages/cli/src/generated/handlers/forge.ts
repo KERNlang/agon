@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 
 import { execFileSync } from 'node:child_process';
 
-import { ensureAgonHome, RUNS_DIR, createPlan, approvePlan, startPlan, mergeStepResult, cancelPlan, failPlan, savePlan, scanProjectContext, getActiveWorkspace, snapshotWorkspace, tracker, resolveWorkingDir, loadOrCreateActiveThread, applyPatchWithUndo, acquireApplyLock, releaseApplyLock, headChanged, branchChanged, headSha, currentBranch } from '@kernlang/agon-core';
+import { ensureAgonHome, RUNS_DIR, createPlan, approvePlan, startPlan, mergeStepResult, cancelPlan, failPlan, savePlan, scanProjectContext, getActiveWorkspace, snapshotWorkspace, snapshotPath, tracker, resolveWorkingDir, loadOrCreateActiveThread, applyPatchWithUndo, acquireApplyLock, releaseApplyLock, headChanged, branchChanged, headSha, currentBranch } from '@kernlang/agon-core';
 
 import type { Plan, PlanStepInput, ApprovalLevel } from '@kernlang/agon-core';
 
@@ -610,13 +610,17 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
     } else {
       // getActiveWorkspace() is a BOOKMARK, not the grounded session root — only
       // use its snapshot if it actually matches where this session is grounded
-      // (forgeCwd = resolveWorkingDir()). A bookmark for some OTHER directory
-      // (from a prior /workspace add, or none at all) must fall back to the
-      // plain cwd snapshot rather than silently plan-snapshotting the wrong repo.
+      // (forgeCwd = resolveWorkingDir()). With session-scoped grounding a
+      // non-matching (or absent) bookmark is the COMMON case, so the fallback
+      // must still be a REAL git snapshot of the grounded cwd (snapshotPath) — a
+      // hardcoded 'unknown'/dirty:false placeholder would lose the repo state
+      // the plan was created against and mislead dirty-tree safety checks.
+      // snapshotPath itself degrades per-field to those placeholders only when
+      // forgeCwd isn't a git repo.
       const ws = getActiveWorkspace();
       const snapshot = ws && ws.path === forgeCwd
         ? snapshotWorkspace(ws)
-        : { id: 'cwd', path: forgeCwd, headSha: 'unknown', branch: 'unknown', dirty: false };
+        : snapshotPath(forgeCwd);
 
       const forgeSteps: PlanStepInput[] = [
         { id: 'baseline', kind: 'fitness', label: 'Baseline fitness check', effects: ['exec'] },

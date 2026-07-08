@@ -33,6 +33,9 @@ vi.mock('@kernlang/agon-core', async () => ({
   buildKernContextSpine: vi.fn(async () => ''),
   getActiveWorkspace: vi.fn(() => null),
   snapshotWorkspace: vi.fn(() => ({ id: 'cwd', path: '/repo', headSha: 'abc', branch: 'main', dirty: false })),
+  // With no matching bookmark (getActiveWorkspace → null), handleForge now
+  // snapshots the grounded cwd directly via snapshotPath.
+  snapshotPath: vi.fn(() => ({ id: 'cwd', path: '/repo', headSha: 'abc', branch: 'main', dirty: false })),
   resolveWorkingDir: vi.fn(() => '/repo'),
   loadOrCreateActiveThread: vi.fn(() => ({ append: vi.fn(), save: vi.fn() })),
   applyPatchWithUndo: vi.fn(() => ({ ok: true, undoToken: 'undo-test' })),

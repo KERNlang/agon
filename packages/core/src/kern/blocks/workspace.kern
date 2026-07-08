@@ -94,24 +94,31 @@ fn name=getWorkspace params="idOrPath:string" returns="Workspace|null"
     let name=state value="loadState()"
     return value="state.workspaces.find((w) => w.id === idOrPath || w.path === resolve(idOrPath) || w.name === idOrPath) ?? null"
 
-fn name=snapshotWorkspace params="ws:Workspace" returns=WorkspaceSnapshot
+fn name=snapshotPath params="path:string" returns=WorkspaceSnapshot
+  doc "Build a real git snapshot (HEAD sha, branch, dirty flag) for a plain directory path — no workspace bookmark required. Each field degrades independently to 'unknown'/'unknown'/false for non-git directories (per-field try/catch), so callers always get a usable WorkspaceSnapshot. Grounding-era counterpart to snapshotWorkspace: with session-scoped grounding the COMMON case is a cwd with NO matching bookmark, and a plan snapshot must still capture the actual repo state it was created against — a hardcoded dirty:false placeholder is actively misleading for safety checks."
   handler <<<
     let sha = 'unknown';
-    try { sha = headSha(ws.path); } catch (err) {
-      console.warn(`[agon] failed to get HEAD sha for ${ws.path}: ${err instanceof Error ? err.message : String(err)}`);
+    try { sha = headSha(path); } catch (err) {
+      console.warn(`[agon] failed to get HEAD sha for ${path}: ${err instanceof Error ? err.message : String(err)}`);
     }
     let branch = 'unknown';
-    try { branch = currentBranch(ws.path); } catch (err) {
-      console.warn(`[agon] failed to get branch for ${ws.path}: ${err instanceof Error ? err.message : String(err)}`);
+    try { branch = currentBranch(path); } catch (err) {
+      console.warn(`[agon] failed to get branch for ${path}: ${err instanceof Error ? err.message : String(err)}`);
     }
     let dirty = false;
-    try { dirty = isDirty(ws.path); } catch (err) {
-      console.warn(`[agon] failed to check dirty state for ${ws.path}: ${err instanceof Error ? err.message : String(err)}`);
+    try { dirty = isDirty(path); } catch (err) {
+      console.warn(`[agon] failed to check dirty state for ${path}: ${err instanceof Error ? err.message : String(err)}`);
     }
     return {
-      id: ws.id, path: ws.path, headSha: sha,
+      id: 'cwd', path, headSha: sha,
       branch, dirty,
     };
+  >>>
+
+fn name=snapshotWorkspace params="ws:Workspace" returns=WorkspaceSnapshot
+  doc "Snapshot a bookmarked workspace — same per-field-degrading git capture as snapshotPath, with the bookmark's id instead of the generic 'cwd'."
+  handler <<<
+    return { ...snapshotPath(ws.path), id: ws.id };
   >>>
 
 // ── Session-scoped grounding ──

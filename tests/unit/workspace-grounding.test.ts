@@ -15,6 +15,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -23,6 +24,7 @@ import {
   setSessionRoot,
   _resetSessionRootForTests,
   scanProjectContext,
+  snapshotPath,
 } from '@kernlang/agon-core';
 import type { HandlerContext, Dispatch } from '../../packages/cli/src/handlers/types.js';
 import { handleWorkspace } from '../../packages/cli/src/generated/handlers/info.js';
@@ -190,5 +192,52 @@ describe('engine/tool dispatch cwd follows the session root', () => {
     const ctxB = createEagerToolContext({} as any, {} as any, new AbortController().signal, (() => {}) as any);
     expect(ctxB.cwd).toBe(dirB);
     expect(ctxB.cwd).not.toBe(dirA);
+  });
+});
+
+describe('snapshotPath — plan snapshots without a matching bookmark', () => {
+  // With session-scoped grounding, NO bookmark matching the grounded cwd is the
+  // COMMON case (launch no longer registers workspaces), so handleBuild/handleForge
+  // fall back to snapshotPath(cwd). That fallback must capture the REAL repo
+  // state — a hardcoded { headSha: 'unknown', dirty: false } placeholder loses
+  // what the plan was created against and misleads dirty-tree safety checks.
+  function git(dir: string, args: string[]): string {
+    return execFileSync('git', args, { cwd: dir, encoding: 'utf-8' }).trim();
+  }
+
+  it('captures the real HEAD sha, branch, and clean dirty flag from a git repo', () => {
+    const repo = makeTempDir('snap-repo');
+    git(repo, ['init', '-b', 'snap-main']);
+    git(repo, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'init']);
+    const expectedSha = git(repo, ['rev-parse', 'HEAD']);
+
+    const snap = snapshotPath(repo);
+    expect(snap.id).toBe('cwd');
+    expect(snap.path).toBe(repo);
+    expect(snap.headSha).toBe(expectedSha);
+    expect(snap.headSha).not.toBe('unknown');
+    expect(snap.branch).toBe('snap-main');
+    expect(snap.dirty).toBe(false);
+  });
+
+  it('reports dirty: true for a repo with uncommitted changes', () => {
+    const repo = makeTempDir('snap-dirty');
+    git(repo, ['init', '-b', 'main']);
+    git(repo, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'init']);
+    writeFileSync(join(repo, 'uncommitted.txt'), 'dirty tree');
+
+    const snap = snapshotPath(repo);
+    expect(snap.dirty).toBe(true);
+    expect(snap.headSha).not.toBe('unknown');
+  });
+
+  it('degrades gracefully to unknown/false placeholders for a non-git directory', () => {
+    const plainDir = makeTempDir('snap-plain');
+    const snap = snapshotPath(plainDir);
+    expect(snap.id).toBe('cwd');
+    expect(snap.path).toBe(plainDir);
+    expect(snap.headSha).toBe('unknown');
+    expect(snap.branch).toBe('unknown');
+    expect(snap.dirty).toBe(false);
   });
 });

@@ -120,36 +120,47 @@ export function getWorkspace(idOrPath: string): Workspace|null {
   return state.workspaces.find((w) => w.id === idOrPath || w.path === resolve(idOrPath) || w.name === idOrPath) ?? null;
 }
 
+/**
+ * Build a real git snapshot (HEAD sha, branch, dirty flag) for a plain directory path — no workspace bookmark required. Each field degrades independently to 'unknown'/'unknown'/false for non-git directories (per-field try/catch), so callers always get a usable WorkspaceSnapshot. Grounding-era counterpart to snapshotWorkspace: with session-scoped grounding the COMMON case is a cwd with NO matching bookmark, and a plan snapshot must still capture the actual repo state it was created against — a hardcoded dirty:false placeholder is actively misleading for safety checks.
+ */
 // @kern-source: workspace:97
-export function snapshotWorkspace(ws: Workspace): WorkspaceSnapshot {
+export function snapshotPath(path: string): WorkspaceSnapshot {
   let sha = 'unknown';
-  try { sha = headSha(ws.path); } catch (err) {
-    console.warn(`[agon] failed to get HEAD sha for ${ws.path}: ${err instanceof Error ? err.message : String(err)}`);
+  try { sha = headSha(path); } catch (err) {
+    console.warn(`[agon] failed to get HEAD sha for ${path}: ${err instanceof Error ? err.message : String(err)}`);
   }
   let branch = 'unknown';
-  try { branch = currentBranch(ws.path); } catch (err) {
-    console.warn(`[agon] failed to get branch for ${ws.path}: ${err instanceof Error ? err.message : String(err)}`);
+  try { branch = currentBranch(path); } catch (err) {
+    console.warn(`[agon] failed to get branch for ${path}: ${err instanceof Error ? err.message : String(err)}`);
   }
   let dirty = false;
-  try { dirty = isDirty(ws.path); } catch (err) {
-    console.warn(`[agon] failed to check dirty state for ${ws.path}: ${err instanceof Error ? err.message : String(err)}`);
+  try { dirty = isDirty(path); } catch (err) {
+    console.warn(`[agon] failed to check dirty state for ${path}: ${err instanceof Error ? err.message : String(err)}`);
   }
   return {
-    id: ws.id, path: ws.path, headSha: sha,
+    id: 'cwd', path, headSha: sha,
     branch, dirty,
   };
 }
 
 /**
+ * Snapshot a bookmarked workspace — same per-field-degrading git capture as snapshotPath, with the bookmark's id instead of the generic 'cwd'.
+ */
+// @kern-source: workspace:118
+export function snapshotWorkspace(ws: Workspace): WorkspaceSnapshot {
+  return { ...snapshotPath(ws.path), id: ws.id };
+}
+
+/**
  * Module-level, per-process override for resolveWorkingDir(). null until setSessionRoot() is called.
  */
-// @kern-source: workspace:131
+// @kern-source: workspace:138
 export const sessionRootState = { path: null as string | null };
 
 /**
  * Ground THIS process's resolveWorkingDir() at path for the rest of the session. Does NOT touch ~/.agon/workspaces.json — call addWorkspace/switchWorkspace separately if the caller also wants a persisted bookmark. Called once at CLI launch with process.cwd(), and again by /workspace switch with the target workspace's path.
  */
-// @kern-source: workspace:134
+// @kern-source: workspace:141
 export function setSessionRoot(path: string): void {
   sessionRootState.path = resolve(path);
 }
@@ -157,7 +168,7 @@ export function setSessionRoot(path: string): void {
 /**
  * Test-only seam: clear the session-scoped override so resolveWorkingDir() falls back to process.cwd() again.
  */
-// @kern-source: workspace:140
+// @kern-source: workspace:147
 export function _resetSessionRootForTests(): void {
   sessionRootState.path = null;
 }
@@ -165,7 +176,7 @@ export function _resetSessionRootForTests(): void {
 /**
  * Returns the session-scoped root set via setSessionRoot() if any, otherwise process.cwd(). Deliberately does NOT consult the persisted `active` workspace field — that's bookmark UX only (see WorkspaceState.active); grounding must never depend on state a PREVIOUS session left behind in a different directory.
  */
-// @kern-source: workspace:146
+// @kern-source: workspace:153
 export function resolveWorkingDir(): string {
   return sessionRootState.path ?? process.cwd();
 }
@@ -173,7 +184,7 @@ export function resolveWorkingDir(): string {
 /**
  * Registers/updates a workspace BOOKMARK for cwd (persisted to workspaces.json) and marks it active for /workspace list's 'last used' indicator. Does NOT ground resolveWorkingDir() — callers that want session grounding must call setSessionRoot() separately. Kept for explicit bookmark flows; the CLI launch path no longer calls this (see setSessionRoot).
  */
-// @kern-source: workspace:152
+// @kern-source: workspace:159
 export function ensureCurrentWorkspace(cwd: string): Workspace {
   const state = loadState();
   const path = resolve(cwd);

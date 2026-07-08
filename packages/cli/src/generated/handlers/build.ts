@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { mkdirSync, readFileSync, existsSync } from 'node:fs';
 
-import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, StreamParser, scanProjectContext, resolveWorkingDir, createPlan, approvePlan, startPlan, mergeStepResult, cancelPlan, failPlan, savePlan, getActiveWorkspace, snapshotWorkspace, formatChatContextForPrompt } from '@kernlang/agon-core';
+import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, StreamParser, scanProjectContext, resolveWorkingDir, createPlan, approvePlan, startPlan, mergeStepResult, cancelPlan, failPlan, savePlan, getActiveWorkspace, snapshotWorkspace, snapshotPath, formatChatContextForPrompt } from '@kernlang/agon-core';
 
 import type { Plan, PlanStepInput, ApprovalLevel } from '@kernlang/agon-core';
 
@@ -102,13 +102,16 @@ export async function handleBuild(input: string, dispatch: Dispatch, ctx: Handle
     } else {
       // getActiveWorkspace() is a BOOKMARK, not the grounded session root — only
       // use its snapshot if it actually matches where this session is grounded
-      // (resolveWorkingDir()/cwd). A bookmark for some OTHER directory (from a
-      // prior /workspace add, or none at all) must fall back to the plain cwd
-      // snapshot rather than silently plan-snapshotting the wrong repo.
+      // (resolveWorkingDir()/cwd). With session-scoped grounding a non-matching
+      // (or absent) bookmark is the COMMON case, so the fallback must still be a
+      // REAL git snapshot of the grounded cwd (snapshotPath) — a hardcoded
+      // 'unknown'/dirty:false placeholder would lose the repo state the plan was
+      // created against and mislead dirty-tree safety checks. snapshotPath itself
+      // degrades per-field to those placeholders only when cwd isn't a git repo.
       const ws = getActiveWorkspace();
       const snapshot = ws && ws.path === cwd
         ? snapshotWorkspace(ws)
-        : { id: 'cwd', path: cwd, headSha: 'unknown', branch: 'unknown', dirty: false };
+        : snapshotPath(cwd);
 
       const buildSteps: PlanStepInput[] = [
         { id: 'implement', kind: 'dispatch', label: `Agent build: ${engineId}`, effects: ['exec', 'write', 'network'] },

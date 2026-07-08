@@ -15,7 +15,7 @@ interface name=Workspace
 
 interface name=WorkspaceState
   field name=workspaces type="Workspace[]"
-  field name=active type=string
+  field name=active type=string doc="Bookmark UX only (e.g. 'last used' in /workspace list) — grounding (resolveWorkingDir) NEVER reads this field. See sessionRootState / setSessionRoot below for the actual grounding mechanism."
 
 fn name=getWorkspacesPath returns=string export=false
   handler <<<
@@ -114,14 +114,43 @@ fn name=snapshotWorkspace params="ws:Workspace" returns=WorkspaceSnapshot
     };
   >>>
 
-fn name=resolveWorkingDir returns=string
-  doc "Returns the active workspace path if set, otherwise process.cwd()."
+// ── Session-scoped grounding ──
+// The active workspace used to be resolveWorkingDir()'s ONLY signal — a
+// process-global "active" field persisted to ~/.agon/workspaces.json. That
+// meant a fresh `agon` launch in a brand-new directory silently kept
+// grounding at whatever repo a PRIOR session last pinned (ensureCurrentWorkspace
+// only flips `active` for a directory that's already a known workspace; for a
+// never-seen cwd it calls addWorkspace, which only sets `active` when it's the
+// very FIRST workspace ever registered) — so every downstream consumer
+// (project-context scan, codebase map, tool exec cwd, engine dispatch cwd)
+// pointed at the wrong repo. Fixed by grounding in an in-memory,
+// per-process override that is set explicitly (at CLI launch, or on
+// /workspace switch) and NEVER implicitly derived from persisted state, and
+// NEVER written back to workspaces.json on launch (so a CI/headless run in an
+// ephemeral dir, or two concurrent sessions, never race on `active`).
+const name=sessionRootState value={{ { path: null as string | null } }}
+  doc "Module-level, per-process override for resolveWorkingDir(). null until setSessionRoot() is called."
+
+fn name=setSessionRoot params="path:string" returns=void export=true
+  doc "Ground THIS process's resolveWorkingDir() at path for the rest of the session. Does NOT touch ~/.agon/workspaces.json — call addWorkspace/switchWorkspace separately if the caller also wants a persisted bookmark. Called once at CLI launch with process.cwd(), and again by /workspace switch with the target workspace's path."
   handler <<<
-    const ws = getActiveWorkspace();
-    return ws ? ws.path : process.cwd();
+    sessionRootState.path = resolve(path);
+  >>>
+
+fn name=_resetSessionRootForTests returns=void export=true
+  doc "Test-only seam: clear the session-scoped override so resolveWorkingDir() falls back to process.cwd() again."
+  handler <<<
+    sessionRootState.path = null;
+  >>>
+
+fn name=resolveWorkingDir returns=string
+  doc "Returns the session-scoped root set via setSessionRoot() if any, otherwise process.cwd(). Deliberately does NOT consult the persisted `active` workspace field — that's bookmark UX only (see WorkspaceState.active); grounding must never depend on state a PREVIOUS session left behind in a different directory."
+  handler <<<
+    return sessionRootState.path ?? process.cwd();
   >>>
 
 fn name=ensureCurrentWorkspace params="cwd:string" returns=Workspace
+  doc "Registers/updates a workspace BOOKMARK for cwd (persisted to workspaces.json) and marks it active for /workspace list's 'last used' indicator. Does NOT ground resolveWorkingDir() — callers that want session grounding must call setSessionRoot() separately. Kept for explicit bookmark flows; the CLI launch path no longer calls this (see setSessionRoot)."
   handler lang="kern"
     let name=state value="loadState()"
     let name=path value="resolve(cwd)"

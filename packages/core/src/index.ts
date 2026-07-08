@@ -63,6 +63,7 @@ export {
   addWorkspace, removeWorkspace, listWorkspaces,
   getActiveWorkspace, switchWorkspace, getWorkspace,
   ensureCurrentWorkspace, snapshotWorkspace, resolveWorkingDir,
+  setSessionRoot, _resetSessionRootForTests,
 } from './workspace.js';
 export type { Workspace, WorkspaceState } from './workspace.js';
 export type { ContextFormat } from './context-scanner.js';

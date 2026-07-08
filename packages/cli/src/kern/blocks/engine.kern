@@ -305,6 +305,9 @@ screen name=DashboardView target=ink export=true
           <Text> </Text>
           <Text italic color="#d4a041">{'     Any AI can join. They compete. You ship.'}</Text>
           <Text dimColor>{'     v'}{VERSION}{'  ·  Powered by '}<Text bold color="#fbbf24">{'KERNlang.dev'}</Text>{KERN_VERSION ? ` (KERN ${KERN_VERSION})` : ''}</Text>
+          {event.workspace && (
+            <Text dimColor>{'     workspace: '}{event.workspace.path}</Text>
+          )}
           <Text> </Text>
 
           <Box>

@@ -1231,6 +1231,11 @@ export function renderBlockOwnRows(block: OutputBlock, mode: string, toolOutputE
           { text: 'KERNlang.dev', color: '#fbbf24', bold: true },
           { text: KERN_VERSION ? ` (KERN ${KERN_VERSION})` : '', dimColor: true },
         ]);
+        if (event.workspace) {
+          pushSegmentsRow(`${baseKey}-dash-workspace`, 0, [
+            { text: `     workspace: ${event.workspace.path}`, dimColor: true },
+          ]);
+        }
         pushSegmentsRow(`${baseKey}-dash-engines`, 0, [
           { text: '  Engines: ', color: '#f97316' },
           ...((event.enabled ?? []) as string[]).flatMap((engineId: string, index: number, list: string[]) => ([

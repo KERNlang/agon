@@ -1,0 +1,187 @@
+// ── Ratings / history hygiene — purge non-real (test-fixture) engine data ──
+//
+// The Glicko ratings store (~/.agon/ratings.json) and forge-run history
+// (~/.agon/runs/*.json) accumulate an entry for every engine id that ever
+// competed. When the test suite forgets storage isolation it dispatches mock
+// engines (`fast`, `slow`, `e1`, `alive`, `staller`, …) straight into the
+// REAL store — on 2026-07-08 the production leaderboard's top 4 were `fast*`
+// test doubles with 1,600+ wins, and `agon history` showed 9/9 fixture runs.
+//
+// This module backs `agon ratings purge-unknown`: it removes rating + forge-run
+// HISTORY records for engine ids that are NOT real engines. "Real" = present in
+// the engine registry (builtin + user), a set the CALLER resolves and passes
+// in, UNIONED with an explicit keep-list. The keep-list matters: some genuinely
+// real engines no longer have a live registry def (a renamed engine like
+// gemini→agy, or a drifted version id like kimi-for-coding-k2p6 whose match
+// history you still want) — a pure registry-diff would wrongly purge those, so
+// the caller keeps them via config.ratingsPurgeKeepEngines / --keep.
+//
+// Self-contained (depends only on the stable loadRatings/saveRatings/agonPath
+// primitives) so it can't be broken by churn in the glicko module. Pure policy
+// (computeUnknown / computeRunManifestPurge) is separated from I/O for testing;
+// every destructive write is preceded by a timestamped backup and the ratings
+// rewrite runs under the same cross-process lock as every other ratings update.
+
+import from="node:fs" names="readFileSync,mkdirSync,copyFileSync,readdirSync,renameSync,existsSync"
+import from="node:path" names="join"
+import from="../models/types.js" names="RatingRecord" types=true
+import from="./config.js" names="agonPath"
+import from="./glicko.js" names="loadRatings,saveRatings"
+import from="../blocks/file-lock.js" names="withFileLock"
+
+// ── Pure policy core (no I/O — unit-testable) ──────────────────────────
+
+fn name=collectRatedIds params="record:RatingRecord" returns="string[]" export=false
+  doc "Every engine id that appears ANYWHERE in a ratings record: the global pool, all byMode disciplines, every byTaskClass bucket, engineMeta. Deduplicated + sorted. Internal — the public surface is computeUnknownEngineIds."
+  handler <<<
+    const ids = new Set<string>();
+    for (const id of Object.keys(record.global ?? {})) ids.add(id);
+    for (const scope of Object.values(record.byMode ?? {})) {
+      for (const id of Object.keys(scope ?? {})) ids.add(id);
+    }
+    for (const scope of Object.values(record.byTaskClass ?? {})) {
+      for (const id of Object.keys(scope ?? {})) ids.add(id);
+    }
+    for (const id of Object.keys(record.engineMeta ?? {})) ids.add(id);
+    return [...ids].sort();
+  >>>
+
+fn name=computeUnknownEngineIds params="record:RatingRecord, keepIds:string[]" returns="string[]" export=true
+  doc "Rated engine ids that are NOT in the keep set — the ids the purge would remove. Exact, case-sensitive id match (an engine id is a stable machine key, never fuzzy-matched here). Sorted."
+  handler <<<
+    const keep = new Set(keepIds);
+    return collectRatedIds(record).filter((id) => !keep.has(id));
+  >>>
+
+fn name=pruneRatingIds params="record:RatingRecord, removeIds:string[]" returns="string[]" export=false
+  doc "Delete the given engine ids from EVERY scope of a ratings record in place (global, byMode disciplines, byTaskClass buckets, engineMeta) and scrub them out of surviving engines' lineage links (engineMeta.derivedFrom/versions) so no kept engine points at a purged predecessor. Returns the ids actually present somewhere (so a no-op id isn't falsely reported). Pure relative to the fs — the caller loads/locks/saves."
+  handler <<<
+    const remove = new Set(removeIds);
+    const removed = new Set<string>();
+    const scrub = (bag: Record<string, unknown> | undefined) => {
+      if (!bag) return;
+      for (const id of Object.keys(bag)) {
+        if (remove.has(id)) { delete bag[id]; removed.add(id); }
+      }
+    };
+    scrub(record.global as any);
+    for (const scope of Object.values(record.byMode ?? {})) scrub(scope as any);
+    for (const scope of Object.values(record.byTaskClass ?? {})) scrub(scope as any);
+    scrub(record.engineMeta as any);
+    for (const meta of Object.values(record.engineMeta ?? {})) {
+      if (meta.derivedFrom && remove.has(meta.derivedFrom)) meta.derivedFrom = null;
+      if (Array.isArray(meta.versions)) meta.versions = meta.versions.filter((v) => !remove.has(v));
+    }
+    return [...removed].sort();
+  >>>
+
+fn name=computeRunManifestPurge params="manifests:Array<{ file:string, engines:string[] }>, keepIds:string[]" returns="string[]" export=true
+  doc "Run-record file names to purge: a forge-run manifest is removed when NONE of its engines is a kept (real) engine — i.e. every competitor was a test double. A manifest with an empty engines list (an aborted/unreachable fixture run) has zero kept engines and so is purged too. A manifest with even one real engine is KEPT untouched. Sorted."
+  handler <<<
+    const keep = new Set(keepIds);
+    const out: string[] = [];
+    for (const m of manifests) {
+      const engines = Array.isArray(m.engines) ? m.engines : [];
+      const hasReal = engines.some((e) => keep.has(e));
+      if (!hasReal) out.push(m.file);
+    }
+    return out.sort();
+  >>>
+
+// ── Report shape ───────────────────────────────────────────────────────
+
+interface name=PurgeReport export=true
+  doc "Outcome of an `agon ratings purge-unknown` invocation, for both --dry-run preview and the applied run."
+  field name=dryRun type=boolean
+  field name=keepCount type=number doc="Size of the resolved keep set (registry ids ∪ extra keep ids)."
+  field name=ratingsPath type=string
+  field name=ratingsUnknown type="string[]" doc="Rated engine ids not in the keep set (candidates)."
+  field name=ratingsRemoved type="string[]" doc="Ids actually deleted from the ratings store (empty on --dry-run)."
+  field name=runsScanned type=number
+  field name=runsPurged type="Array<{ file:string, engines:string[] }>" doc="Forge-run manifests removed (or that would be removed on --dry-run)."
+  field name=backupDir type="string | null" doc="Timestamped backup dir holding a copy of the pre-purge ratings.json and every MOVED (not deleted) run manifest — a purge is fully reversible from here. null on --dry-run or a total no-op."
+
+// ── I/O helpers ────────────────────────────────────────────────────────
+
+fn name=readRunManifests returns="Array<{ file:string, engines:string[] }>" export=false
+  doc "Scan ~/.agon/runs for *.json forge-run manifests, returning each file's declared engine ids. Best-effort: an unreadable/malformed manifest is reported with an empty engines list (so it counts as all-unknown and is purgeable) rather than crashing the scan. Resolves the runs dir via agonPath() at call time (AGON_HOME-aware)."
+  handler <<<
+    const dir = agonPath('runs');
+    let names: string[];
+    try { names = readdirSync(dir).filter((f) => f.endsWith('.json')); }
+    catch { return []; }
+    const out: Array<{ file: string; engines: string[] }> = [];
+    for (const file of names) {
+      let engines: string[] = [];
+      try {
+        const m = JSON.parse(readFileSync(join(dir, file), 'utf-8'));
+        if (Array.isArray(m?.engines)) engines = m.engines.filter((e: unknown): e is string => typeof e === 'string');
+      } catch {
+        // Malformed manifest — treat as zero real engines (purgeable).
+      }
+      out.push({ file, engines });
+    }
+    return out;
+  >>>
+
+fn name=purgeUnknownEngineData params="opts:{ registryIds:string[]; extraKeepIds?:string[]; dryRun:boolean }" returns=PurgeReport export=true
+  doc "Remove ratings + forge-run-history records for engine ids that are not real engines. Keep set = registryIds ∪ extraKeepIds (exact match). On --dry-run nothing is written — the report lists what WOULD go. On a real run: (1) a timestamped ratings.json.bak-<ts> copy is written, then the ratings rewrite runs under the cross-process ratings lock (same lock as every glicko update) reloading inside so a concurrent run isn't clobbered; (2) every purged run manifest is MOVED (not deleted) into a timestamped backup dir so a purge is fully reversible. Real engines — anything in the keep set — are never touched."
+  handler <<<
+    const keepIds = Array.from(new Set([...(opts.registryIds ?? []), ...(opts.extraKeepIds ?? [])]));
+    const keepCount = keepIds.length;
+    const ratingsFile = agonPath('ratings.json');
+
+    // Preview computation (reads only).
+    const preview = loadRatings();
+    const ratingsUnknown = computeUnknownEngineIds(preview, keepIds);
+    const manifests = readRunManifests();
+    const runsScanned = manifests.length;
+    const purgeFiles = computeRunManifestPurge(manifests, keepIds);
+    const runsPurged = manifests.filter((m) => purgeFiles.includes(m.file));
+
+    if (opts.dryRun) {
+      return {
+        dryRun: true, keepCount, ratingsPath: ratingsFile,
+        ratingsUnknown, ratingsRemoved: [],
+        runsScanned, runsPurged, backupDir: null,
+      };
+    }
+
+    // One timestamped backup dir holds BOTH the pre-purge ratings.json copy and
+    // every moved run manifest, so the whole purge is reversible from one place.
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    let backupDir: string | null = null;
+    const ensureBackupDir = (): string => {
+      if (!backupDir) { backupDir = agonPath(`purge-backup-${stamp}`); mkdirSync(backupDir, { recursive: true }); }
+      return backupDir;
+    };
+
+    // ── Ratings: backup then rewrite under the ratings lock (reload inside). ──
+    let ratingsRemoved: string[] = [];
+    withFileLock(ratingsFile + '.lock', () => {
+      if (!existsSync(ratingsFile)) return;
+      const record = loadRatings();
+      const unknownNow = computeUnknownEngineIds(record, keepIds);
+      if (unknownNow.length === 0) return;
+      copyFileSync(ratingsFile, join(ensureBackupDir(), 'ratings.json'));
+      ratingsRemoved = pruneRatingIds(record, unknownNow);
+      saveRatings(record);
+    });
+
+    // ── Runs history: MOVE purged manifests into the backup dir (reversible). ──
+    if (purgeFiles.length > 0) {
+      const runsBackup = join(ensureBackupDir(), 'runs');
+      mkdirSync(runsBackup, { recursive: true });
+      const runsDir = agonPath('runs');
+      for (const file of purgeFiles) {
+        try { renameSync(join(runsDir, file), join(runsBackup, file)); }
+        catch { /* file vanished mid-purge — already gone, fine */ }
+      }
+    }
+
+    return {
+      dryRun: false, keepCount, ratingsPath: ratingsFile,
+      ratingsUnknown, ratingsRemoved,
+      runsScanned, runsPurged, backupDir,
+    };
+  >>>

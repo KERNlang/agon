@@ -109,7 +109,9 @@ export async function handleNeroChallenge(decision: string, dispatch: Dispatch, 
       ? 'forced'
       : result.reason === 'random'
         ? 'random — no rating yet'
-        : `top-rated via ${result.scope}`;
+        : result.reason === 'exploration'
+          ? `exploration (ε) via ${result.scope}`
+          : `top-rated via ${result.scope}`;
     dispatch({ type: 'info', message: `Critic: ${result.engineId} (${pick})` });
 
     dispatch({ type: 'engine-block', engineId: result.engineId, color: 196, content: result.challengeText });

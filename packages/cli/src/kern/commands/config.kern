@@ -81,7 +81,9 @@ const name=configCommand type="ReturnType<typeof defineCommand>"
             if (typeof defaultVal === 'boolean') {
               parsed = args.value === 'true';
             } else if (typeof defaultVal === 'number') {
-              parsed = parseInt(args.value, 10);
+              // Number(), not parseInt: float keys (neroExplorationRate 0.2,
+              // speculativeThresholdUsd 0.50) must not be silently truncated to 0.
+              parsed = Number(args.value);
               if (isNaN(parsed as number)) {
                 fail(`Invalid number: ${args.value}`);
                 process.exit(1);

@@ -5,7 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import { rankEnginesByRating, pickTopRatedEngine, seedSuccessorRating, seedEnginesFromLineage } from '@kernlang/agon-core';
 import type { GlickoRating, RatingRecord } from '@kernlang/agon-core';
-import { buildNeroPrompt, parseNeroVerdict, parseNeroConfidence, runNero, rankNeroCritics } from '@kernlang/agon-forge';
+import { buildNeroPrompt, parseNeroVerdict, parseNeroConfidence, runNero, rankNeroCritics, applyNeroExploration } from '@kernlang/agon-forge';
 
 const rating = (mu: number, phi = 50): GlickoRating => ({
   mu,
@@ -160,7 +160,7 @@ describe('runNero — verdict-gate contract', () => {
   const registry = { get: (id: string) => ({ id }), list: () => [] } as any;
   const adapterReturning = (over: Record<string, unknown>) =>
     ({ dispatch: async () => ({ exitCode: 0, stdout: '', stderr: '', durationMs: 1, timedOut: false, ...over }) }) as any;
-  const base = { decision: 'x', engines: ['fake'], engine: 'fake', timeout: 30, outputDir: '/tmp/nero-test', cwd: '/tmp', retryBackoffMs: 0 };
+  const base = { decision: 'x', engines: ['fake'], engine: 'fake', timeout: 30, outputDir: '/tmp/nero-test', cwd: '/tmp', retryBackoffMs: 0, explorationRate: 0 };
 
   it('ok:true only on a clean exit WITH a parseable verdict', async () => {
     const res = await runNero({ ...base, registry, adapter: adapterReturning({ stdout: 'Confidence: 20%\n## Challenge 1\n…\nVERDICT: FLAWED' }) } as any);
@@ -236,7 +236,9 @@ describe('runNero — self-healing dispatch (resend + down-pass)', () => {
     } as any;
     return { adapter, calls };
   };
-  const baseC = { decision: 'x', timeout: 30, outputDir: '/tmp/nero-test', cwd: '/tmp', retryBackoffMs: 0, registry };
+  // explorationRate is pinned to 0 so these tests assert the deterministic
+  // exploit-only cascade order; the ε-greedy branch has its own suite below.
+  const baseC = { decision: 'x', timeout: 30, outputDir: '/tmp/nero-test', cwd: '/tmp', retryBackoffMs: 0, registry, explorationRate: 0 };
 
   it('resends the SAME critic on a transient empty and accepts the retry', async () => {
     const { adapter, calls } = scripted({ a: [{ stdout: '' }, { stdout: VALID }] });
@@ -345,6 +347,114 @@ describe('pickTopRatedEngine — critique→tribunal→global cascade (Nero sele
   it('still excludes the author across the cascade', () => {
     const r = ratings({ byMode: { forge: {}, brainstorm: {}, tribunal: {}, critique: { author: rating(1900), critic: rating(1600) } } });
     expect(pickTopRatedEngine(['author', 'critic'], r, { modes: ['critique', 'tribunal'], exclude: ['author'] })).toEqual({ engineId: 'critic', reason: 'top-rated', scope: 'critique' });
+  });
+});
+
+describe('applyNeroExploration — ε-greedy critic selection', () => {
+  const entry = (engineId: string) =>
+    ({ engineId, reason: 'top-rated', scope: 'critique' }) as const;
+
+  it('keeps the top pick when the rng draw is >= ε (exploit branch)', () => {
+    const ranked = [entry('a'), entry('b'), entry('c')];
+    const res = applyNeroExploration(ranked as any, 0.2, () => 0.9);
+    expect(res.explored).toBe(false);
+    expect(res.topEngineId).toBe('a');
+    expect(res.ranked.map((r: any) => r.engineId)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('promotes a #2/#3 critic when the rng draw is < ε (explore branch), annotated reason=exploration', () => {
+    const ranked = [entry('a'), entry('b'), entry('c')];
+    // first draw 0.1 < ε → explore; second draw 0.9 → index 1 of [b, c] → c
+    const draws = [0.1, 0.9];
+    const res = applyNeroExploration(ranked as any, 0.2, () => draws.shift()!);
+    expect(res.explored).toBe(true);
+    expect(res.topEngineId).toBe('a');
+    expect(res.ranked[0]).toEqual({ engineId: 'c', reason: 'exploration', scope: 'critique' });
+    // displaced critics keep their cascade order behind the explored pick
+    expect(res.ranked.map((r: any) => r.engineId)).toEqual(['c', 'a', 'b']);
+  });
+
+  it('draws uniformly over #2/#3 only — never promotes #4+', () => {
+    const ranked = [entry('a'), entry('b'), entry('c'), entry('d')];
+    const draws = [0.0, 0.99]; // explore; max draw still lands inside [b, c]
+    const res = applyNeroExploration(ranked as any, 0.5, () => draws.shift()!);
+    expect(res.ranked[0].engineId).toBe('c');
+  });
+
+  it('handles a 2-critic pool (only #2 to explore to)', () => {
+    const ranked = [entry('a'), entry('b')];
+    const draws = [0.0, 0.7];
+    const res = applyNeroExploration(ranked as any, 0.2, () => draws.shift()!);
+    expect(res.explored).toBe(true);
+    expect(res.ranked.map((r: any) => r.engineId)).toEqual(['b', 'a']);
+  });
+
+  it('falls back to the top pick when fewer than 2 critics are eligible', () => {
+    const ranked = [entry('solo')];
+    const res = applyNeroExploration(ranked as any, 1, () => 0);
+    expect(res.explored).toBe(false);
+    expect(res.ranked.map((r: any) => r.engineId)).toEqual(['solo']);
+  });
+
+  it('never explores with ε=0 and clamps ε into [0,1]', () => {
+    const ranked = [entry('a'), entry('b')];
+    expect(applyNeroExploration(ranked as any, 0, () => 0).explored).toBe(false);
+    expect(applyNeroExploration(ranked as any, -5, () => 0).explored).toBe(false);
+    // ε>1 clamps to 1 → always explores (draw 0.999 < 1)
+    const draws = [0.999, 0];
+    expect(applyNeroExploration(ranked as any, 7, () => draws.shift()!).explored).toBe(true);
+  });
+});
+
+describe('runNero — ε-greedy exploration integration', () => {
+  const registry = { get: (id: string) => ({ id }), list: () => [] } as any;
+  const VALID = 'Confidence: 50%\n## Challenge 1\n…\nVERDICT: SOUND';
+  const okAdapter = { dispatch: async () => ({ exitCode: 0, stdout: VALID, stderr: '', durationMs: 1, timedOut: false }) } as any;
+  const baseE = { decision: 'x', timeout: 30, outputDir: '/tmp/nero-test', cwd: '/tmp', retryBackoffMs: 0, registry, adapter: okAdapter };
+  const twoRated = () => ratings({ global: { a: rating(1700), b: rating(1500) } });
+
+  it('dispatches the explored #2 critic and reports reason=exploration', async () => {
+    const draws = [0.05, 0.4]; // 0.05 < ε=0.2 → explore; pick within [b]
+    const msgs: string[] = [];
+    const res = await runNero({
+      ...baseE, engines: ['a', 'b'], ratings: twoRated(),
+      explorationRate: 0.2, rng: () => draws.shift() ?? 0.99,
+      onStatus: (m: string) => msgs.push(m),
+    } as any);
+    expect(res.ok).toBe(true);
+    expect(res.engineId).toBe('b');
+    expect(res.reason).toBe('exploration');
+    expect(msgs.some((m) => /exploration pick/.test(m) && /instead of top-rated a/.test(m))).toBe(true);
+  });
+
+  it('keeps the top-rated critic when the draw exploits', async () => {
+    const res = await runNero({
+      ...baseE, engines: ['a', 'b'], ratings: twoRated(),
+      explorationRate: 0.2, rng: () => 0.95,
+    } as any);
+    expect(res.ok).toBe(true);
+    expect(res.engineId).toBe('a');
+    expect(res.reason).toBe('top-rated');
+  });
+
+  it('a forced --engine pick is never explored', async () => {
+    const res = await runNero({
+      ...baseE, engines: ['a', 'b'], engine: 'a', ratings: twoRated(),
+      explorationRate: 1, rng: () => 0,
+    } as any);
+    expect(res.ok).toBe(true);
+    expect(res.engineId).toBe('a');
+    expect(res.reason).toBe('forced');
+  });
+
+  it('a single eligible critic falls back to the top pick even at ε=1', async () => {
+    const res = await runNero({
+      ...baseE, engines: ['a'], ratings: ratings({ global: { a: rating(1700) } }),
+      explorationRate: 1, rng: () => 0,
+    } as any);
+    expect(res.ok).toBe(true);
+    expect(res.engineId).toBe('a');
+    expect(res.reason).toBe('top-rated');
   });
 });
 

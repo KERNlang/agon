@@ -169,11 +169,11 @@ export function postTaskStop(roomId: string, actor: RoomActor, reason: string, r
 }
 
 /**
- * Pure: should the worker loop stop now? Hard caps first — max wall time, then any task-stop event on the ledger. Room-closed is checked by the loop itself (isRoomClosed), like auto mode.
+ * Pure: should the worker loop stop now? Hard caps first — max wall time, then a task-stop event AFTER this worker joined (seq > state.joinSeq). A stop only halts workers whose join precedes it — workers joining after an old stop ignore it, so yesterday's `room stop` never bricks today's work session in the same room. Room-closed is checked by the loop itself (isRoomClosed), like auto mode.
  */
 // @kern-source: tasks:163
 export function shouldStopWork(state: WorkState, config: WorkConfig, events: RoomEvent[]): StopDecision {
   if (Date.now() - state.startedAtMs >= config.maxWallMs) return { stop: true, reason: 'max-wall-time' };
-  if (events.some((e) => e.kind === 'task-stop')) return { stop: true, reason: 'task-stop' };
+  if (events.some((e) => e.kind === 'task-stop' && e.seq > state.joinSeq)) return { stop: true, reason: 'task-stop' };
   return { stop: false, reason: '' };
 }

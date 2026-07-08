@@ -460,10 +460,13 @@ const name=roomCommand type="any"
 
             try {
               recordPresence(roomId, actor, 0, true);
-              appendEvent(roomId, { kind: 'join', actor, body: '', mentions: [], replyTo: null, repoHint, auto: true });
+              // joinSeq scopes stop signals to THIS session: a task-stop only
+              // halts workers whose join precedes it, so an old `room stop` in
+              // the ledger never bricks a later work session in the same room.
+              const joined = appendEvent(roomId, { kind: 'join', actor, body: '', mentions: [], replyTo: null, repoHint, auto: true });
               header(`Worker ${bold(actor.callsign)} in ${bold(roomId)} ${dim('(' + (dryRun ? 'dry-run' : actor.engineId) + ', ≤' + (workCfg.maxWallMs / 60000) + 'm — Ctrl+C to stop)')}`);
 
-              const st: WorkState = { startedAtMs: Date.now(), tasksHandled: 0 };
+              const st: WorkState = { startedAtMs: Date.now(), tasksHandled: 0, joinSeq: joined.seq };
               for (;;) {
                 pump();
                 if (isRoomClosed(roomId)) { info(dim('worker stopped: room closed')); break; }

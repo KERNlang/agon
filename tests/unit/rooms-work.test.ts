@@ -3,9 +3,9 @@ import { join } from 'node:path';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
-import { createRoom, isRoomClosed } from '../../packages/core/src/generated/rooms/store.js';
+import { createRoom, isRoomClosed, appendEvent } from '../../packages/core/src/generated/rooms/store.js';
 import { drainRoom, createRoomWaker } from '../../packages/core/src/generated/rooms/tail.js';
-import { foldTasks, pickNextTask, postTask, claimTask, postTaskResult, shouldStopWork } from '../../packages/core/src/generated/rooms/tasks.js';
+import { foldTasks, pickNextTask, postTask, claimTask, postTaskResult, postTaskStop, shouldStopWork } from '../../packages/core/src/generated/rooms/tasks.js';
 import type { RoomActor, RoomEvent, TailCursor, WorkConfig, WorkState } from '../../packages/core/src/generated/rooms/types.js';
 
 let home: string;
@@ -46,7 +46,7 @@ describe('room work — end-to-end dry-run loop (fs.watch driven)', () => {
       wakeElapsed = Date.now() - started;
 
       // Worker iteration: drain, pick, claim, dispatch(dry-run), result.
-      const st: WorkState = { startedAtMs: Date.now(), tasksHandled: 0 };
+      const st: WorkState = { startedAtMs: Date.now(), tasksHandled: 0, joinSeq: 0 };
       pump();
       expect(isRoomClosed(roomId)).toBe(false);
       expect(shouldStopWork(st, workCfg, all).stop).toBe(false);
@@ -81,5 +81,33 @@ describe('room work — end-to-end dry-run loop (fs.watch driven)', () => {
     let cursor: TailCursor = { offset: 0, partial: '' };
     const d = drainRoom(roomId, cursor);
     expect(pickNextTask(foldTasks(d.events, Date.now()), 'w2')).toBeNull();
+  });
+
+  it('a worker joining AFTER an old task-stop works the room instead of exiting (stale stop ignored)', () => {
+    // Yesterday: orchestrator stopped that day's workers.
+    const roomId = createRoom('restop-room').roomId;
+    const worker = actor('w1');
+    postTaskStop(roomId, actor('boss'), 'done for today', 'x');
+    // Today: a new task is posted and a NEW worker session joins (join AFTER the stop).
+    postTask(roomId, actor('boss'), 'fresh work', null, 'x');
+    const joined = appendEvent(roomId, { kind: 'join', actor: worker, body: '', mentions: [], replyTo: null, repoHint: 'x', auto: true });
+    const st: WorkState = { startedAtMs: Date.now(), tasksHandled: 0, joinSeq: joined.seq };
+    const workCfg: WorkConfig = { callsign: worker.callsign, maxWallMs: 600_000, leaseTtlMs: 60_000, taskTimeoutMs: 600_000 };
+
+    // One loop iteration, exactly as the CLI wires it: drain → stop-check → pick → claim → result.
+    let cursor: TailCursor = { offset: 0, partial: '' };
+    const all = drainRoom(roomId, cursor).events;
+    expect(shouldStopWork(st, workCfg, all)).toMatchObject({ stop: false }); // stale stop ignored
+    const next = pickNextTask(foldTasks(all, Date.now()), worker.callsign);
+    expect(next).not.toBeNull();
+    expect(claimTask(roomId, worker, next!.taskId, workCfg.leaseTtlMs, 'x').ok).toBe(true);
+    postTaskResult(roomId, worker, next!.taskId, 'did the fresh work', true, 0, 'x');
+    const board = foldTasks(drainRoom(roomId, { offset: 0, partial: '' }).events, Date.now());
+    expect(board.find((t) => t.taskId === next!.taskId)).toMatchObject({ status: 'done', claimedBy: 'w1' });
+
+    // And a NEW stop posted after this join DOES halt the session.
+    postTaskStop(roomId, actor('boss'), 'stop again', 'x');
+    const all2 = drainRoom(roomId, { offset: 0, partial: '' }).events;
+    expect(shouldStopWork(st, workCfg, all2)).toMatchObject({ stop: true, reason: 'task-stop' });
   });
 });

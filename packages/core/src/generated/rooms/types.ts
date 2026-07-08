@@ -149,4 +149,5 @@ export interface WorkConfig {
 export interface WorkState {
   startedAtMs: number;
   tasksHandled: number;
+  joinSeq: number;
 }

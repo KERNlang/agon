@@ -136,3 +136,4 @@ interface name=WorkConfig export=true
 interface name=WorkState export=true
   field name=startedAtMs type=number
   field name=tasksHandled type=number
+  field name=joinSeq type=number

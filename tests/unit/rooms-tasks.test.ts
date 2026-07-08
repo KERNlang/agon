@@ -144,14 +144,18 @@ describe('pickNextTask — ordering and targeting', () => {
 
 describe('shouldStopWork', () => {
   const cfg = (over: Partial<WorkConfig> = {}): WorkConfig => ({ callsign: 'w1', maxWallMs: 600_000, leaseTtlMs: 60_000, taskTimeoutMs: 600_000, ...over });
-  const state = (over: Partial<WorkState> = {}): WorkState => ({ startedAtMs: Date.now(), tasksHandled: 0, ...over });
+  const state = (over: Partial<WorkState> = {}): WorkState => ({ startedAtMs: Date.now(), tasksHandled: 0, joinSeq: 0, ...over });
+  const stopEv = (seq: number): RoomEvent => ({ seq, id: `e${seq}`, roomId: 'r', kind: 'task-stop', createdAt: new Date().toISOString(), actor: actor('boss'), repoHint: 'x', body: 'enough', mentions: [], replyTo: null });
 
   it('stops on max wall time', () => {
     expect(shouldStopWork(state({ startedAtMs: Date.now() - 700_000 }), cfg({ maxWallMs: 600_000 }), [])).toMatchObject({ stop: true, reason: 'max-wall-time' });
   });
-  it('stops when a task-stop event is on the ledger', () => {
-    const events: RoomEvent[] = [{ seq: 1, id: 'e1', roomId: 'r', kind: 'task-stop', createdAt: new Date().toISOString(), actor: actor('boss'), repoHint: 'x', body: 'enough', mentions: [], replyTo: null }];
-    expect(shouldStopWork(state(), cfg(), events)).toMatchObject({ stop: true, reason: 'task-stop' });
+  it('stops on a task-stop posted AFTER this worker joined (seq > joinSeq)', () => {
+    expect(shouldStopWork(state({ joinSeq: 3 }), cfg(), [stopEv(5)])).toMatchObject({ stop: true, reason: 'task-stop' });
+  });
+  it('ignores a STALE task-stop from before this worker joined (seq < joinSeq)', () => {
+    // Yesterday's `room stop` must not brick today's work session in the same room.
+    expect(shouldStopWork(state({ joinSeq: 10 }), cfg(), [stopEv(5)])).toMatchObject({ stop: false });
   });
   it('does not stop otherwise', () => {
     expect(shouldStopWork(state(), cfg(), [])).toMatchObject({ stop: false });

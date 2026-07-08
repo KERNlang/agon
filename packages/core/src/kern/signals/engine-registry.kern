@@ -1,7 +1,7 @@
-import from="node:fs" names="readdirSync,readFileSync,existsSync"
-import from="node:path" names="join,dirname,resolve"
+import from="node:fs" names="readdirSync,readFileSync,existsSync,statSync,accessSync,mkdirSync,writeFileSync,constants"
+import from="node:path" names="join,dirname,resolve,delimiter"
 import from="node:os" names="homedir"
-import from="node:child_process" names="execFileSync"
+import from="node:crypto" names="createHash"
 import from="../models/types.js" names="EngineDefinition,EngineMode,AgonConfig" types=true
 import from="../models/errors.js" names="EngineNotFoundError"
 import from="../../schemas/engine-schema.js" names="validateEngineConfig"
@@ -11,6 +11,112 @@ fn name=getAgonEnginesDir returns=string export=false
     const override = process.env.AGON_HOME?.trim();
     const home = override ? resolve(override) : join(homedir(), '.agon');
     return join(home, 'engines');
+  >>>
+
+// ── Binary resolution: in-process PATH scan + disk cache ──────────────
+// Replaces the old per-engine `execFileSync('which', …)` spawn (~10
+// subprocesses, 5s timeout each, serially, on first roster resolution).
+// Layer 1 is the pre-existing per-process `binaryCache` on the service
+// instance (unchanged). Layer 2 here is a small on-disk cache at
+// ~/.agon/cache/binaries.json shared across process invocations, keyed by a
+// hash of the CURRENT PATH plus the binary name being resolved — a PATH
+// change naturally misses every entry cached under the old hash. Layer 3 is
+// the actual scan: split PATH once and stat each candidate directly, no
+// child process at all.
+
+fn name=binaryCacheFile returns=string export=false
+  handler <<<
+    const override = process.env.AGON_HOME?.trim();
+    const home = override ? resolve(override) : join(homedir(), '.agon');
+    return join(home, 'cache', 'binaries.json');
+  >>>
+
+fn name=hashPathEnv params="pathEnv:string" returns=string export=false
+  handler <<<
+    return createHash('sha256').update(pathEnv).digest('hex');
+  >>>
+
+fn name=isExecutableFile params="candidate:string" returns=boolean export=false
+  doc "True iff candidate exists, is a regular file, and is executable by the current user. Mirrors the executability check `which`/`command -v` perform, so the PATH scan below doesn't surface files a shell 'which' would have skipped."
+  handler <<<
+    try {
+      if (!statSync(candidate).isFile()) return false;
+      accessSync(candidate, constants.X_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  >>>
+
+fn name=scanPathForBinary params="name:string" returns="string|null" export=false
+  doc "In-process replacement for `which <name>`: split process.env.PATH once and stat each candidate directly. No subprocess."
+  handler <<<
+    const pathEnv = process.env.PATH || '';
+    for (const dir of pathEnv.split(delimiter)) {
+      if (!dir) continue;
+      const candidate = join(dir, name);
+      if (isExecutableFile(candidate)) return candidate;
+    }
+    return null;
+  >>>
+
+fn name=loadBinaryDiskCache params="pathHash:string" returns="Record<string, { path: string; mtimeMs: number }>" export=false
+  doc "Best-effort read of ~/.agon/cache/binaries.json. Any I/O or parse failure — missing file, corrupt JSON, permissions — silently yields an empty cache; this is a pure performance optimization and must never block or fail binary resolution. A stored pathHash that doesn't match the current PATH hash means the whole file is stale (PATH changed) and is treated as empty too."
+  handler <<<
+    try {
+      const file = binaryCacheFile();
+      if (!existsSync(file)) return {};
+      const raw = JSON.parse(readFileSync(file, 'utf-8'));
+      if (!raw || typeof raw !== 'object' || raw.pathHash !== pathHash || !raw.entries || typeof raw.entries !== 'object') return {};
+      return raw.entries;
+    } catch {
+      return {};
+    }
+  >>>
+
+fn name=saveBinaryDiskCache params="pathHash:string, entries:Record<string, { path: string; mtimeMs: number }>" returns=void export=false
+  handler <<<
+    try {
+      const file = binaryCacheFile();
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, JSON.stringify({ pathHash, entries }), 'utf-8');
+    } catch {
+      // Best-effort cache write; a failure here must never break binary resolution.
+    }
+  >>>
+
+fn name=findBinaryOnPath params="name:string" returns="string|null" export=false
+  doc "Resolve a bare binary name against PATH, consulting the on-disk cache first. A cache hit is trusted only while the cached file still exists and its mtime is unchanged since it was cached; otherwise this falls through to a fresh PATH scan and refreshes the cache entry."
+  handler <<<
+    const pathEnv = process.env.PATH || '';
+    const pathHash = hashPathEnv(pathEnv);
+    const entries = loadBinaryDiskCache(pathHash);
+    const cached = entries[name];
+    if (cached) {
+      try {
+        const st = statSync(cached.path);
+        if (st.isFile() && st.mtimeMs === cached.mtimeMs) {
+          try {
+            accessSync(cached.path, constants.X_OK);
+            return cached.path;
+          } catch {
+            // No longer executable — fall through to rescan.
+          }
+        }
+      } catch {
+        // Cached path no longer exists — fall through to rescan.
+      }
+    }
+    const resolved = scanPathForBinary(name);
+    if (resolved) {
+      try {
+        const mtimeMs = statSync(resolved).mtimeMs;
+        saveBinaryDiskCache(pathHash, { ...entries, [name]: { path: resolved, mtimeMs } });
+      } catch {
+        // Best-effort cache write.
+      }
+    }
+    return resolved;
   >>>
 
 // One-time log guard so noisy configs don't spam on every load/reload.
@@ -188,11 +294,16 @@ service name=EngineRegistry
       const envKey = `${engine.id.toUpperCase()}_PATH`;
       const envPath = process.env[envKey];
       if (envPath && existsSync(envPath)) { this.binaryCache.set(engine.id, envPath); return envPath; }
-      try {
-        const result = execFileSync('which', [engine.binary], { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
-        if (result) { this.binaryCache.set(engine.id, result); return result; }
-      } catch {
-        // 'which' not finding a binary is expected — no warning needed
+      // engine.binary may itself be an absolute/relative path (contains a
+      // path separator) rather than a bare command name — `which` honored
+      // that by testing the exact path instead of searching PATH; match
+      // that here rather than treating it as a bare name to scan for.
+      if (engine.binary.includes('/') || engine.binary.includes('\\')) {
+        const direct = resolve(engine.binary);
+        if (isExecutableFile(direct)) { this.binaryCache.set(engine.id, direct); return direct; }
+      } else {
+        const fromPath = findBinaryOnPath(engine.binary);
+        if (fromPath) { this.binaryCache.set(engine.id, fromPath); return fromPath; }
       }
       // Implicit last search path: the running node's own bin dir. Under nvm/npm-global
       // layouts every `npm i -g` binary (codex, agon, …) sits next to node — so a process

@@ -253,7 +253,12 @@ fn name=detectProjectType params="cwd:string" returns=string export=false
     if (existsSync(join(cwd, 'pyproject.toml'))) markers.push('python');
     if (existsSync(join(cwd, 'Cargo.toml'))) markers.push('rust');
     if (existsSync(join(cwd, 'go.mod'))) markers.push('go');
-    return markers.join(', ') || 'unknown';
+    // Honest fallback: say plainly that no recognized project markers were found,
+    // rather than a bare "unknown" that reads like a scan failure. Cesar's system
+    // prompt surfaces this verbatim as the project header, so it must be truthful
+    // about a directory with none of the markers we check for — not silently omit
+    // the project-type segment.
+    return markers.join(', ') || 'unrecognized project type';
   >>>
 
 fn name=scanProjectContext params="cwd:string,extraContext?:string,format?:ContextFormat" returns=string

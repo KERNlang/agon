@@ -108,11 +108,102 @@ describe('lazySubCommands', () => {
     expect(lazySub).toEqual(modelsCommand.subCommands);
   });
 
-  it('meta on the lazy models/ext/browser-host entries matches the real command name exactly (name differs from the registered key)', async () => {
+  it('ext/browser-host lazy metas carry the TOP-LEVEL parent command name, not their install subcommand\'s', async () => {
+    // Regression (external review, fix 1): the generated ext.ts /
+    // browser-host.ts define several defineCommand blocks — the nested
+    // `install` subcommand's meta appears FIRST in the file, and the lazy
+    // metas were originally copied from that block instead of the exported
+    // top-level command's meta ('ext' / 'browser-host').
     const extEntry = lazySubCommands.ext as { meta: { name: string } };
-    expect(extEntry.meta.name).toBe('install');
+    expect(extEntry.meta.name).toBe('ext');
     const browserHostEntry = lazySubCommands['browser-host'] as { meta: { name: string } };
-    expect(browserHostEntry.meta.name).toBe('install');
+    expect(browserHostEntry.meta.name).toBe('browser-host');
+  });
+});
+
+describe('lazySubCommands — full parity with the real command modules', () => {
+  // External review, fix 3: the lazy entries duplicate each command's meta
+  // inline (that duplication is the POINT — `agon --help` must render the
+  // full command table without importing a single command module), and the
+  // hasSubCommands set {models, ext, browser-host} is hardcoded. Both can
+  // silently drift as commands evolve. This suite imports EVERY real command
+  // module (test-time cost only) and asserts the lazy map matches reality,
+  // turning both drift hazards into test failures instead of stale --help
+  // output / a crashed nested-subcommand dispatch.
+  //
+  // Static import table (vite can't glob-resolve a fully-variable dynamic
+  // import against .ts sources): key → [loader, exportName], mirroring the
+  // exact specifiers lazy-commands.ts itself uses. The key-snapshot test
+  // above guarantees this table can't silently miss a command: the
+  // completeness check below fails if a lazy key has no table row.
+  const REAL_COMMAND_LOADERS: Record<string, [() => Promise<Record<string, unknown>>, string]> = {
+    forge: [() => import('./commands/forge.js'), 'forgeCommand'],
+    brainstorm: [() => import('./commands/brainstorm.js'), 'brainstormCommand'],
+    tribunal: [() => import('./commands/tribunal.js'), 'tribunalCommand'],
+    campfire: [() => import('./commands/campfire.js'), 'campfireCommand'],
+    'team-forge': [() => import('./commands/team-forge.js'), 'teamForgeCommand'],
+    'team-brainstorm': [() => import('./commands/team-brainstorm.js'), 'teamBrainstormCommand'],
+    'team-tribunal': [() => import('./commands/team-tribunal.js'), 'teamTribunalCommand'],
+    leaderboard: [() => import('./commands/leaderboard.js'), 'leaderboardCommand'],
+    history: [() => import('./commands/history.js'), 'historyCommand'],
+    room: [() => import('./commands/room.js'), 'roomCommand'],
+    provenance: [() => import('./commands/provenance.js'), 'provenanceCommand'],
+    engine: [() => import('./commands/engine.js'), 'engineCommand'],
+    doctor: [() => import('./commands/doctor.js'), 'doctorCommand'],
+    last: [() => import('./commands/last.js'), 'lastCommand'],
+    models: [() => import('./commands/models.js'), 'modelsCommand'],
+    provider: [() => import('./commands/provider.js'), 'providerCommand'],
+    config: [() => import('./commands/config.js'), 'configCommand'],
+    review: [() => import('./commands/review.js'), 'reviewCommand'],
+    call: [() => import('./commands/call.js'), 'callCommand'],
+    'agent-guide': [() => import('./commands/agent-guide.js'), 'agentGuideCommand'],
+    'install-agent-prompts': [() => import('./commands/install-agent-prompts.js'), 'installAgentPromptsCommand'],
+    goal: [() => import('./commands/goal.js'), 'goalCommand'],
+    synthesis: [() => import('./commands/synthesis.js'), 'synthesisCommand'],
+    ask: [() => import('./commands/ask.js'), 'askCommand'],
+    think: [() => import('./commands/think.js'), 'thinkCommand'],
+    rag: [() => import('./commands/rag.js'), 'ragCommand'],
+    nero: [() => import('./commands/nero.js'), 'neroCommand'],
+    council: [() => import('./commands/council.js'), 'councilCommand'],
+    research: [() => import('./commands/research.js'), 'researchCommand'],
+    conquer: [() => import('./commands/conquer.js'), 'conquerCommand'],
+    worktree: [() => import('./commands/worktree.js'), 'worktreeCommand'],
+    attach: [() => import('./commands/attach.js'), 'attachCommand'],
+    daemon: [() => import('./commands/daemon.js'), 'daemonCommand'],
+    serve: [() => import('./commands/serve.js'), 'serveCommand'],
+    drive: [() => import('./commands/drive.js'), 'driveCommand'],
+    chrome: [() => import('./commands/chrome.js'), 'chromeCommand'],
+    ext: [() => import('./commands/ext.js'), 'extCommand'],
+    'browser-host': [() => import('./commands/browser-host.js'), 'browserHostCommand'],
+    login: [() => import('./commands/login.js'), 'loginCommand'],
+    update: [() => import('./commands/update.js'), 'updateCommand'],
+  };
+  const canonicalKeys = Object.keys(lazySubCommands).filter((k) => k !== 'wt' && k !== 'upgrade');
+
+  it('the loader table covers every canonical lazy key (completeness guard for the parity tests)', () => {
+    expect(Object.keys(REAL_COMMAND_LOADERS).sort()).toEqual([...canonicalKeys].sort());
+  });
+
+  it('meta.name and meta.description are identical to each real command module\'s meta', async () => {
+    for (const key of canonicalKeys) {
+      const [load, exportName] = REAL_COMMAND_LOADERS[key];
+      const real = (await load())[exportName] as { meta?: { name?: string; description?: string } };
+      expect(real, `real command export ${exportName} for ${key}`).toBeTruthy();
+      const lazyMeta = (lazySubCommands[key] as { meta: { name?: string; description?: string } }).meta;
+      expect(lazyMeta.name, `${key}: lazy meta.name vs real`).toBe(real.meta?.name);
+      expect(lazyMeta.description, `${key}: lazy meta.description vs real`).toBe(real.meta?.description);
+    }
+  });
+
+  it('a lazy entry exposes subCommands exactly when the real command defines subCommands', async () => {
+    for (const key of canonicalKeys) {
+      const [load, exportName] = REAL_COMMAND_LOADERS[key];
+      const real = (await load())[exportName] as { subCommands?: unknown };
+      const realHas = real.subCommands !== undefined;
+      const entry = lazySubCommands[key] as { subCommands?: unknown };
+      const lazyHas = 'subCommands' in entry && entry.subCommands !== undefined;
+      expect(lazyHas, `${key}: hasSubCommands parity (real=${realHas})`).toBe(realHas);
+    }
   });
 });
 

@@ -509,7 +509,9 @@ export async function runReviewCore(diff: string, label: string, engineId: strin
   const engine = ctx.registry.get(engineId);
   const outputDir = join(RUNS_DIR, `review-${Date.now()}`);
   mkdirSync(outputDir, { recursive: true });
-  const dispatchOpts = { engine: engine, prompt: prompt, cwd: cwd, mode: 'exec' as const, timeout: (config as any).reviewTimeout ?? config.agentTimeout ?? 420, maxTokens: (config as any).reviewMaxTokens ?? 8192, outputDir: outputDir, signal: signal };
+  // Output-token budget: an explicit config.reviewMaxTokens always wins; otherwise never cap an engine BELOW its own configured api.maxTokens. The dispatch layer spreads options.maxTokens OVER engine.api.maxTokens, so the old flat `?? 8192` silently squeezed reasoning engines (kimi/zai configure 16384) down to 8192 — on the ~130KB review prompt they spent the whole budget thinking and finished cleanly with zero text.
+  const reviewMaxTokens = (config as any).reviewMaxTokens ?? Math.max(8192, Number((engine as any)?.api?.maxTokens ?? 0));
+  const dispatchOpts = { engine: engine, prompt: prompt, cwd: cwd, mode: 'exec' as const, timeout: (config as any).reviewTimeout ?? config.agentTimeout ?? 420, maxTokens: reviewMaxTokens, outputDir: outputDir, signal: signal };
   let response = '';
   let usage = undefined as DispatchResult['usage'];
   // Full final DispatchResult (exitCode/stderr/timedOut), not just usage — so a genuine dispatch failure (e.g. an idle-timed-out stream) can be told apart from a real empty answer below. Undefined only if the adapter's generator/promise never settles (never happens in practice).
@@ -556,14 +558,19 @@ export async function runReviewCore(diff: string, label: string, engineId: strin
     usage = result.usage;
   }
   response = response.trim();
+  // Clean engine output BEFORE parse + persist: first strip claude TUI spinner/glyph chrome leaked by the pty path, then reasoning scaffolding (<think> etc.) from MiniMax-style models. Both run before parsing so neither the saved review nor the findings parser sees the junk. MUST also run BEFORE the dispatch-failure checks below: a failed dispatch whose only output is spinner chrome or <think> scaffolding is non-empty raw but empty as the parser will see it — checking pre-strip would skip the throw and fall back into the generic parse-failure misdiagnosis.
+  response = stripTuiChrome(response);
+  response = stripReasoning(response);
   // Surface the REAL dispatch failure instead of letting an empty response fall through to the generic 'parse-failure: empty or unusable response' misdiagnosis below. This is the double-swallowed-error fix: a stalled SSE stream (dispatch.kern's idle-timeout paths) now returns exitCode 124 / timedOut:true / a real stderr instead of a silent success, and here we refuse to treat that as an ordinary empty answer. A NON-empty response with a nonzero exitCode is still surfaced as a (possibly partial) review — some engines emit real text before a late-stage error.
   if (!response && dispatchOutcome && (dispatchOutcome.exitCode !== 0 || dispatchOutcome.timedOut || dispatchOutcome.stderr && dispatchOutcome.stderr.trim())) {
     const failureMsg = dispatchOutcome.stderr && dispatchOutcome.stderr.trim() || `exit ${dispatchOutcome.exitCode ?? 1}${dispatchOutcome.timedOut ? ' (timed out)' : ''}`;
     throw new Error(failureMsg);
   }
-  // Clean engine output BEFORE parse + persist: first strip claude TUI spinner/glyph chrome leaked by the pty path, then reasoning scaffolding (<think> etc.) from MiniMax-style models. Both run before parsing so neither the saved review nor the findings parser sees the junk.
-  response = stripTuiChrome(response);
-  response = stripReasoning(response);
+  // Reasoning exhaustion: the stream finished CLEANLY (exit 0, no stderr) yet produced zero text because the model spent its entire output-token budget thinking — finishReason 'length' (hit maxOutputTokens), or structured parts that are reasoning-only with no text parts. Observed live with kimi/zai reasoning models on the ~130KB review prompt under a too-low maxTokens cap. Without this check the empty answer would be misreported as 'parse-failure: empty or unusable response'; instead name the real cause and the remedy.
+  if (!response && dispatchOutcome && (dispatchOutcome.finishReason === 'length' || Array.isArray(dispatchOutcome.parts) && dispatchOutcome.parts.some((p: any) => p?.kind === 'reasoning') && !dispatchOutcome.parts.some((p: any) => p?.kind === 'text'))) {
+    const reasoningChars = Array.isArray(dispatchOutcome.parts) ? dispatchOutcome.parts.filter((p: any) => p?.kind === 'reasoning').reduce((n: number, p: any) => n + String(p.text ?? '').length, 0) : 0;
+    throw new Error(`model exhausted its output budget on reasoning (finishReason=${dispatchOutcome.finishReason ?? 'unknown'}, ~${reasoningChars} reasoning chars, 0 text chars) — raise reviewMaxTokens or reduce prompt size`);
+  }
   const parsed1 = parseReviewBlocking(response);
   let blocking = parsed1.blocking;
   let parseFailed = parsed1.parseFailed;
@@ -592,7 +599,7 @@ export async function runReviewCore(diff: string, label: string, engineId: strin
 /**
  * Strip the trailing machine-readable findings block (sentinel + JSON) from a review so the Ctrl+R results pager shows clean prose — the consensus summary already encodes those findings. Cesar's copy (ctx.lastReviewResult.reviewOutput) keeps the full response, so 'fix it' still has the structured file/line/minimalFix data. No-op when there's no sentinel.
  */
-// @kern-source: review:539
+// @kern-source: review:545
 export function stripMachineBlock(response: string): string {
   const idx = response.lastIndexOf(REVIEW_SENTINEL);
   if (idx < 0) return response;
@@ -602,7 +609,7 @@ export function stripMachineBlock(response: string): string {
 /**
  * Build a consensus EngineOutcome from one engine's review. status!=='ok' yields an empty-findings failure lane (never a phantom blocker), carrying any diagnostic note (error message / timeout detail) through to ConsensusReport.engineFailures; 'ok' parses the engine's structured findings into RawFindings. Shared by the single- and multi-engine paths so the mapping lives in one place.
  */
-// @kern-source: review:547
+// @kern-source: review:553
 export function reviewOutcome(engineId: string, response: string, status: string, note?: string): any {
   if (status !== 'ok') return { engine: engineId, status, findings: [], note };
   // Guard against a model emitting a non-object element (e.g. `[null]` or a
@@ -621,7 +628,7 @@ export function reviewOutcome(engineId: string, response: string, status: string
 /**
  * Render a consensus report into the compact, human-facing summary lines (tiered: verified / needs-check / speculative / nits / failed). The single source of the summary text shown inline AND stored as ReviewResultData.consensusSummary, so the transcript and the Ctrl+R pager always agree. Each finding row carries compact engine badges ([codex][kimi]) instead of ×N, and disputed clusters get a `⚠ DISPUTED` prefix + indented per-engine stance lines — both via the shared formatConsensusRow so the REPL and the CLI render identically.
  */
-// @kern-source: review:564
+// @kern-source: review:570
 export function buildReviewConsensusLines(consensus: any): string[] {
   const lines: string[] = [`Consensus — ${consensus.summary}`];
   if (consensus.verified.length) { lines.push('VERIFIED (actionable):'); for (const f of consensus.verified) for (const l of formatConsensusRow(f)) lines.push(l); }
@@ -635,7 +642,7 @@ export function buildReviewConsensusLines(consensus: any): string[] {
 /**
  * One-line severity tail for a single engine's review: '2 important, 3 nits' (zero categories omitted; 'no findings' when empty).
  */
-// @kern-source: review:576
+// @kern-source: review:582
 export function formatReviewCounts(c: ReviewSeverityCounts|undefined): string {
   if (!c || c.total === 0) return 'no findings';
   const parts: string[] = [];
@@ -645,7 +652,7 @@ export function formatReviewCounts(c: ReviewSeverityCounts|undefined): string {
   return parts.join(', ');
 }
 
-// @kern-source: review:587
+// @kern-source: review:593
 export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, target?: string, requestedEngine?: string): Promise<void> {
   const abort = new AbortController();
   try {
@@ -774,7 +781,7 @@ export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, targ
 /**
  * Make the review's actual target unmistakable BEFORE engines run. Prints the repo name/path/branch being reviewed, and — critically — warns when the directory you're standing in is a DIFFERENT git repo than the one being reviewed. agon resolves the review dir from the active workspace (resolveWorkingDir), not process.cwd(), so running `agon review` from repo X while the active workspace is repo Y silently reviews Y. That footgun produced a 6-engine review of agon's own repo instead of the user's code; this turns it into a loud, actionable signal instead of a silent wrong-repo pass.
  */
-// @kern-source: review:712
+// @kern-source: review:718
 function announceReviewTarget(dispatch: Dispatch, cwd: string, label: string): void {
   let reviewRoot = cwd;
   try { reviewRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf-8' }).trim() || cwd; } catch { /* not a git repo — keep cwd */ }
@@ -793,7 +800,7 @@ function announceReviewTarget(dispatch: Dispatch, cwd: string, label: string): v
 /**
  * Run review for one or more explicitly requested engines. With 2+ engines they run in PARALLEL — each gets its own hard timeout, so a slow-but-excellent reviewer (codex) never blocks the others and a hung engine can't wedge the whole review. Each engine's block is dispatched as it finishes; findings are combined into ctx.lastReviewResult for Cesar follow-up/fix planning. A single engine delegates to the streaming handleReview path.
  */
-// @kern-source: review:729
+// @kern-source: review:735
 export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, target?: string, requestedEngines?: string[]): Promise<void> {
   const abort = new AbortController();
   try {

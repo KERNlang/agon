@@ -514,9 +514,15 @@ export const roomCommand: any = defineCommand({
               clearInterval(renew);
             }
             if (!reply) { ok = false; reply = '(no output)'; }
+            // Atomic post: refused if our lease expired mid-dispatch and another
+            // worker reclaimed the task — their completion stands, ours drops.
             const posted = postTaskResult(roomId, actor, next.taskId, reply, ok, exit, repoHint);
-            recordPresence(roomId, actor, posted.seq, true);
-            console.log(renderEvent(posted));
+            if (posted.ok && posted.event) {
+              recordPresence(roomId, actor, posted.event.seq, true);
+              console.log(renderEvent(posted.event));
+            } else {
+              info(dim(`work: lost the task during dispatch — dropping this result (one-completer guarantee)${posted.reason ? ': ' + posted.reason : ''}`));
+            }
             st.tasksHandled += 1;
           }
         } finally {

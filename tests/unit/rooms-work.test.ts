@@ -60,7 +60,7 @@ describe('room work — end-to-end dry-run loop (fs.watch driven)', () => {
       expect(foldTasks(all, Date.now()).find((t) => t.taskId === next!.taskId)!.status).toBe('claimed');
 
       // dry-run dispatch → done
-      postTaskResult(roomId, worker, next!.taskId, `(dry-run) ${worker.callsign} completed ${next!.taskId}`, true, 0, 'x');
+      expect(postTaskResult(roomId, worker, next!.taskId, `(dry-run) ${worker.callsign} completed ${next!.taskId}`, true, 0, 'x').ok).toBe(true);
       pump();
       const done = foldTasks(all, Date.now()).find((t) => t.taskId === next!.taskId)!;
       expect(done.status).toBe('done');
@@ -101,7 +101,7 @@ describe('room work — end-to-end dry-run loop (fs.watch driven)', () => {
     const next = pickNextTask(foldTasks(all, Date.now()), worker.callsign);
     expect(next).not.toBeNull();
     expect(claimTask(roomId, worker, next!.taskId, workCfg.leaseTtlMs, 'x').ok).toBe(true);
-    postTaskResult(roomId, worker, next!.taskId, 'did the fresh work', true, 0, 'x');
+    expect(postTaskResult(roomId, worker, next!.taskId, 'did the fresh work', true, 0, 'x').ok).toBe(true);
     const board = foldTasks(drainRoom(roomId, { offset: 0, partial: '' }).events, Date.now());
     expect(board.find((t) => t.taskId === next!.taskId)).toMatchObject({ status: 'done', claimedBy: 'w1' });
 

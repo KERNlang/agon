@@ -136,8 +136,15 @@ fn name=withRoomLock params="roomId:string, work:() => void" returns="void" expo
           if (Date.now() - st.mtimeMs > LOCK_STALE_MS) {
             stale = true;
           } else {
+            // openSync('wx') and writeSync(pid) are TWO steps: a contender
+            // reading in that gap sees EMPTY content. An unparseable or
+            // non-positive owner must NEVER count as dead — only a VALID
+            // integer pid that fails the liveness probe marks the lock stale;
+            // empty/garbage content falls through to the mtime backstop alone.
+            // Otherwise a freshly held lock gets stolen mid-handshake → two
+            // holders in the critical section → duplicate seqs.
             const owner = parseInt((readFileSync(lock, 'utf-8').split('\n')[0] || '').trim(), 10);
-            if (owner !== process.pid && !roomLockPidAlive(owner)) stale = true;
+            if (Number.isInteger(owner) && owner > 0 && owner !== process.pid && !roomLockPidAlive(owner)) stale = true;
           }
         } catch { continue; } // lock vanished between open and stat — retry the open now
         if (stale) { try { unlinkSync(lock); } catch { /* already gone */ } continue; }

@@ -49,6 +49,20 @@ describe('withRoomLock — stale lock reclaim', () => {
     expect(existsSync(lockPath)).toBe(false); // released in finally
   });
 
+  it('does NOT steal a fresh lock with empty content (openSync/writeSync gap safety)', () => {
+    createRoom('r');
+    const lockPath = join(roomDir('r'), '.lock');
+    // The gap between openSync('wx') and writeSync(pid): a contender reads
+    // EMPTY content. parseInt('') = NaN must never count as a dead pid — the
+    // lock is fresh (mtime now), so the only correct behavior is to WAIT and
+    // eventually time out, never to steal.
+    writeFileSync(lockPath, '');
+    const started = Date.now();
+    expect(() => withRoomLock('r', () => {})).toThrow(/room lock timeout/);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(1900); // waited out LOCK_TIMEOUT_MS (2s), no steal
+    expect(existsSync(lockPath)).toBe(true); // the held lock survived
+  }, 10_000);
+
   it('reclaims a lock whose mtime is older than the stale window (live pid, mtime backstop)', () => {
     createRoom('r');
     const lockPath = join(roomDir('r'), '.lock');

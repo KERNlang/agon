@@ -9,6 +9,6 @@ test name="Rooms work mode — task board + atomic claim + worker policy" target
     expect node=fn name=pickNextTask prop=returns is="RoomTaskState | null"
     expect node=fn name=postTask prop=returns is=RoomEvent
     expect node=fn name=claimTask prop=returns is="{ ok: boolean; event?: RoomEvent; reason?: string }"
-    expect node=fn name=postTaskResult prop=returns is=RoomEvent
+    expect node=fn name=postTaskResult prop=returns is="{ ok: boolean; event?: RoomEvent; reason?: string }"
     expect node=fn name=postTaskStop prop=returns is=RoomEvent
     expect node=fn name=shouldStopWork prop=returns is=StopDecision

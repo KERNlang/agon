@@ -19,7 +19,7 @@ fn name=shortTaskId returns="string"
   >>>
 
 fn name=foldTasks params="events:RoomEvent[], nowMs:number" returns="RoomTaskState[]" export=true
-  doc "Fold task/claim/result events into the current task board (latest event per taskId wins). A claim sets claimed + lease; a result sets done|failed; a claimed task whose lease expired with no result folds BACK to open (crash recovery) while keeping claimedBy/claimSeq for the audit trail. task-stop is room-level and ignored here. Ordered by creation seq."
+  doc "Fold task/claim/result events into the current task board (latest event per taskId wins). A claim sets claimed + lease; a result sets done|failed — but ONLY from the current claim holder with a matching claimOfSeq, so a reclaimed worker's late result never overwrites the reclaimer's completion; a claimed task whose lease expired with no result folds BACK to open (crash recovery) while keeping claimedBy/claimSeq for the audit trail. task-stop is room-level and ignored here. Ordered by creation seq."
   handler <<<
     const board = new Map<string, RoomTaskState>();
     for (const ev of events) {
@@ -50,6 +50,14 @@ fn name=foldTasks params="events:RoomEvent[], nowMs:number" returns="RoomTaskSta
         t.result = null;
         if (typeof t.exitCode === 'number') delete t.exitCode;
       } else if (ev.kind === 'result') {
+        // Only the CURRENT claim holder's result counts: a worker that stalled
+        // past its lease and was reclaimed must not have its late result
+        // overwrite the reclaimer's legitimate completion. The result's
+        // claimOfSeq (stamped by postTaskResult from the winning claim) must
+        // also match the current claimSeq when present — defense in depth for
+        // old/foreign ledgers whose results were appended blindly.
+        if (t.claimedBy !== ev.actor.callsign) continue;
+        if (typeof ev.task.claimOfSeq === 'number' && ev.task.claimOfSeq !== t.claimSeq) continue;
         t.status = ev.task.status === 'failed' ? 'failed' : 'done';
         t.result = ev.body;
         t.leaseExpiresAt = null;
@@ -132,19 +140,37 @@ fn name=claimTask params="roomId:string, actor:RoomActor, taskId:string, leaseTt
     return out;
   >>>
 
-fn name=postTaskResult params="roomId:string, actor:RoomActor, taskId:string, body:string, ok:boolean, exitCode:number, repoHint:string" returns="RoomEvent" export=true
-  doc "Post a task result (kind: result, status done|failed). Ends the task on the board and frees its lease."
+fn name=postTaskResult params="roomId:string, actor:RoomActor, taskId:string, body:string, ok:boolean, exitCode:number, repoHint:string" returns="{ ok: boolean; event?: RoomEvent; reason?: string }" export=true
+  doc "Post a task result atomically: fold-check-append under ONE room-lock acquisition (like claimTask). Refuses unless the task is CURRENTLY claimed by this actor — a worker whose lease expired and was reclaimed cannot overwrite the reclaimer's completion; the loop drops the late result instead of posting. The result event carries task.claimOfSeq = the winning claim's seq (which includes renewals, since the fold happens at post time) so foldTasks can verify it."
   handler <<<
-    return appendEvent(roomId, {
-      kind: 'result',
-      actor,
-      body: String(body ?? ''),
-      mentions: [],
-      replyTo: null,
-      repoHint,
-      auto: true,
-      task: { taskId: String(taskId), status: ok ? 'done' : 'failed', exitCode: Number.isFinite(exitCode) ? exitCode : (ok ? 0 : 1) },
+    const id = String(taskId ?? '').trim();
+    if (!id) return { ok: false, reason: 'result needs a taskId' };
+    let out: { ok: boolean; event?: RoomEvent; reason?: string } = { ok: false, reason: 'result not attempted' };
+    withRoomLock(roomId, () => {
+      const t = foldTasks(readEvents(roomId, 0, 0), Date.now()).find((x) => x.taskId === id);
+      if (!t) { out = { ok: false, reason: `no task "${id}"` }; return; }
+      if (t.status !== 'claimed' || t.claimedBy !== actor.callsign) {
+        out = { ok: false, reason: `task "${id}" is ${t.status}${t.claimedBy && t.claimedBy !== actor.callsign ? ` (held by ${t.claimedBy})` : ''} — not claimed by you` };
+        return;
+      }
+      const event = appendEventHoldingLock(roomId, {
+        kind: 'result',
+        actor,
+        body: String(body ?? ''),
+        mentions: [],
+        replyTo: null,
+        repoHint,
+        auto: true,
+        task: {
+          taskId: id,
+          status: ok ? 'done' : 'failed',
+          exitCode: Number.isFinite(exitCode) ? exitCode : (ok ? 0 : 1),
+          ...(typeof t.claimSeq === 'number' ? { claimOfSeq: t.claimSeq } : {}),
+        },
+      });
+      out = { ok: true, event };
     });
+    return out;
   >>>
 
 fn name=postTaskStop params="roomId:string, actor:RoomActor, reason:string, repoHint:string" returns="RoomEvent" export=true

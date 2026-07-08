@@ -207,7 +207,7 @@ if (isSetup && isTty) {
   if (!config.onboarded) {
     runOnboardingThenRepl();
   } else {
-    importRepl().then((startRepl) => startRepl(), reportInteractiveLoadFailure);
+    void importRepl().then((startRepl) => startRepl(), reportInteractiveLoadFailure);
   }
 } else {
   runMain(main);

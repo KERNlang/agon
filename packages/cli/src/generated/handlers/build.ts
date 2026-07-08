@@ -100,8 +100,13 @@ export async function handleBuild(input: string, dispatch: Dispatch, ctx: Handle
       ctx.setCurrentPlan(plan);
       savePlan(plan);
     } else {
+      // getActiveWorkspace() is a BOOKMARK, not the grounded session root — only
+      // use its snapshot if it actually matches where this session is grounded
+      // (resolveWorkingDir()/cwd). A bookmark for some OTHER directory (from a
+      // prior /workspace add, or none at all) must fall back to the plain cwd
+      // snapshot rather than silently plan-snapshotting the wrong repo.
       const ws = getActiveWorkspace();
-      const snapshot = ws
+      const snapshot = ws && ws.path === cwd
         ? snapshotWorkspace(ws)
         : { id: 'cwd', path: cwd, headSha: 'unknown', branch: 'unknown', dirty: false };
 

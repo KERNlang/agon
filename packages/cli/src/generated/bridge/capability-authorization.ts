@@ -31,9 +31,25 @@ export function sessionCapabilityApprovalKey(submitterClientId: string, capabili
 }
 
 /**
- * Validate and digest one runtime tool input exactly once before approval. Malformed roots, cycles, bigint, and non-plain objects return undefined so the brain can surface a structured tool error instead of throwing mid-turn.
+ * Delete approval and denial state for one removed capability registration without touching another client, tool, or replacement registration lifetime.
  */
 // @kern-source: capability-authorization:26
+export function purgeSessionCapabilityRegistration(approvedSession: Map<string,SessionCapabilityApproval>, deniedSession: Set<string>, capability: string, targetClientId: string, registrationId: string): void {
+  const matches = (key: string): boolean => {
+    try {
+      const tuple = JSON.parse(key);
+      return Array.isArray(tuple) && tuple.length === 4
+        && tuple[1] === capability && tuple[2] === targetClientId && tuple[3] === registrationId;
+    } catch { return false; }
+  };
+  for (const key of approvedSession.keys()) { if (matches(key)) approvedSession.delete(key); }
+  for (const key of deniedSession) { if (matches(key)) deniedSession.delete(key); }
+}
+
+/**
+ * Validate and digest one runtime tool input exactly once before approval. Malformed roots, cycles, bigint, and non-plain objects return undefined so the brain can surface a structured tool error instead of throwing mid-turn.
+ */
+// @kern-source: capability-authorization:40
 export function tryCanonicalCapabilityInputDigest(input: Record<string,unknown>): string|undefined {
   try { return canonicalCapabilityInputDigest(input); }
   catch { return undefined; }
@@ -42,7 +58,7 @@ export function tryCanonicalCapabilityInputDigest(input: Record<string,unknown>)
 /**
  * Build the authorization carried on one destructive capability request from the digest validated before approval. Every execution-relevant field is bound, including the enclosing capability request id; session mode preserves the original approval request/provenance while capabilityRequestId, turnId, and inputDigest are refreshed for each emitted request.
  */
-// @kern-source: capability-authorization:33
+// @kern-source: capability-authorization:47
 export function buildCapabilityAuthorizationLease(turnId: string, capabilityRequestId: string, approvalRequestId: string, submitterClientId: string, targetClientId: string, capability: string, inputDigest: string, mode: 'once'|'session', automated: boolean): CapabilityAuthorizationLease {
   return {
     turnId,

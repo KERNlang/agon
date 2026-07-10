@@ -15,23 +15,25 @@ export interface BrowserResearchPolicyConfig {
   contextualIntentPattern: RegExp;
   liveSubjectPattern: RegExp;
   comparisonIntentPattern: RegExp;
+  instructionalLookupPattern: RegExp;
 }
 
-// @kern-source: agentic-browser-policy:18
+// @kern-source: agentic-browser-policy:19
 export const DEFAULT_BROWSER_RESEARCH_POLICY_CONFIG: Readonly<BrowserResearchPolicyConfig> = Object.freeze({
   liveIntentPattern: /\b(search|look up|browse|research|shop|buy)\b|\bsuch(?:e|en|st|t)\b|recherch|kauf/i,
   contextualIntentPattern: /\b(find|recommend|compare|comparison|options?|alternatives?|best|prices?|latest|current)\b|\bfind(?:e|en|est|et)\b|empfehl|vergleich|optionen|alternativen|besten|preise?|aktuell/i,
   liveSubjectPattern: /\b(jobs?|roles?|products?|shopping|stores?|hotels?|flights?|restaurants?|tickets?|deals?|listings?|sources?|websites?|sites?|travel|vacations?|holidays?|games?|goggles?|masks?|libraries?|versions?|releases?|news|weather|schedules?|scores?|laws?|regulations?|stocks?|shares?|crypto|currenc(?:y|ies)|bitcoin)\b|stell(?:e|en)|produkt|shop|laden|läden|hotel|fl(?:ug|üge)|restaurant|ticket|angebot|webseite|quelle|urlaub|reise|spiel|taucherbrill|maske|bibliothek|version|release|nachricht|wetter|fahrplan|ergebnis|gesetz|vorschrift/i,
   comparisonIntentPattern: /\b(recommend|compare|comparison|options|alternatives|products|shopping|best)\b|empfehl|vergleich|optionen|alternativen|produkte|besten/i,
+  instructionalLookupPattern: /\b(?:(?:best )?(?:way|method|command|steps?)\s+(?:to|for)|how (?:do|can|should) (?:i|you|we))\s+(?:find|check|look up|determine)\b[^?\n]{0,80}\b(?:versions?|releases?)\b/i,
 });
 
-// @kern-source: agentic-browser-policy:25
+// @kern-source: agentic-browser-policy:27
 export interface BrowserResearchPolicy {
   requiresLiveEvidence: boolean;
   requiresComparisonTab: boolean;
 }
 
-// @kern-source: agentic-browser-policy:29
+// @kern-source: agentic-browser-policy:31
 export interface BrowserResearchEvidence {
   observationCount: number;
   openedTabCount: number;
@@ -43,12 +45,14 @@ export interface BrowserResearchEvidence {
 /**
  * Classify a user goal without depending on prose length. Live search/recommendation language requires a successful readPage/screenshot before final prose; comparative research also requires opening and observing another owned tab when openTab exists.
  */
-// @kern-source: agentic-browser-policy:36
+// @kern-source: agentic-browser-policy:38
 export function classifyBrowserResearchGoal(input: string, hasObservationTool: boolean, hasOpenTabTool: boolean, config?: BrowserResearchPolicyConfig): BrowserResearchPolicy {
   const selected = config ?? DEFAULT_BROWSER_RESEARCH_POLICY_CONFIG;
   const normalized = input.normalize('NFC').toLowerCase();
-  const explicitLiveIntent = selected.liveIntentPattern.test(normalized);
-  const contextualLiveIntent = selected.contextualIntentPattern.test(normalized) && selected.liveSubjectPattern.test(normalized);
+  const instructionalLookup = selected.instructionalLookupPattern.test(normalized);
+  const explicitLiveIntent = !instructionalLookup && selected.liveIntentPattern.test(normalized);
+  const contextualLiveIntent = !instructionalLookup
+    && selected.contextualIntentPattern.test(normalized) && selected.liveSubjectPattern.test(normalized);
   const requiresLiveEvidence = hasObservationTool && (explicitLiveIntent || contextualLiveIntent);
   return {
     requiresLiveEvidence,
@@ -56,12 +60,12 @@ export function classifyBrowserResearchGoal(input: string, hasObservationTool: b
   };
 }
 
-// @kern-source: agentic-browser-policy:50
+// @kern-source: agentic-browser-policy:54
 export function emptyBrowserResearchEvidence(): BrowserResearchEvidence {
   return { observationCount: 0, openedTabCount: 0, observedOpenedTabCount: 0, focusedOpenedTab: false, openedTabIds: [] };
 }
 
-// @kern-source: agentic-browser-policy:55
+// @kern-source: agentic-browser-policy:59
 export function focusedWorkspaceTabId(output?: string): number|null {
   const match = /^\s*\*\s+\[tabId\s+(\d+)\]/m.exec(output ?? '');
   if (!match) return null;
@@ -72,7 +76,7 @@ export function focusedWorkspaceTabId(output?: string): number|null {
 /**
  * Advance evidence only after a capability succeeds. A read/screenshot counts as live evidence; it satisfies the comparison-tab requirement only while the newly opened owned tab is still focused.
  */
-// @kern-source: agentic-browser-policy:63
+// @kern-source: agentic-browser-policy:67
 export function recordSuccessfulBrowserCapability(evidence: BrowserResearchEvidence, capability: string, input?: Record<string,unknown>, output?: string): BrowserResearchEvidence {
   const next = { ...evidence, openedTabIds: [...evidence.openedTabIds] };
   if (capability === 'openTab') {
@@ -89,9 +93,18 @@ export function recordSuccessfulBrowserCapability(evidence: BrowserResearchEvide
     next.focusedOpenedTab = switchedId !== null && switchedId !== undefined && next.openedTabIds.includes(switchedId);
   }
   if (capability === 'closeTab') {
-    const closedId = typeof input?.tabId === 'number' && Number.isSafeInteger(input.tabId) ? input.tabId : null;
-    if (closedId !== null) next.openedTabIds = next.openedTabIds.filter((id) => id !== closedId);
-    next.focusedOpenedTab = false;
+    const outputClosedMatch = /^\s*closed tab\s+(\d+)\b/im.exec(output ?? '');
+    const outputClosedId = outputClosedMatch ? Number(outputClosedMatch[1]) : null;
+    const closedId = typeof input?.tabId === 'number' && Number.isSafeInteger(input.tabId)
+      ? input.tabId
+      : (outputClosedId !== null && Number.isSafeInteger(outputClosedId) ? outputClosedId : null);
+    const closedOpenedTab = closedId !== null && next.openedTabIds.includes(closedId);
+    if (closedOpenedTab) {
+      next.openedTabIds = next.openedTabIds.filter((id) => id !== closedId);
+      next.openedTabCount = Math.max(0, next.openedTabCount - 1);
+    }
+    const focusedId = focusedWorkspaceTabId(output);
+    next.focusedOpenedTab = focusedId !== null && next.openedTabIds.includes(focusedId);
   }
   if (capability === 'readPage' || capability === 'screenshot') {
     next.observationCount++;
@@ -106,7 +119,7 @@ export function recordSuccessfulBrowserCapability(evidence: BrowserResearchEvide
 /**
  * Return the next concrete evidence action required before final prose, or null once the browser-research contract is satisfied.
  */
-// @kern-source: agentic-browser-policy:95
+// @kern-source: agentic-browser-policy:108
 export function browserResearchEvidenceGap(policy: BrowserResearchPolicy, evidence: BrowserResearchEvidence): string|null {
   if (policy.requiresLiveEvidence && evidence.observationCount < 1) {
     return 'Live browser research is incomplete: call readPage or screenshot and inspect the current live page before answering.';
@@ -121,12 +134,12 @@ export function browserResearchEvidenceGap(policy: BrowserResearchPolicy, eviden
 /**
  * Recognize the stable extension grounding code plus legacy selector-miss text so the brain follows the same readPage then screenshot recovery path during mixed-version upgrades.
  */
-// @kern-source: agentic-browser-policy:108
+// @kern-source: agentic-browser-policy:121
 export function isSelectorGroundingFailure(error: string|undefined): boolean {
-  return !!error && /SELECTOR_GROUNDING_FAILED|selector target (?:was not safely authorized|changed after authorization)|no element matches|no result from the page/i.test(error);
+  return !!error && /SELECTOR_GROUNDING_FAILED|selector target (?:was not safely authorized|changed after authorization)|no element matches|no result from the page|\belement (?:was )?not found\b|could not find (?:the )?(?:element|target|selector)\b/i.test(error);
 }
 
-// @kern-source: agentic-browser-policy:114
+// @kern-source: agentic-browser-policy:127
 export interface PreparedBrowserScreenshot {
   attachment?: ImageAttachment;
   transcript: string;
@@ -135,7 +148,7 @@ export interface PreparedBrowserScreenshot {
 /**
  * Decode, validate, dimension, and attach a browser screenshot once. Both ordinary screenshot calls and automatic selector recovery share this exact pixel-grounding path.
  */
-// @kern-source: agentic-browser-policy:118
+// @kern-source: agentic-browser-policy:131
 export function prepareBrowserScreenshot(dataUrl: string, turnDir: string, imageIndex: number, cwd: string): PreparedBrowserScreenshot {
   const decoded = decodeDataUrlToImageFile(dataUrl, turnDir, imageIndex);
   if (!decoded.path) return { transcript: `(screenshot could not be read${decoded.reason ? `: ${decoded.reason}` : ''})` };

@@ -235,6 +235,39 @@ describe('AgenticTurnBrainClient — the ReAct loop', () => {
     expect(result.responded).toBe(true);
   });
 
+  it('stops advertising a tool immediately after it is denied for the session', async () => {
+    const responses = [
+      `${MARK} {"name":"click","input":{"selector":"#buy"}}`,
+      'I will continue without clicking it.',
+    ];
+    let index = 0;
+    const offered: string[][] = [];
+    const prompts: string[] = [];
+    const registry = { get: (id: string) => ({ id }), listIds: () => ['claude'] } as unknown as EngineRegistry;
+    const client = new AgenticTurnBrainClient(registry);
+    (client as unknown as { adapter: EngineAdapter }).adapter = {
+      dispatch: async (options: { tools?: Array<{ function?: { name?: string } }>; systemPrompt?: string }) => {
+        offered.push((options.tools ?? []).flatMap((tool) => typeof tool.function?.name === 'string' ? [tool.function.name] : []));
+        prompts.push(options.systemPrompt ?? '');
+        return { exitCode: 0, stdout: responses[Math.min(index++, responses.length - 1)], stderr: '', durationMs: 1, timedOut: false };
+      },
+      isAvailable: async () => true,
+    } as unknown as EngineAdapter;
+    await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: actSpec() });
+
+    const { result } = await driveAgent(client, client.runTurn(req('t-denied-advertising')), {
+      capability: () => ({ ok: true, output: 'unused' }),
+      approval: () => 'deny-session',
+    });
+
+    expect(offered[0]).toEqual(['click']);
+    expect(offered[1]).toEqual([]);
+    expect(prompts[0]).toMatch(/^\s*- click\b/m);
+    expect(prompts[1]).not.toMatch(/^\s*- click\b/m);
+    expect(result.responded).toBe(true);
+  });
+
   it("'abort' at an approval prompt ends the turn", async () => {
     const client = makeAgent([`${MARK} {"name":"click","input":{}}`, 'unused']);
     await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
@@ -348,6 +381,26 @@ describe('AgenticTurnBrainClient — the ReAct loop', () => {
     expect(result.responded).toBe(true);
   });
 
+  it('uses an independent evidence-reminder budget before failing closed', async () => {
+    const openTabSpec: CapabilitySpec = { name: 'openTab', description: 'open another owned tab', inputSchema: { url: 'string' }, isReadOnly: false, isDestructive: true };
+    const repeatedRead = `${MARK} {"name":"readPage","input":{}}`;
+    const finalProse = 'The best option appears to be Product A.';
+    const client = makeAgent([repeatedRead, repeatedRead, repeatedRead, finalProse]);
+    await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: openTabSpec });
+
+    const { events, result } = await driveAgent(client, client.runTurn(req('t-evidence-budget', 'recommend and compare current travel products')), {
+      capability: () => ({ ok: true, output: 'LIVE PRODUCT A' }),
+      approval: () => 'approve-session',
+    });
+
+    const evidenceReminders = events.filter((event) => event.kind === 'notice' && /live browser research is incomplete/i.test((event as { message: string }).message));
+    expect(evidenceReminders).toHaveLength(3);
+    expect(events.some((event) => event.kind === 'engine')).toBe(false);
+    expect(result).toMatchObject({ responded: false, reason: expect.stringMatching(/incomplete live browser research/i) });
+  });
+
   it('requires an owned comparison tab and a read there before final product recommendations', async () => {
     const openTabSpec: CapabilitySpec = { name: 'openTab', description: 'open another owned tab', inputSchema: { url: 'string' }, isReadOnly: false, isDestructive: true };
     const client = makeAgent([
@@ -427,8 +480,24 @@ describe('AgenticTurnBrainClient — the ReAct loop', () => {
     });
     expect(events.filter((e) => e.kind === 'approval-request')).toHaveLength(1);
     expect(events.some((e) => e.kind === 'capability-request')).toBe(false);
-    expect(events.filter((e) => e.kind === 'tool' && (e as { status?: string }).status === 'running')).toHaveLength(5);
+    expect(events.filter((e) => e.kind === 'tool' && (e as { status?: string }).status === 'running')).toHaveLength(4);
     expect(result).toMatchObject({ responded: false, reason: expect.stringMatching(/denied for this session/i) });
+  });
+
+  it('bounds varied one-time denials instead of reopening approval for the whole step budget', async () => {
+    const openTabSpec: CapabilitySpec = { name: 'openTab', description: 'open another owned tab', inputSchema: { url: 'string' }, isReadOnly: false, isDestructive: true };
+    const calls = Array.from({ length: 10 }, (_, index) => `${MARK} {"name":"openTab","input":{"url":"https://shop${index}.example/"}}`);
+    const client = makeAgent(calls);
+    await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: openTabSpec });
+    const { events, result } = await driveAgent(client, client.runTurn(req('t-denied-once-loop', 'open product research tabs')), {
+      capability: () => ({ ok: true, output: 'unused' }),
+      approval: () => 'deny',
+    });
+
+    expect(events.filter((event) => event.kind === 'approval-request')).toHaveLength(4);
+    expect(events.some((event) => event.kind === 'capability-request')).toBe(false);
+    expect(result).toMatchObject({ responded: false, reason: expect.stringMatching(/denied by the user/i) });
   });
 
   it('still permits a direct answer for a stable knowledge question', async () => {
@@ -927,6 +996,32 @@ describe('AgenticTurnBrainClient — control surface', () => {
     const { events, result } = await driveAgent(client, client.runTurn(req('t1')), { capability: () => ({ ok: true }), approval: () => 'approve' });
     expect(events.some((e) => e.kind === 'capability-request')).toBe(false); // tool is gone → treated as unknown
     expect(result.responded).toBe(true);
+  });
+
+  it('purges registration-scoped session decisions when a capability is removed or its client detaches', async () => {
+    const approvedClient = makeAgent([`${MARK} {"name":"click","input":{"selector":"#a"}}`, 'done']);
+    await approvedClient.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
+    await approvedClient.registerCapability({ sessionId: 's', clientId: 'c', spec: actSpec() });
+    await driveAgent(approvedClient, approvedClient.runTurn(req('t-approved-cleanup')), {
+      capability: () => ({ ok: true, output: 'clicked' }),
+      approval: () => 'approve-session',
+    });
+    const approvedState = approvedClient as unknown as { approvedSession: Map<string, unknown> };
+    expect(approvedState.approvedSession.size).toBe(1);
+    await approvedClient.unregisterCapability({ sessionId: 's', clientId: 'c', name: 'click' });
+    expect(approvedState.approvedSession.size).toBe(0);
+
+    const deniedClient = makeAgent([`${MARK} {"name":"click","input":{"selector":"#b"}}`, 'not clicked']);
+    await deniedClient.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
+    await deniedClient.registerCapability({ sessionId: 's', clientId: 'c', spec: actSpec() });
+    await driveAgent(deniedClient, deniedClient.runTurn(req('t-denied-cleanup')), {
+      capability: () => ({ ok: true, output: 'unused' }),
+      approval: () => 'deny-session',
+    });
+    const deniedState = deniedClient as unknown as { deniedSession: Set<string> };
+    expect(deniedState.deniedSession.size).toBe(1);
+    deniedClient.notifyClientDetached('s', 'c');
+    expect(deniedState.deniedSession.size).toBe(0);
   });
 
   it('cancel mid-turn (while awaiting a tool result) ends the turn as cancelled', async () => {

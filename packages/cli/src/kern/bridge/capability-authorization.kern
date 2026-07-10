@@ -23,6 +23,20 @@ fn name=sessionCapabilityApprovalKey params="submitterClientId:string, capabilit
     return JSON.stringify([submitterClientId, capability, targetClientId, registrationId]);
   >>>
 
+fn name=purgeSessionCapabilityRegistration params="approvedSession:Map<string,SessionCapabilityApproval>, deniedSession:Set<string>, capability:string, targetClientId:string, registrationId:string" returns=void export=true
+  doc "Delete approval and denial state for one removed capability registration without touching another client, tool, or replacement registration lifetime."
+  handler <<<
+    const matches = (key: string): boolean => {
+      try {
+        const tuple = JSON.parse(key);
+        return Array.isArray(tuple) && tuple.length === 4
+          && tuple[1] === capability && tuple[2] === targetClientId && tuple[3] === registrationId;
+      } catch { return false; }
+    };
+    for (const key of approvedSession.keys()) { if (matches(key)) approvedSession.delete(key); }
+    for (const key of deniedSession) { if (matches(key)) deniedSession.delete(key); }
+  >>>
+
 fn name=tryCanonicalCapabilityInputDigest params="input:Record<string,unknown>" returns="string|undefined" export=true
   doc "Validate and digest one runtime tool input exactly once before approval. Malformed roots, cycles, bigint, and non-plain objects return undefined so the brain can surface a structured tool error instead of throwing mid-turn."
   handler <<<

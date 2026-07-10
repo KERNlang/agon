@@ -14,12 +14,14 @@ interface name=BrowserResearchPolicyConfig export=true
   field name=contextualIntentPattern type=RegExp
   field name=liveSubjectPattern type=RegExp
   field name=comparisonIntentPattern type=RegExp
+  field name=instructionalLookupPattern type=RegExp
 
 const name=DEFAULT_BROWSER_RESEARCH_POLICY_CONFIG type="Readonly<BrowserResearchPolicyConfig>" value={{ Object.freeze({
   liveIntentPattern: /\b(search|look up|browse|research|shop|buy)\b|\bsuch(?:e|en|st|t)\b|recherch|kauf/i,
   contextualIntentPattern: /\b(find|recommend|compare|comparison|options?|alternatives?|best|prices?|latest|current)\b|\bfind(?:e|en|est|et)\b|empfehl|vergleich|optionen|alternativen|besten|preise?|aktuell/i,
   liveSubjectPattern: /\b(jobs?|roles?|products?|shopping|stores?|hotels?|flights?|restaurants?|tickets?|deals?|listings?|sources?|websites?|sites?|travel|vacations?|holidays?|games?|goggles?|masks?|libraries?|versions?|releases?|news|weather|schedules?|scores?|laws?|regulations?|stocks?|shares?|crypto|currenc(?:y|ies)|bitcoin)\b|stell(?:e|en)|produkt|shop|laden|läden|hotel|fl(?:ug|üge)|restaurant|ticket|angebot|webseite|quelle|urlaub|reise|spiel|taucherbrill|maske|bibliothek|version|release|nachricht|wetter|fahrplan|ergebnis|gesetz|vorschrift/i,
   comparisonIntentPattern: /\b(recommend|compare|comparison|options|alternatives|products|shopping|best)\b|empfehl|vergleich|optionen|alternativen|produkte|besten/i,
+  instructionalLookupPattern: /\b(?:(?:best )?(?:way|method|command|steps?)\s+(?:to|for)|how (?:do|can|should) (?:i|you|we))\s+(?:find|check|look up|determine)\b[^?\n]{0,80}\b(?:versions?|releases?)\b/i,
 }) }} export=true
 
 interface name=BrowserResearchPolicy export=true
@@ -38,8 +40,10 @@ fn name=classifyBrowserResearchGoal params="input:string, hasObservationTool:boo
   handler <<<
     const selected = config ?? DEFAULT_BROWSER_RESEARCH_POLICY_CONFIG;
     const normalized = input.normalize('NFC').toLowerCase();
-    const explicitLiveIntent = selected.liveIntentPattern.test(normalized);
-    const contextualLiveIntent = selected.contextualIntentPattern.test(normalized) && selected.liveSubjectPattern.test(normalized);
+    const instructionalLookup = selected.instructionalLookupPattern.test(normalized);
+    const explicitLiveIntent = !instructionalLookup && selected.liveIntentPattern.test(normalized);
+    const contextualLiveIntent = !instructionalLookup
+      && selected.contextualIntentPattern.test(normalized) && selected.liveSubjectPattern.test(normalized);
     const requiresLiveEvidence = hasObservationTool && (explicitLiveIntent || contextualLiveIntent);
     return {
       requiresLiveEvidence,
@@ -78,9 +82,18 @@ fn name=recordSuccessfulBrowserCapability params="evidence:BrowserResearchEviden
       next.focusedOpenedTab = switchedId !== null && switchedId !== undefined && next.openedTabIds.includes(switchedId);
     }
     if (capability === 'closeTab') {
-      const closedId = typeof input?.tabId === 'number' && Number.isSafeInteger(input.tabId) ? input.tabId : null;
-      if (closedId !== null) next.openedTabIds = next.openedTabIds.filter((id) => id !== closedId);
-      next.focusedOpenedTab = false;
+      const outputClosedMatch = /^\s*closed tab\s+(\d+)\b/im.exec(output ?? '');
+      const outputClosedId = outputClosedMatch ? Number(outputClosedMatch[1]) : null;
+      const closedId = typeof input?.tabId === 'number' && Number.isSafeInteger(input.tabId)
+        ? input.tabId
+        : (outputClosedId !== null && Number.isSafeInteger(outputClosedId) ? outputClosedId : null);
+      const closedOpenedTab = closedId !== null && next.openedTabIds.includes(closedId);
+      if (closedOpenedTab) {
+        next.openedTabIds = next.openedTabIds.filter((id) => id !== closedId);
+        next.openedTabCount = Math.max(0, next.openedTabCount - 1);
+      }
+      const focusedId = focusedWorkspaceTabId(output);
+      next.focusedOpenedTab = focusedId !== null && next.openedTabIds.includes(focusedId);
     }
     if (capability === 'readPage' || capability === 'screenshot') {
       next.observationCount++;
@@ -108,7 +121,7 @@ fn name=browserResearchEvidenceGap params="policy:BrowserResearchPolicy, evidenc
 fn name=isSelectorGroundingFailure params="error:string|undefined" returns=boolean export=true
   doc "Recognize the stable extension grounding code plus legacy selector-miss text so the brain follows the same readPage then screenshot recovery path during mixed-version upgrades."
   handler <<<
-    return !!error && /SELECTOR_GROUNDING_FAILED|selector target (?:was not safely authorized|changed after authorization)|no element matches|no result from the page/i.test(error);
+    return !!error && /SELECTOR_GROUNDING_FAILED|selector target (?:was not safely authorized|changed after authorization)|no element matches|no result from the page|\belement (?:was )?not found\b|could not find (?:the )?(?:element|target|selector)\b/i.test(error);
   >>>
 
 interface name=PreparedBrowserScreenshot export=true

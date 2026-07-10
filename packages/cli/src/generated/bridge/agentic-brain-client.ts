@@ -8,7 +8,7 @@ import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 
 import type { ResolvedCapabilityApproval, SessionCapabilityApproval } from './capability-authorization.js';
 
-import { buildCapabilityAuthorizationLease, sessionCapabilityApprovalKey, tryCanonicalCapabilityInputDigest } from './capability-authorization.js';
+import { buildCapabilityAuthorizationLease, purgeSessionCapabilityRegistration, sessionCapabilityApprovalKey, tryCanonicalCapabilityInputDigest } from './capability-authorization.js';
 
 import { browserResearchEvidenceGap, classifyBrowserResearchGoal, emptyBrowserResearchEvidence, isSelectorGroundingFailure, prepareBrowserScreenshot, recordSuccessfulBrowserCapability } from './agentic-browser-policy.js';
 
@@ -567,8 +567,7 @@ export class AgenticTurnBrainClient implements BrainClient {
           sessionCapabilityApprovalKey(req.clientId, name, cap.clientId, cap.registrationId),
         );
       };
-      const turnCaps = [...this.caps.values()].filter((cap) => !capabilityDeniedForTurn(cap.spec.name));
-      const tools = turnCaps.map((c) => c.spec);
+      let tools = [...this.caps.values()].filter((cap) => !capabilityDeniedForTurn(cap.spec.name)).map((cap) => cap.spec);
       let researchPolicy = classifyBrowserResearchGoal(
         req.input,
         tools.some((tool) => tool.name === 'readPage' || tool.name === 'screenshot'),
@@ -579,7 +578,7 @@ export class AgenticTurnBrainClient implements BrainClient {
       // the API path (binary-less engines: the coding-plan models) and ignores them on the CLI
       // path — so claude/codex keep the text-marker protocol while API-only engines get reliable
       // structured tool calls. The system prompt still lists the marker format for the CLI case.
-      const nativeTools = capsToNativeTools(tools);
+      let nativeTools = capsToNativeTools(tools);
       // Will this turn's engine ACTUALLY dispatch via NATIVE function-calling? Two conditions:
       //  1. the dispatch resolves to the adapter's API path. We mirror the adapter's REAL predicate
       //     EXACTLY (adapter.kern dispatch): no USABLE binary — `engine.binary ? findBinary(engine) :
@@ -595,18 +594,35 @@ export class AgenticTurnBrainClient implements BrainClient {
       // Drives BOTH the system prompt (native-call vs marker protocol) and the nudge phrasing below.
       const binaryPath = engine.binary ? this.registry.findBinary(engine) : null;
       const usesApiDispatch = !binaryPath && !!(engine.api && process.env[engine.api.apiKeyEnv]);
-      const usesNativeFc = usesApiDispatch && nativeTools.length > 0;
-      const sysPrompt = buildAgentSystemPrompt(tools, this.systemPrompt, usesNativeFc);
+      let usesNativeFc = usesApiDispatch && nativeTools.length > 0;
+      let sysPrompt = buildAgentSystemPrompt(tools, this.systemPrompt, usesNativeFc);
       // How to tell the engine to ACT, in its own protocol — reused by every nudge/deferral reminder so
       // a native engine is never told to type the (now-suppressed) __AGON_TOOL__ marker. (The nudges
       // only fire when tools.length>0, so usesNativeFc there is equivalent to isApiEngine.)
-      const actInstruction = usesNativeFc
+      let actInstruction = usesNativeFc
         ? 'CALL the appropriate tool now through your function/tool-calling interface (an actual tool call — do not describe it in prose)'
         : `make your NEXT reply EXACTLY one ${AGENT_TOOL_MARKER} {"name":...,"input":...} line and nothing else`;
-      const actNextStep = usesNativeFc ? 'call the next tool' : `a ${AGENT_TOOL_MARKER} tool line`;
+      let actNextStep = usesNativeFc ? 'call the next tool' : `a ${AGENT_TOOL_MARKER} tool line`;
+      const refreshTurnCapabilityView = (): void => {
+        tools = [...this.caps.values()].filter((cap) => !capabilityDeniedForTurn(cap.spec.name)).map((cap) => cap.spec);
+        researchPolicy = classifyBrowserResearchGoal(
+          req.input,
+          tools.some((tool) => tool.name === 'readPage' || tool.name === 'screenshot'),
+          tools.some((tool) => tool.name === 'openTab'),
+        );
+        nativeTools = capsToNativeTools(tools);
+        usesNativeFc = usesApiDispatch && nativeTools.length > 0;
+        sysPrompt = buildAgentSystemPrompt(tools, this.systemPrompt, usesNativeFc);
+        actInstruction = usesNativeFc
+          ? 'CALL the appropriate tool now through your function/tool-calling interface (an actual tool call — do not describe it in prose)'
+          : `make your NEXT reply EXACTLY one ${AGENT_TOOL_MARKER} {"name":...,"input":...} line and nothing else`;
+        actNextStep = usesNativeFc ? 'call the next tool' : `a ${AGENT_TOOL_MARKER} tool line`;
+      };
       const steps: Array<{ name: string; input: Record<string, unknown>; output: string }> = [];
       let imgSeq = rawImages.length;
       let noProgress = 0;      // CONSECUTIVE replies that didn't advance (narration / deferral / identical-repeat); reset on real progress
+      let evidenceReminderGap = '';
+      let evidenceReminders = 0; // independent from narration/re-view progress so each concrete evidence gap gets its full bounded recovery budget
       let consecutiveFailures = 0; // CONSECUTIVE tool calls that ERRORED (malformed input, bad selector, invalid url) — caps a varying-bad-args flail the identical-repeat guard misses
       let questionsAsked = 0;  // mid-turn questions surfaced to the user this turn (bounded by MAX_USER_QUESTIONS)
       let lastCallKey = '';    // the previous executed tool call (name+input) — an identical repeat is a LOOP, not progress
@@ -661,8 +677,12 @@ export class AgenticTurnBrainClient implements BrainClient {
           // bypass the shorter narration matcher.
           const evidenceGap = browserResearchEvidenceGap(researchPolicy, researchEvidence);
           if (tools.length > 0 && evidenceGap) {
-            if (noProgress < MAX_NO_PROGRESS_STEPS) {
-              noProgress++;
+            if (evidenceReminderGap !== evidenceGap) {
+              evidenceReminderGap = evidenceGap;
+              evidenceReminders = 0;
+            }
+            if (evidenceReminders < MAX_NO_PROGRESS_STEPS) {
+              evidenceReminders++;
               const evidenceNudge: BrainEvent = { kind: 'notice', level: 'warning', message: `${evidenceGap} Send a tool call now.` };
               yield evidenceNudge;
               steps.push({ name: 'reminder', input: {}, output: `${evidenceGap} ${actInstruction}. Do not provide recommendations from memory; finish the live browser work first.` });
@@ -834,10 +854,20 @@ export class AgenticTurnBrainClient implements BrainClient {
             }
             if (decision === 'deny-session') {
               this.deniedSession.add(sessionKey);
+              refreshTurnCapabilityView();
             }
             const denied: BrainEvent = { kind: 'tool', engineId: turnEngineId, tool: call.name, status: 'error', output: 'denied by the user' };
             yield denied;
             steps.push({ name: call.name, input: call.input, output: 'DENIED by the user — do not retry; try another approach or explain what you would have done.' });
+            consecutiveFailures++;
+            if (consecutiveFailures >= MAX_CONSECUTIVE_TOOL_FAILURES) {
+              const reason = decision === 'deny-session'
+                ? `stuck: ${consecutiveFailures} tool calls in a row failed — capability "${call.name}" was denied for this session`
+                : `stuck: ${consecutiveFailures} tool calls in a row failed — capability "${call.name}" was repeatedly denied by the user`;
+              const stuck: BrainEvent = { kind: 'notice', level: 'error', message: reason };
+              yield stuck;
+              return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
+            }
             continue;
           }
           if (decision !== 'approve' && decision !== 'approve-session') {
@@ -1063,6 +1093,8 @@ export class AgenticTurnBrainClient implements BrainClient {
   }
 
   async registerCapability(reg: CapabilityRegistration): Promise<ControlAck> {
+    const existing = this.caps.get(reg.spec.name);
+    if (existing) purgeSessionCapabilityRegistration(this.approvedSession, this.deniedSession, reg.spec.name, existing.clientId, existing.registrationId);
     this.caps.set(reg.spec.name, { clientId: reg.clientId, registrationId: randomUUID(), spec: reg.spec });
     return { status: 'accepted' };
   }
@@ -1070,6 +1102,7 @@ export class AgenticTurnBrainClient implements BrainClient {
   async unregisterCapability(req: CapabilityUnregister): Promise<ControlAck> {
     const existing = this.caps.get(req.name);
     if (existing && existing.clientId !== req.clientId) return { status: 'rejected', reason: `capability "${req.name}" is owned by another client` };
+    if (existing) purgeSessionCapabilityRegistration(this.approvedSession, this.deniedSession, req.name, existing.clientId, existing.registrationId);
     this.caps.delete(req.name);
     return { status: 'accepted' };
   }
@@ -1110,7 +1143,11 @@ export class AgenticTurnBrainClient implements BrainClient {
   }
 
   notifyClientDetached(_sessionId: string, clientId: string): void {
-    for (const [name, c] of [...this.caps]) { if (c.clientId === clientId) this.caps.delete(name); }
+    for (const [name, c] of [...this.caps]) {
+      if (c.clientId !== clientId) continue;
+      purgeSessionCapabilityRegistration(this.approvedSession, this.deniedSession, name, c.clientId, c.registrationId);
+      this.caps.delete(name);
+    }
   }
 
   async health(): Promise<BrainHealth> {
@@ -1131,7 +1168,7 @@ export class AgenticTurnBrainClient implements BrainClient {
 /**
  * Factory mirroring createHeadlessTurnBrainClient: build the v2 agentic tool-loop BrainClient from the daemon's EngineRegistry.
  */
-// @kern-source: agentic-brain-client:1142
+// @kern-source: agentic-brain-client:1179
 export function createAgenticTurnBrainClient(registry: EngineRegistry): BrainClient {
   return new AgenticTurnBrainClient(registry);
 }

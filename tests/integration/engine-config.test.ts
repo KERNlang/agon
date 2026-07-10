@@ -16,6 +16,15 @@ function loadEngineConfigs() {
 describe('Engine Config Validation', () => {
   const configs = loadEngineConfigs();
 
+  it('configures Claude stream-json companion with the required verbose flag', () => {
+    const claude = configs.find(({ filename }) => filename === 'claude.json')?.raw;
+    expect(claude).toBeDefined();
+    expect(claude?.companion?.protocol).toBe('stream-json');
+    const serverCmd = claude?.companion?.serverCmd;
+    expect(serverCmd).toBeDefined();
+    expect(serverCmd).toContain('--verbose');
+  });
+
   it('loads all engine configs from engines/', () => {
     expect(configs.length).toBeGreaterThanOrEqual(9);
   });

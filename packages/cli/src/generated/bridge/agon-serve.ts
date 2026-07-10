@@ -271,7 +271,8 @@ export class AgonServe {
     const allowed = ['approve', 'approve-session', 'deny', 'deny-session', 'abort'];
     if (!requestId || !allowed.includes(decision)) { this.sendJson(res, 400, { error: 'missing requestId or invalid decision' }, origin); return; }
     const clientId = typeof body.clientId === 'string' ? body.clientId : 'http';
-    const ack = await this.brain.provideApproval({ sessionId: this.sessionId, requestId, clientId, decision: decision as 'approve' | 'approve-session' | 'deny' | 'deny-session' | 'abort' });
+    const automated = body.automated === true;
+    const ack = await this.brain.provideApproval({ sessionId: this.sessionId, requestId, clientId, decision: decision as 'approve' | 'approve-session' | 'deny' | 'deny-session' | 'abort', automated });
     this.sendJson(res, 200, ack, origin);
   }
 
@@ -313,7 +314,7 @@ export class AgonServe {
 /**
  * Factory: build the loopback bridge for a session given an opened BrainClient and the session id.
  */
-// @kern-source: agon-serve:359
+// @kern-source: agon-serve:360
 export function createAgonServe(opts: { brain: BrainClient, sessionId: string, allowedOrigins?: string[], engines?: string[], engineId?: string }): AgonServe {
   return new AgonServe(opts);
 }

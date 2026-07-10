@@ -13,10 +13,8 @@
 //       the transcript → dispatch again … until the engine answers with no tool
 //       call, or a step/abort/timeout limit trips.
 //
-// Destructive tools (CapabilitySpec.isDestructive) first yield an approval-request
-// and await provideApproval — the load-bearing "ask before acting" gate (the panel
-// toggle decides whether the client auto-approves). approve-session / deny-session
-// are remembered per turn-brain so the agent isn't gated twice for the same tool.
+// Destructive tools first yield an approval-request and await provideApproval.
+// Session decisions are submitter+tool scoped and retain their provenance.
 //
 // This is ENGINE-AGNOSTIC: any text engine that can emit the sentinel drives the
 // loop (claude/codex are reliable; the parse is forgiving — fences/prose around the
@@ -25,14 +23,16 @@
 // exactly the swap the contract promised. The fuller headless-Cesar brain (routing,
 // confidence gate, steering) remains the deferred swap; this is the focused agent.
 
-import from="@kernlang/agon-core" names="BrainClient,BrainClientConfig,BrainEvent,BrainTurnRequest,BrainTurnResult,ControlAck,ControlCapabilities,ClientRef,ApprovalResponse,AnswerResponse,SteerRequest,CancelRequest,CapabilityRegistration,CapabilityUnregister,CapabilityResult,CapabilitySpec,BrainHealth,EngineAdapter,EngineRegistry" types=true
-import from="@kernlang/agon-core" names="buildImageAttachment,decodeDataUrlToImageFile,parseImageDimensions,MAX_DISPATCH_IMAGES,authFailureHint"
+import from="@kernlang/agon-core" names="BrainClient,BrainClientConfig,BrainEvent,BrainTurnRequest,BrainTurnResult,ControlAck,ControlCapabilities,ClientRef,ApprovalResponse,AnswerResponse,SteerRequest,CancelRequest,CapabilityRegistration,CapabilityUnregister,CapabilityResult,CapabilitySpec,CapabilityAuthorizationLease,BrainHealth,EngineAdapter,EngineRegistry" types=true
+import from="@kernlang/agon-core" names="buildImageAttachment,decodeDataUrlToImageFile,MAX_DISPATCH_IMAGES,authFailureHint"
 import from="@kernlang/agon-adapter-cli" names="createCliAdapter"
+import from="./capability-authorization.js" names="ResolvedCapabilityApproval,SessionCapabilityApproval" types=true
+import from="./capability-authorization.js" names="buildCapabilityAuthorizationLease,sessionCapabilityApprovalKey,tryCanonicalCapabilityInputDigest"
+import from="./agentic-browser-policy.js" names="browserResearchEvidenceGap,classifyBrowserResearchGoal,emptyBrowserResearchEvidence,isSelectorGroundingFailure,prepareBrowserScreenshot,recordSuccessfulBrowserCapability"
 import from="node:path" names="join"
 import from="node:os" names="tmpdir"
-import from="node:fs" names="rmSync,readFileSync"
+import from="node:fs" names="rmSync"
 import from="node:crypto" names="randomUUID"
-
 const name=AGENT_TOOL_MARKER type=string value={{ '__AGON_TOOL__' }} export=true
 // A turn ends when the GOAL is met (a genuine final answer), the agent is blocked, or it is
 // detected STUCK (MAX_NO_PROGRESS_STEPS consecutive replies that don't advance) — NOT at a fixed
@@ -138,7 +138,7 @@ fn name=unwrapToolInputEnvelope params="call:{ name: string; input: Record<strin
 const name=TOOL_NAME_RE type="RegExp" value={{ /^[a-zA-Z0-9_-]{1,64}$/ }}
 
 fn name=sanitizeSchemaNode params="value:unknown, depth?:number" returns="unknown" export=true
-  doc "Deep-copy a per-property schema value, dropping prototype-pollution keys (__proto__/constructor/prototype) at EVERY level, so an object-valued inputSchema lent by a (future/third-party) capability can't smuggle a polluting key into the native function-calling tool definition. normalizeToolSchema's TOP-LEVEL guard only skips these at depth 0; this closes the nested case (kimi review 0.85). Depth-bounded (6) so a pathological deep/cyclic structure can't blow the stack. Non-objects pass through unchanged; arrays are mapped element-wise. Agon's own tools lend STRING-valued shorthand (this branch never fires for them), so this is purely defensive depth for object-valued schemas."
+  doc "Deep-copy a real or per-property schema value, dropping prototype-pollution keys (__proto__/constructor/prototype) at EVERY level, so an object-valued inputSchema lent by a capability can't smuggle a polluting key into the native function-calling tool definition. Depth-bounded (6) so a pathological deep/cyclic structure can't blow the stack. Non-objects pass through unchanged; arrays are mapped element-wise. Agon's own tools lend STRING-valued shorthand, so this is defensive depth for object-valued schemas."
   handler <<<
     const d = depth ?? 0;
     if (d > 6 || !value || typeof value !== 'object') return value;
@@ -152,19 +152,15 @@ fn name=sanitizeSchemaNode params="value:unknown, depth?:number" returns="unknow
   >>>
 
 fn name=normalizeToolSchema params="raw:unknown" returns="Record<string, unknown>" export=true
-  doc "Coerce a client-lent inputSchema into a VALID JSON Schema for native function-calling. Agon's page tools lend a SHORTHAND ({ url: 'string' }, { selector: 'string', text: 'string' }, {}), NOT a JSON Schema — passing that straight through as an OpenAI/Anthropic function `parameters` gives the provider no real arg contract: the model can't see that the arg is `url`, so it falls back to the prompt's {name,input} marker envelope and emits { input: '<url>' } → the handler reads input.url = undefined → 'invalid url', forever. (The marker-based CLI engines dodge this — they read the schema from the prose; only the NATIVE path needs a real schema.) So: pass through anything that ALREADY looks like a JSON Schema (declares `type` or `properties`); otherwise treat each key as a property whose value names its type ('string'|'number'|'boolean', default 'string'). `required` is left empty on purpose — the shorthand doesn't say which args are mandatory, and over-constraining would break optional-arg tools like scroll. Declaring typed properties is what fixes the flail; requiredness is a nicety we can't infer."
+  doc "Coerce a client-lent inputSchema into a VALID JSON Schema for native function-calling. Agon's page tools lend a SHORTHAND ({ url: 'string' }, { selector: 'string', text: 'string' }, {}), NOT a JSON Schema — passing that straight through as an OpenAI/Anthropic function `parameters` gives the provider no real arg contract: the model can't see that the arg is `url`, so it falls back to the prompt's {name,input} marker envelope and emits { input: '<url>' } → the handler reads input.url = undefined → 'invalid url', forever. (The marker-based CLI engines dodge this — they read the schema from the prose; only the NATIVE path needs a real schema.) So: recursively sanitize a real object schema that declares type:'object'; otherwise treat each key as a property whose value names its type ('string'|'number'|'boolean', default 'string'). `required` is left empty on purpose — the shorthand doesn't say which args are mandatory, and over-constraining would break optional-arg tools like scroll. Declaring typed properties is what fixes the flail; requiredness is a nicety we can't infer."
   handler <<<
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { type: 'object', properties: {} };
     const obj = raw as Record<string, unknown>;
-    // Already a JSON Schema for the args object — pass through as-is (a future tool may lend a real
-    // one). Detect ONLY by `type === 'object'`: that is THE requirement for an object schema, and it
-    // is unambiguous. Keying off `type`/`properties` PRESENCE false-positives a shorthand whose field
-    // is literally named 'type' or 'properties' — e.g. { type:'string', value:'string' } or a tool
-    // taking a `properties` object arg — so a real schema MUST say type:'object'.
-    if (obj.type === 'object') return obj;
+    // A real args schema says type:'object'; sanitize it, since key-presence checks misclassify shorthand fields literally named type/properties.
+    if (obj.type === 'object') return sanitizeSchemaNode(obj) as Record<string, unknown>;
     // Shorthand → JSON Schema. A value that is a STRING names the field's JSON type; a value that is
     // an OBJECT is already a per-property schema (e.g. { url:{type:'string',format:'uri'} }) and is
-    // kept verbatim so its constraints (format/enum/…) survive to native function-calling.
+    // sanitized without losing constraints (format/enum/…) used by native function-calling.
     const VALID_TYPES = ['string', 'number', 'integer', 'boolean', 'array', 'object', 'null'];
     const properties: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(obj)) {
@@ -288,16 +284,36 @@ fn name=buildAgentSystemPrompt params="tools:CapabilitySpec[], base?:string, nat
     );
     // MULTI-TAB — only when the client lent the workspace tools (an older extension hasn't). Frames the
     // mental model so the engine actually USES the tabs instead of cramming everything into one page.
-    const hasMultiTab = tools.some((t) => t.name === 'openTab' || t.name === 'switchTab');
-    if (hasMultiTab) {
+    const hasOpenTab = tools.some((t) => t.name === 'openTab');
+    const hasSwitchTab = tools.some((t) => t.name === 'switchTab');
+    const hasListTabs = tools.some((t) => t.name === 'listTabs');
+    const hasCloseTab = tools.some((t) => t.name === 'closeTab');
+    const hasNavigate = tools.some((t) => t.name === 'navigate');
+    const comparisonObservationTool = tools.some((t) => t.name === 'readPage')
+      ? 'readPage'
+      : tools.some((t) => t.name === 'screenshot') ? 'screenshot' : null;
+    if (hasOpenTab) {
       lines.push(
         '',
         'MULTI-TAB WORKSPACE — you have your OWN set of tabs (an "Agon" group), SEPARATE from the',
-        "user's tabs. readPage/click/type/navigate/scroll always act on your FOCUSED tab. To work",
-        'several pages at once — compare results, keep a reference open, research across sources —',
-        'openTab to open another page (it becomes focused), switchTab(tabId) to move between them, and',
-        'listTabs to see what you have open; closeTab when done. navigate changes the CURRENT tab;',
-        'openTab makes a NEW one. Prefer real tabs over losing context by navigating away and back.',
+        "user's tabs. Page tools act on the FOCUSED owned tab.",
+        'openTab opens another page in a NEW focused tab. Prefer real tabs over losing context by navigating away and back.',
+      );
+      if (hasSwitchTab) lines.push('switchTab(tabId) moves between owned tabs.');
+      if (hasListTabs) lines.push('listTabs shows which owned tabs are open and focused.');
+      if (hasCloseTab) lines.push('closeTab(tabId) closes an owned tab when it is no longer needed.');
+      if (hasNavigate) lines.push('navigate changes the CURRENT focused tab; openTab makes a NEW one.');
+      if (comparisonObservationTool) {
+        lines.push(
+          'For research and recommendations you MUST use openTab for another relevant source before finishing.',
+          `Keep sources in separate tabs, ${comparisonObservationTool} the newly opened source, then compare the live evidence.`,
+        );
+      }
+    } else if (hasSwitchTab) {
+      lines.push(
+        '',
+        'MULTI-TAB WORKSPACE — switchTab(tabId) moves among the existing owned tabs. Use readPage',
+        'after switching so each conclusion is grounded in the focused tab. openTab is unavailable.',
       );
     }
     return lines.join('\n');
@@ -397,7 +413,6 @@ fn name=describeAgentAction params="name:string, input:Record<string, unknown>" 
   >>>
 
 // ── The agentic brain ────────────────────────────────────────────────────────
-
 service name=AgenticTurnBrainClient implements=BrainClient
   doc "v2 BrainClient: a bounded ReAct tool-loop over one engine, with client-lent capabilities (registerCapability) the brain pulls mid-turn via capability-request, and a per-action approval gate for destructive tools. Construct with the daemon's EngineRegistry; open() binds engine/cwd; runTurn() drives the loop; provideCapabilityResult/provideApproval answer the *-request events by requestId."
   field name=registry type=EngineRegistry private=true
@@ -408,11 +423,11 @@ service name=AgenticTurnBrainClient implements=BrainClient
   field name=startedAtMs type=number private=true
   field name=activeTurnId type="string|null" private=true
   field name=aborts type="Map<string, AbortController>" private=true
-  field name=caps type="Map<string, { clientId: string; spec: CapabilitySpec }>" private=true
+  field name=caps type="Map<string, { clientId: string; registrationId: string; spec: CapabilitySpec }>" private=true
   field name=pendingCaps type="Map<string, { clientId: string; resolve: (r: CapabilityResult) => void }>" private=true
-  field name=pendingApprovals type="Map<string, { clientId: string; resolve: (decision: string) => void }>" private=true
+  field name=pendingApprovals type="Map<string, { clientId: string; resolve: (approval: ResolvedCapabilityApproval) => void }>" private=true
   field name=pendingAnswers type="Map<string, { clientId: string; resolve: (answer: string) => void }>" private=true
-  field name=approvedSession type="Set<string>" private=true
+  field name=approvedSession type="Map<string, SessionCapabilityApproval>" private=true
   field name=deniedSession type="Set<string>" private=true
   field name=controlCapabilities type=ControlCapabilities
 
@@ -430,7 +445,7 @@ service name=AgenticTurnBrainClient implements=BrainClient
       assign target="this.pendingCaps" value="new Map()"
       assign target="this.pendingApprovals" value="new Map()"
       assign target="this.pendingAnswers" value="new Map()"
-      assign target="this.approvedSession" value="new Set()"
+      assign target="this.approvedSession" value="new Map()"
       assign target="this.deniedSession" value="new Set()"
       assign target="this.controlCapabilities" value="{ concurrentTurns: 'per-session-serialized', concurrentSteering: 'unsupported', approvalArbitration: 'host-only', questionArbitration: 'host-only', clientCapabilities: 'supported', cancellation: 'per-turn' }"
       assign target="this.open" value="this.open.bind(this)"
@@ -468,16 +483,16 @@ service name=AgenticTurnBrainClient implements=BrainClient
       });
     >>>
 
-  method name=waitForApproval params="requestId:string, ownerClientId:string, signal:AbortSignal" returns="Promise<string>" async=true private=true
-    doc "Suspend the turn until the OWNING client (ownerClientId — the turn's submitter, the host for v1) answers the approval-request; provideApproval resolves by requestId only when the reply's clientId matches (host-only arbitration). Rejects on abort; on APPROVAL_TIMEOUT_MS resolves to 'deny' (a no-answer is a safe no, not a hang)."
+  method name=waitForApproval params="requestId:string, ownerClientId:string, signal:AbortSignal" returns="Promise<ResolvedCapabilityApproval>" async=true private=true
+    doc "Suspend the turn until the OWNING client (ownerClientId — the turn's submitter, the host for v1) answers the approval-request; provideApproval resolves by requestId only when the reply's clientId matches (host-only arbitration). Returns normalized decision + automated provenance. Rejects on abort; on APPROVAL_TIMEOUT_MS resolves to an interactive-provenance deny (a no-answer is a safe no, not a hang)."
     handler <<<
-      return new Promise<string>((resolve, reject) => {
+      return new Promise<ResolvedCapabilityApproval>((resolve, reject) => {
         if (signal.aborted) { reject(new Error('aborted')); return; }
         let timer: ReturnType<typeof setTimeout>;
         const onAbort = () => { this.pendingApprovals.delete(requestId); clearTimeout(timer); reject(new Error('aborted')); };
-        timer = setTimeout(() => { this.pendingApprovals.delete(requestId); signal.removeEventListener('abort', onAbort); resolve('deny'); }, APPROVAL_TIMEOUT_MS);
+        timer = setTimeout(() => { this.pendingApprovals.delete(requestId); signal.removeEventListener('abort', onAbort); resolve({ decision: 'deny', automated: false }); }, APPROVAL_TIMEOUT_MS);
         signal.addEventListener('abort', onAbort, { once: true });
-        this.pendingApprovals.set(requestId, { clientId: ownerClientId, resolve: (decision: string) => { clearTimeout(timer); signal.removeEventListener('abort', onAbort); resolve(decision); } });
+        this.pendingApprovals.set(requestId, { clientId: ownerClientId, resolve: (approval: ResolvedCapabilityApproval) => { clearTimeout(timer); signal.removeEventListener('abort', onAbort); resolve(approval); } });
       });
     >>>
 
@@ -536,7 +551,23 @@ service name=AgenticTurnBrainClient implements=BrainClient
           }
         }
 
-        const tools = [...this.caps.values()].map((c) => c.spec);
+        // A deny-session decision makes that registration unavailable to this submitting client.
+        // Do not keep advertising it through native tools/the prompt or make evidence depend on it
+        // during later turns. The capability remains registered for other clients and registrations.
+        const capabilityDeniedForTurn = (name: string): boolean => {
+          const cap = this.caps.get(name);
+          return !!cap && this.deniedSession.has(
+            sessionCapabilityApprovalKey(req.clientId, name, cap.clientId, cap.registrationId),
+          );
+        };
+        const turnCaps = [...this.caps.values()].filter((cap) => !capabilityDeniedForTurn(cap.spec.name));
+        const tools = turnCaps.map((c) => c.spec);
+        let researchPolicy = classifyBrowserResearchGoal(
+          req.input,
+          tools.some((tool) => tool.name === 'readPage' || tool.name === 'screenshot'),
+          tools.some((tool) => tool.name === 'openTab'),
+        );
+        let researchEvidence = emptyBrowserResearchEvidence();
         // NATIVE function-calling specs, offered on EVERY dispatch. The adapter uses them only on
         // the API path (binary-less engines: the coding-plan models) and ignores them on the CLI
         // path — so claude/codex keep the text-marker protocol while API-only engines get reliable
@@ -573,6 +604,7 @@ service name=AgenticTurnBrainClient implements=BrainClient
         let questionsAsked = 0;  // mid-turn questions surfaced to the user this turn (bounded by MAX_USER_QUESTIONS)
         let lastCallKey = '';    // the previous executed tool call (name+input) — an identical repeat is a LOOP, not progress
         let selectionRegrounded = false; // one-shot guard: after a click/type/selectOption couldn't find its target we re-ground ONCE (read the page, hand the engine the real `sel=` selectors); reset on any successful action so each fresh miss earns one re-ground
+        let selectionPixelGrounded = false; // second selector miss escalates once to a real screenshot attached to vision; reset after a successful action
         const lastReadOutputs = new Map<string, string>(); // last text output per read-only tool CALL (keyed by name+input) — an identical repeat means the agent is re-viewing the SAME screen (the screenshot↔readPage flail the consecutive-repeat check misses)
 
         for (let step = 0; step < MAX_AGENT_STEPS; step++) {
@@ -592,23 +624,16 @@ service name=AgenticTurnBrainClient implements=BrainClient
             tools: nativeTools, messages: nativeMessages,
           });
           const stdout = (result.stdout || '').trim();
-          // Transport-agnostic call extraction: an API engine returns the call as a STRUCTURED
-          // part (native function-calling) — prefer it; fall back to parsing the __AGON_TOOL__
-          // text marker for CLI engines. Extracted BEFORE the no-answer guard so a NATIVE
-          // tool-only turn is never misread as "no answer" when its stdout is empty: emptiness
-          // means no-answer ONLY when there is also no structured call. (Does not rely on the
-          // streaming layer echoing a <tool> marker into stdout — that coupling was implicit.)
+          // Prefer a native structured call, then the CLI text marker. Extract before the no-answer
+          // guard so an empty-stdout native tool turn is never mistaken for an empty response.
           const rawCall = extractNativeToolCall(result.parts) ?? parseAgentToolCall(stdout);
-          // Pass the target tool's declared fields so the envelope-unwrap never strips a tool that
-          // REALLY takes an `input` arg (agon's tools don't, so this is unconstrained for them).
+          // Declared fields protect a real `input` argument from envelope unwrapping.
           const capForCall = rawCall ? this.caps.get(rawCall.name) : undefined;
           const knownFields = capForCall ? toolFieldNames(capForCall.spec.inputSchema) : undefined;
           const call = unwrapToolInputEnvelope(rawCall, knownFields);
           if (result.exitCode !== 0 || result.timedOut || (stdout.length === 0 && !call)) {
-            // Auth-aware failure surfacing: a 401 (claude's isolated config dir is stale / never logged
-            // in, or an API engine's key is missing) must reach the panel as the EXACT fix command, not
-            // a bare "produced no answer". This is the browser-panel arm of the generic auth checker —
-            // it's why the user no longer sees an unexplained 1-minute "thinking" hang.
+            // Surface auth failures with their exact fix command, not a bare "produced no answer",
+            // so stale CLI login or a missing API key never looks like an unexplained thinking hang.
             const authHint = ctrl.signal.aborted ? null
               : authFailureHint(engine, { stderr: result.stderr, exitCode: result.exitCode, timedOut: result.timedOut });
             const baseReason = ctrl.signal.aborted ? 'cancelled by client'
@@ -621,13 +646,32 @@ service name=AgenticTurnBrainClient implements=BrainClient
           }
 
           if (!call) {
+            const isDeferral = looksLikeDeferral(stdout);
+            // A fluent recommendation is not a valid final answer to a live research goal until
+            // successful browser capabilities prove the page was observed. Comparative research
+            // additionally proves another owned tab was opened and read. This evidence gate is
+            // independent of prose length/language, so a long hallucinated shopping list cannot
+            // bypass the shorter narration matcher.
+            const evidenceGap = browserResearchEvidenceGap(researchPolicy, researchEvidence);
+            if (tools.length > 0 && evidenceGap) {
+              if (noProgress < MAX_NO_PROGRESS_STEPS) {
+                noProgress++;
+                const evidenceNudge: BrainEvent = { kind: 'notice', level: 'warning', message: `${evidenceGap} Send a tool call now.` };
+                yield evidenceNudge;
+                steps.push({ name: 'reminder', input: {}, output: `${evidenceGap} ${actInstruction}. Do not provide recommendations from memory; finish the live browser work first.` });
+                continue;
+              }
+              const reason = `incomplete live browser research after ${MAX_NO_PROGRESS_STEPS} evidence reminders`;
+              const incomplete: BrainEvent = { kind: 'notice', level: 'error', message: reason };
+              yield incomplete;
+              return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
+            }
             // No tool call. Two NON-AGENTIC stalls get a bounded nudge to keep going instead of
             // ending the turn: (1) NARRATION — it described an action but emitted no tool line;
             // (2) DEFERRAL — it asked the user how to proceed / for permission / to pick an option
             // instead of just doing the task (the classic "How would you like me to proceed?").
             // The budget is CONSECUTIVE-no-progress (reset after every real tool call below), so a
             // long, genuinely-advancing browse is never killed for an occasional stall.
-            const isDeferral = looksLikeDeferral(stdout);
             const isNarration = looksLikeActionIntent(stdout);
             // DEFERRAL → ASK THE USER (not just nudge): the engine posed a question instead of acting,
             // and there is a human on the panel. Surface the question (question-request), PAUSE the
@@ -683,12 +727,22 @@ service name=AgenticTurnBrainClient implements=BrainClient
             return { turnId: req.turnId, delegated: false, responded: true, engineId: turnEngineId };
           }
 
-          // A valid tool call. Distinguish genuine PROGRESS (a new, distinct action) from a LOOP
-          // (the identical action repeated back-to-back). Repeating the same call advances nothing,
-          // spins the turn, and re-fires the SAME approval prompt at the user — so treat it as
-          // no-progress: don't re-execute it, nudge the engine to do something different, and give
-          // up if it keeps looping. A DISTINCT call resets the budget (real progress).
-          const callKey = `${call.name}:${JSON.stringify(call.input)}`;
+          // Reject malformed args before approval; valid calls get a stable digest/key for loop detection.
+          const inputDigest = tryCanonicalCapabilityInputDigest(call.input);
+          if (!inputDigest) {
+            const invalid: BrainEvent = { kind: 'tool', engineId: turnEngineId, tool: call.name, status: 'error', output: 'invalid capability input' };
+            yield invalid;
+            steps.push({ name: call.name, input: {}, output: 'ERROR: capability input must be a plain JSON object.' });
+            consecutiveFailures++;
+            if (consecutiveFailures >= MAX_CONSECUTIVE_TOOL_FAILURES) {
+              const reason = `stuck: ${consecutiveFailures} tool calls in a row failed — the inputs are not plain JSON objects`;
+              const stuck: BrainEvent = { kind: 'notice', level: 'error', message: reason };
+              yield stuck;
+              return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
+            }
+            continue;
+          }
+          const callKey = `${call.name}:${inputDigest}`;
           if (callKey === lastCallKey) {
             noProgress++;
             const loopNote: BrainEvent = { kind: 'notice', level: 'warning', message: 'the engine repeated the same action — nudging it to try something different' };
@@ -702,10 +756,7 @@ service name=AgenticTurnBrainClient implements=BrainClient
             steps.push({ name: 'reminder', input: {}, output: `You just requested the IDENTICAL action again (${call.name}); repeating it changes nothing. Do something DIFFERENT — a different tool, selector, or url — or, if the task is COMPLETE, give your final answer with the result.` });
             continue; // do NOT re-execute / re-prompt the user for the same approval
           }
-          // noProgress is reset by PROGRESS, decided AFTER execution below (a mutating action, or a
-          // read that reveals NEW content) — NOT merely by issuing a distinct call. Otherwise an
-          // agent alternating read-only tools over an UNCHANGING view resets the budget every step
-          // and spins to the step backstop (the exact screenshot↔readPage flail we saw).
+          // Reset noProgress only after execution proves it, so alternating unchanged reads cannot evade the stuck budget.
           lastCallKey = callKey;
 
           const cap = this.caps.get(call.name);
@@ -728,50 +779,70 @@ service name=AgenticTurnBrainClient implements=BrainClient
           const running: BrainEvent = { kind: 'tool', engineId: turnEngineId, tool: call.name, status: 'running', input: describeAgentAction(call.name, call.input) };
           yield running;
 
-          // Approval gate — FAIL-SAFE: gate anything that is not EXPLICITLY read-only
-          // (a tool the client mis-/under-declares still asks, never silently acts).
-          // Skipped only once the user approved this tool for the session.
-          if (!cap.spec.isReadOnly && !this.approvedSession.has(call.name)) {
-            if (this.deniedSession.has(call.name)) {
+          const reqId = randomUUID(); // Mint before authorization: every destructive lease is single-request-bound.
+          // Fail-safe gate: anything not explicitly read-only asks. Session state is
+          // registration scoped and retains its original approval provenance.
+          const sessionKey = sessionCapabilityApprovalKey(req.clientId, call.name, cap.clientId, cap.registrationId); const priorSessionApproval = this.approvedSession.get(sessionKey);
+          let authorization: CapabilityAuthorizationLease | undefined;
+          if (!cap.spec.isReadOnly && !priorSessionApproval) {
+            if (this.deniedSession.has(sessionKey)) {
               const denied: BrainEvent = { kind: 'tool', engineId: turnEngineId, tool: call.name, status: 'error', output: 'denied for this session' };
               yield denied;
               steps.push({ name: call.name, input: call.input, output: 'DENIED by the user for this session — do not retry this tool; try another approach or tell the user.' });
+              consecutiveFailures++;
+              if (consecutiveFailures >= MAX_CONSECUTIVE_TOOL_FAILURES) {
+                const reason = `stuck: ${consecutiveFailures} tool calls in a row failed — capability "${call.name}" was denied for this session`;
+                const stuck: BrainEvent = { kind: 'notice', level: 'error', message: reason };
+                yield stuck;
+                return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
+              }
               continue;
             }
             const apId = randomUUID();
-            // targetClientId = the turn submitter: the brain awaits THIS client's approval
-            // (host-only arbitration), so naming it lets every other SSE-subscribed client
-            // (e.g. the browser panel for an `agon drive` turn) skip rendering the prompt.
-            const ask: BrainEvent = { kind: 'approval-request', requestId: apId, tool: call.name, command: describeAgentAction(call.name, call.input), reason: cap.spec.description, targetClientId: req.clientId };
+            const ask: BrainEvent = { kind: 'approval-request', requestId: apId, tool: call.name, command: describeAgentAction(call.name, call.input), reason: cap.spec.description, input: call.input, targetClientId: req.clientId };
             yield ask;
-            let decision: string;
-            try { decision = await this.waitForApproval(apId, req.clientId, ctrl.signal); }
+            let approval: ResolvedCapabilityApproval;
+            try { approval = await this.waitForApproval(apId, req.clientId, ctrl.signal); }
             catch {
               const reason = 'cancelled by client';
               const note: BrainEvent = { kind: 'notice', level: 'warning', message: reason };
               yield note;
               return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
             }
+            const decision = approval.decision;
             if (decision === 'abort') {
               const reason = 'the user aborted the turn at an approval prompt';
               const note: BrainEvent = { kind: 'notice', level: 'warning', message: reason };
               yield note;
               return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
             }
-            if (decision === 'approve-session') this.approvedSession.add(call.name);
+            if (decision === 'approve-session') { authorization = buildCapabilityAuthorizationLease(req.turnId, reqId, apId, req.clientId, cap.clientId, call.name, inputDigest, 'session', approval.automated); this.approvedSession.set(sessionKey, { approvalRequestId: apId, automated: approval.automated }); }
+            else if (decision === 'approve') authorization = buildCapabilityAuthorizationLease(req.turnId, reqId, apId, req.clientId, cap.clientId, call.name, inputDigest, 'once', approval.automated);
             if (decision === 'deny' || decision === 'deny-session') {
-              if (decision === 'deny-session') this.deniedSession.add(call.name);
+              // A denied comparison-tab attempt cannot satisfy the extra-source requirement in
+              // this turn. Keep the ordinary live-observation gate, but allow a caveated result
+              // from the current page rather than discarding it after impossible reminders.
+              if (call.name === 'openTab' && researchPolicy.requiresComparisonTab) {
+                researchPolicy = { ...researchPolicy, requiresComparisonTab: false };
+              }
+              if (decision === 'deny-session') {
+                this.deniedSession.add(sessionKey);
+              }
               const denied: BrainEvent = { kind: 'tool', engineId: turnEngineId, tool: call.name, status: 'error', output: 'denied by the user' };
               yield denied;
               steps.push({ name: call.name, input: call.input, output: 'DENIED by the user — do not retry; try another approach or explain what you would have done.' });
               continue;
             }
-            // 'approve' / 'approve-session' fall through to execution.
-          }
+            if (decision !== 'approve' && decision !== 'approve-session') {
+              const denied: BrainEvent = { kind: 'tool', engineId: turnEngineId, tool: call.name, status: 'error', output: 'invalid approval response' };
+              yield denied;
+              steps.push({ name: call.name, input: call.input, output: 'DENIED: invalid approval response.' });
+              continue;
+            }
+          } else if (!cap.spec.isReadOnly && priorSessionApproval) authorization = buildCapabilityAuthorizationLease(req.turnId, reqId, priorSessionApproval.approvalRequestId, req.clientId, cap.clientId, call.name, inputDigest, 'session', priorSessionApproval.automated);
 
           // Execute: pull the capability from the owning client.
-          const reqId = randomUUID();
-          const capReq: BrainEvent = { kind: 'capability-request', requestId: reqId, capability: call.name, input: call.input, targetClientId: cap.clientId };
+          const capReq: BrainEvent = { kind: 'capability-request', requestId: reqId, turnId: req.turnId, capability: call.name, input: call.input, targetClientId: cap.clientId, ...(authorization ? { authorization } : {}) };
           yield capReq;
           let capRes: CapabilityResult;
           try { capRes = await this.waitForCapabilityResult(reqId, cap.clientId, ctrl.signal); }
@@ -786,27 +857,17 @@ service name=AgenticTurnBrainClient implements=BrainClient
           }
 
           const rawOut = capRes.ok ? (capRes.output ?? '(no output)') : `ERROR: ${capRes.error ?? 'the tool failed'}`;
+          if (capRes.ok && call.name !== 'screenshot') researchEvidence = recordSuccessfulBrowserCapability(researchEvidence, call.name, call.input, capRes.output);
           // A 'data:' image result (e.g. an agent screenshot) is decoded and shown to
           // the engine on the next dispatch as vision, not dumped into the text transcript.
           let transcriptOut = rawOut;
           if (capRes.ok && rawOut.startsWith('data:')) {
-            const decoded = decodeDataUrlToImageFile(rawOut, turnDir, imgSeq++);
-            if (decoded.path) {
-              const att = buildImageAttachment(decoded.path, this.cwd);
-              if (att) {
-                nextImages = [att];
-                // Dimensions are cosmetic grounding help — a scratch-file read race
-                // must never crash the turn.
-                let dims: ReturnType<typeof parseImageDimensions> = null;
-                try { dims = parseImageDimensions(readFileSync(decoded.path)); } catch { dims = null; }
-                transcriptOut = dims
-                  ? `(screenshot captured — ${dims.width}x${dims.height} px; these image pixels ARE the coordinate space for coordinate tools like clickAt, origin at the top-left — it is attached to your view this step)`
-                  : '(screenshot captured — it is attached to your view this step)';
-              }
-              else transcriptOut = '(screenshot captured but could not be attached)';
-            } else {
-              transcriptOut = `(screenshot could not be read${decoded.reason ? `: ${decoded.reason}` : ''})`;
+            const prepared = prepareBrowserScreenshot(rawOut, turnDir, imgSeq++, this.cwd);
+            if (prepared.attachment) {
+              nextImages = [prepared.attachment];
+              if (call.name === 'screenshot') researchEvidence = recordSuccessfulBrowserCapability(researchEvidence, call.name, call.input, capRes.output);
             }
+            transcriptOut = prepared.transcript;
           }
           // Progress accounting — decide whether this executed call ADVANCED the task, so the turn
           // stops when the agent is spinning instead of running to the step backstop:
@@ -824,6 +885,7 @@ service name=AgenticTurnBrainClient implements=BrainClient
             noProgress = 0;            // a SUCCESSFUL action was taken (a FAILED click/type/navigate changed nothing → neutral, not progress)
             lastReadOutputs.clear();   // the page may have changed — forget stale read snapshots
             selectionRegrounded = false; // a successful action clears the one-shot re-ground guard — the next fresh miss earns its own
+            selectionPixelGrounded = false;
           } else if (cap.spec.isReadOnly && capRes.ok && !rawOut.startsWith('data:')) {
             // Key by tool+input (callKey), NOT name: the same read with the same input returning the
             // same text is a genuine re-view; the SAME tool with a DIFFERENT input is a different
@@ -868,19 +930,19 @@ service name=AgenticTurnBrainClient implements=BrainClient
           // needs scroll — and is bounded to one read per miss, reset on the next successful action.)
           const isSelectMiss = !capRes.ok
             && (call.name === 'click' || call.name === 'type' || call.name === 'selectOption')
-            && /no element matches|no result from the page|not found|could not find/i.test(capRes.error ?? '');
-          if (isSelectMiss && !selectionRegrounded && this.caps.has('readPage')) {
+            && isSelectorGroundingFailure(capRes.error);
+          const readCap = this.caps.get('readPage');
+          if (isSelectMiss && !selectionRegrounded && readCap?.spec.isReadOnly === true) {
             // Burn the one-shot UP FRONT: even if this read fails we still inject text guidance below
             // (a real benefit), and burning early stops a slow/unresponsive readPage from being retried
             // on every subsequent miss — each wait is bounded, and the failure streak still ends the turn.
             selectionRegrounded = true;
-            const readCap = this.caps.get('readPage')!;
             const rgId = randomUUID();
             // Surface the auto-read as a normal tool (running → done) so the panel's step counter / toasts
             // see a complete tool lifecycle, not an orphan capability-request with no completion marker.
             const rgRunning: BrainEvent = { kind: 'tool', engineId: turnEngineId, tool: 'readPage', status: 'running', input: 'recovering the right selector — re-reading the page' };
             yield rgRunning;
-            const rgReq: BrainEvent = { kind: 'capability-request', requestId: rgId, capability: 'readPage', input: {}, targetClientId: readCap.clientId };
+            const rgReq: BrainEvent = { kind: 'capability-request', requestId: rgId, turnId: req.turnId, capability: 'readPage', input: {}, targetClientId: readCap.clientId };
             yield rgReq;
             let rg: CapabilityResult | null = null;
             try { rg = await this.waitForCapabilityResult(rgId, readCap.clientId, ctrl.signal); }
@@ -893,6 +955,7 @@ service name=AgenticTurnBrainClient implements=BrainClient
               // Non-abort (timeout / internal error): rg stays null → the text-only reminder below still guides the engine.
             }
             const ground = rg && rg.ok && rg.output ? rg.output.slice(0, 3000) : '';
+            if (rg?.ok) researchEvidence = recordSuccessfulBrowserCapability(researchEvidence, 'readPage', {}, rg.output);
             const rgDone: BrainEvent = { kind: 'tool', engineId: turnEngineId, tool: 'readPage', status: ground ? 'done' : 'error', output: ground ? 're-grounded — handed the engine the page\'s real selectors' : 're-ground read failed; sent text guidance instead' };
             yield rgDone;
             // ALWAYS inject a reminder (never silently fall through, even on a read timeout): the real
@@ -900,6 +963,47 @@ service name=AgenticTurnBrainClient implements=BrainClient
             steps.push({ name: 'reminder', input: {}, output: ground
               ? `Your ${call.name} target was not found. This tool takes a PLAIN CSS selector or one of the exact \`sel=\` selectors below — NOT Playwright/jQuery selectors (:has-text(), :contains(), text=). Here is the page RIGHT NOW; pick the \`sel=\` whose label matches your intent and retry the ${call.name}. If nothing here matches, the element may be off-screen — scroll, then readPage again.\n\n${ground}`
               : `Your ${call.name} target was not found, and the page could not be re-read just now. This tool takes a PLAIN CSS selector or an exact \`sel=\` selector from readPage — NOT Playwright/jQuery selectors (:has-text(), :contains(), text=). Call readPage to get the exact selectors, then retry the ${call.name}.` });
+            continue;
+          }
+          const shotCap = this.caps.get('screenshot');
+          if (isSelectMiss && selectionRegrounded && !selectionPixelGrounded
+            && shotCap?.spec.isReadOnly === true
+            && this.caps.has('clickAt') && !capabilityDeniedForTurn('clickAt')
+            && (call.name !== 'type' || (this.caps.has('insertText') && !capabilityDeniedForTurn('insertText')))) {
+            selectionPixelGrounded = true;
+            const shotId = randomUUID();
+            const shotRunning: BrainEvent = { kind: 'tool', engineId: turnEngineId, tool: 'screenshot', status: 'running', input: 'selector grounding failed again — capturing the visible pixels' };
+            yield shotRunning;
+            const shotReq: BrainEvent = { kind: 'capability-request', requestId: shotId, turnId: req.turnId, capability: 'screenshot', input: {}, targetClientId: shotCap.clientId };
+            yield shotReq;
+            let shot: CapabilityResult | null = null;
+            try { shot = await this.waitForCapabilityResult(shotId, shotCap.clientId, ctrl.signal); }
+            catch {
+              if (ctrl.signal.aborted) {
+                const cancelled: BrainEvent = { kind: 'notice', level: 'warning', message: 'cancelled by client' };
+                yield cancelled;
+                return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason: 'cancelled by client' };
+              }
+            }
+            let shotTranscript = shot?.ok ? (shot.output ?? '(screenshot returned no pixels)') : `ERROR: ${shot?.error ?? 'screenshot recovery failed'}`;
+            let attached = false;
+            if (shot?.ok && shot.output?.startsWith('data:')) {
+              const prepared = prepareBrowserScreenshot(shot.output, turnDir, imgSeq++, this.cwd);
+              shotTranscript = prepared.transcript;
+              if (prepared.attachment) {
+                nextImages = [prepared.attachment];
+                attached = true;
+                researchEvidence = recordSuccessfulBrowserCapability(researchEvidence, 'screenshot', {}, shot.output);
+              }
+            }
+            const shotDone: BrainEvent = { kind: 'tool', engineId: turnEngineId, tool: 'screenshot', status: attached ? 'done' : 'error', output: shotTranscript.slice(0, 400) };
+            yield shotDone;
+            const pixelAction = call.name === 'type'
+              ? 'Use clickAt on the visible field to focus it, then use insertText with the requested text.'
+              : 'Reason over the attached pixels and use clickAt on the visible target.';
+            steps.push({ name: 'reminder', input: {}, output: attached
+              ? `Selector grounding failed a second time, so a fresh screenshot is attached now. ${pixelAction} Do not invent or retry another selector.`
+              : `Selector grounding failed a second time and automatic screenshot recovery did not yield attachable pixels (${shotTranscript}). Call screenshot once, then use clickAt from those fresh pixels; do not invent another selector.` });
             continue;
           }
           if (noChange && noProgress >= MAX_NO_PROGRESS_STEPS) {
@@ -954,9 +1058,9 @@ service name=AgenticTurnBrainClient implements=BrainClient
     >>>
 
   method name=registerCapability params="reg:CapabilityRegistration" returns="Promise<ControlAck>" async=true
-    doc "A client lends the brain a tool. Stored by name with its owning clientId so a capability-request can be routed back. Re-registering a name replaces it (the latest client wins)."
+    doc "A client lends the brain a tool. Stored by name with its owning clientId and a fresh registration lifetime so a replacement cannot inherit stale session authority. Re-registering a name replaces it (the latest client wins)."
     handler <<<
-      this.caps.set(reg.spec.name, { clientId: reg.clientId, spec: reg.spec });
+      this.caps.set(reg.spec.name, { clientId: reg.clientId, registrationId: randomUUID(), spec: reg.spec });
       return { status: 'accepted' };
     >>>
 
@@ -987,7 +1091,7 @@ service name=AgenticTurnBrainClient implements=BrainClient
       if (!pending) return { status: 'rejected', reason: `no pending approval ${res.requestId}` };
       if (res.clientId !== pending.clientId) return { status: 'rejected', reason: `approval ${res.requestId} belongs to another client` };
       this.pendingApprovals.delete(res.requestId);
-      pending.resolve(res.decision);
+      pending.resolve({ decision: res.decision, automated: res.automated === true });
       return { status: 'accepted' };
     >>>
 
@@ -1031,6 +1135,7 @@ service name=AgenticTurnBrainClient implements=BrainClient
       this.pendingCaps.clear();
       this.pendingApprovals.clear();
       this.pendingAnswers.clear();
+      this.caps.clear(); this.approvedSession.clear(); this.deniedSession.clear();
       this.activeTurnId = null;
     >>>
 

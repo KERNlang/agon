@@ -130,9 +130,17 @@ export function approvalTargetsClient(event: Record<string,unknown>, myClientId:
 }
 
 /**
- * Render one bridge BrainEvent (narrowed by `kind`) as a single terminal line, or null to skip. The engine's answer arrives as `engine`/`text`; a capability-request is shown as BROWSER activity (the panel, not us, executes it); approval-requests are handled by the interactive prompt, not rendered here. Pure + exported for the test.
+ * Build the backward-compatible /approval wire body shared by terminal drive and the REPL Chrome handler. `automated` is true only for the unattended --auto-approve path; interactive, non-interactive-deny, and REPL decisions pass false explicitly so audit provenance never has to infer how approval happened.
  */
 // @kern-source: drive:144
+export function buildApprovalPostBody(requestId: string, clientId: string, decision: 'approve'|'approve-session'|'deny'|'deny-session'|'abort', automated: boolean): { requestId: string; clientId: string; decision: 'approve'|'approve-session'|'deny'|'deny-session'|'abort'; automated: boolean } {
+  return { requestId, clientId, decision, automated };
+}
+
+/**
+ * Render one bridge BrainEvent (narrowed by `kind`) as a single terminal line, or null to skip. The engine's answer arrives as `engine`/`text`; a capability-request is shown as BROWSER activity (the panel, not us, executes it); approval-requests are handled by the interactive prompt, not rendered here. Pure + exported for the test.
+ */
+// @kern-source: drive:150
 export function renderDriveEvent(event: Record<string,unknown>): string | null {
   if (!event || typeof event !== 'object') return null;
   const kind = typeof event.kind === 'string' ? event.kind : '';
@@ -173,7 +181,7 @@ export function renderDriveEvent(event: Record<string,unknown>): string | null {
 /**
  * Drive ONE terminal turn against a running serve session: resolve the connection (explicit --url/--token, else discover the newest running serve), /attach to learn the ledger cursor + confirm the token, then run a blocking POST /send WHILE an SSE /events reader renders live events and answers our approval-requests (prompting the terminal unless --auto-approve). /send returns the terminal result; we drain the SSE ~1s after to catch the final engine answer the brain flushed just before its 200, then tear down. Sets exit 2 on a connection/auth/send failure.
  */
-// @kern-source: drive:185
+// @kern-source: drive:191
 export async function runDrive(opts: { prompt: string; sessionArg?: string; url?: string; token?: string; engine?: string; autoApprove: boolean }): Promise<void> {
   // 1. Resolve the connection.
   let conn: ServeConnection | undefined;
@@ -227,7 +235,7 @@ export async function runDrive(opts: { prompt: string; sessionArg?: string; url?
   const interactive = Boolean(process.stdin.isTTY);
   const rl = (interactive && !opts.autoApprove) ? createInterface({ input: process.stdin, output: process.stdout }) : null;
 
-  const askApproval = async (tool: string, command: string, reason: string): Promise<string> => {
+  const askApproval = async (tool: string, command: string, reason: string): Promise<'approve'|'approve-session'|'deny'|'abort'> => {
     if (opts.autoApprove) { console.log(dim(`  ✓ auto-approved: ${command}`)); return 'approve'; }
     console.log(yellow(`  ⚠ the agent wants to ${bold(tool)}${command ? `: ${command}` : ''}`));
     if (reason) console.log(dim(`    ${reason}`));
@@ -259,7 +267,8 @@ export async function runDrive(opts: { prompt: string; sessionArg?: string; url?
         typeof event.reason === 'string' ? event.reason : '',
       );
       try {
-        const ar = await fetch(`${base}/approval`, { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ requestId: typeof event.requestId === 'string' ? event.requestId : '', clientId, decision }) });
+        const approvalBody = buildApprovalPostBody(typeof event.requestId === 'string' ? event.requestId : '', clientId, decision, opts.autoApprove);
+        const ar = await fetch(`${base}/approval`, { method: 'POST', headers: jsonHeaders, body: JSON.stringify(approvalBody) });
         if (!ar.ok) warn(`    approval may not have registered (server said ${ar.status}) — the turn could stall.`);
       } catch { warn('    could not send the approval — the turn may stall until it times out.'); }
       return;
@@ -342,7 +351,7 @@ export async function runDrive(opts: { prompt: string; sessionArg?: string; url?
   }
 }
 
-// @kern-source: drive:357
+// @kern-source: drive:364
 export const driveCommand: any = defineCommand({
   meta: {
     name: 'drive',

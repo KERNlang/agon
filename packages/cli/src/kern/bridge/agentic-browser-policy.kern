@@ -1,0 +1,133 @@
+// ── Deterministic browser-research evidence + pixel recovery helpers ─────────
+//
+// The agent prompt can encourage browsing, but prose alone is not proof that live
+// research happened. This small module keeps that policy/config and screenshot
+// materialization outside the already-oversized brain service.
+
+import from="@kernlang/agon-core" names="ImageAttachment" types=true
+import from="@kernlang/agon-core" names="buildImageAttachment,decodeDataUrlToImageFile,parseImageDimensions"
+import from="node:fs" names="readFileSync"
+
+interface name=BrowserResearchPolicyConfig export=true
+  doc "Configurable intent classifiers used to decide when a turn needs live browser evidence and when comparison research must use another owned tab. Explicit web actions stand alone; ambiguous recommendation/comparison words need a live subject."
+  field name=liveIntentPattern type=RegExp
+  field name=contextualIntentPattern type=RegExp
+  field name=liveSubjectPattern type=RegExp
+  field name=comparisonIntentPattern type=RegExp
+
+const name=DEFAULT_BROWSER_RESEARCH_POLICY_CONFIG type="Readonly<BrowserResearchPolicyConfig>" value={{ Object.freeze({
+  liveIntentPattern: /\b(search|look up|browse|research|shop|buy)\b|\bsuch(?:e|en|st|t)\b|recherch|kauf/i,
+  contextualIntentPattern: /\b(find|recommend|compare|comparison|options?|alternatives?|best|prices?|latest|current)\b|\bfind(?:e|en|est|et)\b|empfehl|vergleich|optionen|alternativen|besten|preise?|aktuell/i,
+  liveSubjectPattern: /\b(jobs?|roles?|products?|shopping|stores?|hotels?|flights?|restaurants?|tickets?|deals?|listings?|sources?|websites?|sites?|travel|vacations?|holidays?|games?|goggles?|masks?|libraries?|versions?|releases?|news|weather|schedules?|scores?|laws?|regulations?|stocks?|shares?|crypto|currenc(?:y|ies)|bitcoin)\b|stell(?:e|en)|produkt|shop|laden|läden|hotel|fl(?:ug|üge)|restaurant|ticket|angebot|webseite|quelle|urlaub|reise|spiel|taucherbrill|maske|bibliothek|version|release|nachricht|wetter|fahrplan|ergebnis|gesetz|vorschrift/i,
+  comparisonIntentPattern: /\b(recommend|compare|comparison|options|alternatives|products|shopping|best)\b|empfehl|vergleich|optionen|alternativen|produkte|besten/i,
+}) }} export=true
+
+interface name=BrowserResearchPolicy export=true
+  field name=requiresLiveEvidence type=boolean
+  field name=requiresComparisonTab type=boolean
+
+interface name=BrowserResearchEvidence export=true
+  field name=observationCount type=number
+  field name=openedTabCount type=number
+  field name=observedOpenedTabCount type=number
+  field name=focusedOpenedTab type=boolean
+  field name=openedTabIds type="number[]"
+
+fn name=classifyBrowserResearchGoal params="input:string, hasObservationTool:boolean, hasOpenTabTool:boolean, config?:BrowserResearchPolicyConfig" returns=BrowserResearchPolicy export=true
+  doc "Classify a user goal without depending on prose length. Live search/recommendation language requires a successful readPage/screenshot before final prose; comparative research also requires opening and observing another owned tab when openTab exists."
+  handler <<<
+    const selected = config ?? DEFAULT_BROWSER_RESEARCH_POLICY_CONFIG;
+    const normalized = input.normalize('NFC').toLowerCase();
+    const explicitLiveIntent = selected.liveIntentPattern.test(normalized);
+    const contextualLiveIntent = selected.contextualIntentPattern.test(normalized) && selected.liveSubjectPattern.test(normalized);
+    const requiresLiveEvidence = hasObservationTool && (explicitLiveIntent || contextualLiveIntent);
+    return {
+      requiresLiveEvidence,
+      requiresComparisonTab: requiresLiveEvidence && hasOpenTabTool && selected.comparisonIntentPattern.test(normalized),
+    };
+  >>>
+
+fn name=emptyBrowserResearchEvidence params="" returns=BrowserResearchEvidence export=true
+  handler <<<
+    return { observationCount: 0, openedTabCount: 0, observedOpenedTabCount: 0, focusedOpenedTab: false, openedTabIds: [] };
+  >>>
+
+fn name=focusedWorkspaceTabId params="output?:string" returns="number|null"
+  handler <<<
+    const match = /^\s*\*\s+\[tabId\s+(\d+)\]/m.exec(output ?? '');
+    if (!match) return null;
+    const id = Number(match[1]);
+    return Number.isSafeInteger(id) ? id : null;
+  >>>
+
+fn name=recordSuccessfulBrowserCapability params="evidence:BrowserResearchEvidence, capability:string, input?:Record<string,unknown>, output?:string" returns=BrowserResearchEvidence export=true
+  doc "Advance evidence only after a capability succeeds. A read/screenshot counts as live evidence; it satisfies the comparison-tab requirement only while the newly opened owned tab is still focused."
+  handler <<<
+    const next = { ...evidence, openedTabIds: [...evidence.openedTabIds] };
+    if (capability === 'openTab') {
+      next.openedTabCount++;
+      next.focusedOpenedTab = true;
+      const openedId = focusedWorkspaceTabId(output);
+      if (openedId !== null && !next.openedTabIds.includes(openedId)) next.openedTabIds.push(openedId);
+      return next;
+    }
+    if (capability === 'switchTab') {
+      const switchedId = typeof input?.tabId === 'number' && Number.isSafeInteger(input.tabId)
+        ? input.tabId
+        : focusedWorkspaceTabId(output);
+      next.focusedOpenedTab = switchedId !== null && switchedId !== undefined && next.openedTabIds.includes(switchedId);
+    }
+    if (capability === 'closeTab') {
+      const closedId = typeof input?.tabId === 'number' && Number.isSafeInteger(input.tabId) ? input.tabId : null;
+      if (closedId !== null) next.openedTabIds = next.openedTabIds.filter((id) => id !== closedId);
+      next.focusedOpenedTab = false;
+    }
+    if (capability === 'readPage' || capability === 'screenshot') {
+      next.observationCount++;
+      if (next.focusedOpenedTab) {
+        next.observedOpenedTabCount++;
+        next.focusedOpenedTab = false;
+      }
+    }
+    return next;
+  >>>
+
+fn name=browserResearchEvidenceGap params="policy:BrowserResearchPolicy, evidence:BrowserResearchEvidence" returns="string|null" export=true
+  doc "Return the next concrete evidence action required before final prose, or null once the browser-research contract is satisfied."
+  handler <<<
+    if (policy.requiresLiveEvidence && evidence.observationCount < 1) {
+      return 'Live browser research is incomplete: call readPage or screenshot and inspect the current live page before answering.';
+    }
+    if (policy.requiresComparisonTab && evidence.observedOpenedTabCount < 1) {
+      if (evidence.openedTabCount < 1) return 'Live browser research is incomplete: you MUST call openTab for another relevant source, then readPage or screenshot that separate tab before comparing.';
+      return 'Live browser research is incomplete: the separate tab is open; call readPage or screenshot there before comparing.';
+    }
+    return null;
+  >>>
+
+fn name=isSelectorGroundingFailure params="error:string|undefined" returns=boolean export=true
+  doc "Recognize the stable extension grounding code plus legacy selector-miss text so the brain follows the same readPage then screenshot recovery path during mixed-version upgrades."
+  handler <<<
+    return !!error && /SELECTOR_GROUNDING_FAILED|selector target (?:was not safely authorized|changed after authorization)|no element matches|no result from the page/i.test(error);
+  >>>
+
+interface name=PreparedBrowserScreenshot export=true
+  field name=attachment type=ImageAttachment optional=true
+  field name=transcript type=string
+
+fn name=prepareBrowserScreenshot params="dataUrl:string, turnDir:string, imageIndex:number, cwd:string" returns=PreparedBrowserScreenshot export=true
+  doc "Decode, validate, dimension, and attach a browser screenshot once. Both ordinary screenshot calls and automatic selector recovery share this exact pixel-grounding path."
+  handler <<<
+    const decoded = decodeDataUrlToImageFile(dataUrl, turnDir, imageIndex);
+    if (!decoded.path) return { transcript: `(screenshot could not be read${decoded.reason ? `: ${decoded.reason}` : ''})` };
+    const attachment = buildImageAttachment(decoded.path, cwd);
+    if (!attachment) return { transcript: '(screenshot captured but could not be attached)' };
+    let dims: ReturnType<typeof parseImageDimensions> = null;
+    try { dims = parseImageDimensions(readFileSync(decoded.path)); } catch { dims = null; }
+    return {
+      attachment,
+      transcript: dims
+        ? `(screenshot captured — ${dims.width}x${dims.height} px; these image pixels ARE the coordinate space for coordinate tools like clickAt, origin at the top-left — it is attached to your view this step)`
+        : '(screenshot captured — it is attached to your view this step)',
+    };
+  >>>

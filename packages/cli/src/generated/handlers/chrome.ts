@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 
 import { ensureChromeBridge } from '../signals/chrome-bridge.js';
 
-import { parseSseChunk, approvalTargetsClient } from '../commands/drive.js';
+import { parseSseChunk, approvalTargetsClient, buildApprovalPostBody } from '../commands/drive.js';
 
 import { sessionResultStore } from '../models/session-results.js';
 
@@ -90,7 +90,8 @@ export async function handleChrome(task: string, dispatch: Dispatch, ctx: Handle
         if (ctrl.signal.aborted) return; // turn torn down → don't POST to a dead turn
         const decision = approved === true ? 'approve' : 'deny';
         try {
-          const ar = await fetch(`${base}/approval`, { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ requestId: typeof event.requestId === 'string' ? event.requestId : '', clientId, decision }), signal: ctrl.signal });
+          const approvalBody = buildApprovalPostBody(typeof event.requestId === 'string' ? event.requestId : '', clientId, decision, false);
+          const ar = await fetch(`${base}/approval`, { method: 'POST', headers: jsonHeaders, body: JSON.stringify(approvalBody), signal: ctrl.signal });
           if (!ar.ok) dispatch({ type: 'warning', message: `approval may not have registered (${ar.status}).` });
         } catch { if (!ctrl.signal.aborted) dispatch({ type: 'warning', message: 'couldn’t send the approval — the turn may stall.' }); }
         return;

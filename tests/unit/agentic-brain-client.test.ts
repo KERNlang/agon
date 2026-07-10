@@ -116,6 +116,17 @@ describe('agent prompt + transcript helpers', () => {
     expect(p).toContain('MULTI-TAB WORKSPACE');
     expect(p).toContain('openTab');
     expect(p).toContain('switchTab');
+    expect(p).toMatch(/research.*MUST.*openTab/i);
+    expect(p).toMatch(/separate tabs.*readPage.*compare/i);
+    const switchOnly = buildAgentSystemPrompt([readSpec(), readSpec('switchTab')]);
+    expect(switchOnly).toContain('MULTI-TAB WORKSPACE');
+    expect(switchOnly).not.toMatch(/MUST.*openTab/i);
+
+    const openOnly = buildAgentSystemPrompt([readSpec(), actSpec('openTab')]);
+    expect(openOnly).toContain('openTab');
+    expect(openOnly).not.toContain('switchTab');
+    expect(openOnly).not.toContain('listTabs');
+    expect(openOnly).not.toContain('closeTab');
   });
   it('renderAgentTranscript frames the request as a GOAL and shows the running tool history', () => {
     expect(renderAgentTranscript('hello', [])).toContain('Nothing done yet');
@@ -280,6 +291,158 @@ describe('AgenticTurnBrainClient — the ReAct loop', () => {
     expect(result.responded).toBe(true);
   });
 
+  it('does not accept a long German recommendation before any live browser evidence', async () => {
+    const client = makeAgent([
+      'Hier sind hervorragende Empfehlungen für deine Taucherbrille und mehrere kompakte Fantasy-Spiele. '.repeat(8),
+      `${MARK} {"name":"readPage","input":{}}`,
+      'Ich habe die aktuelle Seite geprüft und kann die Live-Ergebnisse jetzt zusammenfassen.',
+    ]);
+    await client.open({ sessionId: 's', engineId: 'agy', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1', 'kannst du mir Taucherbrillen und Brettspiele suchen')), {
+      capability: () => ({ ok: true, output: 'LIVE SEARCH RESULTS' }),
+      approval: () => 'approve',
+    });
+    expect(events.filter((e) => e.kind === 'capability-request').map((e) => (e as { capability: string }).capability)).toEqual(['readPage']);
+    expect(events.some((e) => e.kind === 'notice' && /live browser research/i.test((e as { message: string }).message))).toBe(true);
+    expect(result.responded).toBe(true);
+  });
+
+  it('checks live evidence before handling a prose deferral', async () => {
+    const client = makeAgent([
+      'I can recommend several current products. Would you like me to proceed?',
+      `${MARK} {"name":"readPage","input":{}}`,
+      'I inspected the live page and can now report the current products.',
+    ]);
+    await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1', 'search for current travel products')), {
+      capability: () => ({ ok: true, output: 'LIVE PRODUCTS' }),
+      approval: () => 'approve',
+    });
+    expect(events.some((e) => e.kind === 'question-request')).toBe(false);
+    expect(events.filter((e) => e.kind === 'capability-request').map((e) => (e as { capability: string }).capability)).toEqual(['readPage']);
+    expect(result.responded).toBe(true);
+  });
+
+  it('does not count malformed screenshot text as live visual evidence', async () => {
+    const client = makeAgent([
+      `${MARK} {"name":"screenshot","input":{}}`,
+      'I can recommend products from that screenshot.',
+      `${MARK} {"name":"readPage","input":{}}`,
+      'I inspected the live page and can now report its products.',
+    ]);
+    await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec('screenshot') });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1', 'search for current travel products')), {
+      capability: (ev) => (ev as { capability: string }).capability === 'screenshot'
+        ? { ok: true, output: 'not an image data URL' }
+        : { ok: true, output: 'LIVE PRODUCTS' },
+      approval: () => 'approve',
+    });
+    expect(events.filter((e) => e.kind === 'capability-request').map((e) => (e as { capability: string }).capability)).toEqual([
+      'screenshot', 'readPage',
+    ]);
+    expect(events.some((e) => e.kind === 'notice' && /live browser research/i.test((e as { message: string }).message))).toBe(true);
+    expect(result.responded).toBe(true);
+  });
+
+  it('requires an owned comparison tab and a read there before final product recommendations', async () => {
+    const openTabSpec: CapabilitySpec = { name: 'openTab', description: 'open another owned tab', inputSchema: { url: 'string' }, isReadOnly: false, isDestructive: true };
+    const client = makeAgent([
+      `${MARK} {"name":"readPage","input":{}}`,
+      'I found one candidate and can recommend it now.',
+      `${MARK} {"name":"openTab","input":{"url":"https://shop.example/second"}}`,
+      `${MARK} {"name":"readPage","input":{}}`,
+      'I compared both live sources and found the best options.',
+    ]);
+    await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: openTabSpec });
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1', 'recommend and compare travel products for me')), {
+      capability: () => ({ ok: true, output: 'LIVE PAGE' }),
+      approval: () => 'approve-session',
+    });
+    expect(events.filter((e) => e.kind === 'capability-request').map((e) => (e as { capability: string }).capability)).toEqual([
+      'readPage', 'openTab', 'readPage',
+    ]);
+    expect(result.responded).toBe(true);
+  });
+
+  it('degrades to current-tab evidence after openTab is denied for the session', async () => {
+    const openTabSpec: CapabilitySpec = { name: 'openTab', description: 'open another owned tab', inputSchema: { url: 'string' }, isReadOnly: false, isDestructive: true };
+    const client = makeAgent([
+      `${MARK} {"name":"openTab","input":{"url":"https://shop.example/"}}`,
+      'Another tab is unavailable for this session.',
+      `${MARK} {"name":"readPage","input":{}}`,
+      'I inspected the current live page and can report its products with that limitation.',
+    ]);
+    await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: openTabSpec });
+
+    const first = await driveAgent(client, client.runTurn(req('t-deny', 'open another tab')), {
+      capability: () => ({ ok: true, output: 'unused' }),
+      approval: () => 'deny-session',
+    });
+    expect(first.result.responded).toBe(true);
+    expect(first.events.some((e) => e.kind === 'capability-request' && (e as { capability?: string }).capability === 'openTab')).toBe(false);
+
+    const second = await driveAgent(client, client.runTurn(req('t-research', 'search, recommend, and compare current travel products')), {
+      capability: () => ({ ok: true, output: 'LIVE PRODUCTS' }),
+      approval: () => { throw new Error('openTab must stay unavailable after deny-session'); },
+    });
+    expect(second.events.filter((e) => e.kind === 'capability-request').map((e) => (e as { capability: string }).capability)).toEqual(['readPage']);
+    expect(second.result.responded).toBe(true);
+  });
+
+  it('degrades to current-tab evidence after a one-time openTab denial', async () => {
+    const openTabSpec: CapabilitySpec = { name: 'openTab', description: 'open another owned tab', inputSchema: { url: 'string' }, isReadOnly: false, isDestructive: true };
+    const client = makeAgent([
+      `${MARK} {"name":"readPage","input":{}}`,
+      `${MARK} {"name":"openTab","input":{"url":"https://shop.example/second"}}`,
+      'I inspected the current live page and can report its products with the denied second-source limitation.',
+    ]);
+    await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: openTabSpec });
+    const { events, result } = await driveAgent(client, client.runTurn(req('t-deny-once', 'search, recommend, and compare current travel products')), {
+      capability: () => ({ ok: true, output: 'LIVE PRODUCTS' }),
+      approval: () => 'deny',
+    });
+    expect(events.filter((e) => e.kind === 'capability-request').map((e) => (e as { capability: string }).capability)).toEqual(['readPage']);
+    expect(result.responded).toBe(true);
+  });
+
+  it('bounds varied retries of a capability denied for the session', async () => {
+    const openTabSpec: CapabilitySpec = { name: 'openTab', description: 'open another owned tab', inputSchema: { url: 'string' }, isReadOnly: false, isDestructive: true };
+    const calls = Array.from({ length: 10 }, (_, index) => `${MARK} {"name":"openTab","input":{"url":"https://shop${index}.example/"}}`);
+    const client = makeAgent(calls);
+    await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: openTabSpec });
+    const { events, result } = await driveAgent(client, client.runTurn(req('t-denied-loop', 'open product research tabs')), {
+      capability: () => ({ ok: true, output: 'unused' }),
+      approval: () => 'deny-session',
+    });
+    expect(events.filter((e) => e.kind === 'approval-request')).toHaveLength(1);
+    expect(events.some((e) => e.kind === 'capability-request')).toBe(false);
+    expect(events.filter((e) => e.kind === 'tool' && (e as { status?: string }).status === 'running')).toHaveLength(5);
+    expect(result).toMatchObject({ responded: false, reason: expect.stringMatching(/denied for this session/i) });
+  });
+
+  it('still permits a direct answer for a stable knowledge question', async () => {
+    const client = makeAgent(['Paris is the capital of France.']);
+    await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1', 'What is the capital of France?')), {
+      capability: () => ({ ok: true }),
+      approval: () => 'approve',
+    });
+    expect(events.some((e) => e.kind === 'capability-request')).toBe(false);
+    expect(result.responded).toBe(true);
+  });
+
   it('drives a multi-site browse from a GERMAN narration: nudge → navigate → read → navigate → read → answer', async () => {
     // The field scenario: the brain narrates a job search in German, then (once nudged) actually
     // switches sites and reads each. Proves the loop does autonomous multi-step browsing — open a
@@ -344,21 +507,21 @@ describe('AgenticTurnBrainClient — the ReAct loop', () => {
   });
 
   it('a DEFERRAL ("how would you like me to proceed?") now ASKS the user, then continues with their answer', async () => {
-    // The "not agentic at all" failure (Image #7): it read the page then asked the user to drive.
-    // New behavior: that question is surfaced to the user (question-request), answered, and the turn
-    // continues — the human-in-the-loop "ask + approve" flow, instead of a force-nudge.
+    // For a non-live goal, a genuine choice can still be surfaced to the user and the turn resumes.
+    // Live search/recommendation goals are covered separately: their evidence gate runs first so a
+    // deferral cannot substitute for browsing.
     const client = makeAgent([
-      'I can see the LinkedIn jobs page. How would you like me to proceed? 1. Open a job 2. Refine 3. Try another query.', // deferral → ask
+      'I can see the page items. How would you like me to proceed? 1. Group them 2. Sort them 3. Leave them unchanged.', // deferral → ask
       `${MARK} {"name":"readPage","input":{}}`,        // acts on the answer
-      'I found 3 roles that fit your AI-tooling + frontend-lead profile: …',  // final RESULT
+      'I reviewed the visible items and organized the result.',  // final RESULT
     ]);
     await client.open({ sessionId: 's', engineId: 'zai-coding-plan-glm-5.2', cwd: '/tmp' });
     await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
-    const { events, result } = await driveAgent(client, client.runTurn(req('t1', 'find me cool jobs')), { capability: () => ({ ok: true, output: 'JOBS' }), approval: () => 'approve', question: () => 'option 1 — open the best-fit job' });
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1', 'review and organize the visible page items')), { capability: () => ({ ok: true, output: 'ITEMS' }), approval: () => 'approve', question: () => 'option 1 — group them' });
     expect(events.some((e) => e.kind === 'question-request')).toBe(true); // the deferral was surfaced to the user
     expect(events.some((e) => e.kind === 'capability-request')).toBe(true); // it then actually acted
     expect(result.responded).toBe(true);
-    expect(events.find((e) => e.kind === 'engine')).toMatchObject({ content: expect.stringContaining('3 roles that fit') });
+    expect(events.find((e) => e.kind === 'engine')).toMatchObject({ content: expect.stringContaining('organized the result') });
   });
 
   it('still NUDGES pure NARRATION (described an action, no question) to actually emit the tool line', async () => {
@@ -460,6 +623,24 @@ describe('AgenticTurnBrainClient — the ReAct loop', () => {
     expect(result.responded).toBe(true);
   });
 
+  it('never auto-executes a replacement readPage capability that is not explicitly read-only', async () => {
+    const client = makeAgent([
+      `${MARK} {"name":"click","input":{"selector":"#stale"}}`,
+      'The target could not be safely grounded.',
+    ]);
+    await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
+    await client.registerCapability({
+      sessionId: 's', clientId: 'c',
+      spec: { name: 'readPage', description: 'misdeclared replacement', inputSchema: {}, isReadOnly: false, isDestructive: true },
+    });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: actSpec('click') });
+    const { events } = await driveAgent(client, client.runTurn(req('t1', 'click the visible target')), {
+      capability: () => ({ ok: false, error: 'SELECTOR_GROUNDING_FAILED: target changed' }),
+      approval: () => 'approve-session',
+    });
+    expect(events.filter((e) => e.kind === 'capability-request').map((e) => (e as { capability: string }).capability)).toEqual(['click']);
+  });
+
   it('B (selection recovery): the re-ground is ONE-SHOT — repeated misses do not re-read every time', async () => {
     // If the engine keeps missing even after being handed the real selectors, we must NOT readPage on
     // every failure (that would spam the page). One re-ground per miss; the failure streak caps the rest.
@@ -482,6 +663,60 @@ describe('AgenticTurnBrainClient — the ReAct loop', () => {
     });
     const reads = events.filter((e) => e.kind === 'capability-request' && (e as unknown as { capability: string }).capability === 'readPage');
     expect(reads.length).toBe(1); // re-grounded ONCE on the first miss, not after every consecutive miss
+  });
+
+  it('B (selection recovery): a second grounding miss auto-captures pixels before clickAt', async () => {
+    const screenshotSpec = readSpec('screenshot');
+    const clickAtSpec: CapabilitySpec = { name: 'clickAt', description: 'click screenshot pixels', inputSchema: { x: 'number', y: 'number' }, isReadOnly: false, isDestructive: true };
+    const client = makeAgent([
+      `${MARK} {"name":"click","input":{"selector":"#stale-a"}}`,
+      `${MARK} {"name":"click","input":{"selector":"#stale-b"}}`,
+      `${MARK} {"name":"clickAt","input":{"x":40,"y":50}}`,
+      'Clicked the visible control.',
+    ]);
+    await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: actSpec('click') });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: screenshotSpec });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: clickAtSpec });
+    const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+3gAAAABJRU5ErkJggg==';
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1', 'click the visible control')), {
+      capability: (ev) => {
+        const capability = (ev as { capability: string }).capability;
+        if (capability === 'readPage') return { ok: true, output: 'INTERACTIVE: no reliable selector for the visible control' };
+        if (capability === 'screenshot') return { ok: true, output: pixel };
+        if (capability === 'clickAt') return { ok: true, output: 'clicked' };
+        return { ok: false, error: 'SELECTOR_GROUNDING_FAILED: selector target was not safely authorized' };
+      },
+      approval: () => 'approve-session',
+    });
+    expect(events.filter((e) => e.kind === 'capability-request').map((e) => (e as { capability: string }).capability)).toEqual([
+      'click', 'readPage', 'click', 'screenshot', 'clickAt',
+    ]);
+    expect(events.some((e) => e.kind === 'tool' && (e as { tool?: string }).tool === 'screenshot' && (e as { status?: string }).status === 'done')).toBe(true);
+    expect(result.responded).toBe(true);
+  });
+
+  it('does not prescribe insertText recovery when that capability is unavailable', async () => {
+    const client = makeAgent([
+      `${MARK} {"name":"type","input":{"selector":"#stale-a","text":"hello"}}`,
+      `${MARK} {"name":"type","input":{"selector":"#stale-b","text":"hello"}}`,
+      'The field could not be safely grounded.',
+    ]);
+    await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: actSpec('type') });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec('screenshot') });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: actSpec('clickAt') });
+    const { events } = await driveAgent(client, client.runTurn(req('t1', 'fill the visible field')), {
+      capability: (ev) => (ev as { capability: string }).capability === 'readPage'
+        ? { ok: true, output: 'INTERACTIVE: no reliable selector' }
+        : { ok: false, error: 'SELECTOR_GROUNDING_FAILED: target changed' },
+      approval: () => 'approve-session',
+    });
+    expect(events.filter((e) => e.kind === 'capability-request').map((e) => (e as { capability: string }).capability)).toEqual([
+      'type', 'readPage', 'type',
+    ]);
   });
 
   it('re-view detector STOPS the turn when the agent keeps re-viewing the same screens (no progress)', async () => {
@@ -605,6 +840,43 @@ describe('AgenticTurnBrainClient — the ReAct loop', () => {
     const { events, result } = await driveAgent(client, client.runTurn(req('t1')), { capability: () => ({ ok: true }), approval: () => 'approve' });
     expect(events.some((e) => e.kind === 'capability-request')).toBe(false);
     expect(result.responded).toBe(true);
+  });
+
+  it('does not capture pixel recovery when clickAt was denied for the session', async () => {
+    const clickAtSpec: CapabilitySpec = { name: 'clickAt', description: 'click screenshot pixels', inputSchema: { x: 'number', y: 'number' }, isReadOnly: false, isDestructive: true };
+    const screenshotSpec = readSpec('screenshot');
+    const client = makeAgent([
+      `${MARK} {"name":"clickAt","input":{"x":10,"y":10}}`,
+      'Pixel clicking is unavailable for this session.',
+      `${MARK} {"name":"click","input":{"selector":"#missing-a"}}`,
+      `${MARK} {"name":"click","input":{"selector":"#missing-b"}}`,
+      'The selector could not be grounded and pixel recovery is unavailable.',
+    ]);
+    await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: actSpec() });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: clickAtSpec });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: screenshotSpec });
+
+    const denied = await driveAgent(client, client.runTurn(req('t-deny-pixels', 'disable pixel clicking')), {
+      capability: () => ({ ok: true, output: 'unused' }),
+      approval: () => 'deny-session',
+    });
+    expect(denied.result.responded).toBe(true);
+
+    const recovered = await driveAgent(client, client.runTurn(req('t-selector', 'click the requested button')), {
+      capability: (ev) => {
+        const capability = (ev as { capability: string }).capability;
+        if (capability === 'readPage') return { ok: true, output: 'BUTTONS: sel=#actual' };
+        if (capability === 'click') return { ok: false, error: 'SELECTOR_GROUNDING_FAILED: no safe target' };
+        return { ok: true, output: 'unexpected' };
+      },
+      approval: () => 'approve-session',
+    });
+    expect(recovered.events.filter((e) => e.kind === 'capability-request').map((e) => (e as { capability: string }).capability)).toEqual([
+      'click', 'readPage', 'click',
+    ]);
+    expect(recovered.result.responded).toBe(true);
   });
 
   it('the step backstop bounds an engine that keeps making DISTINCT tool calls without ever finishing', async () => {
@@ -845,9 +1117,15 @@ describe('normalizeToolSchema — shorthand → valid JSON Schema (native-callin
   it('defaults an unrecognized value type to string', () => {
     expect(normalizeToolSchema({ x: 'weird' })).toEqual({ type: 'object', properties: { x: { type: 'string' } } });
   });
-  it('passes through a real JSON Schema (type==="object") verbatim', () => {
+  it('preserves a real JSON Schema (type==="object") structurally', () => {
     const real = { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] };
-    expect(normalizeToolSchema(real)).toBe(real); // trusted as-is, not re-wrapped
+    expect(normalizeToolSchema(real)).toEqual(real); // not re-wrapped; defensive sanitization may copy it
+  });
+  it('recursively strips prototype-pollution keys from a real JSON Schema', () => {
+    const dirty = JSON.parse('{"type":"object","__proto__":{"polluted":true},"properties":{"url":{"type":"string","constructor":"bad"}},"meta":{"prototype":"bad","keep":true}}');
+    const clean = normalizeToolSchema(dirty) as Record<string, any>;
+    expect(clean).toEqual({ type: 'object', properties: { url: { type: 'string' } }, meta: { keep: true } });
+    expect(Object.prototype.hasOwnProperty.call(clean, '__proto__')).toBe(false);
   });
   it('does NOT false-positive a shorthand whose field is literally named "type" or "properties" (require type==="object")', () => {
     // { type:'string', value:'string' } is a tool taking a `type` arg, NOT a schema declaring type=string.

@@ -1,0 +1,47 @@
+// ── Capability approval provenance + exact authorization leases ──────────────
+//
+// Kept outside agentic-brain-client.kern because that service is already over the
+// hand-written source size limit. These helpers are pure: the brain owns policy and
+// state, while this module owns collision-free session keys and exact lease shape.
+
+import from="@kernlang/agon-core" names="CapabilityAuthorizationLease" types=true
+import from="@kernlang/agon-core" names="canonicalCapabilityInputDigest"
+
+interface name=ResolvedCapabilityApproval
+  doc "Normalized result of one approval response. `automated` is always concrete: old clients that omit it are normalized to false before the pending approval resolves."
+  field name=decision type="'approve'|'approve-session'|'deny'|'deny-session'|'abort'"
+  field name=automated type=boolean
+
+interface name=SessionCapabilityApproval
+  doc "Original provenance retained when one submitter grants a session approval for one concrete capability registration. Later turns mint a fresh exact-input lease while preserving these fields."
+  field name=approvalRequestId type=string
+  field name=automated type=boolean
+
+fn name=sessionCapabilityApprovalKey params="submitterClientId:string, capability:string, targetClientId:string, registrationId:string" returns=string export=true
+  doc "Collision-free key for session approval/denial state. JSON tuple encoding scopes authority by submitter, capability name, owning client, and the concrete registration lifetime, so replacing a registration can never inherit stale authority."
+  handler <<<
+    return JSON.stringify([submitterClientId, capability, targetClientId, registrationId]);
+  >>>
+
+fn name=tryCanonicalCapabilityInputDigest params="input:Record<string,unknown>" returns="string|undefined" export=true
+  doc "Validate and digest one runtime tool input exactly once before approval. Malformed roots, cycles, bigint, and non-plain objects return undefined so the brain can surface a structured tool error instead of throwing mid-turn."
+  handler <<<
+    try { return canonicalCapabilityInputDigest(input); }
+    catch { return undefined; }
+  >>>
+
+fn name=buildCapabilityAuthorizationLease params="turnId:string, capabilityRequestId:string, approvalRequestId:string, submitterClientId:string, targetClientId:string, capability:string, inputDigest:string, mode:'once'|'session', automated:boolean" returns=CapabilityAuthorizationLease export=true
+  doc "Build the authorization carried on one destructive capability request from the digest validated before approval. Every execution-relevant field is bound, including the enclosing capability request id; session mode preserves the original approval request/provenance while capabilityRequestId, turnId, and inputDigest are refreshed for each emitted request."
+  handler <<<
+    return {
+      turnId,
+      capabilityRequestId,
+      approvalRequestId,
+      submitterClientId,
+      targetClientId,
+      capability,
+      inputDigest,
+      mode,
+      automated,
+    };
+  >>>

@@ -141,6 +141,12 @@ fn name=approvalTargetsClient params="event:Record<string,unknown>, myClientId:s
     return target === '' || target === myClientId;
   >>>
 
+fn name=buildApprovalPostBody params="requestId:string, clientId:string, decision:'approve'|'approve-session'|'deny'|'deny-session'|'abort', automated:boolean" returns="{ requestId: string; clientId: string; decision: 'approve'|'approve-session'|'deny'|'deny-session'|'abort'; automated: boolean }" export=true
+  doc "Build the backward-compatible /approval wire body shared by terminal drive and the REPL Chrome handler. `automated` is true only for the unattended --auto-approve path; interactive, non-interactive-deny, and REPL decisions pass false explicitly so audit provenance never has to infer how approval happened."
+  handler <<<
+    return { requestId, clientId, decision, automated };
+  >>>
+
 fn name=renderDriveEvent params="event:Record<string,unknown>" returns="string | null" export=true
   doc "Render one bridge BrainEvent (narrowed by `kind`) as a single terminal line, or null to skip. The engine's answer arrives as `engine`/`text`; a capability-request is shown as BROWSER activity (the panel, not us, executes it); approval-requests are handled by the interactive prompt, not rendered here. Pure + exported for the test."
   handler <<<
@@ -237,7 +243,7 @@ fn name=runDrive params="opts:{ prompt: string; sessionArg?: string; url?: strin
     const interactive = Boolean(process.stdin.isTTY);
     const rl = (interactive && !opts.autoApprove) ? createInterface({ input: process.stdin, output: process.stdout }) : null;
 
-    const askApproval = async (tool: string, command: string, reason: string): Promise<string> => {
+    const askApproval = async (tool: string, command: string, reason: string): Promise<'approve'|'approve-session'|'deny'|'abort'> => {
       if (opts.autoApprove) { console.log(dim(`  ✓ auto-approved: ${command}`)); return 'approve'; }
       console.log(yellow(`  ⚠ the agent wants to ${bold(tool)}${command ? `: ${command}` : ''}`));
       if (reason) console.log(dim(`    ${reason}`));
@@ -269,7 +275,8 @@ fn name=runDrive params="opts:{ prompt: string; sessionArg?: string; url?: strin
           typeof event.reason === 'string' ? event.reason : '',
         );
         try {
-          const ar = await fetch(`${base}/approval`, { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ requestId: typeof event.requestId === 'string' ? event.requestId : '', clientId, decision }) });
+          const approvalBody = buildApprovalPostBody(typeof event.requestId === 'string' ? event.requestId : '', clientId, decision, opts.autoApprove);
+          const ar = await fetch(`${base}/approval`, { method: 'POST', headers: jsonHeaders, body: JSON.stringify(approvalBody) });
           if (!ar.ok) warn(`    approval may not have registered (server said ${ar.status}) — the turn could stall.`);
         } catch { warn('    could not send the approval — the turn may stall until it times out.'); }
         return;

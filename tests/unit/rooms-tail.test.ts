@@ -134,6 +134,13 @@ describe('createRoomWaker — fs.watch push wakeups', () => {
     createRoom('r');
     const waker = createRoomWaker('r', 5000, () => {});
     try {
+      // Prove the OS watcher is armed before testing the between-waits buffer.
+      // On macOS an append issued immediately after fs.watch() returns can race
+      // the native watcher startup and be lost before our callback exists.
+      const primed = waker.wait();
+      setTimeout(() => { appendEvent('r', { kind: 'post', actor: actor('a'), body: 'prime', mentions: [], replyTo: null, repoHint: 'x' }); }, 20);
+      expect(await primed).toBe('event');
+
       // change happens while nobody is waiting → buffered as `signalled`
       appendEvent('r', { kind: 'post', actor: actor('a'), body: 'buffered', mentions: [], replyTo: null, repoHint: 'x' });
       await new Promise((r) => setTimeout(r, 50));

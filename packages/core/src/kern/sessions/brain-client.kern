@@ -35,6 +35,8 @@
 //
 // This is the M4 "remote-attach client" contract anticipated by daemon-protocol.kern.
 
+import from="node:crypto" names="createHash"
+
 // ── Who is driving — every control message names its origin ──────────────────
 
 interface name=ClientRef
@@ -63,6 +65,52 @@ interface name=ControlCapabilities
   field name=questionArbitration type="'first-wins'|'host-only'|'unsupported'"
   field name=clientCapabilities type="'supported'|'unsupported'"
   field name=cancellation type="'per-turn'|'unsupported'"
+
+// ── Destructive capability authorization continuity ─────────────────────────
+
+interface name=CapabilityAuthorizationLease
+  doc "Server-issued authorization provenance carried from a destructive capability's approval gate to the client that executes it. The lease is bound to the exact capability request id, turn, submitter, target capability owner, capability name, and canonical input digest. Executors must require `capabilityRequestId` to equal the enclosing capability-request `requestId`; replaying either a once or session lease on any fresh request therefore fails closed. `mode='once'` authorizes only the emitted capability request; `mode='session'` records that the originating submitter approved this tool for the session while preserving the original approval request and automated/manual provenance, but every emitted request still receives a freshly bound lease. This is continuity over the authenticated loopback channel, not a cryptographic client signature."
+  field name=turnId type=string
+  field name=capabilityRequestId type=string
+  field name=approvalRequestId type=string optional=true
+  field name=submitterClientId type=string
+  field name=targetClientId type=string
+  field name=capability type=string
+  field name=inputDigest type=string
+  field name=mode type="'once'|'session'"
+  field name=automated type=boolean
+
+fn name=canonicalCapabilityInputDigest params="input:Record<string,unknown>" returns=string export=true
+  doc "Return the deterministic `sha256:<hex>` digest used to bind a capability authorization lease to its exact JSON input. The root must be a plain object. Object keys are sorted recursively; array order and JSON primitive types are preserved; object properties that JSON would omit and array entries that JSON would coerce to null follow JSON.stringify semantics. Cycles, bigint, functions at the root, and non-plain objects fail closed instead of producing an ambiguous digest."
+  handler <<<
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw new TypeError('capability input must be a JSON object');
+    const seen = new Set<object>();
+    const canonicalize = (value: unknown, inArray: boolean): unknown => {
+      if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
+      if (typeof value === 'number') return Number.isFinite(value) ? (Object.is(value, -0) ? 0 : value) : null;
+      if (typeof value === 'undefined' || typeof value === 'function' || typeof value === 'symbol') return inArray ? null : undefined;
+      if (typeof value === 'bigint') throw new TypeError('capability input must be JSON-compatible (bigint is unsupported)');
+      if (typeof value !== 'object') throw new TypeError('capability input must be JSON-compatible');
+      if (seen.has(value)) throw new TypeError('capability input must be acyclic');
+      seen.add(value);
+      try {
+        if (Array.isArray(value)) return value.map((entry) => canonicalize(entry, true));
+        const proto = Object.getPrototypeOf(value);
+        if (proto !== Object.prototype && proto !== null) throw new TypeError('capability input must contain only plain objects');
+        const out = Object.create(null) as Record<string, unknown>;
+        for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+          const normalized = canonicalize((value as Record<string, unknown>)[key], false);
+          if (normalized !== undefined) out[key] = normalized;
+        }
+        return out;
+      } finally {
+        seen.delete(value);
+      }
+    };
+    const canonical = JSON.stringify(canonicalize(input, false));
+    if (typeof canonical !== 'string') throw new TypeError('capability input must be a JSON object');
+    return `sha256:${createHash('sha256').update(canonical, 'utf8').digest('hex')}`;
+  >>>
 
 // ── BrainEvent — the serializable projection of the CLI OutputEvent DU ────────
 
@@ -96,11 +144,12 @@ union name=BrainEvent discriminant=kind export=true
     field name=used type=number
     field name=limit type=number
   variant name=approval-request
-    doc "Projects OutputEvent 'permission-ask' — the `resolve(approved)` callback is REPLACED by `requestId`, answered out-of-band via provideApproval. `diffPreview` is carried as an opaque serializable blob mirroring the OutputEvent diffPreview. `targetClientId` (when set) names the client whose approval the brain is awaiting (the turn's submitter, by host-only arbitration) so a multi-client session routes the prompt to ONE surface: a client renders the approval ONLY when targetClientId is absent or equals its own id, and the brain rejects a provideApproval whose clientId doesn't match. This stops the browser panel from also popping a modal for a terminal-driven (`agon drive`) turn."
+    doc "Projects OutputEvent 'permission-ask' — the `resolve(approved)` callback is REPLACED by `requestId`, answered out-of-band via provideApproval. Optional structured `input` carries the exact capability arguments so a new policy-aware client can classify the pending action without parsing the display-only command; omission remains valid for older producers. `diffPreview` is carried as an opaque serializable blob mirroring the OutputEvent diffPreview. `targetClientId` (when set) names the client whose approval the brain is awaiting (the turn's submitter, by host-only arbitration) so a multi-client session routes the prompt to ONE surface: a client renders the approval ONLY when targetClientId is absent or equals its own id, and the brain rejects a provideApproval whose clientId doesn't match. This stops the browser panel from also popping a modal for a terminal-driven (`agon drive`) turn."
     field name=requestId type=string
     field name=tool type=string
     field name=command type=string
     field name=reason type=string
+    field name=input type="Record<string,unknown>" optional=true
     field name=description type=string optional=true
     field name=fallbackNote type=string optional=true
     field name=diffPreview type="Record<string,unknown>" optional=true
@@ -112,11 +161,13 @@ union name=BrainEvent discriminant=kind export=true
     field name=choices type="Array<{ key: string; label: string; color?: string }>" optional=true
     field name=defaultChoiceKey type=string optional=true
   variant name=capability-request
-    doc "The brain needs a capability that lives in a CLIENT, not the host — e.g. a 'screenshot' or 'page-content' the browser extension provides (the frontend-inspector path). The daemon routes this to a client that registered `capability` (preferring `targetClientId` if set); the client runs it and replies via provideCapabilityResult. This is how a brain running in one process invokes a tool whose execute() lives in another surface."
+    doc "The brain needs a capability that lives in a CLIENT, not the host — e.g. a 'screenshot' or 'page-content' the browser extension provides (the frontend-inspector path). The daemon routes this to a client that registered `capability` (preferring `targetClientId` if set); the client runs it and replies via provideCapabilityResult. A destructive request from a new brain carries optional `authorization` proving its exact approval provenance; when present, the executor must require `authorization.capabilityRequestId === requestId` in addition to the other exact bindings. Omission remains valid for old-client/server skew and leaves the executor's existing local policy in force."
     field name=requestId type=string
+    field name=turnId type=string optional=true
     field name=capability type=string
     field name=input type="Record<string,unknown>"
     field name=targetClientId type=string optional=true
+    field name=authorization type=CapabilityAuthorizationLease optional=true
 
 // ── Turn request / result — the serialized WRITE path ────────────────────────
 
@@ -145,11 +196,12 @@ interface name=BrainTurnResult
 // ── Inbound control messages — request-id correlated, client-attributed ──────
 
 interface name=ApprovalResponse
-  doc "A client's answer to a BrainEvent 'approval-request'. `decision` mirrors the CLI onApproval contract (Promise<boolean|string>): approve/deny once, approve-session/deny-session to remember for the session, abort to cancel the turn. Arbitration: per ControlCapabilities.approvalArbitration — v1 accepts only the host client and returns { unsupported } otherwise."
+  doc "A client's answer to a BrainEvent 'approval-request'. `decision` mirrors the CLI onApproval contract (Promise<boolean|string>): approve/deny once, approve-session/deny-session to remember for the session, abort to cancel the turn. Optional `automated` distinguishes an unattended policy/--auto-approve decision from an interactive human decision; omission is backward-compatible and means false. Arbitration: per ControlCapabilities.approvalArbitration — v1 accepts only the host client and returns { unsupported } otherwise."
   field name=sessionId type=string
   field name=requestId type=string
   field name=clientId type=string
   field name=decision type="'approve'|'approve-session'|'deny'|'deny-session'|'abort'"
+  field name=automated type=boolean optional=true
 
 interface name=AnswerResponse
   doc "A client's answer to a BrainEvent 'question-request'. Arbitration per ControlCapabilities.questionArbitration (v1: host-only)."

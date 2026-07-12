@@ -305,7 +305,7 @@ service name=AgonServe
     >>>
 
   method name=handleApproval params="req:IncomingMessage, res:ServerResponse, origin:string" returns="Promise<void>" async=true private=true
-    doc "The user's decision on an approval-request: { requestId, decision } where decision ∈ approve|approve-session|deny|deny-session|abort. Validated before reaching the brain; resolves the gated turn by requestId."
+    doc "The client's decision on an approval-request: { requestId, decision, automated? } where decision ∈ approve|approve-session|deny|deny-session|abort. `automated` is true only for an explicit boolean true; omission and all legacy values normalize to false. Validated before reaching the brain; resolves the gated turn by requestId."
     handler <<<
       const body = await this.readJson(req);
       const requestId = typeof body.requestId === 'string' ? body.requestId : '';
@@ -313,7 +313,8 @@ service name=AgonServe
       const allowed = ['approve', 'approve-session', 'deny', 'deny-session', 'abort'];
       if (!requestId || !allowed.includes(decision)) { this.sendJson(res, 400, { error: 'missing requestId or invalid decision' }, origin); return; }
       const clientId = typeof body.clientId === 'string' ? body.clientId : 'http';
-      const ack = await this.brain.provideApproval({ sessionId: this.sessionId, requestId, clientId, decision: decision as 'approve' | 'approve-session' | 'deny' | 'deny-session' | 'abort' });
+      const automated = body.automated === true;
+      const ack = await this.brain.provideApproval({ sessionId: this.sessionId, requestId, clientId, decision: decision as 'approve' | 'approve-session' | 'deny' | 'deny-session' | 'abort', automated });
       this.sendJson(res, 200, ack, origin);
     >>>
 

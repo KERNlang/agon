@@ -13,7 +13,7 @@
 import from="@kernlang/agon-core" names="ensureAgonHome,appendMessage,resolveWorkingDir"
 import from="node:crypto" names="randomUUID"
 import from="../signals/chrome-bridge.js" names="ensureChromeBridge"
-import from="../commands/drive.js" names="parseSseChunk,approvalTargetsClient"
+import from="../commands/drive.js" names="parseSseChunk,approvalTargetsClient,buildApprovalPostBody"
 import from="../models/session-results.js" names="sessionResultStore"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../../telemetry/index.js" names="recordRun"
@@ -90,7 +90,8 @@ fn name=handleChrome params="task:string, dispatch:Dispatch, ctx:HandlerContext"
         if (ctrl.signal.aborted) return; // turn torn down → don't POST to a dead turn
         const decision = approved === true ? 'approve' : 'deny';
         try {
-          const ar = await fetch(`${base}/approval`, { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ requestId: typeof event.requestId === 'string' ? event.requestId : '', clientId, decision }), signal: ctrl.signal });
+          const approvalBody = buildApprovalPostBody(typeof event.requestId === 'string' ? event.requestId : '', clientId, decision, false);
+          const ar = await fetch(`${base}/approval`, { method: 'POST', headers: jsonHeaders, body: JSON.stringify(approvalBody), signal: ctrl.signal });
           if (!ar.ok) dispatch({ type: 'warning', message: `approval may not have registered (${ar.status}).` });
         } catch { if (!ctrl.signal.aborted) dispatch({ type: 'warning', message: 'couldn’t send the approval — the turn may stall.' }); }
         return;

@@ -40,17 +40,24 @@ describe('room work — end-to-end dry-run loop (fs.watch driven)', () => {
       expect(pickNextTask(board0, worker.callsign)).toBeNull();
 
       const started = Date.now();
-      const waitP = waker.wait();
+      let waitP = waker.wait();
       setTimeout(() => { postTask(roomId, actor('boss'), 'do the needful', null, 'x'); }, 25);
-      wokeVia = await waitP;
+      // The directory watcher deliberately also sees metadata/lock activity. A
+      // coalesced non-ledger event may therefore wake the real work loop before
+      // the task append; drain it and re-arm exactly as production does.
+      let next: ReturnType<typeof pickNextTask> = null;
+      while (!next) {
+        wokeVia = await waitP;
+        pump();
+        next = pickNextTask(foldTasks(all, Date.now()), worker.callsign);
+        if (!next) waitP = waker.wait();
+      }
       wakeElapsed = Date.now() - started;
 
       // Worker iteration: drain, pick, claim, dispatch(dry-run), result.
       const st: WorkState = { startedAtMs: Date.now(), tasksHandled: 0, joinSeq: 0 };
-      pump();
       expect(isRoomClosed(roomId)).toBe(false);
       expect(shouldStopWork(st, workCfg, all).stop).toBe(false);
-      const next = pickNextTask(foldTasks(all, Date.now()), worker.callsign);
       expect(next).not.toBeNull();
       expect(next!.status).toBe('open');
 

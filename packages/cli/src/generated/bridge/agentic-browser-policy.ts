@@ -16,24 +16,36 @@ export interface BrowserResearchPolicyConfig {
   liveSubjectPattern: RegExp;
   comparisonIntentPattern: RegExp;
   instructionalLookupPattern: RegExp;
+  shoppingMutationPattern: RegExp;
+  shoppingCountPattern: RegExp;
+  shoppingAddControlPattern: RegExp;
+  shoppingRemoveControlPattern: RegExp;
+  shoppingAddedStatePattern: RegExp;
+  shoppingAddActionPattern: RegExp;
 }
 
-// @kern-source: agentic-browser-policy:19
+// @kern-source: agentic-browser-policy:25
 export const DEFAULT_BROWSER_RESEARCH_POLICY_CONFIG: Readonly<BrowserResearchPolicyConfig> = Object.freeze({
   liveIntentPattern: /\b(search|look up|browse|research|shop|buy)\b|\bsuch(?:e|en|st|t)\b|recherch|kauf/i,
   contextualIntentPattern: /\b(find|recommend|compare|comparison|options?|alternatives?|best|prices?|latest|current)\b|\bfind(?:e|en|est|et)\b|empfehl|vergleich|optionen|alternativen|besten|preise?|aktuell/i,
   liveSubjectPattern: /\b(jobs?|roles?|products?|shopping|stores?|hotels?|flights?|restaurants?|tickets?|deals?|listings?|sources?|websites?|sites?|travel|vacations?|holidays?|games?|goggles?|masks?|libraries?|versions?|releases?|news|weather|schedules?|scores?|laws?|regulations?|stocks?|shares?|crypto|currenc(?:y|ies)|bitcoin)\b|stell(?:e|en)|produkt|shop|laden|läden|hotel|fl(?:ug|üge)|restaurant|ticket|angebot|webseite|quelle|urlaub|reise|spiel|taucherbrill|maske|bibliothek|version|release|nachricht|wetter|fahrplan|ergebnis|gesetz|vorschrift/i,
   comparisonIntentPattern: /\b(recommend|compare|comparison|options|alternatives|products|shopping|best)\b|empfehl|vergleich|optionen|alternativen|produkte|besten/i,
   instructionalLookupPattern: /\b(?:(?:best )?(?:way|method|command|steps?)\s+(?:to|for)|how (?:do|can|should) (?:i|you|we))\s+(?:find|check|look up|determine)\b[^?\n]{0,80}\b(?:versions?|releases?)\b/i,
+  shoppingMutationPattern: /\b(?:add|put|place)\b[^.\n]{0,80}\b(?:in|into|to)\b[^.\n]{0,40}\b(?:basket|cart)\b|\b(?:leg(?:e|en)?|füg(?:e|en)?|hinzufüg(?:e|en)?)\b[^.\n]{0,100}\b(?:warenkorb|einkaufswagen)\b/i,
+  shoppingCountPattern: /\b(?:basket|cart)\b[^\n\d]{0,20}(\d+)(?:\s*(?:items?|products?))?\b|\b(?:warenkorb|einkaufswagen)\b[^\n\d]{0,20}(\d+)(?:\s*(?:artikel|produkte?))?\b/i,
+  shoppingAddControlPattern: /\badd to (?:(?:your|the) )?(?:shopping )?(?:basket|cart)\b|\b(?:in den warenkorb|zum warenkorb hinzufügen)\b/i,
+  shoppingRemoveControlPattern: /\bremove from (?:basket|cart)\b|\baus (?:dem )?(?:warenkorb|einkaufswagen) entfernen\b/i,
+  shoppingAddedStatePattern: /\badded to (?:(?:your|the) )?(?:shopping )?(?:basket|cart)\b|\b(?:zum warenkorb hinzugefügt|in den warenkorb gelegt)\b/i,
+  shoppingAddActionPattern: /\badd(?:ed)?[-_\s]?(?:to[-_\s]?)?(?:(?:your|the)[-_\s]?)?(?:shopping[-_\s]?)?(?:basket|cart)\b|\b(?:in[-_\s]?den[-_\s]?warenkorb|zum[-_\s]?warenkorb[-_\s]?hinzufüg)/i,
 });
 
-// @kern-source: agentic-browser-policy:27
+// @kern-source: agentic-browser-policy:39
 export interface BrowserResearchPolicy {
   requiresLiveEvidence: boolean;
   requiresComparisonTab: boolean;
 }
 
-// @kern-source: agentic-browser-policy:31
+// @kern-source: agentic-browser-policy:43
 export interface BrowserResearchEvidence {
   observationCount: number;
   openedTabCount: number;
@@ -45,7 +57,7 @@ export interface BrowserResearchEvidence {
 /**
  * Classify a user goal without depending on prose length. Live search/recommendation language requires a successful readPage/screenshot before final prose; comparative research also requires opening and observing another owned tab when openTab exists.
  */
-// @kern-source: agentic-browser-policy:38
+// @kern-source: agentic-browser-policy:50
 export function classifyBrowserResearchGoal(input: string, hasObservationTool: boolean, hasOpenTabTool: boolean, config?: BrowserResearchPolicyConfig): BrowserResearchPolicy {
   const selected = config ?? DEFAULT_BROWSER_RESEARCH_POLICY_CONFIG;
   const normalized = input.normalize('NFC').toLowerCase();
@@ -60,12 +72,56 @@ export function classifyBrowserResearchGoal(input: string, hasObservationTool: b
   };
 }
 
-// @kern-source: agentic-browser-policy:54
+// @kern-source: agentic-browser-policy:66
 export function emptyBrowserResearchEvidence(): BrowserResearchEvidence {
   return { observationCount: 0, openedTabCount: 0, observedOpenedTabCount: 0, focusedOpenedTab: false, openedTabIds: [] };
 }
 
-// @kern-source: agentic-browser-policy:59
+/**
+ * Return true only when the user explicitly asks to add/put an item into a basket/cart and the client exposes readPage. A successful page click then requires a before/after textual page-state transition before final prose can claim completion.
+ */
+// @kern-source: agentic-browser-policy:71
+export function requiresShoppingMutationVerification(input: string, hasObservationTool: boolean, config?: BrowserResearchPolicyConfig): boolean {
+  if (!hasObservationTool) return false;
+  const selected = config ?? DEFAULT_BROWSER_RESEARCH_POLICY_CONFIG;
+  return selected.shoppingMutationPattern.test(input.normalize('NFC').toLowerCase());
+}
+
+/**
+ * Return true only when before/after readPage output proves a basket transition: the visible item count increased, an Add control became Remove, or the post-action page exposes an explicit added-state message. A pre-existing unchanged positive count does not pass.
+ */
+// @kern-source: agentic-browser-policy:79
+export function confirmsShoppingMutationObservation(beforeOutput: string, afterOutput: string, config?: BrowserResearchPolicyConfig): boolean {
+  const selected = config ?? DEFAULT_BROWSER_RESEARCH_POLICY_CONFIG;
+  const before = beforeOutput.normalize('NFC').toLowerCase();
+  const after = afterOutput.normalize('NFC').toLowerCase();
+  const readCount = (value: string): number | null => {
+    const match = selected.shoppingCountPattern.exec(value);
+    const raw = match?.[1] ?? match?.[2];
+    if (raw === undefined) return null;
+    const count = Number(raw);
+    return Number.isSafeInteger(count) && count >= 0 ? count : null;
+  };
+  const beforeCount = readCount(before);
+  const afterCount = readCount(after);
+  if (beforeCount !== null && afterCount !== null && afterCount > beforeCount) return true;
+  if (selected.shoppingAddControlPattern.test(before) && selected.shoppingRemoveControlPattern.test(after)) return true;
+  return !selected.shoppingAddedStatePattern.test(before) && selected.shoppingAddedStatePattern.test(after);
+}
+
+/**
+ * Recognize an actual add-to-basket/cart action from a click/clickAt call's selector/input metadata or successful result text. Checkout and unrelated clicks do not arm basket verification.
+ */
+// @kern-source: agentic-browser-policy:99
+export function isShoppingAddAction(capability: string, input: Record<string,unknown>, output?: string, config?: BrowserResearchPolicyConfig): boolean {
+  if (capability !== 'click' && capability !== 'clickAt') return false;
+  const selected = config ?? DEFAULT_BROWSER_RESEARCH_POLICY_CONFIG;
+  let inputText = '';
+  try { inputText = JSON.stringify(input); } catch { inputText = ''; }
+  return selected.shoppingAddActionPattern.test(`${inputText}\n${output ?? ''}`.normalize('NFC').toLowerCase());
+}
+
+// @kern-source: agentic-browser-policy:109
 export function focusedWorkspaceTabId(output?: string): number|null {
   const match = /^\s*\*\s+\[tabId\s+(\d+)\]/m.exec(output ?? '');
   if (!match) return null;
@@ -76,7 +132,7 @@ export function focusedWorkspaceTabId(output?: string): number|null {
 /**
  * Advance evidence only after a capability succeeds. A read/screenshot counts as live evidence; it satisfies the comparison-tab requirement only while the newly opened owned tab is still focused.
  */
-// @kern-source: agentic-browser-policy:67
+// @kern-source: agentic-browser-policy:117
 export function recordSuccessfulBrowserCapability(evidence: BrowserResearchEvidence, capability: string, input?: Record<string,unknown>, output?: string): BrowserResearchEvidence {
   const next = { ...evidence, openedTabIds: [...evidence.openedTabIds] };
   if (capability === 'openTab') {
@@ -119,7 +175,7 @@ export function recordSuccessfulBrowserCapability(evidence: BrowserResearchEvide
 /**
  * Return the next concrete evidence action required before final prose, or null once the browser-research contract is satisfied.
  */
-// @kern-source: agentic-browser-policy:108
+// @kern-source: agentic-browser-policy:158
 export function browserResearchEvidenceGap(policy: BrowserResearchPolicy, evidence: BrowserResearchEvidence): string|null {
   if (policy.requiresLiveEvidence && evidence.observationCount < 1) {
     return 'Live browser research is incomplete: call readPage or screenshot and inspect the current live page before answering.';
@@ -134,12 +190,12 @@ export function browserResearchEvidenceGap(policy: BrowserResearchPolicy, eviden
 /**
  * Recognize the stable extension grounding code plus legacy selector-miss text so the brain follows the same readPage then screenshot recovery path during mixed-version upgrades.
  */
-// @kern-source: agentic-browser-policy:121
+// @kern-source: agentic-browser-policy:171
 export function isSelectorGroundingFailure(error: string|undefined): boolean {
   return !!error && /SELECTOR_GROUNDING_FAILED|selector target (?:was not safely authorized|changed after authorization)|no element matches|no result from the page|\belement (?:was )?not found\b|could not find (?:the )?(?:element|target|selector)\b/i.test(error);
 }
 
-// @kern-source: agentic-browser-policy:127
+// @kern-source: agentic-browser-policy:177
 export interface PreparedBrowserScreenshot {
   attachment?: ImageAttachment;
   transcript: string;
@@ -148,7 +204,7 @@ export interface PreparedBrowserScreenshot {
 /**
  * Decode, validate, dimension, and attach a browser screenshot once. Both ordinary screenshot calls and automatic selector recovery share this exact pixel-grounding path.
  */
-// @kern-source: agentic-browser-policy:131
+// @kern-source: agentic-browser-policy:181
 export function prepareBrowserScreenshot(dataUrl: string, turnDir: string, imageIndex: number, cwd: string): PreparedBrowserScreenshot {
   const decoded = decodeDataUrlToImageFile(dataUrl, turnDir, imageIndex);
   if (!decoded.path) return { transcript: `(screenshot could not be read${decoded.reason ? `: ${decoded.reason}` : ''})` };

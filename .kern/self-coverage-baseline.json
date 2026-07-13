@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "root": "packages",
+  "canonicalizeBraces": true,
+  "minimums": {
+    "nativeCoverageUnits": 15,
+    "nativeCoveragePct": 100,
+    "nativeAuthoredPct": 28.54,
+    "classifiedOrMigratablePct": 73.71
+  },
+  "maximums": {
+    "filesWithParseErrors": 0,
+    "blockedHandlers": 620
+  },
+  "blockerMaximums": {
+    "foreign-missing-reason": 70
+  }
+}

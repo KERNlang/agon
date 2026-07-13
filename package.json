@@ -18,6 +18,8 @@
     "guard:reexport": "node scripts/guard/reexport-surface.mjs",
     "kern:review": "node scripts/run-kern-review.mjs",
     "kern:test": "node scripts/run-kern-test.mjs",
+    "kern:coverage": "node scripts/check-kern-native-coverage.mjs",
+    "kern:self-coverage": "node scripts/check-kern-self-coverage.mjs",
     "kern-gaps": "node scripts/run-kern-gaps.mjs",
     "docs:modes": "npm run build:cli && node scripts/generate-mode-docs.mjs",
     "rebuild": "npm run kern:compile && npm run build",
@@ -31,7 +33,7 @@
     "release:cli": "npm run build:cli && node scripts/release/publish-if-new.mjs packages/cli",
     "release": "npm run release:dedup && npm run release:cli",
     "typecheck": "tsc -b",
-    "test": "npm run kern:test && npm run test:ts",
+    "test": "npm run kern:coverage && npm run kern:self-coverage && npm run test:ts",
     "test:ts": "node scripts/run-node22.mjs vitest run",
     "test:watch": "node scripts/run-node22.mjs vitest"
   },

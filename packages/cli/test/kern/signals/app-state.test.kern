@@ -1,0 +1,15 @@
+test name="REPL state transition coverage" target="../../../src/kern/signals/app-state.kern"
+  it name="covers streamed command completion"
+    expect machine=ReplState reaches=idle via=startCommand,startStream,finish
+
+  it name="covers question completion"
+    expect machine=ReplState reaches=idle via=startCommand,askQuestion,answerQuestion,finish
+
+  it name="covers review completion"
+    expect machine=ReplState reaches=idle via=startReview,finishReview
+
+  it name="covers command cancellation"
+    expect machine=ReplState reaches=idle via=startCommand,cancel
+
+  it name="covers the complete transition surface"
+    expect preset=coverage

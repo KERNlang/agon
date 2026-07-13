@@ -18,7 +18,7 @@ import { EngineRegistry } from '@kernlang/agon-core';
 
 import { deriveRoutingHints, buildRoutingContext } from '../cesar/routing.js';
 
-import { summarizeAllCesarToolReliability } from '../cesar/reliability.js';
+import { summarizeAllCesarToolReliability, readCesarDecisionRecords, summarizeCesarLatency } from '../cesar/reliability.js';
 
 import { getLastFoldedRaw, getFoldedRaw, getFoldedRawCount } from '../blocks/narration-fold.js';
 
@@ -58,31 +58,12 @@ export function handleLeaderboard(dispatch: Dispatch): void {
 }
 
 export function handleCesarReport(dispatch: Dispatch): void {
-  const reportPath = join(RUNS_DIR, 'cesar-decisions.jsonl');
-  if (!existsSync(reportPath)) {
-    dispatch({ type: 'info', message: 'No Cesar decision log yet. Use Cesar for a few turns, then run /cesar-report.' });
-    return;
-  }
-
-  let raw = '';
-  try {
-    raw = readFileSync(reportPath, 'utf-8');
-  } catch (err) {
-    dispatch({ type: 'error', message: `Failed to read Cesar report: ${err instanceof Error ? err.message : String(err)}` });
-    return;
-  }
-
-  const records = raw
-    .split('\n')
-    .map((line: string) => line.trim())
-    .filter(Boolean)
-    .map((line: string) => {
-      try { return JSON.parse(line) as any; } catch { return null; }
-    })
-    .filter((r: any) => !!r);
+  // The report renders only the latest 200 decisions. Bound both JSONL
+  // tails so a long-lived installation never reparses its entire history.
+  const records = readCesarDecisionRecords(500);
 
   if (records.length === 0) {
-    dispatch({ type: 'info', message: 'Cesar decision log is empty.' });
+    dispatch({ type: 'info', message: 'No Cesar decision log yet. Use Cesar for a few turns, then run /cesar-report.' });
     return;
   }
 
@@ -97,6 +78,10 @@ export function handleCesarReport(dispatch: Dispatch): void {
     type: 'info',
     message: `Local: ${localCount} (${Math.round((localCount / recent.length) * 100)}%) | Delegated: ${delegatedCount} (${Math.round((delegatedCount / recent.length) * 100)}%) | Escalation hint match: ${Math.round((matchedEsc / recent.length) * 100)}% | Breadth hint match: ${Math.round((matchedBreadth / recent.length) * 100)}%`,
   });
+  const latency = summarizeCesarLatency(recent);
+  if (latency.count > 0) {
+    dispatch({ type: 'info', message: `Turn latency (${latency.count} measured): p50 ${latency.p50Ms}ms | mean ${latency.meanMs}ms | max ${latency.maxMs}ms` });
+  }
 
   const modeCounts: Record<string, number> = {};
   for (const r of recent) {

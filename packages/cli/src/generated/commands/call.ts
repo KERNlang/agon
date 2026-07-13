@@ -22,6 +22,7 @@ export interface CallCommandOptions {
   rounds?: string;
   swaps?: string;
   tribunalMode?: string;
+  tribunalProtocol?: string;
   members?: string;
   cwd?: string;
   engineTimeout?: string;
@@ -44,27 +45,27 @@ export interface CallCommandOptions {
   autoApprove?: boolean;
 }
 
-// @kern-source: call:38
+// @kern-source: call:39
 export interface WorkflowCallMeta {
   workflowId: string;
   version: string;
   planId: string;
 }
 
-// @kern-source: call:43
+// @kern-source: call:44
 export interface BuiltCallCommands {
   cwd: string;
   commands: string[][];
   workflowMeta?: WorkflowCallMeta;
 }
 
-// @kern-source: call:48
+// @kern-source: call:49
 export function textFlag(flag: string, value: string|undefined): string[] {
   const text = value?.trim();
   return text ? [flag, text] : [];
 }
 
-// @kern-source: call:54
+// @kern-source: call:55
 export function requireInput(workflow: string, input: string|undefined): string {
   const text = input?.trim();
   if (!text) {
@@ -73,7 +74,7 @@ export function requireInput(workflow: string, input: string|undefined): string 
   return text;
 }
 
-// @kern-source: call:63
+// @kern-source: call:64
 export function exitWithFailure(message: string): never {
   fail(message);
   process.exit(1);
@@ -83,7 +84,7 @@ export function exitWithFailure(message: string): never {
 /**
  * Enforce the HARD removedEngines denylist at the external-CLI boundary, BEFORE any --engines list is forwarded to a subcommand. Without this, an external CLI (Codex/Antigravity) that passes --engines a,b,<removed> would resurrect a hard-removed engine, since explicit -e lists bypass the registry's auto roster. Fails loudly (pre-run error) rather than silently dropping — silent roster rewrite is the trust hazard (Council batch-2 verdict).
  */
-// @kern-source: call:70
+// @kern-source: call:71
 export function assertNoRemovedEngines(enginesCsv: string|undefined): void {
   const text = enginesCsv?.trim();
   if (!text) return;
@@ -103,28 +104,37 @@ export function assertNoRemovedEngines(enginesCsv: string|undefined): void {
   }
 }
 
-// @kern-source: call:91
+// @kern-source: call:92
 export function normalizeCallWorkflow(workflow: string): string {
   return workflow.trim().toLowerCase().replace(/_/g, '-');
 }
 
-// @kern-source: call:96
+// @kern-source: call:97
 export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
   const workflow = normalizeCallWorkflow(opts.workflow);
   const cwd = opts.cwd?.trim() || process.cwd();
   const engines = textFlag('--engines', opts.engines);
   const timeout = textFlag('--timeout', opts.engineTimeout);
   const tribunalMode = textFlag('--mode', opts.tribunalMode);
+  const protocolValue = opts.tribunalProtocol?.trim().toLowerCase();
+  if (protocolValue && !['auto', 'parallel', 'chained', 'hybrid'].includes(protocolValue)) {
+    throw new Error(`Invalid tribunal protocol: ${opts.tribunalProtocol}. Use auto, parallel, chained, or hybrid.`);
+  }
+  const tribunalProtocol = textFlag('--protocol', protocolValue);
   const commands: string[][] = [];
 
   if (workflow === 'tribunal' || workflow === 'team-tribunal') {
     const question = requireInput(workflow, opts.input);
     const team = opts.team || workflow === 'team-tribunal';
+    if (team && protocolValue && protocolValue !== 'auto') {
+      throw new Error('Tribunal --protocol currently applies to solo tribunal only; team-tribunal has its own team orchestration.');
+    }
     commands.push([
       team ? 'team-tribunal' : 'tribunal',
       question,
       ...textFlag('--rounds', opts.rounds),
       ...tribunalMode,
+      ...(team ? [] : tribunalProtocol),
       ...(team ? textFlag('--members', opts.members) : []),
       ...timeout,
       ...engines,
@@ -292,7 +302,7 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
     if (flowIssues.length > 0) throwWorkflowConformance(flowIssues, 'agon.brainstorm-forge-tribunal@v1 flow verification failed');
     commands.push(['brainstorm', task, ...timeout, ...engines]);
     commands.push(['forge', task, '--test', fitness, '--cwd', cwd, ...timeout, ...engines]);
-    commands.push(['tribunal', `Review the pipeline result for: ${task}`, '--rounds', opts.rounds?.trim() || '1', ...tribunalMode, ...timeout, ...engines]);
+    commands.push(['tribunal', `Review the pipeline result for: ${task}`, '--rounds', opts.rounds?.trim() || '1', ...tribunalMode, ...tribunalProtocol, ...timeout, ...engines]);
     return { cwd, commands, workflowMeta: { workflowId: spec.id, version: spec.version, planId: plan.logicalPlanId } };
   } else {
     throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, chrome, pipeline, review, goal, doctor, or a team-* workflow.`);
@@ -301,12 +311,12 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
   return { cwd, commands };
 }
 
-// @kern-source: call:289
+// @kern-source: call:299
 export function writeJsonl(event: Record<string,unknown>): void {
   process.stdout.write(`${JSON.stringify({ ...event, timestamp: new Date().toISOString() })}\n`);
 }
 
-// @kern-source: call:294
+// @kern-source: call:304
 export async function runCommand(command: string, args: string[], cwd: string, jsonl: boolean, workflowMeta?: WorkflowCallMeta): Promise<number> {
   return new Promise((resolve) => {
     const startedAt = Date.now();
@@ -350,7 +360,7 @@ export async function runCommand(command: string, args: string[], cwd: string, j
   });
 }
 
-// @kern-source: call:338
+// @kern-source: call:348
 export const callCommand: any = defineCommand({
   meta: {
     name: 'call',
@@ -395,6 +405,10 @@ export const callCommand: any = defineCommand({
     tribunalMode: {
       type: 'string',
       description: 'Tribunal mode: adversarial, synthesis, steelman, socratic, red-team, postmortem',
+    },
+    protocol: {
+      type: 'string',
+      description: 'Tribunal protocol: auto, parallel, chained, hybrid',
     },
     members: {
       type: 'string',
@@ -497,6 +511,7 @@ export const callCommand: any = defineCommand({
         rounds: args.rounds,
         swaps: args.swaps,
         tribunalMode: args.tribunalMode,
+        tribunalProtocol: args.protocol,
         members: args.members,
         cwd: args.cwd,
         engineTimeout: args.timeout,

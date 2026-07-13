@@ -522,6 +522,14 @@ interface name=BrainstormGroup
   field name=representative type=string
   field name=similarity type=number
 
+interface name=BrainstormDedupStatus
+  field name=status type="'not-needed' | 'applied' | 'unavailable' | 'failed' | 'timed-out'"
+  field name=detail type=string optional=true
+
+interface name=BrainstormSynthesisStatus
+  field name=status type="'completed' | 'fallback'"
+  field name=detail type=string optional=true
+
 // One panel-health record per multi-engine run: how many seats were requested,
 // how many actually responded (after the one auto-retry), and the banner every
 // surface MUST print when notes exist — a silent 3/6 committee is the failure.
@@ -538,6 +546,8 @@ interface name=BrainstormResult
   field name=winner type=string
   field name=response type=string
   field name=groups type="BrainstormGroup[]" optional=true
+  field name=dedup type=BrainstormDedupStatus optional=true
+  field name=synthesis type=BrainstormSynthesisStatus optional=true
   field name=panelHealth type=PanelHealth optional=true
 
 interface name=BreakerArtifact

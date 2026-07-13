@@ -6,7 +6,7 @@ import type { EngineAdapter, EngineDefinition, ForgeEvent, DispatchResult } from
 
 import { EngineRegistry, buildTribunalPrompt, createSidechainLogger, updateGlickoRanked, classifyTask, loadConfig, seedNewEnginesFromRegistry } from '@kernlang/agon-core';
 
-import type { TribunalMode, TribunalModeConfig } from './tribunal-modes.js';
+import type { TribunalMode, TribunalModeConfig, TribunalProtocol } from './tribunal-modes.js';
 
 import { getModeConfig, buildModePrompt, buildModeSummaryPrompt } from './tribunal-modes.js';
 
@@ -36,10 +36,11 @@ export interface TribunalResult {
   positions: TribunalPosition[];
   summary: string;
   mode?: string;
+  protocol?: TribunalProtocol;
   panelHealth?: { requested: number; responded: number; degraded: boolean; notes: string[]; banner: string | null };
 }
 
-// @kern-source: tribunal:27
+// @kern-source: tribunal:28
 export function buildFallbackSummary(positions: TribunalPosition[]): string {
   return positions.map((p) => `**${p.engineId} (${p.position})**: ${p.arguments[p.arguments.length - 1]?.slice(0, 200) ?? '(no response)'}...`).join('\n\n');
 }
@@ -47,7 +48,7 @@ export function buildFallbackSummary(positions: TribunalPosition[]): string {
 /**
  * Extracts the engine's visible text from a debate-round dispatch. Reasoning-heavy engines (Claude with extended thinking, DeepSeek-R1, o1-class, Kimi reasoning) often emit only internal <think>...</think> when given a single-turn debate prompt. Previous behavior threw on empty-after-strip, degrading the tribunal to '(no response)' placeholders even when the engine actually thought through the question. Now: if stripping leaves nothing but raw output had substantial thinking, surface a truncated thinking excerpt with a clear banner so the debate can continue with real signal.
  */
-// @kern-source: tribunal:31
+// @kern-source: tribunal:32
 export function requireNonEmptyDispatchText(result: DispatchResult, phase: string): string {
   const raw = String(result.stdout ?? '').trim();
   const cleaned = raw.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
@@ -79,8 +80,8 @@ export function requireNonEmptyDispatchText(result: DispatchResult, phase: strin
   });
 }
 
-// @kern-source: tribunal:64
-export async function runTribunal(opts: {question:string, engines:string[], rounds:number, mode?:TribunalMode, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, onEvent?:(event:ForgeEvent)=>void, signal?: AbortSignal}): Promise<TribunalResult> {
+// @kern-source: tribunal:65
+export async function runTribunal(opts: {question:string, engines:string[], rounds:number, mode?:TribunalMode, protocol?:TribunalProtocol, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, onEvent?:(event:ForgeEvent)=>void, signal?: AbortSignal}): Promise<TribunalResult> {
   const { question, rounds, registry, adapter, timeout, outputDir } = opts;
   const signal = opts.signal;
   const mode = opts.mode ?? 'adversarial';
@@ -103,6 +104,7 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
   // strength rather than the 1500 default.
   seedNewEnginesFromRegistry(registry);
   const modeConfig = getModeConfig(mode, engines.length);
+  const protocol = opts.protocol ?? modeConfig.protocol;
 
   // Assign roles from mode config
   const roles = modeConfig.roles.slice(0, engines.length);
@@ -126,7 +128,7 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
     sessionType: 'tribunal',
     outputDir,
   });
-  sidechain.log('tribunal:init', undefined, { question, mode, engines, rounds: effectiveRounds });
+  sidechain.log('tribunal:init', undefined, { question, mode, protocol, engines, rounds: effectiveRounds });
   const allRounds: TribunalRound[] = [];
   // One SeatOutcome per engine-round; folded into panelHealth at the end so a
   // seat that flaked (or was rescued by the auto-retry) is reported loudly.
@@ -141,7 +143,7 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
     }
     opts.onEvent?.({
       type: 'synthesis:start',
-      data: { round, totalRounds: effectiveRounds, mode },
+      data: { round, totalRounds: effectiveRounds, mode, protocol },
     });
 
     const prevArgs = round > 1
@@ -150,8 +152,7 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
           .join('\n\n---\n\n')
       : undefined;
 
-    // Build prompts using mode-aware prompt builder
-    const roundPromises = positions.map(async (pos) => {
+    const dispatchPosition = async (pos: TribunalPosition, currentRoundArguments?: string) => {
       const engine = registry.get(pos.engineId);
       const prompt = buildModePrompt({
         mode,
@@ -160,12 +161,13 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
         round,
         totalRounds: effectiveRounds,
         previousArguments: prevArgs,
+        currentRoundArguments,
       });
 
       opts.onEvent?.({
         type: 'synthesis:critique',
         engineId: pos.engineId,
-        data: { round, position: pos.position, mode },
+        data: { round, position: pos.position, mode, protocol },
       });
 
       // One auto-retry per seat-round (shorter timeout); the engine's own
@@ -193,17 +195,25 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
         return { engineId: pos.engineId, argument: '(failed to respond)' };
       }
       return { engineId: pos.engineId, argument: seat.text };
-    });
+    };
 
-    // Sequential protocol: wait for each in order
     let roundResults: { engineId: string; argument: string }[];
-    if (modeConfig.protocol === 'sequential') {
-      roundResults = [];
-      for (const promise of roundPromises) {
-        roundResults.push(await promise);
-      }
+    const runInParallel = protocol === 'parallel' || (protocol === 'hybrid' && round === 1);
+    if (runInParallel) {
+      roundResults = await Promise.all(positions.map((pos) => dispatchPosition(pos)));
     } else {
-      roundResults = await Promise.all(roundPromises);
+      roundResults = [];
+      for (const pos of positions) {
+        const currentRoundArguments = roundResults.length > 0
+          ? roundResults
+              .map((result) => {
+                const prior = positions.find((candidate) => candidate.engineId === result.engineId);
+                return `**${result.engineId} (${prior?.position ?? 'Participant'}):**\n${result.argument}`;
+              })
+              .join('\n\n---\n\n')
+          : undefined;
+        roundResults.push(await dispatchPosition(pos, currentRoundArguments));
+      }
     }
 
     for (const result of roundResults) {
@@ -239,6 +249,7 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
       mode: 'exec',
       timeout,
       outputDir,
+      signal,
     });
     summary = requireNonEmptyDispatchText(summaryResult, 'tribunal summary');
   } catch (err) {
@@ -261,13 +272,14 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
     rounds: allRounds.length,
     engines: engines.length,
     mode,
+    protocol,
     summaryLength: summary.length,
     panelHealth,
   });
 
   opts.onEvent?.({
     type: 'forge:done',
-    data: { rounds: allRounds.length, engines: engines.length, mode },
+    data: { rounds: allRounds.length, engines: engines.length, mode, protocol },
   });
 
   // Update Glicko-2 ratings — score by per-round substantive credit (not raw length)
@@ -291,5 +303,5 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
     }
   }
 
-  return { question, rounds: allRounds, positions, summary, mode, panelHealth };
+  return { question, rounds: allRounds, positions, summary, mode, protocol, panelHealth };
 }

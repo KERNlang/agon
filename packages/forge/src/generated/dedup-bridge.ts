@@ -2,57 +2,100 @@
 
 import { spawn } from 'node:child_process';
 
-import type { BrainstormGroup } from '@kernlang/agon-core';
+import type { ChildProcessWithoutNullStreams } from 'node:child_process';
+
+import type { BrainstormGroup, BrainstormDedupStatus } from '@kernlang/agon-core';
 
 import { resolveDedupSidecar } from '@kernlang/agon-core';
 
 /**
- * Cluster paraphrased drafts via the Python embedding sidecar. Returns null on any failure — caller should fall back to no-dedup.
+ * Cluster paraphrased drafts via the optional Python embedding sidecar. Always returns an explicit status and bounds the sidecar wall clock; abort still rejects so user cancellation propagates.
  */
-// @kern-source: dedup-bridge:9
-export async function dedupBrainstormDrafts(drafts: {engineId:string, text:string}[]): Promise<BrainstormGroup[] | null> {
+// @kern-source: dedup-bridge:10
+export async function dedupBrainstormDrafts(drafts: {engineId:string, text:string}[], opts?: {timeoutMs?:number, signal?:AbortSignal}): Promise<{groups:BrainstormGroup[] | null, status:BrainstormDedupStatus}> {
   if (drafts.length < 2) {
-    return drafts.map((d) => ({
-      members: [d.engineId],
-      representative: d.engineId,
-      similarity: 1,
-    }));
+    return {
+      groups: drafts.map((d) => ({
+        members: [d.engineId],
+        representative: d.engineId,
+        similarity: 1,
+      })),
+      status: { status: 'not-needed' },
+    };
   }
 
   const sidecar = resolveDedupSidecar('sidecar.py');
-  if (!sidecar) return null;
+  if (!sidecar) {
+    return { groups: null, status: { status: 'unavailable', detail: 'dedup sidecar not installed' } };
+  }
 
   const python = process.env.AGON_PYTHON || 'python3';
+  const timeoutMs = Math.max(1, opts?.timeoutMs ?? 5_000);
 
-  return await new Promise<BrainstormGroup[] | null>((resolveOuter) => {
+  return await new Promise<{groups:BrainstormGroup[] | null, status:BrainstormDedupStatus}>((resolveOuter, rejectOuter) => {
     let stdout = '';
     let stderr = '';
-    let proc;
+    let settled = false;
+    let proc: ChildProcessWithoutNullStreams;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+
+    const cleanup = () => {
+      if (timeout) clearTimeout(timeout);
+      opts?.signal?.removeEventListener('abort', abort);
+    };
+    const finish = (result: {groups:BrainstormGroup[] | null, status:BrainstormDedupStatus}) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolveOuter(result);
+    };
+    const stopProcess = () => {
+      try { proc.kill('SIGTERM'); } catch { /* already gone */ }
+      const hardKill = setTimeout(() => {
+        try { proc.kill('SIGKILL'); } catch { /* already gone */ }
+      }, 250);
+      hardKill.unref?.();
+    };
+    const abort = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      stopProcess();
+      rejectOuter(new Error('Brainstorm deduplication aborted.'));
+    };
+
     try {
       proc = spawn(python, [sidecar], { stdio: ['pipe', 'pipe', 'pipe'] });
-    } catch {
-      return resolveOuter(null);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      return finish({ groups: null, status: { status: 'unavailable', detail } });
     }
+
+    if (opts?.signal?.aborted) return abort();
+    opts?.signal?.addEventListener('abort', abort, { once: true });
+    timeout = setTimeout(() => {
+      stopProcess();
+      finish({ groups: null, status: { status: 'timed-out', detail: `dedup exceeded ${timeoutMs}ms` } });
+    }, timeoutMs);
 
     proc.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
     proc.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
-    proc.on('error', () => resolveOuter(null));
+    proc.on('error', (err: Error) => finish({ groups: null, status: { status: 'unavailable', detail: err.message } }));
     proc.on('close', (code: number | null) => {
       if (code !== 0) {
-        // code 2 = fastembed missing → silent degrade (postinstall + doctor
-        // handle the hint). Non-zero with stderr is a real runtime fault,
-        // worth surfacing.
-        if (code !== 2 && stderr.trim()) {
-          console.warn(`[agon] dedup sidecar exited ${code}: ${stderr.trim().split('\n')[0]}`);
-        }
-        return resolveOuter(null);
+        const detail = stderr.trim().split('\n')[0] || `dedup sidecar exited ${code}`;
+        const status = code === 2 ? 'unavailable' as const : 'failed' as const;
+        return finish({ groups: null, status: { status, detail } });
       }
       try {
         const parsed = JSON.parse(stdout);
         const groups = (parsed?.groups ?? []) as BrainstormGroup[];
-        resolveOuter(Array.isArray(groups) ? groups : null);
+        if (!Array.isArray(groups)) {
+          return finish({ groups: null, status: { status: 'failed', detail: 'dedup sidecar returned malformed groups' } });
+        }
+        finish({ groups, status: { status: 'applied' } });
       } catch {
-        resolveOuter(null);
+        finish({ groups: null, status: { status: 'failed', detail: 'dedup sidecar returned invalid JSON' } });
       }
     });
 

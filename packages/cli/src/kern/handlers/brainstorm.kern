@@ -49,6 +49,28 @@ fn name=handleBrainstorm params="question:string, dispatch:Dispatch, ctx:Handler
     recordCheckpoint(preCp);
 
     const startTime = Date.now();
+    const liveState = new Map<string, { state: 'waiting' | 'running' | 'done' | 'failed'; detail?: string }>(
+      engines.map((id: string) => [id, { state: 'waiting' as const }]),
+    );
+    const currentProgress = (): EngineProgress[] => {
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      return engines.map((id: string) => {
+        const state = liveState.get(id) ?? { state: 'waiting' as const };
+        return {
+          id,
+          status: state.state === 'done'
+            ? `${icons().success} response received`
+            : state.state === 'failed'
+              ? `${icons().fail} ${state.detail ?? 'no response'}`
+              : state.state === 'running'
+                ? `drafting… ${elapsed}s`
+                : 'queued',
+          elapsed,
+          done: state.state === 'done',
+          failed: state.state === 'failed',
+        };
+      });
+    };
     // Poll at 250ms for a responsive elapsed counter, but only DISPATCH when the
     // rendered signature actually changes (i.e. once a second when elapsed ticks).
     // Without this guard brainstorm fired a progress-update — and a full arena
@@ -56,14 +78,8 @@ fn name=handleBrainstorm params="question:string, dispatch:Dispatch, ctx:Handler
     let _lastBrainstormProgressSig = '';
     const progressInterval = setInterval(() => {
       const elapsed = Math.floor((Date.now() - startTime) / 1000);
-      const progress: EngineProgress[] = engines.map((id: string) => ({
-        id,
-        status: `drafting… ${elapsed}s`,
-        elapsed,
-        done: false,
-        failed: false,
-      }));
-      const sig = `${engines.join(',')}@${elapsed}`;
+      const progress = currentProgress();
+      const sig = `${progress.map((entry) => `${entry.id}:${entry.status}`).join(',')}@${elapsed}`;
       if (sig !== _lastBrainstormProgressSig) {
         _lastBrainstormProgressSig = sig;
         dispatch({ type: 'progress-update', engines: progress });
@@ -81,11 +97,44 @@ fn name=handleBrainstorm params="question:string, dispatch:Dispatch, ctx:Handler
         timeout: 120,
         outputDir,
         signal: bsAbort.signal,
+        onEvent: (event: any) => {
+          const data = event.data ?? {};
+          if (event.type === 'brainstorm:seat-started' && typeof data.engineId === 'string') {
+            liveState.set(data.engineId, { state: 'running' });
+            scoreboardStartEngine(scoreboard, data.engineId);
+          }
+          if (event.type === 'brainstorm:seat-completed' && typeof data.engineId === 'string') {
+            if (data.ok) {
+              liveState.set(data.engineId, { state: 'done' });
+              scoreboardFinishEngine(scoreboard, data.engineId, { result: 'response received' });
+            } else {
+              const detail = String(data.detail ?? data.failure ?? 'no response');
+              liveState.set(data.engineId, { state: 'failed', detail });
+              scoreboardFailEngine(scoreboard, data.engineId, detail);
+            }
+            dispatch({ type: 'progress-update', engines: currentProgress() });
+          }
+        },
       });
     } catch (err) {
       clearInterval(progressInterval);
       dispatch({ type: 'progress-clear' });
+      for (const id of engines) {
+        const state = liveState.get(id);
+        if (state?.state !== 'failed') scoreboardFailEngine(scoreboard, id, state?.detail ?? 'brainstorm aborted before a usable draft');
+      }
+      dispatch({ type: 'info', message: renderScoreboard(scoreboard) });
+      recordRun({
+        mode: 'brainstorm',
+        intent: question,
+        success: false,
+        durationMs: Date.now() - startTime,
+        engineIds: engines,
+        completionState: bsAbort.signal.aborted ? 'aborted' : 'crashed',
+      });
       ctx.setActiveAbort(null);
+      // The job owner renders the thrown error. Keep local cleanup/telemetry
+      // here, but do not emit a second identical error block.
       throw err;
     }
 
@@ -135,6 +184,12 @@ fn name=handleBrainstorm params="question:string, dispatch:Dispatch, ctx:Handler
     // Panel health is non-negotiable output: a retried or dropped seat must be
     // visible in the REPL render, not just in background warn noise.
     if (result.panelHealth?.banner) dispatch({ type: 'info', message: `⚠ ${result.panelHealth.banner}` });
+    if (result.dedup && result.dedup.status !== 'applied' && result.dedup.status !== 'not-needed') {
+      dispatch({ type: 'info', message: `Dedup ${result.dedup.status}${result.dedup.detail ? `: ${result.dedup.detail}` : ''}` });
+    }
+    if (result.synthesis?.status === 'fallback') {
+      dispatch({ type: 'warning', message: `Synthesis fallback: ${result.synthesis.detail ?? 'winner expansion failed'}` });
+    }
     dispatch({ type: 'engine-block', engineId: result.winner, color: ENGINE_COLORS[result.winner] ?? 124, content: result.response });
 
     // Save to chat history so follow-up messages have context
@@ -155,6 +210,8 @@ fn name=handleBrainstorm params="question:string, dispatch:Dispatch, ctx:Handler
       data: {
         bids: result.bids.map((b: any) => ({ engineId: b.engineId, reasoning: b.reasoning, approach: b.approach, score: b.score })),
         response: result.response,
+        dedup: result.dedup,
+        synthesis: result.synthesis,
       },
     });
 
@@ -162,6 +219,8 @@ fn name=handleBrainstorm params="question:string, dispatch:Dispatch, ctx:Handler
       mode: 'brainstorm',
       intent: question,
       winner: result.winner,
+      // A synthesis fallback still returns a usable winning draft. Preserve
+      // the degraded detail separately without classifying the run as failed.
       success: true,
       durationMs: Date.now() - startTime,
       engineIds: engines,

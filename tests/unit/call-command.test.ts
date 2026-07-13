@@ -31,6 +31,45 @@ describe('agon call command mapping', () => {
     ]);
   });
 
+  it('forwards a protocol override to a solo tribunal', () => {
+    expect(buildCallCommands({
+      workflow: 'tribunal',
+      input: 'Should the seats respond to each other?',
+      tribunalMode: 'socratic',
+      tribunalProtocol: 'chained',
+    }).commands).toEqual([
+      ['tribunal', 'Should the seats respond to each other?', '--mode', 'socratic', '--protocol', 'chained'],
+    ]);
+  });
+
+  it('rejects an invalid tribunal protocol before constructing a pipeline', () => {
+    expect(() => buildCallCommands({
+      workflow: 'pipeline',
+      input: 'Make the bridge live',
+      fitnessCmd: 'npm test',
+      cwd: '/tmp/project',
+      tribunalProtocol: 'paralell',
+    })).toThrow('Invalid tribunal protocol');
+  });
+
+  it('rejects a protocol override for team tribunal instead of ignoring it', () => {
+    expect(() => buildCallCommands({
+      workflow: 'team-tribunal',
+      input: 'Should teams chain their internal work?',
+      tribunalProtocol: 'hybrid',
+    })).toThrow('solo tribunal only');
+  });
+
+  it('accepts protocol auto for team tribunal as a no-op default', () => {
+    expect(buildCallCommands({
+      workflow: 'team-tribunal',
+      input: 'Should the teams debate this?',
+      tribunalProtocol: 'auto',
+    }).commands).toEqual([
+      ['team-tribunal', 'Should the teams debate this?'],
+    ]);
+  });
+
   it('maps pipeline to brainstorm, forge, then tribunal', () => {
     expect(buildCallCommands({
       workflow: 'pipeline',

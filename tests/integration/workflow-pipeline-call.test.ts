@@ -61,11 +61,12 @@ describe('workflow-pipeline-call — agon.brainstorm-forge-tribunal@v1 wiring', 
       fitnessCmd: 'npm test',
       cwd: '/tmp/project',
       tribunalMode: 'synthesis',
+      tribunalProtocol: 'parallel',
     });
     expect(result.commands).toEqual([
       ['brainstorm', 'Make the bridge live'],
       ['forge', 'Make the bridge live', '--test', 'npm test', '--cwd', '/tmp/project'],
-      ['tribunal', 'Review the pipeline result for: Make the bridge live', '--rounds', '1', '--mode', 'synthesis'],
+      ['tribunal', 'Review the pipeline result for: Make the bridge live', '--rounds', '1', '--mode', 'synthesis', '--protocol', 'parallel'],
     ]);
   });
 

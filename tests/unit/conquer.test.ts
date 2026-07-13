@@ -12,6 +12,7 @@ import {
   parseBuilderSignals,
   classifyAsk,
   buildConquerSystemPrompt,
+  buildConquerTurnPrompt,
   doneOracleDecision,
   runConquer,
   runDoneOracle,
@@ -214,6 +215,23 @@ describe('buildConquerSystemPrompt', () => {
     expect(p).toContain('CONQUER_ASK');
     expect(p).toContain('CONQUER_DONE');
     expect(p).toMatch(/weaken/i);
+  });
+});
+
+describe('buildConquerTurnPrompt', () => {
+  it('keeps the original task on later turns and bounds previous output', () => {
+    const prompt = buildConquerTurnPrompt({
+      task: 'build the quoted CSV importer',
+      turn: 3,
+      previousOutput: 'x'.repeat(7_000),
+      instruction: 'Fix the reproduced failure.',
+      transcript: ['turn 1', 'turn 2'],
+    });
+    expect(prompt).toContain('build the quoted CSV importer');
+    expect(prompt).toContain('turn 2');
+    expect(prompt).toContain('Fix the reproduced failure.');
+    expect(prompt).toContain('earlier chars omitted');
+    expect(prompt.length).toBeLessThan(7_000);
   });
 });
 
@@ -522,11 +540,14 @@ describe('runConquer — supervisory loop', () => {
   });
 
   it('stops at the turn cap when the builder never finishes', async () => {
-    const adapter = { dispatch: async () => turn('still grinding, no sentinel') } as any;
+    const prompts: string[] = [];
+    const adapter = { dispatch: async ({ prompt }: any) => { prompts.push(prompt); return turn('still grinding, no sentinel'); } } as any;
     const res = await runConquer(base({ adapter, caps: { maxTurns: 3, maxWallClockMs: 0 } }));
     expect(res.done).toBe(false);
     expect(res.stopReason).toBe('cap-turns');
     expect(res.turnsUsed).toBe(3);
+    expect(prompts).toHaveLength(3);
+    for (const prompt of prompts) expect(prompt).toContain('build a thing');
   });
 
   it('stops on builder failure (non-zero exit)', async () => {

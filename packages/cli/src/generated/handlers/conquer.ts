@@ -6,7 +6,7 @@ import { mkdirSync } from 'node:fs';
 
 import { ensureAgonHome, RUNS_DIR, appendMessage, resolveWorkingDir, spawnWithTimeout } from '@kernlang/agon-core';
 
-import { runConquer } from '@kernlang/agon-forge';
+import { runConquer, createConquerIsolation } from '@kernlang/agon-forge';
 
 import type { ConquerTurn } from '@kernlang/agon-forge';
 
@@ -45,18 +45,34 @@ export async function handleConquer(task: string, dispatch: Dispatch, ctx: Handl
     const maxTurns = opts?.maxTurns && opts.maxTurns > 0 ? opts.maxTurns : 40;
     const outputDir = join(RUNS_DIR, `conquer-${Date.now()}`);
     mkdirSync(outputDir, { recursive: true });
+    let isolation;
+    try {
+      isolation = createConquerIsolation(task, cwd);
+    } catch (err) {
+      dispatch({ type: 'error', message: `Could not create the Conquer worktree: ${err instanceof Error ? err.message : String(err)}` });
+      return;
+    }
+    const { branch, path: worktreeCwd } = isolation;
 
     dispatch({ type: 'header', title: `Conquer · builder=${builder} · advisors=${advisors.join(',') || '(none)'}` });
     dispatch({ type: 'info', message: task.length > 120 ? task.slice(0, 120) + '…' : task });
     dispatch({ type: 'info', message: `gate: ${gate}` });
+    dispatch({ type: 'info', message: `isolated branch: ${branch}` });
+    dispatch({ type: 'info', message: `worktree: ${worktreeCwd}` });
+    try {
+      const sourceStatus = await spawnWithTimeout({ command: 'git', args: ['status', '--porcelain'], cwd, timeout: 15_000 });
+      if (String(sourceStatus.stdout ?? '').trim()) {
+        dispatch({ type: 'warning', message: 'The source checkout has uncommitted work. It remains untouched and is not included in this HEAD-based Conquer branch.' });
+      }
+    } catch { /* advisory only */ }
 
     ctx.setActiveAbort(cqAbort);
     const startTime = Date.now();
 
     const evaluateDone = async (_claim: string) => {
       try {
-        const diffRes = await spawnWithTimeout({ command: 'git', args: ['diff'], cwd, timeout: 30_000 });
-        const gateRes = await spawnWithTimeout({ command: 'sh', args: ['-c', gate], cwd, timeout: 1_800_000 });
+        const diffRes = await spawnWithTimeout({ command: 'git', args: ['diff'], cwd: worktreeCwd, timeout: 30_000 });
+        const gateRes = await spawnWithTimeout({ command: 'sh', args: ['-c', gate], cwd: worktreeCwd, timeout: 1_800_000 });
         return { diff: String(diffRes.stdout ?? ''), gateOk: gateRes.exitCode === 0, oracleTampered: false };
       } catch (err) {
         dispatch({ type: 'info', message: `done-check gate errored: ${err instanceof Error ? err.message : String(err)} — treating as not-done.` });
@@ -64,14 +80,28 @@ export async function handleConquer(task: string, dispatch: Dispatch, ctx: Handl
       }
     };
 
-    const result = await runConquer({
-      task, builderEngine: builder, advisorEngines: advisors,
-      registry: ctx.registry, adapter: ctx.adapter, timeout: 600, outputDir, cwd, gate,
-      caps: { maxTurns, maxWallClockMs: 0 },
-      evaluateDone,
-      onTurn: (t: ConquerTurn) => dispatch({ type: 'info', message: `turn ${t.n} · ${t.action}${t.action === 'consult' || t.action === 'done-check' ? ` — ${t.detail.slice(0, 80)}` : ''}` }),
-      signal: cqAbort.signal,
-    });
+    let result: any;
+    try {
+      result = await runConquer({
+        task, builderEngine: builder, advisorEngines: advisors,
+        registry: ctx.registry, adapter: ctx.adapter, timeout: 600, outputDir, cwd: worktreeCwd, gate,
+        caps: { maxTurns, maxWallClockMs: 0 },
+        evaluateDone,
+        onTurn: (t: ConquerTurn) => dispatch({ type: 'info', message: `turn ${t.n} · ${t.action}${t.action === 'consult' || t.action === 'done-check' ? ` — ${t.detail.slice(0, 80)}` : ''}` }),
+        signal: cqAbort.signal,
+      });
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      dispatch({ type: 'error', message: `Conquer failed: ${detail}` });
+      dispatch({ type: 'info', message: `Work preserved on ${branch} at ${worktreeCwd}. Remove it later with: agon worktree rm ${branch}` });
+      const failedRun = recordRun({
+        mode: 'conquer', intent: task, winner: builder, success: false,
+        durationMs: Date.now() - startTime, engineIds: [builder, ...advisors],
+        completionState: cqAbort.signal.aborted ? 'aborted' : 'crashed',
+      });
+      if (!process.env.AGON_NO_SUMMARY) dispatch({ type: 'info', message: formatRunSummary(failedRun) });
+      return;
+    }
 
     dispatch({ type: 'info', message: `Stopped: ${result.stopReason} · turns ${result.turnsUsed} · consults ${result.consultsRun}` });
     // Surface the falsifier's findings to the human merge gate (whether or not it blocked).
@@ -84,10 +114,11 @@ export async function handleConquer(task: string, dispatch: Dispatch, ctx: Handl
     if (result.done) {
       const claim = result.lastClaim || '(no claim captured)';
       dispatch({ type: 'info', message: `✓ Conquered. Claim: ${claim}` });
-      dispatch({ type: 'info', message: 'The builder\'s changes are in the working tree — review, then commit + push + open a PR to merge (this is your merge gate).' });
+      dispatch({ type: 'info', message: `The builder's changes are isolated on ${branch} at ${worktreeCwd}. Review and commit there, then open a PR to merge. Remove it later with: agon worktree rm ${branch}` });
       appendMessage(ctx.chatSession, { role: 'engine', engineId: builder, content: `[conquer:done] ${claim}`, timestamp: new Date().toISOString() });
     } else {
-      dispatch({ type: 'info', message: result.doneReason ? `Not verified done — ${result.doneReason}` : 'Did not reach a verified done state — inspect the working tree.' });
+      dispatch({ type: 'info', message: result.doneReason ? `Not verified done — ${result.doneReason}` : 'Did not reach a verified done state — inspect the isolated worktree.' });
+      dispatch({ type: 'info', message: `Work preserved on ${branch} at ${worktreeCwd}.` });
       appendMessage(ctx.chatSession, { role: 'engine', engineId: builder, content: `[conquer:stopped] ${result.stopReason}${result.doneReason ? ` — ${result.doneReason}` : ''}`, timestamp: new Date().toISOString() });
     }
 

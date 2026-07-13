@@ -26,10 +26,14 @@ interface name=CesarToolReliability
   field name=label type=CesarReliabilityLabel
   field name=reason type=string
 
-fn name=readCesarDecisionRecords params="limit?:number" returns="any[]" export=true
-  doc "Read recent Cesar decision records from ~/.agon/runs/cesar-decisions.jsonl. Tail-reads bounded windows when limit is set so long-running sessions do not parse the whole log every turn."
+interface name=CesarLatencySummary export=true
+  field name=count type=number
+  field name=p50Ms type=number
+  field name=meanMs type=number
+  field name=maxMs type=number
+
+fn name=readCesarJsonlPath params="reportPath:string,limit?:number" returns="any[]" export=false
   handler <<<
-    const reportPath = join(RUNS_DIR, 'cesar-decisions.jsonl');
     if (!existsSync(reportPath)) return [];
     let raw = '';
     try {
@@ -64,6 +68,85 @@ fn name=readCesarDecisionRecords params="limit?:number" returns="any[]" export=t
         try { return JSON.parse(line); } catch { return null; }
       })
       .filter((record: any) => !!record);
+  >>>
+
+fn name=mergeCesarTelemetryRecords params="records:any[]" returns="any[]" export=true
+  doc "Merge route-decision and brain-attempt telemetry. Current records join by stable turnId; historical records without one use the former near-time heuristic. Routing fields and attempt duration/tokens are both retained without collapsing distinct retries or repeated prompts."
+  handler <<<
+    const timestamp = (record: any): number => {
+      const value = Date.parse(String(record?.ts ?? ''));
+      return Number.isFinite(value) ? value : Number(record?.timestamp ?? 0) || 0;
+    };
+    const source = (record: any): string => String(record?.__source ?? 'unknown');
+    const stableTurnId = (record: any): string => String(record?.turnId ?? '').trim();
+    const heuristicTurnKey = (record: any): string => [
+      String(record?.mode ?? 'unknown'),
+      String(record?.inputLen ?? 'unknown'),
+    ].join('|');
+
+    const ordered = records.slice().sort((a, b) => timestamp(a) - timestamp(b));
+    const merged: any[] = [];
+    const stableIndex = new Map<string, number>();
+    for (const record of ordered) {
+      let match = -1;
+      const recordTurnId = stableTurnId(record);
+      if (recordTurnId) {
+        const indexed = stableIndex.get(recordTurnId);
+        if (indexed !== undefined && source(merged[indexed]) !== source(record)) match = indexed;
+      } else {
+        for (let i = merged.length - 1; i >= 0; i--) {
+          const candidate = merged[i];
+          const deltaMs = timestamp(record) - timestamp(candidate);
+          if (deltaMs > 5_000) break;
+          const legacyMatch = !stableTurnId(candidate)
+            && heuristicTurnKey(candidate) === heuristicTurnKey(record);
+          if (source(candidate) !== source(record) && legacyMatch) {
+            match = i;
+            break;
+          }
+        }
+      }
+      if (match < 0) {
+        merged.push({ ...record });
+        if (recordTurnId && !stableIndex.has(recordTurnId)) stableIndex.set(recordTurnId, merged.length - 1);
+        continue;
+      }
+      const prior = merged[match];
+      merged[match] = {
+        ...prior,
+        ...record,
+        durationMs: record.durationMs ?? prior.durationMs,
+        responseLen: record.responseLen ?? prior.responseLen,
+        tokens: record.tokens ?? prior.tokens,
+        __source: `${source(prior)}+${source(record)}`,
+      };
+      if (recordTurnId) stableIndex.set(recordTurnId, match);
+    }
+    return merged.map(({ __source, ...record }) => record);
+  >>>
+
+fn name=summarizeCesarLatency params="records:any[]" returns=CesarLatencySummary export=true
+  handler <<<
+    const durations = records
+      .map((record: any) => Number(record?.durationMs))
+      .filter((duration: number) => Number.isFinite(duration) && duration >= 0)
+      .sort((a: number, b: number) => a - b);
+    if (durations.length === 0) return { count: 0, p50Ms: 0, meanMs: 0, maxMs: 0 };
+    const p50Ms = durations[Math.floor((durations.length - 1) * 0.5)];
+    const meanMs = Math.round(durations.reduce((sum: number, duration: number) => sum + duration, 0) / durations.length);
+    return { count: durations.length, p50Ms, meanMs, maxMs: durations[durations.length - 1] };
+  >>>
+
+fn name=readCesarDecisionRecords params="limit?:number" returns="any[]" export=true
+  doc "Read the unified Cesar decision stream. New turns live in cesar-decisions.jsonl; legacy cesar-trace.jsonl records are merged and de-duplicated for backward-compatible reports."
+  handler <<<
+    const perFileLimit = typeof limit === 'number' && limit > 0 ? limit : undefined;
+    const decisions = readCesarJsonlPath(join(RUNS_DIR, 'cesar-decisions.jsonl'), perFileLimit)
+      .map((record: any) => ({ ...record, __source: 'decisions' }));
+    const legacy = readCesarJsonlPath(join(RUNS_DIR, 'cesar-trace.jsonl'), perFileLimit)
+      .map((record: any) => ({ ...record, __source: 'trace' }));
+    const merged = mergeCesarTelemetryRecords([...legacy, ...decisions]);
+    return typeof limit === 'number' && limit > 0 ? merged.slice(-limit) : merged;
   >>>
 
 fn name=isToolHeavyCesarRecord params="record:any" returns=boolean export=true

@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildWhatHappenedSummary,
+  mergeCesarTelemetryRecords,
   shouldDowngradeCesarToolWork,
+  summarizeCesarLatency,
   summarizeCesarToolReliability,
 } from '../../packages/cli/src/generated/cesar/reliability.js';
 
@@ -52,5 +54,48 @@ describe('Cesar tool reliability', () => {
     expect(summary).toContain('Read x2');
     expect(summary).toContain('native/mcp/xml 2/0/1');
     expect(summary).toContain('confidence via tool');
+  });
+
+  it('merges legacy trace latency into one decision record', () => {
+    const records = mergeCesarTelemetryRecords([
+      { __source: 'trace', ts: '2026-07-13T10:00:00.000Z', engineId: 'claude', mode: 'self', inputLen: 42, durationMs: 1200, tokens: { prompt: 100 } },
+      { __source: 'decisions', ts: '2026-07-13T10:00:01.000Z', engineId: 'claude', mode: 'self', inputLen: 42, recommendedFlow: 'answer' },
+      { __source: 'decisions', ts: '2026-07-13T10:01:00.000Z', engineId: 'claude', mode: 'self', inputLen: 42, durationMs: 3000 },
+    ]);
+
+    expect(records).toHaveLength(2);
+    expect(records[0]).toMatchObject({ durationMs: 1200, recommendedFlow: 'answer', tokens: { prompt: 100 } });
+    expect(records[0]).not.toHaveProperty('__source');
+  });
+
+  it('uses stable turn ids without collapsing distinct retries', () => {
+    const records = mergeCesarTelemetryRecords([
+      { __source: 'trace', ts: '2026-07-13T10:00:00.000Z', turnId: 'turn-a', engineId: 'claude', mode: 'self', inputLen: 42, durationMs: 1200 },
+      { __source: 'decisions', ts: '2026-07-13T10:00:08.000Z', turnId: 'turn-a', engineId: 'claude', mode: 'self', inputLen: 42, recommendedFlow: 'answer' },
+      { __source: 'trace', ts: '2026-07-13T10:00:09.000Z', turnId: 'turn-b', engineId: 'claude', mode: 'self', inputLen: 42, durationMs: 900 },
+    ]);
+
+    expect(records).toHaveLength(2);
+    expect(records[0]).toMatchObject({ turnId: 'turn-a', durationMs: 1200, recommendedFlow: 'answer' });
+    expect(records[1]).toMatchObject({ turnId: 'turn-b', durationMs: 900 });
+  });
+
+  it('merges legacy writers even when configured and resolved engine ids differ', () => {
+    const records = mergeCesarTelemetryRecords([
+      { __source: 'trace', ts: '2026-06-11T10:00:00.000Z', engineId: 'claude', mode: 'self', inputLen: 18, durationMs: 700 },
+      { __source: 'decisions', ts: '2026-06-11T10:00:01.000Z', engineId: 'acting-claude', mode: 'self', inputLen: 18, recommendedFlow: 'answer' },
+    ]);
+
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ durationMs: 700, recommendedFlow: 'answer' });
+  });
+
+  it('summarizes one latency stream with p50, mean, and max', () => {
+    expect(summarizeCesarLatency([
+      { durationMs: 100 },
+      { durationMs: 300 },
+      { durationMs: 900 },
+      { durationMs: 'invalid' },
+    ])).toEqual({ count: 3, p50Ms: 300, meanMs: 433, maxMs: 900 });
   });
 });

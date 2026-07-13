@@ -997,6 +997,7 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
 // @kern-source: cesar-router:935
 export async function routeWithCesar(input: string, images: ImageAttachment[], cb: DispatchCallbacks): Promise<boolean> {
   cb.setPendingImages(() => []);
+  const turnStartedAt = Date.now();
   // Hoisted out of the try so the fallback ladder below can see whether the
   // brain's failure was a deterministic config/auth error (skip the pointless
   // same-engine retry) vs a transient drop (retry is worth it).
@@ -1043,6 +1044,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
       const actualMode = result.mode ?? result.action ?? 'unknown';
       appendFileSync(tracePath, JSON.stringify({
         ts: new Date().toISOString(),
+        turnId: result.turnId,
         mode: actualMode,
         delegated: result.delegated,
         responded: result.responded,
@@ -1062,6 +1064,9 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
         narratedToolStalls: (result as any).narratedToolStalls ?? 0,
         autoToolExecutions: (result as any).autoToolExecutions ?? 0,
         confidenceToolUsed: (result as any).confidenceToolUsed === true,
+        liveTodosEmitted: (result as any).liveTodosEmitted === true,
+        multiToolTurn: Number((result as any).toolCallTurns ?? 0) > 1,
+        durationMs: Date.now() - turnStartedAt,
         taskClass: routingHints.taskClass,
         intakeKind: routingHints.intakeKind,
         recommendedFlow: routingHints.recommendedFlow,

@@ -338,6 +338,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         dispatch({ type: 'thinking-chunk', engineId, chunk: `${label} ${reasoning}` } as any);
       };
       const buildToolTelemetry = () => ({
+        turnId: _turnId,
         cesarEngineId: _actualCesarEngineId || undefined,
         cesarBackend: _actualCesarBackend,
         hasNativeTools: _actualHasNativeTools,
@@ -2696,31 +2697,31 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           }
           const tokenUsage = recordCesarTurn(ctx, cesarEngineId, input, response);
 
-          // Trace
+          // Brain-level attempt telemetry covers direct callers (plan execution,
+          // queued turns, and recovery attempts) that do not enter routeWithCesar.
+          // routeWithCesar writes the richer routing decision; read-side merging
+          // joins both records by turnId so normal turns are not double-counted.
           try {
             const tracePath = join(RUNS_DIR, 'cesar-trace.jsonl');
             const taskClass = classifyTask(input);
             const toolTelemetry = buildToolTelemetry();
-          appendFileSync(tracePath, JSON.stringify({
-            ts: new Date().toISOString(), engineId: cesarEngineId, backend: toolTelemetry.cesarBackend ?? ((config as any).cesarBackend ?? 'auto'),
-            durationMs: Date.now() - _turnStart, inputLen: input.length, responseLen: response.length, taskClass,
-            mode: usedQuickNero ? 'self-nero' : 'self', decisionReason: usedQuickNero ? 'self-challenge' : 'self-executed',
-            intakeKind: routingHints.intakeKind, recommendedFlow: routingHints.recommendedFlow,
-            uncertaintyFamily: routingHints.uncertaintyFamily, escalationHint: routingHints.escalationHint,
-            breadthHint: routingHints.recommendedBreadth, forgeScopeHint: routingHints.recommendedForgeScope,
-            toolsUsed: toolTelemetry.toolsUsed, toolCount: toolTelemetry.toolCount, toolEventCount: toolTelemetry.toolEventCount,
-            nativeToolCalls: toolTelemetry.nativeToolCalls, mcpToolCalls: toolTelemetry.mcpToolCalls, xmlToolCalls: toolTelemetry.xmlToolCalls,
-            narratedToolStalls: toolTelemetry.narratedToolStalls, autoToolExecutions: toolTelemetry.autoToolExecutions,
-            confidenceToolUsed: toolTelemetry.confidenceToolUsed, hasNativeTools: toolTelemetry.hasNativeTools,
-            delegated: false,
-            // Live-todo telemetry: emitted? + whether this was a multi-tool turn
-            // (toolCallTurns>1) — the later-gated metric is multi-tool turns that
-            // emitted ZERO todos, derivable from these two fields.
-            liveTodosEmitted: toolTelemetry.liveTodosEmitted,
-            multiToolTurn: toolTelemetry.toolCallTurns > 1,
-            confidence: parsedConfidence,
-            tokens: tokenUsage ? { prompt: tokenUsage.promptTokens, response: tokenUsage.responseTokens, cost: tokenUsage.costUsd } : undefined,
-          }) + '\n');
+            appendFileSync(tracePath, JSON.stringify({
+              ts: new Date().toISOString(), turnId: _turnId,
+              engineId: cesarEngineId, backend: toolTelemetry.cesarBackend ?? ((config as any).cesarBackend ?? 'auto'),
+              durationMs: Date.now() - _turnStart, inputLen: input.length, responseLen: response.length, taskClass,
+              mode: usedQuickNero ? 'self-nero' : 'self', decisionReason: usedQuickNero ? 'self-challenge' : 'self-executed',
+              intakeKind: routingHints.intakeKind, recommendedFlow: routingHints.recommendedFlow,
+              uncertaintyFamily: routingHints.uncertaintyFamily, escalationHint: routingHints.escalationHint,
+              breadthHint: routingHints.recommendedBreadth, forgeScopeHint: routingHints.recommendedForgeScope,
+              toolsUsed: toolTelemetry.toolsUsed, toolCount: toolTelemetry.toolCount, toolEventCount: toolTelemetry.toolEventCount,
+              toolCallTurns: toolTelemetry.toolCallTurns,
+              nativeToolCalls: toolTelemetry.nativeToolCalls, mcpToolCalls: toolTelemetry.mcpToolCalls, xmlToolCalls: toolTelemetry.xmlToolCalls,
+              narratedToolStalls: toolTelemetry.narratedToolStalls, autoToolExecutions: toolTelemetry.autoToolExecutions,
+              confidenceToolUsed: toolTelemetry.confidenceToolUsed, hasNativeTools: toolTelemetry.hasNativeTools,
+              liveTodosEmitted: toolTelemetry.liveTodosEmitted, multiToolTurn: toolTelemetry.toolCallTurns > 1,
+              confidence: parsedConfidence, delegated: false,
+              tokens: tokenUsage ? { prompt: tokenUsage.promptTokens, response: tokenUsage.responseTokens, cost: tokenUsage.costUsd } : undefined,
+            }) + '\n');
           } catch { /* tracing is best-effort */ }
 
           // Auto-remember

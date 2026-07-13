@@ -6,8 +6,8 @@ import {
 import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
 import type { ForgeEvent, RunStatusEngine } from '@kernlang/agon-core';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
-import { isTribunalMode, runTribunal } from '@kernlang/agon-forge';
-import type { TribunalMode } from '@kernlang/agon-forge';
+import { getModeConfig, isTribunalMode, isTribunalProtocol, runTribunal } from '@kernlang/agon-forge';
+import type { TribunalMode, TribunalProtocol } from '@kernlang/agon-forge';
 import { header, fail, info, warn, bold, dim, red } from '../output.js';
 import { filterDefaultOrchestrationEngines } from '../generated/handlers/engine-filter.js';
 
@@ -38,6 +38,12 @@ export const tribunalCommand = defineCommand({
       alias: 'm',
       description: 'Tribunal mode (adversarial, synthesis, steelman, socratic, red-team, postmortem)',
       default: 'adversarial',
+    },
+    protocol: {
+      type: 'string',
+      alias: 'p',
+      description: 'Execution protocol (auto, parallel, chained, hybrid)',
+      default: 'auto',
     },
     timeout: {
       type: 'string',
@@ -79,6 +85,15 @@ export const tribunalCommand = defineCommand({
       info('Valid modes: adversarial, synthesis, steelman, socratic, red-team, postmortem');
       process.exit(1);
     }
+    const requestedProtocol = String(args.protocol ?? 'auto').toLowerCase();
+    if (requestedProtocol !== 'auto' && !isTribunalProtocol(requestedProtocol)) {
+      fail(`Invalid tribunal protocol: ${requestedProtocol}`);
+      info('Valid protocols: auto, parallel, chained, hybrid');
+      process.exit(1);
+    }
+    const protocol = requestedProtocol === 'auto'
+      ? getModeConfig(mode, engines.length).protocol
+      : requestedProtocol as TribunalProtocol;
 
     if (args.quiet) process.env.AGON_QUIET = '1';
     const startedAt = new Date().toISOString();
@@ -93,6 +108,7 @@ export const tribunalCommand = defineCommand({
       info(`Engines: ${engines.join(', ')}`);
       info(`Rounds: ${rounds}`);
       info(`Mode: ${mode}`);
+      info(`Protocol: ${protocol}`);
       console.log('');
     }
 
@@ -108,6 +124,7 @@ export const tribunalCommand = defineCommand({
       engines,
       rounds,
       mode: mode as TribunalMode,
+      protocol,
       registry,
       adapter,
       timeout: parseInt(args.timeout, 10),
@@ -169,7 +186,7 @@ export const tribunalCommand = defineCommand({
       startedAt,
       endedAt: new Date().toISOString(),
       engines: engineStatuses,
-      summary: `${okCount}/${engines.length} engines argued across ${rounds} round(s) (mode=${mode})`,
+      summary: `${okCount}/${engines.length} engines argued across ${rounds} round(s) (mode=${mode}, protocol=${protocol})`,
       ok: okCount === engines.length,
     };
     writeRunStatus(outputDir, status);

@@ -5,15 +5,12 @@
 // CONQUER_DONE claim Cesar runs the done-oracle (the --gate command + diff
 // acceptance-drift + a nero falsification round). Stops at a human merge gate.
 //
-// v1 safety: runs in the CURRENT cwd/branch and, by default, LEAVES the builder's
-// changes in the working tree for the human to review + commit/PR (no surprising
-// git mutations). `--push` commits + pushes the current branch and prints the PR
-// link. Per-session git-worktree isolation + auto-branch are the hardening
-// follow-up. See .design-docs-local/cesar-autonomous-mode.md.
+// Every run gets a persistent named worktree/branch. The user's checkout is never
+// mutated; interrupted work remains inspectable and resumable at the printed path.
 
 import from="citty" names="defineCommand"
 import from="@kernlang/agon-core" names="EngineRegistry,ensureAgonHome,loadConfig,createRunDir,spawnWithTimeout,appendAttribution,appendPrAttribution,githubRepoUrl,defaultBaseBranch,prefilledPrUrl"
-import from="@kernlang/agon-forge" names="runConquer,runPrText"
+import from="@kernlang/agon-forge" names="runConquer,runPrText,createConquerIsolation"
 import from="@kernlang/agon-forge" names="ConquerResult,ConquerTurn" types=true
 import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
 import from="@kernlang/agon-adapter-cli" names="createCliAdapter"
@@ -36,7 +33,7 @@ const name=conquerCommand type=any
         maxTurns: { type: 'string', description: 'Max builder turns (default 40).' },
         maxHours: { type: 'string', description: 'Wall-clock cap in hours (default: none).' },
         timeout: { type: 'string', description: 'Per-builder-turn timeout in seconds (default 600).' },
-        push: { type: 'boolean', description: 'On success, commit the builder work and push the current branch (prints a PR hint). Default: leave changes in the tree for you to review.' },
+        push: { type: 'boolean', description: 'On success, commit and push the isolated conquer branch (prints a PR hint). Default: leave the isolated branch/worktree for review.' },
         label: { type: 'string', description: 'Human-readable suffix baked into the run dir name.' },
       },
       async run({ args }) {
@@ -101,32 +98,28 @@ const name=conquerCommand type=any
         const turnTimeout = parseInt(String(args.timeout ?? '600'), 10) || 600;
         const gateTimeout = parseInt(String(args.gateTimeout ?? '1800'), 10) || 1800;
 
-        // --push commits whatever is dirty after the run, so the tree MUST start clean —
-        // otherwise unrelated WIP/untracked files (or another session's edits) get committed.
-        if (args.push) {
-          const st = await spawnWithTimeout({ command: 'git', args: ['status', '--porcelain'], cwd, timeout: 15_000 });
-          if (String(st.stdout ?? '').trim()) {
-            console.error('--push needs a clean working tree at start so only the builder\'s changes are committed. Commit/stash first, or run without --push and review the diff yourself.');
-            process.exitCode = 1;
-            return;
-          }
-          // The human merge gate is load-bearing: pushing the DEFAULT branch would
-          // land the build with no PR at all. Refuse up front (before an hours-long
-          // run), not after the work is done.
-          const br = await spawnWithTimeout({ command: 'git', args: ['rev-parse', '--abbrev-ref', 'HEAD'], cwd, timeout: 15_000 });
-          const startBranch = String(br.stdout ?? '').trim();
-          if (startBranch === defaultBaseBranch(cwd) || startBranch === 'main' || startBranch === 'master') {
-            console.error(`--push refuses to run on the default branch (${startBranch}) — it would push the build straight to ${startBranch} and bypass the PR merge gate. Create a feature branch first: git checkout -b conquer/<name>`);
-            process.exitCode = 1;
-            return;
-          }
-        }
-
         const { path: outputDir } = createRunDir({ mode: 'conquer', label: args.label, announce: false });
+        let isolation;
+        try {
+          isolation = createConquerIsolation(taskStr, cwd);
+        } catch (err) {
+          console.error(`Could not create the Conquer worktree: ${err instanceof Error ? err.message : String(err)}`);
+          process.exitCode = 1;
+          return;
+        }
+        const { repoRoot: root, branch, path: worktreeCwd } = isolation;
+        try {
+          const sourceStatus = await spawnWithTimeout({ command: 'git', args: ['status', '--porcelain'], cwd, timeout: 15_000 });
+          if (String(sourceStatus.stdout ?? '').trim()) {
+            info(dim('The source checkout has uncommitted work. It remains untouched and is not included in this HEAD-based Conquer branch.'));
+          }
+        } catch { /* isolation is already established; status is advisory */ }
 
         header(`Conquer · builder=${builder} · advisors=${advisors.join(',') || '(none)'}`);
         info(taskStr.length > 120 ? taskStr.slice(0, 120) + '…' : taskStr);
         info(dim(`gate: ${gate}`));
+        info(dim(`isolated branch: ${branch}`));
+        info(dim(`worktree: ${worktreeCwd}`));
         console.log('');
 
         // The done-oracle's environment ops: diff (for L1 acceptance-drift) + the gate
@@ -134,8 +127,8 @@ const name=conquerCommand type=any
         // weakening; a frozen-oracle hash is the hardening follow-up.
         const evaluateDone = async (_claim: string) => {
           try {
-            const diffRes = await spawnWithTimeout({ command: 'git', args: ['diff'], cwd, timeout: 30_000 });
-            const gateRes = await spawnWithTimeout({ command: 'sh', args: ['-c', gate], cwd, timeout: gateTimeout * 1000 });
+            const diffRes = await spawnWithTimeout({ command: 'git', args: ['diff'], cwd: worktreeCwd, timeout: 30_000 });
+            const gateRes = await spawnWithTimeout({ command: 'sh', args: ['-c', gate], cwd: worktreeCwd, timeout: gateTimeout * 1000 });
             return { diff: String(diffRes.stdout ?? ''), gateOk: gateRes.exitCode === 0, oracleTampered: false };
           } catch (err) {
             // A spawn failure (no fds, shell init, etc.) must not crash the unattended loop —
@@ -145,20 +138,29 @@ const name=conquerCommand type=any
           }
         };
 
-        const result: ConquerResult = await runConquer({
-          task: taskStr,
-          builderEngine: builder,
-          advisorEngines: advisors,
-          registry,
-          adapter,
-          timeout: turnTimeout,
-          outputDir,
-          cwd,
-          gate,
-          caps: { maxTurns, maxWallClockMs: maxHours > 0 ? Math.round(maxHours * 3_600_000) : 0 },
-          evaluateDone,
-          onTurn: (t: ConquerTurn) => info(dim(`  turn ${t.n} · ${t.action}${t.action === 'consult' || t.action === 'done-check' ? ` — ${t.detail.slice(0, 80)}` : ''}`)),
-        });
+        let result: ConquerResult;
+        try {
+          result = await runConquer({
+            task: taskStr,
+            builderEngine: builder,
+            advisorEngines: advisors,
+            registry,
+            adapter,
+            timeout: turnTimeout,
+            outputDir,
+            cwd: worktreeCwd,
+            gate,
+            caps: { maxTurns, maxWallClockMs: maxHours > 0 ? Math.round(maxHours * 3_600_000) : 0 },
+            evaluateDone,
+            onTurn: (t: ConquerTurn) => info(dim(`  turn ${t.n} · ${t.action}${t.action === 'consult' || t.action === 'done-check' ? ` — ${t.detail.slice(0, 80)}` : ''}`)),
+          });
+        } catch (err) {
+          console.log('');
+          info(dim(`Conquer failed: ${err instanceof Error ? err.message : String(err)}`));
+          info(dim(`Work preserved on ${branch} at ${worktreeCwd}. Remove it later with: agon worktree rm ${branch}`));
+          process.exitCode = 1;
+          return;
+        }
 
         // Surface the falsifier's findings to the human merge gate — whether or not they
         // blocked. A verified counterexample is shown plainly; an advisory attack (the
@@ -176,7 +178,8 @@ const name=conquerCommand type=any
         console.log('');
         info(`Stopped: ${result.stopReason} · turns ${result.turnsUsed} · consults ${result.consultsRun}`);
         if (!result.done) {
-          info(result.doneReason ? `Not verified done — ${result.doneReason}` : 'Did not reach a verified done state. Inspect the working tree + the run log.');
+          info(result.doneReason ? `Not verified done — ${result.doneReason}` : 'Did not reach a verified done state. Inspect the isolated worktree + the run log.');
+          info(dim(`Work preserved on ${branch} at ${worktreeCwd}.`));
           showFalsifier();
           process.exitCode = 1;
           return;
@@ -187,10 +190,10 @@ const name=conquerCommand type=any
         info(`Claim: ${claim}`);
         showFalsifier();
         if (args.push) {
-          const git = (a: string[], t: number) => spawnWithTimeout({ command: 'git', args: a, cwd, timeout: t });
+          const git = (a: string[], t: number) => spawnWithTimeout({ command: 'git', args: a, cwd: worktreeCwd, timeout: t });
           const branchRes = await git(['rev-parse', '--abbrev-ref', 'HEAD'], 15_000);
-          const branch = String(branchRes.stdout ?? '').trim();
-          if (branchRes.exitCode !== 0 || !branch || branch === 'HEAD') {
+          const headBranch = String(branchRes.stdout ?? '').trim();
+          if (branchRes.exitCode !== 0 || !headBranch || headBranch === 'HEAD') {
             info(dim('Could not resolve a branch to push (detached HEAD?). The builder\'s changes are uncommitted in the tree — review + commit + push manually.'));
             process.exitCode = 1;
           } else {
@@ -204,20 +207,20 @@ const name=conquerCommand type=any
               info(dim(`git ${stage} failed: ${errTxt} — review the tree manually.`));
               process.exitCode = 1;
             } else {
-              const push = await git(['push', '-u', 'origin', branch], 120_000);
+              const push = await git(['push', '-u', 'origin', headBranch], 120_000);
               if (push.exitCode !== 0) {
-                info(dim(`git push failed: ${String(push.stderr ?? '').slice(0, 200)} — committed locally on ${branch}; push it manually.`));
+                info(dim(`git push failed: ${String(push.stderr ?? '').slice(0, 200)} — committed locally on ${headBranch}; push it manually.`));
                 process.exitCode = 1;
               } else {
-                info(`Pushed ${branch}.`);
+                info(`Pushed ${headBranch}.`);
                 // Engine-written PR text + a prefilled compare link — the no-gh PR
                 // path: the human clicks the link (title+body already filled) and
                 // merges. A PR-text miss falls back to the templated title + the
                 // builder's claim; the push already succeeded, so never fail here.
-                const base = defaultBaseBranch(cwd);
+                const base = defaultBaseBranch(root);
                 let title = `conquer: ${taskStr}`.slice(0, 72);
                 let body = claim;
-                if (branch !== base) {
+                if (headBranch !== base) {
                   const logRes = await git(['log', '--oneline', `origin/${base}..HEAD`], 15_000);
                   const commits = logRes.exitCode === 0 ? String(logRes.stdout ?? '').trim() : '';
                   const diffRes = await git(['diff', `origin/${base}...HEAD`], 30_000);
@@ -235,7 +238,7 @@ const name=conquerCommand type=any
                     adapter,
                     timeout: 300,
                     outputDir,
-                    cwd,
+                    cwd: worktreeCwd,
                   });
                   if (pr.ok) { title = pr.title; body = pr.body; }
                   else info(dim('PR-text engine call failed — using the templated title + claim.'));
@@ -245,15 +248,15 @@ const name=conquerCommand type=any
                 info(bold(title));
                 console.log(body);
                 console.log('');
-                const repoUrl = githubRepoUrl(cwd);
-                const url = branch !== base ? prefilledPrUrl({ repoUrl, base, branch, title, body }) : '';
+                const repoUrl = githubRepoUrl(root);
+                const url = headBranch !== base ? prefilledPrUrl({ repoUrl, base, branch: headBranch, title, body }) : '';
                 if (url) info(`Open the PR (form prefilled with the text above): ${url}`);
-                else info(`Open a PR from ${branch} to review + merge — this is your merge gate.`);
+                else info(`Open a PR from ${headBranch} to review + merge — this is your merge gate.`);
               }
             }
           }
         } else {
-          info(dim('The builder\'s changes are in the working tree. Review them, then commit + push + open a PR to merge (this is your merge gate). Pass --push to auto-commit+push the current branch.'));
+          info(dim(`The builder's changes are isolated on ${branch} at ${worktreeCwd}. Review and commit there, then open a PR to merge. Remove it later with: agon worktree rm ${branch}`));
         }
       },
     })

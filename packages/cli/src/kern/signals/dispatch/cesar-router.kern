@@ -936,6 +936,7 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
   doc "Unified Cesar brain routing. Returns true if a background job was dispatched."
   handler <<<
     cb.setPendingImages(() => []);
+    const turnStartedAt = Date.now();
     // Hoisted out of the try so the fallback ladder below can see whether the
     // brain's failure was a deterministic config/auth error (skip the pointless
     // same-engine retry) vs a transient drop (retry is worth it).
@@ -982,6 +983,7 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
         const actualMode = result.mode ?? result.action ?? 'unknown';
         appendFileSync(tracePath, JSON.stringify({
           ts: new Date().toISOString(),
+          turnId: result.turnId,
           mode: actualMode,
           delegated: result.delegated,
           responded: result.responded,
@@ -1001,6 +1003,9 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
           narratedToolStalls: (result as any).narratedToolStalls ?? 0,
           autoToolExecutions: (result as any).autoToolExecutions ?? 0,
           confidenceToolUsed: (result as any).confidenceToolUsed === true,
+          liveTodosEmitted: (result as any).liveTodosEmitted === true,
+          multiToolTurn: Number((result as any).toolCallTurns ?? 0) > 1,
+          durationMs: Date.now() - turnStartedAt,
           taskClass: routingHints.taskClass,
           intakeKind: routingHints.intakeKind,
           recommendedFlow: routingHints.recommendedFlow,
@@ -1038,4 +1043,3 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
     }
     return runCesarBrainFallback(input, cb, crashDel, priorDeterministic);
   >>>
-

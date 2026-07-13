@@ -46,6 +46,7 @@ describe('César Routing', () => {
       expect(context).toContain('INTAKE: big-feature');
       expect(context).toContain('RECOMMENDED FLOW: spec-first');
       expect(context).toContain('FLOW RULE:');
+      expect(context.match(/^RATIONALE:/gm)).toHaveLength(1);
     });
   });
 

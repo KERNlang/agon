@@ -634,7 +634,19 @@ export interface BrainstormGroup {
   similarity: number;
 }
 
-// @kern-source: types:528
+// @kern-source: types:525
+export interface BrainstormDedupStatus {
+  status: 'not-needed' | 'applied' | 'unavailable' | 'failed' | 'timed-out';
+  detail?: string;
+}
+
+// @kern-source: types:529
+export interface BrainstormSynthesisStatus {
+  status: 'completed' | 'fallback';
+  detail?: string;
+}
+
+// @kern-source: types:536
 export interface PanelHealth {
   requested: number;
   responded: number;
@@ -643,17 +655,19 @@ export interface PanelHealth {
   banner: string | null;
 }
 
-// @kern-source: types:535
+// @kern-source: types:543
 export interface BrainstormResult {
   question: string;
   bids: BrainstormBid[];
   winner: string;
   response: string;
   groups?: BrainstormGroup[];
+  dedup?: BrainstormDedupStatus;
+  synthesis?: BrainstormSynthesisStatus;
   panelHealth?: PanelHealth;
 }
 
-// @kern-source: types:543
+// @kern-source: types:553
 export interface BreakerArtifact {
   engineId: string;
   testScript: string;
@@ -663,7 +677,7 @@ export interface BreakerArtifact {
   validated: boolean;
 }
 
-// @kern-source: types:551
+// @kern-source: types:561
 export interface GauntletResult {
   winnerId: string;
   breakerArtifacts: BreakerArtifact[];
@@ -676,7 +690,7 @@ export interface GauntletResult {
   patchPath?: string;
 }
 
-// @kern-source: types:562
+// @kern-source: types:572
 export interface CorpusEntry {
   forgeId: string;
   taskClass: TaskClass;
@@ -686,7 +700,7 @@ export interface CorpusEntry {
   pattern?: string;
 }
 
-// @kern-source: types:570
+// @kern-source: types:580
 export interface GapPattern {
   pattern: string;
   taskClass: TaskClass;
@@ -697,7 +711,7 @@ export interface GapPattern {
   skillPath?: string;
 }
 
-// @kern-source: types:579
+// @kern-source: types:589
 export interface Critique {
   file: string;
   lines: string;
@@ -705,5 +719,5 @@ export interface Critique {
   minimalFix: string;
 }
 
-// @kern-source: types:585
+// @kern-source: types:595
 export const DEFAULT_CONFIG: Required<AgonConfig> = DEFAULT_AGON_CONFIG;

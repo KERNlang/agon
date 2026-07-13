@@ -45,7 +45,7 @@ fn name=rankDrafts params="drafts:{engineId:string, draft:KernDraft, raw:string,
   >>>
 
 fn name=collectRankedDrafts async=true params="opts:{question:string, context?:string, engines:string[], registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal, onEvent?:(event:{type:string,data?:Record<string,unknown>})=>void}" returns="Promise<{ranked:{engineId:string, draft:KernDraft, raw:string, seat:SeatOutcome}[], outcomes:SeatOutcome[]}>"
-  handler <<<
+  handler lang="ts" <<<
     const draftPrompt = buildKernDraftPrompt({
       question: opts.question,
       context: opts.context,
@@ -100,13 +100,18 @@ fn name=scoutScore params="bid:ScoutBid" returns=number
     assign target="score" op="+=" value="bid.risk === 'low' ? 20 : bid.risk === 'medium' ? 10 : 0"
     return value="score"
 
+fn name=warnBrainstorm params="message:string" returns=void export=false
+  handler lang="ts" <<<
+    console.warn(message);
+  >>>
+
 fn name=runScout async=true params="opts:{question:string, context?:string, engines:string[], scoutCount?:number, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal}" returns="Promise<{rankedBids:ScoutBid[], leadEngine:string, topConfidence:number, disagreementSpread:number}>"
   handler lang="kern"
     let name=count value="opts.scoutCount ?? 2"
     comment raw="// Filter quarantined engines BEFORE slicing, else a dead engine in the first"
     comment raw="// scoutCount slots still burns a scout dispatch (review consensus: claude/kimi/agy/zai)."
     let name=__hcScout value="await preflightHealthFilter({ engineIds: opts.engines, registry: opts.registry, adapter: opts.adapter, signal: opts.signal })"
-    do value="__hcScout.skipped.forEach((s) => console.warn(`[agon] scout: skipping ${s.engineId} — ${s.status} (${s.reason})`))"
+    do value="__hcScout.skipped.forEach((s) => warnBrainstorm(`[agon] scout: skipping ${s.engineId} — ${s.status} (${s.reason})`))"
     let name=scouts value="__hcScout.healthy.slice(0, count)"
     let name=collected value="await collectRankedDrafts({ question: opts.question, context: opts.context, engines: scouts, registry: opts.registry, adapter: opts.adapter, timeout: Math.min(opts.timeout, 30), outputDir: opts.outputDir, signal: opts.signal, })"
     let name=ranked value="collected.ranked"
@@ -115,7 +120,7 @@ fn name=runScout async=true params="opts:{question:string, context?:string, engi
     do value="bids.sort((a, b) => scoutScore(b) - scoutScore(a))"
     let name=topConfidence value="bids.length > 0 ? bids[0].confidence : 0"
     let name=secondConfidence value="bids.length > 1 ? bids[1].confidence : 0"
-    let name=disagreementSpread value="Math.abs(topConfidence - secondConfidence)"
+    let name=disagreementSpread value="Number.abs(topConfidence - secondConfidence)"
     return value="{ rankedBids: bids, leadEngine: bids.length > 0 ? bids[0].engineId : scouts[0], topConfidence, disagreementSpread, }"
 
 fn name=fallbackParse params="output:string" returns="KernDraft"
@@ -160,7 +165,7 @@ fn name=fallbackParse params="output:string" returns="KernDraft"
   >>>
 
 fn name=runBrainstorm async=true params="opts:{question:string, context?:string, engines:string[], registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal, onEvent?:(event:{type:string,data?:Record<string,unknown>})=>void}" returns="Promise<BrainstormResult>"
-  handler <<<
+  handler lang="ts" <<<
     const brainstormId = randomUUID().slice(0, 8);
     // Cold-start: seed newly-dropped model versions from their predecessor before
     // bidding, so a new engine competes at its family's strength, not 1500.

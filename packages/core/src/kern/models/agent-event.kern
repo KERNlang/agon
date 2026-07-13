@@ -201,6 +201,6 @@ fn name=unavailableUsage params="" returns=AgentUsage export=true expr={{ return
 fn name=estimatedUsage params="promptText:string,responseText:string" returns=AgentUsage export=true
   doc "Build an estimated AgentUsage using the char/4 heuristic (matches TokenTracker.estimateTokens). Phase 1 AgentSession uses this for CLI engines until Phase 3 protocol parsers emit real usage."
   handler lang="kern"
-    let name=promptTokens value="Math.ceil(promptText.length / 4)"
-    let name=completionTokens value="Math.ceil(responseText.length / 4)"
+    let name=promptTokens value="Number.ceil(promptText.length / 4)"
+    let name=completionTokens value="Number.ceil(responseText.length / 4)"
     return value="{ promptTokens, completionTokens, totalTokens: promptTokens + completionTokens, source: 'estimated', }"

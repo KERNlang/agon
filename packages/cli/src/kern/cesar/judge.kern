@@ -9,40 +9,34 @@ import from="./session.js" names="ensureCesarSession"
 
 fn name=parseForgeJudgment params="response:string, manifest:ForgeManifest" returns="ForgeJudgment|null" export=false
   doc "Parse Cesar's structured judgment response."
-  handler lang="kern"
-    comment raw="// Strip confidence prefix (e.g. ~91%) before parsing structured output"
-    let name=stripped value="parseConfidence(response).rest"
-    let name=lines value="stripped.split('\\n')"
-    let name=winner kind=let value="manifest.winner ?? ''"
-    let name=strengths type="{ engineId: string; category: string; reason: string }[]" value="[]"
-    let name=convergencePlan type="ConvergenceEntry[]" value="[]"
-    let name=summary kind=let value="''"
-    let name=shouldConverge kind=let value="false"
-    each name=line in="lines"
-      let name=trimmed value="line.trim()"
-      comment raw="// WINNER: engineId"
-      let name=winnerMatch value="trimmed.match(/^WINNER:\\s*(.+)/i)"
-      if cond="winnerMatch"
-        assign target="winner" value="winnerMatch[1].trim()"
-      comment raw="// CONVERGE: yes|no"
-      let name=convergeMatch value="trimmed.match(/^CONVERGE:\\s*(yes|no)/i)"
-      if cond="convergeMatch"
-        assign target="shouldConverge" value="convergeMatch[1].toLowerCase() === 'yes'"
-      comment raw="// SUMMARY: text"
-      let name=summaryMatch value="trimmed.match(/^SUMMARY:\\s*(.+)/i)"
-      if cond="summaryMatch"
-        assign target="summary" value="summaryMatch[1].trim()"
-      comment raw="// Strength: - engineId: category — reason"
-      let name=strengthMatch value="trimmed.match(/^-\\s+(\\w+):\\s+(.+?)\\s+[—–-]\\s+(.+)/)"
-      if cond="strengthMatch && !trimmed.startsWith('- file:')"
-        do value="strengths.push({ engineId: strengthMatch[1], category: strengthMatch[2], reason: strengthMatch[3] })"
-      comment raw="// Convergence: - file:path fn:name from:engineId reason:why"
-      let name=convMatch value="trimmed.match(/^-\\s+file:(\\S+)\\s+fn:(\\S+)\\s+from:(\\S+)\\s+reason:(.+)/)"
-      if cond="convMatch"
-        do value="convergencePlan.push({ file: convMatch[1], fn: convMatch[2], from: convMatch[3], reason: convMatch[4].trim() })"
-    if cond="!winner"
-      return value="null"
-    return value="{ winner, strengths, convergencePlan, summary, shouldConverge }"
+  handler lang="ts" <<<
+    const stripped = parseConfidence(response).rest;
+    const lines = stripped.split('\n');
+    let winner = manifest.winner ?? '';
+    const strengths: { engineId: string; category: string; reason: string }[] = [];
+    const convergencePlan: ConvergenceEntry[] = [];
+    let summary = '';
+    let shouldConverge = false;
+    for (const line of lines) {
+      const trimmed = line.trim();
+      const winnerMatch = trimmed.match(/^WINNER:\s*(.+)/i);
+      if (winnerMatch) winner = winnerMatch[1].trim();
+      const convergeMatch = trimmed.match(/^CONVERGE:\s*(yes|no)/i);
+      if (convergeMatch) shouldConverge = convergeMatch[1].toLowerCase() === 'yes';
+      const summaryMatch = trimmed.match(/^SUMMARY:\s*(.+)/i);
+      if (summaryMatch) summary = summaryMatch[1].trim();
+      const strengthMatch = trimmed.match(/^-\s+(\w+):\s+(.+?)\s+[—–-]\s+(.+)/);
+      if (strengthMatch && !trimmed.startsWith('- file:')) {
+        strengths.push({ engineId: strengthMatch[1], category: strengthMatch[2], reason: strengthMatch[3] });
+      }
+      const convMatch = trimmed.match(/^-\s+file:(\S+)\s+fn:(\S+)\s+from:(\S+)\s+reason:(.+)/);
+      if (convMatch) {
+        convergencePlan.push({ file: convMatch[1], fn: convMatch[2], from: convMatch[3], reason: convMatch[4].trim() });
+      }
+    }
+    if (!winner) return null;
+    return { winner, strengths, convergencePlan, summary, shouldConverge };
+  >>>
 
 fn name=cesarReviewForgeOutcome async=true params="manifest:ForgeManifest, dispatch:Dispatch, ctx:HandlerContext" returns="Promise<void>"
   doc "Run after every forge — narrate the outcome to the user via Cesar so the user always knows what happened. Handles error / already-satisfied / single-survivor / normal multi-pass states. For multi-pass, defers to cesarJudgeForge for full judgment. For single-survivor, asks Cesar to read the surviving patch and recommend accept-or-retry. For error, asks Cesar to explain the failure plainly."

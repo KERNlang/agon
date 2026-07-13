@@ -1,11 +1,23 @@
 import from="@kernlang/agon-core" names="EngineRegistry,EventBus,engineHealth"
 import from="../cesar/telemetry.js" names="computeOverallHealth,createEngineVitals,markEngineStalled,updateEngineVitals"
 import from="../cesar/telemetry.js" names="EngineVitals,EngineVitalState,TelemetrySnapshot" types=true
+import from="../lib/kern-host.js" names="hostNowMs,hostSet"
 import from="node:os" names="totalmem"
 
 const name=DEFAULT_SAMPLE_INTERVAL_MS type=number export=true value=1000
 const name=DEFAULT_STALL_THRESHOLD_MS type=number export=true value=30000
 const name=DEFAULT_NETWORK_PROBE_URL type=string export=true value="https://example.com"
+
+fn name=buildTelemetrySnapshotRecord params="timestamp:number,engines:EngineVitals[],activeRuns:number,recentFallbacks:{from:string,to:string,reason:string,at:number}[]" returns=TelemetrySnapshot export=false
+  handler lang="ts" <<<
+    return {
+      timestamp,
+      engines,
+      overallHealth: computeOverallHealth(engines),
+      activeRuns,
+      recentFallbacks,
+    };
+  >>>
 
 interface name=TelemetryServiceOptions export=true
   field name=registry type=EngineRegistry
@@ -38,29 +50,38 @@ service name=TelemetryService export=true singleton=true
   field name=pidusageLoader type="Promise<any>|null" private=true
 
   constructor params="opts:TelemetryServiceOptions"
-    handler lang="kern"
-      assign target="this.opts" value="opts"
-      if cond="opts.__test"
-        assign target="this.sampleIntervalMs" value="Number(opts.sampleIntervalMs ?? DEFAULT_SAMPLE_INTERVAL_MS)"
-        assign target="this.stallThresholdMs" value="Number(opts.stallThresholdMs ?? DEFAULT_STALL_THRESHOLD_MS)"
-      else
-        assign target="this.sampleIntervalMs" value="Math.max(250, Number(opts.sampleIntervalMs ?? DEFAULT_SAMPLE_INTERVAL_MS))"
-        assign target="this.stallThresholdMs" value="Math.max(1000, Number(opts.stallThresholdMs ?? DEFAULT_STALL_THRESHOLD_MS))"
-      assign target="this.networkProbeUrl" value="String(opts.networkProbeUrl ?? DEFAULT_NETWORK_PROBE_URL)"
-      assign target="this.vitals" value="new Map()"
-      assign target="this.subscribers" value="new Set()"
-      assign target="this.stalledIds" value="new Set()"
-      assign target="this.running" value="false"
-      assign target="this.samplerTask" value="null"
-      assign target="this.recentFallbacks" value="[]"
-      assign target="this.pidusageLoader" value="null"
-      let name=now value="Date.now()"
-      let name=engines type="EngineVitals[]" value="[]"
-      each name=id in="opts.registry.listIds()"
-        let name=vital value="createEngineVitals(id, { state: 'idle' as EngineVitalState, lastHeartbeatAt: now })"
-        do value="this.vitals.set(id, vital)"
-        do value="engines.push(vital)"
-      assign target="this.snapshot" value="{ timestamp: now, engines, overallHealth: computeOverallHealth(engines), activeRuns: this.runningJobCount(), recentFallbacks: [], }"
+    handler lang="ts" <<<
+      this.opts = opts;
+      if (opts.__test) {
+        this.sampleIntervalMs = Number(opts.sampleIntervalMs ?? DEFAULT_SAMPLE_INTERVAL_MS);
+        this.stallThresholdMs = Number(opts.stallThresholdMs ?? DEFAULT_STALL_THRESHOLD_MS);
+      } else {
+        this.sampleIntervalMs = Math.max(250, Number(opts.sampleIntervalMs ?? DEFAULT_SAMPLE_INTERVAL_MS));
+        this.stallThresholdMs = Math.max(1000, Number(opts.stallThresholdMs ?? DEFAULT_STALL_THRESHOLD_MS));
+      }
+      this.networkProbeUrl = String(opts.networkProbeUrl ?? DEFAULT_NETWORK_PROBE_URL);
+      this.vitals = new Map();
+      this.subscribers = new Set();
+      this.stalledIds = new Set();
+      this.running = false;
+      this.samplerTask = null;
+      this.recentFallbacks = [];
+      this.pidusageLoader = null;
+      const now = Date.now();
+      const engines: EngineVitals[] = [];
+      for (const id of opts.registry.listIds()) {
+        const vital = createEngineVitals(id, { state: 'idle' as EngineVitalState, lastHeartbeatAt: now });
+        this.vitals.set(id, vital);
+        engines.push(vital);
+      }
+      this.snapshot = {
+        timestamp: now,
+        engines,
+        overallHealth: computeOverallHealth(engines),
+        activeRuns: this.runningJobCount(),
+        recentFallbacks: [],
+      };
+    >>>
 
   method name=start returns=void
     handler <<<
@@ -139,25 +160,25 @@ service name=TelemetryService export=true singleton=true
         let name=isStalled value="sampled.state === 'stalled'"
         if cond="isStalled && !wasStalled"
           do value="this.stalledIds.add(id)"
-          do value="this.emitEvent('engine:stall-detected', { source: 'telemetry-service', engineId: id, at: Date.now(), stallDurationMs: sampled.stallDurationMs ?? 0, })"
+          do value="this.emitEvent('engine:stall-detected', { source: 'telemetry-service', engineId: id, at: hostNowMs(), stallDurationMs: sampled.stallDurationMs ?? 0, })"
           let name=candidate value="this.pickFallbackCandidate(id)"
           if cond="candidate"
             fmt name=reason template="stall>${this.stallThresholdMs}ms"
             assign target="sampled" value="{ ...sampled, state: 'fallback' as EngineVitalState, fallbackTo: candidate, fallbackReason: reason }"
-            assign target="this.recentFallbacks" value="[...this.recentFallbacks.slice(-7), { from: id, to: candidate, reason, at: Date.now() }]"
-            do value="this.emitEvent('engine:fallback', { source: 'telemetry-service', from: id, to: candidate, reason, at: Date.now(), })"
+            assign target="this.recentFallbacks" value="[...this.recentFallbacks.slice(-7), { from: id, to: candidate, reason, at: hostNowMs() }]"
+            do value="this.emitEvent('engine:fallback', { source: 'telemetry-service', from: id, to: candidate, reason, at: hostNowMs(), })"
         else
           if cond="!isStalled && wasStalled"
             do value="this.stalledIds.delete(id)"
         do value="this.vitals.set(id, sampled)"
         do value="nextVitals.push(sampled)"
       comment raw="// Drop vitals for engines that were removed from registry."
-      let name=liveIds value="new Set(ids)"
+      let name=liveIds value="hostSet(ids)"
       each name=staleId in="Array.from(this.vitals.keys())"
         if cond="!liveIds.has(staleId)"
           do value="this.vitals.delete(staleId)"
           do value="this.stalledIds.delete(staleId)"
-      let name=snapshot type="TelemetrySnapshot" value="{ timestamp: Date.now(), engines: nextVitals, overallHealth: computeOverallHealth(nextVitals), activeRuns: this.runningJobCount(), recentFallbacks: this.recentFallbacks.slice(-8), }"
+      let name=snapshot type="TelemetrySnapshot" value="buildTelemetrySnapshotRecord(hostNowMs(), nextVitals, this.runningJobCount(), this.recentFallbacks.slice(-8))"
       return value="snapshot"
 
   method name=sampleOneEngine async=true params="engineId:string,prior:EngineVitals,assignment?:string" returns="Promise<EngineVitals>" private=true

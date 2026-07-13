@@ -4,6 +4,7 @@
 import from="node:crypto" names="randomUUID"
 import from="../models/types.js" names="TaskClass" types=true
 import from="../signals/glicko.js" names="getRatings"
+import from="../blocks/host-runtime.js" names="hostObjectValues"
 
 type name=TeamRole values="architect|implementer|reviewer|captain"
 type name=TeamComposeMode values="explicit|auto-balanced|adaptive"
@@ -218,7 +219,7 @@ fn name=computeContributionWeights params="team:TeamSpec, trace:TeamRoundTrace[]
       if cond="reviewer"
         assign target="weights[reviewer.engineId]" value="(weights[reviewer.engineId] ?? 0) + shift"
     comment raw="// Normalize to sum to 1.0"
-    let name=total value="Object.values(weights).reduce((s, w) => s + w, 0)"
+    let name=total value="(hostObjectValues(weights) as number[]).reduce((s, w) => s + w, 0)"
     if cond="total > 0"
       each name=key in="Object.keys(weights)"
         assign target="weights[key]" op="/=" value="total"

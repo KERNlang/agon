@@ -1,3 +1,5 @@
+import from="../lib/kern-host.js" names="hostRegexExec,hostRegexMatch,hostRegexObjectTest,hostStringSet"
+
 module name=IntentParsing
   interface name=SlashCommand
     field name=cmd type=string
@@ -76,15 +78,15 @@ module name=IntentParsing
 
   const name=AUTOCREDIT_ON_KEYWORDS type=RegExp value={{ /\b(?:schalt(?:e|)?\s+(?:das|es|autoCredit)\s+an|mach(?:e|)?\s+(?:das|es|autoCredit)\s+an|(?:autoCredit|co[\s-]?authored?|contributor)\s+an)\b/i }}
 
-  const name=KNOWN_COLLAB_ENGINE_IDS type="Set<string>" value={{ new Set([ 'claude', 'codex', 'agy', 'antigravity', 'qwen', 'kimi', 'opencode', 'open-code', 'minimax', 'zai', 'aider', 'cursor', 'gpt', 'openai' ]) }}
+  const name=KNOWN_COLLAB_ENGINE_IDS type="Set<string>" value={{ hostStringSet([ 'claude', 'codex', 'agy', 'antigravity', 'qwen', 'kimi', 'opencode', 'open-code', 'minimax', 'zai', 'aider', 'cursor', 'gpt', 'openai' ]) }}
 
   fn name=classifyTask params="input:string" returns="'code'|'question'|'ambiguous'"
     handler lang="kern"
-      if cond="QUESTION_PATTERN.test(input)"
+      if cond="hostRegexObjectTest(QUESTION_PATTERN, input)"
         return value="'question'"
-      if cond="CODE_TASK_PATTERN.test(input)"
+      if cond="hostRegexObjectTest(CODE_TASK_PATTERN, input)"
         return value="'code'"
-      if cond="CODE_ARTIFACT_PATTERN.test(input)"
+      if cond="hostRegexObjectTest(CODE_ARTIFACT_PATTERN, input)"
         return value="'code'"
       return value="'ambiguous'"
 
@@ -93,15 +95,15 @@ module name=IntentParsing
       comment raw="// Only match --hardened as a standalone flag (not inside task text or test args)"
       let name=hardenedMatch value="input.match(/^(--hardened)\\s+(.*)$/i) || input.match(/^(.*?)\\s+(--hardened)\\s*$/i)"
       let name=hardened value="hardenedMatch !== null"
-      let name=cleaned value="hardened ? (hardenedMatch[1] === '--hardened' ? hardenedMatch[2] : hardenedMatch[1]).trim() : input"
-      let name=fitnessMatch value="FITNESS_PATTERN.exec(cleaned)"
+      let name=cleaned value="hardened ? (hardenedMatch?.groups[0] === '--hardened' ? hardenedMatch?.groups[1] ?? '' : hardenedMatch?.groups[0] ?? '').trim() : input"
+      let name=fitnessMatch value="hostRegexExec(FITNESS_PATTERN, cleaned)"
       let name=fitnessCmd value="fitnessMatch ? fitnessMatch[1].trim() : null"
       let name=task value="fitnessCmd ? cleaned.replace(FITNESS_PATTERN, '').trim() : cleaned"
       return value="{ type: 'forge', task, fitnessCmd, hardened } as Intent"
 
   fn name=parseAgentShortcut params="input:string" returns="Intent|null" export=false
     handler lang="kern"
-      let name=match value="input.match(AGENT_TRIGGER_PATTERN)"
+      let name=match value="hostRegexMatch(AGENT_TRIGGER_PATTERN, input)"
       if cond="!match"
         return value="null"
       let name=task value="(match[1] ?? '').trim()"
@@ -167,13 +169,13 @@ module name=IntentParsing
         return value="null"
       let name=IMPLEMENTATION_LEAD_RE value="/^(?:fix(?:e[sd]|ing)?|add(?:ed|ing|s)?|implement(?:ed|ing|s)?|build(?:ing|s)?|built|creat(?:e[sd]?|ing)|refactor(?:ed|ing|s)?|rewrit(?:e|es|ing|ten)|migrat(?:e[sd]?|ing)|wir(?:e[sd]?|ing)|chang(?:e[sd]?|ing)|updat(?:e[sd]?|ing)|optimi[sz](?:e[sd]?|ing)|remov(?:e[sd]?|ing)|delet(?:e[sd]?|ing)|patch(?:ed|ing|es)?)\\b/i"
       let name=normalized value="input.trim().replace(/^(?:can\\s+you\\s+|could\\s+you\\s+|please\\s+)?/i, '')"
-      if cond="IMPLEMENTATION_LEAD_RE.test(normalized)"
+      if cond="hostRegexObjectTest(IMPLEMENTATION_LEAD_RE, normalized)"
         return value="null"
       let name=engineIds value="parseExplicitEngineIds(input)"
       if cond="engineIds.length === 0"
         return value="null"
       let name=targetMatch value="lower.match(/\\b(uncommitted|branch:[\\w./-]+|commit:[a-f0-9]{4,40})\\b/i)"
-      let name=target value="targetMatch ? targetMatch[1] : undefined"
+      let name=target value="targetMatch ? targetMatch.groups[0] ?? undefined : undefined"
       return value="{ type: 'review', engineId: engineIds[0], engineIds, target } as Intent"
 
   fn name=stripCollaborationLeadIn params="input:string" returns=string export=false
@@ -266,7 +268,7 @@ module name=IntentParsing
       let name=match value="input.match(/^(?:review|cr)(?:\\s+([\\s\\S]+))?$/i)"
       if cond="!match"
         return value="null"
-      let name=rest value="(match[1] ?? '').trim()"
+      let name=rest value="(match.groups[0] ?? '').trim()"
       if cond="!rest"
         return value="parseReviewInput('')"
       let name=parsed value="parseReviewInput(rest) as any"
@@ -697,9 +699,9 @@ module name=IntentParsing
         let name=bangCmd value="input.slice(2).trim()"
         if cond="bangCmd"
           return value="{ type: 'run', input: bangCmd } as Intent"
-      if cond="EXIT_KEYWORDS.test(input)"
+      if cond="hostRegexObjectTest(EXIT_KEYWORDS, input)"
         return value="{ type: 'exit' } as Intent"
-      if cond="HELP_KEYWORDS.test(input)"
+      if cond="hostRegexObjectTest(HELP_KEYWORDS, input)"
         return value="{ type: 'help' } as Intent"
       let name=agentShortcut value="parseAgentShortcut(input)"
       if cond="agentShortcut"
@@ -719,20 +721,20 @@ module name=IntentParsing
       if cond="reviewShortcut"
         return value="reviewShortcut"
       comment raw="// Natural-language toggle for autoCredit (German + English)"
-      if cond="AUTOCREDIT_OFF_KEYWORDS.test(input)"
+      if cond="hostRegexObjectTest(AUTOCREDIT_OFF_KEYWORDS, input)"
         return value="{ type: 'toggleAutoCredit', autoCredit: false, input } as Intent"
-      if cond="AUTOCREDIT_ON_KEYWORDS.test(input)"
+      if cond="hostRegexObjectTest(AUTOCREDIT_ON_KEYWORDS, input)"
         return value="{ type: 'toggleAutoCredit', autoCredit: true, input } as Intent"
       comment raw="// Only match keyword shortcuts for short, command-like inputs."
       comment raw="// Skip if input looks like a natural language sentence (question words, pronouns, >4 words)."
-      let name=isCommandLike value="input.split(/\\s+/).length <= 4 && !SENTENCE_PREFIX.test(input)"
+      let name=isCommandLike value="input.split(/\\s+/).length <= 4 && !hostRegexObjectTest(SENTENCE_PREFIX, input)"
       if cond="isCommandLike"
-        if cond="LEADERBOARD_KEYWORDS.test(input)"
+        if cond="hostRegexObjectTest(LEADERBOARD_KEYWORDS, input)"
           return value="{ type: 'leaderboard' } as Intent"
-        if cond="HISTORY_KEYWORDS.test(input)"
+        if cond="hostRegexObjectTest(HISTORY_KEYWORDS, input)"
           return value="{ type: 'history' } as Intent"
-        if cond="ENGINES_KEYWORDS.test(input)"
+        if cond="hostRegexObjectTest(ENGINES_KEYWORDS, input)"
           return value="{ type: 'engines' } as Intent"
-        if cond="CONFIG_KEYWORDS.test(input)"
+        if cond="hostRegexObjectTest(CONFIG_KEYWORDS, input)"
           return value="{ type: 'config' } as Intent"
       return value="{ type: 'auto', input, taskClass: classifyTask(input) } as Intent"

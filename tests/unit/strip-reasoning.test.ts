@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { stripReasoning, stripTuiChrome, formatDuration } from '../../packages/cli/src/generated/blocks/engine-helpers.js';
+import { extractSummary, stripReasoning, stripTuiChrome, formatDuration } from '../../packages/cli/src/generated/blocks/engine-helpers.js';
 
 describe('formatDuration', () => {
   it('renders sub-second durations as milliseconds', () => {
@@ -63,6 +63,13 @@ describe('stripReasoning', () => {
   it('leaves ordinary review prose untouched', () => {
     const prose = 'The divide function lacks a zero guard. <!--AGON_REVIEW_FINDINGS_v1-->\n[]';
     expect(stripReasoning(prose)).toBe(prose);
+  });
+});
+
+describe('extractSummary', () => {
+  it('strips think blocks containing ECMAScript Unicode whitespace', () => {
+    const text = '<think>analysis\u00a0across\u2028lines</think>\u3000Visible answer.';
+    expect(extractSummary(text, 120)).toBe('Visible answer.');
   });
 });
 

@@ -89,8 +89,24 @@ fn name=computeEngineIsolation params="engine:EngineDefinition, opts:{isolation?
   >>>
 
 fn name=resolveArgs params="template:string[], vars:Record<string,string>" returns="string[]"
-  handler lang="kern"
-    return value="template.map((arg) => arg.replace(/\\{(\\w+)\\}/g, (_: string, key: string) => vars[key] ?? ''))"
+  handler lang="ts" <<<
+    return template.map((arg) => arg.replace(/\{(\w+)\}/g, (_: string, key: string) => vars[key] ?? ''));
+  >>>
+
+fn name=hasEnvVar params="name?:string" returns=boolean export=true
+  handler lang="ts" <<<
+    return !!(name && process.env[name]);
+  >>>
+
+fn name=nowMs returns=number export=true
+  handler lang="ts" <<<
+    return Date.now();
+  >>>
+
+fn name=createStringSet params="values:string[]" returns="Set<string>" export=true
+  handler lang="ts" <<<
+    return new Set(values);
+  >>>
 
 fn name=resolveModel params="engine:EngineDefinition,cwd?:string" returns="string|null"
   handler <<<

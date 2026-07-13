@@ -9,6 +9,7 @@ import from="./team.js" names="TeamRole,TeamSpec,TeamMatchResult,TeamMember" typ
 import from="./team.js" names="computeContributionWeights"
 import from="../signals/config.js" names="TEAM_ELO_PATH"
 import from="../blocks/file-lock.js" names="withFileLock"
+import from="../blocks/host-runtime.js" names="hostNowIso,hostPrettyJson"
 
 interface name=TeamCompositionRating
   field name=lineupKey type=string
@@ -49,9 +50,9 @@ fn name=loadTeamElo returns=TeamEloRecord
 fn name=saveTeamElo params="record:TeamEloRecord" returns=void
   handler lang="kern"
     do value="mkdirSync(dirname(TEAM_ELO_PATH), { recursive: true })"
-    assign target="record.lastUpdated" value="new Date().toISOString()"
+    assign target="record.lastUpdated" value="hostNowIso()"
     let name=tmpPath value="TEAM_ELO_PATH + '.tmp'"
-    do value="writeFileSync(tmpPath, JSON.stringify(record, null, 2) + '\\n')"
+    do value="writeFileSync(tmpPath, hostPrettyJson(record) + '\\n')"
     do value="renameSync(tmpPath, TEAM_ELO_PATH)"
 
 fn name=expectedScore params="rA:number, rB:number" returns=number expr={{ return 1 / (1 + 10 ** ((rB - rA) / 400)); }}

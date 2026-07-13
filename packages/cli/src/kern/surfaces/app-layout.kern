@@ -28,7 +28,7 @@ module name=AppLayout
       let name=lines value="String(text ?? '').split('\\n')"
       let name=rowCount kind=let value="0"
       each name=line in="lines"
-        assign target="rowCount" op="+=" value="Math.max(1, Math.ceil(stringDisplayWidth(line) / safeWidth))"
+        assign target="rowCount" op="+=" value="Math.max(1, Number.ceil(stringDisplayWidth(line) / safeWidth))"
       return value="Math.max(1, rowCount)"
 
   fn name=estimateQuestionReservedRows params="questionState:any, termWidth:number" returns=number export=true

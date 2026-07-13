@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseMarkdownBlocks } from '../../packages/cli/src/markdown.js';
+import { cleanEngineOutput, parseMarkdownBlocks } from '../../packages/cli/src/markdown.js';
 
 describe('parseMarkdownBlocks', () => {
   it('prose only → single prose segment', () => {
@@ -146,5 +146,12 @@ describe('parseMarkdownBlocks', () => {
     if (result[0].type === 'table') {
       expect(result[0].alignments).toEqual(['left', 'center', 'right']);
     }
+  });
+});
+
+describe('cleanEngineOutput', () => {
+  it('strips multiline tool and reasoning tags containing Unicode whitespace', () => {
+    const tagged = '<tool_calls><tool_result>hidden\u00a0payload\u2028line</tool_result></tool_calls>\u3000Final answer.';
+    expect(cleanEngineOutput(tagged)).toBe('Final answer.');
   });
 });

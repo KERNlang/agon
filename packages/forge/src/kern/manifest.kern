@@ -5,18 +5,19 @@ import from="@kernlang/agon-core" names="RUNS_DIR"
 
 fn name=writeManifest params="manifest:ForgeManifest" returns="string"
   doc "Atomic manifest write. Writing to .tmp then renameSync avoids leaving a half-written manifest.json if the process is killed (SIGINT) mid-write — a real risk because forge writes the manifest incrementally on every engine settle."
-  handler lang="kern"
-    let name=manifestPath value="join(manifest.forgeDir, 'manifest.json')"
-    let name=body value="JSON.stringify(manifest, null, 2) + '\\n'"
-    let name=tmpPath value="manifestPath + '.tmp'"
-    do value="writeFileSync(tmpPath, body)"
-    do value="renameSync(tmpPath, manifestPath)"
-    do value="mkdirSync(RUNS_DIR, { recursive: true })"
-    let name=historyPath value="join(RUNS_DIR, `${manifest.forgeId}.json`)"
-    let name=historyTmp value="historyPath + '.tmp'"
-    do value="writeFileSync(historyTmp, body)"
-    do value="renameSync(historyTmp, historyPath)"
-    return value="manifestPath"
+  handler lang="ts" <<<
+    const manifestPath = join(manifest.forgeDir, 'manifest.json');
+    const body = JSON.stringify(manifest, null, 2) + '\n';
+    const tmpPath = manifestPath + '.tmp';
+    writeFileSync(tmpPath, body);
+    renameSync(tmpPath, manifestPath);
+    mkdirSync(RUNS_DIR, { recursive: true });
+    const historyPath = join(RUNS_DIR, `${manifest.forgeId}.json`);
+    const historyTmp = historyPath + '.tmp';
+    writeFileSync(historyTmp, body);
+    renameSync(historyTmp, historyPath);
+    return manifestPath;
+  >>>
 
 fn name=readManifest params="forgeDir:string" returns="ForgeManifest"
   handler lang="kern"

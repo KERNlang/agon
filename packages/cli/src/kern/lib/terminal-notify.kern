@@ -1,11 +1,12 @@
 import from="node:process" names="stdout"
+import from="./kern-host.js" names="hostEnvironment"
 
 fn name=bell returns=void export=true
   doc "Ring the terminal bell once on stdout. No-op when stdio is not a TTY (piped runs, CI) or when AGON_NO_BELL is set in the environment, so we never break automation or annoy users who opted out."
   handler lang="kern"
     if cond="!stdout.isTTY"
       return
-    if cond="process.env.AGON_NO_BELL"
+    if cond="hostEnvironment('AGON_NO_BELL')"
       return
     do value="stdout.write('\u0007')"
 
@@ -14,6 +15,6 @@ fn name=setWindowTitle params="label:string" returns=void export=true
   handler lang="kern"
     if cond="!stdout.isTTY"
       return
-    if cond="process.env.AGON_NO_TITLE"
+    if cond="hostEnvironment('AGON_NO_TITLE')"
       return
     do value="stdout.write('\u001b]0;' + label + '\u0007')"

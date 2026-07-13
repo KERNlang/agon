@@ -3,9 +3,17 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { shouldUseCompanionForAgent, buildCommand, resolveArgs, computeEngineIsolation, resolveClaudePtyExtraArgs, answerChannelMode, fileChannelInstruction, readAnswerChannelFile, setupFileAnswerChannel } from '../../packages/adapter-cli/src/generated/adapter-helpers.js';
+import { shouldUseCompanionForAgent, buildCommand, resolveArgs, computeEngineIsolation, resolveClaudePtyExtraArgs, answerChannelMode, fileChannelInstruction, readAnswerChannelFile, setupFileAnswerChannel, createStringSet } from '../../packages/adapter-cli/src/generated/adapter-helpers.js';
 
 describe('adapter helper routing', () => {
+  it('creates a real string Set for repeated baseline-diff membership checks', () => {
+    const values = createStringSet(['diff --git a/a.ts b/a.ts', 'diff --git a/a.ts b/a.ts']);
+    expect(values).toBeInstanceOf(Set);
+    expect(values.size).toBe(1);
+    expect(values.has('diff --git a/a.ts b/a.ts')).toBe(true);
+    expect(values.has('diff --git a/b.ts b/b.ts')).toBe(false);
+  });
+
   it('uses one-shot agent companion only for JSON-RPC engines', () => {
     expect(shouldUseCompanionForAgent({ id: 'codex', companion: { protocol: 'jsonrpc' } } as any)).toBe(true);
     expect(shouldUseCompanionForAgent({ id: 'gemini', companion: { protocol: 'acp' } } as any)).toBe(false);

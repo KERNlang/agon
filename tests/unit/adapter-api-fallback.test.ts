@@ -66,6 +66,7 @@ describe('CliAdapter.dispatch — api fallback gated on key presence (Finding 1)
   beforeEach(() => {
     mockState.apiCalled = false;
     delete process.env.FINDING1_FIXTURE_KEY;
+    delete process.env.undefined;
   });
 
   it('binary missing + key UNSET → throws EngineNotFoundError naming the binary (not "Missing API key")', async () => {
@@ -100,6 +101,20 @@ describe('CliAdapter.dispatch — api fallback gated on key presence (Finding 1)
     const adapter = makeAdapter();
     const opts = { ...makeOptions(), engine: binaryOnly } as DispatchOptions;
     await expect(adapter.dispatch(opts)).rejects.toThrow(EngineNotFoundError);
+    expect(mockState.apiCalled).toBe(false);
+  });
+
+  it('malformed apiKeyEnv cannot enable streaming fallbacks through process.env.undefined', async () => {
+    process.env.undefined = 'must-not-count-as-an-api-key';
+    const malformed = {
+      ...ENGINE,
+      api: { ...ENGINE.api, apiKeyEnv: undefined },
+    } as unknown as EngineDefinition;
+    const options = { ...makeOptions(), engine: malformed } as DispatchOptions;
+    const adapter = makeAdapter();
+
+    await expect(adapter.dispatchStream(options).next()).rejects.toThrow(EngineNotFoundError);
+    await expect(adapter.dispatchAgentStream(options).next()).rejects.toThrow(EngineNotFoundError);
     expect(mockState.apiCalled).toBe(false);
   });
 });

@@ -2,6 +2,7 @@ import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,readdirSync"
 import from="node:path" names="join,resolve"
 import from="node:os" names="homedir"
 import from="node:crypto" names="createHash"
+import from="../blocks/host-runtime.js" names="hostPrettyJson"
 
 fn name=getFlowsDir returns=string export=false
   handler <<<
@@ -67,7 +68,7 @@ fn name=logFlow params="record:FlowRecord" returns=string
     let name=idHash value="createHash('sha256').update(rawId).digest('hex').slice(0, 16)"
     fmt name=filename template="flow-${safeId}-${idHash}.json"
     let name=filepath value="join(getFlowsDir(), filename)"
-    do value="writeFileSync(filepath, JSON.stringify(record, null, 2))"
+    do value="writeFileSync(filepath, hostPrettyJson(record))"
     return value="filepath"
 
 fn name=readFlows params="limit?:number" returns="FlowRecord[]"

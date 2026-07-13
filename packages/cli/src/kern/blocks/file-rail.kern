@@ -6,6 +6,7 @@ import from="react" default="React"
 import from="ink" names="Box,Text"
 import from="../signals/file-tracker.js" names="FileEntry" types=true
 import from="../signals/file-tracker.js" names="getFileDiff"
+import from="../lib/kern-host.js" names="hostNowMs"
 
 fn name=statusGlyph params="status:string" returns=string export=true
   handler lang="kern"
@@ -50,7 +51,7 @@ fn name=fileRailDetailRows params="maxRows:number, hasDetail:boolean" returns=nu
 
 fn name=formatRelativeTime params="ms:number" returns=string export=true confidence=0.95
   handler lang="kern"
-    let name=diff value="Date.now() - ms"
+    let name=diff value="hostNowMs() - ms"
     let name=s value="Math.floor(diff / 1000)"
     if cond="s < 5"
       return value="'just now'"

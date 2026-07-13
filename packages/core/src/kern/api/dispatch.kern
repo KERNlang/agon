@@ -2,6 +2,7 @@ import from="ai" names="streamText,generateText,jsonSchema"
 import from="@ai-sdk/openai-compatible" names="createOpenAICompatible"
 import from="@ai-sdk/anthropic" names="createAnthropic"
 import from="../models/types.js" names="DispatchResult" types=true
+import from="../blocks/host-runtime.js" names="hostNowMs,hostUrlHost"
 
 interface name=ApiConfig
   field name=baseUrl type=string
@@ -67,13 +68,13 @@ fn name=normalizeToolCallId params="id:string, format?:string" returns=string ex
   doc "Normalize tool call IDs per provider: Anthropic requires [a-zA-Z0-9_], Mistral max 9 chars."
   handler lang="kern"
     if cond="!id"
-      fmt return=true template="call_${Date.now()}"
+      fmt return=true template="call_${hostNowMs()}"
     if cond="format === 'anthropic'"
       comment raw="// Claude: alphanumeric + underscore only"
       return value="id.replace(/[^a-zA-Z0-9_]/g, '_')"
     comment raw="// Mistral: max 9 chars, alphanumeric only"
     if cond="format === 'mistral'"
-      return value="id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 9) || `c${Date.now() % 100000000}`"
+      return value="id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 9) || `c${hostNowMs() % 100000000}`"
     return value="id"
 
 fn name=convertMessagesForSdk params="messages:Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, format?:string" returns="any[]"
@@ -344,7 +345,7 @@ fn name=formatMismatchHint params="config:ApiConfig" returns="string|null" expor
     if cond="config.format !== 'anthropic'"
       return value="null"
     try
-      let name=host value="new URL(config.baseUrl).host.toLowerCase()"
+      let name=host value="hostUrlHost(config.baseUrl).toLowerCase()"
       if cond="host === 'api.anthropic.com' || host.endsWith('.anthropic.com')"
         return value="null"
       if cond="_formatHintEmitted.has(host)"

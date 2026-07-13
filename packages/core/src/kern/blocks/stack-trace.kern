@@ -3,6 +3,7 @@ import from="node:path" names="basename,dirname,isAbsolute,normalize,resolve"
 import from="node:url" names="fileURLToPath"
 import from="node:module" names="createRequire"
 import from="node:buffer" names="Buffer"
+import from="./host-runtime.js" names="hostEnv"
 
 interface name=KernSourceLocation export=true
   field name=file type=string
@@ -338,7 +339,7 @@ fn name=formatDefaultStackTrace params="error:any,frames:any[]" returns=string e
 
 fn name=stackTraceMapperDisabled returns=boolean export=false
   handler lang="kern"
-    return value="!!process.env.AGON_NO_STACK_TRACE_MAPPER"
+    return value="!!hostEnv('AGON_NO_STACK_TRACE_MAPPER')"
 
 fn name=stackTraceMapperState returns=any export=false
   handler <<<

@@ -4,6 +4,8 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "baseUrl": ".",
+    "ignoreDeprecations": "6.0",
+    "types": ["node"],
     "paths": {
       "@kernlang/agon-core": ["packages/core/src/index.ts"],
       "@kernlang/agon-forge": ["packages/forge/src/index.ts"],

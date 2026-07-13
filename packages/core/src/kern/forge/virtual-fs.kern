@@ -35,6 +35,7 @@
 import from="node:fs" names="readFileSync,existsSync,readdirSync,statSync"
 import from="node:path" names="join,resolve,relative,dirname,basename"
 import from="node:crypto" names="createHash"
+import from="../blocks/host-runtime.js" names="hostCreateSet,hostNowMs"
 
 // ── EffectPackage — typed mutations from one engine run ──────────────
 
@@ -137,7 +138,7 @@ service name=VirtualFS export=true
       assign target="this.overlay" value="new Map()"
       assign target="this.engineId" value="engineId"
       assign target="this.runId" value="runId"
-      assign target="this.startedAt" value="Date.now()"
+      assign target="this.startedAt" value="hostNowMs()"
       assign target="this.onChange" value="onChange"
 
   method name=setOnChange params="onChange?:((path:string)=>void)" returns=void
@@ -320,8 +321,8 @@ fn name=effectPackageDiff params="pkg:EffectPackage" returns=string export=true
         let name=origLines value="(effect.originalContent ?? '').split('\\n')"
         let name=newLines value="effect.content.split('\\n')"
         comment raw="// Simple line-by-line diff (LCS-free for speed)"
-        let name=origSet value="new Set(origLines)"
-        let name=newSet value="new Set(newLines)"
+        let name=origSet value="hostCreateSet(origLines) as Set<string>"
+        let name=newSet value="hostCreateSet(newLines) as Set<string>"
         each name=oldLine in="origLines"
           if cond="!newSet.has(oldLine)"
             do value="lines.push(`-${oldLine}`)"

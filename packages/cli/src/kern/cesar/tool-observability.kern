@@ -7,6 +7,7 @@
 import from="node:fs" names="appendFileSync,mkdirSync,existsSync,readFileSync"
 import from="node:path" names="join"
 import from="@kernlang/agon-core" names="RUNS_DIR,agonPath"
+import from="../lib/kern-host.js" names="hostDateMs,hostNowIso,hostNowMs"
 
 interface name=CesarApprovalLedgerRecord export=true
   field name=turnId type=string optional=true
@@ -48,7 +49,7 @@ interface name=CesarConfidenceRecord export=true
   field name=value type=number
   field name=reasoning type=string optional=true
 
-fn name=createCesarTurnId returns=string export=true expr={{ return `cesar-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`; }}
+fn name=createCesarTurnId returns=string export=true expr={{ return `cesar-${hostNowMs().toString(36)}-${Math.random().toString(36).slice(2, 8)}`; }}
   doc "Create a short stable-enough id for joining per-turn tool timeline and approval ledger records."
 
 fn name=looksSensitiveString params="value:string" returns=boolean export=false
@@ -133,7 +134,7 @@ fn name=appendCesarJsonl params="fileName:string,record:Record<string,unknown>,r
   handler lang="kern"
     let name=dir value="runsDir ?? RUNS_DIR"
     do value="mkdirSync(dir, { recursive: true })"
-    do value="appendFileSync(join(dir, fileName), JSON.stringify({ ts: new Date().toISOString(), ...record, }) + '\\n')"
+    do value="appendFileSync(join(dir, fileName), JSON.stringify({ ts: hostNowIso(), ...record, }) + '\\n')"
 
 fn name=recordCesarApprovalDecision params="record:CesarApprovalLedgerRecord,runsDir?:string" returns=void export=true
   doc "Append one permission decision to the persistent Cesar approval ledger. Best-effort: failures are swallowed by callers."
@@ -232,7 +233,7 @@ fn name=readJsonlRecords params="filePath:string" returns="Array<Record<string,u
 
 fn name=eventTimeMs params="record:Record<string,unknown>" returns=number export=false
   handler lang="kern"
-    let name=ts value="typeof record.ts === 'string' ? Date.parse(record.ts) : NaN"
+    let name=ts value="typeof record.ts === 'string' ? hostDateMs(record.ts) : NaN"
     return value="Number.isFinite(ts) ? ts : 0"
 
 fn name=replayCesarHarnessLogs params="opts?:{runsDir?:string,turnId?:string,limit?:number}" returns=CesarHarnessReplayResult export=true

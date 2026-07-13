@@ -1,4 +1,5 @@
 import from="@kernlang/agon-core" names="SessionResult,BrainstormResultData,CampfireResultData,TribunalResultData,ForgeResultData,ThinkResultData,CouncilResultData,SynthesisResultData,NeroResultData,ReviewResultData,ResearchResultData,ChromeResultData,ChatSession" types=true
+import from="../lib/kern-host.js" names="hostLocaleTime,hostSet"
 
 const name=BOLD type=string value={{ '\x1b[1m' }}
 
@@ -20,8 +21,7 @@ const name=THIN_RULE type=string value={{ '─'.repeat(70) }}
 
 fn name=formatTime params="iso:string" returns=string
   handler lang="kern"
-    let name=d value="new Date(iso)"
-    return value="d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })"
+    return value="hostLocaleTime(iso)"
 
 fn name=formatChatTranscript params="session:ChatSession" returns=string export=true
   handler <<<
@@ -99,7 +99,7 @@ fn name=formatTribunal params="r:SessionResult, idx:number" returns=string
     do value="lines.push(`${DIM} Engines: ${r.engines.join(', ')}${RESET}`)"
     do value="lines.push(`${BOLD}${RED}${RULE}${RESET}`)"
     do value="lines.push('')"
-    let name=roundNums value="[...new Set(data.rounds.map(r => r.round))].sort()"
+    let name=roundNums value="Array.from(hostSet(data.rounds.map(r => r.round))).sort()"
     each name=num in="roundNums"
       do value="lines.push(`${BOLD}${DIM}── Round ${num} ──${RESET}`)"
       let name=positions value="data.rounds.filter(r => r.round === num)"

@@ -3,7 +3,14 @@
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { prepareCandidate, printResolution, resolveKernCli, resolvePath, runCommand } from './kern-cli-resolver.mjs';
+import {
+  enforceStrictCompileArgs,
+  prepareCandidate,
+  printResolution,
+  resolveKernCli,
+  resolvePath,
+  runCommand,
+} from './kern-cli-resolver.mjs';
 import { addKernSourceTraces } from './kern-source-traces.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -84,7 +91,13 @@ if (process.env.AGON_SKIP_KERN_CHECK !== '1') {
 runCommand(
   'kern:compile',
   selection.candidate.command,
-  [...selection.candidate.commandArgs, 'compile', srcDir, `--outdir=${outDir}`, ...compilerArgs],
+  [
+    ...selection.candidate.commandArgs,
+    'compile',
+    srcDir,
+    `--outdir=${outDir}`,
+    ...enforceStrictCompileArgs(compilerArgs),
+  ],
   selection.candidate.label,
 );
 

@@ -33,6 +33,7 @@ import from="node:path" names="join"
 import from="node:os" names="tmpdir"
 import from="node:fs" names="rmSync"
 import from="node:crypto" names="randomUUID"
+import from="../lib/kern-host.js" names="hostNowMs,hostSet,hostWorkingDirectory"
 const name=AGENT_TOOL_MARKER type=string value={{ '__AGON_TOOL__' }} export=true
 // A turn ends when the GOAL is met (a genuine final answer), the agent is blocked, or it is
 // detected STUCK (MAX_NO_PROGRESS_STEPS consecutive replies that don't advance) — NOT at a fixed
@@ -462,9 +463,9 @@ service name=AgenticTurnBrainClient implements=BrainClient
       assign target="this.registry" value="registry"
       assign target="this.adapter" value="createCliAdapter(registry)"
       assign target="this.engineId" value="'claude'"
-      assign target="this.cwd" value="process.cwd()"
+      assign target="this.cwd" value="hostWorkingDirectory()"
       assign target="this.systemPrompt" value="undefined"
-      assign target="this.startedAtMs" value="Date.now()"
+      assign target="this.startedAtMs" value="hostNowMs()"
       assign target="this.activeTurnId" value="null"
       assign target="this.aborts" value="new Map()"
       assign target="this.caps" value="new Map()"
@@ -472,7 +473,7 @@ service name=AgenticTurnBrainClient implements=BrainClient
       assign target="this.pendingApprovals" value="new Map()"
       assign target="this.pendingAnswers" value="new Map()"
       assign target="this.approvedSession" value="new Map()"
-      assign target="this.deniedSession" value="new Set()"
+      assign target="this.deniedSession" value="hostSet()"
       assign target="this.controlCapabilities" value="{ concurrentTurns: 'per-session-serialized', concurrentSteering: 'unsupported', approvalArbitration: 'host-only', questionArbitration: 'host-only', clientCapabilities: 'supported', cancellation: 'per-turn' }"
       assign target="this.open" value="this.open.bind(this)"
       assign target="this.runTurn" value="this.runTurn.bind(this)"
@@ -1279,7 +1280,7 @@ service name=AgenticTurnBrainClient implements=BrainClient
 
   method name=health returns="Promise<BrainHealth>" async=true
     handler <<<
-      return { alive: true, engineId: this.engineId, pid: null, activeTurnId: this.activeTurnId, queuedTurns: 0, uptimeMs: Date.now() - this.startedAtMs };
+      return { alive: true, engineId: this.engineId, pid: null, activeTurnId: this.activeTurnId, queuedTurns: 0, uptimeMs: hostNowMs() - this.startedAtMs };
     >>>
 
   method name=close returns="Promise<void>" async=true

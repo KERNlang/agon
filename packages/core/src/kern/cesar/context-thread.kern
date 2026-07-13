@@ -38,6 +38,7 @@ import from="node:path" names="join,resolve,basename"
 import from="node:crypto" names="randomUUID,createHash"
 import from="node:os" names="homedir,tmpdir"
 import from="../signals/config.js" names="ensureAgonHome"
+import from="../blocks/host-runtime.js" names="hostCreateSet,hostNowMs,hostObjectValues,hostPrettyJson,hostRegexReplace"
 
 // ── Path helpers ─────────────────────────────────────────────────────
 
@@ -272,7 +273,7 @@ fn name=redactSecrets params="content:string" returns=string
       return value="content"
     let name=out kind=let value="content"
     each name=re in="SECRET_PATTERNS"
-      assign target="out" value="out.replace(re, '[REDACTED-SECRET]')"
+      assign target="out" value="hostRegexReplace(out, re, '[REDACTED-SECRET]')"
     return value="out"
 
 fn name=redactMessage params="msg:ThreadMessage" returns=ThreadMessage
@@ -342,7 +343,7 @@ fn name=threadMessageToLoop params="msg:ThreadMessage,budgetTokens?:number" retu
 fn name=loopEntryToThreadMessage params="entry:Record<string,unknown>,engineId:string,now?:number" returns=ThreadMessage
   doc "Convert a runApiAgentLoop history entry ({role,content,tool_calls?,tool_call_id?}) into a ThreadMessage with provenance. Used by the onHistoryEntry callback."
   handler lang="kern"
-    let name=ts value="now ?? Date.now()"
+    let name=ts value="now ?? hostNowMs()"
     fmt name=id template="msg_${ts}_${randomUUID().slice(0, 8)}"
     let name=role value="(entry.role as ThreadMessage['role']) ?? 'assistant'"
     let name=content value="typeof entry.content === 'string' ? entry.content : (entry.content == null ? '' : String(entry.content))"
@@ -498,7 +499,7 @@ service name=ContextThread export=true
     handler lang="kern"
       if cond="msg.role === 'system'"
         throw value="new Error('ContextThread: role=\"system\" messages must not be persisted. Pass systemPrompt via constructor config instead.')"
-      let name=now value="Date.now()"
+      let name=now value="hostNowMs()"
       fmt name=id template="msg_${now}_${randomUUID().slice(0, 8)}"
       let name=full type="ThreadMessage" value="redactMessage({ ...msg, id, timestamp: now })"
       assign target="full.tokens" value="estimateMessageTokens(full)"
@@ -528,7 +529,7 @@ service name=ContextThread export=true
       assign target="this.messages" value="this.messages.slice(dropCount)"
       comment raw="// Build a cheap stub checkpoint for the dropped range."
       let name=summary value="this.renderTrimMarker(dropCount, dropped)"
-      let name=cp type="ThreadCheckpoint" value="{ id: `cp_evict_${Date.now()}_${randomUUID().slice(0, 6)}`, timestamp: Date.now(), label: `auto-evict-${this.checkpoints.length + 1}`, summary, messagesUpToId: this.messages[0]?.id ?? '', approxTokensSaved: dropped.reduce((s: number, m: ThreadMessage) => s + estimateMessageTokens(m), 0), }"
+      let name=cp type="ThreadCheckpoint" value="{ id: `cp_evict_${hostNowMs()}_${randomUUID().slice(0, 6)}`, timestamp: hostNowMs(), label: `auto-evict-${this.checkpoints.length + 1}`, summary, messagesUpToId: this.messages[0]?.id ?? '', approxTokensSaved: dropped.reduce((s: number, m: ThreadMessage) => s + estimateMessageTokens(m), 0), }"
       do value="this.checkpoints.push(cp)"
 
   method name=journalMessage params="msg:ThreadMessage" returns=void private=true
@@ -725,7 +726,7 @@ service name=ContextThread export=true
   method name=touchFile params="path:string,contentHash:string" returns=void
     doc "Record that a file was read (or re-read) during this thread. Used by hasStaleFiles() to warn when a later engine is about to act on content that has since changed on disk."
     handler lang="kern"
-      let name=now value="Date.now()"
+      let name=now value="hostNowMs()"
       let name=existing value="this.fileTouches[path]"
       if cond="existing && existing.contentHash === contentHash"
         assign target="existing.lastReadAt" value="now"
@@ -738,7 +739,7 @@ service name=ContextThread export=true
     doc "Return every touched file whose on-disk content hash no longer matches the hash recorded when it was last read. Caller supplies a getCurrentHash callback (async work lives in the caller)."
     handler lang="kern"
       let name=stale type="FileTouch[]" value="[]"
-      each name=touch in="Object.values(this.fileTouches)"
+      each name=touch in="hostObjectValues(this.fileTouches) as FileTouch[]"
         let name=current value="getCurrentHash(touch.path)"
         if cond="current != null && current !== touch.contentHash"
           do value="stale.push(touch)"
@@ -747,7 +748,7 @@ service name=ContextThread export=true
   method name=checkpoint params="summary:string,label?:string,messagesUpToId?:string" returns=ThreadCheckpoint
     doc "Create a compaction checkpoint. Older messages are NOT removed from the thread — the checkpoint is metadata that messagesFor() can reference to cheapen older context. Phase A.5 will support hard compaction that drops covered messages."
     handler lang="kern"
-      let name=now value="Date.now()"
+      let name=now value="hostNowMs()"
       let name=lastMessageId value="this.messages.length > 0 ? this.messages[this.messages.length - 1].id : ''"
       let name=upTo value="messagesUpToId ?? lastMessageId"
       let name=idx value="this.messages.findIndex(m => m.id === upTo)"
@@ -1005,7 +1006,7 @@ fn name=saveActivePointer params="pointer:ActivePointerMap" returns=void
     let name=path value="activePointerPath()"
     do value="mkdirSync(threadsDir(), { recursive: true })"
     let name=tmpPath value="path + '.tmp'"
-    do value="writeFileSync(tmpPath, JSON.stringify(pointer, null, 2) + '\\n', 'utf-8')"
+    do value="writeFileSync(tmpPath, hostPrettyJson(pointer) + '\\n', 'utf-8')"
     do value="renameSync(tmpPath, path)"
 
 // ── Phase A.5: process-exit flush registry ───────────────────────────
@@ -1015,7 +1016,7 @@ fn name=saveActivePointer params="pointer:ActivePointerMap" returns=void
 // natural lifetime. The exit handler is registered once.
 const name=_WeakRefCtor type="(new (value:any)=>{deref:()=>any})|undefined" value={{ (globalThis as any).WeakRef as (new (value:any)=>{deref:()=>any})|undefined }}
 
-const name=_exitFlushRegistry type="Set<{deref:()=>any}>" value={{ new Set<{deref:()=>any}>() }}
+const name=_exitFlushRegistry type="Set<{deref:()=>any}>" value={{ hostCreateSet() as Set<{deref:()=>any}> }}
 
 const name=_exitHandlerRegistered type="{value:boolean}" value={{ { value: false } }}
 

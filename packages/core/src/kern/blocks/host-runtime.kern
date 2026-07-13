@@ -1,0 +1,73 @@
+// Explicit TypeScript host boundary for runtime facilities that do not have
+// portable KERN stdlib lowerings. Keep structured KERN handlers portable by
+// routing Node/JavaScript-only behavior through these small adapters.
+
+fn name=hostNowMs returns=number export=true
+  handler lang="ts" <<<
+    return Date.now();
+  >>>
+
+fn name=hostNowIso returns=string export=true
+  handler lang="ts" <<<
+    return new Date().toISOString();
+  >>>
+
+fn name=hostEpochFrom params="value:string|number" returns=number export=true
+  handler lang="ts" <<<
+    return new Date(value).getTime();
+  >>>
+
+fn name=hostCreateSet params="values?:Iterable<any>" returns="Set<any>" export=true
+  handler lang="ts" <<<
+    return new Set(values);
+  >>>
+
+fn name=hostWarn params="message:string" returns=void export=true
+  handler lang="ts" <<<
+    console.warn(message);
+  >>>
+
+fn name=hostLog params="message:string" returns=void export=true
+  handler lang="ts" <<<
+    console.log(message);
+  >>>
+
+fn name=hostEnv params="name:string" returns="string|undefined" export=true
+  handler lang="ts" <<<
+    return process.env[name];
+  >>>
+
+fn name=hostPrettyJson params="value:any" returns=string export=true
+  handler lang="ts" <<<
+    return JSON.stringify(value, null, 2);
+  >>>
+
+fn name=hostObjectValues params="value:Record<string,any>" returns="any[]" export=true
+  handler lang="ts" <<<
+    return Object.values(value);
+  >>>
+
+fn name=hostRegexSplit params="value:string,pattern:RegExp" returns="string[]" export=true
+  handler lang="ts" <<<
+    return value.split(pattern);
+  >>>
+
+fn name=hostRegexReplace params="value:string,pattern:RegExp,replacement:string" returns=string export=true
+  handler lang="ts" <<<
+    return value.replace(pattern, replacement);
+  >>>
+
+fn name=hostRegexTest params="value:string,pattern:RegExp" returns=boolean export=true
+  handler lang="ts" <<<
+    return pattern.test(value);
+  >>>
+
+fn name=hostUrlHost params="value:string" returns=string export=true
+  handler lang="ts" <<<
+    return new URL(value).host;
+  >>>
+
+fn name=hostSqrt params="value:number" returns=number export=true
+  handler lang="ts" <<<
+    return Math.sqrt(value);
+  >>>

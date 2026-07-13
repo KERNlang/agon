@@ -5,6 +5,7 @@
 import from="@kernlang/agon-core" names="ToolCallResult" types=true
 import from="@kernlang/agon-core" names="tracker"
 import from="../../handlers/types.js" names="HandlerContext,PendingDelegation" types=true
+import from="../lib/kern-host.js" names="hostNowMs,hostRegexObjectTest,hostStringSet"
 
 // Yield a macrotask so Ink can paint — await Promise.resolve() is NOT enough
 const name=yieldToInk type="() => Promise<void>" value={{ () => new Promise<void>(resolve => setImmediate(resolve)) }} export=true
@@ -299,7 +300,7 @@ fn name=detectNarratedToolStall params="text:string" returns=boolean export=true
     let name=SEARCH_INTENT_RE value="/\\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:search|grep|find|look)\\s+(?:for\\s+)?[`\"']?.+?[`\"']?\\s*(?:in\\s+|$)/i"
     let name=DIR_INTENT_RE value="/\\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:check|see|look at|list|find)\\s+(?:what's in |files in |the )?\\s*[`\"']?[a-zA-Z0-9_./-]+\\/[`\"']?/i"
     let name=STALL_RE value="/\\b(?:let me (?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab|continue)|i (?:need|want|should|will) (?:to )?(?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab|continue)|now (?:let me|i'll)|continu(?:e|ing)|keep (?:reading|investigating|looking)|next[,.]?\\s*(?:i|let)|before (?:i can|proceeding|implementing|deciding))\\b/i"
-    return value="FAKE_GATE_RE.test(tail) || READ_INTENT_RE.test(tail) || SEARCH_INTENT_RE.test(tail) || DIR_INTENT_RE.test(tail) || STALL_RE.test(tail)"
+    return value="hostRegexObjectTest(FAKE_GATE_RE, tail) || hostRegexObjectTest(READ_INTENT_RE, tail) || hostRegexObjectTest(SEARCH_INTENT_RE, tail) || hostRegexObjectTest(DIR_INTENT_RE, tail) || hostRegexObjectTest(STALL_RE, tail)"
 
 fn name=stripNonAssertionSpans params="text:string" returns=string export=true
   doc "Layer 1 of the watchdog pipeline (brainstorm-validated 2026-06-11): remove NON-ASSERTED spans before any guard regex runs, so quoted/demonstrated text can never read as a claim. Strips fenced code blocks, inline backtick spans, double/curly-quoted spans, and parenthesized capitalized enumerations like '(Read/Edit/Write/Bash)' — the exact shape that false-fired the guards on a description OF the harness. Carve-out: a backticked/quoted span that is ITSELF an active first-person/imperative claim ('I'll edit foo') is kept, so an engine cannot hide a real stall inside quotes. Straight single-quoted spans are deliberately NOT stripped — apostrophes in contractions (can't … don't) would pair up and delete real assertions. Pure; exported for unit tests."
@@ -427,7 +428,7 @@ fn name=shouldRunEagerRepairTool params="toolName:string,meta:any,failedToolName
 fn name=shouldStopAfterXmlToolCall params="toolName:string" returns=boolean export=true
   doc "Return true for XML tools that hand control back to the Agon dispatcher. These tools do not produce inline results; continuing the XML tool loop after them can make Cesar claim a delegation happened while the actual forge/brainstorm/etc. job has not started yet."
   handler lang="kern"
-    let name=HANDOFF_TOOLS value="new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Council', 'Pipeline', 'Review', 'Agent', 'Goal', 'Conquer', 'ProposePlan', 'ExitPlanMode'])"
+    let name=HANDOFF_TOOLS value="hostStringSet(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Council', 'Pipeline', 'Review', 'Agent', 'Goal', 'Conquer', 'ProposePlan', 'ExitPlanMode'])"
     return value="HANDOFF_TOOLS.has(String(toolName ?? ''))"
 
 fn name=stripAgonToolPrefix params="name:string" returns=string export=true
@@ -441,7 +442,7 @@ fn name=isBashToolName params="name:string" returns=boolean export=true
   handler lang="kern"
     return value="stripAgonToolPrefix(name).toLowerCase() === 'bash'"
 
-const name=WRITE_TOOL_NAMES type="Set<string>" value={{ new Set(['edit', 'write', 'multiedit', 'notebookedit']) }}
+const name=WRITE_TOOL_NAMES type="Set<string>" value={{ hostStringSet(['edit', 'write', 'multiedit', 'notebookedit']) }}
 
 fn name=isWriteToolName params="name:string" returns=boolean export=true
   doc "True when a tool name denotes project write-work (file edit/create) on EITHER path — bare Edit/Write/MultiEdit/NotebookEdit (native/XML) or the AgonEdit/AgonWrite MCP aliases. SaveMemory is deliberately NOT write-work: it appends to .agon/project.md (durable memory), not the project tree, so the project's verification gate has nothing to verify for it."
@@ -456,11 +457,11 @@ fn name=buildReviewFollowupPrompt params="input:string, ctx:HandlerContext" retu
     let name=review value="ctx.lastReviewResult"
     if cond="!match || !review"
       return value="{ matched: false, prompt: input }"
-    let name=ageMs value="Date.now() - Number(review.timestamp ?? 0)"
+    let name=ageMs value="hostNowMs() - Number(review.timestamp ?? 0)"
     let name=maxAgeMs value="30 * 60 * 1000"
     if cond="!Number.isFinite(ageMs) || ageMs < 0 || ageMs > maxAgeMs"
       return value="{ matched: false, prompt: input }"
-    let name=requestedEngine value="match[1]?.toLowerCase()"
+    let name=requestedEngine value="match.groups[0]?.toLowerCase()"
     let name=reviewOutput value="String(review.reviewOutput ?? '').trim()"
     let name=cappedReview value="reviewOutput.length > 8000 ? `${reviewOutput.slice(0, 8000)}\\n… [review output truncated]` : reviewOutput"
     let name=label value="String(review.label ?? review.target ?? 'uncommitted changes').trim() || 'uncommitted changes'"

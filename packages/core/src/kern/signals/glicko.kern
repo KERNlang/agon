@@ -8,6 +8,7 @@ import from="node:os" names="homedir"
 import from="../models/types.js" names="GlickoRating,RatingRecord,EngineMeta,TaskClass,EngineDefinition" types=true
 import from="./engine-registry.js" names="EngineRegistry" types=true
 import from="../blocks/file-lock.js" names="withFileLock"
+import from="../blocks/host-runtime.js" names="hostEpochFrom,hostNowIso,hostNowMs,hostPrettyJson,hostSqrt"
 
 fn name=ratingsPath returns=string export=false
   handler <<<
@@ -34,11 +35,11 @@ const name=CONVERGENCE_TOLERANCE type=number value=0.000001
 
 fn name=defaultGlickoRating returns=GlickoRating
   handler lang="kern"
-    return value="{ mu: DEFAULT_MU, phi: DEFAULT_PHI, sigma: DEFAULT_SIGMA, wins: 0, losses: 0, lastActive: new Date().toISOString(), }"
+    return value="{ mu: DEFAULT_MU, phi: DEFAULT_PHI, sigma: DEFAULT_SIGMA, wins: 0, losses: 0, lastActive: hostNowIso(), }"
 
 fn name=defaultEngineMeta returns=EngineMeta
   handler lang="kern"
-    let name=now value="new Date().toISOString()"
+    let name=now value="hostNowIso()"
     return value="{ firstSeen: now, lastActive: now, matchCount: 0, derivedFrom: null, versions: [], }"
 
 fn name=loadRatings returns=RatingRecord
@@ -76,9 +77,9 @@ fn name=saveRatings params="record:RatingRecord" returns=void
   handler lang="kern"
     let name=path value="ratingsPath()"
     do value="mkdirSync(dirname(path), { recursive: true })"
-    assign target="record.lastUpdated" value="new Date().toISOString()"
+    assign target="record.lastUpdated" value="hostNowIso()"
     let name=tmpPath value="path + '.tmp'"
-    do value="writeFileSync(tmpPath, JSON.stringify(record, null, 2) + '\\n')"
+    do value="writeFileSync(tmpPath, hostPrettyJson(record) + '\\n')"
     do value="renameSync(tmpPath, path)"
 
 fn name=getRatings returns=RatingRecord expr={{ return loadRatings(); }}
@@ -92,7 +93,7 @@ fn name=getEngineGlickoRating params="engineId:string, mode?:string" returns=Gli
       return value="record.byMode[mode as keyof typeof record.byMode][engineId] ?? defaultGlickoRating()"
     return value="record.global[engineId] ?? defaultGlickoRating()"
 
-fn name=glickoG params="phi:number" returns=number expr={{ return 1 / Math.sqrt(1 + 3 * phi * phi / (Math.PI * Math.PI)); }}
+fn name=glickoG params="phi:number" returns=number expr={{ return 1 / hostSqrt(1 + 3 * phi * phi / (Math.PI * Math.PI)); }}
   doc "Glicko-2 g(phi) function — reduces impact of uncertain opponents."
 
 fn name=glickoE params="mu:number, muJ:number, phiJ:number" returns=number expr={{ return 1 / (1 + Math.exp(-glickoG(phiJ) * (mu - muJ))); }}
@@ -246,11 +247,11 @@ fn name=advisorScore params="engineId:string, mode:'forge'|'brainstorm'|'tribuna
   handler lang="kern"
     let name=rating value="getEngineGlickoRating(engineId, mode)"
     comment raw="// Apply inactivity: increase phi if engine hasn't competed recently"
-    let name=daysSinceActive value="(Date.now() - new Date(rating.lastActive).getTime()) / 86400000"
+    let name=daysSinceActive value="(hostNowMs() - hostEpochFrom(rating.lastActive)) / 86400000"
     let name=phi kind=let value="rating.phi"
     if cond="daysSinceActive > 14"
       comment raw="// Glicko-2 standard: phi grows with inactivity, capped at initial value"
-      assign target="phi" value="Math.min(Math.sqrt(phi * phi + rating.sigma * rating.sigma * daysSinceActive), DEFAULT_PHI)"
+      assign target="phi" value="Math.min(hostSqrt(phi * phi + rating.sigma * rating.sigma * daysSinceActive), DEFAULT_PHI)"
     return value="Math.round(rating.mu - 2 * phi)"
 
 fn name=rankEnginesByRating params="engineIds:string[], ratings:RatingRecord, mode?:'forge'|'brainstorm'|'tribunal'|'critique'" returns="string[]" export=true

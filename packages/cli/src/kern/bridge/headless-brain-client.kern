@@ -29,6 +29,7 @@ import from="@kernlang/agon-adapter-cli" names="createCliAdapter"
 import from="node:path" names="join"
 import from="node:os" names="tmpdir"
 import from="node:fs" names="rmSync"
+import from="../lib/kern-host.js" names="hostNowMs,hostWorkingDirectory"
 
 service name=HeadlessTurnBrainClient implements=BrainClient
   doc "v1 BrainClient: one single-engine exec turn per request, streamed as BrainEvents, with per-turn cancellation. Construct with the daemon's EngineRegistry; call open() to bind the session's engine/cwd, then runTurn() per turn."
@@ -47,9 +48,9 @@ service name=HeadlessTurnBrainClient implements=BrainClient
       assign target="this.registry" value="registry"
       assign target="this.adapter" value="createCliAdapter(registry)"
       assign target="this.engineId" value="'claude'"
-      assign target="this.cwd" value="process.cwd()"
+      assign target="this.cwd" value="hostWorkingDirectory()"
       assign target="this.systemPrompt" value="undefined"
-      assign target="this.startedAtMs" value="Date.now()"
+      assign target="this.startedAtMs" value="hostNowMs()"
       assign target="this.activeTurnId" value="null"
       assign target="this.aborts" value="new Map()"
       assign target="this.controlCapabilities" value="{ concurrentTurns: 'per-session-serialized', concurrentSteering: 'unsupported', approvalArbitration: 'unsupported', questionArbitration: 'unsupported', clientCapabilities: 'unsupported', cancellation: 'per-turn' }"
@@ -238,7 +239,7 @@ service name=HeadlessTurnBrainClient implements=BrainClient
   method name=health returns="Promise<BrainHealth>" async=true
     doc "Liveness/occupancy for the daemon's supervisor. pid is null (in-process v1, not a spawned host); activeTurnId null = idle; queuedTurns 0 (the daemon, not this impl, queues)."
     handler <<<
-      return { alive: true, engineId: this.engineId, pid: null, activeTurnId: this.activeTurnId, queuedTurns: 0, uptimeMs: Date.now() - this.startedAtMs };
+      return { alive: true, engineId: this.engineId, pid: null, activeTurnId: this.activeTurnId, queuedTurns: 0, uptimeMs: hostNowMs() - this.startedAtMs };
     >>>
 
   method name=close returns="Promise<void>" async=true

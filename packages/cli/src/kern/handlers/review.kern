@@ -13,6 +13,7 @@ import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="@kernlang/agon-core" names="DispatchResult" types=true
 import from="./engine-filter.js" names="filterDefaultOrchestrationEngines"
 import from="../blocks/engine-helpers.js" names="stripReasoning,stripTuiChrome"
+import from="../lib/kern-host.js" names="hostNowMs"
 
 fn name=resolveReviewTarget params="target:string|undefined, cwd:string, base:string|undefined" returns="{diff:string, label:string}"
   handler <<<
@@ -433,7 +434,7 @@ fn name=runReviewRepair params="priorReview:string, engineId:string, ctx:Handler
     do value="parts.push(`Now convert the findings above into a JSON array — output ONLY the array, nothing else. Your entire response must be valid JSON: start with [ and end with ]. No prose, no explanation, no markdown, no code fence. Include every verified blocking finding, then at most the 8 highest-priority, best-verified non-blocking findings; omit duplicates and weak speculation.\\n\\nEach element: {\"file\":\"path\",\"lines\":\"10-12\",\"severity\":\"blocking|important|nit\",\"blocking\":true,\"confidence\":0.0,\"problem\":\"what is wrong\",\"minimalFix\":\"smallest fix\"}\\n\\nconfidence is your 0.00-1.00 certainty the issue is real and correctly diagnosed (1.0 = you verified it in the code; lower it when you are guessing).\\n\\nExample of a valid response:\\n[{\"file\":\"src/auth.ts\",\"lines\":\"42\",\"severity\":\"important\",\"blocking\":false,\"confidence\":0.7,\"problem\":\"missing null check\",\"minimalFix\":\"guard before deref\"}]\\n\\nIf the review found no issues, your entire response must be exactly: []\\nDerive the findings from the review above — do not re-analyze.`)"
     let name=prompt value="parts.join('\\n\\n')"
     let name=engine value="ctx.registry.get(engineId)"
-    let name=outputDir value="join(RUNS_DIR, `review-repair-${Date.now()}`)"
+    let name=outputDir value="join(RUNS_DIR, `review-repair-${hostNowMs()}`)"
     do value="mkdirSync(outputDir, { recursive: true })"
     let name=dispatchOpts value="{ engine, prompt, cwd, mode: 'exec' as const, timeout: (config as any).reviewTimeout ?? config.agentTimeout ?? 420, maxTokens: resolveReviewMaxTokens(config, engine), outputDir, signal, }"
     let name=response kind=let value="''"
@@ -524,7 +525,7 @@ fn name=runReviewCore params="diff:string, label:string, engineId:string, ctx:Ha
     do value="parts.push(`## INSTRUCTIONS\\nProvide a thorough but concise code review: bugs and logic errors, security vulnerabilities, performance issues, code quality, and missing edge cases. Keep the prose under 1200 words. Report every verified blocking finding, then at most the 8 highest-priority, best-verified non-blocking findings so the mandatory machine block cannot be crowded out. Keep each problem and fix concise. For each issue give file, line range, severity (blocking|important|nit), a 0.00-1.00 confidence, and a suggested fix.\\n\\nVERIFY before you flag: confirm each issue against the CURRENT FILE CONTENTS above — is the error really unhandled, the symbol really unused, the import really missing? Only mark a finding 'blocking' if you confirmed it in the code. Set confidence honestly: 1.0 means you verified it in the code; lower it the more you are inferring or guessing. If you could not verify it from the provided context, lower the confidence and downgrade the severity rather than guessing — unverified high-confidence blocking findings are the #1 source of review noise.\\n\\n## REQUIRED MACHINE BLOCK\\nAfter your prose review you MUST append a machine-readable findings block. This is mandatory — a review without it is discarded. The block is the sentinel line, then a fenced JSON code block, as the very last thing in your response. Do NOT stop at the sentinel line: the JSON array after it is required.\\n\\n<!--AGON_REVIEW_FINDINGS_v1-->\\n\\`\\`\\`json\\n[{\"file\":\"src/auth.ts\",\"lines\":\"42\",\"severity\":\"important\",\"blocking\":false,\"confidence\":0.7,\"problem\":\"missing null check\",\"minimalFix\":\"guard before deref\"}]\\n\\`\\`\\`\\n\\nReplace the example with your real findings. If you found no issues, the array MUST be []. Emit the sentinel + JSON block exactly once, at the end.`)"
     let name=prompt value="parts.join('\\n\\n')"
     let name=engine value="ctx.registry.get(engineId)"
-    let name=outputDir value="join(RUNS_DIR, `review-${Date.now()}`)"
+    let name=outputDir value="join(RUNS_DIR, `review-${hostNowMs()}`)"
     do value="mkdirSync(outputDir, { recursive: true })"
     comment raw="// Output-token budget: positive config.reviewMaxTokens is explicit; 0/missing means automatic. Never silently squeeze reasoning engines below their native output budget."
     let name=reviewMaxTokens value="resolveReviewMaxTokens(config, engine)"

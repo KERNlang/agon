@@ -1,6 +1,7 @@
 import from="node:child_process" names="execSync,execFileSync"
 import from="@kernlang/agon-core" names="loadConfig,resolveWorkingDir,configGet,appendAttribution,appendCoAuthor"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
+import from="../lib/kern-host.js" names="hostPromiseAllValues"
 
 fn name=gitExec params="cmd:string, cwd:string" returns=string export=false
   handler lang="kern"
@@ -29,7 +30,7 @@ fn name=handleCommit async=true params="message:string|undefined, dispatch:Dispa
     let name=cwd value="resolveWorkingDir()"
     do value="dispatch({ type: 'spinner-start', message: 'Analyzing changes...' })"
     comment raw="// Step 1: Parallel git context (like Claude Code)"
-    destructure kind=const source="await Promise.all([ Promise.resolve(gitExec('git status --short', cwd)), Promise.resolve(gitExec('git diff --cached', cwd) || gitExec('git diff', cwd)), Promise.resolve(gitExec('git diff --stat', cwd)), Promise.resolve(gitExec('git log --oneline -5', cwd)), ])"
+    destructure kind=const source="await hostPromiseAllValues([ gitExec('git status --short', cwd), gitExec('git diff --cached', cwd) || gitExec('git diff', cwd), gitExec('git diff --stat', cwd), gitExec('git log --oneline -5', cwd), ])"
       element name=status index=0
       element name=diff index=1
       element name=diffStat index=2

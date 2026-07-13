@@ -281,34 +281,37 @@ fn name=runBaseline async=true params="opts:{cwd:string, baseSha:string, fitness
   >>>
 
 fn name=runStage1 async=true params="opts:{starter:string, forgePrompt:string, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, taskClass?:string, enginePrompts?:Map<string,string>, forgeMode?:'implement'|'improve'|'validate', requireDiff?:boolean, baselinePasses?:boolean, acceptReviewOutput?:boolean}" returns="Promise<StageResult>"
-  handler lang="kern"
-    do value="opts.onEvent?.({ type: 'stage1:start', engineId: opts.starter })"
-    let name=root value="repoRoot(opts.cwd)"
-    let name=engineResults value="new Map<string, EngineResult>()"
-    let name=metrics type="DispatchMetric[]" value="[]"
-    try
-      let name=attempt value="await runForgeEngineAttempt({ engineId: opts.starter, prompt: opts.forgePrompt, dispatchMode: 'exec', metricPhase: 'stage1', fitnessCmd: opts.fitnessCmd, config: opts.config, registry: opts.registry, adapter: opts.adapter, root, baseSha: opts.baseSha, forgeDir: opts.forgeDir, worktrees: opts.worktrees, onEvent: opts.onEvent, signal: opts.signal, eventType: 'stage1:dispatch', forgeMode: opts.forgeMode, requireDiff: opts.requireDiff, baselinePasses: opts.baselinePasses, acceptReviewOutput: opts.acceptReviewOutput, })"
-      do value="engineResults.set(opts.starter, attempt.result)"
-      do value="metrics.push(attempt.metric)"
-      catch name=err
-        let name=error value="formatDispatchError(err)"
-        let name=elapsed value="0"
-        do value="console.warn(`[agon] forge stage1: engine ${opts.starter} failed: ${error}`)"
-        do value="emitForgeEvent(opts.onEvent, 'engine:failed', opts.starter, { engineId: opts.starter, phase: 'stage1', error })"
-        let name=failed value="makeFailedResult(opts.starter, error, elapsed)"
-        do value="engineResults.set(opts.starter, failed)"
-        do value="metrics.push({ engineId: opts.starter, phase: 'stage1', dispatchDurationMs: elapsed, totalDurationMs: elapsed, error, })"
-    let name=successful value="[...engineResults.values()].filter((r) => r.pass)"
-    let name=result value="successful.sort((a, b) => b.score - a.score)[0] ?? engineResults.get(opts.starter)"
-    comment raw="// lintWarnings and styleScore are currently hardcoded (0 and 100) in fitness.kern,"
-    comment raw="// so those checks are no-ops. Gate on what matters: pass + score threshold."
-    let name=accepted value="!!result?.pass && result.score >= opts.config.forgeAutoAcceptScore"
-    if cond="accepted"
-      do value="opts.onEvent?.({ type: 'stage1:accepted', engineId: result!.engineId, data: { score: result.score }, })"
-    return value="{ engineResults, accepted, winner: result?.pass ? result.engineId : null, metrics }"
+  handler lang="ts" <<<
+    opts.onEvent?.({ type: 'stage1:start', engineId: opts.starter });
+    const root = repoRoot(opts.cwd);
+    const engineResults = new Map<string, EngineResult>();
+    const metrics: DispatchMetric[] = [];
+    try {
+      const attempt = await runForgeEngineAttempt({ engineId: opts.starter, prompt: opts.forgePrompt, dispatchMode: 'exec', metricPhase: 'stage1', fitnessCmd: opts.fitnessCmd, config: opts.config, registry: opts.registry, adapter: opts.adapter, root, baseSha: opts.baseSha, forgeDir: opts.forgeDir, worktrees: opts.worktrees, onEvent: opts.onEvent, signal: opts.signal, eventType: 'stage1:dispatch', forgeMode: opts.forgeMode, requireDiff: opts.requireDiff, baselinePasses: opts.baselinePasses, acceptReviewOutput: opts.acceptReviewOutput });
+      engineResults.set(opts.starter, attempt.result);
+      metrics.push(attempt.metric);
+    } catch (err) {
+      const error = formatDispatchError(err);
+      const elapsed = 0;
+      console.warn(`[agon] forge stage1: engine ${opts.starter} failed: ${error}`);
+      emitForgeEvent(opts.onEvent, 'engine:failed', opts.starter, { engineId: opts.starter, phase: 'stage1', error });
+      const failed = makeFailedResult(opts.starter, error, elapsed);
+      engineResults.set(opts.starter, failed);
+      metrics.push({ engineId: opts.starter, phase: 'stage1', dispatchDurationMs: elapsed, totalDurationMs: elapsed, error });
+    }
+    const successful = [...engineResults.values()].filter((r) => r.pass);
+    const result = successful.sort((a, b) => b.score - a.score)[0] ?? engineResults.get(opts.starter);
+    // lintWarnings and styleScore are currently hardcoded (0 and 100) in fitness.kern,
+    // so those checks are no-ops. Gate on what matters: pass + score threshold.
+    const accepted = !!result?.pass && result.score >= opts.config.forgeAutoAcceptScore;
+    if (accepted) {
+      opts.onEvent?.({ type: 'stage1:accepted', engineId: result!.engineId, data: { score: result.score } });
+    }
+    return { engineResults, accepted, winner: result?.pass ? result.engineId : null, metrics };
+  >>>
 
 fn name=runStage2 async=true params="opts:{challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, onResult?:(engineId:string,result:EngineResult,metric:DispatchMetric)=>'continue'|'finalize'|void, abortControllers?:Map<string,AbortController>, forgeMode?:'implement'|'improve'|'validate', requireDiff?:boolean, baselinePasses?:boolean, acceptReviewOutput?:boolean, earlyFinalizeCount?:number}" returns="Promise<StageResult>"
-  handler <<<
+  handler lang="ts" <<<
     opts.onEvent?.({ type: 'stage2:start' });
 
     const root = repoRoot(opts.cwd);
@@ -507,7 +510,7 @@ fn name=runStage2 async=true params="opts:{challengers:string[], forgePrompt:str
   >>>
 
 fn name=runStage2WithPeek async=true params="opts:{challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, forgeMode?:'implement'|'improve'|'validate', requireDiff?:boolean, baselinePasses?:boolean, acceptReviewOutput?:boolean}" returns="Promise<StageResult>"
-  handler <<<
+  handler lang="ts" <<<
     if (opts.challengers.length <= 1) {
       // Only one challenger — no peek possible, use normal stage2
       return runStage2(opts);

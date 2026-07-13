@@ -1,6 +1,7 @@
 import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,existsSync,chmodSync"
 import from="node:path" names="join,dirname,resolve"
 import from="node:os" names="homedir"
+import from="../blocks/host-runtime.js" names="hostEnv"
 
 interface name=AuthEntry
   field name=type type="'api'"
@@ -12,7 +13,7 @@ interface name=AuthStore
 
 fn name=getAuthFile returns=string export=false
   handler lang="kern"
-    let name=override value="process.env.AGON_HOME?.trim()"
+    let name=override value="hostEnv('AGON_HOME')?.trim()"
     let name=home value="override ? resolve(override) : join(homedir(), '.agon')"
     return value="join(home, 'auth.json')"
 

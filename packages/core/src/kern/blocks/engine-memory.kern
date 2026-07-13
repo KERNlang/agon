@@ -2,6 +2,7 @@ import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,renameSync"
 import from="node:path" names="join,resolve"
 import from="node:os" names="homedir"
 import from="../models/types.js" names="TaskClass" types=true
+import from="./host-runtime.js" names="hostCreateSet,hostNowIso"
 
 interface name=EngineNote
   field name=taskClass type=TaskClass
@@ -63,7 +64,7 @@ fn name=ensureProfile params="record:EngineMemoryRecord, engineId:string" return
 
 fn name=uniqueStrings params="values:string[], limit?:number" returns="string[]" export=false
   handler lang="kern"
-    let name=seen value="new Set<string>()"
+    let name=seen value="hostCreateSet() as Set<string>"
     let name=out type="string[]" value="[]"
     let name=max value="limit ?? 20"
     each name=value in="values"
@@ -106,18 +107,18 @@ fn name=extractPatchFilePatterns params="patch:string" returns="string[]" export
     each name=line in="String(patch ?? '').split('\\n')"
       let name=diffMatch value="line.match(/^diff --git\\s+a\\/(.+?)\\s+b\\/(.+)$/)"
       if cond="diffMatch"
-        do value="paths.push(diffMatch[1], diffMatch[2])"
+        do value="paths.push(diffMatch.groups[0] as string, diffMatch.groups[1] as string)"
         continue
       let name=markerMatch value="line.match(/^(?:---|\\+\\+\\+)\\s+(?:a\\/|b\\/)?(.+)$/)"
       if cond="markerMatch"
-        do value="paths.push(markerMatch[1])"
+        do value="paths.push(markerMatch.groups[0] as string)"
     return value="uniqueStrings(paths.map(filePathToMemoryPattern).filter(Boolean), 12)"
 
 fn name=addEngineNote params="engineId:string, taskClass:TaskClass, observation:string, forgeId?:string, filePatterns?:string[]" returns=void
   handler lang="kern"
     let name=record value="loadEngineMemory()"
     let name=profile value="ensureProfile(record, engineId)"
-    let name=note value="{ taskClass, observation, timestamp: new Date().toISOString(), forgeId, } as EngineNote"
+    let name=note value="{ taskClass, observation, timestamp: hostNowIso(), forgeId, } as EngineNote"
     let name=patterns value="uniqueStrings(filePatterns ?? [], 12)"
     if cond="patterns.length > 0"
       assign target="note.filePatterns" value="patterns"

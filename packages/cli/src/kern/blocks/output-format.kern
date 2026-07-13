@@ -1,4 +1,5 @@
 import from="../signals/icons.js" names="icons"
+import from="../lib/kern-host.js" names="hostConsoleLog,hostEnvironment,hostWorkingDirectory"
 
 module name=OutputFormatting
   const name=BOLD type=string value={{ '\x1b[1m' }}
@@ -70,27 +71,27 @@ module name=OutputFormatting
     handler lang="kern"
       destructure kind=const source="icons()"
         binding name=h key=header
-      do value="console.log(`\\n${BOLD}${CYAN}${h} ${text}${RESET}`)"
+      do value="hostConsoleLog(`\\n${BOLD}${CYAN}${h} ${text}${RESET}`)"
 
   fn name=success params="text:string" returns=void
     handler lang="kern"
       destructure kind=const source="icons()"
         binding name=s key=success
-      do value="console.log(`${GREEN}${s}${RESET} ${text}`)"
+      do value="hostConsoleLog(`${GREEN}${s}${RESET} ${text}`)"
 
   fn name=fail params="text:string" returns=void
     handler lang="kern"
       destructure kind=const source="icons()"
         binding name=f key=fail
-      do value="console.log(`${RED}${f}${RESET} ${text}`)"
+      do value="hostConsoleLog(`${RED}${f}${RESET} ${text}`)"
 
   fn name=warn params="text:string" returns=void
     handler lang="kern"
       destructure kind=const source="icons()"
         binding name=w key=warning
-      do value="console.log(`${YELLOW}${w}${RESET} ${text}`)"
+      do value="hostConsoleLog(`${YELLOW}${w}${RESET} ${text}`)"
 
-  fn name=info params="text:string" returns=void expr={{ console.log(`${DIM}${text}${RESET}`); }}
+  fn name=info params="text:string" returns=void expr={{ hostConsoleLog(`${DIM}${text}${RESET}`); }}
 
   fn name=scoreboard params="title:string, engineIds:string[], metrics:Array<{label:string,values:string[]}>, winnerId?:string|null" returns=void
     handler <<<
@@ -145,7 +146,7 @@ module name=OutputFormatting
 
   // ── Tool-event label helpers (shared by engine.kern + app.kern) ──
 
-  fn name=shortToolPath params="filePath:string" returns=string expr={{ const home = process.env.HOME; const stripped = String(filePath ?? '').replace(`${process.cwd()}/`, ''); return home ? stripped.replace(home, '~') : stripped; }}
+  fn name=shortToolPath params="filePath:string" returns=string expr={{ const home = hostEnvironment('HOME'); const stripped = String(filePath ?? '').replace(`${hostWorkingDirectory()}/`, ''); return home ? stripped.replace(home, '~') : stripped; }}
 
   fn name=isCesarTelemetryLine params="message:string" returns=boolean
     handler lang="kern"
@@ -160,7 +161,7 @@ module name=OutputFormatting
         let name=text value="String(rawInput ?? '')"
         let name=match value="text.match(/\"value\"\\s*:\\s*(\\d{1,3}(?:\\.\\d+)?)/) || text.match(/(\\d{1,3})\\s*%/)"
         if cond="match"
-          assign target="value" value="Number(match[1])"
+          assign target="value" value="Number(match.groups[0] ?? NaN)"
       if cond="Number.isFinite(value)"
         let name=pct value="value <= 1 && value > 0 ? Math.round(value * 100) : Math.round(value)"
         if cond="pct >= 0 && pct <= 100"

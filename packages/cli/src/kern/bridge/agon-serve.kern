@@ -28,6 +28,7 @@
 import from="@kernlang/agon-core" names="BrainClient,CapabilitySpec" types=true
 import from="@kernlang/agon-core" names="getSessionHost,eventLogAppend,eventLogFlush,MAX_DISPATCH_IMAGES,MAX_DISPATCH_IMAGE_BYTES"
 import from="node:http" names="createServer"
+import from="../lib/kern-host.js" names="hostResolvedVoid,hostSet"
 import from="node:http" names="IncomingMessage,ServerResponse,Server" types=true
 import from="node:crypto" names="randomUUID,timingSafeEqual"
 
@@ -63,8 +64,8 @@ service name=AgonServe
       assign target="this.server" value="null"
       assign target="this.port" value="0"
       assign target="this.turnCounter" value="0"
-      assign target="this.turnTail" value="Promise.resolve()"
-      assign target="this.sse" value="new Set()"
+      assign target="this.turnTail" value="hostResolvedVoid()"
+      assign target="this.sse" value="hostSet()"
 
   method name=start params="port?:number" returns="Promise<{ url: string, token: string }>" async=true
     doc "Bind a loopback HTTP server (127.0.0.1) on `port` (0 = ephemeral). Disables the request timeout so SSE streams aren't culled. Returns the URL + bearer token the caller hands to the client out-of-band."

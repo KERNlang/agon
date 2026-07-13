@@ -10,6 +10,7 @@ import from="../models/extension-manifest.js" names="ExtensionManifest,LoadedExt
 import from="../signals/command-registry.js" names="CommandRegistry"
 import from="../signals/command-registry.js" names="CommandHandler" types=true
 import from="../signals/engine-registry.js" names="EngineRegistry"
+import from="./host-runtime.js" names="hostLog,hostNowMs,hostWarn"
 import from="./skill-loader.js" names="Skill" types=true
 import from="../signals/event-bus.js" names="EventBus"
 
@@ -63,11 +64,11 @@ fn name=loadExtensionManifest params="dir:string, source:'builtin'|'user'|'repo'
       let name=raw value="JSON.parse(readFileSync(manifestPath, 'utf-8'))"
       let name=result value="validateManifest(raw, manifestPath)"
       if cond="!result.ok || !result.data"
-        do value="console.warn(`[agon] skipping extension ${dir}: ${result.error}`)"
+        do value="hostWarn(`[agon] skipping extension ${dir}: ${result.error}`)"
         return value="null"
-      return value="{ manifest: result.data, dir, source, loadedAt: Date.now() }"
+      return value="{ manifest: result.data, dir, source, loadedAt: hostNowMs() }"
       catch name=err
-        do value="console.warn(`[agon] failed to load extension ${dir}: ${(err as Error).message}`)"
+        do value="hostWarn(`[agon] failed to load extension ${dir}: ${(err as Error).message}`)"
         return value="null"
 
 fn name=loadExtensions params="cwd:string" returns="LoadedExtension[]"
@@ -148,7 +149,7 @@ fn name=registerExtensionEngines params="ext:LoadedExtension, engineRegistry:Eng
           do value="engineRegistry.register(raw)"
           do value="registered.push(raw.id)"
         catch name=err
-          do value="console.warn(`[agon] extension '${ext.manifest.id}' engine '${enginePath}': ${(err as Error).message}`)"
+          do value="hostWarn(`[agon] extension '${ext.manifest.id}' engine '${enginePath}': ${(err as Error).message}`)"
     return value="registered"
 
 fn name=registerExtensionSkills params="ext:LoadedExtension" returns="Skill[]"
@@ -230,11 +231,11 @@ fn name=initExtensions async=true params="cwd:string, commandRegistry:CommandReg
       comment raw="// Commands"
       let name=cmds value="await registerExtensionCommands(ext, commandRegistry)"
       if cond="cmds.length > 0"
-        do value="console.log(`[agon] extension '${ext.manifest.id}': registered commands: ${cmds.join(', ')}`)"
+        do value="hostLog(`[agon] extension '${ext.manifest.id}': registered commands: ${cmds.join(', ')}`)"
       comment raw="// Engines"
       let name=engines value="registerExtensionEngines(ext, engineRegistry)"
       if cond="engines.length > 0"
-        do value="console.log(`[agon] extension '${ext.manifest.id}': registered engines: ${engines.join(', ')}`)"
+        do value="hostLog(`[agon] extension '${ext.manifest.id}': registered engines: ${engines.join(', ')}`)"
       comment raw="// Skills"
       let name=skills value="registerExtensionSkills(ext)"
       do value="allSkills.push(...skills)"
@@ -242,13 +243,13 @@ fn name=initExtensions async=true params="cwd:string, commandRegistry:CommandReg
       if cond="eventBus"
         let name=hooks value="await registerExtensionHooks(ext, eventBus)"
         if cond="hooks.length > 0"
-          do value="console.log(`[agon] extension '${ext.manifest.id}': registered hooks: ${hooks.join(', ')}`)"
+          do value="hostLog(`[agon] extension '${ext.manifest.id}': registered hooks: ${hooks.join(', ')}`)"
       comment raw="// System prompt fragments"
       if cond="ext.manifest.contributes?.systemPromptFragments"
         do value="allFragments.push(...ext.manifest.contributes.systemPromptFragments)"
     if cond="extensions.length > 0"
-      do value="console.log(`[agon] loaded ${extensions.length} extension(s)`)"
-    return value="{ extensions, skills: allSkills, systemPromptFragments: allFragments }"
+      do value="hostLog(`[agon] loaded ${extensions.length} extension(s)`)"
+    return value="{ extensions, skills: allSkills.slice(), systemPromptFragments: allFragments.slice() }"
 
 fn name=buildExtensionContext params="cb:any, source:string" returns="Record<string, unknown>"
   doc "Build a sandboxed context object for extension command handlers."

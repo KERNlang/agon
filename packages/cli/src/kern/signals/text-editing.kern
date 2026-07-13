@@ -3,6 +3,8 @@
 // so the logic lives in KERN and only the React component remains
 // hand-maintained.
 
+import from="../lib/kern-host.js" names="hostCharFromCode,hostRegexTest"
+
 fn name=isWordChar params="char:string|undefined" returns=boolean export=false
   handler lang="kern"
     return value="!!char && /[A-Za-z0-9_]/.test(char)"
@@ -11,7 +13,7 @@ fn name=charClass params="char:string|undefined" returns="'space'|'word'|'punct'
   handler lang="kern"
     if cond="!char"
       return value="'none'"
-    if cond="/\s/.test(char)"
+    if cond="hostRegexTest('\\\\s', '', char)"
       return value="'space'"
     if cond="isWordChar(char)"
       return value="'word'"
@@ -19,9 +21,9 @@ fn name=charClass params="char:string|undefined" returns="'space'|'word'|'punct'
 
 fn name=classifyDeleteInput params="input:string,key:{backspace?:boolean;delete?:boolean}" returns="'none'|'backward'|'forward'" export=true
   handler lang="kern"
-    if cond="input === String.fromCharCode(0x1b) + '[3~'"
+    if cond="input === hostCharFromCode(0x1b) + '[3~'"
       return value="'forward'"
-    if cond="key.backspace || key.delete || input === String.fromCharCode(0x7f) || input === String.fromCharCode(0x08)"
+    if cond="key.backspace || key.delete || input === hostCharFromCode(0x7f) || input === hostCharFromCode(0x08)"
       return value="'backward'"
     return value="'none'"
 

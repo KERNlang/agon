@@ -3,6 +3,7 @@ import from="node:fs" names="readdirSync,statSync,lstatSync,existsSync,rmSync,re
 import from="node:path" names="join,relative,sep,isAbsolute"
 import from="../models/errors.js" names="GitError,WorktreeError"
 import from="../utils/patch.js" names="normalizePatchContent"
+import from="./host-runtime.js" names="hostCreateSet,hostRegexSplit"
 
 fn name=git params="args:string[],cwd?:string" returns=string export=false
   handler <<<
@@ -648,7 +649,7 @@ fn name=appendCoAuthor params="message:string,config:{commitCoAuthor?:string}" r
       return value="message"
     let name=trailerLine value="`Co-Authored-By: ${v}`"
     comment raw="// Split into paragraphs on blank lines; inspect the LAST one. A trailer block must be a SEPARATE final paragraph — the subject line (a single-paragraph message like `feat: do thing`) also matches the trailer regex, so only treat the last paragraph as trailers when there is MORE than one paragraph."
-    let name=paragraphs value="message.split(/\\n\\s*\\n/)"
+    let name=paragraphs value="hostRegexSplit(message, /\\n\\s*\\n/)"
     let name=lastParagraph value="paragraphs[paragraphs.length - 1] ?? ''"
     let name=nonEmptyLines value="lastParagraph.split('\\n').map((l: string) => l.trim()).filter(Boolean)"
     let name=isTrailerBlock value="paragraphs.length > 1 && nonEmptyLines.length > 0 && nonEmptyLines.every((l: string) => /^[A-Za-z][A-Za-z-]*: /.test(l))"
@@ -754,7 +755,7 @@ fn name=gitChangedFiles params="cwd:string" returns="string[]"
     try
       let name=unstaged value="git(['diff', '--name-only'], cwd)"
       let name=staged value="git(['diff', '--cached', '--name-only'], cwd)"
-      let name=combined value="new Set([ ...unstaged.split('\\n').filter(Boolean), ...staged.split('\\n').filter(Boolean), ])"
+      let name=combined value="hostCreateSet([ ...unstaged.split('\\n').filter(Boolean), ...staged.split('\\n').filter(Boolean), ]) as Set<string>"
       return value="[...combined]"
       catch name=e
         return value="[]"

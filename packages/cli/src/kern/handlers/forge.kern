@@ -12,6 +12,7 @@ import from="../cesar/scoreboard.js" names="createScoreboard,scoreboardStartEngi
 import from="../cesar/checkpoint.js" names="buildCheckpoint,recordCheckpoint"
 import from="../../telemetry/index.js" names="recordRun,formatRunSummary"
 import from="./engine-filter.js" names="filterDefaultOrchestrationEngines"
+import from="../lib/kern-host.js" names="hostRegexTest,hostStringSet"
 
 fn name=handleForgeEvent params="event:any, plan:Plan, engineStatus:Record<string,string>, dispatch:Dispatch, ctx:HandlerContext" returns=Plan export=false
   handler <<<
@@ -200,7 +201,7 @@ fn name=extractFitnessCommandFromCesarOutput params="output:string" returns="str
     return candidate;
   >>>
 
-fn name=extractGithubLiterals params="text:string" returns="string[]" export=false expr={{ return [...new Set((String(text ?? '').match(/(?:https?:\/\/)?github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+/g) ?? []).map((m: string) => m.replace(/^https?:\/\//, '').replace(/[).,;:'"`\]]+$/g, '')))]; }}
+fn name=extractGithubLiterals params="text:string" returns="string[]" export=false expr={{ return Array.from(hostStringSet((String(text ?? '').match(/(?:https?:\/\/)?github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+/g) ?? []).map((m: string) => m.replace(/^https?:\/\//, '').replace(/[).,;:'"`\]]+$/g, '')))); }}
 
 fn name=repairFitnessCommandTaskLiterals params="task:string, command:string" returns="string" export=true
   doc "Keep literal GitHub repo URLs in Cesar-generated fitness commands aligned with the user's task. Prevents small hallucinated typos from making all engines optimize for the wrong marker."
@@ -233,10 +234,10 @@ fn name=normalizeGithubRemoteLiteral params="remote:string" returns="string|null
     let name=cleaned value="raw.replace(/\\.git$/, '')"
     let name=ssh value="cleaned.match(/^git@github\\.com:([^/]+)\\/(.+)$/)"
     if cond="ssh"
-      fmt return=true template="github.com/${ssh[1]}/${ssh[2]}"
+      fmt return=true template="github.com/${ssh.groups[0] ?? ''}/${ssh.groups[1] ?? ''}"
     let name=https value="cleaned.match(/^https?:\\/\\/github\\.com\\/([^/]+)\\/(.+)$/)"
     if cond="https"
-      fmt return=true template="github.com/${https[1]}/${https[2]}"
+      fmt return=true template="github.com/${https.groups[0] ?? ''}/${https.groups[1] ?? ''}"
     return value="null"
 
 fn name=detectGithubRemoteLiteral params="cwd:string" returns="string|null" export=false
@@ -268,7 +269,7 @@ fn name=taskExplicitlyMentionsLiteral params="task:string,literal:string" return
     if cond="taskLower.includes(literalLower)"
       return value="true"
     let name=escaped value="literalLower.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')"
-    return value="new RegExp(`\\\\b(?:no|avoid|without|forbid|exclude|do not mention)\\\\s+${escaped}\\\\b`, 'i').test(taskLower)"
+    return value="hostRegexTest(`\\\\b(?:no|avoid|without|forbid|exclude|do not mention)\\\\s+${escaped}\\\\b`, 'i', taskLower)"
 
 fn name=taskWantsRepositoryLinkCheck params="task:string" returns=boolean export=true
   doc "Decide whether a fitness command may assert a GitHub/repository URL. This is semantic intent, not literal echoing: public README/footer/link tasks can check the local git origin; normal local docs tasks should not."

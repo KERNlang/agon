@@ -191,15 +191,12 @@ export function resolveReviewTarget(target: string|undefined, cwd: string, base:
 // @kern-source: review:181
 export function selectReviewEngine(requestedEngine: string|undefined, ctx: HandlerContext): string {
   const allActive = ctx.activeEngines();
-  const active = requestedEngine ? allActive : filterDefaultOrchestrationEngines(allActive);
 
   if (requestedEngine) {
-    const resolved = ctx.registry.resolveId(requestedEngine);
-    if (!active.includes(resolved)) {
-      throw new Error(`Engine "${requestedEngine}" is not available. Active engines: ${active.join(', ')}`);
-    }
-    return resolved;
+    return selectReviewEngines([requestedEngine], ctx)[0];
   }
+
+  const active = filterDefaultOrchestrationEngines(allActive);
 
   // Preference order: explicit review default > ranked review-capable engine.
   // Deliberately do not inherit forgeFixedStarter: starter choice is for
@@ -236,7 +233,42 @@ export function selectReviewEngine(requestedEngine: string|undefined, ctx: Handl
   throw new Error('No engines available for review. Try /engines to check availability.');
 }
 
-// @kern-source: review:229
+/**
+ * Select the Review panel. With no explicit list, return EVERY active engine, preserving active-engine order; Review uses generic exec prompts, so a dedicated review block is not required. An explicit list is resolved through EngineRegistry.partitionRoster: hidden engines remain usable when named, removed engines fail loudly, unknown/unavailable engines are rejected, and aliases are deduplicated. This is the standard Review contract: the full active panel runs unless the caller explicitly narrows it with --engine/--engines.
+ */
+// @kern-source: review:226
+export function selectReviewEngines(requestedEngines: string[]|undefined, ctx: HandlerContext): string[] {
+  const allActive = ctx.activeEngines();
+  if (requestedEngines !== undefined) {
+    const raw = requestedEngines.map((id) => String(id ?? '').trim());
+    if (raw.length === 0 || raw.some((id) => !id)) {
+      throw new Error('An explicit Review engine list cannot be empty. Omit --engine/--engines to use the full active panel.');
+    }
+    const partition = ctx.registry.partitionRoster(raw, ctx.config as any);
+    if (partition.removed.length > 0) {
+      throw new Error(`Review engine${partition.removed.length === 1 ? '' : 's'} removed by configuration: ${partition.removed.join(', ')}`);
+    }
+    const explicit: string[] = [];
+    for (const id of partition.active) {
+      let engine: any;
+      try { engine = ctx.registry.get(id); }
+      catch { throw new Error(`Unknown Review engine: ${id}`); }
+      if (!ctx.registry.isAvailable(engine)) {
+        throw new Error(`Review engine is not available: ${id}`);
+      }
+      if (!explicit.includes(id)) explicit.push(id);
+    }
+    if (explicit.length === 0) {
+      throw new Error('No usable engines remained in the explicit Review panel.');
+    }
+    return explicit;
+  }
+
+  if (allActive.length > 0) return allActive;
+  throw new Error('No active engines available for Review. Run `agon doctor review` to diagnose availability or pass an explicit engine.');
+}
+
+// @kern-source: review:259
 export interface ReviewCoreResult {
   response: string;
   blocking: boolean;
@@ -246,10 +278,10 @@ export interface ReviewCoreResult {
   usage?: {promptTokens:number,completionTokens:number,totalTokens:number,source:'sdk'|'cli-reported'|'estimated'};
 }
 
-// @kern-source: review:240
+// @kern-source: review:270
 export const REVIEW_SENTINEL: string = '<!--AGON_REVIEW_FINDINGS_v1-->';
 
-// @kern-source: review:242
+// @kern-source: review:272
 export interface ReviewSeverityCounts {
   blocking: number;
   important: number;
@@ -260,7 +292,7 @@ export interface ReviewSeverityCounts {
 /**
  * Sentinel-anchored, fail-closed extraction of the findings array — the single chokepoint shared by parseReviewBlocking (the blocking gate) and summarizeReviewFindings (severity counts). Returns the parsed array (possibly empty []) or null when no parseable block follows the LAST sentinel. Anti-injection: only text after the LAST sentinel is considered, so attacker brackets quoted earlier in the diff are ignored. Tolerant of almost-JSON (trailing commas, line and block JS-style comments) and fenced json code blocks.
  */
-// @kern-source: review:248
+// @kern-source: review:278
 export function extractReviewFindings(response: string): Array<{severity?:string, blocking?:boolean}> | null {
   if (!response || response.trim().length === 0) return null;
 
@@ -360,7 +392,7 @@ export function extractReviewFindings(response: string): Array<{severity?:string
 /**
  * Sentinel-anchored, fail-closed parser. The engine MUST end its response with a unique sentinel followed by a JSON array of findings. Without a parseable block the response is treated as blocking + parseFailed, so the user must explicitly approve. This blocks the prompt-injection attack where an attacker echoes `[{"blocking":false}]` inside diff content — only the engine's real structured output after the LAST sentinel is considered. Thin wrapper over extractReviewFindings.
  */
-// @kern-source: review:346
+// @kern-source: review:376
 export function parseReviewBlocking(response: string): {blocking:boolean, parseFailed:boolean} {
   const findings = extractReviewFindings(response);
   if (findings === null) return { blocking: true, parseFailed: true };
@@ -371,7 +403,7 @@ export function parseReviewBlocking(response: string): {blocking:boolean, parseF
 /**
  * Count findings by severity from the structured block, for human summaries like 'claude: ok, 1 important, 3 nits'. Returns all-zero when there is no parseable findings block (the caller renders that as unstructured/empty). A finding counts as blocking if blocking===true or severity==='blocking'; otherwise by its severity, with anything not 'important' falling to nit.
  */
-// @kern-source: review:355
+// @kern-source: review:385
 export function summarizeReviewFindings(response: string): ReviewSeverityCounts {
   const findings = extractReviewFindings(response);
   if (!findings) return { blocking: 0, important: 0, nit: 0, total: 0 };
@@ -390,7 +422,7 @@ export function summarizeReviewFindings(response: string): ReviewSeverityCounts 
 /**
  * Repair pass (B): re-ask the engine for ONLY a bare JSON array of the findings it already wrote in prose. Asking for a bare array (no sentinel, no prose, no fence) is the format LLMs comply with most reliably — far better than 'an HTML-comment marker followed by JSON', which engines routinely truncate to just the marker. The caller (runReviewCore) prepends the sentinel itself before parsing, so the anti-injection anchor is preserved. Best-effort: if this still doesn't parse, the fail-closed/unstructured result stands. cwdOverride must match the main dispatch's cwd so the repair engine runs in the SAME repo (goal worktree / process.cwd()), never the active workspace.
  */
-// @kern-source: review:372
+// @kern-source: review:402
 export async function runReviewRepair(priorReview: string, engineId: string, ctx: HandlerContext, signal?: AbortSignal, cwdOverride?: string): Promise<string> {
   const config = ctx.config;
   const cwd = cwdOverride ?? resolveWorkingDir();
@@ -440,7 +472,7 @@ export async function runReviewRepair(priorReview: string, engineId: string, ctx
 /**
  * Repo grounding: read the CURRENT full content of each source file the diff touches and format it as a context block. A diff shows only the changed hunks, so reviewers raise false alarms that reading the whole file would kill instantly ('X is unhandled' when the wrapper handles it three lines down; 'unimported' when it's imported at the top). Bounded hard (per-file + total caps) to protect prompt size / TTFT, and skips generated/dist/min files (derived noise that would blow the budget). Best-effort: deleted/binary/unreadable files are skipped — the diff still covers them.
  */
-// @kern-source: review:410
+// @kern-source: review:440
 export function gatherReviewFileContext(diff: string, cwd: string): string {
   const PER_FILE_MAX = 20_000;
   const TOTAL_MAX = 60_000;
@@ -487,7 +519,7 @@ export function gatherReviewFileContext(diff: string, cwd: string): string {
 /**
  * Core review flow with no ctx side effects. Used by both handleReview (with streaming dispatch) and the plan executor's review step (silent). Does NOT touch ctx.setActiveAbort, ctx.lastReviewResult, ctx.chatSession, or tracker. signal is optional: callers that don't have an abort controller can pass undefined. cwdOverride pins the working directory the review engine runs in AND the repo file-context is gathered from — goal passes the per-task worktree so review engines never operate in (and write to) the parent repo; defaults to resolveWorkingDir() for the interactive/CLI review paths.
  */
-// @kern-source: review:455
+// @kern-source: review:485
 export async function runReviewCore(diff: string, label: string, engineId: string, ctx: HandlerContext, signal?: AbortSignal, onProgress?: (chunk:string)=>void, cwdOverride?: string): Promise<ReviewCoreResult> {
   const cwd = cwdOverride ?? resolveWorkingDir();
   const config = ctx.config;
@@ -599,7 +631,7 @@ export async function runReviewCore(diff: string, label: string, engineId: strin
 /**
  * Strip the trailing machine-readable findings block (sentinel + JSON) from a review so the Ctrl+R results pager shows clean prose — the consensus summary already encodes those findings. Cesar's copy (ctx.lastReviewResult.reviewOutput) keeps the full response, so 'fix it' still has the structured file/line/minimalFix data. No-op when there's no sentinel.
  */
-// @kern-source: review:545
+// @kern-source: review:575
 export function stripMachineBlock(response: string): string {
   const idx = response.lastIndexOf(REVIEW_SENTINEL);
   if (idx < 0) return response;
@@ -609,7 +641,7 @@ export function stripMachineBlock(response: string): string {
 /**
  * Build a consensus EngineOutcome from one engine's review. status!=='ok' yields an empty-findings failure lane (never a phantom blocker), carrying any diagnostic note (error message / timeout detail) through to ConsensusReport.engineFailures; 'ok' parses the engine's structured findings into RawFindings. Shared by the single- and multi-engine paths so the mapping lives in one place.
  */
-// @kern-source: review:553
+// @kern-source: review:583
 export function reviewOutcome(engineId: string, response: string, status: string, note?: string): any {
   if (status !== 'ok') return { engine: engineId, status, findings: [], note };
   // Guard against a model emitting a non-object element (e.g. `[null]` or a
@@ -628,7 +660,7 @@ export function reviewOutcome(engineId: string, response: string, status: string
 /**
  * Render a consensus report into the compact, human-facing summary lines (tiered: verified / needs-check / speculative / nits / failed). The single source of the summary text shown inline AND stored as ReviewResultData.consensusSummary, so the transcript and the Ctrl+R pager always agree. Each finding row carries compact engine badges ([codex][kimi]) instead of ×N, and disputed clusters get a `⚠ DISPUTED` prefix + indented per-engine stance lines — both via the shared formatConsensusRow so the REPL and the CLI render identically.
  */
-// @kern-source: review:570
+// @kern-source: review:600
 export function buildReviewConsensusLines(consensus: any): string[] {
   const lines: string[] = [`Consensus — ${consensus.summary}`];
   if (consensus.verified.length) { lines.push('VERIFIED (actionable):'); for (const f of consensus.verified) for (const l of formatConsensusRow(f)) lines.push(l); }
@@ -642,7 +674,7 @@ export function buildReviewConsensusLines(consensus: any): string[] {
 /**
  * One-line severity tail for a single engine's review: '2 important, 3 nits' (zero categories omitted; 'no findings' when empty).
  */
-// @kern-source: review:582
+// @kern-source: review:612
 export function formatReviewCounts(c: ReviewSeverityCounts|undefined): string {
   if (!c || c.total === 0) return 'no findings';
   const parts: string[] = [];
@@ -652,7 +684,7 @@ export function formatReviewCounts(c: ReviewSeverityCounts|undefined): string {
   return parts.join(', ');
 }
 
-// @kern-source: review:593
+// @kern-source: review:623
 export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, target?: string, requestedEngine?: string): Promise<void> {
   const abort = new AbortController();
   try {
@@ -781,7 +813,7 @@ export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, targ
 /**
  * Make the review's actual target unmistakable BEFORE engines run. Prints the repo name/path/branch being reviewed, and — critically — warns when the directory you're standing in is a DIFFERENT git repo than the one being reviewed. resolveWorkingDir() is session-scoped (set at launch to process.cwd(), or moved by an explicit /workspace switch mid-session) — it no longer silently inherits a stale workspace pinned by a PRIOR session/directory, but an explicit mid-session /workspace switch can still leave your shell's cwd pointed somewhere else. That divergence used to be silent (a launch in repo X kept reviewing whatever repo a previous session had pinned, producing a 6-engine review of agon's own repo instead of the user's code); this turns any remaining divergence into a loud, actionable signal instead of a silent wrong-repo pass.
  */
-// @kern-source: review:718
+// @kern-source: review:748
 function announceReviewTarget(dispatch: Dispatch, cwd: string, label: string): void {
   let reviewRoot = cwd;
   try { reviewRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf-8' }).trim() || cwd; } catch { /* not a git repo — keep cwd */ }
@@ -798,19 +830,21 @@ function announceReviewTarget(dispatch: Dispatch, cwd: string, label: string): v
 }
 
 /**
- * Run review for one or more explicitly requested engines. With 2+ engines they run in PARALLEL — each gets its own hard timeout, so a slow-but-excellent reviewer (codex) never blocks the others and a hung engine can't wedge the whole review. Each engine's block is dispatched as it finishes; findings are combined into ctx.lastReviewResult for Cesar follow-up/fix planning. A single engine delegates to the streaming handleReview path.
+ * Run Review with the full active engine panel by default, or an explicitly requested subset. With 2+ engines they run in PARALLEL — each gets its own hard timeout, so a slow-but-excellent reviewer (codex) never blocks the others and a hung engine can't wedge the whole review. Each engine's block is dispatched as it finishes; findings are combined into ctx.lastReviewResult for Cesar follow-up/fix planning. A one-engine eligible/explicit panel delegates to the streaming handleReview path.
  */
-// @kern-source: review:735
+// @kern-source: review:765
 export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, target?: string, requestedEngines?: string[]): Promise<void> {
   const abort = new AbortController();
   try {
     ensureAgonHome();
     const cwd = resolveWorkingDir();
-    const engineIds = Array.from(new Set(
-      (requestedEngines ?? [])
-        .map((id) => ctx.registry.resolveId(String(id ?? '').trim()))
-        .filter(Boolean),
-    ));
+    let engineIds: string[];
+    try {
+      engineIds = selectReviewEngines(requestedEngines, ctx);
+    } catch (err) {
+      dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) });
+      return;
+    }
     if (engineIds.length <= 1) {
       await handleReview(dispatch, ctx, target, engineIds[0]);
       return;

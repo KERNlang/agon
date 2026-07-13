@@ -20,7 +20,7 @@ import type { EngineDefinition } from '@kernlang/agon-core';
 
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 
-import { runReviewCore, selectReviewEngine } from '../handlers/review.js';
+import { runReviewCore, selectReviewEngines } from '../handlers/review.js';
 
 import { header, table, info, success, fail, warn, green, red, yellow, dim, bold } from '../blocks/output-format.js';
 
@@ -471,7 +471,7 @@ export const doctorCommand: any = defineCommand({
     engines: {
       type: 'string',
       alias: 'e',
-      description: 'For `doctor review`: comma-separated engines to smoke-test (default: active review-capable engines).',
+      description: 'For `doctor review`: strict comma-separated engine subset to smoke-test (default: the same full active panel as Review).',
     },
     timeout: {
       type: 'string',
@@ -501,22 +501,14 @@ export const doctorCommand: any = defineCommand({
     const reviewAdapter = createCliAdapter(registry);
     if (scope === 'review') {
       const ctx = { config, registry, adapter: reviewAdapter, activeEngines: () => registry.activeIds(config) } as any;
-      // Resolve which engines to smoke-test: explicit --engines (alias-resolved),
-      // else every active review-capable engine.
+      // Use the exact runtime selector so Doctor never certifies a smaller
+      // roster than standard Review will actually dispatch.
       let reviewEngineIds: string[];
-      if (typeof args.engines === 'string' && args.engines.trim()) {
-        reviewEngineIds = args.engines.split(',').map((s: string) => registry.resolveId(s.trim())).filter(Boolean);
-      } else {
-        reviewEngineIds = registry.activeIds(config).filter((id: string) => {
-          try { return !!registry.get(id).review; } catch { return false; }
-        });
-      }
-      if (reviewEngineIds.length === 0) {
-        // Last resort: whatever selectReviewEngine would pick.
-        try { reviewEngineIds = [selectReviewEngine(undefined, ctx)]; } catch { /* none */ }
-      }
-      if (reviewEngineIds.length === 0) {
-        fail('No review-capable engines available to smoke-test.');
+      try {
+        const explicit = args.engines != null ? String(args.engines).split(',') : undefined;
+        reviewEngineIds = selectReviewEngines(explicit, ctx);
+      } catch (err) {
+        fail(err instanceof Error ? err.message : String(err));
         process.exit(1);
       }
       const parsedTimeout = args.timeout != null ? Number(String(args.timeout).trim()) : NaN;

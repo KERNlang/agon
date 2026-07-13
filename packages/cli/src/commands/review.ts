@@ -8,7 +8,7 @@ import {
 import type { RunStatusEngine } from '@kernlang/agon-core';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
-import { resolveReviewTarget, runReviewCore, selectReviewEngine, extractReviewFindings } from '../generated/handlers/review.js';
+import { resolveReviewTarget, runReviewCore, selectReviewEngines, reviewOutcome } from '../generated/handlers/review.js';
 import { buildConsensus, formatConsensusRow } from '../generated/blocks/consensus.js';
 import { fail, header, info, warn, bold } from '../output.js';
 
@@ -57,12 +57,12 @@ export const reviewCommand = defineCommand({
     },
     engine: {
       type: 'string',
-      description: 'Specific engine for review',
+      description: 'Use one specific engine instead of the default full Review panel',
     },
     engines: {
       type: 'string',
       alias: 'e',
-      description: 'Comma-separated engine list',
+      description: 'Use a strict explicit engine subset instead of the default full Review panel; invalid or unavailable entries abort rather than silently shrinking it',
     },
     label: {
       type: 'string',
@@ -135,12 +135,19 @@ export const reviewCommand = defineCommand({
       return;
     }
 
-    // Dedupe AFTER alias resolution: 'kimi' and 'kimi-for-coding-k2p6' resolve
-    // to the same id, and with parallel execution duplicates would otherwise
-    // run concurrently and race on the same <engineId>-output.txt.
-    const requested = args.engines
-      ? Array.from(new Set(args.engines.split(',').map((s) => registry.resolveId(s.trim())).filter(Boolean)))
-      : [selectReviewEngine(args.engine, ctx)];
+    // No engine flag means the full active panel. Narrowing to
+    // one reviewer or a subset must be explicit. Selection also dedupes after
+    // alias resolution so two aliases cannot race on one engine output file.
+    let requested: string[];
+    try {
+      const explicit = args.engines != null
+        ? args.engines.split(',')
+        : args.engine != null ? [args.engine] : undefined;
+      requested = selectReviewEngines(explicit, ctx);
+    } catch (err) {
+      fail(err instanceof Error ? err.message : String(err));
+      process.exit(1);
+    }
 
     const parsedParallel = args.maxParallel != null ? Number(String(args.maxParallel).trim()) : NaN;
     const maxParallel = Number.isFinite(parsedParallel) && parsedParallel > 0
@@ -176,14 +183,8 @@ export const reviewCommand = defineCommand({
     // after the run for the cross-engine tiered verdict.
     const findingsByEngine = new Map<string, unknown[]>();
     const captureFindings = (engineId: string, rawResponse: string) => {
-      const raw = extractReviewFindings(rawResponse) || [];
-      findingsByEngine.set(engineId, raw.map((x: any) => ({
-        engine: engineId,
-        severity: typeof x.severity === 'string' ? x.severity : (x.blocking ? 'blocking' : 'nit'),
-        blocking: x.blocking,
-        confidence: x.confidence,
-        file: x.file, lines: x.lines, problem: x.problem, minimalFix: x.minimalFix,
-      })));
+      const outcome = reviewOutcome(engineId, rawResponse, 'ok');
+      findingsByEngine.set(engineId, outcome.findings ?? []);
     };
     const reviewEngine = async (engineId: string): Promise<RunStatusEngine> => {
       const engineStart = Date.now();

@@ -39,7 +39,27 @@ function parseTableAlignment(sepLine: string): ('left'|'center'|'right')[] {
 }
 
 function parseTableCells(line: string): string[] {
-  return line.trim().replace(/^\||\|$/g, '').split('|').map((c: string) => c.trim());
+  const cells: string[] = [];
+  let cell = '';
+  const trimmed = line.trim();
+  for (let index = 0; index < trimmed.length; index += 1) {
+    const char = trimmed[index];
+    if (char === '\\' && trimmed[index + 1] === '|') {
+      cell += '|';
+      index += 1;
+      continue;
+    }
+    if (char === '|') {
+      cells.push(cell.trim());
+      cell = '';
+      continue;
+    }
+    cell += char;
+  }
+  cells.push(cell.trim());
+  if (cells[0] === '') cells.shift();
+  if (cells[cells.length - 1] === '') cells.pop();
+  return cells;
 }
 
 function emitProseWithTables(proseLines: string[], segments: ContentSegment[]): void {
@@ -231,6 +251,7 @@ function deduplicateInline(line: string): string {
   if (len < 10) return line;
   for (let half = Math.floor(len / 2); half >= 5; half--) {
     const candidate = line.slice(0, half);
+    if (!/[\s.,;:!?]/.test(candidate)) continue;
     // Check if the rest of the line starts with the same candidate
     if (line.slice(half).startsWith(candidate)) {
       return candidate + line.slice(half + candidate.length);
@@ -249,18 +270,18 @@ function deduplicateParagraphs(text: string): string {
   const joined = dedupedLines.join('\n');
   // Then: deduplicate consecutive paragraphs
   const paragraphs = joined.split(/\n{2,}/);
-  const seen = hostStringSet();
+  let previous = '';
   const deduped: string[] = [];
   for (const para of paragraphs) {
     const normalized = para.trim().replace(/[ \t\n\r\f\v]+/g, ' ');
     if (!normalized) {
       continue;
     }
-    if (seen.has(normalized)) {
+    if (normalized === previous) {
       continue;
     }
-    seen.add(normalized);
     deduped.push(para.trim());
+    previous = normalized;
   }
   return deduped.join('\n\n');
 }

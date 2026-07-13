@@ -33,7 +33,30 @@ module name=MarkdownParsing
       });
     >>>
 
-  fn name=parseTableCells params="line:string" returns="string[]" export=false expr={{ return line.trim().replace(/^\||\|$/g, '').split('|').map((c: string) => c.trim()); }}
+  fn name=parseTableCells params="line:string" returns="string[]" export=false
+    handler lang="typescript" reason="escaped markdown table parser boundary" <<<
+      const cells: string[] = [];
+      let cell = '';
+      const trimmed = line.trim();
+      for (let index = 0; index < trimmed.length; index += 1) {
+        const char = trimmed[index];
+        if (char === '\\' && trimmed[index + 1] === '|') {
+          cell += '|';
+          index += 1;
+          continue;
+        }
+        if (char === '|') {
+          cells.push(cell.trim());
+          cell = '';
+          continue;
+        }
+        cell += char;
+      }
+      cells.push(cell.trim());
+      if (cells[0] === '') cells.shift();
+      if (cells[cells.length - 1] === '') cells.pop();
+      return cells;
+    >>>
 
   fn name=emitProseWithTables params="proseLines:string[], segments:ContentSegment[]" returns=void export=false
     handler <<<
@@ -223,6 +246,7 @@ module name=MarkdownParsing
       if (len < 10) return line;
       for (let half = Math.floor(len / 2); half >= 5; half--) {
         const candidate = line.slice(0, half);
+        if (!/[\s.,;:!?]/.test(candidate)) continue;
         // Check if the rest of the line starts with the same candidate
         if (line.slice(half).startsWith(candidate)) {
           return candidate + line.slice(half + candidate.length);
@@ -240,16 +264,16 @@ module name=MarkdownParsing
       let name=joined value="dedupedLines.join('\\n')"
       comment raw="// Then: deduplicate consecutive paragraphs"
       let name=paragraphs value="joined.split(/\\n{2,}/)"
-      let name=seen value="hostStringSet()"
+      let name=previous kind=let value="''"
       let name=deduped type="string[]" value="[]"
       each name=para in="paragraphs"
         let name=normalized value="para.trim().replace(/\\s+/g, ' ')"
         if cond="!normalized"
           continue
-        if cond="seen.has(normalized)"
+        if cond="normalized === previous"
           continue
-        do value="seen.add(normalized)"
         do value="deduped.push(para.trim())"
+        assign target="previous" value="normalized"
       return value="deduped.join('\\n\\n')"
 
   fn name=stripBuddyThinkingNoise params="text:string" returns=string export=false

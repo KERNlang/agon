@@ -81,6 +81,22 @@ describe('formatSessionResults', () => {
     expect(output).toContain('Redis wins for this use case');
   });
 
+  it('sorts tribunal round numbers numerically', () => {
+    const results: SessionResult[] = [{
+      type: 'tribunal', timestamp: '2026-04-07T22:25:00.000Z', question: 'order',
+      engines: ['claude'], winner: null,
+      data: {
+        rounds: [
+          { round: 10, engineId: 'claude', position: 'pro', argument: 'tenth' },
+          { round: 2, engineId: 'claude', position: 'pro', argument: 'second' },
+        ],
+        verdict: 'done',
+      },
+    }];
+    const output = formatSessionResults(results);
+    expect(output.indexOf('Round 2')).toBeLessThan(output.indexOf('Round 10'));
+  });
+
   it('formats a forge result with scoreboard', () => {
     const results: SessionResult[] = [{
       type: 'forge',

@@ -10,7 +10,7 @@ import { getFileDiff } from '../signals/file-tracker.js';
 
 import { hostNowMs } from '../lib/kern-host.js';
 
-// @kern-source: file-rail:69
+// @kern-source: file-rail:82
 function FileRailEmpty() {
   return (
     <>
@@ -24,7 +24,7 @@ function FileRailEmpty() {
   );
 }
 
-// @kern-source: file-rail:83
+// @kern-source: file-rail:96
 function FileRailDetail({ expandedFile, maxRows }: { expandedFile:FileEntry; maxRows:number }) {
   const rawDiff = expandedFile.status !== 'read' ? getFileDiff(expandedFile.path, 400) : '';
   // Strip noisy git header lines — we already show the file path
@@ -67,7 +67,7 @@ function FileRailDetail({ expandedFile, maxRows }: { expandedFile:FileEntry; max
   );
 }
 
-// @kern-source: file-rail:130
+// @kern-source: file-rail:143
 const FileRail = React.memo(function FileRail({ files, maxRows, width, focused, selectedIndex, expandedPath, autoExpandSelected }: { files:FileEntry[]; maxRows:number; width?:number; focused?:boolean; selectedIndex?:number; expandedPath?:string|null; autoExpandSelected?:boolean }) {
   const w = width ?? 36;
   const h = Math.max(4, maxRows + 2);
@@ -169,7 +169,25 @@ export function fileRailDetailRows(maxRows: number, hasDetail: boolean): number 
 // @kern-source: file-rail:52
 export function formatRelativeTime(ms: number): string {
   const diff = hostNowMs() - ms;
-  const s = Math.floor((diff / 1000));
+  const future = diff < 0;
+  const s = Math.floor(((future ? (-diff) : diff) / 1000));
+  if (future) {
+    if (s < 5) {
+      return 'in a moment';
+    }
+    if (s < 60) {
+      return `in ${s}s`;
+    }
+    const futureMinutes = Math.floor((s / 60));
+    if (futureMinutes < 60) {
+      return `in ${futureMinutes}m`;
+    }
+    const futureHours = Math.floor((futureMinutes / 60));
+    if (futureHours < 24) {
+      return `in ${futureHours}h`;
+    }
+    return `in ${Math.floor((futureHours / 24))}d`;
+  }
   if (s < 5) {
     return 'just now';
   }

@@ -96,8 +96,8 @@ export function formatDuration(ms: number): string {
 
 // @kern-source: engine-helpers:87
 export function extractSummary(text: string, maxLen: number): string {
-  let s = text.replace(hostEcmaRegex('<think>[\\s\\S]*?<\\/think>\\s*', 'gi'), '');
-  s = s.replace(hostEcmaRegex('^#+\\s+.+\\n', 'gm'), '');
+  let s = stripReasoning(text);
+  s = s.replace(hostEcmaRegex('^#+\\s+.*(?:\\n|$)', 'gm'), '');
   s = s.replace(hostEcmaRegex('^\\s*[-*]\\s+', 'gm'), '');
   s = s.replace(/\*\*/g, '');
   s = s.trim();
@@ -111,15 +111,18 @@ export function extractSummary(text: string, maxLen: number): string {
  */
 // @kern-source: engine-helpers:98
 export function stripReasoning(text: string): string {
-  return text.replace(/<(think|thinking|reasoning)>[\s\S]*?<\/\1>\s*/gi, '').trim();
+  const withoutClosed = text.replace(/<(think|thinking|reasoning)>[\s\S]*?<\/\1>\s*/gi, '');
+  return withoutClosed
+    .replace(/<(think|thinking|reasoning)>(?:(?!<\/(?:think|thinking|reasoning)>)[\s\S])*$/gi, '')
+    .trim();
 }
 
 /**
  * Strip claude TUI thinking-animation chrome that leaks into pty-captured output. The animation redraws on one line, so ANSI-stripping flattens its frames into a glyph/label/counter soup ('·✢✳✶✻✽…This one needs a moment…Working through it…95%…Review …'). Spinner glyph frames and the input-bar prompt char (❯) are NEVER legitimate content, so they're always removed. The …-terminated spinner labels (claude invents endless ones — 'Cogitating…', 'Untangling some thoughts…' — so enumerating them is hopeless) and the leading token/elapsed counter residue are removed ONLY when glyph frames were present, i.e. proof this is TUI chrome. That glyph-gate means API engines (kimi/zai — no TUI) never have real content touched.
  */
-// @kern-source: engine-helpers:104
+// @kern-source: engine-helpers:107
 export function stripTuiChrome(text: string): string {
-  const hadChrome = /[·✢✳✶✻✽⎿]/.test(text);
+  const hadChrome = /[·✢✳✴✵✶✷✸✹✺✻✼✽✾⎿]/.test(text);
   let s = text.replace(/[·✢✳✴✵✶✷✸✹✺✻✼✽✾⎿]/g, '').replace(/❯/g, '');
   if (hadChrome) {
     s = s.replace(/[A-Z][^\n…]{0,40}…/g, '');

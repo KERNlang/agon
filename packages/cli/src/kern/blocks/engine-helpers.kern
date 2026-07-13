@@ -86,8 +86,8 @@ fn name=formatDuration params="ms:number" returns=string export=true
 
 fn name=extractSummary params="text:string, maxLen:number" returns=string
   handler lang="kern"
-    let name=s kind=let value="text.replace(hostEcmaRegex('<think>[\\\\s\\\\S]*?<\\\\/think>\\\\s*', 'gi'), '')"
-    assign target="s" value="s.replace(hostEcmaRegex('^#+\\\\s+.+\\\\n', 'gm'), '')"
+    let name=s kind=let value="stripReasoning(text)"
+    assign target="s" value="s.replace(hostEcmaRegex('^#+\\\\s+.*(?:\\\\n|$)', 'gm'), '')"
     assign target="s" value="s.replace(hostEcmaRegex('^\\\\s*[-*]\\\\s+', 'gm'), '')"
     assign target="s" value="s.replace(/\\*\\*/g, '')"
     assign target="s" value="s.trim()"
@@ -98,13 +98,16 @@ fn name=extractSummary params="text:string, maxLen:number" returns=string
 fn name=stripReasoning params="text:string" returns=string export=true
   doc "Remove reasoning-scaffolding blocks (<think>/<thinking>/<reasoning>) that reasoning models (MiniMax, DeepSeek, Qwen) emit before their real answer and sometimes leak into persisted output. Strips CLOSED blocks only — the common leak case — using a backreference so the open and close tags must match. Engine-agnostic: apply wherever raw engine output is persisted or parsed so scaffolding never reaches users or a structured-findings parser."
   handler <<<
-    return text.replace(/<(think|thinking|reasoning)>[\s\S]*?<\/\1>\s*/gi, '').trim();
+    const withoutClosed = text.replace(/<(think|thinking|reasoning)>[\s\S]*?<\/\1>\s*/gi, '');
+    return withoutClosed
+      .replace(/<(think|thinking|reasoning)>(?:(?!<\/(?:think|thinking|reasoning)>)[\s\S])*$/gi, '')
+      .trim();
   >>>
 
 fn name=stripTuiChrome params="text:string" returns=string export=true
   doc "Strip claude TUI thinking-animation chrome that leaks into pty-captured output. The animation redraws on one line, so ANSI-stripping flattens its frames into a glyph/label/counter soup ('·✢✳✶✻✽…This one needs a moment…Working through it…95%…Review …'). Spinner glyph frames and the input-bar prompt char (❯) are NEVER legitimate content, so they're always removed. The …-terminated spinner labels (claude invents endless ones — 'Cogitating…', 'Untangling some thoughts…' — so enumerating them is hopeless) and the leading token/elapsed counter residue are removed ONLY when glyph frames were present, i.e. proof this is TUI chrome. That glyph-gate means API engines (kimi/zai — no TUI) never have real content touched."
   handler <<<
-    const hadChrome = /[·✢✳✶✻✽⎿]/.test(text);
+    const hadChrome = /[·✢✳✴✵✶✷✸✹✺✻✼✽✾⎿]/.test(text);
     let s = text.replace(/[·✢✳✴✵✶✷✸✹✺✻✼✽✾⎿]/g, '').replace(/❯/g, '');
     if (hadChrome) {
       s = s.replace(/[A-Z][^\n…]{0,40}…/g, '');

@@ -99,7 +99,7 @@ fn name=formatTribunal params="r:SessionResult, idx:number" returns=string
     do value="lines.push(`${DIM} Engines: ${r.engines.join(', ')}${RESET}`)"
     do value="lines.push(`${BOLD}${RED}${RULE}${RESET}`)"
     do value="lines.push('')"
-    let name=roundNums value="Array.from(hostSet(data.rounds.map(r => r.round))).sort()"
+    let name=roundNums value="Array.from(hostSet(data.rounds.map(r => r.round))).sort((left: number, right: number) => left - right)"
     each name=num in="roundNums"
       do value="lines.push(`${BOLD}${DIM}── Round ${num} ──${RESET}`)"
       let name=positions value="data.rounds.filter(r => r.round === num)"

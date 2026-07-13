@@ -124,7 +124,7 @@ export function formatTribunal(r: SessionResult, idx: number): string {
   lines.push(`${DIM} Engines: ${r.engines.join(', ')}${RESET}`);
   lines.push(`${BOLD}${RED}${RULE}${RESET}`);
   lines.push('');
-  const roundNums = Array.from(hostSet(data.rounds.map(r => r.round))).sort();
+  const roundNums = Array.from(hostSet(data.rounds.map(r => r.round))).sort((left: number, right: number) => left - right);
   for (const num of roundNums) {
     lines.push(`${BOLD}${DIM}── Round ${num} ──${RESET}`);
     const positions = data.rounds.filter(r => r.round === num);

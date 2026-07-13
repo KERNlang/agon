@@ -15,6 +15,12 @@ interface name=BrowserResearchPolicyConfig export=true
   field name=liveSubjectPattern type=RegExp
   field name=comparisonIntentPattern type=RegExp
   field name=instructionalLookupPattern type=RegExp
+  field name=shoppingMutationPattern type=RegExp
+  field name=shoppingCountPattern type=RegExp
+  field name=shoppingAddControlPattern type=RegExp
+  field name=shoppingRemoveControlPattern type=RegExp
+  field name=shoppingAddedStatePattern type=RegExp
+  field name=shoppingAddActionPattern type=RegExp
 
 const name=DEFAULT_BROWSER_RESEARCH_POLICY_CONFIG type="Readonly<BrowserResearchPolicyConfig>" value={{ Object.freeze({
   liveIntentPattern: /\b(search|look up|browse|research|shop|buy)\b|\bsuch(?:e|en|st|t)\b|recherch|kauf/i,
@@ -22,6 +28,12 @@ const name=DEFAULT_BROWSER_RESEARCH_POLICY_CONFIG type="Readonly<BrowserResearch
   liveSubjectPattern: /\b(jobs?|roles?|products?|shopping|stores?|hotels?|flights?|restaurants?|tickets?|deals?|listings?|sources?|websites?|sites?|travel|vacations?|holidays?|games?|goggles?|masks?|libraries?|versions?|releases?|news|weather|schedules?|scores?|laws?|regulations?|stocks?|shares?|crypto|currenc(?:y|ies)|bitcoin)\b|stell(?:e|en)|produkt|shop|laden|läden|hotel|fl(?:ug|üge)|restaurant|ticket|angebot|webseite|quelle|urlaub|reise|spiel|taucherbrill|maske|bibliothek|version|release|nachricht|wetter|fahrplan|ergebnis|gesetz|vorschrift/i,
   comparisonIntentPattern: /\b(recommend|compare|comparison|options|alternatives|products|shopping|best)\b|empfehl|vergleich|optionen|alternativen|produkte|besten/i,
   instructionalLookupPattern: /\b(?:(?:best )?(?:way|method|command|steps?)\s+(?:to|for)|how (?:do|can|should) (?:i|you|we))\s+(?:find|check|look up|determine)\b[^?\n]{0,80}\b(?:versions?|releases?)\b/i,
+  shoppingMutationPattern: /\b(?:add|put|place)\b[^.\n]{0,80}\b(?:in|into|to)\b[^.\n]{0,40}\b(?:basket|cart)\b|\b(?:leg(?:e|en)?|füg(?:e|en)?|hinzufüg(?:e|en)?)\b[^.\n]{0,100}\b(?:warenkorb|einkaufswagen)\b/i,
+  shoppingCountPattern: /\b(?:basket|cart)\b[^\n\d]{0,20}(\d+)(?:\s*(?:items?|products?))?\b|\b(?:warenkorb|einkaufswagen)\b[^\n\d]{0,20}(\d+)(?:\s*(?:artikel|produkte?))?\b/i,
+  shoppingAddControlPattern: /\badd to (?:(?:your|the) )?(?:shopping )?(?:basket|cart)\b|\b(?:in den warenkorb|zum warenkorb hinzufügen)\b/i,
+  shoppingRemoveControlPattern: /\bremove from (?:basket|cart)\b|\baus (?:dem )?(?:warenkorb|einkaufswagen) entfernen\b/i,
+  shoppingAddedStatePattern: /\badded to (?:(?:your|the) )?(?:shopping )?(?:basket|cart)\b|\b(?:zum warenkorb hinzugefügt|in den warenkorb gelegt)\b/i,
+  shoppingAddActionPattern: /\badd(?:ed)?[-_\s]?(?:to[-_\s]?)?(?:(?:your|the)[-_\s]?)?(?:shopping[-_\s]?)?(?:basket|cart)\b|\b(?:in[-_\s]?den[-_\s]?warenkorb|zum[-_\s]?warenkorb[-_\s]?hinzufüg)/i,
 }) }} export=true
 
 interface name=BrowserResearchPolicy export=true
@@ -54,6 +66,44 @@ fn name=classifyBrowserResearchGoal params="input:string, hasObservationTool:boo
 fn name=emptyBrowserResearchEvidence params="" returns=BrowserResearchEvidence export=true
   handler <<<
     return { observationCount: 0, openedTabCount: 0, observedOpenedTabCount: 0, focusedOpenedTab: false, openedTabIds: [] };
+  >>>
+
+fn name=requiresShoppingMutationVerification params="input:string, hasObservationTool:boolean, config?:BrowserResearchPolicyConfig" returns=boolean export=true
+  doc "Return true only when the user explicitly asks to add/put an item into a basket/cart and the client exposes readPage. A successful page click then requires a before/after textual page-state transition before final prose can claim completion."
+  handler <<<
+    if (!hasObservationTool) return false;
+    const selected = config ?? DEFAULT_BROWSER_RESEARCH_POLICY_CONFIG;
+    return selected.shoppingMutationPattern.test(input.normalize('NFC').toLowerCase());
+  >>>
+
+fn name=confirmsShoppingMutationObservation params="beforeOutput:string, afterOutput:string, config?:BrowserResearchPolicyConfig" returns=boolean export=true
+  doc "Return true only when before/after readPage output proves a basket transition: the visible item count increased, an Add control became Remove, or the post-action page exposes an explicit added-state message. A pre-existing unchanged positive count does not pass."
+  handler <<<
+    const selected = config ?? DEFAULT_BROWSER_RESEARCH_POLICY_CONFIG;
+    const before = beforeOutput.normalize('NFC').toLowerCase();
+    const after = afterOutput.normalize('NFC').toLowerCase();
+    const readCount = (value: string): number | null => {
+      const match = selected.shoppingCountPattern.exec(value);
+      const raw = match?.[1] ?? match?.[2];
+      if (raw === undefined) return null;
+      const count = Number(raw);
+      return Number.isSafeInteger(count) && count >= 0 ? count : null;
+    };
+    const beforeCount = readCount(before);
+    const afterCount = readCount(after);
+    if (beforeCount !== null && afterCount !== null && afterCount > beforeCount) return true;
+    if (selected.shoppingAddControlPattern.test(before) && selected.shoppingRemoveControlPattern.test(after)) return true;
+    return !selected.shoppingAddedStatePattern.test(before) && selected.shoppingAddedStatePattern.test(after);
+  >>>
+
+fn name=isShoppingAddAction params="capability:string, input:Record<string,unknown>, output?:string, config?:BrowserResearchPolicyConfig" returns=boolean export=true
+  doc "Recognize an actual add-to-basket/cart action from a click/clickAt call's selector/input metadata or successful result text. Checkout and unrelated clicks do not arm basket verification."
+  handler <<<
+    if (capability !== 'click' && capability !== 'clickAt') return false;
+    const selected = config ?? DEFAULT_BROWSER_RESEARCH_POLICY_CONFIG;
+    let inputText = '';
+    try { inputText = JSON.stringify(input); } catch { inputText = ''; }
+    return selected.shoppingAddActionPattern.test(`${inputText}\n${output ?? ''}`.normalize('NFC').toLowerCase());
   >>>
 
 fn name=focusedWorkspaceTabId params="output?:string" returns="number|null"

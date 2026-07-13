@@ -10,7 +10,7 @@ import type { ResolvedCapabilityApproval, SessionCapabilityApproval } from './ca
 
 import { buildCapabilityAuthorizationLease, purgeSessionCapabilityRegistration, sessionCapabilityApprovalKey, tryCanonicalCapabilityInputDigest } from './capability-authorization.js';
 
-import { browserResearchEvidenceGap, classifyBrowserResearchGoal, emptyBrowserResearchEvidence, isSelectorGroundingFailure, prepareBrowserScreenshot, recordSuccessfulBrowserCapability } from './agentic-browser-policy.js';
+import { browserResearchEvidenceGap, classifyBrowserResearchGoal, confirmsShoppingMutationObservation, emptyBrowserResearchEvidence, isSelectorGroundingFailure, isShoppingAddAction, prepareBrowserScreenshot, recordSuccessfulBrowserCapability, requiresShoppingMutationVerification } from './agentic-browser-policy.js';
 
 import { join } from 'node:path';
 
@@ -206,7 +206,7 @@ export function buildAgentSystemPrompt(tools: CapabilitySpec[], base?: string, n
     for (const t of tools) {
       // Label by isReadOnly (fail-safe): anything NOT explicitly read-only ACTS and is
       // gated — matching the runTurn gate, so the engine never sees a mutating tool as "read-only".
-      const tag = t.isReadOnly ? '(read-only)' : '(ACTS on the page — the user must approve)';
+      const tag = t.isReadOnly ? '(read-only)' : '(ACTS on the page — call it directly; a separate policy handles approval)';
       lines.push(`- ${t.name} ${tag}: ${t.description}`);
       lines.push(`    input: ${JSON.stringify(t.inputSchema).slice(0, 800)}`);
     }
@@ -282,6 +282,22 @@ export function buildAgentSystemPrompt(tools: CapabilitySpec[], base?: string, n
     'nothing new; SCROLL first. Do NOT re-click a control you already clicked (e.g. a toggle).',
     'Keep a brief running tally of what you have handled so you know when the task is complete.',
   );
+  const hasShoppingAction = tools.some((t) => t.name === 'click' || t.name === 'clickAt');
+  if (hasShoppingAction) {
+    lines.push(
+      '',
+      'SHOPPING AND FORMS — generic browser actions ARE the capability. Use click/clickAt for',
+      'controls such as product options and Add to basket/cart; use type/insertText/selectOption',
+      'when those tools are available. You do NOT need a special shopping-cart or checkout tool.',
+      'An approval requirement does NOT mean you are unable to act: CALL the page tool and let the',
+      'separate policy/UI handle any approval. Never ask for that approval in prose or refuse merely',
+      'because approval may be required. Before adding an item, readPage the current basket state;',
+      'after the action, readPage again and',
+      'confirm a visible basket/cart state change before claiming success. If the user requested only',
+      'a basket, stop before final purchase; if they explicitly requested checkout/purchase, continue',
+      'with page tools and let the separate approval gate surface any irreversible confirmation.',
+    );
+  }
   // MULTI-TAB — only when the client lent the workspace tools (an older extension hasn't). Frames the
   // mental model so the engine actually USES the tabs instead of cramming everything into one page.
   const hasOpenTab = tools.some((t) => t.name === 'openTab');
@@ -322,7 +338,7 @@ export function buildAgentSystemPrompt(tools: CapabilitySpec[], base?: string, n
 /**
  * The growing ReAct transcript re-sent to the (stateless, exec-mode) engine each step. The user's request is framed as a standing GOAL (restated every step so a stateless engine never loses sight of it) plus the progress so far, ending with: you are NOT done until the goal is met — act, or give the RESULT.
  */
-// @kern-source: agentic-brain-client:322
+// @kern-source: agentic-brain-client:338
 export function renderAgentTranscript(userInput: string, steps: Array<{ name: string; input: Record<string, unknown>; output: string }>): string {
   // Frame the request as the GOAL the agent must ACHIEVE, not a one-off question. Re-sent every
   // step (the engine is stateless in exec mode), so it keeps pursuing the goal to completion
@@ -341,16 +357,16 @@ export function renderAgentTranscript(userInput: string, steps: Array<{ name: st
   return lines.join('\n');
 }
 
-// @kern-source: agentic-brain-client:342
+// @kern-source: agentic-brain-client:358
 export const AGENT_MSG_KEEP_FULL: number = 4;
 
-// @kern-source: agentic-brain-client:343
+// @kern-source: agentic-brain-client:359
 export const AGENT_MSG_TRIM_HEAD: number = 240;
 
 /**
  * JSON.stringify a tool call's input, defaulting to {} on any throw — guards renderAgentMessages so one circular/unserializable input can never crash the whole message reconstruction (and thus the turn).
  */
-// @kern-source: agentic-brain-client:345
+// @kern-source: agentic-brain-client:361
 function safeStringifyArgs(input: unknown): string {
   try { return JSON.stringify(input ?? {}); } catch { return '{}'; }
 }
@@ -358,7 +374,7 @@ function safeStringifyArgs(input: unknown): string {
 /**
  * Phase 2: reconstruct the ReAct progress as a NATIVE OpenAI message thread for the API+tools path — user(goal), then per executed step an assistant{tool_calls} + tool{result} PAIR (a 'reminder' step becomes a user instruction). The model attends to a real tool conversation (vs the flat user-prompt transcript renderAgentTranscript builds for CLI engines), and the stable prefix is prompt-cacheable. BOUNDS context: only the last AGENT_MSG_KEEP_FULL tool results stay verbatim; older ones truncate to a short head — this is what keeps a long browse from bloating to the step backstop. Tool-call ids are synthetic+contiguous (call_<i>), all convertMessagesForSdk needs to pair each assistant call with its result. The system prompt is NOT included here — the adapter prepends the project-context one.
  */
-// @kern-source: agentic-brain-client:351
+// @kern-source: agentic-brain-client:367
 export function renderAgentMessages(userInput: string, steps: Array<{ name: string; input: Record<string, unknown>; output: string }>): Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}> {
   const messages: Array<{role:string, content:any, tool_calls?:any[], tool_call_id?:string}> = [];
   messages.push({ role: 'user', content: `YOUR GOAL — keep working until this is fully achieved, then report the result: ${userInput}` });
@@ -388,7 +404,7 @@ export function renderAgentMessages(userInput: string, steps: Array<{ name: stri
 /**
  * True when an engine's reply DESCRIBES an action ('Let me navigate…', 'Ich suche…') but emitted no tool call — a short intent preamble, not a final answer — so the loop can NUDGE it to actually emit the tool line (the common weak-engine failure: the brain says it will act, then stops). Covers English + German narration, the panel's two languages; other languages degrade to no-nudge (the proactivity system prompt still pushes the model to act in any language — this is only the backstop). Bounded to short replies so a real prose answer that mentions 'review'/'search' isn't misread as narration.
  */
-// @kern-source: agentic-brain-client:379
+// @kern-source: agentic-brain-client:395
 export function looksLikeActionIntent(text: string): boolean {
   const s = text.trim();
   if (s.length === 0 || s.length >= 500) return false; // a substantive reply is a real answer, not a preamble
@@ -410,16 +426,28 @@ export function looksLikeActionIntent(text: string): boolean {
 /**
  * True when the engine, instead of acting, ASKS the user how to proceed / for permission / to pick an option ('How would you like me to proceed?', 'Which option would you like?', 'Soll ich…?'). The classic non-agentic stall: it hands the wheel back to the user. The loop nudges it to decide and continue (the user still approves each page-changing action via the SEPARATE gate, so the agent never needs to ask in prose). Kept to strong, unambiguous phrases (EN + DE) so a completed answer that merely ends 'let me know if you want more' is NOT misread as a stall.
  */
-// @kern-source: agentic-brain-client:399
+// @kern-source: agentic-brain-client:415
 export function looksLikeDeferral(text: string): boolean {
   const t = text.toLowerCase();
   return /(how would you like me to proceed|how (should|shall|do) (i|we) proceed|which (one|option)( would you| do you want| should i)|would you like me to\b|do you want me to\b|let me know which|wie soll ich (fortfahren|vorgehen|weitermachen)|möchtest du, dass ich|soll ich\b.*\?|welche (option|möglichkeit))/.test(t);
 }
 
 /**
+ * True only for the observed false browser-capability refusal: the engine claims it cannot complete the task because generic page tools are read-only/approval-gated or because no special cart/checkout tool exists. This is not a generic error matcher: real blockers such as login, CAPTCHA, sold-out variants, missing permissions, or an actual failed capability remain valid final blockers. The run loop additionally requires a registered page-mutation tool before acting on this signal.
+ */
+// @kern-source: agentic-brain-client:422
+export function looksLikeFalseToolLimitation(text: string): boolean {
+  const t = text.normalize('NFC').toLowerCase();
+  const refusesCompletion = /\b(?:i (?:cannot|can't) (?:complete|finish)(?: this| the)? (?:request|task)|i(?: am|'m|’m) unable to (?:complete|finish)(?: this| the)? (?:request|task)|cannot autonomously complete|unable to autonomously complete)\b/.test(t);
+  const mistakesApprovalForInability = /tools? available to me (?:are|is) read-only[\s\S]{0,180}require[\s\S]{0,80}approval|(?:click\s*\/\s*type|type\s*\/\s*click|page(?:-changing)? actions?|operations?)[\s\S]{0,40}(?:need|require)[\s\S]{0,80}(?:explicit|per-step|page-level)?[\s\S]{0,30}approval/.test(t);
+  const inventsMissingSpecialTool = /(?:there is |there's )?no (?:special )?tool[\s\S]{0,100}(?:shopping[- ]cart|basket)|no (?:checkout|payment|checkout\s*\/\s*payment) capability/.test(t);
+  return refusesCompletion && (mistakesApprovalForInability || inventsMissingSpecialTool);
+}
+
+/**
  * A compact, human-readable one-liner for the approval popup's `command` field — what the agent is about to do.
  */
-// @kern-source: agentic-brain-client:406
+// @kern-source: agentic-brain-client:432
 export function describeAgentAction(name: string, input: Record<string, unknown>): string {
   let arg = '';
   try { arg = JSON.stringify(input); } catch { arg = '{…}'; }
@@ -430,7 +458,7 @@ export function describeAgentAction(name: string, input: Record<string, unknown>
 /**
  * v2 BrainClient: a bounded ReAct tool-loop over one engine, with client-lent capabilities (registerCapability) the brain pulls mid-turn via capability-request, and a per-action approval gate for destructive tools. Construct with the daemon's EngineRegistry; open() binds engine/cwd; runTurn() drives the loop; provideCapabilityResult/provideApproval answer the *-request events by requestId.
  */
-// @kern-source: agentic-brain-client:416
+// @kern-source: agentic-brain-client:442
 export class AgenticTurnBrainClient implements BrainClient {
   private registry: EngineRegistry;
   private adapter: EngineAdapter;
@@ -574,6 +602,10 @@ export class AgenticTurnBrainClient implements BrainClient {
         tools.some((tool) => tool.name === 'openTab'),
       );
       let researchEvidence = emptyBrowserResearchEvidence();
+      let shoppingMutationVerificationEnabled = requiresShoppingMutationVerification(
+        req.input,
+        tools.some((tool) => tool.name === 'readPage'),
+      );
       // NATIVE function-calling specs, offered on EVERY dispatch. The adapter uses them only on
       // the API path (binary-less engines: the coding-plan models) and ignores them on the CLI
       // path — so claude/codex keep the text-marker protocol while API-only engines get reliable
@@ -603,13 +635,21 @@ export class AgenticTurnBrainClient implements BrainClient {
         ? 'CALL the appropriate tool now through your function/tool-calling interface (an actual tool call — do not describe it in prose)'
         : `make your NEXT reply EXACTLY one ${AGENT_TOOL_MARKER} {"name":...,"input":...} line and nothing else`;
       let actNextStep = usesNativeFc ? 'call the next tool' : `a ${AGENT_TOOL_MARKER} tool line`;
-      const refreshTurnCapabilityView = (): void => {
+        const refreshTurnCapabilityView = (): void => {
         tools = [...this.caps.values()].filter((cap) => !capabilityDeniedForTurn(cap.spec.name)).map((cap) => cap.spec);
-        researchPolicy = classifyBrowserResearchGoal(
+          researchPolicy = classifyBrowserResearchGoal(
           req.input,
           tools.some((tool) => tool.name === 'readPage' || tool.name === 'screenshot'),
           tools.some((tool) => tool.name === 'openTab'),
-        );
+          );
+          shoppingMutationVerificationEnabled = requiresShoppingMutationVerification(
+            req.input,
+            tools.some((tool) => tool.name === 'readPage'),
+          );
+          if (!shoppingMutationVerificationEnabled) {
+            shoppingVerificationRequired = false;
+            shoppingVerificationObserved = false;
+          }
         nativeTools = capsToNativeTools(tools);
         usesNativeFc = usesApiDispatch && nativeTools.length > 0;
         sysPrompt = buildAgentSystemPrompt(tools, this.systemPrompt, usesNativeFc);
@@ -623,6 +663,12 @@ export class AgenticTurnBrainClient implements BrainClient {
       let noProgress = 0;      // CONSECUTIVE replies that didn't advance (narration / deferral / identical-repeat); reset on real progress
       let evidenceReminderGap = '';
       let evidenceReminders = 0; // independent from narration/re-view progress so each concrete evidence gap gets its full bounded recovery budget
+      let shoppingVerificationRequired = false;
+      let shoppingVerificationObserved = false;
+      let shoppingVerificationReminders = 0;
+      let lastShoppingObservation = '';
+      let shoppingBaselineObservation = '';
+      let shoppingBaselineReminders = 0;
       let consecutiveFailures = 0; // CONSECUTIVE tool calls that ERRORED (malformed input, bad selector, invalid url) — caps a varying-bad-args flail the identical-repeat guard misses
       let questionsAsked = 0;  // mid-turn questions surfaced to the user this turn (bounded by MAX_USER_QUESTIONS)
       let lastCallKey = '';    // the previous executed tool call (name+input) — an identical repeat is a LOOP, not progress
@@ -670,6 +716,20 @@ export class AgenticTurnBrainClient implements BrainClient {
 
         if (!call) {
           const isDeferral = looksLikeDeferral(stdout);
+          if (shoppingVerificationRequired) {
+            if (shoppingVerificationReminders < MAX_NO_PROGRESS_STEPS) {
+              shoppingVerificationReminders++;
+              const verificationGap = 'Basket verification is incomplete: call readPage and confirm the live basket/cart state changed from the pre-action baseline before answering.';
+              const verificationNudge: BrainEvent = { kind: 'notice', level: 'warning', message: verificationGap };
+              yield verificationNudge;
+              steps.push({ name: 'reminder', input: {}, output: `${verificationGap} ${actInstruction}` });
+              continue;
+            }
+            const reason = `incomplete basket verification after ${MAX_NO_PROGRESS_STEPS} evidence reminders`;
+            const incomplete: BrainEvent = { kind: 'notice', level: 'error', message: reason };
+            yield incomplete;
+            return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
+          }
           // A fluent recommendation is not a valid final answer to a live research goal until
           // successful browser capabilities prove the page was observed. Comparative research
           // additionally proves another owned tab was opened and read. This evidence gate is
@@ -700,13 +760,18 @@ export class AgenticTurnBrainClient implements BrainClient {
           // The budget is CONSECUTIVE-no-progress (reset after every real tool call below), so a
           // long, genuinely-advancing browse is never killed for an occasional stall.
           const isNarration = looksLikeActionIntent(stdout);
+          const hasPageMutationTool = tools.some((tool) => !tool.isReadOnly && (
+            tool.name === 'click' || tool.name === 'clickAt' || tool.name === 'type'
+            || tool.name === 'insertText' || tool.name === 'selectOption'
+          ));
+          const isFalseToolLimitation = hasPageMutationTool && looksLikeFalseToolLimitation(stdout);
           // DEFERRAL → ASK THE USER (not just nudge): the engine posed a question instead of acting,
           // and there is a human on the panel. Surface the question (question-request), PAUSE the
           // turn for their typed answer, then CONTINUE with it injected — so an engine that wants a
           // human go-ahead (e.g. "post /kern wrong on all 18?") gets one instead of dead-ending or
           // being force-nudged. Bounded by MAX_USER_QUESTIONS; past the cap a deferral falls through
           // to the autonomous nudge below.
-          if (tools.length > 0 && isDeferral && questionsAsked < MAX_USER_QUESTIONS) {
+          if (tools.length > 0 && isDeferral && !isFalseToolLimitation && questionsAsked < MAX_USER_QUESTIONS) {
             questionsAsked++;
             const qId = randomUUID();
             // Register the pending-answer listener BEFORE yielding the question: waitForUserAnswer's
@@ -735,14 +800,18 @@ export class AgenticTurnBrainClient implements BrainClient {
             }
             // else: timed out → no continue/return; control falls through to the nudge block.
           }
-          if (tools.length > 0 && noProgress < MAX_NO_PROGRESS_STEPS && (isNarration || isDeferral)) {
+          if (tools.length > 0 && noProgress < MAX_NO_PROGRESS_STEPS && (isNarration || isDeferral || isFalseToolLimitation)) {
             noProgress++;
-            const why = isDeferral
+            const why = isFalseToolLimitation
+              ? 'the engine falsely treated available browser actions or their approval gate as a missing capability — telling it to use the registered page tool'
+              : isDeferral
               ? 'the engine asked how to proceed instead of acting — telling it to decide and continue'
               : 'the engine described an action but sent no tool call — asking it to actually act';
             const nudge: BrainEvent = { kind: 'notice', level: 'warning', message: why };
             yield nudge;
-            const reminder = isDeferral
+            const reminder = isFalseToolLimitation
+              ? `Generic browser tools ARE sufficient for ordinary page workflows such as selecting options and adding an item to a basket. Approval is handled by a SEPARATE policy after you call the tool; it is not a reason to refuse or ask in prose. Take the next concrete page action now: ${actInstruction}. After a shopping action, observe the page again and verify the basket/cart state changed before claiming completion. Report a blocker only after an actual tool attempt returns that concrete blocker.`
+              : isDeferral
               ? `You asked the user how to proceed, but you are an AUTONOMOUS agent — do NOT ask for direction, permission, or which option to pick. DECIDE the most reasonable next step yourself and DO it: ${actInstruction}. The user already approves each page-changing action through a SEPARATE prompt, so you never need to ask in prose. Give a final prose answer only once the task is actually COMPLETE, or if you are truly blocked (e.g. a login is required).`
               : `You said: "${stdout.trim().slice(0, 160)}" — but you took NO action, so nothing happened. To act, ${actInstruction}. If you are truly finished, give your final prose answer.`;
             steps.push({ name: 'reminder', input: {}, output: reminder });
@@ -752,6 +821,36 @@ export class AgenticTurnBrainClient implements BrainClient {
           const ans: BrainEvent = { kind: 'engine', engineId: turnEngineId, content: stdout };
           yield ans;
           return { turnId: req.turnId, delegated: false, responded: true, engineId: turnEngineId };
+        }
+
+        if (
+          shoppingVerificationRequired && !shoppingVerificationObserved
+          && this.caps.get(call.name)?.spec.isReadOnly === false
+        ) {
+          shoppingVerificationReminders++;
+          const verificationNote: BrainEvent = { kind: 'notice', level: 'warning', message: 'basket verification is pending — asking the engine to readPage before another page-changing action' };
+          yield verificationNote;
+          if (shoppingVerificationReminders >= MAX_NO_PROGRESS_STEPS) {
+            const reason = 'incomplete basket verification: attempted another page-changing action before readPage verification';
+            return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
+          }
+          steps.push({ name: 'reminder', input: {}, output: `Basket verification is pending from the previous add action. Call readPage now and confirm the basket/cart state changed from the pre-action baseline before another page-changing action. ${actInstruction}` });
+          continue;
+        }
+
+        if (
+          shoppingMutationVerificationEnabled && (call.name === 'click' || call.name === 'clickAt' || isShoppingAddAction(call.name, call.input))
+          && !lastShoppingObservation
+        ) {
+          shoppingBaselineReminders++;
+          const baselineNote: BrainEvent = { kind: 'notice', level: 'warning', message: 'basket action needs a pre-action readPage baseline — asking the engine to observe before clicking' };
+          yield baselineNote;
+          if (shoppingBaselineReminders >= MAX_NO_PROGRESS_STEPS) {
+            const reason = 'incomplete basket verification: no pre-action readPage baseline';
+            return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
+          }
+          steps.push({ name: 'reminder', input: {}, output: `Before changing the basket, call readPage once to capture its current visible count/control state. Then perform the click and call readPage again to prove the state changed. ${actInstruction}` });
+          continue;
         }
 
         // Reject malformed args before approval; valid calls get a stable digest/key for loop detection.
@@ -894,6 +993,8 @@ export class AgenticTurnBrainClient implements BrainClient {
         }
 
         const rawOut = capRes.ok ? (capRes.output ?? '(no output)') : `ERROR: ${capRes.error ?? 'the tool failed'}`;
+        const confirmedShoppingState = capRes.ok && call.name === 'readPage' && shoppingVerificationRequired
+          && confirmsShoppingMutationObservation(shoppingBaselineObservation, rawOut);
         if (capRes.ok && call.name !== 'screenshot') researchEvidence = recordSuccessfulBrowserCapability(researchEvidence, call.name, call.input, capRes.output);
         // A 'data:' image result (e.g. an agent screenshot) is decoded and shown to
         // the engine on the next dispatch as vision, not dumped into the text transcript.
@@ -923,6 +1024,15 @@ export class AgenticTurnBrainClient implements BrainClient {
           lastReadOutputs.clear();   // the page may have changed — forget stale read snapshots
           selectionRegrounded = false; // a successful action clears the one-shot re-ground guard — the next fresh miss earns its own
           selectionPixelGrounded = false;
+          if (shoppingVerificationRequired) shoppingVerificationObserved = false;
+          if (shoppingMutationVerificationEnabled && isShoppingAddAction(call.name, call.input, capRes.output)) {
+            shoppingBaselineObservation = lastShoppingObservation;
+            shoppingVerificationRequired = true;
+            shoppingVerificationObserved = false;
+            shoppingVerificationReminders = 0;
+            shoppingBaselineReminders = 0;
+          }
+          lastShoppingObservation = '';
         } else if (cap.spec.isReadOnly && capRes.ok && !rawOut.startsWith('data:')) {
           // Key by tool+input (callKey), NOT name: the same read with the same input returning the
           // same text is a genuine re-view; the SAME tool with a DIFFERENT input is a different
@@ -943,6 +1053,16 @@ export class AgenticTurnBrainClient implements BrainClient {
           }
           lastReadOutputs.set(callKey, fp);
         } // else: screenshot / failed read / failed action → leave noProgress unchanged (neutral)
+        if (capRes.ok && call.name === 'readPage') {
+          shoppingBaselineReminders = 0;
+          if (shoppingVerificationRequired) shoppingVerificationObserved = true;
+          lastShoppingObservation = rawOut;
+        }
+        if (confirmedShoppingState && shoppingVerificationRequired) {
+          shoppingVerificationRequired = false;
+          shoppingVerificationObserved = false;
+          shoppingVerificationReminders = 0;
+        }
         // Failure streak — tracked SEPARATELY from noProgress: a failed action is progress-neutral
         // there (it didn't re-view a stale screen), but an unbroken run of failures is its own
         // stuck signal that varying-bad-args evades (every callKey differs, so the loop guard misses).
@@ -1168,7 +1288,7 @@ export class AgenticTurnBrainClient implements BrainClient {
 /**
  * Factory mirroring createHeadlessTurnBrainClient: build the v2 agentic tool-loop BrainClient from the daemon's EngineRegistry.
  */
-// @kern-source: agentic-brain-client:1179
+// @kern-source: agentic-brain-client:1297
 export function createAgenticTurnBrainClient(registry: EngineRegistry): BrainClient {
   return new AgenticTurnBrainClient(registry);
 }

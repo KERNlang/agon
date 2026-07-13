@@ -55,20 +55,20 @@ export interface CapabilityAuthorizationLease {
  */
 // @kern-source: brain-client:83
 export function canonicalCapabilityInputDigest(input: Record<string,unknown>): string {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new TypeError('capability input must be a JSON object');
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new globalThis.TypeError('capability input must be a JSON object');
   const seen = new Set<object>();
   const canonicalize = (value: unknown, inArray: boolean): unknown => {
     if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
     if (typeof value === 'number') return Number.isFinite(value) ? (Object.is(value, -0) ? 0 : value) : null;
     if (typeof value === 'undefined' || typeof value === 'function' || typeof value === 'symbol') return inArray ? null : undefined;
-    if (typeof value === 'bigint') throw new TypeError('capability input must be JSON-compatible (bigint is unsupported)');
-    if (typeof value !== 'object') throw new TypeError('capability input must be JSON-compatible');
-    if (seen.has(value)) throw new TypeError('capability input must be acyclic');
+    if (typeof value === 'bigint') throw new globalThis.TypeError('capability input must be JSON-compatible (bigint is unsupported)');
+    if (typeof value !== 'object') throw new globalThis.TypeError('capability input must be JSON-compatible');
+    if (seen.has(value)) throw new globalThis.TypeError('capability input must be acyclic');
     seen.add(value);
     try {
       if (Array.isArray(value)) return value.map((entry) => canonicalize(entry, true));
       const proto = Object.getPrototypeOf(value);
-      if (proto !== Object.prototype && proto !== null) throw new TypeError('capability input must contain only plain objects');
+      if (proto !== Object.prototype && proto !== null) throw new globalThis.TypeError('capability input must contain only plain objects');
       const out = Object.create(null) as Record<string, unknown>;
       for (const key of Object.keys(value as Record<string, unknown>).sort()) {
         const normalized = canonicalize((value as Record<string, unknown>)[key], false);
@@ -80,7 +80,7 @@ export function canonicalCapabilityInputDigest(input: Record<string,unknown>): s
     }
   };
   const canonical = JSON.stringify(canonicalize(input, false));
-  if (typeof canonical !== 'string') throw new TypeError('capability input must be a JSON object');
+  if (typeof canonical !== 'string') throw new globalThis.TypeError('capability input must be a JSON object');
   return `sha256:${createHash('sha256').update(canonical, 'utf8').digest('hex')}`;
 }
 

@@ -17,6 +17,7 @@ import {
   describeAgentAction,
   looksLikeActionIntent,
   looksLikeDeferral,
+  looksLikeFalseToolLimitation,
   AGENT_TOOL_MARKER as MARK,
 } from '../../packages/cli/src/generated/bridge/agentic-brain-client.js';
 import type { BrainEvent, BrainTurnResult, EngineAdapter, EngineRegistry, CapabilitySpec } from '@kernlang/agon-core';
@@ -178,6 +179,19 @@ describe('agent prompt + transcript helpers', () => {
     expect(looksLikeDeferral('I found 5 roles that fit: NVIDIA, AWS, Ashby … Let me know if you want details on any.')).toBe(false);
     expect(looksLikeDeferral('Here are the matching jobs, ranked by fit. The AWS role is the strongest match.')).toBe(false);
   });
+
+  it('recognizes the captured MiniMax shopping refusal without swallowing real external blockers', () => {
+    const captured = `I cannot complete this request. The tools available to me are read-only
+or require page-level approvals (click, type, navigate) — there is no tool
+for adding items to a shopping cart on an external site like Galaxus, and
+no checkout/payment capability. Even the click/type actions need your
+explicit approval per step and cannot autonomously complete a purchase.`;
+    expect(looksLikeFalseToolLimitation(captured)).toBe(true);
+    expect(looksLikeFalseToolLimitation("I'm unable to finish this task because there's no shopping-cart tool available and page actions require per-step approval.")).toBe(true);
+    expect(looksLikeFalseToolLimitation('I cannot finish the task: type/click operations require explicit approval and cannot run autonomously.')).toBe(true);
+    expect(looksLikeFalseToolLimitation('I cannot continue because the site requires a login and CAPTCHA.')).toBe(false);
+    expect(looksLikeFalseToolLimitation('The Add to basket click failed because the requested size is sold out.')).toBe(false);
+  });
 });
 
 describe('AgenticTurnBrainClient — the ReAct loop', () => {
@@ -321,6 +335,334 @@ describe('AgenticTurnBrainClient — the ReAct loop', () => {
     });
     expect(events.some((e) => e.kind === 'notice' && /tool call/.test((e as { message: string }).message))).toBe(true);
     expect(events.some((e) => e.kind === 'capability-request')).toBe(true);
+    expect(result.responded).toBe(true);
+  });
+
+  it('retries the captured false shopping-tool refusal, adds the item, then verifies the basket', async () => {
+    const captured = `I cannot complete this request. The tools available to me are read-only
+or require page-level approvals (click, type, navigate) — there is no tool
+for adding items to a shopping cart on an external site like Galaxus, and
+no checkout/payment capability. Even the click/type actions need your
+explicit approval per step and cannot autonomously complete a purchase.`;
+    const client = makeAgent([
+      captured,
+      `${MARK} {"name":"readPage","input":{}}`,
+      `${MARK} {"name":"click","input":{"selector":"button.add-to-basket"}}`,
+      `${MARK} {"name":"readPage","input":{}}`,
+      'The product is now in the basket; the basket count is 1.',
+    ]);
+    await client.open({ sessionId: 's', engineId: 'minimax-m3', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: actSpec() });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    let reads = 0;
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1', 'Put this product in the basket.')), {
+      capability: (ev) => (ev as { capability: string }).capability === 'click'
+        ? { ok: true, output: 'clicked Add to basket' }
+        : { ok: true, output: reads++ === 0 ? 'Basket (0 items)\nAdd to basket' : 'Basket (1 item)' },
+      approval: () => 'approve',
+    });
+    expect(events.some((e) => e.kind === 'question-request')).toBe(false);
+    expect(events.filter((e) => e.kind === 'capability-request').map((e) => (e as { capability: string }).capability)).toEqual(['readPage', 'click', 'readPage']);
+    expect(events.some((e) => e.kind === 'notice' && /capability|approval/i.test((e as { message: string }).message))).toBe(true);
+    expect(events.find((e) => e.kind === 'engine')).toMatchObject({ content: 'The product is now in the basket; the basket count is 1.' });
+    expect(result.responded).toBe(true);
+  });
+
+  it('blocks an immediate success claim after a basket click until the live page is observed', async () => {
+    const client = makeAgent([
+      `${MARK} {"name":"readPage","input":{}}`,
+      `${MARK} {"name":"click","input":{"selector":"button.add-to-basket"}}`,
+      'Done — the item is in the basket.',
+      `${MARK} {"name":"readPage","input":{}}`,
+      'Verified: the basket count is 1.',
+    ]);
+    await client.open({ sessionId: 's', engineId: 'minimax-m3', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: actSpec() });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    let reads = 0;
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1', 'Put this product in the basket.')), {
+      capability: (ev) => (ev as { capability: string }).capability === 'click'
+        ? { ok: true, output: 'clicked Add to basket' }
+        : { ok: true, output: reads++ === 0 ? 'Basket (0 items)\nAdd to basket' : 'Basket (1 item)' },
+      approval: () => 'approve',
+    });
+    expect(events.filter((e) => e.kind === 'capability-request').map((e) => (e as { capability: string }).capability)).toEqual(['readPage', 'click', 'readPage']);
+    expect(events.some((e) => e.kind === 'notice' && /basket verification/i.test((e as { message: string }).message))).toBe(true);
+    expect(events.find((e) => e.kind === 'engine')).toMatchObject({ content: 'Verified: the basket count is 1.' });
+    expect(result.responded).toBe(true);
+  });
+
+  it('blocks a second basket add until the first add is verified with readPage', async () => {
+    const client = makeAgent([
+      `${MARK} {"name":"readPage","input":{}}`,
+      `${MARK} {"name":"click","input":{"selector":"button.add-to-basket"}}`,
+      `${MARK} {"name":"click","input":{"selector":"button.add-to-cart"}}`,
+      `${MARK} {"name":"readPage","input":{}}`,
+      'Verified: the basket count is 1.',
+    ]);
+    await client.open({ sessionId: 's', engineId: 'minimax-m3', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: actSpec() });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    let reads = 0;
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1', 'Put this product in the basket.')), {
+      capability: (ev) => (ev as { capability: string }).capability === 'click'
+        ? { ok: true, output: 'clicked Add to basket' }
+        : { ok: true, output: reads++ === 0 ? 'Basket (0 items)\nAdd to basket' : 'Basket (1 item)' },
+      approval: () => 'approve-session',
+    });
+    expect(events.filter((e) => e.kind === 'capability-request').map((e) => (e as { capability: string }).capability)).toEqual([
+      'readPage', 'click', 'readPage',
+    ]);
+    expect(events.some((e) => e.kind === 'notice' && /verification.*pending/i.test((e as { message: string }).message))).toBe(true);
+    expect(result.responded).toBe(true);
+  });
+
+  it('blocks navigation while basket verification is pending', async () => {
+    const client = makeAgent([
+      `${MARK} {"name":"readPage","input":{}}`,
+      `${MARK} {"name":"click","input":{"selector":"button.add-to-basket"}}`,
+      `${MARK} {"name":"navigate","input":{"url":"https://other.test/"}}`,
+      `${MARK} {"name":"readPage","input":{}}`,
+      'Verified: the basket count is 1.',
+    ]);
+    await client.open({ sessionId: 's', engineId: 'minimax-m3', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: actSpec() });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: actSpec('navigate') });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    let reads = 0;
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1', 'Put this product in the basket.')), {
+      capability: (ev) => (ev as { capability: string }).capability === 'readPage'
+        ? { ok: true, output: reads++ === 0 ? 'Basket (0 items)\nAdd to basket' : 'Basket (1 item)' }
+        : { ok: true, output: 'clicked Add to basket' },
+      approval: () => 'approve-session',
+    });
+    expect(events.filter((e) => e.kind === 'capability-request').map((e) => (e as { capability: string }).capability)).toEqual([
+      'readPage', 'click', 'readPage',
+    ]);
+    expect(events.some((e) => e.kind === 'notice' && /verification.*pending/i.test((e as { message: string }).message))).toBe(true);
+    expect(result.responded).toBe(true);
+  });
+
+  it('blocks every page-mutating tool while basket verification is pending', async () => {
+    const client = makeAgent([
+      `${MARK} {"name":"readPage","input":{}}`,
+      `${MARK} {"name":"click","input":{"selector":"button.add-to-basket"}}`,
+      `${MARK} {"name":"type","input":{"selector":"input.quantity","text":"2"}}`,
+      `${MARK} {"name":"readPage","input":{}}`,
+      'Verified: the basket count is 1.',
+    ]);
+    await client.open({ sessionId: 's', engineId: 'minimax-m3', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: actSpec() });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: actSpec('type') });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    let reads = 0;
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1', 'Put this product in the basket.')), {
+      capability: (ev) => (ev as { capability: string }).capability === 'readPage'
+        ? { ok: true, output: reads++ === 0 ? 'Basket (0 items)\nAdd to basket' : 'Basket (1 item)' }
+        : { ok: true, output: 'clicked Add to basket' },
+      approval: () => 'approve-session',
+    });
+    expect(events.filter((e) => e.kind === 'capability-request').map((e) => (e as { capability: string }).capability)).toEqual([
+      'readPage', 'click', 'readPage',
+    ]);
+    expect(events.some((e) => e.kind === 'notice' && /verification.*pending/i.test((e as { message: string }).message))).toBe(true);
+    expect(result.responded).toBe(true);
+  });
+
+  it('requires a readPage basket baseline before a coordinate click in an explicit basket goal', async () => {
+    const client = makeAgent([
+      `${MARK} {"name":"clickAt","input":{"x":40,"y":50}}`,
+      `${MARK} {"name":"readPage","input":{}}`,
+      `${MARK} {"name":"clickAt","input":{"x":40,"y":50}}`,
+      `${MARK} {"name":"readPage","input":{}}`,
+      'Verified: the basket count is 1.',
+    ]);
+    await client.open({ sessionId: 's', engineId: 'minimax-m3', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: actSpec('clickAt') });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    let reads = 0;
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1', 'Put this product in the basket.')), {
+      capability: (ev) => (ev as { capability: string }).capability === 'readPage'
+        ? { ok: true, output: reads++ === 0 ? 'Basket (0 items)\nAdd to basket' : 'Basket (1 item)' }
+        : { ok: true, output: 'clicked left at (40, 50) on "Add to basket"' },
+      approval: () => 'approve-session',
+    });
+    expect(events.filter((e) => e.kind === 'capability-request').map((e) => (e as { capability: string }).capability)).toEqual([
+      'readPage', 'clickAt', 'readPage',
+    ]);
+    expect(events.some((e) => e.kind === 'notice' && /pre-action readPage baseline/i.test((e as { message: string }).message))).toBe(true);
+    expect(result.responded).toBe(true);
+  });
+
+  it('requires a readPage basket baseline when only the click result reveals the add action', async () => {
+    const client = makeAgent([
+      `${MARK} {"name":"click","input":{"selector":"button.primary"}}`,
+      `${MARK} {"name":"readPage","input":{}}`,
+      `${MARK} {"name":"click","input":{"selector":"button.primary"}}`,
+      `${MARK} {"name":"readPage","input":{}}`,
+      'Verified: the basket count is 1.',
+    ]);
+    await client.open({ sessionId: 's', engineId: 'minimax-m3', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: actSpec() });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    let reads = 0;
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1', 'Put this product in the basket.')), {
+      capability: (ev) => (ev as { capability: string }).capability === 'readPage'
+        ? { ok: true, output: reads++ === 0 ? 'Basket (0 items)\nAdd to basket' : 'Basket (1 item)' }
+        : { ok: true, output: 'clicked Add to basket' },
+      approval: () => 'approve-session',
+    });
+    expect(events.filter((e) => e.kind === 'capability-request').map((e) => (e as { capability: string }).capability)).toEqual([
+      'readPage', 'click', 'readPage',
+    ]);
+    expect(events.some((e) => e.kind === 'notice' && /pre-action readPage baseline/i.test((e as { message: string }).message))).toBe(true);
+    expect(result.responded).toBe(true);
+  });
+
+  it('does not clear basket verification when readPage still shows only Add to basket', async () => {
+    const client = makeAgent([
+      `${MARK} {"name":"readPage","input":{}}`,
+      `${MARK} {"name":"click","input":{"selector":"button.add-to-basket"}}`,
+      `${MARK} {"name":"readPage","input":{}}`,
+      'Done — the item is in the basket.',
+    ]);
+    await client.open({ sessionId: 's', engineId: 'minimax-m3', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: actSpec() });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1', 'Put this product in the basket.')), {
+      capability: (ev) => (ev as { capability: string }).capability === 'click'
+        ? { ok: true, output: 'clicked Add to basket' }
+        : { ok: true, output: 'Basket (0 items)\nAdd to basket' },
+      approval: () => 'approve',
+    });
+    expect(events.some((e) => e.kind === 'engine')).toBe(false);
+    expect(events.some((e) => e.kind === 'notice' && /incomplete basket verification/i.test((e as { message: string }).message))).toBe(true);
+    expect(result).toMatchObject({ responded: false, reason: expect.stringMatching(/incomplete basket verification/i) });
+  });
+
+  it('allows a recovery mutation after an unchanged post-add read while still requiring final verification', async () => {
+    const client = makeAgent([
+      `${MARK} {"name":"readPage","input":{}}`,
+      `${MARK} {"name":"click","input":{"selector":"button.add-to-basket"}}`,
+      `${MARK} {"name":"readPage","input":{}}`,
+      `${MARK} {"name":"selectOption","input":{"selector":"select.variant","value":"M"}}`,
+      `${MARK} {"name":"readPage","input":{}}`,
+      `${MARK} {"name":"click","input":{"selector":"button.add-to-basket"}}`,
+      `${MARK} {"name":"readPage","input":{}}`,
+      'Verified: the basket count is 1.',
+    ]);
+    await client.open({ sessionId: 's', engineId: 'minimax-m3', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: actSpec() });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: actSpec('selectOption') });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    const pages = ['Basket (0 items)\nAdd to basket', 'Basket (0 items)\nAdd to basket', 'Basket (0 items)\nAdd to basket', 'Basket (1 item)'];
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1', 'Put this product in the basket.')), {
+      capability: (ev) => {
+        const capability = (ev as { capability: string }).capability;
+        if (capability === 'readPage') return { ok: true, output: pages.shift() ?? 'Basket (1 item)' };
+        if (capability === 'selectOption') return { ok: true, output: 'selected size M' };
+        return { ok: true, output: 'clicked Add to basket' };
+      },
+      approval: () => 'approve-session',
+    });
+    expect(events.filter((e) => e.kind === 'capability-request').map((e) => (e as { capability: string }).capability)).toEqual([
+      'readPage', 'click', 'readPage', 'selectOption', 'readPage', 'click', 'readPage',
+    ]);
+    expect(result.responded).toBe(true);
+  });
+
+  it('resets the baseline reminder budget after every compliant readPage', async () => {
+    const client = makeAgent([
+      `${MARK} {"name":"click","input":{"selector":"button.option-a"}}`,
+      `${MARK} {"name":"readPage","input":{}}`,
+      `${MARK} {"name":"click","input":{"selector":"button.option-a"}}`,
+      `${MARK} {"name":"readPage","input":{}}`,
+      `${MARK} {"name":"click","input":{"selector":"button.option-b"}}`,
+      `${MARK} {"name":"readPage","input":{}}`,
+      `${MARK} {"name":"click","input":{"selector":"button.option-c"}}`,
+      `${MARK} {"name":"readPage","input":{}}`,
+      `${MARK} {"name":"click","input":{"selector":"button.add-to-basket"}}`,
+      `${MARK} {"name":"readPage","input":{}}`,
+      'Configured the product and verified it in the basket.',
+    ]);
+    await client.open({ sessionId: 's', engineId: 'minimax-m3', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: actSpec() });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    const eventsSeen: string[] = [];
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1', 'Put this configured product in the basket.')), {
+      capability: (ev) => {
+        if ((ev as { capability: string }).capability === 'readPage') {
+          const completedAdds = eventsSeen.filter((selector) => selector.includes('add-to-basket')).length;
+          return { ok: true, output: completedAdds > 0 ? 'Basket (1 item)' : 'Basket (0 items)\nProduct options' };
+        }
+        const selector = (ev as { input?: { selector?: string } }).input?.selector ?? '';
+        eventsSeen.push(selector);
+        return { ok: true, output: selector.includes('add-to-basket') ? 'clicked Add to basket' : 'clicked product option' };
+      },
+      approval: () => 'approve-session',
+    });
+    expect(events.filter((e) => e.kind === 'capability-request' && (e as { capability: string }).capability === 'click')).toHaveLength(4);
+    expect(result.responded).toBe(true);
+  });
+
+  it('verifies each add action in a multi-item basket goal without re-arming on checkout', async () => {
+    const client = makeAgent([
+      `${MARK} {"name":"readPage","input":{}}`,
+      `${MARK} {"name":"click","input":{"selector":"button.add-to-basket"}}`,
+      `${MARK} {"name":"readPage","input":{}}`,
+      `${MARK} {"name":"click","input":{"selector":"button.add-to-cart"}}`,
+      `${MARK} {"name":"readPage","input":{}}`,
+      `${MARK} {"name":"click","input":{"selector":"button.checkout"}}`,
+      'Both products are verified in the basket and checkout is open.',
+    ]);
+    await client.open({ sessionId: 's', engineId: 'minimax-m3', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: actSpec() });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    let reads = 0;
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1', 'Put these two products in the basket, then open checkout.')), {
+      capability: (ev) => {
+        if ((ev as { capability: string }).capability === 'readPage') return { ok: true, output: `Cart (${reads++})` };
+        const selector = (ev as { input?: { selector?: string } }).input?.selector ?? '';
+        return { ok: true, output: selector.includes('checkout') ? 'clicked Checkout' : 'clicked Add to basket' };
+      },
+      approval: () => 'approve-session',
+    });
+    expect(events.filter((e) => e.kind === 'capability-request').map((e) => (e as { capability: string }).capability)).toEqual([
+      'readPage', 'click', 'readPage', 'click', 'readPage', 'click',
+    ]);
+    expect(events.find((e) => e.kind === 'engine')).toMatchObject({ content: 'Both products are verified in the basket and checkout is open.' });
+    expect(result.responded).toBe(true);
+  });
+
+  it('does not surface a false tool-limitation refusal as a user question when it also asks to proceed', async () => {
+    const client = makeAgent([
+      'I cannot complete this request because there is no shopping-cart tool and click/type actions require explicit approval. Would you like me to proceed?',
+      `${MARK} {"name":"click","input":{"selector":"button.add-to-basket"}}`,
+      'The requested page action completed.',
+    ]);
+    await client.open({ sessionId: 's', engineId: 'minimax-m3', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: actSpec() });
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1', 'Add this product to the basket.')), {
+      capability: () => ({ ok: true, output: 'clicked Add to basket' }),
+      approval: () => 'approve',
+    });
+    expect(events.some((e) => e.kind === 'question-request')).toBe(false);
+    expect(events.some((e) => e.kind === 'capability-request')).toBe(true);
+    expect(result.responded).toBe(true);
+  });
+
+  it('does not nudge a shopping-tool refusal when an older client exposes navigation but no page mutation tool', async () => {
+    const refusal = 'I cannot complete this request because there is no shopping-cart tool and page actions require explicit approval.';
+    const client = makeAgent([refusal]);
+    await client.open({ sessionId: 's', engineId: 'minimax-m3', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: actSpec('navigate') });
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1', 'Add this product to the basket.')), {
+      capability: () => ({ ok: true }),
+      approval: () => 'approve',
+    });
+    expect(events.some((e) => e.kind === 'capability-request')).toBe(false);
+    expect(events.some((e) => e.kind === 'notice' && /falsely treated available browser actions/i.test((e as { message: string }).message))).toBe(false);
+    expect(events.find((e) => e.kind === 'engine')).toMatchObject({ content: refusal });
     expect(result.responded).toBe(true);
   });
 

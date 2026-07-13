@@ -6,9 +6,36 @@ import {
   emptyBrowserResearchEvidence,
   isSelectorGroundingFailure,
   recordSuccessfulBrowserCapability,
+  requiresShoppingMutationVerification,
+  confirmsShoppingMutationObservation,
+  isShoppingAddAction,
 } from '../../packages/cli/src/generated/bridge/agentic-browser-policy.js';
 
 describe('deterministic browser research policy', () => {
+  it('requires post-action observation only for explicit basket/cart mutation goals with an observation tool', () => {
+    expect(requiresShoppingMutationVerification('Put this product in the basket.', true)).toBe(true);
+    expect(requiresShoppingMutationVerification('Lege dieses Produkt in den Warenkorb.', true)).toBe(true);
+    expect(requiresShoppingMutationVerification('Find products for my basket.', true)).toBe(false);
+    expect(requiresShoppingMutationVerification('Put this product in the basket.', false)).toBe(false);
+  });
+
+  it('accepts positive visible cart state but rejects an unchanged Add-to-basket page', () => {
+    expect(confirmsShoppingMutationObservation('Basket (0 items)\nAdd to basket', 'Basket (1 item)')).toBe(true);
+    expect(confirmsShoppingMutationObservation('Warenkorb: 1 Artikel', 'Warenkorb: 2 Artikel')).toBe(true);
+    expect(confirmsShoppingMutationObservation('Add to basket', 'Remove from basket')).toBe(true);
+    expect(confirmsShoppingMutationObservation('Basket (1 item)', 'Basket (1 item)')).toBe(false);
+    expect(confirmsShoppingMutationObservation('', 'Basket (1 item)')).toBe(false);
+    expect(confirmsShoppingMutationObservation('Added to basket', 'Added to basket')).toBe(false);
+    expect(confirmsShoppingMutationObservation('Add to basket', 'Added to basket')).toBe(true);
+    expect(confirmsShoppingMutationObservation('Cart (0)', 'Cart (1)')).toBe(true);
+    expect(isShoppingAddAction('click', { selector: 'button.add-to-basket' })).toBe(true);
+    expect(isShoppingAddAction('click', { selector: 'button.primary' }, 'clicked Add to cart')).toBe(true);
+    expect(isShoppingAddAction('clickAt', { x: 40, y: 50 }, 'clicked left at (40, 50) on "Add to basket"')).toBe(true);
+    expect(isShoppingAddAction('click', { selector: 'button.primary' }, 'clicked Add to Shopping Cart')).toBe(true);
+    expect(isShoppingAddAction('click', { selector: 'button.checkout' }, 'clicked Checkout')).toBe(false);
+  });
+
+
   it('recognizes German search requests without treating ordinary English "such" as search intent', () => {
     expect(classifyBrowserResearchGoal('Bitte Taucherbrillen suchen', true, true)).toMatchObject({
       requiresLiveEvidence: true,

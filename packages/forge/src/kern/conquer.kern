@@ -24,13 +24,14 @@
 // token usage, not price), so caps enforce turns + wall-clock; spend is best-effort.
 
 import from="@kernlang/agon-core" names="EngineAdapter,EngineRegistry,RatingRecord" types=true
-import from="@kernlang/agon-core" names="resolveWorkingDir,getRatings,seedNewEnginesFromRegistry,spawnWithTimeout,buildKernContextSpine"
+import from="@kernlang/agon-core" names="resolveWorkingDir,getRatings,seedNewEnginesFromRegistry,spawnWithTimeout,buildKernContextSpine,repoRoot,createSessionWorktree"
 import from="./nero.js" names="runNero,rankNeroCritics,parseNeroVerdict"
 import from="./tribunal.js" names="runTribunal"
 import from="./brainstorm.js" names="runBrainstorm"
 import from="./council.js" names="runCouncil"
 import from="./goal/diff.js" names="isTestFile,parseChangedLines,newFilesInDiff"
 import from="node:path" names="join,dirname"
+import from="node:crypto" names="randomUUID"
 
 const name=ESCAPING_OPS type="readonly string[]" value={{ ['push', 'force-push', 'publish', 'deploy', 'network-install', 'merge'] as const }}
   doc "Builder permission-request kinds whose blast radius ESCAPES the worktree (un-spendable tokens, remote/CI state, global package installs). Cesar never auto-approves these even inside isolation — they need a human or an explicit gate. The worktree contains git, not the environment."
@@ -141,6 +142,23 @@ interface name=ConquerResult
   field name=counterexample type=string doc="The most recent falsifier's runnable counterexample command, '' if none. Present whether or not it blocked (a verified one blocks; a rejected/advisory one is surfaced to the human)."
   field name=observed type=string doc="The wrong output the falsifier reported observing, '' if none."
 
+interface name=ConquerIsolation export=true
+  field name=repoRoot type=string
+  field name=branch type=string
+  field name=path type=string
+
+fn name=createConquerIsolation params="task:string,cwd?:string,runId?:string" returns=ConquerIsolation export=true
+  doc "Create a persistent named worktree for one Conquer run. It branches from HEAD, so uncommitted source-checkout work remains untouched and is intentionally not copied into the build. The worktree is kept after success/failure for the human merge gate and crash recovery."
+  handler <<<
+    const sourceCwd = cwd ?? resolveWorkingDir();
+    const root = repoRoot(sourceCwd);
+    const slug = task.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 36) || 'build';
+    const suffix = (runId?.trim() || randomUUID().slice(0, 8)).replace(/[^a-zA-Z0-9._-]+/g, '-');
+    const branch = `conquer/${slug}-${suffix}`;
+    const worktree = createSessionWorktree({ repoRoot: root, branch, base: 'HEAD', link: true });
+    return { repoRoot: root, branch, path: worktree.path };
+  >>>
+
 interface name=DoneOracleInput
   field name=gateOk type=boolean
   field name=oracleTampered type=boolean
@@ -201,6 +219,27 @@ fn name=buildConquerSystemPrompt params="" returns=string export=true
       'Do not weaken, skip, or rewrite existing tests to make them pass. Add new tests in new files.',
       'Keep going until you emit one of the sentinels.',
     ].join('\n');
+  >>>
+
+fn name=buildConquerTurnPrompt params="opts:{task:string, turn:number, kernSpine?:string, previousOutput?:string, instruction:string, transcript?:string[]}" returns=string export=true
+  doc "Build a bounded supervisor envelope for every builder turn. The original task is repeated verbatim on every dispatch, while only recent state and a capped previous output are carried forward so a long run neither loses its objective nor grows prompt context without bound."
+  handler <<<
+    const recentState = (opts.transcript ?? []).slice(-6).join('\n') || '(first turn)';
+    const previous = String(opts.previousOutput ?? '');
+    const cappedPrevious = previous.length > 6_000
+      ? `[... ${previous.length - 6_000} earlier chars omitted]\n${previous.slice(-6_000)}`
+      : previous;
+    const sections = [
+      '## CONQUER ORIGINAL TASK (authoritative; keep working toward this exact request)',
+      opts.task,
+      '',
+      `## SUPERVISOR STATE (turn ${opts.turn})`,
+      recentState,
+    ];
+    if (opts.turn === 1 && opts.kernSpine) sections.push('', opts.kernSpine);
+    if (cappedPrevious) sections.push('', '## PREVIOUS BUILDER OUTPUT', cappedPrevious);
+    sections.push('', '## CESAR INSTRUCTION', opts.instruction);
+    return sections.join('\n');
   >>>
 
 fn name=dispatchConsult async=true params="opts:{ mode: 'nero' | 'tribunal' | 'brainstorm' | 'council'; question: string; engines: string[]; registry: EngineRegistry; adapter: EngineAdapter; timeout: number; outputDir: string; cwd?: string; signal?: AbortSignal }" returns="Promise<{ mode: string; verdict: string; confidence: number | null; flawed: boolean }>" export=true
@@ -473,12 +512,14 @@ fn name=runConquer async=true params="opts:ConquerOptions" returns="Promise<Conq
     const transcript: string[] = [];
     const state: ConquerState = { turn: 0, spentUsd: 0, startedAtMs: Date.now(), consults: 0 };
 
-    // Conquer builds its own builder prompt (it does NOT route through runForge),
-    // so the whole-project spine is injected here, on the FIRST turn only —
-    // later turns reassign `prompt` from builder output + Cesar's feedback.
+    // Conquer builds its own builder prompt (it does NOT route through runForge).
+    // The project spine is injected on turn one; the original task is repeated
+    // verbatim on EVERY turn by buildConquerTurnPrompt so supervisor feedback
+    // cannot accidentally replace the actual objective.
     // Best-effort + memoized per cwd; '' for non-TS targets or if the CLI is absent.
     const kernSpine = await buildKernContextSpine(cwd);
-    let prompt = kernSpine ? `${opts.task}\n\n${kernSpine}` : opts.task;
+    let previousOutput = '';
+    let instruction = 'Begin the task. Work autonomously until you need a real decision or can make a verified done claim.';
     let done = false;
     let lastClaim = '';
     let doneReason = '';
@@ -498,6 +539,15 @@ fn name=runConquer async=true params="opts:ConquerOptions" returns="Promise<Conq
       if (breach) { stopReason = breach; break; }
       state.turn += 1;
 
+      const prompt = buildConquerTurnPrompt({
+        task: opts.task,
+        turn: state.turn,
+        kernSpine,
+        previousOutput,
+        instruction,
+        transcript,
+      });
+
       const res = await opts.adapter.dispatch({
         engine: builder, prompt, systemPrompt: sys, cwd,
         mode: 'agent', timeout: opts.timeout, outputDir: opts.outputDir, signal: opts.signal,
@@ -514,6 +564,7 @@ fn name=runConquer async=true params="opts:ConquerOptions" returns="Promise<Conq
         break;
       }
       emit(state.turn, 'build', out);
+      previousOutput = out;
 
       const sig = parseBuilderSignals(out);
 
@@ -537,7 +588,7 @@ fn name=runConquer async=true params="opts:ConquerOptions" returns="Promise<Conq
         const ce = verdict.falsified && verdict.counterexample
           ? ` A falsifier reproduced a failure: \`${verdict.counterexample}\`${verdict.observed ? ` → observed: ${verdict.observed}` : ''}.`
           : '';
-        prompt = `${out}\n\n[Cesar] Not done yet — ${verdict.reason}.${ce} Fix it and continue; re-emit CONQUER_DONE when the gate is green.`;
+        instruction = `[Cesar] Not done yet — ${verdict.reason}.${ce} Fix it and continue; re-emit CONQUER_DONE when the gate is green.`;
         continue;
       }
 
@@ -550,12 +601,12 @@ fn name=runConquer async=true params="opts:ConquerOptions" returns="Promise<Conq
         });
         state.consults += 1;
         emit(state.turn, 'consult', `${mode}: ${consult.verdict.slice(0, 120)}`);
-        prompt = `${out}\n\n${summarizeConsultForBuilder(consult)}\n\nContinue. Emit CONQUER_ASK only for a real fork, CONQUER_DONE when finished.`;
+        instruction = `${summarizeConsultForBuilder(consult)}\n\nContinue. Emit CONQUER_ASK only for a real fork, CONQUER_DONE when finished.`;
         continue;
       }
 
       // No sentinel — nudge and keep building.
-      prompt = `${out}\n\n[Cesar] Continue. Emit "CONQUER_ASK: <question>" if you hit a fork, "CONQUER_DONE: <claim>" when finished and tests pass.`;
+      instruction = '[Cesar] Continue. Emit "CONQUER_ASK: <question>" if you hit a fork, "CONQUER_DONE: <claim>" when finished and tests pass.';
     }
 
     return {

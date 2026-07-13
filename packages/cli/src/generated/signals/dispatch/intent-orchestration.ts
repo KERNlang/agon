@@ -73,8 +73,8 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
       const continuationEpoch = cb.ctx.inputEpoch ?? 0;
       const continuationUserTurns = countTrackedUserTurns(cb.ctx);
       cb.runAsJob('tribunal', _tLabel, withThreadOutcome(_tCwd, 'tribunal', _tLabel, async () => {
-        if (cb.eventBus) await cb.eventBus.emit('pre:tribunal', { question: intent.question, mode: intent.tribunalMode, cwd: _tCwd });
-        await handleTribunal(intent.question, cb.dispatch, cb.ctx, intent.tribunalMode);
+        if (cb.eventBus) await cb.eventBus.emit('pre:tribunal', { question: intent.question, mode: intent.tribunalMode, protocol: intent.tribunalProtocol, cwd: _tCwd });
+        await handleTribunal(intent.question, cb.dispatch, cb.ctx, intent.tribunalMode, intent.tribunalProtocol);
         if (cb.eventBus) cb.eventBus.emit('post:tribunal', { question: intent.question, cwd: _tCwd }).catch(() => {});
         const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
         if (chatContext) await continueCesarAfterResult(`Tribunal concluded on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb, continuationEpoch, continuationUserTurns);

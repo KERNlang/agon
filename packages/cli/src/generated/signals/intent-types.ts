@@ -4,7 +4,7 @@
 export type Intent =
   | { type: 'forge'; task: string; fitnessCmd: string | null }
   | { type: 'brainstorm'; question: string }
-  | { type: 'tribunal'; question: string; tribunalMode?: string }
+  | { type: 'tribunal'; question: string; tribunalMode?: string; tribunalProtocol?: string }
   | { type: 'team-tribunal'; question: string; tribunalMode?: string; membersPerSide?: number }
   | { type: 'team-forge'; task: string; fitnessCmd: string | null; membersPerSide?: number }
   | { type: 'team-brainstorm'; question: string; membersPerSide?: number }

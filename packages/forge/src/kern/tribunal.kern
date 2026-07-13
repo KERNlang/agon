@@ -1,7 +1,7 @@
 import from="node:crypto" names="randomUUID"
 import from="@kernlang/agon-core" names="EngineAdapter,EngineDefinition,ForgeEvent,DispatchResult" types=true
 import from="@kernlang/agon-core" names="EngineRegistry,buildTribunalPrompt,createSidechainLogger,updateGlickoRanked,classifyTask,loadConfig,seedNewEnginesFromRegistry"
-import from="./tribunal-modes.js" names="TribunalMode,TribunalModeConfig" types=true
+import from="./tribunal-modes.js" names="TribunalMode,TribunalModeConfig,TribunalProtocol" types=true
 import from="./tribunal-modes.js" names="getModeConfig,buildModePrompt,buildModeSummaryPrompt"
 import from="./health-check.js" names="preflightHealthFilter"
 import from="./seat-dispatch.js" names="dispatchSeatWithRetry,buildPanelHealth"
@@ -22,6 +22,7 @@ interface name=TribunalResult
   field name=positions type="TribunalPosition[]"
   field name=summary type=string
   field name=mode type=string optional=true
+  field name=protocol type=TribunalProtocol optional=true
   field name=panelHealth type="{ requested: number; responded: number; degraded: boolean; notes: string[]; banner: string | null }" optional=true
 
 fn name=buildFallbackSummary params="positions:TribunalPosition[]" returns="string"
@@ -61,7 +62,7 @@ fn name=requireNonEmptyDispatchText params="result:DispatchResult, phase:string"
     });
   >>>
 
-fn name=runTribunal async=true params="opts:{question:string, engines:string[], rounds:number, mode?:TribunalMode, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, onEvent?:(event:ForgeEvent)=>void, signal?:AbortSignal}" returns="Promise<TribunalResult>"
+fn name=runTribunal async=true params="opts:{question:string, engines:string[], rounds:number, mode?:TribunalMode, protocol?:TribunalProtocol, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, onEvent?:(event:ForgeEvent)=>void, signal?:AbortSignal}" returns="Promise<TribunalResult>"
   handler <<<
     const { question, rounds, registry, adapter, timeout, outputDir } = opts;
     const signal = opts.signal;
@@ -85,6 +86,7 @@ fn name=runTribunal async=true params="opts:{question:string, engines:string[], 
     // strength rather than the 1500 default.
     seedNewEnginesFromRegistry(registry);
     const modeConfig = getModeConfig(mode, engines.length);
+    const protocol = opts.protocol ?? modeConfig.protocol;
 
     // Assign roles from mode config
     const roles = modeConfig.roles.slice(0, engines.length);
@@ -108,7 +110,7 @@ fn name=runTribunal async=true params="opts:{question:string, engines:string[], 
       sessionType: 'tribunal',
       outputDir,
     });
-    sidechain.log('tribunal:init', undefined, { question, mode, engines, rounds: effectiveRounds });
+    sidechain.log('tribunal:init', undefined, { question, mode, protocol, engines, rounds: effectiveRounds });
     const allRounds: TribunalRound[] = [];
     // One SeatOutcome per engine-round; folded into panelHealth at the end so a
     // seat that flaked (or was rescued by the auto-retry) is reported loudly.
@@ -123,7 +125,7 @@ fn name=runTribunal async=true params="opts:{question:string, engines:string[], 
       }
       opts.onEvent?.({
         type: 'synthesis:start',
-        data: { round, totalRounds: effectiveRounds, mode },
+        data: { round, totalRounds: effectiveRounds, mode, protocol },
       });
 
       const prevArgs = round > 1
@@ -132,8 +134,7 @@ fn name=runTribunal async=true params="opts:{question:string, engines:string[], 
             .join('\n\n---\n\n')
         : undefined;
 
-      // Build prompts using mode-aware prompt builder
-      const roundPromises = positions.map(async (pos) => {
+      const dispatchPosition = async (pos: TribunalPosition, currentRoundArguments?: string) => {
         const engine = registry.get(pos.engineId);
         const prompt = buildModePrompt({
           mode,
@@ -142,12 +143,13 @@ fn name=runTribunal async=true params="opts:{question:string, engines:string[], 
           round,
           totalRounds: effectiveRounds,
           previousArguments: prevArgs,
+          currentRoundArguments,
         });
 
         opts.onEvent?.({
           type: 'synthesis:critique',
           engineId: pos.engineId,
-          data: { round, position: pos.position, mode },
+          data: { round, position: pos.position, mode, protocol },
         });
 
         // One auto-retry per seat-round (shorter timeout); the engine's own
@@ -175,17 +177,25 @@ fn name=runTribunal async=true params="opts:{question:string, engines:string[], 
           return { engineId: pos.engineId, argument: '(failed to respond)' };
         }
         return { engineId: pos.engineId, argument: seat.text };
-      });
+      };
 
-      // Sequential protocol: wait for each in order
       let roundResults: { engineId: string; argument: string }[];
-      if (modeConfig.protocol === 'sequential') {
-        roundResults = [];
-        for (const promise of roundPromises) {
-          roundResults.push(await promise);
-        }
+      const runInParallel = protocol === 'parallel' || (protocol === 'hybrid' && round === 1);
+      if (runInParallel) {
+        roundResults = await Promise.all(positions.map((pos) => dispatchPosition(pos)));
       } else {
-        roundResults = await Promise.all(roundPromises);
+        roundResults = [];
+        for (const pos of positions) {
+          const currentRoundArguments = roundResults.length > 0
+            ? roundResults
+                .map((result) => {
+                  const prior = positions.find((candidate) => candidate.engineId === result.engineId);
+                  return `**${result.engineId} (${prior?.position ?? 'Participant'}):**\n${result.argument}`;
+                })
+                .join('\n\n---\n\n')
+            : undefined;
+          roundResults.push(await dispatchPosition(pos, currentRoundArguments));
+        }
       }
 
       for (const result of roundResults) {
@@ -221,6 +231,7 @@ fn name=runTribunal async=true params="opts:{question:string, engines:string[], 
         mode: 'exec',
         timeout,
         outputDir,
+        signal,
       });
       summary = requireNonEmptyDispatchText(summaryResult, 'tribunal summary');
     } catch (err) {
@@ -243,13 +254,14 @@ fn name=runTribunal async=true params="opts:{question:string, engines:string[], 
       rounds: allRounds.length,
       engines: engines.length,
       mode,
+      protocol,
       summaryLength: summary.length,
       panelHealth,
     });
 
     opts.onEvent?.({
       type: 'forge:done',
-      data: { rounds: allRounds.length, engines: engines.length, mode },
+      data: { rounds: allRounds.length, engines: engines.length, mode, protocol },
     });
 
     // Update Glicko-2 ratings — score by per-round substantive credit (not raw length)
@@ -273,5 +285,5 @@ fn name=runTribunal async=true params="opts:{question:string, engines:string[], 
       }
     }
 
-    return { question, rounds: allRounds, positions, summary, mode, panelHealth };
+    return { question, rounds: allRounds, positions, summary, mode, protocol, panelHealth };
   >>>

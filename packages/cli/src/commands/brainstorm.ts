@@ -4,7 +4,7 @@ import {
   createRunDir, writeRunStatus, printRunSummary,
 } from '@kernlang/agon-core';
 import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
-import type { BrainstormBid } from '@kernlang/agon-core';
+import type { BrainstormBid, BrainstormResult } from '@kernlang/agon-core';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { runBrainstorm } from '@kernlang/agon-forge';
 import { header, info, warn, table, bold, green } from '../output.js';
@@ -66,14 +66,47 @@ export const brainstormCommand = defineCommand({
       info(`Engines: ${available.join(', ')}`);
     }
 
-    const result = await runBrainstorm({
-      question: args.question,
-      engines: available,
-      registry,
-      adapter,
-      timeout: parseInt(args.timeout, 10),
-      outputDir,
-    });
+    const seatState = new Map<string, { ok: boolean; detail: string }>();
+    let result: BrainstormResult;
+    try {
+      result = await runBrainstorm({
+        question: args.question,
+        engines: available,
+        registry,
+        adapter,
+        timeout: parseInt(args.timeout, 10),
+        outputDir,
+        onEvent: (event) => {
+          const data = event.data as Record<string, unknown> | undefined;
+          if (event.type === 'brainstorm:seat-completed' && typeof data?.engineId === 'string') {
+            const ok = data.ok === true;
+            const detail = ok
+              ? `${Number(data.attempts ?? 1)} attempt(s)`
+              : String(data.detail ?? data.failure ?? 'no usable response');
+            seatState.set(data.engineId, { ok, detail });
+            if (!quiet) info(`${ok ? icons().success : icons().fail} ${data.engineId}: ${detail}`);
+          }
+        },
+      });
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      const failedStatus = {
+        mode: 'brainstorm',
+        label: args.label,
+        startedAt,
+        endedAt: new Date().toISOString(),
+        engines: available.map((id: string) => ({
+          id,
+          status: 'error' as const,
+          detail: seatState.get(id)?.detail ?? detail,
+        })),
+        summary: detail,
+        ok: false,
+      };
+      writeRunStatus(outputDir, failedStatus);
+      printRunSummary(failedStatus);
+      throw err;
+    }
 
     // Authoritative outcome record. A bid entry counts as 'ok' (engine
     // participated with a confidence); missing engines collapse to 'error'.
@@ -92,7 +125,9 @@ export const brainstormCommand = defineCommand({
       startedAt,
       endedAt: new Date().toISOString(),
       engines: engineStatuses,
-      summary: `${okCount}/${available.length} bid; winner=${result.winner}${result.panelHealth?.banner ? `; ${result.panelHealth.banner}` : ''}`,
+      summary: `${okCount}/${available.length} bid; winner=${result.winner}; synthesis=${result.synthesis?.status ?? 'unknown'}; dedup=${result.dedup?.status ?? 'unknown'}${result.panelHealth?.banner ? `; ${result.panelHealth.banner}` : ''}`,
+      // Synthesis fallback still returns the ranked winning draft. Panel
+      // participation determines success; synthesis status carries degradation.
       ok: okCount === available.length,
     };
     writeRunStatus(outputDir, status);
@@ -107,6 +142,12 @@ export const brainstormCommand = defineCommand({
     if (result.panelHealth?.banner) {
       console.log('');
       warn(result.panelHealth.banner);
+    }
+    if (result.dedup && !['applied', 'not-needed'].includes(result.dedup.status)) {
+      warn(`Dedup ${result.dedup.status}${result.dedup.detail ? `: ${result.dedup.detail}` : ''}`);
+    }
+    if (result.synthesis?.status === 'fallback') {
+      warn(`Synthesis fallback: ${result.synthesis.detail ?? 'winner expansion failed; showing ranked drafts'}`);
     }
 
     console.log('');

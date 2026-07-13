@@ -4,22 +4,33 @@
 export type TribunalMode = 'adversarial' | 'socratic' | 'red-team' | 'steelman' | 'synthesis' | 'postmortem';
 
 // @kern-source: tribunal-modes:3
+export type TribunalProtocol = 'parallel' | 'chained' | 'hybrid';
+
+// @kern-source: tribunal-modes:5
 export interface TribunalModeConfig {
   roles: string[];
-  protocol: 'parallel'|'sequential';
+  protocol: TribunalProtocol;
   summaryStyle: 'verdict'|'questions'|'risk-register'|'decision-matrix'|'postmortem-report';
   maxRounds: number;
 }
 
-// @kern-source: tribunal-modes:9
+// @kern-source: tribunal-modes:11
 export const TRIBUNAL_MODES: TribunalMode[] = ['adversarial', 'socratic', 'red-team', 'steelman', 'synthesis', 'postmortem'];
 
-// @kern-source: tribunal-modes:11
+// @kern-source: tribunal-modes:13
+export const TRIBUNAL_PROTOCOLS: TribunalProtocol[] = ['parallel', 'chained', 'hybrid'];
+
+// @kern-source: tribunal-modes:15
 export function isTribunalMode(s: string): s is TribunalMode {
   return TRIBUNAL_MODES.includes(s as TribunalMode);
 }
 
-// @kern-source: tribunal-modes:13
+// @kern-source: tribunal-modes:17
+export function isTribunalProtocol(s: string): s is TribunalProtocol {
+  return TRIBUNAL_PROTOCOLS.includes(s as TribunalProtocol);
+}
+
+// @kern-source: tribunal-modes:19
 export function getModeConfig(mode: TribunalMode, engineCount: number): TribunalModeConfig {
   switch (mode) {
     case 'adversarial': {
@@ -28,14 +39,14 @@ export function getModeConfig(mode: TribunalMode, engineCount: number): Tribunal
         : engineCount === 2
           ? ['Argue FOR', 'Argue AGAINST']
           : ['Argue FOR', 'Argue AGAINST', "Play devil's advocate", ...Array.from({ length: Math.max(0, engineCount - 3) }, (_, i) => `Perspective ${i + 4}: Find unconventional angles`)];
-      return { roles, protocol: 'parallel', summaryStyle: 'verdict', maxRounds: 3 };
+      return { roles, protocol: 'hybrid', summaryStyle: 'verdict', maxRounds: 3 };
     }
     case 'socratic':
       return {
         roles: engineCount >= 3
           ? ['Questioner', 'Responder', ...Array.from({ length: engineCount - 2 }, () => 'Observer')]
           : ['Questioner', 'Responder'],
-        protocol: 'sequential',
+        protocol: 'chained',
         summaryStyle: 'questions',
         maxRounds: 3,
       };
@@ -44,7 +55,7 @@ export function getModeConfig(mode: TribunalMode, engineCount: number): Tribunal
         roles: engineCount >= 2
           ? ['Defender', ...Array.from({ length: engineCount - 1 }, (_, i) => `Attacker ${i + 1}`)]
           : ['Defender'],
-        protocol: 'parallel',
+        protocol: 'hybrid',
         summaryStyle: 'risk-register',
         maxRounds: 2,
       };
@@ -53,7 +64,7 @@ export function getModeConfig(mode: TribunalMode, engineCount: number): Tribunal
         roles: engineCount >= 3
           ? ['Advocate', 'Steelman opponent', 'Judge']
           : ['Advocate', 'Steelman opponent'],
-        protocol: 'sequential',
+        protocol: 'chained',
         summaryStyle: 'verdict',
         maxRounds: 2,
       };
@@ -71,7 +82,7 @@ export function getModeConfig(mode: TribunalMode, engineCount: number): Tribunal
         roles: engineCount >= 3
           ? ['Timeline analyst', 'Root-cause investigator', 'Prevention designer']
           : ['Investigator', 'Prevention designer'],
-        protocol: 'sequential',
+        protocol: 'chained',
         summaryStyle: 'postmortem-report',
         maxRounds: 2,
       };
@@ -80,9 +91,9 @@ export function getModeConfig(mode: TribunalMode, engineCount: number): Tribunal
   }
 }
 
-// @kern-source: tribunal-modes:74
-export function buildModePrompt(opts: {mode:TribunalMode,role:string,question:string,round:number,totalRounds:number,previousArguments?:string}): string {
-  const { mode, role, question, round, totalRounds, previousArguments } = opts;
+// @kern-source: tribunal-modes:80
+export function buildModePrompt(opts: {mode:TribunalMode,role:string,question:string,round:number,totalRounds:number,previousArguments?:string,currentRoundArguments?:string}): string {
+  const { mode, role, question, round, totalRounds, previousArguments, currentRoundArguments } = opts;
   const parts: string[] = [];
 
   parts.push(`## ROLE\nYou are: **${role}**`);
@@ -91,6 +102,10 @@ export function buildModePrompt(opts: {mode:TribunalMode,role:string,question:st
 
   if (previousArguments) {
     parts.push(`## PREVIOUS ARGUMENTS\n${previousArguments}`);
+  }
+
+  if (currentRoundArguments) {
+    parts.push(`## EARLIER ARGUMENTS THIS ROUND\n${currentRoundArguments}`);
   }
 
   switch (mode) {
@@ -143,7 +158,7 @@ export function buildModePrompt(opts: {mode:TribunalMode,role:string,question:st
   return parts.join('\n\n');
 }
 
-// @kern-source: tribunal-modes:137
+// @kern-source: tribunal-modes:147
 export function buildModeSummaryPrompt(opts: {mode:TribunalMode,question:string,positions:{engineId:string,position:string,arguments:string[]}[]}): string {
   const { mode, question, positions } = opts;
   const debateText = positions

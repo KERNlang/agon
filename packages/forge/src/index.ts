@@ -20,8 +20,8 @@ export { runLint, runStyleCheck } from './quality.js';
 export { writeManifest, readManifest, updateManifest } from './manifest.js';
 export type { StageResult, SynthesisResult, ForgeEventCallback, WorktreeEntry } from './types.js';
 export type { TribunalResult, TribunalRound, TribunalPosition } from './tribunal.js';
-export { getModeConfig, buildModePrompt, buildModeSummaryPrompt, isTribunalMode, TRIBUNAL_MODES } from './tribunal-modes.js';
-export type { TribunalMode, TribunalModeConfig } from './tribunal-modes.js';
+export { getModeConfig, buildModePrompt, buildModeSummaryPrompt, isTribunalMode, isTribunalProtocol, TRIBUNAL_MODES, TRIBUNAL_PROTOCOLS } from './tribunal-modes.js';
+export type { TribunalMode, TribunalModeConfig, TribunalProtocol } from './tribunal-modes.js';
 // ── Gauntlet ──
 export { runGauntlet } from './generated/gauntlet.js';
 export { addToCorpus, getCorpusForReplay, getGapPatterns, getCorpusStats, loadCorpus } from './generated/corpus.js';
@@ -68,11 +68,11 @@ export type { OracleHole } from './generated/goal/oracle-redteam.js';
 // ── Conquer (supervised-autonomous build) ──
 export {
   pickEscalationMode, classifyStuck, shouldEscalate, shouldAutoApprove, summarizeConsultForBuilder,
-  capBreached, parseBuilderSignals, classifyAsk, buildConquerSystemPrompt,
+  capBreached, parseBuilderSignals, classifyAsk, buildConquerSystemPrompt, buildConquerTurnPrompt, createConquerIsolation,
   dispatchConsult, doneOracleDecision, runDoneOracle, runConquer,
   isAgentCapableEngine, buildFalsifierPrompt, parseFalsifierOutput, isSafeCounterexample, runDoneFalsifier,
   ESCAPING_OPS, DONE_SENTINEL, ASK_SENTINEL,
 } from './conquer.js';
-export type { StuckSignals, ConquerCaps, ConquerState, ConquerTurn, ConquerOptions, ConquerResult, DoneOracleInput, SandboxOps, FalsifierResult } from './conquer.js';
+export type { StuckSignals, ConquerCaps, ConquerState, ConquerTurn, ConquerOptions, ConquerResult, ConquerIsolation, DoneOracleInput, SandboxOps, FalsifierResult } from './conquer.js';
 export { dispatchSeatWithRetry, buildPanelHealth, classifySeatFailure } from './generated/seat-dispatch.js';
 export type { SeatOutcome } from './generated/seat-dispatch.js';

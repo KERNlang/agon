@@ -1,6 +1,8 @@
 interface name=BrainstormResultData export=true
   field name=bids type="{ engineId: string; reasoning: string; approach?: string; score?: number }[]"
   field name=response type=string
+  field name=dedup type="{ status: string; detail?: string }" optional=true
+  field name=synthesis type="{ status: string; detail?: string }" optional=true
 
 interface name=CampfireResultData export=true
   field name=rounds type="{ engineId: string; content: string }[]"
@@ -8,6 +10,7 @@ interface name=CampfireResultData export=true
 interface name=TribunalResultData export=true
   field name=rounds type="{ round: number; engineId: string; position: string; argument: string }[]"
   field name=verdict type=string
+  field name=protocol type="'parallel' | 'chained' | 'hybrid'" optional=true
 
 interface name=ForgeResultData export=true
   field name=scoreboard type="{ engineId: string; pass: boolean; score: number; diffLines: number; filesChanged: number; durationSec: number }[]"

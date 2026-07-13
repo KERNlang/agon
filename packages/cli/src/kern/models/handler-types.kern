@@ -304,6 +304,7 @@ interface name=PendingDelegation
 type name=CesarLiveMode values="self|self-nero|delegate|forge|forge-slice|team-forge|brainstorm|team-brainstorm|campfire|tribunal|team-tribunal|pipeline|goal|conquer|review|agent|team-agent|plan"
 
 interface name=CesarTurnOutcome
+  field name=turnId type=string optional=true
   field name=mode type=CesarLiveMode optional=true
   field name=delegated type=boolean
   field name=responded type=boolean
@@ -330,6 +331,20 @@ interface name=CesarTurnOutcome
   field name=budget type=number optional=true
   field name=deterministicFailure type=boolean optional=true
   field name=awaitingUserInput type=boolean optional=true
+  field name=cesarEngineId type=string optional=true
+  field name=cesarBackend type=string optional=true
+  field name=hasNativeTools type=boolean optional=true
+  field name=toolCount type=number optional=true
+  field name=toolEventCount type=number optional=true
+  field name=toolCallTurns type=number optional=true
+  field name=toolsUsed type="string[]" optional=true
+  field name=nativeToolCalls type=number optional=true
+  field name=mcpToolCalls type=number optional=true
+  field name=xmlToolCalls type=number optional=true
+  field name=narratedToolStalls type=number optional=true
+  field name=autoToolExecutions type=number optional=true
+  field name=confidenceToolUsed type=boolean optional=true
+  field name=liveTodosEmitted type=boolean optional=true
 
 interface name=CesarState
   field name=busy type=boolean

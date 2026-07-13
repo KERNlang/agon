@@ -1124,7 +1124,46 @@ describe('Forge E2E', () => {
 
       expect(result.winner).toBe('solid');
       expect(result.response).toBe('synthesized answer');
-      expect(result.bids.find((b) => b.engineId === 'empty')?.confidence).toBe(0);
+      expect(result.bids.find((b) => b.engineId === 'empty')).toBeUndefined();
+      expect(result.panelHealth).toMatchObject({ requested: 2, responded: 1, degraded: true });
+    } finally {
+      cleanupTestAgonHome(agonHome);
+      rmSync(outputDir, { recursive: true, force: true });
+    }
+  });
+
+  it('fails honestly when every brainstorm seat is unusable', async () => {
+    const agonHome = setupTestAgonHome('brainstorm-all-failed');
+    const outputDir = join(tmpdir(), `agon-brainstorm-all-failed-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(outputDir, { recursive: true });
+    let calls = 0;
+
+    const adapter: EngineAdapter = {
+      dispatch: async (): Promise<DispatchResult> => {
+        calls++;
+        return { exitCode: 0, stdout: '', stderr: '', durationMs: 1, timedOut: false };
+      },
+      isAvailable: async () => true,
+      getVersion: async () => 'test',
+    };
+
+    try {
+      vi.resetModules();
+      const { EngineRegistry } = await import('../../packages/core/src/index.js');
+      const { runBrainstorm } = await import('../../packages/forge/src/index.js');
+      const registry = new EngineRegistry();
+      registry.register(makeEngine('empty-a'));
+      registry.register(makeEngine('empty-b'));
+
+      await expect(runBrainstorm({
+        question: 'How should jobs run?',
+        engines: ['empty-a', 'empty-b'],
+        registry,
+        adapter,
+        timeout: 1,
+        outputDir,
+      })).rejects.toThrow('no engine produced a usable draft');
+      expect(calls).toBe(4);
     } finally {
       cleanupTestAgonHome(agonHome);
       rmSync(outputDir, { recursive: true, force: true });

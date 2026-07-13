@@ -33,12 +33,16 @@ export interface CesarToolReliability {
   reason: string;
 }
 
-/**
- * Read recent Cesar decision records from ~/.agon/runs/cesar-decisions.jsonl. Tail-reads bounded windows when limit is set so long-running sessions do not parse the whole log every turn.
- */
 // @kern-source: reliability:29
-export function readCesarDecisionRecords(limit?: number): any[] {
-  const reportPath = join(RUNS_DIR, 'cesar-decisions.jsonl');
+export interface CesarLatencySummary {
+  count: number;
+  p50Ms: number;
+  meanMs: number;
+  maxMs: number;
+}
+
+// @kern-source: reliability:35
+function readCesarJsonlPath(reportPath: string, limit?: number): any[] {
   if (!existsSync(reportPath)) return [];
   let raw = '';
   try {
@@ -76,9 +80,92 @@ export function readCesarDecisionRecords(limit?: number): any[] {
 }
 
 /**
+ * Merge route-decision and brain-attempt telemetry. Current records join by stable turnId; historical records without one use the former near-time heuristic. Routing fields and attempt duration/tokens are both retained without collapsing distinct retries or repeated prompts.
+ */
+// @kern-source: reliability:73
+export function mergeCesarTelemetryRecords(records: any[]): any[] {
+  const timestamp = (record: any): number => {
+    const value = Date.parse(String(record?.ts ?? ''));
+    return Number.isFinite(value) ? value : Number(record?.timestamp ?? 0) || 0;
+  };
+  const source = (record: any): string => String(record?.__source ?? 'unknown');
+  const stableTurnId = (record: any): string => String(record?.turnId ?? '').trim();
+  const heuristicTurnKey = (record: any): string => [
+    String(record?.mode ?? 'unknown'),
+    String(record?.inputLen ?? 'unknown'),
+  ].join('|');
+
+  const ordered = records.slice().sort((a, b) => timestamp(a) - timestamp(b));
+  const merged: any[] = [];
+  const stableIndex = new Map<string, number>();
+  for (const record of ordered) {
+    let match = -1;
+    const recordTurnId = stableTurnId(record);
+    if (recordTurnId) {
+      const indexed = stableIndex.get(recordTurnId);
+      if (indexed !== undefined && source(merged[indexed]) !== source(record)) match = indexed;
+    } else {
+      for (let i = merged.length - 1; i >= 0; i--) {
+        const candidate = merged[i];
+        const deltaMs = timestamp(record) - timestamp(candidate);
+        if (deltaMs > 5_000) break;
+        const legacyMatch = !stableTurnId(candidate)
+          && heuristicTurnKey(candidate) === heuristicTurnKey(record);
+        if (source(candidate) !== source(record) && legacyMatch) {
+          match = i;
+          break;
+        }
+      }
+    }
+    if (match < 0) {
+      merged.push({ ...record });
+      if (recordTurnId && !stableIndex.has(recordTurnId)) stableIndex.set(recordTurnId, merged.length - 1);
+      continue;
+    }
+    const prior = merged[match];
+    merged[match] = {
+      ...prior,
+      ...record,
+      durationMs: record.durationMs ?? prior.durationMs,
+      responseLen: record.responseLen ?? prior.responseLen,
+      tokens: record.tokens ?? prior.tokens,
+      __source: `${source(prior)}+${source(record)}`,
+    };
+    if (recordTurnId) stableIndex.set(recordTurnId, match);
+  }
+  return merged.map(({ __source, ...record }) => record);
+}
+
+// @kern-source: reliability:128
+export function summarizeCesarLatency(records: any[]): CesarLatencySummary {
+  const durations = records
+    .map((record: any) => Number(record?.durationMs))
+    .filter((duration: number) => Number.isFinite(duration) && duration >= 0)
+    .sort((a: number, b: number) => a - b);
+  if (durations.length === 0) return { count: 0, p50Ms: 0, meanMs: 0, maxMs: 0 };
+  const p50Ms = durations[Math.floor((durations.length - 1) * 0.5)];
+  const meanMs = Math.round(durations.reduce((sum: number, duration: number) => sum + duration, 0) / durations.length);
+  return { count: durations.length, p50Ms, meanMs, maxMs: durations[durations.length - 1] };
+}
+
+/**
+ * Read the unified Cesar decision stream. New turns live in cesar-decisions.jsonl; legacy cesar-trace.jsonl records are merged and de-duplicated for backward-compatible reports.
+ */
+// @kern-source: reliability:140
+export function readCesarDecisionRecords(limit?: number): any[] {
+  const perFileLimit = typeof limit === 'number' && limit > 0 ? limit : undefined;
+  const decisions = readCesarJsonlPath(join(RUNS_DIR, 'cesar-decisions.jsonl'), perFileLimit)
+    .map((record: any) => ({ ...record, __source: 'decisions' }));
+  const legacy = readCesarJsonlPath(join(RUNS_DIR, 'cesar-trace.jsonl'), perFileLimit)
+    .map((record: any) => ({ ...record, __source: 'trace' }));
+  const merged = mergeCesarTelemetryRecords([...legacy, ...decisions]);
+  return typeof limit === 'number' && limit > 0 ? merged.slice(-limit) : merged;
+}
+
+/**
  * Classify whether a Cesar decision record represents a turn where real tools would normally be expected.
  */
-// @kern-source: reliability:69
+// @kern-source: reliability:152
 export function isToolHeavyCesarRecord(record: any): boolean {
   const flow = String(record?.recommendedFlow ?? record?.flow ?? '').toLowerCase();
   const intake = String(record?.intakeKind ?? '').toLowerCase();
@@ -86,7 +173,7 @@ export function isToolHeavyCesarRecord(record: any): boolean {
   return ['quick-fix', 'bug-fix', 'plan-first', 'forge-slice', 'forge-full', 'review'].includes(flow) || ['quick-fix', 'bug', 'feature', 'big-feature', 'review'].includes(intake) || ['bugfix', 'feature', 'refactor'].includes(taskClass);
 }
 
-// @kern-source: reliability:77
+// @kern-source: reliability:160
 export function emptyCesarToolReliability(engineId?: string, backend?: string): CesarToolReliability {
   return { engineId: String(engineId ?? 'all'), backend: String(backend ?? 'all'), turns: 0, toolTurns: 0, toolTurnRate: 0, toolHeavyTurns: 0, toolHeavyToolTurns: 0, toolHeavyToolRate: 0, avgTools: 0, nativeToolCalls: 0, mcpToolCalls: 0, xmlToolCalls: 0, narratedToolStalls: 0, stallRate: 0, autoToolExecutions: 0, confidenceToolTurns: 0, confidenceToolRate: 0, topTools: '-', label: 'calibrating', reason: 'No Cesar decision records yet.' };
 }
@@ -94,7 +181,7 @@ export function emptyCesarToolReliability(engineId?: string, backend?: string): 
 /**
  * Summarize observed Cesar tool reliability for one engine/backend from decision records.
  */
-// @kern-source: reliability:81
+// @kern-source: reliability:164
 export function summarizeCesarToolReliability(records: any[], engineId?: string, backend?: string): CesarToolReliability {
   const targetEngine = String(engineId ?? '').trim();
   const targetBackend = String(backend ?? '').trim();
@@ -215,7 +302,7 @@ export function summarizeCesarToolReliability(records: any[], engineId?: string,
 /**
  * Read and summarize recent Cesar tool reliability, falling back from exact backend to any backend for the same engine.
  */
-// @kern-source: reliability:200
+// @kern-source: reliability:283
 export function readCesarToolReliability(engineId?: string, backend?: string, limit?: number): CesarToolReliability {
   const records = readCesarDecisionRecords(limit ?? 200);
   let summary = summarizeCesarToolReliability(records, engineId, backend);
@@ -228,7 +315,7 @@ export function readCesarToolReliability(engineId?: string, backend?: string, li
 /**
  * Summarize recent Cesar tool reliability for every observed engine/backend pair.
  */
-// @kern-source: reliability:209
+// @kern-source: reliability:292
 export function summarizeAllCesarToolReliability(limit?: number): CesarToolReliability[] {
   const records = readCesarDecisionRecords(limit ?? 200);
   const pairs = new Map<string, { engineId: string; backend: string }>();
@@ -242,7 +329,7 @@ export function summarizeAllCesarToolReliability(limit?: number): CesarToolRelia
     .sort((a, b) => b.turns - a.turns || a.engineId.localeCompare(b.engineId));
 }
 
-// @kern-source: reliability:224
+// @kern-source: reliability:307
 export function formatCesarReliabilityLine(summary: CesarToolReliability): string {
   if (!summary || summary.turns <= 0) {
     const engine = summary?.engineId ?? 'all';
@@ -257,7 +344,7 @@ export function formatCesarReliabilityLine(summary: CesarToolReliability): strin
 /**
  * Return true when Cesar should bias away from self-tooling and toward plan/orchestration for this turn.
  */
-// @kern-source: reliability:234
+// @kern-source: reliability:317
 export function shouldDowngradeCesarToolWork(summary: CesarToolReliability, intakeKind?: string, recommendedFlow?: string): boolean {
   const intake = String(intakeKind ?? '').toLowerCase();
   const flow = String(recommendedFlow ?? '').toLowerCase();
@@ -274,7 +361,7 @@ export function shouldDowngradeCesarToolWork(summary: CesarToolReliability, inta
 /**
  * Build a compact visible summary of the actual tools Cesar used this turn.
  */
-// @kern-source: reliability:246
+// @kern-source: reliability:329
 export function buildWhatHappenedSummary(telemetry: Record<string,unknown>): string {
   const toolCount = Number(telemetry?.toolCount ?? 0) || 0;
   const eventCount = Number(telemetry?.toolEventCount ?? 0) || 0;

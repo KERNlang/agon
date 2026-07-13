@@ -415,19 +415,13 @@ export function buildRoutingContext(input: string, ctx: HandlerContext, consume?
     parts.push(`RATIONALE: ${formatModeRationale(rationale)}`);
   } catch { /* rationale is advisory */ }
 
-  // ── Mode Rationale line (compact, human-readable) ──
-  try {
-    const rationale = buildModeRationale(hints, { confidence: undefined, engines: activeEngines, costUsd: hints.estimatedStepCost?.costUsd });
-    parts.push(`RATIONALE: ${formatModeRationale(rationale)}`);
-  } catch { /* rationale is advisory */ }
-
   return parts.join('\n');
 }
 
 /**
  * Pure, zero-LLM-cost classification: should this /agent request run as a team (parallel engines) rather than solo? Returns true when the task pattern suggests cross-module fan-out AND at least 2 API engines are available. Based on the same FANOUT_RE/scopeDirSpread signals that buildRoutingContext includes in the Cesar prompt — but exported so dispatch can use them without a full brain call.
  */
-// @kern-source: routing:402
+// @kern-source: routing:396
 export function shouldUseAgentTeam(input: string, ctx: HandlerContext): boolean {
   // Need at least 2 active engines for team mode to make sense.
   const available = ctx.activeEngines();
@@ -441,7 +435,7 @@ export function shouldUseAgentTeam(input: string, ctx: HandlerContext): boolean 
 /**
  * Cost-aware speculation gate. Returns true only when: (1) estimated step cost exceeds speculativeThresholdUsd, (2) uncertainty is not 'none', (3) ELO spread between top engines is below speculativeEloSpreadThreshold. Prevents wasteful scout+parallel runs on cheap, sure, or lopsided tasks.
  */
-// @kern-source: routing:412
+// @kern-source: routing:406
 export function shouldSpeculate(hints: CesarRoutingHints, config: Required<AgonConfig>): boolean {
   const threshold = (config as any).speculativeThresholdUsd ?? 0.50;
   const eloThreshold = (config as any).speculativeEloSpreadThreshold ?? 15;

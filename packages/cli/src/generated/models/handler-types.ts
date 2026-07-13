@@ -118,6 +118,7 @@ export type CesarLiveMode = 'self' | 'self-nero' | 'delegate' | 'forge' | 'forge
 
 // @kern-source: handler-types:306
 export interface CesarTurnOutcome {
+  turnId?: string;
   mode?: CesarLiveMode;
   delegated: boolean;
   responded: boolean;
@@ -144,9 +145,23 @@ export interface CesarTurnOutcome {
   budget?: number;
   deterministicFailure?: boolean;
   awaitingUserInput?: boolean;
+  cesarEngineId?: string;
+  cesarBackend?: string;
+  hasNativeTools?: boolean;
+  toolCount?: number;
+  toolEventCount?: number;
+  toolCallTurns?: number;
+  toolsUsed?: string[];
+  nativeToolCalls?: number;
+  mcpToolCalls?: number;
+  xmlToolCalls?: number;
+  narratedToolStalls?: number;
+  autoToolExecutions?: number;
+  confidenceToolUsed?: boolean;
+  liveTodosEmitted?: boolean;
 }
 
-// @kern-source: handler-types:334
+// @kern-source: handler-types:349
 export interface CesarState {
   busy: boolean;
   busySince: number | null;
@@ -180,7 +195,7 @@ export interface CesarState {
   gateNudgedClaim?: string | undefined;
 }
 
-// @kern-source: handler-types:366
+// @kern-source: handler-types:381
 export interface HandlerContext {
   registry: EngineRegistry;
   adapter: EngineAdapter;

@@ -6,7 +6,9 @@ import { mkdirSync } from 'node:fs';
 
 import { ensureAgonHome, RUNS_DIR, scanProjectContext, tracker, appendMessage, resolveWorkingDir } from '@kernlang/agon-core';
 
-import { runTribunal } from '@kernlang/agon-forge';
+import { runTribunal, getModeConfig, isTribunalProtocol } from '@kernlang/agon-forge';
+
+import type { TribunalMode, TribunalProtocol } from '@kernlang/agon-forge';
 
 import { sessionResultStore } from '../models/session-results.js';
 
@@ -20,8 +22,8 @@ import { recordRun, formatRunSummary } from '../../telemetry/index.js';
 
 import { filterDefaultOrchestrationEngines } from './engine-filter.js';
 
-// @kern-source: tribunal:12
-export async function handleTribunal(question: string, dispatch: Dispatch, ctx: HandlerContext, tribunalMode?: string): Promise<void> {
+// @kern-source: tribunal:13
+export async function handleTribunal(question: string, dispatch: Dispatch, ctx: HandlerContext, tribunalMode?: string, tribunalProtocol?: string): Promise<void> {
   const tribunalAbort = new AbortController();
   try {
     ensureAgonHome();
@@ -42,7 +44,15 @@ export async function handleTribunal(question: string, dispatch: Dispatch, ctx: 
     }
 
     const engines = active.slice(0, 4);
-    const mode = (tribunalMode ?? 'adversarial') as any;
+    const mode = (tribunalMode ?? 'adversarial') as TribunalMode;
+    const requestedProtocol = tribunalProtocol?.trim().toLowerCase();
+    if (requestedProtocol && requestedProtocol !== 'auto' && !isTribunalProtocol(requestedProtocol)) {
+      dispatch({ type: 'error', message: `Invalid tribunal protocol: ${requestedProtocol}. Use auto, parallel, chained, or hybrid.` });
+      return;
+    }
+    const protocol = requestedProtocol && requestedProtocol !== 'auto'
+      ? requestedProtocol as TribunalProtocol
+      : getModeConfig(mode, engines.length).protocol;
     const outputDir = join(RUNS_DIR, `tribunal-${Date.now()}`);
     mkdirSync(outputDir, { recursive: true });
 
@@ -56,6 +66,7 @@ export async function handleTribunal(question: string, dispatch: Dispatch, ctx: 
     dispatch({ type: 'header', title: `Tribunal (${mode}): ${question}` });
     dispatch({ type: 'info', message: `Engines: ${engines.join(', ')}` });
     dispatch({ type: 'info', message: `Mode: ${mode}` });
+    dispatch({ type: 'info', message: `Protocol: ${protocol}` });
     if (projectCtx) dispatch({ type: 'info', message: `Context: ${tribunalCwd}` });
 
     ctx.setActiveAbort(tribunalAbort);
@@ -63,7 +74,7 @@ export async function handleTribunal(question: string, dispatch: Dispatch, ctx: 
     // ── Scoreboard + Checkpoint ──
     const runId = `tribunal-${Date.now()}`;
     const scoreboard = createScoreboard(runId, 'tribunal', engines);
-    const preCp = buildCheckpoint(runId, 'pre-dispatch', 'tribunal', engines, { question, mode });
+    const preCp = buildCheckpoint(runId, 'pre-dispatch', 'tribunal', engines, { question, mode, protocol });
     recordCheckpoint(preCp);
 
     // Track per-engine state for progress-update
@@ -94,6 +105,7 @@ export async function handleTribunal(question: string, dispatch: Dispatch, ctx: 
         engines,
         rounds: 2,
         mode,
+        protocol,
         registry: ctx.registry,
         adapter: ctx.adapter,
         timeout: 120,
@@ -128,7 +140,7 @@ export async function handleTribunal(question: string, dispatch: Dispatch, ctx: 
       scoreboardFinishEngine(scoreboard, id, { result: engineState[id]?.status ?? 'done' });
     }
     dispatch({ type: 'info', message: renderScoreboard(scoreboard) });
-    const postCp = buildCheckpoint(runId, 'post-dispatch', 'tribunal', engines, { question, mode });
+    const postCp = buildCheckpoint(runId, 'post-dispatch', 'tribunal', engines, { question, mode, protocol });
     recordCheckpoint(postCp);
 
     // Final progress with done state
@@ -158,7 +170,7 @@ export async function handleTribunal(question: string, dispatch: Dispatch, ctx: 
     dispatch({ type: 'info', message: `Full debate saved: ${outputDir}` });
 
     // Save verdict to chat history for follow-ups
-    appendMessage(ctx.chatSession, { role: 'user', content: `[tribunal:${mode}] ${question}`, timestamp: new Date().toISOString() });
+    appendMessage(ctx.chatSession, { role: 'user', content: `[tribunal:${mode}/${protocol}] ${question}`, timestamp: new Date().toISOString() });
     appendMessage(ctx.chatSession, { role: 'engine', engineId: 'tribunal', content: result.summary, timestamp: new Date().toISOString() });
 
     sessionResultStore.add({
@@ -177,6 +189,7 @@ export async function handleTribunal(question: string, dispatch: Dispatch, ctx: 
           }))
         ),
         verdict: result.summary,
+        protocol,
       },
     });
 

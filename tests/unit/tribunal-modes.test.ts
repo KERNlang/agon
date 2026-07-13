@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { getModeConfig, buildModePrompt, buildModeSummaryPrompt, isTribunalMode, TRIBUNAL_MODES } from '@kernlang/agon-forge';
+import {
+  getModeConfig,
+  buildModePrompt,
+  buildModeSummaryPrompt,
+  isTribunalMode,
+  isTribunalProtocol,
+  TRIBUNAL_MODES,
+  TRIBUNAL_PROTOCOLS,
+} from '@kernlang/agon-forge';
 import { detectIntent } from '../../packages/cli/src/generated/signals/intent.js';
 
 describe('tribunal-modes', () => {
@@ -22,11 +30,22 @@ describe('tribunal-modes', () => {
     });
   });
 
+  describe('tribunal protocols', () => {
+    it('contains and validates every execution protocol', () => {
+      expect(TRIBUNAL_PROTOCOLS).toEqual(['parallel', 'chained', 'hybrid']);
+      for (const protocol of TRIBUNAL_PROTOCOLS) {
+        expect(isTribunalProtocol(protocol)).toBe(true);
+      }
+      expect(isTribunalProtocol('sequential')).toBe(false);
+      expect(isTribunalProtocol('auto')).toBe(false);
+    });
+  });
+
   describe('getModeConfig', () => {
     it('adversarial: FOR/AGAINST for 2 engines', () => {
       const config = getModeConfig('adversarial', 2);
       expect(config.roles).toEqual(['Argue FOR', 'Argue AGAINST']);
-      expect(config.protocol).toBe('parallel');
+      expect(config.protocol).toBe('hybrid');
       expect(config.summaryStyle).toBe('verdict');
     });
 
@@ -39,7 +58,7 @@ describe('tribunal-modes', () => {
     it('socratic: questioner + responder for 2 engines', () => {
       const config = getModeConfig('socratic', 2);
       expect(config.roles).toEqual(['Questioner', 'Responder']);
-      expect(config.protocol).toBe('sequential');
+      expect(config.protocol).toBe('chained');
       expect(config.summaryStyle).toBe('questions');
     });
 
@@ -53,18 +72,20 @@ describe('tribunal-modes', () => {
       expect(config.roles[0]).toBe('Defender');
       expect(config.roles[1]).toContain('Attacker');
       expect(config.roles[2]).toContain('Attacker');
+      expect(config.protocol).toBe('hybrid');
       expect(config.summaryStyle).toBe('risk-register');
     });
 
     it('steelman: advocate + opponent + judge for 3', () => {
       const config = getModeConfig('steelman', 3);
       expect(config.roles).toEqual(['Advocate', 'Steelman opponent', 'Judge']);
-      expect(config.protocol).toBe('sequential');
+      expect(config.protocol).toBe('chained');
     });
 
     it('synthesis: proposers for 2 engines', () => {
       const config = getModeConfig('synthesis', 2);
       expect(config.roles).toEqual(['Proposer A', 'Proposer B']);
+      expect(config.protocol).toBe('parallel');
       expect(config.summaryStyle).toBe('decision-matrix');
     });
 
@@ -73,6 +94,7 @@ describe('tribunal-modes', () => {
       expect(config.roles).toContain('Timeline analyst');
       expect(config.roles).toContain('Root-cause investigator');
       expect(config.roles).toContain('Prevention designer');
+      expect(config.protocol).toBe('chained');
       expect(config.summaryStyle).toBe('postmortem-report');
     });
   });
@@ -132,6 +154,17 @@ describe('tribunal-modes', () => {
       });
       expect(prompt).toContain('PREVIOUS ARGUMENTS');
       expect(prompt).toContain('Previous round arguments here');
+    });
+
+    it('separates earlier current-round arguments from previous rounds', () => {
+      const prompt = buildModePrompt({
+        mode: 'socratic', role: 'Responder',
+        question: 'Is auth secure?', round: 1, totalRounds: 2,
+        currentRoundArguments: 'Questioner asked about token rotation',
+      });
+      expect(prompt).toContain('EARLIER ARGUMENTS THIS ROUND');
+      expect(prompt).toContain('Questioner asked about token rotation');
+      expect(prompt).not.toContain('PREVIOUS ARGUMENTS');
     });
   });
 
@@ -209,6 +242,29 @@ describe('tribunal-modes', () => {
       const intent = detectIntent('/tribunal synthesis How should we restructure?');
       expect(intent.type).toBe('tribunal');
       expect((intent as any).tribunalMode).toBe('synthesis');
+    });
+
+    it('/tribunal accepts mode and protocol independently', () => {
+      const intent = detectIntent('/tribunal --mode red-team --protocol parallel Review the rollout');
+      expect(intent.type).toBe('tribunal');
+      expect((intent as any).tribunalMode).toBe('red-team');
+      expect((intent as any).tribunalProtocol).toBe('parallel');
+      expect(intent.question).toBe('Review the rollout');
+    });
+
+    it('/tribunal accepts a protocol override after a shorthand mode', () => {
+      const intent = detectIntent('/tribunal socratic Can this scale? --protocol chained');
+      expect(intent.type).toBe('tribunal');
+      expect((intent as any).tribunalMode).toBe('socratic');
+      expect((intent as any).tribunalProtocol).toBe('chained');
+      expect(intent.question).toBe('Can this scale?');
+    });
+
+    it('/tribunal accepts auto as the mode-specific protocol default', () => {
+      const intent = detectIntent('/tribunal --protocol auto Should defaults follow the mode?');
+      expect(intent.type).toBe('tribunal');
+      expect((intent as any).tribunalProtocol).toBe('auto');
+      expect(intent.question).toBe('Should defaults follow the mode?');
     });
   });
 });

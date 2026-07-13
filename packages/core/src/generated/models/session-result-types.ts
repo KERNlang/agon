@@ -4,27 +4,30 @@
 export interface BrainstormResultData {
   bids: { engineId: string; reasoning: string; approach?: string; score?: number }[];
   response: string;
+  dedup?: { status: string; detail?: string };
+  synthesis?: { status: string; detail?: string };
 }
 
-// @kern-source: session-result-types:5
+// @kern-source: session-result-types:7
 export interface CampfireResultData {
   rounds: { engineId: string; content: string }[];
 }
 
-// @kern-source: session-result-types:8
+// @kern-source: session-result-types:10
 export interface TribunalResultData {
   rounds: { round: number; engineId: string; position: string; argument: string }[];
   verdict: string;
+  protocol?: 'parallel' | 'chained' | 'hybrid';
 }
 
-// @kern-source: session-result-types:12
+// @kern-source: session-result-types:15
 export interface ForgeResultData {
   scoreboard: { engineId: string; pass: boolean; score: number; diffLines: number; filesChanged: number; durationSec: number }[];
   winner: string | null;
   synthesis?: { pass: boolean; score: number } | undefined;
 }
 
-// @kern-source: session-result-types:17
+// @kern-source: session-result-types:20
 export interface ThinkResultData {
   strategy: string;
   thoughtCount: number;
@@ -32,7 +35,7 @@ export interface ThinkResultData {
   openQuestions: string[];
 }
 
-// @kern-source: session-result-types:23
+// @kern-source: session-result-types:26
 export interface CouncilResultData {
   verdict: string;
   chairmanId: string;
@@ -40,14 +43,14 @@ export interface CouncilResultData {
   seats: { role: string; engineId: string }[];
 }
 
-// @kern-source: session-result-types:29
+// @kern-source: session-result-types:32
 export interface SynthesisResultData {
   winner: string | null;
   judgeReasoning: string;
   swaps: number;
 }
 
-// @kern-source: session-result-types:34
+// @kern-source: session-result-types:37
 export interface NeroResultData {
   verdict: string;
   criticId: string;
@@ -58,7 +61,7 @@ export interface NeroResultData {
 /**
  * A code review run, recorded so the full per-engine prose lives in the Ctrl+R results pager instead of flooding the transcript inline. The transcript shows only the compact consensus; reviews[] holds each engine's complete review text for on-demand viewing.
  */
-// @kern-source: session-result-types:40
+// @kern-source: session-result-types:43
 export interface ReviewResultData {
   label: string;
   consensusSummary: string;
@@ -69,7 +72,7 @@ export interface ReviewResultData {
 /**
  * A keyless web-grounded research run: Agon discovers sources via the authoritative router (npm/GitHub/MDN/IETF/Stack Overflow/Wikipedia, no API key), an engine drafts a cited answer from the fetched content, and Agon verifies the citations. citationsVerified/Total drive the trust line; the full answer + per-source list live in the results pager.
  */
-// @kern-source: session-result-types:51
+// @kern-source: session-result-types:54
 export interface ResearchResultData {
   intent: string;
   answer: string;
@@ -82,7 +85,7 @@ export interface ResearchResultData {
 /**
  * A browser-driving turn (`/chrome` / `agon chrome`): the agentic ReAct brain answered using the user's own browser through the side panel. answer is the engine's reply; pageActivity is true when page tools actually ran (the panel was attached and acted on the page), false when no page tools ran this turn — either no panel was attached, or the brain answered in text without needing one.
  */
-// @kern-source: session-result-types:60
+// @kern-source: session-result-types:63
 export interface ChromeResultData {
   task: string;
   answer: string;
@@ -90,7 +93,7 @@ export interface ChromeResultData {
   pageActivity: boolean;
 }
 
-// @kern-source: session-result-types:67
+// @kern-source: session-result-types:70
 export interface SessionResult {
   type: 'brainstorm' | 'campfire' | 'tribunal' | 'forge' | 'think' | 'council' | 'synthesis' | 'nero' | 'review' | 'research' | 'chrome';
   timestamp: string;

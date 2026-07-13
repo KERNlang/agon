@@ -22,6 +22,7 @@ module name=IntentParsing
     field name=sessionId type="string|undefined"
     field name=index type="number|undefined"
     field name=tribunalMode type="string|undefined"
+    field name=tribunalProtocol type="string|undefined"
     field name=membersPerSide type="number|undefined"
     field name=hardened type="boolean|undefined"
     field name=jobId type="string|undefined"
@@ -298,22 +299,31 @@ module name=IntentParsing
           return { type: 'brainstorm', question: rest } as Intent;
         case 'tribunal': {
           const MODES = ['adversarial', 'socratic', 'red-team', 'steelman', 'synthesis', 'postmortem'];
+          const PROTOCOLS = ['auto', 'parallel', 'chained', 'hybrid'];
           const tribunalParts = rest.split(/\s+/);
-          const firstWord = tribunalParts[0]?.toLowerCase();
-          // Check --mode flag
-          const modeIdx = tribunalParts.indexOf('--mode');
-          if (modeIdx >= 0 && tribunalParts[modeIdx + 1] && MODES.includes(tribunalParts[modeIdx + 1])) {
-            const tMode = tribunalParts[modeIdx + 1];
-            const tQuestion = [...tribunalParts.slice(0, modeIdx), ...tribunalParts.slice(modeIdx + 2)].join(' ');
-            return { type: 'tribunal', question: tQuestion, tribunalMode: tMode } as Intent;
-          }
-          // Check --<mode> flag
-          for (const m of MODES) {
-            if (firstWord === `--${m}` || firstWord === m) {
-              return { type: 'tribunal', question: tribunalParts.slice(1).join(' '), tribunalMode: m } as Intent;
+          let tMode: string | undefined;
+          let tProtocol: string | undefined;
+          const questionParts: string[] = [];
+          for (let i = 0; i < tribunalParts.length; i += 1) {
+            const token = tribunalParts[i];
+            const lower = token.toLowerCase();
+            if (lower === '--mode' && tribunalParts[i + 1] && MODES.includes(tribunalParts[i + 1].toLowerCase())) {
+              tMode = tribunalParts[i + 1].toLowerCase();
+              i += 1;
+              continue;
             }
+            if (lower === '--protocol' && tribunalParts[i + 1] && PROTOCOLS.includes(tribunalParts[i + 1].toLowerCase())) {
+              tProtocol = tribunalParts[i + 1].toLowerCase();
+              i += 1;
+              continue;
+            }
+            if (!tMode && questionParts.length === 0 && (MODES.includes(lower) || (lower.startsWith('--') && MODES.includes(lower.slice(2))))) {
+              tMode = lower.startsWith('--') ? lower.slice(2) : lower;
+              continue;
+            }
+            questionParts.push(token);
           }
-          return { type: 'tribunal', question: rest } as Intent;
+          return { type: 'tribunal', question: questionParts.join(' '), tribunalMode: tMode, tribunalProtocol: tProtocol } as Intent;
         }
         case 'team-tribunal': {
           const MODES = ['adversarial', 'socratic', 'red-team', 'steelman', 'synthesis', 'postmortem'];

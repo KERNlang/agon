@@ -390,12 +390,6 @@ fn name=buildRoutingContext params="input:string, ctx:HandlerContext, consume?:b
       parts.push(`RATIONALE: ${formatModeRationale(rationale)}`);
     } catch { /* rationale is advisory */ }
 
-    // ── Mode Rationale line (compact, human-readable) ──
-    try {
-      const rationale = buildModeRationale(hints, { confidence: undefined, engines: activeEngines, costUsd: hints.estimatedStepCost?.costUsd });
-      parts.push(`RATIONALE: ${formatModeRationale(rationale)}`);
-    } catch { /* rationale is advisory */ }
-
     return parts.join('\n');
   >>>
 

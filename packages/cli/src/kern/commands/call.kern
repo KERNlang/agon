@@ -14,6 +14,7 @@ interface name=CallCommandOptions export=true
   field name=rounds type=string optional=true
   field name=swaps type=string optional=true
   field name=tribunalMode type=string optional=true
+  field name=tribunalProtocol type=string optional=true
   field name=members type=string optional=true
   field name=cwd type=string optional=true
   field name=engineTimeout type=string optional=true
@@ -100,16 +101,25 @@ fn name=buildCallCommands params="opts:CallCommandOptions" returns="BuiltCallCom
     const engines = textFlag('--engines', opts.engines);
     const timeout = textFlag('--timeout', opts.engineTimeout);
     const tribunalMode = textFlag('--mode', opts.tribunalMode);
+    const protocolValue = opts.tribunalProtocol?.trim().toLowerCase();
+    if (protocolValue && !['auto', 'parallel', 'chained', 'hybrid'].includes(protocolValue)) {
+      throw new Error(`Invalid tribunal protocol: ${opts.tribunalProtocol}. Use auto, parallel, chained, or hybrid.`);
+    }
+    const tribunalProtocol = textFlag('--protocol', protocolValue);
     const commands: string[][] = [];
 
     if (workflow === 'tribunal' || workflow === 'team-tribunal') {
       const question = requireInput(workflow, opts.input);
       const team = opts.team || workflow === 'team-tribunal';
+      if (team && protocolValue && protocolValue !== 'auto') {
+        throw new Error('Tribunal --protocol currently applies to solo tribunal only; team-tribunal has its own team orchestration.');
+      }
       commands.push([
         team ? 'team-tribunal' : 'tribunal',
         question,
         ...textFlag('--rounds', opts.rounds),
         ...tribunalMode,
+        ...(team ? [] : tribunalProtocol),
         ...(team ? textFlag('--members', opts.members) : []),
         ...timeout,
         ...engines,
@@ -277,7 +287,7 @@ fn name=buildCallCommands params="opts:CallCommandOptions" returns="BuiltCallCom
       if (flowIssues.length > 0) throwWorkflowConformance(flowIssues, 'agon.brainstorm-forge-tribunal@v1 flow verification failed');
       commands.push(['brainstorm', task, ...timeout, ...engines]);
       commands.push(['forge', task, '--test', fitness, '--cwd', cwd, ...timeout, ...engines]);
-      commands.push(['tribunal', `Review the pipeline result for: ${task}`, '--rounds', opts.rounds?.trim() || '1', ...tribunalMode, ...timeout, ...engines]);
+      commands.push(['tribunal', `Review the pipeline result for: ${task}`, '--rounds', opts.rounds?.trim() || '1', ...tribunalMode, ...tribunalProtocol, ...timeout, ...engines]);
       return { cwd, commands, workflowMeta: { workflowId: spec.id, version: spec.version, planId: plan.logicalPlanId } };
     } else {
       throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, chrome, pipeline, review, goal, doctor, or a team-* workflow.`);
@@ -382,6 +392,10 @@ const name=callCommand type="any"
           type: 'string',
           description: 'Tribunal mode: adversarial, synthesis, steelman, socratic, red-team, postmortem',
         },
+        protocol: {
+          type: 'string',
+          description: 'Tribunal protocol: auto, parallel, chained, hybrid',
+        },
         members: {
           type: 'string',
           alias: 'm',
@@ -483,6 +497,7 @@ const name=callCommand type="any"
             rounds: args.rounds,
             swaps: args.swaps,
             tribunalMode: args.tribunalMode,
+            tribunalProtocol: args.protocol,
             members: args.members,
             cwd: args.cwd,
             engineTimeout: args.timeout,

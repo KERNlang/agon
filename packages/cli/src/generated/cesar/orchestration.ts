@@ -16,7 +16,7 @@ export function fenceSeedPlan(plan: string): string {
 }
 
 // @kern-source: orchestration:9
-export async function routeViaCesar(input: string, dispatch: Dispatch, ctx: HandlerContext, hintClass?: 'code'|'question'|'ambiguous'): Promise<RoutingDecision> {
+async function routeViaCesar(input: string, dispatch: Dispatch, ctx: HandlerContext, hintClass?: 'code'|'question'|'ambiguous'): Promise<RoutingDecision> {
   const config = ctx.config;
   const engines = ctx.activeEngines();
   const agentIds = ctx.registry.agentCapableIds(config as any);

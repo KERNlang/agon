@@ -1,8 +1,8 @@
 # KERN 4.5 Runtime Adoption
 
-**Status:** Implemented; final release gate pending  
+**Status:** Implemented; local release gate passed, final branch review/push/link pending
 **Date:** 2026-07-13  
-**Confidence:** 0.95
+**Confidence:** 0.99
 
 ## Goal
 
@@ -82,4 +82,5 @@ For every independent slice: focused tests, strict KERN compile where KERN sourc
 - `de97e346` adds non-vacuous native coverage and strict self-coverage gates. Current native coverage is 15/15 transition units (100%); current self-coverage is 676 native handlers, 73.93% classified/migratable, 620 blocked handlers, and zero parse-error files.
 - `1c21b4bf` adds the durable namespaced RAG adapter, passes all 14 published KERN 4.5 conformance cases, and adds a pure source-runner parity pilot. The repeated full-roster passes drove durability, locking, true cosine, corruption, path-confinement, and safe-default fixes; the commit-boundary review returned zero verified findings.
 - `5249cd5a` fixes the output-truth edge cases plus negative/non-finite arena crash paths. Fifty-nine focused tests pass; review `review-1783981767811-d19fas-cli-output-truth-final` returned zero verified findings.
-- Every implementation commit uses the required Agon KERN authorship and signature. Repository-wide compile, tests, build, branch review, push, and linked-binary verification remain the final release gate.
+- The repository-wide local release gate passes: all six KERN workspaces compile cleanly; native KERN tests pass 201/201 with 15/15 declared transition coverage; self-coverage reports 676 native handlers, 73.93% classified/migratable, 620 blocked handlers, and zero parse errors; TypeScript 6.0.3 is deduplicated; typecheck passes; the production build passes; and the full TypeScript suite passes 4,064 tests with one intentional skip across 270 files.
+- Every implementation commit uses the required Agon KERN authorship and signature. Final full-roster branch review, the single feature-branch push, and linked-binary verification remain the release gate.

@@ -226,10 +226,10 @@ describe('runReviewCore maxTokens resolution (Fix D)', () => {
     } as any;
   }
 
-  it('uses the engine\'s own api.maxTokens when it exceeds the 8192 default and no reviewMaxTokens is configured', async () => {
+  it('uses the engine\'s own api.maxTokens when automatic reviewMaxTokens is configured as zero', async () => {
     const record: { maxTokens?: number } = {};
     const engine = { id: 'kimi', api: { baseUrl: 'http://x', apiKeyEnv: 'K', model: 'm', maxTokens: 16384 } };
-    await runReviewCore(diff, 'label', 'kimi', ctxRecordingMaxTokens(record, engine));
+    await runReviewCore(diff, 'label', 'kimi', ctxRecordingMaxTokens(record, engine, { reviewMaxTokens: 0 }));
     expect(record.maxTokens).toBe(16384);
   });
 

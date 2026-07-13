@@ -8,7 +8,14 @@ import {
 import type { RunStatusEngine } from '@kernlang/agon-core';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
-import { resolveReviewTarget, runReviewCore, selectReviewEngines, reviewOutcome } from '../generated/handlers/review.js';
+import {
+  remainingReviewRetrySeconds,
+  resolveReviewTarget,
+  reviewOutcome,
+  runReviewCore,
+  selectReviewEngines,
+  shouldRetryReviewAttempt,
+} from '../generated/handlers/review.js';
 import { buildConsensus, formatConsensusRow } from '../generated/blocks/consensus.js';
 import { fail, header, info, warn, bold } from '../output.js';
 
@@ -223,18 +230,18 @@ export const reviewCommand = defineCommand({
           clearTimeout(timer);
         }
       };
-      // Transient flake (timeout / hard dispatch error) gets ONE retry at half
-      // the wall clock before the seat is reported failed — a 6-engine review
-      // must not quietly complete as a 4-engine committee. Parse failures are
-      // NOT retried here; they already have their own in-band repair pass.
+      // A hard dispatch error gets ONE retry only when meaningful wall-clock
+      // budget remains, and both attempts share the advertised per-engine
+      // timeout. An outer timeout consumes the whole budget and stays final;
+      // reserving retry time would prematurely abort legitimately slow engines,
+      // while retrying afterward would violate the hard limit. Parse failures
+      // use their in-band repair pass.
       let outcome = await attempt(timeoutSec);
       let retryNote = '';
-      if (outcome.kind !== 'ok') {
+      const remainingSec = remainingReviewRetrySeconds(engineStart, timeoutSec);
+      if (shouldRetryReviewAttempt(outcome.kind, remainingSec)) {
         const firstKind = outcome.kind;
-        // Half the wall clock, floored at 60s, but never LONGER than the first
-        // attempt — a sub-120s --timeout must not get a bigger retry budget.
-        const retryTimeoutSec = Math.min(timeoutSec, Math.max(60, Math.floor(timeoutSec / 2)));
-        outcome = await attempt(retryTimeoutSec);
+        outcome = await attempt(remainingSec);
         retryNote = outcome.kind === 'ok'
           ? ` (${firstKind} on first attempt → retried OK)`
           : ` (${firstKind} → retried, failed again)`;

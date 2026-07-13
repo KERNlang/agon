@@ -9,6 +9,8 @@ interface name=RagChunk
   field name=startLine type=number
   field name=endLine type=number
   field name=text type=string
+  field name=citation type="{uri?:string,locator?:string}" optional=true
+  field name=metadata type="Record<string,unknown>" optional=true
 
 interface name=RagHit
   field name=id type=string
@@ -17,6 +19,8 @@ interface name=RagHit
   field name=endLine type=number
   field name=text type=string
   field name=score type=number
+  field name=citation type="{uri?:string,locator?:string}" optional=true
+  field name=metadata type="Record<string,unknown>" optional=true
 
 interface name=RagCorpusFile
   field name=path type=string

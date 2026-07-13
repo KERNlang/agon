@@ -370,8 +370,9 @@ export type {
 } from './generated/teams/team.js';
 export { getTeamElo, updateTeamElo, predictTeamRating } from './generated/teams/team-elo.js';
 export type { TeamCompositionRating, TeamRoleRating, TeamEloRecord } from './generated/teams/team-elo.js';
-export { buildRagIndex, queryRag, collectCorpusFiles, chunkMarkdown, embedTexts, embedSidecarHint, ragDir, loadRagIndex, cosineTopK, isGrounded, formatCitedBlocks, formatCitationFootnotes, RAG_DEFAULT_TOP_K, RAG_GROUNDED_MIN_SCORE } from './rag.js';
+export { buildRagIndex, queryRag, collectCorpusFiles, chunkMarkdown, embedTexts, embedSidecarHint, ragDir, loadRagIndex, cosineTopK, isGrounded, formatCitedBlocks, formatCitationFootnotes, AgonPersistentRagVectorStore, adapterNamespaceDir, createAgonRagVectorStoreContract, RAG_DEFAULT_TOP_K, RAG_GROUNDED_MIN_SCORE } from './rag.js';
 export type { RagChunk, RagHit, RagManifest, RagIndexResult, RagQueryResult } from './rag.js';
+export { classifyRuntimePilotChange } from './generated/workflows/runtime-pilot.js';
 // ── Guard-fire telemetry (Phase 0) — pure tracker (Module A) + JSONL/counters store (Module A2) ──
 export {
   normalizeForHash, contentHashOf, tokenSetJaccard,

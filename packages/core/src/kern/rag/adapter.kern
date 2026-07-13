@@ -1,0 +1,232 @@
+import from="node:path" names="join"
+import from="node:fs" names="existsSync"
+import from="./types.js" names="RagChunk,RagManifest" types=true
+import from="./store.js" names="loadRagIndexAt,saveRagIndexAt"
+import from="../blocks/file-lock.js" names="withFileLock"
+
+const name=AGON_RAG_ADAPTER_MAX_DIMENSIONS type=number value=4096
+  doc "Default maximum embedding dimensions advertised by the adapter. Factory callers may lower it for a deployment."
+
+const name=AGON_RAG_ADAPTER_MANIFEST_VERSION type=string value={{ '1.0.0' }}
+
+fn name=adapterNamespaceDir params="root:string,namespace:string" returns=string export=true
+  doc "Traversal-safe persistent directory for one adapter namespace. base64url is injective for UTF-8 input, preventing sanitized-name collisions."
+  handler lang="typescript" reason="persistent vector-store host boundary" <<<
+    const encoded = Buffer.from(namespace, 'utf8').toString('base64url');
+    return join(root, '.agon', 'rag-adapters', encoded || 'default');
+  >>>
+
+fn name=ragChunkFromAdapterInput params="chunk:any" returns=RagChunk export=false
+  handler lang="typescript" reason="persistent vector-store host boundary" <<<
+    if (!chunk || typeof chunk.id !== 'string' || !chunk.id.trim()) throw new Error('Agon RAG adapter chunk id must be a non-empty string.');
+    if (typeof chunk.text !== 'string' || !chunk.text.trim()) throw new Error(`Agon RAG adapter chunk '${chunk.id}' text must be a non-empty string.`);
+    if (typeof chunk.source !== 'string' || !chunk.source.trim()) throw new Error(`Agon RAG adapter chunk '${chunk.id}' source must be a non-empty string.`);
+    const locator = typeof chunk.citation?.locator === 'string' ? chunk.citation.locator : '';
+    if (chunk.citation !== undefined && (!chunk.citation || typeof chunk.citation !== 'object' || Array.isArray(chunk.citation))) throw new Error(`Agon RAG adapter chunk '${chunk.id}' citation must be an object.`);
+    if (chunk.citation?.uri !== undefined && typeof chunk.citation.uri !== 'string') throw new Error(`Agon RAG adapter chunk '${chunk.id}' citation uri must be a string.`);
+    if (chunk.citation?.locator !== undefined && typeof chunk.citation.locator !== 'string') throw new Error(`Agon RAG adapter chunk '${chunk.id}' citation locator must be a string.`);
+    if (chunk.metadata !== undefined && (!chunk.metadata || typeof chunk.metadata !== 'object' || Array.isArray(chunk.metadata) || (Object.getPrototypeOf(chunk.metadata) !== Object.prototype && Object.getPrototypeOf(chunk.metadata) !== null))) throw new Error(`Agon RAG adapter chunk '${chunk.id}' metadata must be a plain object.`);
+    const lines = locator.match(/^L(\d+)(?:-(\d+))?$/);
+    const startLine = lines ? Number(lines[1]) : Number(chunk.metadata?.startLine ?? 0);
+    const endLine = lines ? Number(lines[2] ?? lines[1]) : Number(chunk.metadata?.endLine ?? startLine);
+    return {
+      id: chunk.id, source: chunk.source,
+      startLine: Number.isFinite(startLine) ? startLine : 0,
+      endLine: Number.isFinite(endLine) ? endLine : 0,
+      text: chunk.text,
+      ...(chunk.citation ? { citation: structuredClone(chunk.citation) } : {}),
+      ...(chunk.metadata ? { metadata: structuredClone(chunk.metadata) } : {}),
+    };
+  >>>
+
+class name=AgonPersistentRagVectorStore export=true
+  field name=kind type="'local-persistent'"
+  field name=metric type="'cosine'"
+  field name=fingerprint type=string
+  field name=dims type=number
+  field name=storageDir type=string private=true
+  field name=defaultTopK type=number private=true
+  field name=defaultMinScore type=number private=true
+  field name=chunks type="RagChunk[]" private=true
+  field name=matrix type=Float32Array private=true
+  field name=closed type=boolean private=true
+
+  constructor params="root:string,context:{fingerprint:string,dims:number,namespace:string},maxDimensions?:number,searchDefaults?:{topK?:number,minScore?:number}"
+    handler lang="typescript" reason="persistent vector-store host boundary" <<<
+      const limit = maxDimensions ?? AGON_RAG_ADAPTER_MAX_DIMENSIONS;
+      if (!context.fingerprint?.trim()) throw new Error('Agon RAG adapter requires an embedding fingerprint.');
+      if (!Number.isInteger(context.dims) || context.dims <= 0 || context.dims > limit) throw new Error(`Agon RAG adapter dimensions must be between 1 and ${limit}.`);
+      if (!context.namespace?.trim()) throw new Error('Agon RAG adapter requires a namespace.');
+      const defaultTopK = searchDefaults?.topK ?? 5;
+      const defaultMinScore = searchDefaults?.minScore ?? 0;
+      if (!Number.isInteger(defaultTopK) || defaultTopK <= 0) throw new Error('Agon RAG adapter default topK must be a positive integer.');
+      if (!Number.isFinite(defaultMinScore) || defaultMinScore < 0 || defaultMinScore > 1) throw new Error('Agon RAG adapter default minScore must be between 0 and 1.');
+      this.kind = 'local-persistent';
+      this.metric = 'cosine';
+      this.fingerprint = context.fingerprint;
+      this.dims = context.dims;
+      this.storageDir = adapterNamespaceDir(root, context.namespace);
+      this.defaultTopK = defaultTopK;
+      this.defaultMinScore = defaultMinScore;
+      this.closed = false;
+      this.chunks = [];
+      this.matrix = new Float32Array();
+      withFileLock(this.storageDir + '.lock', () => this.refreshFromDisk());
+    >>>
+
+  method name=assertOpen returns=void private=true
+    handler lang="typescript" reason="persistent vector-store host boundary" <<<
+      if (this.closed) throw new Error('Agon RAG adapter is closed.');
+    >>>
+
+  method name=assertCompatible params="vector:ArrayLike<number>,fingerprint?:string" returns=void private=true
+    handler lang="typescript" reason="persistent vector-store host boundary" <<<
+      this.assertOpen();
+      if ((fingerprint ?? this.fingerprint) !== this.fingerprint) throw new Error('Agon RAG adapter embedding fingerprint mismatch.');
+      if (vector.length !== this.dims) throw new Error(`Agon RAG adapter expected ${this.dims} dimensions, got ${vector.length}.`);
+      for (let index = 0; index < vector.length; index += 1) {
+        if (!Number.isFinite(vector[index])) throw new Error(`Agon RAG adapter vector contains a non-finite value at index ${index}.`);
+      }
+    >>>
+
+  method name=refreshFromDisk returns=void private=true
+    handler lang="typescript" reason="persistent vector-store host boundary" <<<
+      const existing = loadRagIndexAt(this.storageDir, 'index');
+      if (!existing && existsSync(join(this.storageDir, 'index', 'manifest.json'))) throw new Error('Agon RAG adapter persisted namespace is corrupt or structurally invalid.');
+      if (existing && (existing.manifest.model !== this.fingerprint || existing.manifest.dims !== this.dims)) throw new Error('Agon RAG adapter embedding fingerprint mismatch for persisted namespace.');
+      this.chunks = existing?.chunks ?? [];
+      this.matrix = existing?.matrix ?? new Float32Array();
+    >>>
+
+  method name=persist returns=void private=true
+    handler lang="typescript" reason="persistent vector-store host boundary" <<<
+      const manifest: RagManifest = { corpusHash: 'index', model: this.fingerprint, dims: this.dims, chunkCount: this.chunks.length, files: [], builtAt: Date.now() };
+      saveRagIndexAt(this.storageDir, manifest, this.chunks, this.matrix);
+    >>>
+
+  method name=upsertInMemory params="chunk:RagChunk,vector:Float32Array" returns=void private=true
+    handler lang="typescript" reason="persistent vector-store host boundary" <<<
+      const index = this.chunks.findIndex((entry) => entry.id === chunk.id);
+      if (index >= 0) {
+        this.chunks[index] = chunk;
+        this.matrix.set(vector, index * this.dims);
+        return;
+      }
+      this.chunks.push(chunk);
+      const expanded = new Float32Array(this.matrix.length + this.dims);
+      expanded.set(this.matrix);
+      expanded.set(vector, this.matrix.length);
+      this.matrix = expanded;
+    >>>
+
+  method name=upsert params="chunk:any,vector:Float64Array,fingerprint?:string" returns=void
+    handler lang="typescript" reason="persistent vector-store host boundary" <<<
+      this.assertCompatible(vector, fingerprint);
+      const stored = ragChunkFromAdapterInput(chunk);
+      const storedVector = Float32Array.from(vector);
+      withFileLock(this.storageDir + '.lock', () => {
+        this.refreshFromDisk();
+        this.upsertInMemory(stored, storedVector);
+        this.persist();
+      });
+    >>>
+
+  method name=upsertMany params="entries:Iterable<any>" returns=void
+    handler lang="typescript" reason="persistent vector-store host boundary" <<<
+      this.assertOpen();
+      const batch = Array.from(entries).map((entry) => {
+        this.assertCompatible(entry.vector, entry.fingerprint);
+        return { chunk: ragChunkFromAdapterInput(entry.chunk), vector: Float32Array.from(entry.vector) };
+      });
+      withFileLock(this.storageDir + '.lock', () => {
+        this.refreshFromDisk();
+        const merged = new Map<string, {chunk:RagChunk,vector:Float32Array}>();
+        for (let index = 0; index < this.chunks.length; index += 1) {
+          merged.set(this.chunks[index].id, {
+            chunk: this.chunks[index],
+            vector: this.matrix.subarray(index * this.dims, (index + 1) * this.dims),
+          });
+        }
+        for (const entry of batch) merged.set(entry.chunk.id, entry);
+        this.chunks = [];
+        this.matrix = new Float32Array(merged.size * this.dims);
+        let index = 0;
+        for (const entry of merged.values()) {
+          this.chunks.push(entry.chunk);
+          this.matrix.set(entry.vector, index * this.dims);
+          index += 1;
+        }
+        this.persist();
+      });
+    >>>
+
+  method name=search params="query:string,queryVector:Float64Array,options?:any,fingerprint?:string" returns=any
+    handler lang="typescript" reason="persistent vector-store host boundary" <<<
+      if (typeof query !== 'string') throw new Error('Agon RAG adapter query must be a string.');
+      this.assertCompatible(queryVector, fingerprint);
+      if (options?.metadataFilter) throw new Error('Agon RAG adapter metadata filters are not supported.');
+      const topK = options?.topK ?? this.defaultTopK;
+      const minScore = options?.minScore ?? this.defaultMinScore;
+      if (!Number.isInteger(topK) || topK <= 0) throw new Error('Agon RAG adapter topK must be a positive integer.');
+      if (!Number.isFinite(minScore) || minScore < 0 || minScore > 1) throw new Error('Agon RAG adapter minScore must be between 0 and 1.');
+      const scored: {chunk:RagChunk,score:number}[] = [];
+      let queryNorm = 0;
+      for (let dimension = 0; dimension < this.dims; dimension += 1) queryNorm += queryVector[dimension] * queryVector[dimension];
+      for (let row = 0; row < this.chunks.length; row += 1) {
+        let dot = 0;
+        let storedNorm = 0;
+        const offset = row * this.dims;
+        for (let dimension = 0; dimension < this.dims; dimension += 1) {
+          const queryValue = queryVector[dimension];
+          const storedValue = this.matrix[offset + dimension];
+          dot += queryValue * storedValue;
+          storedNorm += storedValue * storedValue;
+        }
+        const rawScore = queryNorm === 0 || storedNorm === 0 ? 0 : dot / (Math.sqrt(queryNorm) * Math.sqrt(storedNorm));
+        const score = Math.max(0, Math.min(1, rawScore));
+        if (score > 0 && score >= minScore) scored.push({ chunk: this.chunks[row], score });
+      }
+      scored.sort((left, right) => right.score - left.score || left.chunk.id.localeCompare(right.chunk.id));
+      return { query, chunks: scored.slice(0, topK).map(({ chunk, score }) => ({
+        id: chunk.id, text: chunk.text, score, source: chunk.source,
+        citation: chunk.citation ?? { uri: chunk.source, locator: chunk.startLine > 0 ? `L${chunk.startLine}-${chunk.endLine}` : undefined },
+        ...(chunk.metadata ? { metadata: structuredClone(chunk.metadata) } : {}),
+      })) };
+    >>>
+
+  method name=snapshot returns=any
+    handler lang="typescript" reason="persistent vector-store host boundary" <<<
+      this.assertOpen();
+      const entries = this.chunks.map((chunk, index) => ({
+        chunk: { id: chunk.id, text: chunk.text, source: chunk.source, ...(chunk.citation ? { citation: structuredClone(chunk.citation) } : {}), ...(chunk.metadata ? { metadata: structuredClone(chunk.metadata) } : {}) },
+        vector: Array.from(this.matrix.slice(index * this.dims, (index + 1) * this.dims)),
+        fingerprint: this.fingerprint,
+      })).sort((a, b) => a.chunk.id < b.chunk.id ? -1 : a.chunk.id > b.chunk.id ? 1 : 0);
+      return { version: 'kern-rag-vector-store-v1', fingerprint: this.fingerprint, dims: this.dims, metric: this.metric, entries };
+    >>>
+
+  method name=clear returns=void
+    handler lang="typescript" reason="persistent vector-store host boundary" <<<
+      this.assertOpen();
+      withFileLock(this.storageDir + '.lock', () => {
+        this.chunks = [];
+        this.matrix = new Float32Array();
+        this.persist();
+      });
+    >>>
+
+  method name=close returns=void
+    handler lang="typescript" reason="persistent vector-store host boundary" <<<
+      if (this.closed) return;
+      this.closed = true;
+    >>>
+
+fn name=createAgonRagVectorStoreContract params="root:string,maxDimensions?:number,searchDefaults?:{topK?:number,minScore?:number}" returns=any export=true
+  doc "Structural KERN 4.5 vector-store adapter contract over Agon's persistent chunk/matrix codec. The caller may pass it to KERN's conformance or external-adapter registration without this package importing the KERN harness at runtime."
+  handler lang="typescript" reason="persistent vector-store host boundary" <<<
+    const limit = maxDimensions ?? AGON_RAG_ADAPTER_MAX_DIMENSIONS;
+    return {
+      manifest: { name: 'agon-local-persistent', kind: 'vectorStore', adapterKind: 'local-persistent', version: AGON_RAG_ADAPTER_MANIFEST_VERSION, transport: 'in-process', metrics: ['cosine'], maxDimensions: limit, persistence: 'durable', capabilities: { upsert: true, upsertMany: true, search: true, snapshot: true, clear: true, namespaces: true, filters: [], maxDimensions: limit } },
+      createStore: (context: {fingerprint:string,dims:number,namespace:string}) => new AgonPersistentRagVectorStore(root, context, limit, searchDefaults),
+    };
+  >>>

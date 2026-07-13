@@ -15,22 +15,25 @@ export function compareKernSelfCoverage(report, policy) {
   const minimums = policy?.minimums ?? {};
   const maximums = policy?.maximums ?? {};
 
-  for (const field of ['nativeAuthoredPct', 'classifiedOrMigratablePct']) {
+  for (const field of ['nativeHandlers', 'classifiedOrMigratablePct']) {
     const minimum = minimums[field];
     const actual = report?.[field];
-    if (typeof minimum !== 'number') {
+    if (!Number.isFinite(minimum) || minimum < 0) {
       failures.push(`minimums.${field} must be numeric`);
-    } else if (!(typeof actual === 'number') || actual < minimum) {
+    } else if (!Number.isFinite(actual) || actual < 0 || actual < minimum) {
       failures.push(`${field} ${String(actual)} is below baseline ${minimum}`);
     }
+  }
+  if (!Number.isFinite(report?.nativeAuthoredPct) || report.nativeAuthoredPct < 0) {
+    failures.push('nativeAuthoredPct must be numeric');
   }
 
   for (const field of ['filesWithParseErrors', 'blockedHandlers']) {
     const maximum = maximums[field];
     const actual = report?.[field];
-    if (typeof maximum !== 'number') {
+    if (!Number.isFinite(maximum) || maximum < 0) {
       failures.push(`maximums.${field} must be numeric`);
-    } else if (!(typeof actual === 'number') || actual > maximum) {
+    } else if (!Number.isFinite(actual) || actual < 0 || actual > maximum) {
       failures.push(`${field} ${String(actual)} exceeds baseline ${maximum}`);
     }
   }
@@ -43,21 +46,26 @@ export function compareKernSelfCoverage(report, policy) {
       failures.push('each blocker entry must contain a string reason');
       continue;
     }
-    if (typeof entry.count !== 'number') {
+    if (!Number.isFinite(entry.count) || entry.count < 0) {
       failures.push(`blocker ${entry.reason} count must be numeric`);
       continue;
     }
     blockerCounts.set(entry.reason, (blockerCounts.get(entry.reason) ?? 0) + entry.count);
   }
   const blockerMaximums = policy?.blockerMaximums;
-  if (!blockerMaximums || typeof blockerMaximums !== 'object' || typeof blockerMaximums['foreign-missing-reason'] !== 'number') {
+  if (!blockerMaximums || typeof blockerMaximums !== 'object' || !Number.isFinite(blockerMaximums['foreign-missing-reason']) || blockerMaximums['foreign-missing-reason'] < 0) {
     failures.push('blockerMaximums.foreign-missing-reason must be numeric');
+  }
+  for (const reason of blockerCounts.keys()) {
+    if (!Object.hasOwn(blockerMaximums ?? {}, reason)) {
+      failures.push(`blocker ${reason} has no baseline ceiling`);
+    }
   }
   for (const [reason, maximum] of Object.entries(blockerMaximums ?? {})) {
     const rawActual = blockerCounts.has(reason) ? blockerCounts.get(reason) : 0;
-    if (typeof maximum !== 'number') {
+    if (!Number.isFinite(maximum) || maximum < 0) {
       failures.push(`blockerMaximums.${reason} must be numeric`);
-    } else if (typeof rawActual !== 'number') {
+    } else if (!Number.isFinite(rawActual) || rawActual < 0) {
       failures.push(`blocker ${reason} count must be numeric`);
     } else if (rawActual > maximum) {
       failures.push(`blocker ${reason} ${rawActual} exceeds baseline ${maximum}`);
@@ -111,7 +119,7 @@ function main() {
     return;
   }
 
-  console.log(`KERN self-coverage green: ${report.nativeAuthoredPct}% native · ${report.classifiedOrMigratablePct}% classified/migratable · ${report.blockedHandlers} blocked · ${report.filesWithParseErrors} parse errors`);
+  console.log(`KERN self-coverage green: ${report.nativeHandlers} native handlers (${report.nativeAuthoredPct}%) · ${report.classifiedOrMigratablePct}% classified/migratable · ${report.blockedHandlers} blocked · ${report.filesWithParseErrors} parse errors`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) main();

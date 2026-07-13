@@ -5,7 +5,7 @@
   "minimums": {
     "nativeCoverageUnits": 15,
     "nativeCoveragePct": 100,
-    "nativeAuthoredPct": 28.54,
+    "nativeHandlers": 673,
     "classifiedOrMigratablePct": 73.71
   },
   "maximums": {
@@ -13,6 +13,37 @@
     "blockedHandlers": 620
   },
   "blockerMaximums": {
-    "foreign-missing-reason": 70
+    "comments-present": 185,
+    "foreign-missing-reason": 70,
+    "var-bad-expr": 62,
+    "for-stmt": 61,
+    "ts-parse-error": 40,
+    "closure-nested-function": 27,
+    "closure-loop": 23,
+    "expr-stmt-bad-expr": 23,
+    "switch-stmt": 22,
+    "closure-try": 19,
+    "while-bad-cond": 16,
+    "unsupported-stmt-FunctionDeclaration": 10,
+    "closure-spread": 9,
+    "closure-uninitialized-decl": 6,
+    "expr-stmt-assignment": 6,
+    "closure-destructure": 4,
+    "closure-this": 4,
+    "expr-stmt-bad-assign-value": 4,
+    "return-bad-expr": 4,
+    "var-template-multiline": 4,
+    "closure-await": 3,
+    "closure-throw": 3,
+    "if-bad-cond": 3,
+    "var-multi-decl": 3,
+    "var-destructure-rest": 2,
+    "closure-incdec-value-position": 1,
+    "expr-stmt-bad-assign-target": 1,
+    "for-of-destructure": 1,
+    "return-template-escapes": 1,
+    "return-template-multiline": 1,
+    "unsupported-stmt-ClassDeclaration": 1,
+    "var-template-escapes": 1
   }
 }

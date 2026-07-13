@@ -40,6 +40,8 @@ function makeCtx() {
     registry: {
       resolveId: (id: string) => id,
       get: (id: string) => ({ id, displayName: id, review: { args: [] } }),
+      isAvailable: () => true,
+      partitionRoster: (requested: string[]) => ({ active: requested, removed: [] }),
     },
     adapter: {
       dispatch: async (opts: { engine: { id: string } }) => {
@@ -59,6 +61,7 @@ function makeCtx() {
       startedAt: new Date().toISOString(),
       messages: [],
     },
+    activeEngines: () => ['ok', 'hung'],
     setActiveAbort: () => undefined,
   };
   return { ctx, dispatchCalls };
@@ -85,7 +88,7 @@ describe('handleReviewMany hard timeout', () => {
     const { ctx, dispatchCalls } = makeCtx();
     initChatFile(agonHome, ctx.chatSession);
     const started = Date.now();
-    await handleReviewMany((event: any) => events.push(event), ctx, 'uncommitted', ['ok', 'hung']);
+    await handleReviewMany((event: any) => events.push(event), ctx, 'uncommitted');
     const elapsed = Date.now() - started;
 
     expect(dispatchCalls.sort()).toEqual(['hung', 'ok']);

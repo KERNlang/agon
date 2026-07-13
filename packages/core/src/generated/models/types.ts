@@ -351,7 +351,7 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   forgeHealthCheckApiTimeoutSec: 45,
   forgeMaxParallelApi: 2,
   forgeJudgeEngine: '',
-  reviewMaxTokens: 8192,
+  reviewMaxTokens: 0,
   reviewFileContext: true,
   ratingsEnabled: true,
   contextSummary: true,

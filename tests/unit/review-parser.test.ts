@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { afterEach } from 'vitest';
 import { join } from 'node:path';
-import { parseReviewBlocking, selectReviewEngine, summarizeReviewFindings } from '../../packages/cli/src/generated/handlers/review.js';
+import { parseReviewBlocking, selectReviewEngine, selectReviewEngines, summarizeReviewFindings } from '../../packages/cli/src/generated/handlers/review.js';
 import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 
 const SENTINEL = '<!--AGON_REVIEW_FINDINGS_v1-->';
@@ -250,12 +250,24 @@ describe('selectReviewEngine', () => {
   });
 
   function makeCtx(config: Record<string, unknown> = {}) {
+    const known = ['claude', 'codex', 'gemini'];
     return {
       config,
-      activeEngines: () => ['claude', 'codex', 'gemini'],
+      activeEngines: () => known,
       registry: {
-        get: (id: string) => ({ id, review: { args: [] } }),
+        get: (id: string) => {
+          if (!known.includes(id)) throw new Error(`unknown engine: ${id}`);
+          return { id, review: { args: [] } };
+        },
         resolveId: (id: string) => id,
+        isAvailable: () => true,
+        partitionRoster: (requested: string[], rosterConfig: Record<string, unknown>) => {
+          const removedSet = new Set((rosterConfig.removedEngines as string[] | undefined) ?? []);
+          return {
+            active: requested.filter((id) => !removedSet.has(id)),
+            removed: requested.filter((id) => removedSet.has(id)),
+          };
+        },
       },
     } as any;
   }
@@ -304,5 +316,47 @@ describe('selectReviewEngine', () => {
     const engine = selectReviewEngine('codex', makeCtx({ reviewDefaultEngine: 'claude' }));
 
     expect(engine).toBe('codex');
+  });
+
+  it('selects every active engine for the default panel', () => {
+    const engines = selectReviewEngines(undefined, makeCtx({ reviewDefaultEngine: 'claude' }));
+
+    expect(engines).toEqual(['claude', 'codex', 'gemini']);
+  });
+
+  it('includes active generic engines without a dedicated Review capability', () => {
+    const ctx = makeCtx();
+    ctx.registry.get = (id: string) => ({ id, review: id === 'codex' ? undefined : { args: [] } });
+
+    expect(selectReviewEngines(undefined, ctx)).toEqual(['claude', 'codex', 'gemini']);
+  });
+
+  it('uses an explicitly requested subset even when an engine lacks Review support', () => {
+    const ctx = makeCtx();
+    ctx.registry.get = (id: string) => ({ id, review: undefined });
+
+    expect(selectReviewEngines(['codex'], ctx)).toEqual(['codex']);
+  });
+
+  it('rejects an explicitly requested inactive reviewer', () => {
+    expect(() => selectReviewEngines(['missing'], makeCtx())).toThrow('Unknown Review engine: missing');
+  });
+
+  it('honors an explicitly requested hidden reviewer', () => {
+    const ctx = makeCtx({ hiddenEngines: ['codex'] });
+    ctx.activeEngines = () => ['claude', 'gemini'];
+
+    expect(selectReviewEngines(['codex'], ctx)).toEqual(['codex']);
+  });
+
+  it('rejects an explicitly requested removed reviewer', () => {
+    expect(() => selectReviewEngines(['codex'], makeCtx({ removedEngines: ['codex'] })))
+      .toThrow('Review engine removed by configuration: codex');
+  });
+
+  it('rejects an empty explicit reviewer list instead of expanding it', () => {
+    expect(() => selectReviewEngines([], makeCtx())).toThrow('cannot be empty');
+    expect(() => selectReviewEngines(['  '], makeCtx())).toThrow('cannot be empty');
+    expect(() => selectReviewEngines(['claude', '  ', 'codex'], makeCtx())).toThrow('cannot be empty');
   });
 });

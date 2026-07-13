@@ -254,7 +254,13 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
       ...textFlag('--engine', opts.engine),
     ]);
   } else if (workflow === 'review') {
-    commands.push(['review', opts.input?.trim() || 'uncommitted', ...timeout, ...engines]);
+    commands.push([
+      'review',
+      opts.input?.trim() || 'uncommitted',
+      ...textFlag('--engine', opts.engine),
+      ...timeout,
+      ...engines,
+    ]);
   } else if (workflow === 'goal') {
     // Autonomous controller. goal itself enforces that --gate and --queue are
     // present (and prints a clear error otherwise), so the bridge just forwards
@@ -311,12 +317,12 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
   return { cwd, commands };
 }
 
-// @kern-source: call:299
+// @kern-source: call:305
 export function writeJsonl(event: Record<string,unknown>): void {
   process.stdout.write(`${JSON.stringify({ ...event, timestamp: new Date().toISOString() })}\n`);
 }
 
-// @kern-source: call:304
+// @kern-source: call:310
 export async function runCommand(command: string, args: string[], cwd: string, jsonl: boolean, workflowMeta?: WorkflowCallMeta): Promise<number> {
   return new Promise((resolve) => {
     const startedAt = Date.now();
@@ -360,7 +366,7 @@ export async function runCommand(command: string, args: string[], cwd: string, j
   });
 }
 
-// @kern-source: call:348
+// @kern-source: call:354
 export const callCommand: any = defineCommand({
   meta: {
     name: 'call',
@@ -490,7 +496,7 @@ export const callCommand: any = defineCommand({
     },
     engine: {
       type: 'string',
-      description: 'For research/chrome: force a specific engine (research: draft the answer; chrome: per-turn engine override)',
+      description: 'For review/research/chrome: force a specific engine (review: narrow the panel; research: draft the answer; chrome: per-turn engine override)',
     },
     'auto-approve': {
       type: 'boolean',

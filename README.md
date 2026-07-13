@@ -288,12 +288,16 @@ Performs an automated, multi-engine code review of your uncommitted changes, bra
 
 ```bash
 /review HEAD~1..HEAD
-agon review commit:HEAD --engines claude,codex,agy
+agon review commit:HEAD                         # all active engines in parallel
+agon review commit:HEAD --engine claude        # explicit single-reviewer fast path
+agon review commit:HEAD --engines claude,codex # explicit subset
 agon review branch:feat-x --base main        # feat-x's commits vs main, regardless of checkout
 agon review range:main...feat-x              # fully explicit two-ref scope
 ```
 
 Diff scope is deliberate, never implicit: `--base <ref>` pins the base for `uncommitted`/`branch:` targets, and `range:BASE...TARGET` names both ends. A failed reviewer seat (timeout / hard error) is auto-retried once at half the wall clock before it's reported — and every failure is named in the run summary, never silently folded into a smaller panel. The same retry + loud `panel degraded:` banner applies to brainstorm, tribunal, and council seats.
+
+Standard Review deliberately uses the full active panel even when the legacy `reviewDefaultEngine` preference is configured. Narrowing requires `--engine` or `--engines`. Explicit subsets are strict: an unknown, unavailable, or removed engine aborts the request instead of silently changing the committee.
 
 ### Agent
 An autonomous agent loop that can operate solo or in shadow mode, automatically routed to the best engine by Cesar based on task requirements.

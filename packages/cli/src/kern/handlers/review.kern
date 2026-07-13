@@ -1,5 +1,5 @@
 // ── Review Handler — unified /review command ──────────────────────────
-// Dispatches a single engine in review mode. No plan model — review is read-only.
+// Dispatches one or more engines in review mode. No plan model — review is read-only.
 
 import from="node:child_process" names="execFileSync"
 import from="node:path" names="join,resolve,sep"
@@ -181,15 +181,12 @@ fn name=resolveReviewTarget params="target:string|undefined, cwd:string, base:st
 fn name=selectReviewEngine params="requestedEngine:string|undefined, ctx:HandlerContext" returns=string
   handler <<<
     const allActive = ctx.activeEngines();
-    const active = requestedEngine ? allActive : filterDefaultOrchestrationEngines(allActive);
 
     if (requestedEngine) {
-      const resolved = ctx.registry.resolveId(requestedEngine);
-      if (!active.includes(resolved)) {
-        throw new Error(`Engine "${requestedEngine}" is not available. Active engines: ${active.join(', ')}`);
-      }
-      return resolved;
+      return selectReviewEngines([requestedEngine], ctx)[0];
     }
+
+    const active = filterDefaultOrchestrationEngines(allActive);
 
     // Preference order: explicit review default > ranked review-capable engine.
     // Deliberately do not inherit forgeFixedStarter: starter choice is for
@@ -224,6 +221,39 @@ fn name=selectReviewEngine params="requestedEngine:string|undefined, ctx:Handler
     if (active.length > 0) return active[0];
 
     throw new Error('No engines available for review. Try /engines to check availability.');
+  >>>
+
+fn name=selectReviewEngines params="requestedEngines:string[]|undefined, ctx:HandlerContext" returns="string[]" export=true
+  doc "Select the Review panel. With no explicit list, return EVERY active engine, preserving active-engine order; Review uses generic exec prompts, so a dedicated review block is not required. An explicit list is resolved through EngineRegistry.partitionRoster: hidden engines remain usable when named, removed engines fail loudly, unknown/unavailable engines are rejected, and aliases are deduplicated. This is the standard Review contract: the full active panel runs unless the caller explicitly narrows it with --engine/--engines."
+  handler <<<
+    const allActive = ctx.activeEngines();
+    if (requestedEngines !== undefined) {
+      const raw = requestedEngines.map((id) => String(id ?? '').trim());
+      if (raw.length === 0 || raw.some((id) => !id)) {
+        throw new Error('An explicit Review engine list cannot be empty. Omit --engine/--engines to use the full active panel.');
+      }
+      const partition = ctx.registry.partitionRoster(raw, ctx.config as any);
+      if (partition.removed.length > 0) {
+        throw new Error(`Review engine${partition.removed.length === 1 ? '' : 's'} removed by configuration: ${partition.removed.join(', ')}`);
+      }
+      const explicit: string[] = [];
+      for (const id of partition.active) {
+        let engine: any;
+        try { engine = ctx.registry.get(id); }
+        catch { throw new Error(`Unknown Review engine: ${id}`); }
+        if (!ctx.registry.isAvailable(engine)) {
+          throw new Error(`Review engine is not available: ${id}`);
+        }
+        if (!explicit.includes(id)) explicit.push(id);
+      }
+      if (explicit.length === 0) {
+        throw new Error('No usable engines remained in the explicit Review panel.');
+      }
+      return explicit;
+    }
+
+    if (allActive.length > 0) return allActive;
+    throw new Error('No active engines available for Review. Run `agon doctor review` to diagnose availability or pass an explicit engine.');
   >>>
 
 interface name=ReviewCoreResult export=true
@@ -369,6 +399,29 @@ fn name=summarizeReviewFindings params="response:string" returns="ReviewSeverity
     return { blocking, important, nit, total: findings.length };
   >>>
 
+fn name=resolveReviewMaxTokens params="config:any, engine:any" returns=number export=true
+  doc "Resolve the per-dispatch Review output budget. Positive reviewMaxTokens is an explicit user override. Zero/missing means automatic: keep an 8192 floor for CLI engines and honor a larger native api.maxTokens for reasoning-heavy API engines."
+  handler <<<
+    const configured = Number(config?.reviewMaxTokens);
+    if (Number.isFinite(configured) && configured > 0) return Math.floor(configured);
+    const native = Number(engine?.api?.maxTokens);
+    return Math.max(8192, Number.isFinite(native) && native > 0 ? Math.floor(native) : 0);
+  >>>
+
+fn name=remainingReviewRetrySeconds params="startedAtMs:number, timeoutSec:number, nowMs?:number" returns=number export=true
+  doc "Return the whole seconds still available inside a Review engine's original wall-clock budget, clamped to that original budget so a backward clock adjustment cannot extend the advertised timeout."
+  handler <<<
+    const now = nowMs ?? Date.now();
+    const limit = Math.max(0, Math.floor(timeoutSec));
+    return Math.max(0, Math.min(limit, Math.floor((startedAtMs + timeoutSec * 1000 - now) / 1000)));
+  >>>
+
+fn name=shouldRetryReviewAttempt params="kind:'ok'|'timeout'|'error', remainingSec:number" returns=boolean export=true
+  doc "Retry one hard dispatch error only when at least five seconds remain in the original wall-clock budget. Timeouts are final: the outer attempt already consumed the budget, and reserving retry time would prematurely abort legitimately slow reviewers."
+  handler <<<
+    return kind === 'error' && remainingSec >= 5;
+  >>>
+
 fn name=runReviewRepair params="priorReview:string, engineId:string, ctx:HandlerContext, signal?:AbortSignal, cwdOverride?:string" returns="Promise<string>" async=true
   doc "Repair pass (B): re-ask the engine for ONLY a bare JSON array of the findings it already wrote in prose. Asking for a bare array (no sentinel, no prose, no fence) is the format LLMs comply with most reliably — far better than 'an HTML-comment marker followed by JSON', which engines routinely truncate to just the marker. The caller (runReviewCore) prepends the sentinel itself before parsing, so the anti-injection anchor is preserved. Best-effort: if this still doesn't parse, the fail-closed/unstructured result stands. cwdOverride must match the main dispatch's cwd so the repair engine runs in the SAME repo (goal worktree / process.cwd()), never the active workspace."
   handler lang="kern"
@@ -377,12 +430,12 @@ fn name=runReviewRepair params="priorReview:string, engineId:string, ctx:Handler
     let name=parts type="string[]" value="[]"
     do value="parts.push('You previously produced this code review:')"
     do value="parts.push(priorReview)"
-    do value="parts.push(`Now convert the findings above into a JSON array — output ONLY the array, nothing else. Your entire response must be valid JSON: start with [ and end with ]. No prose, no explanation, no markdown, no code fence.\\n\\nEach element: {\"file\":\"path\",\"lines\":\"10-12\",\"severity\":\"blocking|important|nit\",\"blocking\":true,\"confidence\":0.0,\"problem\":\"what is wrong\",\"minimalFix\":\"smallest fix\"}\\n\\nconfidence is your 0.00-1.00 certainty the issue is real and correctly diagnosed (1.0 = you verified it in the code; lower it when you are guessing).\\n\\nExample of a valid response:\\n[{\"file\":\"src/auth.ts\",\"lines\":\"42\",\"severity\":\"important\",\"blocking\":false,\"confidence\":0.7,\"problem\":\"missing null check\",\"minimalFix\":\"guard before deref\"}]\\n\\nIf the review found no issues, your entire response must be exactly: []\\nDerive the findings from the review above — do not re-analyze.`)"
+    do value="parts.push(`Now convert the findings above into a JSON array — output ONLY the array, nothing else. Your entire response must be valid JSON: start with [ and end with ]. No prose, no explanation, no markdown, no code fence. Include every verified blocking finding, then at most the 8 highest-priority, best-verified non-blocking findings; omit duplicates and weak speculation.\\n\\nEach element: {\"file\":\"path\",\"lines\":\"10-12\",\"severity\":\"blocking|important|nit\",\"blocking\":true,\"confidence\":0.0,\"problem\":\"what is wrong\",\"minimalFix\":\"smallest fix\"}\\n\\nconfidence is your 0.00-1.00 certainty the issue is real and correctly diagnosed (1.0 = you verified it in the code; lower it when you are guessing).\\n\\nExample of a valid response:\\n[{\"file\":\"src/auth.ts\",\"lines\":\"42\",\"severity\":\"important\",\"blocking\":false,\"confidence\":0.7,\"problem\":\"missing null check\",\"minimalFix\":\"guard before deref\"}]\\n\\nIf the review found no issues, your entire response must be exactly: []\\nDerive the findings from the review above — do not re-analyze.`)"
     let name=prompt value="parts.join('\\n\\n')"
     let name=engine value="ctx.registry.get(engineId)"
     let name=outputDir value="join(RUNS_DIR, `review-repair-${Date.now()}`)"
     do value="mkdirSync(outputDir, { recursive: true })"
-    let name=dispatchOpts value="{ engine, prompt, cwd, mode: 'exec' as const, timeout: (config as any).reviewTimeout ?? config.agentTimeout ?? 420, maxTokens: (config as any).reviewMaxTokens ?? 8192, outputDir, signal, }"
+    let name=dispatchOpts value="{ engine, prompt, cwd, mode: 'exec' as const, timeout: (config as any).reviewTimeout ?? config.agentTimeout ?? 420, maxTokens: resolveReviewMaxTokens(config, engine), outputDir, signal, }"
     let name=response kind=let value="''"
     if cond="ctx.adapter.dispatchStream"
       let name=gen value="ctx.adapter.dispatchStream(dispatchOpts)"
@@ -468,13 +521,13 @@ fn name=runReviewCore params="diff:string, label:string, engineId:string, ctx:Ha
     if cond="fileContext"
       do value="parts.push(`## CURRENT FILE CONTENTS\\nFull current content of the changed source files, for grounding. Verify each finding against this real code — e.g. check whether an error is actually handled, a symbol actually unused, or an import actually missing — before flagging it. The DIFF below shows only what changed.\\n\\n${fileContext}`)"
     do value="parts.push(`## DIFF\\n\\`\\`\\`diff\\n${diff}\\n\\`\\`\\``)"
-    do value="parts.push(`## INSTRUCTIONS\\nProvide a thorough code review: bugs and logic errors, security vulnerabilities, performance issues, code quality, and missing edge cases. For each issue give file, line range, severity (blocking|important|nit), a 0.00-1.00 confidence, and a suggested fix.\\n\\nVERIFY before you flag: confirm each issue against the CURRENT FILE CONTENTS above — is the error really unhandled, the symbol really unused, the import really missing? Only mark a finding 'blocking' if you confirmed it in the code. Set confidence honestly: 1.0 means you verified it in the code; lower it the more you are inferring or guessing. If you could not verify it from the provided context, lower the confidence and downgrade the severity rather than guessing — unverified high-confidence blocking findings are the #1 source of review noise.\\n\\n## REQUIRED MACHINE BLOCK\\nAfter your prose review you MUST append a machine-readable findings block. This is mandatory — a review without it is discarded. The block is the sentinel line, then a fenced JSON code block, as the very last thing in your response. Do NOT stop at the sentinel line: the JSON array after it is required.\\n\\n<!--AGON_REVIEW_FINDINGS_v1-->\\n\\`\\`\\`json\\n[{\"file\":\"src/auth.ts\",\"lines\":\"42\",\"severity\":\"important\",\"blocking\":false,\"confidence\":0.7,\"problem\":\"missing null check\",\"minimalFix\":\"guard before deref\"}]\\n\\`\\`\\`\\n\\nReplace the example with your real findings. If you found no issues, the array MUST be []. Emit the sentinel + JSON block exactly once, at the end.`)"
+    do value="parts.push(`## INSTRUCTIONS\\nProvide a thorough but concise code review: bugs and logic errors, security vulnerabilities, performance issues, code quality, and missing edge cases. Keep the prose under 1200 words. Report every verified blocking finding, then at most the 8 highest-priority, best-verified non-blocking findings so the mandatory machine block cannot be crowded out. Keep each problem and fix concise. For each issue give file, line range, severity (blocking|important|nit), a 0.00-1.00 confidence, and a suggested fix.\\n\\nVERIFY before you flag: confirm each issue against the CURRENT FILE CONTENTS above — is the error really unhandled, the symbol really unused, the import really missing? Only mark a finding 'blocking' if you confirmed it in the code. Set confidence honestly: 1.0 means you verified it in the code; lower it the more you are inferring or guessing. If you could not verify it from the provided context, lower the confidence and downgrade the severity rather than guessing — unverified high-confidence blocking findings are the #1 source of review noise.\\n\\n## REQUIRED MACHINE BLOCK\\nAfter your prose review you MUST append a machine-readable findings block. This is mandatory — a review without it is discarded. The block is the sentinel line, then a fenced JSON code block, as the very last thing in your response. Do NOT stop at the sentinel line: the JSON array after it is required.\\n\\n<!--AGON_REVIEW_FINDINGS_v1-->\\n\\`\\`\\`json\\n[{\"file\":\"src/auth.ts\",\"lines\":\"42\",\"severity\":\"important\",\"blocking\":false,\"confidence\":0.7,\"problem\":\"missing null check\",\"minimalFix\":\"guard before deref\"}]\\n\\`\\`\\`\\n\\nReplace the example with your real findings. If you found no issues, the array MUST be []. Emit the sentinel + JSON block exactly once, at the end.`)"
     let name=prompt value="parts.join('\\n\\n')"
     let name=engine value="ctx.registry.get(engineId)"
     let name=outputDir value="join(RUNS_DIR, `review-${Date.now()}`)"
     do value="mkdirSync(outputDir, { recursive: true })"
-    comment raw="// Output-token budget: an explicit config.reviewMaxTokens always wins; otherwise never cap an engine BELOW its own configured api.maxTokens. The dispatch layer spreads options.maxTokens OVER engine.api.maxTokens, so the old flat `?? 8192` silently squeezed reasoning engines (kimi/zai configure 16384) down to 8192 — on the ~130KB review prompt they spent the whole budget thinking and finished cleanly with zero text."
-    let name=reviewMaxTokens value="(config as any).reviewMaxTokens ?? Math.max(8192, Number((engine as any)?.api?.maxTokens ?? 0))"
+    comment raw="// Output-token budget: positive config.reviewMaxTokens is explicit; 0/missing means automatic. Never silently squeeze reasoning engines below their native output budget."
+    let name=reviewMaxTokens value="resolveReviewMaxTokens(config, engine)"
     let name=dispatchOpts value="{ engine, prompt, cwd, mode: 'exec' as const, timeout: (config as any).reviewTimeout ?? config.agentTimeout ?? 420, maxTokens: reviewMaxTokens, outputDir, signal, }"
     let name=response kind=let value="''"
     let name=usage kind=let value="undefined as DispatchResult['usage']"
@@ -530,7 +583,7 @@ fn name=runReviewCore params="diff:string, label:string, engineId:string, ctx:Ha
     if cond="parseFailed && response.length > 0 && !(signal?.aborted)"
       let name=repairResp value="await runReviewRepair(response, engineId, ctx, signal, cwd)"
       if cond="repairResp"
-        let name=repairBlock value="`<!--AGON_REVIEW_FINDINGS_v1-->\\n${repairResp}`"
+        let name=repairBlock value="`${REVIEW_SENTINEL}\\n${repairResp}`"
         let name=parsed2 value="parseReviewBlocking(repairBlock)"
         if cond="!parsed2.parseFailed"
           assign target="blocking" value="parsed2.blocking"
@@ -733,16 +786,18 @@ fn name=announceReviewTarget params="dispatch:Dispatch, cwd:string, label:string
   >>>
 
 fn name=handleReviewMany params="dispatch:Dispatch, ctx:HandlerContext, target?:string, requestedEngines?:string[]" returns="Promise<void>" async=true export=true
-  doc "Run review for one or more explicitly requested engines. With 2+ engines they run in PARALLEL — each gets its own hard timeout, so a slow-but-excellent reviewer (codex) never blocks the others and a hung engine can't wedge the whole review. Each engine's block is dispatched as it finishes; findings are combined into ctx.lastReviewResult for Cesar follow-up/fix planning. A single engine delegates to the streaming handleReview path."
+  doc "Run Review with the full active engine panel by default, or an explicitly requested subset. With 2+ engines they run in PARALLEL — each gets its own hard timeout, so a slow-but-excellent reviewer (codex) never blocks the others and a hung engine can't wedge the whole review. Each engine's block is dispatched as it finishes; findings are combined into ctx.lastReviewResult for Cesar follow-up/fix planning. A one-engine eligible/explicit panel delegates to the streaming handleReview path."
   signal name=abort
   handler <<<
     ensureAgonHome();
     const cwd = resolveWorkingDir();
-    const engineIds = Array.from(new Set(
-      (requestedEngines ?? [])
-        .map((id) => ctx.registry.resolveId(String(id ?? '').trim()))
-        .filter(Boolean),
-    ));
+    let engineIds: string[];
+    try {
+      engineIds = selectReviewEngines(requestedEngines, ctx);
+    } catch (err) {
+      dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) });
+      return;
+    }
     if (engineIds.length <= 1) {
       await handleReview(dispatch, ctx, target, engineIds[0]);
       return;

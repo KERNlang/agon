@@ -8,7 +8,14 @@ import {
 import type { RunStatusEngine } from '@kernlang/agon-core';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
-import { resolveReviewTarget, runReviewCore, selectReviewEngine, extractReviewFindings } from '../generated/handlers/review.js';
+import {
+  remainingReviewRetrySeconds,
+  resolveReviewTarget,
+  reviewOutcome,
+  runReviewCore,
+  selectReviewEngines,
+  shouldRetryReviewAttempt,
+} from '../generated/handlers/review.js';
 import { buildConsensus, formatConsensusRow } from '../generated/blocks/consensus.js';
 import { fail, header, info, warn, bold } from '../output.js';
 
@@ -57,12 +64,12 @@ export const reviewCommand = defineCommand({
     },
     engine: {
       type: 'string',
-      description: 'Specific engine for review',
+      description: 'Use one specific engine instead of the default full Review panel',
     },
     engines: {
       type: 'string',
       alias: 'e',
-      description: 'Comma-separated engine list',
+      description: 'Use a strict explicit engine subset instead of the default full Review panel; invalid or unavailable entries abort rather than silently shrinking it',
     },
     label: {
       type: 'string',
@@ -135,12 +142,19 @@ export const reviewCommand = defineCommand({
       return;
     }
 
-    // Dedupe AFTER alias resolution: 'kimi' and 'kimi-for-coding-k2p6' resolve
-    // to the same id, and with parallel execution duplicates would otherwise
-    // run concurrently and race on the same <engineId>-output.txt.
-    const requested = args.engines
-      ? Array.from(new Set(args.engines.split(',').map((s) => registry.resolveId(s.trim())).filter(Boolean)))
-      : [selectReviewEngine(args.engine, ctx)];
+    // No engine flag means the full active panel. Narrowing to
+    // one reviewer or a subset must be explicit. Selection also dedupes after
+    // alias resolution so two aliases cannot race on one engine output file.
+    let requested: string[];
+    try {
+      const explicit = args.engines != null
+        ? args.engines.split(',')
+        : args.engine != null ? [args.engine] : undefined;
+      requested = selectReviewEngines(explicit, ctx);
+    } catch (err) {
+      fail(err instanceof Error ? err.message : String(err));
+      process.exit(1);
+    }
 
     const parsedParallel = args.maxParallel != null ? Number(String(args.maxParallel).trim()) : NaN;
     const maxParallel = Number.isFinite(parsedParallel) && parsedParallel > 0
@@ -176,14 +190,8 @@ export const reviewCommand = defineCommand({
     // after the run for the cross-engine tiered verdict.
     const findingsByEngine = new Map<string, unknown[]>();
     const captureFindings = (engineId: string, rawResponse: string) => {
-      const raw = extractReviewFindings(rawResponse) || [];
-      findingsByEngine.set(engineId, raw.map((x: any) => ({
-        engine: engineId,
-        severity: typeof x.severity === 'string' ? x.severity : (x.blocking ? 'blocking' : 'nit'),
-        blocking: x.blocking,
-        confidence: x.confidence,
-        file: x.file, lines: x.lines, problem: x.problem, minimalFix: x.minimalFix,
-      })));
+      const outcome = reviewOutcome(engineId, rawResponse, 'ok');
+      findingsByEngine.set(engineId, outcome.findings ?? []);
     };
     const reviewEngine = async (engineId: string): Promise<RunStatusEngine> => {
       const engineStart = Date.now();
@@ -222,18 +230,18 @@ export const reviewCommand = defineCommand({
           clearTimeout(timer);
         }
       };
-      // Transient flake (timeout / hard dispatch error) gets ONE retry at half
-      // the wall clock before the seat is reported failed — a 6-engine review
-      // must not quietly complete as a 4-engine committee. Parse failures are
-      // NOT retried here; they already have their own in-band repair pass.
+      // A hard dispatch error gets ONE retry only when meaningful wall-clock
+      // budget remains, and both attempts share the advertised per-engine
+      // timeout. An outer timeout consumes the whole budget and stays final;
+      // reserving retry time would prematurely abort legitimately slow engines,
+      // while retrying afterward would violate the hard limit. Parse failures
+      // use their in-band repair pass.
       let outcome = await attempt(timeoutSec);
       let retryNote = '';
-      if (outcome.kind !== 'ok') {
+      const remainingSec = remainingReviewRetrySeconds(engineStart, timeoutSec);
+      if (shouldRetryReviewAttempt(outcome.kind, remainingSec)) {
         const firstKind = outcome.kind;
-        // Half the wall clock, floored at 60s, but never LONGER than the first
-        // attempt — a sub-120s --timeout must not get a bigger retry budget.
-        const retryTimeoutSec = Math.min(timeoutSec, Math.max(60, Math.floor(timeoutSec / 2)));
-        outcome = await attempt(retryTimeoutSec);
+        outcome = await attempt(remainingSec);
         retryNote = outcome.kind === 'ok'
           ? ` (${firstKind} on first attempt → retried OK)`
           : ` (${firstKind} → retried, failed again)`;

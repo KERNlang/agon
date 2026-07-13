@@ -239,7 +239,13 @@ fn name=buildCallCommands params="opts:CallCommandOptions" returns="BuiltCallCom
         ...textFlag('--engine', opts.engine),
       ]);
     } else if (workflow === 'review') {
-      commands.push(['review', opts.input?.trim() || 'uncommitted', ...timeout, ...engines]);
+      commands.push([
+        'review',
+        opts.input?.trim() || 'uncommitted',
+        ...textFlag('--engine', opts.engine),
+        ...timeout,
+        ...engines,
+      ]);
     } else if (workflow === 'goal') {
       // Autonomous controller. goal itself enforces that --gate and --queue are
       // present (and prints a clear error otherwise), so the bridge just forwards
@@ -476,7 +482,7 @@ const name=callCommand type="any"
         },
         engine: {
           type: 'string',
-          description: 'For research/chrome: force a specific engine (research: draft the answer; chrome: per-turn engine override)',
+          description: 'For review/research/chrome: force a specific engine (review: narrow the panel; research: draft the answer; chrome: per-turn engine override)',
         },
         'auto-approve': {
           type: 'boolean',

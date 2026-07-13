@@ -313,6 +313,16 @@ describe('agon call command mapping', () => {
     ]);
   });
 
+  it('forwards --engine to review as an explicit single-reviewer request', () => {
+    expect(buildCallCommands({
+      workflow: 'review',
+      input: 'commit:HEAD',
+      engine: 'agy',
+    }).commands).toEqual([
+      ['review', 'commit:HEAD', '--engine', 'agy'],
+    ]);
+  });
+
   it('maps doctor to the top-level doctor command (engines by default)', () => {
     expect(buildCallCommands({ workflow: 'doctor' }).commands).toEqual([
       ['doctor', 'engines'],

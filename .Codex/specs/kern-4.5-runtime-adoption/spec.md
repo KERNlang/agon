@@ -1,6 +1,6 @@
 # KERN 4.5 Runtime Adoption
 
-**Status:** In progress  
+**Status:** Implemented; final release gate pending  
 **Date:** 2026-07-13  
 **Confidence:** 0.95
 
@@ -35,7 +35,7 @@ Adopt the useful runtime surfaces already published in KERN 4.5 without replacin
 
 1. Commit the native warning baseline and run native KERN tests with coverage enabled.
 2. Add native reachability tests for the existing ThinkChain and ReplState machines, require 100% over the resulting non-zero transition surface, and remove the wrapper's `--pass-with-no-tests` escape so deleting all native tests fails.
-3. Add a compact self-coverage policy and comparator. Fail on parse errors, native/classified percentage regression, increased blocked handlers, or increased unexplained foreign handlers; accept equal or improved reports.
+3. Add a compact self-coverage policy and comparator. Fail on parse errors, native-handler count or classified percentage regression, increased blocked handlers, any new blocker category, or any blocker-category ceiling increase; accept equal or improved reports. Native count replaces native percentage so an explicitly declared host adapter cannot fail solely by enlarging the denominator.
 4. Put the self-coverage gate in the root test chain so normal local and CI verification inherit it.
 
 ### C. Persistent RAG adapter conformance
@@ -75,3 +75,11 @@ Adopt the useful runtime surfaces already published in KERN 4.5 without replacin
 ## Acceptance gate
 
 For every independent slice: focused tests, strict KERN compile where KERN source changed, and `agon review uncommitted -e claude,codex,agy`; resolve verified findings before its signed commit. Final acceptance requires strict compile across all workspaces, native KERN tests plus self-coverage regression gate, full TypeScript suite, TypeScript 6 typecheck, production build, final full-roster Agon review with no verified blockers, one branch push, and `npm run install:cli` followed by path/version verification of the linked `agon` binary.
+
+## Implementation evidence
+
+- `c644f9cf` seeds fresh Cesar sessions with the cached KERN context spine; focused review `review-1783976413258-ouukna-kern-4-5-context-spine` returned zero verified findings.
+- `de97e346` adds non-vacuous native coverage and strict self-coverage gates. Current native coverage is 15/15 transition units (100%); current self-coverage is 676 native handlers, 73.93% classified/migratable, 620 blocked handlers, and zero parse-error files.
+- `1c21b4bf` adds the durable namespaced RAG adapter, passes all 14 published KERN 4.5 conformance cases, and adds a pure source-runner parity pilot. The repeated full-roster passes drove durability, locking, true cosine, corruption, path-confinement, and safe-default fixes; the commit-boundary review returned zero verified findings.
+- `5249cd5a` fixes the output-truth edge cases plus negative/non-finite arena crash paths. Fifty-nine focused tests pass; review `review-1783981767811-d19fas-cli-output-truth-final` returned zero verified findings.
+- Every implementation commit uses the required Agon KERN authorship and signature. Repository-wide compile, tests, build, branch review, push, and linked-binary verification remain the final release gate.

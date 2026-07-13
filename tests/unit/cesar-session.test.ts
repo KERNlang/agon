@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ToolRegistry } from '@kernlang/agon-core';
 import type { ToolContext, ToolHandler } from '@kernlang/agon-core';
-import { buildCesarConversationSnapshot, buildOnApproval, buildOnToolCall, canUseCesarMcp, loadCesarMcpServers, normalizeCesarMcpServers } from '../../packages/cli/src/generated/cesar/session.js';
+import { buildCesarConversationSnapshot, buildCesarSystemPrompt, buildOnApproval, buildOnToolCall, canUseCesarMcp, loadCesarMcpServers, normalizeCesarMcpServers, prepareCesarSystemPrompt } from '../../packages/cli/src/generated/cesar/session.js';
 import { applyInvariantsRule1, _resetInvariantsRule1DriftWarning, CESAR_RULE_1_STRICT, CESAR_RULE_1_INVARIANTS, CESAR_SYSTEM_PROMPT } from '../../packages/cli/src/generated/cesar/session.js';
 import { createTaskExecutionLease } from '../../packages/cli/src/generated/cesar/task-execution-lease.js';
 import { beginCesarTurn, createCesarTurnRuntimeHost } from '../../packages/cli/src/generated/cesar/turn-runtime.js';
@@ -23,6 +23,61 @@ function makeTempDir(name: string): string {
   testDirs.push(dir);
   return dir;
 }
+
+function makePromptContext(): any {
+  return {
+    config: {},
+    activeEngines: () => ['codex'],
+    registry: { get: (id: string) => ({ id }) },
+    cesar: {},
+    chatSession: { messages: [] },
+    explorationMode: false,
+  };
+}
+
+describe('Cesar KERN context spine', () => {
+  it('prepares and stores one compiler-derived map before the engine list', async () => {
+    const ctx = makePromptContext();
+    const spine = '## PROJECT MAP\n<kern_map>caller → callee</kern_map>';
+    const builder = vi.fn(async () => spine);
+
+    const prompt = await prepareCesarSystemPrompt(ctx, '/repo-under-test', builder);
+
+    expect(builder).toHaveBeenCalledTimes(1);
+    expect(builder).toHaveBeenCalledWith('/repo-under-test');
+    expect(ctx.cesar.kernContextSpine).toBe(spine);
+    expect(prompt.match(/<kern_map>/g)).toHaveLength(1);
+    expect(prompt.indexOf(spine)).toBeLessThan(prompt.lastIndexOf('## AVAILABLE ENGINES'));
+  });
+
+  it('keeps startup best-effort for an empty map', async () => {
+    const ctx = makePromptContext();
+    const prompt = await prepareCesarSystemPrompt(ctx, '/repo-under-test', async () => '');
+
+    expect(ctx.cesar.kernContextSpine).toBe('');
+    expect(prompt).not.toContain('<kern_map>');
+    expect(prompt).toContain('## AVAILABLE ENGINES');
+  });
+
+  it('clears a stale map when a refresh fails', async () => {
+    const ctx = makePromptContext();
+    ctx.cesar.kernContextSpine = '<kern_map>stale</kern_map>';
+
+    const prompt = await prepareCesarSystemPrompt(ctx, '/repo-under-test', async () => {
+      throw new Error('context unavailable');
+    });
+
+    expect(ctx.cesar.kernContextSpine).toBe('');
+    expect(prompt).not.toContain('<kern_map>stale</kern_map>');
+  });
+
+  it('renders a pre-primed map through the synchronous prompt path', () => {
+    const ctx = makePromptContext();
+    ctx.cesar.kernContextSpine = '## PROJECT MAP\n<kern_map>primed</kern_map>';
+
+    expect(buildCesarSystemPrompt(ctx)).toContain('<kern_map>primed</kern_map>');
+  });
+});
 
 describe('cesar MCP session config', () => {
   it('normalizes named mcpServers objects into an array with names', () => {

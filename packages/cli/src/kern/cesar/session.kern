@@ -5,7 +5,7 @@ import from="node:fs" names="mkdirSync"
 import from="node:url" names="fileURLToPath,pathToFileURL"
 import from="node:module" names="createRequire"
 import from="@kernlang/agon-core" names="PersistentSession,PersistentSessionConfig" types=true
-import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,ensureAgonHome,getAgonHome,resolveWorkingDir,scanProjectContext,buildCodebaseMap,buildProjectMemoryBlock,createPersistentSession,ToolRegistry,getProjectFileStateCache,buildToolSystemPrompt,toolsToOpenAIFormat,executeToolCall,RUNS_DIR,tracker,discoverMcpServers,mcpDiscoveryFingerprint,mcpServersToWireFormat,listCesarPlans,saveConversation,formatChatContextForPrompt,isReadOnlyCommand,AGON_MODE_NAMES,parsePermissionRuleSet,parseToolHooks,evaluatePermissionRules,evaluateToolRules,PERMISSION_DENIED_MESSAGE,claudeBrainUsesPty"
+import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,ensureAgonHome,getAgonHome,resolveWorkingDir,scanProjectContext,buildCodebaseMap,buildKernContextSpine,buildProjectMemoryBlock,createPersistentSession,ToolRegistry,getProjectFileStateCache,buildToolSystemPrompt,toolsToOpenAIFormat,executeToolCall,RUNS_DIR,tracker,discoverMcpServers,mcpDiscoveryFingerprint,mcpServersToWireFormat,listCesarPlans,saveConversation,formatChatContextForPrompt,isReadOnlyCommand,AGON_MODE_NAMES,parsePermissionRuleSet,parseToolHooks,evaluatePermissionRules,evaluateToolRules,PERMISSION_DENIED_MESSAGE,claudeBrainUsesPty"
 import from="@kernlang/agon-core" names="ToolContext,ToolCallResult" types=true
 import from="@kernlang/agon-core" names="resolveGuardMode,readGuardModesFromConfig"
 import from="@kernlang/agon-core" names="GuardMode" types=true
@@ -296,6 +296,8 @@ fn name=buildCesarSystemPrompt params="ctx:HandlerContext" returns=string export
       // unexpected bug, not just a missing/odd repo. Don't swallow it silently.
       console.warn(`[agon] codebase atlas skipped: ${err instanceof Error ? err.message : String(err)}`);
     }
+    const kernContextSpine = ctx.cesar?.kernContextSpine;
+    if (kernContextSpine) systemParts.push(kernContextSpine);
     // Engine list is now in ROUTING CONTEXT (per-turn), but keep a basic list for fallback
     systemParts.push(`## AVAILABLE ENGINES\n${engineList}\n\nMODES vs ENGINES: the names above are ENGINES — runnable backends you delegate to (codex, claude, agy, …). MODES are commands/workflows you invoke (run /<name>): ${AGON_MODE_NAMES.join(', ')}. A mode runs ON engines — never treat a mode name (e.g. "conquer") as an engine id.`);
     if (ctx.explorationMode) {
@@ -473,6 +475,20 @@ RULE: End your turn by calling EITHER ProposePlan (if a plan helps) OR ExitPlanM
     }
 
     return systemParts.join('\n\n');
+  >>>
+
+fn name=prepareCesarSystemPrompt params="ctx:HandlerContext, cwd?:string, spineBuilder?:(cwd:string)=>Promise<string>" returns="Promise<string>" async=true export=true
+  doc "Prepare the compiler-derived project spine once at the fresh-session boundary, store it on Cesar state for sync fallback/budget callers, and return the complete prompt. Best-effort: empty or failed builds clear any stale spine and preserve normal startup."
+  handler <<<
+    const targetCwd = cwd ?? resolveWorkingDir();
+    let spine = '';
+    try {
+      spine = await (spineBuilder ?? buildKernContextSpine)(targetCwd);
+    } catch {
+      spine = '';
+    }
+    if (ctx.cesar) ctx.cesar.kernContextSpine = spine;
+    return buildCesarSystemPrompt(ctx);
   >>>
 
 const name=CESAR_SNAPSHOT_MSG_CHAR_CAP type=number value=4000 doc="Max chars per message folded into Cesar's continuity snapshot. Keeps a big review/brainstorm/tribunal reply (or a huge tool result) from flooding Cesar's context (the human transcript still shows it in full)."
@@ -1455,7 +1471,7 @@ fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promi
     }
 
     // Build system prompt and tool registry
-    const systemPrompt = buildCesarSystemPrompt(ctx);
+    const systemPrompt = await prepareCesarSystemPrompt(ctx, cwd);
     const toolRegistry = createCesarToolRegistry(cesarEngineId);
 
     // Store registry on context for tool execution during responses

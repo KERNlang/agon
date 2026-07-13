@@ -14,7 +14,7 @@ interface name=ToolLoopCallbacks
   field name=onToolCall type="(name: string, input: Record<string,unknown>) => void" optional=true
   field name=shouldStopAfterToolCall type="(name: string, input: Record<string,unknown>) => boolean" optional=true
   field name=onToolResult type="(name: string, result: ToolCallResult) => void" optional=true
-  field name=onPermissionAsk type="(tool: string, message: string) => Promise<boolean>" optional=true
+  field name=onPermissionAsk type="(tool: string, message: string) => Promise<boolean|string>" optional=true
   field name=onText type="(text: string) => void" optional=true
   field name=onTurnComplete type="(turn: number) => void" optional=true
   field name=maxTurns type=number optional=true

@@ -21,6 +21,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
   let promptSentViaStart = false; // true if system prompt was sent in session/new
   let reconnectAttempts = 0;
   let reconnecting = false;
+  let activeControlPlane: SessionSendOptions['controlPlane'] = undefined;
   const pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
   let notificationHandlers: Array<(method: string, params: any) => void> = [];
 
@@ -136,7 +137,11 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
             }
 
             if (config.onApproval) {
-              config.onApproval(String(tName), String(tCmd)).then((result: boolean | string) => {
+              const approvalId = String(msg.id);
+              const approvalControlPlane = activeControlPlane
+                ? { ...activeControlPlane, toolCallId: approvalId, stepId: `approval:${approvalId}` }
+                : undefined;
+              config.onApproval(String(tName), String(tCmd), approvalControlPlane).then((result: boolean | string) => {
                 const approved = typeof result === 'string' ? false : result;
                 const optionId = approved
                   ? (allowOpt?.optionId ?? alwaysOpt?.optionId ?? 'proceed_once')
@@ -170,7 +175,11 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
           const buildGenericResult = (ok: boolean) => isV2Generic ? { decision: ok ? 'accept' : 'decline' } : { approved: ok };
 
           if (config.onApproval) {
-            config.onApproval(String(toolName), String(toolCmd)).then((result: boolean | string) => {
+            const approvalId = String(msg.id);
+            const approvalControlPlane = activeControlPlane
+              ? { ...activeControlPlane, toolCallId: approvalId, stepId: `approval:${approvalId}` }
+              : undefined;
+            config.onApproval(String(toolName), String(toolCmd), approvalControlPlane).then((result: boolean | string) => {
               if (typeof result === 'string') {
                 if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, error: { code: -32001, message: result } }) + '\n');
               } else {
@@ -251,6 +260,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
     },
 
     async *send(opts: SessionSendOptions) {
+      activeControlPlane = opts.controlPlane;
       if (!alive || !proc || !sessionId) {
         const reconnected = await tryReconnect();
         if (!reconnected) {
@@ -353,6 +363,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
           yield chunks.shift()!;
         }
       } finally {
+        if (activeControlPlane === opts.controlPlane) activeControlPlane = undefined;
         opts.signal?.removeEventListener('abort', onAbort);
         const idx = notificationHandlers.indexOf(handler);
         if (idx >= 0) notificationHandlers.splice(idx, 1);

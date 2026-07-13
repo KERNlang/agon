@@ -11,10 +11,11 @@ import from="../../handlers/forge.js" names="prepareForgeFitnessCommand,inferPro
 import from="../../handlers/team-tribunal.js" names="handleTeamTribunal"
 import from="../../handlers/team-forge.js" names="handleTeamForge"
 import from="../../handlers/team-brainstorm.js" names="handleTeamBrainstorm"
+import from="../../handlers/council.js" names="handleCouncil"
 import from="../../../handlers/cesar-brain.js" names="handleCesarBrain,parseSuggestion"
 import from="@kernlang/agon-core" names="appendMessage,appendUserTurnIfAbsent,buildHistoryPrimedPrompt,formatChatContextForPrompt"
 import from="../../handlers/pipeline.js" names="handlePipeline"
-import from="../../cesar/routing.js" names="deriveRoutingHints"
+import from="../../cesar/routing.js" names="deriveRoutingHints,executionActionForPlan"
 import from="../../cesar/session.js" names="buildCesarSystemPrompt,resolveCesarBackend"
 import from="../../cesar/recap.js" names="createCesarRecapCapture,recordCesarRecapEvent,buildCesarTurnRecapEvent,buildCesarRecapDiffPreview,shouldEmitCesarRecap"
 import from="../file-tracker.js" names="listFiles,getFileDiff"
@@ -221,7 +222,7 @@ fn name=handleDelegatedAction async=true params="result:any, input:string, cb:Di
         // (observed: review ran 3× back-to-back). Execution actions (forge, pipeline,
         // delegate, agent) are intentionally NOT listed — those may recur as the
         // focused next step; thinking/analysis dispatches must not.
-        const RECURSIVE_THINKING_ACTIONS = ['brainstorm', 'tribunal', 'campfire', 'team-brainstorm', 'team-tribunal', 'review'];
+        const RECURSIVE_THINKING_ACTIONS = ['brainstorm', 'tribunal', 'campfire', 'council', 'team-brainstorm', 'team-tribunal', 'review'];
         if (inDelegatedContinuation && RECURSIVE_THINKING_ACTIONS.includes(routeAction)) {
           cb.dispatch({ type: 'warning', message: `Skipped repeated ${routeAction} during delegated-result synthesis. Cesar should summarize or choose a focused execution step instead.` });
           return false;
@@ -232,13 +233,10 @@ fn name=handleDelegatedAction async=true params="result:any, input:string, cb:Di
         // — without this, an Agent(...) delegation slips past the approval
         // boundary and starts an autonomous run that can mutate the
         // workspace before the user has approved the proposed plan.
-        const _planActive = cb.ctx.activePlan && ['planning', 'awaiting_approval'].includes(cb.ctx.activePlan.state);
-        if (_planActive) {
-          const EXECUTION_ACTIONS = ['forge', 'team-forge', 'build', 'pipeline', 'agent', 'team-agent', 'goal'];
-          if (EXECUTION_ACTIONS.includes(routeAction)) {
-            cb.dispatch({ type: 'info', message: `Plan mode: converting ${routeAction} → brainstorm (no execution until plan approved)` });
-            routeAction = 'brainstorm';
-          }
+        const _planSafeAction = executionActionForPlan(routeAction, cb.ctx.activePlan);
+        if (_planSafeAction !== routeAction) {
+          cb.dispatch({ type: 'info', message: `Plan mode: converting ${routeAction} → brainstorm (no execution until plan approved)` });
+          routeAction = _planSafeAction;
         }
 
         const executionSpec = extractExecutionSpec(input);
@@ -275,7 +273,7 @@ ${input}`;
         // is worth it, Cesar should switch intentionally by proposing a plan.
 
         // Enrich delegation context — Cesar's investigation should flow to brainstorm/tribunal/campfire
-        const THINKING_ACTIONS = ['brainstorm', 'tribunal', 'campfire', 'team-brainstorm', 'team-tribunal'];
+        const THINKING_ACTIONS = ['brainstorm', 'tribunal', 'campfire', 'council', 'team-brainstorm', 'team-tribunal'];
         if (THINKING_ACTIONS.includes(routeAction) && cb.ctx.chatSession?.messages?.length > 0) {
           const recent = cb.ctx.chatSession.messages.slice(-4);
           const cesarContext = recent
@@ -405,6 +403,17 @@ You still own the overall task. Integrate the forged slice with the rest of the 
                   ? `Campfire on: "${taskInput.slice(0, 200)}" failed: ${errorMsg}. ${chatContext ? `Partial discussion:\n\n${chatContext}\n\n` : ''}Decide how to recover or continue the task directly.`
                   : `Campfire discussion on: "${taskInput.slice(0, 200)}"\n\n${chatContext || '(no discussion captured — check output above)'}\n\nSummarize the key insights and any consensus reached.`,
                 continuationEpoch, continuationUserTurns), cb.ctx));
+            return true;
+          }
+          case 'council': {
+            cb.dispatch({ type: 'info', message: 'Cesar → council' });
+            const _cwdCouncil = resolveWorkingDir();
+            cb.runAsJob('council', label, withThreadOutcome(_cwdCouncil, 'council', label, () =>
+              runDelegatedJobThenContinue(cb, () => handleCouncil(taskInput, cb.dispatch, cb.ctx), ({ chatContext, success, errorMsg }) =>
+                !success
+                  ? `Council on: "${taskInput.slice(0, 200)}" failed: ${errorMsg}. ${chatContext ? `Partial deliberation:\n\n${chatContext}\n\n` : ''}Continue with the strongest available evidence.`
+                  : `Council concluded on: "${taskInput.slice(0, 200)}"\n\n${chatContext || '(no transcript captured — check output above)'}\n\nSynthesize the chairman verdict, strongest dissent, and next concrete step.`,
+                continuationEpoch, continuationUserTurns, 2500), cb.ctx));
             return true;
           }
           case 'pipeline': {
@@ -599,6 +608,16 @@ fn name=handleRecoveredDelegation async=true params="crashDel:any, input:string,
             }, cb.ctx));
             return true;
           }
+          case 'council': {
+            cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'council', 'recovered delegation') });
+            const _cwdRecoverCouncil = resolveWorkingDir();
+            cb.runAsJob('council', label, withThreadOutcome(_cwdRecoverCouncil, 'council', label, async () => {
+              await handleCouncil(recoveredTask, cb.dispatch, cb.ctx);
+              const chatContext = collectRecentEngineContext(cb.ctx, 16, 2500);
+              if (chatContext) await continueCesarAfterResult(`Recovered council concluded on: "${recoveredTask.slice(0, 200)}"\n\n${chatContext}\n\nSynthesize the verdict and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
+            }, cb.ctx));
+            return true;
+          }
           case 'pipeline': cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'pipeline', 'recovered delegation') }); cb.runAsJob('pipeline', label, () => handlePipeline(recoveredTask, cb.dispatch, cb.ctx, recoveredFitness ?? undefined, { reviewEngines: crashDel.engines })); return true;
           case 'review': {
             cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'review', 'recovered delegation') });
@@ -782,6 +801,16 @@ fn name=runCesarBrainFallback async=true params="input:string, cb:DispatchCallba
                 }, cb.ctx));
                 return true;
               }
+              case 'council': {
+                cb.dispatch({ type: 'info', message: 'Cesar → council' });
+                const _cwdFallbackCouncil = resolveWorkingDir();
+                cb.runAsJob('council', label, withThreadOutcome(_cwdFallbackCouncil, 'council', label, async () => {
+                  await handleCouncil(fallbackTask, cb.dispatch, cb.ctx);
+                  const chatContext = collectRecentEngineContext(cb.ctx, 16, 2500);
+                  if (chatContext) await continueCesarAfterResult(`Fallback council concluded on: "${fallbackTask.slice(0, 200)}"\n\n${chatContext}\n\nSynthesize the verdict and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
+                }, cb.ctx));
+                return true;
+              }
               case 'pipeline': cb.dispatch({ type: 'info', message: 'Cesar → pipeline' }); cb.runAsJob('pipeline', label, () => handlePipeline(fallbackTask, cb.dispatch, cb.ctx, fallbackFitness ?? undefined, { reviewEngines: Array.isArray(crashDel?.engines) ? crashDel.engines : undefined })); return true;
               case 'review': {
                 cb.dispatch({ type: 'info', message: 'Cesar → review' });
@@ -952,7 +981,14 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
       const result = await handleCesarBrain(input, cesarDispatch as any, cb.ctx, images);
       priorDeterministic = result.deterministicFailure === true;
       const emitRecap = () => {
-        const recapEvent = buildCesarTurnRecapEvent(recapCapture, result, recapStartedFiles, listFiles());
+        const latestTerminal = cb.ctx.cesarRuntimeHost?.latestTerminal;
+        if (result.turnId && latestTerminal && latestTerminal.envelope?.turnId !== result.turnId) {
+          return;
+        }
+        const settledResult = latestTerminal && (!result.turnId || latestTerminal.envelope?.turnId === result.turnId)
+          ? { ...result, terminalState: result.terminalState ?? latestTerminal.state }
+          : result;
+        const recapEvent = buildCesarTurnRecapEvent(recapCapture, settledResult, recapStartedFiles, listFiles());
         const changedFiles = Array.isArray((recapEvent as any).files)
           ? (recapEvent as any).files.filter((file: any) => String(file?.status ?? '') !== 'read').slice(0, 4)
           : [];

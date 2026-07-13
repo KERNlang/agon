@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { parseSuggestion, parseConfidence, confidenceBadge, CONFIDENCE_TIERS, CESAR_SYSTEM_PROMPT, buildReviewFollowupPrompt, detectNarratedToolStall, extractStrictConfidence, buildEscalationSuggestionLine, ESCALATION_SUGGESTION_THRESHOLD } from '../../packages/cli/src/handlers/cesar-brain.js';
 // Source of truth for these helpers is packages/cli/src/kern/cesar/brain-helpers.kern;
 // the generated/*.js below is regenerated from it (npm run kern:compile) — do not edit by hand.
-import { eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, splitBeforeToolMarkup, isUserDirectedQuestion, findTrailingUserQuestion, detectAwaitingUserInput, detectMutationIntentStall, detectFabricatedDelegation, stripNonAssertionSpans, shouldDeescalateGuard, isBashToolName, isWriteToolName, stripAgonToolPrefix } from '../../packages/cli/src/generated/cesar/brain-helpers.js';
+import { claimEagerToolExecution, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, splitBeforeToolMarkup, isUserDirectedQuestion, findTrailingUserQuestion, detectAwaitingUserInput, detectMutationIntentStall, detectFabricatedDelegation, stripNonAssertionSpans, shouldDeescalateGuard, isBashToolName, isWriteToolName, stripAgonToolPrefix, withEagerToolCallId } from '../../packages/cli/src/generated/cesar/brain-helpers.js';
 import { createReportConfidenceTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createPipelineTool } from '../../packages/core/src/tools.js';
 // Rigid DECISION/CONFIDENCE parser for ACTUALLY-FIRED nero/advisor results — C4
 // must leave this untouched (downstream escalation routing depends on it).
@@ -309,6 +309,27 @@ describe('Cesar Brain', () => {
   });
 
   describe('eager tool repair loop guards', () => {
+    it('assigns one fallback id that the eager running and terminal events can share', () => {
+      const original = { status: 'running', input: { file_path: 'a.ts' } };
+
+      const correlated = withEagerToolCallId(original, 'eager-turn-7');
+
+      expect(correlated).toEqual({ ...original, toolCallId: 'eager-turn-7' });
+      expect(withEagerToolCallId({ ...original, toolCallId: 'provider-1' }, 'ignored').toolCallId).toBe('provider-1');
+      expect(original).not.toHaveProperty('toolCallId');
+    });
+
+    it('claims a correlated eager tool call only once per turn', () => {
+      const claimed = new Set<string>();
+
+      expect(claimEagerToolExecution(claimed, 'call-streamed-1')).toBe(true);
+      expect(claimEagerToolExecution(claimed, 'call-streamed-1')).toBe(false);
+      expect(claimEagerToolExecution(claimed, 'call-streamed-2')).toBe(true);
+      // Without a correlation id there is no safe identity to dedupe on.
+      expect(claimEagerToolExecution(claimed, undefined)).toBe(true);
+      expect(claimEagerToolExecution(claimed, undefined)).toBe(true);
+    });
+
     it('limits repair retries to failed tools and only once per tool', () => {
       const failedNames = eagerFailedToolNames([
         { toolName: 'Read', result: { ok: false, error: 'Malformed JSON', content: '' } },

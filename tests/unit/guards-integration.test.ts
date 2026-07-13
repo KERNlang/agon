@@ -149,7 +149,14 @@ describe('GuardPipeline integration — invariants mode', () => {
       });
 
       await session.start();
-      await drain(session.send({ message: 'edit the manifest', toolLoopBaseBudget: 8, toolLoopMaxBudget: 8 }));
+      const chunks = await drain(session.send({ message: 'edit the manifest', toolLoopBaseBudget: 8, toolLoopMaxBudget: 8 }));
+
+      const blockedChunk = chunks.find((c: any) => c.type === 'tool_call' && c.metadata?.output === 'Blocked: read the file first');
+      expect(blockedChunk?.metadata).toEqual(expect.objectContaining({
+        toolCallId: 'call_e1',
+        terminalReason: 'skipped_policy',
+        executionOwner: 'session',
+      }));
 
       // The first Edit (never-read existing path) was BLOCKED — onToolCall never
       // ran for it, and the next dispatch's history carries the block feedback.

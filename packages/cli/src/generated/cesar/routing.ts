@@ -54,9 +54,19 @@ export interface CesarRoutingHints {
 }
 
 /**
- * Cheap, deterministic routing hints for Cesar: intake kind, flow recommendation, uncertainty family, escalation shape, breadth, and forge scope.
+ * Hold every mutating/background execution delegation behind the plan approval boundary; thinking modes remain available while planning.
  */
 // @kern-source: routing:35
+export function executionActionForPlan(action: string, activePlan?: {state?:string}|null): string {
+  const planActive = !(!activePlan) && ['planning', 'awaiting_approval'].includes(String(activePlan.state ?? ''));
+  const executionActions = new Set(['forge', 'team-forge', 'build', 'pipeline', 'agent', 'team-agent', 'goal', 'conquer']);
+  return (planActive && executionActions.has(action)) ? 'brainstorm' : action;
+}
+
+/**
+ * Cheap, deterministic routing hints for Cesar: intake kind, flow recommendation, uncertainty family, escalation shape, breadth, and forge scope.
+ */
+// @kern-source: routing:42
 export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRoutingHints {
   const taskClass = classifyTask(input);
   const inputTokens = Math.ceil(input.length / 4);
@@ -278,7 +288,7 @@ export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRou
 /**
  * Build a lightweight routing context (~200-600 tokens) for Cesar to make intelligent intake, mode, and team decisions. consume defaults to true: pass consume=false from diagnostic/preview callers (e.g. /cesar-hints) so they don't burn one-shot turn flags like justExitedPlanMode.
  */
-// @kern-source: routing:255
+// @kern-source: routing:262
 export function buildRoutingContext(input: string, ctx: HandlerContext, consume?: boolean): string {
   const parts: string[] = [];
 
@@ -421,7 +431,7 @@ export function buildRoutingContext(input: string, ctx: HandlerContext, consume?
 /**
  * Pure, zero-LLM-cost classification: should this /agent request run as a team (parallel engines) rather than solo? Returns true when the task pattern suggests cross-module fan-out AND at least 2 API engines are available. Based on the same FANOUT_RE/scopeDirSpread signals that buildRoutingContext includes in the Cesar prompt — but exported so dispatch can use them without a full brain call.
  */
-// @kern-source: routing:396
+// @kern-source: routing:403
 export function shouldUseAgentTeam(input: string, ctx: HandlerContext): boolean {
   // Need at least 2 active engines for team mode to make sense.
   const available = ctx.activeEngines();
@@ -435,7 +445,7 @@ export function shouldUseAgentTeam(input: string, ctx: HandlerContext): boolean 
 /**
  * Cost-aware speculation gate. Returns true only when: (1) estimated step cost exceeds speculativeThresholdUsd, (2) uncertainty is not 'none', (3) ELO spread between top engines is below speculativeEloSpreadThreshold. Prevents wasteful scout+parallel runs on cheap, sure, or lopsided tasks.
  */
-// @kern-source: routing:406
+// @kern-source: routing:413
 export function shouldSpeculate(hints: CesarRoutingHints, config: Required<AgonConfig>): boolean {
   const threshold = (config as any).speculativeThresholdUsd ?? 0.50;
   const eloThreshold = (config as any).speculativeEloSpreadThreshold ?? 15;

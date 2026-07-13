@@ -30,6 +30,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
   let promptSentViaStart = false; // true if system prompt was sent in thread/start
   let reconnectAttempts = 0;
   let reconnecting = false;
+  let activeControlPlane: SessionSendOptions['controlPlane'] = undefined;
   const pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
   let notificationHandlers: Array<(method: string, params: any) => void> = [];
 
@@ -173,7 +174,11 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
           };
 
           if (config.onApproval) {
-            config.onApproval(String(toolName), String(toolCmd)).then((result: boolean | string) => {
+            const approvalId = String(msg.id);
+            const approvalControlPlane = activeControlPlane
+              ? { ...activeControlPlane, toolCallId: approvalId, stepId: `approval:${approvalId}` }
+              : undefined;
+            config.onApproval(String(toolName), String(toolCmd), approvalControlPlane).then((result: boolean | string) => {
               if (typeof result === 'string') {
                 // String = denied with reason — send JSONRPC error so engine sees WHY
                 if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, error: { code: -32001, message: result } }) + '\n');
@@ -264,6 +269,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
     },
 
     async *send(opts: SessionSendOptions) {
+      activeControlPlane = opts.controlPlane;
       if (!alive || !proc) {
         const reconnected = await tryReconnect();
         if (!reconnected) {
@@ -399,6 +405,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
           yield chunks.shift()!;
         }
       } finally {
+        if (activeControlPlane === opts.controlPlane) activeControlPlane = undefined;
         opts.signal?.removeEventListener('abort', onAbort);
         const idx = notificationHandlers.indexOf(handler);
         if (idx >= 0) notificationHandlers.splice(idx, 1);

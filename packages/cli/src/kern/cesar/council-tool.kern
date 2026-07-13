@@ -1,0 +1,30 @@
+import from="@kernlang/agon-core" names="ToolDefinition,ToolHandler,ToolContext,ToolResult,PermissionDecision" types=true
+
+fn name=createCouncilTool returns=ToolHandler export=true
+  doc "Signal tool that lets Cesar convene the all-usable-engine Council by judgment, without forcing it on routine work."
+  handler <<<
+    const definition: ToolDefinition = {
+      name: 'Council',
+      description: 'Convene all usable non-excluded engines in a structured roundtable chaired by the strongest available engine. Use for high-stakes, hard-to-reverse decisions where several independent perspectives materially improve the answer. This is optional: use your judgment, and after calling, stop so the orchestrator can run the council and return its verdict.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          question: { type: 'string', description: 'The concrete decision or technical question for the council.' },
+          roles: { type: 'array', items: { type: 'string' }, description: 'Optional role names for council seats.' },
+          chairman: { type: 'string', description: 'Optional available engine id to chair the synthesis.' },
+        },
+        required: ['question'],
+      },
+      maxResultSizeChars: 500,
+      isReadOnly: true,
+      isConcurrencySafe: true,
+    };
+    const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null =>
+      typeof input.question === 'string' && input.question.trim() ? null : 'Missing required parameter: question';
+    const checkPermission = (_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => ({ behavior: 'allow' });
+    const execute = async (_input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => ({
+      ok: true,
+      content: 'Council delegation accepted. End this turn so the orchestrator can convene the panel and continue with the verdict.',
+    });
+    return { definition, validate, checkPermission, execute };
+  >>>

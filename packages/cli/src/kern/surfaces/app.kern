@@ -40,6 +40,8 @@ import from="../blocks/todo-list.js" names="TodoList"
 import from="../signals/todos.js" names="Todo" types=true
 import from="../signals/todos.js" names="clearTodos"
 import from="../cesar/session.js" names="saveCesarConversationSnapshot"
+import from="../cesar/turn-runtime.js" names="createDurableCesarTurnRuntimeHost"
+import from="../cesar/turn-runtime.js" names="CesarTurnRuntimeHost" types=true
 import from="../../generated/surfaces/status.js" names="SpinnerBlock,BackgroundJobRail,ExecutionRailPanel"
 import from="../../generated/blocks/controls.js" names="EnginePicker,ModelPicker,ReviewBlock,CesarPicker"
 import from="../../generated/blocks/rendering.js" names="contentWidth,withContentWidthOverride,color256toHex,engineColor,CODE_RAIL,CODE_RAIL_COLOR,MAX_CODE_LINES"
@@ -213,6 +215,7 @@ screen name=App target=ink
   ref name=pasteHashesRef type="Map<string,string>" initial="new Map()"
   ref name=activeAbortRef type="AbortController|null" initial="null"
   ref name=activeTurnRef type="{ input:string; engineId:string; retried:boolean }|null" initial="null"
+  ref name=cesarRuntimeHostRef type=CesarTurnRuntimeHost initial="createDurableCesarTurnRuntimeHost(chatSession.id)"
   ref name=lastActivityTimeRef type=number initial="Date.now()"
   // Single-shot bell guard: set true when we ring on done/await, cleared on
   // the next user keystroke or next dispatch. Prevents double-bell when both
@@ -861,10 +864,13 @@ screen name=App target=ink
 
   callback name=interruptActiveRun params="message:string, clearChat:boolean" deps="replState,dispatch,trackAbort,outputActions"
     handler lang="kern"
-      do value="runInterruptActiveRun({ activeAbortRef, activePlanRef, setActiveAbort, setActivePlan, setLiveSpinner, setLiveProgress, outputActions, setQuestionState, setQuestionAnswer, setPendingPlanProposal, setSlashPickerOpen, setEnginePickerOpen, setModelPickerOpen, setCesarPickerOpen, setReviewEvent, replState, dispatch, setReplState, pendingBellRef, bell, setWindowTitle }, message, clearChat)"
+      do value="runInterruptActiveRun({ activeAbortRef, activePlanRef, cesarRuntimeHost: cesarRuntimeHostRef.current, setActiveAbort, setActivePlan, setLiveSpinner, setLiveProgress, outputActions, setQuestionState, setQuestionAnswer, setPendingPlanProposal, setSlashPickerOpen, setEnginePickerOpen, setModelPickerOpen, setCesarPickerOpen, setReviewEvent, replState, dispatch, setReplState, pendingBellRef, bell, setWindowTitle }, message, clearChat)"
 
   callback name=buildContext params="" deps="registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,extensionPromptFragments,sessionMcpServers,telemetryVitals,recentFallbacks,setActivePlanWrapped"
     handler <<<
+      if (cesarRuntimeHostRef.current.sessionId !== chatSession.id) {
+        cesarRuntimeHostRef.current = createDurableCesarTurnRuntimeHost(chatSession.id);
+      }
       return {
         registry, adapter, activeEngines,
         get inputEpoch() { return inputEpochRef.current; },
@@ -886,6 +892,7 @@ screen name=App target=ink
         telemetryVitals,
         telemetrySnapshot: () => telemetryPollerRef.current?.snapshot?.() ?? telemetryVitals,
         recentFallbacks,
+        cesarRuntimeHost: cesarRuntimeHostRef.current,
       };
     >>>
 
@@ -1467,7 +1474,7 @@ screen name=App target=ink
   effect deps="setActiveAbort,outputActions"
     handler <<<
       _cancelCallback.fn = buildCancelCallback({
-        activeAbortRef, activePlanRef, setActiveAbort, setActivePlan,
+        activeAbortRef, activePlanRef, cesarRuntimeHost: cesarRuntimeHostRef.current, setActiveAbort, setActivePlan,
         setLiveSpinner, setLiveProgress, outputActions,
         agentProgressRef, setAgentProgress,
         setQuestionState, setQuestionAnswer, setPendingPlanProposal,

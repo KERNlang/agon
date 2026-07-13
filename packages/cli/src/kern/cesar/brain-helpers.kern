@@ -380,6 +380,25 @@ fn name=shouldDeescalateGuard params="opts:{intakeKind?:string, recommendedFlow?
     return true;
   >>>
 
+fn name=withEagerToolCallId params="meta:Record<string,unknown>,fallbackId:string" returns="Record<string,unknown>" export=true
+  doc "Give an uncorrelated eager streaming call one stable identity before any lifecycle event is emitted. The same enriched metadata must feed the running event and executeEagerTool terminal event so recap correlation cannot split one call into two records."
+  handler <<<
+    const existing = typeof meta?.toolCallId === 'string' ? meta.toolCallId.trim() : '';
+    if (existing) return meta;
+    return { ...meta, toolCallId: fallbackId };
+  >>>
+
+fn name=claimEagerToolExecution params="claimed:Set<string>,toolCallId:unknown" returns=boolean export=true
+  doc "Claim one correlated eager tool execution for the current Cesar turn. Streaming adapters may repeat a running chunk while assembling arguments; a stable toolCallId executes once. Uncorrelated calls remain fail-open because a tool name or payload cannot safely distinguish duplicates from independent calls."
+  handler lang="kern"
+    let name=id value="String(toolCallId ?? '').trim()"
+    if cond="!id"
+      return value=true
+    if cond="claimed.has(id)"
+      return value=false
+    do value="claimed.add(id)"
+    return value=true
+
 fn name=eagerFailedToolNames params="results:ToolCallResult[]" returns="string[]" export=true
   doc "Return unique tool names from failed eager tool results. Used to restrict one-shot repair retries to the tool that just failed."
   handler lang="kern"
@@ -408,7 +427,7 @@ fn name=shouldRunEagerRepairTool params="toolName:string,meta:any,failedToolName
 fn name=shouldStopAfterXmlToolCall params="toolName:string" returns=boolean export=true
   doc "Return true for XML tools that hand control back to the Agon dispatcher. These tools do not produce inline results; continuing the XML tool loop after them can make Cesar claim a delegation happened while the actual forge/brainstorm/etc. job has not started yet."
   handler lang="kern"
-    let name=HANDOFF_TOOLS value="new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal', 'ProposePlan', 'ExitPlanMode'])"
+    let name=HANDOFF_TOOLS value="new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Council', 'Pipeline', 'Review', 'Agent', 'Goal', 'Conquer', 'ProposePlan', 'ExitPlanMode'])"
     return value="HANDOFF_TOOLS.has(String(toolName ?? ''))"
 
 fn name=stripAgonToolPrefix params="name:string" returns=string export=true

@@ -1,6 +1,9 @@
-import from="@kernlang/agon-core" names="ToolRegistry,getProjectFileStateCache,createReadTool,createEditTool,createMultiEditTool,createWriteTool,createBashTool,createGrepTool,createGlobTool,createForgeTool,createBrainstormTool,createTribunalTool,createCampfireTool,createPipelineTool,createGoalTool,createConquerTool,createReviewTool,createDelegateTool,createAgentTool,createReportConfidenceTool,createProposePlanTool,createExitPlanModeTool,createListPlansTool,createRetrieveResultTool,createQuickNeroTool,createTodoWriteTool,createSaveMemoryTool,executeToolCall,resolveWorkingDir,parsePermissionRuleSet,parseToolHooks"
+import from="@kernlang/agon-core" names="ToolRegistry,getProjectFileStateCache,createReadTool,createEditTool,createMultiEditTool,createWriteTool,createBashTool,createGrepTool,createGlobTool,createForgeTool,createBrainstormTool,createTribunalTool,createCampfireTool,createPipelineTool,createGoalTool,createConquerTool,createReviewTool,createDelegateTool,createAgentTool,createReportConfidenceTool,createProposePlanTool,createExitPlanModeTool,createListPlansTool,createRetrieveResultTool,createQuickNeroTool,createTodoWriteTool,createSaveMemoryTool,executeToolCall,resolveWorkingDir,parsePermissionRuleSet,parseToolHooks,isReadOnlyCommand"
 import from="@kernlang/agon-core" names="ToolContext,ToolCallResult" types=true
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
+import from="./council-tool.js" names="createCouncilTool"
+import from="./task-execution-lease.js" names="authorizeTaskAction,isTaskFileMutationAction"
+import from="./brain-helpers.js" names="isBashToolName"
 
 fn name=createCesarToolRegistry params="engineId?:string" returns="ToolRegistry"
   doc "Create and populate the standard Cesar tool registry. Single source of truth — no more duplication."
@@ -17,6 +20,7 @@ fn name=createCesarToolRegistry params="engineId?:string" returns="ToolRegistry"
     do value="toolRegistry.register(createBrainstormTool())"
     do value="toolRegistry.register(createTribunalTool())"
     do value="toolRegistry.register(createCampfireTool())"
+    do value="toolRegistry.register(createCouncilTool())"
     do value="toolRegistry.register(createPipelineTool())"
     do value="toolRegistry.register(createGoalTool())"
     do value="toolRegistry.register(createConquerTool())"
@@ -39,7 +43,7 @@ fn name=createEagerToolContext params="ctx:HandlerContext, config:any, signal:Ab
     let name=cwd value="resolveWorkingDir()"
     let name=fsc value="getProjectFileStateCache(cwd)"
     let name=explorationMode value="(ctx as any).explorationMode ?? false"
-    return value="{ cwd, readFileState: (fsc as any).cache, abortSignal: signal, permissionMode: (config as any).permissionMode ?? 'ask', explorationMode, allowedCommands: (config as any).allowedCommands ?? [], toolPermissions: (config as any).toolPermissions ?? {}, source: 'orchestrator' as const, permissionRules: parsePermissionRuleSet((config as any).permissions), toolHooks: parseToolHooks((config as any).hooks), onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }), }"
+    return value="{ cwd, readFileState: (fsc as any).cache, abortSignal: signal, permissionMode: (config as any).permissionMode ?? 'ask', explorationMode, allowedCommands: (config as any).allowedCommands ?? [], toolPermissions: (config as any).toolPermissions ?? {}, source: 'orchestrator' as const, permissionRules: parsePermissionRuleSet((config as any).permissions), toolHooks: parseToolHooks((config as any).hooks), taskExecutionLease: ctx.cesar?.taskExecutionLease, onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }), } as any"
 
 fn name=parseEagerToolInput params="toolName:string,input:unknown" returns="{ok:boolean,input?:Record<string,unknown>,error?:string,raw:string}" export=true
   doc "Parse a streaming tool input into a JSON object. Malformed input is returned as an explicit retryable error instead of being silently coerced."
@@ -102,19 +106,49 @@ fn name=executeEagerTool async=true params="toolName:string, meta:Record<string,
       const result: ToolCallResult = {
         toolCallId: callId,
         toolName,
-        result: { ok: false, content: '', error },
+        result: { ok: false, content: '', error, terminalReason: 'failed' },
         durationMs: 0,
       };
-      dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'error', output: error, durationMs: result.durationMs } as any);
+      dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, toolCallId: callId, terminalReason: 'failed', status: 'error', output: error, durationMs: result.durationMs } as any);
       return result;
     }
     const parsedInput = parsed.input ?? {};
+    const lease = (toolCtx as any).taskExecutionLease;
+    const requestTaskApproval = (tool: string, message: string) => new Promise<boolean>((resolve) => {
+      const command = (parsedInput as any).command ?? (parsedInput as any).file_path ?? toolInput;
+      dispatch({ type: 'permission-ask', tool, command, reason: message, resolve: (approved: boolean | string) => {
+        resolve(typeof approved === 'string' ? approved === 'y' || approved === 'a' : !!approved);
+      } } as any);
+    });
+    const authorizeEagerTaskAction = async (tool: string, input: Record<string, unknown>): Promise<boolean | string> => {
+      const target = isBashToolName(tool)
+        ? String((input as any).command ?? '')
+        : String((input as any).file_path ?? (input as any).notebook_path ?? (input as any).path ?? (input as any).task ?? '');
+      const needsAuthorization = isTaskFileMutationAction(tool)
+        || (isBashToolName(tool) && !isReadOnlyCommand(target));
+      if (!lease || !needsAuthorization) return true;
+      const authorization = await authorizeTaskAction(
+        lease,
+        tool,
+        target,
+        (evaluation: any) => requestTaskApproval(
+          tool,
+          evaluation.decision === 'ask_task_once'
+            ? 'Approve this important task once'
+            : 'Approve this dangerous action boundary',
+        ),
+      );
+      return authorization.decision === 'allow'
+        ? true
+        : `Task execution lease denied ${tool} (${authorization.reason}).`;
+    };
 
     const streamId = `eager-stream-${callId}`;
     let streamStarted = false;
 
     const streamingCtx: ToolContext = {
       ...toolCtx,
+      authorizeToolCall: authorizeEagerTaskAction,
       onStreamChunk: (chunk: string) => {
         if (!streamStarted) {
           streamStarted = true;
@@ -129,11 +163,15 @@ fn name=executeEagerTool async=true params="toolName:string, meta:Record<string,
       streamingCtx,
       toolRegistry,
       async (tool: string, message: string) => {
-        return new Promise<boolean>((resolve) => {
-          let command = '';
-          command = (parsedInput as any).command ?? (parsedInput as any).file_path ?? toolInput;
-          dispatch({ type: 'permission-ask', tool, command, reason: message, resolve } as any);
-        });
+        const permissionTarget = isBashToolName(tool)
+          ? String((parsedInput as any).command ?? '')
+          : String((parsedInput as any).file_path ?? (parsedInput as any).notebook_path ?? (parsedInput as any).path ?? (parsedInput as any).task ?? '');
+        const permissionNeedsTaskAuthorization = isTaskFileMutationAction(tool)
+          || (isBashToolName(tool) && !isReadOnlyCommand(permissionTarget));
+        if (lease && permissionNeedsTaskAuthorization) {
+          return authorizeEagerTaskAction(tool, parsedInput);
+        }
+        return requestTaskApproval(tool, message);
       },
     );
 
@@ -144,10 +182,10 @@ fn name=executeEagerTool async=true params="toolName:string, meta:Record<string,
     // renderer shows the "· 1.4s" suffix; the brain-side _toolStartMs entry is cleared
     // by dispatchToolCall when a terminal event already carries durationMs.
     if (streamStarted) {
-      dispatch({ type: 'tool-stream-end', streamId, engineId: cesarEngineId, tool: toolName, input: toolInput, status, output: out, durationMs: result.durationMs } as any);
+      dispatch({ type: 'tool-stream-end', streamId, engineId: cesarEngineId, tool: toolName, input: toolInput, toolCallId: callId, terminalReason: result.result.terminalReason, status, output: out, durationMs: result.durationMs } as any);
     } else {
       // No chunks produced (permission denied, fast exit, etc.) — emit a normal tool-call block
-      dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status, output: out, durationMs: result.durationMs } as any);
+      dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, toolCallId: callId, terminalReason: result.result.terminalReason, status, output: out, durationMs: result.durationMs } as any);
     }
     return result;
   >>>

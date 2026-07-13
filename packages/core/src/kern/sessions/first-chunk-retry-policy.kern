@@ -1,0 +1,24 @@
+interface name=FirstChunkRetryInput export=true
+  field name=error type=string
+  field name=retriesUsed type=number
+  field name=maxRetries type=number
+  field name=hadSideEffects type=boolean
+  field name=aborted type=boolean
+
+interface name=FirstChunkRetryDecision export=true
+  field name=retry type=boolean
+  field name=reason type="'clean_first_chunk_timeout'|'not_first_chunk_timeout'|'side_effect_already_started'|'retry_budget_exhausted'|'aborted'"
+
+fn name=decideFirstChunkRetry params="input:FirstChunkRetryInput" returns=FirstChunkRetryDecision export=true
+  doc "Allow a bounded dispatch retry only when the provider produced no usable first chunk and the current user turn has initiated no side effect."
+  handler <<<
+    if (input.aborted) return { retry: false, reason: 'aborted' };
+    if (!/API stream first-chunk idle timeout/i.test(input.error)) {
+      return { retry: false, reason: 'not_first_chunk_timeout' };
+    }
+    if (input.hadSideEffects) return { retry: false, reason: 'side_effect_already_started' };
+    if (!Number.isSafeInteger(input.maxRetries) || input.maxRetries <= input.retriesUsed) {
+      return { retry: false, reason: 'retry_budget_exhausted' };
+    }
+    return { retry: true, reason: 'clean_first_chunk_timeout' };
+  >>>

@@ -6,47 +6,51 @@ export interface ToolInput {
 }
 
 // @kern-source: tool-types:7
+export type ToolTerminalReason = 'succeeded' | 'failed' | 'skipped_policy' | 'denied' | 'cancelled' | 'unknown';
+
+// @kern-source: tool-types:9
 export interface ToolResult {
   ok: boolean;
   content: string;
   error?: string;
   metadata?: Record<string,unknown>;
+  terminalReason?: ToolTerminalReason;
 }
 
-// @kern-source: tool-types:13
+// @kern-source: tool-types:16
 export interface PermissionDecision {
   behavior: 'allow'|'ask'|'deny';
   message?: string;
   reason?: string;
 }
 
-// @kern-source: tool-types:23
+// @kern-source: tool-types:26
 export interface ParsedPermissionRule {
   tool: string;
   command?: string;
   prefix: boolean;
 }
 
-// @kern-source: tool-types:28
+// @kern-source: tool-types:31
 export interface PermissionRuleSet {
   allow: ParsedPermissionRule[];
   deny: ParsedPermissionRule[];
 }
 
-// @kern-source: tool-types:37
+// @kern-source: tool-types:40
 export interface ToolHookDef {
   matcher?: string;
   command: string;
   timeout?: number;
 }
 
-// @kern-source: tool-types:42
+// @kern-source: tool-types:45
 export interface ParsedToolHooks {
   preToolUse: ToolHookDef[];
   postToolUse: ToolHookDef[];
 }
 
-// @kern-source: tool-types:46
+// @kern-source: tool-types:49
 export interface ToolContext {
   cwd: string;
   readFileState: Map<string, FileState>;
@@ -58,6 +62,7 @@ export interface ToolContext {
   onProgress?: ((message: string) => void);
   onStreamChunk?: ((chunk: string) => void);
   onTodos?: ((todos: Array<{id:string,text:string,state:string,kind?:string,note?:string}>) => void);
+  authorizeToolCall?: ((tool:string,input:Record<string,unknown>)=>Promise<boolean|string>|boolean|string);
   readOnlyMode?: boolean;
   blockedTools?: string[];
   blockedToolMessage?: string;
@@ -68,7 +73,7 @@ export interface ToolContext {
   toolHooks?: ParsedToolHooks;
 }
 
-// @kern-source: tool-types:66
+// @kern-source: tool-types:70
 export interface FileState {
   content: string;
   timestamp: number;
@@ -79,7 +84,7 @@ export interface FileState {
   lastTouchedAt?: number;
 }
 
-// @kern-source: tool-types:75
+// @kern-source: tool-types:79
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -91,7 +96,7 @@ export interface ToolDefinition {
   metadata?: Record<string,unknown>;
 }
 
-// @kern-source: tool-types:85
+// @kern-source: tool-types:89
 export interface ToolHandler {
   definition: ToolDefinition;
   validate: (input: Record<string,unknown>, ctx: ToolContext) => string|null;
@@ -99,14 +104,14 @@ export interface ToolHandler {
   execute: (input: Record<string,unknown>, ctx: ToolContext) => Promise<ToolResult>;
 }
 
-// @kern-source: tool-types:91
+// @kern-source: tool-types:95
 export interface ToolCall {
   id: string;
   name: string;
   input: Record<string,unknown>;
 }
 
-// @kern-source: tool-types:96
+// @kern-source: tool-types:100
 export interface ToolCallResult {
   toolCallId: string;
   toolName: string;

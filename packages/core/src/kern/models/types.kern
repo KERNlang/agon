@@ -89,7 +89,7 @@ interface name=EngineDefinition
   field name=imageFlag type=string optional=true
   field name=systemPromptFlag type=string optional=true
   field name=agent type=EngineModeConfig optional=true
-  field name=api type="{baseUrl:string, apiKeyEnv:string, model:string, maxTokens?:number, contextWindow?:number, format?:'openai'|'anthropic', firstChunkTimeoutMs?:number, idleTimeoutMs?:number}" optional=true
+  field name=api type="{baseUrl:string, apiKeyEnv:string, model:string, maxTokens?:number, contextWindow?:number, format?:'openai'|'anthropic', firstChunkTimeoutMs?:number, idleTimeoutMs?:number, firstChunkRetryCount?:number, firstChunkRetryBackoffMs?:number}" optional=true
   field name=companion type=CompanionConfig optional=true
   field name=sessionBudget type=SessionBudget optional=true
     doc "Proactive context-window budget for this engine's Cesar brain session. When present, the pre-turn gate estimates session tokens and warns/auto-compacts/hard-stops before the window overflows. When ABSENT the gate is inert (feature opt-in per engine — zero regression for engines lacking it)."

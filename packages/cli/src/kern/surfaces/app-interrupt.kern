@@ -32,6 +32,7 @@ import from="@kernlang/agon-core" names="saveCesarPlan,cancelCesarPlan"
 import from="@kernlang/agon-core" names="PersistentSession" types=true
 import from="../cesar/pause-state.js" names="createPauseState,dismissPauseState"
 import from="../cesar/steering.js" names="clearSteering"
+import from="../cesar/turn-runtime.js" names="transitionCesarTurn"
 import from="../cesar/pause-state.js" names="PauseState" types=true
 import from="../signals/output.js" names="OutputActions,AgentProgressSnapshot" types=true
 import from="../signals/output.js" names="clearPermissionQueue,clearThinkingBuffer"
@@ -72,6 +73,7 @@ module name=AppInterrupt
     // ── Active run handles (abort controller + pending plan) ──
     field name=activeAbortRef type="{current: AbortController | null}"
     field name=activePlanRef type="{current: any}"
+    field name=cesarRuntimeHost type="any"
     field name=setActiveAbort type="(abort:AbortController | null) => void"
     field name=setActivePlan type="(plan:any) => void"
     // ── Output / stream teardown (spinner, progress, in-flight stream flush) ──
@@ -103,6 +105,9 @@ module name=AppInterrupt
   fn name=runInterruptActiveRun params="opts:InterruptRunDeps, message:string, clearChat:boolean" returns=void
     handler lang="kern"
       let name=abort value="opts.activeAbortRef.current"
+      let name=activeRuntime value="opts.cesarRuntimeHost?.active"
+      if cond="activeRuntime && activeRuntime.state === 'running'"
+        do value="transitionCesarTurn(opts.cesarRuntimeHost, activeRuntime.envelope, 'cancelling')"
       if cond="abort"
         do value="abort.abort()"
       do value="runTrackAbort(null, opts.activeAbortRef, opts.setActiveAbort)"
@@ -154,6 +159,7 @@ module name=AppInterrupt
     // ── Active run handles (abort controller + pending plan) ──
     field name=activeAbortRef type="{current: AbortController | null}"
     field name=activePlanRef type="{current: any}"
+    field name=cesarRuntimeHost type="any"
     field name=setActiveAbort type="(abort:AbortController | null) => void"
     field name=setActivePlan type="(plan:any) => void"
     // ── Output / stream teardown ──
@@ -185,6 +191,10 @@ module name=AppInterrupt
   fn name=buildCancelCallback params="opts:CancelCallbackDeps" returns="() => void"
     handler <<<
       return () => {
+        const activeRuntime = opts.cesarRuntimeHost?.active;
+        if (activeRuntime && activeRuntime.state === 'running') {
+          transitionCesarTurn(opts.cesarRuntimeHost, activeRuntime.envelope, 'cancelling');
+        }
         for (const abort of _activeAborts) abort.abort();
         _activeAborts.clear();
         // Hard cancel also drops any mid-turn steering (no carryover).

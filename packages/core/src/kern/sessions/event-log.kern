@@ -48,6 +48,11 @@ interface name=AppendOptions
   field name=kind type=string optional=true
   field name=fsync type=boolean optional=true
 
+interface name=DurableAppendResult export=true
+  field name=ok type=boolean
+  field name=seq type=number
+  field name=error type=string optional=true
+
 // ── Constants ────────────────────────────────────────────────────────
 
 const name=EVENT_LOG_FLUSH_MS type=number value=50
@@ -280,6 +285,30 @@ fn name=append params="sessionId:string, event:unknown, opts?:AppendOptions" ret
     buf.pending.push({ seq, ts: Date.now(), event });
     scheduleFlush(sessionId);
     return seq;
+  >>>
+
+fn name=appendDurable params="sessionId:string,event:unknown,opts?:AppendOptions" returns=DurableAppendResult export=true
+  doc "Fail-closed control-plane append. Flushes earlier buffered output first, writes this event synchronously, and reports disk failure to the caller before any mutation may begin."
+  handler <<<
+    const buf = getBuffer(sessionId, opts);
+    const failuresBeforeFlush = _writeFailures.count;
+    flush(sessionId);
+    if (_writeFailures.count !== failuresBeforeFlush) {
+      return { ok: false, seq: 0, error: 'failed_to_flush_prior_events' };
+    }
+    if (buf.timer) { clearTimeout(buf.timer); buf.timer = null; }
+    const seq = buf.nextSeq;
+    const entry: LoggedEvent = { seq, ts: Date.now(), event };
+    try {
+      mkdirSync(sessionDir(sessionId), { recursive: true });
+      appendFileSync(eventsPath(sessionId), safeStringifyEvent(entry) + '\n');
+    } catch (err) {
+      _writeFailures.count += 1;
+      return { ok: false, seq: 0, error: err instanceof Error ? err.message : String(err) };
+    }
+    buf.nextSeq = seq + 1;
+    rotateIfNeeded(sessionId, buf.rotateBytes, seq);
+    return { ok: true, seq };
   >>>
 
 // ── latestSeq ────────────────────────────────────────────────────────

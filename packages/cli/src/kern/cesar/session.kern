@@ -16,6 +16,8 @@ import from="./routing.js" names="buildRoutingContext"
 import from="./brain-helpers.js" names="extractDelegation"
 import from="./self-turn-approval.js" names="applyCesarSelfTurnApproval,approvalArgsFromCommand"
 import from="./approval-diff.js" names="approvalToolIsFileMutating,buildApprovalDiffPreview"
+import from="./turn-runtime.js" names="isActiveCesarTurn,runTurnPermissionOnce,runTurnToolOnce"
+import from="./task-execution-lease.js" names="approveTaskAction,authorizeTaskAction,claimTaskActionPrompt,evaluateTaskAction,isTaskFileMutationAction"
 import from="./tool-observability.js" names="recordCesarApprovalDecision,recordCesarToolTimeline,recordCesarConfidence,buildToolErrorDiagnostic"
 
 const name=CESAR_SYSTEM_PROMPT type=string
@@ -120,7 +122,7 @@ CRITICAL: You have orchestration modes as DIRECT TOOL CALLS. NEVER use Bash to r
     EXAMPLE (team, investigate): "Audit the auth layer for security issues" → Agent(task:"audit auth layer...", team:true, taskKind:"investigate")
     ALWAYS set taskKind explicitly. Mismatched taskKind silently breaks the synthesis path.
 
-  After calling Tribunal/Brainstorm/Campfire/Forge/Pipeline/Review/Agent: STOP. The orchestrator handles the rest.
+  After calling Tribunal/Brainstorm/Campfire/Council/Forge/Pipeline/Review/Agent/Conquer: STOP. The orchestrator handles the rest.
   DEFAULT IS SOLO. Investigate first. But when delegation fits — call the tool directly, never via Bash.
 RULE 3 — SOLO vs TEAM: When delegating, decide solo or team.
   Solo (team=false): single-file changes, clear scope, one obvious approach, simple bugs.
@@ -142,7 +144,7 @@ RULE 4b — MODE PURPOSE (don't mix them up — and don't always default to brai
 RULE 4c — REVIEW: Use Review(target?, engine?, engines?) to delegate read-only code review. Default target is "uncommitted". Targets: "uncommitted", "branch:NAME", "commit:SHA". Specify engine ONLY when the user explicitly names one via "with <engine>"; if they name multiple reviewers, specify engines:["codex","claude"] or the named set and Agon will run them in parallel. Otherwise choose two diverse engines for high-stakes reviews or omit engine/engines and let Agon auto-select. If the user asks to review AND fix, do NOT stop at Review; call Pipeline(task, fitnessCmd?, engines?) so the findings are fixed immediately through Agon's agent harness.
 RULE 5 — WORKSPACE: Use Read for files. Use Grep for search. NEVER use cat/head/tail/grep via Bash. For shell commands use AgonBash (MCP tool), for edits use AgonEdit, for new files use AgonWrite. The user will see a Y/N/Always prompt for write operations. If they choose "Always", that command is auto-approved going forward. When the user says "commit", call AgonBash with the git commands. Don't say "I can't" or "I need permission" — call the tool and the permission system handles it.
 RULE 5b — DURABLE MEMORY: Call SaveMemory(memory, section) to record a fact that should survive into FUTURE sessions — and ONLY for that. section is one of Decisions / Constraints / Conventions / Session Notes. Use it when a real, durable fact is established: an architectural decision ("we chose session tokens over JWT"), a hard constraint ("Node 20 floor", "no top-level await"), or a project convention ("commits use conventional format"). Do NOT save transient/session state, the current TODO, things obvious from the code, or speculation — that is noise next session. One fact per call, no date (it is added automatically); the user confirms each memory. Saved memory comes back as a [PROJECT MEMORY] block at the top of your context in later sessions, so don't re-save what is already there.
-RULE 6 — AFTER DELEGATION: After calling Forge/Brainstorm/Tribunal/Campfire/Pipeline/Review/Agent, STOP. Do not continue responding. The orchestrator handles the rest. After calling Delegate, WAIT for the result — do NOT stop. Incorporate the delegated result into your response.
+RULE 6 — AFTER DELEGATION: After calling Forge/Brainstorm/Tribunal/Campfire/Council/Pipeline/Review/Agent/Conquer, STOP. Do not continue responding. The orchestrator handles the rest. After calling Delegate, WAIT for the result — do NOT stop. Incorporate the delegated result into your response.
 RULE 7 — NO NARRATION: NEVER narrate your research process. Do not write "Reading the file...", "I'm checking...", "Let me look at...", "I've confirmed...". The user sees your text output — if you narrate exploration it looks like you have no clue. Instead: call tools SILENTLY, then speak ONLY when you have the answer or decision. Your visible output should be conclusions, answers, and actions — never a play-by-play of your investigation. If you need to read files or search code, call Read/Grep/Glob directly without announcing it.
 RULE 7b — LIVE TODO CHECKLIST (the sanctioned exception to RULE 7): For multi-step work — more than 2 distinct steps — pin a live checklist so the user can watch progress without you narrating it. Emit a [TODOS] block: one JSON array, each item {"id","text","state"} where state is pending|running|done|failed. It is INVISIBLE to the user (the runtime strips it and renders a pinned checklist instead) — never describe it in prose. Re-emit the WHOLE block (latest snapshot) whenever a step's state changes — typically right after a tool finishes — so items tick from running to done as you work. OPTIONAL: skip it for single-step or chat turns. Example for "refactor the parser and add a test":
   [TODOS]
@@ -547,7 +549,7 @@ fn name=saveCesarConversationSnapshot params="session:PersistentSession|null, ch
     }
   >>>
 
-fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, config:any" returns="((name:string, args:Record<string,unknown>, callId:string) => Promise<string>) | undefined"
+fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, config:any" returns="((name:string, args:Record<string,unknown>, callId:string, controlPlane?:any) => Promise<string>) | undefined"
   doc "Build the onToolCall callback for API engines with native function calling."
   handler <<<
     const cwd = resolveWorkingDir();
@@ -576,7 +578,14 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
       // path here: executeToolCall fires them around handler.execute.
       toolHooks: parseToolHooks((config as any).hooks),
     };
-    return async (name: string, args: Record<string, unknown>, callId: string) => {
+    return async (name: string, args: Record<string, unknown>, callId: string, controlPlane?: any) => {
+      // Fence correlated callbacks before ANY plan, delegation, confidence, or
+      // approval state can mutate. Legacy uncorrelated adapters retain their
+      // existing path; once an envelope is present it must own the active lease.
+      const runtime = ctx.cesarRuntimeHost?.active;
+      if (controlPlane && (!runtime || !isActiveCesarTurn(ctx.cesarRuntimeHost, controlPlane))) {
+        return `Error: [STALE_TURN_REJECTED] ${name} was not executed because its Cesar turn lease expired.`;
+      }
       // Plan mode: block execution tools and mutating shell commands before
       // they can open a permission prompt that captures "go"/"yes".
       const activePlan = ctx.activePlan;
@@ -591,26 +600,6 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
             return `[BLOCKED] Mutating Bash commands are not available in plan mode. Use Read/Grep/Glob or read-only Bash for investigation, then call ProposePlan and wait for approval before running "${cmd}".`;
           }
         }
-      }
-
-      // Fast path: small answers/edits stay live and cheap. ReportConfidence
-      // remains allowed, but planning/delegation/self-check tools are gated so
-      // Cesar does not turn a one-file fix into a full orchestration cycle.
-      const fastPathMode = String((ctx.cesar as any)?.fastPathMode ?? '');
-      if (fastPathMode) {
-        const BLOCKED_IN_FAST_PATH = ['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal', 'Delegate', 'ProposePlan', 'QuickNero'];
-        if (BLOCKED_IN_FAST_PATH.includes(name)) {
-          throw new Error(`[BLOCKED_FAST_PATH] This is a ${fastPathMode} fast-path turn. Do the direct work with Read/Grep/Glob/Edit/Write/Bash as needed, then answer briefly. Do not plan, forge, delegate, review, or self-challenge unless the user explicitly asks.`);
-        }
-      }
-
-      // ── Orchestration signal tools — intercept before execution ──
-      const ORCH_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal']);
-      if (ORCH_TOOLS.has(name)) {
-        ctx.cesar!.pendingDelegation = extractDelegation(name, args);
-        // [DELEGATION_BREAK] prefix signals persistent-session to stop the tool loop
-        // immediately — the model must not continue after delegation.
-        return '[DELEGATION_BREAK] Delegation accepted. The orchestrator will handle the rest.';
       }
 
       // ── Delegate tool — actually dispatches to another engine and returns result ──
@@ -794,6 +783,17 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
         ctx.cesar!.blockedOnConfidence = null;
       }
 
+      // ── Orchestration signal tools — autonomous, but only after the internal
+      // confidence-before-spend nudge above. This never asks the user to approve
+      // orchestration; Cesar reports confidence and then chooses the mode itself.
+      const ORCH_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Council', 'Pipeline', 'Review', 'Agent', 'Goal', 'Conquer']);
+      if (ORCH_TOOLS.has(name)) {
+        ctx.cesar!.pendingDelegation = extractDelegation(name, args);
+        // [DELEGATION_BREAK] prefix signals persistent-session to stop the tool loop
+        // immediately — the model must not continue after delegation.
+        return '[DELEGATION_BREAK] Delegation accepted. The orchestrator will handle the rest.';
+      }
+
       // Dedup stable discovery tools. Do not cache Read here: the Read tool
       // performs mtime-aware dedup itself and must run on explicit re-read so
       // Edit/Write snapshots refresh after a file changes.
@@ -801,11 +801,44 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
       const cached = CACHEABLE_TOOLS.has(name) ? toolResultCache.get(cacheKey) : undefined;
       if (cached !== undefined) return cached;
 
-      const result = await executeToolCall(
-        { id: callId, name, input: args },
-        sharedToolCtx,
-        toolRegistry,
-        async (tool: string, message: string) => {
+      const lease = ctx.cesar?.taskExecutionLease;
+      const taskTarget = name === 'Bash'
+        ? String((args as any).command ?? '')
+        : String((args as any).file_path ?? (args as any).notebook_path ?? (args as any).path ?? (args as any).task ?? '');
+      const requestTaskApproval = (tool: string, evaluation: any) => new Promise<boolean>((resolve) => {
+        const d = ctx.cesar!.lastDispatch;
+        if (!d) { resolve(false); return; }
+        const cmd = renderToolPermissionCommand(tool, args);
+        let permDiffPreview: any = undefined;
+        if (approvalToolIsFileMutating(tool)) {
+          try { permDiffPreview = buildApprovalDiffPreview(String(tool), args as Record<string, unknown>); }
+          catch { /* diff is best-effort — fall back to command preview */ }
+        }
+        d({ type: 'permission-ask', tool, command: cmd, reason: evaluation.decision === 'ask_task_once' ? 'Approve this important task once' : 'Approve this dangerous action boundary', diffPreview: permDiffPreview && Array.isArray(permDiffPreview.files) ? permDiffPreview : undefined, fallbackNote: permDiffPreview && typeof permDiffPreview.fallback === 'string' ? permDiffPreview.fallback : undefined, resolve: (approved: boolean | string) => resolve(typeof approved === 'string' ? approved === 'y' || approved === 'a' : !!approved) } as any);
+      });
+      // Tool handlers can auto-allow in-workspace writes or permissionMode=auto
+      // Bash without invoking their permission callback. Enforce the turn lease
+      // first for every authority-bearing native/API mutation.
+      const needsLeasePreflight = isTaskFileMutationAction(name)
+        || (name === 'Bash' && !isReadOnlyCommand(taskTarget));
+      if (lease && needsLeasePreflight) {
+        const authorization = await authorizeTaskAction(lease, name, taskTarget, (evaluation: any) => requestTaskApproval(name, evaluation));
+        if (authorization.decision !== 'allow') return `DENIED: ${name} was not executed (${authorization.reason}).`;
+      }
+
+      const executeNativeTool = () => executeToolCall(
+          { id: callId, name, input: args },
+          sharedToolCtx,
+          toolRegistry,
+          async (tool: string, message: string) => {
+          const target = tool === 'Bash'
+            ? String((args as any).command ?? '')
+            : String((args as any).file_path ?? (args as any).path ?? (args as any).task ?? '');
+          if (lease) {
+            const authorization = await authorizeTaskAction(lease, tool, target, (evaluation: any) => requestTaskApproval(tool, evaluation));
+            if (authorization.decision === 'deny') return false;
+            if (authorization.decision === 'allow') return true;
+          }
           return new Promise<boolean>((resolve) => {
             const d = ctx.cesar!.lastDispatch;
             if (d) {
@@ -825,11 +858,16 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
               }
               d({ type: 'permission-ask', tool, command: cmd, reason: message, diffPreview: permDiffPreview && Array.isArray(permDiffPreview.files) ? permDiffPreview : undefined, fallbackNote: permDiffPreview && typeof permDiffPreview.fallback === 'string' ? permDiffPreview.fallback : undefined, resolve } as any);
             } else {
-              resolve(true);
+              resolve(false);
             }
           });
-        },
-      );
+          },
+        );
+      const mutating = ['Edit', 'Write', 'MultiEdit'].includes(name)
+        || (name === 'Bash' && !isReadOnlyCommand(String((args as any).command ?? '')));
+      const result = runtime && controlPlane
+        ? await runTurnToolOnce(runtime, callId, 'session', mutating ? 'mutation' : 'read_only', executeNativeTool)
+        : await executeNativeTool();
       let output = result.result.ok ? result.result.content : (result.result.error ?? 'Tool execution failed');
       // F6: a permission denial (deny rule / deny-all) is terminal, not a
       // malformed-input retry. Surface it verbatim so the retry wrapper below
@@ -885,11 +923,11 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
     };
   >>>
 
-fn name=buildOnApproval params="ctx:HandlerContext, engineId:string" returns="(tool:string, command:string) => Promise<boolean|string>"
+fn name=buildOnApproval params="ctx:HandlerContext, engineId:string" returns="(tool:string, command:string, controlPlane?:any) => Promise<boolean|string>"
   doc "Build the onApproval callback for engine tool approvals. Returns true to approve, false to deny silently, or a string to deny with a reason the engine can see."
   handler <<<
     const engine = ctx.registry.get(engineId);
-    return async (tool: string, command: string): Promise<boolean | string> => {
+    const evaluateApproval = async (tool: string, command: string): Promise<boolean | string> => {
       const cfg = ctx.config;
       const perms = (cfg as any).toolPermissions ?? {};
       const allowed = (cfg as any).allowedCommands ?? [];
@@ -1017,6 +1055,48 @@ fn name=buildOnApproval params="ctx:HandlerContext, engineId:string" returns="(t
         return true;
       }
 
+      // One turn-scoped authority decision shared by companion and native
+      // adapters. Routine AUTO work proceeds without keyboard prompts;
+      // important work asks once for the task; dangerous boundaries ask for
+      // the exact action+target unless the user's request already named both.
+      const taskLease = ctx.cesar?.taskExecutionLease;
+      if (taskLease) {
+        const taskTarget = agonTool === 'Bash' ? command : ruleArg;
+        const evaluation = evaluateTaskAction(taskLease, agonTool, taskTarget);
+        if (evaluation.decision === 'deny') {
+          logApproval('denied', 'task-lease', evaluation.reason);
+          return false;
+        }
+        if (evaluation.decision === 'allow') {
+          logApproval('approved', 'task-lease', evaluation.reason);
+          return true;
+        }
+        if (!claimTaskActionPrompt(taskLease, evaluation.signature)) {
+          logApproval('denied', 'task-lease', 'duplicate or previously declined approval boundary');
+          return false;
+        }
+        return new Promise<boolean>((resolve) => {
+          const dispatch = ctx.cesar!.lastDispatch;
+          if (!dispatch) {
+            logApproval('denied', 'task-lease', 'approval required but no prompt surface is available');
+            resolve(false);
+            return;
+          }
+          logApproval('prompted', 'task-lease', evaluation.reason);
+          let permDiffPreview: any = undefined;
+          if (approvalToolIsFileMutating(agonTool)) {
+            try { permDiffPreview = buildApprovalDiffPreview(agonTool, approvalArgsFromCommand(agonTool, command)); }
+            catch { /* diff is best-effort — fall back to command preview */ }
+          }
+          dispatch({ type: 'permission-ask', tool: agonTool, command, reason: evaluation.decision === 'ask_task_once' ? 'Approve this important task once' : 'Approve this dangerous action boundary', diffPreview: permDiffPreview && Array.isArray(permDiffPreview.files) ? permDiffPreview : undefined, fallbackNote: permDiffPreview && typeof permDiffPreview.fallback === 'string' ? permDiffPreview.fallback : undefined, resolve: (approved: boolean | string) => {
+            const wasApproved = typeof approved === 'string' ? approved === 'y' || approved === 'a' : !!approved;
+            if (wasApproved) approveTaskAction(taskLease, agonTool, taskTarget);
+            logApproval(wasApproved ? 'approved' : 'denied', 'task-lease', wasApproved ? 'user approved' : 'user denied');
+            resolve(wasApproved);
+          } } as any);
+        });
+      }
+
       // Cesar self-turn fast path: bounded edits/writes on files already read
       // in the project cache do not need to interrupt the stream for another
       // Y/N prompt. This intentionally runs after exploration/plan/confidence
@@ -1096,6 +1176,17 @@ fn name=buildOnApproval params="ctx:HandlerContext, engineId:string" returns="(t
           resolve(true);
         }
       });
+    };
+    return async (tool: string, command: string, controlPlane?: any): Promise<boolean | string> => {
+      const runtime = ctx.cesarRuntimeHost?.active;
+      const requestId = typeof controlPlane?.toolCallId === 'string' ? controlPlane.toolCallId : '';
+      if (controlPlane && (!runtime || !requestId || !isActiveCesarTurn(ctx.cesarRuntimeHost, controlPlane))) {
+        return 'STALE_TURN_REJECTED: approval denied because its Cesar turn lease expired.';
+      }
+      if (runtime && requestId) {
+        return runTurnPermissionOnce(runtime, requestId, () => evaluateApproval(tool, command));
+      }
+      return evaluateApproval(tool, command);
     };
   >>>
 
@@ -1381,12 +1472,12 @@ fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promi
       fullPrompt += '\n\nYou have tools available via function calling. Call them directly — do NOT describe them in XML or narrate what you would call. Just call the function.';
     } else if (isCompanion) {
       // CLI companion with MCP orchestration: reference MCP tools, no XML for orchestration
-      fullPrompt += '\n\nYou have tools available via the agon-orchestration MCP server:\n- Orchestration: Tribunal, Brainstorm, Campfire, Forge, Pipeline, Review, Agent, Delegate, QuickNero, ReportConfidence, ProposePlan, ExitPlanMode\n- Write operations: AgonBash (shell commands), AgonEdit (file edits), AgonWrite (file creation)\n\nCall them as MCP tools — NEVER via your native Bash/Edit/Write. Your native write tools are disabled. Use AgonBash for ALL shell commands (git, npm, etc.), AgonEdit for file edits, AgonWrite for new files. The user will be asked to approve write operations. After calling any orchestration tool except Delegate, QuickNero, and ReportConfidence: STOP and wait.';
+      fullPrompt += '\n\nYou have tools available via the agon-orchestration MCP server:\n- Orchestration: Tribunal, Brainstorm, Campfire, Council, Forge, Pipeline, Review, Agent, Conquer, Delegate, QuickNero, ReportConfidence, ProposePlan, ExitPlanMode\n- Write operations: AgonBash (shell commands), AgonEdit (file edits), AgonWrite (file creation)\n\nCall them as MCP tools — NEVER via your native Bash/Edit/Write. Your native write tools are disabled. Use AgonBash for ALL shell commands (git, npm, etc.), AgonEdit for file edits, AgonWrite for new files. The user will be asked to approve write operations. After calling any orchestration tool except Delegate, QuickNero, and ReportConfidence: STOP and wait.';
       if (isClaudePtyBrain) {
         // PTY brain: the user reads your reply ONLY via DeliverAnswer (TUI text is
         // an unreliable preview). Required every turn that doesn't STOP for an
         // orchestration tool / plan / delegation.
-        fullPrompt += '\n\nIMPORTANT — DELIVERING YOUR REPLY: You are running under a PTY answer-channel. DeliverAnswer is REQUIRED and is the FASTEST way to reply — calling it returns your answer to the user INSTANTLY. To show the user your response you MUST call the DeliverAnswer tool with your complete reply (markdown) in the `text` argument, then STOP. Plain printed/streamed text is only a draft preview, may not reach the user, AND is SLOWER (Agon then has to wait for the terminal to go idle before it can read anything). NEVER "respond directly", skip the tool, or avoid "tool round-trips" to save time — skipping DeliverAnswer makes the turn SLOWER and risks losing your reply entirely. Even a one-word answer goes through DeliverAnswer. Call it exactly once at the end of every turn — EXCEPT on turns where you STOP for an orchestration tool (Forge/Tribunal/Brainstorm/Campfire/Pipeline/Review/Agent/Delegate), ProposePlan, or ExitPlanMode (those already end your turn and Agon handles the rest). Always call ReportConfidence first as usual.';
+        fullPrompt += '\n\nIMPORTANT — DELIVERING YOUR REPLY: You are running under a PTY answer-channel. DeliverAnswer is REQUIRED and is the FASTEST way to reply — calling it returns your answer to the user INSTANTLY. To show the user your response you MUST call the DeliverAnswer tool with your complete reply (markdown) in the `text` argument, then STOP. Plain printed/streamed text is only a draft preview, may not reach the user, AND is SLOWER (Agon then has to wait for the terminal to go idle before it can read anything). NEVER "respond directly", skip the tool, or avoid "tool round-trips" to save time — skipping DeliverAnswer makes the turn SLOWER and risks losing your reply entirely. Even a one-word answer goes through DeliverAnswer. Call it exactly once at the end of every turn — EXCEPT on turns where you STOP for an orchestration tool (Forge/Tribunal/Brainstorm/Campfire/Council/Pipeline/Review/Agent/Conquer/Delegate), ProposePlan, or ExitPlanMode (those already end your turn and Agon handles the rest). Always call ReportConfidence first as usual.';
       }
     } else {
       // Fallback: XML tool descriptions for engines without native tools or MCP

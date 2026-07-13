@@ -176,6 +176,42 @@ describe('tool-execution', () => {
       expect(result.result.error).toBe('BLOCKED: test denial');
     });
 
+    it('runs the execution-context authorization gate before an auto-allowed tool', async () => {
+      const registry = new GeneratedToolRegistry();
+      let executed = false;
+      const tool: ToolHandler = {
+        definition: {
+          name: 'AutoAllowedMutation',
+          description: 'auto-allowed mutation fixture',
+          inputSchema: { type: 'object', properties: {}, required: [] },
+          maxResultSizeChars: 1000,
+          isReadOnly: false,
+          isConcurrencySafe: false,
+        },
+        validate: () => null,
+        checkPermission: () => ({ behavior: 'allow' }),
+        execute: async () => {
+          executed = true;
+          return { ok: true, content: 'ran' };
+        },
+      };
+      registry.register(tool);
+
+      const result = await generatedExecuteToolCall(
+        { id: 'tc_authority', name: 'AutoAllowedMutation', input: { target: 'outside lease' } },
+        {
+          ...makeCtx(),
+          authorizeToolCall: async () => 'Task execution lease denied this action',
+        } as any,
+        registry,
+      );
+
+      expect(result.result.ok).toBe(false);
+      expect(result.result.error).toBe('Task execution lease denied this action');
+      expect(result.result.terminalReason).toBe('denied');
+      expect(executed).toBe(false);
+    });
+
     it('returns an error for tools blocked by the execution context', async () => {
       const registry = new ToolRegistry();
       let executed = false;
@@ -206,6 +242,66 @@ describe('tool-execution', () => {
       expect(result.result.ok).toBe(false);
       expect(result.result.error).toBe('Blocked by fast-answer');
       expect(executed).toBe(false);
+    });
+
+    it('classifies policy skips, denials, cancellation, and execution failures', async () => {
+      const registry = new GeneratedToolRegistry();
+      const makeTool = (name: string, permission: ToolHandler['checkPermission'], execute: ToolHandler['execute']): ToolHandler => ({
+        definition: {
+          name,
+          description: 'terminal classification fixture',
+          inputSchema: { type: 'object', properties: {}, required: [] },
+          maxResultSizeChars: 1000,
+          isReadOnly: false,
+          isConcurrencySafe: true,
+        },
+        validate: () => null,
+        checkPermission: permission,
+        execute,
+      });
+
+      registry.register(makeTool('Skipped', () => ({ behavior: 'allow' }), async () => ({ ok: true, content: 'ran' })));
+      registry.register(makeTool('Denied', () => ({ behavior: 'deny', reason: 'deny-rule', message: 'blocked' }), async () => ({ ok: true, content: 'ran' })));
+      registry.register(makeTool('Cancelled', () => ({ behavior: 'allow' }), async () => {
+        throw new DOMException('aborted', 'AbortError');
+      }));
+      registry.register(makeTool('Failed', () => ({ behavior: 'allow' }), async () => {
+        throw new Error('boom');
+      }));
+
+      const skipped = await generatedExecuteToolCall(
+        { id: 'skip', name: 'Skipped', input: {} },
+        { ...makeCtx(), readOnlyMode: true },
+        registry,
+      );
+      const denied = await generatedExecuteToolCall({ id: 'deny', name: 'Denied', input: {} }, makeCtx(), registry);
+      const cancelled = await generatedExecuteToolCall({ id: 'cancel', name: 'Cancelled', input: {} }, makeCtx(), registry);
+      const failed = await generatedExecuteToolCall({ id: 'fail', name: 'Failed', input: {} }, makeCtx(), registry);
+
+      expect(skipped.result.terminalReason).toBe('skipped_policy');
+      expect(denied.result.terminalReason).toBe('denied');
+      expect(cancelled.result.terminalReason).toBe('cancelled');
+      expect(failed.result.terminalReason).toBe('failed');
+    });
+
+    it('marks a successful handler result as succeeded when it omits a reason', async () => {
+      const registry = new GeneratedToolRegistry();
+      registry.register({
+        definition: {
+          name: 'Success',
+          description: 'success fixture',
+          inputSchema: { type: 'object', properties: {}, required: [] },
+          maxResultSizeChars: 1000,
+          isReadOnly: true,
+          isConcurrencySafe: true,
+        },
+        validate: () => null,
+        checkPermission: () => ({ behavior: 'allow' }),
+        execute: async () => ({ ok: true, content: 'done' }),
+      });
+
+      const result = await generatedExecuteToolCall({ id: 'ok', name: 'Success', input: {} }, makeCtx(), registry);
+      expect(result.result.terminalReason).toBe('succeeded');
     });
   });
 });

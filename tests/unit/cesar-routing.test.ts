@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { fenceSeedPlan } from '../../packages/cli/src/handlers/cesar.js';
-import { deriveRoutingHints, buildRoutingContext, shouldSpeculate } from '../../packages/cli/src/generated/cesar/routing.js';
+import { deriveRoutingHints, buildRoutingContext, executionActionForPlan, shouldSpeculate } from '../../packages/cli/src/generated/cesar/routing.js';
 
 const routingCtx = {
   activeEngines: () => ['claude'],
@@ -9,6 +9,14 @@ const routingCtx = {
 } as any;
 
 describe('César Routing', () => {
+  describe('plan execution boundary', () => {
+    it('downgrades Conquer while a plan is not yet approved', () => {
+      expect(executionActionForPlan('conquer', { state: 'planning' })).toBe('brainstorm');
+      expect(executionActionForPlan('conquer', { state: 'awaiting_approval' })).toBe('brainstorm');
+      expect(executionActionForPlan('conquer', { state: 'running' })).toBe('conquer');
+    });
+  });
+
   describe('intake flow hints', () => {
     it('keeps tiny edits on quick-fix flow', () => {
       const hints = deriveRoutingHints('fix typo in README.md', routingCtx);

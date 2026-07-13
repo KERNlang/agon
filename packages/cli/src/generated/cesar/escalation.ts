@@ -18,16 +18,18 @@ import { CONFIDENCE_TIERS, confidenceBadge, parseConfidence } from './confidence
 
 import { CESAR_SYSTEM_PROMPT } from './session.js';
 
-// @kern-source: escalation:11
+import { approveTaskAction, buildTaskActionTarget, claimTaskActionPrompt, evaluateTaskAction, taskExplicitlyRequestsAction } from './task-execution-lease.js';
+
+// @kern-source: escalation:12
 export type QuickNeroDecision = 'self' | 'tribunal' | 'brainstorm' | 'campfire' | 'forge';
 
-// @kern-source: escalation:13
+// @kern-source: escalation:14
 export type QuickNeroScope = 'slice' | 'full' | 'none';
 
 /**
  * Parse structured guidance from Quick Nero self-check output.
  */
-// @kern-source: escalation:15
+// @kern-source: escalation:16
 export function parseQuickNeroDecision(text: string): {decision:QuickNeroDecision, team:boolean, scope:QuickNeroScope, rationale:string} {
   const cleaned = text.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
   const decisionMatch = cleaned.match(/(?:^|\n)\s*DECISION:\s*(self|tribunal|brainstorm|campfire|forge)\b/i);
@@ -44,7 +46,7 @@ export function parseQuickNeroDecision(text: string): {decision:QuickNeroDecisio
 /**
  * Pick the highest-ELO engine for this task class (excluding Cesar) as advisor.
  */
-// @kern-source: escalation:29
+// @kern-source: escalation:30
 export function pickBestAdvisor(input: string, ctx: HandlerContext): {engineId:string, color:number}|null {
   const cesarEngineId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude';
   const otherEngines = ctx.activeEngines().filter((id: string) => id !== cesarEngineId);
@@ -61,7 +63,7 @@ export function pickBestAdvisor(input: string, ctx: HandlerContext): {engineId:s
 /**
  * At <70% confidence, dispatch the best-ranked engine as advisor with a focused advisory prompt.
  */
-// @kern-source: escalation:42
+// @kern-source: escalation:43
 export async function fireAdvisor(input: string, cesarResponse: string, parsedConfidence: number|null, ctx: HandlerContext, abort: AbortController): Promise<{stdout:string, engineId:string, color:number}|null> {
   const advisor = pickBestAdvisor(input, ctx);
       if (!advisor) return null;
@@ -101,7 +103,7 @@ export async function fireAdvisor(input: string, cesarResponse: string, parsedCo
 /**
  * Same-session self-challenge: inject a challenge message into the existing Cesar session. Fast — no engine spawn.
  */
-// @kern-source: escalation:80
+// @kern-source: escalation:81
 export async function fireQuickNero(session: any, response: string, input: string, confidence: number, dispatch: Dispatch, signal: AbortSignal, ctx: HandlerContext): Promise<{ challenged: boolean; newConfidence: number|null; challengeText: string; decision: QuickNeroDecision; team: boolean; scope: 'slice'|'full'|'none'; rationale: string }> {
   const challengePrompt = `[SELF-CHECK] You responded at ${confidence}% confidence.
 
@@ -145,7 +147,7 @@ export async function fireQuickNero(session: any, response: string, input: strin
 /**
  * Same-turn adversarial subagent: spawn a second Cesar instance with a contrarian prompt to attack the original response.
  */
-// @kern-source: escalation:122
+// @kern-source: escalation:123
 export async function fireNero(input: string, response: string, confidence: number, ctx: HandlerContext, abort: AbortController): Promise<{ challengeText: string; challengeConfidence: number|null } | null> {
   // Nero is the TOP-RATED adversarial engine (critique -> tribunal -> global
       // Glicko cascade — best builder != best critic), NOT the Cesar engine. The
@@ -199,7 +201,7 @@ export async function fireNero(input: string, response: string, confidence: numb
 /**
  * Display advisor opinion and present escalation menu. At <70%, advisor replaces STOP.
  */
-// @kern-source: escalation:174
+// @kern-source: escalation:175
 export async function handleSecondOpinion(secondResult: {stdout:string, engineId:string, color:number}|null, input: string, response: string, parsedConfidence: number|null, cesarEngineId: string, dispatch: Dispatch, ctx: HandlerContext, abortSignal?: AbortSignal): Promise<{delegated:boolean, responded:boolean, action?:string, task?:string, reasoning?:string}|null> {
   if (!secondResult || !secondResult.stdout.trim()) return null;
 
@@ -278,7 +280,7 @@ export async function handleSecondOpinion(secondResult: {stdout:string, engineId
 /**
  * Auto-activate Nero mode — kill session so next turn reboots with Nero system prompt.
  */
-// @kern-source: escalation:251
+// @kern-source: escalation:252
 export function activateNero(ctx: HandlerContext, dispatch: Dispatch): void {
   if (!ctx.neroMode && ctx.setNeroMode) {
     ctx.setNeroMode(true);
@@ -294,7 +296,7 @@ export function activateNero(ctx: HandlerContext, dispatch: Dispatch): void {
 /**
  * Auto-deactivate Nero when confidence recovers.
  */
-// @kern-source: escalation:263
+// @kern-source: escalation:264
 export function deactivateNero(ctx: HandlerContext, dispatch: Dispatch): void {
   ctx.setNeroMode(false);
   ctx.neroMode = false;
@@ -304,25 +306,47 @@ export function deactivateNero(ctx: HandlerContext, dispatch: Dispatch): void {
 }
 
 /**
- * Ask user to confirm a suggested delegation with a simple yes/no prompt.
+ * Apply Cesar's task authority lease to a chosen delegation. Read-only thinking is always free; routine AUTO execution is free; important and dangerous boundaries ask only when required.
  */
-// @kern-source: escalation:273
-export async function promptDelegation(action: string, dispatch: Dispatch, hardened?: boolean, tribunalMode?: string, team?: boolean): Promise<{approved:boolean, action?:string, hardened?:boolean, tribunalMode?:string, team?:boolean, userContext?:string}> {
+// @kern-source: escalation:274
+export async function promptDelegation(action: string, dispatch: Dispatch, hardened?: boolean, tribunalMode?: string, team?: boolean, ctx?: HandlerContext, target?: string, details?: Record<string,unknown>): Promise<{approved:boolean, action?:string, hardened?:boolean, tribunalMode?:string, team?:boolean, userContext?:string}> {
+  const normalizedAction = String(action ?? '').replace(/^team-/, '').toLowerCase();
+  const thinkingActions = new Set(['brainstorm', 'tribunal', 'campfire', 'council', 'review']);
+  if (thinkingActions.has(normalizedAction)) return { approved: true, action, hardened, tribunalMode, team };
+
+  const lease = ctx?.cesar?.taskExecutionLease;
+  if (lease) {
+    if ((normalizedAction === 'goal' || normalizedAction === 'conquer')
+        && !taskExplicitlyRequestsAction(lease, normalizedAction)) {
+      dispatch({ type: 'info', message: `${normalizedAction === 'goal' ? 'Goal' : 'Conquer'} requires an explicit user request — skipped.` });
+      return { approved: false };
+    }
+    const authorityTarget = buildTaskActionTarget(lease, String(target ?? ''), details);
+    const evaluation = evaluateTaskAction(lease, normalizedAction, authorityTarget);
+    if (evaluation.decision === 'deny') {
+      dispatch({ type: 'info', message: `${action} is outside this task's authority lease — skipped.` });
+      return { approved: false };
+    }
+    if (evaluation.decision === 'allow') return { approved: true, action, hardened, tribunalMode, team };
+    if (!claimTaskActionPrompt(lease, evaluation.signature)) return { approved: false };
+  }
+
   const confirmLabel = hardened ? `${action} (hardened)` : action;
   const answer = await new Promise<string>((resolve) => {
-    dispatch({ type: 'question', prompt: `Cesar suggests: ${confirmLabel}${tribunalMode ? ` [${tribunalMode}]` : ''}`, choices: [
+    dispatch({ type: 'question', prompt: lease ? `Approve ${confirmLabel} for this task${tribunalMode ? ` [${tribunalMode}]` : ''}` : `Cesar suggests: ${confirmLabel}${tribunalMode ? ` [${tribunalMode}]` : ''}`, choices: [
       { key: 'y', label: 'Yes', color: '#4ade80' },
       { key: 'n', label: 'No', color: '#ef4444' },
     ], resolve } as any);
   });
 
-  return { approved: answer === 'y' };
+  if (answer === 'y' && lease) approveTaskAction(lease, normalizedAction, buildTaskActionTarget(lease, String(target ?? ''), details));
+  return { approved: answer === 'y', action, hardened, tribunalMode, team };
 }
 
 /**
  * Last-resort fallback: if Cesar had routing context but still didn't delegate at low confidence, offer brainstorm. Cesar should have decided — this is a safety net.
  */
-// @kern-source: escalation:287
+// @kern-source: escalation:310
 export async function promptProtocolEnforcement(input: string, parsedConfidence: number|null, ctx: HandlerContext, dispatch: Dispatch): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, team?:boolean, tribunalMode?:string}|null> {
   if (parsedConfidence === null
       || parsedConfidence >= CONFIDENCE_TIERS.nero

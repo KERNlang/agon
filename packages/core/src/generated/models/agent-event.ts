@@ -11,11 +11,11 @@ export interface AgentUsage {
 // @kern-source: agent-event:42
 export type AgentEvent =
   | { kind: 'assistant_chunk'; engineId: string; text: string }
-  | { kind: 'tool_call'; engineId: string; toolName: string; status: 'running'|'ok'|'error'|'rejected'; toolCallId?: string; input?: Record<string,unknown>; output?: string; error?: string }
+  | { kind: 'tool_call'; engineId: string; toolName: string; status: 'running'|'ok'|'error'|'rejected'; toolCallId?: string; input?: Record<string,unknown>; output?: string; error?: string; terminalReason?: 'succeeded'|'failed'|'skipped_policy'|'denied'|'cancelled'|'unknown' }
   | { kind: 'turn_complete'; engineId: string; stopReason: string; usage: AgentUsage|null }
   | { kind: 'error'; engineId: string; message: string; recoverable: boolean };
 
-// @kern-source: agent-event:67
+// @kern-source: agent-event:68
 export interface RawSessionChunk {
   type: 'text'|'status'|'tool_call'|'error'|'done';
   content: string;
@@ -25,7 +25,7 @@ export interface RawSessionChunk {
 /**
  * Build an assistant_chunk event — streaming text from the model.
  */
-// @kern-source: agent-event:74
+// @kern-source: agent-event:75
 export function makeAssistantChunk(engineId: string, text: string): AgentEvent {
   return { kind: 'assistant_chunk', engineId, text };
 }
@@ -33,15 +33,15 @@ export function makeAssistantChunk(engineId: string, text: string): AgentEvent {
 /**
  * Build a tool_call event. Status semantics: running=started, ok=completed successfully, error=tool threw, rejected=user or permission system blocked.
  */
-// @kern-source: agent-event:77
-export function makeToolCall(engineId: string, toolName: string, status: 'running'|'ok'|'error'|'rejected', opts?: {toolCallId?:string,input?:Record<string,unknown>,output?:string,error?:string}): AgentEvent {
-  return { kind: 'tool_call', engineId: engineId, toolName: toolName, status: status, toolCallId: opts?.toolCallId, input: opts?.input, output: opts?.output, error: opts?.error };
+// @kern-source: agent-event:78
+export function makeToolCall(engineId: string, toolName: string, status: 'running'|'ok'|'error'|'rejected', opts?: {toolCallId?:string,input?:Record<string,unknown>,output?:string,error?:string,terminalReason?:'succeeded'|'failed'|'skipped_policy'|'denied'|'cancelled'|'unknown'}): AgentEvent {
+  return { kind: 'tool_call', engineId: engineId, toolName: toolName, status: status, toolCallId: opts?.toolCallId, input: opts?.input, output: opts?.output, error: opts?.error, terminalReason: opts?.terminalReason };
 }
 
 /**
  * Build a turn_complete event. Usage is null for CLI engines that don't report it, or an AgentUsage struct for API engines with SDK usage.
  */
-// @kern-source: agent-event:82
+// @kern-source: agent-event:83
 export function makeTurnComplete(engineId: string, stopReason: string, usage?: AgentUsage|null): AgentEvent {
   return { kind: 'turn_complete', engineId, stopReason, usage: usage ?? null };
 }
@@ -49,7 +49,7 @@ export function makeTurnComplete(engineId: string, stopReason: string, usage?: A
 /**
  * Build an error event. Recoverable=true for retryable errors (network blip), false for terminal failures.
  */
-// @kern-source: agent-event:85
+// @kern-source: agent-event:86
 export function makeError(engineId: string, message: string, recoverable?: boolean): AgentEvent {
   return { kind: 'error', engineId, message, recoverable: recoverable ?? false };
 }
@@ -57,7 +57,7 @@ export function makeError(engineId: string, message: string, recoverable?: boole
 /**
  * Map a SessionChunk from any CLI-engine protocol (stream-json / JSONRPC / ACP) to a canonical AgentEvent. Returns null for chunks that don't carry agent-mode semantics (e.g. 'status' notifications). CLI engines never carry usage, so turn_complete.usage is always null here.
  */
-// @kern-source: agent-event:90
+// @kern-source: agent-event:91
 export function normalizeSessionChunk(chunk: RawSessionChunk, engineId: string): AgentEvent|null {
   const meta = chunk.metadata ?? {};
 
@@ -92,6 +92,21 @@ export function normalizeSessionChunk(chunk: RawSessionChunk, engineId: string):
       const input = (meta.input && typeof meta.input === 'object') ? meta.input as Record<string,unknown> : undefined;
       const output = typeof meta.output === 'string' ? meta.output : undefined;
       const errMsg = typeof meta.error === 'string' ? meta.error : undefined;
+      const rawTerminalReason = typeof meta.terminalReason === 'string' ? meta.terminalReason : undefined;
+      const terminalReason = rawTerminalReason === 'succeeded'
+        || rawTerminalReason === 'failed'
+        || rawTerminalReason === 'skipped_policy'
+        || rawTerminalReason === 'denied'
+        || rawTerminalReason === 'cancelled'
+        || rawTerminalReason === 'unknown'
+        ? rawTerminalReason
+        : status === 'rejected'
+          ? 'denied'
+          : status === 'error'
+            ? 'failed'
+            : status === 'ok'
+              ? 'succeeded'
+              : undefined;
 
       return {
         kind: 'tool_call',
@@ -102,6 +117,7 @@ export function normalizeSessionChunk(chunk: RawSessionChunk, engineId: string):
         input,
         output,
         error: errMsg,
+        terminalReason,
       };
     }
 
@@ -124,7 +140,7 @@ export function normalizeSessionChunk(chunk: RawSessionChunk, engineId: string):
 /**
  * Build a canonical event sequence from an ApiAgentResult. Used when real-time callbacks weren't wired and we need to reconstruct the turn post-hoc.
  */
-// @kern-source: agent-event:166
+// @kern-source: agent-event:183
 export function buildApiTurnEvents(engineId: string, response: string, toolCalls: number, stopReason: string, usage?: AgentUsage|null): AgentEvent[] {
   const events: AgentEvent[] = [];
   if (response) {
@@ -142,7 +158,7 @@ export function buildApiTurnEvents(engineId: string, response: string, toolCalls
 /**
  * Build a sentinel AgentUsage for CLI engines that report nothing. Use this in turn_complete events when source='unavailable' is semantically clearer than null.
  */
-// @kern-source: agent-event:181
+// @kern-source: agent-event:198
 export function unavailableUsage(): AgentUsage {
   return { promptTokens: 0, completionTokens: 0, totalTokens: 0, source: 'unavailable' };
 }
@@ -150,7 +166,7 @@ export function unavailableUsage(): AgentUsage {
 /**
  * Build an estimated AgentUsage using the char/4 heuristic (matches TokenTracker.estimateTokens). Phase 1 AgentSession uses this for CLI engines until Phase 3 protocol parsers emit real usage.
  */
-// @kern-source: agent-event:184
+// @kern-source: agent-event:201
 export function estimatedUsage(promptText: string, responseText: string): AgentUsage {
   const promptTokens = Math.ceil(promptText.length / 4);
   const completionTokens = Math.ceil(responseText.length / 4);

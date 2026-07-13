@@ -18,7 +18,7 @@ export interface ToolLoopCallbacks {
   onToolCall?: (name: string, input: Record<string,unknown>) => void;
   shouldStopAfterToolCall?: (name: string, input: Record<string,unknown>) => boolean;
   onToolResult?: (name: string, result: ToolCallResult) => void;
-  onPermissionAsk?: (tool: string, message: string) => Promise<boolean>;
+  onPermissionAsk?: (tool: string, message: string) => Promise<boolean|string>;
   onText?: (text: string) => void;
   onTurnComplete?: (turn: number) => void;
   maxTurns?: number;

@@ -20,7 +20,7 @@ export const APPROVAL_DIFF_MAX_CONTENT_CHARS: number = 262144;
 // @kern-source: approval-diff:25
 export function approvalToolIsFileMutating(tool: unknown): boolean {
   const key = String(tool ?? '').toLowerCase();
-  return key === 'edit' || key === 'write' || key === 'agonedit' || key === 'agonwrite' || key === 'multiedit' || key === 'agonmultiedit';
+  return key === 'edit' || key === 'write' || key === 'agonedit' || key === 'agonwrite' || key === 'multiedit' || key === 'agonmultiedit' || key === 'notebookedit' || key === 'agonnotebookedit';
 }
 
 /**

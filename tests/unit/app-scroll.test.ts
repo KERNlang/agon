@@ -213,7 +213,7 @@ describe('app scroll helpers', () => {
 
     const event = buildCesarTurnRecapEvent(
       capture,
-      { mode: 'self', responded: true, cesarEngineId: 'cesar' },
+      { mode: 'self', responded: true, terminalState: 'completed', cesarEngineId: 'cesar' },
       [{ path: '/repo/a.ts', relPath: 'a.ts', status: 'read', touchCount: 1, lastTouchedAt: 1 }],
       [{ path: '/repo/a.ts', relPath: 'a.ts', status: 'edited', touchCount: 2, lastTouchedAt: 2 }],
     );
@@ -230,15 +230,87 @@ describe('app scroll helpers', () => {
     const rows = buildTranscriptRows([{ id: 1, event } as any], 'chat', false, true);
     const text = transcriptRowsToPlainText(rows, 0, 0, rows.length - 1, 999);
     expect(text).toContain('Cesar recap');
+    expect(text).toContain('Done');
     expect(text).toContain('91% confidence');
     // Clean turn: the per-command list is gone; the tool rollup line renders and
     // there are no failure / non-fatal markers (every tool succeeded).
-    expect(text).toContain('3 tools');
+    expect(text).toContain('3 tools: Confidence, Bash, Edit');
     expect(text).not.toContain('non-fatal');
+    expect(text).toContain('workspace: ~1 edited');
     expect(text).toContain('a.ts');
     expect(text).toContain('checkpoint: abc12345');
     expect(text).toContain('/undo abc12345');
     expect(text).toContain('+new');
+  });
+
+  it('renders a clean Done recap for policy-skipped probes recovered by successful gates', () => {
+    const capture = createCesarRecapCapture('compile build and typecheck', 1_000);
+    for (const command of ['npm run kern:compile 2>&1 | tail -20', 'npm run build 2>&1 | tail -15']) {
+      recordCesarRecapEvent(capture, {
+        type: 'tool-call', engineId: 'cesar', tool: 'Bash', input: JSON.stringify({ command }),
+        status: 'error', output: '[Investigation phase] skipped', terminalReason: 'skipped_policy', toolCallId: `skip-${command}`,
+      });
+    }
+    for (const command of ['npm run kern:compile', 'npm run build', 'npm run typecheck']) {
+      recordCesarRecapEvent(capture, {
+        type: 'tool-call', engineId: 'cesar', tool: 'Bash', input: JSON.stringify({ command }),
+        status: 'done', output: 'ok', terminalReason: 'succeeded', toolCallId: `pass-${command}`,
+      });
+    }
+    const event = buildCesarTurnRecapEvent(capture, { mode: 'self', responded: true, terminalState: 'completed' }, [], []);
+    const rows = buildTranscriptRows([{ id: 1, event } as any], 'chat', false, true);
+    const text = transcriptRowsToPlainText(rows, 0, 0, rows.length - 1, 999);
+
+    expect(text).toContain('Done');
+    expect(text).toContain('workspace: unchanged');
+    expect(text).toContain('verified: ✓ compile · ✓ build · ✓ typecheck');
+    expect(text).toContain('5 tools: Bash x5 · 2 skipped');
+    expect(text).not.toContain('failed');
+    expect(text).not.toContain('non-fatal');
+    expect(text).not.toContain('explored only');
+    expect(text).not.toContain('0% confidence');
+  });
+
+  it('keeps a genuine non-command tool failure visible without turning Done red', () => {
+    const event = {
+      type: 'cesar-recap', outcome: 'Done', mode: 'self', terminalState: 'completed',
+      toolCount: 1, toolSummary: ['Read'], failedTools: 1, nonFatalCount: 1,
+      files: [], warnings: [], verification: [], changeSummary: { created: 0, edited: 0, read: 0 },
+    } as any;
+    const rows = buildTranscriptRows([{ id: 1, event } as any], 'chat', false, true);
+    const text = transcriptRowsToPlainText(rows, 0, 0, rows.length - 1, 999);
+
+    expect(text).toContain('Done');
+    expect(text).toContain('1 tools: Read · 1 non-fatal');
+  });
+
+  it('keeps failed verification visible in the Cesar recap', () => {
+    const event = {
+      type: 'cesar-recap', outcome: 'Done with failures', mode: 'self', terminalState: 'failed', failed: true,
+      toolCount: 1, toolSummary: ['Bash'], files: [], warnings: [],
+      verification: [{ label: 'typecheck', state: 'failed', ok: false }],
+      changeSummary: { created: 0, edited: 0, read: 0 },
+    } as any;
+    const rows = buildTranscriptRows([{ id: 1, event } as any], 'chat', false, true);
+    const text = transcriptRowsToPlainText(rows, 0, 0, rows.length - 1, 999);
+
+    expect(text).toContain('verification failed');
+    expect(text).toContain('typecheck');
+  });
+
+  it('caps the Cesar recap tool rollup at eight entries with an overflow marker', () => {
+    const toolSummary = Array.from({ length: 10 }, (_, index) => `Tool${index + 1}`);
+    const event = {
+      type: 'cesar-recap', outcome: 'Done', mode: 'self', terminalState: 'completed',
+      toolCount: toolSummary.length, toolSummary,
+      files: [], warnings: [], verification: [], changeSummary: { created: 0, edited: 0, read: 0 },
+    } as any;
+    const rows = buildTranscriptRows([{ id: 1, event } as any], 'chat', false, true);
+    const text = transcriptRowsToPlainText(rows, 0, 0, rows.length - 1, 999);
+
+    expect(text).toContain('10 tools: Tool1, Tool2, Tool3, Tool4, Tool5, Tool6, Tool7, Tool8, ...');
+    expect(text).not.toContain('Tool9');
+    expect(text).not.toContain('Tool10');
   });
 
   it('replays terminal render snapshots across native and fullscreen sizes', () => {

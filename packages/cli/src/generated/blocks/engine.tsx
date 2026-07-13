@@ -28,6 +28,8 @@ import { PlanProposalView, PlanExecutionView } from './plan-view.js';
 
 import { parseToolInputPayload, extractPatchText, parsePatchPreview, extractSummary, formatDuration } from './engine-helpers.js';
 
+import { formatCesarRecapToolSummary } from '../cesar/recap.js';
+
 import { createRequire } from 'node:module';
 
 import { readFileSync, existsSync } from 'node:fs';
@@ -40,13 +42,13 @@ import { fileURLToPath } from 'node:url';
 
 export { parseToolInputPayload, extractPatchText, parsePatchPreview, extractSummary } from './engine-helpers.js';
 
-// @kern-source: engine:65
+// @kern-source: engine:66
 export interface OutputBlock {
   id: number;
   event: OutputEvent;
 }
 
-// @kern-source: engine:71
+// @kern-source: engine:72
 export function EngineProgressView({ engines, mode }: { engines:EngineProgress[]; mode?:string }) {
   // Use explicit mode if it's an arena mode, otherwise detect from status text
   const arenaModes = ['forge', 'brainstorm', 'campfire', 'tribunal'];
@@ -85,7 +87,7 @@ export function EngineProgressView({ engines, mode }: { engines:EngineProgress[]
   );
 }
 
-// @kern-source: engine:115
+// @kern-source: engine:116
 const EngineBlock = React.memo(function EngineBlock({ engineId, color, content, actingNote, foldedSteps }: { engineId:string; color:number; content:string; actingNote?:string; foldedSteps?:number }) {
   const wrapWidth = contentWidth(8);
   const cleaned = cleanEngineOutput(content);
@@ -117,7 +119,7 @@ const EngineBlock = React.memo(function EngineBlock({ engineId, color, content, 
 });
 export { EngineBlock };
 
-// @kern-source: engine:154
+// @kern-source: engine:155
 const ConversationalResponse = React.memo(function ConversationalResponse({ engineId, content, actingNote, foldedSteps }: { engineId:string; content:string; actingNote?:string; foldedSteps?:number }) {
   const wrapWidth = contentWidth(2);
   const cleaned = cleanEngineOutput(content);
@@ -137,21 +139,24 @@ const ConversationalResponse = React.memo(function ConversationalResponse({ engi
 });
 export { ConversationalResponse };
 
-// @kern-source: engine:180
+// @kern-source: engine:181
 const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:OutputEvent & { type: 'cesar-recap' } }) {
   const files = Array.isArray((event as any).files) ? (event as any).files : [];
   const warnings = Array.isArray((event as any).warnings) ? (event as any).warnings : [];
   const toolSummary = Array.isArray((event as any).toolSummary) ? (event as any).toolSummary : [];
   const checkpoints = Array.isArray((event as any).checkpoints) ? (event as any).checkpoints : [];
   const diffFiles = Array.isArray((event as any).diffPreview?.files) ? (event as any).diffPreview.files : [];
-  const confidence = typeof (event as any).confidence === 'number' ? `${Math.round((event as any).confidence)}% confidence` : '';
+  const confidenceValue = (event as any).confidence;
+  const confidence = typeof confidenceValue === 'number' && Number.isFinite(confidenceValue) ? `${Math.round(confidenceValue)}% confidence` : '';
   const seconds = typeof (event as any).durationMs === 'number' ? `${(((event as any).durationMs) / 1000).toFixed(1)}s` : '';
   const failed = (event as any).failed === true;
-  const nonFatalCount = Number((event as any).nonFatalCount ?? 0);
+  const terminalState = String((event as any).terminalState ?? '');
   const failureLines = Array.isArray((event as any).failureLines) ? (event as any).failureLines : [];
   const failureOverflow = Number((event as any).failureOverflow ?? 0);
-  const statusColor = failed ? '#fbbf24' : '#4ade80';
-  const statusIcon = failed ? icons().warning : icons().success;
+  const partial = terminalState === 'partial' || terminalState === 'waiting' || terminalState === 'timed_out';
+  const interrupted = terminalState === 'cancelled' || terminalState === 'superseded';
+  const statusColor = failed ? '#ef4444' : partial ? '#fbbf24' : interrupted ? '#a8a8a8' : '#4ade80';
+  const statusIcon = failed ? icons().fail : partial || interrupted ? icons().warning : icons().success;
   const change = (event as any).changeSummary ?? { created: 0, edited: 0, read: 0 };
   const createdCount = Number(change.created ?? 0);
   const editedCount = Number(change.edited ?? 0);
@@ -160,11 +165,24 @@ const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:O
   const changeParts: string[] = [];
   if (createdCount > 0) changeParts.push(`+${createdCount} created`);
   if (editedCount > 0) changeParts.push(`~${editedCount} edited`);
-  const verification = Array.isArray((event as any).verification) ? (event as any).verification : [];
+  const verification = Array.isArray((event as any).verification)
+    ? (event as any).verification.filter((value: unknown) => value !== null && typeof value === 'object')
+    : [];
+  const passedVerification = verification.filter((v: any) => v.state === 'passed' || (v.state === undefined && v.ok === true));
+  const failedVerification = verification.filter((v: any) => v.state === 'failed' || (v.state === undefined && v.ok === false));
+  const notRunVerification = verification.filter((v: any) => v.state === 'not_run' || v.state === 'pending');
   const changedFiles = files.filter((f: any) => String(f.status) !== 'read');
-  const toolLine = toolSummary.length > 0
-    ? `${(event as any).toolCount ?? toolSummary.length} tools: ${toolSummary.slice(0, 8).join(', ')}${toolSummary.length > 8 ? ', ...' : ''}`
-    : `${(event as any).toolCount ?? 0} tools`;
+  const toolCount = (event as any).toolCount ?? toolSummary.length;
+  const toolParts = [formatCesarRecapToolSummary(toolCount, toolSummary)];
+  const skippedTools = Number((event as any).skippedTools ?? 0);
+  const deniedTools = Number((event as any).deniedTools ?? 0);
+  const cancelledTools = Number((event as any).cancelledTools ?? 0);
+  const nonFatalCount = Number((event as any).nonFatalCount ?? 0);
+  if (skippedTools > 0) toolParts.push(`${skippedTools} skipped`);
+  if (deniedTools > 0) toolParts.push(`${deniedTools} denied`);
+  if (cancelledTools > 0) toolParts.push(`${cancelledTools} cancelled`);
+  if (nonFatalCount > 0) toolParts.push(`${nonFatalCount} non-fatal`);
+  const toolLine = toolParts.join(' · ');
   const fileGlyph = (status: string) => status === 'edited' ? 'M' : status === 'created' ? '+' : 'r';
   return (
     <Box flexDirection="column" paddingLeft={1} marginTop={1}>
@@ -189,28 +207,34 @@ const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:O
       ) : null}
       {changedTotal > 0 ? (
         <Text>
-          <Text color="#4ade80" bold>{'  changes: '}</Text>
+          <Text dimColor>{'  workspace: '}</Text>
           <Text color="#4ade80">{changeParts.join(', ')}</Text>
           {readCount > 0 ? <Text dimColor>{' · '}{readCount}{' read'}</Text> : null}
         </Text>
       ) : (
         <Text>
-          <Text color="#fbbf24" bold>{'  changes: '}</Text>
-          <Text color="#fbbf24">{'none (explored only)'}</Text>
+          <Text dimColor>{'  workspace: '}</Text>
+          <Text>{'unchanged'}</Text>
           {readCount > 0 ? <Text dimColor>{' · '}{readCount}{' read'}</Text> : null}
         </Text>
       )}
-      {verification.length > 0 ? (
+      {passedVerification.length > 0 ? (
         <Text>
           <Text dimColor>{'  verified: '}</Text>
-          {verification.map((v: any, i: number) => (
+          {passedVerification.map((v: any, i: number) => (
             <Text key={`verify-${i}`}>
-              <Text color={v.ok ? '#4ade80' : '#ef4444'}>{v.ok ? icons().success : icons().fail}</Text>
+              <Text color="#4ade80">{'✓'}</Text>
               <Text>{' '}{v.label}</Text>
-              {i < verification.length - 1 ? <Text dimColor>{' · '}</Text> : null}
+              {i < passedVerification.length - 1 ? <Text dimColor>{' · '}</Text> : null}
             </Text>
           ))}
         </Text>
+      ) : null}
+      {failedVerification.length > 0 ? (
+        <Text color="#ef4444">{'  verification failed'}{` · ${failedVerification.map((v: any) => v.label).join(', ')}`}</Text>
+      ) : null}
+      {notRunVerification.length > 0 ? (
+        <Text color="#fbbf24">{'  verification: not run'}{` · ${notRunVerification.map((v: any) => v.label).join(', ')}`}</Text>
       ) : null}
       {(event as any).todos && Number((event as any).todos.total ?? 0) > 0 ? (
         <Text>
@@ -218,7 +242,8 @@ const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:O
           <Text color={Number((event as any).todos.done ?? 0) >= Number((event as any).todos.total ?? 0) ? '#4ade80' : '#fbbf24'}>{Number((event as any).todos.done ?? 0)}{'/'}{Number((event as any).todos.total ?? 0)}{' done'}</Text>
         </Text>
       ) : null}
-      <Text dimColor>{'  '}{toolLine}{nonFatalCount > 0 ? ` · ${nonFatalCount} non-fatal` : ''}</Text>
+      {(event as any).remaining ? <Text color="#fbbf24">{'  remaining: '}{String((event as any).remaining)}</Text> : null}
+      <Text dimColor>{'  '}{toolLine}</Text>
       {(event as any).confidenceReasoning ? (
         <Text italic color="#a8a8a8">{'  why: '}{(event as any).confidenceReasoning}</Text>
       ) : null}
@@ -250,7 +275,7 @@ const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:O
 });
 export { CesarRecapBlock };
 
-// @kern-source: engine:296
+// @kern-source: engine:320
 export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboard' } }) {
   return (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
@@ -321,7 +346,7 @@ export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboar
   );
 }
 
-// @kern-source: engine:371
+// @kern-source: engine:395
 function TableView({ headers, rows }: { headers:string[]; rows:string[][] }) {
   const widths = headers.map((h: string, i: number) =>
     Math.max(h.length, ...rows.map((r: string[]) => (r[i] ?? '').length)) + 2,
@@ -345,7 +370,7 @@ function TableView({ headers, rows }: { headers:string[]; rows:string[][] }) {
   );
 }
 
-// @kern-source: engine:400
+// @kern-source: engine:424
 const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpanded }: { event:OutputEvent; mode:string; toolOutputExpanded?:boolean; thinkingExpanded?:boolean }) {
   switch (event.type) {
     case 'text': {
@@ -985,7 +1010,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
 });
 export { OutputBlockView };
 
-// @kern-source: engine:1046
+// @kern-source: engine:1070
 const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:OutputBlock[] }) {
   const labelForTool = (raw: unknown) => {
     const toolKey = String(raw ?? '').toLowerCase();
@@ -1145,7 +1170,7 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
 });
 export { ToolCallGroup };
 
-// @kern-source: engine:1212
+// @kern-source: engine:1236
 const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputBlock[] }) {
   const round = (blocks[0]?.event as any)?.round ?? '?';
   const w = contentWidth(6);
@@ -1171,7 +1196,7 @@ const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputB
 });
 export { DebateGroup };
 
-// @kern-source: engine:1241
+// @kern-source: engine:1265
 const BidGroup = React.memo(function BidGroup({ blocks }: { blocks:OutputBlock[] }) {
   const w = contentWidth(6);
   return (
@@ -1201,16 +1226,16 @@ const BidGroup = React.memo(function BidGroup({ blocks }: { blocks:OutputBlock[]
 });
 export { BidGroup };
 
-// @kern-source: engine:27
+// @kern-source: engine:28
 export const BRAND: readonly string[] = ['#fbbf24', '#f9a816', '#f97316', '#f45a2a', '#ef4444'] as const;
 
-// @kern-source: engine:29
+// @kern-source: engine:30
 export const LOGO_LINES: string[] = ['    █████╗  ██████╗  ██████╗ ███╗   ██╗', '   ██╔══██╗██╔════╝ ██╔═══██╗████╗  ██║', '   ███████║██║  ███╗██║   ██║██╔██╗ ██║', '   ██╔══██╗██║   ██╗██║   ██║██║╚██╗██║', '   ██║  ██║╚██████╔╝╚██████╔╝██║ ╚████║', '   ╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═══╝'];
 
 /**
  * Read a package's installed version from its package.json at runtime so the banner auto-reflects npm upgrades instead of a frozen literal. Walks up from a resolvable entry (or this module for the own package) to the nearest package.json whose name matches. Falls back to the literal if resolution fails — e.g. an exports-locked package.json that can't be required by path.
  */
-// @kern-source: engine:31
+// @kern-source: engine:32
 export function resolvePackageVersion(resolveSpecifier: string|null, wantName: string, fallback: string): string {
   try {
     const req = createRequire(import.meta.url);
@@ -1230,8 +1255,8 @@ export function resolvePackageVersion(resolveSpecifier: string|null, wantName: s
   return fallback;
 }
 
-// @kern-source: engine:58
+// @kern-source: engine:59
 export const VERSION: string = resolvePackageVersion(null, '@kernlang/agon', '0.2.3');
 
-// @kern-source: engine:60
+// @kern-source: engine:61
 export const KERN_VERSION: string = resolvePackageVersion('@kernlang/terminal/runtime', '@kernlang/terminal', '4.0.0');

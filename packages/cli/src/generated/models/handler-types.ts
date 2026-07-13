@@ -52,11 +52,11 @@ export type OutputEvent =
   | { type: 'question'; prompt: string; resolve: (answer: string) => void }
   | { type: 'permission-ask'; tool: string; command: string; description?: string; reason: string; diffPreview?: { files: Array<{ path: string; relPath: string; status: string; additions: number; deletions: number; lines: string[]; omitted: number }>; totalFiles: number }; fallbackNote?: string; resolve: (approved: boolean) => void }
   | { type: 'patch-review'; winnerId: string; patchPath: string; patchContent: string }
-  | { type: 'tool-call'; engineId: string; tool: string; input: string; status: 'running'|'done'|'error'; output?: string; durationMs?: number }
+  | { type: 'tool-call'; engineId: string; tool: string; input: string; status: 'running'|'done'|'error'; toolCallId?: string; terminalReason?: 'succeeded'|'failed'|'skipped_policy'|'denied'|'cancelled'|'unknown'; output?: string; durationMs?: number }
   | { type: 'tool-call-group'; blocks: any[] }
   | { type: 'tool-stream-start'; streamId: string; engineId: string; tool: string; input: string }
   | { type: 'tool-stream-chunk'; streamId: string; chunk: string }
-  | { type: 'tool-stream-end'; streamId: string; status: 'done'|'error'; output?: string; engineId?: string; tool?: string; input?: string; durationMs?: number }
+  | { type: 'tool-stream-end'; streamId: string; status: 'done'|'error'; output?: string; engineId?: string; tool?: string; input?: string; toolCallId?: string; terminalReason?: 'succeeded'|'failed'|'skipped_policy'|'denied'|'cancelled'|'unknown'; durationMs?: number }
   | { type: 'user-message'; content: string }
   | { type: 'response-meta'; engineId: string; elapsed: number; inputTokens?: number; outputTokens?: number; cost?: number }
   | { type: 'confidence-update'; value: number|null }
@@ -75,7 +75,7 @@ export type OutputEvent =
   | { type: 'agent-routing'; mode: 'solo'|'team'; engines: string[]; reason: string }
   | { type: 'agent-team-complete'; teamId: string; winner: string|null; synthesizedPatch?: string|null; synthesizedAnalysis?: string|null; memberOutcomes: Array<{engineId:string,outcome:string,diffLines:number,passedFitness:boolean}>; teamCostUsd: number; teamDurationMs: number; synthesisRan?: boolean; synthesisChanged?: boolean; synthesisCostUsd?: number; synthesisFitnessRegressed?: boolean };
 
-// @kern-source: handler-types:268
+// @kern-source: handler-types:272
 export interface PendingDelegation {
   action: string;
   task?: string;
@@ -113,12 +113,13 @@ export interface PendingDelegation {
   createdAt: number;
 }
 
-// @kern-source: handler-types:304
+// @kern-source: handler-types:308
 export type CesarLiveMode = 'self' | 'self-nero' | 'delegate' | 'forge' | 'forge-slice' | 'team-forge' | 'brainstorm' | 'team-brainstorm' | 'campfire' | 'tribunal' | 'team-tribunal' | 'pipeline' | 'goal' | 'conquer' | 'review' | 'agent' | 'team-agent' | 'plan';
 
-// @kern-source: handler-types:306
+// @kern-source: handler-types:310
 export interface CesarTurnOutcome {
   turnId?: string;
+  terminalState?: 'completed'|'failed'|'cancelled'|'timed_out'|'superseded';
   mode?: CesarLiveMode;
   delegated: boolean;
   responded: boolean;
@@ -161,7 +162,7 @@ export interface CesarTurnOutcome {
   liveTodosEmitted?: boolean;
 }
 
-// @kern-source: handler-types:349
+// @kern-source: handler-types:354
 export interface CesarState {
   busy: boolean;
   busySince: number | null;
@@ -190,12 +191,13 @@ export interface CesarState {
   turnId?: string | undefined;
   sessionMcpServers: Array<{name:string, type?:string, url?:string, command?:string, args?:string[]}>;
   autoModeQueued?: boolean;
+  taskExecutionLease?: any | undefined;
   discoveredGate?: DiscoveredGate | undefined;
   gateWaived?: boolean;
   gateNudgedClaim?: string | undefined;
 }
 
-// @kern-source: handler-types:381
+// @kern-source: handler-types:387
 export interface HandlerContext {
   registry: EngineRegistry;
   adapter: EngineAdapter;
@@ -219,6 +221,7 @@ export interface HandlerContext {
   extensionPromptFragments?: string[];
   eventBus?: EventBus | undefined;
   cesar?: CesarState | undefined;
+  cesarRuntimeHost?: any | undefined;
   lastReviewResult?: { engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | undefined;
   sessionMcpServers?: Array<Record<string,unknown>>;
   setSessionMcpServers?: ((servers: Array<Record<string,unknown>>) => void) | undefined;

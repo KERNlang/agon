@@ -6,6 +6,8 @@ import { ToolRegistry } from '@kernlang/agon-core';
 import type { ToolContext, ToolHandler } from '@kernlang/agon-core';
 import { buildCesarConversationSnapshot, buildOnApproval, buildOnToolCall, canUseCesarMcp, loadCesarMcpServers, normalizeCesarMcpServers } from '../../packages/cli/src/generated/cesar/session.js';
 import { applyInvariantsRule1, _resetInvariantsRule1DriftWarning, CESAR_RULE_1_STRICT, CESAR_RULE_1_INVARIANTS, CESAR_SYSTEM_PROMPT } from '../../packages/cli/src/generated/cesar/session.js';
+import { createTaskExecutionLease } from '../../packages/cli/src/generated/cesar/task-execution-lease.js';
+import { beginCesarTurn, createCesarTurnRuntimeHost } from '../../packages/cli/src/generated/cesar/turn-runtime.js';
 
 const testDirs: string[] = [];
 
@@ -162,13 +164,88 @@ describe('cesar MCP session config', () => {
     expect(snapshot[0].content).toBe('[codex] short reply');
   });
 
-  it('reports blocked fast-path orchestration as a native tool error', async () => {
+  it('keeps optional orchestration available on a confident fast-path turn', async () => {
     const onToolCall = buildOnToolCall({
-      cesar: { fastPathMode: 'answer' },
+      cesar: { fastPathMode: 'answer', confidenceSatisfied: true },
       explorationMode: false,
     } as any, {} as any, {});
 
-    await expect(onToolCall?.('Forge', { task: 'simple question' }, 'call_1')).rejects.toThrow(/\[BLOCKED_FAST_PATH\]/);
+    await expect(onToolCall?.('Forge', { task: 'simple question' }, 'call_1')).resolves.toContain('[DELEGATION_BREAK]');
+  });
+
+  it('auto-approves routine task work through the companion approval adapter', async () => {
+    const onApproval = buildOnApproval({
+      config: { permissionMode: 'ask' },
+      cesar: {
+        turnId: 'turn-routine',
+        confidenceSatisfied: true,
+        taskExecutionLease: createTaskExecutionLease('fix the recap and run tests', true, process.cwd()),
+        lastDispatch: () => { throw new Error('routine AUTO work must not prompt'); },
+      },
+      registry: { get: () => ({}) },
+    } as any, 'claude');
+
+    await expect(onApproval('Bash', 'npm test')).resolves.toBe(true);
+  });
+
+  it('enforces the task lease before native tools can auto-allow a mutation', async () => {
+    const registry = new ToolRegistry();
+    let edits = 0;
+    registry.register({
+      definition: {
+        name: 'Edit', description: 'test edit', inputSchema: { type: 'object', properties: {} },
+        maxResultSizeChars: 1000, isReadOnly: false, isConcurrencySafe: false,
+      },
+      validate: () => null,
+      // Core Edit/Write handlers may allow an in-workspace edit without calling
+      // the permission callback. The turn lease must still run before execute.
+      checkPermission: () => ({ behavior: 'allow' }),
+      execute: async () => { edits += 1; return { ok: true, content: 'edited' }; },
+    } as ToolHandler);
+    const events: any[] = [];
+    const onToolCall = buildOnToolCall({
+      cesar: {
+        confidenceSatisfied: true,
+        taskExecutionLease: createTaskExecutionLease('change the auth session contract', true, process.cwd()),
+        lastDispatch: (event: any) => events.push(event),
+      },
+      explorationMode: false,
+    } as any, registry, { permissionMode: 'auto' });
+
+    const pending = onToolCall?.('Edit', {
+      file_path: 'auth.ts', old_string: 'before', new_string: 'after',
+    }, 'edit-important');
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toEqual(expect.objectContaining({ type: 'permission-ask', tool: 'Edit' }));
+    expect(edits).toBe(0);
+    events[0].resolve(false);
+    await expect(pending).resolves.toContain('DENIED');
+    expect(edits).toBe(0);
+  });
+
+  it('asks once for an important task, then covers subsequent task actions', async () => {
+    const events: any[] = [];
+    const lease = createTaskExecutionLease('change the auth session contract', true, process.cwd());
+    const onApproval = buildOnApproval({
+      config: { permissionMode: 'ask' },
+      cesar: {
+        turnId: 'turn-important',
+        confidenceSatisfied: true,
+        taskExecutionLease: lease,
+        lastDispatch: (event: any) => events.push(event),
+      },
+      registry: { get: () => ({}) },
+    } as any, 'claude');
+
+    const first = onApproval('Bash', 'npm test');
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('permission-ask');
+    events[0].resolve(true);
+    await expect(first).resolves.toBe(true);
+
+    await expect(onApproval('Bash', 'npm run build')).resolves.toBe(true);
+    expect(events).toHaveLength(1);
   });
 
   it('blocks mutating Bash while a plan is waiting for approval', async () => {
@@ -273,6 +350,20 @@ describe('cesar MCP session config', () => {
     // Edit still gated
     const edit = await onToolCall?.('Edit', { file_path: 'x.ts', old_string: 'a', new_string: 'b' }, 'c3');
     expect(String(edit)).toContain('Report confidence first');
+  });
+
+  it('keeps autonomous orchestration behind the internal confidence spend gate', async () => {
+    const cesar: any = { confidenceSatisfied: false, blockedOnConfidence: null, confidenceBlockCount: 0, pendingDelegation: null };
+    const onToolCall = buildOnToolCall({ cesar, explorationMode: false } as any, new ToolRegistry(), {});
+
+    const blocked = await onToolCall?.('Forge', { task: 'compare implementations' }, 'forge-1');
+    expect(String(blocked)).toContain('Report confidence first');
+    expect(cesar.pendingDelegation).toBeNull();
+
+    cesar.confidenceSatisfied = true;
+    const accepted = await onToolCall?.('Forge', { task: 'compare implementations' }, 'forge-2');
+    expect(String(accepted)).toContain('Delegation accepted');
+    expect(cesar.pendingDelegation).toEqual(expect.objectContaining({ action: 'forge' }));
   });
 
   it('appends a codebase-brief nudge once after many read/search calls in a turn', async () => {
@@ -459,6 +550,47 @@ describe('cesar MCP session config', () => {
     await expect(onToolCall?.('Read', { file_path: 'package.json' }, 'call_1')).resolves.toBe('read-1');
     await expect(onToolCall?.('Read', { file_path: 'package.json' }, 'call_2')).resolves.toBe('read-2');
     expect(readCount).toBe(2);
+  });
+
+  it('rejects a stale correlated tool call instead of bypassing the runtime fence', async () => {
+    const registry = new ToolRegistry();
+    let edits = 0;
+    registry.register({
+      definition: {
+        name: 'Edit', description: 'test edit', inputSchema: { type: 'object', properties: {} },
+        maxResultSizeChars: 1000, isReadOnly: false, isConcurrencySafe: false,
+      },
+      validate: () => null,
+      checkPermission: () => ({ behavior: 'allow' }),
+      execute: async () => { edits += 1; return { ok: true, content: 'edited' }; },
+    } as ToolHandler);
+    const host = createCesarTurnRuntimeHost('chat-stale');
+    const stale = beginCesarTurn(host, 'turn-old', 'api-session');
+    beginCesarTurn(host, 'turn-new', 'api-session');
+    const onToolCall = buildOnToolCall({
+      cesar: { confidenceSatisfied: true }, cesarRuntimeHost: host, explorationMode: false,
+    } as any, registry, {});
+
+    const result = await onToolCall?.('Edit', { file_path: 'x.ts', old_string: 'a', new_string: 'b' }, 'edit-old', stale.envelope);
+
+    expect(result).toContain('[STALE_TURN_REJECTED]');
+    expect(edits).toBe(0);
+  });
+
+  it('fences stale orchestration and confidence callbacks before they mutate Cesar state', async () => {
+    const host = createCesarTurnRuntimeHost('chat-stale-signals');
+    const stale = beginCesarTurn(host, 'turn-old', 'api-session');
+    beginCesarTurn(host, 'turn-new', 'api-session');
+    const cesar: any = { confidenceSatisfied: false, pendingDelegation: null };
+    const onToolCall = buildOnToolCall({
+      cesar, cesarRuntimeHost: host, explorationMode: false,
+    } as any, new ToolRegistry(), {});
+
+    await expect(onToolCall?.('Forge', { task: 'stale build' }, 'forge-old', stale.envelope)).resolves.toContain('[STALE_TURN_REJECTED]');
+    await expect(onToolCall?.('ReportConfidence', { value: 99 }, 'confidence-old', stale.envelope)).resolves.toContain('[STALE_TURN_REJECTED]');
+    expect(cesar.pendingDelegation).toBeNull();
+    expect(cesar.reportedConfidence).toBeUndefined();
+    expect(cesar.confidenceSatisfied).toBe(false);
   });
 });
 

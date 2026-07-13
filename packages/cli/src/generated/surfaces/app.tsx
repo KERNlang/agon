@@ -78,6 +78,10 @@ import { clearTodos } from '../signals/todos.js';
 
 import { saveCesarConversationSnapshot } from '../cesar/session.js';
 
+import { createDurableCesarTurnRuntimeHost } from '../cesar/turn-runtime.js';
+
+import type { CesarTurnRuntimeHost } from '../cesar/turn-runtime.js';
+
 import { SpinnerBlock, BackgroundJobRail, ExecutionRailPanel } from '../../generated/surfaces/status.js';
 
 import { EnginePicker, ModelPicker, ReviewBlock, CesarPicker } from '../../generated/blocks/controls.js';
@@ -150,7 +154,7 @@ import { runProcessInputQueue, runSendBtwMessage, runHandleSubmit } from './app-
 
 export { COMPOSER_HISTORY_LIMIT, isMutatingToolCall, probeEngineVitals, parseToolCallPayload, toolPreviewWindow, toolCallSupportsDetailView, detailViewerSupportsEvent, toolDetailViewportRows, findLatestToolDetailEvent, findLatestToolEvent, buildExecutionRailStats, composerHistoryPath, loadComposerInputHistory, saveComposerInputHistory, findLatestFailedToolEvent, buildFailedToolRetryDraft, buildToolDetailView, createInitialRegistry, drainStdinBuffer, maxScrollOffsetForRowCount, nextWheelAnimationStep, clampNumber, charDisplayWidth, stringDisplayWidth, displayColumnToStringIndex, normalizeRowSelection, normalizeTextSelection, richLineToPlainText, transcriptRowToPlainText, transcriptRowTextStartColumn, resolveTranscriptColumnFromMouse, transcriptRowsToPlainText, resolveTranscriptRowFromMouse, estimateVisibleBlockBudget, estimateWrappedRowCount, estimateQuestionReservedRows, estimateBottomChromeExtraRows, summarizeBtwTranscriptEvent, buildDashboardBlock, estimatePinnedLiveRows, estimateWrappedRows, estimateToolCallRows, estimateOutputEventRows, buildDisplayItems, isToolCallLikeBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, estimateDisplayItemRows, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, isDuplicateEngineBlock, appendTranscriptBlock, normalizeTerminalMode, fileRailWidthForTerminal, fileRailMaxRowsForTerminal, buildTerminalReplaySnapshot, parseMarkdownToRows, buildToolCallRows, buildCollapsedToolGroupRows, buildTranscriptRows } from './app-helpers.js';
 
-// @kern-source: app:94
+// @kern-source: app:96
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -545,6 +549,7 @@ export function App() {
   const pasteHashesRef = useRef<Map<string,string>>(new Map());
   const activeAbortRef = useRef<AbortController|null>(null);
   const activeTurnRef = useRef<{ input:string; engineId:string; retried:boolean }|null>(null);
+  const cesarRuntimeHostRef = useRef<CesarTurnRuntimeHost>(createDurableCesarTurnRuntimeHost(chatSession.id));
   const lastActivityTimeRef = useRef<number>(Date.now());
   const pendingBellRef = useRef<boolean>(false);
   const awaitingPlanAnnouncedRef = useRef<string>('');
@@ -926,10 +931,13 @@ export function App() {
   }, [dispatch]);
 
   const interruptActiveRun = useCallback((message:string, clearChat:boolean) => {
-    runInterruptActiveRun({ activeAbortRef: activeAbortRef, activePlanRef: activePlanRef, setActiveAbort: setActiveAbort, setActivePlan: setActivePlan, setLiveSpinner: setLiveSpinner, setLiveProgress: setLiveProgress, outputActions: outputActions, setQuestionState: setQuestionState, setQuestionAnswer: setQuestionAnswer, setPendingPlanProposal: setPendingPlanProposal, setSlashPickerOpen: setSlashPickerOpen, setEnginePickerOpen: setEnginePickerOpen, setModelPickerOpen: setModelPickerOpen, setCesarPickerOpen: setCesarPickerOpen, setReviewEvent: setReviewEvent, replState: replState, dispatch: dispatch, setReplState: setReplState, pendingBellRef: pendingBellRef, bell: bell, setWindowTitle: setWindowTitle }, message, clearChat);
+    runInterruptActiveRun({ activeAbortRef: activeAbortRef, activePlanRef: activePlanRef, cesarRuntimeHost: cesarRuntimeHostRef.current, setActiveAbort: setActiveAbort, setActivePlan: setActivePlan, setLiveSpinner: setLiveSpinner, setLiveProgress: setLiveProgress, outputActions: outputActions, setQuestionState: setQuestionState, setQuestionAnswer: setQuestionAnswer, setPendingPlanProposal: setPendingPlanProposal, setSlashPickerOpen: setSlashPickerOpen, setEnginePickerOpen: setEnginePickerOpen, setModelPickerOpen: setModelPickerOpen, setCesarPickerOpen: setCesarPickerOpen, setReviewEvent: setReviewEvent, replState: replState, dispatch: dispatch, setReplState: setReplState, pendingBellRef: pendingBellRef, bell: bell, setWindowTitle: setWindowTitle }, message, clearChat);
   }, [replState,dispatch,trackAbort,outputActions]);
 
   const buildContext = useCallback(() => {
+    if (cesarRuntimeHostRef.current.sessionId !== chatSession.id) {
+      cesarRuntimeHostRef.current = createDurableCesarTurnRuntimeHost(chatSession.id);
+    }
     return {
       registry, adapter, activeEngines,
       get inputEpoch() { return inputEpochRef.current; },
@@ -951,6 +959,7 @@ export function App() {
       telemetryVitals,
       telemetrySnapshot: () => telemetryPollerRef.current?.snapshot?.() ?? telemetryVitals,
       recentFallbacks,
+      cesarRuntimeHost: cesarRuntimeHostRef.current,
     };
   }, [registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,extensionPromptFragments,sessionMcpServers,telemetryVitals,recentFallbacks,setActivePlanWrapped]);
 
@@ -1679,7 +1688,7 @@ export function App() {
 
   useEffect(() => {
     _cancelCallback.fn = buildCancelCallback({
-      activeAbortRef, activePlanRef, setActiveAbort, setActivePlan,
+      activeAbortRef, activePlanRef, cesarRuntimeHost: cesarRuntimeHostRef.current, setActiveAbort, setActivePlan,
       setLiveSpinner, setLiveProgress, outputActions,
       agentProgressRef, setAgentProgress,
       setQuestionState, setQuestionAnswer, setPendingPlanProposal,
@@ -2066,10 +2075,10 @@ export function App() {
   );
 }
 
-// @kern-source: app:92
+// @kern-source: app:94
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:1887
+// @kern-source: app:1894
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   // Session-scoped grounding ONLY — deliberately does NOT call

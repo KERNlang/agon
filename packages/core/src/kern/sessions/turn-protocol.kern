@@ -1,0 +1,113 @@
+type name=TurnLifecycleState values="created|running|cancelling|cancelled|completed|failed|timed_out|superseded" export=true
+
+interface name=ControlPlaneEnvelopeV1 export=true
+  field name=schemaVersion type=1
+  field name=sessionId type=string
+  field name=turnId type=string
+  field name=leaseEpoch type=number
+  field name=attempt type=number
+  field name=producerId type=string
+  field name=stepId type=string optional=true
+  field name=toolCallId type=string optional=true
+
+interface name=ControlPlaneEnvelopeValidation export=true
+  field name=ok type=boolean
+  field name=value type=ControlPlaneEnvelopeV1 optional=true
+  field name=reason type=string optional=true
+
+interface name=TurnLifecycleTransition export=true
+  field name=ok type=boolean
+  field name=state type=TurnLifecycleState
+  field name=reason type="'invalid_transition'|'terminal_state'" optional=true
+
+fn name=nonEmpty params="value:unknown" returns=boolean export=false
+  handler <<<
+    return typeof value === 'string' && value.trim().length > 0;
+  >>>
+
+fn name=positiveInteger params="value:unknown" returns=boolean export=false
+  handler <<<
+    return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+  >>>
+
+fn name=validateControlPlaneEnvelope params="input:unknown" returns=ControlPlaneEnvelopeValidation export=true
+  doc "Validate the versioned identity carried through every session, turn, step, and tool boundary."
+  handler <<<
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      return { ok: false, reason: 'envelope_not_object' };
+    }
+    const candidate = input as Record<string, unknown>;
+    if (candidate.schemaVersion !== 1) return { ok: false, reason: 'unsupported_schema_version' };
+    if (!nonEmpty(candidate.sessionId)) return { ok: false, reason: 'invalid_session_id' };
+    if (!nonEmpty(candidate.turnId)) return { ok: false, reason: 'invalid_turn_id' };
+    if (!positiveInteger(candidate.leaseEpoch)) return { ok: false, reason: 'invalid_lease_epoch' };
+    if (!positiveInteger(candidate.attempt)) return { ok: false, reason: 'invalid_attempt' };
+    if (!nonEmpty(candidate.producerId)) return { ok: false, reason: 'invalid_producer_id' };
+    if (candidate.stepId !== undefined && !nonEmpty(candidate.stepId)) return { ok: false, reason: 'invalid_step_id' };
+    if (candidate.toolCallId !== undefined && !nonEmpty(candidate.toolCallId)) return { ok: false, reason: 'invalid_tool_call_id' };
+
+    const value: ControlPlaneEnvelopeV1 = {
+      schemaVersion: 1,
+      sessionId: candidate.sessionId as string,
+      turnId: candidate.turnId as string,
+      leaseEpoch: candidate.leaseEpoch as number,
+      attempt: candidate.attempt as number,
+      producerId: candidate.producerId as string,
+    };
+    if (candidate.stepId !== undefined) value.stepId = candidate.stepId as string;
+    if (candidate.toolCallId !== undefined) value.toolCallId = candidate.toolCallId as string;
+    return { ok: true, value };
+  >>>
+
+fn name=controlPlaneIdentity params="envelope:ControlPlaneEnvelopeV1" returns=string export=true
+  doc "Stable idempotency key for one producer attempt; optional step and tool ids refine the identity."
+  handler <<<
+    return [
+      envelope.sessionId,
+      envelope.turnId,
+      envelope.leaseEpoch,
+      envelope.attempt,
+      envelope.producerId,
+      envelope.stepId ?? '',
+      envelope.toolCallId ?? '',
+    ].join(':');
+  >>>
+
+fn name=isCurrentControlPlaneEnvelope params="candidate:ControlPlaneEnvelopeV1, current:ControlPlaneEnvelopeV1" returns=boolean export=true
+  doc "Fence output unless it belongs to the exact active producer attempt and lease epoch."
+  handler <<<
+    return candidate.schemaVersion === current.schemaVersion
+      && candidate.sessionId === current.sessionId
+      && candidate.turnId === current.turnId
+      && candidate.leaseEpoch === current.leaseEpoch
+      && candidate.attempt === current.attempt
+      && candidate.producerId === current.producerId;
+  >>>
+
+fn name=isTerminalTurnState params="state:TurnLifecycleState" returns=boolean export=true
+  handler <<<
+    return state === 'cancelled'
+      || state === 'completed'
+      || state === 'failed'
+      || state === 'timed_out'
+      || state === 'superseded';
+  >>>
+
+fn name=reduceTurnLifecycle params="current:TurnLifecycleState, next:TurnLifecycleState" returns=TurnLifecycleTransition export=true
+  doc "Pure lifecycle reducer. Terminal states are immutable and skipped transitions fail closed."
+  handler <<<
+    if (isTerminalTurnState(current)) return { ok: false, state: current, reason: 'terminal_state' };
+    const allowed = current === 'created'
+      ? next === 'running'
+      : current === 'running'
+        ? next === 'cancelling'
+          || next === 'completed'
+          || next === 'failed'
+          || next === 'timed_out'
+          || next === 'superseded'
+        : current === 'cancelling'
+          ? next === 'cancelled' || next === 'timed_out'
+          : false;
+    if (!allowed) return { ok: false, state: current, reason: 'invalid_transition' };
+    return { ok: true, state: next };
+  >>>

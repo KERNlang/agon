@@ -98,6 +98,12 @@ service name=StreamBridge export=true
             tool: event.toolName,
             input: event.input ? JSON.stringify(event.input) : '',
             status: toolStatus,
+            toolCallId: event.toolCallId,
+            terminalReason: event.terminalReason
+              ?? (event.status === 'rejected' ? 'denied'
+                : event.status === 'error' ? 'failed'
+                : event.status === 'ok' ? 'succeeded'
+                : undefined),
             output: event.output,
           });
           break;

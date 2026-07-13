@@ -51,6 +51,7 @@ union name=AgentEvent discriminant=kind
     field name=input type="Record<string,unknown>" optional=true
     field name=output type=string optional=true
     field name=error type=string optional=true
+    field name=terminalReason type="'succeeded'|'failed'|'skipped_policy'|'denied'|'cancelled'|'unknown'" optional=true
   variant name=turn_complete
     field name=engineId type=string
     field name=stopReason type=string
@@ -74,10 +75,10 @@ interface name=RawSessionChunk
 fn name=makeAssistantChunk params="engineId:string,text:string" returns=AgentEvent export=true expr={{ return { kind: 'assistant_chunk', engineId, text }; }}
   doc "Build an assistant_chunk event — streaming text from the model."
 
-fn name=makeToolCall params="engineId:string,toolName:string,status:'running'|'ok'|'error'|'rejected',opts?:{toolCallId?:string,input?:Record<string,unknown>,output?:string,error?:string}" returns=AgentEvent export=true
+fn name=makeToolCall params="engineId:string,toolName:string,status:'running'|'ok'|'error'|'rejected',opts?:{toolCallId?:string,input?:Record<string,unknown>,output?:string,error?:string,terminalReason?:'succeeded'|'failed'|'skipped_policy'|'denied'|'cancelled'|'unknown'}" returns=AgentEvent export=true
   doc "Build a tool_call event. Status semantics: running=started, ok=completed successfully, error=tool threw, rejected=user or permission system blocked."
   handler lang="kern"
-    return value="{ kind: 'tool_call', engineId, toolName, status, toolCallId: opts?.toolCallId, input: opts?.input, output: opts?.output, error: opts?.error, }"
+    return value="{ kind: 'tool_call', engineId, toolName, status, toolCallId: opts?.toolCallId, input: opts?.input, output: opts?.output, error: opts?.error, terminalReason: opts?.terminalReason, }"
 
 fn name=makeTurnComplete params="engineId:string,stopReason:string,usage?:AgentUsage|null" returns=AgentEvent export=true expr={{ return { kind: 'turn_complete', engineId, stopReason, usage: usage ?? null }; }}
   doc "Build a turn_complete event. Usage is null for CLI engines that don't report it, or an AgentUsage struct for API engines with SDK usage."
@@ -123,6 +124,21 @@ fn name=normalizeSessionChunk params="chunk:RawSessionChunk,engineId:string" ret
         const input = (meta.input && typeof meta.input === 'object') ? meta.input as Record<string,unknown> : undefined;
         const output = typeof meta.output === 'string' ? meta.output : undefined;
         const errMsg = typeof meta.error === 'string' ? meta.error : undefined;
+        const rawTerminalReason = typeof meta.terminalReason === 'string' ? meta.terminalReason : undefined;
+        const terminalReason = rawTerminalReason === 'succeeded'
+          || rawTerminalReason === 'failed'
+          || rawTerminalReason === 'skipped_policy'
+          || rawTerminalReason === 'denied'
+          || rawTerminalReason === 'cancelled'
+          || rawTerminalReason === 'unknown'
+          ? rawTerminalReason
+          : status === 'rejected'
+            ? 'denied'
+            : status === 'error'
+              ? 'failed'
+              : status === 'ok'
+                ? 'succeeded'
+                : undefined;
 
         return {
           kind: 'tool_call',
@@ -133,6 +149,7 @@ fn name=normalizeSessionChunk params="chunk:RawSessionChunk,engineId:string" ret
           input,
           output,
           error: errMsg,
+          terminalReason,
         };
       }
 

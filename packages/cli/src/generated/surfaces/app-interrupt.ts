@@ -8,6 +8,8 @@ import { createPauseState, dismissPauseState } from '../cesar/pause-state.js';
 
 import { clearSteering } from '../cesar/steering.js';
 
+import { transitionCesarTurn } from '../cesar/turn-runtime.js';
+
 import type { PauseState } from '../cesar/pause-state.js';
 
 import type { OutputActions, AgentProgressSnapshot } from '../signals/output.js';
@@ -45,6 +47,7 @@ export function runTrackAbort(abort: AbortController | null, activeAbortRef: {cu
 export interface InterruptRunDeps {
   activeAbortRef: {current: AbortController | null};
   activePlanRef: {current: any};
+  cesarRuntimeHost: any;
   setActiveAbort: (abort:AbortController | null) => void;
   setActivePlan: (plan:any) => void;
   setLiveSpinner: (val:any) => void;
@@ -68,6 +71,10 @@ export interface InterruptRunDeps {
 
 export function runInterruptActiveRun(opts: InterruptRunDeps, message: string, clearChat: boolean): void {
   const abort = opts.activeAbortRef.current;
+  const activeRuntime = opts.cesarRuntimeHost?.active;
+  if (activeRuntime && activeRuntime.state === 'running') {
+    transitionCesarTurn(opts.cesarRuntimeHost, activeRuntime.envelope, 'cancelling');
+  }
   if (abort) {
     abort.abort();
   }
@@ -124,6 +131,7 @@ export function runInterruptActiveRun(opts: InterruptRunDeps, message: string, c
 export interface CancelCallbackDeps {
   activeAbortRef: {current: AbortController | null};
   activePlanRef: {current: any};
+  cesarRuntimeHost: any;
   setActiveAbort: (abort:AbortController | null) => void;
   setActivePlan: (plan:any) => void;
   setLiveSpinner: (val:any) => void;
@@ -145,6 +153,10 @@ export interface CancelCallbackDeps {
 
 export function buildCancelCallback(opts: CancelCallbackDeps): () => void {
   return () => {
+    const activeRuntime = opts.cesarRuntimeHost?.active;
+    if (activeRuntime && activeRuntime.state === 'running') {
+      transitionCesarTurn(opts.cesarRuntimeHost, activeRuntime.envelope, 'cancelling');
+    }
     for (const abort of _activeAborts) abort.abort();
     _activeAborts.clear();
     // Hard cancel also drops any mid-turn steering (no carryover).

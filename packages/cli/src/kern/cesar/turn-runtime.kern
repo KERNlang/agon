@@ -1,0 +1,304 @@
+import from="../../../../core/src/generated/sessions/turn-protocol.js" names="isCurrentControlPlaneEnvelope,isTerminalTurnState,reduceTurnLifecycle"
+import from="../../../../core/src/generated/sessions/turn-protocol.js" names="ControlPlaneEnvelopeV1,TurnLifecycleState,TurnLifecycleTransition" types=true
+import from="../../../../core/src/generated/sessions/control-plane-ledger.js" names="appendControlPlaneEvent,recoverControlPlane"
+import from="../../handlers/types.js" names="CesarState" types=true
+
+type name=TurnExecutionOwner values="session|harness|mcp" export=true
+type name=TurnEffectClass values="read_only|mutation|external|unknown" export=true
+
+fn name=resolveCesarAbortOutcome params="timedOut:boolean,hasPartial:boolean" returns="{terminalState:'timed_out'|'cancelled',responded:boolean,decisionReason:string}" export=true
+  doc "Keep harness timeouts distinct from user interrupts all the way into lifecycle persistence and recap rendering."
+  handler <<<
+    return timedOut
+      ? { terminalState: 'timed_out', responded: hasPartial, decisionReason: hasPartial ? 'timeout-preserved-partial' : 'timeout' }
+      : { terminalState: 'cancelled', responded: false, decisionReason: 'aborted' };
+  >>>
+
+fn name=classifyCesarStreamError params="signalAborted:boolean,hasPartial:boolean" returns="'abort'|'partial'|'failure'" export=true
+  doc "Keep adapter AbortError rejections on the cancellation path instead of misclassifying no-output user aborts as stream failures."
+  handler <<<
+    if (signalAborted) return 'abort';
+    return hasPartial ? 'partial' : 'failure';
+  >>>
+
+fn name=releaseCesarTurnHandles params="state:any" returns=void export=true
+  doc "Release turn-scoped authority and dispatch handles after the owning turn reaches a terminal state."
+  handler <<<
+    state.taskExecutionLease = undefined;
+    state.lastDispatch = null;
+  >>>
+
+interface name=CesarTurnRuntime export=true
+  field name=envelope type=ControlPlaneEnvelopeV1
+  field name=state type=TurnLifecycleState
+  field name=toolPromises type="Map<string,Promise<any>>"
+  field name=permissionPromises type="Map<string,Promise<boolean|string>>"
+  field name=toolClaims type="Map<string,{owner:TurnExecutionOwner,effectClass:TurnEffectClass}>"
+  field name=permissionClaims type="Set<string>"
+  field name=terminalAccepted type=boolean
+  field name=writeLifecycle type="((event:Record<string,unknown>)=>{ok:boolean,seq:number,error?:string})|undefined" optional=true
+
+interface name=CesarTurnRuntimeHost export=true
+  field name=sessionId type=string
+  field name=nextLeaseEpoch type=number
+  field name=active type="CesarTurnRuntime|null"
+  field name=latestTerminal type="CesarTurnRuntime|null"
+  field name=writeLifecycle type="((event:Record<string,unknown>)=>{ok:boolean,seq:number,error?:string})|undefined" optional=true
+  field name=recoveryBlockedReason type=string optional=true
+  field name=needsInspection type="string[]" optional=true
+  field name=retryableReadOnly type="string[]" optional=true
+
+fn name=createCesarTurnRuntimeHost params="sessionId:string,nextLeaseEpoch?:number,writeLifecycle?:((event:Record<string,unknown>)=>{ok:boolean,seq:number,error?:string})" returns=CesarTurnRuntimeHost export=true
+  handler <<<
+    const initialEpoch = typeof nextLeaseEpoch === 'number' && Number.isSafeInteger(nextLeaseEpoch) && nextLeaseEpoch > 0
+      ? nextLeaseEpoch
+      : 1;
+    return {
+      sessionId,
+      nextLeaseEpoch: initialEpoch,
+      active: null,
+      latestTerminal: null,
+      writeLifecycle,
+    };
+  >>>
+
+fn name=createDurableCesarTurnRuntimeHost params="sessionId:string" returns=CesarTurnRuntimeHost export=true
+  doc "Production host seeded from durable recovery; control-plane writes are synchronous and fail closed."
+  handler <<<
+    const recovery = recoverControlPlane(sessionId);
+    const host = createCesarTurnRuntimeHost(
+      sessionId,
+      recovery.nextLeaseEpoch,
+      (event) => appendControlPlaneEvent(sessionId, event),
+    );
+    if (recovery.unsupportedSchema) host.recoveryBlockedReason = 'unsupported control-plane schema';
+    if (recovery.needsInspection.length > 0) host.needsInspection = recovery.needsInspection;
+    if (recovery.retryableReadOnly.length > 0) host.retryableReadOnly = recovery.retryableReadOnly;
+    return host;
+  >>>
+
+fn name=resetStaleCesarTurnState params="state:CesarState" returns=void export=true
+  doc "Atomically release every in-memory field owned by a superseded producer. Delegation, dispatch, authority, and tool-loop scratch state must not cross the fresh lease; app-side steering and session-scoped plan/budget state have separate ownership."
+  handler <<<
+    state.busy = false;
+    state.busySince = null;
+    state.abortSignal = null;
+    state.turnId = undefined;
+    state.pendingDelegation = null;
+    releaseCesarTurnHandles(state);
+    state.planDispatch = null;
+    state.reportedConfidence = undefined;
+    state.reportedConfidenceReasoning = undefined;
+    state.confidenceSatisfied = false;
+    state.blockedOnConfidence = null;
+    state.confidenceBlockCount = 0;
+    state.searchToolCount = 0;
+    state.searchNudged = false;
+    state.quickNeroRequested = false;
+  >>>
+
+fn name=beginCesarTurn params="host:CesarTurnRuntimeHost,turnId:string,producerId:string,attempt?:number" returns=CesarTurnRuntime export=true
+  doc "Claim one monotonic lease for a user turn. An older running producer is fenced before the new lease becomes active."
+  handler <<<
+    if (host.recoveryBlockedReason) {
+      throw new Error(`cannot begin Cesar turn: ${host.recoveryBlockedReason}`);
+    }
+    const previous = host.active;
+    if (previous && !isTerminalTurnState(previous.state)) {
+      const superseded = reduceTurnLifecycle(previous.state, 'superseded');
+      if (superseded.ok) {
+        if (previous.writeLifecycle) {
+          const persisted = previous.writeLifecycle({ type: 'turn_terminal', envelope: previous.envelope, state: superseded.state });
+          if (!persisted.ok) throw new Error(`durable supersede failed: ${persisted.error ?? 'unknown error'}`);
+        }
+        previous.state = superseded.state;
+        previous.terminalAccepted = true;
+        host.latestTerminal = previous;
+      }
+    }
+    const envelope: ControlPlaneEnvelopeV1 = {
+      schemaVersion: 1,
+      sessionId: host.sessionId,
+      turnId,
+      leaseEpoch: host.nextLeaseEpoch,
+      attempt: typeof attempt === 'number' && Number.isSafeInteger(attempt) && attempt > 0 ? attempt : 1,
+      producerId,
+    };
+    host.nextLeaseEpoch += 1;
+    const runtime: CesarTurnRuntime = {
+      envelope,
+      state: 'running',
+      toolPromises: new Map(),
+      permissionPromises: new Map(),
+      toolClaims: new Map(),
+      permissionClaims: new Set(),
+      terminalAccepted: false,
+      writeLifecycle: host.writeLifecycle,
+    };
+    if (runtime.writeLifecycle) {
+      const persisted = runtime.writeLifecycle({ type: 'turn_started', envelope });
+      if (!persisted.ok) throw new Error(`durable turn claim failed: ${persisted.error ?? 'unknown error'}`);
+    }
+    host.active = runtime;
+    return runtime;
+  >>>
+
+fn name=isActiveCesarTurn params="host:CesarTurnRuntimeHost,envelope:ControlPlaneEnvelopeV1" returns=boolean export=true
+  handler <<<
+    const active = host.active;
+    return !!active
+      && !isTerminalTurnState(active.state)
+      && isCurrentControlPlaneEnvelope(envelope, active.envelope);
+  >>>
+
+fn name=transitionCesarTurn params="host:CesarTurnRuntimeHost,envelope:ControlPlaneEnvelopeV1,next:TurnLifecycleState" returns=TurnLifecycleTransition export=true
+  handler <<<
+    const runtime = host.active && isCurrentControlPlaneEnvelope(envelope, host.active.envelope)
+      ? host.active
+      : host.latestTerminal && isCurrentControlPlaneEnvelope(envelope, host.latestTerminal.envelope)
+        ? host.latestTerminal
+        : null;
+    if (!runtime) return { ok: false, state: 'superseded', reason: 'terminal_state' };
+    const transition = reduceTurnLifecycle(runtime.state, next);
+    if (!transition.ok) return transition;
+    if (isTerminalTurnState(transition.state)) {
+      if (runtime.writeLifecycle) {
+        const persisted = runtime.writeLifecycle({ type: 'turn_terminal', envelope: runtime.envelope, state: transition.state });
+        if (!persisted.ok) return { ok: false, state: runtime.state, reason: 'terminal_state' };
+      }
+      runtime.state = transition.state;
+      runtime.terminalAccepted = true;
+      host.latestTerminal = runtime;
+      if (host.active === runtime) host.active = null;
+    } else {
+      runtime.state = transition.state;
+    }
+    return transition;
+  >>>
+
+fn name=fenceStaleCesarTurn params="host:CesarTurnRuntimeHost" returns=boolean export=true
+  doc "Release a stale active slot exactly once. An already-terminal runtime is safe to detach; a live runtime must first accept a durable terminal transition."
+  handler <<<
+    const active = host.active;
+    if (!active) return true;
+    if (isTerminalTurnState(active.state)) {
+      host.latestTerminal = active;
+      host.active = null;
+      return true;
+    }
+    const next = active.state === 'cancelling' ? 'timed_out' : 'superseded';
+    return transitionCesarTurn(host, active.envelope, next).ok;
+  >>>
+
+fn name=claimTurnPermission params="runtime:CesarTurnRuntime,requestId:string" returns=boolean export=true
+  doc "Return true only for the first live claim of one stable permission request id."
+  handler <<<
+    if (!requestId || isTerminalTurnState(runtime.state)) return false;
+    if (runtime.permissionClaims.has(requestId)) return false;
+    runtime.permissionClaims.add(requestId);
+    return true;
+  >>>
+
+fn name=runTurnPermissionOnce async=true params="runtime:CesarTurnRuntime,requestId:string,ask:()=>Promise<boolean|string>" returns="Promise<boolean|string>" export=true
+  doc "Join duplicate adapter permission requests to one prompt and one durable decision."
+  handler <<<
+    if (!requestId) throw new Error('requestId is required for turn-scoped permission');
+    if (isTerminalTurnState(runtime.state)) throw new Error('turn is already terminal');
+    const existing = runtime.permissionPromises.get(requestId);
+    if (existing) return existing;
+    const promise = (async () => {
+      if (runtime.writeLifecycle) {
+        const requested = runtime.writeLifecycle({ type: 'permission_requested', envelope: runtime.envelope, requestId });
+        if (!requested.ok) throw new Error(`durable permission request failed: ${requested.error ?? 'unknown error'}`);
+      }
+      let decisionCompleted = false;
+      try {
+        const decision = await ask();
+        if (isTerminalTurnState(runtime.state)) {
+          decisionCompleted = true;
+          if (runtime.writeLifecycle) {
+            runtime.writeLifecycle({ type: 'permission_terminal', envelope: runtime.envelope, requestId, decision: 'denied' });
+          }
+          return false;
+        }
+        decisionCompleted = true;
+        if (runtime.writeLifecycle) {
+          const terminal = runtime.writeLifecycle({
+            type: 'permission_terminal',
+            envelope: runtime.envelope,
+            requestId,
+            decision: typeof decision === 'string' ? 'denied' : decision ? 'approved' : 'denied',
+          });
+          if (!terminal.ok) throw new Error(`durable permission terminal failed: ${terminal.error ?? 'unknown error'}`);
+        }
+        return decision;
+      } catch (err) {
+        if (!decisionCompleted && runtime.writeLifecycle && !(err instanceof Error && err.message.startsWith('durable permission request failed'))) {
+          runtime.writeLifecycle({ type: 'permission_terminal', envelope: runtime.envelope, requestId, decision: 'failed' });
+        }
+        throw err;
+      }
+    })();
+    runtime.permissionPromises.set(requestId, promise);
+    return promise;
+  >>>
+
+fn name=inferToolTerminalReason params="value:any" returns="'succeeded'|'failed'|'skipped_policy'|'denied'|'cancelled'|'unknown'" export=true
+  doc "Normalize structured and legacy native-tool results without treating a non-throwing ok:false result as success."
+  handler <<<
+    const explicit = value?.terminalReason ?? value?.result?.terminalReason;
+    if (['succeeded', 'failed', 'skipped_policy', 'denied', 'cancelled', 'unknown'].includes(explicit)) return explicit;
+    const result = value?.result ?? value;
+    if (result?.ok !== false) return 'succeeded';
+    const reason = String(result?.error ?? result?.reason ?? result?.output ?? '');
+    if (/permission denied|user denied|not approved/i.test(reason)) return 'denied';
+    if (/abort|cancel(?:led|ed)|interrupt/i.test(reason)) return 'cancelled';
+    if (/investigation phase|read-only mode|skipped.+mutating|policy skip/i.test(reason)) return 'skipped_policy';
+    return 'failed';
+  >>>
+
+fn name=runTurnToolOnce async=true params="runtime:CesarTurnRuntime,toolCallId:string,owner:TurnExecutionOwner,effectClass:TurnEffectClass,execute:()=>Promise<any>" returns="Promise<any>" export=true
+  doc "At-most-once local initiation: duplicate representations join the first promise by stable toolCallId."
+  handler <<<
+    if (!toolCallId) throw new Error('toolCallId is required for turn-scoped execution');
+    if (isTerminalTurnState(runtime.state)) throw new Error('turn is already terminal');
+    const existing = runtime.toolPromises.get(toolCallId);
+    if (existing) return existing;
+    runtime.toolClaims.set(toolCallId, { owner, effectClass });
+    const promise = (async () => {
+      if (runtime.writeLifecycle) {
+        const claim = runtime.writeLifecycle({
+          type: 'tool_claimed',
+          envelope: runtime.envelope,
+          toolCallId,
+          owner,
+          effectClass,
+        });
+        if (!claim.ok) throw new Error(`durable tool claim failed: ${claim.error ?? 'unknown error'}`);
+      }
+      let executionCompleted = false;
+      try {
+        const value = await execute();
+        if (isTerminalTurnState(runtime.state)) {
+          executionCompleted = true;
+          if (runtime.writeLifecycle) {
+            runtime.writeLifecycle({ type: 'tool_terminal', envelope: runtime.envelope, toolCallId, terminalReason: 'cancelled' });
+          }
+          throw new Error('turn became terminal during tool execution');
+        }
+        executionCompleted = true;
+        if (runtime.writeLifecycle) {
+          const terminal = runtime.writeLifecycle({ type: 'tool_terminal', envelope: runtime.envelope, toolCallId, terminalReason: inferToolTerminalReason(value) });
+          if (!terminal.ok) throw new Error(`durable tool terminal failed: ${terminal.error ?? 'unknown error'}`);
+        }
+        return value;
+      } catch (err) {
+        if (!executionCompleted && runtime.writeLifecycle && !(err instanceof Error && err.message.startsWith('durable tool claim failed'))) {
+          runtime.writeLifecycle({ type: 'tool_terminal', envelope: runtime.envelope, toolCallId, terminalReason: 'failed' });
+        }
+        throw err;
+      }
+    })();
+    runtime.toolPromises.set(toolCallId, promise);
+    return promise;
+  >>>

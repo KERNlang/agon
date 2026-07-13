@@ -1,0 +1,10 @@
+fn name=scheduleToolBatch async=true params="calls:any[],isSafe:(call:any)=>boolean,execute:(call:any)=>Promise<any>" returns="Promise<any[]>" export=true
+  doc "Run a batch concurrently only when every call declares itself safe; otherwise serialize the entire batch in model order."
+  handler <<<
+    const batch = Array.isArray(calls) ? calls : [];
+    if (batch.length === 0) return [];
+    if (batch.every((call) => isSafe(call))) return Promise.all(batch.map((call) => execute(call)));
+    const results: any[] = [];
+    for (const call of batch) results.push(await execute(call));
+    return results;
+  >>>

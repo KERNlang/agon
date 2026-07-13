@@ -352,6 +352,25 @@ export function buildHarnessDoctorReport(registry: EngineRegistry, config: any, 
   }
   rows.push(['Backend', `${backendPref} -> ${backend}`, backendStatus, backendDetail]);
 
+  const apiTiming = engine?.api;
+  if (apiTiming) {
+    const seconds = (value: unknown) => typeof value === 'number' && Number.isFinite(value)
+      ? `${Number(value) / 1000}s`
+      : 'provider default';
+    const retryCount = typeof apiTiming.firstChunkRetryCount === 'number'
+      ? String(apiTiming.firstChunkRetryCount)
+      : 'default';
+    const retryBackoff = typeof apiTiming.firstChunkRetryBackoffMs === 'number'
+      ? `${apiTiming.firstChunkRetryBackoffMs}ms`
+      : 'default';
+    rows.push([
+      'Latency policy',
+      selected,
+      typeof apiTiming.firstChunkTimeoutMs === 'number' && typeof apiTiming.idleTimeoutMs === 'number' ? 'ok' : 'warn',
+      `first=${seconds(apiTiming.firstChunkTimeoutMs)}, idle=${seconds(apiTiming.idleTimeoutMs)}, retry=${retryCount}, backoff=${retryBackoff}`,
+    ]);
+  }
+
   const hasNative = cesar?.hasNativeTools === true;
   const hasMcpSignal = typeof cesar?.mcpSignalPath === 'string' && cesar.mcpSignalPath.length > 0;
   rows.push(['Native tools', selected, hasNative ? 'ok' : 'warn', hasNative ? 'active in current Cesar session' : 'not active yet; send a Cesar turn to test native tool streaming']);
@@ -377,14 +396,14 @@ export function buildHarnessDoctorReport(registry: EngineRegistry, config: any, 
   };
 }
 
-// @kern-source: doctor:343
+// @kern-source: doctor:362
 export interface ReviewDoctorReport {
   rows: string[][];
   ok: boolean;
   summary: string;
 }
 
-// @kern-source: doctor:348
+// @kern-source: doctor:367
 export const REVIEW_DOCTOR_DIFF: string = [
   'diff --git a/sample.ts b/sample.ts',
   'new file mode 100644',
@@ -400,7 +419,7 @@ export const REVIEW_DOCTOR_DIFF: string = [
 /**
  * Review-specific reliability smoke test (#8). For each engine, runs a real review of a tiny synthetic buggy diff through the full runReviewCore pipeline (prompt → dispatch → sentinel parse → repair) under a short hard timeout, then classifies whether the engine produced machine-parseable output. This catches engines that pass `doctor engines` (binary/key reachable) but hang or emit unparseable output in actual review use — the kimi/zai failure mode the user hit.
  */
-// @kern-source: doctor:360
+// @kern-source: doctor:379
 export async function runReviewDoctor(registry: EngineRegistry, config: any, adapter: any, engineIds: string[], timeoutSec: number): Promise<ReviewDoctorReport> {
   // Align the inner dispatch timeout with the orchestrator wall clock (+grace)
   // so a misbehaving dispatch path that defers abort still can't exceed the
@@ -456,7 +475,7 @@ export async function runReviewDoctor(registry: EngineRegistry, config: any, ada
   };
 }
 
-// @kern-source: doctor:417
+// @kern-source: doctor:436
 export const doctorCommand: any = defineCommand({
   meta: {
     name: 'doctor',

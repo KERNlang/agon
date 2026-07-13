@@ -203,4 +203,92 @@ describe('Eager Tool Execution', () => {
       status: 'error',
     }));
   });
+
+  it('enforces the task lease before an eager auto-allowed mutation', async () => {
+    const { ToolRegistry } = await import('../../packages/core/src/generated/signals/tool-registry.js');
+    const { executeEagerTool } = await import('../../packages/cli/src/generated/cesar/tools.js');
+    const { createTaskExecutionLease } = await import('../../packages/cli/src/generated/cesar/task-execution-lease.js');
+
+    const registry = new ToolRegistry();
+    let executed = false;
+    registry.register({
+      definition: {
+        name: 'Edit',
+        description: 'auto-allowed eager mutation fixture',
+        inputSchema: { type: 'object', properties: {}, required: [] },
+        maxResultSizeChars: 1000,
+        isReadOnly: false,
+        isConcurrencySafe: false,
+      },
+      validate: () => null,
+      checkPermission: () => ({ behavior: 'allow' as const }),
+      execute: async () => {
+        executed = true;
+        return { ok: true, content: 'ran' };
+      },
+    });
+    const events: any[] = [];
+    const result = await executeEagerTool(
+      'Edit',
+      { toolCallId: 'lease_1', input: { file_path: '/tmp/outside-lease.ts' } },
+      registry,
+      {
+        cwd: REPO_ROOT,
+        readFileState: new Map(),
+        permissionMode: 'auto',
+        taskExecutionLease: createTaskExecutionLease('fix the local recap', true, REPO_ROOT),
+      } as any,
+      (event: any) => events.push(event),
+      'cesar',
+    );
+
+    expect(result.result.ok).toBe(false);
+    expect(result.result.terminalReason).toBe('denied');
+    expect(result.result.error).toContain('workspace_escape');
+    expect(executed).toBe(false);
+  });
+
+  it('enforces the task lease for case-insensitive eager bash aliases', async () => {
+    const { ToolRegistry } = await import('../../packages/core/src/generated/signals/tool-registry.js');
+    const { executeEagerTool } = await import('../../packages/cli/src/generated/cesar/tools.js');
+    const { createTaskExecutionLease } = await import('../../packages/cli/src/generated/cesar/task-execution-lease.js');
+
+    const registry = new ToolRegistry();
+    let executed = false;
+    registry.register({
+      definition: {
+        name: 'Bash',
+        description: 'case-insensitive eager bash fixture',
+        inputSchema: { type: 'object', properties: {}, required: [] },
+        maxResultSizeChars: 1000,
+        isReadOnly: false,
+        isConcurrencySafe: false,
+      },
+      validate: () => null,
+      checkPermission: () => ({ behavior: 'allow' as const }),
+      execute: async () => {
+        executed = true;
+        return { ok: true, content: 'ran' };
+      },
+    });
+    const result = await executeEagerTool(
+      'bash',
+      { toolCallId: 'lease_lower_bash', input: { command: 'rm -rf /tmp/outside-lease' } },
+      registry,
+      {
+        cwd: REPO_ROOT,
+        readFileState: new Map(),
+        permissionMode: 'auto',
+        taskExecutionLease: createTaskExecutionLease('fix the local recap', true, REPO_ROOT),
+      } as any,
+      (event: any) => {
+        if (event.type === 'permission-ask') event.resolve(false);
+      },
+      'cesar',
+    );
+
+    expect(result.result.ok).toBe(false);
+    expect(result.result.terminalReason).toBe('denied');
+    expect(executed).toBe(false);
+  });
 });

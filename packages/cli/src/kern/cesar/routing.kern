@@ -32,6 +32,13 @@ interface name=CesarRoutingHints
   field name=estimatedStepCost type=CostEstimate optional=true
   field name=eloSpread type=number optional=true
 
+fn name=executionActionForPlan params="action:string,activePlan?:{state?:string}|null" returns=string export=true
+  doc "Hold every mutating/background execution delegation behind the plan approval boundary; thinking modes remain available while planning."
+  handler lang="kern"
+    let name=planActive value="!!activePlan && ['planning', 'awaiting_approval'].includes(String(activePlan.state ?? ''))"
+    let name=executionActions value="new Set(['forge', 'team-forge', 'build', 'pipeline', 'agent', 'team-agent', 'goal', 'conquer'])"
+    return value="planActive && executionActions.has(action) ? 'brainstorm' : action"
+
 fn name=deriveRoutingHints params="input:string, ctx:HandlerContext" returns="CesarRoutingHints" export=true
   doc "Cheap, deterministic routing hints for Cesar: intake kind, flow recommendation, uncertainty family, escalation shape, breadth, and forge scope."
   handler <<<

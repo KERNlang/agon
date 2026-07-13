@@ -11,6 +11,8 @@ interface name=ApiConfig
   field name=format type="'openai'|'anthropic'" optional=true
   field name=firstChunkTimeoutMs type=number optional=true
   field name=idleTimeoutMs type=number optional=true
+  field name=firstChunkRetryCount type=number optional=true
+  field name=firstChunkRetryBackoffMs type=number optional=true
 
 // Model instance cache — provider+model objects are stateless, safe to reuse
 const name=_modelCache type="Map<string,{model:any, apiKey:string}>" value={{ new Map<string,{model:any, apiKey:string}>() }}

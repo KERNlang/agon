@@ -4,11 +4,14 @@
 interface name=ToolInput
   field name=type type=string
 
+type name=ToolTerminalReason values="succeeded|failed|skipped_policy|denied|cancelled|unknown" export=true
+
 interface name=ToolResult
   field name=ok type=boolean
   field name=content type=string
   field name=error type=string optional=true
   field name=metadata type="Record<string,unknown>" optional=true
+  field name=terminalReason type=ToolTerminalReason optional=true
 
 interface name=PermissionDecision
   field name=behavior type="'allow'|'ask'|'deny'"
@@ -54,6 +57,7 @@ interface name=ToolContext
   field name=onProgress type="((message: string) => void)" optional=true
   field name=onStreamChunk type="((chunk: string) => void)" optional=true
   field name=onTodos type="((todos: Array<{id:string,text:string,state:string,kind?:string,note?:string}>) => void)" optional=true
+  field name=authorizeToolCall type="((tool:string,input:Record<string,unknown>)=>Promise<boolean|string>|boolean|string)" optional=true
   field name=readOnlyMode type=boolean optional=true
   field name=blockedTools type="string[]" optional=true
   field name=blockedToolMessage type=string optional=true

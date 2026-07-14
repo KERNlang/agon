@@ -35,6 +35,7 @@ const EXPECTED_COMMAND_NAMES = [
   'config',
   'review',
   'call',
+  'job',
   'agent-guide',
   'install-agent-prompts',
   'goal',
@@ -85,8 +86,8 @@ describe('lazySubCommands', () => {
     }
   });
 
-  it('only commands with real nested subCommands (models, ext, browser-host, ratings) expose a subCommands field', () => {
-    const withSubCommands = new Set(['models', 'ext', 'browser-host', 'ratings']);
+  it('only commands with real nested subCommands expose a subCommands field', () => {
+    const withSubCommands = new Set(['models', 'ext', 'browser-host', 'ratings', 'job']);
     for (const [key, entry] of Object.entries(lazySubCommands)) {
       const canonical = key === 'wt' ? 'worktree' : key === 'upgrade' ? 'update' : key;
       const hasField = 'subCommands' in (entry as object) && (entry as { subCommands?: unknown }).subCommands !== undefined;
@@ -126,7 +127,7 @@ describe('lazySubCommands — full parity with the real command modules', () => 
   // External review, fix 3: the lazy entries duplicate each command's meta
   // inline (that duplication is the POINT — `agon --help` must render the
   // full command table without importing a single command module), and the
-  // hasSubCommands set {models, ext, browser-host} is hardcoded. Both can
+  // hasSubCommands set is hardcoded. Both can
   // silently drift as commands evolve. This suite imports EVERY real command
   // module (test-time cost only) and asserts the lazy map matches reality,
   // turning both drift hazards into test failures instead of stale --help
@@ -158,6 +159,7 @@ describe('lazySubCommands — full parity with the real command modules', () => 
     config: [() => import('./commands/config.js'), 'configCommand'],
     review: [() => import('./commands/review.js'), 'reviewCommand'],
     call: [() => import('./commands/call.js'), 'callCommand'],
+    job: [() => import('./commands/job.js'), 'jobCommand'],
     'agent-guide': [() => import('./commands/agent-guide.js'), 'agentGuideCommand'],
     'install-agent-prompts': [() => import('./commands/install-agent-prompts.js'), 'installAgentPromptsCommand'],
     goal: [() => import('./commands/goal.js'), 'goalCommand'],

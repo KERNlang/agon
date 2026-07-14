@@ -32,14 +32,16 @@
 
 import from="citty" names="defineCommand"
 import from="node:fs" names="mkdirSync,writeFileSync,readFileSync,existsSync,rmSync,utimesSync,statSync,chmodSync"
-import from="node:path" names="join,dirname"
+import from="node:path" names="join,dirname,resolve"
 import from="node:net" names="createServer,connect"
 import from="node:net" names="Socket,Server" types=true
 import from="node:child_process" names="spawn"
-import from="@kernlang/agon-core" names="ensureAgonHome,loadConfig,agonPath,EngineRegistry,eventLogAppend,eventLogFlush,eventLogLatestSeq"
+import from="@kernlang/agon-core" names="ensureAgonHome,loadConfig,agonPath,EngineRegistry,JobService,eventLogAppend,eventLogFlush,eventLogLatestSeq"
 import from="@kernlang/agon-core" names="encodeDaemonRequest,encodeDaemonResponse,parseDaemonRequest,parseDaemonResponse,splitFrames"
 import from="@kernlang/agon-core" names="DaemonRequest,DaemonResponse" types=true
 import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
+import from="../jobs/daemon-job-router.js" names="handleDaemonJobRequest,isDaemonJobRequest"
+import from="../jobs/workflow-job.js" names="daemonJobConfig,resolveDaemonWorkflowJob"
 import from="@kernlang/agon-adapter-cli" names="createCliAdapter"
 import from="../blocks/output-format.js" names="header,info,success,warn,bold,dim,green,cyan,yellow,red"
 
@@ -288,10 +290,19 @@ fn name=runDaemonServer returns="Promise<void>" async=true export=true
   handler <<<
     ensureAgonHome();
     mkdirSync(daemonDir(), { recursive: true });
+    try { chmodSync(daemonDir(), 0o700); }
+    catch (err) { throw new Error(`Cannot secure daemon directory: ${err instanceof Error ? err.message : String(err)}`); }
 
     const startedAtMs = Date.now();
     const sessionId = `daemon-${startedAtMs}`;
     const cwd = process.cwd();
+    const jobConfig = daemonJobConfig(cwd);
+    const jobs = new JobService({
+      eventLimit: jobConfig.jobEventLimit,
+      retentionLimit: jobConfig.jobRetentionLimit,
+      maxConcurrency: jobConfig.jobMaxConcurrency,
+    });
+    const jobResolver = { resolve: resolveDaemonWorkflowJob };
 
     const registry = new EngineRegistry();
     registry.load(resolveBuiltinEnginesDir());
@@ -322,19 +333,28 @@ fn name=runDaemonServer returns="Promise<void>" async=true export=true
     // leaving an orphaned daemon (review: sockets-keep-process-alive).
     const openSockets = new Set<Socket>();
 
-    return await new Promise<void>((resolve) => {
+    return await new Promise<void>((resolve, reject) => {
       let shuttingDown = false;
-      const cleanup = (): void => {
-        if (shuttingDown) return;
+      let cleanupPromise: Promise<void> | null = null;
+      const cleanup = (failure?: Error): Promise<void> => {
+        if (cleanupPromise) return cleanupPromise;
         shuttingDown = true;
-        try { clearInterval(heartbeat); } catch { /* best-effort */ }
-        try { eventLogFlush(sessionId); } catch { /* best-effort */ }
-        try { server.close(); } catch { /* best-effort */ }
-        for (const s of openSockets) { try { s.destroy(); } catch { /* best-effort */ } }
-        openSockets.clear();
-        try { rmSync(socketPath(), { force: true }); } catch { /* best-effort */ }
-        try { rmSync(pidFilePath(), { force: true }); } catch { /* best-effort */ }
-        resolve();
+        cleanupPromise = (async () => {
+          jobs.cancelAll('daemon shutting down');
+          const drained = await jobs.waitForIdle(jobConfig.jobShutdownTimeoutMs);
+          if (!drained) console.warn(`[agond] job drain exceeded ${jobConfig.jobShutdownTimeoutMs}ms; completing shutdown`);
+          try { clearInterval(heartbeat); } catch { /* best-effort */ }
+          process.off('SIGTERM', onSignal);
+          process.off('SIGINT', onSignal);
+          try { eventLogFlush(sessionId); } catch { /* best-effort */ }
+          try { server.close(); } catch { /* best-effort */ }
+          for (const s of openSockets) { try { s.destroy(); } catch { /* best-effort */ } }
+          openSockets.clear();
+          try { rmSync(socketPath(), { force: true }); } catch { /* best-effort */ }
+          try { rmSync(pidFilePath(), { force: true }); } catch { /* best-effort */ }
+          if (failure) reject(failure); else resolve();
+        })();
+        return cleanupPromise;
       };
 
       const reply = (sock: Socket, msg: DaemonResponse): void => {
@@ -342,14 +362,23 @@ fn name=runDaemonServer returns="Promise<void>" async=true export=true
       };
 
       const handleRequest = async (sock: Socket, req: DaemonRequest): Promise<void> => {
+        if (isDaemonJobRequest(req)) {
+          try {
+            const response = handleDaemonJobRequest(req, jobs, jobResolver);
+            if (response) reply(sock, response);
+          } catch (err) {
+            reply(sock, { type: 'error', message: err instanceof Error ? err.message : String(err) });
+          }
+          return;
+        }
         switch (req.type) {
           case 'ping':
-            reply(sock, { type: 'pong', sessionId, uptime: Date.now() - startedAtMs });
+            reply(sock, { type: 'pong', sessionId, uptime: Date.now() - startedAtMs, capabilities: ['jobs-v1'] });
             return;
           case 'shutdown':
             reply(sock, { type: 'bye' });
             // Give the bye a tick to flush to the socket before we tear down.
-            setTimeout(cleanup, 10);
+            setTimeout(() => { void cleanup(); }, 10);
             return;
           case 'prompt': {
             if (turnState.busy) { reply(sock, { type: 'busy' }); return; }
@@ -373,9 +402,7 @@ fn name=runDaemonServer returns="Promise<void>" async=true export=true
       };
 
       // A client must never grow the daemon's memory unbounded by streaming
-      // bytes with no newline. 1 MiB is far above any legitimate frame (a prompt
-      // is a single JSON line); past it we drop the connection.
-      const MAX_BUFFER_BYTES = 1024 * 1024;
+      // bytes with no newline. The configured frame bound drops the connection.
 
       const server: Server = createServer((sock: Socket) => {
         sock.setEncoding('utf-8');
@@ -383,7 +410,7 @@ fn name=runDaemonServer returns="Promise<void>" async=true export=true
         let buffer = '';
         sock.on('data', (chunk: string) => {
           buffer += chunk;
-          if (buffer.length > MAX_BUFFER_BYTES) {
+          if (Buffer.byteLength(buffer, 'utf8') > jobConfig.daemonFrameMaxBytes) {
             // Oversized un-framed input — refuse and hang up rather than grow.
             try { sock.write(encodeDaemonResponse({ type: 'error', message: 'frame too large' })); } catch { /* best-effort */ }
             try { sock.destroy(); } catch { /* best-effort */ }
@@ -409,25 +436,27 @@ fn name=runDaemonServer returns="Promise<void>" async=true export=true
         // stale-probed; if we still hit it the file is racing — log and exit so
         // we don't run a daemon with no socket. cleanup() removes our own files.
         console.warn(`[agond] socket server error: ${err.message}`);
-        cleanup();
+        void cleanup(err);
       });
 
       // Clean shutdown on the usual signals so a `kill` (stop's SIGTERM fallback)
       // still removes the socket + pidfile.
-      const onSignal = (): void => cleanup();
+      const onSignal = (): void => { void cleanup(); };
       process.on('SIGTERM', onSignal);
       process.on('SIGINT', onSignal);
 
       try {
         server.listen(socketPath(), () => {
-          // Restrict the socket to the owner (0o600) so another local user can't
-          // connect and {shutdown} or {prompt} us. Best-effort: a chmod failure
-          // (exotic fs) doesn't stop the daemon serving.
-          try { chmodSync(socketPath(), 0o600); } catch { /* best-effort */ }
+          // Jobs can mutate a workspace, so a socket permission failure is fatal.
+          try { chmodSync(socketPath(), 0o600); }
+          catch (err) {
+            console.warn(`[agond] cannot secure socket: ${err instanceof Error ? err.message : String(err)}`);
+            void cleanup(new Error(`Cannot secure daemon socket: ${err instanceof Error ? err.message : String(err)}`));
+          }
         });
       } catch (err) {
         console.warn(`[agond] listen failed: ${err instanceof Error ? err.message : String(err)}`);
-        cleanup();
+        void cleanup(err instanceof Error ? err : new Error(String(err)));
       }
     });
   >>>
@@ -471,7 +500,8 @@ fn name=startDaemon params="foreground:boolean" returns="Promise<void>" async=tr
     // entry (dist/index.js); execPath is the node binary. detached + stdio
     // 'ignore' + unref() = the child has its own session leader and is not tied
     // to our stdio or lifetime.
-    const entry = process.argv[1];
+    const entry = process.argv[1] ? resolve(process.argv[1]) : '';
+    if (!entry) throw new Error('Cannot start daemon: CLI entry path is unavailable');
     const child = spawn(process.execPath, [entry, 'daemon', 'run', '--foreground'], {
       detached: true,
       stdio: 'ignore',

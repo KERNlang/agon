@@ -135,15 +135,41 @@ describeMaybe('agond survival — the daemon outlives its launcher', () => {
     if (pong?.type === 'pong') {
       expect(pong.sessionId).toBe(sessionId);
       expect(pong.uptime).toBeGreaterThanOrEqual(0);
+      expect(pong.capabilities).toContain('jobs-v1');
     }
 
-    // 5) Send a prompt — the echo seam appends it to the session ledger and acks
+    // 5) Submit a daemon-owned autonomous job through the real jobs-v1 socket.
+    // The same echo seam keeps this deterministic after the safe workflow
+    // allowlist/payload validation boundary.
+    const accepted = await sendRequest(sockPath, {
+      type: 'job-submit', kind: 'brainstorm', payload: { input: 'job survives too', cwd: process.cwd() }, clientId: 'integration-test',
+    });
+    expect(accepted?.type).toBe('job-accepted');
+    if (!accepted || accepted.type !== 'job-accepted') throw new Error('job was not accepted');
+    let jobResult: DaemonResponse | null = null;
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      jobResult = await sendRequest(sockPath, { type: 'job-result', jobId: accepted.job.id });
+      if (jobResult?.type === 'job-result' && jobResult.ready) break;
+      await sleep(25);
+    }
+    expect(jobResult).toMatchObject({
+      type: 'job-result', ready: true,
+      outcome: { state: 'succeeded', value: { ok: true, kind: 'brainstorm', label: 'job survives too' } },
+    });
+    const jobEvents = await sendRequest(sockPath, { type: 'job-events', jobId: accepted.job.id, afterSeq: 0, limit: 20 });
+    expect(jobEvents).toMatchObject({ type: 'job-events', terminal: true });
+    if (jobEvents?.type === 'job-events') {
+      expect(jobEvents.events.some((event) => event.type === 'submitted')).toBe(true);
+      expect(jobEvents.events.some((event) => event.type === 'stdout')).toBe(true);
+    }
+
+    // 6) Send a prompt — the echo seam appends it to the session ledger and acks
     //    with the highest written seq.
     const ack = await sendRequest(sockPath, { type: 'prompt', text: 'survive and echo me' });
     expect(ack?.type).toBe('ack');
     if (ack?.type === 'ack') expect(ack.seq).toBeGreaterThan(0);
 
-    // 6) Replay the ledger from disk (the M1/M2 read seam) and assert the turn
+    // 7) Replay the ledger from disk (the M1/M2 read seam) and assert the turn
     //    landed: a user-message + an echo engine-block. This is the cross-process
     //    proof — the daemon WROTE the ledger, this test process READS it.
     const events = replay(sessionId, 0);
@@ -155,7 +181,7 @@ describeMaybe('agond survival — the daemon outlives its launcher', () => {
     );
     expect((echoBlock?.event as { content?: string } | undefined)?.content).toContain('survive and echo me');
 
-    // 7) A second prompt while idle still works (one-turn-at-a-time, not broken
+    // 8) A second prompt while idle still works (one-turn-at-a-time, not broken
     //    after the first), and seq advances monotonically.
     const ack2 = await sendRequest(sockPath, { type: 'prompt', text: 'second turn' });
     expect(ack2?.type).toBe('ack');
@@ -163,7 +189,7 @@ describeMaybe('agond survival — the daemon outlives its launcher', () => {
       expect(ack2.seq).toBeGreaterThan(ack.seq);
     }
 
-    // 8) Stop the daemon and assert it cleans up its socket + pidfile, and the
+    // 9) Stop the daemon and assert it cleans up its socket + pidfile, and the
     //    process actually exits.
     const bye = await sendRequest(sockPath, { type: 'shutdown' });
     expect(bye?.type).toBe('bye');

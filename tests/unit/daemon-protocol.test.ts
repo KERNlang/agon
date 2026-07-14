@@ -34,6 +34,12 @@ describe('daemon-protocol — round-trip', () => {
     { type: 'prompt', text: 'refactor auth' },
     { type: 'ping' },
     { type: 'shutdown' },
+    { type: 'job-submit', kind: 'brainstorm', payload: { input: 'design cache' }, clientId: 'codex' },
+    { type: 'job-list' },
+    { type: 'job-get', jobId: 'job-1' },
+    { type: 'job-events', jobId: 'job-1', afterSeq: 4, limit: 20 },
+    { type: 'job-result', jobId: 'job-1' },
+    { type: 'job-cancel', jobId: 'job-1', reason: 'operator request' },
   ];
   for (const req of requests) {
     it(`request "${req.type}" survives encode → parse`, () => {
@@ -44,9 +50,16 @@ describe('daemon-protocol — round-trip', () => {
 
   const responses: DaemonResponse[] = [
     { type: 'ack', seq: 7 },
-    { type: 'pong', sessionId: 'daemon-42', uptime: 999 },
+    { type: 'pong', sessionId: 'daemon-42', uptime: 999, capabilities: ['jobs-v1'] },
     { type: 'busy' },
     { type: 'bye' },
+    { type: 'job-accepted', job: { id: 'j1', kind: 'brainstorm', label: 'cache', state: 'queued', createdAt: 'now' } },
+    { type: 'job-list', jobs: [{ id: 'j1', kind: 'brainstorm', label: 'cache', state: 'running', createdAt: 'now', startedAt: 'then' }] },
+    { type: 'job-snapshot', job: { id: 'j1', kind: 'brainstorm', label: 'cache', state: 'succeeded', createdAt: 'now', finishedAt: 'later' } },
+    { type: 'job-events', jobId: 'j1', events: [{ seq: 2, ts: 3, type: 'progress', data: { step: 1 } }], nextSeq: 2, earliestSeq: 1, terminal: false, truncated: false },
+    { type: 'job-result', job: { id: 'j1', kind: 'brainstorm', label: 'cache', state: 'succeeded', createdAt: 'now' }, ready: true, outcome: { state: 'succeeded', value: { ok: true } } },
+    { type: 'job-cancelled', job: { id: 'j1', kind: 'brainstorm', label: 'cache', state: 'cancelled', createdAt: 'now' }, status: 'accepted' },
+    { type: 'job-not-found', jobId: 'missing' },
     { type: 'error', message: 'boom' },
   ];
   for (const res of responses) {
@@ -91,6 +104,19 @@ describe('daemon-protocol — tolerant parse', () => {
     expect(parseDaemonResponse(JSON.stringify({ type: 'ack', seq: '5' }))).toEqual({ type: 'ack', seq: 5 });
     const pong = parseDaemonResponse(JSON.stringify({ type: 'pong', sessionId: 's', uptime: '88' }));
     expect(pong).toEqual({ type: 'pong', sessionId: 's', uptime: 88 });
+  });
+
+  it('keeps pong capabilities optional for old daemons', () => {
+    expect(parseDaemonResponse(JSON.stringify({ type: 'pong', sessionId: 'old', uptime: 1 })))
+      .toEqual({ type: 'pong', sessionId: 'old', uptime: 1 });
+  });
+
+  it('rejects unsafe or incomplete job request fields', () => {
+    expect(parseDaemonRequest(JSON.stringify({ type: 'job-submit', kind: '', payload: {} }))).toMatchObject({ type: 'error' });
+    expect(parseDaemonRequest(JSON.stringify({ type: 'job-submit', kind: 'review', payload: [] }))).toMatchObject({ type: 'error' });
+    expect(parseDaemonRequest(JSON.stringify({ type: 'job-get', jobId: ' ' }))).toMatchObject({ type: 'error' });
+    expect(parseDaemonRequest(JSON.stringify({ type: 'job-events', jobId: 'j1', afterSeq: -1 }))).toMatchObject({ type: 'error' });
+    expect(parseDaemonRequest(JSON.stringify({ type: 'job-events', jobId: 'j1', limit: 0 }))).toMatchObject({ type: 'error' });
   });
 
   it('snaps a non-finite seq to 0 (never NaN on the wire)', () => {

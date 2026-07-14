@@ -4,6 +4,14 @@ import { JobService } from '../../packages/core/src/generated/jobs/job-service.j
 
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
+type InspectableJobService = {
+  records: Map<string, { executor: unknown }>;
+};
+
+const retainedExecutor = (jobs: JobService, id: string) => (
+  (jobs as unknown as InspectableJobService).records.get(id)?.executor
+);
+
 describe('JobService', () => {
   it('runs a submitted job to success with ordered replayable events and a result', async () => {
     const jobs = new JobService({ eventLimit: 8, retentionLimit: 4, maxConcurrency: 2 });
@@ -88,6 +96,61 @@ describe('JobService', () => {
     release();
     await tick();
     expect(secondRun).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for cancelled executors to actually settle before reporting idle', async () => {
+    const jobs = new JobService({ eventLimit: 8, retentionLimit: 4, maxConcurrency: 1 });
+    let release!: () => void;
+    const job = jobs.submit('build', 'drain before shutdown', {
+      run: () => new Promise<void>((resolve) => { release = resolve; }),
+    });
+    await tick();
+
+    expect(jobs.cancelAll('daemon shutting down')).toBe(1);
+    expect(jobs.get(job.id)?.state).toBe('cancelled');
+    let drained = false;
+    const drain = jobs.waitForIdle().then(() => { drained = true; });
+    await tick();
+    expect(drained).toBe(false);
+
+    release();
+    await drain;
+    expect(drained).toBe(true);
+  });
+
+  it('bounds shutdown draining when an executor ignores cancellation', async () => {
+    const jobs = new JobService({ eventLimit: 8, retentionLimit: 4, maxConcurrency: 1 });
+    let release!: () => void;
+    jobs.submit('build', 'ignore cancellation', {
+      run: () => new Promise<void>((resolve) => { release = resolve; }),
+    });
+    await tick();
+    jobs.cancelAll('shutdown');
+
+    await expect(jobs.waitForIdle(10)).resolves.toBe(false);
+    release();
+    await expect(jobs.waitForIdle(100)).resolves.toBe(true);
+  });
+
+  it('releases executor references once retained jobs no longer need them', async () => {
+    const completedJobs = new JobService({ eventLimit: 8, retentionLimit: 4, maxConcurrency: 1 });
+    const completed = completedJobs.submit('done', 'retained success', { run: async () => 'ok' });
+    await tick();
+
+    expect(completedJobs.get(completed.id)?.state).toBe('succeeded');
+    expect(retainedExecutor(completedJobs, completed.id)).toBeNull();
+
+    const queuedJobs = new JobService({ eventLimit: 8, retentionLimit: 4, maxConcurrency: 1 });
+    let release!: () => void;
+    queuedJobs.submit('blocker', 'occupy slot', {
+      run: () => new Promise<void>((resolve) => { release = resolve; }),
+    });
+    await tick();
+    const queued = queuedJobs.submit('queued', 'cancel before start', { run: async () => 'unused' });
+
+    expect(queuedJobs.cancel(queued.id)).toBe(true);
+    expect(retainedExecutor(queuedJobs, queued.id)).toBeNull();
+    release();
   });
 
   it('records failures without converting them into success', async () => {

@@ -4,7 +4,7 @@ import { defineCommand } from 'citty';
 
 import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, utimesSync, statSync, chmodSync } from 'node:fs';
 
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 
 import { createServer, connect } from 'node:net';
 
@@ -12,13 +12,17 @@ import type { Socket, Server } from 'node:net';
 
 import { spawn } from 'node:child_process';
 
-import { ensureAgonHome, loadConfig, agonPath, EngineRegistry, eventLogAppend, eventLogFlush, eventLogLatestSeq } from '@kernlang/agon-core';
+import { ensureAgonHome, loadConfig, agonPath, EngineRegistry, JobService, eventLogAppend, eventLogFlush, eventLogLatestSeq } from '@kernlang/agon-core';
 
 import { encodeDaemonRequest, encodeDaemonResponse, parseDaemonRequest, parseDaemonResponse, splitFrames } from '@kernlang/agon-core';
 
 import type { DaemonRequest, DaemonResponse } from '@kernlang/agon-core';
 
 import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
+
+import { handleDaemonJobRequest, isDaemonJobRequest } from '../jobs/daemon-job-router.js';
+
+import { daemonJobConfig, resolveDaemonWorkflowJob } from '../jobs/workflow-job.js';
 
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 
@@ -27,7 +31,7 @@ import { header, info, success, warn, bold, dim, green, cyan, yellow, red } from
 /**
  * The $AGON_HOME/daemon/ directory that holds the pidfile, heartbeat, and socket. Resolved at call time (not a frozen const) so a test that sets AGON_HOME after module load points the daemon at its temp home.
  */
-// @kern-source: daemon:48
+// @kern-source: daemon:50
 export function daemonDir(): string {
   return agonPath('daemon');
 }
@@ -35,7 +39,7 @@ export function daemonDir(): string {
 /**
  * Path to the daemon pidfile ($AGON_HOME/daemon/agond.pid). Holds JSON { pid, sessionId, startedAt } so `status`/`stop` can find the process AND name its session without opening the socket.
  */
-// @kern-source: daemon:51
+// @kern-source: daemon:53
 export function pidFilePath(): string {
   return join(daemonDir(), 'agond.pid');
 }
@@ -43,7 +47,7 @@ export function pidFilePath(): string {
 /**
  * Path to the heartbeat file ($AGON_HOME/daemon/heartbeat). The server touches its mtime every HEARTBEAT_MS; `status` reads the mtime age to decide liveness even if the socket is wedged.
  */
-// @kern-source: daemon:54
+// @kern-source: daemon:56
 export function heartbeatPath(): string {
   return join(daemonDir(), 'heartbeat');
 }
@@ -51,7 +55,7 @@ export function heartbeatPath(): string {
 /**
  * Path to the unix domain socket the daemon listens on ($AGON_HOME/daemon/agond.sock). Newline-JSON protocol (see daemon-protocol.kern). Cleaned on clean exit; a stale file from a crash is probed-then-removed on the next start/stop.
  */
-// @kern-source: daemon:57
+// @kern-source: daemon:59
 export function socketPath(): string {
   return join(daemonDir(), 'agond.sock');
 }
@@ -59,25 +63,25 @@ export function socketPath(): string {
 /**
  * How often the running daemon touches the heartbeat file's mtime. 2s, matching the spec; the timer is unref'd so it never keeps the process alive past its real work.
  */
-// @kern-source: daemon:62
+// @kern-source: daemon:64
 export const HEARTBEAT_MS: number = 2000;
 
 /**
  * A daemon whose heartbeat mtime is older than this is considered DEAD by `status` even if its pid still kill(0)-checks (e.g. hung). 5s = > 2 missed beats.
  */
-// @kern-source: daemon:65
+// @kern-source: daemon:67
 export const HEARTBEAT_STALE_MS: number = 5000;
 
 /**
  * How long a client waits for a {type:'pong'} (or any reply) before declaring the socket unreachable. Bounds `status`/`stop`/stale-probe so a wedged socket never hangs the CLI.
  */
-// @kern-source: daemon:68
+// @kern-source: daemon:70
 export const PING_TIMEOUT_MS: number = 1500;
 
 /**
  * Contents of the pidfile: the daemon's OS pid, the session id it owns, and when it started (ISO). Read by status/stop; written once by the server loop on boot.
  */
-// @kern-source: daemon:73
+// @kern-source: daemon:75
 export interface DaemonPidInfo {
   pid: number;
   sessionId: string;
@@ -87,7 +91,7 @@ export interface DaemonPidInfo {
 /**
  * Parse the pidfile into { pid, sessionId, startedAt }, or null when it is absent/unreadable/malformed. Never throws — a corrupt pidfile reads as 'no daemon' so stale-takeover can clean it.
  */
-// @kern-source: daemon:79
+// @kern-source: daemon:81
 export function readPidFile(): DaemonPidInfo | null {
   try {
     const raw = readFileSync(pidFilePath(), 'utf-8');
@@ -106,7 +110,7 @@ export function readPidFile(): DaemonPidInfo | null {
 /**
  * Write the pidfile atomically-ish (mkdir the daemon dir first, then writeFileSync — single small write is effectively atomic on POSIX). Best-effort: a write failure is logged, not thrown, so the daemon still runs (status degrades to socket-ping only).
  */
-// @kern-source: daemon:96
+// @kern-source: daemon:98
 export function writePidFile(info: DaemonPidInfo): void {
   try {
     mkdirSync(daemonDir(), { recursive: true });
@@ -119,7 +123,7 @@ export function writePidFile(info: DaemonPidInfo): void {
 /**
  * True if a process with this pid exists and is signalable by us (kill(pid, 0) does not actually send a signal — it only checks existence/permission). EPERM means the process EXISTS but we can't signal it → still alive. ESRCH means it's gone. A non-finite/<=0 pid is dead.
  */
-// @kern-source: daemon:109
+// @kern-source: daemon:111
 export function isProcessAlive(pid: number): boolean {
   if (!Number.isFinite(pid) || pid <= 0) return false;
   try {
@@ -135,7 +139,7 @@ export function isProcessAlive(pid: number): boolean {
 /**
  * Milliseconds since the heartbeat file was last touched, or Infinity when it's absent/unreadable (treated as maximally stale). `status` compares this against HEARTBEAT_STALE_MS to catch a hung daemon whose pid still exists.
  */
-// @kern-source: daemon:123
+// @kern-source: daemon:125
 export function heartbeatAgeMs(): number {
   try {
     const st = statSync(heartbeatPath());
@@ -148,7 +152,7 @@ export function heartbeatAgeMs(): number {
 /**
  * Connect to the daemon socket, send ONE request, and resolve with the FIRST reply frame (or null if the socket is unreachable / no reply within timeoutMs). Pure transport: encodes via the protocol module, accumulates bytes with splitFrames, parses the first complete line. Used by status (ping), stop (shutdown), the stale-socket probe, and tests. Never throws — a refused/absent socket resolves null so callers branch on 'no live daemon'.
  */
-// @kern-source: daemon:136
+// @kern-source: daemon:138
 export async function sendDaemonRequest(req: DaemonRequest, timeoutMs?: number): Promise<DaemonResponse | null> {
   const timeout = typeof timeoutMs === 'number' && timeoutMs > 0 ? timeoutMs : PING_TIMEOUT_MS;
   return await new Promise<DaemonResponse | null>((resolve) => {
@@ -184,7 +188,7 @@ export async function sendDaemonRequest(req: DaemonRequest, timeoutMs?: number):
 /**
  * What a start/status check learned about the current daemon. `live` true ⇒ a process is up AND answering; refuse to start over it. `hung` true ⇒ the pidfile pid is ALIVE but its socket does not answer (half-dead / mid-boot) — start must ALSO refuse here (NOT spawn a second daemon over a running pid), and tell the user to `stop` it. `staleCleaned` true ⇒ we found a dead pidfile/socket and removed it, so a fresh start is safe.
  */
-// @kern-source: daemon:172
+// @kern-source: daemon:174
 export interface DaemonLiveness {
   live: boolean;
   hung?: boolean;
@@ -196,7 +200,7 @@ export interface DaemonLiveness {
 /**
  * Decide whether a live daemon owns this AGON_HOME. A daemon is LIVE only if its pidfile pid is process-alive AND a ping over the socket returns pong. If the pid is ALIVE but the socket does not answer, the daemon is HUNG (half-dead / mid-boot) — we report hung:true and DO NOT remove its pidfile or spawn over it (the spec's 'refuse when ALIVE'); only `stop` may tear a hung daemon down. If the pid is DEAD (crash), the leftover pidfile/socket are STALE — remove them and report staleCleaned so a caller can start fresh. A socket file with no listener pings null → stale → removed. This is the stale-takeover gate the spec requires.
  */
-// @kern-source: daemon:180
+// @kern-source: daemon:182
 export async function probeDaemon(): Promise<DaemonLiveness> {
   const info = readPidFile();
   // No pidfile: maybe a leftover socket from a crash that never wrote one.
@@ -235,7 +239,7 @@ export async function probeDaemon(): Promise<DaemonLiveness> {
 /**
  * Run ONE headless single-engine turn for a prompt and append every step to the session ledger, returning the highest seq written (for the ack). The reused plumbing: a user-message event, then a single dispatch of the configured cesarEngine in 'exec' mode (the SAME call `agon ask` makes), then an engine-block (or error) event. AGON_DAEMON_ECHO=1 is a documented TEST SEAM — instead of dispatching a real engine (heavy/non-deterministic for an automated survival test) it echoes the prompt straight into the ledger as an engine-block, so the test can assert the event landed without a live engine. The ledger writes are flushed synchronously before returning so the ack's seq is durable and an attach client sees the turn immediately.
  */
-// @kern-source: daemon:219
+// @kern-source: daemon:221
 export async function runHeadlessTurn(sessionId: string, text: string, registry: EngineRegistry, cwd: string): Promise<number> {
   // 1) Record the user's prompt as a ledger event (mirrors the REPL tee shape).
   eventLogAppend(sessionId, { type: 'user-message', content: text }, { kind: 'daemon' });
@@ -302,14 +306,23 @@ export async function runHeadlessTurn(sessionId: string, text: string, registry:
 /**
  * The actual daemon: create a session id (daemon-<ts>), seed its ledger meta, write the pidfile, start the unref'd heartbeat, and listen on the unix socket. Serves the newline-JSON protocol: {prompt} → run one headless turn (busy if one is already running) → ack(seq); {ping} → pong(sessionId, uptime); {shutdown} → bye then clean exit. On exit (shutdown / SIGTERM / SIGINT) it flushes the ledger, closes the server, and removes the socket + pidfile. Returns a promise that resolves only when the daemon shuts down — the foreground/detached child awaits it to stay alive.
  */
-// @kern-source: daemon:286
+// @kern-source: daemon:288
 export async function runDaemonServer(): Promise<void> {
   ensureAgonHome();
   mkdirSync(daemonDir(), { recursive: true });
+  try { chmodSync(daemonDir(), 0o700); }
+  catch (err) { throw new Error(`Cannot secure daemon directory: ${err instanceof Error ? err.message : String(err)}`); }
 
   const startedAtMs = Date.now();
   const sessionId = `daemon-${startedAtMs}`;
   const cwd = process.cwd();
+  const jobConfig = daemonJobConfig(cwd);
+  const jobs = new JobService({
+    eventLimit: jobConfig.jobEventLimit,
+    retentionLimit: jobConfig.jobRetentionLimit,
+    maxConcurrency: jobConfig.jobMaxConcurrency,
+  });
+  const jobResolver = { resolve: resolveDaemonWorkflowJob };
 
   const registry = new EngineRegistry();
   registry.load(resolveBuiltinEnginesDir());
@@ -340,19 +353,28 @@ export async function runDaemonServer(): Promise<void> {
   // leaving an orphaned daemon (review: sockets-keep-process-alive).
   const openSockets = new Set<Socket>();
 
-  return await new Promise<void>((resolve) => {
+  return await new Promise<void>((resolve, reject) => {
     let shuttingDown = false;
-    const cleanup = (): void => {
-      if (shuttingDown) return;
+    let cleanupPromise: Promise<void> | null = null;
+    const cleanup = (failure?: Error): Promise<void> => {
+      if (cleanupPromise) return cleanupPromise;
       shuttingDown = true;
-      try { clearInterval(heartbeat); } catch { /* best-effort */ }
-      try { eventLogFlush(sessionId); } catch { /* best-effort */ }
-      try { server.close(); } catch { /* best-effort */ }
-      for (const s of openSockets) { try { s.destroy(); } catch { /* best-effort */ } }
-      openSockets.clear();
-      try { rmSync(socketPath(), { force: true }); } catch { /* best-effort */ }
-      try { rmSync(pidFilePath(), { force: true }); } catch { /* best-effort */ }
-      resolve();
+      cleanupPromise = (async () => {
+        jobs.cancelAll('daemon shutting down');
+        const drained = await jobs.waitForIdle(jobConfig.jobShutdownTimeoutMs);
+        if (!drained) console.warn(`[agond] job drain exceeded ${jobConfig.jobShutdownTimeoutMs}ms; completing shutdown`);
+        try { clearInterval(heartbeat); } catch { /* best-effort */ }
+        process.off('SIGTERM', onSignal);
+        process.off('SIGINT', onSignal);
+        try { eventLogFlush(sessionId); } catch { /* best-effort */ }
+        try { server.close(); } catch { /* best-effort */ }
+        for (const s of openSockets) { try { s.destroy(); } catch { /* best-effort */ } }
+        openSockets.clear();
+        try { rmSync(socketPath(), { force: true }); } catch { /* best-effort */ }
+        try { rmSync(pidFilePath(), { force: true }); } catch { /* best-effort */ }
+        if (failure) reject(failure); else resolve();
+      })();
+      return cleanupPromise;
     };
 
     const reply = (sock: Socket, msg: DaemonResponse): void => {
@@ -360,14 +382,23 @@ export async function runDaemonServer(): Promise<void> {
     };
 
     const handleRequest = async (sock: Socket, req: DaemonRequest): Promise<void> => {
+      if (isDaemonJobRequest(req)) {
+        try {
+          const response = handleDaemonJobRequest(req, jobs, jobResolver);
+          if (response) reply(sock, response);
+        } catch (err) {
+          reply(sock, { type: 'error', message: err instanceof Error ? err.message : String(err) });
+        }
+        return;
+      }
       switch (req.type) {
         case 'ping':
-          reply(sock, { type: 'pong', sessionId, uptime: Date.now() - startedAtMs });
+          reply(sock, { type: 'pong', sessionId, uptime: Date.now() - startedAtMs, capabilities: ['jobs-v1'] });
           return;
         case 'shutdown':
           reply(sock, { type: 'bye' });
           // Give the bye a tick to flush to the socket before we tear down.
-          setTimeout(cleanup, 10);
+          setTimeout(() => { void cleanup(); }, 10);
           return;
         case 'prompt': {
           if (turnState.busy) { reply(sock, { type: 'busy' }); return; }
@@ -391,9 +422,7 @@ export async function runDaemonServer(): Promise<void> {
     };
 
     // A client must never grow the daemon's memory unbounded by streaming
-    // bytes with no newline. 1 MiB is far above any legitimate frame (a prompt
-    // is a single JSON line); past it we drop the connection.
-    const MAX_BUFFER_BYTES = 1024 * 1024;
+    // bytes with no newline. The configured frame bound drops the connection.
 
     const server: Server = createServer((sock: Socket) => {
       sock.setEncoding('utf-8');
@@ -401,7 +430,7 @@ export async function runDaemonServer(): Promise<void> {
       let buffer = '';
       sock.on('data', (chunk: string) => {
         buffer += chunk;
-        if (buffer.length > MAX_BUFFER_BYTES) {
+        if (Buffer.byteLength(buffer, 'utf8') > jobConfig.daemonFrameMaxBytes) {
           // Oversized un-framed input — refuse and hang up rather than grow.
           try { sock.write(encodeDaemonResponse({ type: 'error', message: 'frame too large' })); } catch { /* best-effort */ }
           try { sock.destroy(); } catch { /* best-effort */ }
@@ -427,25 +456,27 @@ export async function runDaemonServer(): Promise<void> {
       // stale-probed; if we still hit it the file is racing — log and exit so
       // we don't run a daemon with no socket. cleanup() removes our own files.
       console.warn(`[agond] socket server error: ${err.message}`);
-      cleanup();
+      void cleanup(err);
     });
 
     // Clean shutdown on the usual signals so a `kill` (stop's SIGTERM fallback)
     // still removes the socket + pidfile.
-    const onSignal = (): void => cleanup();
+    const onSignal = (): void => { void cleanup(); };
     process.on('SIGTERM', onSignal);
     process.on('SIGINT', onSignal);
 
     try {
       server.listen(socketPath(), () => {
-        // Restrict the socket to the owner (0o600) so another local user can't
-        // connect and {shutdown} or {prompt} us. Best-effort: a chmod failure
-        // (exotic fs) doesn't stop the daemon serving.
-        try { chmodSync(socketPath(), 0o600); } catch { /* best-effort */ }
+        // Jobs can mutate a workspace, so a socket permission failure is fatal.
+        try { chmodSync(socketPath(), 0o600); }
+        catch (err) {
+          console.warn(`[agond] cannot secure socket: ${err instanceof Error ? err.message : String(err)}`);
+          void cleanup(new Error(`Cannot secure daemon socket: ${err instanceof Error ? err.message : String(err)}`));
+        }
       });
     } catch (err) {
       console.warn(`[agond] listen failed: ${err instanceof Error ? err.message : String(err)}`);
-      cleanup();
+      void cleanup(err instanceof Error ? err : new Error(String(err)));
     }
   });
 }
@@ -453,7 +484,7 @@ export async function runDaemonServer(): Promise<void> {
 /**
  * Start the daemon. In --foreground (also the internal `daemon run` mode) this RUNS the server loop in THIS process (awaits runDaemonServer, never returns until shutdown). Otherwise it RE-SPAWNS this binary as `daemon run --foreground` with detached:true + stdio:'ignore' + unref(), so the child outlives this launcher and the terminal — then prints the session id + attach hint and returns. Refuses to start over a LIVE daemon (prints status); cleans a STALE pidfile/socket first (stale-takeover).
  */
-// @kern-source: daemon:437
+// @kern-source: daemon:466
 export async function startDaemon(foreground: boolean): Promise<void> {
   ensureAgonHome();
   mkdirSync(daemonDir(), { recursive: true });
@@ -489,7 +520,8 @@ export async function startDaemon(foreground: boolean): Promise<void> {
   // entry (dist/index.js); execPath is the node binary. detached + stdio
   // 'ignore' + unref() = the child has its own session leader and is not tied
   // to our stdio or lifetime.
-  const entry = process.argv[1];
+  const entry = process.argv[1] ? resolve(process.argv[1]) : '';
+  if (!entry) throw new Error('Cannot start daemon: CLI entry path is unavailable');
   const child = spawn(process.execPath, [entry, 'daemon', 'run', '--foreground'], {
     detached: true,
     stdio: 'ignore',
@@ -507,7 +539,7 @@ export async function startDaemon(foreground: boolean): Promise<void> {
   // Wait briefly for the daemon to write its pidfile so we can print the real
   // session id. Poll a few times rather than a fixed sleep so a fast daemon
   // prints instantly and a slow one still resolves.
-// @kern-source: daemon:567
+// @kern-source: daemon:597
   let info0: DaemonPidInfo | null = null;
   for (let i = 0; i < 40; i += 1) {
     if (spawnErr.msg) break;
@@ -537,7 +569,7 @@ export async function startDaemon(foreground: boolean): Promise<void> {
 /**
  * Report whether a daemon is running for this AGON_HOME and how healthy it is, across THREE independent signals: the pidfile pid (kill -0 alive?), the heartbeat mtime freshness (< HEARTBEAT_STALE_MS?), and a live socket ping (pong?). Prints the owned session id + an attach hint when up. Does NOT clean stale files — it's read-only diagnosis (start/stop own the cleanup).
  */
-// @kern-source: daemon:520
+// @kern-source: daemon:550
 export async function daemonStatus(): Promise<void> {
   ensureAgonHome();
   const info = readPidFile();
@@ -591,7 +623,7 @@ function info0(text: string): void {
 /**
  * Render a millisecond uptime as a coarse human string (e.g. '42s', '3m', '2h 5m'). Used by status/pong reporting. Defensive: a non-finite/negative input renders '?'.
  */
-// @kern-source: daemon:570
+// @kern-source: daemon:600
 export function formatUptime(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) return '?';
   const s = Math.floor(ms / 1000);
@@ -605,7 +637,7 @@ export function formatUptime(ms: number): string {
 /**
  * Stop the daemon. First try a graceful {shutdown} over the socket (the daemon replies {bye} and self-cleans its socket + pidfile). If the socket is unreachable but a pid is alive, fall back to SIGTERM via the pidfile. Then poll until the pid is gone, and finally sweep any leftover socket/pidfile so a crash that left files behind doesn't block the next start. Idempotent: 'stop' with nothing running just reports so.
  */
-// @kern-source: daemon:584
+// @kern-source: daemon:614
 export async function stopDaemon(): Promise<void> {
   ensureAgonHome();
   const info = readPidFile();
@@ -645,7 +677,7 @@ export async function stopDaemon(): Promise<void> {
   success(acked ? 'agond stopped (graceful shutdown).' : 'agond stopped (signaled / swept).');
 }
 
-// @kern-source: daemon:627
+// @kern-source: daemon:657
 export const daemonCommand: any = defineCommand({
   meta: {
     name: 'daemon',

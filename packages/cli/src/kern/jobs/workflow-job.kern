@@ -1,0 +1,223 @@
+// Safe daemon workflow registry and cancellable child-process executor.
+// The daemon accepts named Agon workflows only. It never accepts executable,
+// argv, or shell fields from a client.
+
+import from="node:child_process" names="spawn"
+import from="node:fs" names="statSync"
+import from="node:path" names="resolve"
+import from="@kernlang/agon-core" names="DEFAULT_AGON_CONFIG,loadConfig"
+import from="@kernlang/agon-core" names="AgonConfig,JobExecutor,JobTaskContext" types=true
+import from="../commands/call.js" names="buildCallCommands,validateCallEngineRoster"
+import from="../commands/call.js" names="BuiltCallCommands,CallCommandOptions" types=true
+
+type name=DaemonWorkflowKind values="brainstorm|team-brainstorm|tribunal|team-tribunal|campfire|think|nero|council|research|synthesis|review|doctor|forge|team-forge|pipeline" export=true
+
+interface name=DaemonWorkflowPlan export=true
+  field name=kind type=DaemonWorkflowKind
+  field name=label type=string
+  field name=cwd type=string
+  field name=commands type="string[][]"
+
+interface name=DaemonWorkflowRuntimeOptions export=true
+  field name=script type=string
+  field name=outputChunkChars type=number optional=true
+  field name=cancelGraceMs type=number optional=true
+
+interface name=ResolvedDaemonWorkflowJob export=true
+  field name=label type=string
+  field name=executor type=JobExecutor
+
+const name=SAFE_WORKFLOW_KINDS type="readonly DaemonWorkflowKind[]" value={{ ['brainstorm','team-brainstorm','tribunal','team-tribunal','campfire','think','nero','council','research','synthesis','review','doctor','forge','team-forge','pipeline'] as const }}
+
+const name=PAYLOAD_FIELDS type="readonly string[]" value={{ ['input','engines','rounds','swaps','tribunalMode','tribunalProtocol','members','cwd','engineTimeout','strategy','lead','finalizeOnScore','steps','branches','critic','reasoning','focus','confidence','roles','chairman','count','engine','autoApprove'] as const }}
+
+const name=STRING_PAYLOAD_FIELDS type="readonly string[]" value={{ ['input','engines','rounds','swaps','tribunalMode','tribunalProtocol','members','cwd','engineTimeout','strategy','lead','finalizeOnScore','steps','branches','critic','reasoning','focus','confidence','roles','chairman','count','engine'] as const }}
+
+fn name=daemonWorkflowKinds returns="DaemonWorkflowKind[]" export=true expr={{ return [...SAFE_WORKFLOW_KINDS]; }}
+
+fn name=positiveRuntimeInteger params="value:number|undefined,fallback:number,label:string" returns=number
+  handler <<<
+    const candidate = value ?? fallback;
+    if (!Number.isFinite(candidate) || candidate < 1) throw new Error(`${label} must be a positive integer`);
+    return Math.floor(candidate);
+  >>>
+
+fn name=assertWorkingDirectory params="cwd:string" returns=string
+  handler <<<
+    const absolute = resolve(cwd);
+    try {
+      if (!statSync(absolute).isDirectory()) throw new Error('not a directory');
+    } catch {
+      throw new Error(`Daemon job working directory does not exist: ${absolute}`);
+    }
+    return absolute;
+  >>>
+
+fn name=buildDaemonWorkflowPlan params="kind:string,payload:Record<string,unknown>,labelMaxChars?:number" returns=DaemonWorkflowPlan export=true
+  handler lang="typescript" reason="strict untrusted JSON payload normalization at the daemon boundary" <<<
+    const normalizedKind = String(kind ?? '').trim().toLowerCase().replace(/_/g, '-');
+    if (!SAFE_WORKFLOW_KINDS.includes(normalizedKind as DaemonWorkflowKind)) {
+      throw new Error(`Workflow "${normalizedKind || kind}" is not available as a daemon job`);
+    }
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      throw new Error('Daemon job payload must be an object');
+    }
+    for (const key of Object.keys(payload)) {
+      if (!PAYLOAD_FIELDS.includes(key)) throw new Error(`Unsupported job payload field: ${key}`);
+    }
+    if (payload.autoApprove !== undefined) {
+      if (typeof payload.autoApprove !== 'boolean') throw new Error('autoApprove must be a boolean');
+      if (payload.autoApprove) throw new Error('autoApprove is not permitted for daemon jobs');
+    }
+    const options: CallCommandOptions = { workflow: normalizedKind };
+    for (const key of STRING_PAYLOAD_FIELDS) {
+      const value = payload[key];
+      if (value === undefined) continue;
+      if (typeof value !== 'string') throw new Error(`${key} must be a string`);
+      (options as unknown as Record<string, unknown>)[key] = value;
+    }
+    const cwd = assertWorkingDirectory(typeof payload.cwd === 'string' && payload.cwd.trim() ? payload.cwd : process.cwd());
+    options.cwd = cwd;
+    const built: BuiltCallCommands = buildCallCommands(options);
+    const maxLabel = positiveRuntimeInteger(labelMaxChars, DEFAULT_AGON_CONFIG.jobLabelMaxChars, 'jobLabelMaxChars');
+    const input = typeof payload.input === 'string' ? payload.input.trim() : '';
+    const label = (input || normalizedKind).slice(0, maxLabel);
+    return { kind: normalizedKind as DaemonWorkflowKind, label, cwd: built.cwd, commands: built.commands };
+  >>>
+
+fn name=validateDaemonWorkflowEngines params="plan:DaemonWorkflowPlan" returns=void export=true
+  handler <<<
+    for (const command of plan.commands) {
+      for (const flag of ['--engines', '--engine']) {
+        const index = command.indexOf(flag);
+        if (index >= 0) validateCallEngineRoster(command[index + 1], plan.cwd);
+      }
+    }
+  >>>
+
+fn name=emitChunks params="ctx:JobTaskContext,type:string,text:string,maxChars:number" returns=void
+  handler lang="typescript" reason="bounded host process-output chunking loop" <<<
+    for (let offset = 0; offset < text.length; offset += maxChars) {
+      ctx.emit(type, { text: text.slice(offset, offset + maxChars) });
+    }
+  >>>
+
+fn name=runWorkflowCommand params="ctx:JobTaskContext,script:string,args:string[],cwd:string,outputChunkChars:number,cancelGraceMs:number" returns="Promise<number>" async=true
+  handler lang="typescript" reason="child process lifecycle and process-group cancellation require host event closures" <<<
+    if (ctx.signal.aborted) throw new Error('Cancelled before workflow command started');
+    return await new Promise<number>((resolvePromise, rejectPromise) => {
+      let settled = false;
+      let forceTimer: ReturnType<typeof setTimeout> | undefined;
+      const child = spawn(process.execPath, [script, ...args], {
+        cwd,
+        detached: process.platform !== 'win32',
+        env: {
+          ...process.env,
+          AGON_CALL_DEPTH: String(Number(process.env.AGON_CALL_DEPTH ?? '0') + 1),
+          AGON_CWD: cwd,
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      const signalTree = (signal: NodeJS.Signals): void => {
+        if (!child.pid) return;
+        try {
+          if (process.platform !== 'win32') process.kill(-child.pid, signal);
+          else child.kill(signal);
+        } catch {
+          try { child.kill(signal); } catch { /* already gone */ }
+        }
+      };
+      const cleanup = (): void => {
+        ctx.signal.removeEventListener('abort', onAbort);
+        if (forceTimer) clearTimeout(forceTimer);
+      };
+      const finish = (error: Error | null, code = 1): void => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        if (error) rejectPromise(error); else resolvePromise(code);
+      };
+      const onAbort = (): void => {
+        signalTree('SIGTERM');
+        forceTimer = setTimeout(() => signalTree('SIGKILL'), cancelGraceMs);
+        forceTimer.unref?.();
+      };
+      ctx.signal.addEventListener('abort', onAbort, { once: true });
+      child.stdout?.on('data', (chunk) => emitChunks(ctx, 'stdout', String(chunk), outputChunkChars));
+      child.stderr?.on('data', (chunk) => emitChunks(ctx, 'stderr', String(chunk), outputChunkChars));
+      child.once('error', (error) => finish(error));
+      child.once('close', (code, signal) => {
+        ctx.emit('command-finished', { command: args[0], exitCode: typeof code === 'number' ? code : 1, signal });
+        finish(null, typeof code === 'number' ? code : 1);
+      });
+      if (ctx.signal.aborted) onAbort();
+    });
+  >>>
+
+fn name=createDaemonWorkflowExecutor params="plan:DaemonWorkflowPlan,options:DaemonWorkflowRuntimeOptions" returns=JobExecutor export=true
+  handler lang="typescript" reason="executor closure sequences validated child commands under one AbortSignal" <<<
+    const script = String(options.script ?? '').trim();
+    if (!script) throw new Error('Unable to resolve the Agon CLI entry script');
+    const outputChunkChars = positiveRuntimeInteger(options.outputChunkChars, DEFAULT_AGON_CONFIG.jobOutputChunkChars, 'jobOutputChunkChars');
+    const cancelGraceMs = positiveRuntimeInteger(options.cancelGraceMs, DEFAULT_AGON_CONFIG.jobCancelGraceMs, 'jobCancelGraceMs');
+    return {
+      async run(ctx: JobTaskContext): Promise<unknown> {
+        const phases: Array<{ command: string; exitCode: number }> = [];
+        for (const args of plan.commands) {
+          if (ctx.signal.aborted) throw new Error('Cancelled');
+          ctx.emit('command-started', { command: args[0], args });
+          const exitCode = await runWorkflowCommand(ctx, script, args, plan.cwd, outputChunkChars, cancelGraceMs);
+          phases.push({ command: args[0] ?? '', exitCode });
+          if (exitCode !== 0) throw new Error(`${args[0] ?? 'workflow'} exited with code ${exitCode}`);
+        }
+        return { ok: true, phases };
+      },
+    };
+  >>>
+
+fn name=daemonJobConfig params="cwd:string" returns="Pick<Required<AgonConfig>,'jobEventLimit'|'jobRetentionLimit'|'jobMaxConcurrency'|'jobLabelMaxChars'|'jobOutputChunkChars'|'jobCancelGraceMs'|'jobShutdownTimeoutMs'|'daemonFrameMaxBytes'>" export=true
+  handler <<<
+    const config = { ...DEFAULT_AGON_CONFIG, ...loadConfig(cwd) } as Required<AgonConfig>;
+    return {
+      jobEventLimit: config.jobEventLimit,
+      jobRetentionLimit: config.jobRetentionLimit,
+      jobMaxConcurrency: config.jobMaxConcurrency,
+      jobLabelMaxChars: config.jobLabelMaxChars,
+      jobOutputChunkChars: config.jobOutputChunkChars,
+      jobCancelGraceMs: config.jobCancelGraceMs,
+      jobShutdownTimeoutMs: config.jobShutdownTimeoutMs,
+      daemonFrameMaxBytes: config.daemonFrameMaxBytes,
+    };
+  >>>
+
+fn name=resolveDaemonWorkflowJob params="kind:string,payload:Record<string,unknown>" returns=ResolvedDaemonWorkflowJob export=true
+  handler <<<
+    const requestedCwd = typeof payload.cwd === 'string' && payload.cwd.trim() ? payload.cwd : process.cwd();
+    const config = daemonJobConfig(requestedCwd);
+    const plan = buildDaemonWorkflowPlan(kind, payload, config.jobLabelMaxChars);
+    validateDaemonWorkflowEngines(plan);
+    // Deterministic cross-process integration seam. The daemon survival test
+    // already sets this for prompt turns; preserve all allowlist/payload/engine
+    // validation, then avoid a real engine dispatch after that boundary.
+    if (process.env.AGON_DAEMON_ECHO === '1') {
+      return {
+        label: plan.label,
+        executor: {
+          async run(ctx: JobTaskContext): Promise<unknown> {
+            ctx.emit('stdout', { text: `echo job: ${plan.label}\n` });
+            return { ok: true, kind: plan.kind, label: plan.label };
+          },
+        },
+      };
+    }
+    const script = process.argv[1] ? resolve(process.argv[1]) : '';
+    if (!script) throw new Error('Unable to resolve the Agon CLI entry script');
+    return {
+      label: plan.label,
+      executor: createDaemonWorkflowExecutor(plan, {
+        script,
+        outputChunkChars: config.jobOutputChunkChars,
+        cancelGraceMs: config.jobCancelGraceMs,
+      }),
+    };
+  >>>

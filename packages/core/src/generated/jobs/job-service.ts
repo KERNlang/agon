@@ -114,11 +114,13 @@ export class JobService {
   private eventLimit: number;
   private retentionLimit: number;
   private maxConcurrency: number;
+  private idleWaiters: Array<()=>void>;
 
   constructor(options?: JobServiceOptions) {
     this.records = new Map();
     this.queue = [];
     this.activeCount = 0;
+    this.idleWaiters = [];
     this.eventLimit = positiveInteger(options?.eventLimit, DEFAULT_AGON_CONFIG.jobEventLimit, 'jobEventLimit');
     this.retentionLimit = positiveInteger(options?.retentionLimit, DEFAULT_AGON_CONFIG.jobRetentionLimit, 'jobRetentionLimit');
     this.maxConcurrency = positiveInteger(options?.maxConcurrency, DEFAULT_AGON_CONFIG.jobMaxConcurrency, 'jobMaxConcurrency');
@@ -177,6 +179,7 @@ export class JobService {
     record.taskSettled = true;
     this.resolveWaiters(record);
     this.prune();
+    this.notifyIdle();
     return true;
   }
 
@@ -187,6 +190,7 @@ export class JobService {
     record.taskSettled = true;
     this.resolveWaiters(record);
     this.prune();
+    this.notifyIdle();
     return true;
   }
 
@@ -241,6 +245,33 @@ export class JobService {
     });
   }
 
+  waitForIdle(timeoutMs?: number): Promise<boolean> {
+    if (this.activeCount === 0 && this.queue.length === 0 && [...this.records.values()].every((record) => record.taskSettled)) {
+      return Promise.resolve(true);
+    }
+    return new Promise<boolean>((resolve) => {
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const waiter = (): void => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        resolve(true);
+      };
+      this.idleWaiters.push(waiter);
+      if (timeoutMs !== undefined) {
+        const timeout = positiveInteger(timeoutMs, timeoutMs, 'timeoutMs');
+        timer = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          this.idleWaiters = this.idleWaiters.filter((entry) => entry !== waiter);
+          resolve(false);
+        }, timeout);
+        timer.unref?.();
+      }
+    });
+  }
+
   cancel(id: string, reason?: string): boolean {
     const record = this.records.get(id);
     if (!record || isTerminalJobState(record.snapshot.state)) return false;
@@ -249,11 +280,13 @@ export class JobService {
     try { record.controller.abort(message); } catch { record.controller.abort(); }
     this.finish(record, 'cancelled', undefined, message);
     if (wasQueued || record.executor === null) {
+      record.executor = null;
       record.taskSettled = true;
       this.queue = this.queue.filter((queuedId) => queuedId !== id);
       this.resolveWaiters(record);
       this.prune();
       this.pump();
+      this.notifyIdle();
     } else {
       // The caller sees cancellation now. The underlying executor still owns
       // its slot until its promise settles, even if it ignored AbortSignal.
@@ -321,11 +354,13 @@ export class JobService {
           if (!isTerminalJobState(record.snapshot.state)) this.finish(record, 'failed', undefined, errorMessage(error));
         })
         .finally(() => {
+          record.executor = null;
           record.taskSettled = true;
           this.activeCount -= 1;
           this.resolveWaiters(record);
           this.prune();
           this.pump();
+          this.notifyIdle();
         });
     }
   }
@@ -338,5 +373,12 @@ export class JobService {
     for (let index = 0; index < removeCount; index += 1) {
       this.records.delete(terminal[index].snapshot.id);
     }
+  }
+
+  private notifyIdle(): void {
+    if (this.activeCount !== 0 || this.queue.length !== 0) return;
+    if ([...this.records.values()].some((record) => !record.taskSettled)) return;
+    const waiters = this.idleWaiters.splice(0);
+    waiters.forEach((resolve) => resolve());
   }
 }

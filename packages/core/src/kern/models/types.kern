@@ -258,6 +258,16 @@ config name=AgonConfig
     doc "Maximum fully-settled terminal autonomous jobs retained in memory by a JobService instance."
   field name=jobMaxConcurrency type=number default=4
     doc "Maximum autonomous job executors active at once. Cancelled executors retain their slot until their promise settles."
+  field name=jobLabelMaxChars type=number default=120
+    doc "Maximum characters retained in an autonomous job display label. Full input remains in the executor closure only while the job is active."
+  field name=jobOutputChunkChars type=number default=16000
+    doc "Maximum characters stored in one stdout/stderr autonomous job event. Large process chunks are split before replay retention."
+  field name=jobCancelGraceMs type=number default=2000
+    doc "Grace period between SIGTERM and SIGKILL when cancelling a daemon workflow process tree."
+  field name=jobShutdownTimeoutMs type=number default=10000
+    doc "Maximum time a daemon or HTTP host waits for cancelled autonomous executors to settle before completing shutdown."
+  field name=daemonFrameMaxBytes type=number default=1048576
+    doc "Maximum buffered newline-JSON daemon request frame size before the client connection is rejected."
   field name=gauntletEnabled type=boolean default=false
   field name=gauntletMaxBreakers type=number default=3
   field name=gauntletRepairTimeout type=number default=300

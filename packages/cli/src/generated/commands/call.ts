@@ -85,18 +85,18 @@ export function exitWithFailure(message: string): never {
  * Enforce the HARD removedEngines denylist at the external-CLI boundary, BEFORE any --engines list is forwarded to a subcommand. Without this, an external CLI (Codex/Antigravity) that passes --engines a,b,<removed> would resurrect a hard-removed engine, since explicit -e lists bypass the registry's auto roster. Fails loudly (pre-run error) rather than silently dropping — silent roster rewrite is the trust hazard (Council batch-2 verdict).
  */
 // @kern-source: call:71
-export function assertNoRemovedEngines(enginesCsv: string|undefined): void {
+export function validateCallEngineRoster(enginesCsv: string|undefined, cwd?: string): void {
   const text = enginesCsv?.trim();
   if (!text) return;
   const requested = text.split(',').map((s) => s.trim()).filter(Boolean);
   if (requested.length === 0) return;
-  const config = loadConfig();
+  const config = loadConfig(cwd);
   const registry = new EngineRegistry();
   registry.load(resolveBuiltinEnginesDir());
   const { removed } = registry.partitionRoster(requested, config as any);
   if (removed.length > 0) {
     const plural = removed.length > 1;
-    exitWithFailure(
+    throw new Error(
       `Refusing to run: ${removed.join(', ')} ${plural ? 'were' : 'was'} hard-removed via ` +
         '`agon engine remove` and cannot run in any agon session. ' +
         `Restore with \`agon engine add <id>\`, or drop ${plural ? 'them' : 'it'} from --engines.`,
@@ -505,9 +505,10 @@ export const callCommand: any = defineCommand({
     },
   },
   async run({ args }) {
-    assertNoRemovedEngines(args.engines);
     let built: BuiltCallCommands;
     try {
+      validateCallEngineRoster(args.engines, args.cwd);
+      validateCallEngineRoster(args.engine, args.cwd);
       built = buildCallCommands({
         workflow: args.workflow,
         input: args.input,

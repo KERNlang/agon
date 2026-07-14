@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { JobManager } from '../../packages/cli/src/generated/signals/job-manager.js';
 
 describe('JobManager', () => {
@@ -77,5 +77,38 @@ describe('JobManager', () => {
     jm.fail(jobs[4].id, 'error');
     expect(jm.running()).toHaveLength(2);
     expect(jm.list()).toHaveLength(5);
+  });
+
+  it('runs work through JobService and reports terminal success', async () => {
+    const job = jm.run('agent', 'Autonomous task', async () => {});
+    expect(job.state).toBe('running');
+    expect((await jm.wait(job.id))?.state).toBe('done');
+  });
+
+  it('returns the terminal job even when core retention prunes it immediately', async () => {
+    const tiny = new JobManager({ retentionLimit: 1 });
+    const first = tiny.run('one', 'first', async () => {});
+    await tiny.wait(first.id);
+    const second = tiny.run('two', 'second', async () => {});
+    await tiny.wait(second.id);
+    const third = tiny.run('three', 'third', async () => {});
+
+    expect(await tiny.wait(third.id)).toMatchObject({ id: third.id, state: 'done' });
+    expect(tiny.list()).toHaveLength(1);
+  });
+
+  it('forwards cancellation to a running executor AbortSignal', async () => {
+    let release!: () => void;
+    const aborted = vi.fn();
+    const job = jm.run('agent', 'Cancel task', async (signal) => {
+      signal.addEventListener('abort', aborted, { once: true });
+      await new Promise<void>((resolve) => { release = resolve; });
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(jm.cancel(job.id, 'stop')).toBe(true);
+    expect(jm.get(job.id)?.state).toBe('cancelled');
+    expect(aborted).toHaveBeenCalledTimes(1);
+    release();
   });
 });

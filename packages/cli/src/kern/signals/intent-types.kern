@@ -102,6 +102,8 @@ union name=Intent discriminant=type
     field name=snapshotId type=string optional=true
   variant name=checkpoints
   variant name=jobs
+    field name=action type="'list'|'cancel'" optional=true
+    field name=jobId type=string optional=true
   variant name=focus
     field name=jobId type=string optional=true
   variant name=explore

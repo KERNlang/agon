@@ -1,8 +1,17 @@
 import { describe, expect, it } from 'vitest';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-import { buildCallCommands } from '../../packages/cli/src/commands/call.js';
+import { buildCallCommands, validateCallEngineRoster } from '../../packages/cli/src/commands/call.js';
 
 describe('agon call command mapping', () => {
+  it('rejects a singular engine that is hard-removed in project config', () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'agon-call-engine-'));
+    writeFileSync(join(cwd, '.agon.json'), JSON.stringify({ removedEngines: ['codex'] }));
+    expect(() => validateCallEngineRoster('codex', cwd)).toThrow(/hard-removed/i);
+  });
+
   it('maps tribunal to the live team tribunal bridge', () => {
     expect(buildCallCommands({
       workflow: 'tribunal',

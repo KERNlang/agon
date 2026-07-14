@@ -126,7 +126,25 @@ export async function dispatchMetaIntent(intent: any, input: string, cb: Dispatc
 
     // ── Job commands ──
     case 'jobs': {
-      const allJobs = (cb as any).jobManager?.list?.() ?? [];
+      const jobsIntent = intent as any;
+      if (jobsIntent.action === 'cancel') {
+        if (!jobsIntent.jobId) {
+          cb.dispatch({ type: 'info', message: 'Usage: /jobs cancel <job-id>' });
+          break;
+        }
+        const cancelled = cb.jobManager?.cancel?.(jobsIntent.jobId, 'Cancelled by user') ?? false;
+        if (!cancelled) {
+          const existing = cb.jobManager?.get?.(jobsIntent.jobId);
+          cb.dispatch({
+            type: existing ? 'info' : 'error',
+            message: existing ? `Job ${jobsIntent.jobId} is already ${existing.state}.` : `Job not found: ${jobsIntent.jobId}`,
+          });
+        } else {
+          cb.dispatch({ type: 'success', message: `Cancelled job ${jobsIntent.jobId}.` });
+        }
+        break;
+      }
+      const allJobs = cb.jobManager?.list?.() ?? [];
       if (allJobs.length === 0) {
         cb.dispatch({ type: 'info', message: 'No jobs.' });
       } else {
@@ -139,10 +157,10 @@ export async function dispatchMetaIntent(intent: any, input: string, cb: Dispatc
     case 'focus': {
       const focusId = (intent as any).jobId;
       if (!focusId) { cb.dispatch({ type: 'info', message: 'Usage: /focus <job-id>' }); break; }
-      const job = (cb as any).jobManager?.get?.(focusId);
+      const job = cb.jobManager?.get?.(focusId);
       if (!job) { cb.dispatch({ type: 'error', message: `Job not found: ${focusId}` }); break; }
       cb.dispatch({ type: 'info', message: `Job ${job.id}: ${job.type} — ${job.state} — ${job.label}` });
-      if (job.error) cb.dispatch({ type: 'error', message: job.error });
+      if (job.error && job.state === 'failed') cb.dispatch({ type: 'error', message: job.error });
       break;
     }
 

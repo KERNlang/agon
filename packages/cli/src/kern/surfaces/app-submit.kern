@@ -63,6 +63,7 @@ import from="./app-composer.js" names="COMPOSER_HISTORY_LIMIT,saveComposerInputH
 import from="./app-blocks.js" names="summarizeBtwTranscriptEvent"
 import from="../lib/terminal-notify.js" names="setWindowTitle"
 import from="../signals/app-input.js" names="extractFileMentions"
+import from="../signals/job-abort-scope.js" names="runInJobAbortScope"
 import from="node:path" names="join,resolve,relative,sep,isAbsolute"
 import from="node:fs" names="mkdirSync,readFileSync,statSync,realpathSync,openSync,readSync,closeSync"
 
@@ -628,16 +629,26 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
         : null;
       const cb: DispatchCallbacks = {
         dispatch: opts.dispatch, ctx, commandRegistry: opts.commandRegistry, eventBus: opts.eventBus, loadedExtensions: opts.loadedExtensions, setWorkspacePath: opts.setWorkspacePath,
-        runAsJob: (type: string, label: string, fn: () => Promise<void>) => {
-          const job = opts.jobManager.create(type, label);
+        runAsJob: (type: string, label: string, fn: (signal: AbortSignal) => Promise<void>) => {
+          const job = opts.jobManager.run(type, label, (signal: AbortSignal) => runInJobAbortScope(signal, () => fn(signal)));
           opts.chatStartTimeRef.current = Date.now();
           opts.setJobList([...opts.jobManager.list()]);
-          opts.dispatch({ type: 'info', message: `Started background job [${job.id}] ${type}: ${label || type}` } as any);
+          opts.dispatch({ type: 'info', message: `${job.state === 'queued' ? 'Queued' : 'Started'} background job [${job.id}] ${type}: ${label || type}` } as any);
           // Transition to idle so user can submit new commands while job runs
-          // Strip stays active via jobList.some(j => j.state === 'running') check
+          // Strip stays active while the snapshot is queued or running.
           opts.setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
-          fn().then(() => { opts.jobManager.complete(job.id); opts.setJobList([...opts.jobManager.list()]); opts.bell(); setWindowTitle('agon'); })
-            .catch((err: any) => { opts.jobManager.fail(job.id, err instanceof Error ? err.message : String(err)); opts.setJobList([...opts.jobManager.list()]); opts.dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); opts.bell(); setWindowTitle('agon'); });
+          opts.jobManager.wait(job.id)
+            .then((finished: any) => {
+              opts.setJobList([...opts.jobManager.list()]);
+              if (!finished) opts.dispatch({ type: 'error', message: `Job ${job.id} finished but its result was unavailable.` } as any);
+              else if (finished.state === 'failed') opts.dispatch({ type: 'error', message: finished.error ?? `${type} failed` } as any);
+              opts.bell();
+              setWindowTitle('agon');
+            })
+            .catch((err: any) => {
+              opts.setJobList([...opts.jobManager.list()]);
+              opts.dispatch({ type: 'error', message: `Job ${job.id} tracking failed: ${err instanceof Error ? err.message : String(err)}` } as any);
+            });
         },
         setMode: opts.setMode, setPendingImages: opts.setPendingImages, setSessionEngines: opts.setSessionEngines, setEnginePickerOpen: opts.setEnginePickerOpen, setModelPickerOpen: opts.setModelPickerOpen, setModelPickerEntries: opts.setModelPickerEntries, setModelPickerLoading: opts.setModelPickerLoading, setCesarPickerOpen: opts.setCesarPickerOpen, setChatSession: opts.setChatSession, setLastUndoToken: opts.setLastUndoToken, askQuestion: opts.askQuestion, exit: () => process.exit(0),
         setModelPickerTargetEngine: opts.setModelPickerTargetEngine, setModelPickerInitialFilter: opts.setModelPickerInitialFilter, setModelPickerTitle: opts.setModelPickerTitle, setModelPickerCliGroups: opts.setModelPickerCliGroups,

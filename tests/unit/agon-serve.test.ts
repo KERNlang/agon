@@ -208,3 +208,125 @@ describe('AgonServe — multi-origin allowlist (dev id + a second/store id)', ()
     expect(r2.headers.get('access-control-allow-origin')).toBe(STORE_ORIGIN);
   });
 });
+
+describe('AgonServe — authenticated asynchronous jobs', () => {
+  let url: string;
+  let token: string;
+  let serve: ReturnType<typeof createAgonServe>;
+
+  beforeAll(async () => {
+    serve = createAgonServe({
+      brain: fakeBrain(),
+      sessionId: 'sess-jobs',
+      allowedOrigins: [],
+      resolveJob: {
+        resolve(kind, payload) {
+          if (kind !== 'brainstorm' && kind !== 'slow') throw new Error(`workflow ${kind} is not allowed`);
+          const input = String(payload.input ?? '').trim();
+          if (!input) throw new Error('input is required');
+          return {
+            label: input,
+            executor: {
+              async run(ctx) {
+                ctx.emit('output', { stream: 'stdout', text: input });
+                if (kind === 'slow') {
+                  await new Promise<void>((resolve) => {
+                    const timer = setTimeout(resolve, 500);
+                    ctx.signal.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true });
+                  });
+                }
+                if (ctx.signal.aborted) throw new Error('cancelled');
+                return { text: input.toUpperCase() };
+              },
+            },
+          };
+        },
+      },
+    });
+    const started = await serve.start();
+    url = started.url;
+    token = started.token;
+  });
+  afterAll(async () => { await serve.close(); });
+
+  const authed = (extra: Record<string, string> = {}) => ({ Authorization: `Bearer ${token}`, ...extra });
+  const jsonHeaders = () => authed({ 'Content-Type': 'application/json' });
+
+  it('submits immediately, lists, reads status/events/result, and isolates unknown ids', async () => {
+    const submitted = await fetch(`${url}/v1/jobs`, {
+      method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ kind: 'brainstorm', payload: { input: 'cache plan' } }),
+    });
+    expect(submitted.status).toBe(202);
+    const { job } = await submitted.json() as { job: { id: string; kind: string } };
+    expect(job.kind).toBe('brainstorm');
+
+    const listed = await fetch(`${url}/v1/jobs`, { headers: authed() });
+    expect(listed.status).toBe(200);
+    expect(((await listed.json()) as { jobs: Array<{ id: string }> }).jobs.some((item) => item.id === job.id)).toBe(true);
+
+    const status = await fetch(`${url}/v1/jobs/${job.id}`, { headers: authed() });
+    expect(status.status).toBe(200);
+    expect(((await status.json()) as { job: { id: string } }).job.id).toBe(job.id);
+
+    const events = await fetch(`${url}/v1/jobs/${job.id}/events?afterSeq=0&limit=20`, { headers: authed() });
+    expect(events.status).toBe(200);
+    const page = await events.json() as { jobId: string; events: Array<{ seq: number; type: string }> };
+    expect(page.jobId).toBe(job.id);
+    expect(page.events.map((event) => event.type)).toContain('output');
+
+    let result = await fetch(`${url}/v1/jobs/${job.id}/result`, { headers: authed() });
+    if (result.status === 202) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      result = await fetch(`${url}/v1/jobs/${job.id}/result`, { headers: authed() });
+    }
+    expect(result.status).toBe(200);
+    expect(await result.json()).toMatchObject({ ready: true, outcome: { state: 'succeeded', value: { text: 'CACHE PLAN' } } });
+
+    const missing = await fetch(`${url}/v1/jobs/not-real`, { headers: authed() });
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toMatchObject({ error: 'job not found', jobId: 'not-real' });
+  });
+
+  it('rejects unregistered workflows and invalid event cursors', async () => {
+    const rejected = await fetch(`${url}/v1/jobs`, {
+      method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ kind: 'shell', payload: { input: 'rm -rf .' } }),
+    });
+    expect(rejected.status).toBe(400);
+    expect((await rejected.json() as { error: string }).error).toMatch(/not allowed/);
+
+    const submitted = await fetch(`${url}/v1/jobs`, {
+      method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ kind: 'brainstorm', payload: { input: 'cursor' } }),
+    });
+    const { job } = await submitted.json() as { job: { id: string } };
+    const invalid = await fetch(`${url}/v1/jobs/${job.id}/events?afterSeq=-1`, { headers: authed() });
+    expect(invalid.status).toBe(400);
+  });
+
+  it('cancels a running job idempotently and exposes the terminal outcome', async () => {
+    const submitted = await fetch(`${url}/v1/jobs`, {
+      method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ kind: 'slow', payload: { input: 'wait' } }),
+    });
+    const { job } = await submitted.json() as { job: { id: string } };
+
+    const first = await fetch(`${url}/v1/jobs/${job.id}/cancel`, {
+      method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ reason: 'operator request' }),
+    });
+    expect(first.status).toBe(200);
+    expect(await first.json()).toMatchObject({ status: 'accepted', job: { state: 'cancelled' } });
+
+    const second = await fetch(`${url}/v1/jobs/${job.id}/cancel`, {
+      method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ reason: 'again' }),
+    });
+    expect(second.status).toBe(200);
+    expect(await second.json()).toMatchObject({ status: 'already-cancelled' });
+
+    const result = await fetch(`${url}/v1/jobs/${job.id}/result`, { headers: authed() });
+    expect(result.status).toBe(200);
+    expect(await result.json()).toMatchObject({ ready: true, outcome: { state: 'cancelled', error: 'operator request' } });
+  });
+
+  it('keeps every job route behind the existing bearer-token boundary', async () => {
+    expect((await fetch(`${url}/v1/jobs`)).status).toBe(401);
+    expect((await fetch(`${url}/v1/jobs`, { method: 'POST', body: '{}' })).status).toBe(401);
+  });
+});

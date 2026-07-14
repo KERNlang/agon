@@ -1,0 +1,66 @@
+// Pure jobs-v1 request router shared by the daemon socket host and tests.
+
+import from="@kernlang/agon-core" names="JobService"
+import from="@kernlang/agon-core" names="DaemonRequest,DaemonResponse,JobExecutor,JobTaskContext" types=true
+
+interface name=ResolvedJob export=true
+  field name=label type=string
+  field name=executor type=JobExecutor
+
+interface name=DaemonJobResolver export=true
+  field name=resolve type="(kind:string,payload:Record<string,unknown>)=>ResolvedJob"
+
+fn name=isDaemonJobRequest params="request:DaemonRequest" returns=boolean export=true
+  handler <<<
+    return request.type === 'job-submit' || request.type === 'job-list' || request.type === 'job-get'
+      || request.type === 'job-events' || request.type === 'job-result' || request.type === 'job-cancel';
+  >>>
+
+fn name=handleDaemonJobRequest params="request:DaemonRequest,jobs:JobService,resolver:DaemonJobResolver" returns="DaemonResponse|null" export=true
+  handler lang="typescript" reason="discriminated daemon protocol routing and executor wrapping" <<<
+    switch (request.type) {
+      case 'job-submit': {
+        const resolved = resolver.resolve(request.kind, request.payload);
+        const clientId = request.clientId;
+        const executor: JobExecutor = {
+          async run(ctx: JobTaskContext): Promise<unknown> {
+            if (clientId) ctx.emit('submitted', { clientId });
+            return await resolved.executor.run(ctx);
+          },
+        };
+        const job = jobs.submit(request.kind, resolved.label, executor);
+        return { type: 'job-accepted', job };
+      }
+      case 'job-list':
+        return { type: 'job-list', jobs: jobs.list() };
+      case 'job-get': {
+        const job = jobs.get(request.jobId);
+        return job ? { type: 'job-snapshot', job } : { type: 'job-not-found', jobId: request.jobId };
+      }
+      case 'job-events': {
+        const page = jobs.events(request.jobId, request.afterSeq, request.limit);
+        return page ? { type: 'job-events', ...page } : { type: 'job-not-found', jobId: request.jobId };
+      }
+      case 'job-result': {
+        const job = jobs.get(request.jobId);
+        if (!job) return { type: 'job-not-found', jobId: request.jobId };
+        const outcome = jobs.result(request.jobId);
+        return outcome
+          ? { type: 'job-result', job, ready: true, outcome }
+          : { type: 'job-result', job, ready: false };
+      }
+      case 'job-cancel': {
+        const before = jobs.get(request.jobId);
+        if (!before) return { type: 'job-not-found', jobId: request.jobId };
+        if (before.state === 'cancelled') return { type: 'job-cancelled', job: before, status: 'already-cancelled' };
+        if (before.state === 'succeeded' || before.state === 'failed') {
+          return { type: 'job-cancelled', job: before, status: 'already-terminal' };
+        }
+        jobs.cancel(request.jobId, request.reason);
+        const job = jobs.get(request.jobId) ?? before;
+        return { type: 'job-cancelled', job, status: 'accepted' };
+      }
+      default:
+        return null;
+    }
+  >>>

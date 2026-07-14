@@ -1,10 +1,11 @@
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync,readFileSync,existsSync"
 import from="@kernlang/agon-core" names="ensureAgonHome,RUNS_DIR,appendMessage,tracker,StreamParser,scanProjectContext,resolveWorkingDir,createPlan,approvePlan,startPlan,mergeStepResult,cancelPlan,failPlan,savePlan,getActiveWorkspace,snapshotWorkspace,snapshotPath,formatChatContextForPrompt"
-import from="@kernlang/agon-core" names="Plan,PlanStepInput,ApprovalLevel" types=true
+import from="@kernlang/agon-core" names="AgentDispatchResult,Plan,PlanStepInput,ApprovalLevel" types=true
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="./agent.js" names="buildAgentApprovalCallback"
+import from="../cesar/brain-helpers.js" names="yieldToInk"
 
 fn name=injectFileReferences params="input:string, cwd:string" returns=string export=false
   handler <<<
@@ -156,6 +157,7 @@ fn name=handleBuild params="input:string, dispatch:Dispatch, ctx:HandlerContext,
 
     let response = '';
     let streaming = false;
+    let dispatchResult: AgentDispatchResult | undefined;
 
     try {
       if (ctx.adapter.dispatchAgentStream) {
@@ -164,8 +166,14 @@ fn name=handleBuild params="input:string, dispatch:Dispatch, ctx:HandlerContext,
 
         while (true) {
           const iter = await gen.next();
-          if (iter.done) break;
-          if (abort.signal.aborted) break;
+          if (iter.done) {
+            if (iter.value && typeof iter.value === 'object') dispatchResult = iter.value as AgentDispatchResult;
+            break;
+          }
+          if (abort.signal.aborted) {
+            await gen.return(undefined as never);
+            break;
+          }
           const chunk = iter.value as string;
 
           if (chunk.startsWith('\x00')) {
@@ -202,6 +210,7 @@ fn name=handleBuild params="input:string, dispatch:Dispatch, ctx:HandlerContext,
         }
       } else if (ctx.adapter.dispatchAgent) {
         const agentResult = await ctx.adapter.dispatchAgent(dispatchOpts);
+        dispatchResult = agentResult;
         response = agentResult.stdout;
         dispatch({ type: 'spinner-stop' });
         if (agentResult.diff) {
@@ -222,6 +231,20 @@ fn name=handleBuild params="input:string, dispatch:Dispatch, ctx:HandlerContext,
 
     if (abort.signal.aborted) {
       dispatch({ type: 'spinner-stop' });
+      return;
+    }
+
+    if (dispatchResult && dispatchResult.exitCode !== 0) {
+      if (streaming) {
+        dispatch({ type: 'streaming-end', engineId });
+        await yieldToInk();
+      }
+      dispatch({ type: 'spinner-stop' });
+      const reason = dispatchResult.stderr || `agent exited with code ${dispatchResult.exitCode}`;
+      dispatch({ type: 'error', message: `${engineId}: ${reason}` });
+      plan = failPlan(plan, reason);
+      ctx.setCurrentPlan(plan);
+      savePlan(plan);
       return;
     }
 

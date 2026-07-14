@@ -1,8 +1,9 @@
 import from="node:fs" names="writeFileSync,mkdirSync"
 import from="node:path" names="join,dirname"
-import from="@kernlang/agon-core" names="EngineAdapter,EngineDefinition,DispatchOptions,DispatchResult,AgentDispatchResult" types=true
-import from="@kernlang/agon-core" names="EngineRegistry,spawnWithTimeout,spawnStream,EngineNotFoundError,readOnlyDiff,diffLineCount,apiDispatch,apiDispatchTools,apiDispatchToolsHistory,attachVisionToMessages,apiStreamDispatch,companionDispatch,runHooks,hooksFailed,runApiAgentLoop,sessionContext,resolveWorkingDir,engineHealth,classifyDispatchFailure"
-import from="./adapter-helpers.js" names="buildCommand,checkEnvVars,resolveModel,stripStreamJson,usesStreamJson,recordDispatchHealth,shouldUseCompanionForAgent,shouldUseClaudePty,runClaudePtyDispatch,runClaudePtyStreamDispatch,resolveClaudePtyExtraArgs,computeEngineIsolation,hasEnvVar,nowMs,createStringSet"
+import from="@kernlang/agon-core" names="ApiAgentResult,ApiConfig,EngineAdapter,EngineDefinition,DispatchOptions,DispatchResult,AgentDispatchResult" types=true
+import from="@kernlang/agon-core" names="EngineRegistry,spawnWithTimeout,spawnStream,EngineNotFoundError,readOnlyDiff,apiDispatch,apiDispatchTools,apiDispatchToolsHistory,attachVisionToMessages,apiStreamDispatch,companionDispatch,runHooks,hooksFailed,runApiAgentLoop,safeAgentVisibleText,sessionContext,resolveWorkingDir"
+import from="./adapter-helpers.js" names="buildCommand,checkEnvVars,resolveModel,stripStreamJson,usesStreamJson,recordDispatchHealth,shouldUseCompanionForAgent,shouldUseClaudePty,runClaudePtyDispatch,runClaudePtyStreamDispatch,resolveClaudePtyExtraArgs,computeEngineIsolation,hasEnvVar,nowMs,captureNewAgentDiff"
+import from="./execution-plan.js" names="AgentStreamQueue,buildApiAgentContext,cancelledApiAgentResult,createLinkedAbortController,encodeAgentStreamText,normalizeApiAgentOutcome,normalizeDispatchOptions,planEngineExecution"
 
 service name=CliAdapter implements=EngineAdapter
   field name=registry type=EngineRegistry private=true
@@ -17,24 +18,20 @@ service name=CliAdapter implements=EngineAdapter
       assign target="this.isAvailable" value="this.isAvailable.bind(this)"
       assign target="this.getVersion" value="this.getVersion.bind(this)"
 
-  method name=withEngineTimeout params="options:DispatchOptions" returns="DispatchOptions" private=true
-    handler lang="kern"
-      comment raw="// Honor the engine's declared timeout (slow coding-plan engines like zai set timeout=300) over a lower generic command default (orchestration uses 120s), so a slow engine isn't cut off mid-answer and lose its slot. Returns a NEW options object — never mutates the caller's, since callers may reuse/retry the same DispatchOptions."
-      let name=declared value="Number((options.engine as any)?.timeout ?? 0)"
-      if cond="declared > Number(options.timeout ?? 0)"
-        return value="{ ...options, timeout: declared }"
-      return value="options"
-
   method name=dispatch params="options:DispatchOptions" returns="Promise<DispatchResult>" async=true
     handler lang="kern"
-      assign target="options" value="this.withEngineTimeout(options)"
-      comment raw="// Prefer CLI binary when available — API is fallback for binary-less engines"
-      let name=binaryPath value="options.engine.binary ? this.registry.findBinary(options.engine) : null"
-      if cond="!binaryPath"
+      assign target="options" value="normalizeDispatchOptions(options)"
+      comment raw="// Prefer CLI binary when available — API is fallback for binary-less engines. The shared execution planner owns this decision for every public adapter method."
+      let name=binaryCandidate value="options.engine.binary ? this.registry.findBinary(options.engine) : null"
+      let name=apiKeyAvailable value="!!(options.engine.api && hasEnvVar(options.engine.api.apiKeyEnv))"
+      let name=resolvedApiModel value="!binaryCandidate && apiKeyAvailable ? resolveModel(options.engine, options.cwd) : null"
+      let name=execution value="planEngineExecution(options, binaryCandidate, apiKeyAvailable, resolvedApiModel)"
+      assign target="options" value="execution.options"
+      let name=binaryPath value="execution.binaryPath as string"
+      if cond="execution.backend !== 'cli'"
         comment raw="// No CLI binary — use API ONLY when a usable key is present, otherwise fail. Gating on the key (not just the api block) is what keeps binary-missing + no-key from mis-reporting as \"Missing API key\" for codex/claude/agy (which all declare an api block): without a key it falls through to the EngineNotFoundError(missingBinary) throw, while binary-missing + valid key still uses the api fallback (a feature). A possibly-absent apiKeyEnv → process.env[undefined] → undefined (falsy), correctly treated as no usable key."
-        if cond="options.engine.api && hasEnvVar(options.engine.api.apiKeyEnv)"
-          let name=resolvedModel value="resolveModel(options.engine, options.cwd)"
-          let name=apiConfig value="{ ...options.engine.api, ...(resolvedModel ? { model: resolvedModel } : {}), ...(options.maxTokens ? { maxTokens: options.maxTokens } : {}) }"
+        if cond="execution.backend === 'api'"
+          let name=apiConfig value="execution.apiConfig as ApiConfig"
           comment raw="// Inject project context for API engines so they know the codebase"
           comment raw="// Uses sessionContext cache — avoids redundant git spawns when handleChat already gathered context"
           let name=sysPrompt kind=let value="options.systemPrompt"
@@ -42,13 +39,13 @@ service name=CliAdapter implements=EngineAdapter
             let name=projectCtx value="sessionContext.get(options.cwd || resolveWorkingDir())"
             if cond="projectCtx"
               assign target="sysPrompt" value="[sysPrompt ?? '', `## PROJECT CONTEXT\\n${projectCtx}`].filter(Boolean).join('\\n\\n')"
-          comment raw="// NATIVE function-calling when the caller lent tool specs (the browser brain's ReAct loop). With a reconstructed conversation history (Phase 2) → apiDispatchToolsHistory (structured assistant/tool thread, prompt-cacheable); with tools but no history → apiDispatchTools (single prompt); otherwise plain text-only apiDispatch. Any structured call lands in result.parts. CLI/companion paths above never reach here, so they keep the in-prompt text-marker protocol untouched."
-          comment raw="// Base thread for the native tools path: the reconstructed history if the caller sent one, else a single user-prompt turn synthesised so a tools+images dispatch NEVER silently drops the image when no explicit thread was passed (the browser brain always sends a thread; this closes the trap for any future caller). NOTE: synth is its OWN let — an inline `messages ?? (cond ? x : null)` mis-compiles via KERN's ?? / ternary precedence into `(messages ?? cond) ? x : null`, which would DISCARD a real thread."
-          let name=synthMessages value="options.tools && options.tools.length && options.images && options.images.length ? [{ role: 'user', content: options.prompt }] : null"
-          let name=baseMessages value="options.messages ?? synthMessages"
+          comment raw="// STRUCTURED API dispatch: reconstructed history uses apiDispatchToolsHistory; tools without history use apiDispatchTools; image-only turns synthesize a one-message history so vision content is never dropped; plain text uses apiDispatch. Any structured call lands in result.parts."
+          comment raw="// Base thread: the reconstructed non-empty history if the caller sent one, else a single user-prompt turn synthesized for images. NOTE: synth is its OWN let — an inline `messages ?? (cond ? x : null)` mis-compiles via KERN's ?? / ternary precedence into `(messages ?? cond) ? x : null`, which would DISCARD a real thread."
+          let name=synthMessages value="options.images && options.images.length ? [{ role: 'user', content: options.prompt }] : null"
+          let name=baseMessages value="options.messages && options.messages.length > 0 ? options.messages : synthMessages"
           comment raw="// VISION: splice a browser screenshot into the thread's last user turn so a vision-capable API engine (kimi/minimax) actually SEES the page. attachVisionToMessages is a no-op when the engine lacks the 'vision' capability (e.g. zai-coding silently ignores images) or there are no images, so non-vision turns are byte-identical."
           let name=apiMessages value="baseMessages && options.images && options.images.length ? attachVisionToMessages(baseMessages, options.images.map((i) => i.path), options.engine.capabilities?.includes('vision') === true) : baseMessages"
-          let name=result value="apiMessages && options.tools && options.tools.length ? await apiDispatchToolsHistory(apiConfig, apiMessages, options.timeout, options.signal, options.tools, sysPrompt) : (options.tools && options.tools.length ? await apiDispatchTools(apiConfig, options.prompt, options.timeout, options.signal, options.tools, sysPrompt) : await apiDispatch(apiConfig, options.prompt, options.timeout, options.signal, sysPrompt))"
+          let name=result value="apiMessages ? await apiDispatchToolsHistory(apiConfig, apiMessages, options.timeout, options.signal, options.tools, sysPrompt) : (options.tools && options.tools.length ? await apiDispatchTools(apiConfig, options.prompt, options.timeout, options.signal, options.tools, sysPrompt) : await apiDispatch(apiConfig, options.prompt, options.timeout, options.signal, sysPrompt))"
           let name=outputPath value="join(options.outputDir, `${options.engine.id}-output.txt`)"
           do value="mkdirSync(dirname(outputPath), { recursive: true })"
           do value="writeFileSync(outputPath, result.stdout)"
@@ -117,7 +114,7 @@ service name=CliAdapter implements=EngineAdapter
 
   method name=dispatchStream params="options:DispatchOptions" returns="string, DispatchResult, void" async=true stream=true
     handler lang="ts" <<<
-      options = this.withEngineTimeout(options);
+      options = normalizeDispatchOptions(options);
       // workspace-pure isolation, resolved once for every dispatch path below.
       const iso = computeEngineIsolation(options.engine, { isolation: options.isolation, cwd: options.cwd });
       // Subscription pty path for claude — yields response deltas, returns final result.
@@ -143,14 +140,17 @@ service name=CliAdapter implements=EngineAdapter
         // fall through to legacy path
       }
 
-      // Prefer CLI binary when available — API is fallback for binary-less engines
-      const binaryPath = options.engine.binary ? this.registry.findBinary(options.engine) : null;
+      // Shared CLI-first planner: the wrappers keep their current execution behavior,
+      // while backend selection and API config normalization stay identical.
+      const binaryCandidate = options.engine.binary ? this.registry.findBinary(options.engine) : null;
+      const apiKeyAvailable = !!(options.engine.api && hasEnvVar(options.engine.api.apiKeyEnv));
+      const resolvedApiModel = !binaryCandidate && apiKeyAvailable ? resolveModel(options.engine, options.cwd) : null;
+      const execution = planEngineExecution(options, binaryCandidate, apiKeyAvailable, resolvedApiModel);
+      options = execution.options;
 
-      if (!binaryPath) {
+      if (execution.backend === 'api') {
         // API fallback ONLY when a usable key is present — binary-missing + no-key falls through to EngineNotFoundError(missingBinary) instead of mis-reporting "Missing API key". (Absent apiKeyEnv → process.env[undefined] → undefined → no usable key.)
-        if (options.engine.api && hasEnvVar(options.engine.api.apiKeyEnv)) {
-          const resolvedModel = resolveModel(options.engine, options.cwd);
-          const apiConfig = { ...options.engine.api, ...(resolvedModel ? { model: resolvedModel } : {}), ...(options.maxTokens ? { maxTokens: options.maxTokens } : {}) };
+          const apiConfig = execution.apiConfig as ApiConfig;
           // NOTE: this STREAMING API fallback is prompt-only — it carries neither native tools nor
           // vision images (no current caller streams those: the browser brain uses the non-stream
           // dispatch() above, and image chat goes through session-resume). If a future caller needs
@@ -165,11 +165,14 @@ service name=CliAdapter implements=EngineAdapter
           const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
           mkdirSync(dirname(outputPath), { recursive: true });
           writeFileSync(outputPath, result.stdout);
+          recordDispatchHealth(options.engine.id, result);
           return result;
-        }
+      }
+      if (execution.backend === 'missing') {
         // No CLI binary AND no API fallback — report the missing binary, not a key.
         throw new EngineNotFoundError(options.engine.id, options.engine.installHint, options.engine.binary);
       }
+      const binaryPath = execution.binaryPath as string;
 
       // Resolve system prompt for CLI: native flag if available, else prepend
       let effectivePrompt = options.prompt;
@@ -216,12 +219,13 @@ service name=CliAdapter implements=EngineAdapter
       mkdirSync(dirname(outputPath), { recursive: true });
       writeFileSync(outputPath, result.stdout);
 
+      recordDispatchHealth(options.engine.id, result);
       return result;
     >>>
 
   method name=dispatchAgent params="options:DispatchOptions" returns="Promise<AgentDispatchResult>" async=true
     handler lang="kern"
-      assign target="options" value="this.withEngineTimeout(options)"
+      assign target="options" value="normalizeDispatchOptions(options)"
       comment raw="// workspace-pure isolation, resolved once for every agent dispatch path below."
       let name=iso value="computeEngineIsolation(options.engine, { isolation: options.isolation, cwd: options.cwd })"
       comment raw="// Subscription pty path for claude (agent mode: tools + bypassed perms)."
@@ -234,60 +238,33 @@ service name=CliAdapter implements=EngineAdapter
           let name=outputPath value="join(options.outputDir, `${options.engine.id}-output.txt`)"
           do value="mkdirSync(dirname(outputPath), { recursive: true })"
           do value="writeFileSync(outputPath, ptyResult.stdout)"
-          let name=postDiff value="readOnlyDiff(options.cwd)"
-          let name=baselineFiles value="createStringSet(ptyBaseline.split('\\n').filter((l: string) => l.startsWith('diff --git')))"
-          let name=postLines value="postDiff.split('\\n')"
-          let name=newDiffLines type="string[]" value="[]"
-          let name=inNewFile kind=let value="false"
-          each name=line in="postLines"
-            if cond="line.startsWith('diff --git')"
-              assign target="inNewFile" value="!baselineFiles.has(line)"
-            if cond="inNewFile"
-              do value="newDiffLines.push(line)"
-          let name=diff value="newDiffLines.join('\\n')"
-          let name=lines value="diffLineCount(diff)"
-          let name=files value="diff ? newDiffLines.filter((l: string) => l.startsWith('diff --git')).length : 0"
+          let name=change value="captureNewAgentDiff(ptyBaseline, options.cwd)"
           do value="recordDispatchHealth(options.engine.id, ptyResult)"
-          return value="{ ...ptyResult, diff, diffLines: lines, filesChanged: files }"
+          return value="{ ...ptyResult, ...change }"
       comment raw="// API fallback: use API agent loop when binary is declared but not installed AND a usable key is present. Without a key, fall through to the EngineNotFoundError(missingBinary) throw below rather than mis-reporting \"Missing API key\". (Absent apiKeyEnv → process.env[undefined] → undefined → no usable key.)"
-      let name=agentBinaryPath value="options.engine.binary ? this.registry.findBinary(options.engine) : null"
-      if cond="options.engine.api && !agentBinaryPath && hasEnvVar(options.engine.api.apiKeyEnv)"
-        let name=resolvedModel value="resolveModel(options.engine, options.cwd)"
-        let name=apiConfig value="{ ...options.engine.api, ...(resolvedModel ? { model: resolvedModel } : {}), ...(options.maxTokens ? { maxTokens: options.maxTokens } : {}) }"
-        let name=cwd value="options.cwd || resolveWorkingDir()"
-        let name=projectCtx value="sessionContext.get(cwd)"
-        let name=systemPrompt value="[ options.systemPrompt ?? 'You are an AI coding assistant. Be direct and concise.', projectCtx ? `## PROJECT CONTEXT\\n${projectCtx}` : '', ].filter(Boolean).join('\\n\\n')"
+      let name=binaryCandidate value="options.engine.binary ? this.registry.findBinary(options.engine) : null"
+      let name=apiKeyAvailable value="!!(options.engine.api && hasEnvVar(options.engine.api.apiKeyEnv))"
+      let name=resolvedApiModel value="!binaryCandidate && apiKeyAvailable ? resolveModel(options.engine, options.cwd) : null"
+      let name=execution value="planEngineExecution(options, binaryCandidate, apiKeyAvailable, resolvedApiModel)"
+      assign target="options" value="execution.options"
+      if cond="execution.backend === 'api'"
+        let name=apiConfig value="execution.apiConfig as ApiConfig"
+        let name=agentContext value="buildApiAgentContext(options)"
         let name=startTime value="nowMs()"
-        let name=baselineDiff value="readOnlyDiff(cwd)"
-        let name=result value="await runApiAgentLoop({ api: apiConfig, prompt: options.prompt, systemPrompt, cwd, timeout: options.timeout, signal: options.signal, maxSteps: 200, permissionMode: options.permissionMode, allowedCommands: options.allowedCommands, toolPermissions: options.toolPermissions, onPermissionAsk: options.onApproval, onTodos: options.onTodos, })"
-        let name=postDiff value="readOnlyDiff(cwd)"
-        let name=baselineFiles value="createStringSet(baselineDiff.split('\\n').filter((l: string) => l.startsWith('diff --git')))"
-        let name=postLines value="postDiff.split('\\n')"
-        let name=newDiffLines type="string[]" value="[]"
-        let name=inNewFile kind=let value="false"
-        each name=line in="postLines"
-          if cond="line.startsWith('diff --git')"
-            assign target="inNewFile" value="!baselineFiles.has(line)"
-          if cond="inNewFile"
-            do value="newDiffLines.push(line)"
-        let name=diff value="newDiffLines.join('\\n')"
-        let name=lines value="diffLineCount(diff)"
-        let name=files value="diff ? newDiffLines.filter((l: string) => l.startsWith('diff --git')).length : 0"
+        let name=baselineDiff value="readOnlyDiff(agentContext.cwd)"
+        let name=result value="await runApiAgentLoop({ api: apiConfig, prompt: options.prompt, systemPrompt: agentContext.systemPrompt, historyMessages: agentContext.historyMessages, cwd: agentContext.cwd, timeout: options.timeout, signal: options.signal, maxSteps: 200, permissionMode: options.permissionMode, allowedCommands: options.allowedCommands, toolPermissions: options.toolPermissions, onPermissionAsk: options.onApproval, onTodos: options.onTodos, })"
+        let name=change value="captureNewAgentDiff(baselineDiff, agentContext.cwd)"
         let name=outputPath value="join(options.outputDir, `${options.engine.id}-output.txt`)"
         do value="mkdirSync(dirname(outputPath), { recursive: true })"
         do value="writeFileSync(outputPath, result.response)"
-        comment raw="// runApiAgentLoop catches errors and packs them into result.response;"
-        comment raw="// it doesn't expose exitCode/stderr the same way as spawnWithTimeout."
-        comment raw="// Best-effort: if the response begins with an auth-error sentinel,"
-        comment raw="// record. Otherwise treat as ok."
-        let name=respText value="result.response ?? ''"
-        let name=looksLikeAuth value="/\\b401\\b|invalid api key|invalid access token|token (expired|invalid)|unauthori[sz]ed|authentication (failed|error)/i.test(respText.slice(0, 500))"
-        do value="recordDispatchHealth(options.engine.id, looksLikeAuth ? { exitCode: 1, stderr: respText.slice(0, 500), timedOut: false } : { exitCode: 0, stderr: '', timedOut: false })"
-        return value="{ exitCode: 0, stdout: result.response, stderr: '', durationMs: nowMs() - startTime, timedOut: false, diff, diffLines: lines, filesChanged: files, }"
-      let name=binaryPath value="this.registry.findBinary(options.engine)"
-      if cond="!binaryPath"
+        comment raw="// Normalize the API tool loop into the same truthful terminal contract as CLI execution. Partial stdout and worktree changes survive failure/timeout/cancel."
+        let name=outcome value="normalizeApiAgentOutcome(result)"
+        do value="recordDispatchHealth(options.engine.id, outcome)"
+        return value="{ ...outcome, durationMs: nowMs() - startTime, ...change }"
+      if cond="execution.backend === 'missing'"
         comment raw="// Binary check BEFORE env-var check: a missing binary must never report as a missing key."
         throw value="new EngineNotFoundError(options.engine.id, options.engine.installHint, options.engine.binary)"
+      let name=binaryPath value="execution.binaryPath as string"
       let name=envError value="checkEnvVars(options.engine)"
       if cond="envError"
         throw value="new EngineNotFoundError(options.engine.id, envError)"
@@ -300,21 +277,9 @@ service name=CliAdapter implements=EngineAdapter
           let name=outputPath value="join(options.outputDir, `${options.engine.id}-output.txt`)"
           do value="mkdirSync(dirname(outputPath), { recursive: true })"
           do value="writeFileSync(outputPath, companionResult.stdout)"
-          let name=postDiff value="readOnlyDiff(options.cwd)"
-          let name=baselineFiles value="createStringSet(baselineDiff.split('\\n').filter((l: string) => l.startsWith('diff --git')))"
-          let name=postLines value="postDiff.split('\\n')"
-          let name=newDiffLines type="string[]" value="[]"
-          let name=inNewFile kind=let value="false"
-          each name=line in="postLines"
-            if cond="line.startsWith('diff --git')"
-              assign target="inNewFile" value="!baselineFiles.has(line)"
-            if cond="inNewFile"
-              do value="newDiffLines.push(line)"
-          let name=diff value="newDiffLines.join('\\n')"
-          let name=lines value="diffLineCount(diff)"
-          let name=files value="diff ? newDiffLines.filter((l: string) => l.startsWith('diff --git')).length : 0"
+          let name=change value="captureNewAgentDiff(baselineDiff, options.cwd)"
           do value="recordDispatchHealth(options.engine.id, companionResult)"
-          return value="{ ...companionResult, diff, diffLines: lines, filesChanged: files }"
+          return value="{ ...companionResult, ...change }"
       comment raw="// Resolve system prompt for direct CLI agent dispatch. Forge relies on"
       comment raw="// this path for Claude/Gemini because their one-shot companion wrappers"
       comment raw="// are not equivalent to their persistent Cesar sessions."
@@ -339,26 +304,13 @@ service name=CliAdapter implements=EngineAdapter
       let name=outputPath value="join(options.outputDir, `${options.engine.id}-output.txt`)"
       do value="mkdirSync(dirname(outputPath), { recursive: true })"
       do value="writeFileSync(outputPath, result.stdout)"
-      let name=postDiff value="readOnlyDiff(options.cwd)"
-      comment raw="// Only count new changes by excluding baseline"
-      let name=baselineFiles value="createStringSet(baselineDiff.split('\\n').filter((l: string) => l.startsWith('diff --git')))"
-      let name=postLines value="postDiff.split('\\n')"
-      let name=newDiffLines type="string[]" value="[]"
-      let name=inNewFile kind=let value="false"
-      each name=line in="postLines"
-        if cond="line.startsWith('diff --git')"
-          assign target="inNewFile" value="!baselineFiles.has(line)"
-        if cond="inNewFile"
-          do value="newDiffLines.push(line)"
-      let name=diff value="newDiffLines.join('\\n')"
-      let name=lines value="diffLineCount(diff)"
-      let name=files value="diff ? newDiffLines.filter((l: string) => l.startsWith('diff --git')).length : 0"
+      let name=change value="captureNewAgentDiff(baselineDiff, options.cwd)"
       do value="recordDispatchHealth(options.engine.id, result)"
-      return value="{ ...result, diff, diffLines: lines, filesChanged: files }"
+      return value="{ ...result, ...change }"
 
   method name=dispatchAgentStream params="options:DispatchOptions" returns="string, AgentDispatchResult, void" async=true stream=true
     handler lang="ts" <<<
-      options = this.withEngineTimeout(options);
+      options = normalizeDispatchOptions(options);
       // workspace-pure isolation, resolved once for every agent-stream path below.
       const iso = computeEngineIsolation(options.engine, { isolation: options.isolation, cwd: options.cwd });
       // Subscription pty path for claude (agent mode). Same diff capture as dispatchAgent.
@@ -380,45 +332,101 @@ service name=CliAdapter implements=EngineAdapter
           const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
           mkdirSync(dirname(outputPath), { recursive: true });
           writeFileSync(outputPath, last.stdout);
-          const postDiff = readOnlyDiff(options.cwd);
-          const baselineFiles = new Set(baselineDiff.split('\n').filter((l: string) => l.startsWith('diff --git')));
-          const postLines = postDiff.split('\n');
-          const newDiffLines: string[] = [];
-          let inNewFile = false;
-          for (const line of postLines) {
-            if (line.startsWith('diff --git')) inNewFile = !baselineFiles.has(line);
-            if (inNewFile) newDiffLines.push(line);
-          }
-          const diff = newDiffLines.join('\n');
-          const lines = diffLineCount(diff);
-          const files = diff ? newDiffLines.filter((l: string) => l.startsWith('diff --git')).length : 0;
+          const change = captureNewAgentDiff(baselineDiff, options.cwd);
           recordDispatchHealth(options.engine.id, last);
-          return { ...last, diff, diffLines: lines, filesChanged: files };
+          return { ...last, ...change };
         }
         // fall through to legacy path
       }
 
-      const streamBinaryPath = options.engine.binary ? this.registry.findBinary(options.engine) : null;
-      // API-only-stream notice ONLY when a usable key is present — binary-missing + no-key falls through to EngineNotFoundError(missingBinary) instead of mis-reporting "Missing API key". (Absent apiKeyEnv → process.env[undefined] → undefined → no usable key.)
-      if (options.engine.api && !streamBinaryPath && hasEnvVar(options.engine.api.apiKeyEnv)) {
-        yield `Engine "${options.engine.id}" is API-only and does not support streaming agent mode. Use non-streaming dispatch or install the CLI binary.`;
-        return {
-          exitCode: 1,
-          stdout: '',
-          stderr: `Engine "${options.engine.id}" is API-only and does not support agent mode`,
-          durationMs: 0,
-          timedOut: false,
-          diff: '',
-          diffLines: 0,
-          filesChanged: 0,
+      const binaryCandidate = options.engine.binary ? this.registry.findBinary(options.engine) : null;
+      const apiKeyAvailable = !!(options.engine.api && hasEnvVar(options.engine.api.apiKeyEnv));
+      const resolvedApiModel = !binaryCandidate && apiKeyAvailable ? resolveModel(options.engine, options.cwd) : null;
+      const execution = planEngineExecution(options, binaryCandidate, apiKeyAvailable, resolvedApiModel);
+      options = execution.options;
+      // API-only agent streaming uses the same tool loop and terminal contract
+      // as dispatchAgent, but only parsed visible prose is exposed to callers.
+      if (execution.backend === 'api') {
+        const apiConfig = execution.apiConfig as ApiConfig;
+        const { cwd, systemPrompt, historyMessages } = buildApiAgentContext(options);
+        const startedAt = nowMs();
+        const baselineDiff = readOnlyDiff(cwd);
+        const streamAbort = createLinkedAbortController(options.signal);
+        const queue = new AgentStreamQueue(streamAbort.controller.signal);
+        let settled = false;
+        let result: ApiAgentResult | null = null;
+        let runError: unknown = null;
+        let emittedFinal = false;
+        const publish = (text: string, phase: 'narration' | 'final') => {
+          const safe = safeAgentVisibleText(text);
+          if (!safe || streamAbort.controller.signal.aborted) return;
+          if (phase === 'final') emittedFinal = true;
+          queue.push(encodeAgentStreamText(safe, phase));
         };
+
+        try {
+          void runApiAgentLoop({
+            api: apiConfig,
+            prompt: options.prompt,
+            systemPrompt,
+            historyMessages,
+            cwd,
+            timeout: options.timeout,
+            signal: streamAbort.controller.signal,
+            maxSteps: 200,
+            permissionMode: options.permissionMode,
+            allowedCommands: options.allowedCommands,
+            toolPermissions: options.toolPermissions,
+            onPermissionAsk: options.onApproval,
+            onTodos: options.onTodos,
+            onVisibleChunk: (text: string, phase: 'narration' | 'final') => publish(text, phase),
+          }).then((value) => {
+            result = value;
+            settled = true;
+            queue.settle();
+          }).catch((error) => {
+            runError = error;
+            settled = true;
+            queue.settle();
+          });
+
+          while (true) {
+            const chunk = await queue.next();
+            if (chunk === null) break;
+            yield chunk;
+          }
+          if (!settled && streamAbort.controller.signal.aborted) result = cancelledApiAgentResult();
+          if (runError) throw runError;
+          // Assignment happens in the completion callback, which TypeScript's
+          // control-flow analysis does not track across the awaited queue.
+          const agentResult = result as ApiAgentResult | null;
+          if (!agentResult) throw new Error(`Engine "${options.engine.id}" returned no API agent result`);
+
+          // When no final callback fired, surface only sanitized terminal prose.
+          // Narration remains transient status and cancellation never invents a tail.
+          if (!emittedFinal && !agentResult.cancelled) {
+            const fallback = safeAgentVisibleText(agentResult.response);
+            if (fallback) yield encodeAgentStreamText(fallback, 'final');
+          }
+
+          const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
+          mkdirSync(dirname(outputPath), { recursive: true });
+          writeFileSync(outputPath, agentResult.response ?? '');
+          const outcome = normalizeApiAgentOutcome(agentResult);
+          const change = captureNewAgentDiff(baselineDiff, cwd);
+          recordDispatchHealth(options.engine.id, outcome);
+          return { ...outcome, durationMs: nowMs() - startedAt, ...change };
+        } finally {
+          streamAbort.dispose(); queue.dispose();
+          if (!settled) streamAbort.controller.abort(new Error('API agent stream consumer closed'));
+        }
       }
 
-      const binaryPath = this.registry.findBinary(options.engine);
-      if (!binaryPath) {
+      if (execution.backend === 'missing') {
         // Missing binary, not a key — report the binary by name with an install hint.
         throw new EngineNotFoundError(options.engine.id, options.engine.installHint, options.engine.binary);
       }
+      const binaryPath = execution.binaryPath as string;
 
       const { command, args } = buildCommand(
         options.engine, options.mode, options.prompt,
@@ -454,22 +462,9 @@ service name=CliAdapter implements=EngineAdapter
       mkdirSync(dirname(outputPath), { recursive: true });
       writeFileSync(outputPath, result.stdout);
 
-      const postDiff = readOnlyDiff(options.cwd);
-      const baselineFiles = new Set(baselineDiff.split('\n').filter((l: string) => l.startsWith('diff --git')));
-      const postLines = postDiff.split('\n');
-      const newDiffLines: string[] = [];
-      let inNewFile = false;
-      for (const line of postLines) {
-        if (line.startsWith('diff --git')) {
-          inNewFile = !baselineFiles.has(line);
-        }
-        if (inNewFile) newDiffLines.push(line);
-      }
-      const diff = newDiffLines.join('\n');
-      const lines = diffLineCount(diff);
-      const files = diff ? newDiffLines.filter((l: string) => l.startsWith('diff --git')).length : 0;
-
-      return { ...result, diff, diffLines: lines, filesChanged: files };
+      const change = captureNewAgentDiff(baselineDiff, options.cwd);
+      recordDispatchHealth(options.engine.id, result);
+      return { ...result, ...change };
     >>>
 
   method name=isAvailable params="engine:EngineDefinition" returns="Promise<boolean>" async=true

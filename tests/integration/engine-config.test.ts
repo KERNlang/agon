@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { validateEngineConfig, EngineDefinitionSchema } from '../../packages/core/src/schemas/engine-schema.js';
+import { validateEngineConfig } from '../../packages/core/src/schemas/engine-schema.js';
 
 const ENGINES_DIR = join(import.meta.dirname, '../../engines');
 
@@ -104,14 +104,37 @@ describe('Engine Config Validation', () => {
         expect(result.data.sessionBudget?.contextWindow).toBe(raw.sessionBudget.contextWindow);
       });
 
-      it('passes Zod validation (with warnings for missing optionals)', () => {
+      // Every declared execution field must survive validation. A valid config
+      // is registered from the parsed value, so an omitted Zod key silently
+      // disables the feature even though the JSON and TypeScript contract both
+      // contain it.
+      it('preserves all declared execution metadata in validated config', () => {
         const result = validateEngineConfig(raw, filename);
-        // Log warnings but don't fail — some configs are intentionally minimal
-        if (!result.ok) {
-          console.warn(`[WARN] ${result.error}`);
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+
+        for (const key of ['effort', 'cliModels', 'family', 'derivedFrom', 'modes', 'adapterType'] as const) {
+          if (raw[key] !== undefined) {
+            expect(result.data[key]).toEqual(raw[key]);
+          }
         }
-        // At minimum, must parse without throwing
-        expect(raw.id).toBeTruthy();
+
+        for (const key of [
+          'contextWindow',
+          'firstChunkTimeoutMs',
+          'idleTimeoutMs',
+          'firstChunkRetryCount',
+          'firstChunkRetryBackoffMs',
+        ] as const) {
+          if (raw.api?.[key] !== undefined) {
+            expect(result.data.api?.[key]).toEqual(raw.api[key]);
+          }
+        }
+      });
+
+      it('passes Zod validation', () => {
+        const result = validateEngineConfig(raw, filename);
+        expect(result.ok, result.ok ? undefined : result.error).toBe(true);
       });
     });
   }
@@ -162,9 +185,16 @@ describe('Engine Config Validation', () => {
       expect(validateEngineConfig({ ...base, isolationHints: { authMarker: '..' } }, 't.json').ok).toBe(false);
     });
 
+    it('rejects an empty authMarker that would resolve to the config directory', () => {
+      expect(validateEngineConfig({ ...base, isolationHints: { authMarker: '' } }, 't.json').ok).toBe(false);
+      expect(validateEngineConfig({ ...base, isolationHints: { authMarker: 'C:' } }, 't.json').ok).toBe(false);
+    });
+
     it('rejects authFiles with traversal, absolute paths, or empty entries', () => {
       expect(validateEngineConfig({ ...base, isolationHints: { authFiles: ['../secret'] } }, 't.json').ok).toBe(false);
       expect(validateEngineConfig({ ...base, isolationHints: { authFiles: ['/etc/passwd'] } }, 't.json').ok).toBe(false);
+      expect(validateEngineConfig({ ...base, isolationHints: { authFiles: ['C:\\secret'] } }, 't.json').ok).toBe(false);
+      expect(validateEngineConfig({ ...base, isolationHints: { authFiles: ['C:secret'] } }, 't.json').ok).toBe(false);
       expect(validateEngineConfig({ ...base, isolationHints: { authFiles: [''] } }, 't.json').ok).toBe(false);
     });
 

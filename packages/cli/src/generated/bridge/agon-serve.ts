@@ -2,7 +2,9 @@
 
 import type { BrainClient, CapabilitySpec } from '@kernlang/agon-core';
 
-import { getSessionHost, eventLogAppend, eventLogFlush, MAX_DISPATCH_IMAGES, MAX_DISPATCH_IMAGE_BYTES } from '@kernlang/agon-core';
+import type { JobExecutor } from '@kernlang/agon-core';
+
+import { getSessionHost, eventLogAppend, eventLogFlush, MAX_DISPATCH_IMAGES, MAX_DISPATCH_IMAGE_BYTES, JobService, DEFAULT_AGON_CONFIG } from '@kernlang/agon-core';
 
 import { createServer } from 'node:http';
 
@@ -12,13 +14,24 @@ import type { IncomingMessage, ServerResponse, Server } from 'node:http';
 
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 
-// @kern-source: agon-serve:40
+// @kern-source: agon-serve:41
 export const MAX_SEND_BODY_BYTES: number = Math.ceil((MAX_DISPATCH_IMAGES * MAX_DISPATCH_IMAGE_BYTES * 4) / 3) + 1024 * 1024;
+
+// @kern-source: agon-serve:43
+export interface AgonServeJobDefinition {
+  label: string;
+  executor: JobExecutor;
+}
+
+// @kern-source: agon-serve:47
+export interface AgonServeJobResolver {
+  resolve: (kind:string,payload:Record<string,unknown>)=>AgonServeJobDefinition;
+}
 
 /**
  * Loopback HTTP bridge fronting ONE Agon session. start() binds 127.0.0.1 and returns { url, token }; clients pass `Authorization: Bearer <token>`. Routes: OPTIONS (CORS preflight); POST /attach → { sessionId, lastSeq }; POST /send → drive a BrainClient turn, append events to the ledger, return the BrainTurnResult; GET /events?from=N → SSE tail of the ledger (multi-client fan-out); POST /cancel → BrainClient.cancel; POST /approval → BrainClient.provideApproval; POST /answer → BrainClient.provideAnswer (the user's reply to a mid-turn question-request).
  */
-// @kern-source: agon-serve:42
+// @kern-source: agon-serve:50
 export class AgonServe {
   private brain: BrainClient;
   private sessionId: string;
@@ -31,8 +44,11 @@ export class AgonServe {
   private turnCounter: number;
   private turnTail: Promise<void>;
   private sse: Set<{ res: ServerResponse, ping: ReturnType<typeof setInterval>, unsubscribe: () => void }>;
+  private jobs: JobService;
+  private jobShutdownTimeoutMs: number;
+  private resolveJob: AgonServeJobResolver|undefined;
 
-  constructor(opts: { brain: BrainClient, sessionId: string, allowedOrigins?: string[], engines?: string[], engineId?: string }) {
+  constructor(opts: { brain: BrainClient, sessionId: string, allowedOrigins?: string[], engines?: string[], engineId?: string, jobService?: JobService, jobShutdownTimeoutMs?: number, resolveJob?: AgonServeJobResolver }) {
     this.brain = opts.brain;
     this.sessionId = opts.sessionId;
     this.token = randomUUID();
@@ -44,6 +60,9 @@ export class AgonServe {
     this.turnCounter = 0;
     this.turnTail = hostResolvedVoid();
     this.sse = hostSet();
+    this.jobs = opts.jobService ?? new JobService();
+    this.jobShutdownTimeoutMs = opts.jobShutdownTimeoutMs ?? DEFAULT_AGON_CONFIG.jobShutdownTimeoutMs;
+    this.resolveJob = opts.resolveJob;
   }
 
   async start(port?: number): Promise<{ url: string, token: string }> {
@@ -63,20 +82,26 @@ export class AgonServe {
   async close(): Promise<void> {
     const server = this.server;
     this.server = null;
+    let serverClosed = Promise.resolve();
+    if (server) {
+      serverClosed = new Promise<void>((resolve) => {
+        let settled = false;
+        const finish = () => { if (settled) return; settled = true; resolve(); };
+        server.close((err) => { if (err) console.warn(`[agon-serve] close: ${err.message}`); finish(); });
+        const t = setTimeout(finish, this.jobShutdownTimeoutMs);
+        if (typeof (t as { unref?: () => void }).unref === 'function') (t as { unref: () => void }).unref();
+      });
+    }
     // Iterate a COPY: conn.res.end() can fire a 'close' that deletes conn from
     // this.sse, mutating the Set mid-iteration.
     for (const conn of [...this.sse]) {
       try { clearInterval(conn.ping); conn.unsubscribe(); conn.res.end(); } catch { /* best-effort */ }
     }
     this.sse.clear();
-    if (!server) return;
-    await new Promise<void>((resolve) => {
-      let settled = false;
-      const finish = () => { if (settled) return; settled = true; resolve(); };
-      server.close((err) => { if (err) console.warn(`[agon-serve] close: ${err.message}`); finish(); });
-      const t = setTimeout(finish, 2000); // never let a stuck socket hold shutdown forever
-      if (typeof (t as { unref?: () => void }).unref === 'function') (t as { unref: () => void }).unref();
-    });
+    this.jobs.cancelAll('HTTP job host closed');
+    const drained = await this.jobs.waitForIdle(this.jobShutdownTimeoutMs);
+    if (!drained) console.warn(`[agon-serve] job drain exceeded ${this.jobShutdownTimeoutMs}ms; completing shutdown`);
+    await serverClosed;
   }
 
   private corsHeaders(origin: string): Record<string, string> {
@@ -126,6 +151,10 @@ export class AgonServe {
       }
       if (method === 'POST' && path === '/send') { await this.handleSend(req, res, origin); return; }
       if (method === 'POST' && path === '/cancel') { await this.handleCancel(req, res, origin); return; }
+      if (path === '/v1/jobs' || path.startsWith('/v1/jobs/')) {
+        await this.handleJobs(req, res, method, path, url, origin);
+        return;
+      }
       // Agent tool-loop control plane — these call the brain DIRECTLY (never chained
       // on turnTail), so a capability-request the live turn is awaiting can be answered
       // while handleSend still holds the per-session write lock (no deadlock).
@@ -143,6 +172,67 @@ export class AgonServe {
       const status = msg.includes('too large') ? 413 : msg.includes('invalid JSON') ? 400 : 500;
       this.sendJson(res, status, { error: msg }, origin);
     }
+  }
+
+  private async handleJobs(req: IncomingMessage, res: ServerResponse, method: string, path: string, url: URL, origin: string): Promise<void> {
+    if (method === 'POST' && path === '/v1/jobs') {
+      if (!this.resolveJob) { this.sendJson(res, 503, { error: 'job execution is not configured' }, origin); return; }
+      const body = await this.readJson(req);
+      const kind = typeof body.kind === 'string' ? body.kind.trim() : '';
+      const rawPayload = body.payload;
+      if (!kind || !rawPayload || typeof rawPayload !== 'object' || Array.isArray(rawPayload)) {
+        this.sendJson(res, 400, { error: 'missing kind or invalid payload' }, origin);
+        return;
+      }
+      try {
+        const definition = this.resolveJob.resolve(kind, rawPayload as Record<string, unknown>);
+        const job = this.jobs.submit(kind, definition.label, definition.executor);
+        this.sendJson(res, 202, { job }, origin);
+      } catch (err) {
+        this.sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) }, origin);
+      }
+      return;
+    }
+    if (method === 'GET' && path === '/v1/jobs') {
+      this.sendJson(res, 200, { jobs: this.jobs.list() }, origin);
+      return;
+    }
+
+    const segments = path.split('/').filter(Boolean);
+    const id = segments[2] ?? '';
+    const action = segments[3] ?? '';
+    if (!id || segments.length > 4) { this.sendJson(res, 404, { error: 'not found' }, origin); return; }
+    const job = this.jobs.get(id);
+    if (!job) { this.sendJson(res, 404, { error: 'job not found', jobId: id }, origin); return; }
+
+    if (method === 'GET' && !action) { this.sendJson(res, 200, { job }, origin); return; }
+    if (method === 'GET' && action === 'events') {
+      const afterRaw = url.searchParams.get('afterSeq');
+      const limitRaw = url.searchParams.get('limit');
+      const afterSeq = afterRaw === null ? undefined : Number(afterRaw);
+      const limit = limitRaw === null ? undefined : Number(limitRaw);
+      if ((afterSeq !== undefined && (!Number.isInteger(afterSeq) || afterSeq < 0)) || (limit !== undefined && (!Number.isInteger(limit) || limit < 1))) {
+        this.sendJson(res, 400, { error: 'invalid event cursor or limit' }, origin);
+        return;
+      }
+      this.sendJson(res, 200, this.jobs.events(id, afterSeq, limit), origin);
+      return;
+    }
+    if (method === 'GET' && action === 'result') {
+      const outcome = this.jobs.result(id);
+      this.sendJson(res, outcome ? 200 : 202, { job: this.jobs.get(id), ready: outcome !== null, ...(outcome ? { outcome } : {}) }, origin);
+      return;
+    }
+    if (method === 'POST' && action === 'cancel') {
+      const body = await this.readJson(req);
+      const reason = typeof body.reason === 'string' ? body.reason : undefined;
+      const accepted = this.jobs.cancel(id, reason);
+      const current = this.jobs.get(id) ?? job;
+      const status = accepted ? 'accepted' : (current.state === 'cancelled' ? 'already-cancelled' : 'already-terminal');
+      this.sendJson(res, 200, { job: current, status }, origin);
+      return;
+    }
+    this.sendJson(res, 404, { error: 'not found' }, origin);
   }
 
   private streamEvents(req: IncomingMessage, res: ServerResponse, from: number, origin: string): void {
@@ -316,7 +406,7 @@ export class AgonServe {
 /**
  * Factory: build the loopback bridge for a session given an opened BrainClient and the session id.
  */
-// @kern-source: agon-serve:361
-export function createAgonServe(opts: { brain: BrainClient, sessionId: string, allowedOrigins?: string[], engines?: string[], engineId?: string }): AgonServe {
+// @kern-source: agon-serve:448
+export function createAgonServe(opts: { brain: BrainClient, sessionId: string, allowedOrigins?: string[], engines?: string[], engineId?: string, jobService?: JobService, jobShutdownTimeoutMs?: number, resolveJob?: AgonServeJobResolver }): AgonServe {
   return new AgonServe(opts);
 }

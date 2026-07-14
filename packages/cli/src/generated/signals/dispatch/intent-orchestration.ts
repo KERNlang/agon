@@ -238,8 +238,9 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
           engines: teamEngines,
           reason: 'complexity hint: multi-step-fanout — task pattern suggests cross-module work',
         });
-        cb.runAsJob('team-agent', input?.slice(0, 40) ?? 'team-agent', () => runAgentJobWithAutoResume(input, cb, () => runAgentTeam(input, cb.dispatch, cb.ctx, {
+        cb.runAsJob('team-agent', input?.slice(0, 40) ?? 'team-agent', (signal) => runAgentJobWithAutoResume(input, cb, () => runAgentTeam(input, cb.dispatch, cb.ctx, {
           taskKind: 'edit',
+          parentSignal: signal,
         })));
       } else {
         // Phase D: check for a second API engine to run as a silent shadow.
@@ -263,11 +264,12 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
             foregroundEngineId: firstEngine,
             shadowEngineId: apiEngines[1],
           });
-          cb.runAsJob('agent', input?.slice(0, 40) ?? 'agent', () => runAgentJobWithAutoResume(input, cb, () => runAgentTeam(input, cb.dispatch, cb.ctx, {
+          cb.runAsJob('agent', input?.slice(0, 40) ?? 'agent', (signal) => runAgentJobWithAutoResume(input, cb, () => runAgentTeam(input, cb.dispatch, cb.ctx, {
             engines: apiEngines.slice(0, 2),
             shadowMode: true,
             foregroundEngineId: firstEngine,
             taskKind: 'edit',
+            parentSignal: signal,
           })));
         } else {
           cb.dispatch({
@@ -276,7 +278,7 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
             engines: [firstEngine],
             reason: 'single engine — no shadow available',
           });
-          cb.runAsJob('agent', input?.slice(0, 40) ?? 'agent', () => runAgentJobWithAutoResume(input, cb, () => runAgentMode(input, cb.dispatch, cb.ctx)));
+          cb.runAsJob('agent', input?.slice(0, 40) ?? 'agent', (signal) => runAgentJobWithAutoResume(input, cb, () => runAgentMode(input, cb.dispatch, cb.ctx, { parentSignal: signal })));
         }
       }
       return { handled: true, ranAsJob: true };
@@ -285,14 +287,15 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
       // Explicit opt-out of shadow workers — always runs pure solo.
       const soloInput = intent.input;
       cb.dispatch({ type: 'agent-routing', mode: 'solo', engines: [cb.ctx.activeEngines()[0] ?? 'default'], reason: 'explicit /agent-solo — shadow mode disabled' });
-      cb.runAsJob('agent', soloInput?.slice(0, 40) ?? 'agent', () => runAgentJobWithAutoResume(soloInput, cb, () => runAgentMode(soloInput, cb.dispatch, cb.ctx, { maxTurns: intent.maxTurns })));
+      cb.runAsJob('agent', soloInput?.slice(0, 40) ?? 'agent', (signal) => runAgentJobWithAutoResume(soloInput, cb, () => runAgentMode(soloInput, cb.dispatch, cb.ctx, { maxTurns: intent.maxTurns, parentSignal: signal })));
       return { handled: true, ranAsJob: true };
     }
     case 'team-agent':
-      cb.runAsJob('team-agent', intent.input?.slice(0, 40) ?? 'team-agent', () => runAgentJobWithAutoResume(intent.input, cb, () => runAgentTeam(intent.input, cb.dispatch, cb.ctx, {
+      cb.runAsJob('team-agent', intent.input?.slice(0, 40) ?? 'team-agent', (signal) => runAgentJobWithAutoResume(intent.input, cb, () => runAgentTeam(intent.input, cb.dispatch, cb.ctx, {
         engines: intent.engines,
         taskKind: intent.taskKind,
         maxTurns: intent.maxTurns,
+        parentSignal: signal,
       })));
       return { handled: true, ranAsJob: true };
     case 'speculate': {

@@ -129,6 +129,8 @@ interface name=DispatchResult
   field name=stderr type=string
   field name=durationMs type=number
   field name=timedOut type=boolean
+  field name=engineFault type=boolean optional=true
+    doc "True when the execution transport/engine failed, as distinct from a caller cancellation, policy denial, or ordinary nonzero task result."
   field name=pid type="number|null" optional=true
   field name=usage type="{promptTokens:number,completionTokens:number,totalTokens:number,cachedInputTokens?:number,source:'sdk'|'cli-reported'|'estimated'}" optional=true
     doc "promptTokens (AI SDK inputTokens) already INCLUDES cache read+write tokens, so promptTokens+completionTokens = the request's exact context occupancy. cachedInputTokens = the cache-read share, for display/cost."
@@ -250,6 +252,22 @@ config name=AgonConfig
   field name=approvalLevel type="'plan'|'task'|'write'|'none'" default=plan
   field name=agentTimeout type=number default=600
   field name=agentPermissionLevel type="'full'|'plan'|'read-only'" default=full
+  field name=jobEventLimit type=number default=256
+    doc "Maximum replayable events retained per autonomous job. Older events are evicted while sequence cursors remain monotonic."
+  field name=jobRetentionLimit type=number default=100
+    doc "Maximum fully-settled terminal autonomous jobs retained in memory by a JobService instance."
+  field name=jobMaxConcurrency type=number default=4
+    doc "Maximum autonomous job executors active at once. Cancelled executors retain their slot until their promise settles."
+  field name=jobLabelMaxChars type=number default=120
+    doc "Maximum characters retained in an autonomous job display label. Full input remains in the executor closure only while the job is active."
+  field name=jobOutputChunkChars type=number default=16000
+    doc "Maximum characters stored in one stdout/stderr autonomous job event. Large process chunks are split before replay retention."
+  field name=jobCancelGraceMs type=number default=2000
+    doc "Grace period between SIGTERM and SIGKILL when cancelling a daemon workflow process tree."
+  field name=jobShutdownTimeoutMs type=number default=10000
+    doc "Maximum time a daemon or HTTP host waits for cancelled autonomous executors to settle before completing shutdown."
+  field name=daemonFrameMaxBytes type=number default=1048576
+    doc "Maximum buffered newline-JSON daemon request frame size before the client connection is rejected."
   field name=gauntletEnabled type=boolean default=false
   field name=gauntletMaxBreakers type=number default=3
   field name=gauntletRepairTimeout type=number default=300

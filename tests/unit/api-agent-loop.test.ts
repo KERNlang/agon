@@ -9,7 +9,7 @@ vi.mock('../../packages/core/src/generated/api/dispatch.js', () => ({
   apiStreamDispatchWithHistory: apiStreamDispatchWithHistoryMock,
 }));
 
-import { runApiAgentLoop } from '../../packages/core/src/generated/api/agent-loop.js';
+import { repairToolName, runApiAgentLoop } from '../../packages/core/src/generated/api/agent-loop.js';
 
 async function* streamChunks(chunks: string[]) {
   for (const chunk of chunks) yield chunk;
@@ -34,6 +34,33 @@ async function* failStream(stderr: string, exitCode = 1) {
   };
 }
 
+async function* partialTimeoutStream() {
+  yield 'partial before timeout';
+  return {
+    exitCode: 124,
+    stdout: 'partial before timeout',
+    stderr: 'API stream inter-chunk idle timeout',
+    durationMs: 1,
+    timedOut: true,
+  };
+}
+
+async function* partialThrowTimeoutStream() {
+  yield 'partial before thrown timeout';
+  throw new Error('Request timed out while reading stream');
+}
+
+async function* partialFailureStream() {
+  yield 'partial before transport failure';
+  return {
+    exitCode: 1,
+    stdout: 'partial before transport failure',
+    stderr: 'upstream stream closed',
+    durationMs: 1,
+    timedOut: false,
+  };
+}
+
 async function* reasoningOnlyStream() {
   return {
     exitCode: 0,
@@ -46,6 +73,23 @@ async function* reasoningOnlyStream() {
 }
 
 describe('runApiAgentLoop', () => {
+  it.each([
+    ['webfetch', 'WebFetch'],
+    ['WEBSEARCH', 'WebSearch'],
+    ['todowrite', 'TodoWrite'],
+    ['retrieveresult', 'RetrieveResult'],
+  ])('repairs newer tool name %s to %s', (input, expected) => {
+    expect(repairToolName(input, undefined)).toBe(expected);
+  });
+
+  it('returns the registry canonical name when a registered tool matches case-insensitively', () => {
+    const registry = {
+      get: (name: string) => name.toLowerCase() === 'customtool'
+        ? { definition: { name: 'CustomTool' } }
+        : undefined,
+    };
+    expect(repairToolName('CUSTOMTOOL', registry)).toBe('CustomTool');
+  });
   beforeEach(() => {
     apiStreamDispatchWithHistoryMock.mockReset();
   });
@@ -90,6 +134,84 @@ describe('runApiAgentLoop', () => {
       expect(toolEntry).toBeTruthy();
       expect(String(toolEntry?.content)).toContain('Tool loop failed before producing a result');
       expect(secondStepHistory.some((entry: any) => entry.role === 'tool' && entry.tool_call_id === toolCallId)).toBe(true);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('emits only parsed visible narration and a verified final response', async () => {
+    const cwd = join(tmpdir(), `agon-api-agent-loop-visible-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(cwd, { recursive: true });
+    const visible: Array<{ text: string; phase: string }> = [];
+
+    apiStreamDispatchWithHistoryMock
+      .mockImplementationOnce(() => streamChunks([
+        'I will inspect it. <tool name="Read">{"file_path":"missing.txt"}</tool>',
+      ]))
+      .mockImplementationOnce(() => streamChunks(['Verified final answer.']));
+
+    try {
+      const result = await runApiAgentLoop({
+        api: { baseUrl: 'https://example.invalid/v1', apiKeyEnv: 'AGON_TEST_API_KEY', model: 'test-model' },
+        prompt: 'Inspect and answer',
+        cwd,
+        timeout: 120,
+        onVisibleChunk: (text, phase) => visible.push({ text, phase }),
+      });
+
+      expect(result.response).toBe('Verified final answer.');
+      expect(visible).toEqual([
+        { text: 'I will inspect it.', phase: 'narration' },
+        { text: 'Verified final answer.', phase: 'final' },
+      ]);
+      expect(visible.map((entry) => entry.text).join('\n')).not.toContain('<tool');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('does not expose a truncated provider tool wrapper as final visible text', async () => {
+    const cwd = join(tmpdir(), `agon-api-agent-loop-truncated-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(cwd, { recursive: true });
+    const visible: Array<{ text: string; phase: string }> = [];
+    apiStreamDispatchWithHistoryMock.mockImplementationOnce(() => streamChunks([
+      'prefix <tool_ca',
+    ]));
+
+    try {
+      await runApiAgentLoop({
+        api: { baseUrl: 'https://example.invalid/v1', apiKeyEnv: 'AGON_TEST_API_KEY', model: 'test-model' },
+        prompt: 'Inspect and answer',
+        cwd,
+        timeout: 120,
+        onVisibleChunk: (text, phase) => visible.push({ text, phase }),
+      });
+
+      expect(visible).toEqual([]);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('does not emit a fake approval gate as a terminal visible response', async () => {
+    const cwd = join(tmpdir(), `agon-api-agent-loop-gate-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(cwd, { recursive: true });
+    const visible: Array<{ text: string; phase: string }> = [];
+
+    apiStreamDispatchWithHistoryMock
+      .mockImplementationOnce(() => streamChunks(['I need user approval before I can edit.']))
+      .mockImplementationOnce(() => streamChunks(['I continued autonomously.']));
+
+    try {
+      await runApiAgentLoop({
+        api: { baseUrl: 'https://example.invalid/v1', apiKeyEnv: 'AGON_TEST_API_KEY', model: 'test-model' },
+        prompt: 'Continue',
+        cwd,
+        timeout: 120,
+        onVisibleChunk: (text, phase) => visible.push({ text, phase }),
+      });
+
+      expect(visible).toEqual([{ text: 'I continued autonomously.', phase: 'final' }]);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -247,6 +369,131 @@ describe('runApiAgentLoop', () => {
     }
   });
 
+  it('still performs the first dispatch when the total timeout is 30 seconds or less', async () => {
+    const cwd = join(tmpdir(), `agon-api-agent-loop-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(cwd, { recursive: true });
+    apiStreamDispatchWithHistoryMock.mockImplementation(() => streamChunks(['quick answer']));
+
+    try {
+      const result = await runApiAgentLoop({
+        api: { baseUrl: 'https://example.invalid/v1', apiKeyEnv: 'AGON_TEST_API_KEY', model: 'test-model' },
+        prompt: 'Answer quickly',
+        cwd,
+        timeout: 15,
+      });
+
+      expect(result.response).toBe('quick answer');
+      expect(result.timedOut).toBeFalsy();
+      expect(apiStreamDispatchWithHistoryMock).toHaveBeenCalledTimes(1);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('retries a transient failure inside a short total timeout when backoff fits', async () => {
+    const cwd = join(tmpdir(), `agon-api-agent-loop-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(cwd, { recursive: true });
+    apiStreamDispatchWithHistoryMock
+      .mockImplementationOnce(() => failStream('429 rate limit exceeded', 1))
+      .mockImplementationOnce(() => streamChunks(['recovered quickly']));
+
+    try {
+      const result = await runApiAgentLoop({
+        api: { baseUrl: 'https://example.invalid/v1', apiKeyEnv: 'AGON_TEST_API_KEY', model: 'test-model' },
+        prompt: 'Retry quickly',
+        cwd,
+        timeout: 15,
+        retryBaseMs: 1,
+      });
+      expect(result.response).toBe('recovered quickly');
+      expect(apiStreamDispatchWithHistoryMock).toHaveBeenCalledTimes(2);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('preserves timeout state when a stream times out after partial output', async () => {
+    const cwd = join(tmpdir(), `agon-api-agent-loop-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(cwd, { recursive: true });
+    apiStreamDispatchWithHistoryMock.mockImplementation(() => partialTimeoutStream());
+
+    try {
+      const result = await runApiAgentLoop({
+        api: { baseUrl: 'https://example.invalid/v1', apiKeyEnv: 'AGON_TEST_API_KEY', model: 'test-model' },
+        prompt: 'Keep partial output',
+        cwd,
+        timeout: 120,
+      });
+      expect(result.response).toBe('partial before timeout');
+      expect(result.failed).toBe(true);
+      expect(result.timedOut).toBe(true);
+      expect(result.errorReason).toContain('idle timeout');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('preserves timeout state when a stream throws after partial output', async () => {
+    const cwd = join(tmpdir(), `agon-api-agent-loop-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(cwd, { recursive: true });
+    apiStreamDispatchWithHistoryMock.mockImplementation(() => partialThrowTimeoutStream());
+
+    try {
+      const result = await runApiAgentLoop({
+        api: { baseUrl: 'https://example.invalid/v1', apiKeyEnv: 'AGON_TEST_API_KEY', model: 'test-model' },
+        prompt: 'Keep thrown-timeout output',
+        cwd,
+        timeout: 120,
+      });
+      expect(result.response).toBe('partial before thrown timeout');
+      expect(result.failed).toBe(true);
+      expect(result.timedOut).toBe(true);
+      expect(result.engineFault).toBe(false);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('preserves partial output while marking a non-timeout transport failure as an engine fault', async () => {
+    const cwd = join(tmpdir(), `agon-api-agent-loop-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(cwd, { recursive: true });
+    apiStreamDispatchWithHistoryMock.mockImplementation(() => partialFailureStream());
+
+    try {
+      const result = await runApiAgentLoop({
+        api: { baseUrl: 'https://example.invalid/v1', apiKeyEnv: 'AGON_TEST_API_KEY', model: 'test-model' },
+        prompt: 'Keep partial output',
+        cwd,
+        timeout: 120,
+      });
+      expect(result.response).toBe('partial before transport failure');
+      expect(result.failed).toBe(true);
+      expect(result.timedOut).toBe(false);
+      expect(result.engineFault).toBe(true);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('treats a nonzero dispatch result with empty stderr as failure', async () => {
+    const cwd = join(tmpdir(), `agon-api-agent-loop-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(cwd, { recursive: true });
+    apiStreamDispatchWithHistoryMock.mockImplementation(() => failStream('', 1));
+
+    try {
+      const result = await runApiAgentLoop({
+        api: { baseUrl: 'https://example.invalid/v1', apiKeyEnv: 'AGON_TEST_API_KEY', model: 'test-model' },
+        prompt: 'Fail truthfully',
+        cwd,
+        timeout: 120,
+      });
+      expect(result.failed).toBe(true);
+      expect(result.errorReason).toContain('exited with code 1');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   it('does NOT retry a permanent failure (missing API key)', async () => {
     const cwd = join(tmpdir(), `agon-api-agent-loop-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     mkdirSync(cwd, { recursive: true });
@@ -274,6 +521,30 @@ describe('runApiAgentLoop', () => {
       expect(result.failed).toBe(true);
       expect(result.engineFault).toBe(true);
       expect(result.errorReason).toContain('Missing API key');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('marks a caller abort as cancelled instead of completed', async () => {
+    const cwd = join(tmpdir(), `agon-api-agent-loop-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(cwd, { recursive: true });
+    const controller = new AbortController();
+    controller.abort();
+    apiStreamDispatchWithHistoryMock.mockImplementation(() => failStream('aborted', 130));
+
+    try {
+      const result = await runApiAgentLoop({
+        api: { baseUrl: 'https://example.invalid/v1', apiKeyEnv: 'AGON_TEST_API_KEY', model: 'test-model' },
+        prompt: 'Stop now',
+        cwd,
+        timeout: 120,
+        signal: controller.signal,
+      });
+
+      expect(result.cancelled).toBe(true);
+      expect(result.failed).toBeFalsy();
+      expect(result.errorReason).toContain('aborted');
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -331,7 +602,40 @@ describe('runApiAgentLoop', () => {
       expect(result.response).toContain('tool loop limit');
       expect(result.response.length).toBeGreaterThan(0);
       expect(result.toolCalls).toBe(2);
+      expect(result.failed).toBe(true);
+      expect(result.harvestable).toBe(true);
+      expect(result.errorReason).toContain('tool loop limit');
     } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('preserves the last visible narration when the shared deadline expires between tool steps', async () => {
+    const cwd = join(tmpdir(), `agon-api-agent-loop-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(cwd, { recursive: true });
+    let now = 1_000;
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    apiStreamDispatchWithHistoryMock.mockImplementation(() => {
+      now += 1_100;
+      return streamChunks([
+        'I inspected the current state. <tool name="Read">{"file_path":"missing.txt"}</tool>',
+      ]);
+    });
+
+    try {
+      const result = await runApiAgentLoop({
+        api: { baseUrl: 'https://example.invalid/v1', apiKeyEnv: 'AGON_TEST_API_KEY', model: 'test-model' },
+        prompt: 'Keep working',
+        cwd,
+        timeout: 1,
+        maxSteps: 3,
+      });
+
+      expect(result.timedOut).toBe(true);
+      expect(result.response).toContain('I inspected the current state.');
+      expect(result.response).not.toBe('[Timeout — ran out of time]');
+    } finally {
+      nowSpy.mockRestore();
       rmSync(cwd, { recursive: true, force: true });
     }
   });

@@ -19,6 +19,8 @@
 // null (skip it), a malformed line yields an { type:'error' } request/response
 // rather than throwing, so one corrupt frame never wedges the connection.
 
+import from="../jobs/job-service.js" names="JobEvent,JobOutcome,JobSnapshot" types=true
+
 // ── Request messages (client → daemon) ──────────────────────────────────────
 
 union name=DaemonRequest discriminant=type export=true
@@ -27,6 +29,22 @@ union name=DaemonRequest discriminant=type export=true
     field name=text type=string
   variant name=ping
   variant name=shutdown
+  variant name=job-submit
+    field name=kind type=string
+    field name=payload type="Record<string,unknown>"
+    field name=clientId type=string optional=true
+  variant name=job-list
+  variant name=job-get
+    field name=jobId type=string
+  variant name=job-events
+    field name=jobId type=string
+    field name=afterSeq type=number optional=true
+    field name=limit type=number optional=true
+  variant name=job-result
+    field name=jobId type=string
+  variant name=job-cancel
+    field name=jobId type=string
+    field name=reason type=string optional=true
   variant name=error
     field name=message type=string
 
@@ -39,8 +57,31 @@ union name=DaemonResponse discriminant=type export=true
   variant name=pong
     field name=sessionId type=string
     field name=uptime type=number
+    field name=capabilities type="string[]" optional=true
   variant name=busy
   variant name=bye
+  variant name=job-accepted
+    field name=job type=JobSnapshot
+  variant name=job-list
+    field name=jobs type="JobSnapshot[]"
+  variant name=job-snapshot
+    field name=job type=JobSnapshot
+  variant name=job-events
+    field name=jobId type=string
+    field name=events type="JobEvent[]"
+    field name=nextSeq type=number
+    field name=earliestSeq type=number
+    field name=terminal type=boolean
+    field name=truncated type=boolean
+  variant name=job-result
+    field name=job type=JobSnapshot
+    field name=ready type=boolean
+    field name=outcome type=JobOutcome optional=true
+  variant name=job-cancelled
+    field name=job type=JobSnapshot
+    field name=status type="'accepted'|'already-cancelled'|'already-terminal'"
+  variant name=job-not-found
+    field name=jobId type=string
   variant name=error
     field name=message type=string
 
@@ -83,6 +124,66 @@ fn name=parseDaemonRequest params="line:string" returns="DaemonRequest | null" e
         return { type: 'ping' };
       case 'shutdown':
         return { type: 'shutdown' };
+      case 'job-submit': {
+        const raw = parsed as { kind?: unknown; payload?: unknown; clientId?: unknown };
+        const kind = typeof raw.kind === 'string' ? raw.kind.trim() : '';
+        if (!kind) return { type: 'error', message: 'job-submit kind must be a non-empty string' };
+        if (!raw.payload || typeof raw.payload !== 'object' || Array.isArray(raw.payload)) {
+          return { type: 'error', message: 'job-submit payload must be an object' };
+        }
+        const request: DaemonRequest = { type: 'job-submit', kind, payload: raw.payload as Record<string, unknown> };
+        if (raw.clientId !== undefined) {
+          if (typeof raw.clientId !== 'string' || !raw.clientId.trim()) {
+            return { type: 'error', message: 'job-submit clientId must be a non-empty string' };
+          }
+          request.clientId = raw.clientId.trim();
+        }
+        return request;
+      }
+      case 'job-list':
+        return { type: 'job-list' };
+      case 'job-get':
+      case 'job-result': {
+        const jobId = typeof (parsed as { jobId?: unknown }).jobId === 'string'
+          ? (parsed as { jobId: string }).jobId.trim()
+          : '';
+        if (!jobId) return { type: 'error', message: `${type} jobId must be a non-empty string` };
+        return type === 'job-get' ? { type: 'job-get', jobId } : { type: 'job-result', jobId };
+      }
+      case 'job-events': {
+        const raw = parsed as { jobId?: unknown; afterSeq?: unknown; limit?: unknown };
+        const jobId = typeof raw.jobId === 'string' ? raw.jobId.trim() : '';
+        if (!jobId) return { type: 'error', message: 'job-events jobId must be a non-empty string' };
+        const request: DaemonRequest = { type: 'job-events', jobId };
+        if (raw.afterSeq !== undefined) {
+          const afterSeq = Number(raw.afterSeq);
+          if (!Number.isInteger(afterSeq) || afterSeq < 0) {
+            return { type: 'error', message: 'job-events afterSeq must be a non-negative integer' };
+          }
+          request.afterSeq = afterSeq;
+        }
+        if (raw.limit !== undefined) {
+          const limit = Number(raw.limit);
+          if (!Number.isInteger(limit) || limit < 1) {
+            return { type: 'error', message: 'job-events limit must be a positive integer' };
+          }
+          request.limit = limit;
+        }
+        return request;
+      }
+      case 'job-cancel': {
+        const raw = parsed as { jobId?: unknown; reason?: unknown };
+        const jobId = typeof raw.jobId === 'string' ? raw.jobId.trim() : '';
+        if (!jobId) return { type: 'error', message: 'job-cancel jobId must be a non-empty string' };
+        const request: DaemonRequest = { type: 'job-cancel', jobId };
+        if (raw.reason !== undefined) {
+          if (typeof raw.reason !== 'string' || !raw.reason.trim()) {
+            return { type: 'error', message: 'job-cancel reason must be a non-empty string' };
+          }
+          request.reason = raw.reason.trim();
+        }
+        return request;
+      }
       default:
         return { type: 'error', message: `unknown request type: ${type || '(none)'}` };
     }
@@ -110,12 +211,84 @@ fn name=parseDaemonResponse params="line:string" returns="DaemonResponse | null"
       case 'pong': {
         const sessionId = String((parsed as { sessionId?: unknown }).sessionId ?? '');
         const uptime = Number((parsed as { uptime?: unknown }).uptime);
-        return { type: 'pong', sessionId, uptime: Number.isFinite(uptime) ? uptime : 0 };
+        const response: DaemonResponse = { type: 'pong', sessionId, uptime: Number.isFinite(uptime) ? uptime : 0 };
+        const capabilities = (parsed as { capabilities?: unknown }).capabilities;
+        if (Array.isArray(capabilities) && capabilities.every((entry) => typeof entry === 'string')) {
+          response.capabilities = capabilities;
+        }
+        return response;
       }
       case 'busy':
         return { type: 'busy' };
       case 'bye':
         return { type: 'bye' };
+      case 'job-accepted':
+      case 'job-snapshot': {
+        const job = (parsed as { job?: unknown }).job;
+        if (!job || typeof job !== 'object' || Array.isArray(job)) {
+          return { type: 'error', message: `${type} job must be an object` };
+        }
+        return type === 'job-accepted'
+          ? { type: 'job-accepted', job: job as JobSnapshot }
+          : { type: 'job-snapshot', job: job as JobSnapshot };
+      }
+      case 'job-list': {
+        const jobs = (parsed as { jobs?: unknown }).jobs;
+        if (!Array.isArray(jobs) || jobs.some((job) => !job || typeof job !== 'object' || Array.isArray(job))) {
+          return { type: 'error', message: 'job-list jobs must be an array of objects' };
+        }
+        return { type: 'job-list', jobs: jobs as JobSnapshot[] };
+      }
+      case 'job-events': {
+        const raw = parsed as {
+          jobId?: unknown; events?: unknown; nextSeq?: unknown; earliestSeq?: unknown;
+          terminal?: unknown; truncated?: unknown;
+        };
+        if (typeof raw.jobId !== 'string' || !raw.jobId.trim() || !Array.isArray(raw.events)) {
+          return { type: 'error', message: 'invalid job-events response' };
+        }
+        const nextSeq = Number(raw.nextSeq);
+        const earliestSeq = Number(raw.earliestSeq);
+        if (!Number.isInteger(nextSeq) || nextSeq < 0 || !Number.isInteger(earliestSeq) || earliestSeq < 0
+          || typeof raw.terminal !== 'boolean' || typeof raw.truncated !== 'boolean'
+          || raw.events.some((event) => !event || typeof event !== 'object' || Array.isArray(event))) {
+          return { type: 'error', message: 'invalid job-events response' };
+        }
+        return {
+          type: 'job-events', jobId: raw.jobId.trim(), events: raw.events as JobEvent[],
+          nextSeq, earliestSeq, terminal: raw.terminal, truncated: raw.truncated,
+        };
+      }
+      case 'job-result': {
+        const raw = parsed as { job?: unknown; ready?: unknown; outcome?: unknown };
+        if (!raw.job || typeof raw.job !== 'object' || Array.isArray(raw.job) || typeof raw.ready !== 'boolean') {
+          return { type: 'error', message: 'invalid job-result response' };
+        }
+        const response: DaemonResponse = { type: 'job-result', job: raw.job as JobSnapshot, ready: raw.ready };
+        if (raw.outcome !== undefined) {
+          if (!raw.outcome || typeof raw.outcome !== 'object' || Array.isArray(raw.outcome)) {
+            return { type: 'error', message: 'job-result outcome must be an object' };
+          }
+          response.outcome = raw.outcome as JobOutcome;
+        }
+        return response;
+      }
+      case 'job-cancelled': {
+        const raw = parsed as { job?: unknown; status?: unknown };
+        if (!raw.job || typeof raw.job !== 'object' || Array.isArray(raw.job)
+          || (raw.status !== 'accepted' && raw.status !== 'already-cancelled' && raw.status !== 'already-terminal')) {
+          return { type: 'error', message: 'invalid job-cancelled response' };
+        }
+        return { type: 'job-cancelled', job: raw.job as JobSnapshot, status: raw.status };
+      }
+      case 'job-not-found': {
+        const jobId = typeof (parsed as { jobId?: unknown }).jobId === 'string'
+          ? (parsed as { jobId: string }).jobId.trim()
+          : '';
+        return jobId
+          ? { type: 'job-not-found', jobId }
+          : { type: 'error', message: 'job-not-found jobId must be a non-empty string' };
+      }
       case 'error': {
         const message = String((parsed as { message?: unknown }).message ?? 'error');
         return { type: 'error', message };

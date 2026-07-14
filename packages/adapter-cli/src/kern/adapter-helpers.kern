@@ -1,5 +1,5 @@
 import from="@kernlang/agon-core" names="EngineDefinition,EngineMode,EngineModeConfig,ImageAttachment,EngineIsolationPlan" types=true
-import from="@kernlang/agon-core" names="EngineNotFoundError,loadConfig,engineHealth,classifyDispatchFailure,resolveIsolationMode,planEngineIsolation,agonPath,claudeBrainUsesPty"
+import from="@kernlang/agon-core" names="EngineNotFoundError,loadConfig,engineHealth,classifyDispatchFailure,resolveIsolationMode,planEngineIsolation,agonPath,claudeBrainUsesPty,readOnlyDiff,diffLineCount"
 import from="node:fs" names="statSync,mkdirSync,existsSync,copyFileSync,chmodSync,unlinkSync,readFileSync,mkdtempSync,rmSync"
 import from="node:path" names="join,dirname,basename"
 import from="node:os" names="homedir,tmpdir"
@@ -14,6 +14,25 @@ fn name=recordDispatchHealth params="engineId:string, result:{exitCode?:number,s
     let name=status value="classifyDispatchFailure({ stderr: result.stderr, exitCode, timedOut: result.timedOut })"
     if cond="status === 'auth-failed' || status === 'unreachable' || status === 'binary-missing'"
       do value="engineHealth.mark(engineId, status, (result.stderr || '').split('\\n')[0])"
+
+fn name=captureNewAgentDiff params="baselineDiff:string,cwd:string" returns="{diff:string,diffLines:number,filesChanged:number}" export=true
+  doc "Capture only files whose diff headers were absent from the pre-dispatch baseline. Shared by sync, PTY, companion, API, and streaming agent paths."
+  handler <<<
+    const postDiff = readOnlyDiff(cwd);
+    const baselineFiles = new Set(baselineDiff.split('\n').filter((line: string) => line.startsWith('diff --git')));
+    const newDiffLines: string[] = [];
+    let inNewFile = false;
+    for (const line of postDiff.split('\n')) {
+      if (line.startsWith('diff --git')) inNewFile = !baselineFiles.has(line);
+      if (inNewFile) newDiffLines.push(line);
+    }
+    const diff = newDiffLines.join('\n');
+    return {
+      diff,
+      diffLines: diffLineCount(diff),
+      filesChanged: diff ? newDiffLines.filter((line: string) => line.startsWith('diff --git')).length : 0,
+    };
+  >>>
 
 fn name=stampDispatchDepth params="env?:Record<string,string>" returns="Record<string,string>" export=false
   doc "Merge the recursion-guard depth marker onto a dispatch env. Applied at EVERY computeEngineIsolation return (inherit / clean-dir fallback / isolate) so a dispatched engine is always marked. The spawn merges the result over process.env, so inherit mode still inherits the full environment — just plus AGON_DISPATCH_DEPTH. A child that tries to run agon sees depth>0 and the entrypoint guard refuses (no process fan-out)."

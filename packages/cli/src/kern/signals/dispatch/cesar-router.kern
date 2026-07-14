@@ -499,19 +499,21 @@ You still own the overall task. Integrate the forged slice with the rest of the 
           case 'agent':
             cb.dispatch({ type: 'info', message: `Cesar → agent${hardened ? ' (hardened)' : ''}` });
             // Cesar called the Agent tool with team:false (or omitted). Solo agent.
-            cb.runAsJob('agent', label, () => runAgentJobWithAutoResume(taskInput, cb, () => runAgentMode(taskInput, cb.dispatch, cb.ctx, {
+            cb.runAsJob('agent', label, (signal) => runAgentJobWithAutoResume(taskInput, cb, () => runAgentMode(taskInput, cb.dispatch, cb.ctx, {
               maxTurns: result.maxTurns as number | undefined,
               systemPrompt: undefined,
+              parentSignal: signal,
             })));
             return true;
           case 'team-agent':
             cb.dispatch({ type: 'info', message: `Cesar → team-agent${hardened ? ' (hardened)' : ''}` });
             // Cesar called the Agent tool with team:true. Spawn AgentTeam with the
             // engines list (or auto-pick) and the taskKind discriminator.
-            cb.runAsJob('team-agent', label, () => runAgentJobWithAutoResume(taskInput, cb, () => runAgentTeam(taskInput, cb.dispatch, cb.ctx, {
+            cb.runAsJob('team-agent', label, (signal) => runAgentJobWithAutoResume(taskInput, cb, () => runAgentTeam(taskInput, cb.dispatch, cb.ctx, {
               engines: result.engines as string[] | undefined,
               taskKind: result.taskKind as 'edit' | 'investigate' | undefined,
               maxTurns: result.maxTurns as number | undefined,
+              parentSignal: signal,
             })));
             return true;
           case 'delegate': {

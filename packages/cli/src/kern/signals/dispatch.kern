@@ -8,7 +8,7 @@ import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 interface name=DispatchCallbacks
   field name=dispatch type=Dispatch
   field name=ctx type=HandlerContext
-  field name=runAsJob type="(type:string, label:string, fn:()=>Promise<void>) => void"
+  field name=runAsJob type="(type:string, label:string, fn:(signal:AbortSignal)=>Promise<void>) => void"
   field name=setMode type="(mode:'chat'|'campfire'|'brainstorm'|'tribunal') => void"
   field name=setPendingImages type="(fn:(prev:ImageAttachment[])=>ImageAttachment[]) => void"
   field name=setSessionEngines type="(engines:string[]|null) => void"

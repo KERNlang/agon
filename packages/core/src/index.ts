@@ -142,6 +142,7 @@ export type {
 } from './context-parts.js';
 export { runApiAgentLoop } from './generated/api/agent-loop.js';
 export type { ApiAgentOptions, ApiAgentResult } from './generated/api/agent-loop.js';
+export { safeAgentVisibleText } from './generated/api/agent-visible.js';
 // ── Engine dispatch isolation ──
 export { resolveIsolationMode, planEngineIsolation, isValidIsolationMode, ISOLATION_MODES } from './generated/signals/isolation.js';
 export type { EngineIsolationPlan } from './generated/signals/isolation.js';
@@ -204,6 +205,9 @@ export {
   parseDaemonRequest, parseDaemonResponse, splitFrames,
 } from './generated/sessions/daemon-protocol.js';
 export type { DaemonRequest, DaemonResponse } from './generated/sessions/daemon-protocol.js';
+// ── JobService — cancellable autonomous execution + bounded replay ──
+export { JobService } from './generated/jobs/job-service.js';
+export type { JobState, JobSnapshot, JobEvent, JobEventPage, JobOutcome, JobTaskContext, JobExecutor, JobServiceOptions } from './generated/jobs/job-service.js';
 // ── BrainClient — daemon↔brain boundary for the Agon Everywhere bridge (client/server split M4) ──
 export { canonicalCapabilityInputDigest, conservativeControlCapabilities } from './generated/sessions/brain-client.js';
 export type {

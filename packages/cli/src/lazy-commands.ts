@@ -27,9 +27,9 @@ import type { CommandDef, CommandMeta, SubCommandsDef } from 'citty';
 // set `subCommands` to a function when the real command genuinely defines
 // nested subCommands — otherwise that truthy check passes, the resolved
 // value comes back `undefined`, and citty's `Object.entries(undefined)`
-// throws. Only `models`, `ext`, and `browser-host` currently nest
+// throws. `models`, `ratings`, `ext`, `browser-host`, and `job` currently nest
 // subCommands (confirmed against the generated command sources), so only
-// those three get a lazy `subCommands` field; every other entry omits it
+// those parent commands get a lazy `subCommands` field; every other entry omits it
 // entirely, exactly like the real leaf commands do.
 
 // A command module may export other helpers alongside its CommandDef (e.g.
@@ -178,6 +178,10 @@ const call = lazyCommand(() => import('./commands/call.js'), 'callCommand', {
   name: 'call',
   description: 'Live bridge for external CLIs to run Agon modes',
 });
+const job = lazyCommand(() => import('./commands/job.js'), 'jobCommand', {
+  name: 'job',
+  description: 'Submit, observe, and cancel daemon-owned autonomous jobs',
+}, { hasSubCommands: true });
 const agentGuide = lazyCommand(() => import('./commands/agent-guide.js'), 'agentGuideCommand', {
   name: 'agent-guide',
   description: 'Print how to call agon — a compact overview for any external engine (Codex, Antigravity, Claude, OpenCode)',
@@ -288,6 +292,7 @@ export const lazySubCommands: SubCommandsDef = {
   config,
   review,
   call,
+  job,
   'agent-guide': agentGuide,
   'install-agent-prompts': installAgentPrompts,
   goal,

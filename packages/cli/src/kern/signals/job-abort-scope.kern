@@ -1,0 +1,46 @@
+// ── Per-job abort scope ─────────────────────────────────────────────
+// Background handlers already publish their current AbortController through
+// HandlerContext.setActiveAbort(). AsyncLocalStorage lets the shared TUI setter
+// detect which job owns that call, bridge only that job's signal, and avoid the
+// old global-controller race when several background jobs overlap.
+
+import from="node:async_hooks" names="AsyncLocalStorage"
+
+interface name=JobAbortStore
+  field name=signal type=AbortSignal
+  field name=child type="AbortController|null"
+  field name=detach type="(()=>void)|null"
+
+const name=jobAbortStorage type="AsyncLocalStorage<JobAbortStore>" value={{ new AsyncLocalStorage<JobAbortStore>() }}
+
+fn name=runInJobAbortScope params="signal:AbortSignal,fn:()=>Promise<void>" returns="Promise<void>" async=true export=true
+  handler lang="typescript" reason="Node AsyncLocalStorage boundary for concurrent background jobs" <<<
+    const store: JobAbortStore = { signal, child: null, detach: null };
+    try {
+      await jobAbortStorage.run(store, fn);
+    } finally {
+      store.detach?.();
+      store.detach = null;
+      store.child = null;
+    }
+  >>>
+
+fn name=trackJobAbortController params="child:AbortController|null" returns=boolean export=true
+  handler lang="typescript" reason="AbortSignal listener bridge scoped by AsyncLocalStorage" <<<
+    const store = jobAbortStorage.getStore();
+    if (!store) return false;
+    store.detach?.();
+    store.detach = null;
+    store.child = child;
+    if (!child) return true;
+    const forward = () => {
+      if (!child.signal.aborted) child.abort(store.signal.reason);
+    };
+    if (store.signal.aborted) {
+      forward();
+    } else {
+      store.signal.addEventListener('abort', forward, { once: true });
+      store.detach = () => store.signal.removeEventListener('abort', forward);
+    }
+    return true;
+  >>>

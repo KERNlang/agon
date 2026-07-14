@@ -107,8 +107,25 @@ export class Speculator {
 
     // Fan out: run all members in parallel.
     const memberPromises = opts.members.map(async (member) => {
-      const memberCwd = worktreesByEngine[member.engineId] ?? cwd;
-      if (opts.onMemberStart) opts.onMemberStart(member.engineId);
+      // Isolation is fail-closed: a failed worktree must never silently route
+      // an engine into the user's shared working tree. Preserve a structured
+      // score-zero candidate so callers can diagnose the skipped member.
+      if (isolate && !worktreesByEngine[member.engineId]) {
+        const vfs = new VirtualFS(this.snapshot!, member.engineId, this.runId);
+        const reason = `isolated worktree unavailable for ${member.engineId}`;
+        const pkg = vfs.toEffectPackage(`Error: ${reason}`, 0, 0);
+        scores[member.engineId] = 0;
+        if (opts.onMemberComplete) {
+          try { opts.onMemberComplete(pkg, 0); }
+          catch (err: any) { console.warn(`[agon] speculator: onMemberComplete failed for ${member.engineId}: ${err?.message ?? err}`); }
+        }
+        return { pkg, vfs, score: 0, memberCwd: cwd, eligible: false };
+      }
+      const memberCwd = isolate ? worktreesByEngine[member.engineId] : cwd;
+      if (opts.onMemberStart) {
+        try { opts.onMemberStart(member.engineId); }
+        catch (err: any) { console.warn(`[agon] speculator: onMemberStart failed for ${member.engineId}: ${err?.message ?? err}`); }
+      }
 
       const vfs = new VirtualFS(this.snapshot!, member.engineId, this.runId);
       if (opts.onMemberPreview) {
@@ -123,7 +140,8 @@ export class Speculator {
           previewDirty.delete(member.engineId);
           const pkg = vfs.toEffectPackage('', 0, 0);
           const preview = effectPackageDiff(pkg);
-          opts.onMemberPreview!(pkg, preview, path);
+          try { opts.onMemberPreview!(pkg, preview, path); }
+          catch (err: any) { console.warn(`[agon] speculator: onMemberPreview failed for ${member.engineId}: ${err?.message ?? err}`); }
         });
       }
       const startedAt = Date.now();
@@ -155,8 +173,10 @@ export class Speculator {
           virtualFs: vfs,
         });
       } catch (err: any) {
-        // Failed engine contributes an empty package — will score 0 and lose.
-        result = { response: '', toolCalls: 0, steps: 0 };
+        // Failed members retain any partial overlay in candidates for
+        // diagnostics, but score 0 and are ineligible for selection/apply.
+        const cancelled = !!opts.signal?.aborted;
+        result = { response: '', toolCalls: 0, steps: 0, failed: !cancelled, cancelled, errorReason: err?.message ?? String(err) };
       }
 
       // Read/Edit/Write tool calls have mutated vfs.overlay; Bash changes
@@ -166,22 +186,30 @@ export class Speculator {
         result.toolCalls,
         Math.ceil(result.response.length / 4), // estimated tokens
       );
-      const score = scoreEffectPackage(pkg, opts.taskKeywords);
+      const failed = !!(result.failed || result.cancelled || result.timedOut);
+      // A tool-loop safety ceiling is still a truthful failed terminal result,
+      // but its explicitly harvestable overlay may be judged like Forge judges
+      // a timed-out worktree. All other failures/cancellations stay ineligible.
+      const eligible = !failed || (!!result.harvestable && pkg.effects.length > 0);
+      const score = eligible ? scoreEffectPackage(pkg, opts.taskKeywords) : 0;
       scores[member.engineId] = score;
-      candidates.push(pkg);
 
       if (opts.onMemberPreview && pkg.effects.length > 0 && previewDirty.has(member.engineId)) {
         const path = previewDirty.get(member.engineId) ?? memberCwd;
         previewDirty.delete(member.engineId);
         previewTimes.set(member.engineId, Date.now());
-        opts.onMemberPreview(pkg, effectPackageDiff(pkg), path);
+        try { opts.onMemberPreview(pkg, effectPackageDiff(pkg), path); }
+        catch (err: any) { console.warn(`[agon] speculator: onMemberPreview failed for ${member.engineId}: ${err?.message ?? err}`); }
       }
-      if (opts.onMemberComplete) opts.onMemberComplete(pkg, score);
-      return { pkg, vfs, score, memberCwd };
+      if (opts.onMemberComplete) {
+        try { opts.onMemberComplete(pkg, score); }
+        catch (err: any) { console.warn(`[agon] speculator: onMemberComplete failed for ${member.engineId}: ${err?.message ?? err}`); }
+      }
+      return { pkg, vfs, score, memberCwd, eligible };
     });
 
     // Wait for all members, collect successful results as plain objects.
-    interface MemberOutcome { pkg: EffectPackage; vfs: VirtualFS; score: number; memberCwd: string; }
+    interface MemberOutcome { pkg: EffectPackage; vfs: VirtualFS; score: number; memberCwd: string; eligible: boolean; }
     const outcomes: MemberOutcome[] = [];
     const settled = await Promise.allSettled(memberPromises);
     for (const r of settled) {
@@ -189,11 +217,15 @@ export class Speculator {
         outcomes.push(r.value as MemberOutcome);
       }
     }
+    // Promise.allSettled preserves input order; derive the public candidates
+    // list here instead of racing concurrent candidates.push side effects.
+    candidates.push(...outcomes.map((outcome) => outcome.pkg));
 
     // Select winner: highest score.
     let winnerOutcome: MemberOutcome | null = null;
     let winnerScore = -1;
     for (const s of outcomes) {
+      if (!s.eligible) continue;
       if (s.score > winnerScore) {
         winnerOutcome = s;
         winnerScore = s.score;
@@ -262,7 +294,7 @@ export class Speculator {
 /**
  * Create a fresh Speculator instance. One per agent invocation.
  */
-// @kern-source: speculator:268
+// @kern-source: speculator:300
 export function createSpeculator(): Speculator {
   return new Speculator();
 }

@@ -46,7 +46,9 @@ import { createWebSearchTool } from '../tools/tool-web-search.js';
 
 import type { ToolCacheEntry } from '../models/context-parts.js';
 
-// @kern-source: agent-loop:30
+import { safeAgentVisibleText } from './agent-visible.js';
+
+// @kern-source: agent-loop:31
 export interface ApiAgentOptions {
   api: ApiConfig;
   prompt: string;
@@ -56,6 +58,7 @@ export interface ApiAgentOptions {
   signal?: AbortSignal;
   maxSteps?: number;
   onChunk?: (text:string)=>void;
+  onVisibleChunk?: (text:string,phase:'narration'|'final')=>void;
   onToolCall?: (name:string,args:Record<string,unknown>)=>void;
   onTodos?: (todos: Array<{id:string,text:string,state:string,kind?:string,note?:string}>)=>void;
   heavyToolSemaphore?: Semaphore;
@@ -71,7 +74,7 @@ export interface ApiAgentOptions {
   retryBaseMs?: number;
 }
 
-// @kern-source: agent-loop:53
+// @kern-source: agent-loop:56
 export interface ApiAgentResult {
   response: string;
   toolCalls: number;
@@ -79,12 +82,15 @@ export interface ApiAgentResult {
   failed?: boolean;
   errorReason?: string;
   engineFault?: boolean;
+  cancelled?: boolean;
+  timedOut?: boolean;
+  harvestable?: boolean;
 }
 
 /**
  * Attempt to repair malformed JSON tool arguments. Handles common LLM mistakes: markdown fencing, trailing commas, single quotes, unquoted keys.
  */
-// @kern-source: agent-loop:61
+// @kern-source: agent-loop:67
 export function repairToolArgs(raw: string): Record<string,unknown>|null {
   let cleaned = raw.trim();
 
@@ -115,17 +121,19 @@ export function repairToolArgs(raw: string): Record<string,unknown>|null {
 /**
  * Auto-correct tool name case mismatches. Maps 'read' → 'Read', 'GREP' → 'Grep', etc.
  */
-// @kern-source: agent-loop:90
-export function repairToolName(name: string, registry: any): string {
-  // Check if exact match exists
-  if (registry.has?.(name) || registry.get?.(name)) return name;
+// @kern-source: agent-loop:96
+export function repairToolName(name: string, registry?: any): string {
+  // Prefer the registry's canonical spelling when one is available. ToolRegistry.get
+  // already resolves case-insensitively, so custom registered tools stay authoritative.
+  const registered = registry?.get?.(name);
+  if (registered?.definition?.name) return registered.definition.name;
 
   // Try common case variants
   const lower = name.toLowerCase();
   const capitalized = lower.charAt(0).toUpperCase() + lower.slice(1);
 
   // Known tool names in Agon
-  const knownTools = ['Read', 'Edit', 'MultiEdit', 'Write', 'Bash', 'Grep', 'Glob', 'Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Review', 'Delegate', 'Pipeline', 'ReportConfidence', 'ProposePlan', 'ExitPlanMode'];
+  const knownTools = ['Read', 'Edit', 'MultiEdit', 'Write', 'Bash', 'Grep', 'Glob', 'WebFetch', 'WebSearch', 'TodoWrite', 'RetrieveResult', 'Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Review', 'Delegate', 'Pipeline', 'ReportConfidence', 'ProposePlan', 'ExitPlanMode'];
   const match = knownTools.find((t: string) => t.toLowerCase() === lower);
   if (match) return match;
 
@@ -136,7 +144,7 @@ export function repairToolName(name: string, registry: any): string {
 /**
  * True when an API dispatch failure looks transient (worth a backoff+retry) rather than permanent. Transient: request timeout (exitCode 124), rate limit (429), upstream 5xx, stream errors, connection resets / DNS hiccups, overloaded. Permanent (never retried): missing/invalid API key, 401/403 auth, 400 bad request. Aborts (exitCode 130 / signal) are handled by the caller, not here.
  */
-// @kern-source: agent-loop:109
+// @kern-source: agent-loop:117
 export function isTransientDispatchFailure(stderr: string, exitCode?: number): boolean {
   const s = String(stderr ?? '').toLowerCase();
   if (exitCode === 124) return true; // request timed out
@@ -148,7 +156,7 @@ export function isTransientDispatchFailure(stderr: string, exitCode?: number): b
 /**
  * Run an API engine with full tool loop. Returns final response after all tool calls resolve.
  */
-// @kern-source: agent-loop:119
+// @kern-source: agent-loop:127
 export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentResult> {
   // Run-scoped cache ID: prevents concurrent forge runs from colliding
   const runCacheId = `${opts.api.model || 'api-agent'}-${randomUUID().slice(0, 8)}`;
@@ -261,15 +269,21 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
     const retryBaseMs = opts.retryBaseMs ?? 500;
     let dispatchAttempt = 0;
     let dispatchSettled = false;
+    let lastTransientTimedOut = false;
     while (!dispatchSettled) {
       // Per-step timeout, RECOMPUTED every attempt so backoff sleeps + prior
       // failed attempts can never hand a stale (too-large) timeout to dispatch
       // or let a retry overrun totalDeadline.
-      const remaining = Math.max(30, Math.floor((totalDeadline - Date.now()) / 1000));
-      if (remaining <= 30) {
-        // Less than 30s left — bail out with what we have.
-        return { response: finalResponse || '[Timeout — ran out of time]', toolCalls: totalToolCalls, steps: step };
+      const remainingRaw = Math.floor((totalDeadline - Date.now()) / 1000);
+      if (remainingRaw <= 0) {
+        // The shared deadline is exhausted — bail out with what we have.
+        const reason = 'API agent deadline exceeded';
+        return { response: finalResponse || lastVisibleText || '[Timeout — ran out of time]', toolCalls: totalToolCalls, steps: step, failed: true, timedOut: true, errorReason: reason };
       }
+      // Short, explicitly configured turns must still get a dispatch. The
+      // previous 30s floor paired with an <=30 bailout skipped every turn
+      // whose total timeout was 30 seconds or less.
+      const remaining = Math.max(1, remainingRaw);
 
       fullResponse = '';
       dispatchResult = null;
@@ -281,19 +295,22 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
           const { value, done } = await gen.next();
           if (done) {
             dispatchResult = value as any;
-            if (dispatchResult?.stderr) {
+            if (dispatchResult?.stderr || (Number(dispatchResult?.exitCode ?? 0) !== 0)) {
+              const dispatchError = dispatchResult.stderr || `API dispatch exited with code ${dispatchResult.exitCode}`;
               // Caller abort → stop now (a cancel is not a failure to retry).
               if (opts.signal?.aborted || dispatchResult.exitCode === 130) {
-                return { response: `Error: ${dispatchResult.stderr}`, toolCalls: totalToolCalls, steps: step };
+                return { response: `Error: ${dispatchError}`, toolCalls: totalToolCalls, steps: step, cancelled: true, errorReason: dispatchError || 'aborted by caller' };
               }
               // Only retry when nothing was streamed yet (a clean re-send).
-              if (!fullResponse && isTransientDispatchFailure(dispatchResult.stderr, dispatchResult.exitCode)) {
-                transientReason = dispatchResult.stderr;
+              if (!fullResponse && isTransientDispatchFailure(dispatchError, dispatchResult.exitCode)) {
+                transientReason = dispatchError;
+                lastTransientTimedOut = dispatchResult.timedOut === true || dispatchResult.exitCode === 124;
               } else {
                 // Permanent dispatch failure (e.g. Missing API key, 401/403,
                 // 400). Flag it so the session classifies this as an error
                 // turn and quarantines the engine — NOT a 0-tool 'completed'.
-                return { response: `Error: ${dispatchResult.stderr}`, toolCalls: totalToolCalls, steps: step, failed: true, engineFault: true, errorReason: dispatchResult.stderr };
+                const timedOut = dispatchResult.timedOut === true || dispatchResult.exitCode === 124;
+                return { response: fullResponse || `Error: ${dispatchError}`, toolCalls: totalToolCalls, steps: step, failed: true, engineFault: !timedOut, timedOut, errorReason: dispatchError };
               }
             }
             break;
@@ -303,14 +320,17 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
         }
       } catch (err: any) {
         const msg = err?.message ?? String(err);
-        if (!fullResponse && !opts.signal?.aborted && isTransientDispatchFailure(msg, undefined)) {
+        const thrownTimedOut = /timed out|timeout|etimedout/i.test(msg);
+        if (opts.signal?.aborted) {
+          return { response: fullResponse || `Error: ${msg}`, toolCalls: totalToolCalls, steps: step, cancelled: true, errorReason: msg || 'aborted by caller' };
+        } else if (!fullResponse && isTransientDispatchFailure(msg, undefined)) {
           transientReason = msg;
+          lastTransientTimedOut = thrownTimedOut;
         } else {
-          // Partial output is preserved as a normal result; a clean stream
-          // fault with no output is flagged as an engine fault (RC2).
-          return fullResponse
-            ? { response: fullResponse, toolCalls: totalToolCalls, steps: step }
-            : { response: `Error: ${msg}`, toolCalls: totalToolCalls, steps: step, failed: true, engineFault: true, errorReason: msg };
+          // Preserve partial output, but never convert a broken stream into a
+          // successful turn. Both clean and partial stream faults are engine
+          // failures; the adapter keeps the partial stdout for diagnostics.
+          return { response: fullResponse || `Error: ${msg}`, toolCalls: totalToolCalls, steps: step, failed: true, engineFault: !thrownTimedOut, timedOut: thrownTimedOut, errorReason: msg };
         }
       }
 
@@ -319,17 +339,19 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
       // Transient — back off and retry, if attempts + time budget allow.
       dispatchAttempt++;
       const backoffMs = Math.min(4000, retryBaseMs * 2 ** (dispatchAttempt - 1));
-      if (dispatchAttempt > maxDispatchRetries || opts.signal?.aborted || (totalDeadline - Date.now()) <= backoffMs + 30000) {
+      if (dispatchAttempt > maxDispatchRetries || opts.signal?.aborted || (totalDeadline - Date.now()) <= backoffMs) {
         // Transient retries exhausted. Flag as an engine fault unless the
         // stop was a caller abort (a cancel is not a failure to quarantine).
         const aborted = !!opts.signal?.aborted;
         const reason = `API engine failed after ${dispatchAttempt} attempt(s) (${transientReason})`;
-        return { response: `Error: ${reason}`, toolCalls: totalToolCalls, steps: step, failed: !aborted, engineFault: !aborted, errorReason: reason };
+        return aborted
+          ? { response: `Error: ${reason}`, toolCalls: totalToolCalls, steps: step, cancelled: true, errorReason: reason }
+          : { response: `Error: ${reason}`, toolCalls: totalToolCalls, steps: step, failed: true, engineFault: true, timedOut: lastTransientTimedOut || Date.now() >= totalDeadline, errorReason: reason };
       }
       console.warn(`[agon] api-agent-loop: transient failure (${transientReason}); reconnecting attempt ${dispatchAttempt}/${maxDispatchRetries} in ${backoffMs}ms`);
       await new Promise((r) => setTimeout(r, backoffMs));
       if (opts.signal?.aborted) {
-        return { response: 'Error: aborted during reconnect', toolCalls: totalToolCalls, steps: step };
+        return { response: 'Error: aborted during reconnect', toolCalls: totalToolCalls, steps: step, cancelled: true, errorReason: 'aborted during reconnect' };
       }
     }
 
@@ -397,7 +419,10 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
 
     if (extractedCalls.length > 0) {
       const cleanText = [parsedToolCalls.textBefore, parsedToolCalls.textAfter].filter(Boolean).join('\n\n').trim();
-      if (cleanText) lastVisibleText = cleanText;
+      if (cleanText) {
+        lastVisibleText = cleanText;
+        if (opts.onVisibleChunk) opts.onVisibleChunk(cleanText, 'narration');
+      }
       pushHistory({
         role: 'assistant', content: cleanText || null,
         tool_calls: extractedCalls.map(tc => ({ id: tc.id, type: 'function', function: { name: tc.name, arguments: tc.arguments } })),
@@ -555,23 +580,32 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
 
     // Final response
     finalResponse = fullResponse;
+    const finalVisible = safeAgentVisibleText(fullResponse);
+    if (opts.onVisibleChunk && finalVisible) opts.onVisibleChunk(finalVisible, 'final');
     pushHistory({ role: 'assistant', content: fullResponse });
     break;
   }
 
   if (!finalResponse && totalToolCalls > 0) {
+    const reason = `API engine reached the ${MAX_STEPS}-step tool loop limit (runaway safety ceiling) after ${totalToolCalls} tool calls`;
     return {
-      response: `API engine reached the ${MAX_STEPS}-step tool loop limit (runaway safety ceiling) after ${totalToolCalls} tool calls; evaluating any candidate worktree changes with fitness.`,
+      response: `${reason}; evaluating any candidate worktree changes with fitness.`,
       toolCalls: totalToolCalls,
       steps: step,
+      failed: true,
+      harvestable: true,
+      errorReason: reason,
     };
   }
 
   if (!finalResponse) {
+    const reason = `API engine completed ${step} steps without visible output or tool calls.`;
     return {
-      response: `Error: API engine completed ${step} steps without visible output or tool calls.`,
+      response: `Error: ${reason}`,
       toolCalls: totalToolCalls,
       steps: step,
+      failed: true,
+      errorReason: reason,
     };
   }
 

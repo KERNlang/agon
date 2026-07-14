@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveForgeDispatchTimeout } from '../../packages/forge/src/generated/stages.js';
+import { resolveForgeDispatchTimeout, shouldHarvestFailedDispatch } from '../../packages/forge/src/generated/stages.js';
 import { resolveForgeRunTimeout, resolveForgeSynthesisTimeout } from '../../packages/forge/src/generated/forge.js';
 
 describe('forge dispatch timeout selection', () => {
@@ -24,6 +24,30 @@ describe('forge dispatch timeout selection', () => {
   it('does NOT use forgeTimeout (overall-run cap) as the per-engine floor — that was the 30-min hostage bug', () => {
     expect(resolveForgeDispatchTimeout({ id: 'codex', timeout: 120 }, { forgeTimeout: 1800, forgeDispatchTimeout: 480 } as any)).toBe(480);
     expect(resolveForgeDispatchTimeout({ id: 'codex', timeout: 120 }, { forgeTimeout: 1800 } as any)).toBe(480);
+  });
+});
+
+describe('failed dispatch candidate harvesting', () => {
+  it('rejects a missing dispatch result without throwing', () => {
+    expect(shouldHarvestFailedDispatch(undefined)).toBe(false);
+  });
+
+  it('harvests a timed-out worktree for fitness', () => {
+    expect(shouldHarvestFailedDispatch({ exitCode: 124, timedOut: true, diffLines: 0, filesChanged: 0 })).toBe(true);
+  });
+
+  it('harvests partial work when an agent failed after changing files', () => {
+    expect(shouldHarvestFailedDispatch({ exitCode: 1, timedOut: false, diffLines: 8, filesChanged: 1 })).toBe(true);
+  });
+
+  it('does not harvest a failed dispatch with no candidate changes', () => {
+    expect(shouldHarvestFailedDispatch({ exitCode: 1, timedOut: false, diffLines: 0, filesChanged: 0 })).toBe(false);
+    expect(shouldHarvestFailedDispatch({ exitCode: 1, timedOut: false, diff: 'non-canonical marker', diffLines: 0, filesChanged: 0 })).toBe(false);
+  });
+
+  it('does not harvest cancellation even if partial changes exist', () => {
+    expect(shouldHarvestFailedDispatch({ exitCode: 130, timedOut: false, diffLines: 8, filesChanged: 1 })).toBe(false);
+    expect(shouldHarvestFailedDispatch({ exitCode: 1, cancelled: true, timedOut: false, diffLines: 8, filesChanged: 1 })).toBe(false);
   });
 });
 

@@ -1,62 +1,141 @@
-interface name=Job
+// ── JobManager — compatibility facade over the core JobService ───────
+// Existing TUI/extensions keep numeric IDs and running/done vocabulary. The
+// lifecycle, cancellation signal, result, retention, and replay ledger all live
+// in JobService so new autonomous execution has one truthful owner.
+
+import from="@kernlang/agon-core" names="JobService"
+import from="@kernlang/agon-core" names="JobSnapshot,JobOutcome,JobEventPage,JobServiceOptions" types=true
+
+interface name=Job export=true
   field name=id type=string
   field name=type type=string
-  field name=state type="'running'|'done'|'failed'|'cancelled'"
+  field name=state type="'queued'|'running'|'done'|'failed'|'cancelled'"
   field name=startedAt type=string
   field name=label type=string
   field name=error type=string optional=true
 
-service name=JobManager singleton=true
-  doc "Manages background jobs for long-running commands (forge, tribunal, brainstorm, campfire)."
-  field name=jobs type="Map<string,Job>" private=true
+class name=JobManager export=true
+  doc "Legacy-compatible TUI facade backed by the cancellable core JobService. New work should use run(); create/complete/fail remain for extensions that manually own execution."
+  field name=service type=JobService private=true
+  field name=localToCore type="Map<string,string>" private=true
   field name=nextId type=number private=true
 
-  constructor
+  constructor params="options?:JobServiceOptions"
     handler lang="kern"
-      assign target="this.jobs" value="new Map()"
+      assign target="this.service" value="new JobService(options)"
+      assign target="this.localToCore" value="new Map()"
       assign target="this.nextId" value="1"
 
   method name=create params="type:string,label:string" returns=Job
-    handler <<<
+    handler lang="typescript" reason="legacy numeric-id facade over core job snapshots" <<<
+      const snapshot = this.service.createManual(type, label);
       const id = String(this.nextId++);
-      const job: Job = {
-        id,
-        type,
-        state: 'running',
-        startedAt: new Date().toISOString(),
-        label,
-      };
-      this.jobs.set(id, job);
-      return job;
+      this.localToCore.set(id, snapshot.id);
+      return this.toLegacy(snapshot, id);
+    >>>
+
+  method name=run params="type:string,label:string,fn:(signal:AbortSignal)=>Promise<void>" returns=Job
+    handler lang="typescript" reason="AbortSignal executor adapter across package boundary" <<<
+      const snapshot = this.service.submit(type, label, { run: ({ signal }) => fn(signal) });
+      const id = String(this.nextId++);
+      this.localToCore.set(id, snapshot.id);
+      return this.toLegacy(snapshot, id);
     >>>
 
   method name=complete params="id:string" returns=void
     handler lang="kern"
-      let name=job value="this.jobs.get(id)"
-      if cond="job && job.state === 'running'"
-        assign target="job.state" value="'done'"
+      let name=coreId value="this.localToCore.get(id)"
+      if cond="coreId"
+        do value="this.service.completeManual(coreId)"
 
   method name=fail params="id:string,error:string" returns=void
     handler lang="kern"
-      let name=job value="this.jobs.get(id)"
-      if cond="job && job.state === 'running'"
-        assign target="job.state" value="'failed'"
-        assign target="job.error" value="error"
+      let name=coreId value="this.localToCore.get(id)"
+      if cond="coreId"
+        do value="this.service.failManual(coreId,error)"
 
-  method name=cancel params="id:string" returns=void
+  method name=cancel params="id:string,reason?:string" returns=boolean
     handler lang="kern"
-      let name=job value="this.jobs.get(id)"
-      if cond="job && job.state === 'running'"
-        assign target="job.state" value="'cancelled'"
+      let name=coreId value="this.localToCore.get(id)"
+      if cond="!coreId"
+        return value="false"
+      return value="this.service.cancel(coreId,reason)"
 
   method name=get params="id:string" returns="Job|undefined"
-    handler lang="kern"
-      return value="this.jobs.get(id)"
+    handler <<<
+      const coreId = this.localToCore.get(id);
+      if (!coreId) return undefined;
+      const snapshot = this.service.get(coreId);
+      return snapshot ? this.toLegacy(snapshot, id) : undefined;
+    >>>
 
   method name=list returns="Job[]"
-    handler lang="kern"
-      return value="[...this.jobs.values()]"
+    handler <<<
+      const jobs: Job[] = [];
+      for (const [id, coreId] of this.localToCore) {
+        const snapshot = this.service.get(coreId);
+        if (snapshot) {
+          jobs.push(this.toLegacy(snapshot, id));
+        } else {
+          // JobService retention is authoritative. Drop stale facade IDs as
+          // soon as the UI asks for a fresh list so this map stays bounded too.
+          this.localToCore.delete(id);
+        }
+      }
+      return jobs;
+    >>>
 
   method name=running returns="Job[]"
     handler lang="kern"
-      return value="[...this.jobs.values()].filter((j) => j.state === 'running')"
+      return value="this.list().filter((job) => job.state === 'queued' || job.state === 'running')"
+
+  method name=wait params="id:string" returns="Promise<Job|undefined>" async=true
+    handler <<<
+      const coreId = this.localToCore.get(id);
+      if (!coreId) return undefined;
+      const before = this.get(id);
+      const outcome = await this.service.wait(coreId);
+      if (!before || !outcome) return undefined;
+      // The core may synchronously prune this record after resolving waiters.
+      // Build the terminal facade value from the waiter outcome rather than
+      // racing a second get() against retention cleanup.
+      return {
+        ...before,
+        state: outcome.state === 'succeeded' ? 'done' : outcome.state,
+        error: outcome.error,
+      };
+    >>>
+
+  method name=result params="id:string" returns="JobOutcome|null|undefined"
+    handler lang="kern"
+      let name=coreId value="this.localToCore.get(id)"
+      if cond="!coreId"
+        return value="undefined"
+      return value="this.service.result(coreId)"
+
+  method name=events params="id:string,afterSeq?:number,limit?:number" returns="JobEventPage|undefined"
+    handler lang="kern"
+      let name=coreId value="this.localToCore.get(id)"
+      if cond="!coreId"
+        return value="undefined"
+      return value="this.service.events(coreId,afterSeq,limit)"
+
+  method name=toLegacy params="snapshot:JobSnapshot,id:string" returns=Job private=true
+    handler <<<
+      const state: Job['state'] = snapshot.state === 'succeeded'
+        ? 'done'
+        : snapshot.state === 'failed'
+          ? 'failed'
+          : snapshot.state === 'cancelled'
+            ? 'cancelled'
+            : snapshot.state;
+      const job: Job = {
+        id,
+        type: snapshot.kind,
+        state,
+        startedAt: snapshot.startedAt ?? snapshot.createdAt,
+        label: snapshot.label,
+      };
+      if (snapshot.error) job.error = snapshot.error;
+      return job;
+    >>>

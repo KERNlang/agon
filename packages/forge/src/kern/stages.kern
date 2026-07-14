@@ -110,6 +110,20 @@ fn name=resolveForgeDispatchTimeout params="engine:any,config:Required<AgonConfi
       return value="Math.max(engineTimeout, floor)"
     return value="floor"
 
+fn name=shouldHarvestFailedDispatch params="result:{exitCode?:number,timedOut?:boolean,cancelled?:boolean,diff?:string,diffLines?:number,filesChanged?:number}|null|undefined" returns=boolean export=true
+  doc "Allow Forge fitness to judge a timed-out or partially changed candidate while rejecting cancellations and failures that produced no worktree changes. The dispatch result remains nonzero for truthful diagnostics."
+  handler lang="kern"
+    if cond="!result"
+      return value="false"
+    let name=exitCode value="Number(result.exitCode ?? 0)"
+    if cond="result.cancelled || exitCode === 130"
+      return value="false"
+    if cond="result.timedOut"
+      return value="true"
+    if cond="exitCode === 0"
+      return value="false"
+    return value="Number(result.diffLines ?? 0) > 0 || Number(result.filesChanged ?? 0) > 0"
+
 fn name=runForgeEngineAttempt async=true params="opts:{engineId:string,prompt:string,dispatchMode:'exec'|'review',metricPhase:'stage1'|'stage2-scout'|'stage2-follower',fitnessCmd:string,config:Required<AgonConfig>,registry:EngineRegistry,adapter:EngineAdapter,root:string,baseSha:string,forgeDir:string,worktrees:WorktreeEntry[],onEvent?:ForgeEventCallback,signal?:AbortSignal,eventType:string,eventData?:Record<string,unknown>,worktreePath?:string,forgeMode?:'implement'|'improve'|'validate',requireDiff?:boolean,baselinePasses?:boolean,acceptReviewOutput?:boolean}" returns="Promise<{result:EngineResult,metric:DispatchMetric,dispatchResult:any,worktreePath:string}>"
   handler <<<
     const engine = opts.registry.get(opts.engineId);
@@ -157,11 +171,14 @@ fn name=runForgeEngineAttempt async=true params="opts:{engineId:string,prompt:st
         });
       }
       const dispatchExitCode = typeof dispatchResult?.exitCode === 'number' ? dispatchResult.exitCode : 0;
-      if (dispatchResult?.timedOut) {
+      if (shouldHarvestFailedDispatch(dispatchResult)) {
         const stderr = dispatchResult?.stderr ? `: ${String(dispatchResult.stderr).slice(0, 240).replace(/\s+/g, ' ').trim()}` : '';
+        const outcome = dispatchResult?.timedOut
+          ? `timed out after ${dispatchTimeout}s`
+          : `exited with code ${dispatchExitCode}`;
         dispatchResult = {
           ...dispatchResult,
-          stdout: `${dispatchResult?.stdout ?? ''}\n[agon] dispatch timed out after ${dispatchTimeout}s${stderr}; harvesting candidate worktree for fitness.\n`,
+          stdout: `${dispatchResult?.stdout ?? ''}\n[agon] dispatch ${outcome}${stderr}; harvesting candidate worktree for fitness.\n`,
         };
       } else if (dispatchExitCode !== 0) {
         const reason = `dispatch exited with code ${dispatchExitCode}`;

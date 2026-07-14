@@ -8,6 +8,7 @@ const setActiveAbortMock = vi.fn();
 const savePlanMock = vi.fn();
 const createPlanMock = vi.fn();
 const dispatchAgentMock = vi.fn();
+const dispatchAgentStreamMock = vi.fn();
 
 vi.mock('@kernlang/agon-forge', () => ({
   runForge: (...args: any[]) => runForgeMock(...args),
@@ -151,5 +152,45 @@ describe('handleForge', () => {
 
     expect(askQuestionMock).not.toHaveBeenCalledWith('Approve build plan? [Y/n]');
     expect(dispatchAgentMock).toHaveBeenCalled();
+  });
+
+  it('fails the build plan when a streamed agent returns a nonzero terminal result', async () => {
+    const { handleBuild } = await import('../../packages/cli/src/generated/handlers/build.js');
+    dispatchAgentStreamMock.mockImplementation(async function* () {
+      yield `${JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'partial work' }] } })}\n`;
+      return {
+        exitCode: 124,
+        stdout: 'partial work',
+        stderr: 'agent deadline exceeded',
+        durationMs: 50,
+        timedOut: true,
+        diff: '',
+        diffLines: 0,
+        filesChanged: 0,
+      };
+    });
+
+    const ctx: any = {
+      askQuestion: askQuestionMock,
+      activeEngines: () => ['codex'],
+      config: { approvalLevel: 'plan', forgeFixedStarter: 'codex', agentTimeout: 60 },
+      registry: {
+        agentCapableIds: () => ['codex'],
+        get: vi.fn(() => ({ timeout: 60 })),
+      },
+      adapter: { dispatchAgentStream: dispatchAgentStreamMock },
+      currentPlan: null,
+      setCurrentPlan: setCurrentPlanMock,
+      setActiveAbort: setActiveAbortMock,
+      chatSession: { messages: [] },
+    };
+
+    await handleBuild('fix login bug', dispatchMock, ctx, undefined, true);
+
+    expect(dispatchMock).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'error',
+      message: expect.stringContaining('agent deadline exceeded'),
+    }));
+    expect(setCurrentPlanMock).toHaveBeenCalledWith(expect.objectContaining({ state: 'failed' }));
   });
 });

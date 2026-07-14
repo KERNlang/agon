@@ -68,20 +68,20 @@ fn name=exitWithFailure params="message:string" returns="never"
     throw new Error('process.exit returned unexpectedly');
   >>>
 
-fn name=assertNoRemovedEngines params="enginesCsv:string|undefined" returns="void"
+fn name=validateCallEngineRoster params="enginesCsv:string|undefined,cwd?:string" returns="void" export=true
   doc "Enforce the HARD removedEngines denylist at the external-CLI boundary, BEFORE any --engines list is forwarded to a subcommand. Without this, an external CLI (Codex/Antigravity) that passes --engines a,b,<removed> would resurrect a hard-removed engine, since explicit -e lists bypass the registry's auto roster. Fails loudly (pre-run error) rather than silently dropping — silent roster rewrite is the trust hazard (Council batch-2 verdict)."
   handler <<<
     const text = enginesCsv?.trim();
     if (!text) return;
     const requested = text.split(',').map((s) => s.trim()).filter(Boolean);
     if (requested.length === 0) return;
-    const config = loadConfig();
+    const config = loadConfig(cwd);
     const registry = new EngineRegistry();
     registry.load(resolveBuiltinEnginesDir());
     const { removed } = registry.partitionRoster(requested, config as any);
     if (removed.length > 0) {
       const plural = removed.length > 1;
-      exitWithFailure(
+      throw new Error(
         `Refusing to run: ${removed.join(', ')} ${plural ? 'were' : 'was'} hard-removed via ` +
           '`agon engine remove` and cannot run in any agon session. ' +
           `Restore with \`agon engine add <id>\`, or drop ${plural ? 'them' : 'it'} from --engines.`,
@@ -491,9 +491,10 @@ const name=callCommand type="any"
         },
       },
       async run({ args }) {
-        assertNoRemovedEngines(args.engines);
         let built: BuiltCallCommands;
         try {
+          validateCallEngineRoster(args.engines, args.cwd);
+          validateCallEngineRoster(args.engine, args.cwd);
           built = buildCallCommands({
             workflow: args.workflow,
             input: args.input,

@@ -28,6 +28,8 @@ import { JobManager } from '../signals/job-manager.js';
 
 import type { Job } from '../signals/job-manager.js';
 
+import { trackJobAbortController } from '../signals/job-abort-scope.js';
+
 import { shortToolPath, isCesarTelemetryLine, formatConfidenceToolLabel } from '../blocks/output-format.js';
 
 import { icons } from '../signals/icons.js';
@@ -156,7 +158,7 @@ import { runProcessInputQueue, runSendBtwMessage, runHandleSubmit } from './app-
 
 export { COMPOSER_HISTORY_LIMIT, isMutatingToolCall, probeEngineVitals, parseToolCallPayload, toolPreviewWindow, toolCallSupportsDetailView, detailViewerSupportsEvent, toolDetailViewportRows, findLatestToolDetailEvent, findLatestToolEvent, buildExecutionRailStats, composerHistoryPath, loadComposerInputHistory, saveComposerInputHistory, findLatestFailedToolEvent, buildFailedToolRetryDraft, buildToolDetailView, createInitialRegistry, drainStdinBuffer, maxScrollOffsetForRowCount, nextWheelAnimationStep, clampNumber, charDisplayWidth, stringDisplayWidth, displayColumnToStringIndex, normalizeRowSelection, normalizeTextSelection, richLineToPlainText, transcriptRowToPlainText, transcriptRowTextStartColumn, resolveTranscriptColumnFromMouse, transcriptRowsToPlainText, resolveTranscriptRowFromMouse, estimateVisibleBlockBudget, estimateWrappedRowCount, estimateQuestionReservedRows, estimateBottomChromeExtraRows, summarizeBtwTranscriptEvent, buildDashboardBlock, estimatePinnedLiveRows, estimateWrappedRows, estimateToolCallRows, estimateOutputEventRows, buildDisplayItems, isToolCallLikeBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, estimateDisplayItemRows, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, isDuplicateEngineBlock, appendTranscriptBlock, normalizeTerminalMode, fileRailWidthForTerminal, fileRailMaxRowsForTerminal, buildTerminalReplaySnapshot, parseMarkdownToRows, buildToolCallRows, buildCollapsedToolGroupRows, buildTranscriptRows } from './app-helpers.js';
 
-// @kern-source: app:97
+// @kern-source: app:98
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -322,7 +324,7 @@ export function App() {
   const setLastReviewResult = useMemo(() => __inkSafe(_setLastReviewResultRaw), [_setLastReviewResultRaw]);
   const [toolDetailEvent, _setToolDetailEventRaw] = useState<any|null>(null);
   const setToolDetailEvent = useMemo(() => __inkSafe(_setToolDetailEventRaw), [_setToolDetailEventRaw]);
-  const [jobManager, _setJobManagerRaw] = useState<any>(() => new JobManager());
+  const [jobManager, _setJobManagerRaw] = useState<any>(() => { const cfg = loadConfig(); return new JobManager({ eventLimit: cfg.jobEventLimit, retentionLimit: cfg.jobRetentionLimit, maxConcurrency: cfg.jobMaxConcurrency }); });
   const setJobManager = useMemo(() => __inkSafe(_setJobManagerRaw), [_setJobManagerRaw]);
   const [jobList, _setJobListRaw] = useState<Job[]>([]);
   const setJobList = useMemo(() => __inkSafe(_setJobListRaw), [_setJobListRaw]);
@@ -613,7 +615,7 @@ export function App() {
   }, [outputBlocks,chatSession,replState,config]);
 
   const runningJobs = useMemo(() => {
-          return jobList.filter((j: Job) => j.state === 'running');
+          return jobList.filter((j: Job) => j.state === 'queued' || j.state === 'running');
   }, [jobList]);
 
   const activeStream = useMemo(() => {
@@ -830,6 +832,9 @@ export function App() {
   }, [bell,setWindowTitle,pendingBellRef]);
 
   const trackAbort = useCallback((abort:AbortController|null) => {
+    if (trackJobAbortController(abort)) {
+      return;
+    }
     runTrackAbort(abort, activeAbortRef, setActiveAbort);
   }, []);
 
@@ -2077,10 +2082,10 @@ export function App() {
   );
 }
 
-// @kern-source: app:95
+// @kern-source: app:96
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:1895
+// @kern-source: app:1898
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   // Session-scoped grounding ONLY — deliberately does NOT call

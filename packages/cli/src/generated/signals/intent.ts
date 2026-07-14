@@ -676,8 +676,14 @@ function parseSlashCommand(input: string, commandRegistry?: any): Intent {
       return { type: 'checkpoints' } as unknown as Intent;
     case 'status':
       return { type: 'status' } as Intent;
-    case 'jobs':
-      return { type: 'jobs' } as Intent;
+    case 'jobs': {
+      const [action, jobId] = rest.split(/\s+/).filter(Boolean);
+      return {
+        type: 'jobs',
+        action: action === 'cancel' ? 'cancel' : 'list',
+        jobId: action === 'cancel' ? jobId : undefined,
+      } as Intent;
+    }
     case 'focus':
       return { type: 'focus', jobId: rest || undefined } as Intent;
     case 'explore':
@@ -744,7 +750,7 @@ function parseSlashCommand(input: string, commandRegistry?: any): Intent {
   }
 }
 
-// @kern-source: intent:685
+// @kern-source: intent:691
 export function detectIntent(raw: string, commandRegistry?: any): Intent {
   const input = raw.trim();
   if (!input) {

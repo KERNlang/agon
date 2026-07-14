@@ -128,7 +128,28 @@ export function resolveForgeDispatchTimeout(engine: any, config: Required<AgonCo
   return floor;
 }
 
+/**
+ * Allow Forge fitness to judge a timed-out or partially changed candidate while rejecting cancellations and failures that produced no worktree changes. The dispatch result remains nonzero for truthful diagnostics.
+ */
 // @kern-source: stages:113
+export function shouldHarvestFailedDispatch(result: {exitCode?:number,timedOut?:boolean,cancelled?:boolean,diff?:string,diffLines?:number,filesChanged?:number}|null|undefined): boolean {
+  if (!result) {
+    return false;
+  }
+  const exitCode = Number(result.exitCode ?? 0);
+  if (result.cancelled || exitCode === 130) {
+    return false;
+  }
+  if (result.timedOut) {
+    return true;
+  }
+  if (exitCode === 0) {
+    return false;
+  }
+  return Number(result.diffLines ?? 0) > 0 || Number(result.filesChanged ?? 0) > 0;
+}
+
+// @kern-source: stages:127
 export async function runForgeEngineAttempt(opts: {engineId:string,prompt:string,dispatchMode:'exec'|'review',metricPhase:'stage1'|'stage2-scout'|'stage2-follower',fitnessCmd:string,config:Required<AgonConfig>,registry:EngineRegistry,adapter:EngineAdapter,root:string,baseSha:string,forgeDir:string,worktrees:WorktreeEntry[],onEvent?:ForgeEventCallback,signal?:AbortSignal,eventType:string,eventData?:Record<string,unknown>,worktreePath?:string,forgeMode?:'implement'|'improve'|'validate',requireDiff?:boolean,baselinePasses?:boolean,acceptReviewOutput?:boolean}): Promise<{result:EngineResult,metric:DispatchMetric,dispatchResult:any,worktreePath:string}> {
   const engine = opts.registry.get(opts.engineId);
   const forgeMode = resolveForgeMode(opts.forgeMode);
@@ -175,11 +196,14 @@ export async function runForgeEngineAttempt(opts: {engineId:string,prompt:string
       });
     }
     const dispatchExitCode = typeof dispatchResult?.exitCode === 'number' ? dispatchResult.exitCode : 0;
-    if (dispatchResult?.timedOut) {
+    if (shouldHarvestFailedDispatch(dispatchResult)) {
       const stderr = dispatchResult?.stderr ? `: ${String(dispatchResult.stderr).slice(0, 240).replace(/\s+/g, ' ').trim()}` : '';
+      const outcome = dispatchResult?.timedOut
+        ? `timed out after ${dispatchTimeout}s`
+        : `exited with code ${dispatchExitCode}`;
       dispatchResult = {
         ...dispatchResult,
-        stdout: `${dispatchResult?.stdout ?? ''}\n[agon] dispatch timed out after ${dispatchTimeout}s${stderr}; harvesting candidate worktree for fitness.\n`,
+        stdout: `${dispatchResult?.stdout ?? ''}\n[agon] dispatch ${outcome}${stderr}; harvesting candidate worktree for fitness.\n`,
       };
     } else if (dispatchExitCode !== 0) {
       const reason = `dispatch exited with code ${dispatchExitCode}`;
@@ -274,7 +298,7 @@ export async function runForgeEngineAttempt(opts: {engineId:string,prompt:string
   return { result, metric, dispatchResult, worktreePath: wtPath };
 }
 
-// @kern-source: stages:259
+// @kern-source: stages:276
 export async function runBaseline(opts: {cwd:string, baseSha:string, fitnessCmd:string, fitnessTimeout:number, forgeDir:string, onEvent?:ForgeEventCallback}): Promise<boolean> {
   opts.onEvent?.({ type: 'baseline:start' });
 
@@ -298,7 +322,7 @@ export async function runBaseline(opts: {cwd:string, baseSha:string, fitnessCmd:
   }
 }
 
-// @kern-source: stages:283
+// @kern-source: stages:300
 export async function runStage1(opts: {starter:string, forgePrompt:string, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, taskClass?:string, enginePrompts?:Map<string,string>, forgeMode?:'implement'|'improve'|'validate', requireDiff?:boolean, baselinePasses?:boolean, acceptReviewOutput?:boolean}): Promise<StageResult> {
   opts.onEvent?.({ type: 'stage1:start', engineId: opts.starter });
   const root = repoRoot(opts.cwd);
@@ -328,7 +352,7 @@ export async function runStage1(opts: {starter:string, forgePrompt:string, fitne
   return { engineResults, accepted, winner: result?.pass ? result.engineId : null, metrics };
 }
 
-// @kern-source: stages:313
+// @kern-source: stages:330
 export async function runStage2(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, onResult?:(engineId:string,result:EngineResult,metric:DispatchMetric)=>'continue'|'finalize'|void, abortControllers?: Map<string,AbortController>, forgeMode?: 'implement'|'improve'|'validate', requireDiff?: boolean, baselinePasses?: boolean, acceptReviewOutput?: boolean, earlyFinalizeCount?: number}): Promise<StageResult> {
   opts.onEvent?.({ type: 'stage2:start' });
 
@@ -527,7 +551,7 @@ export async function runStage2(opts: {challengers:string[], forgePrompt:string,
   return { engineResults: allResults, accepted: false, winner: null, metrics };
 }
 
-// @kern-source: stages:512
+// @kern-source: stages:529
 export async function runStage2WithPeek(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, forgeMode?:'implement'|'improve'|'validate', requireDiff?:boolean, baselinePasses?:boolean, acceptReviewOutput?:boolean}): Promise<StageResult> {
   if (opts.challengers.length <= 1) {
     // Only one challenger — no peek possible, use normal stage2

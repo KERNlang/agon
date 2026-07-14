@@ -1,0 +1,374 @@
+// ── JobService — autonomous execution lifecycle and replay ledger ─────
+// A process-local owner for cancellable work. The daemon will own one long-lived
+// instance; the TUI can own a session-scoped instance. Cancellation is visible
+// immediately, but an executor that ignores AbortSignal retains its concurrency
+// slot until it settles so hidden work can never exceed maxConcurrency.
+
+import from="node:crypto" names="randomUUID"
+import from="../models/types.js" names="DEFAULT_AGON_CONFIG"
+
+type name=JobState values="queued|running|succeeded|failed|cancelled" export=true
+type name=TerminalJobState values="succeeded|failed|cancelled"
+
+interface name=JobSnapshot export=true
+  field name=id type=string
+  field name=kind type=string
+  field name=label type=string
+  field name=state type=JobState
+  field name=createdAt type=string
+  field name=startedAt type=string optional=true
+  field name=finishedAt type=string optional=true
+  field name=error type=string optional=true
+
+interface name=JobEvent export=true
+  field name=seq type=number
+  field name=ts type=number
+  field name=type type=string
+  field name=data type=unknown optional=true
+
+interface name=JobEventPage export=true
+  field name=jobId type=string
+  field name=events type="JobEvent[]"
+  field name=nextSeq type=number
+  field name=earliestSeq type=number
+  field name=terminal type=boolean
+  field name=truncated type=boolean
+
+interface name=JobOutcome export=true
+  field name=state type=TerminalJobState
+  field name=value type=unknown optional=true
+  field name=error type=string optional=true
+
+interface name=JobTaskContext export=true
+  field name=signal type=AbortSignal
+  field name=emit type="(type:string,data?:unknown)=>void"
+
+interface name=JobExecutor export=true
+  field name=run type="(ctx:JobTaskContext)=>Promise<unknown>"
+
+interface name=JobServiceOptions export=true
+  field name=eventLimit type=number optional=true
+  field name=retentionLimit type=number optional=true
+  field name=maxConcurrency type=number optional=true
+
+interface name=JobRecord
+  field name=snapshot type=JobSnapshot
+  field name=events type="JobEvent[]"
+  field name=nextSeq type=number
+  field name=controller type=AbortController
+  field name=executor type="JobExecutor|null"
+  field name=outcome type="JobOutcome|null"
+  field name=taskSettled type=boolean
+  field name=waiters type="Array<(outcome:JobOutcome)=>void>"
+
+fn name=isTerminalJobState params="state:JobState" returns=boolean expr={{ return state === 'succeeded' || state === 'failed' || state === 'cancelled'; }}
+
+fn name=positiveJobServiceInteger params="value:number|undefined,fallback:number,label:string" returns=number
+  handler <<<
+    const candidate = value ?? fallback;
+    if (!Number.isFinite(candidate) || candidate < 1) {
+      throw new Error(`${label} must be a positive integer`);
+    }
+    return Math.floor(candidate);
+  >>>
+
+fn name=cloneSnapshot params="snapshot:JobSnapshot" returns=JobSnapshot expr={{ return { ...snapshot }; }}
+fn name=cloneOutcome params="outcome:JobOutcome" returns=JobOutcome expr={{ return { ...outcome }; }}
+fn name=errorMessage params="error:unknown" returns=string expr={{ return error instanceof Error ? error.message : String(error); }}
+
+class name=JobService export=true
+  field name=records type="Map<string,JobRecord>" private=true
+  field name=queue type="string[]" private=true
+  field name=activeCount type=number private=true
+  field name=eventLimit type=number private=true
+  field name=retentionLimit type=number private=true
+  field name=maxConcurrency type=number private=true
+  field name=idleWaiters type="Array<()=>void>" private=true
+
+  constructor params="options?:JobServiceOptions"
+    handler <<<
+      this.records = new Map();
+      this.queue = [];
+      this.activeCount = 0;
+      this.idleWaiters = [];
+      this.eventLimit = positiveJobServiceInteger(options?.eventLimit, DEFAULT_AGON_CONFIG.jobEventLimit, 'jobEventLimit');
+      this.retentionLimit = positiveJobServiceInteger(options?.retentionLimit, DEFAULT_AGON_CONFIG.jobRetentionLimit, 'jobRetentionLimit');
+      this.maxConcurrency = positiveJobServiceInteger(options?.maxConcurrency, DEFAULT_AGON_CONFIG.jobMaxConcurrency, 'jobMaxConcurrency');
+    >>>
+
+  method name=submit params="kind:string,label:string,executor:JobExecutor" returns=JobSnapshot
+    handler <<<
+      const normalizedKind = String(kind ?? '').trim();
+      const normalizedLabel = String(label ?? '').trim();
+      if (!normalizedKind) throw new Error('Job kind must not be empty');
+      if (!executor || typeof executor.run !== 'function') throw new Error('Job executor must provide run(ctx)');
+      const id = randomUUID();
+      const record: JobRecord = {
+        snapshot: {
+          id,
+          kind: normalizedKind,
+          label: normalizedLabel || normalizedKind,
+          state: 'queued',
+          createdAt: new Date().toISOString(),
+        },
+        events: [],
+        nextSeq: 1,
+        controller: new AbortController(),
+        executor,
+        outcome: null,
+        taskSettled: false,
+        waiters: [],
+      };
+      this.records.set(id, record);
+      this.appendEvent(record, 'queued');
+      this.queue.push(id);
+      this.pump();
+      return cloneSnapshot(record.snapshot);
+    >>>
+
+  method name=createManual params="kind:string,label:string" returns=JobSnapshot
+    doc "Compatibility seam for legacy JobManager callers. New execution must use submit() so cancellation reaches the executor."
+    handler <<<
+      const normalizedKind = String(kind ?? '').trim();
+      const normalizedLabel = String(label ?? '').trim();
+      if (!normalizedKind) throw new Error('Job kind must not be empty');
+      const now = new Date().toISOString();
+      const id = randomUUID();
+      const record: JobRecord = {
+        snapshot: { id, kind: normalizedKind, label: normalizedLabel || normalizedKind, state: 'running', createdAt: now, startedAt: now },
+        events: [], nextSeq: 1, controller: new AbortController(), executor: null,
+        outcome: null, taskSettled: false, waiters: [],
+      };
+      this.records.set(id, record);
+      this.appendEvent(record, 'queued');
+      this.appendEvent(record, 'started');
+      return cloneSnapshot(record.snapshot);
+    >>>
+
+  method name=completeManual params="id:string,value?:unknown" returns=boolean
+    handler <<<
+      const record = this.records.get(id);
+      if (!record || record.executor !== null || record.snapshot.state !== 'running') return false;
+      this.finish(record, 'succeeded', value);
+      record.taskSettled = true;
+      this.resolveWaiters(record);
+      this.prune();
+      this.notifyIdle();
+      return true;
+    >>>
+
+  method name=failManual params="id:string,error:string" returns=boolean
+    handler <<<
+      const record = this.records.get(id);
+      if (!record || record.executor !== null || record.snapshot.state !== 'running') return false;
+      this.finish(record, 'failed', undefined, error);
+      record.taskSettled = true;
+      this.resolveWaiters(record);
+      this.prune();
+      this.notifyIdle();
+      return true;
+    >>>
+
+  method name=get params="id:string" returns="JobSnapshot|undefined"
+    handler <<<
+      const record = this.records.get(id);
+      return record ? cloneSnapshot(record.snapshot) : undefined;
+    >>>
+
+  method name=list returns="JobSnapshot[]"
+    handler <<<
+      return [...this.records.values()]
+        .map((record) => cloneSnapshot(record.snapshot))
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    >>>
+
+  method name=running returns="JobSnapshot[]"
+    handler <<<
+      return this.list().filter((job) => job.state === 'queued' || job.state === 'running');
+    >>>
+
+  method name=result params="id:string" returns="JobOutcome|null|undefined"
+    handler <<<
+      const record = this.records.get(id);
+      if (!record) return undefined;
+      return record.outcome ? cloneOutcome(record.outcome) : null;
+    >>>
+
+  method name=events params="id:string,afterSeq?:number,limit?:number" returns="JobEventPage|undefined"
+    handler <<<
+      const record = this.records.get(id);
+      if (!record) return undefined;
+      const cursor = Number.isFinite(afterSeq) ? Math.max(0, Math.floor(afterSeq as number)) : 0;
+      const requestedLimit = Number.isFinite(limit) ? Math.max(1, Math.floor(limit as number)) : this.eventLimit;
+      const boundedLimit = Math.min(requestedLimit, this.eventLimit);
+      const earliestSeq = record.events[0]?.seq ?? record.nextSeq;
+      const events = record.events
+        .filter((event) => event.seq > cursor)
+        .slice(0, boundedLimit)
+        .map((event) => ({ ...event }));
+      return {
+        jobId: id,
+        events,
+        nextSeq: events.length > 0 ? events[events.length - 1].seq : cursor,
+        earliestSeq,
+        terminal: isTerminalJobState(record.snapshot.state),
+        truncated: cursor < earliestSeq - 1,
+      };
+    >>>
+
+  method name=wait params="id:string" returns="Promise<JobOutcome|undefined>"
+    handler lang="typescript" reason="promise waiter registration requires a host closure" <<<
+      const record = this.records.get(id);
+      if (!record) return Promise.resolve(undefined);
+      if (record.outcome) return Promise.resolve(cloneOutcome(record.outcome));
+      return new Promise((resolve) => {
+        record.waiters.push((outcome) => resolve(cloneOutcome(outcome)));
+      });
+    >>>
+
+  method name=waitForIdle params="timeoutMs?:number" returns="Promise<boolean>"
+    doc "Resolve only after every queued/running executor has actually settled. Cancellation becoming visible is not enough: daemon/HTTP shutdown uses this to keep the host alive through the SIGKILL grace path and avoid orphaning detached engine processes."
+    handler lang="typescript" reason="host promise waiter registration for process shutdown draining" <<<
+      if (this.activeCount === 0 && this.queue.length === 0 && [...this.records.values()].every((record) => record.taskSettled)) {
+        return Promise.resolve(true);
+      }
+      return new Promise<boolean>((resolve) => {
+        let settled = false;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const waiter = (): void => {
+          if (settled) return;
+          settled = true;
+          if (timer) clearTimeout(timer);
+          resolve(true);
+        };
+        this.idleWaiters.push(waiter);
+        if (timeoutMs !== undefined) {
+          const timeout = positiveJobServiceInteger(timeoutMs, timeoutMs, 'timeoutMs');
+          timer = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            this.idleWaiters = this.idleWaiters.filter((entry) => entry !== waiter);
+            resolve(false);
+          }, timeout);
+          timer.unref?.();
+        }
+      });
+    >>>
+
+  method name=cancel params="id:string,reason?:string" returns=boolean
+    handler <<<
+      const record = this.records.get(id);
+      if (!record || isTerminalJobState(record.snapshot.state)) return false;
+      const message = reason?.trim() || 'Cancelled';
+      const wasQueued = record.snapshot.state === 'queued';
+      try { record.controller.abort(message); } catch { record.controller.abort(); }
+      this.finish(record, 'cancelled', undefined, message);
+      if (wasQueued || record.executor === null) {
+        record.executor = null;
+        record.taskSettled = true;
+        this.queue = this.queue.filter((queuedId) => queuedId !== id);
+        this.resolveWaiters(record);
+        this.prune();
+        this.pump();
+        this.notifyIdle();
+      } else {
+        // The caller sees cancellation now. The underlying executor still owns
+        // its slot until its promise settles, even if it ignored AbortSignal.
+        this.resolveWaiters(record);
+      }
+      return true;
+    >>>
+
+  method name=cancelAll params="reason?:string" returns=number
+    handler <<<
+      let cancelled = 0;
+      for (const job of this.running()) {
+        if (this.cancel(job.id, reason)) cancelled += 1;
+      }
+      return cancelled;
+    >>>
+
+  method name=appendEvent params="record:JobRecord,type:string,data?:unknown" returns=void private=true
+    handler lang="typescript" reason="bounded host event-buffer mutation" <<<
+      const event: JobEvent = { seq: record.nextSeq++, ts: Date.now(), type };
+      if (data !== undefined) event.data = data;
+      record.events.push(event);
+      if (record.events.length > this.eventLimit) {
+        record.events.splice(0, record.events.length - this.eventLimit);
+      }
+    >>>
+
+  method name=finish params="record:JobRecord,state:TerminalJobState,value?:unknown,error?:string" returns=void private=true
+    handler <<<
+      if (isTerminalJobState(record.snapshot.state)) return;
+      record.snapshot.state = state;
+      record.snapshot.finishedAt = new Date().toISOString();
+      if (error) record.snapshot.error = error;
+      record.outcome = { state };
+      if (value !== undefined) record.outcome.value = value;
+      if (error) record.outcome.error = error;
+      this.appendEvent(record, state, error ? { error } : value);
+    >>>
+
+  method name=resolveWaiters params="record:JobRecord" returns=void private=true
+    handler <<<
+      if (!record.outcome) return;
+      const waiters = record.waiters.splice(0);
+      for (const resolve of waiters) resolve(record.outcome);
+    >>>
+
+  method name=pump returns=void private=true
+    handler lang="typescript" reason="host Promise scheduling and AbortSignal executor closure" <<<
+      while (this.activeCount < this.maxConcurrency && this.queue.length > 0) {
+        const id = this.queue.shift();
+        if (!id) continue;
+        const record = this.records.get(id);
+        if (!record || record.snapshot.state !== 'queued' || !record.executor) continue;
+        this.activeCount += 1;
+        record.snapshot.state = 'running';
+        record.snapshot.startedAt = new Date().toISOString();
+        this.appendEvent(record, 'started');
+        const context: JobTaskContext = {
+          signal: record.controller.signal,
+          emit: (type, data) => {
+            if (!isTerminalJobState(record.snapshot.state)) this.appendEvent(record, type, data);
+          },
+        };
+        Promise.resolve()
+          .then(() => record.executor!.run(context))
+          .then((value) => {
+            if (!isTerminalJobState(record.snapshot.state)) this.finish(record, 'succeeded', value);
+          })
+          .catch((error) => {
+            if (!isTerminalJobState(record.snapshot.state)) this.finish(record, 'failed', undefined, errorMessage(error));
+          })
+          .finally(() => {
+            record.executor = null;
+            record.taskSettled = true;
+            this.activeCount -= 1;
+            this.resolveWaiters(record);
+            this.prune();
+            this.pump();
+            this.notifyIdle();
+          });
+      }
+    >>>
+
+  method name=prune returns=void private=true
+    handler lang="typescript" reason="bounded host Map retention sweep" <<<
+      const terminal = [...this.records.values()]
+        .filter((record) => record.taskSettled && isTerminalJobState(record.snapshot.state))
+        .sort((a, b) => (a.snapshot.finishedAt ?? '').localeCompare(b.snapshot.finishedAt ?? ''));
+      const removeCount = terminal.length - this.retentionLimit;
+      for (let index = 0; index < removeCount; index += 1) {
+        this.records.delete(terminal[index].snapshot.id);
+      }
+    >>>
+
+  method name=notifyIdle returns=void private=true
+    handler <<<
+      if (this.activeCount !== 0 || this.queue.length !== 0) return;
+      if ([...this.records.values()].some((record) => !record.taskSettled)) return;
+      const waiters = this.idleWaiters.splice(0);
+      waiters.forEach((resolve) => resolve());
+    >>>

@@ -48,7 +48,7 @@ export type Intent =
   | { type: 'commit'; input?: string }
   | { type: 'undo'; snapshotId?: string }
   | { type: 'checkpoints' }
-  | { type: 'jobs' }
+  | { type: 'jobs'; action?: 'list'|'cancel'; jobId?: string }
   | { type: 'focus'; jobId?: string }
   | { type: 'explore' }
   | { type: 'permissions' }

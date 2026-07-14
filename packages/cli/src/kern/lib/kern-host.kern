@@ -2,117 +2,149 @@
 // Keep platform-specific globals here so native handlers remain honest about
 // which operations cannot be lowered across every KERN target.
 
-fn name=hostNowMs returns=number export=true
-  handler lang="ts" <<<
-    return Date.now();
-  >>>
+module name=HostPrimitives
+  fn name=hostNowMs returns=number export=true
+    handler lang="ts" <<<
+      return Date.now();
+    >>>
 
-fn name=hostRandom returns=number export=true
-  handler lang="ts" <<<
-    return Math.random();
-  >>>
+  fn name=hostRandom returns=number export=true
+    handler lang="ts" <<<
+      return Math.random();
+    >>>
 
-fn name=hostDateMs params="value:string|number" returns=number export=true
-  handler lang="ts" <<<
-    return new Date(value).getTime();
-  >>>
+  fn name=hostDateMs params="value:string|number" returns=number export=true
+    handler lang="ts" <<<
+      return new Date(value).getTime();
+    >>>
 
-fn name=hostNowIso returns=string export=true
-  handler lang="ts" <<<
-    return new Date().toISOString();
-  >>>
+  fn name=hostNowIso returns=string export=true
+    handler lang="ts" <<<
+      return new Date().toISOString();
+    >>>
 
-fn name=hostDateIso params="value:string|number" returns=string export=true
-  handler lang="ts" <<<
-    return new Date(value).toISOString();
-  >>>
+  fn name=hostDateIso params="value:string|number" returns=string export=true
+    handler lang="ts" <<<
+      return new Date(value).toISOString();
+    >>>
 
-fn name=hostLocaleTime params="value:string" returns=string export=true
-  handler lang="ts" <<<
-    return new Date(value).toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    });
-  >>>
+  fn name=hostLocaleTime params="value:string" returns=string export=true
+    handler lang="ts" <<<
+      return new Date(value).toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      });
+    >>>
 
-fn name=hostWorkingDirectory returns=string export=true
-  handler lang="ts" <<<
-    return process.cwd();
-  >>>
+  fn name=hostWorkingDirectory returns=string export=true
+    handler lang="ts" <<<
+      return process.cwd();
+    >>>
 
-fn name=hostEnvironment params="name:string" returns="string|undefined" export=true
-  handler lang="ts" <<<
-    return process.env[name];
-  >>>
+  fn name=hostEnvironment params="name:string" returns="string|undefined" export=true
+    handler lang="ts" <<<
+      return process.env[name];
+    >>>
 
-fn name=hostStringSet params="values?:string[]" returns="Set<string>" export=true
-  handler lang="ts" <<<
-    return new Set(values ?? []);
-  >>>
+  fn name=hostStringSet params="values?:string[]" returns="Set<string>" export=true
+    handler lang="ts" <<<
+      return new Set(values ?? []);
+    >>>
 
-fn name=hostSet params="values?:Iterable<any>" returns="Set<any>" export=true
-  handler lang="ts" <<<
-    return new Set(values ?? []);
-  >>>
+  fn name=hostSet params="values?:Iterable<any>" returns="Set<any>" export=true
+    handler lang="ts" <<<
+      return new Set(values ?? []);
+    >>>
 
-fn name=hostObjectValues params="value:Record<string,any>" returns="any[]" export=true
-  handler lang="ts" <<<
-    return Object.values(value);
-  >>>
+  fn name=hostObjectValues params="value:Record<string,any>" returns="any[]" export=true
+    handler lang="ts" <<<
+      return Object.values(value);
+    >>>
 
-fn name=hostResolvedVoid returns="Promise<void>" export=true
-  handler lang="ts" <<<
-    return Promise.resolve();
-  >>>
+module name=CliHostOperations
+  fn name=hostWaitForInteractiveChoice params="signal:AbortSignal,ask:(resolve:(answer:string)=>void)=>void" returns="Promise<string>" async=true export=true
+    doc "Host AbortSignal/Promise arbitration for a REPL choice. Settles with an empty answer on external cancellation and detaches the listener on every completion path."
+    handler lang="ts" reason="JavaScript AbortSignal and Promise callback host boundary" <<<
+      return new Promise<string>((resolve, reject) => {
+        let settled = false;
+        const finish = (answer: string) => {
+          if (settled) return;
+          settled = true;
+          signal.removeEventListener('abort', onAbort);
+          resolve(answer);
+        };
+        const onAbort = () => finish('');
+        if (signal.aborted) { finish(''); return; }
+        signal.addEventListener('abort', onAbort, { once: true });
+        try { ask(finish); }
+        catch (err) {
+          signal.removeEventListener('abort', onAbort);
+          settled = true;
+          reject(err);
+        }
+      });
+    >>>
 
-fn name=hostPromiseAll params="values:Promise<any>[]" returns="Promise<any[]>" async=true export=true
-  handler lang="ts" <<<
-    return Promise.all(values);
-  >>>
+  fn name=hostResolvedVoid returns="Promise<void>" export=true
+    handler lang="ts" <<<
+      return Promise.resolve();
+    >>>
 
-fn name=hostPromiseAllValues params="values:any[]" returns="Promise<any[]>" async=true export=true
-  handler lang="ts" <<<
-    return Promise.all(values.map((value) => Promise.resolve(value)));
-  >>>
+  fn name=hostPromiseAll params="values:Promise<any>[]" returns="Promise<any[]>" async=true export=true
+    handler lang="ts" <<<
+      return Promise.all(values);
+    >>>
 
-fn name=hostConsoleLog params="message:string" returns=void export=true
-  handler lang="ts" <<<
-    console.log(message);
-  >>>
+  fn name=hostPromiseAllValues params="values:any[]" returns="Promise<any[]>" async=true export=true
+    handler lang="ts" <<<
+      return Promise.all(values.map((value) => Promise.resolve(value)));
+    >>>
 
-fn name=hostConsoleWarn params="message:string" returns=void export=true
-  handler lang="ts" <<<
-    console.warn(message);
-  >>>
+  fn name=hostConsoleLog params="message:string" returns=void export=true
+    handler lang="ts" <<<
+      console.log(message);
+    >>>
 
-fn name=hostRegexTest params="pattern:string,flags:string,value:string" returns=boolean export=true
-  handler lang="ts" <<<
-    return new RegExp(pattern, flags).test(value);
-  >>>
+  fn name=hostConsoleWarn params="message:string" returns=void export=true
+    handler lang="ts" <<<
+      console.warn(message);
+    >>>
 
-fn name=hostEcmaRegex params="pattern:string,flags:string" returns=RegExp export=true
-  doc "Construct a JavaScript RegExp at the explicit host boundary. Use when native KERN's portable ASCII regex lowering would change required ECMAScript Unicode-whitespace semantics."
-  handler lang="ts" <<<
-    return new RegExp(pattern, flags);
-  >>>
+  fn name=hostRegexTest params="pattern:string,flags:string,value:string" returns=boolean export=true
+    handler lang="ts" <<<
+      return new RegExp(pattern, flags).test(value);
+    >>>
 
-fn name=hostRegexObjectTest params="pattern:RegExp,value:string" returns=boolean export=true
-  handler lang="ts" <<<
-    return pattern.test(value);
-  >>>
+  fn name=hostEcmaRegex params="pattern:string,flags:string" returns=RegExp export=true
+    doc "Construct a JavaScript RegExp at the explicit host boundary. Use when native KERN's portable ASCII regex lowering would change required ECMAScript Unicode-whitespace semantics."
+    handler lang="ts" <<<
+      return new RegExp(pattern, flags);
+    >>>
 
-fn name=hostRegexExec params="pattern:RegExp,value:string" returns="RegExpExecArray|null" export=true
-  handler lang="ts" <<<
-    return pattern.exec(value);
-  >>>
+  fn name=hostRegexObjectTest params="pattern:RegExp,value:string" returns=boolean export=true
+    handler lang="ts" <<<
+      return pattern.test(value);
+    >>>
 
-fn name=hostRegexMatch params="pattern:RegExp,value:string" returns="RegExpMatchArray|null" export=true
-  handler lang="ts" <<<
-    return value.match(pattern);
-  >>>
+  fn name=hostRegexExec params="pattern:RegExp,value:string" returns="RegExpExecArray|null" export=true
+    handler lang="ts" <<<
+      return pattern.exec(value);
+    >>>
 
-fn name=hostCharFromCode params="code:number" returns=string export=true
-  handler lang="ts" <<<
-    return String.fromCharCode(code);
-  >>>
+  fn name=hostRegexMatch params="pattern:RegExp,value:string" returns="RegExpMatchArray|null" export=true
+    handler lang="ts" <<<
+      return value.match(pattern);
+    >>>
+
+  fn name=hostCharFromCode params="code:number" returns=string export=true
+    handler lang="ts" <<<
+      return String.fromCharCode(code);
+    >>>
+
+  fn name=hostAggregateError params="errors:unknown[],message:string" returns=Error export=true
+    doc "Construct an AggregateError at the explicit TypeScript host boundary so portable KERN handlers do not reference an undeclared JavaScript global."
+    handler lang="ts" reason="JavaScript AggregateError host boundary" <<<
+      const AggregateErrorCtor = globalThis.AggregateError;
+      return new AggregateErrorCtor(errors, message);
+    >>>

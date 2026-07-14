@@ -10,16 +10,20 @@ import type { CesarState } from '../../handlers/types.js';
 
 import { isApprovedPermissionResponse } from './task-execution-lease.js';
 
-// @kern-source: turn-runtime:7
-export type TurnExecutionOwner = 'session' | 'harness' | 'mcp';
+import { hostAggregateError } from '../lib/kern-host.js';
 
 // @kern-source: turn-runtime:8
+export type TurnExecutionOwner = 'session' | 'harness' | 'mcp';
+
+// @kern-source: turn-runtime:9
 export type TurnEffectClass = 'read_only' | 'mutation' | 'external' | 'unknown';
+
+// ── Module: TurnClassification ──
 
 /**
  * Keep harness timeouts distinct from user interrupts all the way into lifecycle persistence and recap rendering.
  */
-// @kern-source: turn-runtime:10
+// @kern-source: turn-runtime:12
 export function resolveCesarAbortOutcome(timedOut: boolean, hasPartial: boolean): {terminalState:'timed_out'|'cancelled',responded:boolean,decisionReason:string} {
   return timedOut
     ? { terminalState: 'timed_out', responded: hasPartial, decisionReason: hasPartial ? 'timeout-preserved-partial' : 'timeout' }
@@ -29,22 +33,23 @@ export function resolveCesarAbortOutcome(timedOut: boolean, hasPartial: boolean)
 /**
  * Keep adapter AbortError rejections on the cancellation path instead of misclassifying no-output user aborts as stream failures.
  */
-// @kern-source: turn-runtime:18
+// @kern-source: turn-runtime:20
 export function classifyCesarStreamError(signalAborted: boolean, hasPartial: boolean): 'abort'|'partial'|'failure' {
   if (signalAborted) return 'abort';
   return hasPartial ? 'partial' : 'failure';
 }
 
+
 /**
  * Release turn-scoped authority and dispatch handles after the owning turn reaches a terminal state.
  */
-// @kern-source: turn-runtime:25
+// @kern-source: turn-runtime:27
 export function releaseCesarTurnHandles(state: any): void {
   state.taskExecutionLease = undefined;
   state.lastDispatch = null;
 }
 
-// @kern-source: turn-runtime:32
+// @kern-source: turn-runtime:34
 export interface CesarTurnRuntime {
   envelope: ControlPlaneEnvelopeV1;
   state: TurnLifecycleState;
@@ -56,7 +61,7 @@ export interface CesarTurnRuntime {
   writeLifecycle?: ((event:Record<string,unknown>)=>{ok:boolean,seq:number,error?:string})|undefined;
 }
 
-// @kern-source: turn-runtime:42
+// @kern-source: turn-runtime:44
 export interface CesarTurnRuntimeHost {
   sessionId: string;
   nextLeaseEpoch: number;
@@ -68,7 +73,7 @@ export interface CesarTurnRuntimeHost {
   retryableReadOnly?: string[];
 }
 
-// @kern-source: turn-runtime:52
+// @kern-source: turn-runtime:54
 export function createCesarTurnRuntimeHost(sessionId: string, nextLeaseEpoch?: number, writeLifecycle?: ((event:Record<string,unknown>)=>{ok:boolean,seq:number,error?:string})): CesarTurnRuntimeHost {
   const initialEpoch = typeof nextLeaseEpoch === 'number' && Number.isSafeInteger(nextLeaseEpoch) && nextLeaseEpoch > 0
     ? nextLeaseEpoch
@@ -85,7 +90,7 @@ export function createCesarTurnRuntimeHost(sessionId: string, nextLeaseEpoch?: n
 /**
  * Production host seeded from durable recovery; control-plane writes are synchronous and fail closed.
  */
-// @kern-source: turn-runtime:66
+// @kern-source: turn-runtime:68
 export function createDurableCesarTurnRuntimeHost(sessionId: string): CesarTurnRuntimeHost {
   const recovery = recoverControlPlane(sessionId);
   const host = createCesarTurnRuntimeHost(
@@ -102,7 +107,7 @@ export function createDurableCesarTurnRuntimeHost(sessionId: string): CesarTurnR
 /**
  * Atomically release every in-memory field owned by a superseded producer. Delegation, dispatch, authority, and tool-loop scratch state must not cross the fresh lease; app-side steering and session-scoped plan/budget state have separate ownership.
  */
-// @kern-source: turn-runtime:81
+// @kern-source: turn-runtime:83
 export function resetStaleCesarTurnState(state: CesarState): void {
   state.busy = false;
   state.busySince = null;
@@ -124,7 +129,7 @@ export function resetStaleCesarTurnState(state: CesarState): void {
 /**
  * Claim one monotonic lease for a user turn. An older running producer is fenced before the new lease becomes active.
  */
-// @kern-source: turn-runtime:101
+// @kern-source: turn-runtime:103
 export function beginCesarTurn(host: CesarTurnRuntimeHost, turnId: string, producerId: string, attempt?: number): CesarTurnRuntime {
   if (host.recoveryBlockedReason) {
     throw new Error(`cannot begin Cesar turn: ${host.recoveryBlockedReason}`);
@@ -170,7 +175,9 @@ export function beginCesarTurn(host: CesarTurnRuntimeHost, turnId: string, produ
   return runtime;
 }
 
-// @kern-source: turn-runtime:148
+// ── Module: TurnQueries ──
+
+// @kern-source: turn-runtime:151
 export function isActiveCesarTurn(host: CesarTurnRuntimeHost, envelope: ControlPlaneEnvelopeV1): boolean {
   const active = host.active;
   return !!active
@@ -178,7 +185,8 @@ export function isActiveCesarTurn(host: CesarTurnRuntimeHost, envelope: ControlP
     && isCurrentControlPlaneEnvelope(envelope, active.envelope);
 }
 
-// @kern-source: turn-runtime:156
+
+// @kern-source: turn-runtime:159
 export function transitionCesarTurn(host: CesarTurnRuntimeHost, envelope: ControlPlaneEnvelopeV1, next: TurnLifecycleState): TurnLifecycleTransition {
   const runtime = host.active && isCurrentControlPlaneEnvelope(envelope, host.active.envelope)
     ? host.active
@@ -206,7 +214,7 @@ export function transitionCesarTurn(host: CesarTurnRuntimeHost, envelope: Contro
 /**
  * Release a stale active slot exactly once. An already-terminal runtime is safe to detach; a live runtime must first accept a durable terminal transition.
  */
-// @kern-source: turn-runtime:181
+// @kern-source: turn-runtime:184
 export function fenceStaleCesarTurn(host: CesarTurnRuntimeHost): boolean {
   const active = host.active;
   if (!active) return true;
@@ -219,10 +227,12 @@ export function fenceStaleCesarTurn(host: CesarTurnRuntimeHost): boolean {
   return transitionCesarTurn(host, active.envelope, next).ok;
 }
 
+// ── Module: TurnClaims ──
+
 /**
  * Return true only for the first live claim of one stable permission request id.
  */
-// @kern-source: turn-runtime:195
+// @kern-source: turn-runtime:199
 export function claimTurnPermission(runtime: CesarTurnRuntime, requestId: string): boolean {
   if (!requestId || isTerminalTurnState(runtime.state)) return false;
   if (runtime.permissionClaims.has(requestId)) return false;
@@ -230,10 +240,11 @@ export function claimTurnPermission(runtime: CesarTurnRuntime, requestId: string
   return true;
 }
 
+
 /**
  * Join duplicate adapter permission requests to one prompt and one durable decision.
  */
-// @kern-source: turn-runtime:204
+// @kern-source: turn-runtime:208
 export async function runTurnPermissionOnce(runtime: CesarTurnRuntime, requestId: string, ask: ()=>Promise<boolean|string>): Promise<boolean|string> {
   if (!requestId) throw new Error('requestId is required for turn-scoped permission');
   if (isTerminalTurnState(runtime.state)) throw new Error('turn is already terminal');
@@ -279,7 +290,7 @@ export async function runTurnPermissionOnce(runtime: CesarTurnRuntime, requestId
         const failed = runtime.writeLifecycle({ type: 'permission_terminal', envelope: runtime.envelope, requestId, decision: 'failed' });
         if (!failed.ok) {
           const persistenceError = new Error(`durable permission terminal failed: ${failed.error ?? 'unknown error'}`);
-          throw new AggregateError([err, persistenceError], persistenceError.message);
+          throw hostAggregateError([err, persistenceError], persistenceError.message);
         }
       }
       throw err;
@@ -295,7 +306,7 @@ export async function runTurnPermissionOnce(runtime: CesarTurnRuntime, requestId
 /**
  * Normalize structured and legacy native-tool results without treating a non-throwing ok:false result as success.
  */
-// @kern-source: turn-runtime:264
+// @kern-source: turn-runtime:268
 export function inferToolTerminalReason(value: any): 'succeeded'|'failed'|'skipped_policy'|'denied'|'cancelled'|'unknown' {
   const explicit = value?.terminalReason ?? value?.result?.terminalReason;
   if (['succeeded', 'failed', 'skipped_policy', 'denied', 'cancelled', 'unknown'].includes(explicit)) return explicit;
@@ -311,7 +322,7 @@ export function inferToolTerminalReason(value: any): 'succeeded'|'failed'|'skipp
 /**
  * At-most-once local initiation: duplicate representations join the first promise by stable toolCallId.
  */
-// @kern-source: turn-runtime:278
+// @kern-source: turn-runtime:282
 export async function runTurnToolOnce(runtime: CesarTurnRuntime, toolCallId: string, owner: TurnExecutionOwner, effectClass: TurnEffectClass, execute: ()=>Promise<any>): Promise<any> {
   if (!toolCallId) throw new Error('toolCallId is required for turn-scoped execution');
   if (isTerminalTurnState(runtime.state)) throw new Error('turn is already terminal');
@@ -358,7 +369,7 @@ export async function runTurnToolOnce(runtime: CesarTurnRuntime, toolCallId: str
         const failed = runtime.writeLifecycle({ type: 'tool_terminal', envelope: runtime.envelope, toolCallId, terminalReason });
         if (!failed.ok) {
           const persistenceError = new Error(`durable tool terminal failed: ${failed.error ?? 'unknown error'}`);
-          throw new AggregateError([err, persistenceError], persistenceError.message);
+          throw hostAggregateError([err, persistenceError], persistenceError.message);
         }
       }
       throw err;

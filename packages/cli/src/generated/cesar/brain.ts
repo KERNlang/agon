@@ -50,10 +50,14 @@ import { createTaskExecutionLease, authorizeTaskAction, isTaskFileMutationAction
 
 import { yieldToInk, recordCesarTurn, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, createTodosDisplayStripper, createPreambleStripper, findTrailingUserQuestion, detectAwaitingUserInput, detectNarratedToolStall, detectMutationIntentStall, detectFabricatedDelegation, shouldDeescalateGuard, withEagerToolCallId, claimEagerToolExecution, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation, isBashToolName, isWriteToolName } from './brain-helpers.js';
 
-import { hostNowIso } from '../lib/kern-host.js';
+import { runCesarConfirmationFollowUp } from './confirmation-follow-up.js';
 
-// @kern-source: brain:28
-export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
+import { consumeCesarPlanControlSignals } from './plan-control-signals.js';
+
+import { hostNowIso, hostWaitForInteractiveChoice } from '../lib/kern-host.js';
+
+// @kern-source: brain:30
+export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>, turnAlreadyCommitted?: boolean): Promise<CesarTurnOutcome> {
   // streaming-end commits a real stream OR (when only a speculative preview
   // draft sits on the pane) drops the draft without committing — safe no-op when
   // there's no entry at all. Always firing it clears a lingering PTY draft.
@@ -65,9 +69,11 @@ export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input
     dispatch({ type: 'spinner-stop' });
   }
   await yieldToInk();
-  appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: hostNowIso() });
-  appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: hostNowIso() });
-  recordCesarTurn(ctx, cesarEngineId, input, response);
+  if (!turnAlreadyCommitted) {
+    appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: hostNowIso() });
+    appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: hostNowIso() });
+    recordCesarTurn(ctx, cesarEngineId, input, response);
+  }
   const delResult = await promptDelegation(pendingDel.action, dispatch, pendingDel.hardened, pendingDel.tribunalMode, pendingDel.team, ctx, pendingDel.task ?? input, pendingDel as any);
   const happened = buildWhatHappenedSummary(telemetry ?? {});
   if (happened) {
@@ -83,7 +89,7 @@ export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input
   return { delegated: false, responded: true, decisionReason: 'delegation-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:54
+// @kern-source: brain:57
 export async function commitTurnAndSuggest(suggestion: {action:string, rest?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}, input: string, response: string, cesarEngineId: string, color: number, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   // streaming-end commits a real stream OR drops a lingering speculative preview
   // draft without committing — safe no-op when there's no entry at all.
@@ -114,10 +120,10 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
   return { delegated: false, responded: true, decisionReason: 'suggestion-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:79
+// @kern-source: brain:82
 export const _noBriefNudged: WeakMap<object, boolean> = new WeakMap<object, boolean>();
 
-// @kern-source: brain:81
+// @kern-source: brain:84
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<CesarTurnOutcome> {
   const abort = new AbortController();
       const _turnStart = Date.now();
@@ -1776,6 +1782,20 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             error: status === 'error' ? output : undefined,
           } as any);
         };
+        const consumePlanControlSignals = async () => {
+          if (!(ctx.cesar as any)?._proposePlanArgs && !(ctx.cesar as any)?._exitPlanModeArgs) {
+            return { handled: false, planProposed: false, plan: undefined, error: undefined };
+          }
+          const planHandlers = await import('../handlers/plan-mode.js');
+          return consumeCesarPlanControlSignals({
+            ctx,
+            dispatch,
+            engineId: cesarEngineId,
+            dispatchToolCall: (event: any) => dispatchToolCall(event),
+            proposePlan: planHandlers.handleProposePlan,
+            exitPlanMode: planHandlers.handleExitPlanMode,
+          });
+        };
         const hasTextToolCalls = sawStreamingXmlToolCall || response.includes('<tool_call_tool>') || response.includes('<tool name=');
         if (toolRegistry && response && (!ctx.cesar!.hasNativeTools || hasTextToolCalls)) {
           const toolParsed = parseToolCalls(response);
@@ -1878,57 +1898,19 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           }
         }
 
-        // ── Post-tool-loop: wire up ProposePlan if called during XML tool loop ──
-        if ((ctx.cesar as any)?._proposePlanArgs && !ctx.cesar!.proposedPlan) {
-          const ppArgs = (ctx.cesar as any)._proposePlanArgs;
-          delete (ctx.cesar as any)._proposePlanArgs;
-          try {
-            const activePlan = ctx.activePlan;
-            // awaiting_approval is a not-yet-accepted proposal — allow a fresh
-            // ProposePlan to supersede it. Only running/paused/planning (a
-            // genuinely active plan) blocks a nested proposal.
-            if (activePlan && ['planning', 'running', 'paused'].includes(activePlan.state)) {
-              dispatchToolCall({
-                type: 'tool-call',
-                engineId: cesarEngineId,
-                tool: 'ProposePlan',
-                input: JSON.stringify(ppArgs ?? {}),
-                status: 'error',
-                output: 'A Cesar plan is already active; nested plans are blocked. Resume or cancel the current plan before proposing another.',
-              } as any);
-            } else {
-              const { handleProposePlan } = await import('../handlers/plan-mode.js');
-              const planDispatch = ctx.cesar!.planDispatch ?? dispatch;
-              const plan = await handleProposePlan(ppArgs, planDispatch, ctx);
-              if (ctx.setActivePlan) ctx.setActivePlan(plan);
-              ctx.cesar!.proposedPlan = plan;
-              if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
-              dispatch({ type: 'spinner-stop' });
-              if (response) {
-                appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
-                appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-              }
-              return { mode: 'self', delegated: false, responded: true, decisionReason: 'plan-proposed', ...buildToolTelemetry() };
-            }
-          } catch (err) {
-            console.warn(`[agon] ProposePlan via tool loop failed: ${err instanceof Error ? err.message : String(err)}`);
-          }
+        // ── Post-tool-loop: apply plan control signals in this same turn ──
+        const planControl = await consumePlanControlSignals();
+        if (planControl.error) {
+          console.warn(`[agon] Plan control via tool loop failed: ${planControl.error}`);
         }
-
-        // ── Post-tool-loop: wire up ExitPlanMode if called during XML tool loop ──
-        // The core ExitPlanMode tool is a no-op signal, so XML-tool engines need
-        // the real archive+clear applied here (mirrors ProposePlan above).
-        if ((ctx.cesar as any)?._exitPlanModeArgs) {
-          const epArgs = (ctx.cesar as any)._exitPlanModeArgs;
-          delete (ctx.cesar as any)._exitPlanModeArgs;
-          try {
-            const { handleExitPlanMode } = await import('../handlers/plan-mode.js');
-            const planDispatch = ctx.cesar!.planDispatch ?? dispatch;
-            const exitResult = handleExitPlanMode(String((epArgs as any)?.reason ?? ''), planDispatch, ctx);
-            dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: 'ExitPlanMode', input: JSON.stringify(epArgs ?? {}), status: 'done', output: exitResult } as any);
-          } catch (err) {
-            console.warn(`[agon] ExitPlanMode via tool loop failed: ${err instanceof Error ? err.message : String(err)}`);
+        if (planControl.planProposed) {
+          if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
+          dispatch({ type: 'spinner-stop' });
+          if (response) {
+            appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+            appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
           }
+          return { mode: 'self', delegated: false, responded: true, decisionReason: 'plan-proposed', ...buildToolTelemetry() };
         }
 
         // ── Post-tool-loop: check delegation set during XML tool loop ──
@@ -2874,6 +2856,84 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           const _isChatTurn = routingHints.intakeKind === 'chat' || routingHints.recommendedFlow === 'answer';
           const isForkQuestion = !_isChatTurn && /\?\s*$/.test(lastLine) && _forkOptions.length >= 2 && _forkOptions.length <= 6;
           const asksConfirmation = !_isChatTurn && !ranToolLoop && /\?\s*$/.test(lastLine) && /\b(want|shall|should|ready|proceed|go ahead|dispatch|confirm|continue|implement)\b/i.test(lastLine);
+          let interactivePlanControl: any = null;
+          const _runInteractiveChoice = async (answer: string, message?: string) => {
+            dispatch({ type: 'spinner-start', message: `${cesarEngineId} continuing…`, color });
+            try {
+              const followUp = await runCesarConfirmationFollowUp({
+                answer,
+                message,
+                send: async (nextMessage: string) => {
+                  let text = '';
+                  let streamError = '';
+                  const gen = session.send({ message: nextMessage, signal: abort.signal, controlPlane: _turnRuntime.envelope });
+                  for await (const chunk of gen) {
+                    if (abort.signal.aborted) break;
+                    if (chunk.type === 'text') text += chunk.content;
+                    if (chunk.type === 'error') streamError = String(chunk.content ?? 'Cesar follow-up stream failed.');
+                    if (chunk.type === 'done' || chunk.type === 'error') break;
+                  }
+                  return streamError ? { text, error: streamError } : text;
+                },
+                executeTools: toolRegistry ? async (toolResponse: string) => {
+                  const toolResult = await runToolLoop(
+                    async (nextMessage: string) => {
+                      if (ctx.cesar!.pendingDelegation || !session.alive || abort.signal.aborted) return '';
+                      let next = '';
+                      const gen = session.send({
+                        message: drainSteeringIntoSend(nextMessage, 'auto'),
+                        signal: abort.signal,
+                        controlPlane: _turnRuntime.envelope,
+                        toolLoopBaseBudget: cesarFastPath ? fastPathBaseBudget : undefined,
+                        toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined,
+                      });
+                      for await (const chunk of gen) {
+                        const chunkType = String((chunk as any).type);
+                        if (chunkType === 'text') next += chunk.content;
+                        if (chunkType === 'error') {
+                          throw new Error(String(chunk.content ?? 'Cesar tool-loop continuation failed.'));
+                        }
+                        if (chunkType === 'done' || chunkType === 'error') break;
+                      }
+                      return next.trim();
+                    },
+                    toolResponse,
+                    toolCtx,
+                    toolRegistry,
+                    _buildContToolLoopOpts(),
+                  );
+                  interactivePlanControl = await consumePlanControlSignals();
+                  return { finalText: toolResult.finalText?.trim() ?? '', turns: toolResult.turns ?? 0, rendered: true };
+                } : undefined,
+                onText: (text: string) => {
+                  dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: text });
+                },
+                onExchange: (nextMessage: string, exchange: any) => {
+                  appendMessage(ctx.chatSession, { role: 'user', content: nextMessage, timestamp: hostNowIso() });
+                  if (exchange.content) {
+                    appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: exchange.content, timestamp: hostNowIso() });
+                  }
+                  recordCesarTurn(ctx, cesarEngineId, nextMessage, String(exchange.content ?? ''));
+                },
+              });
+              _toolCallTurns += Number.isFinite(followUp.turns) ? followUp.turns : 0;
+              if (followUp.content) response = `${response}\n\n${followUp.content}`;
+              const missingToolResult = followUp.status === 'tools' && !followUp.content && !ctx.cesar!.pendingDelegation && !interactivePlanControl?.handled;
+              if (followUp.status === 'empty' || followUp.status === 'incomplete' || followUp.status === 'error' || missingToolResult) {
+                _turnTerminalState = 'failed';
+                dispatch({ type: 'warning', message: followUp.status === 'error'
+                  ? `Cesar follow-up failed: ${followUp.error ?? 'unknown stream error'}`
+                  : followUp.status === 'incomplete'
+                  ? 'Cesar returned follow-up tool calls but no tool executor was available; the turn is incomplete.'
+                  : followUp.status === 'tools'
+                    ? 'Cesar executed the follow-up tools but produced no final result; the turn is incomplete.'
+                    : 'Cesar accepted the choice but produced no follow-up result; the turn is incomplete.' });
+              }
+              return followUp;
+            } finally {
+              dispatch({ type: 'spinner-stop' });
+            }
+          };
           if (isForkQuestion) {
             const _forkColors = ['#4ade80', '#22d3ee', '#fbbf24', '#a78bfa', '#f97316', '#ef4444'];
             // The composer auto-appends an "Other" row so the user is never boxed
@@ -2881,44 +2941,50 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             // routes the typed answer to Cesar as the next turn. Here we only list
             // the parsed fork options.
             const _choices = _forkOptions.map((o, i) => ({ key: o.key, label: o.label, color: _forkColors[i % _forkColors.length] }));
-            const picked = String(await new Promise<string>((resolve) => {
+            const picked = String(await hostWaitForInteractiveChoice(abort.signal, (resolve) => {
               dispatch({ type: 'question', prompt: `${cesarEngineId} — pick one (Esc to decide later):`, choices: _choices, resolve } as any);
             })).toLowerCase();
             const chosen = _forkOptions.find((o) => o.key === picked);
             if (chosen && session.alive && !abort.signal.aborted) {
-              dispatch({ type: 'spinner-start', message: `${cesarEngineId} continuing…`, color });
-              let followUp = '';
-              const gen = session.send({ message: `Go with option ${chosen.key.toUpperCase()}: ${chosen.full}. Proceed and finish it.`, signal: abort.signal, controlPlane: _turnRuntime.envelope });
-              for await (const chunk of gen) {
-                if (abort.signal.aborted) break;
-                if (chunk.type === 'text') followUp += chunk.content;
-                if (chunk.type === 'done' || chunk.type === 'error') break;
+              await _runInteractiveChoice(picked, `Go with option ${chosen.key.toUpperCase()}: ${chosen.full}. Proceed and finish it.`);
+              if (interactivePlanControl?.error) console.warn(`[agon] Interactive plan control failed: ${interactivePlanControl.error}`);
+              if (interactivePlanControl?.planProposed) {
+                return { mode: 'self', delegated: false, responded: true, decisionReason: 'plan-proposed', ...buildToolTelemetry() };
               }
-              dispatch({ type: 'spinner-stop' });
-              if (followUp.trim()) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: followUp.trim() });
+              const interactiveDelegation = ctx.cesar?.pendingDelegation;
+              if (interactiveDelegation) {
+                ctx.cesar!.pendingDelegation = null;
+                return await commitTurnAndDelegate(interactiveDelegation, input, response, cesarEngineId, false, dispatch, ctx, buildToolTelemetry(), true);
+              }
+              if (_turnTerminalState === 'failed') {
+                return { delegated: false, responded: true, decisionReason: 'interactive-follow-up-incomplete', ...buildToolTelemetry() };
+              }
             }
           } else if (asksConfirmation) {
             // Yes/No is not enough — the composer auto-appends an "Other" row so the
             // user can redirect Cesar with a free-text instruction ("do X instead")
             // instead of being boxed into y/n. Picking it opens an inline field and
             // routes the typed instruction to Cesar as the next turn.
-            const answer = await new Promise<string>((resolve) => {
+            const answer = await hostWaitForInteractiveChoice(abort.signal, (resolve) => {
               dispatch({ type: 'question', prompt: `${cesarEngineId}: ${lastLine.length > 80 ? lastLine.slice(0, 80) + '…' : lastLine}`, choices: [
                 { key: 'y', label: 'Yes', color: '#4ade80' },
                 { key: 'n', label: 'No', color: '#ef4444' },
               ], resolve } as any);
             });
             if (answer === 'y' && session.alive && !abort.signal.aborted) {
-              dispatch({ type: 'spinner-start', message: `${cesarEngineId} continuing…`, color });
-              let followUp = '';
-              const gen = session.send({ message: 'yes', signal: abort.signal, controlPlane: _turnRuntime.envelope });
-              for await (const chunk of gen) {
-                if (abort.signal.aborted) break;
-                if (chunk.type === 'text') followUp += chunk.content;
-                if (chunk.type === 'done' || chunk.type === 'error') break;
+              await _runInteractiveChoice(answer);
+              if (interactivePlanControl?.error) console.warn(`[agon] Interactive plan control failed: ${interactivePlanControl.error}`);
+              if (interactivePlanControl?.planProposed) {
+                return { mode: 'self', delegated: false, responded: true, decisionReason: 'plan-proposed', ...buildToolTelemetry() };
               }
-              dispatch({ type: 'spinner-stop' });
-              if (followUp.trim()) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: followUp.trim() });
+              const interactiveDelegation = ctx.cesar?.pendingDelegation;
+              if (interactiveDelegation) {
+                ctx.cesar!.pendingDelegation = null;
+                return await commitTurnAndDelegate(interactiveDelegation, input, response, cesarEngineId, false, dispatch, ctx, buildToolTelemetry(), true);
+              }
+              if (_turnTerminalState === 'failed') {
+                return { delegated: false, responded: true, decisionReason: 'interactive-follow-up-incomplete', ...buildToolTelemetry() };
+              }
             }
           }
 

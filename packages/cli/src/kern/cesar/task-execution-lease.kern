@@ -198,62 +198,63 @@ fn name=isDangerousTaskAction params="lease:TaskExecutionLease,action:string,tar
     catch { return true; }
   >>>
 
-fn name=evaluateTaskAction params="lease:TaskExecutionLease,action:string,target:string,options?:{hardDeny?:boolean,prohibited?:boolean}" returns=TaskActionEvaluation export=true
-  handler <<<
-    const signature = canonicalTaskActionSignature(action, target);
-    if (options?.hardDeny || options?.prohibited) return { decision: 'deny', signature, reason: 'hard_deny' };
-    if (targetEscapesWorkspace(lease, action, target)) return { decision: 'deny', signature, reason: 'workspace_escape' };
-    if (lease.approvedSignatures.has(signature)) return { decision: 'allow', signature, reason: 'boundary_approved' };
-    const dangerous = isDangerousTaskAction(lease, action, target);
-    if (dangerous) {
+module name=TaskAuthorization
+  fn name=evaluateTaskAction params="lease:TaskExecutionLease,action:string,target:string,options?:{hardDeny?:boolean,prohibited?:boolean}" returns=TaskActionEvaluation export=true
+    handler <<<
+      const signature = canonicalTaskActionSignature(action, target);
+      if (options?.hardDeny || options?.prohibited) return { decision: 'deny', signature, reason: 'hard_deny' };
+      if (targetEscapesWorkspace(lease, action, target)) return { decision: 'deny', signature, reason: 'workspace_escape' };
+      if (lease.approvedSignatures.has(signature)) return { decision: 'allow', signature, reason: 'boundary_approved' };
+      const dangerous = isDangerousTaskAction(lease, action, target);
+      if (dangerous) {
+        if (!lease.autoMode) return { decision: 'ask_boundary_once', signature, reason: 'auto_off' };
+        if (taskExplicitlyAuthorizes(lease, action, target)) return { decision: 'allow', signature, reason: 'explicit_authority' };
+        return { decision: 'ask_boundary_once', signature, reason: 'dangerous_boundary' };
+      }
       if (!lease.autoMode) return { decision: 'ask_boundary_once', signature, reason: 'auto_off' };
-      if (taskExplicitlyAuthorizes(lease, action, target)) return { decision: 'allow', signature, reason: 'explicit_authority' };
-      return { decision: 'ask_boundary_once', signature, reason: 'dangerous_boundary' };
-    }
-    if (!lease.autoMode) return { decision: 'ask_boundary_once', signature, reason: 'auto_off' };
-    if (lease.risk === 'important' && !lease.taskApproved) return { decision: 'ask_task_once', signature, reason: 'important_task' };
-    if (lease.risk === 'important' && lease.taskApproved) return { decision: 'allow', signature, reason: 'task_approved' };
-    return { decision: 'allow', signature, reason: 'routine_auto' };
-  >>>
+      if (lease.risk === 'important' && !lease.taskApproved) return { decision: 'ask_task_once', signature, reason: 'important_task' };
+      if (lease.risk === 'important' && lease.taskApproved) return { decision: 'allow', signature, reason: 'task_approved' };
+      return { decision: 'allow', signature, reason: 'routine_auto' };
+    >>>
 
-fn name=authorizeTaskAction async=true params="lease:TaskExecutionLease|undefined,action:string,target:string,requestApproval:(evaluation:TaskActionEvaluation)=>Promise<boolean>" returns="Promise<TaskActionEvaluation>" export=true
-  doc "Resolve one task-lease decision before an authority-bearing tool can execute. This sits above tool-specific auto-allow rules so native, API, companion, and eager adapters cannot bypass the task boundary."
-  handler <<<
-    if (!lease) {
-      return { decision: 'allow', signature: canonicalTaskActionSignature(action, target), reason: 'no_task_lease' };
-    }
-    const evaluation = evaluateTaskAction(lease, action, target);
-    if (evaluation.decision === 'allow' || evaluation.decision === 'deny') return evaluation;
-    const pendingApproval = lease.approvalPromises.get(evaluation.signature);
-    if (pendingApproval) {
-      const approved = await pendingApproval;
+  fn name=authorizeTaskAction async=true params="lease:TaskExecutionLease|undefined,action:string,target:string,requestApproval:(evaluation:TaskActionEvaluation)=>Promise<boolean>" returns="Promise<TaskActionEvaluation>" export=true
+    doc "Resolve one task-lease decision before an authority-bearing tool can execute. This sits above tool-specific auto-allow rules so native, API, companion, and eager adapters cannot bypass the task boundary."
+    handler <<<
+      if (!lease) {
+        return { decision: 'allow', signature: canonicalTaskActionSignature(action, target), reason: 'no_task_lease' };
+      }
+      const evaluation = evaluateTaskAction(lease, action, target);
+      if (evaluation.decision === 'allow' || evaluation.decision === 'deny') return evaluation;
+      const pendingApproval = lease.approvalPromises.get(evaluation.signature);
+      if (pendingApproval) {
+        const approved = await pendingApproval;
+        if (!approved) return { ...evaluation, decision: 'deny', reason: 'user_denied' };
+        approveTaskAction(lease, action, target);
+        return { ...evaluateTaskAction(lease, action, target), reason: 'joined_user_approval' };
+      }
+      if (!claimTaskActionPrompt(lease, evaluation.signature)) {
+        return { ...evaluation, decision: 'deny', reason: 'duplicate_or_declined_boundary' };
+      }
+      const approvalPromise = requestApproval(evaluation);
+      lease.approvalPromises.set(evaluation.signature, approvalPromise);
+      let approved = false;
+      try { approved = await approvalPromise; }
+      finally { lease.approvalPromises.delete(evaluation.signature); }
       if (!approved) return { ...evaluation, decision: 'deny', reason: 'user_denied' };
       approveTaskAction(lease, action, target);
-      return { ...evaluateTaskAction(lease, action, target), reason: 'joined_user_approval' };
-    }
-    if (!claimTaskActionPrompt(lease, evaluation.signature)) {
-      return { ...evaluation, decision: 'deny', reason: 'duplicate_or_declined_boundary' };
-    }
-    const approvalPromise = requestApproval(evaluation);
-    lease.approvalPromises.set(evaluation.signature, approvalPromise);
-    let approved = false;
-    try { approved = await approvalPromise; }
-    finally { lease.approvalPromises.delete(evaluation.signature); }
-    if (!approved) return { ...evaluation, decision: 'deny', reason: 'user_denied' };
-    approveTaskAction(lease, action, target);
-    return { ...evaluateTaskAction(lease, action, target), reason: 'user_approved' };
-  >>>
+      return { ...evaluateTaskAction(lease, action, target), reason: 'user_approved' };
+    >>>
 
-fn name=claimTaskActionPrompt params="lease:TaskExecutionLease,signature:string" returns=boolean export=true
-  handler <<<
-    if (!signature || lease.promptedSignatures.has(signature)) return false;
-    lease.promptedSignatures.add(signature);
-    return true;
-  >>>
+  fn name=claimTaskActionPrompt params="lease:TaskExecutionLease,signature:string" returns=boolean export=true
+    handler <<<
+      if (!signature || lease.promptedSignatures.has(signature)) return false;
+      lease.promptedSignatures.add(signature);
+      return true;
+    >>>
 
-fn name=approveTaskAction params="lease:TaskExecutionLease,action:string,target:string" returns=void export=true
-  handler <<<
-    const signature = canonicalTaskActionSignature(action, target);
-    lease.approvedSignatures.add(signature);
-    if (lease.risk === 'important' && !isDangerousTaskAction(lease, action, target)) lease.taskApproved = true;
-  >>>
+  fn name=approveTaskAction params="lease:TaskExecutionLease,action:string,target:string" returns=void export=true
+    handler <<<
+      const signature = canonicalTaskActionSignature(action, target);
+      lease.approvedSignatures.add(signature);
+      if (lease.risk === 'important' && !isDangerousTaskAction(lease, action, target)) lease.taskApproved = true;
+    >>>

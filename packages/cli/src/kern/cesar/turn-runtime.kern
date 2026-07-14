@@ -3,24 +3,26 @@ import from="../../../../core/src/generated/sessions/turn-protocol.js" names="Co
 import from="../../../../core/src/generated/sessions/control-plane-ledger.js" names="appendControlPlaneEvent,recoverControlPlane"
 import from="../../handlers/types.js" names="CesarState" types=true
 import from="./task-execution-lease.js" names="isApprovedPermissionResponse"
+import from="../lib/kern-host.js" names="hostAggregateError"
 
 type name=TurnExecutionOwner values="session|harness|mcp" export=true
 type name=TurnEffectClass values="read_only|mutation|external|unknown" export=true
 
-fn name=resolveCesarAbortOutcome params="timedOut:boolean,hasPartial:boolean" returns="{terminalState:'timed_out'|'cancelled',responded:boolean,decisionReason:string}" export=true
-  doc "Keep harness timeouts distinct from user interrupts all the way into lifecycle persistence and recap rendering."
-  handler <<<
-    return timedOut
-      ? { terminalState: 'timed_out', responded: hasPartial, decisionReason: hasPartial ? 'timeout-preserved-partial' : 'timeout' }
-      : { terminalState: 'cancelled', responded: false, decisionReason: 'aborted' };
-  >>>
+module name=TurnClassification
+  fn name=resolveCesarAbortOutcome params="timedOut:boolean,hasPartial:boolean" returns="{terminalState:'timed_out'|'cancelled',responded:boolean,decisionReason:string}" export=true
+    doc "Keep harness timeouts distinct from user interrupts all the way into lifecycle persistence and recap rendering."
+    handler <<<
+      return timedOut
+        ? { terminalState: 'timed_out', responded: hasPartial, decisionReason: hasPartial ? 'timeout-preserved-partial' : 'timeout' }
+        : { terminalState: 'cancelled', responded: false, decisionReason: 'aborted' };
+    >>>
 
-fn name=classifyCesarStreamError params="signalAborted:boolean,hasPartial:boolean" returns="'abort'|'partial'|'failure'" export=true
-  doc "Keep adapter AbortError rejections on the cancellation path instead of misclassifying no-output user aborts as stream failures."
-  handler <<<
-    if (signalAborted) return 'abort';
-    return hasPartial ? 'partial' : 'failure';
-  >>>
+  fn name=classifyCesarStreamError params="signalAborted:boolean,hasPartial:boolean" returns="'abort'|'partial'|'failure'" export=true
+    doc "Keep adapter AbortError rejections on the cancellation path instead of misclassifying no-output user aborts as stream failures."
+    handler <<<
+      if (signalAborted) return 'abort';
+      return hasPartial ? 'partial' : 'failure';
+    >>>
 
 fn name=releaseCesarTurnHandles params="state:any" returns=void export=true
   doc "Release turn-scoped authority and dispatch handles after the owning turn reaches a terminal state."
@@ -145,13 +147,14 @@ fn name=beginCesarTurn params="host:CesarTurnRuntimeHost,turnId:string,producerI
     return runtime;
   >>>
 
-fn name=isActiveCesarTurn params="host:CesarTurnRuntimeHost,envelope:ControlPlaneEnvelopeV1" returns=boolean export=true
-  handler <<<
-    const active = host.active;
-    return !!active
-      && !isTerminalTurnState(active.state)
-      && isCurrentControlPlaneEnvelope(envelope, active.envelope);
-  >>>
+module name=TurnQueries
+  fn name=isActiveCesarTurn params="host:CesarTurnRuntimeHost,envelope:ControlPlaneEnvelopeV1" returns=boolean export=true
+    handler <<<
+      const active = host.active;
+      return !!active
+        && !isTerminalTurnState(active.state)
+        && isCurrentControlPlaneEnvelope(envelope, active.envelope);
+    >>>
 
 fn name=transitionCesarTurn params="host:CesarTurnRuntimeHost,envelope:ControlPlaneEnvelopeV1,next:TurnLifecycleState" returns=TurnLifecycleTransition export=true
   handler <<<
@@ -192,14 +195,15 @@ fn name=fenceStaleCesarTurn params="host:CesarTurnRuntimeHost" returns=boolean e
     return transitionCesarTurn(host, active.envelope, next).ok;
   >>>
 
-fn name=claimTurnPermission params="runtime:CesarTurnRuntime,requestId:string" returns=boolean export=true
-  doc "Return true only for the first live claim of one stable permission request id."
-  handler <<<
-    if (!requestId || isTerminalTurnState(runtime.state)) return false;
-    if (runtime.permissionClaims.has(requestId)) return false;
-    runtime.permissionClaims.add(requestId);
-    return true;
-  >>>
+module name=TurnClaims
+  fn name=claimTurnPermission params="runtime:CesarTurnRuntime,requestId:string" returns=boolean export=true
+    doc "Return true only for the first live claim of one stable permission request id."
+    handler <<<
+      if (!requestId || isTerminalTurnState(runtime.state)) return false;
+      if (runtime.permissionClaims.has(requestId)) return false;
+      runtime.permissionClaims.add(requestId);
+      return true;
+    >>>
 
 fn name=runTurnPermissionOnce async=true params="runtime:CesarTurnRuntime,requestId:string,ask:()=>Promise<boolean|string>" returns="Promise<boolean|string>" export=true
   doc "Join duplicate adapter permission requests to one prompt and one durable decision."
@@ -248,7 +252,7 @@ fn name=runTurnPermissionOnce async=true params="runtime:CesarTurnRuntime,reques
           const failed = runtime.writeLifecycle({ type: 'permission_terminal', envelope: runtime.envelope, requestId, decision: 'failed' });
           if (!failed.ok) {
             const persistenceError = new Error(`durable permission terminal failed: ${failed.error ?? 'unknown error'}`);
-            throw new AggregateError([err, persistenceError], persistenceError.message);
+            throw hostAggregateError([err, persistenceError], persistenceError.message);
           }
         }
         throw err;
@@ -323,7 +327,7 @@ fn name=runTurnToolOnce async=true params="runtime:CesarTurnRuntime,toolCallId:s
           const failed = runtime.writeLifecycle({ type: 'tool_terminal', envelope: runtime.envelope, toolCallId, terminalReason });
           if (!failed.ok) {
             const persistenceError = new Error(`durable tool terminal failed: ${failed.error ?? 'unknown error'}`);
-            throw new AggregateError([err, persistenceError], persistenceError.message);
+            throw hostAggregateError([err, persistenceError], persistenceError.message);
           }
         }
         throw err;

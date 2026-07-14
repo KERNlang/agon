@@ -17,7 +17,7 @@ interface name=JobClientConnection export=true
   field name=ok type=boolean
   field name=message type=string optional=true
 
-fn name=positiveInteger params="value:unknown,label:string" returns=number export=true
+fn name=positiveJobCliInteger params="value:unknown,label:string" returns=number export=true
   handler <<<
     const parsed = typeof value === 'number' ? value : Number(String(value ?? ''));
     if (!Number.isInteger(parsed) || parsed < 1) throw new Error(`${label} must be a positive integer`);
@@ -156,9 +156,9 @@ fn name=requestOrFail params="request:DaemonRequest,timing:JobClientTiming" retu
 fn name=timingFromArgs params="args:Record<string,unknown>" returns=JobClientTiming export=true
   handler <<<
     return {
-      pollMs: positiveInteger(args.pollMs ?? 500, '--poll-ms'),
-      connectTimeoutMs: positiveInteger(args.connectTimeoutMs ?? 5000, '--connect-timeout-ms'),
-      requestTimeoutMs: positiveInteger(args.requestTimeoutMs ?? 2000, '--request-timeout-ms'),
+      pollMs: positiveJobCliInteger(args.pollMs ?? 500, '--poll-ms'),
+      connectTimeoutMs: positiveJobCliInteger(args.connectTimeoutMs ?? 5000, '--connect-timeout-ms'),
+      requestTimeoutMs: positiveJobCliInteger(args.requestTimeoutMs ?? 2000, '--request-timeout-ms'),
     };
   >>>
 
@@ -315,7 +315,7 @@ const name=jobCommand type="any" export=true
           async run({ args }) {
             const timing = await connectFromArgs(args as Record<string, unknown>); if (!timing) return;
             try {
-              await followEvents(String(args.jobId), timing, nonNegativeInteger(args.after, '--after'), positiveInteger(args.limit, '--limit'), !!args.follow, nonNegativeInteger(args.waitTimeoutMs, '--wait-timeout-ms'), !!args.json);
+              await followEvents(String(args.jobId), timing, nonNegativeInteger(args.after, '--after'), positiveJobCliInteger(args.limit, '--limit'), !!args.follow, nonNegativeInteger(args.waitTimeoutMs, '--wait-timeout-ms'), !!args.json);
             } catch (error) { failClient(error instanceof Error ? error.message : String(error)); }
           },
         }),

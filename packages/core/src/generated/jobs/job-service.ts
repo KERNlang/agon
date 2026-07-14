@@ -83,7 +83,7 @@ export function isTerminalJobState(state: JobState): boolean {
 }
 
 // @kern-source: job-service:66
-export function positiveInteger(value: number|undefined, fallback: number, label: string): number {
+export function positiveJobServiceInteger(value: number|undefined, fallback: number, label: string): number {
   const candidate = value ?? fallback;
   if (!Number.isFinite(candidate) || candidate < 1) {
     throw new Error(`${label} must be a positive integer`);
@@ -121,9 +121,9 @@ export class JobService {
     this.queue = [];
     this.activeCount = 0;
     this.idleWaiters = [];
-    this.eventLimit = positiveInteger(options?.eventLimit, DEFAULT_AGON_CONFIG.jobEventLimit, 'jobEventLimit');
-    this.retentionLimit = positiveInteger(options?.retentionLimit, DEFAULT_AGON_CONFIG.jobRetentionLimit, 'jobRetentionLimit');
-    this.maxConcurrency = positiveInteger(options?.maxConcurrency, DEFAULT_AGON_CONFIG.jobMaxConcurrency, 'jobMaxConcurrency');
+    this.eventLimit = positiveJobServiceInteger(options?.eventLimit, DEFAULT_AGON_CONFIG.jobEventLimit, 'jobEventLimit');
+    this.retentionLimit = positiveJobServiceInteger(options?.retentionLimit, DEFAULT_AGON_CONFIG.jobRetentionLimit, 'jobRetentionLimit');
+    this.maxConcurrency = positiveJobServiceInteger(options?.maxConcurrency, DEFAULT_AGON_CONFIG.jobMaxConcurrency, 'jobMaxConcurrency');
   }
 
   submit(kind: string, label: string, executor: JobExecutor): JobSnapshot {
@@ -260,7 +260,7 @@ export class JobService {
       };
       this.idleWaiters.push(waiter);
       if (timeoutMs !== undefined) {
-        const timeout = positiveInteger(timeoutMs, timeoutMs, 'timeoutMs');
+        const timeout = positiveJobServiceInteger(timeoutMs, timeoutMs, 'timeoutMs');
         timer = setTimeout(() => {
           if (settled) return;
           settled = true;

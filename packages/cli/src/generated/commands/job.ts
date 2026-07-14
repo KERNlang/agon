@@ -22,7 +22,7 @@ export interface JobClientConnection {
 }
 
 // @kern-source: job:20
-export function positiveInteger(value: unknown, label: string): number {
+export function positiveJobCliInteger(value: unknown, label: string): number {
   const parsed = typeof value === 'number' ? value : Number(String(value ?? ''));
   if (!Number.isInteger(parsed) || parsed < 1) throw new Error(`${label} must be a positive integer`);
   return parsed;
@@ -165,9 +165,9 @@ export async function requestOrFail(request: DaemonRequest, timing: JobClientTim
 // @kern-source: job:156
 export function timingFromArgs(args: Record<string,unknown>): JobClientTiming {
   return {
-    pollMs: positiveInteger(args.pollMs ?? 500, '--poll-ms'),
-    connectTimeoutMs: positiveInteger(args.connectTimeoutMs ?? 5000, '--connect-timeout-ms'),
-    requestTimeoutMs: positiveInteger(args.requestTimeoutMs ?? 2000, '--request-timeout-ms'),
+    pollMs: positiveJobCliInteger(args.pollMs ?? 500, '--poll-ms'),
+    connectTimeoutMs: positiveJobCliInteger(args.connectTimeoutMs ?? 5000, '--connect-timeout-ms'),
+    requestTimeoutMs: positiveJobCliInteger(args.requestTimeoutMs ?? 2000, '--request-timeout-ms'),
   };
 }
 
@@ -319,7 +319,7 @@ export const jobCommand: any = defineCommand({
       async run({ args }) {
         const timing = await connectFromArgs(args as Record<string, unknown>); if (!timing) return;
         try {
-          await followEvents(String(args.jobId), timing, nonNegativeInteger(args.after, '--after'), positiveInteger(args.limit, '--limit'), !!args.follow, nonNegativeInteger(args.waitTimeoutMs, '--wait-timeout-ms'), !!args.json);
+          await followEvents(String(args.jobId), timing, nonNegativeInteger(args.after, '--after'), positiveJobCliInteger(args.limit, '--limit'), !!args.follow, nonNegativeInteger(args.waitTimeoutMs, '--wait-timeout-ms'), !!args.json);
         } catch (error) { failClient(error instanceof Error ? error.message : String(error)); }
       },
     }),

@@ -56,7 +56,7 @@ fn name=resolvePackageVersion params="resolveSpecifier:string|null, wantName:str
 // runtime actually loads (@kernlang/terminal, whose package.json is exports-locked
 // so we resolve it via its exported /runtime entry and walk up to package.json).
 // The literals are last-resort fallbacks if resolution fails.
-const name=VERSION type=string value={{ resolvePackageVersion(null, '@kernlang/agon', '0.3.0') }}
+const name=VERSION type=string value={{ resolvePackageVersion(null, '@kernlang/agon', '0.2.4') }}
 
 const name=KERN_VERSION type=string value={{ resolvePackageVersion('@kernlang/terminal/runtime', '@kernlang/terminal', '4.0.0') }}
 

@@ -133,6 +133,37 @@ describe('Cesar turn runtime host', () => {
     expect(isActiveCesarTurn(host, second.envelope)).toBe(true);
   });
 
+  it('durably supersedes a cancelling producer before replacing its lease', () => {
+    const events: Array<Record<string, unknown>> = [];
+    const host = createCesarTurnRuntimeHost('chat-cancelling', 1, (event: Record<string, unknown>) => {
+      events.push(event);
+      return { ok: true, seq: events.length };
+    });
+    const first = beginCesarTurn(host, 'turn-1', 'api-session');
+    expect(transitionCesarTurn(host, first.envelope, 'cancelling')).toEqual({ ok: true, state: 'cancelling' });
+
+    const second = beginCesarTurn(host, 'turn-2', 'api-session');
+
+    expect(first.state).toBe('superseded');
+    expect(first.terminalAccepted).toBe(true);
+    expect(host.latestTerminal).toBe(first);
+    expect(host.active).toBe(second);
+    expect(events).toContainEqual({ type: 'turn_terminal', envelope: first.envelope, state: 'superseded' });
+  });
+
+  it('leaves the active producer unchanged when durable supersede fails', () => {
+    const host = createCesarTurnRuntimeHost('chat-supersede-failure', 1, (event: Record<string, unknown>) => event.type === 'turn_terminal'
+      ? { ok: false, seq: 0, error: 'disk full' }
+      : { ok: true, seq: 1 });
+    const first = beginCesarTurn(host, 'turn-1', 'api-session');
+
+    expect(() => beginCesarTurn(host, 'turn-2', 'api-session')).toThrow('durable supersede failed');
+    expect(first.state).toBe('running');
+    expect(first.terminalAccepted).toBe(false);
+    expect(host.active).toBe(first);
+    expect(host.latestTerminal).toBeNull();
+  });
+
   it('releases a stale active slot that is already terminal', () => {
     const host = createCesarTurnRuntimeHost('chat-terminal-stale');
     const runtime = beginCesarTurn(host, 'turn-1', 'api-session');
@@ -201,6 +232,69 @@ describe('Cesar turn runtime host', () => {
     expect(prompts).toBe(1);
     expect(writes.filter((type) => type === 'permission_requested')).toHaveLength(1);
     expect(writes.filter((type) => type === 'permission_terminal')).toHaveLength(1);
+  });
+
+  it.each(['y', 'a'])('records the approved %s permission response truthfully', async (answer) => {
+    const decisions: string[] = [];
+    const host = createCesarTurnRuntimeHost('chat-approved-string', 1, (event: Record<string, unknown>) => {
+      if (event.type === 'permission_terminal') decisions.push(String(event.decision));
+      return { ok: true, seq: decisions.length + 1 };
+    });
+    const runtime = beginCesarTurn(host, 'turn-1', 'api-session');
+
+    await expect(runTurnPermissionOnce(runtime, `permission-${answer}`, async () => answer)).resolves.toBe(answer);
+    expect(decisions).toEqual(['approved']);
+  });
+
+  it('does not open a permission prompt after the turn becomes terminal', async () => {
+    const decisions: string[] = [];
+    let runtime: ReturnType<typeof beginCesarTurn>;
+    const host = createCesarTurnRuntimeHost('chat-terminal-before-ask', 1, (event: Record<string, unknown>) => {
+      if (event.type === 'permission_requested') runtime.state = 'cancelled';
+      if (event.type === 'permission_terminal') decisions.push(String(event.decision));
+      return { ok: true, seq: decisions.length + 1 };
+    });
+    runtime = beginCesarTurn(host, 'turn-1', 'api-session');
+    let prompts = 0;
+
+    await expect(runTurnPermissionOnce(runtime, 'permission-cancelled', async () => {
+      prompts += 1;
+      return true;
+    })).resolves.toBe(false);
+    expect(prompts).toBe(0);
+    expect(decisions).toEqual(['denied']);
+  });
+
+  it('evicts a rejected permission promise so the same request can retry', async () => {
+    const host = createCesarTurnRuntimeHost('chat-permission-retry');
+    const runtime = beginCesarTurn(host, 'turn-1', 'api-session');
+    let attempts = 0;
+    const ask = async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error('temporary prompt failure');
+      return true;
+    };
+
+    await expect(runTurnPermissionOnce(runtime, 'permission-retry', ask)).rejects.toThrow('temporary prompt failure');
+    await expect(runTurnPermissionOnce(runtime, 'permission-retry', ask)).resolves.toBe(true);
+    expect(attempts).toBe(2);
+  });
+
+  it('fails closed when recording a rejected permission also fails', async () => {
+    const host = createCesarTurnRuntimeHost('chat-permission-failure-ledger', 1, (event: Record<string, unknown>) => event.type === 'permission_terminal'
+      ? { ok: false, seq: 0, error: 'disk full' }
+      : { ok: true, seq: 1 });
+    const runtime = beginCesarTurn(host, 'turn-1', 'api-session');
+
+    await expect(runTurnPermissionOnce(runtime, 'permission-failure-ledger', async () => {
+      throw new Error('prompt crashed');
+    })).rejects.toMatchObject({
+      message: expect.stringContaining('durable permission terminal failed'),
+      errors: [
+        expect.objectContaining({ message: 'prompt crashed' }),
+        expect.objectContaining({ message: 'durable permission terminal failed: disk full' }),
+      ],
+    });
   });
 
   it('accepts exactly one terminal transition', () => {
@@ -280,6 +374,38 @@ describe('Cesar turn runtime host', () => {
     expect(terminals).toEqual(['failed']);
   });
 
+  it('does not misclassify an ordinary transaction abort as user cancellation', async () => {
+    const terminals: string[] = [];
+    const host = createCesarTurnRuntimeHost('chat-tool-transaction-abort', 1, (event: Record<string, unknown>) => {
+      if (event.type === 'tool_terminal') terminals.push(String(event.terminalReason));
+      return { ok: true, seq: terminals.length + 1 };
+    });
+    const runtime = beginCesarTurn(host, 'turn-1', 'api-session');
+
+    await runTurnToolOnce(runtime, 'tc-transaction-abort', 'session', 'mutation', async () => ({
+      ok: false,
+      error: 'database transaction aborted after deadlock',
+    }));
+    expect(terminals).toEqual(['failed']);
+  });
+
+  it.each([
+    Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }),
+    Object.assign(new Error('terminated by signal SIGTERM'), { code: 'ABORT_ERR' }),
+  ])('records an aborted tool rejection as cancelled', async (failure) => {
+    const terminals: string[] = [];
+    const host = createCesarTurnRuntimeHost('chat-tool-abort', 1, (event: Record<string, unknown>) => {
+      if (event.type === 'tool_terminal') terminals.push(String(event.terminalReason));
+      return { ok: true, seq: terminals.length + 1 };
+    });
+    const runtime = beginCesarTurn(host, 'turn-1', 'api-session');
+
+    await expect(runTurnToolOnce(runtime, 'tc-abort', 'session', 'read_only', async () => {
+      throw failure;
+    })).rejects.toBe(failure);
+    expect(terminals).toEqual(['cancelled']);
+  });
+
   it('rejects a late tool result after the turn is cancelled', async () => {
     let resolveTool!: (value: string) => void;
     const tool = new Promise<string>((resolve) => { resolveTool = resolve; });
@@ -299,6 +425,53 @@ describe('Cesar turn runtime host', () => {
     expect(terminals).toContain('cancelled');
   });
 
+  it('fails closed when a late tool terminal record cannot be persisted', async () => {
+    let resolveTool!: (value: string) => void;
+    const tool = new Promise<string>((resolve) => { resolveTool = resolve; });
+    const host = createCesarTurnRuntimeHost('chat-late-tool-ledger', 1, (event: Record<string, unknown>) => event.type === 'tool_terminal'
+      ? { ok: false, seq: 0, error: 'disk full' }
+      : { ok: true, seq: 1 });
+    const runtime = beginCesarTurn(host, 'turn-1', 'api-session');
+    const pending = runTurnToolOnce(runtime, 'tc-late-ledger', 'session', 'read_only', () => tool);
+    expect(transitionCesarTurn(host, runtime.envelope, 'cancelling').ok).toBe(true);
+    expect(transitionCesarTurn(host, runtime.envelope, 'cancelled').ok).toBe(true);
+    resolveTool('too late');
+
+    await expect(pending).rejects.toThrow('durable tool terminal failed');
+  });
+
+  it('evicts a rejected tool promise so the same tool call can retry', async () => {
+    const host = createCesarTurnRuntimeHost('chat-tool-retry');
+    const runtime = beginCesarTurn(host, 'turn-1', 'api-session');
+    let attempts = 0;
+    const execute = async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error('temporary tool failure');
+      return 'recovered';
+    };
+
+    await expect(runTurnToolOnce(runtime, 'tc-retry', 'session', 'read_only', execute)).rejects.toThrow('temporary tool failure');
+    await expect(runTurnToolOnce(runtime, 'tc-retry', 'session', 'read_only', execute)).resolves.toBe('recovered');
+    expect(attempts).toBe(2);
+  });
+
+  it('fails closed when recording a rejected tool execution also fails', async () => {
+    const host = createCesarTurnRuntimeHost('chat-tool-failure-ledger', 1, (event: Record<string, unknown>) => event.type === 'tool_terminal'
+      ? { ok: false, seq: 0, error: 'disk full' }
+      : { ok: true, seq: 1 });
+    const runtime = beginCesarTurn(host, 'turn-1', 'api-session');
+
+    await expect(runTurnToolOnce(runtime, 'tc-failure-ledger', 'session', 'read_only', async () => {
+      throw new Error('tool crashed');
+    })).rejects.toMatchObject({
+      message: expect.stringContaining('durable tool terminal failed'),
+      errors: [
+        expect.objectContaining({ message: 'tool crashed' }),
+        expect.objectContaining({ message: 'durable tool terminal failed: disk full' }),
+      ],
+    });
+  });
+
   it('makes a late permission approval inert after cancellation', async () => {
     let resolveApproval!: (value: boolean) => void;
     const approval = new Promise<boolean>((resolve) => { resolveApproval = resolve; });
@@ -316,6 +489,21 @@ describe('Cesar turn runtime host', () => {
 
     await expect(pending).resolves.toBe(false);
     expect(decisions).toEqual(['denied']);
+  });
+
+  it('fails closed when a late permission terminal record cannot be persisted', async () => {
+    let resolveApproval!: (value: boolean) => void;
+    const approval = new Promise<boolean>((resolve) => { resolveApproval = resolve; });
+    const host = createCesarTurnRuntimeHost('chat-late-permission-ledger', 1, (event: Record<string, unknown>) => event.type === 'permission_terminal'
+      ? { ok: false, seq: 0, error: 'disk full' }
+      : { ok: true, seq: 1 });
+    const runtime = beginCesarTurn(host, 'turn-1', 'api-session');
+    const pending = runTurnPermissionOnce(runtime, 'permission-late-ledger', () => approval);
+    expect(transitionCesarTurn(host, runtime.envelope, 'cancelling').ok).toBe(true);
+    expect(transitionCesarTurn(host, runtime.envelope, 'cancelled').ok).toBe(true);
+    resolveApproval(true);
+
+    await expect(pending).rejects.toThrow('durable permission terminal failed');
   });
 
   it('blocks new turns when durable recovery sees an unsupported schema', () => {

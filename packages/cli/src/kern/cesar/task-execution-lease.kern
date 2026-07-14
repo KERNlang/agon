@@ -1,4 +1,4 @@
-import from="node:path" names="resolve,relative,isAbsolute"
+import from="node:path" names="resolve,relative,isAbsolute,sep"
 
 type name=TaskRisk values="routine|important|dangerous" export=true
 type name=TaskActionDecision values="allow|ask_task_once|ask_boundary_once|deny" export=true
@@ -30,7 +30,10 @@ const name=DEFAULT_DANGEROUS_PATTERN type=string value={{ '\\b(push|deploy|publi
 
 fn name=canonicalTaskActionSignature params="action:string,target:string" returns=string export=true
   handler <<<
-    return `${String(action ?? '').trim().toLowerCase()}:${String(target ?? '').trim().replace(/\s+/g, ' ').toLowerCase()}`;
+    const normalizedAction = String(action ?? '').trim().toLowerCase();
+    const fileMutation = ['edit', 'write', 'multiedit', 'notebookedit'].includes(normalizedAction.replace(/^agon/, ''));
+    const normalizedTarget = String(target ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+    return `${normalizedAction}:${fileMutation ? normalizedTarget.replace(/\\/g, '/') : normalizedTarget}`;
   >>>
 
 fn name=createTaskExecutionLease params="input:string,autoMode:boolean,workspace:string,patterns?:{important?:string,dangerous?:string}" returns=TaskExecutionLease export=true
@@ -59,20 +62,89 @@ fn name=createTaskExecutionLease params="input:string,autoMode:boolean,workspace
     };
   >>>
 
+fn name=buildAuthorizationTokenCounts params="clause:string,semanticPush:boolean" returns="Map<string,number>" export=false
+  handler <<<
+    const tokens = new Map<string, number>();
+    const normalizedClause = (semanticPush ? clause.replace(/\bforce-push\b/g, 'force push') : clause).replace(/\\/g, '/');
+    for (const rawToken of normalizedClause.split(/[^a-z0-9._/-]+/)) {
+      if (!rawToken) continue;
+      let token = rawToken;
+      if (semanticPush) {
+        if (token === '-f' || token === '--force') token = 'force';
+        else if (token === '--delete') token = 'delete';
+        else if (token === '--force-with-lease') token = 'force-with-lease';
+        else if (token.startsWith('-')) token = `option:${token.replace(/^-+/, '')}`;
+      }
+      if (token) tokens.set(token, (tokens.get(token) ?? 0) + 1);
+    }
+    if (semanticPush) {
+      for (const rawRefspec of clause.split(/\s+/)) {
+        const refspec = rawRefspec.replace(/^['"]|['"]$/g, '');
+        if (refspec.startsWith('+')) tokens.set('force', (tokens.get('force') ?? 0) + 1);
+        if (refspec.startsWith(':')) tokens.set('delete', (tokens.get('delete') ?? 0) + 1);
+      }
+    }
+    return tokens;
+  >>>
+
 fn name=taskExplicitlyAuthorizes params="lease:TaskExecutionLease,action:string,target:string" returns=boolean export=true
   handler <<<
     const input = lease.input.toLowerCase();
-    const actionToken = String(action ?? '').toLowerCase();
-    if (!actionToken || !input.includes(actionToken)) return false;
-    const targetTokens = String(target ?? '').toLowerCase().split(/[^a-z0-9._/-]+/).filter((token) => token.length > 1);
-    return targetTokens.length === 0 || targetTokens.every((token) => input.includes(token));
+    const normalizedAction = String(action ?? '').trim().toLowerCase();
+    let actionToken = normalizedAction;
+    let authorizationTarget = String(target ?? '').toLowerCase();
+    let semanticShellBoundary = false;
+    if (normalizedAction === 'push') {
+      semanticShellBoundary = true;
+    } else if (/^(?:agon)?(?:bash|shell)$/.test(normalizedAction)) {
+      const trimmedTarget = authorizationTarget.trim();
+      const gitPush = /^git\s+push(?:\s|$)/.exec(trimmedTarget);
+      if (gitPush) {
+        actionToken = 'push';
+        semanticShellBoundary = true;
+        authorizationTarget = trimmedTarget.slice(gitPush[0].length)
+          .split(/\s+/)
+          .filter((token) => token && token !== '-u' && token !== '--set-upstream')
+          .join(' ');
+      }
+    }
+    const positiveClauses = input
+      .split(/(?:[.;,\n]+|\bbut\b|\bhowever\b|\bexcept\b|\bexcluding\b|\bother\s+than\b|\band\s+(?=(?:do\s+not|don['’]?t|never|without|no)\b))/)
+      .filter((clause) => !/(?:^|\s)(?:do\s+not|don['’]?t|never|without|not)(?=\s|$)|(?:^|\s)no\s+(?:push|force|delete|touch|use|run|call)(?=\s|$)/.test(clause));
+    const authorizingTokenSets: Array<Map<string, number>> = [];
+    for (const clause of positiveClauses) {
+      const tokens = buildAuthorizationTokenCounts(clause, semanticShellBoundary);
+      if (tokens.has(actionToken)) authorizingTokenSets.push(tokens);
+    }
+    if (!actionToken || authorizingTokenSets.length === 0) return false;
+    const targetTokenCounts = buildAuthorizationTokenCounts(authorizationTarget, semanticShellBoundary);
+    const targetTokens = Array.from(targetTokenCounts.keys());
+    if (targetTokens.length === 0) return true;
+    for (const tokens of authorizingTokenSets) {
+      let matches = true;
+      for (const token of targetTokens) {
+        const required = (targetTokenCounts.get(token) ?? 0) + (token === actionToken ? 1 : 0);
+        if ((tokens.get(token) ?? 0) < required) { matches = false; break; }
+      }
+      if (matches) return true;
+    }
+    return false;
   >>>
 
 fn name=taskExplicitlyRequestsAction params="lease:TaskExecutionLease,action:string" returns=boolean export=true
   doc "Goal and Conquer use this action-level check for their explicit-user-only boundary; side effects are evaluated separately against the full delegation target."
-  handler lang="kern"
-    let name=token value="String(action ?? '').trim().toLowerCase()"
-    return value="!!token && lease.input.toLowerCase().includes(token)"
+  handler <<<
+    const token = String(action ?? '').trim().toLowerCase();
+    if (!token) return false;
+    return buildAuthorizationTokenCounts(lease.input.toLowerCase(), false).has(token);
+  >>>
+
+fn name=relativePathEscapesWorkspace params="rel:string,pathSeparator?:string" returns=boolean export=true
+  doc "Recognize a path.relative result that crosses the workspace root on either POSIX or Windows. The optional separator keeps the platform rule directly testable."
+  handler <<<
+    const separator = pathSeparator || sep;
+    return rel === '..' || rel.startsWith(`..${separator}`) || rel.startsWith('../') || rel.startsWith('..\\') || isAbsolute(rel);
+  >>>
 
 fn name=buildTaskActionTarget params="lease:TaskExecutionLease,primary:string,details?:Record<string,unknown>" returns=string export=true
   doc "Bind every delegation field that can widen authority into one auditable lease target. External queues and external actions remain visible to the dangerous-boundary policy."
@@ -83,7 +155,7 @@ fn name=buildTaskActionTarget params="lease:TaskExecutionLease,primary:string,de
     if (queue) {
       const absoluteQueue = isAbsolute(queue) ? resolve(queue) : resolve(lease.workspace, queue);
       const rel = relative(lease.workspace, absoluteQueue);
-      const external = rel === '..' || rel.startsWith('..' + (process.platform === 'win32' ? '\\\\' : '/')) || isAbsolute(rel);
+      const external = relativePathEscapesWorkspace(rel);
       parts.push((external ? 'external queue ' : 'queue ') + queue);
     }
     for (const key of ['gate', 'builder', 'target', 'fitnessCmd'] as const) {
@@ -111,12 +183,12 @@ fn name=targetEscapesWorkspace params="lease:TaskExecutionLease,action:string,ta
     if (!candidate || !isTaskFileMutationAction(action)) return false;
     const absoluteTarget = isAbsolute(candidate) ? resolve(candidate) : resolve(lease.workspace, candidate);
     const rel = relative(lease.workspace, absoluteTarget);
-    return rel === '..' || rel.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) || isAbsolute(rel);
+    return relativePathEscapesWorkspace(rel);
   >>>
 
 fn name=isDangerousTaskAction params="lease:TaskExecutionLease,action:string,target:string" returns=boolean export=false
   handler <<<
-    const normalizedAction = String(action ?? '').trim();
+    const normalizedAction = String(action ?? '').trim().replace(/^agon/i, '');
     const authorityTargetBearing = /^(bash|shell|goal|conquer|forge|agent|pipeline)$/i.test(normalizedAction);
     try {
       const pattern = new RegExp(lease.dangerousPattern, 'i');
@@ -135,6 +207,7 @@ fn name=evaluateTaskAction params="lease:TaskExecutionLease,action:string,target
     if (lease.approvedSignatures.has(signature)) return { decision: 'allow', signature, reason: 'boundary_approved' };
     const dangerous = isDangerousTaskAction(lease, action, target);
     if (dangerous) {
+      if (!lease.autoMode) return { decision: 'ask_boundary_once', signature, reason: 'auto_off' };
       if (taskExplicitlyAuthorizes(lease, action, target)) return { decision: 'allow', signature, reason: 'explicit_authority' };
       return { decision: 'ask_boundary_once', signature, reason: 'dangerous_boundary' };
     }

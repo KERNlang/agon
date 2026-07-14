@@ -59,6 +59,7 @@ describe('turn lifecycle reducer', () => {
     expect(reduceTurnLifecycle('created', 'running')).toEqual({ ok: true, state: 'running' });
     expect(reduceTurnLifecycle('running', 'cancelling')).toEqual({ ok: true, state: 'cancelling' });
     expect(reduceTurnLifecycle('cancelling', 'cancelled')).toEqual({ ok: true, state: 'cancelled' });
+    expect(reduceTurnLifecycle('cancelling', 'superseded')).toEqual({ ok: true, state: 'superseded' });
     expect(reduceTurnLifecycle('running', 'completed')).toEqual({ ok: true, state: 'completed' });
     expect(reduceTurnLifecycle('running', 'failed')).toEqual({ ok: true, state: 'failed' });
     expect(reduceTurnLifecycle('running', 'timed_out')).toEqual({ ok: true, state: 'timed_out' });

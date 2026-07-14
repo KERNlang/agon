@@ -123,7 +123,7 @@ export function reduceTurnLifecycle(current: TurnLifecycleState, next: TurnLifec
         || next === 'timed_out'
         || next === 'superseded'
       : current === 'cancelling'
-        ? next === 'cancelled' || next === 'timed_out'
+        ? next === 'cancelled' || next === 'timed_out' || next === 'superseded'
         : false;
   if (!allowed) return { ok: false, state: current, reason: 'invalid_transition' };
   return { ok: true, state: next };

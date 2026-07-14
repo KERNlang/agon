@@ -1,0 +1,35 @@
+import from="@kernlang/agon-core" names="ApiConfig,DispatchOptions,EngineDefinition" types=true
+
+type name=ExecutionBackend values="cli|api|missing"
+
+interface name=ExecutionPlan
+  field name=options type=DispatchOptions
+  field name=backend type=ExecutionBackend
+  field name=binaryPath type="string|null"
+  field name=apiConfig type=ApiConfig optional=true
+
+fn name=normalizeDispatchOptions params="options:DispatchOptions" returns="DispatchOptions" export=true
+  doc "Apply the engine timeout as a floor without mutating a caller-owned DispatchOptions object."
+  handler lang="kern"
+    let name=declared value="Number((options.engine as any)?.timeout ?? 0)"
+    if cond="declared > Number(options.timeout ?? 0)"
+      return value="{ ...options, timeout: declared }"
+    return value="options"
+
+fn name=buildApiDispatchConfig params="engine:EngineDefinition,resolvedModel:string|null,maxTokens:number|undefined" returns="ApiConfig" export=true
+  doc "Clone the complete API definition, then apply only per-dispatch model/token overrides."
+  handler lang="kern"
+    if cond="!engine.api"
+      throw value="new Error(`Engine \"${engine.id}\" has no API configuration`)"
+    return value="{ ...engine.api, ...(resolvedModel ? { model: resolvedModel } : {}), ...(maxTokens && maxTokens > 0 ? { maxTokens } : {}) }"
+
+fn name=planEngineExecution params="options:DispatchOptions,binaryPath:string|null,apiKeyAvailable:boolean,resolvedModel:string|null" returns="ExecutionPlan" export=true
+  doc "Choose CLI first, API only as a usable fallback, or a truthful missing backend. Shared by every public adapter dispatch method."
+  handler lang="kern"
+    let name=normalized value="normalizeDispatchOptions(options)"
+    if cond="binaryPath"
+      return value="{ options: normalized, backend: 'cli', binaryPath }"
+    if cond="normalized.engine.api && apiKeyAvailable"
+      let name=apiConfig value="buildApiDispatchConfig(normalized.engine, resolvedModel, normalized.maxTokens)"
+      return value="{ options: normalized, backend: 'api', binaryPath: null, apiConfig }"
+    return value="{ options: normalized, backend: 'missing', binaryPath: null }"

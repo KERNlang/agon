@@ -12,6 +12,8 @@ import { join } from 'node:path';
 // observable without a real network call; everything else stays real.
 const mockState = {
   apiCalled: false,
+  apiStreamCalled: false,
+  apiAgentCalled: false,
 };
 
 vi.mock('@kernlang/agon-core', async (importOriginal) => {
@@ -21,6 +23,15 @@ vi.mock('@kernlang/agon-core', async (importOriginal) => {
     apiDispatch: async () => {
       mockState.apiCalled = true;
       return { exitCode: 0, stdout: 'api-fallback-output', stderr: '', durationMs: 1, timedOut: false };
+    },
+    apiStreamDispatch: async function* () {
+      mockState.apiStreamCalled = true;
+      yield 'api-stream-output';
+      return { exitCode: 0, stdout: 'api-stream-output', stderr: '', durationMs: 1, timedOut: false };
+    },
+    runApiAgentLoop: async () => {
+      mockState.apiAgentCalled = true;
+      return { response: 'api-agent-output', steps: [], totalTokens: 1 };
     },
   };
 });
@@ -65,6 +76,8 @@ function makeOptions(): DispatchOptions {
 describe('CliAdapter.dispatch — api fallback gated on key presence (Finding 1)', () => {
   beforeEach(() => {
     mockState.apiCalled = false;
+    mockState.apiStreamCalled = false;
+    mockState.apiAgentCalled = false;
     delete process.env.FINDING1_FIXTURE_KEY;
     delete process.env.undefined;
   });
@@ -94,6 +107,38 @@ describe('CliAdapter.dispatch — api fallback gated on key presence (Finding 1)
     const result = await adapter.dispatch(makeOptions());
     expect(mockState.apiCalled).toBe(true);
     expect(result.stdout).toBe('api-fallback-output');
+  });
+
+  it('dispatchStream uses the same API fallback selection', async () => {
+    process.env.FINDING1_FIXTURE_KEY = 'sk-test-123';
+    const gen = makeAdapter().dispatchStream(makeOptions());
+
+    expect(await gen.next()).toEqual({ value: 'api-stream-output', done: false });
+    const terminal = await gen.next();
+    expect(terminal.done).toBe(true);
+    expect(terminal.value.stdout).toBe('api-stream-output');
+    expect(mockState.apiStreamCalled).toBe(true);
+  });
+
+  it('dispatchAgent uses the same API fallback selection', async () => {
+    process.env.FINDING1_FIXTURE_KEY = 'sk-test-123';
+    const result = await makeAdapter().dispatchAgent({ ...makeOptions(), mode: 'agent' });
+
+    expect(mockState.apiAgentCalled).toBe(true);
+    expect(result.stdout).toBe('api-agent-output');
+  });
+
+  it('dispatchAgentStream keeps its explicit API-only unsupported result', async () => {
+    process.env.FINDING1_FIXTURE_KEY = 'sk-test-123';
+    const gen = makeAdapter().dispatchAgentStream({ ...makeOptions(), mode: 'agent' });
+
+    const notice = await gen.next();
+    expect(notice.done).toBe(false);
+    expect(notice.value).toContain('does not support streaming agent mode');
+    const terminal = await gen.next();
+    expect(terminal.done).toBe(true);
+    expect(terminal.value.exitCode).toBe(1);
+    expect(mockState.apiAgentCalled).toBe(false);
   });
 
   it('binary-only engine (no api block) + binary missing → still throws EngineNotFoundError (unchanged)', async () => {

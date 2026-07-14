@@ -1,8 +1,9 @@
 import from="node:fs" names="writeFileSync,mkdirSync"
 import from="node:path" names="join,dirname"
-import from="@kernlang/agon-core" names="EngineAdapter,EngineDefinition,DispatchOptions,DispatchResult,AgentDispatchResult" types=true
+import from="@kernlang/agon-core" names="ApiConfig,EngineAdapter,EngineDefinition,DispatchOptions,DispatchResult,AgentDispatchResult" types=true
 import from="@kernlang/agon-core" names="EngineRegistry,spawnWithTimeout,spawnStream,EngineNotFoundError,readOnlyDiff,diffLineCount,apiDispatch,apiDispatchTools,apiDispatchToolsHistory,attachVisionToMessages,apiStreamDispatch,companionDispatch,runHooks,hooksFailed,runApiAgentLoop,sessionContext,resolveWorkingDir,engineHealth,classifyDispatchFailure"
 import from="./adapter-helpers.js" names="buildCommand,checkEnvVars,resolveModel,stripStreamJson,usesStreamJson,recordDispatchHealth,shouldUseCompanionForAgent,shouldUseClaudePty,runClaudePtyDispatch,runClaudePtyStreamDispatch,resolveClaudePtyExtraArgs,computeEngineIsolation,hasEnvVar,nowMs,createStringSet"
+import from="./execution-plan.js" names="normalizeDispatchOptions,planEngineExecution"
 
 service name=CliAdapter implements=EngineAdapter
   field name=registry type=EngineRegistry private=true
@@ -17,24 +18,20 @@ service name=CliAdapter implements=EngineAdapter
       assign target="this.isAvailable" value="this.isAvailable.bind(this)"
       assign target="this.getVersion" value="this.getVersion.bind(this)"
 
-  method name=withEngineTimeout params="options:DispatchOptions" returns="DispatchOptions" private=true
-    handler lang="kern"
-      comment raw="// Honor the engine's declared timeout (slow coding-plan engines like zai set timeout=300) over a lower generic command default (orchestration uses 120s), so a slow engine isn't cut off mid-answer and lose its slot. Returns a NEW options object — never mutates the caller's, since callers may reuse/retry the same DispatchOptions."
-      let name=declared value="Number((options.engine as any)?.timeout ?? 0)"
-      if cond="declared > Number(options.timeout ?? 0)"
-        return value="{ ...options, timeout: declared }"
-      return value="options"
-
   method name=dispatch params="options:DispatchOptions" returns="Promise<DispatchResult>" async=true
     handler lang="kern"
-      assign target="options" value="this.withEngineTimeout(options)"
-      comment raw="// Prefer CLI binary when available — API is fallback for binary-less engines"
-      let name=binaryPath value="options.engine.binary ? this.registry.findBinary(options.engine) : null"
-      if cond="!binaryPath"
+      assign target="options" value="normalizeDispatchOptions(options)"
+      comment raw="// Prefer CLI binary when available — API is fallback for binary-less engines. The shared execution planner owns this decision for every public adapter method."
+      let name=binaryCandidate value="options.engine.binary ? this.registry.findBinary(options.engine) : null"
+      let name=apiKeyAvailable value="!!(options.engine.api && hasEnvVar(options.engine.api.apiKeyEnv))"
+      let name=resolvedApiModel value="!binaryCandidate && apiKeyAvailable ? resolveModel(options.engine, options.cwd) : null"
+      let name=execution value="planEngineExecution(options, binaryCandidate, apiKeyAvailable, resolvedApiModel)"
+      assign target="options" value="execution.options"
+      let name=binaryPath value="execution.binaryPath as string"
+      if cond="execution.backend !== 'cli'"
         comment raw="// No CLI binary — use API ONLY when a usable key is present, otherwise fail. Gating on the key (not just the api block) is what keeps binary-missing + no-key from mis-reporting as \"Missing API key\" for codex/claude/agy (which all declare an api block): without a key it falls through to the EngineNotFoundError(missingBinary) throw, while binary-missing + valid key still uses the api fallback (a feature). A possibly-absent apiKeyEnv → process.env[undefined] → undefined (falsy), correctly treated as no usable key."
-        if cond="options.engine.api && hasEnvVar(options.engine.api.apiKeyEnv)"
-          let name=resolvedModel value="resolveModel(options.engine, options.cwd)"
-          let name=apiConfig value="{ ...options.engine.api, ...(resolvedModel ? { model: resolvedModel } : {}), ...(options.maxTokens ? { maxTokens: options.maxTokens } : {}) }"
+        if cond="execution.backend === 'api'"
+          let name=apiConfig value="execution.apiConfig as ApiConfig"
           comment raw="// Inject project context for API engines so they know the codebase"
           comment raw="// Uses sessionContext cache — avoids redundant git spawns when handleChat already gathered context"
           let name=sysPrompt kind=let value="options.systemPrompt"
@@ -117,7 +114,7 @@ service name=CliAdapter implements=EngineAdapter
 
   method name=dispatchStream params="options:DispatchOptions" returns="string, DispatchResult, void" async=true stream=true
     handler lang="ts" <<<
-      options = this.withEngineTimeout(options);
+      options = normalizeDispatchOptions(options);
       // workspace-pure isolation, resolved once for every dispatch path below.
       const iso = computeEngineIsolation(options.engine, { isolation: options.isolation, cwd: options.cwd });
       // Subscription pty path for claude — yields response deltas, returns final result.
@@ -143,14 +140,17 @@ service name=CliAdapter implements=EngineAdapter
         // fall through to legacy path
       }
 
-      // Prefer CLI binary when available — API is fallback for binary-less engines
-      const binaryPath = options.engine.binary ? this.registry.findBinary(options.engine) : null;
+      // Shared CLI-first planner: the wrappers keep their current execution behavior,
+      // while backend selection and API config normalization stay identical.
+      const binaryCandidate = options.engine.binary ? this.registry.findBinary(options.engine) : null;
+      const apiKeyAvailable = !!(options.engine.api && hasEnvVar(options.engine.api.apiKeyEnv));
+      const resolvedApiModel = !binaryCandidate && apiKeyAvailable ? resolveModel(options.engine, options.cwd) : null;
+      const execution = planEngineExecution(options, binaryCandidate, apiKeyAvailable, resolvedApiModel);
+      options = execution.options;
 
-      if (!binaryPath) {
+      if (execution.backend === 'api') {
         // API fallback ONLY when a usable key is present — binary-missing + no-key falls through to EngineNotFoundError(missingBinary) instead of mis-reporting "Missing API key". (Absent apiKeyEnv → process.env[undefined] → undefined → no usable key.)
-        if (options.engine.api && hasEnvVar(options.engine.api.apiKeyEnv)) {
-          const resolvedModel = resolveModel(options.engine, options.cwd);
-          const apiConfig = { ...options.engine.api, ...(resolvedModel ? { model: resolvedModel } : {}), ...(options.maxTokens ? { maxTokens: options.maxTokens } : {}) };
+          const apiConfig = execution.apiConfig as ApiConfig;
           // NOTE: this STREAMING API fallback is prompt-only — it carries neither native tools nor
           // vision images (no current caller streams those: the browser brain uses the non-stream
           // dispatch() above, and image chat goes through session-resume). If a future caller needs
@@ -166,10 +166,12 @@ service name=CliAdapter implements=EngineAdapter
           mkdirSync(dirname(outputPath), { recursive: true });
           writeFileSync(outputPath, result.stdout);
           return result;
-        }
+      }
+      if (execution.backend === 'missing') {
         // No CLI binary AND no API fallback — report the missing binary, not a key.
         throw new EngineNotFoundError(options.engine.id, options.engine.installHint, options.engine.binary);
       }
+      const binaryPath = execution.binaryPath as string;
 
       // Resolve system prompt for CLI: native flag if available, else prepend
       let effectivePrompt = options.prompt;
@@ -221,7 +223,7 @@ service name=CliAdapter implements=EngineAdapter
 
   method name=dispatchAgent params="options:DispatchOptions" returns="Promise<AgentDispatchResult>" async=true
     handler lang="kern"
-      assign target="options" value="this.withEngineTimeout(options)"
+      assign target="options" value="normalizeDispatchOptions(options)"
       comment raw="// workspace-pure isolation, resolved once for every agent dispatch path below."
       let name=iso value="computeEngineIsolation(options.engine, { isolation: options.isolation, cwd: options.cwd })"
       comment raw="// Subscription pty path for claude (agent mode: tools + bypassed perms)."
@@ -250,10 +252,13 @@ service name=CliAdapter implements=EngineAdapter
           do value="recordDispatchHealth(options.engine.id, ptyResult)"
           return value="{ ...ptyResult, diff, diffLines: lines, filesChanged: files }"
       comment raw="// API fallback: use API agent loop when binary is declared but not installed AND a usable key is present. Without a key, fall through to the EngineNotFoundError(missingBinary) throw below rather than mis-reporting \"Missing API key\". (Absent apiKeyEnv → process.env[undefined] → undefined → no usable key.)"
-      let name=agentBinaryPath value="options.engine.binary ? this.registry.findBinary(options.engine) : null"
-      if cond="options.engine.api && !agentBinaryPath && hasEnvVar(options.engine.api.apiKeyEnv)"
-        let name=resolvedModel value="resolveModel(options.engine, options.cwd)"
-        let name=apiConfig value="{ ...options.engine.api, ...(resolvedModel ? { model: resolvedModel } : {}), ...(options.maxTokens ? { maxTokens: options.maxTokens } : {}) }"
+      let name=binaryCandidate value="options.engine.binary ? this.registry.findBinary(options.engine) : null"
+      let name=apiKeyAvailable value="!!(options.engine.api && hasEnvVar(options.engine.api.apiKeyEnv))"
+      let name=resolvedApiModel value="!binaryCandidate && apiKeyAvailable ? resolveModel(options.engine, options.cwd) : null"
+      let name=execution value="planEngineExecution(options, binaryCandidate, apiKeyAvailable, resolvedApiModel)"
+      assign target="options" value="execution.options"
+      if cond="execution.backend === 'api'"
+        let name=apiConfig value="execution.apiConfig as ApiConfig"
         let name=cwd value="options.cwd || resolveWorkingDir()"
         let name=projectCtx value="sessionContext.get(cwd)"
         let name=systemPrompt value="[ options.systemPrompt ?? 'You are an AI coding assistant. Be direct and concise.', projectCtx ? `## PROJECT CONTEXT\\n${projectCtx}` : '', ].filter(Boolean).join('\\n\\n')"
@@ -284,10 +289,10 @@ service name=CliAdapter implements=EngineAdapter
         let name=looksLikeAuth value="/\\b401\\b|invalid api key|invalid access token|token (expired|invalid)|unauthori[sz]ed|authentication (failed|error)/i.test(respText.slice(0, 500))"
         do value="recordDispatchHealth(options.engine.id, looksLikeAuth ? { exitCode: 1, stderr: respText.slice(0, 500), timedOut: false } : { exitCode: 0, stderr: '', timedOut: false })"
         return value="{ exitCode: 0, stdout: result.response, stderr: '', durationMs: nowMs() - startTime, timedOut: false, diff, diffLines: lines, filesChanged: files, }"
-      let name=binaryPath value="this.registry.findBinary(options.engine)"
-      if cond="!binaryPath"
+      if cond="execution.backend === 'missing'"
         comment raw="// Binary check BEFORE env-var check: a missing binary must never report as a missing key."
         throw value="new EngineNotFoundError(options.engine.id, options.engine.installHint, options.engine.binary)"
+      let name=binaryPath value="execution.binaryPath as string"
       let name=envError value="checkEnvVars(options.engine)"
       if cond="envError"
         throw value="new EngineNotFoundError(options.engine.id, envError)"
@@ -358,7 +363,7 @@ service name=CliAdapter implements=EngineAdapter
 
   method name=dispatchAgentStream params="options:DispatchOptions" returns="string, AgentDispatchResult, void" async=true stream=true
     handler lang="ts" <<<
-      options = this.withEngineTimeout(options);
+      options = normalizeDispatchOptions(options);
       // workspace-pure isolation, resolved once for every agent-stream path below.
       const iso = computeEngineIsolation(options.engine, { isolation: options.isolation, cwd: options.cwd });
       // Subscription pty path for claude (agent mode). Same diff capture as dispatchAgent.
@@ -398,9 +403,13 @@ service name=CliAdapter implements=EngineAdapter
         // fall through to legacy path
       }
 
-      const streamBinaryPath = options.engine.binary ? this.registry.findBinary(options.engine) : null;
+      const binaryCandidate = options.engine.binary ? this.registry.findBinary(options.engine) : null;
+      const apiKeyAvailable = !!(options.engine.api && hasEnvVar(options.engine.api.apiKeyEnv));
+      const resolvedApiModel = !binaryCandidate && apiKeyAvailable ? resolveModel(options.engine, options.cwd) : null;
+      const execution = planEngineExecution(options, binaryCandidate, apiKeyAvailable, resolvedApiModel);
+      options = execution.options;
       // API-only-stream notice ONLY when a usable key is present — binary-missing + no-key falls through to EngineNotFoundError(missingBinary) instead of mis-reporting "Missing API key". (Absent apiKeyEnv → process.env[undefined] → undefined → no usable key.)
-      if (options.engine.api && !streamBinaryPath && hasEnvVar(options.engine.api.apiKeyEnv)) {
+      if (execution.backend === 'api') {
         yield `Engine "${options.engine.id}" is API-only and does not support streaming agent mode. Use non-streaming dispatch or install the CLI binary.`;
         return {
           exitCode: 1,
@@ -414,11 +423,11 @@ service name=CliAdapter implements=EngineAdapter
         };
       }
 
-      const binaryPath = this.registry.findBinary(options.engine);
-      if (!binaryPath) {
+      if (execution.backend === 'missing') {
         // Missing binary, not a key — report the binary by name with an install hint.
         throw new EngineNotFoundError(options.engine.id, options.engine.installHint, options.engine.binary);
       }
+      const binaryPath = execution.binaryPath as string;
 
       const { command, args } = buildCommand(
         options.engine, options.mode, options.prompt,

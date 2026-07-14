@@ -22,6 +22,7 @@ import { statSync } from 'node:fs';
 
 // ── Module: AppLifecycle ──
 
+// @kern-source: app-lifecycle:29
 export function loadExtensionsForWorkspace(workspacePath: string, commandRegistry: CommandRegistry, registry: EngineRegistry, eventBus: EventBus, setExtensionSkills: (s:Skill[]) => void, setExtensionPromptFragments: (f:string[]) => void, setLoadedExtensions: (e:LoadedExtension[]) => void): void {
   initExtensions(workspacePath, commandRegistry, registry, eventBus).then(({ extensions, skills: extSkills, systemPromptFragments }) => {
     if (extSkills.length > 0) setExtensionSkills(extSkills);
@@ -32,6 +33,7 @@ export function loadExtensionsForWorkspace(workspacePath: string, commandRegistr
   });
 }
 
+// @kern-source: app-lifecycle:43
 export function startPlanSyncWatcher(activePlan: CesarPlan | null, setActivePlanWrapped: (plan:CesarPlan) => void, planWatcherTimerRef: {current: ReturnType<typeof setInterval> | null}, planWatcherDebounceTimerRef: {current: ReturnType<typeof setTimeout> | null}, planWatcherStatMtimeRef: {current: number}, activePlanRef: {current: CesarPlan | null}): (() => void) | undefined {
   if (planWatcherTimerRef.current) { clearInterval(planWatcherTimerRef.current); planWatcherTimerRef.current = null; }
   if (planWatcherDebounceTimerRef.current) { clearTimeout(planWatcherDebounceTimerRef.current); planWatcherDebounceTimerRef.current = null; }
@@ -86,6 +88,7 @@ export function startPlanSyncWatcher(activePlan: CesarPlan | null, setActivePlan
   };
 }
 
+// @kern-source: app-lifecycle:100
 export function startUpdateCheck(version: string, setUpdateChecking: (v:boolean) => void, setUpdateInfo: (info:any) => void): (() => void) | undefined {
   // On a linked/dev checkout the global `agon` IS this build (via npm link),
   // so an npm-update banner would offer to install OVER the link and clobber
@@ -114,6 +117,7 @@ export function startUpdateCheck(version: string, setUpdateChecking: (v:boolean)
   return () => clearTimeout(boot);
 }
 
+// @kern-source: app-lifecycle:132
 export function subscribeOrchestrationResults(eventBus: EventBus, dispatch: (event:any) => void, chatSession: ChatSession): (() => void) | undefined {
   if (!eventBus) return;
   const modes = ['brainstorm', 'forge', 'tribunal', 'campfire'] as const;
@@ -160,6 +164,7 @@ export function subscribeOrchestrationResults(eventBus: EventBus, dispatch: (eve
 /**
  * Explicit dependencies for startTelemetryPoller — the telemetry poller effect's registry/session handles, active-turn refs, and state setters, passed in rather than captured from component scope.
  */
+// @kern-source: app-lifecycle:179
 export interface TelemetryPollerDeps {
   registry: EngineRegistry;
   cesarSession: PersistentSession|null;
@@ -179,6 +184,7 @@ export interface TelemetryPollerDeps {
   statusDashboardOpenRef: {current: boolean};
 }
 
+// @kern-source: app-lifecycle:205
 export function startTelemetryPoller(opts: TelemetryPollerDeps): (() => void) | undefined {
   const {
     registry,

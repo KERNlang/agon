@@ -22,14 +22,19 @@ import type { ReplStateState } from '../signals/app-state.js';
 
 // ── Module: AppInterrupt ──
 
+// @kern-source: app-interrupt:47
 export const _activeAborts: Set<AbortController> = new Set<AbortController>();
 
+// @kern-source: app-interrupt:49
 export const _cancelCallback: { fn: (() => void) | null } = { fn: null };
 
+// @kern-source: app-interrupt:51
 export const _lastSigintAt: { value: number } = { value: 0 };
 
+// @kern-source: app-interrupt:53
 export const _pauseState: { value: PauseState | null } = { value: null };
 
+// @kern-source: app-interrupt:59
 export function runTrackAbort(abort: AbortController | null, activeAbortRef: {current: AbortController | null}, setActiveAbort: (abort:AbortController | null) => void): void {
   if (activeAbortRef.current) {
     _activeAborts.delete(activeAbortRef.current);
@@ -44,6 +49,7 @@ export function runTrackAbort(abort: AbortController | null, activeAbortRef: {cu
 /**
  * Explicit dependencies for runInterruptActiveRun — the active-run refs, the output bridge, and the modal/repl setState fns the interrupt path resets, passed in rather than captured from component scope.
  */
+// @kern-source: app-interrupt:71
 export interface InterruptRunDeps {
   activeAbortRef: {current: AbortController | null};
   activePlanRef: {current: any};
@@ -69,6 +75,7 @@ export interface InterruptRunDeps {
   setWindowTitle: (title:string) => void;
 }
 
+// @kern-source: app-interrupt:105
 export function runInterruptActiveRun(opts: InterruptRunDeps, message: string, clearChat: boolean): void {
   const abort = opts.activeAbortRef.current;
   const activeRuntime = opts.cesarRuntimeHost?.active;
@@ -128,6 +135,7 @@ export function runInterruptActiveRun(opts: InterruptRunDeps, message: string, c
 /**
  * Explicit dependencies for buildCancelCallback — the refs and setState fns the SIGINT hard-cancel callback resets. Distinct from InterruptRunDeps: also clears agent-progress + tool-detail and FINISHES the repl (vs cancel).
  */
+// @kern-source: app-interrupt:157
 export interface CancelCallbackDeps {
   activeAbortRef: {current: AbortController | null};
   activePlanRef: {current: any};
@@ -151,6 +159,7 @@ export interface CancelCallbackDeps {
   setReplState: (updater:(prev:any) => any) => void;
 }
 
+// @kern-source: app-interrupt:191
 export function buildCancelCallback(opts: CancelCallbackDeps): () => void {
   return () => {
     const activeRuntime = opts.cesarRuntimeHost?.active;
@@ -190,6 +199,7 @@ export function buildCancelCallback(opts: CancelCallbackDeps): () => void {
   };
 }
 
+// @kern-source: app-interrupt:239
 export function handleSigint(cesarSessionHolder: {session: PersistentSession | null}): void {
   const now = Date.now();
   if (now - _lastSigintAt.value < 1200) {

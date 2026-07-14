@@ -16,6 +16,7 @@ import type { OutputEvent } from '../../handlers/types.js';
 
 // ── Module: AppLayout ──
 
+// @kern-source: app-layout:11
 export function estimateVisibleBlockBudget(rows: number, mode: string, overlayReservedRows: number): number {
   // Chat mode keeps 7 rows for the composer/status chrome at minimum:
   // margin + bordered composer (3) + Cesar strip + two-line status bar.
@@ -25,6 +26,7 @@ export function estimateVisibleBlockBudget(rows: number, mode: string, overlayRe
   return Math.max(1, (rows - reservedRows));
 }
 
+// @kern-source: app-layout:25
 export function estimateWrappedRowCount(text: string, wrapWidth: number): number {
   const safeWidth = Math.max(1, wrapWidth);
   const lines = String(text ?? '').split('\n');
@@ -38,6 +40,7 @@ export function estimateWrappedRowCount(text: string, wrapWidth: number): number
 /**
  * Reserve extra transcript rows when the bottom composer is showing a multi-line question or permission card, so short terminals do not clip the actionable keys.
  */
+// @kern-source: app-layout:34
 export function estimateQuestionReservedRows(questionState: any, termWidth: number): number {
   if (!questionState) return 0;
   const safeWidth = Math.max(24, termWidth - 12);
@@ -86,6 +89,7 @@ export function estimateQuestionReservedRows(questionState: any, termWidth: numb
 /**
  * Reserve extra rows above the base composer/status chrome for stacked prompt cards, queued-input badges, chat spinner rows, and the one-line plan chip (PlanChip) pinned directly above the composer.
  */
+// @kern-source: app-layout:81
 export function estimateBottomChromeExtraRows(mode: string, questionState: any, termWidth: number, pendingImageCount: number, inputQueueCount: number, hasLiveSpinner: boolean, hasPlanChip: boolean = false): number {
   let extraRows = 0;
   if (pendingImageCount > 0) {
@@ -104,6 +108,7 @@ export function estimateBottomChromeExtraRows(mode: string, questionState: any, 
   return extraRows;
 }
 
+// @kern-source: app-layout:96
 export function estimatePinnedLiveRows(mode: string, hasStream: boolean, hasProgress: boolean, agentCount: number, toolStreamCount?: number): number {
   const streamRows = hasStream ? ((mode === 'chat') ? 3 : 6) : 0;
   const progressRows = hasProgress ? ((mode === 'chat') ? 3 : 5) : 0;
@@ -115,6 +120,7 @@ export function estimatePinnedLiveRows(mode: string, hasStream: boolean, hasProg
   return streamRows + progressRows + agentRows + toolRows;
 }
 
+// @kern-source: app-layout:107
 export function estimateWrappedRows(text: string, width: number): number {
   const safeWidth = Math.max(1, width);
   if (!text) return 0;
@@ -124,6 +130,7 @@ export function estimateWrappedRows(text: string, width: number): number {
   }, 0);
 }
 
+// @kern-source: app-layout:117
 export function estimateToolCallRows(event: any, toolOutputExpanded: boolean, codeWidth: number): number {
   if (!event || event.type !== 'tool-call') {
     return 0;
@@ -215,6 +222,7 @@ export function estimateToolCallRows(event: any, toolOutputExpanded: boolean, co
   return rows;
 }
 
+// @kern-source: app-layout:189
 export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   const proseWidth = contentWidth(4);
   const chatWidth = contentWidth(2);
@@ -326,6 +334,7 @@ export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOu
   }
 }
 
+// @kern-source: app-layout:301
 export function estimateDisplayItemRows(item: OutputBlock, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   return estimateOutputEventRows(item.event, mode, toolOutputExpanded, thinkingExpanded);
 }

@@ -4,6 +4,7 @@ import { hostEcmaRegex, hostStringSet } from '../lib/kern-host.js';
 
 // ── Module: MarkdownParsing ──
 
+// @kern-source: markdown:4
 export interface ContentSegment {
   type: 'prose'|'code'|'table';
   text: string|undefined;
@@ -15,19 +16,24 @@ export interface ContentSegment {
   alignments: ('left'|'center'|'right')[]|undefined;
 }
 
+// @kern-source: markdown:14
 export const FENCE_OPEN: RegExp = /^```(\w*)\s*$/;
 
+// @kern-source: markdown:16
 export const FENCE_CLOSE: RegExp = /^```\s*$/;
 
+// @kern-source: markdown:18
 function isTableSeparator(line: string): boolean {
   return /^\|[\s:_-]+(\|[\s:_-]+)*\|?\s*$/.test(line.trim());
 }
 
+// @kern-source: markdown:20
 function isTableRow(line: string): boolean {
   const t = line.trim();
   return t.startsWith('|') && t.includes('|', 1);
 }
 
+// @kern-source: markdown:25
 function parseTableAlignment(sepLine: string): ('left'|'center'|'right')[] {
   const cells = sepLine.trim().replace(/^\||\|$/g, '').split('|');
   return cells.map((c: string) => {
@@ -38,6 +44,7 @@ function parseTableAlignment(sepLine: string): ('left'|'center'|'right')[] {
   });
 }
 
+// @kern-source: markdown:36
 function parseTableCells(line: string): string[] {
   const cells: string[] = [];
   let cell = '';
@@ -62,6 +69,7 @@ function parseTableCells(line: string): string[] {
   return cells;
 }
 
+// @kern-source: markdown:61
 function emitProseWithTables(proseLines: string[], segments: ContentSegment[]): void {
   let i = 0;
   let buffered: string[] = [];
@@ -96,10 +104,13 @@ function emitProseWithTables(proseLines: string[], segments: ContentSegment[]): 
   flushProse();
 }
 
+// @kern-source: markdown:96
 export const _mdCache: Map<string, ContentSegment[]> = new Map();
 
+// @kern-source: markdown:98
 export const _MD_CACHE_MAX: number = 500;
 
+// @kern-source: markdown:100
 export function parseMarkdownBlocks(text: string): ContentSegment[] {
   // LRU cache — avoid re-parsing identical content during streaming
   // Use djb2 hash for large strings to avoid collisions
@@ -171,6 +182,7 @@ export function parseMarkdownBlocks(text: string): ContentSegment[] {
   return segments;
 }
 
+// @kern-source: markdown:172
 export function truncateCodeLine(line: string, maxWidth: number): string {
   if (line.length <= maxWidth) {
     return line;
@@ -179,6 +191,7 @@ export function truncateCodeLine(line: string, maxWidth: number): string {
   return line.slice(0, maxWidth - 1) + `…+${overflow}`;
 }
 
+// @kern-source: markdown:179
 function extractCodexStructured(text: string): string|null {
   const summaryMatch = ((__m) => __m === null ? null : { full: __m[0], groups: Array.from(__m).slice(1).map((g) => g === undefined ? null : g), index: __m.index, named: __m.groups ? Object.fromEntries(Object.entries(__m.groups).map(([__k, __v]) => [__k, __v === undefined ? null : __v])) : {} })(text.match(/summary:[ \t\n\r\f\v]*"([ \t\n\r\f\v\S]*?)"[ \t\n\r\f\v]*(?:sections[ \t\n\r\f\v]*\{|$)/));
   const contentMatches = [...[...text.matchAll(/content:[ \t\n\r\f\v]*"([ \t\n\r\f\v\S]*?)"[ \t\n\r\f\v]*\}/g)].map((__m) => ({ full: __m[0], groups: Array.from(__m).slice(1).map((g) => g === undefined ? null : g), index: __m.index }))];
@@ -193,6 +206,7 @@ function extractCodexStructured(text: string): string|null {
   return parts.join('\n').replace(/\\n/g, '\n').trim();
 }
 
+// @kern-source: markdown:191
 function parseStreamJsonLine(trimmed: string): {action:'use'|'skip'|'keep', content?:string} {
   try {
     const parsed = JSON.parse(trimmed);
@@ -245,6 +259,7 @@ function parseStreamJsonLine(trimmed: string): {action:'use'|'skip'|'keep', cont
 /**
  * Remove inline sentence repetition like 'Hello.Hello.' within a single line.
  */
+// @kern-source: markdown:241
 function deduplicateInline(line: string): string {
   // Check if the line is a repeated substring (e.g. "abcabc" → "abc")
   const len = line.length;
@@ -263,6 +278,7 @@ function deduplicateInline(line: string): string {
 /**
  * Remove consecutive duplicate paragraphs/sentences from buddy streaming output.
  */
+// @kern-source: markdown:258
 function deduplicateParagraphs(text: string): string {
   // First: deduplicate within each line (streaming chunk concatenation artifacts)
   const lines = text.split('\n');
@@ -289,6 +305,7 @@ function deduplicateParagraphs(text: string): string {
 /**
  * Strip progressive thinking/status updates that duplicate as streaming chunks.
  */
+// @kern-source: markdown:279
 function stripBuddyThinkingNoise(text: string): string {
   const lines = text.split('\n');
   const result: string[] = [];
@@ -317,6 +334,7 @@ function stripBuddyThinkingNoise(text: string): string {
   return result.join('\n');
 }
 
+// @kern-source: markdown:309
 function shortenFilePaths(text: string): string {
   // Only shorten paths in prose — skip fenced code blocks
   const fenceRe = /^```[\s\S]*?^```/gm;
@@ -373,6 +391,7 @@ function shortenFilePaths(text: string): string {
 /**
  * Gently insert paragraph breaks in very dense text walls — only when truly needed.
  */
+// @kern-source: markdown:363
 function addParagraphBreaks(text: string): string {
   const paragraphs = text.split(/\n{2,}/);
   const result: string[] = [];
@@ -415,8 +434,10 @@ function addParagraphBreaks(text: string): string {
   return result.join('\n\n');
 }
 
+// @kern-source: markdown:407
 export const _cleanCache: Map<string, string> = new Map();
 
+// @kern-source: markdown:409
 export function cleanEngineOutput(raw: string): string {
   // Key by raw content — different streams can share lengths, so length alone collides.
   const cached = _cleanCache.get(raw);

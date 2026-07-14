@@ -33,6 +33,7 @@ import { formatCesarRecapToolSummary } from '../cesar/recap.js';
 /**
  * Count visible tool activity, touched files, and queued messages for the live execution rail.
  */
+// @kern-source: app-rendering:18
 export function buildExecutionRailStats(blocks: OutputBlock[], files: any[], queueCount: number): any {
   let toolCount = 0;
   let failedToolCount = 0;
@@ -66,6 +67,7 @@ export function buildExecutionRailStats(blocks: OutputBlock[], files: any[], que
   };
 }
 
+// @kern-source: app-rendering:52
 export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: number, paddingLeft: number, borderColor: string): any[] {
   const rows: any[] = [];
   const cleaned = String(text ?? '').trim();
@@ -196,6 +198,7 @@ export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: nu
   return rows;
 }
 
+// @kern-source: app-rendering:183
 export function buildToolCallRows(baseKey: string, event: any, toolOutputExpanded: boolean): any[] {
   if (!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')) return [];
 
@@ -579,6 +582,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
   return rows;
 }
 
+// @kern-source: app-rendering:567
 export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any[] {
   if (!events || events.length === 0) return [];
 
@@ -673,10 +677,13 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
   return rows;
 }
 
+// @kern-source: app-rendering:668
 export const _mdRowCache = new Map<string, any[]>();
 
+// @kern-source: app-rendering:669
 export const _MD_ROW_CACHE_MAX: number = 1500;
 
+// @kern-source: app-rendering:670
 export function cachedMarkdownRows(baseKey: string, text: string, wrapWidth: number, paddingLeft: number, borderColor: string): any[] {
   // baseKey (block id) is globally unique (Date.now()+random, never reused
   // across /clear), but key on text identity too so the cache is provably
@@ -703,10 +710,13 @@ export function cachedMarkdownRows(baseKey: string, text: string, wrapWidth: num
   return rows;
 }
 
+// @kern-source: app-rendering:722
 export const _blockRowCache = new Map<string, any[]>();
 
+// @kern-source: app-rendering:723
 export const _BLOCK_ROW_CACHE_MAX: number = 1500;
 
+// @kern-source: app-rendering:725
 export function blockWantsLeadingGap(eventType: string): boolean {
   return eventType === 'user-message'
     || eventType === 'engine-block'
@@ -714,6 +724,7 @@ export function blockWantsLeadingGap(eventType: string): boolean {
     || eventType === 'debate-round';
 }
 
+// @kern-source: app-rendering:742
 export const _CACHEABLE_BLOCK_TYPES = new Set<string>([
     'text', 'user-message', 'engine-block', 'separator', 'header',
     'success', 'warning', 'info', 'error', 'permission-ask',
@@ -721,10 +732,12 @@ export const _CACHEABLE_BLOCK_TYPES = new Set<string>([
     'verdict',
   ]);
 
+// @kern-source: app-rendering:749
 export function isCacheableBlockType(eventType: string): boolean {
   return _CACHEABLE_BLOCK_TYPES.has(eventType);
 }
 
+// @kern-source: app-rendering:754
 export function blockRowFingerprint(event: any, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean, proseWidth: number, chatWidth: number, engineWidth: number): string {
   // Cheap content signature so an in-place mutation (status/output update on
   // a non-tool block, or any event field change) busts the cache. Widths
@@ -753,6 +766,7 @@ export function blockRowFingerprint(event: any, mode: string, toolOutputExpanded
   return `${type}|${engineId}|${tool}|${status}|${folded}|${extra}|${content.length}|${content.slice(0, 120)}|${content.slice(-40)}|${widths}|${flags}`;
 }
 
+// @kern-source: app-rendering:783
 export function cachedBlockOwnRows(block: OutputBlock, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean, proseWidth: number, chatWidth: number, engineWidth: number): any[] {
   const event = block.event as any;
   const type = String(event?.type ?? '');
@@ -790,6 +804,7 @@ export function cachedBlockOwnRows(block: OutputBlock, mode: string, toolOutputE
 /**
  * Drop every cached block row. Called from the clearBlocks reset funnel so a /clear (which can recycle block ids in replay paths) can never serve rows rendered for a previous transcript.
  */
+// @kern-source: app-rendering:818
 export function clearBlockRowCache(): void {
   _blockRowCache.clear();
 }
@@ -797,6 +812,7 @@ export function clearBlockRowCache(): void {
 /**
  * Render the intrinsic rows for ONE transcript block, independent of its neighbors and of its position in the transcript (no leading positional spacer — that is prepended by buildTranscriptRows). Tool-call grouping is NOT handled here.
  */
+// @kern-source: app-rendering:824
 export function renderBlockOwnRows(block: OutputBlock, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean, proseWidth: number, chatWidth: number, engineWidth: number): any[] {
   const rows: any[] = [];
   const event = block.event as any;
@@ -1344,6 +1360,7 @@ export function renderBlockOwnRows(block: OutputBlock, mode: string, toolOutputE
   return rows;
 }
 
+// @kern-source: app-rendering:1373
 export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): any[] {
   const rows: any[] = [];
   const proseWidth = contentWidth(4);

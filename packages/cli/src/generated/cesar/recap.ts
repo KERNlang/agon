@@ -24,7 +24,9 @@ export function createCesarRecapCapture(input: string, startedAt?: number): any 
   return { input: String(input ?? ''), startedAt: startedAt ?? hostNowMs(), toolEventsByKey: {} as Record<string, any>, toolOrder: [] as string[], toolStreamsById: {} as Record<string, any>, warnings: [] as string[], errors: [] as string[], confidence: null as number | null, confidenceReasoning: '', engineId: '', durationMs: null as number | null, todos: [] as any[] };
 }
 
-// @kern-source: recap:26
+// ── Module: RecapParsing ──
+
+// @kern-source: recap:27
 export function parseRecapJsonObject(input: unknown): Record<string,unknown> {
   if (input && typeof input === 'object' && !Array.isArray(input)) {
     return input as Record<string, unknown>;
@@ -41,7 +43,7 @@ export function parseRecapJsonObject(input: unknown): Record<string,unknown> {
   }
 }
 
-// @kern-source: recap:39
+// @kern-source: recap:40
 export function recapToolLabel(tool: unknown): string {
   const key = String(tool ?? '').toLowerCase();
   if (key === 'bash' || key === 'run' || key === 'agonbash') {
@@ -74,7 +76,7 @@ export function recapToolLabel(tool: unknown): string {
   return String(tool ?? 'Tool');
 }
 
-// @kern-source: recap:62
+// @kern-source: recap:63
 export function extractRecapCommand(tool: unknown, input: unknown): string {
   const key = String(tool ?? '').toLowerCase();
   if (key !== 'bash' && key !== 'run' && key !== 'agonbash') {
@@ -85,7 +87,7 @@ export function extractRecapCommand(tool: unknown, input: unknown): string {
   return command;
 }
 
-// @kern-source: recap:71
+// @kern-source: recap:72
 export function classifyRecapCommand(command: string): string {
   const cmd = String(command ?? '').trim();
   const lower = cmd.toLowerCase();
@@ -119,7 +121,7 @@ export function classifyRecapCommand(command: string): string {
   return cmd.split(/[ \t\n\r\f\v]+/).slice(0, 3).join(' ');
 }
 
-// @kern-source: recap:95
+// @kern-source: recap:96
 export function shortenRecapText(value: unknown, max: number): string {
   const text = String(value ?? '').replace(/[ \t\n\r\f\v]+/g, ' ').trim();
   if (text.length <= max) {
@@ -128,7 +130,7 @@ export function shortenRecapText(value: unknown, max: number): string {
   return text.slice(0, Math.max(0, (max - 1))) + '…';
 }
 
-// @kern-source: recap:102
+// @kern-source: recap:103
 export function readRecapConfidence(input: unknown): { value:number|null; reasoning:string } {
   const parsed = parseRecapJsonObject(input);
   const rawValue = parsed.value ?? parsed.confidence ?? parsed.score;
@@ -147,7 +149,7 @@ export function readRecapConfidence(input: unknown): { value:number|null; reason
   return { value: normalized, reasoning: reasoning };
 }
 
-// @kern-source: recap:117
+// @kern-source: recap:118
 export function recordCesarRecapEvent(capture: any, event: any): void {
   if (!capture || !event || typeof event !== 'object') return;
   const type = String(event.type ?? '');
@@ -266,11 +268,13 @@ export function recordCesarRecapEvent(capture: any, event: any): void {
     capture.engineId = String(event.engineId);
   }
   if (type === 'response-meta' && Number.isFinite(Number(event.elapsed))) {
-    capture.durationMs = Number(event.elapsed);
+    const elapsed = Number(event.elapsed);
+    const previous = Number(capture.durationMs);
+    capture.durationMs = Number.isFinite(previous) ? Math.max(previous, elapsed) : elapsed;
   }
 }
 
-// @kern-source: recap:240
+// @kern-source: recap:243
 export function buildRecapTouchedFiles(beforeFiles: any[], afterFiles: any[]): any[] {
   const before = new Map<string, any>();
   for (const beforeFile of Array.isArray(beforeFiles) ? beforeFiles : []) {
@@ -294,7 +298,7 @@ export function buildRecapTouchedFiles(beforeFiles: any[], afterFiles: any[]): a
   return touched;
 }
 
-// @kern-source: recap:258
+// @kern-source: recap:261
 export function buildCesarRecapDiffPreview(files: any[], diffsByPath: Record<string,string>, maxFiles?: number, maxLinesPerFile?: number): any {
   const previews: any[] = [];
   const fileLimit = maxFiles ?? 4;
@@ -334,13 +338,13 @@ export function buildCesarRecapDiffPreview(files: any[], diffsByPath: Record<str
   return { files: previews, totalFiles: previews.length };
 }
 
-// @kern-source: recap:298
+// @kern-source: recap:301
 export type FinalAction = 'commit' | 'push' | 'compile' | 'typecheck' | 'build' | 'lint' | 'tests' | 'deploy' | 'run';
 
 /**
  * Single source of truth for whether a FAILED command deserves a bright red ✗ line in the recap (CONSEQUENTIAL) or folds silently into the dim 'non-fatal' count (PLUMBING). Returns a typed FinalAction string (commit | push | compile | typecheck | build | lint | tests | deploy | run) for consequential commands, or null for plumbing / non-commands. PLUMBING = navigation/inspection/staging/probes whose non-zero exit is noise (cd, ls, echo, cat, git status/add/diff/log, node --check, empty {} calls). Everything else fails OPEN to the generic 'run' action so an unknown build/deploy script can NEVER be silently swallowed. Only bash-family tools classify; reads/edits/searches return null (their effects show in the files line, not as command failures).
  */
-// @kern-source: recap:300
+// @kern-source: recap:303
 export function classifyConsequence(tool: unknown, command: string): FinalAction|null {
   const key = String(tool ?? '').toLowerCase();
   if (key !== 'bash' && key !== 'run' && key !== 'agonbash') return null;
@@ -388,7 +392,7 @@ export function classifyConsequence(tool: unknown, command: string): FinalAction
   return action; // null when every segment is plumbing
 }
 
-// @kern-source: recap:349
+// @kern-source: recap:352
 export function buildCesarTurnRecapEvent(capture: any, result: any, beforeFiles: any[], afterFiles: any[]): any {
   const orderedTools = (capture?.toolOrder ?? [])
     .map((key: string) => capture.toolEventsByKey?.[key])
@@ -610,7 +614,7 @@ export function buildCesarTurnRecapEvent(capture: any, result: any, beforeFiles:
 /**
  * Gate the end-of-turn recap. A delegation, a genuinely failed turn, or one with an unrecovered red ✗ failure always recaps. Otherwise emit only when the turn produced real FINDINGS — touched/changed files, a diff, a ran verification (build/test/…), todo progress, or warnings/errors — OR did more than one tool call. SKIP a trivial turn (no findings AND toolCount <= 1): a bare ReportConfidence turn, or a lone plumbing command like `git status` (which renders no actionable row), must stay quiet.
  */
-// @kern-source: recap:568
+// @kern-source: recap:571
 export function shouldEmitCesarRecap(event: any): boolean {
   if (!event || event.type !== 'cesar-recap') {
     return false;

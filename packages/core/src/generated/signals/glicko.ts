@@ -14,7 +14,9 @@ import { withFileLock } from '../blocks/file-lock.js';
 
 import { hostEpochFrom, hostNowIso, hostNowMs, hostPrettyJson, hostSqrt } from '../blocks/host-runtime.js';
 
-// @kern-source: glicko:13
+// ── Module: GlickoRatings ──
+
+// @kern-source: glicko:15
 function ratingsPath(): string {
   const override = process.env.AGON_HOME?.trim();
   const home = override ? resolve(override) : join(homedir(), '.agon');
@@ -24,44 +26,44 @@ function ratingsPath(): string {
 /**
  * Cross-process lock next to ratings.json. Every load→mutate→save of the ratings record MUST run under withFileLock(ratingsLockPath()) — two concurrent run completions doing unlocked RMW was how parallel agon sessions silently corrupted ratings.
  */
-// @kern-source: glicko:20
+// @kern-source: glicko:22
 function ratingsLockPath(): string {
   return ratingsPath() + '.lock';
 }
 
-// @kern-source: glicko:23
+// @kern-source: glicko:25
 export const GLICKO_SCALE: number = 173.7178;
 
-// @kern-source: glicko:25
+// @kern-source: glicko:27
 export const DEFAULT_MU: number = 1500;
 
-// @kern-source: glicko:27
+// @kern-source: glicko:29
 export const DEFAULT_PHI: number = 350;
 
-// @kern-source: glicko:29
+// @kern-source: glicko:31
 export const DEFAULT_SIGMA: number = 0.06;
 
 /**
  * System constant — constrains volatility change. Lower = more conservative.
  */
-// @kern-source: glicko:31
+// @kern-source: glicko:33
 export const TAU: number = 0.5;
 
-// @kern-source: glicko:34
+// @kern-source: glicko:36
 export const CONVERGENCE_TOLERANCE: number = 0.000001;
 
-// @kern-source: glicko:36
+// @kern-source: glicko:38
 export function defaultGlickoRating(): GlickoRating {
   return { mu: DEFAULT_MU, phi: DEFAULT_PHI, sigma: DEFAULT_SIGMA, wins: 0, losses: 0, lastActive: hostNowIso() };
 }
 
-// @kern-source: glicko:40
+// @kern-source: glicko:42
 export function defaultEngineMeta(): EngineMeta {
   const now = hostNowIso();
   return { firstSeen: now, lastActive: now, matchCount: 0, derivedFrom: null, versions: [] };
 }
 
-// @kern-source: glicko:45
+// @kern-source: glicko:47
 export function loadRatings(): RatingRecord {
   try {
     const parsed = JSON.parse(readFileSync(ratingsPath(), 'utf-8')) as RatingRecord;
@@ -92,7 +94,7 @@ export function loadRatings(): RatingRecord {
   }
 }
 
-// @kern-source: glicko:76
+// @kern-source: glicko:78
 export function saveRatings(record: RatingRecord): void {
   const path = ratingsPath();
   mkdirSync(dirname(path), { recursive: true });
@@ -105,7 +107,7 @@ export function saveRatings(record: RatingRecord): void {
 /**
  * Load current Glicko-2 ratings.
  */
-// @kern-source: glicko:85
+// @kern-source: glicko:87
 export function getRatings(): RatingRecord {
   return loadRatings();
 }
@@ -113,7 +115,7 @@ export function getRatings(): RatingRecord {
 /**
  * Get a single engine's Glicko-2 rating, optionally for a specific mode.
  */
-// @kern-source: glicko:88
+// @kern-source: glicko:90
 export function getEngineGlickoRating(engineId: string, mode?: string): GlickoRating {
   const record = loadRatings();
   if (mode && record.byMode[mode as keyof typeof record.byMode]) {
@@ -125,7 +127,7 @@ export function getEngineGlickoRating(engineId: string, mode?: string): GlickoRa
 /**
  * Glicko-2 g(phi) function — reduces impact of uncertain opponents.
  */
-// @kern-source: glicko:96
+// @kern-source: glicko:98
 export function glickoG(phi: number): number {
   return 1 / hostSqrt(1 + 3 * phi * phi / (Math.PI * Math.PI));
 }
@@ -133,7 +135,7 @@ export function glickoG(phi: number): number {
 /**
  * Glicko-2 expected score.
  */
-// @kern-source: glicko:99
+// @kern-source: glicko:101
 export function glickoE(mu: number, muJ: number, phiJ: number): number {
   return 1 / (1 + Math.exp(-glickoG(phiJ) * (mu - muJ)));
 }
@@ -141,7 +143,7 @@ export function glickoE(mu: number, muJ: number, phiJ: number): number {
 /**
  * Apply one pairwise Glicko-2 update to an in-memory record. Pure relative to the fs — load/lock/save are the caller's job, so a ranked batch can run N*(N-1)/2 pair updates under ONE lock with ONE load and ONE save.
  */
-// @kern-source: glicko:102
+// @kern-source: glicko:104
 function applyGlickoPair(record: RatingRecord, winnerId: string, loserId: string, taskClass: TaskClass, mode: 'forge'|'brainstorm'|'tribunal'|'critique'): void {
   const now = new Date().toISOString();
 
@@ -214,7 +216,7 @@ function applyGlickoPair(record: RatingRecord, winnerId: string, loserId: string
 /**
  * Single pairwise Glicko-2 update. The full read-modify-write runs under the cross-process ratings lock so concurrent agon processes can't lose each other's updates.
  */
-// @kern-source: glicko:173
+// @kern-source: glicko:175
 export function updateGlicko(winnerId: string, loserId: string, taskClass: TaskClass, mode: 'forge'|'brainstorm'|'tribunal'|'critique'): {winnerMu:number, loserMu:number} {
   let result = { winnerMu: DEFAULT_MU, loserMu: DEFAULT_MU };
   withFileLock(ratingsLockPath(), () => {
@@ -229,7 +231,7 @@ export function updateGlicko(winnerId: string, loserId: string, taskClass: TaskC
 /**
  * Glicko-2 volatility update via Illinois algorithm (Step 5).
  */
-// @kern-source: glicko:186
+// @kern-source: glicko:188
 export function computeNewSigma(sigma: number, phi: number, v: number, delta: number): number {
   const a = Math.log(sigma * sigma);
   const tau2 = TAU * TAU;
@@ -274,7 +276,7 @@ export function computeNewSigma(sigma: number, phi: number, v: number, delta: nu
 /**
  * Pairwise Glicko-2 updates for all ranked positions. Higher score beats lower score. The WHOLE batch runs under one ratings lock with a single load and save — previously each pair did its own unlocked load→save (up to 15 RMW cycles for a 6-engine run), which is what let two concurrent run completions clobber each other.
  */
-// @kern-source: glicko:229
+// @kern-source: glicko:231
 export function updateGlickoRanked(ranked: Array<{engineId:string,score:number}>, taskClass: TaskClass, mode: 'forge'|'brainstorm'|'tribunal'|'critique'): void {
   if (ranked.length < 2) return;
   withFileLock(ratingsLockPath(), () => {
@@ -292,7 +294,7 @@ export function updateGlickoRanked(ranked: Array<{engineId:string,score:number}>
 /**
  * Conservative rating estimate for advisor/starter selection. Returns mu - 2*phi (lower bound of 95% CI).
  */
-// @kern-source: glicko:245
+// @kern-source: glicko:247
 export function advisorScore(engineId: string, mode: 'forge'|'brainstorm'|'tribunal'|'critique'): number {
   const rating = getEngineGlickoRating(engineId, mode);
   // Apply inactivity: increase phi if engine hasn't competed recently
@@ -308,7 +310,7 @@ export function advisorScore(engineId: string, mode: 'forge'|'brainstorm'|'tribu
 /**
  * Rank engines by Glicko-2 confidence floor (mu - 2*phi), highest first, WITHIN a scope. When `mode` is given, ranking uses that discipline's byMode ratings (e.g. mode='tribunal' = adversarial/critique skill — the right proxy for a Nero-style critic, since the best BUILDER is not the best CRITIC); otherwise the global pool. Only engines that already hold a rating record IN THAT SCOPE are returned; the rest are omitted so callers can fall back. Ties break on mu, then engine id for determinism.
  */
-// @kern-source: glicko:257
+// @kern-source: glicko:259
 export function rankEnginesByRating(engineIds: string[], ratings: RatingRecord, mode?: 'forge'|'brainstorm'|'tribunal'|'critique'): string[] {
   const scope = mode ? (ratings.byMode[mode] ?? {}) : ratings.global;
   const rated = engineIds.filter((id) => scope[id] !== undefined);
@@ -326,7 +328,7 @@ export function rankEnginesByRating(engineIds: string[], ratings: RatingRecord, 
 /**
  * Pick the single best engine for a role. Tries each discipline in opts.modes IN ORDER (e.g. ['critique','tribunal'] for Nero — prefer a proven critic, fall back to adversarial-debate skill), then the GLOBAL ranking, then a random engine when NO engine has any rating yet. opts.mode is shorthand for a single-element modes list. opts.exclude drops engines from the pool (e.g. the author being challenged, to avoid grading-own-homework) but is ignored if it would empty the pool. rng is injectable for deterministic tests. scope reports WHICH rating decided the pick.
  */
-// @kern-source: glicko:273
+// @kern-source: glicko:275
 export function pickTopRatedEngine(engineIds: string[], ratings: RatingRecord, opts?: { mode?:'forge'|'brainstorm'|'tribunal'|'critique'; modes?:Array<'forge'|'brainstorm'|'tribunal'|'critique'>; exclude?:string[]; rng?:() => number }): { engineId: string; reason: 'top-rated' | 'random' | 'none'; scope: 'forge' | 'brainstorm' | 'tribunal' | 'critique' | 'global' | null } {
   const exclude = new Set(opts?.exclude ?? []);
   let pool = engineIds.filter((id) => !exclude.has(id));
@@ -346,16 +348,16 @@ export function pickTopRatedEngine(engineIds: string[], ratings: RatingRecord, o
   return { engineId: pool[idx], reason: 'random' as const, scope: null };
 }
 
-// @kern-source: glicko:294
+// @kern-source: glicko:296
 export const PHI_INHERIT_MULT: number = 1.5;
 
-// @kern-source: glicko:296
+// @kern-source: glicko:298
 export const MIN_INHERIT_GAMES: number = 5;
 
 /**
  * Compute the cold-start rating a NEW model version should inherit from its predecessor (engineMeta.derivedFrom). Pure — exported for testing. Returns null when the predecessor is too green to inherit from (caller uses fresh defaults). ANTI-GAMING: a below-average predecessor (mu < 1500) is inherited FULLY with no phi inflation — you can't shed a bad rating by version-bumping; a strong predecessor (mu >= 1500) inherits its mu with inflated (capped) phi so a better model converges quickly. W/L always reset.
  */
-// @kern-source: glicko:298
+// @kern-source: glicko:300
 export function seedSuccessorRating(predecessor: GlickoRating): GlickoRating | null {
   const totalGames = predecessor.wins + predecessor.losses;
   if (totalGames < MIN_INHERIT_GAMES) return null;
@@ -378,7 +380,7 @@ export function seedSuccessorRating(predecessor: GlickoRating): GlickoRating | n
 /**
  * Seed cold-start GLOBAL ratings for new engines that declare a predecessor (lineage: engineId -> derivedFrom id). Mutates `ratings` in place and returns the ids it seeded. Pure (no IO) — exported for testing. Skips an engine that already has a global rating, whose predecessor has no rating yet, or whose predecessor is too green (seedSuccessorRating -> null). Records provenance via the existing engineMeta.derivedFrom + predecessor.versions scaffolding.
  */
-// @kern-source: glicko:319
+// @kern-source: glicko:321
 export function seedEnginesFromLineage(ratings: RatingRecord, lineage: Record<string,string>): string[] {
   const seeded: string[] = [];
   const disciplines = ['forge', 'brainstorm', 'tribunal', 'critique'] as const;
@@ -411,7 +413,7 @@ export function seedEnginesFromLineage(ratings: RatingRecord, lineage: Record<st
 /**
  * Build an engineId -> derivedFrom map from the registered engine definitions (EngineDefinition.derivedFrom). Engines with no declared predecessor are omitted.
  */
-// @kern-source: glicko:350
+// @kern-source: glicko:352
 export function lineageFromRegistry(registry: EngineRegistry): Record<string,string> {
   const map: Record<string, string> = {};
   for (const def of registry.list() as EngineDefinition[]) {
@@ -423,7 +425,7 @@ export function lineageFromRegistry(registry: EngineRegistry): Record<string,str
 /**
  * One-shot cold-start seeding: read engine lineage from the registry, seed any new engine's global rating from its predecessor, and persist if anything changed. Safe to call repeatedly (idempotent — only seeds engines with no rating yet). Call before a competition so a freshly-dropped model version enters ranked play near its family's strength instead of from 1500.
  */
-// @kern-source: glicko:360
+// @kern-source: glicko:362
 export function seedNewEnginesFromRegistry(registry: EngineRegistry): string[] {
   let seeded: string[] = [];
   withFileLock(ratingsLockPath(), () => {

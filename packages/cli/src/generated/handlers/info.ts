@@ -24,6 +24,7 @@ import { getLastFoldedRaw, getFoldedRaw, getFoldedRawCount } from '../blocks/nar
 
 // ── Module: InfoHandlers ──
 
+// @kern-source: info:14
 export function handleLeaderboard(dispatch: Dispatch): void {
   const ratings = getRatings();
   dispatch({ type: 'header', title: 'Global Leaderboard' });
@@ -57,6 +58,7 @@ export function handleLeaderboard(dispatch: Dispatch): void {
   }
 }
 
+// @kern-source: info:48
 export function handleCesarReport(dispatch: Dispatch): void {
   // The report renders only the latest 200 decisions. Bound both JSONL
   // tails so a long-lived installation never reparses its entire history.
@@ -225,6 +227,7 @@ export function handleCesarReport(dispatch: Dispatch): void {
   dispatch({ type: 'table', headers: ['Recent Mode', 'Intake', 'Flow', 'Tools', 'Stalls', 'Family', 'Hint', 'Breadth', 'Forge Scope'], rows: recentTail });
 }
 
+// @kern-source: info:217
 export function handleCesarHints(input: string, dispatch: Dispatch, ctx: HandlerContext): void {
   const trimmed = input.trim();
   if (!trimmed) {
@@ -242,6 +245,7 @@ export function handleCesarHints(input: string, dispatch: Dispatch, ctx: Handler
   dispatch({ type: 'text', content: routingCtx });
 }
 
+// @kern-source: info:233
 function showRunDetail(dispatch: Dispatch, id: string): void {
   let files: string[];
   try {
@@ -274,6 +278,7 @@ function showRunDetail(dispatch: Dispatch, id: string): void {
   }
 }
 
+// @kern-source: info:266
 export function handleHistory(dispatch: Dispatch, id?: string): void {
   ensureAgonHome();
 
@@ -316,6 +321,7 @@ export function handleHistory(dispatch: Dispatch, id?: string): void {
   dispatch({ type: 'info', message: 'Use /history <id> for details' });
 }
 
+// @kern-source: info:309
 export async function handleEngines(dispatch: Dispatch, ctx: HandlerContext, intent?: Intent&{type:'engines'}): Promise<void> {
   const action = String((intent as any)?.action ?? '').toLowerCase();
   if (action && action !== 'list') {
@@ -463,6 +469,7 @@ export async function handleEngines(dispatch: Dispatch, ctx: HandlerContext, int
   }
 }
 
+// @kern-source: info:457
 export async function handleDiscover(dispatch: Dispatch, ctx: HandlerContext): Promise<void> {
   dispatch({ type: 'header', title: 'Engine Discovery' });
   dispatch({ type: 'spinner-start', message: 'Scanning installed engines...' });
@@ -491,6 +498,7 @@ export async function handleDiscover(dispatch: Dispatch, ctx: HandlerContext): P
   }
 }
 
+// @kern-source: info:486
 export function handleConfig(intent: Intent&{type:'config'}, dispatch: Dispatch, ctx?: HandlerContext): void {
   ensureAgonHome();
   const action = (intent as any).action ?? 'list';
@@ -555,6 +563,7 @@ export function handleConfig(intent: Intent&{type:'config'}, dispatch: Dispatch,
 /**
  * Render the loaded CC-parity allow/deny permission rules, their source scope file, and which scope wins. Mirrors Claude Code's /permissions inspection. deny ALWAYS wins over allow.
  */
+// @kern-source: info:548
 export function handlePermissions(dispatch: Dispatch): void {
   ensureAgonHome();
   // Use the resolved active workspace dir, not the raw process cwd, so
@@ -602,6 +611,7 @@ export function handlePermissions(dispatch: Dispatch): void {
   }
 }
 
+// @kern-source: info:597
 export function handleUse(engineIds: string[], dispatch: Dispatch, ctx: HandlerContext, setSessionEngines: (engines:string[]|null)=>void): void {
   if (engineIds.length === 0 || engineIds.length === 1 && engineIds[0] === 'all') {
     setSessionEngines(null);
@@ -636,6 +646,7 @@ export function handleUse(engineIds: string[], dispatch: Dispatch, ctx: HandlerC
   dispatch({ type: 'info', message: 'Saved — persists across sessions. Use /cesar <engine> to change Cesar brain separately.' });
 }
 
+// @kern-source: info:626
 export function handleCesar(engineId: string, dispatch: Dispatch, ctx: HandlerContext): void {
   // Parse: "/cesar claude api" or "/cesar claude cli" or "/cesar claude" or "/cesar"
   const parts = engineId.trim().split(/\s+/);
@@ -712,6 +723,7 @@ export function handleCesar(engineId: string, dispatch: Dispatch, ctx: HandlerCo
 /**
  * Reprint the untouched raw text of a recently narration-folded engine-block. The compact '▸ N reasoning steps folded · /raw' placeholder points here; native scrollback rows cannot expand in place, so /raw re-emits the full original as a fresh block. Bare /raw shows the most recent fold; /raw <n> pages back (1 = most recent) through the last 20. foldedSteps:0 marks it pre-processed so output.kern does not re-fold it.
  */
+// @kern-source: info:700
 export function handleRaw(dispatch: Dispatch, index?: number): void {
   const count = getFoldedRawCount();
   if (count === 0) {
@@ -728,6 +740,7 @@ export function handleRaw(dispatch: Dispatch, index?: number): void {
   dispatch({ type: 'engine-block', engineId: 'raw', color: 244, content: raw, foldedSteps: 0 });
 }
 
+// @kern-source: info:718
 export function handleTokens(dispatch: Dispatch): void {
   const stats = tracker.getStats();
   dispatch({ type: 'header', title: 'Token Usage — This Session' });
@@ -793,6 +806,7 @@ export function handleTokens(dispatch: Dispatch): void {
   dispatch({ type: 'info', message: `${stats.dispatches} dispatches across ${Object.keys(stats.byEngine).length} engines` });
 }
 
+// @kern-source: info:784
 export function handleWorkspace(action: string, dispatch: Dispatch, ctx: HandlerContext, path?: string): void {
   switch (action) {
     case 'add': {
@@ -849,6 +863,7 @@ export function handleWorkspace(action: string, dispatch: Dispatch, ctx: Handler
   }
 }
 
+// @kern-source: info:841
 export function handleChats(dispatch: Dispatch, sessionId?: string): void {
   if (sessionId) {
     const session = loadChatSession(sessionId);
@@ -882,6 +897,7 @@ export function handleChats(dispatch: Dispatch, sessionId?: string): void {
   dispatch({ type: 'table', headers: ['Session', 'Msgs', 'Date', 'First Message'], rows });
 }
 
+// @kern-source: info:875
 export function handleModels(dispatch: Dispatch, ctx: HandlerContext): void {
   dispatch({ type: 'header', title: 'Models & Engines' });
   const config = ctx.config;

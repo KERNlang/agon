@@ -4,6 +4,7 @@ import { charDisplayWidth, stringDisplayWidth, displayColumnToStringIndex, clamp
 
 // ── Module: AppSelection ──
 
+// @kern-source: app-selection:5
 export function normalizeRowSelection(anchor: number|null, focus: number|null): {start:number,end:number}|null {
   if (anchor === null || focus === null) {
     return null;
@@ -11,6 +12,7 @@ export function normalizeRowSelection(anchor: number|null, focus: number|null): 
   return { start: Math.min(anchor, focus), end: Math.max(anchor, focus) };
 }
 
+// @kern-source: app-selection:11
 export function normalizeTextSelection(anchorRow: number|null, anchorCol: number|null, focusRow: number|null, focusCol: number|null): {startRow:number,startCol:number,endRow:number,endCol:number}|null {
   if (anchorRow === null || anchorCol === null || focusRow === null || focusCol === null) {
     return null;
@@ -27,6 +29,7 @@ export function normalizeTextSelection(anchorRow: number|null, anchorCol: number
   return { startRow: focusRow, startCol: focusCol, endRow: anchorRow, endCol: anchorCol };
 }
 
+// @kern-source: app-selection:23
 export function richLineToPlainText(line: any): string {
   if (!line) {
     return '';
@@ -56,6 +59,7 @@ export function richLineToPlainText(line: any): string {
   return `${indent}${listIndent}${marker}${spanText}`;
 }
 
+// @kern-source: app-selection:45
 export function transcriptRowToPlainText(row: any): string {
   if (!row) {
     return '';
@@ -77,12 +81,14 @@ export function transcriptRowToPlainText(row: any): string {
   return `${prefix}${text}`;
 }
 
+// @kern-source: app-selection:61
 export function transcriptRowTextStartColumn(row: any): number {
   const paddingLeft = Math.max(0, Number(row?.paddingLeft ?? 0));
   const borderColumns = row?.borderColor ? 2 : 0;
   return paddingLeft + borderColumns + 2;
 }
 
+// @kern-source: app-selection:67
 export function resolveTranscriptColumnFromMouse(mouseX: number, row: any): number {
   const text = transcriptRowToPlainText(row);
   const startColumn = transcriptRowTextStartColumn(row);
@@ -93,6 +99,7 @@ export function resolveTranscriptColumnFromMouse(mouseX: number, row: any): numb
   return displayColumnToStringIndex(text, targetColumn);
 }
 
+// @kern-source: app-selection:76
 export function transcriptRowsToPlainText(rows: any[], anchorRow: number|null, anchorCol: number|null, focusRow: number|null, focusCol: number|null): string {
   const range = normalizeTextSelection(anchorRow, anchorCol, focusRow, focusCol);
   if (!range) return '';
@@ -117,6 +124,7 @@ export function transcriptRowsToPlainText(rows: any[], anchorRow: number|null, a
   return lines.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd();
 }
 
+// @kern-source: app-selection:101
 export function resolveTranscriptRowFromMouse(mouseY: number, viewportTopLine: number, firstVisibleRow: number, visibleRowCount: number): number|null {
   if (visibleRowCount <= 0) {
     return null;

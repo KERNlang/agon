@@ -6,6 +6,7 @@ import {
   shouldEmitCesarRecap,
   classifyConsequence,
   formatCesarRecapToolSummary,
+  readRecapConfidence,
 } from '../../packages/cli/src/generated/cesar/recap.js';
 
 const bashCall = (command: string, status: string, output = '') => ({
@@ -22,6 +23,12 @@ describe('formatCesarRecapToolSummary', () => {
     expect(formatCesarRecapToolSummary(14, tools)).toBe(
       '14 tools: Tool1, Tool2, Tool3, Tool4, Tool5, Tool6, Tool7, Tool8, ...',
     );
+  });
+});
+
+describe('readRecapConfidence', () => {
+  it('reads a numbered percentage capture through KERN regex match groups', () => {
+    expect(readRecapConfidence('Confidence: 92%')).toEqual({ value: 92, reasoning: '' });
   });
 });
 
@@ -149,6 +156,17 @@ describe('buildCesarTurnRecapEvent — todo delta capture', () => {
     const capture = createCesarRecapCapture('x', Date.now());
     const recap = buildCesarTurnRecapEvent(capture, { responded: true }, [], []);
     expect(recap.todos).toBeNull();
+  });
+});
+
+describe('buildCesarTurnRecapEvent — duration capture', () => {
+  it('does not let a zero-duration confirmation follow-up erase the real turn duration', () => {
+    const capture = createCesarRecapCapture('scope it', Date.now() - 120_000);
+    recordCesarRecapEvent(capture, { type: 'response-meta', engineId: 'zai', elapsed: 120_000 });
+    recordCesarRecapEvent(capture, { type: 'response-meta', engineId: 'zai', elapsed: 0 });
+
+    const recap = buildCesarTurnRecapEvent(capture, { responded: true, terminalState: 'completed' }, [], []);
+    expect(recap.durationMs).toBe(120_000);
   });
 });
 

@@ -175,116 +175,117 @@ fn name=formatCouncil params="r:SessionResult, idx:number" returns=string
     do value="lines.push('')"
     return value="lines.join('\\n')"
 
-fn name=formatSynthesis params="r:SessionResult, idx:number" returns=string
-  handler lang="kern"
-    let name=data value="r.data as SynthesisResultData"
-    let name=lines type="string[]" value="[]"
-    do value="lines.push(`${BOLD}${GREEN}${RULE}${RESET}`)"
-    do value="lines.push(`${BOLD} SYNTHESIS #${idx} ${DIM}· ${formatTime(r.timestamp)} · ${RESET}${BOLD}\"${r.question}\"${RESET}`)"
-    do value="lines.push(`${DIM} Engines: ${r.engines.join(', ')}${data.winner ? ` · Winner: ${data.winner}` : ''} · ${data.swaps} swap(s)${RESET}`)"
-    do value="lines.push(`${BOLD}${GREEN}${RULE}${RESET}`)"
-    do value="lines.push('')"
-    if cond="data.judgeReasoning"
-      do value="lines.push(`${BOLD}── Judge reasoning ──${RESET}`)"
-      do value="lines.push(data.judgeReasoning)"
+module name=ExtendedResultFormatting
+  fn name=formatSynthesis params="r:SessionResult, idx:number" returns=string
+    handler lang="kern"
+      let name=data value="r.data as SynthesisResultData"
+      let name=lines type="string[]" value="[]"
+      do value="lines.push(`${BOLD}${GREEN}${RULE}${RESET}`)"
+      do value="lines.push(`${BOLD} SYNTHESIS #${idx} ${DIM}· ${formatTime(r.timestamp)} · ${RESET}${BOLD}\"${r.question}\"${RESET}`)"
+      do value="lines.push(`${DIM} Engines: ${r.engines.join(', ')}${data.winner ? ` · Winner: ${data.winner}` : ''} · ${data.swaps} swap(s)${RESET}`)"
+      do value="lines.push(`${BOLD}${GREEN}${RULE}${RESET}`)"
       do value="lines.push('')"
-    return value="lines.join('\\n')"
+      if cond="data.judgeReasoning"
+        do value="lines.push(`${BOLD}── Judge reasoning ──${RESET}`)"
+        do value="lines.push(data.judgeReasoning)"
+        do value="lines.push('')"
+      return value="lines.join('\\n')"
 
-fn name=formatNero params="r:SessionResult, idx:number" returns=string
-  handler lang="kern"
-    let name=data value="r.data as NeroResultData"
-    let name=lines type="string[]" value="[]"
-    do value="lines.push(`${BOLD}${RED}${RULE}${RESET}`)"
-    do value="lines.push(`${BOLD} NERO #${idx} ${DIM}· ${formatTime(r.timestamp)} · ${RESET}${BOLD}\"${r.question}\"${RESET}`)"
-    do value="lines.push(`${DIM} Critic: ${data.criticId} · ${data.verdict.toUpperCase()}${data.challengeConfidence != null ? ` · Nero ${data.challengeConfidence}% sure original is correct` : ''}${RESET}`)"
-    do value="lines.push(`${BOLD}${RED}${RULE}${RESET}`)"
-    do value="lines.push('')"
-    if cond="data.challengeText"
-      do value="lines.push(data.challengeText)"
+  fn name=formatNero params="r:SessionResult, idx:number" returns=string
+    handler lang="kern"
+      let name=data value="r.data as NeroResultData"
+      let name=lines type="string[]" value="[]"
+      do value="lines.push(`${BOLD}${RED}${RULE}${RESET}`)"
+      do value="lines.push(`${BOLD} NERO #${idx} ${DIM}· ${formatTime(r.timestamp)} · ${RESET}${BOLD}\"${r.question}\"${RESET}`)"
+      do value="lines.push(`${DIM} Critic: ${data.criticId} · ${data.verdict.toUpperCase()}${data.challengeConfidence != null ? ` · Nero ${data.challengeConfidence}% sure original is correct` : ''}${RESET}`)"
+      do value="lines.push(`${BOLD}${RED}${RULE}${RESET}`)"
       do value="lines.push('')"
-    return value="lines.join('\\n')"
+      if cond="data.challengeText"
+        do value="lines.push(data.challengeText)"
+        do value="lines.push('')"
+      return value="lines.join('\\n')"
 
-fn name=formatResearch params="r:SessionResult, idx:number" returns=string
-  handler lang="kern"
-    let name=data value="r.data as ResearchResultData"
-    let name=lines type="string[]" value="[]"
-    do value="lines.push(`${BOLD}${CYAN}${RULE}${RESET}`)"
-    do value="lines.push(`${BOLD} RESEARCH #${idx} ${DIM}· ${formatTime(r.timestamp)} · ${RESET}${BOLD}\"${r.question}\"${RESET}`)"
-    do value="lines.push(`${DIM} ${data.intent} · engine ${data.engineId} · ${data.citationsVerified}/${data.citationsTotal} citations verified${RESET}`)"
-    do value="lines.push(`${BOLD}${CYAN}${RULE}${RESET}`)"
-    do value="lines.push('')"
-    if cond="data.answer"
-      do value="lines.push(data.answer)"
+  fn name=formatResearch params="r:SessionResult, idx:number" returns=string
+    handler lang="kern"
+      let name=data value="r.data as ResearchResultData"
+      let name=lines type="string[]" value="[]"
+      do value="lines.push(`${BOLD}${CYAN}${RULE}${RESET}`)"
+      do value="lines.push(`${BOLD} RESEARCH #${idx} ${DIM}· ${formatTime(r.timestamp)} · ${RESET}${BOLD}\"${r.question}\"${RESET}`)"
+      do value="lines.push(`${DIM} ${data.intent} · engine ${data.engineId} · ${data.citationsVerified}/${data.citationsTotal} citations verified${RESET}`)"
+      do value="lines.push(`${BOLD}${CYAN}${RULE}${RESET}`)"
       do value="lines.push('')"
-    if cond="data.sources && data.sources.length > 0"
-      do value="lines.push(`${BOLD}── Sources ──${RESET}`)"
-      each name=s in="data.sources"
-        do value="lines.push(`  ${s.title || s.url}`)"
-        do value="lines.push(`  ${DIM}${s.url}${RESET}`)"
+      if cond="data.answer"
+        do value="lines.push(data.answer)"
+        do value="lines.push('')"
+      if cond="data.sources && data.sources.length > 0"
+        do value="lines.push(`${BOLD}── Sources ──${RESET}`)"
+        each name=s in="data.sources"
+          do value="lines.push(`  ${s.title || s.url}`)"
+          do value="lines.push(`  ${DIM}${s.url}${RESET}`)"
+        do value="lines.push('')"
+      return value="lines.join('\\n')"
+
+  fn name=formatChrome params="r:SessionResult, idx:number" returns=string
+    handler lang="kern"
+      let name=data value="r.data as ChromeResultData"
+      let name=lines type="string[]" value="[]"
+      do value="lines.push(`${BOLD}${CYAN}${RULE}${RESET}`)"
+      do value="lines.push(`${BOLD} CHROME #${idx} ${DIM}· ${formatTime(r.timestamp)} · ${RESET}${BOLD}\"${r.question}\"${RESET}`)"
+      do value="lines.push(`${DIM} Engine: ${data.engineId}${data.pageActivity ? ' · drove the page' : ' · text only (no page tools ran)'}${RESET}`)"
+      do value="lines.push(`${BOLD}${CYAN}${RULE}${RESET}`)"
       do value="lines.push('')"
-    return value="lines.join('\\n')"
+      if cond="data.answer"
+        do value="lines.push(data.answer)"
+        do value="lines.push('')"
+      return value="lines.join('\\n')"
 
-fn name=formatChrome params="r:SessionResult, idx:number" returns=string
-  handler lang="kern"
-    let name=data value="r.data as ChromeResultData"
-    let name=lines type="string[]" value="[]"
-    do value="lines.push(`${BOLD}${CYAN}${RULE}${RESET}`)"
-    do value="lines.push(`${BOLD} CHROME #${idx} ${DIM}· ${formatTime(r.timestamp)} · ${RESET}${BOLD}\"${r.question}\"${RESET}`)"
-    do value="lines.push(`${DIM} Engine: ${data.engineId}${data.pageActivity ? ' · drove the page' : ' · text only (no page tools ran)'}${RESET}`)"
-    do value="lines.push(`${BOLD}${CYAN}${RULE}${RESET}`)"
-    do value="lines.push('')"
-    if cond="data.answer"
-      do value="lines.push(data.answer)"
+  fn name=formatReview params="r:SessionResult, idx:number" returns=string
+    handler lang="kern"
+      let name=data value="r.data as ReviewResultData"
+      let name=lines type="string[]" value="[]"
+      let name=accent value="data.blocking ? RED : YELLOW"
+      do value="lines.push(`${BOLD}${accent}${RULE}${RESET}`)"
+      do value="lines.push(`${BOLD} REVIEW #${idx} ${DIM}· ${formatTime(r.timestamp)} · ${RESET}${BOLD}${data.label}${RESET}`)"
+      do value="lines.push(`${DIM} Engines: ${r.engines.join(', ')}${data.blocking ? ` · ${RESET}${RED}${BOLD}BLOCKING${RESET}` : ''}${RESET}`)"
+      do value="lines.push(`${BOLD}${accent}${RULE}${RESET}`)"
       do value="lines.push('')"
-    return value="lines.join('\\n')"
+      if cond="data.consensusSummary"
+        do value="lines.push(`${BOLD}── Consensus ──${RESET}`)"
+        do value="lines.push(data.consensusSummary)"
+        do value="lines.push('')"
+      each name=rev in="data.reviews"
+        let name=statusTag value="rev.status === 'ok' ? '' : `${DIM} [${rev.status}]${RESET}`"
+        do value="lines.push(`${BOLD}── ${rev.engineId}${statusTag} ──${RESET}`)"
+        do value="lines.push(rev.reviewOutput)"
+        do value="lines.push('')"
+      return value="lines.join('\\n')"
 
-fn name=formatReview params="r:SessionResult, idx:number" returns=string
-  handler lang="kern"
-    let name=data value="r.data as ReviewResultData"
-    let name=lines type="string[]" value="[]"
-    let name=accent value="data.blocking ? RED : YELLOW"
-    do value="lines.push(`${BOLD}${accent}${RULE}${RESET}`)"
-    do value="lines.push(`${BOLD} REVIEW #${idx} ${DIM}· ${formatTime(r.timestamp)} · ${RESET}${BOLD}${data.label}${RESET}`)"
-    do value="lines.push(`${DIM} Engines: ${r.engines.join(', ')}${data.blocking ? ` · ${RESET}${RED}${BOLD}BLOCKING${RESET}` : ''}${RESET}`)"
-    do value="lines.push(`${BOLD}${accent}${RULE}${RESET}`)"
-    do value="lines.push('')"
-    if cond="data.consensusSummary"
-      do value="lines.push(`${BOLD}── Consensus ──${RESET}`)"
-      do value="lines.push(data.consensusSummary)"
-      do value="lines.push('')"
-    each name=rev in="data.reviews"
-      let name=statusTag value="rev.status === 'ok' ? '' : `${DIM} [${rev.status}]${RESET}`"
-      do value="lines.push(`${BOLD}── ${rev.engineId}${statusTag} ──${RESET}`)"
-      do value="lines.push(rev.reviewOutput)"
-      do value="lines.push('')"
-    return value="lines.join('\\n')"
-
-fn name=formatSessionResults params="results:SessionResult[]" returns=string export=true
-  handler <<<
-    if (results.length === 0) {
-      return `${DIM}No results in this session yet. Run /brainstorm, /campfire, /tribunal, /forge, /think, /council, /synthesis, /nero, /research, /chrome, or /review first.${RESET}\n`;
-    }
-
-    const sections: string[] = [];
-    sections.push(`${BOLD}Session Results (${results.length})${RESET}\n`);
-
-    for (let i = 0; i < results.length; i++) {
-      const r = results[i];
-      const idx = i + 1;
-      switch (r.type) {
-        case 'brainstorm': sections.push(formatBrainstorm(r, idx)); break;
-        case 'campfire': sections.push(formatCampfire(r, idx)); break;
-        case 'tribunal': sections.push(formatTribunal(r, idx)); break;
-        case 'forge': sections.push(formatForge(r, idx)); break;
-        case 'think': sections.push(formatThink(r, idx)); break;
-        case 'council': sections.push(formatCouncil(r, idx)); break;
-        case 'synthesis': sections.push(formatSynthesis(r, idx)); break;
-        case 'nero': sections.push(formatNero(r, idx)); break;
-        case 'research': sections.push(formatResearch(r, idx)); break;
-        case 'chrome': sections.push(formatChrome(r, idx)); break;
-        case 'review': sections.push(formatReview(r, idx)); break;
+  fn name=formatSessionResults params="results:SessionResult[]" returns=string export=true
+    handler <<<
+      if (results.length === 0) {
+        return `${DIM}No results in this session yet. Run /brainstorm, /campfire, /tribunal, /forge, /think, /council, /synthesis, /nero, /research, /chrome, or /review first.${RESET}\n`;
       }
-    }
 
-    return sections.join('\n');
-  >>>
+      const sections: string[] = [];
+      sections.push(`${BOLD}Session Results (${results.length})${RESET}\n`);
+
+      for (let i = 0; i < results.length; i++) {
+        const r = results[i];
+        const idx = i + 1;
+        switch (r.type) {
+          case 'brainstorm': sections.push(formatBrainstorm(r, idx)); break;
+          case 'campfire': sections.push(formatCampfire(r, idx)); break;
+          case 'tribunal': sections.push(formatTribunal(r, idx)); break;
+          case 'forge': sections.push(formatForge(r, idx)); break;
+          case 'think': sections.push(formatThink(r, idx)); break;
+          case 'council': sections.push(formatCouncil(r, idx)); break;
+          case 'synthesis': sections.push(formatSynthesis(r, idx)); break;
+          case 'nero': sections.push(formatNero(r, idx)); break;
+          case 'research': sections.push(formatResearch(r, idx)); break;
+          case 'chrome': sections.push(formatChrome(r, idx)); break;
+          case 'review': sections.push(formatReview(r, idx)); break;
+        }
+      }
+
+      return sections.join('\n');
+    >>>

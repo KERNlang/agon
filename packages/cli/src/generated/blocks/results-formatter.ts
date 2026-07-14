@@ -212,7 +212,9 @@ export function formatCouncil(r: SessionResult, idx: number): string {
   return lines.join('\n');
 }
 
-// @kern-source: results-formatter:178
+// ── Module: ExtendedResultFormatting ──
+
+// @kern-source: results-formatter:179
 export function formatSynthesis(r: SessionResult, idx: number): string {
   const data = r.data as SynthesisResultData;
   const lines: string[] = [];
@@ -229,7 +231,7 @@ export function formatSynthesis(r: SessionResult, idx: number): string {
   return lines.join('\n');
 }
 
-// @kern-source: results-formatter:193
+// @kern-source: results-formatter:194
 export function formatNero(r: SessionResult, idx: number): string {
   const data = r.data as NeroResultData;
   const lines: string[] = [];
@@ -245,7 +247,7 @@ export function formatNero(r: SessionResult, idx: number): string {
   return lines.join('\n');
 }
 
-// @kern-source: results-formatter:207
+// @kern-source: results-formatter:208
 export function formatResearch(r: SessionResult, idx: number): string {
   const data = r.data as ResearchResultData;
   const lines: string[] = [];
@@ -269,7 +271,7 @@ export function formatResearch(r: SessionResult, idx: number): string {
   return lines.join('\n');
 }
 
-// @kern-source: results-formatter:227
+// @kern-source: results-formatter:228
 export function formatChrome(r: SessionResult, idx: number): string {
   const data = r.data as ChromeResultData;
   const lines: string[] = [];
@@ -285,7 +287,7 @@ export function formatChrome(r: SessionResult, idx: number): string {
   return lines.join('\n');
 }
 
-// @kern-source: results-formatter:241
+// @kern-source: results-formatter:242
 export function formatReview(r: SessionResult, idx: number): string {
   const data = r.data as ReviewResultData;
   const lines: string[] = [];
@@ -309,7 +311,7 @@ export function formatReview(r: SessionResult, idx: number): string {
   return lines.join('\n');
 }
 
-// @kern-source: results-formatter:262
+// @kern-source: results-formatter:263
 export function formatSessionResults(results: SessionResult[]): string {
   if (results.length === 0) {
     return `${DIM}No results in this session yet. Run /brainstorm, /campfire, /tribunal, /forge, /think, /council, /synthesis, /nero, /research, /chrome, or /review first.${RESET}\n`;

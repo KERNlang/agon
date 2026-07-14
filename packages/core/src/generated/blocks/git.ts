@@ -12,7 +12,9 @@ import { normalizePatchContent } from '../utils/patch.js';
 
 import { hostCreateSet, hostRegexSplit } from './host-runtime.js';
 
-// @kern-source: git:8
+// ── Module: GitOperations ──
+
+// @kern-source: git:10
 function git(args: string[], cwd?: string): string {
   try {
     return execFileSync('git', args, {
@@ -34,7 +36,7 @@ function git(args: string[], cwd?: string): string {
 /**
  * Run git and preserve stdout exactly. Use for patch/diff payloads where trimming the final newline corrupts applyability.
  */
-// @kern-source: git:27
+// @kern-source: git:29
 function gitRaw(args: string[], cwd?: string): string {
   try {
     return execFileSync('git', args, {
@@ -53,22 +55,22 @@ function gitRaw(args: string[], cwd?: string): string {
   }
 }
 
-// @kern-source: git:47
+// @kern-source: git:49
 export function repoRoot(cwd: string): string {
   return git(['rev-parse', '--show-toplevel'], cwd);
 }
 
-// @kern-source: git:49
+// @kern-source: git:51
 export function headSha(cwd: string): string {
   return git(['rev-parse', 'HEAD'], cwd);
 }
 
-// @kern-source: git:51
+// @kern-source: git:53
 export function worktreePrune(cwd: string): void {
   git(['worktree', 'prune'], cwd);
 }
 
-// @kern-source: git:53
+// @kern-source: git:55
 function symlinkNodeModuleEntry(sourcePath: string, targetPath: string): void {
   if (existsSync(targetPath)) return;
   const sourceStat = statSync(sourcePath);
@@ -81,7 +83,7 @@ function symlinkNodeModuleEntry(sourcePath: string, targetPath: string): void {
 /**
  * External git worktrees live outside the repo, so Node cannot walk up to the root install. Create a shallow node_modules overlay: external deps link to the source install, while workspace packages (any scope) link back into the candidate worktree so runtime tests see candidate edits. Handles both npm-hoisted (root node_modules/@scope) and pnpm non-hoisted (per-package node_modules) layouts.
  */
-// @kern-source: git:63
+// @kern-source: git:65
 export function linkWorktreeNodeModules(repoDir: string, worktreePath: string): void {
   const repoPackages = join(repoDir, 'packages');
   const worktreePackages = join(worktreePath, 'packages');
@@ -205,7 +207,7 @@ export function linkWorktreeNodeModules(repoDir: string, worktreePath: string): 
 /**
  * Git worktrees omit ignored package dist artifacts, but workspace package exports point at dist. Copy existing root artifacts into the candidate worktree so fitness commands can resolve local workspace packages without forcing every forge candidate to rebuild first.
  */
-// @kern-source: git:185
+// @kern-source: git:187
 export function hydrateWorktreeBuildArtifacts(repoDir: string, worktreePath: string): void {
   const sourcePackages = join(repoDir, 'packages');
   const targetPackages = join(worktreePath, 'packages');
@@ -225,16 +227,16 @@ export function hydrateWorktreeBuildArtifacts(repoDir: string, worktreePath: str
   }
 }
 
-// @kern-source: git:206
+// @kern-source: git:208
 export const activeWorktrees: Map<string, string> = (() => {
-    const g = globalThis as any;
-    if (!g.__agonActiveWorktrees) {
-      g.__agonActiveWorktrees = new Map<string, string>();
-    }
-    return g.__agonActiveWorktrees;
-  })();
+      const g = globalThis as any;
+      if (!g.__agonActiveWorktrees) {
+        g.__agonActiveWorktrees = new Map<string, string>();
+      }
+      return g.__agonActiveWorktrees;
+    })();
 
-// @kern-source: git:216
+// @kern-source: git:218
 export function registerExitHooks(): void {
   const g = globalThis as any;
   if (g.__agonExitHooksRegistered) return;
@@ -281,7 +283,7 @@ export function registerExitHooks(): void {
   process.on('SIGTERM', handleSigTerm);
 }
 
-// @kern-source: git:263
+// @kern-source: git:265
 export function worktreeCreate(repoDir: string, worktreePath: string, sha: string): string {
   registerExitHooks();
   worktreePrune(repoDir);
@@ -301,7 +303,7 @@ export function worktreeCreate(repoDir: string, worktreePath: string, sha: strin
 /**
  * Resolve the PER-CHECKOUT git-dir (never the shared common-dir): the main checkout -> <repo>/.git, a linked worktree -> <repo>/.git/worktrees/<name>. Keying an advisory lock here makes sessions sharing ONE checkout contend (same dir) while separate worktrees stay independent (distinct dirs).
  */
-// @kern-source: git:280
+// @kern-source: git:282
 export function absoluteGitDir(cwd: string): string {
   return git(['rev-parse', '--absolute-git-dir'], cwd);
 }
@@ -309,7 +311,7 @@ export function absoluteGitDir(cwd: string): string {
 /**
  * True if refs/heads/<branch> already exists in repoDir.
  */
-// @kern-source: git:286
+// @kern-source: git:288
 export function branchExists(repoDir: string, branch: string): boolean {
   try {
     git(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], repoDir);
@@ -322,7 +324,7 @@ export function branchExists(repoDir: string, branch: string): boolean {
 /**
  * Add a git worktree checked out on a NAMED branch — unlike worktreeCreate, which detaches for throwaway forge candidates. Prefers git's DWIM (an existing local branch, or a tracking branch when <branch> resolves on exactly one remote); only when that fails is a fresh branch created off base/HEAD. When link is not false, overlay node_modules + dist so the worktree is immediately buildable.
  */
-// @kern-source: git:297
+// @kern-source: git:299
 export function worktreeAddOnBranch(repoDir: string, worktreePath: string, branch: string, base?: string, link?: boolean): string {
   // Session worktrees are persistent by design: do NOT register them for
   // process-exit cleanup. Only ephemeral throwaway worktrees (worktreeCreate)
@@ -354,7 +356,7 @@ export function worktreeAddOnBranch(repoDir: string, worktreePath: string, branc
 /**
  * Strict worktree removal: one retry, then throws WorktreeError. Use when cleanup failure must be visible to the caller (e.g. AgentTeam where leaked worktrees collide on subsequent runs).
  */
-// @kern-source: git:327
+// @kern-source: git:329
 export function worktreeRemove(repoDir: string, worktreePath: string): void {
   let lastErr: unknown = null;
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -374,7 +376,7 @@ export function worktreeRemove(repoDir: string, worktreePath: string): void {
 /**
  * Best-effort worktree removal: idempotent (silent if already gone), logs warning on real failure, never throws. For finally-block cleanup paths where the caller is already in an error path or doesn't need to know about cleanup failures.
  */
-// @kern-source: git:345
+// @kern-source: git:347
 export function worktreeRemoveBestEffort(repoDir: string, worktreePath: string): void {
   // Skip silently if the worktree directory is already gone — git worktree remove
   // on a missing path errors with 'is not a working tree' and floods cleanup logs
@@ -394,7 +396,7 @@ export function worktreeRemoveBestEffort(repoDir: string, worktreePath: string):
 /**
  * Janitor: scan .agon/agent-worktrees/<runId>/ and remove any directories whose mtime is older than threshold. Called at startup of every team run to clean up after cancelled/crashed runs that left worktrees behind.
  */
-// @kern-source: git:363
+// @kern-source: git:365
 export function worktreePruneAll(repoDir: string, olderThanMs: number): void {
   const baseDir = join(repoDir, '.agon', 'agent-worktrees');
   if (!existsSync(baseDir)) return;
@@ -424,7 +426,7 @@ export function worktreePruneAll(repoDir: string, olderThanMs: number): void {
 /**
  * Prune any registered git worktrees that point to ephemeral Agon roots: repo-local .agon/agent-worktrees/, .agon/speculate-worktrees/, .agon/runs/, or .agon/goals/. Explicitly excludes persistent session worktrees under ~/.agon/worktrees/.
  */
-// @kern-source: git:391
+// @kern-source: git:393
 export function worktreePruneOrphaned(repoDir: string): void {
   try {
     const output = git(['worktree', 'list', '--porcelain'], repoDir);
@@ -451,7 +453,7 @@ export function worktreePruneOrphaned(repoDir: string): void {
 /**
  * Return the unified diff of all changes in a worktree against the base SHA, INCLUDING untracked files but EXCLUDING anything in .gitignore (node_modules, dist, .agon, etc.). Used by Phase 3 scoring to compute per-member diffs without the buggy worktreeDiff approach (which does git add -A and would stage node_modules).
  */
-// @kern-source: git:417
+// @kern-source: git:419
 export function worktreeChangedDiff(cwd: string, baseSha: string): string {
   try {
     // Diff tracked changes against baseSha
@@ -486,7 +488,7 @@ export function worktreeChangedDiff(cwd: string, baseSha: string): string {
 /**
  * Return shortstat numbers (file count, total lines changed) for a worktree against base SHA, including untracked files. Used by Phase 3 scoring without the node_modules-explosion bug of worktreeDiff. Untracked files are counted via direct filesystem read since they're not in the git index.
  */
-// @kern-source: git:450
+// @kern-source: git:452
 export function worktreeChangedShortstat(cwd: string, baseSha: string): {filesChanged:number,linesChanged:number} {
   let filesChanged = 0;
   let linesChanged = 0;
@@ -551,7 +553,7 @@ export function worktreeChangedShortstat(cwd: string, baseSha: string): {filesCh
 /**
  * Capture the working tree (modifications to TRACKED files only) as a stash-like commit SHA WITHOUT modifying the working tree. Returns the stash SHA, or HEAD SHA if the tree is clean. Used by AgentTeam to give parallel agents a worktree base that includes the user's in-progress edits to tracked files, so synthesized patches apply cleanly against the user's actual current state. KNOWN LIMITATION: untracked files (new files the user just created locally but hasn't `git add`-ed) are NOT in the snapshot — git stash create silently ignores -u. Agents will not see those files. Logs a warning when untracked files are present so the user knows.
  */
-// @kern-source: git:513
+// @kern-source: git:515
 export function stashSnapshot(cwd: string): string {
   try {
     // git stash create captures TRACKED modifications as a commit object
@@ -582,7 +584,7 @@ export function stashSnapshot(cwd: string): string {
 /**
  * Check if cwd exists AND is a git working tree (so 'git diff --cached' won't silently fall back to --no-index mode and reject the flag).
  */
-// @kern-source: git:542
+// @kern-source: git:544
 function isWorktreeOrRepo(cwd: string): boolean {
   if (!existsSync(cwd)) {
     return false;
@@ -601,7 +603,7 @@ function isWorktreeOrRepo(cwd: string): boolean {
   }
 }
 
-// @kern-source: git:558
+// @kern-source: git:560
 export function worktreeDiff(cwd: string): string {
   if (!isWorktreeOrRepo(cwd)) return '';
   try {
@@ -613,7 +615,7 @@ export function worktreeDiff(cwd: string): string {
   }
 }
 
-// @kern-source: git:570
+// @kern-source: git:572
 export function readOnlyDiff(cwd: string): string {
   if (!isWorktreeOrRepo(cwd)) return '';
   try {
@@ -626,7 +628,7 @@ export function readOnlyDiff(cwd: string): string {
   }
 }
 
-// @kern-source: git:583
+// @kern-source: git:585
 export function diffLineCount(diff: string): number {
   let count = 0;
   for (const line of diff.split('\n')) {
@@ -636,7 +638,7 @@ export function diffLineCount(diff: string): number {
   return count;
 }
 
-// @kern-source: git:593
+// @kern-source: git:595
 export function diffFileCount(cwd: string): number {
   if (!isWorktreeOrRepo(cwd)) return 0;
   try {
@@ -648,7 +650,7 @@ export function diffFileCount(cwd: string): number {
   }
 }
 
-// @kern-source: git:605
+// @kern-source: git:607
 export function applyPatch(cwd: string, patchContent: string): void {
   if (!patchContent.trim()) {
     return;
@@ -661,7 +663,7 @@ export function applyPatch(cwd: string, patchContent: string): void {
   }
 }
 
-// @kern-source: git:615
+// @kern-source: git:617
 export function currentBranch(cwd: string): string {
   try {
     return git(['rev-parse', '--abbrev-ref', 'HEAD'], cwd);
@@ -670,7 +672,7 @@ export function currentBranch(cwd: string): string {
   }
 }
 
-// @kern-source: git:622
+// @kern-source: git:624
 export function isDirty(cwd: string): boolean {
   try {
     return git(['status', '--porcelain'], cwd).length > 0;
@@ -679,7 +681,7 @@ export function isDirty(cwd: string): boolean {
   }
 }
 
-// @kern-source: git:629
+// @kern-source: git:631
 export function recentCommits(cwd: string, count?: number): string {
   try {
     return git(['log', '--oneline', `-${count ?? 10}`], cwd);
@@ -691,7 +693,7 @@ export function recentCommits(cwd: string, count?: number): string {
 /**
  * Co-Authored-By trailer paragraph for commits agon itself creates. IDIOM: returns '' when config.commitCoAuthor is unset/blank, else a full leading-blank-line paragraph `\n\nCo-Authored-By: <value>` meant to be string-CONCATENATED onto the commit message body (matching the autoCredit trailer pattern in /commit). NOTE: call sites should prefer appendCoAuthor, which is paragraph-aware — it joins into the message's final paragraph when that paragraph is already a trailer block (so git keeps both trailers), instead of blindly prepending a blank-line paragraph. coAuthorTrailer stays exported for direct unit testing of the raw paragraph idiom.
  */
-// @kern-source: git:636
+// @kern-source: git:638
 export function coAuthorTrailer(config: {commitCoAuthor?:string}): string {
   const v = (config.commitCoAuthor ?? '').trim();
   if (!v) {
@@ -703,7 +705,7 @@ export function coAuthorTrailer(config: {commitCoAuthor?:string}): string {
 /**
  * Paragraph-aware Co-Authored-By append. Returns message unchanged when config.commitCoAuthor is blank/unset. Otherwise: if the message's LAST paragraph is a SEPARATE trailer block — there is more than one paragraph AND every non-empty line of the last one matches /^[A-Za-z][A-Za-z-]*: / (e.g. a user-supplied Co-Authored-By: or Signed-off-by:) — the new trailer is joined with a single `\n` so all trailers share ONE final paragraph (git only parses trailers from the last paragraph; a blank-line separator would orphan the existing ones). Otherwise the trailer is appended as a new `\n\n` paragraph. The >1-paragraph guard is load-bearing: a single-paragraph conventional-commit subject like `feat: do thing` also matches the trailer regex and must NOT be treated as a trailer block. Prefer this over coAuthorTrailer at all commit call sites.
  */
-// @kern-source: git:644
+// @kern-source: git:646
 export function appendCoAuthor(message: string, config: {commitCoAuthor?:string}): string {
   const v = (config.commitCoAuthor ?? '').trim();
   if (!v) {
@@ -724,19 +726,19 @@ export function appendCoAuthor(message: string, config: {commitCoAuthor?:string}
 /**
  * The Claude-Code-style attribution line agon appends to COMMITS it creates — 'Forged by', after agon's signature forge mode. Commit messages are rendered as PLAIN TEXT on GitHub (no markdown, no images), so the brand mark is the agon arena glyph ⚔️ — the colored AGON wordmark is impossible here. PR bodies use AGON_ATTRIBUTION_PR (markdown context, real logo image). Same wording in both so they read as one brand.
  */
-// @kern-source: git:660
+// @kern-source: git:662
 export const AGON_ATTRIBUTION: string = '⚔️ Forged by [Agon](https://github.com/KERNlang/agon)';
 
 /**
  * PR-body attribution line — PR bodies render markdown/HTML, so this shows the real AGON logo: the KERN-Agon GitHub account's avatar (github.com/KERN-Agon.png is a stable public URL even though the repo is private). Upload the AGON wordmark as that account's profile picture once and it powers BOTH the co-author/contributor avatar AND this footer. Falls back to GitHub's identicon until the avatar is set — never broken.
  */
-// @kern-source: git:663
+// @kern-source: git:665
 export const AGON_ATTRIBUTION_PR: string = '<img src="https://github.com/KERN-Agon.png" width="16" height="16" alt="Agon" /> Forged by [Agon](https://github.com/KERNlang/agon)';
 
 /**
  * Claude-Code-1:1 attribution block for commits agon itself creates: appends the '🤖 Generated with [Agon](…)' line as its own paragraph, then the Co-Authored-By trailer as the final paragraph — the exact layout Claude Code uses. config.commitCoAuthor is the SINGLE opt-out switch (mirrors Claude Code's includeCoAuthoredBy): blank/unset returns the message unchanged — no banner, no trailer. Implemented as appendCoAuthor(message + banner): the banner paragraph guarantees the trailer lands alone in the last paragraph, where git parses trailers. Prefer this over bare appendCoAuthor at agon's own commit call sites.
  */
-// @kern-source: git:666
+// @kern-source: git:668
 export function appendAttribution(message: string, config: {commitCoAuthor?:string}): string {
   const v = (config.commitCoAuthor ?? '').trim();
   if (!v) return message;
@@ -746,7 +748,7 @@ export function appendAttribution(message: string, config: {commitCoAuthor?:stri
 /**
  * PR-body variant of appendAttribution: appends only the Generated-with line (Co-Authored-By is a commit-trailer concept, not PR text), using the markdown/logo variant since PR bodies render HTML. Same single opt-out switch (commitCoAuthor blank = no footer).
  */
-// @kern-source: git:674
+// @kern-source: git:676
 export function appendPrAttribution(body: string, config: {commitCoAuthor?:string}): string {
   const v = (config.commitCoAuthor ?? '').trim();
   if (!v) return body;
@@ -756,7 +758,7 @@ export function appendPrAttribution(body: string, config: {commitCoAuthor?:strin
 /**
  * Normalize a github.com remote URL (scp-like ssh, ssh://, http(s), with/without .git) to https://github.com/<org>/<repo>. Returns '' for non-GitHub or unparseable remotes — callers then skip the prefilled-PR link and just print the PR text. Pure; exported for unit tests.
  */
-// @kern-source: git:682
+// @kern-source: git:684
 export function normalizeGitHubRemote(url: string): string {
   const u = url.trim();
   let m = u.match(/^(?:ssh:\/\/)?git@github\.com[/:]([^/]+)\/(.+?)(?:\.git)?\/?$/);
@@ -769,7 +771,7 @@ export function normalizeGitHubRemote(url: string): string {
 /**
  * https://github.com/<org>/<repo> for the given remote (default 'origin'), or '' (no such remote / not GitHub). Callers that push to a --remote MUST pass it through so the PR link targets the repo that actually received the branch.
  */
-// @kern-source: git:693
+// @kern-source: git:695
 export function githubRepoUrl(cwd: string, remote?: string): string {
   try {
     return normalizeGitHubRemote(git(['remote', 'get-url', remote ?? 'origin'], cwd));
@@ -781,7 +783,7 @@ export function githubRepoUrl(cwd: string, remote?: string): string {
 /**
  * The remote default branch for the given remote (default 'origin'). Resolution order, all local (never hits the network): <remote>/HEAD symbolic-ref → an existing refs/remotes/<remote>/main → …/master → 'main'. The existence probes cover clones where <remote>/HEAD was never populated but the real default branch is fetched. Used as the PR base for prefilled compare links.
  */
-// @kern-source: git:703
+// @kern-source: git:705
 export function defaultBaseBranch(cwd: string, remote?: string): string {
   const r = remote ?? 'origin';
   try {
@@ -801,7 +803,7 @@ export function defaultBaseBranch(cwd: string, remote?: string): string {
 /**
  * GitHub compare URL with ?quick_pull=1&title=…&body=… — clicking it opens the new-PR form already filled in. This is agon's no-gh PR path: after a push, the human clicks the link and merges; no GitHub CLI/token needed. The title is clamped to 256 chars and the body shrunk until the whole URL fits in ~7500 chars (GitHub/browsers reject very long URLs) — callers print the full body in the terminal first so nothing is lost. Returns '' when repoUrl is empty. Pure; exported for unit tests.
  */
-// @kern-source: git:721
+// @kern-source: git:723
 export function prefilledPrUrl(opts: {repoUrl:string,base:string,branch:string,title:string,body:string}): string {
   if (!opts.repoUrl) return '';
   const head = `${opts.repoUrl}/compare/${encodeURIComponent(opts.base)}...${encodeURIComponent(opts.branch)}?quick_pull=1&title=${encodeURIComponent(opts.title.slice(0, 256))}`;
@@ -818,7 +820,7 @@ export function prefilledPrUrl(opts: {repoUrl:string,base:string,branch:string,t
 /**
  * Read-only: git status --short. Never mutates the working tree.
  */
-// @kern-source: git:736
+// @kern-source: git:738
 export function gitStatusShort(cwd: string): string {
   try {
     return git(['status', '--short'], cwd);
@@ -830,7 +832,7 @@ export function gitStatusShort(cwd: string): string {
 /**
  * Read-only: git diff --stat for unstaged changes. No git add.
  */
-// @kern-source: git:744
+// @kern-source: git:746
 export function gitDiffStat(cwd: string): string {
   try {
     return git(['diff', '--stat'], cwd);
@@ -842,7 +844,7 @@ export function gitDiffStat(cwd: string): string {
 /**
  * Read-only: list of changed file paths (unstaged + staged). No git add.
  */
-// @kern-source: git:752
+// @kern-source: git:754
 export function gitChangedFiles(cwd: string): string[] {
   try {
     const unstaged = git(['diff', '--name-only'], cwd);
@@ -857,7 +859,7 @@ export function gitChangedFiles(cwd: string): string[] {
 /**
  * Read-only: truncated git diff (unstaged). Caps output. No git add.
  */
-// @kern-source: git:763
+// @kern-source: git:765
 export function gitTruncatedDiff(cwd: string, maxLines?: number): string {
   try {
     const diff = git(['diff'], cwd);

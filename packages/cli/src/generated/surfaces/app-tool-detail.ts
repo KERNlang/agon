@@ -16,6 +16,7 @@ import { buildToolCallRows } from './app-rendering.js';
 
 // ── Module: AppToolDetail ──
 
+// @kern-source: app-tool-detail:11
 export function isMutatingToolCall(event: any): boolean {
   if (!event || event.type !== 'tool-call') {
     return false;
@@ -38,6 +39,7 @@ export function isMutatingToolCall(event: any): boolean {
   }
 }
 
+// @kern-source: app-tool-detail:28
 export function parseToolCallPayload(event: any): any {
   const rawInput = String(event?.input ?? '');
   let parsed: Record<string, unknown> = {};
@@ -51,6 +53,7 @@ export function parseToolCallPayload(event: any): any {
   return { rawInput: rawInput, parsed: parsed, toolKey: String(event?.tool ?? '').toLowerCase() };
 }
 
+// @kern-source: app-tool-detail:39
 export function toolPreviewWindow(lineCount: number, expanded: boolean): any {
   if (lineCount <= 0) {
     return { head: 0, tail: 0, skipped: 0 };
@@ -66,6 +69,7 @@ export function toolPreviewWindow(lineCount: number, expanded: boolean): any {
   return { head: head, tail: tail, skipped: Math.max(0, (lineCount - head - tail)) };
 }
 
+// @kern-source: app-tool-detail:52
 export function toolCallSupportsDetailView(event: any): boolean {
   if (!event || event.type !== 'tool-call') {
     return false;
@@ -89,6 +93,7 @@ export function toolCallSupportsDetailView(event: any): boolean {
   return rawInput.length > 160 || outputText.length > 400;
 }
 
+// @kern-source: app-tool-detail:73
 export function detailViewerSupportsEvent(event: any): boolean {
   if (!event) {
     return false;
@@ -102,10 +107,12 @@ export function detailViewerSupportsEvent(event: any): boolean {
   return toolCallSupportsDetailView(event);
 }
 
+// @kern-source: app-tool-detail:86
 export function toolDetailViewportRows(termHeight: number): number {
   return Math.max(8, Math.min(18, termHeight - 14));
 }
 
+// @kern-source: app-tool-detail:88
 export function findLatestToolDetailEvent(blocks: OutputBlock[]): any {
   for (let index = blocks.length - 1; index >= 0; index -= 1) {
     const event = blocks[index]?.event as any;
@@ -125,6 +132,7 @@ export function findLatestToolDetailEvent(blocks: OutputBlock[]): any {
   return null;
 }
 
+// @kern-source: app-tool-detail:108
 export function findLatestToolEvent(blocks: OutputBlock[]): any {
   for (let index = blocks.length - 1; index >= 0; index -= 1) {
     const event = blocks[index]?.event as any;
@@ -140,6 +148,7 @@ export function findLatestToolEvent(blocks: OutputBlock[]): any {
   return null;
 }
 
+// @kern-source: app-tool-detail:124
 export function findLatestFailedToolEvent(blocks: OutputBlock[]): any {
   for (let index = blocks.length - 1; index >= 0; index -= 1) {
     const event = blocks[index]?.event as any;
@@ -155,6 +164,7 @@ export function findLatestFailedToolEvent(blocks: OutputBlock[]): any {
   return null;
 }
 
+// @kern-source: app-tool-detail:140
 export function buildFailedToolRetryDraft(event: any): string {
   if (!event) return '';
   const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
@@ -169,6 +179,7 @@ export function buildFailedToolRetryDraft(event: any): string {
   return `retry the failed ${toolName} call with corrected input:\n${payload}${suffix}`;
 }
 
+// @kern-source: app-tool-detail:155
 export function buildToolDetailView(event: any): any {
   if (!event) {
     return { title: 'Detail viewer', subtitle: '', accentColor: '#a78bfa', rows: [] };

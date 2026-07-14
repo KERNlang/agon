@@ -56,20 +56,22 @@ export interface CesarConfidenceRecord {
   reasoning?: string;
 }
 
+// ── Module: CesarToolPayloadSummaries ──
+
 /**
  * Create a short stable-enough id for joining per-turn tool timeline and approval ledger records.
  */
-// @kern-source: tool-observability:52
+// @kern-source: tool-observability:53
 export function createCesarTurnId(): string {
   return `cesar-${hostNowMs().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-// @kern-source: tool-observability:55
+// @kern-source: tool-observability:56
 function looksSensitiveString(value: string): boolean {
   return /(?:secret|token|password|credential|api[_-]?key|private[_-]?key)[ \t\n\r\f\v]*[:=]/i.test(value) || /-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(value) || /\b(?:sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9_]{16,}|AKIA[0-9A-Z]{16})\b/.test(value);
 }
 
-// @kern-source: tool-observability:59
+// @kern-source: tool-observability:60
 function summarizeCommandString(value: string): Record<string,unknown> {
   const raw = String(value ?? '').trim();
   const first = raw.split(/[ \t\n\r\f\v]+/)[0] ?? '';
@@ -78,7 +80,7 @@ function summarizeCommandString(value: string): Record<string,unknown> {
   return { commandBase: base, chars: raw.length, redactedPreview: true, sensitive: sensitive || undefined };
 }
 
-// @kern-source: tool-observability:67
+// @kern-source: tool-observability:68
 function summarizeValue(key: string, value: unknown): unknown {
   const lower = key.toLowerCase();
   if (/(secret|token|password|credential|api[_-]?key|private[_-]?key|content|old_string|new_string)/i.test(lower)) {
@@ -111,7 +113,7 @@ function summarizeValue(key: string, value: unknown): unknown {
 /**
  * Summarize tool input/output payloads for logs without storing full file contents or large blobs.
  */
-// @kern-source: tool-observability:88
+// @kern-source: tool-observability:89
 export function summarizeToolPayload(payload: Record<string,unknown>|string|undefined): Record<string,unknown>|undefined {
   if (payload === undefined) return undefined;
   if (typeof payload === 'string') {
@@ -137,7 +139,7 @@ export function summarizeToolPayload(payload: Record<string,unknown>|string|unde
 /**
  * Format a failed tool result into a Cesar-facing diagnostic: tool name + a redacted, length-capped input snippet + the error. Reuses summarizeToolPayload so secrets/large blobs never land in the snippet.
  */
-// @kern-source: tool-observability:112
+// @kern-source: tool-observability:113
 export function buildToolErrorDiagnostic(name: string, args: Record<string,unknown>|string|undefined, error: string|undefined): string {
   let inputSnippet: string;
   try {
@@ -157,7 +159,7 @@ export function buildToolErrorDiagnostic(name: string, args: Record<string,unkno
   return `Tool ${name} failed.\nInput (redacted): ${inputSnippet}\nError: ${errMsg}`;
 }
 
-// @kern-source: tool-observability:133
+// @kern-source: tool-observability:134
 function appendCesarJsonl(fileName: string, record: Record<string,unknown>, runsDir?: string): void {
   const dir = runsDir ?? RUNS_DIR;
   mkdirSync(dir, { recursive: true });
@@ -167,7 +169,7 @@ function appendCesarJsonl(fileName: string, record: Record<string,unknown>, runs
 /**
  * Append one permission decision to the persistent Cesar approval ledger. Best-effort: failures are swallowed by callers.
  */
-// @kern-source: tool-observability:139
+// @kern-source: tool-observability:140
 export function recordCesarApprovalDecision(record: CesarApprovalLedgerRecord, runsDir?: string): void {
   try {
     const argsSummary = summarizeToolPayload(record.args);
@@ -190,7 +192,7 @@ export function recordCesarApprovalDecision(record: CesarApprovalLedgerRecord, r
 /**
  * Append one compact per-turn tool timeline event. Best-effort and payload-summarized.
  */
-// @kern-source: tool-observability:160
+// @kern-source: tool-observability:161
 export function recordCesarToolTimeline(record: CesarToolTimelineRecord, runsDir?: string): void {
   try {
     appendCesarJsonl('cesar-tool-timeline.jsonl', {
@@ -215,7 +217,7 @@ export function recordCesarToolTimeline(record: CesarToolTimelineRecord, runsDir
 /**
  * Append one reported-confidence snapshot to ~/.agon/calibration/<sessionId>.jsonl (data-only — no scoring, no outcome judgment). Best-effort: failures are swallowed by callers.
  */
-// @kern-source: tool-observability:183
+// @kern-source: tool-observability:184
 export function recordCesarConfidence(record: CesarConfidenceRecord): void {
   try {
     // sessionId becomes a filename component — reject anything that could escape the
@@ -247,7 +249,7 @@ export function recordCesarConfidence(record: CesarConfidenceRecord): void {
   } catch { /* observability must never block tools */ }
 }
 
-// @kern-source: tool-observability:216
+// @kern-source: tool-observability:217
 function readJsonlRecords(filePath: string): Array<Record<string,unknown>> {
   if (!existsSync(filePath)) {
     return [];
@@ -271,7 +273,7 @@ function readJsonlRecords(filePath: string): Array<Record<string,unknown>> {
   return out;
 }
 
-// @kern-source: tool-observability:234
+// @kern-source: tool-observability:235
 function eventTimeMs(record: Record<string,unknown>): number {
   const ts = (typeof record.ts === 'string') ? hostDateMs(record.ts) : NaN;
   return Number.isFinite(ts) ? ts : 0;
@@ -280,7 +282,7 @@ function eventTimeMs(record: Record<string,unknown>): number {
 /**
  * Replay the compact Cesar approval ledger and tool timeline into a readable per-turn summary. This is the CLI/UI surface for post-mortem harness debugging.
  */
-// @kern-source: tool-observability:239
+// @kern-source: tool-observability:240
 export function replayCesarHarnessLogs(opts?: {runsDir?:string,turnId?:string,limit?:number}): CesarHarnessReplayResult {
   const dir = opts?.runsDir ?? RUNS_DIR;
   const limitRaw = Number(opts?.limit ?? 5);

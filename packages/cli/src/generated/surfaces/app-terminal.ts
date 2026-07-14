@@ -20,12 +20,14 @@ import type { OutputBlock } from '../../generated/blocks/engine.js';
 
 // ── Module: AppTerminal ──
 
+// @kern-source: app-terminal:13
 export function createInitialRegistry(): EngineRegistry {
   const reg = new EngineRegistry();
   reg.load(resolveBuiltinEnginesDir());
   return reg;
 }
 
+// @kern-source: app-terminal:19
 export function drainStdinBuffer(): void {
   if (!process.stdin.isTTY || typeof process.stdin.read !== 'function') return;
   let chunk: string | Buffer | null;
@@ -34,10 +36,12 @@ export function drainStdinBuffer(): void {
   } while (chunk !== null);
 }
 
+// @kern-source: app-terminal:28
 export function normalizeTerminalMode(value: any): 'native'|'fullscreen' {
   return value === 'fullscreen' ? 'fullscreen' : 'native';
 }
 
+// @kern-source: app-terminal:30
 export function fileRailWidthForTerminal(termWidth: number, expanded: boolean): number {
   const safeWidth = Math.max(40, Math.floor((Number(termWidth) || 100)));
   if (expanded) {
@@ -46,6 +50,7 @@ export function fileRailWidthForTerminal(termWidth: number, expanded: boolean): 
   return Math.max(28, Math.min(42, Math.floor((safeWidth * 0.22))));
 }
 
+// @kern-source: app-terminal:37
 export function fileRailMaxRowsForTerminal(termHeight: number, terminalMode: string, expanded: boolean): number {
   const safeHeight = Math.max(8, Math.floor((Number(termHeight) || 24)));
   if (terminalMode === 'native') {
@@ -63,6 +68,7 @@ export function fileRailMaxRowsForTerminal(termHeight: number, terminalMode: str
 /**
  * Pure terminal replay harness: summarizes the layout-sensitive parts of the REPL for fixed viewport sizes so unit tests can catch native/fullscreen regressions without launching an interactive TTY.
  */
+// @kern-source: app-terminal:48
 export function buildTerminalReplaySnapshot(blocks: OutputBlock[], opts: any): {terminalMode:'native'|'fullscreen'; mode:string; termWidth:number; termHeight:number; visibleBudget:number; transcriptRowCount:number; staticBlockCount:number; liveBlockCount:number; fileRailWidth:number; fileRailRows:number; headerRows:number; lowerChromeRows:number} {
   const terminalMode = normalizeTerminalMode(opts?.terminalMode);
   const mode = String(opts?.mode ?? 'chat');

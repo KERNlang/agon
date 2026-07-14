@@ -8,12 +8,15 @@ import { ensureAgonHome, getAgonHome } from '@kernlang/agon-core';
 
 // ── Module: AppComposer ──
 
+// @kern-source: app-composer:7
 export const COMPOSER_HISTORY_LIMIT: number = 200;
 
+// @kern-source: app-composer:9
 export function composerHistoryPath(): string {
   return join(getAgonHome(), 'composer-history.json');
 }
 
+// @kern-source: app-composer:11
 export function loadComposerInputHistory(): string[] {
   try {
     const parsed = JSON.parse(readFileSync(composerHistoryPath(), 'utf-8'));
@@ -26,6 +29,7 @@ export function loadComposerInputHistory(): string[] {
   }
 }
 
+// @kern-source: app-composer:21
 export function saveComposerInputHistory(history: string[]): void {
   try {
     ensureAgonHome();

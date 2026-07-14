@@ -23,572 +23,575 @@ fn name=createCesarRecapCapture params="input:string,startedAt?:number" returns=
   handler lang="kern"
     return value="{ input: String(input ?? ''), startedAt: startedAt ?? hostNowMs(), toolEventsByKey: {} as Record<string, any>, toolOrder: [] as string[], toolStreamsById: {} as Record<string, any>, warnings: [] as string[], errors: [] as string[], confidence: null as number | null, confidenceReasoning: '', engineId: '', durationMs: null as number | null, todos: [] as any[], }"
 
-fn name=parseRecapJsonObject params="input:unknown" returns="Record<string,unknown>"
-  handler lang="kern"
-    if cond="input && typeof input === 'object' && !Array.isArray(input)"
-      return value="input as Record<string, unknown>"
-    let name=raw value="String(input ?? '').trim()"
-    if cond="!raw.startsWith('{')"
-      return value="{}"
-    try
-      let name=parsed value="JSON.parse(raw)"
-      return value="parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}"
-      catch name=e
+module name=RecapParsing
+  fn name=parseRecapJsonObject params="input:unknown" returns="Record<string,unknown>"
+    handler lang="kern"
+      if cond="input && typeof input === 'object' && !Array.isArray(input)"
+        return value="input as Record<string, unknown>"
+      let name=raw value="String(input ?? '').trim()"
+      if cond="!raw.startsWith('{')"
         return value="{}"
+      try
+        let name=parsed value="JSON.parse(raw)"
+        return value="parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}"
+        catch name=e
+          return value="{}"
 
-fn name=recapToolLabel params="tool:unknown" returns=string export=true
-  handler lang="kern"
-    let name=key value="String(tool ?? '').toLowerCase()"
-    if cond="key === 'bash' || key === 'run' || key === 'agonbash'"
-      return value="'Bash'"
-    if cond="key === 'read'"
-      return value="'Read'"
-    if cond="key === 'grep' || key === 'search'"
-      return value="'Search'"
-    if cond="key === 'glob' || key === 'find'"
-      return value="'Find'"
-    if cond="key === 'edit' || key === 'update' || key === 'agonedit'"
-      return value="'Edit'"
-    if cond="key === 'write' || key === 'agonwrite'"
-      return value="'Write'"
-    if cond="key === 'applypatch' || key === 'apply_patch'"
-      return value="'Patch'"
-    if cond="key === 'reportconfidence'"
-      return value="'Confidence'"
-    if cond="key === 'quicknero'"
-      return value="'QuickNero'"
-    return value="String(tool ?? 'Tool')"
+  fn name=recapToolLabel params="tool:unknown" returns=string export=true
+    handler lang="kern"
+      let name=key value="String(tool ?? '').toLowerCase()"
+      if cond="key === 'bash' || key === 'run' || key === 'agonbash'"
+        return value="'Bash'"
+      if cond="key === 'read'"
+        return value="'Read'"
+      if cond="key === 'grep' || key === 'search'"
+        return value="'Search'"
+      if cond="key === 'glob' || key === 'find'"
+        return value="'Find'"
+      if cond="key === 'edit' || key === 'update' || key === 'agonedit'"
+        return value="'Edit'"
+      if cond="key === 'write' || key === 'agonwrite'"
+        return value="'Write'"
+      if cond="key === 'applypatch' || key === 'apply_patch'"
+        return value="'Patch'"
+      if cond="key === 'reportconfidence'"
+        return value="'Confidence'"
+      if cond="key === 'quicknero'"
+        return value="'QuickNero'"
+      return value="String(tool ?? 'Tool')"
 
-fn name=extractRecapCommand params="tool:unknown,input:unknown" returns=string export=true
-  handler lang="kern"
-    let name=key value="String(tool ?? '').toLowerCase()"
-    if cond="key !== 'bash' && key !== 'run' && key !== 'agonbash'"
-      return value="''"
-    let name=parsed value="parseRecapJsonObject(input)"
-    let name=command value="String(parsed.command ?? parsed.cmd ?? input ?? '').trim()"
-    return value="command"
+  fn name=extractRecapCommand params="tool:unknown,input:unknown" returns=string export=true
+    handler lang="kern"
+      let name=key value="String(tool ?? '').toLowerCase()"
+      if cond="key !== 'bash' && key !== 'run' && key !== 'agonbash'"
+        return value="''"
+      let name=parsed value="parseRecapJsonObject(input)"
+      let name=command value="String(parsed.command ?? parsed.cmd ?? input ?? '').trim()"
+      return value="command"
 
-fn name=classifyRecapCommand params="command:string" returns=string export=true
-  handler lang="kern"
-    let name=cmd value="String(command ?? '').trim()"
-    let name=lower value="cmd.toLowerCase()"
-    if cond="!cmd"
-      return value="'command'"
-    if cond="/\\bkern:compile\\b/.test(lower)"
-      return value="'compile'"
-    if cond="/\\bnpm\\s+run\\s+typecheck\\b|\\btsc\\s+-b\\b/.test(lower)"
-      return value="'typecheck'"
-    if cond="/\\bnpm\\s+run\\s+build\\b|\\bcargo\\s+build\\b|\\bgo\\s+build\\b/.test(lower)"
-      return value="'build'"
-    if cond="/\\bnpm\\s+run\\s+lint\\b|\\beslint\\b/.test(lower)"
-      return value="'lint'"
-    if cond="/\\bnpm\\s+(run\\s+)?test\\b|\\bvitest\\b|\\bpytest\\b|\\bcargo\\s+test\\b|\\bgo\\s+test\\b/.test(lower)"
-      return value="'tests'"
-    if cond="/\\bgit\\s+commit\\b/.test(lower)"
-      return value="'commit'"
-    if cond="/\\bgit\\s+push\\b/.test(lower)"
-      return value="'push'"
-    if cond="/\\bgit\\s+status\\b/.test(lower)"
-      return value="'git status'"
-    return value="cmd.split(/\\s+/).slice(0, 3).join(' ')"
+  fn name=classifyRecapCommand params="command:string" returns=string export=true
+    handler lang="kern"
+      let name=cmd value="String(command ?? '').trim()"
+      let name=lower value="cmd.toLowerCase()"
+      if cond="!cmd"
+        return value="'command'"
+      if cond="/\\bkern:compile\\b/.test(lower)"
+        return value="'compile'"
+      if cond="/\\bnpm\\s+run\\s+typecheck\\b|\\btsc\\s+-b\\b/.test(lower)"
+        return value="'typecheck'"
+      if cond="/\\bnpm\\s+run\\s+build\\b|\\bcargo\\s+build\\b|\\bgo\\s+build\\b/.test(lower)"
+        return value="'build'"
+      if cond="/\\bnpm\\s+run\\s+lint\\b|\\beslint\\b/.test(lower)"
+        return value="'lint'"
+      if cond="/\\bnpm\\s+(run\\s+)?test\\b|\\bvitest\\b|\\bpytest\\b|\\bcargo\\s+test\\b|\\bgo\\s+test\\b/.test(lower)"
+        return value="'tests'"
+      if cond="/\\bgit\\s+commit\\b/.test(lower)"
+        return value="'commit'"
+      if cond="/\\bgit\\s+push\\b/.test(lower)"
+        return value="'push'"
+      if cond="/\\bgit\\s+status\\b/.test(lower)"
+        return value="'git status'"
+      return value="cmd.split(/\\s+/).slice(0, 3).join(' ')"
 
-fn name=shortenRecapText params="value:unknown,max:number" returns=string
-  handler lang="kern"
-    let name=text value="String(value ?? '').replace(/\\s+/g, ' ').trim()"
-    if cond="text.length <= max"
-      return value="text"
-    return value="text.slice(0, Math.max(0, max - 1)) + '\\u2026'"
+  fn name=shortenRecapText params="value:unknown,max:number" returns=string
+    handler lang="kern"
+      let name=text value="String(value ?? '').replace(/\\s+/g, ' ').trim()"
+      if cond="text.length <= max"
+        return value="text"
+      return value="text.slice(0, Math.max(0, max - 1)) + '\\u2026'"
 
-fn name=readRecapConfidence params="input:unknown" returns="{ value:number|null; reasoning:string }" export=true
-  handler lang="kern"
-    let name=parsed value="parseRecapJsonObject(input)"
-    let name=rawValue value="parsed.value ?? parsed.confidence ?? parsed.score"
-    let name=value kind=let value="Number(rawValue)"
-    if cond="!Number.isFinite(value)"
-      let name=match value="String(input ?? '').match(/(\\d{1,3})(?:\\.\\d+)?\\s*%/)"
-      if cond="match"
-        assign target="value" value="Number(match.groups[0] ?? NaN)"
-    if cond="Number.isFinite(value) && value <= 1 && value > 0"
-      assign target="value" value="Math.round(value * 100)"
-    let name=normalized value="Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : null"
-    let name=reasoning value="shortenRecapText(parsed.reasoning ?? parsed.reason ?? parsed.thought ?? '', 220)"
-    return value="{ value: normalized, reasoning }"
+  fn name=readRecapConfidence params="input:unknown" returns="{ value:number|null; reasoning:string }" export=true
+    handler lang="kern"
+      let name=parsed value="parseRecapJsonObject(input)"
+      let name=rawValue value="parsed.value ?? parsed.confidence ?? parsed.score"
+      let name=value kind=let value="Number(rawValue)"
+      if cond="!Number.isFinite(value)"
+        let name=match value="String(input ?? '').match(/(\\d{1,3})(?:\\.\\d+)?\\s*%/)"
+        if cond="match"
+          assign target="value" value="Number(match.groups[0] ?? NaN)"
+      if cond="Number.isFinite(value) && value <= 1 && value > 0"
+        assign target="value" value="Math.round(value * 100)"
+      let name=normalized value="Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : null"
+      let name=reasoning value="shortenRecapText(parsed.reasoning ?? parsed.reason ?? parsed.thought ?? '', 220)"
+      return value="{ value: normalized, reasoning }"
 
-fn name=recordCesarRecapEvent params="capture:any,event:any" returns=void export=true
-  handler <<<
-    if (!capture || !event || typeof event !== 'object') return;
-    const type = String(event.type ?? '');
-    if (type === 'tool-stream-start') {
-      const streamId = String(event.streamId ?? '').trim();
-      const streamKey = streamId ? `$${streamId}` : '';
-      if (streamKey) {
-        capture.toolStreamsById ??= {};
-        capture.toolStreamsById[streamKey] = {
-          engineId: event.engineId,
-          tool: event.tool,
-          input: event.input,
-          toolCallId: event.toolCallId,
-        };
-      }
-      return;
-    }
-    if (type === 'tool-stream-end') {
-      const streamId = String(event.streamId ?? '').trim();
-      const streamKey = streamId ? `$${streamId}` : '';
-      const started = streamKey ? capture.toolStreamsById?.[streamKey] : undefined;
-      if (started) event = { ...started, ...event };
-      if (streamKey && capture.toolStreamsById) delete capture.toolStreamsById[streamKey];
-    }
-    // Eager tools that emitted streamed output finish with tool-stream-end
-    // instead of a second tool-call event. Treat that terminal event as the
-    // correlated tool update so the recap never leaves a completed call in
-    // its initial running state.
-    if (type === 'tool-call' || type === 'tool-stream-end') {
-      const tool = String(event.tool ?? 'Tool');
-      const toolCallId = typeof event.toolCallId === 'string' && event.toolCallId.trim()
-        ? event.toolCallId.trim()
-        : '';
-      const key = toolCallId
-        ? `id\u0000${toolCallId}`
-        : `${tool}\u0000${String(event.input ?? '').slice(0, 2000)}`;
-      if (!capture.toolEventsByKey[key]) {
-        capture.toolEventsByKey[key] = {
-          key,
-          toolCallId: toolCallId || undefined,
-          tool,
-          input: String(event.input ?? ''),
-          status: String(event.status ?? 'running'),
-          output: String(event.output ?? ''),
-          engineId: String(event.engineId ?? ''),
-          terminalReason: event.terminalReason,
-        };
-        capture.toolOrder.push(key);
-      } else {
-        capture.toolEventsByKey[key] = {
-          ...capture.toolEventsByKey[key],
-          input: event.input !== undefined && String(event.input).length > 0
-            ? String(event.input)
-            : capture.toolEventsByKey[key].input,
-          status: String(event.status ?? capture.toolEventsByKey[key].status ?? 'running'),
-          output: String(event.output ?? capture.toolEventsByKey[key].output ?? ''),
-          engineId: String(event.engineId ?? capture.toolEventsByKey[key].engineId ?? ''),
-          terminalReason: event.terminalReason ?? capture.toolEventsByKey[key].terminalReason,
-        };
-      }
-      if (!capture.engineId && event.engineId) capture.engineId = String(event.engineId);
-      if (String(tool).toLowerCase() === 'reportconfidence') {
-        const conf = readRecapConfidence(event.input);
-        if (conf.value !== null) capture.confidence = conf.value;
-        if (conf.reasoning) capture.confidenceReasoning = conf.reasoning;
-      }
-      return;
-    }
-    if (type === 'confidence-update') {
-      if (event.value === null || event.value === undefined) {
-        capture.confidence = null;
+  fn name=recordCesarRecapEvent params="capture:any,event:any" returns=void export=true
+    handler <<<
+      if (!capture || !event || typeof event !== 'object') return;
+      const type = String(event.type ?? '');
+      if (type === 'tool-stream-start') {
+        const streamId = String(event.streamId ?? '').trim();
+        const streamKey = streamId ? `$${streamId}` : '';
+        if (streamKey) {
+          capture.toolStreamsById ??= {};
+          capture.toolStreamsById[streamKey] = {
+            engineId: event.engineId,
+            tool: event.tool,
+            input: event.input,
+            toolCallId: event.toolCallId,
+          };
+        }
         return;
       }
-      const value = Number(event.value);
-      capture.confidence = Number.isFinite(value) ? Math.round(value) : null;
-      return;
-    }
-    if (type === 'todos-set') {
-      // Latest live-todos snapshot wins (the brain re-emits the WHOLE block each
-      // state change). Keep only what we need for the recap delta line.
-      const list = Array.isArray(event.todos) ? event.todos : [];
-      capture.todos = list.map((t: any) => ({ state: String(t?.state ?? 'pending') }));
-      return;
-    }
-    if (type === 'todos-clear') {
-      // A live clear wipes the rolling list. scope:'live' (or no scope) both drop
-      // the live snapshot we track. The next todos-set (if any) re-captures it.
-      capture.todos = [];
-      return;
-    }
-    if (type === 'thinking-chunk') {
-      const chunk = String(event.chunk ?? '').trim();
-      const match = chunk.match(/^Confidence reasoning(?:\s*[^:]*)?:\s*(.+)$/i);
-      if (match) capture.confidenceReasoning = shortenRecapText(match[1], 220);
-      if (!capture.engineId && event.engineId) capture.engineId = String(event.engineId);
-      return;
-    }
-    if (type === 'warning' && event.message) {
-      const msg = String(event.message);
-      // Benign, recovered internal nudges (the brain re-prompting ITSELF to
-      // finish a paused turn) are not turn problems — keep them out of the
-      // recap so a successful turn never reads as a failure. They still render
-      // live while they happen; this only suppresses them from the summary.
-      // Primary signal: an explicit `transient` flag stamped at the source, so
-      // suppression survives any rewording. The regex is a fallback for any
-      // benign nudge that predates the flag.
-      if (event.transient === true || /paused mid-task|auto-continuing/i.test(msg)) return;
-      capture.warnings.push(shortenRecapText(msg, 180));
-      return;
-    }
-    if (type === 'error' && event.message) {
-      capture.errors.push(shortenRecapText(event.message, 180));
-      return;
-    }
-    if ((type === 'engine-block' || type === 'response-meta') && event.engineId && !capture.engineId) {
-      capture.engineId = String(event.engineId);
-    }
-    if (type === 'response-meta' && Number.isFinite(Number(event.elapsed))) {
-      capture.durationMs = Number(event.elapsed);
-    }
-  >>>
-
-fn name=buildRecapTouchedFiles params="beforeFiles:any[],afterFiles:any[]" returns="any[]" export=true
-  handler lang="kern"
-    let name=before value="new Map<string, any>()"
-    each name=beforeFile in="Array.isArray(beforeFiles) ? beforeFiles : []"
-      if cond="beforeFile?.path"
-        do value="before.set(String(beforeFile.path), beforeFile)"
-    let name=touched type="any[]" value="[]"
-    each name=afterFile in="Array.isArray(afterFiles) ? afterFiles : []"
-      if cond="!afterFile?.path"
-        continue
-      let name=prev value="before.get(String(afterFile.path))"
-      let name=changed value="!prev || prev.touchCount !== afterFile.touchCount || prev.lastTouchedAt !== afterFile.lastTouchedAt || prev.status !== afterFile.status"
-      if cond="!changed"
-        continue
-      do value="touched.push({ path: String(afterFile.path), relPath: String(afterFile.relPath ?? afterFile.path), status: String(afterFile.status ?? 'read'), touchCount: Number(afterFile.touchCount ?? 0), })"
-    do value="touched.sort((a, b) => String(a.status).localeCompare(String(b.status)) || a.relPath.localeCompare(b.relPath))"
-    return value="touched"
-
-fn name=buildCesarRecapDiffPreview params="files:any[],diffsByPath:Record<string,string>,maxFiles?:number,maxLinesPerFile?:number" returns=any export=true
-  handler lang="ts" <<<
-    const previews: any[] = [];
-    const fileLimit = maxFiles ?? 4;
-    const lineLimit = maxLinesPerFile ?? 6;
-    for (const file of Array.isArray(files) ? files : []) {
-      if (previews.length >= fileLimit) break;
-      const status = String(file?.status ?? '');
-      if (status === 'read') continue;
-      const path = String(file?.path ?? '');
-      const relPath = String(file?.relPath ?? path);
-      const diff = String(diffsByPath?.[path] ?? diffsByPath?.[relPath] ?? '').trim();
-      if (!diff) continue;
-      let additions = 0;
-      let deletions = 0;
-      let candidateLines = 0;
-      const visibleLines: string[] = [];
-      for (const line of diff.split('\n')) {
-        if (line.startsWith('+') && !line.startsWith('+++')) additions += 1;
-        if (line.startsWith('-') && !line.startsWith('---')) deletions += 1;
-        const interesting = line.startsWith('@@')
-          || (line.startsWith('+') && !line.startsWith('+++'))
-          || (line.startsWith('-') && !line.startsWith('---'));
-        if (!interesting) continue;
-        candidateLines += 1;
-        if (visibleLines.length < lineLimit) visibleLines.push(shortenRecapText(line, 120));
+      if (type === 'tool-stream-end') {
+        const streamId = String(event.streamId ?? '').trim();
+        const streamKey = streamId ? `$${streamId}` : '';
+        const started = streamKey ? capture.toolStreamsById?.[streamKey] : undefined;
+        if (started) event = { ...started, ...event };
+        if (streamKey && capture.toolStreamsById) delete capture.toolStreamsById[streamKey];
       }
-      previews.push({
-        path,
-        relPath,
-        status,
-        additions,
-        deletions,
-        lines: visibleLines,
-        omitted: Math.max(0, candidateLines - visibleLines.length),
-      });
-    }
-    return { files: previews, totalFiles: previews.length };
-  >>>
-
-type name=FinalAction values="commit|push|compile|typecheck|build|lint|tests|deploy|run" export=true
-
-fn name=classifyConsequence params="tool:unknown,command:string" returns="FinalAction|null" export=true
-  doc "Single source of truth for whether a FAILED command deserves a bright red ✗ line in the recap (CONSEQUENTIAL) or folds silently into the dim 'non-fatal' count (PLUMBING). Returns a typed FinalAction string (commit | push | compile | typecheck | build | lint | tests | deploy | run) for consequential commands, or null for plumbing / non-commands. PLUMBING = navigation/inspection/staging/probes whose non-zero exit is noise (cd, ls, echo, cat, git status/add/diff/log, node --check, empty {} calls). Everything else fails OPEN to the generic 'run' action so an unknown build/deploy script can NEVER be silently swallowed. Only bash-family tools classify; reads/edits/searches return null (their effects show in the files line, not as command failures)."
-  handler <<<
-    const key = String(tool ?? '').toLowerCase();
-    if (key !== 'bash' && key !== 'run' && key !== 'agonbash') return null;
-    const cmd = String(command ?? '').trim();
-    if (!cmd || cmd === '{}' || cmd === '{ }') return null;
-    // Classify each CHAINED segment independently, then combine: the command is
-    // consequential if ANY segment is. This makes `cd repo && git commit` a
-    // commit and `cd repo && ./deploy.sh` a (fail-open) run — a leading plumbing
-    // step (cd/git add) can no longer MASK a consequential one that follows it.
-    const classifySegment = (seg: string): string => {
-      if (!seg) return 'plumbing';
-      // STRING-ARG commands first: their arguments are DATA, not sub-commands, so
-      // an action mentioned inside (`echo 'git commit done'`, `grep kern:compile`)
-      // must NOT be read as that action. Short-circuit them to plumbing before the
-      // specific checks below, which otherwise match anywhere in the segment.
-      if (/^(echo|printf|cat|head|tail|grep|rg|sed|awk|ls|pwd|wc|which|type|env|export|find|test|\[)\b/.test(seg)) return 'plumbing';
-      // SPECIFIC actions — matched anywhere in the segment (so `npm test | tee log`
-      // still recognizes the test on the left of a pipe).
-      if (/\bgit\s+commit\b/.test(seg)) return 'commit';
-      if (/\bgit\s+push\b/.test(seg)) return 'push';
-      if (/\bkern:compile\b/.test(seg)) return 'compile';
-      if (/\bnpm\s+run\s+typecheck\b|\btsc\b/.test(seg)) return 'typecheck';
-      if (/\bnpm\s+run\s+build\b|\bcargo\s+build\b|\bgo\s+build\b/.test(seg)) return 'build';
-      if (/\bnpm\s+run\s+lint\b|\beslint\b/.test(seg)) return 'lint';
-      if (/\bnpm\s+(run\s+)?test\b|\bvitest\b|\bpytest\b|\bcargo\s+test\b|\bgo\s+test\b/.test(seg)) return 'tests';
-      // OTHER PLUMBING — navigation/staging/probes whose non-zero exit is noise.
-      const plumbing = /^(cd|set|true|:|sleep|mkdir|touch|node\s+--check|command\s+-v)\b/.test(seg)
-        || /^git\s+(status|add|diff|log|show|stash\s+list|rev-parse|branch|remote|config\s+--get)\b/.test(seg);
-      return plumbing ? 'plumbing' : 'run'; // unknown → consequential (fail open)
-    };
-    // Split on command separators (&&, ||, ;) only — NOT a bare pipe (`|` inside a
-    // quoted/regex arg) and NOT a single `&`, which would fragment redirections
-    // like `2>&1` / `&>file` and misclassify benign plumbing as a `run` failure.
-    // A consequential action chained after a single `&` is still caught by the
-    // anywhere-matching SPECIFIC checks above; only the rarer unknown-after-`&`
-    // case is missed — an acceptable trade for not breaking `2>&1`.
-    const segments = cmd.toLowerCase().split(/&&|\|\||;/).map((s: string) => s.trim());
-    let action: FinalAction | null = null;
-    for (const seg of segments) {
-      const c = classifySegment(seg);
-      if (c === 'plumbing') continue;
-      action = c as FinalAction; // non-plumbing → a concrete FinalAction
-      if (c !== 'run') break; // a specific action wins over a generic fail-open run
-    }
-    return action; // null when every segment is plumbing
-  >>>
-
-fn name=buildCesarTurnRecapEvent params="capture:any,result:any,beforeFiles:any[],afterFiles:any[]" returns=any export=true
-  handler <<<
-    const orderedTools = (capture?.toolOrder ?? [])
-      .map((key: string) => capture.toolEventsByKey?.[key])
-      .filter(Boolean);
-    const toolCounts: Record<string, number> = {};
-    const commands: any[] = [];
-    const checkpoints: any[] = [];
-    const normalizedTools: any[] = [];
-    let skippedTools = 0;
-    let deniedTools = 0;
-    let cancelledTools = 0;
-    const normalizeTerminalReason = (tool: any): string => {
-      const explicit = String(tool?.terminalReason ?? '');
-      if (['succeeded', 'failed', 'skipped_policy', 'denied', 'cancelled', 'unknown'].includes(explicit)) return explicit;
-      const output = String(tool?.output ?? '');
-      if (/\[Investigation phase\]|read-only mode|skipped.+mutating/i.test(output)) return 'skipped_policy';
-      if (/permission denied|user denied permission|permission required/i.test(output)) return 'denied';
-      if (/abort|cancelled|canceled|interrupted/i.test(output)) return 'cancelled';
-      const status = String(tool?.status ?? '').toLowerCase();
-      if (status === 'error' || status === 'failed') return 'failed';
-      if (['done', 'completed', 'success', 'succeeded'].includes(status)) return 'succeeded';
-      return 'unknown';
-    };
-    for (const t of orderedTools) {
-      const label = recapToolLabel(t.tool);
-      toolCounts[label] = (toolCounts[label] ?? 0) + 1;
-      const terminalReason = normalizeTerminalReason(t);
-      const normalized = { ...t, terminalReason };
-      normalizedTools.push(normalized);
-      if (terminalReason === 'skipped_policy') skippedTools += 1;
-      else if (terminalReason === 'denied') deniedTools += 1;
-      else if (terminalReason === 'cancelled') cancelledTools += 1;
-      const checkpoint = String(t.output ?? '').match(/\bcheckpoint\s+([a-z0-9]{6,12})\b/i);
-      if (checkpoint && !checkpoints.some((c: any) => c.id === checkpoint[1])) {
-        checkpoints.push({ id: checkpoint[1], label });
+      // Eager tools that emitted streamed output finish with tool-stream-end
+      // instead of a second tool-call event. Treat that terminal event as the
+      // correlated tool update so the recap never leaves a completed call in
+      // its initial running state.
+      if (type === 'tool-call' || type === 'tool-stream-end') {
+        const tool = String(event.tool ?? 'Tool');
+        const toolCallId = typeof event.toolCallId === 'string' && event.toolCallId.trim()
+          ? event.toolCallId.trim()
+          : '';
+        const key = toolCallId
+          ? `id\u0000${toolCallId}`
+          : `${tool}\u0000${String(event.input ?? '').slice(0, 2000)}`;
+        if (!capture.toolEventsByKey[key]) {
+          capture.toolEventsByKey[key] = {
+            key,
+            toolCallId: toolCallId || undefined,
+            tool,
+            input: String(event.input ?? ''),
+            status: String(event.status ?? 'running'),
+            output: String(event.output ?? ''),
+            engineId: String(event.engineId ?? ''),
+            terminalReason: event.terminalReason,
+          };
+          capture.toolOrder.push(key);
+        } else {
+          capture.toolEventsByKey[key] = {
+            ...capture.toolEventsByKey[key],
+            input: event.input !== undefined && String(event.input).length > 0
+              ? String(event.input)
+              : capture.toolEventsByKey[key].input,
+            status: String(event.status ?? capture.toolEventsByKey[key].status ?? 'running'),
+            output: String(event.output ?? capture.toolEventsByKey[key].output ?? ''),
+            engineId: String(event.engineId ?? capture.toolEventsByKey[key].engineId ?? ''),
+            terminalReason: event.terminalReason ?? capture.toolEventsByKey[key].terminalReason,
+          };
+        }
+        if (!capture.engineId && event.engineId) capture.engineId = String(event.engineId);
+        if (String(tool).toLowerCase() === 'reportconfidence') {
+          const conf = readRecapConfidence(event.input);
+          if (conf.value !== null) capture.confidence = conf.value;
+          if (conf.reasoning) capture.confidenceReasoning = conf.reasoning;
+        }
+        return;
       }
-      const command = extractRecapCommand(t.tool, t.input);
-      if (command) {
-        commands.push({
-          label: classifyRecapCommand(command),
-          command: shortenRecapText(command.split('\n')[0] ?? command, 120),
-          status: String(t.status ?? 'done'),
-          terminalReason,
-          toolKey: String(t.key ?? t.toolCallId ?? ''),
-          output: String(t.output ?? ''),
+      if (type === 'confidence-update') {
+        if (event.value === null || event.value === undefined) {
+          capture.confidence = null;
+          return;
+        }
+        const value = Number(event.value);
+        capture.confidence = Number.isFinite(value) ? Math.round(value) : null;
+        return;
+      }
+      if (type === 'todos-set') {
+        // Latest live-todos snapshot wins (the brain re-emits the WHOLE block each
+        // state change). Keep only what we need for the recap delta line.
+        const list = Array.isArray(event.todos) ? event.todos : [];
+        capture.todos = list.map((t: any) => ({ state: String(t?.state ?? 'pending') }));
+        return;
+      }
+      if (type === 'todos-clear') {
+        // A live clear wipes the rolling list. scope:'live' (or no scope) both drop
+        // the live snapshot we track. The next todos-set (if any) re-captures it.
+        capture.todos = [];
+        return;
+      }
+      if (type === 'thinking-chunk') {
+        const chunk = String(event.chunk ?? '').trim();
+        const match = chunk.match(/^Confidence reasoning(?:\s*[^:]*)?:\s*(.+)$/i);
+        if (match) capture.confidenceReasoning = shortenRecapText(match[1], 220);
+        if (!capture.engineId && event.engineId) capture.engineId = String(event.engineId);
+        return;
+      }
+      if (type === 'warning' && event.message) {
+        const msg = String(event.message);
+        // Benign, recovered internal nudges (the brain re-prompting ITSELF to
+        // finish a paused turn) are not turn problems — keep them out of the
+        // recap so a successful turn never reads as a failure. They still render
+        // live while they happen; this only suppresses them from the summary.
+        // Primary signal: an explicit `transient` flag stamped at the source, so
+        // suppression survives any rewording. The regex is a fallback for any
+        // benign nudge that predates the flag.
+        if (event.transient === true || /paused mid-task|auto-continuing/i.test(msg)) return;
+        capture.warnings.push(shortenRecapText(msg, 180));
+        return;
+      }
+      if (type === 'error' && event.message) {
+        capture.errors.push(shortenRecapText(event.message, 180));
+        return;
+      }
+      if ((type === 'engine-block' || type === 'response-meta') && event.engineId && !capture.engineId) {
+        capture.engineId = String(event.engineId);
+      }
+      if (type === 'response-meta' && Number.isFinite(Number(event.elapsed))) {
+        const elapsed = Number(event.elapsed);
+        const previous = Number(capture.durationMs);
+        capture.durationMs = Number.isFinite(previous) ? Math.max(previous, elapsed) : elapsed;
+      }
+    >>>
+
+  fn name=buildRecapTouchedFiles params="beforeFiles:any[],afterFiles:any[]" returns="any[]" export=true
+    handler lang="kern"
+      let name=before value="new Map<string, any>()"
+      each name=beforeFile in="Array.isArray(beforeFiles) ? beforeFiles : []"
+        if cond="beforeFile?.path"
+          do value="before.set(String(beforeFile.path), beforeFile)"
+      let name=touched type="any[]" value="[]"
+      each name=afterFile in="Array.isArray(afterFiles) ? afterFiles : []"
+        if cond="!afterFile?.path"
+          continue
+        let name=prev value="before.get(String(afterFile.path))"
+        let name=changed value="!prev || prev.touchCount !== afterFile.touchCount || prev.lastTouchedAt !== afterFile.lastTouchedAt || prev.status !== afterFile.status"
+        if cond="!changed"
+          continue
+        do value="touched.push({ path: String(afterFile.path), relPath: String(afterFile.relPath ?? afterFile.path), status: String(afterFile.status ?? 'read'), touchCount: Number(afterFile.touchCount ?? 0), })"
+      do value="touched.sort((a, b) => String(a.status).localeCompare(String(b.status)) || a.relPath.localeCompare(b.relPath))"
+      return value="touched"
+
+  fn name=buildCesarRecapDiffPreview params="files:any[],diffsByPath:Record<string,string>,maxFiles?:number,maxLinesPerFile?:number" returns=any export=true
+    handler lang="ts" <<<
+      const previews: any[] = [];
+      const fileLimit = maxFiles ?? 4;
+      const lineLimit = maxLinesPerFile ?? 6;
+      for (const file of Array.isArray(files) ? files : []) {
+        if (previews.length >= fileLimit) break;
+        const status = String(file?.status ?? '');
+        if (status === 'read') continue;
+        const path = String(file?.path ?? '');
+        const relPath = String(file?.relPath ?? path);
+        const diff = String(diffsByPath?.[path] ?? diffsByPath?.[relPath] ?? '').trim();
+        if (!diff) continue;
+        let additions = 0;
+        let deletions = 0;
+        let candidateLines = 0;
+        const visibleLines: string[] = [];
+        for (const line of diff.split('\n')) {
+          if (line.startsWith('+') && !line.startsWith('+++')) additions += 1;
+          if (line.startsWith('-') && !line.startsWith('---')) deletions += 1;
+          const interesting = line.startsWith('@@')
+            || (line.startsWith('+') && !line.startsWith('+++'))
+            || (line.startsWith('-') && !line.startsWith('---'));
+          if (!interesting) continue;
+          candidateLines += 1;
+          if (visibleLines.length < lineLimit) visibleLines.push(shortenRecapText(line, 120));
+        }
+        previews.push({
+          path,
+          relPath,
+          status,
+          additions,
+          deletions,
+          lines: visibleLines,
+          omitted: Math.max(0, candidateLines - visibleLines.length),
         });
       }
-    }
-    const verifyLabels = new Set(['compile', 'typecheck', 'build', 'tests', 'lint']);
-    const verifyOrder: string[] = [];
-    const finalExecutedVerification = new Map<string, any>();
-    for (const command of commands) {
-      const label = String(command.label);
-      if (!verifyLabels.has(label)) continue;
-      if (!verifyOrder.includes(label)) verifyOrder.push(label);
-      if (command.terminalReason === 'succeeded' || command.terminalReason === 'failed') {
-        finalExecutedVerification.set(label, command);
-      }
-    }
-    const requiredVerification = Array.isArray(result?.requiredVerification)
-      ? result.requiredVerification.map((v: unknown) => String(v)).filter((v: string) => verifyLabels.has(v))
-      : [];
-    for (const label of requiredVerification) if (!verifyOrder.includes(label)) verifyOrder.push(label);
-    const verification = verifyOrder
-      .map((label) => {
-        const finalAttempt = finalExecutedVerification.get(label);
-        if (!finalAttempt) return requiredVerification.includes(label)
-          ? { label, ok: false, state: 'not_run' }
-          : null;
-        const ok = finalAttempt.terminalReason === 'succeeded';
-        return { label, ok, state: ok ? 'passed' : 'failed' };
-      })
-      .filter(Boolean);
+      return { files: previews, totalFiles: previews.length };
+    >>>
 
-    const finalVerificationFailed = new Set(
-      verification.filter((v: any) => v.state === 'failed').map((v: any) => String(v.label)),
-    );
-    const failureLines: any[] = [];
-    const seenFailures = new Set<string>();
-    let nonVerificationFailedTools = 0;
-    let nonFatalFailedTools = 0;
-    let fatalNonCommandFailedTools = 0;
-    const finalConsequentialAttempt = new Map<string, any>();
-    for (const tool of normalizedTools) {
-      if (tool.terminalReason !== 'failed' && tool.terminalReason !== 'succeeded') continue;
-      const command = extractRecapCommand(tool.tool, tool.input);
-      if (!command || verifyLabels.has(classifyRecapCommand(command))) continue;
-      const signature = `${String(tool.tool).toLowerCase()}\u0000${command.trim().replace(/\s+/g, ' ')}`;
-      finalConsequentialAttempt.set(signature, tool);
-    }
-    for (const tool of normalizedTools) {
-      if (tool.terminalReason !== 'failed') continue;
-      const command = extractRecapCommand(tool.tool, tool.input);
-      const logicalLabel = command ? classifyRecapCommand(command) : '';
-      if (verifyLabels.has(logicalLabel)) continue;
-      if (command) {
-        const signature = `${String(tool.tool).toLowerCase()}\u0000${command.trim().replace(/\s+/g, ' ')}`;
-        if (finalConsequentialAttempt.get(signature) !== tool) continue;
+  type name=FinalAction values="commit|push|compile|typecheck|build|lint|tests|deploy|run" export=true
+
+  fn name=classifyConsequence params="tool:unknown,command:string" returns="FinalAction|null" export=true
+    doc "Single source of truth for whether a FAILED command deserves a bright red ✗ line in the recap (CONSEQUENTIAL) or folds silently into the dim 'non-fatal' count (PLUMBING). Returns a typed FinalAction string (commit | push | compile | typecheck | build | lint | tests | deploy | run) for consequential commands, or null for plumbing / non-commands. PLUMBING = navigation/inspection/staging/probes whose non-zero exit is noise (cd, ls, echo, cat, git status/add/diff/log, node --check, empty {} calls). Everything else fails OPEN to the generic 'run' action so an unknown build/deploy script can NEVER be silently swallowed. Only bash-family tools classify; reads/edits/searches return null (their effects show in the files line, not as command failures)."
+    handler <<<
+      const key = String(tool ?? '').toLowerCase();
+      if (key !== 'bash' && key !== 'run' && key !== 'agonbash') return null;
+      const cmd = String(command ?? '').trim();
+      if (!cmd || cmd === '{}' || cmd === '{ }') return null;
+      // Classify each CHAINED segment independently, then combine: the command is
+      // consequential if ANY segment is. This makes `cd repo && git commit` a
+      // commit and `cd repo && ./deploy.sh` a (fail-open) run — a leading plumbing
+      // step (cd/git add) can no longer MASK a consequential one that follows it.
+      const classifySegment = (seg: string): string => {
+        if (!seg) return 'plumbing';
+        // STRING-ARG commands first: their arguments are DATA, not sub-commands, so
+        // an action mentioned inside (`echo 'git commit done'`, `grep kern:compile`)
+        // must NOT be read as that action. Short-circuit them to plumbing before the
+        // specific checks below, which otherwise match anywhere in the segment.
+        if (/^(echo|printf|cat|head|tail|grep|rg|sed|awk|ls|pwd|wc|which|type|env|export|find|test|\[)\b/.test(seg)) return 'plumbing';
+        // SPECIFIC actions — matched anywhere in the segment (so `npm test | tee log`
+        // still recognizes the test on the left of a pipe).
+        if (/\bgit\s+commit\b/.test(seg)) return 'commit';
+        if (/\bgit\s+push\b/.test(seg)) return 'push';
+        if (/\bkern:compile\b/.test(seg)) return 'compile';
+        if (/\bnpm\s+run\s+typecheck\b|\btsc\b/.test(seg)) return 'typecheck';
+        if (/\bnpm\s+run\s+build\b|\bcargo\s+build\b|\bgo\s+build\b/.test(seg)) return 'build';
+        if (/\bnpm\s+run\s+lint\b|\beslint\b/.test(seg)) return 'lint';
+        if (/\bnpm\s+(run\s+)?test\b|\bvitest\b|\bpytest\b|\bcargo\s+test\b|\bgo\s+test\b/.test(seg)) return 'tests';
+        // OTHER PLUMBING — navigation/staging/probes whose non-zero exit is noise.
+        const plumbing = /^(cd|set|true|:|sleep|mkdir|touch|node\s+--check|command\s+-v)\b/.test(seg)
+          || /^git\s+(status|add|diff|log|show|stash\s+list|rev-parse|branch|remote|config\s+--get)\b/.test(seg);
+        return plumbing ? 'plumbing' : 'run'; // unknown → consequential (fail open)
+      };
+      // Split on command separators (&&, ||, ;) only — NOT a bare pipe (`|` inside a
+      // quoted/regex arg) and NOT a single `&`, which would fragment redirections
+      // like `2>&1` / `&>file` and misclassify benign plumbing as a `run` failure.
+      // A consequential action chained after a single `&` is still caught by the
+      // anywhere-matching SPECIFIC checks above; only the rarer unknown-after-`&`
+      // case is missed — an acceptable trade for not breaking `2>&1`.
+      const segments = cmd.toLowerCase().split(/&&|\|\||;/).map((s: string) => s.trim());
+      let action: FinalAction | null = null;
+      for (const seg of segments) {
+        const c = classifySegment(seg);
+        if (c === 'plumbing') continue;
+        action = c as FinalAction; // non-plumbing → a concrete FinalAction
+        if (c !== 'run') break; // a specific action wins over a generic fail-open run
       }
-      const consequence = classifyConsequence(tool.tool, command ?? '');
-      // A failed non-command tool is still a real failed tool, but has no
-      // command-shaped red line. A known plumbing command is intentionally
-      // non-fatal: expose it only in the dim diagnostic count, never through
-      // failedTools (which also controls the recap failure gate).
-      if (!command) {
-        nonVerificationFailedTools += 1;
-        const toolKey = String(tool.tool ?? '').replace(/^agon/i, '').toLowerCase();
-        if (['edit', 'write', 'multiedit', 'notebookedit', 'applypatch', 'apply_patch'].includes(toolKey)) {
-          fatalNonCommandFailedTools += 1;
-        } else {
-          nonFatalFailedTools += 1;
+      return action; // null when every segment is plumbing
+    >>>
+
+  fn name=buildCesarTurnRecapEvent params="capture:any,result:any,beforeFiles:any[],afterFiles:any[]" returns=any export=true
+    handler <<<
+      const orderedTools = (capture?.toolOrder ?? [])
+        .map((key: string) => capture.toolEventsByKey?.[key])
+        .filter(Boolean);
+      const toolCounts: Record<string, number> = {};
+      const commands: any[] = [];
+      const checkpoints: any[] = [];
+      const normalizedTools: any[] = [];
+      let skippedTools = 0;
+      let deniedTools = 0;
+      let cancelledTools = 0;
+      const normalizeTerminalReason = (tool: any): string => {
+        const explicit = String(tool?.terminalReason ?? '');
+        if (['succeeded', 'failed', 'skipped_policy', 'denied', 'cancelled', 'unknown'].includes(explicit)) return explicit;
+        const output = String(tool?.output ?? '');
+        if (/\[Investigation phase\]|read-only mode|skipped.+mutating/i.test(output)) return 'skipped_policy';
+        if (/permission denied|user denied permission|permission required/i.test(output)) return 'denied';
+        if (/abort|cancelled|canceled|interrupted/i.test(output)) return 'cancelled';
+        const status = String(tool?.status ?? '').toLowerCase();
+        if (status === 'error' || status === 'failed') return 'failed';
+        if (['done', 'completed', 'success', 'succeeded'].includes(status)) return 'succeeded';
+        return 'unknown';
+      };
+      for (const t of orderedTools) {
+        const label = recapToolLabel(t.tool);
+        toolCounts[label] = (toolCounts[label] ?? 0) + 1;
+        const terminalReason = normalizeTerminalReason(t);
+        const normalized = { ...t, terminalReason };
+        normalizedTools.push(normalized);
+        if (terminalReason === 'skipped_policy') skippedTools += 1;
+        else if (terminalReason === 'denied') deniedTools += 1;
+        else if (terminalReason === 'cancelled') cancelledTools += 1;
+        const checkpoint = String(t.output ?? '').match(/\bcheckpoint\s+([a-z0-9]{6,12})\b/i);
+        if (checkpoint && !checkpoints.some((c: any) => c.id === checkpoint[1])) {
+          checkpoints.push({ id: checkpoint[1], label });
         }
-        continue;
+        const command = extractRecapCommand(t.tool, t.input);
+        if (command) {
+          commands.push({
+            label: classifyRecapCommand(command),
+            command: shortenRecapText(command.split('\n')[0] ?? command, 120),
+            status: String(t.status ?? 'done'),
+            terminalReason,
+            toolKey: String(t.key ?? t.toolCallId ?? ''),
+            output: String(t.output ?? ''),
+          });
+        }
       }
-      if (!consequence) {
-        nonFatalFailedTools += 1;
-        continue;
+      const verifyLabels = new Set(['compile', 'typecheck', 'build', 'tests', 'lint']);
+      const verifyOrder: string[] = [];
+      const finalExecutedVerification = new Map<string, any>();
+      for (const command of commands) {
+        const label = String(command.label);
+        if (!verifyLabels.has(label)) continue;
+        if (!verifyOrder.includes(label)) verifyOrder.push(label);
+        if (command.terminalReason === 'succeeded' || command.terminalReason === 'failed') {
+          finalExecutedVerification.set(label, command);
+        }
       }
-      nonVerificationFailedTools += 1;
-      const firstLineCommand = command.split('\n')[0] ?? command;
-      const dedupKey = `${consequence} ${firstLineCommand}`;
-      if (seenFailures.has(dedupKey)) continue;
-      seenFailures.add(dedupKey);
-      const reason = String(tool.output ?? '').split('\n').map((line: string) => line.trim()).filter(Boolean)[0] ?? '';
-      failureLines.push({
-        action: consequence,
-        command: shortenRecapText(firstLineCommand, 80),
-        reason: shortenRecapText(reason, 70),
-      });
-    }
-    for (const label of verifyOrder) {
-      if (!finalVerificationFailed.has(label)) continue;
-      const finalAttempt = finalExecutedVerification.get(label);
-      if (!finalAttempt) continue;
-      failureLines.push({
-        action: label,
-        command: shortenRecapText(finalAttempt.command, 80),
-        reason: shortenRecapText(String(finalAttempt.output ?? '').split('\n').find((line: string) => line.trim()) ?? '', 70),
-      });
-    }
-    const failedTools = nonVerificationFailedTools + finalVerificationFailed.size;
-    const toolSummary = Object.entries(toolCounts)
-      .map(([name, count]) => count > 1 ? `${name} x${count}` : name);
-    const mode = String(result?.mode ?? result?.action ?? 'self');
-    const delegated = result?.delegated === true;
-    const action = String(result?.action ?? result?.mode ?? '').trim();
-    const terminalState = String(result?.terminalState ?? '');
-    const completedWithConsequentialFailure = (terminalState === '' || terminalState === 'completed')
-      && (failureLines.length > 0 || fatalNonCommandFailedTools > 0);
-    const partialTerminal = terminalState === 'timed_out' || terminalState === 'partial' || terminalState === 'waiting';
-    const interruptedTerminal = terminalState === 'cancelled' || terminalState === 'superseded';
-    const noResponseFailure = result?.responded === false && !partialTerminal && !interruptedTerminal;
-    const failed = terminalState === 'failed' || noResponseFailure || completedWithConsequentialFailure;
-    const outcome = delegated ? `Handed off to ${action || mode}`
-      : terminalState === 'timed_out' || terminalState === 'partial' || terminalState === 'waiting' ? 'Partial'
-      : terminalState === 'cancelled' ? 'Interrupted'
-      : terminalState === 'failed' ? 'Failed'
-      : result?.responded === false ? 'No response'
-      : completedWithConsequentialFailure ? 'Failed'
-      : terminalState === 'completed' ? 'Done'
-      : 'Completed';
-    const shownFailures = failureLines.slice(0, 3);
-    const failureOverflow = Math.max(0, failureLines.length - shownFailures.length);
-    const nonFatalCount = nonFatalFailedTools;
-    const confidence = capture?.confidence ?? null;
-    const durationMs = Number.isFinite(Number(capture?.durationMs))
-      ? Number(capture.durationMs)
-      : Date.now() - Number(capture?.startedAt ?? Date.now());
-    const files = buildRecapTouchedFiles(beforeFiles, afterFiles);
-    let createdCount = 0;
-    let editedCount = 0;
-    let readCount = 0;
-    for (const f of files) {
-      const s = String(f.status);
-      if (s === 'created') createdCount += 1;
-      else if (s === 'edited') editedCount += 1;
-      else readCount += 1;
-    }
-    const changeSummary = { created: createdCount, edited: editedCount, read: readCount };
-    // Todo delta: the turn's final live-checklist snapshot → "N/M done". Built
-    // from the latest todos-set captured this turn; null when the turn declared
-    // no live checklist (so the renderer omits the line).
-    const todoItems = Array.isArray(capture?.todos) ? capture.todos : [];
-    const todoTotal = todoItems.length;
-    const todoDone = todoItems.filter((t: any) => {
-      const s = String(t?.state ?? '');
-      return s === 'done' || s === 'cancelled';
-    }).length;
-    const todos = todoTotal > 0 ? { done: todoDone, total: todoTotal } : null;
-    return {
-      type: 'cesar-recap',
-      engineId: String(result?.cesarEngineId ?? capture?.engineId ?? 'cesar'),
-      mode,
-      outcome,
-      terminalState: terminalState || undefined,
-      failed,
-      durationMs,
-      confidence,
-      confidenceReasoning: String(capture?.confidenceReasoning ?? ''),
-      toolCount: orderedTools.length,
-      failedTools,
-      skippedTools,
-      deniedTools,
-      cancelledTools,
-      nonFatalCount,
-      failureLines: shownFailures,
-      failureOverflow,
-      toolSummary,
-      commands,
-      files,
-      changeSummary,
-      todos,
-      verification,
-      checkpoints,
-      warnings: [...(capture?.warnings ?? []), ...(capture?.errors ?? [])].slice(0, 4),
-    };
-  >>>
+      const requiredVerification = Array.isArray(result?.requiredVerification)
+        ? result.requiredVerification.map((v: unknown) => String(v)).filter((v: string) => verifyLabels.has(v))
+        : [];
+      for (const label of requiredVerification) if (!verifyOrder.includes(label)) verifyOrder.push(label);
+      const verification = verifyOrder
+        .map((label) => {
+          const finalAttempt = finalExecutedVerification.get(label);
+          if (!finalAttempt) return requiredVerification.includes(label)
+            ? { label, ok: false, state: 'not_run' }
+            : null;
+          const ok = finalAttempt.terminalReason === 'succeeded';
+          return { label, ok, state: ok ? 'passed' : 'failed' };
+        })
+        .filter(Boolean);
 
-fn name=shouldEmitCesarRecap params="event:any" returns=boolean export=true
-  doc "Gate the end-of-turn recap. A delegation, a genuinely failed turn, or one with an unrecovered red ✗ failure always recaps. Otherwise emit only when the turn produced real FINDINGS — touched/changed files, a diff, a ran verification (build/test/…), todo progress, or warnings/errors — OR did more than one tool call. SKIP a trivial turn (no findings AND toolCount <= 1): a bare ReportConfidence turn, or a lone plumbing command like `git status` (which renders no actionable row), must stay quiet."
-  handler lang="kern"
-    if cond="!event || event.type !== 'cesar-recap'"
-      return value="false"
-    if cond="String(event.outcome ?? '').startsWith('Handed off to ')"
+      const finalVerificationFailed = new Set(
+        verification.filter((v: any) => v.state === 'failed').map((v: any) => String(v.label)),
+      );
+      const failureLines: any[] = [];
+      const seenFailures = new Set<string>();
+      let nonVerificationFailedTools = 0;
+      let nonFatalFailedTools = 0;
+      let fatalNonCommandFailedTools = 0;
+      const finalConsequentialAttempt = new Map<string, any>();
+      for (const tool of normalizedTools) {
+        if (tool.terminalReason !== 'failed' && tool.terminalReason !== 'succeeded') continue;
+        const command = extractRecapCommand(tool.tool, tool.input);
+        if (!command || verifyLabels.has(classifyRecapCommand(command))) continue;
+        const signature = `${String(tool.tool).toLowerCase()}\u0000${command.trim().replace(/\s+/g, ' ')}`;
+        finalConsequentialAttempt.set(signature, tool);
+      }
+      for (const tool of normalizedTools) {
+        if (tool.terminalReason !== 'failed') continue;
+        const command = extractRecapCommand(tool.tool, tool.input);
+        const logicalLabel = command ? classifyRecapCommand(command) : '';
+        if (verifyLabels.has(logicalLabel)) continue;
+        if (command) {
+          const signature = `${String(tool.tool).toLowerCase()}\u0000${command.trim().replace(/\s+/g, ' ')}`;
+          if (finalConsequentialAttempt.get(signature) !== tool) continue;
+        }
+        const consequence = classifyConsequence(tool.tool, command ?? '');
+        // A failed non-command tool is still a real failed tool, but has no
+        // command-shaped red line. A known plumbing command is intentionally
+        // non-fatal: expose it only in the dim diagnostic count, never through
+        // failedTools (which also controls the recap failure gate).
+        if (!command) {
+          nonVerificationFailedTools += 1;
+          const toolKey = String(tool.tool ?? '').replace(/^agon/i, '').toLowerCase();
+          if (['edit', 'write', 'multiedit', 'notebookedit', 'applypatch', 'apply_patch'].includes(toolKey)) {
+            fatalNonCommandFailedTools += 1;
+          } else {
+            nonFatalFailedTools += 1;
+          }
+          continue;
+        }
+        if (!consequence) {
+          nonFatalFailedTools += 1;
+          continue;
+        }
+        nonVerificationFailedTools += 1;
+        const firstLineCommand = command.split('\n')[0] ?? command;
+        const dedupKey = `${consequence} ${firstLineCommand}`;
+        if (seenFailures.has(dedupKey)) continue;
+        seenFailures.add(dedupKey);
+        const reason = String(tool.output ?? '').split('\n').map((line: string) => line.trim()).filter(Boolean)[0] ?? '';
+        failureLines.push({
+          action: consequence,
+          command: shortenRecapText(firstLineCommand, 80),
+          reason: shortenRecapText(reason, 70),
+        });
+      }
+      for (const label of verifyOrder) {
+        if (!finalVerificationFailed.has(label)) continue;
+        const finalAttempt = finalExecutedVerification.get(label);
+        if (!finalAttempt) continue;
+        failureLines.push({
+          action: label,
+          command: shortenRecapText(finalAttempt.command, 80),
+          reason: shortenRecapText(String(finalAttempt.output ?? '').split('\n').find((line: string) => line.trim()) ?? '', 70),
+        });
+      }
+      const failedTools = nonVerificationFailedTools + finalVerificationFailed.size;
+      const toolSummary = Object.entries(toolCounts)
+        .map(([name, count]) => count > 1 ? `${name} x${count}` : name);
+      const mode = String(result?.mode ?? result?.action ?? 'self');
+      const delegated = result?.delegated === true;
+      const action = String(result?.action ?? result?.mode ?? '').trim();
+      const terminalState = String(result?.terminalState ?? '');
+      const completedWithConsequentialFailure = (terminalState === '' || terminalState === 'completed')
+        && (failureLines.length > 0 || fatalNonCommandFailedTools > 0);
+      const partialTerminal = terminalState === 'timed_out' || terminalState === 'partial' || terminalState === 'waiting';
+      const interruptedTerminal = terminalState === 'cancelled' || terminalState === 'superseded';
+      const noResponseFailure = result?.responded === false && !partialTerminal && !interruptedTerminal;
+      const failed = terminalState === 'failed' || noResponseFailure || completedWithConsequentialFailure;
+      const outcome = delegated ? `Handed off to ${action || mode}`
+        : terminalState === 'timed_out' || terminalState === 'partial' || terminalState === 'waiting' ? 'Partial'
+        : terminalState === 'cancelled' ? 'Interrupted'
+        : terminalState === 'failed' ? 'Failed'
+        : result?.responded === false ? 'No response'
+        : completedWithConsequentialFailure ? 'Failed'
+        : terminalState === 'completed' ? 'Done'
+        : 'Completed';
+      const shownFailures = failureLines.slice(0, 3);
+      const failureOverflow = Math.max(0, failureLines.length - shownFailures.length);
+      const nonFatalCount = nonFatalFailedTools;
+      const confidence = capture?.confidence ?? null;
+      const durationMs = Number.isFinite(Number(capture?.durationMs))
+        ? Number(capture.durationMs)
+        : Date.now() - Number(capture?.startedAt ?? Date.now());
+      const files = buildRecapTouchedFiles(beforeFiles, afterFiles);
+      let createdCount = 0;
+      let editedCount = 0;
+      let readCount = 0;
+      for (const f of files) {
+        const s = String(f.status);
+        if (s === 'created') createdCount += 1;
+        else if (s === 'edited') editedCount += 1;
+        else readCount += 1;
+      }
+      const changeSummary = { created: createdCount, edited: editedCount, read: readCount };
+      // Todo delta: the turn's final live-checklist snapshot → "N/M done". Built
+      // from the latest todos-set captured this turn; null when the turn declared
+      // no live checklist (so the renderer omits the line).
+      const todoItems = Array.isArray(capture?.todos) ? capture.todos : [];
+      const todoTotal = todoItems.length;
+      const todoDone = todoItems.filter((t: any) => {
+        const s = String(t?.state ?? '');
+        return s === 'done' || s === 'cancelled';
+      }).length;
+      const todos = todoTotal > 0 ? { done: todoDone, total: todoTotal } : null;
+      return {
+        type: 'cesar-recap',
+        engineId: String(result?.cesarEngineId ?? capture?.engineId ?? 'cesar'),
+        mode,
+        outcome,
+        terminalState: terminalState || undefined,
+        failed,
+        durationMs,
+        confidence,
+        confidenceReasoning: String(capture?.confidenceReasoning ?? ''),
+        toolCount: orderedTools.length,
+        failedTools,
+        skippedTools,
+        deniedTools,
+        cancelledTools,
+        nonFatalCount,
+        failureLines: shownFailures,
+        failureOverflow,
+        toolSummary,
+        commands,
+        files,
+        changeSummary,
+        todos,
+        verification,
+        checkpoints,
+        warnings: [...(capture?.warnings ?? []), ...(capture?.errors ?? [])].slice(0, 4),
+      };
+    >>>
+
+  fn name=shouldEmitCesarRecap params="event:any" returns=boolean export=true
+    doc "Gate the end-of-turn recap. A delegation, a genuinely failed turn, or one with an unrecovered red ✗ failure always recaps. Otherwise emit only when the turn produced real FINDINGS — touched/changed files, a diff, a ran verification (build/test/…), todo progress, or warnings/errors — OR did more than one tool call. SKIP a trivial turn (no findings AND toolCount <= 1): a bare ReportConfidence turn, or a lone plumbing command like `git status` (which renders no actionable row), must stay quiet."
+    handler lang="kern"
+      if cond="!event || event.type !== 'cesar-recap'"
+        return value="false"
+      if cond="String(event.outcome ?? '').startsWith('Handed off to ')"
+        return value="true"
+      comment raw="// A genuinely FAILED turn, or one with an unrecovered red ✗ failure, always"
+      comment raw="// recaps — the user must see the problem even if nothing else happened."
+      if cond="event.failed === true || Number(event.failedTools ?? 0) > 0 || (Array.isArray(event.failureLines) && event.failureLines.length > 0)"
+        return value="true"
+      let name=hasFiles value="Array.isArray(event.files) && event.files.some((f: any) => String(f?.status ?? '') !== 'read')"
+      let name=hasDiff value="!!(event.diffPreview && Array.isArray(event.diffPreview.files) && event.diffPreview.files.length > 0)"
+      comment raw="// Per-command rows were removed from the renderers, so a lone PLUMBING command"
+      comment raw="// (git status / cd) renders nothing actionable — it must NOT force a recap."
+      comment raw="// A ran VERIFICATION (build/test/…) is a real visible signal; consequential"
+      comment raw="// failures already force-emit above via failureLines."
+      let name=hasVerification value="Array.isArray(event.verification) && event.verification.length > 0"
+      let name=hasWarnings value="Array.isArray(event.warnings) && event.warnings.length > 0"
+      let name=hasTodos value="!!(event.todos && Number(event.todos.total ?? 0) > 0)"
+      let name=hasFindings value="hasFiles || hasDiff || hasVerification || hasWarnings || hasTodos"
+      let name=toolCount value="Number(event.toolCount ?? 0)"
+      comment raw="// SKIP the trivial turn: no findings AND at most one tool call (the bare"
+      comment raw="// ReportConfidence turn — toolCount 1, confidence set, nothing else)."
+      if cond="!hasFindings && toolCount <= 1"
+        return value="false"
       return value="true"
-    comment raw="// A genuinely FAILED turn, or one with an unrecovered red ✗ failure, always"
-    comment raw="// recaps — the user must see the problem even if nothing else happened."
-    if cond="event.failed === true || Number(event.failedTools ?? 0) > 0 || (Array.isArray(event.failureLines) && event.failureLines.length > 0)"
-      return value="true"
-    let name=hasFiles value="Array.isArray(event.files) && event.files.some((f: any) => String(f?.status ?? '') !== 'read')"
-    let name=hasDiff value="!!(event.diffPreview && Array.isArray(event.diffPreview.files) && event.diffPreview.files.length > 0)"
-    comment raw="// Per-command rows were removed from the renderers, so a lone PLUMBING command"
-    comment raw="// (git status / cd) renders nothing actionable — it must NOT force a recap."
-    comment raw="// A ran VERIFICATION (build/test/…) is a real visible signal; consequential"
-    comment raw="// failures already force-emit above via failureLines."
-    let name=hasVerification value="Array.isArray(event.verification) && event.verification.length > 0"
-    let name=hasWarnings value="Array.isArray(event.warnings) && event.warnings.length > 0"
-    let name=hasTodos value="!!(event.todos && Number(event.todos.total ?? 0) > 0)"
-    let name=hasFindings value="hasFiles || hasDiff || hasVerification || hasWarnings || hasTodos"
-    let name=toolCount value="Number(event.toolCount ?? 0)"
-    comment raw="// SKIP the trivial turn: no findings AND at most one tool call (the bare"
-    comment raw="// ReportConfidence turn — toolCount 1, confidence set, nothing else)."
-    if cond="!hasFindings && toolCount <= 1"
-      return value="false"
-    return value="true"

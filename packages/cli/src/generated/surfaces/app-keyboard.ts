@@ -19,6 +19,7 @@ import { spawnSync } from 'node:child_process';
 /**
  * Explicit dependencies for runHandleCancelOrExit — the question/repl/input state the Ctrl+C cancel path inspects, the active-abort ref it reads for the cancel-vs-interrupt message, and the setters/callbacks/dispatch it fires.
  */
+// @kern-source: app-keyboard:58
 export interface CancelOrExitDeps {
   questionState: any;
   replState: ReplStateState;
@@ -33,6 +34,7 @@ export interface CancelOrExitDeps {
   dispatch: (event:any) => void;
 }
 
+// @kern-source: app-keyboard:81
 export function runHandleCancelOrExit(opts: CancelOrExitDeps): void {
   if (opts.questionState) { opts.questionState.resolve(''); opts.setQuestionState(null); opts.setQuestionAnswer(''); opts.setSelectedChoiceIndex(0); opts.setQuestionOtherActive(false); }
   if (opts.replState !== 'idle') {
@@ -59,6 +61,7 @@ export function runHandleCancelOrExit(opts: CancelOrExitDeps): void {
 /**
  * Explicit dependencies for runHandleComposerCtrlShortcut — the chord/handled refs it flips, the rail + composer + tool-output setters, and the cancel/submit/tool callbacks the per-key cases delegate to.
  */
+// @kern-source: app-keyboard:112
 export interface ComposerCtrlShortcutDeps {
   nestedCtrlShortcutRef: {current: { key: string; at: number }};
   ctrlKeyHandledRef: {current: boolean};
@@ -74,6 +77,7 @@ export interface ComposerCtrlShortcutDeps {
   draftLatestFailedToolRetry: () => void;
 }
 
+// @kern-source: app-keyboard:135
 export function runHandleComposerCtrlShortcut(opts: ComposerCtrlShortcutDeps, shortcut: string): void {
   opts.nestedCtrlShortcutRef.current = { key: shortcut, at: Date.now() };
   switch (shortcut) {
@@ -126,6 +130,7 @@ export function runHandleComposerCtrlShortcut(opts: ComposerCtrlShortcutDeps, sh
 /**
  * Explicit dependencies for runHandleKeyboardInput — the UI-state snapshot fed to resolveKeyboardInput, the refs the router consults/flips, and every setter/callback/dispatch the action switch fires. Passed in rather than captured from component scope; values are read at call time so staleness matches the original closure.
  */
+// @kern-source: app-keyboard:192
 export interface KeyboardInputDeps {
   modelPickerOpen: boolean;
   cesarPickerOpen: boolean;
@@ -196,6 +201,7 @@ export interface KeyboardInputDeps {
   dispatch: (event:any) => void;
 }
 
+// @kern-source: app-keyboard:280
 export function runHandleKeyboardInput(opts: KeyboardInputDeps, input: string, key: any): void {
   if (isTerminalFocusReport(input)) return;
   if (key?.paste) return;

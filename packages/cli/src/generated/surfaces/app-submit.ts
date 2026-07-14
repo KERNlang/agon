@@ -36,16 +36,21 @@ import { mkdirSync, readFileSync, statSync, realpathSync, openSync, readSync, cl
 
 // ── Module: AppSubmit ──
 
+// @kern-source: app-submit:75
 export const MENTION_MAX_FILE_BYTES: number = 65536;
 
+// @kern-source: app-submit:76
 export const MENTION_MAX_TOTAL_BYTES: number = 262144;
 
+// @kern-source: app-submit:77
 export const MENTION_MAX_FILES: number = 20;
 
+// @kern-source: app-submit:86
 export function isLiteralCommandLine(input: string): boolean {
   return input.startsWith('/') || input.startsWith('! ');
 }
 
+// @kern-source: app-submit:96
 export function buildMentionedFilesContext(text: string, cwd: string): string {
   const allMentions = extractFileMentions(text);
   const mentions = allMentions.slice(0, MENTION_MAX_FILES);
@@ -122,6 +127,7 @@ export function buildMentionedFilesContext(text: string, cwd: string): string {
   return `\n\n[Attached files referenced with @ in the message above]\n${blocks.join('\n\n')}${note}`;
 }
 
+// @kern-source: app-submit:177
 export function runProcessInputQueue(replState: ReplStateState, inputQueue: string[], setInputQueue: (updater:(prev:string[]) => string[]) => void, handleSubmit: (value:string) => void, setSteeringCount: (n:number) => void): void {
   if (replState !== 'idle') return;
   // The turn is over — clear the mid-turn steering hint count.
@@ -148,6 +154,7 @@ export function runProcessInputQueue(replState: ReplStateState, inputQueue: stri
 /**
  * Explicit dependencies for runSendBtwMessage — the context builder + live runtime signals (mode/replState/streams/transcript/plan/jobs) it folds into the side-chat prompt, the prior btwPanel it continues, the separate btwAbortRef it swaps, and the panel setter + dispatch it drives. Passed in rather than captured from component scope; values read at call time so staleness matches the original closure.
  */
+// @kern-source: app-submit:209
 export interface SendBtwMessageDeps {
   buildContext: () => any;
   btwPanel: any;
@@ -162,6 +169,7 @@ export interface SendBtwMessageDeps {
   dispatch: (event:any) => void;
 }
 
+// @kern-source: app-submit:234
 export function runSendBtwMessage(opts: SendBtwMessageDeps, question: string): void {
   const q = (question ?? '').trim();
         if (!q) return;
@@ -256,6 +264,7 @@ export function runSendBtwMessage(opts: SendBtwMessageDeps, question: string): v
 /**
  * Explicit dependencies for runHandleSubmit — the refs it consults (epoch/paste/bell/plan/turn/job-timing), the composer + history + queue + mode state it resets, every modal/picker/engine setter the DispatchCallbacks object wires, and the callbacks it delegates to. Passed in rather than captured from component scope; values read at call time so staleness matches the original closure.
  */
+// @kern-source: app-submit:334
 export interface HandleSubmitDeps {
   inputEpochRef: {current: number};
   pendingBellRef: {current: boolean};
@@ -323,6 +332,7 @@ export interface HandleSubmitDeps {
   bell: () => void;
 }
 
+// @kern-source: app-submit:417
 export async function runHandleSubmit(opts: HandleSubmitDeps, value: string): Promise<void> {
   opts.inputEpochRef.current += 1;
   let input = cleanSubmitValue(value);

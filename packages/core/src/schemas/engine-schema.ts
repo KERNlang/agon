@@ -18,6 +18,42 @@ export const EngineModelConfigSchema = z.object({
   default: z.union([z.string(), z.null()]).optional(),
 });
 
+export const EngineEffortConfigSchema = z.object({
+  flag: z.string().min(1).optional(),
+  configKey: z.string().min(1).optional(),
+  levels: z.array(z.string().min(1)).min(1),
+  default: z.string().min(1).optional(),
+}).refine(
+  (effort) => effort.default === undefined || effort.levels.includes(effort.default),
+  { message: 'default must be one of the declared effort levels', path: ['default'] },
+).refine(
+  (effort) => effort.flag !== undefined || effort.configKey !== undefined,
+  { message: 'effort requires either flag or configKey', path: ['flag'] },
+);
+
+export const CliModelEntrySchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1).optional(),
+});
+
+export const EngineCliModelConfigSchema = z.object({
+  default: z.string().min(1).optional(),
+  list: z.array(CliModelEntrySchema).min(1).optional(),
+  dynamicListCmd: z.array(z.string()).min(1).refine(
+    (command) => command.every((part) => part.trim().length > 0),
+    { message: 'dynamicListCmd entries must be non-empty' },
+  ).optional(),
+}).refine(
+  (models) => models.list !== undefined || models.dynamicListCmd !== undefined,
+  { message: 'cliModels requires a static list or dynamicListCmd', path: ['list'] },
+).refine(
+  (models) => models.default === undefined
+    || models.list === undefined
+    || models.dynamicListCmd !== undefined
+    || models.list.some((entry) => entry.id === models.default),
+  { message: 'default must identify an entry in the static model list', path: ['default'] },
+);
+
 export const EngineEnvVarSchema = z.object({
   required: z.boolean().optional(),
   default: z.string().optional(),
@@ -41,10 +77,15 @@ export const CompanionConfigSchema = z.object({
 
 export const ApiConfigSchema = z.object({
   baseUrl: z.string().url(),
-  apiKeyEnv: z.string(),
-  model: z.string(),
+  apiKeyEnv: z.string().min(1),
+  model: z.string().min(1),
   maxTokens: z.number().int().positive().optional(),
+  contextWindow: z.number().int().positive().optional(),
   format: z.enum(['openai', 'anthropic']).optional(),
+  firstChunkTimeoutMs: z.number().int().positive().optional(),
+  idleTimeoutMs: z.number().int().positive().optional(),
+  firstChunkRetryCount: z.number().int().nonnegative().optional(),
+  firstChunkRetryBackoffMs: z.number().int().nonnegative().optional(),
 });
 
 // Workspace-pure isolation knobs. MUST be modelled here or Zod silently strips
@@ -61,14 +102,18 @@ export const ApiConfigSchema = z.object({
 const RelAuthFile = z
   .string()
   .refine(
-    (v) => v.length > 0 && !v.startsWith('/') && !v.startsWith('\\') && !/(^|[\\/])\.\.([\\/]|$)/.test(v),
-    { message: 'authFiles entries must be non-empty relative paths without ".." segments' },
+    (v) => v.length > 0
+      && !v.startsWith('/')
+      && !v.startsWith('\\')
+      && !/^[A-Za-z]:/.test(v)
+      && !/(^|[\\/])\.\.([\\/]|$)/.test(v),
+    { message: 'authFiles entries must be non-empty relative paths without absolute or ".." segments' },
   );
 const AuthMarker = z
   .string()
   .refine(
-    (v) => v === '' || (!/[\\/]/.test(v) && v !== '.' && v !== '..'),
-    { message: 'authMarker must be a bare filename (no path separators, not "." or "..")' },
+    (v) => v.length > 0 && !/[\\/:]/.test(v) && v !== '.' && v !== '..',
+    { message: 'authMarker must be a non-empty bare filename (no path separators, drive prefix, ".", or "..")' },
   );
 
 export const IsolationHintsSchema = z.object({
@@ -117,11 +162,14 @@ export const EngineDefinitionSchema = z.object({
   review: EngineModeConfigSchema.optional(),
   agent: EngineModeConfigSchema.optional(),
   model: EngineModelConfigSchema.optional(),
+  effort: EngineEffortConfigSchema.optional(),
   env: z.record(z.string(), EngineEnvVarSchema).optional(),
   test: z.object({ args: z.array(z.string()) }).optional(),
   modes: z.array(z.enum(['exec', 'review', 'agent'])).optional(),
   modelConfigKey: z.string().optional(),
   adapterType: z.string().optional(),
+  family: z.string().min(1).optional(),
+  derivedFrom: z.string().min(1).optional(),
   capabilities: z.array(z.string()).optional(),
   // Guard-pipeline mode (P1+P2). Optional enum mirroring EngineDefinition.guards
   // in types.kern. MUST be modelled here or Zod silently strips it at load
@@ -135,6 +183,7 @@ export const EngineDefinitionSchema = z.object({
   companion: CompanionConfigSchema.optional(),
   isolationHints: IsolationHintsSchema.optional(),
   sessionBudget: SessionBudgetSchema.optional(),
+  cliModels: EngineCliModelConfigSchema.optional(),
 });
 
 export type ValidatedEngineDefinition = z.infer<typeof EngineDefinitionSchema>;

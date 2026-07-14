@@ -1,0 +1,96 @@
+// Autonomous job MCP adapter. Each tool invokes the fixed `agon job` client,
+// which speaks jobs-v1 to the daemon-owned JobService. No workflow process is
+// started here and no request field can become an executable or free-form argv.
+
+import from="node:child_process" names="spawn"
+import from="@kernlang/agon-core" names="DEFAULT_AGON_CONFIG,loadConfig"
+import from="@kernlang/agon-core" names="AgonConfig" types=true
+
+const name=JOB_TOOLS type="Array<{name:string,description:string,inputSchema:Record<string,unknown>}>" value={{ [
+  { name: 'JobSubmit', description: 'Submit an allowlisted Agon workflow to the long-lived daemon and return immediately with its job id.', inputSchema: { type: 'object', properties: { kind: { type: 'string', description: 'Registered workflow kind, such as brainstorm, review, or forge.' }, payload: { type: 'object', description: 'Structured workflow payload. The daemon rejects unknown fields and never accepts shell or argv.' } }, required: ['kind', 'payload'] } },
+  { name: 'JobList', description: 'List autonomous jobs retained by the Agon daemon.', inputSchema: { type: 'object', properties: {} } },
+  { name: 'JobStatus', description: 'Get one autonomous job snapshot.', inputSchema: { type: 'object', properties: { jobId: { type: 'string' } }, required: ['jobId'] } },
+  { name: 'JobEvents', description: 'Replay bounded ordered events for one autonomous job after a sequence cursor.', inputSchema: { type: 'object', properties: { jobId: { type: 'string' }, afterSeq: { type: 'number', minimum: 0 }, limit: { type: 'number', minimum: 1 } }, required: ['jobId'] } },
+  { name: 'JobResult', description: 'Read the terminal result for one autonomous job without blocking.', inputSchema: { type: 'object', properties: { jobId: { type: 'string' } }, required: ['jobId'] } },
+  { name: 'JobCancel', description: 'Request idempotent cancellation of one autonomous job.', inputSchema: { type: 'object', properties: { jobId: { type: 'string' }, reason: { type: 'string' } }, required: ['jobId'] } },
+] }} export=true
+
+fn name=isJobTool params="name:string" returns=boolean export=true expr={{ return JOB_TOOLS.some((tool) => tool.name === name); }}
+
+fn name=requiredString params="value:unknown,label:string" returns=string
+  handler <<<
+    const normalized = typeof value === 'string' ? value.trim() : '';
+    if (!normalized) throw new Error(`${label} is required`);
+    return normalized;
+  >>>
+
+fn name=optionalInteger params="value:unknown,label:string,minimum:number" returns="number|undefined"
+  handler <<<
+    if (value === undefined) return undefined;
+    if (!Number.isInteger(value) || Number(value) < minimum) throw new Error(`${label} must be an integer >= ${minimum}`);
+    return Number(value);
+  >>>
+
+fn name=buildMcpJobCommand params="name:string,args:Record<string,unknown>" returns="string[]" export=true
+  doc "Build a fixed agon-job client invocation. Only structured job fields are serialized; executable, shell, and argv are never accepted."
+  handler <<<
+    if (name === 'JobSubmit') {
+      const kind = requiredString(args.kind, 'kind');
+      const payload = args.payload;
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('payload must be an object');
+      return ['job', 'submit', kind, '--payload', JSON.stringify(payload), '--json'];
+    }
+    if (name === 'JobList') return ['job', 'list', '--json'];
+    const jobId = requiredString(args.jobId, 'jobId');
+    if (name === 'JobStatus') return ['job', 'status', jobId, '--json'];
+    if (name === 'JobResult') return ['job', 'result', jobId, '--json'];
+    if (name === 'JobCancel') {
+      const reason = typeof args.reason === 'string' && args.reason.trim() ? ['--reason', args.reason.trim()] : [];
+      return ['job', 'cancel', jobId, ...reason, '--json'];
+    }
+    if (name === 'JobEvents') {
+      const after = optionalInteger(args.afterSeq, 'afterSeq', 0);
+      const limit = optionalInteger(args.limit, 'limit', 1);
+      return ['job', 'events', jobId, ...(after === undefined ? [] : ['--after', String(after)]), ...(limit === undefined ? [] : ['--limit', String(limit)]), '--json'];
+    }
+    throw new Error(`Unknown job tool: ${name}`);
+  >>>
+
+fn name=runMcpJobCommand params="args:string[]" returns="Promise<string>" async=true
+  handler lang="typescript" reason="bounded asynchronous child-process collection" <<<
+    const nodeScript = process.env.AGON_CLI_NODE_SCRIPT;
+    const command = nodeScript ? process.execPath : (process.env.AGON_CLI_COMMAND || 'agon');
+    const runArgs = nodeScript ? [nodeScript, ...args] : args;
+    const config = loadConfig(process.cwd()) as Required<AgonConfig>;
+    const maxBytes = config.daemonFrameMaxBytes || DEFAULT_AGON_CONFIG.daemonFrameMaxBytes;
+    return await new Promise<string>((resolvePromise) => {
+      const child = spawn(command, runArgs, { cwd: process.cwd(), env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+      const stdout: Buffer[] = [];
+      const stderr: Buffer[] = [];
+      let size = 0;
+      let overflow = false;
+      const collect = (target: Buffer[], chunk: Buffer | string): void => {
+        if (overflow) return;
+        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        size += buffer.length;
+        if (size > maxBytes) { overflow = true; child.kill('SIGTERM'); return; }
+        target.push(buffer);
+      };
+      child.stdout?.on('data', (chunk) => collect(stdout, chunk));
+      child.stderr?.on('data', (chunk) => collect(stderr, chunk));
+      child.once('error', (error) => resolvePromise(JSON.stringify({ ok: false, error: error.message })));
+      child.once('close', (code, signal) => {
+        if (overflow) { resolvePromise(JSON.stringify({ ok: false, error: `job response exceeded ${maxBytes} bytes` })); return; }
+        const output = Buffer.concat(stdout).toString('utf8').trim();
+        const error = Buffer.concat(stderr).toString('utf8').trim();
+        if (code === 0 && output) { resolvePromise(output); return; }
+        resolvePromise(JSON.stringify({ ok: false, exitCode: code, signal, error: error || output || 'agon job client failed' }));
+      });
+    });
+  >>>
+
+fn name=handleJobToolCall params="name:string,args:Record<string,unknown>" returns="Promise<string>" async=true export=true
+  handler <<<
+    try { return await runMcpJobCommand(buildMcpJobCommand(name, args)); }
+    catch (error) { return JSON.stringify({ ok: false, error: error instanceof Error ? error.message : String(error) }); }
+  >>>

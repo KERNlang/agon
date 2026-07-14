@@ -34,7 +34,7 @@
 // Cesar host exists; the flag name is reserved now so v2 doesn't rename it.
 
 import from="citty" names="defineCommand"
-import from="@kernlang/agon-core" names="ensureAgonHome,loadConfig,EngineRegistry,eventLogAppend,eventLogFlush,agonPath"
+import from="@kernlang/agon-core" names="ensureAgonHome,loadConfig,EngineRegistry,JobService,eventLogAppend,eventLogFlush,agonPath"
 import from="@kernlang/agon-core" names="BrainClient" types=true
 import from="node:fs" names="mkdirSync,writeFileSync,rmSync,chmodSync"
 import from="node:path" names="join"
@@ -42,6 +42,7 @@ import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
 import from="../bridge/agentic-brain-client.js" names="createAgenticTurnBrainClient"
 import from="../bridge/agon-serve.js" names="createAgonServe"
 import from="../bridge/agon-serve.js" names="AgonServe" types=true
+import from="../jobs/workflow-job.js" names="daemonJobConfig,resolveDaemonWorkflowJob"
 import from="../blocks/output-format.js" names="header,info,success,warn,bold,dim,green,cyan,yellow,red"
 
 // ── Pure helpers (exported so the unit test drives them without binding a port) ─
@@ -172,7 +173,11 @@ fn name=buildServeRuntime params="opts:ServeOptions" returns="Promise<ServeRunti
     // user's hiddenEngines/removedEngines, honoring engineActivationMode. NOT every definition on
     // disk (registry.listIds()). So the attached client's engine picker shows just the connected,
     // usable, non-hidden models — not the full catalogue. loadConfig guarantees the four fields.
-    const cfg = loadConfig(opts.cwd) as { engineActivationMode?: 'auto' | 'explicit'; forgeEnabledEngines?: string[]; hiddenEngines?: string[]; removedEngines?: string[] };
+    const cfg = loadConfig(opts.cwd) as {
+      engineActivationMode?: 'auto' | 'explicit'; forgeEnabledEngines?: string[];
+      hiddenEngines?: string[]; removedEngines?: string[]; jobEventLimit?: number;
+      jobRetentionLimit?: number; jobMaxConcurrency?: number;
+    };
     const available = registry.activeIds({
       engineActivationMode: cfg.engineActivationMode === 'explicit' ? 'explicit' : 'auto',
       forgeEnabledEngines: cfg.forgeEnabledEngines ?? [],
@@ -185,7 +190,13 @@ fn name=buildServeRuntime params="opts:ServeOptions" returns="Promise<ServeRunti
     // the current selection — and pass the canonical id as the default so the picker selects it.
     const defaultId = registry.resolveId(opts.engineId);
     const engines = available.includes(defaultId) ? [...available] : [defaultId, ...available];
-    const serve = createAgonServe({ brain, sessionId, allowedOrigins: opts.allowedOrigins, engines, engineId: defaultId });
+    const jobConfig = daemonJobConfig(opts.cwd);
+    const jobService = new JobService({
+      eventLimit: jobConfig.jobEventLimit,
+      retentionLimit: jobConfig.jobRetentionLimit,
+      maxConcurrency: jobConfig.jobMaxConcurrency,
+    });
+    const serve = createAgonServe({ brain, sessionId, allowedOrigins: opts.allowedOrigins, engines, engineId: defaultId, jobService, jobShutdownTimeoutMs: jobConfig.jobShutdownTimeoutMs, resolveJob: { resolve: resolveDaemonWorkflowJob } });
     return { serve, brain, sessionId, engineId: opts.engineId };
   >>>
 

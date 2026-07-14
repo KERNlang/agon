@@ -2,6 +2,8 @@
 
 import { runApiAgentLoop } from '../api/agent-loop.js';
 
+import type { ApiAgentResult } from '../api/agent-loop.js';
+
 import type { ApiConfig } from '../api/dispatch.js';
 
 import { worktreeChangedDiff } from '../blocks/git.js';
@@ -13,7 +15,7 @@ import type { Semaphore } from '../blocks/semaphore.js';
 /**
  * One non-winning team member surfaced to the winner during synthesis. diff is the unified-diff string from worktreeChangedDiff against baseSha; response is the loser's final assistant message (their reasoning). Either may be empty — the prompt builder handles missing content gracefully.
  */
-// @kern-source: agent-synthesis:29
+// @kern-source: agent-synthesis:30
 export interface AgentSynthesisLoser {
   engineId: string;
   diff: string;
@@ -24,31 +26,31 @@ export interface AgentSynthesisLoser {
 /**
  * Max characters of the winner's diff to include in the synthesis prompt. Capped to prevent a runaway diff from blowing the context window.
  */
-// @kern-source: agent-synthesis:38
+// @kern-source: agent-synthesis:39
 export const MAX_WINNER_DIFF_CHARS: number = 12000;
 
 /**
  * Max characters of a single loser's diff. Tighter than winner because we have N losers.
  */
-// @kern-source: agent-synthesis:41
+// @kern-source: agent-synthesis:42
 export const MAX_LOSER_DIFF_CHARS: number = 8000;
 
 /**
  * Max characters of a single loser's text response (their reasoning).
  */
-// @kern-source: agent-synthesis:44
+// @kern-source: agent-synthesis:45
 export const MAX_LOSER_RESPONSE_CHARS: number = 2000;
 
 /**
  * Hard cap on the total synthesis prompt size. If the composed prompt (winner + all losers + template) exceeds this, loser context is progressively trimmed. Tuned to fit comfortably in a 200k-token context model with room for the agent's response + tool outputs.
  */
-// @kern-source: agent-synthesis:47
+// @kern-source: agent-synthesis:48
 export const MAX_TOTAL_PROMPT_CHARS: number = 40000;
 
 /**
  * Inputs for one synthesis pass. winnerApi is the winner's API config, NOT the engine wrapper — synthesis only supports API engines because runApiAgentLoop is API-only. winnerWorktreePath must be the worktree the winner agent already ran in (the synthesis edits land there). baseSha is captured at AgentTeam.initialize and used to recompute the final diff. systemPrompt is the winner's original team-member systemPrompt — threaded through so the refinement call keeps any repo-specific constraints, formatting rules, or safety instructions that the original team-member had.
  */
-// @kern-source: agent-synthesis:52
+// @kern-source: agent-synthesis:53
 export interface AgentSynthesisOptions {
   task: string;
   winnerEngineId: string;
@@ -69,7 +71,7 @@ export interface AgentSynthesisOptions {
 /**
  * Outcome of one synthesis pass. ok=false when the LLM call or diff recompute failed — synthesizedDiff falls back to the original winnerDiff in that case so the caller still has something to surface. changed=false when the winner's edits were a no-op (didn't actually modify anything beyond what they already had). responseExcerpt is the winner's narrative summary, capped at ~400 chars for transcripts.
  */
-// @kern-source: agent-synthesis:71
+// @kern-source: agent-synthesis:72
 export interface AgentSynthesisResult {
   ok: boolean;
   synthesizedDiff: string;
@@ -82,7 +84,7 @@ export interface AgentSynthesisResult {
 /**
  * Truncate a string to maxChars with a visible marker. Preserves the empty string as-is so downstream detection of 'empty means missing' still works.
  */
-// @kern-source: agent-synthesis:82
+// @kern-source: agent-synthesis:83
 function clampStr(s: string, maxChars: number): string {
   if (!s) {
     return s;
@@ -96,7 +98,7 @@ function clampStr(s: string, maxChars: number): string {
 /**
  * Construct the elevated-loser-insights synthesis prompt template. Closes RT-25 by forcing the winner into a humility frame: their solution is a draft, the losers each saw something they missed, and they should refine to incorporate the valuable insights. The wording is deliberately confrontational — 'NOT to defend', 'Treat your own as a draft' — to counter the LLM tendency to polish-instead-of-incorporate. Prompt-injection defense: all loser content is wrapped in clearly-marked <untrusted_data> blocks and the template warns the winner that loser content is DATA not instructions. Progressive trimming: if the composed prompt exceeds MAX_TOTAL_PROMPT_CHARS, loser context is trimmed from the end until it fits.
  */
-// @kern-source: agent-synthesis:91
+// @kern-source: agent-synthesis:92
 export function buildAgentSynthesisPrompt(opts: {task:string,winnerEngineId:string,winnerDiff:string,losers:AgentSynthesisLoser[]}): string {
   const lines: string[] = [];
   lines.push(`# Synthesis Pass — Refine Your Solution Using Other Engines' Insights`);
@@ -190,7 +192,7 @@ export function buildAgentSynthesisPrompt(opts: {task:string,winnerEngineId:stri
 /**
  * Construct the synthesis prompt for taskKind='investigate' (text-output tasks). Same humility frame as the edit prompt, but the deliverable is a unified analysis instead of a diff. Loser content is wrapped in <untrusted_data> blocks with the same prompt-injection defense as the edit-mode prompt.
  */
-// @kern-source: agent-synthesis:185
+// @kern-source: agent-synthesis:186
 export function buildAgentInvestigateSynthesisPrompt(opts: {task:string,winnerEngineId:string,winnerResponse:string,losers:AgentSynthesisLoser[]}): string {
   const lines: string[] = [];
   lines.push(`# Synthesis Pass — Reconcile Multiple Investigation Reports`);
@@ -247,21 +249,20 @@ export function buildAgentInvestigateSynthesisPrompt(opts: {task:string,winnerEn
 }
 
 /**
- * Detect the error-as-response shapes that runApiAgentLoop returns on abort, timeout, or upstream failure. The loop converts thrown errors into `{response: 'Error: ...', toolCalls, steps}` for most streaming failures, and returns `[Timeout — ran out of time]` when the internal deadline fires. Synthesis must treat these as failures, not successful completions.
+ * Use the structured API-agent terminal contract. Partial response text is diagnostic output, never proof of success when a failure flag is present; response prose itself is never parsed as status.
  */
-// @kern-source: agent-synthesis:244
-function isAgentLoopErrorResponse(response: string): boolean {
-  if (!response) {
-    return true;
+// @kern-source: agent-synthesis:245
+function agentLoopFailureReason(result: ApiAgentResult): string|null {
+  if (result.cancelled) {
+    return result.errorReason ?? 'API agent was cancelled';
   }
-  const t = response.trimStart();
-  if (t.startsWith('Error:')) {
-    return true;
+  if (result.timedOut) {
+    return result.errorReason ?? 'API agent timed out';
   }
-  if (t.startsWith('[Timeout')) {
-    return true;
+  if (result.failed) {
+    return result.errorReason ?? 'API agent execution failed';
   }
-  return false;
+  return null;
 }
 
 /**
@@ -323,12 +324,13 @@ export async function runAgentTeamSynthesis(opts: AgentSynthesisOptions): Promis
     }
     // Detect error-as-response shape from runApiAgentLoop (it catches stream
     // errors and returns them as a "response" string rather than throwing).
-    if (isAgentLoopErrorResponse(result.response)) {
+    const loopFailure = agentLoopFailureReason(result);
+    if (loopFailure) {
       return {
         ok: false,
         synthesizedDiff: opts.winnerDiff,
         changed: false,
-        error: `Synthesis loop reported error: ${result.response.slice(0, 200)}`,
+        error: `Synthesis loop reported error: ${loopFailure.slice(0, 200)}`,
         responseExcerpt: result.response.slice(0, 400),
         skipped: false,
       };
@@ -387,7 +389,7 @@ export async function runAgentTeamSynthesis(opts: AgentSynthesisOptions): Promis
 /**
  * Inputs for synthesizing investigate-mode results. Mirrors AgentSynthesisOptions but the deliverable is a single reconciled report instead of a diff.
  */
-// @kern-source: agent-synthesis:376
+// @kern-source: agent-synthesis:377
 export interface AgentInvestigateSynthesisOptions {
   task: string;
   winnerEngineId: string;
@@ -406,7 +408,7 @@ export interface AgentInvestigateSynthesisOptions {
 /**
  * Outcome of an investigate-mode synthesis pass. ok=false when the LLM call failed; report falls back to the winner's original response in that case.
  */
-// @kern-source: agent-synthesis:391
+// @kern-source: agent-synthesis:392
 export interface AgentInvestigateSynthesisResult {
   ok: boolean;
   report: string;
@@ -417,7 +419,7 @@ export interface AgentInvestigateSynthesisResult {
 /**
  * Reconcile multiple investigate-mode reports into one. Same humility frame as runAgentTeamSynthesis but the output is a text report rather than a diff. Hardened with the same failure detection: pre/post abort check, error-as-response detection, thrown-error catch. Falls back to the winner's original response in every failure mode.
  */
-// @kern-source: agent-synthesis:398
+// @kern-source: agent-synthesis:399
 export async function runAgentInvestigateSynthesis(opts: AgentInvestigateSynthesisOptions): Promise<AgentInvestigateSynthesisResult> {
   if (opts.losers.length === 0) {
     return {
@@ -461,11 +463,12 @@ export async function runAgentInvestigateSynthesis(opts: AgentInvestigateSynthes
         skipped: false,
       };
     }
-    if (isAgentLoopErrorResponse(result.response)) {
+    const loopFailure = agentLoopFailureReason(result);
+    if (loopFailure) {
       return {
         ok: false,
         report: opts.winnerResponse,
-        error: `Reconciliation loop reported error: ${result.response.slice(0, 200)}`,
+        error: `Reconciliation loop reported error: ${loopFailure.slice(0, 200)}`,
         skipped: false,
       };
     }
@@ -489,7 +492,7 @@ export async function runAgentInvestigateSynthesis(opts: AgentInvestigateSynthes
 /**
  * Outcome of re-running the project's fitness command against the winner's worktree after synthesis edits. passed=true means the refinement did not regress; passed=false means the caller must revert to the pre-synthesis diff. error is populated for unexpected spawn failures separate from normal non-zero exits.
  */
-// @kern-source: agent-synthesis:470
+// @kern-source: agent-synthesis:472
 export interface PostSynthesisFitnessResult {
   passed: boolean;
   exitCode: number;
@@ -500,7 +503,7 @@ export interface PostSynthesisFitnessResult {
 /**
  * Re-run the project's fitness command (e.g. 'npm run typecheck') against the winner's worktree after synthesis edits. Used by runAgentTeam to decide whether to keep the synthesized diff or revert to the pre-synthesis winner diff. Extracted from the caller into a standalone helper so it can be unit-tested against a mocked spawn. Swallows spawn errors into the result rather than throwing — the caller must NOT crash the team run on a fitness tool hiccup.
  */
-// @kern-source: agent-synthesis:477
+// @kern-source: agent-synthesis:479
 export async function runPostSynthesisFitnessCheck(opts: {worktreePath:string, fitnessCmd:string, timeoutSec?:number, signal?:AbortSignal}): Promise<PostSynthesisFitnessResult> {
   const start = Date.now();
   try {
@@ -508,7 +511,7 @@ export async function runPostSynthesisFitnessCheck(opts: {worktreePath:string, f
       command: 'sh',
       args: ['-c', opts.fitnessCmd],
       cwd: opts.worktreePath,
-      timeout: opts.timeoutSec ?? 90,
+      timeout: (opts.timeoutSec ?? 90) * 1000,
       signal: opts.signal,
     });
     return {
@@ -530,7 +533,7 @@ export async function runPostSynthesisFitnessCheck(opts: {worktreePath:string, f
 /**
  * Weak runtime heuristic for detecting whether the synthesis winner actually engaged with loser insights or just polished its own answer. mentionedEngineIds lists the loser engineIds that appeared in the response excerpt; hasAnyMention is the top-level flag used for dispatch.
  */
-// @kern-source: agent-synthesis:507
+// @kern-source: agent-synthesis:509
 export interface SynthesisBiasSignal {
   hasAnyMention: boolean;
   mentionedEngineIds: string[];
@@ -539,7 +542,7 @@ export interface SynthesisBiasSignal {
 /**
  * Scan the synthesis response excerpt for mentions of the loser engineIds. This is a WEAK heuristic — the model might paraphrase (e.g. 'codex's approach' → 'the alternative factoring') without naming the engine — but non-zero mentions is a positive signal that the humility frame was followed. Zero mentions combined with a non-no-op diff is the bias warning signal the caller surfaces.
  */
-// @kern-source: agent-synthesis:512
+// @kern-source: agent-synthesis:514
 export function detectSynthesisInsightMention(opts: {responseExcerpt:string, loserEngineIds:string[]}): SynthesisBiasSignal {
   const excerpt = opts.responseExcerpt.toLowerCase();
   const mentioned: string[] = [];

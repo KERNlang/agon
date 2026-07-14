@@ -19,6 +19,7 @@
 // separate prevents accidentally pulling the API surface into scoring code.
 
 import from="../api/agent-loop.js" names="runApiAgentLoop"
+import from="../api/agent-loop.js" names="ApiAgentResult" types=true
 import from="../api/dispatch.js" names="ApiConfig" types=true
 import from="../blocks/git.js" names="worktreeChangedDiff"
 import from="../blocks/process.js" names="spawnWithTimeout"
@@ -241,17 +242,16 @@ fn name=buildAgentInvestigateSynthesisPrompt params="opts:{task:string,winnerEng
 
 // ── Edit-mode synthesis runner ───────────────────────────────────
 
-fn name=isAgentLoopErrorResponse params="response:string" returns=boolean export=false
-  doc "Detect the error-as-response shapes that runApiAgentLoop returns on abort, timeout, or upstream failure. The loop converts thrown errors into `{response: 'Error: ...', toolCalls, steps}` for most streaming failures, and returns `[Timeout — ran out of time]` when the internal deadline fires. Synthesis must treat these as failures, not successful completions."
+fn name=agentLoopFailureReason params="result:ApiAgentResult" returns="string|null" export=false
+  doc "Use the structured API-agent terminal contract. Partial response text is diagnostic output, never proof of success when a failure flag is present; response prose itself is never parsed as status."
   handler lang="kern"
-    if cond="!response"
-      return value="true"
-    let name=t value="response.trimStart()"
-    if cond="t.startsWith('Error:')"
-      return value="true"
-    if cond="t.startsWith('[Timeout')"
-      return value="true"
-    return value="false"
+    if cond="result.cancelled"
+      return value="result.errorReason ?? 'API agent was cancelled'"
+    if cond="result.timedOut"
+      return value="result.errorReason ?? 'API agent timed out'"
+    if cond="result.failed"
+      return value="result.errorReason ?? 'API agent execution failed'"
+    return value="null"
 
 fn name=runAgentTeamSynthesis async=true params="opts:AgentSynthesisOptions" returns="Promise<AgentSynthesisResult>" export=true
   doc "Run a synthesis pass on the winner's worktree using the elevated-loser-insights prompt. Re-invokes the winner via runApiAgentLoop with full tool access against the worktree the winner already edited, then captures the new diff against baseSha. Falls back gracefully in FIVE failure modes: (a) no losers → skipped; (b) signal aborted before call → ok=false; (c) runApiAgentLoop throws → ok=false; (d) runApiAgentLoop returns error-as-response shape → ok=false; (e) signal aborted during call → ok=false (checked post-return); (f) worktreeChangedDiff throws OR returns empty when original was non-empty → ok=false (corruption signal). In every failure mode synthesizedDiff is the original winnerDiff so the caller always has a safe value to surface. Used by AgentTeam.runAgentTeam in the CLI handler to mitigate RT-25 winner-refines blind spot."
@@ -310,12 +310,13 @@ fn name=runAgentTeamSynthesis async=true params="opts:AgentSynthesisOptions" ret
       }
       // Detect error-as-response shape from runApiAgentLoop (it catches stream
       // errors and returns them as a "response" string rather than throwing).
-      if (isAgentLoopErrorResponse(result.response)) {
+      const loopFailure = agentLoopFailureReason(result);
+      if (loopFailure) {
         return {
           ok: false,
           synthesizedDiff: opts.winnerDiff,
           changed: false,
-          error: `Synthesis loop reported error: ${result.response.slice(0, 200)}`,
+          error: `Synthesis loop reported error: ${loopFailure.slice(0, 200)}`,
           responseExcerpt: result.response.slice(0, 400),
           skipped: false,
         };
@@ -440,11 +441,12 @@ fn name=runAgentInvestigateSynthesis async=true params="opts:AgentInvestigateSyn
           skipped: false,
         };
       }
-      if (isAgentLoopErrorResponse(result.response)) {
+      const loopFailure = agentLoopFailureReason(result);
+      if (loopFailure) {
         return {
           ok: false,
           report: opts.winnerResponse,
-          error: `Reconciliation loop reported error: ${result.response.slice(0, 200)}`,
+          error: `Reconciliation loop reported error: ${loopFailure.slice(0, 200)}`,
           skipped: false,
         };
       }
@@ -483,7 +485,7 @@ fn name=runPostSynthesisFitnessCheck async=true params="opts:{worktreePath:strin
         command: 'sh',
         args: ['-c', opts.fitnessCmd],
         cwd: opts.worktreePath,
-        timeout: opts.timeoutSec ?? 90,
+        timeout: (opts.timeoutSec ?? 90) * 1000,
         signal: opts.signal,
       });
       return {

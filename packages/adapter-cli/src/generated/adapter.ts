@@ -10,7 +10,7 @@ import { EngineRegistry, spawnWithTimeout, spawnStream, EngineNotFoundError, rea
 
 import { buildCommand, checkEnvVars, resolveModel, stripStreamJson, usesStreamJson, recordDispatchHealth, shouldUseCompanionForAgent, shouldUseClaudePty, runClaudePtyDispatch, runClaudePtyStreamDispatch, resolveClaudePtyExtraArgs, computeEngineIsolation, hasEnvVar, nowMs, createStringSet } from './adapter-helpers.js';
 
-import { normalizeDispatchOptions, planEngineExecution } from './execution-plan.js';
+import { normalizeApiAgentOutcome, normalizeDispatchOptions, planEngineExecution } from './execution-plan.js';
 
 // @kern-source: adapter:8
 export class CliAdapter implements EngineAdapter {
@@ -48,13 +48,13 @@ export class CliAdapter implements EngineAdapter {
             sysPrompt = [sysPrompt ?? '', `## PROJECT CONTEXT\n${projectCtx}`].filter(Boolean).join('\n\n');
           }
         }
-        // NATIVE function-calling when the caller lent tool specs (the browser brain's ReAct loop). With a reconstructed conversation history (Phase 2) → apiDispatchToolsHistory (structured assistant/tool thread, prompt-cacheable); with tools but no history → apiDispatchTools (single prompt); otherwise plain text-only apiDispatch. Any structured call lands in result.parts. CLI/companion paths above never reach here, so they keep the in-prompt text-marker protocol untouched.
-        // Base thread for the native tools path: the reconstructed history if the caller sent one, else a single user-prompt turn synthesised so a tools+images dispatch NEVER silently drops the image when no explicit thread was passed (the browser brain always sends a thread; this closes the trap for any future caller). NOTE: synth is its OWN let — an inline `messages ?? (cond ? x : null)` mis-compiles via KERN's ?? / ternary precedence into `(messages ?? cond) ? x : null`, which would DISCARD a real thread.
-        const synthMessages = (options.tools && options.tools.length && options.images && options.images.length) ? [{ role: 'user', content: options.prompt }] : null;
-        const baseMessages = options.messages ?? synthMessages;
+        // STRUCTURED API dispatch: reconstructed history uses apiDispatchToolsHistory; tools without history use apiDispatchTools; image-only turns synthesize a one-message history so vision content is never dropped; plain text uses apiDispatch. Any structured call lands in result.parts.
+        // Base thread: the reconstructed non-empty history if the caller sent one, else a single user-prompt turn synthesized for images. NOTE: synth is its OWN let — an inline `messages ?? (cond ? x : null)` mis-compiles via KERN's ?? / ternary precedence into `(messages ?? cond) ? x : null`, which would DISCARD a real thread.
+        const synthMessages = (options.images && options.images.length) ? [{ role: 'user', content: options.prompt }] : null;
+        const baseMessages = (options.messages && options.messages.length > 0) ? options.messages : synthMessages;
         // VISION: splice a browser screenshot into the thread's last user turn so a vision-capable API engine (kimi/minimax) actually SEES the page. attachVisionToMessages is a no-op when the engine lacks the 'vision' capability (e.g. zai-coding silently ignores images) or there are no images, so non-vision turns are byte-identical.
         const apiMessages = (baseMessages && options.images && options.images.length) ? attachVisionToMessages(baseMessages, options.images.map((i) => i.path), options.engine.capabilities?.includes('vision') === true) : baseMessages;
-        const result = (apiMessages && options.tools && options.tools.length) ? (await apiDispatchToolsHistory(apiConfig, apiMessages, options.timeout, options.signal, options.tools, sysPrompt)) : ((options.tools && options.tools.length) ? (await apiDispatchTools(apiConfig, options.prompt, options.timeout, options.signal, options.tools, sysPrompt)) : (await apiDispatch(apiConfig, options.prompt, options.timeout, options.signal, sysPrompt)));
+        const result = apiMessages ? (await apiDispatchToolsHistory(apiConfig, apiMessages, options.timeout, options.signal, options.tools, sysPrompt)) : ((options.tools && options.tools.length) ? (await apiDispatchTools(apiConfig, options.prompt, options.timeout, options.signal, options.tools, sysPrompt)) : (await apiDispatch(apiConfig, options.prompt, options.timeout, options.signal, sysPrompt)));
         const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
         mkdirSync(dirname(outputPath), { recursive: true });
         writeFileSync(outputPath, result.stdout);
@@ -307,14 +307,10 @@ export class CliAdapter implements EngineAdapter {
       const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
       mkdirSync(dirname(outputPath), { recursive: true });
       writeFileSync(outputPath, result.response);
-      // runApiAgentLoop catches errors and packs them into result.response;
-      // it doesn't expose exitCode/stderr the same way as spawnWithTimeout.
-      // Best-effort: if the response begins with an auth-error sentinel,
-      // record. Otherwise treat as ok.
-      const respText = result.response ?? '';
-      const looksLikeAuth = /\b401\b|invalid api key|invalid access token|token (expired|invalid)|unauthori[sz]ed|authentication (failed|error)/i.test(respText.slice(0, 500));
-      recordDispatchHealth(options.engine.id, looksLikeAuth ? { exitCode: 1, stderr: respText.slice(0, 500), timedOut: false } : { exitCode: 0, stderr: '', timedOut: false });
-      return { exitCode: 0, stdout: result.response, stderr: '', durationMs: nowMs() - startTime, timedOut: false, diff: diff, diffLines: lines, filesChanged: files };
+      // Normalize the API tool loop into the same truthful terminal contract as CLI execution. Partial stdout and worktree changes survive failure/timeout/cancel.
+      const outcome = normalizeApiAgentOutcome(result);
+      recordDispatchHealth(options.engine.id, outcome);
+      return { ...outcome, durationMs: nowMs() - startTime, diff: diff, diffLines: lines, filesChanged: files };
     }
     if (execution.backend === 'missing') {
       // Binary check BEFORE env-var check: a missing binary must never report as a missing key.

@@ -1,4 +1,4 @@
-import from="@kernlang/agon-core" names="ApiConfig,DispatchOptions,EngineDefinition" types=true
+import from="@kernlang/agon-core" names="ApiAgentResult,ApiConfig,DispatchOptions,EngineDefinition" types=true
 
 type name=ExecutionBackend values="cli|api|missing"
 
@@ -7,6 +7,13 @@ interface name=ExecutionPlan
   field name=backend type=ExecutionBackend
   field name=binaryPath type="string|null"
   field name=apiConfig type=ApiConfig optional=true
+
+interface name=NormalizedApiAgentOutcome
+  field name=exitCode type=number
+  field name=stdout type=string
+  field name=stderr type=string
+  field name=timedOut type=boolean
+  field name=engineFault type=boolean optional=true
 
 fn name=normalizeDispatchOptions params="options:DispatchOptions" returns="DispatchOptions" export=true
   doc "Apply the engine timeout as a floor without mutating a caller-owned DispatchOptions object."
@@ -22,6 +29,22 @@ fn name=buildApiDispatchConfig params="engine:EngineDefinition,resolvedModel:str
     if cond="!engine.api"
       throw value="new Error(`Engine \"${engine.id}\" has no API configuration`)"
     return value="{ ...engine.api, ...(resolvedModel ? { model: resolvedModel } : {}), ...(maxTokens && maxTokens > 0 ? { maxTokens } : {}) }"
+
+fn name=normalizeApiAgentOutcome params="result:ApiAgentResult|null|undefined" returns="NormalizedApiAgentOutcome" export=true
+  doc "Convert the API tool loop's terminal state into the same exit-code contract used by CLI execution while preserving partial output. Cancellation wins over timeout, which wins over failure."
+  handler lang="kern"
+    if cond="!result"
+      return value="{ exitCode: 1, stdout: '', stderr: 'API agent returned no terminal result', timedOut: false, engineFault: true }"
+    let name=stdout value="result.response ?? ''"
+    let name=reason value="result.errorReason ?? ''"
+    let name=fault value="result.engineFault === true ? { engineFault: true } : {}"
+    if cond="result.cancelled"
+      return value="{ exitCode: 130, stdout, stderr: reason || 'aborted', timedOut: false, ...fault }"
+    if cond="result.timedOut"
+      return value="{ exitCode: 124, stdout, stderr: reason || 'API agent timed out', timedOut: true, ...fault }"
+    if cond="result.failed"
+      return value="{ exitCode: 1, stdout, stderr: reason || 'API agent execution failed', timedOut: false, ...fault }"
+    return value="{ exitCode: 0, stdout, stderr: '', timedOut: false, ...fault }"
 
 fn name=planEngineExecution params="options:DispatchOptions,binaryPath:string|null,apiKeyAvailable:boolean,resolvedModel:string|null" returns="ExecutionPlan" export=true
   doc "Choose CLI first, API only as a usable fallback, or a truthful missing backend. Shared by every public adapter dispatch method."

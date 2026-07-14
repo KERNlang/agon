@@ -153,8 +153,8 @@ describe('runAgentTeamSynthesis — fallback paths', () => {
     expect(mockRun).not.toHaveBeenCalled();
   });
 
-  it('returns ok=false when runApiAgentLoop returns Error: prefix', async () => {
-    mockRun.mockResolvedValueOnce({ response: 'Error: stream failed halfway', toolCalls: 0, steps: 1 });
+  it('returns ok=false when runApiAgentLoop reports a structured stream failure', async () => {
+    mockRun.mockResolvedValueOnce({ response: 'Error: stream failed halfway', toolCalls: 0, steps: 1, failed: true, errorReason: 'stream failed halfway' });
     const r = await runAgentTeamSynthesis({ ...baseOpts, losers: [loser('codex')] });
     expect(r.ok).toBe(false);
     expect(r.error).toMatch(/Synthesis loop reported error/);
@@ -162,11 +162,33 @@ describe('runAgentTeamSynthesis — fallback paths', () => {
     expect(mockDiff).not.toHaveBeenCalled();
   });
 
-  it('returns ok=false when runApiAgentLoop returns [Timeout prefix', async () => {
-    mockRun.mockResolvedValueOnce({ response: '[Timeout — ran out of time]', toolCalls: 0, steps: 1 });
+  it('returns ok=false when runApiAgentLoop reports a structured timeout', async () => {
+    mockRun.mockResolvedValueOnce({ response: '[Timeout — ran out of time]', toolCalls: 0, steps: 1, failed: true, timedOut: true, errorReason: 'API agent deadline exceeded' });
     const r = await runAgentTeamSynthesis({ ...baseOpts, losers: [loser('codex')] });
     expect(r.ok).toBe(false);
     expect(r.error).toMatch(/Synthesis loop reported error/);
+  });
+
+  it('returns ok=false when the loop reports a structured failure with partial text', async () => {
+    mockRun.mockResolvedValueOnce({
+      response: 'partial synthesis narration',
+      toolCalls: 2,
+      steps: 2,
+      failed: true,
+      errorReason: 'upstream stream closed',
+    });
+    const r = await runAgentTeamSynthesis({ ...baseOpts, losers: [loser('codex')] });
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain('upstream stream closed');
+    expect(r.responseExcerpt).toContain('partial synthesis narration');
+    expect(mockDiff).not.toHaveBeenCalled();
+  });
+
+  it('does not mistake a legitimate answer beginning with Error: for a failed loop', async () => {
+    mockRun.mockResolvedValueOnce({ response: 'Error: the user reported a stale cache, so I refreshed it.', toolCalls: 0, steps: 1 });
+    mockDiff.mockReturnValueOnce(baseOpts.winnerDiff);
+    const r = await runAgentTeamSynthesis({ ...baseOpts, losers: [loser('codex')] });
+    expect(r.ok).toBe(true);
   });
 
   it('returns ok=false when abort fires during call (post-return signal check)', async () => {
@@ -263,6 +285,21 @@ describe('runAgentInvestigateSynthesis — fallback paths', () => {
     expect(r.report).toBe(invOpts.winnerResponse);
   });
 
+  it('returns ok=false when reconciliation reports a structured timeout with partial text', async () => {
+    mockRun.mockResolvedValueOnce({
+      response: 'partial reconciliation',
+      toolCalls: 1,
+      steps: 2,
+      failed: true,
+      timedOut: true,
+      errorReason: 'API agent deadline exceeded',
+    });
+    const r = await runAgentInvestigateSynthesis({ ...invOpts, losers: [loser('codex')] });
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain('API agent deadline exceeded');
+    expect(r.report).toBe(invOpts.winnerResponse);
+  });
+
   it('returns ok=false on pre-call abort', async () => {
     const ac = new AbortController();
     ac.abort();
@@ -277,7 +314,7 @@ describe('runAgentInvestigateSynthesis — fallback paths', () => {
   });
 
   it('returns ok=false on Error: response shape', async () => {
-    mockRun.mockResolvedValueOnce({ response: 'Error: backend exploded', toolCalls: 0, steps: 1 });
+    mockRun.mockResolvedValueOnce({ response: 'Error: backend exploded', toolCalls: 0, steps: 1, failed: true, errorReason: 'backend exploded' });
     const r = await runAgentInvestigateSynthesis({ ...invOpts, losers: [loser('codex')] });
     expect(r.ok).toBe(false);
     expect(r.error).toMatch(/Reconciliation loop reported error/);
@@ -371,7 +408,7 @@ describe('runPostSynthesisFitnessCheck', () => {
       signal: ac.signal,
     });
     expect(mockSpawn).toHaveBeenCalledWith(
-      expect.objectContaining({ signal: ac.signal, cwd: '/tmp/wt', timeout: 90 }),
+      expect.objectContaining({ signal: ac.signal, cwd: '/tmp/wt', timeout: 90_000 }),
     );
   });
 
@@ -383,7 +420,7 @@ describe('runPostSynthesisFitnessCheck', () => {
       timeoutSec: 30,
     });
     expect(mockSpawn).toHaveBeenCalledWith(
-      expect.objectContaining({ timeout: 30 }),
+      expect.objectContaining({ timeout: 30_000 }),
     );
   });
 });

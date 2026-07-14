@@ -4,6 +4,7 @@ import type { DispatchOptions, EngineDefinition } from '@kernlang/agon-core';
 import {
   buildApiDispatchConfig,
   normalizeDispatchOptions,
+  normalizeApiAgentOutcome,
   planEngineExecution,
 } from '../../packages/adapter-cli/src/generated/execution-plan.js';
 
@@ -106,5 +107,73 @@ describe('execution planner', () => {
     expect(plan.options.timeout).toBe(300);
     expect(plan.apiConfig).toEqual({ ...API, model: 'resolved-model', maxTokens: 12_000 });
     expect(input.timeout).toBe(120);
+  });
+
+  it('normalizes a successful API agent result without inventing an error', () => {
+    expect(normalizeApiAgentOutcome({ response: 'done', toolCalls: 2, steps: 3 })).toEqual({
+      exitCode: 0,
+      stdout: 'done',
+      stderr: '',
+      timedOut: false,
+    });
+  });
+
+  it('turns a missing API agent result into a truthful failure', () => {
+    expect(normalizeApiAgentOutcome(undefined)).toEqual({
+      exitCode: 1,
+      stdout: '',
+      stderr: 'API agent returned no terminal result',
+      timedOut: false,
+      engineFault: true,
+    });
+  });
+
+  it('preserves partial API agent output while surfacing an execution failure', () => {
+    expect(normalizeApiAgentOutcome({
+      response: 'partial work',
+      toolCalls: 1,
+      steps: 2,
+      failed: true,
+      errorReason: 'upstream stream closed',
+      engineFault: true,
+    })).toEqual({
+      exitCode: 1,
+      stdout: 'partial work',
+      stderr: 'upstream stream closed',
+      timedOut: false,
+      engineFault: true,
+    });
+  });
+
+  it('gives cancellation precedence over a generic failure', () => {
+    expect(normalizeApiAgentOutcome({
+      response: 'Error: aborted',
+      toolCalls: 0,
+      steps: 1,
+      failed: true,
+      cancelled: true,
+      errorReason: 'aborted by caller',
+    })).toEqual({
+      exitCode: 130,
+      stdout: 'Error: aborted',
+      stderr: 'aborted by caller',
+      timedOut: false,
+    });
+  });
+
+  it('normalizes an API agent deadline as a timeout', () => {
+    expect(normalizeApiAgentOutcome({
+      response: 'partial before timeout',
+      toolCalls: 4,
+      steps: 5,
+      failed: true,
+      timedOut: true,
+      errorReason: 'API agent deadline exceeded',
+    })).toEqual({
+      exitCode: 124,
+      stdout: 'partial before timeout',
+      stderr: 'API agent deadline exceeded',
+      timedOut: true,
+    });
   });
 });

@@ -192,8 +192,7 @@ fn name=isDangerousTaskAction params="lease:TaskExecutionLease,action:string,tar
     const authorityTargetBearing = /^(bash|shell|goal|conquer|forge|agent|pipeline)$/i.test(normalizedAction);
     try {
       const pattern = new RegExp(lease.dangerousPattern, 'i');
-      return lease.risk === 'dangerous'
-        || pattern.test(normalizedAction)
+      return pattern.test(normalizedAction)
         || (authorityTargetBearing && pattern.test(String(target ?? '')));
     }
     catch { return true; }

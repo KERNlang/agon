@@ -455,6 +455,22 @@ describe('Cesar turn runtime host', () => {
     expect(attempts).toBe(2);
   });
 
+  it.each(['mutation', 'external', 'unknown'] as const)('never re-executes a failed %s call with the same id', async (effectClass) => {
+    const host = createCesarTurnRuntimeHost(`chat-tool-at-most-once-${effectClass}`);
+    const runtime = beginCesarTurn(host, 'turn-1', 'api-session');
+    let attempts = 0;
+    const execute = async () => {
+      attempts += 1;
+      throw new Error('partial side effect then failure');
+    };
+
+    const first = runTurnToolOnce(runtime, 'tc-at-most-once', 'session', effectClass, execute);
+    await expect(first).rejects.toThrow('partial side effect then failure');
+    const duplicate = runTurnToolOnce(runtime, 'tc-at-most-once', 'harness', effectClass, execute);
+    await expect(duplicate).rejects.toThrow('partial side effect then failure');
+    expect(attempts).toBe(1);
+  });
+
   it('fails closed when recording a rejected tool execution also fails', async () => {
     const host = createCesarTurnRuntimeHost('chat-tool-failure-ledger', 1, (event: Record<string, unknown>) => event.type === 'tool_terminal'
       ? { ok: false, seq: 0, error: 'disk full' }

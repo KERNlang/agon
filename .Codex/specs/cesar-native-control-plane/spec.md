@@ -19,7 +19,7 @@ The work remains KERN-first: new and modified runtime source is `.kern`; generat
 
 ## Agon Council Review
 
-- **VERIFIED:** A three-engine Council (`claude,codex,agy`) completed successfully at `/Users/nicolascukas/.agon/runs/council-1783951893521-9pgm73-cesar-control-plane-spec`.
+- **VERIFIED:** A three-engine Council (`claude,codex,agy`) completed successfully at `~/.agon/runs/council-1783951893521-9pgm73-cesar-control-plane-spec`.
 - **VERIFIED:** The chairman recommendation was “approve P0 only,” with 78% confidence, conditioned on forward compatibility between the P0 lease model and the P1 ledger schema.
 - **VERIFIED:** The Council required P1 to prove schema-versioned fail-closed recovery and required P2 to separate cognitive freedom from execution authority.
 - **ACCEPTED:** Reframe the implementation gates by authority surface rather than treating P0–P2 as a monolithic approval.
@@ -31,13 +31,13 @@ The work remains KERN-first: new and modified runtime source is `.kern`; generat
 - **VERIFIED:** The KERN-first implementation adds the shared turn protocol, Cesar turn runtime, durable control-plane ledger, safe scheduler, bounded first-chunk retry, task execution lease, native Council tool, structured tool terminal reasons, and settled-runtime recap behavior. Generated TypeScript was produced through the KERN compiler rather than edited as the source of truth.
 - **VERIFIED:** The final local gate passed 183 KERN tests and 4,011 TypeScript tests with one intentional skip; typecheck and the production build also passed.
 - **VERIFIED:** Mandatory multi-engine review iterations were run at:
-  - `/Users/nicolascukas/.agon/runs/review-1783957623748-bb17ib`
-  - `/Users/nicolascukas/.agon/runs/review-1783958454611-6hx823`
-  - `/Users/nicolascukas/.agon/runs/review-1783959289546-e4socq`
-  - `/Users/nicolascukas/.agon/runs/review-1783959854851-uedpsq`
-  - `/Users/nicolascukas/.agon/runs/review-1783960428936-4o3h7w`
-  - `/Users/nicolascukas/.agon/runs/review-1783961153594-s686sx`
-- **VERIFIED:** The final post-correction review completed with all three engines successful, zero verified findings, at `/Users/nicolascukas/.agon/runs/review-1783968770460-ljige3`.
+  - `~/.agon/runs/review-1783957623748-bb17ib`
+  - `~/.agon/runs/review-1783958454611-6hx823`
+  - `~/.agon/runs/review-1783959289546-e4socq`
+  - `~/.agon/runs/review-1783959854851-uedpsq`
+  - `~/.agon/runs/review-1783960428936-4o3h7w`
+  - `~/.agon/runs/review-1783961153594-s686sx`
+- **VERIFIED:** The final post-correction review completed with all three engines successful, zero verified findings, at `~/.agon/runs/review-1783968770460-ljige3`.
 - **VERIFIED:** Review findings were used as implementation gates and drove follow-up fixes for Goal/Conquer plan-mode authority, task-target widening, correlated terminal events, stale-turn fencing, recap truth, and orchestration continuation behavior.
 - **VERIFIED:** The branch remains local. No feature-branch or `main` push is part of this certification record.
 

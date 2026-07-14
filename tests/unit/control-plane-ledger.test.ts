@@ -72,4 +72,18 @@ describe('control-plane durable recovery', () => {
     expect(recovered.unsupportedSchema).toBe(true);
     expect(recovered.retryableReadOnly).toEqual([]);
   });
+
+  it('fails closed when only the nested control-plane envelope has an unknown schema', () => {
+    const sid = 'chat-ledger-nested-schema';
+    appendControlPlaneEvent(sid, {
+      type: 'turn_started',
+      envelope: { schemaVersion: 2, sessionId: sid, turnId: 't1', leaseEpoch: 1, attempt: 1, producerId: 'brain' },
+    });
+
+    expect(recoverControlPlane(sid)).toMatchObject({
+      unsupportedSchema: true,
+      retryableReadOnly: [],
+      needsInspection: [],
+    });
+  });
 });

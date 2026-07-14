@@ -318,6 +318,7 @@ export async function runTurnToolOnce(runtime: CesarTurnRuntime, toolCallId: str
   const existing = runtime.toolPromises.get(toolCallId);
   if (existing) return existing;
   runtime.toolClaims.set(toolCallId, { owner, effectClass });
+  let executionStarted = false;
   const promise = (async () => {
     if (runtime.writeLifecycle) {
       const claim = runtime.writeLifecycle({
@@ -331,6 +332,7 @@ export async function runTurnToolOnce(runtime: CesarTurnRuntime, toolCallId: str
     }
     let executionCompleted = false;
     try {
+      executionStarted = true;
       const value = await execute();
       if (isTerminalTurnState(runtime.state)) {
         executionCompleted = true;
@@ -364,7 +366,8 @@ export async function runTurnToolOnce(runtime: CesarTurnRuntime, toolCallId: str
   })();
   runtime.toolPromises.set(toolCallId, promise);
   void promise.catch(() => {
-    if (runtime.toolPromises.get(toolCallId) === promise) runtime.toolPromises.delete(toolCallId);
+    const retrySafe = effectClass === 'read_only' || !executionStarted;
+    if (retrySafe && runtime.toolPromises.get(toolCallId) === promise) runtime.toolPromises.delete(toolCallId);
   });
   return promise;
 }

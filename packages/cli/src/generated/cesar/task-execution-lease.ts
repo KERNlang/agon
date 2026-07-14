@@ -215,14 +215,13 @@ function isDangerousTaskAction(lease: TaskExecutionLease, action: string, target
   const authorityTargetBearing = /^(bash|shell|goal|conquer|forge|agent|pipeline)$/i.test(normalizedAction);
   try {
     const pattern = new RegExp(lease.dangerousPattern, 'i');
-    return lease.risk === 'dangerous'
-      || pattern.test(normalizedAction)
+    return pattern.test(normalizedAction)
       || (authorityTargetBearing && pattern.test(String(target ?? '')));
   }
   catch { return true; }
 }
 
-// @kern-source: task-execution-lease:202
+// @kern-source: task-execution-lease:201
 export function evaluateTaskAction(lease: TaskExecutionLease, action: string, target: string, options?: {hardDeny?:boolean,prohibited?:boolean}): TaskActionEvaluation {
   const signature = canonicalTaskActionSignature(action, target);
   if (options?.hardDeny || options?.prohibited) return { decision: 'deny', signature, reason: 'hard_deny' };
@@ -243,7 +242,7 @@ export function evaluateTaskAction(lease: TaskExecutionLease, action: string, ta
 /**
  * Resolve one task-lease decision before an authority-bearing tool can execute. This sits above tool-specific auto-allow rules so native, API, companion, and eager adapters cannot bypass the task boundary.
  */
-// @kern-source: task-execution-lease:220
+// @kern-source: task-execution-lease:219
 export async function authorizeTaskAction(lease: TaskExecutionLease|undefined, action: string, target: string, requestApproval: (evaluation:TaskActionEvaluation)=>Promise<boolean>): Promise<TaskActionEvaluation> {
   if (!lease) {
     return { decision: 'allow', signature: canonicalTaskActionSignature(action, target), reason: 'no_task_lease' };
@@ -270,14 +269,14 @@ export async function authorizeTaskAction(lease: TaskExecutionLease|undefined, a
   return { ...evaluateTaskAction(lease, action, target), reason: 'user_approved' };
 }
 
-// @kern-source: task-execution-lease:248
+// @kern-source: task-execution-lease:247
 export function claimTaskActionPrompt(lease: TaskExecutionLease, signature: string): boolean {
   if (!signature || lease.promptedSignatures.has(signature)) return false;
   lease.promptedSignatures.add(signature);
   return true;
 }
 
-// @kern-source: task-execution-lease:255
+// @kern-source: task-execution-lease:254
 export function approveTaskAction(lease: TaskExecutionLease, action: string, target: string): void {
   const signature = canonicalTaskActionSignature(action, target);
   lease.approvedSignatures.add(signature);

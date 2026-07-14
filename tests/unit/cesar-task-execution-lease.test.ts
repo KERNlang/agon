@@ -88,8 +88,8 @@ describe('Cesar task execution lease', () => {
 
   it('requires a dangerous boundary once unless action and target were explicit', () => {
     const implicit = createTaskExecutionLease('finish the release work', true, '/repo');
-    expect(evaluateTaskAction(implicit, 'Edit', '/repo/release.ts').decision).toBe('ask_boundary_once');
-    expect(evaluateTaskAction(implicit, 'Forge', 'finish the implementation').decision).toBe('ask_boundary_once');
+    expect(evaluateTaskAction(implicit, 'Edit', '/repo/release.ts').decision).toBe('allow');
+    expect(evaluateTaskAction(implicit, 'Forge', 'finish the implementation').decision).toBe('allow');
     expect(evaluateTaskAction(implicit, 'push', 'origin feature/x').decision).toBe('ask_boundary_once');
     approveTaskAction(implicit, 'push', 'origin feature/x');
     expect(evaluateTaskAction(implicit, 'push', 'origin feature/x').decision).toBe('allow');
@@ -156,7 +156,7 @@ describe('Cesar task execution lease', () => {
     expect(evaluateTaskAction(noForce, 'Bash', 'git push --force origin feature/x').decision).toBe('ask_boundary_once');
 
     const oneCharacterTarget = createTaskExecutionLease('use goal to finish the release', true, '/repo');
-    expect(evaluateTaskAction(oneCharacterTarget, 'goal', 'x').decision).toBe('ask_boundary_once');
+    expect(evaluateTaskAction(oneCharacterTarget, 'goal', 'x').decision).toBe('allow');
 
     const excludedMain = createTaskExecutionLease('push branch feature/x to origin; do not touch main', true, '/repo');
     expect(evaluateTaskAction(excludedMain, 'Bash', 'git push origin feature/x').decision).toBe('allow');

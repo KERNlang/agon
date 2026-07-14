@@ -142,6 +142,7 @@ export type {
 } from './context-parts.js';
 export { runApiAgentLoop } from './generated/api/agent-loop.js';
 export type { ApiAgentOptions, ApiAgentResult } from './generated/api/agent-loop.js';
+export { safeAgentVisibleText } from './generated/api/agent-visible.js';
 // ── Engine dispatch isolation ──
 export { resolveIsolationMode, planEngineIsolation, isValidIsolationMode, ISOLATION_MODES } from './generated/signals/isolation.js';
 export type { EngineIsolationPlan } from './generated/signals/isolation.js';

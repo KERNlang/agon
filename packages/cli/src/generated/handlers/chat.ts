@@ -139,7 +139,10 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
             break;
           }
           const value = iterResult.value;
-          if (abort.signal.aborted) break;
+          if (abort.signal.aborted) {
+            await gen.return(undefined as never);
+            break;
+          }
 
           if (value.startsWith('\x00')) {
             const status = value.slice(1).trim();
@@ -185,9 +188,18 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
         const parser = new StreamParser();
 
         while (true) {
-          const { value, done } = await gen.next();
-          if (done) break;
-          if (abort.signal.aborted) break;
+          const iterResult = await gen.next();
+          if (iterResult.done) {
+            if (iterResult.value && typeof iterResult.value === 'object') {
+              dispatchResult = iterResult.value as DispatchResult;
+            }
+            break;
+          }
+          const value = iterResult.value;
+          if (abort.signal.aborted) {
+            await gen.return(undefined as never);
+            break;
+          }
 
           if (value.startsWith('\x00')) {
             const status = value.slice(1).trim();
@@ -241,6 +253,17 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
 
     if (abort.signal.aborted) {
       dispatch({ type: 'spinner-stop' });
+      return;
+    }
+
+    if (dispatchResult && dispatchResult.exitCode !== 0) {
+      if (streaming) {
+        dispatch({ type: 'streaming-end', engineId });
+        await yieldToInk();
+      }
+      dispatch({ type: 'spinner-stop' });
+      const reason = dispatchResult.stderr || `engine exited with code ${dispatchResult.exitCode}`;
+      dispatch({ type: 'error', message: `${engineId}: ${reason}` });
       return;
     }
 

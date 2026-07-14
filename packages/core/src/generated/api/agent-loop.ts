@@ -46,7 +46,9 @@ import { createWebSearchTool } from '../tools/tool-web-search.js';
 
 import type { ToolCacheEntry } from '../models/context-parts.js';
 
-// @kern-source: agent-loop:30
+import { safeAgentVisibleText } from './agent-visible.js';
+
+// @kern-source: agent-loop:31
 export interface ApiAgentOptions {
   api: ApiConfig;
   prompt: string;
@@ -56,6 +58,7 @@ export interface ApiAgentOptions {
   signal?: AbortSignal;
   maxSteps?: number;
   onChunk?: (text:string)=>void;
+  onVisibleChunk?: (text:string,phase:'narration'|'final')=>void;
   onToolCall?: (name:string,args:Record<string,unknown>)=>void;
   onTodos?: (todos: Array<{id:string,text:string,state:string,kind?:string,note?:string}>)=>void;
   heavyToolSemaphore?: Semaphore;
@@ -71,7 +74,7 @@ export interface ApiAgentOptions {
   retryBaseMs?: number;
 }
 
-// @kern-source: agent-loop:53
+// @kern-source: agent-loop:56
 export interface ApiAgentResult {
   response: string;
   toolCalls: number;
@@ -87,7 +90,7 @@ export interface ApiAgentResult {
 /**
  * Attempt to repair malformed JSON tool arguments. Handles common LLM mistakes: markdown fencing, trailing commas, single quotes, unquoted keys.
  */
-// @kern-source: agent-loop:64
+// @kern-source: agent-loop:67
 export function repairToolArgs(raw: string): Record<string,unknown>|null {
   let cleaned = raw.trim();
 
@@ -118,7 +121,7 @@ export function repairToolArgs(raw: string): Record<string,unknown>|null {
 /**
  * Auto-correct tool name case mismatches. Maps 'read' → 'Read', 'GREP' → 'Grep', etc.
  */
-// @kern-source: agent-loop:93
+// @kern-source: agent-loop:96
 export function repairToolName(name: string, registry?: any): string {
   // Prefer the registry's canonical spelling when one is available. ToolRegistry.get
   // already resolves case-insensitively, so custom registered tools stay authoritative.
@@ -141,7 +144,7 @@ export function repairToolName(name: string, registry?: any): string {
 /**
  * True when an API dispatch failure looks transient (worth a backoff+retry) rather than permanent. Transient: request timeout (exitCode 124), rate limit (429), upstream 5xx, stream errors, connection resets / DNS hiccups, overloaded. Permanent (never retried): missing/invalid API key, 401/403 auth, 400 bad request. Aborts (exitCode 130 / signal) are handled by the caller, not here.
  */
-// @kern-source: agent-loop:114
+// @kern-source: agent-loop:117
 export function isTransientDispatchFailure(stderr: string, exitCode?: number): boolean {
   const s = String(stderr ?? '').toLowerCase();
   if (exitCode === 124) return true; // request timed out
@@ -153,7 +156,7 @@ export function isTransientDispatchFailure(stderr: string, exitCode?: number): b
 /**
  * Run an API engine with full tool loop. Returns final response after all tool calls resolve.
  */
-// @kern-source: agent-loop:124
+// @kern-source: agent-loop:127
 export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentResult> {
   // Run-scoped cache ID: prevents concurrent forge runs from colliding
   const runCacheId = `${opts.api.model || 'api-agent'}-${randomUUID().slice(0, 8)}`;
@@ -416,7 +419,10 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
 
     if (extractedCalls.length > 0) {
       const cleanText = [parsedToolCalls.textBefore, parsedToolCalls.textAfter].filter(Boolean).join('\n\n').trim();
-      if (cleanText) lastVisibleText = cleanText;
+      if (cleanText) {
+        lastVisibleText = cleanText;
+        if (opts.onVisibleChunk) opts.onVisibleChunk(cleanText, 'narration');
+      }
       pushHistory({
         role: 'assistant', content: cleanText || null,
         tool_calls: extractedCalls.map(tc => ({ id: tc.id, type: 'function', function: { name: tc.name, arguments: tc.arguments } })),
@@ -574,6 +580,8 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
 
     // Final response
     finalResponse = fullResponse;
+    const finalVisible = safeAgentVisibleText(fullResponse);
+    if (opts.onVisibleChunk && finalVisible) opts.onVisibleChunk(finalVisible, 'final');
     pushHistory({ role: 'assistant', content: fullResponse });
     break;
   }

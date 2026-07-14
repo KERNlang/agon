@@ -2,10 +2,14 @@
 
 import type { ApiAgentResult, ApiConfig, DispatchOptions, EngineDefinition } from '@kernlang/agon-core';
 
-// @kern-source: execution-plan:3
-export type ExecutionBackend = 'cli' | 'api' | 'missing';
+import { attachVisionToMessages, sessionContext, resolveWorkingDir } from '@kernlang/agon-core';
+
+import { EventEmitter, once } from 'node:events';
 
 // @kern-source: execution-plan:5
+export type ExecutionBackend = 'cli' | 'api' | 'missing';
+
+// @kern-source: execution-plan:7
 export interface ExecutionPlan {
   options: DispatchOptions;
   backend: ExecutionBackend;
@@ -13,7 +17,7 @@ export interface ExecutionPlan {
   apiConfig?: ApiConfig;
 }
 
-// @kern-source: execution-plan:11
+// @kern-source: execution-plan:13
 export interface NormalizedApiAgentOutcome {
   exitCode: number;
   stdout: string;
@@ -22,10 +26,89 @@ export interface NormalizedApiAgentOutcome {
   engineFault?: boolean;
 }
 
+// @kern-source: execution-plan:20
+export interface LinkedAbortController {
+  controller: AbortController;
+  dispose: ()=>void;
+}
+
+// @kern-source: execution-plan:24
+export interface ApiAgentContext {
+  cwd: string;
+  systemPrompt: string;
+  historyMessages: Array<Record<string,unknown>>|undefined;
+}
+
+/**
+ * Create an owned controller that mirrors one upstream signal and can detach its listener deterministically.
+ */
+// @kern-source: execution-plan:29
+export function createLinkedAbortController(upstream?: AbortSignal): LinkedAbortController {
+  const controller = new AbortController();
+  const relay = () => controller.abort(upstream?.reason);
+  if (upstream?.aborted) relay();
+  else upstream?.addEventListener('abort', relay, { once: true });
+  return { controller, dispose: () => upstream?.removeEventListener('abort', relay) };
+}
+
+/**
+ * Small callback-to-async bridge for API-agent visible chunks. One consumer drains ordered values until settle().
+ */
+// @kern-source: execution-plan:39
+export class AgentStreamQueue {
+  values: string[];
+  events: EventEmitter;
+  settled: boolean;
+  abortSignal: AbortSignal|undefined;
+  abortListener: (()=>void)|undefined;
+
+  constructor(signal?: AbortSignal) {
+    this.values = [];
+    this.events = new EventEmitter();
+    this.settled = false;
+    this.abortSignal = signal;
+    this.abortListener = this.settle.bind(this);
+    if (signal?.aborted) {
+      this.settle();
+    } else {
+      signal?.addEventListener('abort', this.abortListener, { once: true });
+    }
+  }
+
+  push(value: string): void {
+    this.values.push(value);
+    this.events.emit('ready');
+  }
+
+  settle(): void {
+    this.settled = true;
+    this.events.emit('ready');
+  }
+
+  async next(): Promise<string|null> {
+    while (this.values.length === 0 && !this.settled) {
+      await once(this.events, 'ready');
+    }
+    return this.values.shift() ?? null;
+  }
+
+  dispose(): void {
+    this.abortSignal?.removeEventListener('abort', this.abortListener!);
+  }
+}
+
+/**
+ * Truthful terminal fallback when an upstream abort wakes the stream queue before a non-cooperative provider settles.
+ */
+// @kern-source: execution-plan:81
+export function cancelledApiAgentResult(): ApiAgentResult {
+  return { response: '', toolCalls: 0, steps: 0, cancelled: true, errorReason: 'aborted by caller' };
+}
+
 /**
  * Apply the engine timeout as a floor without mutating a caller-owned DispatchOptions object.
  */
-// @kern-source: execution-plan:18
+// @kern-source: execution-plan:86
 export function normalizeDispatchOptions(options: DispatchOptions): DispatchOptions {
   const declared = Number((options.engine as any)?.timeout ?? 0);
   if (declared > Number(options.timeout ?? 0)) {
@@ -37,18 +120,39 @@ export function normalizeDispatchOptions(options: DispatchOptions): DispatchOpti
 /**
  * Clone the complete API definition, then apply only per-dispatch model/token overrides.
  */
-// @kern-source: execution-plan:26
+// @kern-source: execution-plan:94
 export function buildApiDispatchConfig(engine: EngineDefinition, resolvedModel: string|null, maxTokens: number|undefined): ApiConfig {
   if (!engine.api) {
     throw new Error(`Engine "${engine.id}" has no API configuration`);
   }
-  return { ...engine.api, ...resolvedModel ? { model: resolvedModel } : {}, ...(maxTokens && maxTokens > 0) ? { maxTokens: maxTokens } : {} };
+  const modelOverride = resolvedModel ? { model: resolvedModel } : {};
+  const tokenOverride = (maxTokens && maxTokens > 0) ? { maxTokens: maxTokens } : {};
+  return { ...engine.api, ...modelOverride, ...tokenOverride };
+}
+
+/**
+ * Build shared cwd, prompt, structured history, and vision context for synchronous and streaming API-agent execution.
+ */
+// @kern-source: execution-plan:103
+export function buildApiAgentContext(options: DispatchOptions): ApiAgentContext {
+  const cwd = options.cwd || resolveWorkingDir();
+  const projectCtx = sessionContext.get(cwd);
+  const systemPrompt = [
+    options.systemPrompt ?? 'You are an AI coding assistant. Be direct and concise.',
+    projectCtx ? `## PROJECT CONTEXT\n${projectCtx}` : '',
+  ].filter(Boolean).join('\n\n');
+  const synthesized = options.images?.length ? [{ role: 'user', content: options.prompt }] : undefined;
+  const base = options.messages?.length ? options.messages : synthesized;
+  const historyMessages = base && options.images?.length
+    ? attachVisionToMessages(base, options.images.map((image) => image.path), options.engine.capabilities?.includes('vision') === true)
+    : base;
+  return { cwd, systemPrompt, historyMessages };
 }
 
 /**
  * Convert the API tool loop's terminal state into the same exit-code contract used by CLI execution while preserving partial output. Cancellation wins over timeout, which wins over failure.
  */
-// @kern-source: execution-plan:33
+// @kern-source: execution-plan:120
 export function normalizeApiAgentOutcome(result: ApiAgentResult|null|undefined): NormalizedApiAgentOutcome {
   if (!result) {
     return { exitCode: 1, stdout: '', stderr: 'API agent returned no terminal result', timedOut: false, engineFault: true };
@@ -69,9 +173,20 @@ export function normalizeApiAgentOutcome(result: ApiAgentResult|null|undefined):
 }
 
 /**
+ * Encode narration as transient status and final prose as assistant text. Both use newline-terminated Claude-compatible NDJSON envelopes.
+ */
+// @kern-source: execution-plan:136
+export function encodeAgentStreamText(text: string, phase: 'narration'|'final' = 'final'): string {
+  if (phase === 'narration') {
+    return JSON.stringify({ type: 'system', message: text }) + '\n';
+  }
+  return JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: text }] } }) + '\n';
+}
+
+/**
  * Choose CLI first, API only as a usable fallback, or a truthful missing backend. Shared by every public adapter dispatch method.
  */
-// @kern-source: execution-plan:49
+// @kern-source: execution-plan:143
 export function planEngineExecution(options: DispatchOptions, binaryPath: string|null, apiKeyAvailable: boolean, resolvedModel: string|null): ExecutionPlan {
   const normalized = normalizeDispatchOptions(options);
   if (binaryPath) {

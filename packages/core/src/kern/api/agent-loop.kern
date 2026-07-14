@@ -26,6 +26,7 @@ import from="../tools/tool-web-fetch.js" names="createWebFetchTool"
 import from="../tools/tool-todo-write.js" names="createTodoWriteTool"
 import from="../tools/tool-web-search.js" names="createWebSearchTool"
 import from="../models/context-parts.js" names="ToolCacheEntry" types=true
+import from="./agent-visible.js" names="safeAgentVisibleText"
 
 interface name=ApiAgentOptions
   field name=api type=ApiConfig
@@ -36,6 +37,8 @@ interface name=ApiAgentOptions
   field name=signal type=AbortSignal optional=true
   field name=maxSteps type=number optional=true
   field name=onChunk type="(text:string)=>void" optional=true
+  field name=onVisibleChunk type="(text:string,phase:'narration'|'final')=>void" optional=true
+    doc "Safe parsed output callback. Never receives raw transport chunks or tool-call XML."
   field name=onToolCall type="(name:string,args:Record<string,unknown>)=>void" optional=true
   field name=onTodos type="(todos: Array<{id:string,text:string,state:string,kind?:string,note?:string}>)=>void" optional=true
   field name=heavyToolSemaphore type=Semaphore optional=true
@@ -385,7 +388,10 @@ fn name=runApiAgentLoop async=true params="opts:ApiAgentOptions" returns="Promis
 
       if (extractedCalls.length > 0) {
         const cleanText = [parsedToolCalls.textBefore, parsedToolCalls.textAfter].filter(Boolean).join('\n\n').trim();
-        if (cleanText) lastVisibleText = cleanText;
+        if (cleanText) {
+          lastVisibleText = cleanText;
+          if (opts.onVisibleChunk) opts.onVisibleChunk(cleanText, 'narration');
+        }
         pushHistory({
           role: 'assistant', content: cleanText || null,
           tool_calls: extractedCalls.map(tc => ({ id: tc.id, type: 'function', function: { name: tc.name, arguments: tc.arguments } })),
@@ -543,6 +549,8 @@ fn name=runApiAgentLoop async=true params="opts:ApiAgentOptions" returns="Promis
 
       // Final response
       finalResponse = fullResponse;
+      const finalVisible = safeAgentVisibleText(fullResponse);
+      if (opts.onVisibleChunk && finalVisible) opts.onVisibleChunk(finalVisible, 'final');
       pushHistory({ role: 'assistant', content: fullResponse });
       break;
     }

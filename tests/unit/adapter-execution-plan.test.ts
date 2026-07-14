@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
+import { safeAgentVisibleText, StreamParser } from '@kernlang/agon-core';
 import type { DispatchOptions, EngineDefinition } from '@kernlang/agon-core';
 import {
   buildApiDispatchConfig,
+  encodeAgentStreamText,
   normalizeDispatchOptions,
   normalizeApiAgentOutcome,
   planEngineExecution,
@@ -49,6 +51,28 @@ function options(overrides: Partial<DispatchOptions> = {}): DispatchOptions {
 }
 
 describe('execution planner', () => {
+  it('encodes narration as a parser-compatible transient status', () => {
+    const parser = new StreamParser();
+    expect(parser.feed(encodeAgentStreamText('Inspecting safely.', 'narration'))).toEqual([
+      { type: 'status', content: 'Inspecting safely.' },
+    ]);
+  });
+
+  it('encodes final prose as parser-compatible assistant text', () => {
+    const parser = new StreamParser();
+    expect(parser.feed(encodeAgentStreamText('Done.', 'final'))).toEqual([
+      { type: 'text', content: 'Done.' },
+    ]);
+  });
+
+  it.each([
+    'prefix <tool_ca',
+    'prefix <invoke name="Read">truncated provider wrapper',
+    'prefix <antml:function_call>truncated provider wrapper',
+  ])('fails closed for provider-specific tool markup: %s', (text) => {
+    expect(safeAgentVisibleText(text)).toBe('');
+  });
+
   it('raises the dispatch timeout to the engine floor without mutating the caller', () => {
     const input = options();
     const normalized = normalizeDispatchOptions(input);

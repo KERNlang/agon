@@ -13,8 +13,14 @@ import { join } from 'node:path';
 const mockState = {
   apiCalled: false,
   apiStreamCalled: false,
+  apiStreamResult: { exitCode: 0, stdout: 'api-stream-output', stderr: '', durationMs: 1, timedOut: false },
   apiAgentCalled: false,
   apiAgentResult: { response: 'api-agent-output', toolCalls: 0, steps: 1 } as Record<string, unknown>,
+  apiAgentVisible: [] as Array<{ text: string; phase: 'narration'|'final' }>,
+  apiAgentWaitForAbort: false,
+  apiAgentNeverSettles: false,
+  apiAgentSignal: null as AbortSignal | null,
+  apiAgentHistory: undefined as Array<Record<string, unknown>> | undefined,
   apiHistoryCalled: false,
   apiHistoryMessages: [] as Array<Record<string, unknown>>,
   apiHistoryTools: undefined as unknown,
@@ -40,18 +46,25 @@ vi.mock('@kernlang/agon-core', async (importOriginal) => {
     ],
     apiStreamDispatch: async function* () {
       mockState.apiStreamCalled = true;
-      yield 'api-stream-output';
-      return { exitCode: 0, stdout: 'api-stream-output', stderr: '', durationMs: 1, timedOut: false };
+      yield mockState.apiStreamResult.stdout;
+      return mockState.apiStreamResult;
     },
-    runApiAgentLoop: async () => {
+    runApiAgentLoop: async (opts: { signal?: AbortSignal; historyMessages?: Array<Record<string, unknown>>; onVisibleChunk?: (text: string, phase: 'narration'|'final') => void }) => {
       mockState.apiAgentCalled = true;
+      mockState.apiAgentSignal = opts.signal ?? null;
+      mockState.apiAgentHistory = opts.historyMessages;
+      for (const chunk of mockState.apiAgentVisible) opts.onVisibleChunk?.(chunk.text, chunk.phase);
+      if (mockState.apiAgentWaitForAbort && opts.signal && !opts.signal.aborted) {
+        await new Promise<void>((resolve) => opts.signal!.addEventListener('abort', () => resolve(), { once: true }));
+      }
+      if (mockState.apiAgentNeverSettles) await new Promise<void>(() => {});
       return mockState.apiAgentResult;
     },
   };
 });
 
 import { CliAdapter } from '../../packages/adapter-cli/src/generated/adapter.js';
-import { EngineRegistry, EngineNotFoundError } from '@kernlang/agon-core';
+import { engineHealth, EngineRegistry, EngineNotFoundError } from '@kernlang/agon-core';
 import type { EngineDefinition, DispatchOptions } from '@kernlang/agon-core';
 
 // An engine that declares BOTH a (non-resolvable) CLI binary and an api block —
@@ -91,11 +104,18 @@ describe('CliAdapter.dispatch — api fallback gated on key presence (Finding 1)
   beforeEach(() => {
     mockState.apiCalled = false;
     mockState.apiStreamCalled = false;
+    mockState.apiStreamResult = { exitCode: 0, stdout: 'api-stream-output', stderr: '', durationMs: 1, timedOut: false };
     mockState.apiAgentCalled = false;
     mockState.apiAgentResult = { response: 'api-agent-output', toolCalls: 0, steps: 1 };
+    mockState.apiAgentVisible = [];
+    mockState.apiAgentWaitForAbort = false;
+    mockState.apiAgentNeverSettles = false;
+    mockState.apiAgentSignal = null;
+    mockState.apiAgentHistory = undefined;
     mockState.apiHistoryCalled = false;
     mockState.apiHistoryMessages = [];
     mockState.apiHistoryTools = undefined;
+    engineHealth.clearAll();
     delete process.env.FINDING1_FIXTURE_KEY;
     delete process.env.undefined;
   });
@@ -160,6 +180,24 @@ describe('CliAdapter.dispatch — api fallback gated on key presence (Finding 1)
     expect(mockState.apiStreamCalled).toBe(true);
   });
 
+  it('dispatchStream records an API authentication failure in engine health', async () => {
+    process.env.FINDING1_FIXTURE_KEY = 'sk-test-123';
+    mockState.apiStreamResult = {
+      exitCode: 1,
+      stdout: 'partial response',
+      stderr: '401 unauthorized',
+      durationMs: 1,
+      timedOut: false,
+    };
+    const gen = makeAdapter().dispatchStream(makeOptions());
+
+    expect((await gen.next()).value).toBe('partial response');
+    const terminal = await gen.next();
+
+    expect(terminal.value.exitCode).toBe(1);
+    expect(engineHealth.get(ENGINE.id)?.status).toBe('auth-failed');
+  });
+
   it('dispatchAgent uses the same API fallback selection', async () => {
     process.env.FINDING1_FIXTURE_KEY = 'sk-test-123';
     const result = await makeAdapter().dispatchAgent({ ...makeOptions(), mode: 'agent' });
@@ -167,6 +205,21 @@ describe('CliAdapter.dispatch — api fallback gated on key presence (Finding 1)
     expect(mockState.apiAgentCalled).toBe(true);
     expect(result.stdout).toBe('api-agent-output');
     expect(result.exitCode).toBe(0);
+  });
+
+  it('dispatchAgent carries structured history and vision into the API tool loop', async () => {
+    process.env.FINDING1_FIXTURE_KEY = 'sk-test-123';
+    const visionEngine = { ...ENGINE, capabilities: ['vision'] } as unknown as EngineDefinition;
+    await makeAdapter().dispatchAgent({
+      ...makeOptions(),
+      engine: visionEngine,
+      mode: 'agent',
+      messages: [{ role: 'user', content: 'Earlier context' }],
+      images: [{ path: '/tmp/agent-screen.png', mimeType: 'image/png' }],
+    });
+
+    expect(JSON.stringify(mockState.apiAgentHistory)).toContain('Earlier context');
+    expect(JSON.stringify(mockState.apiAgentHistory)).toContain('/tmp/agent-screen.png');
   });
 
   it('dispatchAgent keeps partial output but returns failure when the API loop fails', async () => {
@@ -206,17 +259,98 @@ describe('CliAdapter.dispatch — api fallback gated on key presence (Finding 1)
     expect(result.timedOut).toBe(false);
   });
 
-  it('dispatchAgentStream keeps its explicit API-only unsupported result', async () => {
+  it('dispatchAgentStream streams safe API-agent envelopes and returns a truthful terminal result', async () => {
     process.env.FINDING1_FIXTURE_KEY = 'sk-test-123';
+    mockState.apiAgentVisible = [
+      { text: 'Inspecting safely.', phase: 'narration' },
+      { text: 'API agent complete.', phase: 'final' },
+    ];
+    mockState.apiAgentResult = { response: 'API agent complete.', toolCalls: 1, steps: 2 };
     const gen = makeAdapter().dispatchAgentStream({ ...makeOptions(), mode: 'agent' });
 
-    const notice = await gen.next();
-    expect(notice.done).toBe(false);
-    expect(notice.value).toContain('does not support streaming agent mode');
+    const narration = await gen.next();
+    expect(narration.done).toBe(false);
+    expect(JSON.parse(narration.value)).toEqual({
+      type: 'system',
+      message: 'Inspecting safely.',
+    });
+    const final = await gen.next();
+    expect(JSON.parse(final.value).message.content[0].text).toBe('API agent complete.');
     const terminal = await gen.next();
     expect(terminal.done).toBe(true);
-    expect(terminal.value.exitCode).toBe(1);
-    expect(mockState.apiAgentCalled).toBe(false);
+    expect(terminal.value.exitCode).toBe(0);
+    expect(terminal.value.stdout).toBe('API agent complete.');
+    expect(mockState.apiAgentCalled).toBe(true);
+  });
+
+  it('dispatchAgentStream carries structured history into the API tool loop', async () => {
+    process.env.FINDING1_FIXTURE_KEY = 'sk-test-123';
+    const gen = makeAdapter().dispatchAgentStream({
+      ...makeOptions(),
+      mode: 'agent',
+      messages: [{ role: 'user', content: 'Streaming context' }],
+    });
+
+    while (!(await gen.next()).done) { /* drain */ }
+    expect(mockState.apiAgentHistory).toEqual([{ role: 'user', content: 'Streaming context' }]);
+  });
+
+  it('aborts the API tool loop when a stream consumer stops early', async () => {
+    process.env.FINDING1_FIXTURE_KEY = 'sk-test-123';
+    mockState.apiAgentVisible = [{ text: 'Inspecting safely.', phase: 'narration' }];
+    mockState.apiAgentWaitForAbort = true;
+    const gen = makeAdapter().dispatchAgentStream({ ...makeOptions(), mode: 'agent' });
+
+    expect((await gen.next()).done).toBe(false);
+    await gen.return(undefined as never);
+
+    expect(mockState.apiAgentSignal?.aborted).toBe(true);
+  });
+
+  it('returns cancellation when the provider ignores an upstream abort', async () => {
+    process.env.FINDING1_FIXTURE_KEY = 'sk-test-123';
+    mockState.apiAgentVisible = [{ text: 'Inspecting safely.', phase: 'narration' }];
+    mockState.apiAgentNeverSettles = true;
+    const controller = new AbortController();
+    const gen = makeAdapter().dispatchAgentStream({
+      ...makeOptions(),
+      mode: 'agent',
+      signal: controller.signal,
+    });
+
+    expect((await gen.next()).done).toBe(false);
+    controller.abort();
+    const terminal = await Promise.race([
+      gen.next(),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('stream did not cancel')), 250)),
+    ]);
+
+    expect(terminal.done).toBe(true);
+    expect(terminal.value.exitCode).toBe(130);
+    expect(terminal.value.stderr).toBe('aborted by caller');
+  });
+
+  it.each([
+    [{ response: 'partial timeout', toolCalls: 1, steps: 2, failed: true, timedOut: true, errorReason: 'deadline' }, 124],
+    [{ response: 'partial failure', toolCalls: 1, steps: 2, failed: true, engineFault: true, errorReason: 'stream closed' }, 1],
+    [{ response: 'partial cancel', toolCalls: 1, steps: 2, cancelled: true, errorReason: 'aborted' }, 130],
+  ])('dispatchAgentStream preserves API-agent terminal status %#', async (apiAgentResult, expectedExitCode) => {
+    process.env.FINDING1_FIXTURE_KEY = 'sk-test-123';
+    mockState.apiAgentResult = apiAgentResult;
+    const gen = makeAdapter().dispatchAgentStream({ ...makeOptions(), mode: 'agent' });
+    const first = await gen.next();
+    if (expectedExitCode === 130) {
+      expect(first.done).toBe(true);
+      expect(first.value.exitCode).toBe(130);
+      expect(first.value.stdout).toBe(apiAgentResult.response);
+      return;
+    }
+    expect(first.done).toBe(false);
+    expect(first.value).not.toContain('<tool');
+    const terminal = await gen.next();
+    expect(terminal.done).toBe(true);
+    expect(terminal.value.exitCode).toBe(expectedExitCode);
+    expect(terminal.value.stdout).toBe(apiAgentResult.response);
   });
 
   it('binary-only engine (no api block) + binary missing → still throws EngineNotFoundError (unchanged)', async () => {

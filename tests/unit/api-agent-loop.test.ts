@@ -139,6 +139,84 @@ describe('runApiAgentLoop', () => {
     }
   });
 
+  it('emits only parsed visible narration and a verified final response', async () => {
+    const cwd = join(tmpdir(), `agon-api-agent-loop-visible-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(cwd, { recursive: true });
+    const visible: Array<{ text: string; phase: string }> = [];
+
+    apiStreamDispatchWithHistoryMock
+      .mockImplementationOnce(() => streamChunks([
+        'I will inspect it. <tool name="Read">{"file_path":"missing.txt"}</tool>',
+      ]))
+      .mockImplementationOnce(() => streamChunks(['Verified final answer.']));
+
+    try {
+      const result = await runApiAgentLoop({
+        api: { baseUrl: 'https://example.invalid/v1', apiKeyEnv: 'AGON_TEST_API_KEY', model: 'test-model' },
+        prompt: 'Inspect and answer',
+        cwd,
+        timeout: 120,
+        onVisibleChunk: (text, phase) => visible.push({ text, phase }),
+      });
+
+      expect(result.response).toBe('Verified final answer.');
+      expect(visible).toEqual([
+        { text: 'I will inspect it.', phase: 'narration' },
+        { text: 'Verified final answer.', phase: 'final' },
+      ]);
+      expect(visible.map((entry) => entry.text).join('\n')).not.toContain('<tool');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('does not expose a truncated provider tool wrapper as final visible text', async () => {
+    const cwd = join(tmpdir(), `agon-api-agent-loop-truncated-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(cwd, { recursive: true });
+    const visible: Array<{ text: string; phase: string }> = [];
+    apiStreamDispatchWithHistoryMock.mockImplementationOnce(() => streamChunks([
+      'prefix <tool_ca',
+    ]));
+
+    try {
+      await runApiAgentLoop({
+        api: { baseUrl: 'https://example.invalid/v1', apiKeyEnv: 'AGON_TEST_API_KEY', model: 'test-model' },
+        prompt: 'Inspect and answer',
+        cwd,
+        timeout: 120,
+        onVisibleChunk: (text, phase) => visible.push({ text, phase }),
+      });
+
+      expect(visible).toEqual([]);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('does not emit a fake approval gate as a terminal visible response', async () => {
+    const cwd = join(tmpdir(), `agon-api-agent-loop-gate-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(cwd, { recursive: true });
+    const visible: Array<{ text: string; phase: string }> = [];
+
+    apiStreamDispatchWithHistoryMock
+      .mockImplementationOnce(() => streamChunks(['I need user approval before I can edit.']))
+      .mockImplementationOnce(() => streamChunks(['I continued autonomously.']));
+
+    try {
+      await runApiAgentLoop({
+        api: { baseUrl: 'https://example.invalid/v1', apiKeyEnv: 'AGON_TEST_API_KEY', model: 'test-model' },
+        prompt: 'Continue',
+        cwd,
+        timeout: 120,
+        onVisibleChunk: (text, phase) => visible.push({ text, phase }),
+      });
+
+      expect(visible).toEqual([{ text: 'I continued autonomously.', phase: 'final' }]);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   it('reprompts when an API stream returns only hidden reasoning', async () => {
     const cwd = join(tmpdir(), `agon-api-agent-loop-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     mkdirSync(cwd, { recursive: true });

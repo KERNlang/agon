@@ -6,7 +6,7 @@ import { mkdirSync, readFileSync, existsSync } from 'node:fs';
 
 import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, StreamParser, scanProjectContext, resolveWorkingDir, createPlan, approvePlan, startPlan, mergeStepResult, cancelPlan, failPlan, savePlan, getActiveWorkspace, snapshotWorkspace, snapshotPath, formatChatContextForPrompt } from '@kernlang/agon-core';
 
-import type { Plan, PlanStepInput, ApprovalLevel } from '@kernlang/agon-core';
+import type { AgentDispatchResult, Plan, PlanStepInput, ApprovalLevel } from '@kernlang/agon-core';
 
 import { ENGINE_COLORS } from '../blocks/output-format.js';
 
@@ -14,7 +14,9 @@ import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
 import { buildAgentApprovalCallback } from './agent.js';
 
-// @kern-source: build:9
+import { yieldToInk } from '../cesar/brain-helpers.js';
+
+// @kern-source: build:10
 function injectFileReferences(input: string, cwd: string): string {
   const FILE_REF = /(?:^|\s)([\w./-]+\.\w{1,10})\b/g;
   let result = input;
@@ -39,7 +41,7 @@ function injectFileReferences(input: string, cwd: string): string {
   return result;
 }
 
-// @kern-source: build:34
+// @kern-source: build:35
 export async function handleBuild(input: string, dispatch: Dispatch, ctx: HandlerContext, existingPlan?: Plan, skipPlanApproval?: boolean): Promise<void> {
   const abort = new AbortController();
   try {
@@ -165,6 +167,7 @@ export async function handleBuild(input: string, dispatch: Dispatch, ctx: Handle
 
     let response = '';
     let streaming = false;
+    let dispatchResult: AgentDispatchResult | undefined;
 
     try {
       if (ctx.adapter.dispatchAgentStream) {
@@ -173,8 +176,14 @@ export async function handleBuild(input: string, dispatch: Dispatch, ctx: Handle
 
         while (true) {
           const iter = await gen.next();
-          if (iter.done) break;
-          if (abort.signal.aborted) break;
+          if (iter.done) {
+            if (iter.value && typeof iter.value === 'object') dispatchResult = iter.value as AgentDispatchResult;
+            break;
+          }
+          if (abort.signal.aborted) {
+            await gen.return(undefined as never);
+            break;
+          }
           const chunk = iter.value as string;
 
           if (chunk.startsWith('\x00')) {
@@ -211,6 +220,7 @@ export async function handleBuild(input: string, dispatch: Dispatch, ctx: Handle
         }
       } else if (ctx.adapter.dispatchAgent) {
         const agentResult = await ctx.adapter.dispatchAgent(dispatchOpts);
+        dispatchResult = agentResult;
         response = agentResult.stdout;
         dispatch({ type: 'spinner-stop' });
         if (agentResult.diff) {
@@ -231,6 +241,20 @@ export async function handleBuild(input: string, dispatch: Dispatch, ctx: Handle
 
     if (abort.signal.aborted) {
       dispatch({ type: 'spinner-stop' });
+      return;
+    }
+
+    if (dispatchResult && dispatchResult.exitCode !== 0) {
+      if (streaming) {
+        dispatch({ type: 'streaming-end', engineId });
+        await yieldToInk();
+      }
+      dispatch({ type: 'spinner-stop' });
+      const reason = dispatchResult.stderr || `agent exited with code ${dispatchResult.exitCode}`;
+      dispatch({ type: 'error', message: `${engineId}: ${reason}` });
+      plan = failPlan(plan, reason);
+      ctx.setCurrentPlan(plan);
+      savePlan(plan);
       return;
     }
 

@@ -1,4 +1,6 @@
 import from="@kernlang/agon-core" names="ApiAgentResult,ApiConfig,DispatchOptions,EngineDefinition" types=true
+import from="@kernlang/agon-core" names="attachVisionToMessages,sessionContext,resolveWorkingDir"
+import from="node:events" names="EventEmitter,once"
 
 type name=ExecutionBackend values="cli|api|missing"
 
@@ -15,6 +17,72 @@ interface name=NormalizedApiAgentOutcome
   field name=timedOut type=boolean
   field name=engineFault type=boolean optional=true
 
+interface name=LinkedAbortController
+  field name=controller type=AbortController
+  field name=dispose type="()=>void"
+
+interface name=ApiAgentContext
+  field name=cwd type=string
+  field name=systemPrompt type=string
+  field name=historyMessages type="Array<Record<string,unknown>>|undefined"
+
+fn name=createLinkedAbortController params="upstream?:AbortSignal" returns=LinkedAbortController export=true
+  doc "Create an owned controller that mirrors one upstream signal and can detach its listener deterministically."
+  handler <<<
+    const controller = new AbortController();
+    const relay = () => controller.abort(upstream?.reason);
+    if (upstream?.aborted) relay();
+    else upstream?.addEventListener('abort', relay, { once: true });
+    return { controller, dispose: () => upstream?.removeEventListener('abort', relay) };
+  >>>
+
+service name=AgentStreamQueue
+  doc "Small callback-to-async bridge for API-agent visible chunks. One consumer drains ordered values until settle()."
+  field name=values type="string[]"
+  field name=events type=EventEmitter
+  field name=settled type=boolean
+  field name=abortSignal type="AbortSignal|undefined"
+  field name=abortListener type="(()=>void)|undefined"
+
+  constructor params="signal?:AbortSignal"
+    handler lang="kern"
+      assign target="this.values" value="[]"
+      assign target="this.events" value="new EventEmitter()"
+      assign target="this.settled" value="false"
+      assign target="this.abortSignal" value="signal"
+      assign target="this.abortListener" value="this.settle.bind(this)"
+      if cond="signal?.aborted"
+        do value="this.settle()"
+      else
+        do value="signal?.addEventListener('abort', this.abortListener, { once: true })"
+
+  method name=push params="value:string" returns=void
+    handler lang="kern"
+      do value="this.values.push(value)"
+      do value="this.events.emit('ready')"
+
+  method name=settle returns=void
+    handler lang="kern"
+      assign target="this.settled" value="true"
+      do value="this.events.emit('ready')"
+
+  method name=next returns="Promise<string|null>" async=true
+    handler <<<
+      while (this.values.length === 0 && !this.settled) {
+        await once(this.events, 'ready');
+      }
+      return this.values.shift() ?? null;
+    >>>
+
+  method name=dispose returns=void
+    handler lang="kern"
+      do value="this.abortSignal?.removeEventListener('abort', this.abortListener!)"
+
+fn name=cancelledApiAgentResult returns=ApiAgentResult export=true
+  doc "Truthful terminal fallback when an upstream abort wakes the stream queue before a non-cooperative provider settles."
+  handler lang="kern"
+    return value="{ response: '', toolCalls: 0, steps: 0, cancelled: true, errorReason: 'aborted by caller' }"
+
 fn name=normalizeDispatchOptions params="options:DispatchOptions" returns="DispatchOptions" export=true
   doc "Apply the engine timeout as a floor without mutating a caller-owned DispatchOptions object."
   handler lang="kern"
@@ -28,7 +96,26 @@ fn name=buildApiDispatchConfig params="engine:EngineDefinition,resolvedModel:str
   handler lang="kern"
     if cond="!engine.api"
       throw value="new Error(`Engine \"${engine.id}\" has no API configuration`)"
-    return value="{ ...engine.api, ...(resolvedModel ? { model: resolvedModel } : {}), ...(maxTokens && maxTokens > 0 ? { maxTokens } : {}) }"
+    let name=modelOverride value="resolvedModel ? { model: resolvedModel } : {}"
+    let name=tokenOverride value="maxTokens && maxTokens > 0 ? { maxTokens } : {}"
+    return value="{ ...engine.api, ...modelOverride, ...tokenOverride }"
+
+fn name=buildApiAgentContext params="options:DispatchOptions" returns=ApiAgentContext export=true
+  doc "Build shared cwd, prompt, structured history, and vision context for synchronous and streaming API-agent execution."
+  handler <<<
+    const cwd = options.cwd || resolveWorkingDir();
+    const projectCtx = sessionContext.get(cwd);
+    const systemPrompt = [
+      options.systemPrompt ?? 'You are an AI coding assistant. Be direct and concise.',
+      projectCtx ? `## PROJECT CONTEXT\n${projectCtx}` : '',
+    ].filter(Boolean).join('\n\n');
+    const synthesized = options.images?.length ? [{ role: 'user', content: options.prompt }] : undefined;
+    const base = options.messages?.length ? options.messages : synthesized;
+    const historyMessages = base && options.images?.length
+      ? attachVisionToMessages(base, options.images.map((image) => image.path), options.engine.capabilities?.includes('vision') === true)
+      : base;
+    return { cwd, systemPrompt, historyMessages };
+  >>>
 
 fn name=normalizeApiAgentOutcome params="result:ApiAgentResult|null|undefined" returns="NormalizedApiAgentOutcome" export=true
   doc "Convert the API tool loop's terminal state into the same exit-code contract used by CLI execution while preserving partial output. Cancellation wins over timeout, which wins over failure."
@@ -45,6 +132,13 @@ fn name=normalizeApiAgentOutcome params="result:ApiAgentResult|null|undefined" r
     if cond="result.failed"
       return value="{ exitCode: 1, stdout, stderr: reason || 'API agent execution failed', timedOut: false, ...fault }"
     return value="{ exitCode: 0, stdout, stderr: '', timedOut: false, ...fault }"
+
+fn name=encodeAgentStreamText params="text:string,phase:'narration'|'final'='final'" returns=string export=true
+  doc "Encode narration as transient status and final prose as assistant text. Both use newline-terminated Claude-compatible NDJSON envelopes."
+  handler lang="kern"
+    if cond="phase === 'narration'"
+      return value="JSON.stringify({ type: 'system', message: text }) + '\\n'"
+    return value="JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text }] } }) + '\\n'"
 
 fn name=planEngineExecution params="options:DispatchOptions,binaryPath:string|null,apiKeyAvailable:boolean,resolvedModel:string|null" returns="ExecutionPlan" export=true
   doc "Choose CLI first, API only as a usable fallback, or a truthful missing backend. Shared by every public adapter dispatch method."

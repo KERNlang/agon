@@ -1,0 +1,15 @@
+test name="ThinkChain transition coverage" target="../../src/kern/thinking.kern"
+  it name="covers linear completion"
+    expect machine=ThinkChain reaches=complete via=begin,advance,finalize
+
+  it name="covers revision completion"
+    expect machine=ThinkChain reaches=complete via=begin,critique,revise,finalize
+
+  it name="covers revision resume"
+    expect machine=ThinkChain reaches=complete via=begin,critique,revise,resume,finalize
+
+  it name="covers abort"
+    expect machine=ThinkChain reaches=aborted via=begin,abort
+
+  it name="covers the complete transition surface"
+    expect preset=coverage

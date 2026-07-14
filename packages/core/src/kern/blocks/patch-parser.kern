@@ -97,7 +97,7 @@ fn name=invertPatch params="content:string" returns=string
                 comment raw="// Swap the hunk header ranges"
                 let name=match value="line.match(/@@ -(\\d+(?:,\\d+)?) \\+(\\d+(?:,\\d+)?) @@(.*)/)"
                 if cond="match"
-                  do value="result.push(`@@ -${match[2]} +${match[1]} @@${match[3]}`)"
+                  do value="result.push(`@@ -${match.groups[1]} +${match.groups[0]} @@${match.groups[2]}`)"
                 else
                   do value="result.push(line)"
               else

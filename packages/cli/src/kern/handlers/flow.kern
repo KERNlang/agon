@@ -1,6 +1,7 @@
 import from="@kernlang/agon-core" names="logFlow,readFlows,analyzeFlows,FRICTION_TAGS,tracker"
 import from="@kernlang/agon-core" names="FlowRecord,FlowFeedback,FlowTelemetry,FlowModeMeta,FlowAnalysis" types=true
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
+import from="../lib/kern-host.js" names="hostNowMs"
 
 fn name=buildTelemetry params="ctx:HandlerContext, startTime:number" returns=FlowTelemetry export=false
   handler lang="kern"
@@ -8,7 +9,7 @@ fn name=buildTelemetry params="ctx:HandlerContext, startTime:number" returns=Flo
     let name=tokensByEngine type="Record<string, {prompt:number, response:number}>" value="{}"
     each pairKey=id pairValue=e in="stats.byEngine" entries=true
       assign target="tokensByEngine[id]" value="{ prompt: e.promptTokens, response: e.responseTokens }"
-    return value="{ engines: ctx.activeEngines(), durationMs: Date.now() - startTime, tokensByEngine, }"
+    return value="{ engines: ctx.activeEngines(), durationMs: hostNowMs() - startTime, tokensByEngine, }"
 
 fn name=handleFlowReport params="dispatch:Dispatch, ctx:HandlerContext, sessionMode:string, startTime:number, modeMeta?:FlowModeMeta" returns="Promise<void>" async=true
   handler <<<

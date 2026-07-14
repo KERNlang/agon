@@ -8,6 +8,7 @@ import from="node:path" names="join,dirname"
 import from="node:crypto" names="createHash"
 import from="../utils/paths.js" names="runtimeAgonPath"
 import from="../models/context-parts.js" names="CompactionSummaryPart,ToolCacheEntry" types=true
+import from="../blocks/host-runtime.js" names="hostNowMs"
 
 const name=SESSION_SCHEMA_VERSION type=number value=2
 const name=SESSION_MAX_MESSAGES type=number value=80
@@ -99,7 +100,7 @@ fn name=saveSessionState params="engineId:string, state:{ messageHistory: Array<
     let name=path value="sessionStorePath(engineId)"
     comment raw="// Keep last SESSION_MAX_MESSAGES to avoid unbounded growth"
     let name=trimmed value="state.messageHistory.slice(-SESSION_MAX_MESSAGES)"
-    let name=data type="SessionStateV2" value="{ schemaVersion: SESSION_SCHEMA_VERSION, messageHistory: trimmed, compactionSummary: state.compactionSummary ?? null, toolCacheManifest: state.toolCacheManifest ?? [], confidence: state.confidence, readPaths: state.readPaths, savedAt: Date.now(), }"
+    let name=data type="SessionStateV2" value="{ schemaVersion: SESSION_SCHEMA_VERSION, messageHistory: trimmed, compactionSummary: state.compactionSummary ?? null, toolCacheManifest: state.toolCacheManifest ?? [], confidence: state.confidence, readPaths: state.readPaths, savedAt: hostNowMs(), }"
     let name=tmpPath value="path + '.tmp'"
     do value="writeFileSync(tmpPath, JSON.stringify(data), 'utf-8')"
     do value="renameSync(tmpPath, path)"
@@ -114,7 +115,7 @@ fn name=loadSessionState params="engineId:string" returns="{ messageHistory: Arr
       let name=raw value="readFileSync(path, 'utf-8')"
       let name=data value="JSON.parse(raw)"
       comment raw="// TTL: discard state older than SESSION_TTL_MS."
-      if cond="data.savedAt && Date.now() - data.savedAt > SESSION_TTL_MS"
+      if cond="data.savedAt && hostNowMs() - data.savedAt > SESSION_TTL_MS"
         return value="null"
       if cond="!Array.isArray(data.messageHistory)"
         return value="null"
@@ -231,7 +232,7 @@ fn name=saveConversation params="messages:Array<{role:string,content:any,tool_ca
     comment raw="// readPaths is set only when defined: JSON.stringify drops an undefined"
     comment raw="// field, so a strict-source save (readPaths === undefined) writes the SAME"
     comment raw="// JSON shape as before this field existed."
-    let name=data type="ConversationState" value="{ schemaVersion: CONVERSATION_SCHEMA_VERSION, messageHistory: clean, savedAt: Date.now(), sourceEngine: sourceEngineId, readPaths, }"
+    let name=data type="ConversationState" value="{ schemaVersion: CONVERSATION_SCHEMA_VERSION, messageHistory: clean, savedAt: hostNowMs(), sourceEngine: sourceEngineId, readPaths, }"
     let name=tmpPath value="path + '.tmp'"
     do value="writeFileSync(tmpPath, JSON.stringify(data), 'utf-8')"
     do value="renameSync(tmpPath, path)"
@@ -246,7 +247,7 @@ fn name=loadConversation params="" returns="{ messageHistory: Array<{role:string
       let name=raw value="readFileSync(path, 'utf-8')"
       let name=data value="JSON.parse(raw)"
       comment raw="// TTL: discard conversations older than SESSION_TTL_MS."
-      if cond="data.savedAt && Date.now() - data.savedAt > SESSION_TTL_MS"
+      if cond="data.savedAt && hostNowMs() - data.savedAt > SESSION_TTL_MS"
         return value="null"
       if cond="!Array.isArray(data.messageHistory)"
         return value="null"

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 
 import {
   append,
+  appendDurable,
   flush,
   replay,
   latestSeq,
@@ -105,6 +106,19 @@ describe('event-log — replay proof', () => {
 });
 
 describe('event-log — durability & seq recovery', () => {
+  it('appendDurable persists before returning and preserves monotonic ordering', () => {
+    const sid = 'chat-durable-1';
+    append(sid, { type: 'buffered' }, { flushMs: 10_000 });
+    const result = appendDurable(sid, { kind: 'control-plane', schemaVersion: 1, type: 'tool_claimed' });
+
+    expect(result).toEqual({ ok: true, seq: 2 });
+    resetEventLogState();
+    expect(replay(sid, 0).map((entry) => entry.event)).toEqual([
+      { type: 'buffered' },
+      { kind: 'control-plane', schemaVersion: 1, type: 'tool_claimed' },
+    ]);
+  });
+
   it('flush writes one NDJSON line per event', () => {
     const sid = 'chat-2001';
     append(sid, { type: 'x', n: 1 });

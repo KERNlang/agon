@@ -446,3 +446,11 @@ export function runCommand(prefix, command, args, label) {
     process.exit(result.status);
   }
 }
+
+// KERN intentionally permits diagnostic recovery by default and can exit 0
+// after compiling only part of a directory. Agon's generated tree is a build
+// input, so partial output is safe only when the caller explicitly requests it.
+export function enforceStrictCompileArgs(args) {
+  if (args.includes('--tolerant') || args.includes('--strict-parse')) return args;
+  return [...args, '--strict-parse'];
+}

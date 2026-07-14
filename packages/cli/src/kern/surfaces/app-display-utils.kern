@@ -7,7 +7,7 @@ module name=AppDisplayUtils
       if cond="!Number.isFinite(pending) || pending === 0"
         return value="{ step: 0, remaining: 0 }"
       let name=direction value="pending > 0 ? 1 : -1"
-      let name=magnitude value="Math.abs(pending)"
+      let name=magnitude value="Number.abs(pending)"
       let name=stepSize value="magnitude >= 16 ? 6 : magnitude >= 10 ? 5 : magnitude >= 6 ? 4 : magnitude >= 3 ? 2 : 1"
       let name=step value="direction * Math.min(stepSize, magnitude)"
       return value="{ step, remaining: pending - step }"

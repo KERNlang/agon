@@ -148,11 +148,13 @@ describe('normalizeSessionChunk', () => {
     const chunk: RawSessionChunk = {
       type: 'tool_call',
       content: 'Bash',
-      metadata: { status: 'denied' },
+      metadata: { status: 'denied', toolCallId: 'tc-denied', terminalReason: 'denied' },
     };
     const ev = normalizeSessionChunk(chunk, 'codex');
     if (!ev || ev.kind !== 'tool_call') throw new Error('wrong kind');
     expect(ev.status).toBe('rejected');
+    expect(ev.toolCallId).toBe('tc-denied');
+    expect(ev.terminalReason).toBe('denied');
   });
 
   it('maps done chunks to turn_complete with null usage (CLI engines)', () => {

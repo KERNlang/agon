@@ -5,6 +5,7 @@ import from="node:crypto" names="createHash"
 import from="../models/types.js" names="EngineDefinition,EngineMode,AgonConfig" types=true
 import from="../models/errors.js" names="EngineNotFoundError"
 import from="../../schemas/engine-schema.js" names="validateEngineConfig"
+import from="../blocks/host-runtime.js" names="hostCreateSet,hostNowMs"
 
 fn name=getAgonEnginesDir returns=string export=false
   handler <<<
@@ -360,7 +361,7 @@ service name=EngineRegistry
     doc "Available engines filtered through user activation settings. Both hiddenEngines (soft) and removedEngines (hard) are excluded from the automatic roster in every mode. In auto mode every available engine that is neither hidden nor removed is active; in explicit mode only such forgeEnabledEngines are active. Explicit -e/--engines requests bypass this method — use partitionRoster to enforce the HARD removedEngines denylist on those."
     handler lang="kern"
       let name=allIds value="this.listIds()"
-      let name=excluded value="new Set<string>()"
+      let name=excluded value="hostCreateSet() as Set<string>"
       each name=rawExcluded in="[...(config?.hiddenEngines ?? []), ...(config?.removedEngines ?? [])]"
         each name=id in="this.resolveFilterIdsAgainst(String(rawExcluded ?? '').trim(), allIds)"
           do value="excluded.add(id)"
@@ -369,7 +370,7 @@ service name=EngineRegistry
         return value="available"
       let name=availableIds value="available.map((e: EngineDefinition) => e.id)"
       let name=byId value="new Map(available.map((e: EngineDefinition) => [e.id, e]))"
-      let name=seen value="new Set<string>()"
+      let name=seen value="hostCreateSet() as Set<string>"
       let name=active type="EngineDefinition[]" value="[]"
       each name=rawId in="config.forgeEnabledEngines ?? []"
         let name=id value="this.resolveIdAgainst(String(rawId ?? '').trim(), availableIds)"
@@ -391,7 +392,7 @@ service name=EngineRegistry
       if cond="!requested"
         return value="{ active: this.activeIds(config), removed: [] }"
       let name=allIds value="this.listIds()"
-      let name=removedSet value="new Set<string>()"
+      let name=removedSet value="hostCreateSet() as Set<string>"
       each name=rawRemoved in="config?.removedEngines ?? []"
         each name=id in="this.resolveFilterIdsAgainst(String(rawRemoved ?? '').trim(), allIds)"
           do value="removedSet.add(id)"
@@ -412,7 +413,7 @@ service name=EngineRegistry
               do value="removed.push(removedId)"
         if cond="id && !removedSet.has(id) && !rawRemovedAlias && !active.includes(id)"
           do value="active.push(id)"
-      return value="{ active, removed }"
+      return value="{ active: active.slice(), removed: removed.slice() }"
 
   method name=pickStarter params="available:string[], strategy:'fixed'|'rotate', preferred?:string" returns=string
     handler lang="kern"
@@ -422,7 +423,7 @@ service name=EngineRegistry
         if cond="preferred && available.includes(preferred)"
           return value="preferred"
         return value="available[0]"
-      return value="available[Math.floor(Date.now() / 1000) % available.length]"
+      return value="available[Number.floor(hostNowMs() / 1000) % available.length]"
 
   method name=getFallbackChain params="sourceId:string, taskClass?:string, candidateIds?:string[]" returns="string[]"
     doc "Return ranked candidate engines for fallback from sourceId, excluding source itself. Uses Glicko-2 ratings when available; falls back to available order."

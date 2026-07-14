@@ -2,6 +2,7 @@ import from="node:fs" names="mkdirSync,appendFileSync,readFileSync,readdirSync,s
 import from="node:path" names="join"
 import from="../utils/paths.js" names="runtimeAgonPath"
 import from="../cesar/context-thread.js" names="ContextThread" types=true
+import from="../blocks/host-runtime.js" names="hostNowIso,hostNowMs"
 
 interface name=ChatMessage
   field name=role type="'user'|'engine'"
@@ -59,8 +60,8 @@ fn name=startChatSession params="opts?:{cwd?:string,branch?:string,engineIds?:st
   handler lang="kern"
     do value="ensureChatsDir()"
     do value="pruneChats()"
-    fmt name=id template="chat-${Date.now()}"
-    let name=session type="ChatSession" value="{ id, startedAt: new Date().toISOString(), messages: [], cwd: opts?.cwd, branch: opts?.branch, engineIds: opts?.engineIds, }"
+    fmt name=id template="chat-${hostNowMs()}"
+    let name=session type="ChatSession" value="{ id, startedAt: hostNowIso(), messages: [], cwd: opts?.cwd, branch: opts?.branch, engineIds: opts?.engineIds, }"
     let name=filePath value="join(chatsDir(), `${id}.ndjson`)"
     let name=header type="Record<string, unknown>" value="{ _type: 'header', id, startedAt: session.startedAt, }"
     if cond="opts?.cwd"
@@ -91,7 +92,7 @@ fn name=appendUserTurnIfAbsent params="session:ChatSession|null|undefined, input
     let name=last value="messages.length > 0 ? messages[messages.length - 1] : null"
     if cond="last && last.role === 'user' && last.content === input"
       return value="false"
-    let name=msg type="ChatMessage" value="{ role: 'user', content: input, timestamp: new Date().toISOString() }"
+    let name=msg type="ChatMessage" value="{ role: 'user', content: input, timestamp: hostNowIso() }"
     do value="session.messages.push(msg)"
     let name=filePath value="join(chatsDir(), `${session.id}.ndjson`)"
     do value="appendFileSync(filePath, JSON.stringify(msg) + '\\n')"
@@ -130,7 +131,7 @@ fn name=trimChatSummary params="summary:string" returns=string export=false
 fn name=appendSummaryRecord params="session:ChatSession" returns=void export=false
   handler lang="kern"
     let name=filePath value="join(chatsDir(), `${session.id}.ndjson`)"
-    do value="appendFileSync(filePath, JSON.stringify({ _type: 'summary', summary: session.summary ?? '', summarizedMessageCount: session.summarizedMessageCount ?? 0, timestamp: new Date().toISOString(), }) + '\\n')"
+    do value="appendFileSync(filePath, JSON.stringify({ _type: 'summary', summary: session.summary ?? '', summarizedMessageCount: session.summarizedMessageCount ?? 0, timestamp: hostNowIso(), }) + '\\n')"
 
 fn name=freeSummarizedMessageBodies params="messages:ChatMessage[], from:number, to:number" returns=void export=false
   doc "Null out the in-memory content of messages[from..to). Those turns are already folded into the rolling summary AND persisted to disk (appendMessage writes the ndjson), so dropping their bodies bounds session RAM without losing anything callers need. Objects are kept so indices/summarizedMessageCount/resume accounting stay valid."

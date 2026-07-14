@@ -3,6 +3,7 @@
 // by forge preflight + Cesar fallback. Resets on process restart.
 
 import from="../models/types.js" names="EngineDefinition" types=true
+import from="../blocks/host-runtime.js" names="hostNowMs"
 
 interface name=EngineHealthRecord
   field name=engineId type=string
@@ -26,7 +27,7 @@ service name=EngineHealth singleton=true
         return
       let name=existing value="this.records.get(engineId)"
       let name=trimmedReason value="reason.length > 200 ? reason.slice(0, 200) + '…' : reason"
-      do value="this.records.set(engineId, { engineId, status, reason: trimmedReason, lastFailureAt: Date.now(), failureCount: (existing?.failureCount ?? 0) + 1, })"
+      do value="this.records.set(engineId, { engineId, status, reason: trimmedReason, lastFailureAt: hostNowMs(), failureCount: (existing?.failureCount ?? 0) + 1, })"
 
   method name=clear params="engineId:string" returns=void
     doc "Manually rehabilitate an engine (e.g., after the user refreshes a token)."

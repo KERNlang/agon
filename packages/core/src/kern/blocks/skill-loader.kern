@@ -2,6 +2,7 @@ import from="node:fs" names="readFileSync,readdirSync,existsSync"
 import from="node:path" names="join,dirname,resolve"
 import from="node:os" names="homedir"
 import from="node:url" names="fileURLToPath"
+import from="./host-runtime.js" names="hostRegexReplace"
 
 interface name=Skill
   field name=name type=string
@@ -19,13 +20,13 @@ fn name=parseFrontmatter params="content:string" returns="{meta:Record<string,st
     if cond="!match"
       return value="{ meta: {}, body: content }"
     let name=meta type="Record<string, string>" value="{}"
-    each name=line in="match[1].split('\\n')"
+    each name=line in="(match.groups[0] as string).split('\\n')"
       let name=idx value="line.indexOf(':')"
       if cond="idx > 0"
         let name=key value="line.slice(0, idx).trim()"
         let name=val value="line.slice(idx + 1).trim()"
         assign target="meta[key]" value="val"
-    return value="{ meta, body: match[2].trim() }"
+    return value="{ meta, body: (match.groups[1] as string).trim() }"
 
 fn name=loadSkillFile params="filePath:string" returns="Skill|null"
   handler <<<
@@ -99,4 +100,4 @@ fn name=findSkill params="trigger:string, skills:Skill[]" returns="Skill|null"
 
 fn name=renderSkillPrompt params="skill:Skill, input:string" returns=string
   handler lang="kern"
-    return value="skill.prompt .replace(/\\{input\\}/g, input) .replace(/\\{trigger\\}/g, skill.trigger) .replace(/\\{name\\}/g, skill.name)"
+    return value="hostRegexReplace(hostRegexReplace(hostRegexReplace(skill.prompt, /\\{input\\}/g, input), /\\{trigger\\}/g, skill.trigger), /\\{name\\}/g, skill.name)"

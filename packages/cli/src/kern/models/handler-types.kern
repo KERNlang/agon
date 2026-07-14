@@ -123,6 +123,8 @@ union name=OutputEvent discriminant=type
     field name=tool type=string
     field name=input type=string
     field name=status type="'running'|'done'|'error'"
+    field name=toolCallId type=string optional=true
+    field name=terminalReason type="'succeeded'|'failed'|'skipped_policy'|'denied'|'cancelled'|'unknown'" optional=true
     field name=output type=string optional=true
     doc "Wall-clock duration of the tool call (running→done/error), set by the brain dispatcher. Rendered as a dim suffix on the result line (e.g. '→ 12 lines · 1.4s'). Absent for instant signal/MCP completions that had no preceding 'running' event."
     field name=durationMs type=number optional=true
@@ -144,6 +146,8 @@ union name=OutputEvent discriminant=type
     field name=engineId type=string optional=true
     field name=tool type=string optional=true
     field name=input type=string optional=true
+    field name=toolCallId type=string optional=true
+    field name=terminalReason type="'succeeded'|'failed'|'skipped_policy'|'denied'|'cancelled'|'unknown'" optional=true
     doc "Wall-clock duration of the streamed tool call, measured by executeToolCall in the eager path. Passed through to the synthetic tool-call block in output.kern so the renderer shows the '· 1.4s' suffix for streaming tools too."
     field name=durationMs type=number optional=true
   variant name=user-message
@@ -305,6 +309,7 @@ type name=CesarLiveMode values="self|self-nero|delegate|forge|forge-slice|team-f
 
 interface name=CesarTurnOutcome
   field name=turnId type=string optional=true
+  field name=terminalState type="'completed'|'failed'|'cancelled'|'timed_out'|'superseded'" optional=true
   field name=mode type=CesarLiveMode optional=true
   field name=delegated type=boolean
   field name=responded type=boolean
@@ -367,6 +372,7 @@ interface name=CesarState
   field name=autoNero type=boolean
   field name=advisorPending type=boolean
   field name=mcpFingerprint type="string | undefined"
+  field name=kernContextSpine type="string | undefined" optional=true doc="Compiler-derived project call/use map prepared once for each fresh Cesar session."
   field name=mcpSignalPath type="string | undefined" optional=true
   field name=planDispatch type="((event: any) => void) | null"
   field name=proposedPlan type="any | undefined"
@@ -374,6 +380,7 @@ interface name=CesarState
   field name=turnId type="string | undefined" optional=true
   field name=sessionMcpServers type="Array<{name:string, type?:string, url?:string, command?:string, args?:string[]}>"
   field name=autoModeQueued type=boolean optional=true
+  field name=taskExecutionLease type="any | undefined" optional=true doc="Turn-scoped AUTO authority shared by native, companion, XML, and MCP execution adapters."
   field name=discoveredGate type="DiscoveredGate | undefined" optional=true doc="The verification gate discovered for the current turn's cwd (command + loose matchers). command==='' means gateAbsent."
   field name=gateWaived type=boolean optional=true doc="Session-sticky: when true, the verify-before-done gate nudge is suppressed for the rest of the session. Set on /nogate, on a user skip-signal after a nudge, or when no gate could be discovered (gateAbsent)."
   field name=gateNudgedClaim type="string | undefined" optional=true doc="Signature of the most recent done-claim that already received a gate nudge — guards one nudge per distinct claim so a repeated/identical 'done' doesn't re-nudge, while a NEW done-claim (different signature) can."
@@ -401,6 +408,7 @@ interface name=HandlerContext
   field name=extensionPromptFragments type="string[]" optional=true
   field name=eventBus type="EventBus | undefined" optional=true
   field name=cesar type="CesarState | undefined" optional=true
+  field name=cesarRuntimeHost type="any | undefined" optional=true doc="App-owned stable control-plane host shared by every fresh HandlerContext for this chat ledger."
   field name=lastReviewResult type="{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | undefined" optional=true
   field name=sessionMcpServers type="Array<Record<string,unknown>>" optional=true
   field name=setSessionMcpServers type="((servers: Array<Record<string,unknown>>) => void) | undefined" optional=true

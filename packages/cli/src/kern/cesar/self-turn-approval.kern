@@ -6,6 +6,7 @@
 import from="node:fs" names="existsSync,statSync,readFileSync"
 import from="node:path" names="resolve,relative,isAbsolute,basename"
 import from="@kernlang/agon-core" names="ToolContext" types=true
+import from="../lib/kern-host.js" names="hostNowMs"
 
 fn name=canonicalToolName params="tool:string" returns=string export=false
   handler lang="kern"
@@ -162,7 +163,7 @@ fn name=isStaleCachedRead params="filePath:string,cached:any" returns=boolean ex
 fn name=markCesarTouchedCache params="cache:any,filePath:string,cached:any,nextContent:string" returns=void export=false
   doc "Optimistically refresh the read cache after approving a Cesar-owned edit/write. The next approval verifies the expected content against disk."
   handler lang="kern"
-    let name=now value="Date.now()"
+    let name=now value="hostNowMs()"
     do value="cache.set(filePath, { ...cached, content: nextContent, timestamp: Math.max(Number(cached?.timestamp ?? 0), now), offset: undefined, limit: undefined, isPartialView: false, lastTouchedBy: 'cesar', lastTouchedAt: now, })"
 
 fn name=applyCesarSelfTurnApproval params="tool:string,args:Record<string,unknown>,toolCtx:ToolContext,config:any" returns="{approve:boolean,reason:string,tool?:string,path?:string,diffTokens?:number}" export=true
@@ -199,7 +200,7 @@ fn name=applyCesarSelfTurnApproval params="tool:string,args:Record<string,unknow
       return value="{ approve: false, reason: 'file changed since last read', tool: t, path: filePath }"
     let name=maxTokensRaw value="Number((config as any).cesarSelfTurnAutoApproveMaxDiffTokens ?? 1200)"
     let name=maxTokens value="Number.isFinite(maxTokensRaw) && maxTokensRaw > 0 ? maxTokensRaw : 1200"
-    let name=diffTokens kind=let value="Number.POSITIVE_INFINITY"
+    let name=diffTokens kind=let value="1 / 0"
     let name=nextContent type="string | null" kind=let value="null"
     if cond="t === 'Edit'"
       let name=oldString value="normalizedArgs.old_string"

@@ -36,6 +36,11 @@ fn name=listMcpTools returns="Array<{name:string,description:string,inputSchema:
   >>>
 
 module name=OrchestrationServer
+  fn name=hostStringSet params="values:string[]" returns="Set<string>" export=false
+    handler lang="ts" <<<
+      return new Set(values);
+    >>>
+
   fn name=writeSignal params="tool:string, args:Record<string,unknown>"
     doc "Append a signal to the signal file (array). Supports ReportConfidence + orchestration in same turn."
     handler <<<
@@ -218,9 +223,9 @@ module name=OrchestrationServer
   fn name=handleToolCall params="name:string, args:Record<string,unknown>" returns="string"
     doc "Handle an MCP tool call — write signal and return delegation message."
     handler lang="kern"
-      let name=NON_BREAKING value="new Set(['ReportConfidence', 'QuickNero'])"
-      let name=BREAK_AND_RESUME value="new Set(['Delegate'])"
-      let name=DIRECT_WORKFLOWS value="new Set(['Forge', 'Synthesis', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review'])"
+      let name=NON_BREAKING value="hostStringSet(['ReportConfidence', 'QuickNero'])"
+      let name=BREAK_AND_RESUME value="hostStringSet(['Delegate'])"
+      let name=DIRECT_WORKFLOWS value="hostStringSet(['Forge', 'Synthesis', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review'])"
       if cond="!hasSignalTransport() && DIRECT_WORKFLOWS.has(name)"
         return value="runAgonCliDirect(name, args)"
       do value="writeSignal(name, args)"

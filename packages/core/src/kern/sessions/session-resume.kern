@@ -24,6 +24,8 @@ import from="../guards/guard-types.js" names="GuardMode,GuardSnapshot,TurnEviden
 import from="../diagnostics/diagnostic-runner.js" names="DiagnosticRunner"
 import from="../models/context-parts.js" names="CompactionSummaryPart,ToolCacheEntry" types=true
 import from="./persistent-session.js" names="PersistentSessionConfig,PersistentSession,SessionChunk,SessionSendOptions" types=true
+import from="./tool-scheduler.js" names="scheduleToolBatch"
+import from="./first-chunk-retry-policy.js" names="decideFirstChunkRetry"
 
 fn name=createResumeSession params="config:PersistentSessionConfig" returns="PersistentSession"
   doc "Fallback: spawn per turn with --resume/--continue. Works for any CLI engine."
@@ -984,6 +986,16 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
           // content-filter/format empty still surfaces the real error after retries.
           let emptyResponseRetries = 0;
           const MAX_EMPTY_RETRIES = 2;
+          let firstChunkRetries = 0;
+          const requestedFirstChunkRetries = Number(config.engine.api?.firstChunkRetryCount ?? 1);
+          const MAX_FIRST_CHUNK_RETRIES = Number.isSafeInteger(requestedFirstChunkRetries) && requestedFirstChunkRetries >= 0
+            ? requestedFirstChunkRetries
+            : 1;
+          const requestedFirstChunkBackoffMs = Number(config.engine.api?.firstChunkRetryBackoffMs ?? 1000);
+          const FIRST_CHUNK_RETRY_BACKOFF_MS = Number.isFinite(requestedFirstChunkBackoffMs) && requestedFirstChunkBackoffMs >= 0
+            ? requestedFirstChunkBackoffMs
+            : 1000;
+          let hadTurnSideEffects = false;
           // One-shot emergency recovery: if a request fails with an overflow-shaped
           // error, hard-trim history once and retry the same step instead of
           // surfacing an empty response (the spin trigger). Token estimates can be
@@ -1191,6 +1203,26 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                 yield { type: 'status' as const, content: 'context overflow — trimmed history, retrying…' };
                 step--;
                 continue;
+              }
+              const firstChunkDecision = decideFirstChunkRetry({
+                error: lastStderr,
+                retriesUsed: firstChunkRetries,
+                maxRetries: MAX_FIRST_CHUNK_RETRIES,
+                hadSideEffects: hadTurnSideEffects,
+                aborted: opts.signal?.aborted === true,
+              });
+              if (/API stream first-chunk idle timeout/i.test(lastStderr)) {
+                if (firstChunkDecision.retry) {
+                  firstChunkRetries++;
+                  yield { type: 'status' as const, content: `first chunk timed out — safe retry ${firstChunkRetries}/${MAX_FIRST_CHUNK_RETRIES}…` };
+                  if (FIRST_CHUNK_RETRY_BACKOFF_MS > 0) {
+                    await new Promise(r => setTimeout(r, FIRST_CHUNK_RETRY_BACKOFF_MS));
+                  }
+                  step--;
+                  continue;
+                }
+                yield { type: 'error' as const, content: lastStderr };
+                break;
               }
               // Empty response after successful stream: usually means the model returned
               // an empty completion (rate limit, content filter, or format mismatch — common
@@ -1507,9 +1539,9 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
               }
               for (const tc of parsedCalls) {
                 if (tc.parseError) {
-                  yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, status: 'error', output: `Malformed tool arguments from API: ${tc.arguments.slice(0, 200)}` } };
+                  yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, status: 'error', output: `Malformed tool arguments from API: ${tc.arguments.slice(0, 200)}`, toolCallId: tc.id, controlPlane: opts.controlPlane } };
                 } else {
-                  yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, status: 'running' } };
+                  yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, status: 'running', toolCallId: tc.id, executionOwner: 'session', controlPlane: opts.controlPlane } };
                 }
               }
 
@@ -1726,7 +1758,7 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                     const tc = parsedCalls[bi];
                     if (blockedIdx.has(bi)) {
                       gwResults.push({ id: tc.id, name: tc.name, args: tc.args, result: blockFeedback.get(bi)! });
-                      yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, status: 'error', output: 'Blocked: read the file first' } };
+                      yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, status: 'error', output: 'Blocked: read the file first', toolCallId: tc.id, terminalReason: 'skipped_policy', executionOwner: 'session', controlPlane: opts.controlPlane } };
                     } else {
                       let result: string;
                       try {
@@ -1734,7 +1766,7 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                           const ck = cacheKey(tc.name, tc.args);
                           const prev = toolResultCache.get(ck);
                           if (prev) { result = prev.result; }
-                          else { result = await config.onToolCall!(tc.name, tc.args, tc.id); toolResultCache.set(ck, { result, callId: tc.id }); }
+                          else { result = await config.onToolCall!(tc.name, tc.args, tc.id, opts.controlPlane); toolResultCache.set(ck, { result, callId: tc.id }); }
                         } else if (tc.name === 'RetrieveResult' && tc.args.id) {
                           const cached = loadToolResultFromDisk(config.engine.id, tc.args.id as string);
                           result = cached ?? `No cached result found for id "${tc.args.id}".`;
@@ -1742,12 +1774,12 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                           const stub = tryReadDedupe(tc.name, tc.args);
                           if (stub !== null) { result = stub; }
                           else {
-                            result = await config.onToolCall!(tc.name, tc.args, tc.id);
+                            result = await config.onToolCall!(tc.name, tc.args, tc.id, opts.controlPlane);
                             const okRead = !(result.startsWith('Error:') || result.startsWith('Unknown tool:'));
                             if (okRead) refreshReadEntry(tc.name, tc.args, result, tc.id, result.length > INLINE_LIMIT ? tc.id : null);
                           }
                         } else {
-                          result = await config.onToolCall!(tc.name, tc.args, tc.id);
+                          result = await config.onToolCall!(tc.name, tc.args, tc.id, opts.controlPlane);
                         }
                       } catch (err: any) { result = `Error: ${err.message ?? String(err)}`; }
                       gwResults.push({ id: tc.id, name: tc.name, args: tc.args, result });
@@ -1765,7 +1797,7 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                       if (readPathRegistry && okExec) {
                         try { readPathRegistry.record(tc.name, tc.args as Record<string, unknown>, result); } catch { /* best-effort */ }
                       }
-                      yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, output: result, status: okExec ? 'done' : 'error' } };
+                      yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, output: result, status: okExec ? 'done' : 'error', toolCallId: tc.id, terminalReason: okExec ? 'succeeded' : 'failed', executionOwner: 'session', controlPlane: opts.controlPlane } };
                     }
                   }
                   // Telemetry for executed (non-blocked) tools.
@@ -1889,7 +1921,7 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                 for (const tc of parsedCalls) {
                   if (WRITE_TOOLS.has(tc.name)) {
                     gateResults.push({ ...tc, result: `[BLOCKED] You haven't investigated the codebase yet. Call Read/Grep to understand the code first, then decide if this needs Forge or Brainstorm. Do not write code without reading what exists.` });
-                    yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, status: 'error', output: 'Blocked: investigate first' } };
+                    yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, status: 'error', output: 'Blocked: investigate first', toolCallId: tc.id, terminalReason: 'skipped_policy', executionOwner: 'session', controlPlane: opts.controlPlane } };
                   } else if (READ_TOOLS.has(tc.name)) {
                     // Allow reads through — let the model investigate (with dedup)
                     let result: string;
@@ -1900,7 +1932,7 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                         if (prev) {
                           result = prev.result;
                         } else {
-                          result = await config.onToolCall!(tc.name, tc.args, tc.id);
+                          result = await config.onToolCall!(tc.name, tc.args, tc.id, opts.controlPlane);
                           toolResultCache.set(ck, { result, callId: tc.id });
                         }
                       } else if (tc.name === 'RetrieveResult' && tc.args.id) {
@@ -1910,25 +1942,27 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                         const stub = tryReadDedupe(tc.name, tc.args);
                         if (stub !== null) { result = stub; }
                         else {
-                          result = await config.onToolCall!(tc.name, tc.args, tc.id);
+                          result = await config.onToolCall!(tc.name, tc.args, tc.id, opts.controlPlane);
                           const okRead = !(result.startsWith('Error:') || result.startsWith('Unknown tool:'));
                           if (okRead) refreshReadEntry(tc.name, tc.args, result, tc.id, result.length > INLINE_LIMIT ? tc.id : null);
                         }
                       } else {
-                        result = await config.onToolCall!(tc.name, tc.args, tc.id);
+                        result = await config.onToolCall!(tc.name, tc.args, tc.id, opts.controlPlane);
                       }
                     } catch (err: any) { result = `Error: ${err.message ?? String(err)}`; }
                     gateResults.push({ ...tc, result });
                     readCount++;
-                    yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, output: result, status: 'done' } };
+                    const readOk = !(result.startsWith('Error:') || result.startsWith('Unknown tool:'));
+                    yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, output: result, status: readOk ? 'done' : 'error', toolCallId: tc.id, terminalReason: readOk ? 'succeeded' : 'failed', executionOwner: 'session', controlPlane: opts.controlPlane } };
                   } else {
                     // Other tools (Bash, etc.) — let through
                     let result: string;
-                    try { result = await config.onToolCall!(tc.name, tc.args, tc.id); } catch (err: any) { result = `Error: ${err.message ?? String(err)}`; }
+                    try { result = await config.onToolCall!(tc.name, tc.args, tc.id, opts.controlPlane); } catch (err: any) { result = `Error: ${err.message ?? String(err)}`; }
                     gateResults.push({ ...tc, result });
                     // Read dedupe invalidation: a Bash here can touch anything.
-                    if (!(result.startsWith('Error:') || result.startsWith('Unknown tool:'))) applyReadInvalidation(tc.name, tc.args as Record<string, unknown>);
-                    yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, output: result, status: 'done' } };
+                    const otherOk = !(result.startsWith('Error:') || result.startsWith('Unknown tool:'));
+                    if (otherOk) applyReadInvalidation(tc.name, tc.args as Record<string, unknown>);
+                    yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, output: result, status: otherOk ? 'done' : 'error', toolCallId: tc.id, terminalReason: otherOk ? 'succeeded' : 'failed', executionOwner: 'session', controlPlane: opts.controlPlane } };
                   }
                 }
                 // ── Telemetry: record every EXECUTED tool result in the gate path ──
@@ -1961,10 +1995,13 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                 if (ORCH_TOOLS.has(tc.name)) orchCount++;
               }
 
-              // Execute all in parallel — intercept RetrieveResult locally (cache is in-process)
+              // Parallelize only a batch made entirely of safe read tools.
+              // Any mutation, Bash command, or orchestration handoff serializes
+              // the whole model-ordered batch so generated outputs cannot race.
+              if (parsedCalls.some((tc) => !READ_TOOLS.has(tc.name))) hadTurnSideEffects = true;
               yield { type: 'status' as const, content: `executing ${parsedCalls.length} tool${parsedCalls.length > 1 ? 's' : ''}…` };
-              const guardToolExecT0 = performance.now(); // telemetry: wall time around the parallel exec
-              const results = await Promise.all(parsedCalls.map(async (tc) => {
+              const guardToolExecT0 = performance.now();
+              const results = await scheduleToolBatch(parsedCalls, (tc) => READ_TOOLS.has(tc.name), async (tc) => {
                 let result: string;
                 let readDedupeHit = false;
                 try {
@@ -1975,7 +2012,7 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                     if (prev) {
                       result = prev.result;
                     } else {
-                      result = await config.onToolCall!(tc.name, tc.args, tc.id);
+                      result = await config.onToolCall!(tc.name, tc.args, tc.id, opts.controlPlane);
                       toolResultCache.set(ck, { result, callId: tc.id });
                     }
                   } else if (tc.name === 'RetrieveResult' && tc.args.id) {
@@ -1990,18 +2027,18 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                       result = stub;
                       readDedupeHit = true;
                     } else {
-                      result = await config.onToolCall!(tc.name, tc.args, tc.id);
+                      result = await config.onToolCall!(tc.name, tc.args, tc.id, opts.controlPlane);
                       const okRead = !(result.startsWith('Error:') || result.startsWith('Unknown tool:'));
                       if (okRead) refreshReadEntry(tc.name, tc.args, result, tc.id, result.length > INLINE_LIMIT ? tc.id : null);
                     }
                   } else {
-                    result = await config.onToolCall!(tc.name, tc.args, tc.id);
+                    result = await config.onToolCall!(tc.name, tc.args, tc.id, opts.controlPlane);
                   }
                 } catch (err: any) {
                   result = `Error: ${err.message ?? String(err)}`;
                 }
                 return { ...tc, result, readDedupeHit };
-              }));
+              });
               // ── claude 0.75: consume readDedupeHit so a dedupe hit is NOT charged
               // as real tool-exec time in guard telemetry. tryReadDedupe returns a
               // stub SYNCHRONOUSLY (no awaited handler), so a hit contributes ~0 to
@@ -2094,7 +2131,7 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
               for (const tc of results) {
                 const isError = tc.result.startsWith('Error:') || tc.result.startsWith('Unknown tool:');
                 if (isError) stepErrors++;
-                yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, output: tc.result, status: isError ? 'error' : 'done' } };
+                yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, output: tc.result, status: isError ? 'error' : 'done', toolCallId: tc.id, terminalReason: isError ? 'failed' : 'succeeded', executionOwner: 'session', controlPlane: opts.controlPlane } };
 
                 let histContent = tc.result;
                 if (histContent.length > INLINE_LIMIT) {
@@ -2211,14 +2248,15 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                   const INLINE_LIMIT = 8192;
                   const autoResults: string[] = [];
                   for (const sc of syntheticCalls) {
-                    yield { type: 'tool_call' as const, content: sc.name, metadata: { input: sc.args, status: 'running' } };
+                    yield { type: 'tool_call' as const, content: sc.name, metadata: { input: sc.args, status: 'running', toolCallId: sc.id, executionOwner: 'session', controlPlane: opts.controlPlane } };
                     let result: string;
                     try {
-                      result = await config.onToolCall(sc.name, sc.args, sc.id);
+                      result = await config.onToolCall(sc.name, sc.args, sc.id, opts.controlPlane);
                     } catch (err: any) {
                       result = `Error: ${err.message ?? String(err)}`;
                     }
-                    yield { type: 'tool_call' as const, content: sc.name, metadata: { input: sc.args, output: result, status: 'done' } };
+                    const syntheticOk = !(result.startsWith('Error:') || result.startsWith('Unknown tool:'));
+                    yield { type: 'tool_call' as const, content: sc.name, metadata: { input: sc.args, output: result, status: syntheticOk ? 'done' : 'error', toolCallId: sc.id, terminalReason: syntheticOk ? 'succeeded' : 'failed', executionOwner: 'session', controlPlane: opts.controlPlane } };
 
                     // FIX 3: record a SUCCESSFUL synthetic Read/Grep/Glob into the
                     // read-path registry, exactly like the main exec path does — a

@@ -5,6 +5,7 @@
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync,appendFileSync,existsSync,readFileSync"
 import from="@kernlang/agon-core" names="RUNS_DIR,resolveWorkingDir,currentBranch,gitChangedFiles"
+import from="../lib/kern-host.js" names="hostNowMs"
 
 type name=CheckpointPhase values="pre-dispatch|post-dispatch|post-judgment|user-pause"
 
@@ -20,7 +21,7 @@ interface name=Checkpoint export=true
   field name=engineIds type=string[]
   field name=metadata type="Record<string,unknown>" optional=true
 
-fn name=createCheckpointId returns=string export=false expr={{ return `chk-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`; }}
+fn name=createCheckpointId returns=string export=false expr={{ return `chk-${hostNowMs().toString(36)}-${Math.random().toString(36).slice(2, 6)}`; }}
 
 fn name=buildCheckpoint params="runId:string,phase:CheckpointPhase,mode:string,engineIds:string[],metadata?:Record<string,unknown>" returns=Checkpoint export=true
   handler <<<
@@ -82,7 +83,7 @@ fn name=lastCheckpointForRun params="runId:string,runsDir?:string" returns="Chec
 
 fn name=formatCheckpointLine params="cp:Checkpoint" returns=string export=true
   handler lang="kern"
-    let name=ago value="Math.round((Date.now() - cp.ts) / 1000)"
+    let name=ago value="Math.round((hostNowMs() - cp.ts) / 1000)"
     let name=agoText value="ago < 60 ? `${ago}s ago` : ago < 3600 ? `${Math.round(ago / 60)}m ago` : `${Math.round(ago / 3600)}h ago`"
     let name=files value="cp.changedFiles.length > 0 ? ` (${cp.changedFiles.length} changed)` : ''"
     fmt return=true template="${cp.phase} ${cp.mode} ${cp.engineIds.join('+')}${files} — ${agoText}"

@@ -20,6 +20,7 @@ import from="../signals/token-tracker.js" names="estimateTokens,estimateCost"
 import from="../models/agent-event.js" names="AgentEvent" types=true
 import from="../models/agent-event.js" names="makeAssistantChunk,makeToolCall"
 import from="../blocks/semaphore.js" names="Semaphore" types=true
+import from="../blocks/host-runtime.js" names="hostNowMs"
 import from="./context-thread.js" names="ContextThread" types=true
 
 // ── Budget definition ─────────────────────────────────────────────
@@ -450,8 +451,9 @@ service name=AgentSession export=true
   method name=getStats returns=AgentSessionStats
     handler lang="kern"
       let name=budget value="this.config.budget"
-      let name=elapsed value="Date.now() - this.startedAt"
-      return value="{ turnsUsed: this.turnsUsed, turnsRemaining: Math.max(0, budget.maxTurns - this.turnsUsed), tokensUsed: this.tokensUsed, tokensRemaining: budget.maxTokens != null ? Math.max(0, budget.maxTokens - this.tokensUsed) : null, totalToolCalls: this.totalToolCalls, totalCostUsd: this.totalCostUsd, elapsedMs: elapsed, durationRemainingMs: Math.max(0, budget.maxDurationMs - elapsed), state: this.state, }"
+      let name=maxTokens value="budget.maxTokens"
+      let name=elapsed value="hostNowMs() - this.startedAt"
+      return value="{ turnsUsed: this.turnsUsed, turnsRemaining: Math.max(0, budget.maxTurns - this.turnsUsed), tokensUsed: this.tokensUsed, tokensRemaining: maxTokens === undefined ? null : Math.max(0, maxTokens - this.tokensUsed), totalToolCalls: this.totalToolCalls, totalCostUsd: this.totalCostUsd, elapsedMs: elapsed, durationRemainingMs: Math.max(0, budget.maxDurationMs - elapsed), state: this.state, }"
 
   method name=getSignal returns=AbortSignal
     doc "Expose the session's abort signal so callers can pass it to nested operations."

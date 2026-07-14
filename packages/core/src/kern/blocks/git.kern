@@ -3,771 +3,774 @@ import from="node:fs" names="readdirSync,statSync,lstatSync,existsSync,rmSync,re
 import from="node:path" names="join,relative,sep,isAbsolute"
 import from="../models/errors.js" names="GitError,WorktreeError"
 import from="../utils/patch.js" names="normalizePatchContent"
+import from="./host-runtime.js" names="hostCreateSet,hostRegexSplit"
 
-fn name=git params="args:string[],cwd?:string" returns=string export=false
-  handler <<<
-    try {
-      return execFileSync('git', args, {
-        cwd, encoding: 'utf-8', timeout: 30_000,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      }).trim();
-    } catch (err: unknown) {
-      const e = err as { status?: number; stderr?: string|Buffer; stdout?: string|Buffer; message?: string };
-      const stderr = Buffer.isBuffer(e.stderr) ? e.stderr.toString('utf-8') : (e.stderr ?? '');
-      const stdout = Buffer.isBuffer(e.stdout) ? e.stdout.toString('utf-8') : (e.stdout ?? '');
-      const detail = stderr.trim() || stdout.trim() || e.message || 'unknown error';
-      throw new GitError(
-        `git ${args[0]} failed: ${detail}`,
-        e.status ?? 1,
-      );
-    }
-  >>>
+module name=GitOperations
 
-fn name=gitRaw params="args:string[],cwd?:string" returns=string export=false
-  doc "Run git and preserve stdout exactly. Use for patch/diff payloads where trimming the final newline corrupts applyability."
-  handler <<<
-    try {
-      return execFileSync('git', args, {
-        cwd, encoding: 'utf-8', timeout: 30_000,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
-    } catch (err: unknown) {
-      const e = err as { status?: number; stderr?: string|Buffer; stdout?: string|Buffer; message?: string };
-      const stderr = Buffer.isBuffer(e.stderr) ? e.stderr.toString('utf-8') : (e.stderr ?? '');
-      const stdout = Buffer.isBuffer(e.stdout) ? e.stdout.toString('utf-8') : (e.stdout ?? '');
-      const detail = stderr.trim() || stdout.trim() || e.message || 'unknown error';
-      throw new GitError(
-        `git ${args[0]} failed: ${detail}`,
-        e.status ?? 1,
-      );
-    }
-  >>>
+  fn name=git params="args:string[],cwd?:string" returns=string export=false
+    handler <<<
+      try {
+        return execFileSync('git', args, {
+          cwd, encoding: 'utf-8', timeout: 30_000,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        }).trim();
+      } catch (err: unknown) {
+        const e = err as { status?: number; stderr?: string|Buffer; stdout?: string|Buffer; message?: string };
+        const stderr = Buffer.isBuffer(e.stderr) ? e.stderr.toString('utf-8') : (e.stderr ?? '');
+        const stdout = Buffer.isBuffer(e.stdout) ? e.stdout.toString('utf-8') : (e.stdout ?? '');
+        const detail = stderr.trim() || stdout.trim() || e.message || 'unknown error';
+        throw new GitError(
+          `git ${args[0]} failed: ${detail}`,
+          e.status ?? 1,
+        );
+      }
+    >>>
 
-fn name=repoRoot params="cwd:string" returns=string expr={{ return git(['rev-parse', '--show-toplevel'], cwd); }}
+  fn name=gitRaw params="args:string[],cwd?:string" returns=string export=false
+    doc "Run git and preserve stdout exactly. Use for patch/diff payloads where trimming the final newline corrupts applyability."
+    handler <<<
+      try {
+        return execFileSync('git', args, {
+          cwd, encoding: 'utf-8', timeout: 30_000,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        });
+      } catch (err: unknown) {
+        const e = err as { status?: number; stderr?: string|Buffer; stdout?: string|Buffer; message?: string };
+        const stderr = Buffer.isBuffer(e.stderr) ? e.stderr.toString('utf-8') : (e.stderr ?? '');
+        const stdout = Buffer.isBuffer(e.stdout) ? e.stdout.toString('utf-8') : (e.stdout ?? '');
+        const detail = stderr.trim() || stdout.trim() || e.message || 'unknown error';
+        throw new GitError(
+          `git ${args[0]} failed: ${detail}`,
+          e.status ?? 1,
+        );
+      }
+    >>>
 
-fn name=headSha params="cwd:string" returns=string expr={{ return git(['rev-parse', 'HEAD'], cwd); }}
+  fn name=repoRoot params="cwd:string" returns=string expr={{ return git(['rev-parse', '--show-toplevel'], cwd); }}
 
-fn name=worktreePrune params="cwd:string" returns=void expr={{ git(['worktree', 'prune'], cwd); }}
+  fn name=headSha params="cwd:string" returns=string expr={{ return git(['rev-parse', 'HEAD'], cwd); }}
 
-fn name=symlinkNodeModuleEntry params="sourcePath:string,targetPath:string" returns=void export=false
-  handler <<<
-    if (existsSync(targetPath)) return;
-    const sourceStat = statSync(sourcePath);
-    const linkType = sourceStat.isDirectory()
-      ? (process.platform === 'win32' ? 'junction' : 'dir')
-      : 'file';
-    symlinkSync(sourcePath, targetPath, linkType);
-  >>>
+  fn name=worktreePrune params="cwd:string" returns=void expr={{ git(['worktree', 'prune'], cwd); }}
 
-fn name=linkWorktreeNodeModules params="repoDir:string,worktreePath:string" returns=void export=true
-  doc "External git worktrees live outside the repo, so Node cannot walk up to the root install. Create a shallow node_modules overlay: external deps link to the source install, while workspace packages (any scope) link back into the candidate worktree so runtime tests see candidate edits. Handles both npm-hoisted (root node_modules/@scope) and pnpm non-hoisted (per-package node_modules) layouts."
-  handler <<<
-    const repoPackages = join(repoDir, 'packages');
-    const worktreePackages = join(worktreePath, 'packages');
-    // Workspace symlinks resolve through realpathSync, which canonicalizes the
-    // path (e.g. macOS /var -> /private/var, or any symlinked repo/home/temp
-    // component). Compare containment against the realpath'd base or the check
-    // silently fails and the workspace re-point is skipped.
-    const repoPackagesReal = existsSync(repoPackages) ? realpathSync(repoPackages) : repoPackages;
+  fn name=symlinkNodeModuleEntry params="sourcePath:string,targetPath:string" returns=void export=false
+    handler <<<
+      if (existsSync(targetPath)) return;
+      const sourceStat = statSync(sourcePath);
+      const linkType = sourceStat.isDirectory()
+        ? (process.platform === 'win32' ? 'junction' : 'dir')
+        : 'file';
+      symlinkSync(sourcePath, targetPath, linkType);
+    >>>
 
-    const warn = (err: unknown) => {
-      console.warn(`[agon] worktree node_modules link failed for ${worktreePath}: ${err instanceof Error ? err.message : String(err)}`);
-    };
+  fn name=linkWorktreeNodeModules params="repoDir:string,worktreePath:string" returns=void export=true
+    doc "External git worktrees live outside the repo, so Node cannot walk up to the root install. Create a shallow node_modules overlay: external deps link to the source install, while workspace packages (any scope) link back into the candidate worktree so runtime tests see candidate edits. Handles both npm-hoisted (root node_modules/@scope) and pnpm non-hoisted (per-package node_modules) layouts."
+    handler <<<
+      const repoPackages = join(repoDir, 'packages');
+      const worktreePackages = join(worktreePath, 'packages');
+      // Workspace symlinks resolve through realpathSync, which canonicalizes the
+      // path (e.g. macOS /var -> /private/var, or any symlinked repo/home/temp
+      // component). Compare containment against the realpath'd base or the check
+      // silently fails and the workspace re-point is skipped.
+      const repoPackagesReal = existsSync(repoPackages) ? realpathSync(repoPackages) : repoPackages;
 
-    const isInsideRepoPackages = (candidatePath: string): boolean => {
-      const rel = relative(repoPackagesReal, candidatePath);
-      return rel !== '' && rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
-    };
+      const warn = (err: unknown) => {
+        console.warn(`[agon] worktree node_modules link failed for ${worktreePath}: ${err instanceof Error ? err.message : String(err)}`);
+      };
 
-    const workspacePackageNameFor = (resolvedPath: string): string | null => {
-      if (!isInsideRepoPackages(resolvedPath)) return null;
-      const rel = relative(repoPackagesReal, resolvedPath);
-      const [packageName] = rel.split(sep);
-      return packageName || null;
-    };
+      const isInsideRepoPackages = (candidatePath: string): boolean => {
+        const rel = relative(repoPackagesReal, candidatePath);
+        return rel !== '' && rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+      };
 
-    // A workspace symlink (resolving into repo/packages) is re-pointed at the
-    // worktree's copy so the gate sees candidate edits; everything else keeps
-    // pointing at the repo's resolved install (externals, .pnpm store, etc.).
-    const sourceForNodeModuleEntry = (sourcePath: string): string => {
-      const entryStat = lstatSync(sourcePath);
-      if (!entryStat.isSymbolicLink()) return sourcePath;
+      const workspacePackageNameFor = (resolvedPath: string): string | null => {
+        if (!isInsideRepoPackages(resolvedPath)) return null;
+        const rel = relative(repoPackagesReal, resolvedPath);
+        const [packageName] = rel.split(sep);
+        return packageName || null;
+      };
 
-      const resolvedPath = realpathSync(sourcePath);
-      const workspacePackageName = workspacePackageNameFor(resolvedPath);
-      if (!workspacePackageName) return resolvedPath;
+      // A workspace symlink (resolving into repo/packages) is re-pointed at the
+      // worktree's copy so the gate sees candidate edits; everything else keeps
+      // pointing at the repo's resolved install (externals, .pnpm store, etc.).
+      const sourceForNodeModuleEntry = (sourcePath: string): string => {
+        const entryStat = lstatSync(sourcePath);
+        if (!entryStat.isSymbolicLink()) return sourcePath;
 
-      const worktreePackage = join(worktreePackages, workspacePackageName);
-      return existsSync(worktreePackage) ? worktreePackage : resolvedPath;
-    };
+        const resolvedPath = realpathSync(sourcePath);
+        const workspacePackageName = workspacePackageNameFor(resolvedPath);
+        if (!workspacePackageName) return resolvedPath;
 
-    const linkNodeModuleEntry = (
-      sourceDir: string,
-      targetDir: string,
-      entryName: string,
-      allowScopeRecursion: boolean,
-    ): void => {
-      const sourcePath = join(sourceDir, entryName);
-      const targetPath = join(targetDir, entryName);
-      const entryStat = lstatSync(sourcePath);
+        const worktreePackage = join(worktreePackages, workspacePackageName);
+        return existsSync(worktreePackage) ? worktreePackage : resolvedPath;
+      };
 
-      // Scope dir (@scope/pkg): recurse exactly one level so each scoped
-      // package is linked individually. allowScopeRecursion=false on the
-      // inner call prevents walking arbitrary nested trees / recursion loops.
-      if (allowScopeRecursion && entryName.startsWith('@') && entryStat.isDirectory()) {
-        mkdirSync(targetPath, { recursive: true });
-        const scopedEntries = readdirSync(sourcePath, { withFileTypes: true });
-        for (const scopedEntry of scopedEntries) {
-          linkNodeModuleEntry(sourcePath, targetPath, scopedEntry.name, false);
+      const linkNodeModuleEntry = (
+        sourceDir: string,
+        targetDir: string,
+        entryName: string,
+        allowScopeRecursion: boolean,
+      ): void => {
+        const sourcePath = join(sourceDir, entryName);
+        const targetPath = join(targetDir, entryName);
+        const entryStat = lstatSync(sourcePath);
+
+        // Scope dir (@scope/pkg): recurse exactly one level so each scoped
+        // package is linked individually. allowScopeRecursion=false on the
+        // inner call prevents walking arbitrary nested trees / recursion loops.
+        if (allowScopeRecursion && entryName.startsWith('@') && entryStat.isDirectory()) {
+          mkdirSync(targetPath, { recursive: true });
+          const scopedEntries = readdirSync(sourcePath, { withFileTypes: true });
+          for (const scopedEntry of scopedEntries) {
+            linkNodeModuleEntry(sourcePath, targetPath, scopedEntry.name, false);
+          }
+          return;
         }
-        return;
-      }
 
-      symlinkNodeModuleEntry(sourceForNodeModuleEntry(sourcePath), targetPath);
-    };
+        symlinkNodeModuleEntry(sourceForNodeModuleEntry(sourcePath), targetPath);
+      };
 
-    const linkEntries = (sourceDir: string, targetDir: string): void => {
-      mkdirSync(targetDir, { recursive: true });
-      const entries = readdirSync(sourceDir, { withFileTypes: true });
-      for (const entry of entries) {
-        try {
-          linkNodeModuleEntry(sourceDir, targetDir, entry.name, true);
-        } catch (err) {
-          warn(err);
+      const linkEntries = (sourceDir: string, targetDir: string): void => {
+        mkdirSync(targetDir, { recursive: true });
+        const entries = readdirSync(sourceDir, { withFileTypes: true });
+        for (const entry of entries) {
+          try {
+            linkNodeModuleEntry(sourceDir, targetDir, entry.name, true);
+          } catch (err) {
+            warn(err);
+          }
         }
+      };
+
+      try {
+        // 1. Root node_modules overlay (npm-hoisted externals + @scope packages).
+        const rootSource = join(repoDir, 'node_modules');
+        const rootTarget = join(worktreePath, 'node_modules');
+
+        if (existsSync(rootSource)) {
+          // Recurse EVERY root entry through the generic linker. Scope dirs
+          // (@scope) are walked one level so each scoped package is linked
+          // individually; sourceForNodeModuleEntry re-points only the symlinks
+          // that resolve into repo/packages (the workspace packages) at the
+          // worktree copy, leaving real external deps pointing at the source
+          // install. This replaces a former @agon-only fast path: the workspace
+          // scope is now @kernlang, which is MIXED — it holds both workspace
+          // packages (@kernlang/agon-*) and external compiler deps
+          // (@kernlang/cli, @kernlang/core, ...), so a wholesale scope symlink
+          // would wrongly resolve candidate packages back to the source repo.
+          // The generic path also fixes the node_modules-name vs packages-dir
+          // mismatch (node_modules/@kernlang/agon-core ↔ packages/core): it maps
+          // via realpath, not by assuming the entry name equals the package dir.
+          linkEntries(rootSource, rootTarget);
+        }
+
+        // 2. Per-package node_modules overlay (pnpm non-hoisted layout): each
+        //    packages/<p>/node_modules is recreated in the worktree.
+        if (existsSync(repoPackages)) {
+          const packageEntries = readdirSync(repoPackages, { withFileTypes: true });
+          for (const entry of packageEntries) {
+            if (!entry.isDirectory()) continue;
+
+            const packageNodeModules = join(repoPackages, entry.name, 'node_modules');
+            if (!existsSync(packageNodeModules)) continue;
+
+            linkEntries(
+              packageNodeModules,
+              join(worktreePackages, entry.name, 'node_modules'),
+            );
+          }
+        }
+      } catch (err) {
+        warn(err);
       }
-    };
+    >>>
 
-    try {
-      // 1. Root node_modules overlay (npm-hoisted externals + @scope packages).
-      const rootSource = join(repoDir, 'node_modules');
-      const rootTarget = join(worktreePath, 'node_modules');
-
-      if (existsSync(rootSource)) {
-        // Recurse EVERY root entry through the generic linker. Scope dirs
-        // (@scope) are walked one level so each scoped package is linked
-        // individually; sourceForNodeModuleEntry re-points only the symlinks
-        // that resolve into repo/packages (the workspace packages) at the
-        // worktree copy, leaving real external deps pointing at the source
-        // install. This replaces a former @agon-only fast path: the workspace
-        // scope is now @kernlang, which is MIXED — it holds both workspace
-        // packages (@kernlang/agon-*) and external compiler deps
-        // (@kernlang/cli, @kernlang/core, ...), so a wholesale scope symlink
-        // would wrongly resolve candidate packages back to the source repo.
-        // The generic path also fixes the node_modules-name vs packages-dir
-        // mismatch (node_modules/@kernlang/agon-core ↔ packages/core): it maps
-        // via realpath, not by assuming the entry name equals the package dir.
-        linkEntries(rootSource, rootTarget);
-      }
-
-      // 2. Per-package node_modules overlay (pnpm non-hoisted layout): each
-      //    packages/<p>/node_modules is recreated in the worktree.
-      if (existsSync(repoPackages)) {
-        const packageEntries = readdirSync(repoPackages, { withFileTypes: true });
+  fn name=hydrateWorktreeBuildArtifacts params="repoDir:string,worktreePath:string" returns=void export=true
+    doc "Git worktrees omit ignored package dist artifacts, but workspace package exports point at dist. Copy existing root artifacts into the candidate worktree so fitness commands can resolve local workspace packages without forcing every forge candidate to rebuild first."
+    handler <<<
+      const sourcePackages = join(repoDir, 'packages');
+      const targetPackages = join(worktreePath, 'packages');
+      if (!existsSync(sourcePackages) || !existsSync(targetPackages)) return;
+      try {
+        const packageEntries = readdirSync(sourcePackages, { withFileTypes: true });
         for (const entry of packageEntries) {
           if (!entry.isDirectory()) continue;
-
-          const packageNodeModules = join(repoPackages, entry.name, 'node_modules');
-          if (!existsSync(packageNodeModules)) continue;
-
-          linkEntries(
-            packageNodeModules,
-            join(worktreePackages, entry.name, 'node_modules'),
-          );
+          const sourceDist = join(sourcePackages, entry.name, 'dist');
+          const targetDist = join(targetPackages, entry.name, 'dist');
+          const targetPackage = join(targetPackages, entry.name);
+          if (!existsSync(sourceDist) || !existsSync(targetPackage) || existsSync(targetDist)) continue;
+          cpSync(sourceDist, targetDist, { recursive: true, dereference: true });
         }
+      } catch (err) {
+        console.warn(`[agon] worktree artifact hydration failed for ${worktreePath}: ${err instanceof Error ? err.message : String(err)}`);
       }
-    } catch (err) {
-      warn(err);
-    }
-  >>>
+    >>>
 
-fn name=hydrateWorktreeBuildArtifacts params="repoDir:string,worktreePath:string" returns=void export=true
-  doc "Git worktrees omit ignored package dist artifacts, but workspace package exports point at dist. Copy existing root artifacts into the candidate worktree so fitness commands can resolve local workspace packages without forcing every forge candidate to rebuild first."
-  handler <<<
-    const sourcePackages = join(repoDir, 'packages');
-    const targetPackages = join(worktreePath, 'packages');
-    if (!existsSync(sourcePackages) || !existsSync(targetPackages)) return;
-    try {
-      const packageEntries = readdirSync(sourcePackages, { withFileTypes: true });
-      for (const entry of packageEntries) {
-        if (!entry.isDirectory()) continue;
-        const sourceDist = join(sourcePackages, entry.name, 'dist');
-        const targetDist = join(targetPackages, entry.name, 'dist');
-        const targetPackage = join(targetPackages, entry.name);
-        if (!existsSync(sourceDist) || !existsSync(targetPackage) || existsSync(targetDist)) continue;
-        cpSync(sourceDist, targetDist, { recursive: true, dereference: true });
+  const name=activeWorktrees type="Map<string, string>" value={{
+    (() => {
+      const g = globalThis as any;
+      if (!g.__agonActiveWorktrees) {
+        g.__agonActiveWorktrees = new Map<string, string>();
       }
-    } catch (err) {
-      console.warn(`[agon] worktree artifact hydration failed for ${worktreePath}: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  >>>
+      return g.__agonActiveWorktrees;
+    })()
+  }}
 
-const name=activeWorktrees type="Map<string, string>" value={{
-  (() => {
-    const g = globalThis as any;
-    if (!g.__agonActiveWorktrees) {
-      g.__agonActiveWorktrees = new Map<string, string>();
-    }
-    return g.__agonActiveWorktrees;
-  })()
-}}
+  fn name=registerExitHooks returns=void
+    handler <<<
+      const g = globalThis as any;
+      if (g.__agonExitHooksRegistered) return;
+      g.__agonExitHooksRegistered = true;
 
-fn name=registerExitHooks returns=void
-  handler <<<
-    const g = globalThis as any;
-    if (g.__agonExitHooksRegistered) return;
-    g.__agonExitHooksRegistered = true;
+      const cleanup = () => {
+        if (activeWorktrees.size === 0) return;
+        process.stderr.write(`\n[agon] Cleaning up active git worktrees...\n`);
+        // Capture repos BEFORE mutating the map so git worktree prune runs for
+        // every repo that had tracked worktrees, not just the empty remainder.
+        const repoDirs = new Set(activeWorktrees.values());
+        for (const [wtPath, repoDir] of activeWorktrees.entries()) {
+          try {
+            execFileSync('git', ['worktree', 'remove', wtPath, '--force'], { cwd: repoDir, stdio: 'ignore' });
+            activeWorktrees.delete(wtPath);
+          } catch { /* best effort */ }
+        }
+        for (const repoDir of repoDirs) {
+          try {
+            execFileSync('git', ['worktree', 'prune'], { cwd: repoDir, stdio: 'ignore' });
+          } catch {}
+        }
+      };
 
-    const cleanup = () => {
-      if (activeWorktrees.size === 0) return;
-      process.stderr.write(`\n[agon] Cleaning up active git worktrees...\n`);
-      // Capture repos BEFORE mutating the map so git worktree prune runs for
-      // every repo that had tracked worktrees, not just the empty remainder.
-      const repoDirs = new Set(activeWorktrees.values());
-      for (const [wtPath, repoDir] of activeWorktrees.entries()) {
-        try {
-          execFileSync('git', ['worktree', 'remove', wtPath, '--force'], { cwd: repoDir, stdio: 'ignore' });
-          activeWorktrees.delete(wtPath);
-        } catch { /* best effort */ }
-      }
-      for (const repoDir of repoDirs) {
-        try {
-          execFileSync('git', ['worktree', 'prune'], { cwd: repoDir, stdio: 'ignore' });
-        } catch {}
-      }
-    };
+      process.on('exit', () => {
+        cleanup();
+      });
 
-    process.on('exit', () => {
-      cleanup();
-    });
+      const handleSigInt = () => {
+        cleanup();
+        if (process.listenerCount('SIGINT') <= 1) {
+          process.exit(130);
+        }
+      };
 
-    const handleSigInt = () => {
-      cleanup();
-      if (process.listenerCount('SIGINT') <= 1) {
-        process.exit(130);
-      }
-    };
+      const handleSigTerm = () => {
+        cleanup();
+        if (process.listenerCount('SIGTERM') <= 1) {
+          process.exit(143);
+        }
+      };
 
-    const handleSigTerm = () => {
-      cleanup();
-      if (process.listenerCount('SIGTERM') <= 1) {
-        process.exit(143);
-      }
-    };
+      process.on('SIGINT', handleSigInt);
+      process.on('SIGTERM', handleSigTerm);
+    >>>
 
-    process.on('SIGINT', handleSigInt);
-    process.on('SIGTERM', handleSigTerm);
-  >>>
-
-fn name=worktreeCreate params="repoDir:string,worktreePath:string,sha:string" returns=string
-  handler <<<
-    registerExitHooks();
-    worktreePrune(repoDir);
-    try {
-      git(['worktree', 'add', '--detach', worktreePath, sha], repoDir);
-      activeWorktrees.set(worktreePath, repoDir);
-      linkWorktreeNodeModules(repoDir, worktreePath);
-      hydrateWorktreeBuildArtifacts(repoDir, worktreePath);
-      return worktreePath;
-    } catch (err) {
-      throw new WorktreeError(
-        `Failed to create worktree at ${worktreePath}: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-  >>>
-
-fn name=absoluteGitDir params="cwd:string" returns=string
-  doc "Resolve the PER-CHECKOUT git-dir (never the shared common-dir): the main checkout -> <repo>/.git, a linked worktree -> <repo>/.git/worktrees/<name>. Keying an advisory lock here makes sessions sharing ONE checkout contend (same dir) while separate worktrees stay independent (distinct dirs)."
-  handler <<<
-    return git(['rev-parse', '--absolute-git-dir'], cwd);
-  >>>
-
-fn name=branchExists params="repoDir:string,branch:string" returns=boolean
-  doc "True if refs/heads/<branch> already exists in repoDir."
-  handler <<<
-    try {
-      git(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], repoDir);
-      return true;
-    } catch {
-      return false;
-    }
-  >>>
-
-fn name=worktreeAddOnBranch params="repoDir:string,worktreePath:string,branch:string,base?:string,link?:boolean" returns=string
-  doc "Add a git worktree checked out on a NAMED branch — unlike worktreeCreate, which detaches for throwaway forge candidates. Prefers git's DWIM (an existing local branch, or a tracking branch when <branch> resolves on exactly one remote); only when that fails is a fresh branch created off base/HEAD. When link is not false, overlay node_modules + dist so the worktree is immediately buildable."
-  handler <<<
-    // Session worktrees are persistent by design: do NOT register them for
-    // process-exit cleanup. Only ephemeral throwaway worktrees (worktreeCreate)
-    // should be tracked in activeWorktrees.
-    worktreePrune(repoDir);
-    // Guard the empty string: '' ?? 'HEAD' is '', which git rejects as a start-point.
-    const startPoint = (base && base.trim()) || 'HEAD';
-    try {
+  fn name=worktreeCreate params="repoDir:string,worktreePath:string,sha:string" returns=string
+    handler <<<
+      registerExitHooks();
+      worktreePrune(repoDir);
       try {
-        // DWIM: checks out an existing local branch, or creates a tracking
-        // branch when <branch> resolves on exactly one remote.
-        git(['worktree', 'add', worktreePath, branch], repoDir);
-      } catch {
-        // <branch> resolves to no ref — create a fresh branch off the base.
-        git(['worktree', 'add', '-b', branch, worktreePath, startPoint], repoDir);
-      }
-      if (link !== false) {
+        git(['worktree', 'add', '--detach', worktreePath, sha], repoDir);
+        activeWorktrees.set(worktreePath, repoDir);
         linkWorktreeNodeModules(repoDir, worktreePath);
         hydrateWorktreeBuildArtifacts(repoDir, worktreePath);
-      }
-      return worktreePath;
-    } catch (err) {
-      throw new WorktreeError(
-        `Failed to add worktree for branch ${branch} at ${worktreePath}: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-  >>>
-
-fn name=worktreeRemove params="repoDir:string,worktreePath:string" returns=void
-  doc "Strict worktree removal: one retry, then throws WorktreeError. Use when cleanup failure must be visible to the caller (e.g. AgentTeam where leaked worktrees collide on subsequent runs)."
-  handler <<<
-    let lastErr: unknown = null;
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        git(['worktree', 'remove', worktreePath, '--force'], repoDir);
-        activeWorktrees.delete(worktreePath);
-        return;
+        return worktreePath;
       } catch (err) {
-        lastErr = err;
+        throw new WorktreeError(
+          `Failed to create worktree at ${worktreePath}: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
-    }
-    throw new WorktreeError(
-      `Failed to remove worktree ${worktreePath} after retry: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`,
-    );
-  >>>
+    >>>
 
-fn name=worktreeRemoveBestEffort params="repoDir:string,worktreePath:string" returns=void
-  doc "Best-effort worktree removal: idempotent (silent if already gone), logs warning on real failure, never throws. For finally-block cleanup paths where the caller is already in an error path or doesn't need to know about cleanup failures."
-  handler <<<
-    // Skip silently if the worktree directory is already gone — git worktree remove
-    // on a missing path errors with 'is not a working tree' and floods cleanup logs
-    // when forge re-runs cleanup over already-cleaned paths. Also prune the registry
-    // so git's internal state doesn't drift.
-    if (!existsSync(worktreePath)) {
-      try { git(['worktree', 'prune'], repoDir); } catch { /* non-fatal */ }
-      return;
-    }
-    try {
-      worktreeRemove(repoDir, worktreePath);
-    } catch (err) {
-      console.warn(`[agon] best-effort worktree remove failed for ${worktreePath}: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  >>>
+  fn name=absoluteGitDir params="cwd:string" returns=string
+    doc "Resolve the PER-CHECKOUT git-dir (never the shared common-dir): the main checkout -> <repo>/.git, a linked worktree -> <repo>/.git/worktrees/<name>. Keying an advisory lock here makes sessions sharing ONE checkout contend (same dir) while separate worktrees stay independent (distinct dirs)."
+    handler <<<
+      return git(['rev-parse', '--absolute-git-dir'], cwd);
+    >>>
 
-fn name=worktreePruneAll params="repoDir:string,olderThanMs:number" returns=void
-  doc "Janitor: scan .agon/agent-worktrees/<runId>/ and remove any directories whose mtime is older than threshold. Called at startup of every team run to clean up after cancelled/crashed runs that left worktrees behind."
-  handler <<<
-    const baseDir = join(repoDir, '.agon', 'agent-worktrees');
-    if (!existsSync(baseDir)) return;
-    let runIds: string[];
-    try { runIds = readdirSync(baseDir); } catch { return; }
-    const now = Date.now();
-    for (const runId of runIds) {
-      const runPath = join(baseDir, runId);
-      let runStat: { isDirectory: () => boolean; mtimeMs: number };
-      try { runStat = statSync(runPath); } catch { continue; }
-      if (!runStat.isDirectory()) continue;
-      if (now - runStat.mtimeMs < olderThanMs) continue;
-      // Old enough — clean up each engine worktree under this runId
-      let engineIds: string[];
-      try { engineIds = readdirSync(runPath); } catch { continue; }
-      for (const engineId of engineIds) {
-        const wtPath = join(runPath, engineId);
-        try { worktreeRemove(repoDir, wtPath); } catch { /* swallow during janitor */ }
-      }
-      // Try to remove the empty runId dir
-      try { rmSync(runPath, { recursive: true, force: true }); } catch { /* leave it */ }
-    }
-    // Prune git's internal worktree registry
-    try { git(['worktree', 'prune'], repoDir); } catch { /* non-fatal */ }
-  >>>
-
-fn name=worktreePruneOrphaned params="repoDir:string" returns=void export=true
-  doc "Prune any registered git worktrees that point to ephemeral Agon roots: repo-local .agon/agent-worktrees/, .agon/speculate-worktrees/, .agon/runs/, or .agon/goals/. Explicitly excludes persistent session worktrees under ~/.agon/worktrees/."
-  handler <<<
-    try {
-      const output = git(['worktree', 'list', '--porcelain'], repoDir);
-      const lines = output.split('\n');
-      for (const line of lines) {
-        if (line.startsWith('worktree ')) {
-          const wtPath = line.slice(9).trim();
-          // Only match ephemeral Agon worktree roots. Session worktrees live
-          // under ~/.agon/worktrees/ and must NOT be caught here.
-          const isAgentWt = wtPath.includes('.agon/agent-worktrees') ||
-                            wtPath.includes('.agon/speculate-worktrees') ||
-                            wtPath.includes('.agon/runs') ||
-                            wtPath.includes('.agon/goals');
-          if (isAgentWt) {
-            worktreeRemoveBestEffort(repoDir, wtPath);
-          }
-        }
-      }
-    } catch (err) {
-      console.warn(`[agon] worktreePruneOrphaned failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  >>>
-
-
-fn name=worktreeChangedDiff params="cwd:string,baseSha:string" returns=string
-  doc "Return the unified diff of all changes in a worktree against the base SHA, INCLUDING untracked files but EXCLUDING anything in .gitignore (node_modules, dist, .agon, etc.). Used by Phase 3 scoring to compute per-member diffs without the buggy worktreeDiff approach (which does git add -A and would stage node_modules)."
-  handler <<<
-    try {
-      // Diff tracked changes against baseSha
-      const trackedDiff = gitRaw(['diff', baseSha, '--'], cwd);
-      // Add untracked files (respecting .gitignore via --exclude-standard)
-      // We pipe each untracked file through git diff --no-index against /dev/null
-      // to get a unified diff format.
-      const untracked = git(['ls-files', '--others', '--exclude-standard'], cwd);
-      const untrackedFiles = untracked.split('\n').filter((l: string) => l.trim());
-      let untrackedDiffs = '';
-      for (const file of untrackedFiles) {
-        try {
-          // git diff --no-index returns 1 when there are differences (which is normal here)
-          const result = execFileSync('git', ['diff', '--no-index', '--', '/dev/null', file], {
-            cwd, encoding: 'utf-8', timeout: 10_000,
-            stdio: ['pipe', 'pipe', 'pipe'],
-          });
-          untrackedDiffs += result;
-        } catch (e: unknown) {
-          // exit 1 is expected (means there are differences); capture stdout from the error
-          const err = e as { status?: number; stdout?: string };
-          if (err.status === 1 && err.stdout) untrackedDiffs += err.stdout;
-        }
-      }
-      return trackedDiff + (trackedDiff && untrackedDiffs ? '\n' : '') + untrackedDiffs;
-    } catch (err) {
-      console.warn(`[agon] worktreeChangedDiff failed: ${err instanceof Error ? err.message : String(err)}`);
-      return '';
-    }
-  >>>
-
-fn name=worktreeChangedShortstat params="cwd:string,baseSha:string" returns="{filesChanged:number,linesChanged:number}"
-  doc "Return shortstat numbers (file count, total lines changed) for a worktree against base SHA, including untracked files. Used by Phase 3 scoring without the node_modules-explosion bug of worktreeDiff. Untracked files are counted via direct filesystem read since they're not in the git index."
-  handler <<<
-    let filesChanged = 0;
-    let linesChanged = 0;
-    try {
-      // Tracked changes
-      const trackedStat = git(['diff', baseSha, '--shortstat', '--'], cwd);
-      // Format: " 3 files changed, 47 insertions(+), 12 deletions(-)"
-      const fileMatch = trackedStat.match(/(\d+)\s+files?\s+changed/);
-      const insMatch = trackedStat.match(/(\d+)\s+insertions?/);
-      const delMatch = trackedStat.match(/(\d+)\s+deletions?/);
-      if (fileMatch) filesChanged += parseInt(fileMatch[1], 10);
-      if (insMatch) linesChanged += parseInt(insMatch[1], 10);
-      if (delMatch) linesChanged += parseInt(delMatch[1], 10);
-      // Untracked files (count files + lines).
-      // Gemini code review fix #4: skip git show :file — untracked files by
-      // definition aren't in the index, so that call always failed. Read the
-      // file directly from disk via fs.readFileSync (handles paths with spaces;
-      // wc -l doesn't quote properly when invoked via execFile).
-      const untracked = git(['ls-files', '--others', '--exclude-standard'], cwd);
-      const untrackedFiles = untracked.split('\n').filter((l: string) => l.trim());
-      filesChanged += untrackedFiles.length;
-      for (const file of untrackedFiles) {
-        const fullPath = join(cwd, file);
-        try {
-          // Read as raw buffer first so we can detect binary by scanning for
-          // null bytes — readFileSync(path, 'utf-8') would throw on binary
-          // with an inscrutable error, swallowing the type information.
-          const buf = readFileSync(fullPath);
-          // Binary heuristic: presence of NUL byte in first 8KB. Skip silently.
-          let isBinary = false;
-          const sample = buf.slice(0, Math.min(buf.length, 8192));
-          for (let i = 0; i < sample.length; i++) {
-            if (sample[i] === 0) { isBinary = true; break; }
-          }
-          if (isBinary) continue;
-          // Count newlines + 1 for trailing line without newline. Matches wc -l
-          // semantics but handles paths with spaces (which wc -l invoked via
-          // execFile does NOT) and binary detection (which utf-8 readFileSync
-          // does NOT — it would throw on first invalid byte sequence).
-          const content = buf.toString('utf-8');
-          const newlineCount = (content.match(/\n/g) ?? []).length;
-          linesChanged += newlineCount + (content.length > 0 && !content.endsWith('\n') ? 1 : 0);
-        } catch (err: unknown) {
-          // OpenCode review fix #3: categorize the catch instead of
-          // silently swallowing every error type.
-          const e = err as { code?: string };
-          if (e.code === 'ENOENT') {
-            // File deleted between ls-files and read — racy but harmless, skip silently.
-          } else if (e.code === 'EACCES' || e.code === 'EPERM') {
-            console.warn(`[agon] worktreeChangedShortstat: permission denied reading ${file}`);
-          } else {
-            console.warn(`[agon] worktreeChangedShortstat: failed to read ${file}: ${err instanceof Error ? err.message : String(err)}`);
-          }
-        }
-      }
-    } catch (err) {
-      console.warn(`[agon] worktreeChangedShortstat failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
-    return { filesChanged, linesChanged };
-  >>>
-
-fn name=stashSnapshot params="cwd:string" returns=string
-  doc "Capture the working tree (modifications to TRACKED files only) as a stash-like commit SHA WITHOUT modifying the working tree. Returns the stash SHA, or HEAD SHA if the tree is clean. Used by AgentTeam to give parallel agents a worktree base that includes the user's in-progress edits to tracked files, so synthesized patches apply cleanly against the user's actual current state. KNOWN LIMITATION: untracked files (new files the user just created locally but hasn't `git add`-ed) are NOT in the snapshot — git stash create silently ignores -u. Agents will not see those files. Logs a warning when untracked files are present so the user knows."
-  handler <<<
-    try {
-      // git stash create captures TRACKED modifications as a commit object
-      // without modifying the working tree or saving to the stash list.
-      // The -u flag is silently ignored by git stash create (it only works
-      // for git stash push). Untracked files are NOT captured.
-      const sha = git(['stash', 'create'], cwd);
-
-      // Warn if there are untracked files that the snapshot is missing.
+  fn name=branchExists params="repoDir:string,branch:string" returns=boolean
+    doc "True if refs/heads/<branch> already exists in repoDir."
+    handler <<<
       try {
+        git(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], repoDir);
+        return true;
+      } catch {
+        return false;
+      }
+    >>>
+
+  fn name=worktreeAddOnBranch params="repoDir:string,worktreePath:string,branch:string,base?:string,link?:boolean" returns=string
+    doc "Add a git worktree checked out on a NAMED branch — unlike worktreeCreate, which detaches for throwaway forge candidates. Prefers git's DWIM (an existing local branch, or a tracking branch when <branch> resolves on exactly one remote); only when that fails is a fresh branch created off base/HEAD. When link is not false, overlay node_modules + dist so the worktree is immediately buildable."
+    handler <<<
+      // Session worktrees are persistent by design: do NOT register them for
+      // process-exit cleanup. Only ephemeral throwaway worktrees (worktreeCreate)
+      // should be tracked in activeWorktrees.
+      worktreePrune(repoDir);
+      // Guard the empty string: '' ?? 'HEAD' is '', which git rejects as a start-point.
+      const startPoint = (base && base.trim()) || 'HEAD';
+      try {
+        try {
+          // DWIM: checks out an existing local branch, or creates a tracking
+          // branch when <branch> resolves on exactly one remote.
+          git(['worktree', 'add', worktreePath, branch], repoDir);
+        } catch {
+          // <branch> resolves to no ref — create a fresh branch off the base.
+          git(['worktree', 'add', '-b', branch, worktreePath, startPoint], repoDir);
+        }
+        if (link !== false) {
+          linkWorktreeNodeModules(repoDir, worktreePath);
+          hydrateWorktreeBuildArtifacts(repoDir, worktreePath);
+        }
+        return worktreePath;
+      } catch (err) {
+        throw new WorktreeError(
+          `Failed to add worktree for branch ${branch} at ${worktreePath}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    >>>
+
+  fn name=worktreeRemove params="repoDir:string,worktreePath:string" returns=void
+    doc "Strict worktree removal: one retry, then throws WorktreeError. Use when cleanup failure must be visible to the caller (e.g. AgentTeam where leaked worktrees collide on subsequent runs)."
+    handler <<<
+      let lastErr: unknown = null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          git(['worktree', 'remove', worktreePath, '--force'], repoDir);
+          activeWorktrees.delete(worktreePath);
+          return;
+        } catch (err) {
+          lastErr = err;
+        }
+      }
+      throw new WorktreeError(
+        `Failed to remove worktree ${worktreePath} after retry: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`,
+      );
+    >>>
+
+  fn name=worktreeRemoveBestEffort params="repoDir:string,worktreePath:string" returns=void
+    doc "Best-effort worktree removal: idempotent (silent if already gone), logs warning on real failure, never throws. For finally-block cleanup paths where the caller is already in an error path or doesn't need to know about cleanup failures."
+    handler <<<
+      // Skip silently if the worktree directory is already gone — git worktree remove
+      // on a missing path errors with 'is not a working tree' and floods cleanup logs
+      // when forge re-runs cleanup over already-cleaned paths. Also prune the registry
+      // so git's internal state doesn't drift.
+      if (!existsSync(worktreePath)) {
+        try { git(['worktree', 'prune'], repoDir); } catch { /* non-fatal */ }
+        return;
+      }
+      try {
+        worktreeRemove(repoDir, worktreePath);
+      } catch (err) {
+        console.warn(`[agon] best-effort worktree remove failed for ${worktreePath}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    >>>
+
+  fn name=worktreePruneAll params="repoDir:string,olderThanMs:number" returns=void
+    doc "Janitor: scan .agon/agent-worktrees/<runId>/ and remove any directories whose mtime is older than threshold. Called at startup of every team run to clean up after cancelled/crashed runs that left worktrees behind."
+    handler <<<
+      const baseDir = join(repoDir, '.agon', 'agent-worktrees');
+      if (!existsSync(baseDir)) return;
+      let runIds: string[];
+      try { runIds = readdirSync(baseDir); } catch { return; }
+      const now = Date.now();
+      for (const runId of runIds) {
+        const runPath = join(baseDir, runId);
+        let runStat: { isDirectory: () => boolean; mtimeMs: number };
+        try { runStat = statSync(runPath); } catch { continue; }
+        if (!runStat.isDirectory()) continue;
+        if (now - runStat.mtimeMs < olderThanMs) continue;
+        // Old enough — clean up each engine worktree under this runId
+        let engineIds: string[];
+        try { engineIds = readdirSync(runPath); } catch { continue; }
+        for (const engineId of engineIds) {
+          const wtPath = join(runPath, engineId);
+          try { worktreeRemove(repoDir, wtPath); } catch { /* swallow during janitor */ }
+        }
+        // Try to remove the empty runId dir
+        try { rmSync(runPath, { recursive: true, force: true }); } catch { /* leave it */ }
+      }
+      // Prune git's internal worktree registry
+      try { git(['worktree', 'prune'], repoDir); } catch { /* non-fatal */ }
+    >>>
+
+  fn name=worktreePruneOrphaned params="repoDir:string" returns=void export=true
+    doc "Prune any registered git worktrees that point to ephemeral Agon roots: repo-local .agon/agent-worktrees/, .agon/speculate-worktrees/, .agon/runs/, or .agon/goals/. Explicitly excludes persistent session worktrees under ~/.agon/worktrees/."
+    handler <<<
+      try {
+        const output = git(['worktree', 'list', '--porcelain'], repoDir);
+        const lines = output.split('\n');
+        for (const line of lines) {
+          if (line.startsWith('worktree ')) {
+            const wtPath = line.slice(9).trim();
+            // Only match ephemeral Agon worktree roots. Session worktrees live
+            // under ~/.agon/worktrees/ and must NOT be caught here.
+            const isAgentWt = wtPath.includes('.agon/agent-worktrees') ||
+                              wtPath.includes('.agon/speculate-worktrees') ||
+                              wtPath.includes('.agon/runs') ||
+                              wtPath.includes('.agon/goals');
+            if (isAgentWt) {
+              worktreeRemoveBestEffort(repoDir, wtPath);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(`[agon] worktreePruneOrphaned failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    >>>
+
+
+  fn name=worktreeChangedDiff params="cwd:string,baseSha:string" returns=string
+    doc "Return the unified diff of all changes in a worktree against the base SHA, INCLUDING untracked files but EXCLUDING anything in .gitignore (node_modules, dist, .agon, etc.). Used by Phase 3 scoring to compute per-member diffs without the buggy worktreeDiff approach (which does git add -A and would stage node_modules)."
+    handler <<<
+      try {
+        // Diff tracked changes against baseSha
+        const trackedDiff = gitRaw(['diff', baseSha, '--'], cwd);
+        // Add untracked files (respecting .gitignore via --exclude-standard)
+        // We pipe each untracked file through git diff --no-index against /dev/null
+        // to get a unified diff format.
         const untracked = git(['ls-files', '--others', '--exclude-standard'], cwd);
         const untrackedFiles = untracked.split('\n').filter((l: string) => l.trim());
-        if (untrackedFiles.length > 0) {
-          console.warn(`[agon] stashSnapshot: ${untrackedFiles.length} untracked file(s) NOT included in agent base SHA. The first few: ${untrackedFiles.slice(0, 3).join(', ')}. Agents will operate on tracked changes only — \`git add\` these files first if you need them in the agent's view.`);
+        let untrackedDiffs = '';
+        for (const file of untrackedFiles) {
+          try {
+            // git diff --no-index returns 1 when there are differences (which is normal here)
+            const result = execFileSync('git', ['diff', '--no-index', '--', '/dev/null', file], {
+              cwd, encoding: 'utf-8', timeout: 10_000,
+              stdio: ['pipe', 'pipe', 'pipe'],
+            });
+            untrackedDiffs += result;
+          } catch (e: unknown) {
+            // exit 1 is expected (means there are differences); capture stdout from the error
+            const err = e as { status?: number; stdout?: string };
+            if (err.status === 1 && err.stdout) untrackedDiffs += err.stdout;
+          }
         }
-      } catch { /* untracked check is informational only */ }
+        return trackedDiff + (trackedDiff && untrackedDiffs ? '\n' : '') + untrackedDiffs;
+      } catch (err) {
+        console.warn(`[agon] worktreeChangedDiff failed: ${err instanceof Error ? err.message : String(err)}`);
+        return '';
+      }
+    >>>
 
-      if (sha.trim()) return sha.trim();
-      // Empty result = clean working tree (no tracked modifications), just use HEAD
-      return git(['rev-parse', 'HEAD'], cwd);
-    } catch (err) {
-      // git stash create unsupported or other failure — fall back to HEAD
-      console.warn(`[agon] stashSnapshot fell back to HEAD: ${err instanceof Error ? err.message : String(err)}`);
-      return git(['rev-parse', 'HEAD'], cwd);
-    }
-  >>>
-
-fn name=isWorktreeOrRepo params="cwd:string" returns=boolean export=false
-  doc "Check if cwd exists AND is a git working tree (so 'git diff --cached' won't silently fall back to --no-index mode and reject the flag)."
-  handler lang="kern"
-    if cond="!existsSync(cwd)"
-      return value="false"
-    comment raw="// git worktrees have a `.git` file (regular file pointing to the registry),"
-    comment raw="// a regular repo has a `.git` directory. Either is enough for diff/index ops."
-    if cond="existsSync(join(cwd, '.git'))"
-      return value="true"
-    comment raw="// Fall back to asking git directly — handles edge cases like submodules."
-    try
-      do value="execFileSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd, encoding: 'utf-8', timeout: 2000, stdio: ['pipe', 'pipe', 'pipe'], })"
-      return value="true"
-      catch name=e
-        return value="false"
-
-fn name=worktreeDiff params="cwd:string" returns=string
-  handler <<<
-    if (!isWorktreeOrRepo(cwd)) return '';
-    try {
-      git(['add', '-A'], cwd);
-      return gitRaw(['diff', '--cached'], cwd);
-    } catch (err) {
-      console.warn(`[agon] worktreeDiff failed: ${err instanceof Error ? err.message : String(err)}`);
-      return '';
-    }
-  >>>
-
-fn name=readOnlyDiff params="cwd:string" returns=string
-  handler <<<
-    if (!isWorktreeOrRepo(cwd)) return '';
-    try {
-      const staged = gitRaw(['diff', '--cached'], cwd);
-      const unstaged = gitRaw(['diff'], cwd);
-      return staged + (staged && unstaged ? '\n' : '') + unstaged;
-    } catch (err) {
-      console.warn(`[agon] readOnlyDiff failed: ${err instanceof Error ? err.message : String(err)}`);
-      return '';
-    }
-  >>>
-
-fn name=diffLineCount params="diff:string" returns=number
-  handler <<<
-    let count = 0;
-    for (const line of diff.split('\n')) {
-      if (line.startsWith('+') && !line.startsWith('+++')) count++;
-      if (line.startsWith('-') && !line.startsWith('---')) count++;
-    }
-    return count;
-  >>>
-
-fn name=diffFileCount params="cwd:string" returns=number
-  handler <<<
-    if (!isWorktreeOrRepo(cwd)) return 0;
-    try {
-      const result = git(['diff', '--cached', '--name-only'], cwd);
-      return result ? result.split('\n').filter(Boolean).length : 0;
-    } catch (err) {
-      console.warn(`[agon] diffFileCount failed: ${err instanceof Error ? err.message : String(err)}`);
-      return 0;
-    }
-  >>>
-
-fn name=applyPatch params="cwd:string,patchContent:string" returns=void
-  handler lang="kern"
-    if cond="!patchContent.trim()"
-      return
-    try
-      do value="execFileSync('git', ['apply', '--allow-empty', '-'], { cwd, input: normalizePatchContent(patchContent), encoding: 'utf-8', timeout: 30000, stdio: ['pipe', 'pipe', 'pipe'] })"
-      catch name=err
-        let name=e value="err as { stderr?: string }"
-        throw value="new GitError(`Failed to apply patch: ${e.stderr?.trim() ?? 'unknown error'}`)"
-
-fn name=currentBranch params="cwd:string" returns=string
-  handler lang="kern"
-    try
-      return value="git(['rev-parse', '--abbrev-ref', 'HEAD'], cwd)"
-      catch name=e
-        return value="'unknown'"
-
-fn name=isDirty params="cwd:string" returns=boolean
-  handler lang="kern"
-    try
-      return value="git(['status', '--porcelain'], cwd).length > 0"
-      catch name=e
-        return value="false"
-
-fn name=recentCommits params="cwd:string,count?:number" returns=string
-  handler lang="kern"
-    try
-      return value="git(['log', '--oneline', `-${count ?? 10}`], cwd)"
-      catch name=e
-        return value="''"
-
-fn name=coAuthorTrailer params="config:{commitCoAuthor?:string}" returns=string export=true
-  doc "Co-Authored-By trailer paragraph for commits agon itself creates. IDIOM: returns '' when config.commitCoAuthor is unset/blank, else a full leading-blank-line paragraph `\\n\\nCo-Authored-By: <value>` meant to be string-CONCATENATED onto the commit message body (matching the autoCredit trailer pattern in /commit). NOTE: call sites should prefer appendCoAuthor, which is paragraph-aware — it joins into the message's final paragraph when that paragraph is already a trailer block (so git keeps both trailers), instead of blindly prepending a blank-line paragraph. coAuthorTrailer stays exported for direct unit testing of the raw paragraph idiom."
-  handler lang="kern"
-    let name=v value="(config.commitCoAuthor ?? '').trim()"
-    if cond="!v"
-      return value="''"
-    return value="`\\n\\nCo-Authored-By: ${v}`"
-
-fn name=appendCoAuthor params="message:string,config:{commitCoAuthor?:string}" returns=string export=true
-  doc "Paragraph-aware Co-Authored-By append. Returns message unchanged when config.commitCoAuthor is blank/unset. Otherwise: if the message's LAST paragraph is a SEPARATE trailer block — there is more than one paragraph AND every non-empty line of the last one matches /^[A-Za-z][A-Za-z-]*: / (e.g. a user-supplied Co-Authored-By: or Signed-off-by:) — the new trailer is joined with a single `\\n` so all trailers share ONE final paragraph (git only parses trailers from the last paragraph; a blank-line separator would orphan the existing ones). Otherwise the trailer is appended as a new `\\n\\n` paragraph. The >1-paragraph guard is load-bearing: a single-paragraph conventional-commit subject like `feat: do thing` also matches the trailer regex and must NOT be treated as a trailer block. Prefer this over coAuthorTrailer at all commit call sites."
-  handler lang="kern"
-    let name=v value="(config.commitCoAuthor ?? '').trim()"
-    if cond="!v"
-      return value="message"
-    let name=trailerLine value="`Co-Authored-By: ${v}`"
-    comment raw="// Split into paragraphs on blank lines; inspect the LAST one. A trailer block must be a SEPARATE final paragraph — the subject line (a single-paragraph message like `feat: do thing`) also matches the trailer regex, so only treat the last paragraph as trailers when there is MORE than one paragraph."
-    let name=paragraphs value="message.split(/\\n\\s*\\n/)"
-    let name=lastParagraph value="paragraphs[paragraphs.length - 1] ?? ''"
-    let name=nonEmptyLines value="lastParagraph.split('\\n').map((l: string) => l.trim()).filter(Boolean)"
-    let name=isTrailerBlock value="paragraphs.length > 1 && nonEmptyLines.length > 0 && nonEmptyLines.every((l: string) => /^[A-Za-z][A-Za-z-]*: /.test(l))"
-    if cond="isTrailerBlock"
-      return value="`${message}\\n${trailerLine}`"
-    return value="`${message}\\n\\n${trailerLine}`"
-
-const name=AGON_ATTRIBUTION type=string value={{ '⚔️ Forged by [Agon](https://github.com/KERNlang/agon)' }} export=true
-  doc "The Claude-Code-style attribution line agon appends to COMMITS it creates — 'Forged by', after agon's signature forge mode. Commit messages are rendered as PLAIN TEXT on GitHub (no markdown, no images), so the brand mark is the agon arena glyph ⚔️ — the colored AGON wordmark is impossible here. PR bodies use AGON_ATTRIBUTION_PR (markdown context, real logo image). Same wording in both so they read as one brand."
-
-const name=AGON_ATTRIBUTION_PR type=string value={{ '<img src="https://github.com/KERN-Agon.png" width="16" height="16" alt="Agon" /> Forged by [Agon](https://github.com/KERNlang/agon)' }} export=true
-  doc "PR-body attribution line — PR bodies render markdown/HTML, so this shows the real AGON logo: the KERN-Agon GitHub account's avatar (github.com/KERN-Agon.png is a stable public URL even though the repo is private). Upload the AGON wordmark as that account's profile picture once and it powers BOTH the co-author/contributor avatar AND this footer. Falls back to GitHub's identicon until the avatar is set — never broken."
-
-fn name=appendAttribution params="message:string,config:{commitCoAuthor?:string}" returns=string export=true
-  doc "Claude-Code-1:1 attribution block for commits agon itself creates: appends the '🤖 Generated with [Agon](…)' line as its own paragraph, then the Co-Authored-By trailer as the final paragraph — the exact layout Claude Code uses. config.commitCoAuthor is the SINGLE opt-out switch (mirrors Claude Code's includeCoAuthoredBy): blank/unset returns the message unchanged — no banner, no trailer. Implemented as appendCoAuthor(message + banner): the banner paragraph guarantees the trailer lands alone in the last paragraph, where git parses trailers. Prefer this over bare appendCoAuthor at agon's own commit call sites."
-  handler <<<
-    const v = (config.commitCoAuthor ?? '').trim();
-    if (!v) return message;
-    return appendCoAuthor(`${message.trimEnd()}\n\n${AGON_ATTRIBUTION}`, config);
-  >>>
-
-fn name=appendPrAttribution params="body:string,config:{commitCoAuthor?:string}" returns=string export=true
-  doc "PR-body variant of appendAttribution: appends only the Generated-with line (Co-Authored-By is a commit-trailer concept, not PR text), using the markdown/logo variant since PR bodies render HTML. Same single opt-out switch (commitCoAuthor blank = no footer)."
-  handler <<<
-    const v = (config.commitCoAuthor ?? '').trim();
-    if (!v) return body;
-    return `${body.trimEnd()}\n\n${AGON_ATTRIBUTION_PR}`;
-  >>>
-
-fn name=normalizeGitHubRemote params="url:string" returns=string export=true
-  doc "Normalize a github.com remote URL (scp-like ssh, ssh://, http(s), with/without .git) to https://github.com/<org>/<repo>. Returns '' for non-GitHub or unparseable remotes — callers then skip the prefilled-PR link and just print the PR text. Pure; exported for unit tests."
-  handler <<<
-    const u = url.trim();
-    let m = u.match(/^(?:ssh:\/\/)?git@github\.com[/:]([^/]+)\/(.+?)(?:\.git)?\/?$/);
-    if (m) return `https://github.com/${m[1]}/${m[2]}`;
-    m = u.match(/^https?:\/\/(?:[^@/]+@)?github\.com\/([^/]+)\/(.+?)(?:\.git)?\/?$/);
-    if (m) return `https://github.com/${m[1]}/${m[2]}`;
-    return '';
-  >>>
-
-fn name=githubRepoUrl params="cwd:string,remote?:string" returns=string export=true
-  doc "https://github.com/<org>/<repo> for the given remote (default 'origin'), or '' (no such remote / not GitHub). Callers that push to a --remote MUST pass it through so the PR link targets the repo that actually received the branch."
-  handler <<<
-    try {
-      return normalizeGitHubRemote(git(['remote', 'get-url', remote ?? 'origin'], cwd));
-    } catch {
-      return '';
-    }
-  >>>
-
-fn name=defaultBaseBranch params="cwd:string,remote?:string" returns=string export=true
-  doc "The remote default branch for the given remote (default 'origin'). Resolution order, all local (never hits the network): <remote>/HEAD symbolic-ref → an existing refs/remotes/<remote>/main → …/master → 'main'. The existence probes cover clones where <remote>/HEAD was never populated but the real default branch is fetched. Used as the PR base for prefilled compare links."
-  handler <<<
-    const r = remote ?? 'origin';
-    try {
-      const ref = git(['symbolic-ref', '--short', `refs/remotes/${r}/HEAD`], cwd).trim();
-      const name = ref.startsWith(`${r}/`) ? ref.slice(r.length + 1) : ref;
-      if (name) return name;
-    } catch { /* fall through to existence probes */ }
-    for (const candidate of ['main', 'master']) {
+  fn name=worktreeChangedShortstat params="cwd:string,baseSha:string" returns="{filesChanged:number,linesChanged:number}"
+    doc "Return shortstat numbers (file count, total lines changed) for a worktree against base SHA, including untracked files. Used by Phase 3 scoring without the node_modules-explosion bug of worktreeDiff. Untracked files are counted via direct filesystem read since they're not in the git index."
+    handler <<<
+      let filesChanged = 0;
+      let linesChanged = 0;
       try {
-        git(['show-ref', '--verify', '--quiet', `refs/remotes/${r}/${candidate}`], cwd);
-        return candidate;
-      } catch { /* try next */ }
-    }
-    return 'main';
-  >>>
+        // Tracked changes
+        const trackedStat = git(['diff', baseSha, '--shortstat', '--'], cwd);
+        // Format: " 3 files changed, 47 insertions(+), 12 deletions(-)"
+        const fileMatch = trackedStat.match(/(\d+)\s+files?\s+changed/);
+        const insMatch = trackedStat.match(/(\d+)\s+insertions?/);
+        const delMatch = trackedStat.match(/(\d+)\s+deletions?/);
+        if (fileMatch) filesChanged += parseInt(fileMatch[1], 10);
+        if (insMatch) linesChanged += parseInt(insMatch[1], 10);
+        if (delMatch) linesChanged += parseInt(delMatch[1], 10);
+        // Untracked files (count files + lines).
+        // Gemini code review fix #4: skip git show :file — untracked files by
+        // definition aren't in the index, so that call always failed. Read the
+        // file directly from disk via fs.readFileSync (handles paths with spaces;
+        // wc -l doesn't quote properly when invoked via execFile).
+        const untracked = git(['ls-files', '--others', '--exclude-standard'], cwd);
+        const untrackedFiles = untracked.split('\n').filter((l: string) => l.trim());
+        filesChanged += untrackedFiles.length;
+        for (const file of untrackedFiles) {
+          const fullPath = join(cwd, file);
+          try {
+            // Read as raw buffer first so we can detect binary by scanning for
+            // null bytes — readFileSync(path, 'utf-8') would throw on binary
+            // with an inscrutable error, swallowing the type information.
+            const buf = readFileSync(fullPath);
+            // Binary heuristic: presence of NUL byte in first 8KB. Skip silently.
+            let isBinary = false;
+            const sample = buf.slice(0, Math.min(buf.length, 8192));
+            for (let i = 0; i < sample.length; i++) {
+              if (sample[i] === 0) { isBinary = true; break; }
+            }
+            if (isBinary) continue;
+            // Count newlines + 1 for trailing line without newline. Matches wc -l
+            // semantics but handles paths with spaces (which wc -l invoked via
+            // execFile does NOT) and binary detection (which utf-8 readFileSync
+            // does NOT — it would throw on first invalid byte sequence).
+            const content = buf.toString('utf-8');
+            const newlineCount = (content.match(/\n/g) ?? []).length;
+            linesChanged += newlineCount + (content.length > 0 && !content.endsWith('\n') ? 1 : 0);
+          } catch (err: unknown) {
+            // OpenCode review fix #3: categorize the catch instead of
+            // silently swallowing every error type.
+            const e = err as { code?: string };
+            if (e.code === 'ENOENT') {
+              // File deleted between ls-files and read — racy but harmless, skip silently.
+            } else if (e.code === 'EACCES' || e.code === 'EPERM') {
+              console.warn(`[agon] worktreeChangedShortstat: permission denied reading ${file}`);
+            } else {
+              console.warn(`[agon] worktreeChangedShortstat: failed to read ${file}: ${err instanceof Error ? err.message : String(err)}`);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(`[agon] worktreeChangedShortstat failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      return { filesChanged, linesChanged };
+    >>>
 
-fn name=prefilledPrUrl params="opts:{repoUrl:string,base:string,branch:string,title:string,body:string}" returns=string export=true
-  doc "GitHub compare URL with ?quick_pull=1&title=…&body=… — clicking it opens the new-PR form already filled in. This is agon's no-gh PR path: after a push, the human clicks the link and merges; no GitHub CLI/token needed. The title is clamped to 256 chars and the body shrunk until the whole URL fits in ~7500 chars (GitHub/browsers reject very long URLs) — callers print the full body in the terminal first so nothing is lost. Returns '' when repoUrl is empty. Pure; exported for unit tests."
-  handler <<<
-    if (!opts.repoUrl) return '';
-    const head = `${opts.repoUrl}/compare/${encodeURIComponent(opts.base)}...${encodeURIComponent(opts.branch)}?quick_pull=1&title=${encodeURIComponent(opts.title.slice(0, 256))}`;
-    let url = `${head}&body=${encodeURIComponent(opts.body)}`;
-    const note = '\n\n…(body truncated — the full description was printed in the terminal)';
-    let keep = opts.body.length;
-    while (url.length > 7500 && keep > 0) {
-      keep = Math.floor(keep * 0.7);
-      url = `${head}&body=${encodeURIComponent(opts.body.slice(0, keep) + note)}`;
-    }
-    return url;
-  >>>
+  fn name=stashSnapshot params="cwd:string" returns=string
+    doc "Capture the working tree (modifications to TRACKED files only) as a stash-like commit SHA WITHOUT modifying the working tree. Returns the stash SHA, or HEAD SHA if the tree is clean. Used by AgentTeam to give parallel agents a worktree base that includes the user's in-progress edits to tracked files, so synthesized patches apply cleanly against the user's actual current state. KNOWN LIMITATION: untracked files (new files the user just created locally but hasn't `git add`-ed) are NOT in the snapshot — git stash create silently ignores -u. Agents will not see those files. Logs a warning when untracked files are present so the user knows."
+    handler <<<
+      try {
+        // git stash create captures TRACKED modifications as a commit object
+        // without modifying the working tree or saving to the stash list.
+        // The -u flag is silently ignored by git stash create (it only works
+        // for git stash push). Untracked files are NOT captured.
+        const sha = git(['stash', 'create'], cwd);
 
-fn name=gitStatusShort params="cwd:string" returns=string
-  doc "Read-only: git status --short. Never mutates the working tree."
-  handler lang="kern"
-    try
-      return value="git(['status', '--short'], cwd)"
-      catch name=e
+        // Warn if there are untracked files that the snapshot is missing.
+        try {
+          const untracked = git(['ls-files', '--others', '--exclude-standard'], cwd);
+          const untrackedFiles = untracked.split('\n').filter((l: string) => l.trim());
+          if (untrackedFiles.length > 0) {
+            console.warn(`[agon] stashSnapshot: ${untrackedFiles.length} untracked file(s) NOT included in agent base SHA. The first few: ${untrackedFiles.slice(0, 3).join(', ')}. Agents will operate on tracked changes only — \`git add\` these files first if you need them in the agent's view.`);
+          }
+        } catch { /* untracked check is informational only */ }
+
+        if (sha.trim()) return sha.trim();
+        // Empty result = clean working tree (no tracked modifications), just use HEAD
+        return git(['rev-parse', 'HEAD'], cwd);
+      } catch (err) {
+        // git stash create unsupported or other failure — fall back to HEAD
+        console.warn(`[agon] stashSnapshot fell back to HEAD: ${err instanceof Error ? err.message : String(err)}`);
+        return git(['rev-parse', 'HEAD'], cwd);
+      }
+    >>>
+
+  fn name=isWorktreeOrRepo params="cwd:string" returns=boolean export=false
+    doc "Check if cwd exists AND is a git working tree (so 'git diff --cached' won't silently fall back to --no-index mode and reject the flag)."
+    handler lang="kern"
+      if cond="!existsSync(cwd)"
+        return value="false"
+      comment raw="// git worktrees have a `.git` file (regular file pointing to the registry),"
+      comment raw="// a regular repo has a `.git` directory. Either is enough for diff/index ops."
+      if cond="existsSync(join(cwd, '.git'))"
+        return value="true"
+      comment raw="// Fall back to asking git directly — handles edge cases like submodules."
+      try
+        do value="execFileSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd, encoding: 'utf-8', timeout: 2000, stdio: ['pipe', 'pipe', 'pipe'], })"
+        return value="true"
+        catch name=e
+          return value="false"
+
+  fn name=worktreeDiff params="cwd:string" returns=string
+    handler <<<
+      if (!isWorktreeOrRepo(cwd)) return '';
+      try {
+        git(['add', '-A'], cwd);
+        return gitRaw(['diff', '--cached'], cwd);
+      } catch (err) {
+        console.warn(`[agon] worktreeDiff failed: ${err instanceof Error ? err.message : String(err)}`);
+        return '';
+      }
+    >>>
+
+  fn name=readOnlyDiff params="cwd:string" returns=string
+    handler <<<
+      if (!isWorktreeOrRepo(cwd)) return '';
+      try {
+        const staged = gitRaw(['diff', '--cached'], cwd);
+        const unstaged = gitRaw(['diff'], cwd);
+        return staged + (staged && unstaged ? '\n' : '') + unstaged;
+      } catch (err) {
+        console.warn(`[agon] readOnlyDiff failed: ${err instanceof Error ? err.message : String(err)}`);
+        return '';
+      }
+    >>>
+
+  fn name=diffLineCount params="diff:string" returns=number
+    handler <<<
+      let count = 0;
+      for (const line of diff.split('\n')) {
+        if (line.startsWith('+') && !line.startsWith('+++')) count++;
+        if (line.startsWith('-') && !line.startsWith('---')) count++;
+      }
+      return count;
+    >>>
+
+  fn name=diffFileCount params="cwd:string" returns=number
+    handler <<<
+      if (!isWorktreeOrRepo(cwd)) return 0;
+      try {
+        const result = git(['diff', '--cached', '--name-only'], cwd);
+        return result ? result.split('\n').filter(Boolean).length : 0;
+      } catch (err) {
+        console.warn(`[agon] diffFileCount failed: ${err instanceof Error ? err.message : String(err)}`);
+        return 0;
+      }
+    >>>
+
+  fn name=applyPatch params="cwd:string,patchContent:string" returns=void
+    handler lang="kern"
+      if cond="!patchContent.trim()"
+        return
+      try
+        do value="execFileSync('git', ['apply', '--allow-empty', '-'], { cwd, input: normalizePatchContent(patchContent), encoding: 'utf-8', timeout: 30000, stdio: ['pipe', 'pipe', 'pipe'] })"
+        catch name=err
+          let name=e value="err as { stderr?: string }"
+          throw value="new GitError(`Failed to apply patch: ${e.stderr?.trim() ?? 'unknown error'}`)"
+
+  fn name=currentBranch params="cwd:string" returns=string
+    handler lang="kern"
+      try
+        return value="git(['rev-parse', '--abbrev-ref', 'HEAD'], cwd)"
+        catch name=e
+          return value="'unknown'"
+
+  fn name=isDirty params="cwd:string" returns=boolean
+    handler lang="kern"
+      try
+        return value="git(['status', '--porcelain'], cwd).length > 0"
+        catch name=e
+          return value="false"
+
+  fn name=recentCommits params="cwd:string,count?:number" returns=string
+    handler lang="kern"
+      try
+        return value="git(['log', '--oneline', `-${count ?? 10}`], cwd)"
+        catch name=e
+          return value="''"
+
+  fn name=coAuthorTrailer params="config:{commitCoAuthor?:string}" returns=string export=true
+    doc "Co-Authored-By trailer paragraph for commits agon itself creates. IDIOM: returns '' when config.commitCoAuthor is unset/blank, else a full leading-blank-line paragraph `\\n\\nCo-Authored-By: <value>` meant to be string-CONCATENATED onto the commit message body (matching the autoCredit trailer pattern in /commit). NOTE: call sites should prefer appendCoAuthor, which is paragraph-aware — it joins into the message's final paragraph when that paragraph is already a trailer block (so git keeps both trailers), instead of blindly prepending a blank-line paragraph. coAuthorTrailer stays exported for direct unit testing of the raw paragraph idiom."
+    handler lang="kern"
+      let name=v value="(config.commitCoAuthor ?? '').trim()"
+      if cond="!v"
         return value="''"
+      return value="`\\n\\nCo-Authored-By: ${v}`"
 
-fn name=gitDiffStat params="cwd:string" returns=string
-  doc "Read-only: git diff --stat for unstaged changes. No git add."
-  handler lang="kern"
-    try
-      return value="git(['diff', '--stat'], cwd)"
-      catch name=e
-        return value="''"
+  fn name=appendCoAuthor params="message:string,config:{commitCoAuthor?:string}" returns=string export=true
+    doc "Paragraph-aware Co-Authored-By append. Returns message unchanged when config.commitCoAuthor is blank/unset. Otherwise: if the message's LAST paragraph is a SEPARATE trailer block — there is more than one paragraph AND every non-empty line of the last one matches /^[A-Za-z][A-Za-z-]*: / (e.g. a user-supplied Co-Authored-By: or Signed-off-by:) — the new trailer is joined with a single `\\n` so all trailers share ONE final paragraph (git only parses trailers from the last paragraph; a blank-line separator would orphan the existing ones). Otherwise the trailer is appended as a new `\\n\\n` paragraph. The >1-paragraph guard is load-bearing: a single-paragraph conventional-commit subject like `feat: do thing` also matches the trailer regex and must NOT be treated as a trailer block. Prefer this over coAuthorTrailer at all commit call sites."
+    handler lang="kern"
+      let name=v value="(config.commitCoAuthor ?? '').trim()"
+      if cond="!v"
+        return value="message"
+      let name=trailerLine value="`Co-Authored-By: ${v}`"
+      comment raw="// Split into paragraphs on blank lines; inspect the LAST one. A trailer block must be a SEPARATE final paragraph — the subject line (a single-paragraph message like `feat: do thing`) also matches the trailer regex, so only treat the last paragraph as trailers when there is MORE than one paragraph."
+      let name=paragraphs value="hostRegexSplit(message, /\\n\\s*\\n/)"
+      let name=lastParagraph value="paragraphs[paragraphs.length - 1] ?? ''"
+      let name=nonEmptyLines value="lastParagraph.split('\\n').map((l: string) => l.trim()).filter(Boolean)"
+      let name=isTrailerBlock value="paragraphs.length > 1 && nonEmptyLines.length > 0 && nonEmptyLines.every((l: string) => /^[A-Za-z][A-Za-z-]*: /.test(l))"
+      if cond="isTrailerBlock"
+        return value="`${message}\\n${trailerLine}`"
+      return value="`${message}\\n\\n${trailerLine}`"
 
-fn name=gitChangedFiles params="cwd:string" returns="string[]"
-  doc "Read-only: list of changed file paths (unstaged + staged). No git add."
-  handler lang="kern"
-    try
-      let name=unstaged value="git(['diff', '--name-only'], cwd)"
-      let name=staged value="git(['diff', '--cached', '--name-only'], cwd)"
-      let name=combined value="new Set([ ...unstaged.split('\\n').filter(Boolean), ...staged.split('\\n').filter(Boolean), ])"
-      return value="[...combined]"
-      catch name=e
-        return value="[]"
+  const name=AGON_ATTRIBUTION type=string value={{ '⚔️ Forged by [Agon](https://github.com/KERNlang/agon)' }} export=true
+    doc "The Claude-Code-style attribution line agon appends to COMMITS it creates — 'Forged by', after agon's signature forge mode. Commit messages are rendered as PLAIN TEXT on GitHub (no markdown, no images), so the brand mark is the agon arena glyph ⚔️ — the colored AGON wordmark is impossible here. PR bodies use AGON_ATTRIBUTION_PR (markdown context, real logo image). Same wording in both so they read as one brand."
 
-fn name=gitTruncatedDiff params="cwd:string,maxLines?:number" returns=string
-  doc "Read-only: truncated git diff (unstaged). Caps output. No git add."
-  handler lang="kern"
-    try
-      let name=diff value="git(['diff'], cwd)"
-      let name=lines value="diff.split('\\n')"
-      let name=limit value="maxLines ?? 200"
-      if cond="lines.length <= limit"
-        return value="diff"
-      return value="lines.slice(0, limit).join('\\n') + `\\n... (${lines.length - limit} more lines)`"
-      catch name=e
-        return value="''"
+  const name=AGON_ATTRIBUTION_PR type=string value={{ '<img src="https://github.com/KERN-Agon.png" width="16" height="16" alt="Agon" /> Forged by [Agon](https://github.com/KERNlang/agon)' }} export=true
+    doc "PR-body attribution line — PR bodies render markdown/HTML, so this shows the real AGON logo: the KERN-Agon GitHub account's avatar (github.com/KERN-Agon.png is a stable public URL even though the repo is private). Upload the AGON wordmark as that account's profile picture once and it powers BOTH the co-author/contributor avatar AND this footer. Falls back to GitHub's identicon until the avatar is set — never broken."
+
+  fn name=appendAttribution params="message:string,config:{commitCoAuthor?:string}" returns=string export=true
+    doc "Claude-Code-1:1 attribution block for commits agon itself creates: appends the '🤖 Generated with [Agon](…)' line as its own paragraph, then the Co-Authored-By trailer as the final paragraph — the exact layout Claude Code uses. config.commitCoAuthor is the SINGLE opt-out switch (mirrors Claude Code's includeCoAuthoredBy): blank/unset returns the message unchanged — no banner, no trailer. Implemented as appendCoAuthor(message + banner): the banner paragraph guarantees the trailer lands alone in the last paragraph, where git parses trailers. Prefer this over bare appendCoAuthor at agon's own commit call sites."
+    handler <<<
+      const v = (config.commitCoAuthor ?? '').trim();
+      if (!v) return message;
+      return appendCoAuthor(`${message.trimEnd()}\n\n${AGON_ATTRIBUTION}`, config);
+    >>>
+
+  fn name=appendPrAttribution params="body:string,config:{commitCoAuthor?:string}" returns=string export=true
+    doc "PR-body variant of appendAttribution: appends only the Generated-with line (Co-Authored-By is a commit-trailer concept, not PR text), using the markdown/logo variant since PR bodies render HTML. Same single opt-out switch (commitCoAuthor blank = no footer)."
+    handler <<<
+      const v = (config.commitCoAuthor ?? '').trim();
+      if (!v) return body;
+      return `${body.trimEnd()}\n\n${AGON_ATTRIBUTION_PR}`;
+    >>>
+
+  fn name=normalizeGitHubRemote params="url:string" returns=string export=true
+    doc "Normalize a github.com remote URL (scp-like ssh, ssh://, http(s), with/without .git) to https://github.com/<org>/<repo>. Returns '' for non-GitHub or unparseable remotes — callers then skip the prefilled-PR link and just print the PR text. Pure; exported for unit tests."
+    handler <<<
+      const u = url.trim();
+      let m = u.match(/^(?:ssh:\/\/)?git@github\.com[/:]([^/]+)\/(.+?)(?:\.git)?\/?$/);
+      if (m) return `https://github.com/${m[1]}/${m[2]}`;
+      m = u.match(/^https?:\/\/(?:[^@/]+@)?github\.com\/([^/]+)\/(.+?)(?:\.git)?\/?$/);
+      if (m) return `https://github.com/${m[1]}/${m[2]}`;
+      return '';
+    >>>
+
+  fn name=githubRepoUrl params="cwd:string,remote?:string" returns=string export=true
+    doc "https://github.com/<org>/<repo> for the given remote (default 'origin'), or '' (no such remote / not GitHub). Callers that push to a --remote MUST pass it through so the PR link targets the repo that actually received the branch."
+    handler <<<
+      try {
+        return normalizeGitHubRemote(git(['remote', 'get-url', remote ?? 'origin'], cwd));
+      } catch {
+        return '';
+      }
+    >>>
+
+  fn name=defaultBaseBranch params="cwd:string,remote?:string" returns=string export=true
+    doc "The remote default branch for the given remote (default 'origin'). Resolution order, all local (never hits the network): <remote>/HEAD symbolic-ref → an existing refs/remotes/<remote>/main → …/master → 'main'. The existence probes cover clones where <remote>/HEAD was never populated but the real default branch is fetched. Used as the PR base for prefilled compare links."
+    handler <<<
+      const r = remote ?? 'origin';
+      try {
+        const ref = git(['symbolic-ref', '--short', `refs/remotes/${r}/HEAD`], cwd).trim();
+        const name = ref.startsWith(`${r}/`) ? ref.slice(r.length + 1) : ref;
+        if (name) return name;
+      } catch { /* fall through to existence probes */ }
+      for (const candidate of ['main', 'master']) {
+        try {
+          git(['show-ref', '--verify', '--quiet', `refs/remotes/${r}/${candidate}`], cwd);
+          return candidate;
+        } catch { /* try next */ }
+      }
+      return 'main';
+    >>>
+
+  fn name=prefilledPrUrl params="opts:{repoUrl:string,base:string,branch:string,title:string,body:string}" returns=string export=true
+    doc "GitHub compare URL with ?quick_pull=1&title=…&body=… — clicking it opens the new-PR form already filled in. This is agon's no-gh PR path: after a push, the human clicks the link and merges; no GitHub CLI/token needed. The title is clamped to 256 chars and the body shrunk until the whole URL fits in ~7500 chars (GitHub/browsers reject very long URLs) — callers print the full body in the terminal first so nothing is lost. Returns '' when repoUrl is empty. Pure; exported for unit tests."
+    handler <<<
+      if (!opts.repoUrl) return '';
+      const head = `${opts.repoUrl}/compare/${encodeURIComponent(opts.base)}...${encodeURIComponent(opts.branch)}?quick_pull=1&title=${encodeURIComponent(opts.title.slice(0, 256))}`;
+      let url = `${head}&body=${encodeURIComponent(opts.body)}`;
+      const note = '\n\n…(body truncated — the full description was printed in the terminal)';
+      let keep = opts.body.length;
+      while (url.length > 7500 && keep > 0) {
+        keep = Math.floor(keep * 0.7);
+        url = `${head}&body=${encodeURIComponent(opts.body.slice(0, keep) + note)}`;
+      }
+      return url;
+    >>>
+
+  fn name=gitStatusShort params="cwd:string" returns=string
+    doc "Read-only: git status --short. Never mutates the working tree."
+    handler lang="kern"
+      try
+        return value="git(['status', '--short'], cwd)"
+        catch name=e
+          return value="''"
+
+  fn name=gitDiffStat params="cwd:string" returns=string
+    doc "Read-only: git diff --stat for unstaged changes. No git add."
+    handler lang="kern"
+      try
+        return value="git(['diff', '--stat'], cwd)"
+        catch name=e
+          return value="''"
+
+  fn name=gitChangedFiles params="cwd:string" returns="string[]"
+    doc "Read-only: list of changed file paths (unstaged + staged). No git add."
+    handler lang="kern"
+      try
+        let name=unstaged value="git(['diff', '--name-only'], cwd)"
+        let name=staged value="git(['diff', '--cached', '--name-only'], cwd)"
+        let name=combined value="hostCreateSet([ ...unstaged.split('\\n').filter(Boolean), ...staged.split('\\n').filter(Boolean), ]) as Set<string>"
+        return value="[...combined]"
+        catch name=e
+          return value="[]"
+
+  fn name=gitTruncatedDiff params="cwd:string,maxLines?:number" returns=string
+    doc "Read-only: truncated git diff (unstaged). Caps output. No git add."
+    handler lang="kern"
+      try
+        let name=diff value="git(['diff'], cwd)"
+        let name=lines value="diff.split('\\n')"
+        let name=limit value="maxLines ?? 200"
+        if cond="lines.length <= limit"
+          return value="diff"
+        return value="lines.slice(0, limit).join('\\n') + `\\n... (${lines.length - limit} more lines)`"
+        catch name=e
+          return value="''"

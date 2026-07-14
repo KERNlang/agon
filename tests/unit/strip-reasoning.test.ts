@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { stripReasoning, stripTuiChrome, formatDuration } from '../../packages/cli/src/generated/blocks/engine-helpers.js';
+import { extractSummary, stripReasoning, stripTuiChrome, formatDuration } from '../../packages/cli/src/generated/blocks/engine-helpers.js';
 
 describe('formatDuration', () => {
   it('renders sub-second durations as milliseconds', () => {
@@ -64,6 +64,26 @@ describe('stripReasoning', () => {
     const prose = 'The divide function lacks a zero guard. <!--AGON_REVIEW_FINDINGS_v1-->\n[]';
     expect(stripReasoning(prose)).toBe(prose);
   });
+
+  it('strips an unclosed reasoning tail without swallowing mismatched tags', () => {
+    expect(stripReasoning('Visible answer.\n<think>unfinished analysis')).toBe('Visible answer.');
+    expect(stripReasoning('<reasoning>unfinished analysis')).toBe('');
+  });
+});
+
+describe('extractSummary', () => {
+  it('strips think blocks containing ECMAScript Unicode whitespace', () => {
+    const text = '<think>analysis\u00a0across\u2028lines</think>\u3000Visible answer.';
+    expect(extractSummary(text, 120)).toBe('Visible answer.');
+  });
+
+  it('removes markdown headings that end at EOF', () => {
+    expect(extractSummary('Body without punctuation\n## Sources', 120)).toBe('Body without punctuation');
+  });
+
+  it('does not expose an unclosed reasoning tail', () => {
+    expect(extractSummary('Visible answer.\n<thinking>unfinished', 120)).toBe('Visible answer.');
+  });
 });
 
 describe('stripTuiChrome', () => {
@@ -75,6 +95,10 @@ describe('stripTuiChrome', () => {
 
   it('strips inline ❯ prompt chars', () => {
     expect(stripTuiChrome('Findings ❯- File: a.ts ❯- problem')).toBe('Findings - File: a.ts - problem');
+  });
+
+  it('uses every removable spinner glyph as proof of TUI chrome', () => {
+    expect(stripTuiChrome('✴Cogitating…42Review: clear')).toBe('Review: clear');
   });
 
   it('does NOT touch API-engine output (no glyphs → no label/counter stripping)', () => {

@@ -3,6 +3,7 @@
 // "who's working on what" view.  Consumed by the /status dashboard.
 
 import from="./scoreboard.js" names="Scoreboard,ScoreboardEntry" types=true
+import from="../lib/kern-host.js" names="hostDateIso,hostNowMs"
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -35,13 +36,13 @@ interface name=TelemetrySnapshot export=true
 
 fn name=createEngineVitals params="engineId:string,partial?:Partial<EngineVitals>" returns=EngineVitals export=true
   handler lang="kern"
-    return value="{ engineId, state: 'idle', lastHeartbeatAt: Date.now(), ...partial, }"
+    return value="{ engineId, state: 'idle', lastHeartbeatAt: hostNowMs(), ...partial, }"
 
-fn name=updateEngineVitals params="v:EngineVitals,partial:Partial<EngineVitals>" returns=EngineVitals export=true expr={{ return { ...v, ...partial, lastHeartbeatAt: partial.lastHeartbeatAt ?? Date.now() }; }}
+fn name=updateEngineVitals params="v:EngineVitals,partial:Partial<EngineVitals>" returns=EngineVitals export=true expr={{ return { ...v, ...partial, lastHeartbeatAt: partial.lastHeartbeatAt ?? hostNowMs() }; }}
 
 fn name=markEngineStalled params="v:EngineVitals,stallThresholdMs:number" returns=EngineVitals export=true
   handler lang="kern"
-    let name=now value="Date.now()"
+    let name=now value="hostNowMs()"
     let name=elapsed value="now - v.lastHeartbeatAt"
     if cond="elapsed >= stallThresholdMs && v.state !== 'stalled'"
       return value="{ ...v, state: 'stalled', stallDurationMs: elapsed }"
@@ -74,19 +75,23 @@ fn name=renderEngineVitalLine params="v:EngineVitals" returns=string export=true
     let name=stateIcon type="Record<EngineVitalState, string>" value="{ idle: '\\u25cb', busy: '\\u25d0', stalled: '\\u26a0', offline: '\\u2718', fallback: '\\u21c4', }"
     let name=netIcon type="Record<NetworkHealth, string>" value="{ healthy: '\\u2191', degraded: '\\u223f', unreachable: '\\u2718', }"
     let name=parts type="string[]" value="[]"
+    let name=cpuPercent value="v.cpuPercent ?? 0"
+    let name=memPercent value="v.memPercent ?? 0"
+    let name=latencyMs value="v.latencyMs ?? 0"
+    let name=stallDurationMs value="v.stallDurationMs ?? 0"
     do value="parts.push(`${stateIcon[v.state]} ${v.engineId}`)"
     if cond="v.cpuPercent != null"
-      do value="parts.push(formatVitalBar('CPU', v.cpuPercent, 8))"
+      do value="parts.push(formatVitalBar('CPU', cpuPercent, 8))"
     if cond="v.memPercent != null"
-      do value="parts.push(formatVitalBar('MEM', v.memPercent, 8))"
+      do value="parts.push(formatVitalBar('MEM', memPercent, 8))"
     if cond="v.latencyMs != null"
-      do value="parts.push(`${v.latencyMs}ms`)"
+      do value="parts.push(`${latencyMs}ms`)"
     if cond="v.network"
       do value="parts.push(netIcon[v.network])"
     if cond="v.task"
       do value="parts.push(`\\u2014 ${v.task}${v.taskDetail ? ` (${v.taskDetail})` : ''}`)"
     if cond="v.stallDurationMs != null"
-      do value="parts.push(`[stalled ${(v.stallDurationMs / 1000).toFixed(1)}s]`)"
+      do value="parts.push(`[stalled ${(stallDurationMs / 1000).toFixed(1)}s]`)"
     if cond="v.fallbackTo"
       do value="parts.push(`[fallback \\u2192 ${v.fallbackTo}]`)"
     return value="parts.join('  ')"
@@ -94,7 +99,7 @@ fn name=renderEngineVitalLine params="v:EngineVitals" returns=string export=true
 fn name=renderTelemetrySnapshot params="snap:TelemetrySnapshot" returns=string export=true
   handler lang="kern"
     let name=lines type="string[]" value="[]"
-    do value="lines.push(`\\u2500\\u2500\\u2500 Agon Telemetry ${new Date(snap.timestamp).toISOString()} \\u2500\\u2500\\u2500`)"
+    do value="lines.push(`\\u2500\\u2500\\u2500 Agon Telemetry ${hostDateIso(snap.timestamp)} \\u2500\\u2500\\u2500`)"
     do value="lines.push(`Health: ${snap.overallHealth.toUpperCase()}  |  Active runs: ${snap.activeRuns}`)"
     if cond="snap.recentFallbacks.length > 0"
       do value="lines.push(`Recent fallbacks:`)"

@@ -5,6 +5,7 @@ import from="../signals/config.js" names="ensureAgonHome"
 import from="./context-scanner.js" names="isKernProject"
 import from="./git.js" names="headSha,currentBranch,isDirty"
 import from="./plan.js" names="WorkspaceSnapshot" types=true
+import from="./host-runtime.js" names="hostNowMs,hostPrettyJson"
 
 interface name=Workspace
   field name=id type=string
@@ -41,7 +42,7 @@ fn name=saveState params="state:WorkspaceState" returns=void export=false
   handler lang="kern"
     let name=WORKSPACES_PATH value="getWorkspacesPath()"
     let name=tmpPath value="WORKSPACES_PATH + '.tmp'"
-    do value="writeFileSync(tmpPath, JSON.stringify(state, null, 2) + '\\n')"
+    do value="writeFileSync(tmpPath, hostPrettyJson(state) + '\\n')"
     do value="renameSync(tmpPath, WORKSPACES_PATH)"
 
 fn name=addWorkspace params="rawPath:string" returns=Workspace
@@ -53,7 +54,7 @@ fn name=addWorkspace params="rawPath:string" returns=Workspace
       return value="existing"
     let name=id value="basename(path).toLowerCase().replace(/[^a-z0-9-]/g, '-')"
     let name=name value="basename(path)"
-    let name=ws type="Workspace" value="{ id, path, name, isKern: isKernProject(path), addedAt: Date.now() }"
+    let name=ws type="Workspace" value="{ id, path, name, isKern: isKernProject(path), addedAt: hostNowMs() }"
     do value="state.workspaces.push(ws)"
     if cond="state.workspaces.length === 1"
       assign target="state.active" value="ws.id"

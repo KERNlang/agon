@@ -1,0 +1,83 @@
+import from="./event-log.js" names="appendDurable,replay"
+import from="./event-log.js" names="DurableAppendResult" types=true
+
+interface name=ControlPlaneRecovery export=true
+  field name=nextLeaseEpoch type=number
+  field name=needsInspection type="string[]"
+  field name=retryableReadOnly type="string[]"
+  field name=unsupportedSchema type=boolean
+
+fn name=appendControlPlaneEvent params="sessionId:string,event:Record<string,unknown>" returns=DurableAppendResult export=true
+  doc "The only fail-closed writer for control-plane lifecycle events."
+  handler <<<
+    const envelope = event.envelope && typeof event.envelope === 'object'
+      ? event.envelope as Record<string, unknown>
+      : undefined;
+    let schemaVersion = typeof event.schemaVersion === 'number' ? event.schemaVersion : 1;
+    if (typeof envelope?.schemaVersion === 'number' && envelope.schemaVersion !== 1) {
+      schemaVersion = envelope.schemaVersion;
+    }
+    return appendDurable(sessionId, {
+      kind: 'control-plane',
+      ...event,
+      schemaVersion,
+    }, { kind: 'repl' });
+  >>>
+
+fn name=recoverControlPlane params="sessionId:string" returns=ControlPlaneRecovery export=true
+  doc "Reduce durable lifecycle evidence. Never auto-replay work; only expose unfinished read-only calls as explicit retry candidates."
+  handler <<<
+    const claims = new Map<string, { toolCallId: string; effectClass: string }>();
+    const terminals = new Set<string>();
+    let maxEpoch = 0;
+    let unsupportedSchema = false;
+    for (const entry of replay(sessionId, 0)) {
+      const event = entry.event as Record<string, unknown> | null;
+      if (!event || event.kind !== 'control-plane') continue;
+      const envelope = event.envelope as Record<string, unknown> | undefined;
+      if (event.schemaVersion !== 1 || (envelope?.schemaVersion !== undefined && envelope.schemaVersion !== 1)) {
+        unsupportedSchema = true;
+        continue;
+      }
+      const epoch = Number(envelope?.leaseEpoch ?? 0);
+      if (Number.isSafeInteger(epoch) && epoch > maxEpoch) maxEpoch = epoch;
+      const type = String(event.type ?? '');
+      const toolCallId = String(event.toolCallId ?? '');
+      // Tool ids are only stable inside one producer attempt. Include the
+      // durable envelope identity so a late terminal from an older lease can
+      // never mask an unterminated call that reused the same adapter id.
+      const correlationKey = envelope && typeof envelope === 'object'
+        ? [
+            String(envelope.sessionId ?? sessionId),
+            String(envelope.turnId ?? ''),
+            String(envelope.leaseEpoch ?? ''),
+            String(envelope.attempt ?? ''),
+            String(envelope.producerId ?? ''),
+            toolCallId,
+          ].join(':')
+        : `legacy:${toolCallId}`;
+      if (type === 'tool_claimed' && toolCallId) {
+        const effectClass = String(event.effectClass ?? 'unknown');
+        claims.set(correlationKey, { toolCallId, effectClass });
+      } else if (type === 'tool_terminal' && toolCallId) {
+        terminals.add(correlationKey);
+      }
+    }
+    if (unsupportedSchema) {
+      return { nextLeaseEpoch: maxEpoch + 1 || 1, needsInspection: [], retryableReadOnly: [], unsupportedSchema: true };
+    }
+    const needsInspection: string[] = [];
+    const retryableReadOnly: string[] = [];
+    for (const [correlationKey, claim] of claims) {
+      if (terminals.has(correlationKey)) continue;
+      const { toolCallId, effectClass } = claim;
+      if (effectClass === 'read_only') retryableReadOnly.push(toolCallId);
+      else needsInspection.push(toolCallId);
+    }
+    return {
+      nextLeaseEpoch: maxEpoch > 0 ? maxEpoch + 1 : 1,
+      needsInspection,
+      retryableReadOnly,
+      unsupportedSchema: false,
+    };
+  >>>

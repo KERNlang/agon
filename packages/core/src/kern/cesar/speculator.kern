@@ -29,6 +29,7 @@ import from="../forge/virtual-fs.js" names="VirtualFS,createFileSnapshot,scoreEf
 import from="../forge/virtual-fs.js" names="EffectPackage,FileSnapshot,FileEffect" types=true
 import from="node:path" names="resolve,join"
 import from="../blocks/git.js" names="repoRoot,worktreeCreate,worktreeRemoveBestEffort,stashSnapshot,worktreeDiff,applyPatch"
+import from="../blocks/host-runtime.js" names="hostNowMs"
 
 // ── Speculator configuration ──────────────────────────────────────────
 
@@ -74,7 +75,7 @@ service name=Speculator export=true
 
   constructor params=""
     handler lang="kern"
-      assign target="this.runId" value="`spec_${Date.now()}_${randomUUID().slice(0, 8)}`"
+      assign target="this.runId" value="`spec_${hostNowMs()}_${randomUUID().slice(0, 8)}`"
       assign target="this.snapshot" value="null"
 
   method name=run params="opts:SpeculatorOptions" returns="Promise<SpeculatorResult>" async=true

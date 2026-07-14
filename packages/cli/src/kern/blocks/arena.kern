@@ -13,10 +13,12 @@ import from="../signals/icons.js" names="icons"
 
 fn name=forgeBar params="pct:number, width:number" returns=string export=false
   handler lang="kern"
-    let name=filled value="Math.round(pct * width)"
-    let name=half value="pct > 0 && filled < width ? 1 : 0"
+    let name=safeWidth value="Math.max(0, Math.floor(width))"
+    let name=safePct value="Math.max(0, Math.min(1, pct))"
+    let name=filled value="Math.round(safePct * safeWidth)"
+    let name=half value="safePct > 0 && filled < safeWidth ? 1 : 0"
     let name=halfChar value="half ? '\\u2592' : ''"
-    return value="'\\u2588'.repeat(filled) + halfChar + '\\u2591'.repeat(Math.max(0, width - filled - half))"
+    return value="'\\u2588'.repeat(filled) + halfChar + '\\u2591'.repeat(Math.max(0, safeWidth - filled - half))"
 
 fn name=forgeSummary params="engines:EngineProgress[]" returns=string export=false
   handler lang="kern"
@@ -30,15 +32,17 @@ fn name=renderForgeRows params="engines:EngineProgress[]" returns="React.ReactNo
     const maxElapsed = 120;
     const leader = engines.reduce((acc: { leaderId: string; bestPct: number }, e: EngineProgress) => {
       const status = String(e.status ?? '');
+      const elapsed = Number.isFinite(e.elapsed) ? Math.max(0, e.elapsed) : 0;
       const active = !e.done && !e.failed && !status.startsWith('queued') && !status.startsWith('preparing') && !status.startsWith('waiting');
-      const pct = e.done ? 1 : active ? Math.min(e.elapsed / maxElapsed, 0.9) : 0;
+      const pct = e.done ? 1 : active ? Math.min(elapsed / maxElapsed, 0.9) : 0;
       return (pct > acc.bestPct || e.done) ? { leaderId: e.id, bestPct: pct } : acc;
     }, { leaderId: '', bestPct: -1 });
     return engines.map((e: EngineProgress) => {
       const status = String(e.status ?? '');
+      const elapsed = Number.isFinite(e.elapsed) ? Math.max(0, e.elapsed) : 0;
       const isWaiting = status.startsWith('queued') || status.startsWith('preparing') || status.startsWith('waiting');
       const isActive = !e.done && !e.failed && !isWaiting;
-      const pct = e.done ? 1 : e.failed ? 0 : isActive ? Math.min(e.elapsed / maxElapsed, 0.9) : 0;
+      const pct = e.done ? 1 : e.failed ? 0 : isActive ? Math.min(elapsed / maxElapsed, 0.9) : 0;
       const bar = forgeBar(pct, 12);
       const isLead = e.id === leader.leaderId && !e.failed;
       const statusTxt = e.done ? (e.score ? `score ${e.score}` : 'done') : e.failed ? 'failed' : isWaiting ? status : `${status} ${Math.round(pct * 100)}%`;
@@ -83,8 +87,9 @@ screen name=BrainstormStorm target=ink
   prop name=engines type="EngineProgress[]"
   render
     handler <<<
-      const elapsed = engines[0]?.elapsed ?? 0;
-      const frame = elapsed % STORM_BOLTS.length;
+      const rawElapsed = engines[0]?.elapsed ?? 0;
+      const elapsed = Number.isFinite(rawElapsed) ? rawElapsed : 0;
+      const frame = ((Math.floor(elapsed) % STORM_BOLTS.length) + STORM_BOLTS.length) % STORM_BOLTS.length;
       const bolt = STORM_BOLTS[frame];
       const doneCount = engines.filter((e: EngineProgress) => e.done).length;
       return (
@@ -127,8 +132,9 @@ screen name=CampfireFire target=ink
   prop name=engines type="EngineProgress[]"
   render
     handler <<<
-      const elapsed = engines[0]?.elapsed ?? 0;
-      const frame = elapsed % FIRE_FRAMES.length;
+      const rawElapsed = engines[0]?.elapsed ?? 0;
+      const elapsed = Number.isFinite(rawElapsed) ? rawElapsed : 0;
+      const frame = ((Math.floor(elapsed) % FIRE_FRAMES.length) + FIRE_FRAMES.length) % FIRE_FRAMES.length;
       const flames = FIRE_FRAMES[frame];
       return (
         <Box flexDirection="column" paddingLeft={2}>
@@ -186,15 +192,17 @@ screen name=TribunalCourt target=ink
   prop name=engines type="EngineProgress[]"
   render
     handler <<<
-      const elapsed = engines[0]?.elapsed ?? 0;
-      const frame = elapsed % SCALES_FRAMES.length;
+      const rawElapsed = engines[0]?.elapsed ?? 0;
+      const elapsed = Number.isFinite(rawElapsed) ? rawElapsed : 0;
+      const frame = ((Math.floor(elapsed) % SCALES_FRAMES.length) + SCALES_FRAMES.length) % SCALES_FRAMES.length;
       const title = SCALES_FRAMES[frame];
       return (
         <Box flexDirection="column" paddingLeft={2}>
           <Text color="#c084fc" bold>{title}</Text>
           <Text color="#c084fc">{'\u2551'}</Text>
           {engines.map((e: EngineProgress) => {
-            const statusParts = e.status.split(' ');
+            const status = String(e.status ?? '');
+            const statusParts = status.split(' ');
             const round = statusParts[0] ?? '';
             const position = statusParts.slice(1).join(' ');
             const posColor = position.includes('pro') || position.includes('defender') ? '#22c55e'
@@ -203,17 +211,17 @@ screen name=TribunalCourt target=ink
             return (
               <Box key={e.id}>
                 <Text color="#c084fc">{'\u2551 '}</Text>
-                <Text color={e.done ? 'green' : e.status === 'waiting' ? '#64748b' : 'yellow'}>
-                  {e.done ? '\u2713' : e.status === 'waiting' ? '\u25cb' : '\u25cf'}
+                <Text color={e.done ? 'green' : status === 'waiting' ? '#64748b' : 'yellow'}>
+                  {e.done ? '\u2713' : status === 'waiting' ? '\u25cb' : '\u25cf'}
                 </Text>
                 <Text>{' '}</Text>
                 <Box width={14}>
                   <Text bold color={engineColor(e.id)}>{e.id}</Text>
                 </Box>
-                {e.status === 'waiting' ? (
+                {status === 'waiting' ? (
                   <Text dimColor>{'awaiting turn'}</Text>
                 ) : e.done ? (
-                  <Text color="green">{e.status}</Text>
+                  <Text color="green">{status}</Text>
                 ) : (
                   <Box>
                     <Text dimColor>{round}{' '}</Text>

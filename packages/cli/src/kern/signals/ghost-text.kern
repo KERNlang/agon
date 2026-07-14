@@ -7,7 +7,7 @@ fn name=getGhostCompletion params="input:string, commands:Array<{cmd:string}>, e
     if cond="engineIds && engineIds.length > 0"
       let name=cesarMatch value="input.match(/^\\/(use)\\s+(\\S*)$/i)"
       if cond="cesarMatch"
-        let name=partial value="cesarMatch[2].toLowerCase()"
+        let name=partial value="(cesarMatch.groups[1] ?? '').toLowerCase()"
         each name=id in="engineIds"
           if cond="id.toLowerCase().startsWith(partial) && id.length > partial.length"
             return value="id.slice(partial.length)"

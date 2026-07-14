@@ -1,4 +1,5 @@
 import from="../models/errors.js" names="PlanStateError"
+import from="./host-runtime.js" names="hostNowIso"
 
 type name=PlanState values="draft|approved|running|paused|completed|failed|cancelled"
 type name=StepState values="pending|running|completed|failed|skipped"
@@ -61,31 +62,50 @@ interface name=Plan
 type name=PlanStepInput alias="Omit<PlanStep,'result'>"
 
 fn name=createPlan params="action:PlanAction,workspace:WorkspaceSnapshot,steps:PlanStepInput[]" returns=Plan
-  handler lang="kern"
-    fmt name=id template="plan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}"
-    return value="{ id, action, state: 'draft', steps: steps.map((s) => Object.assign({}, s, { result: { state: 'pending' as StepState, attempts: [], artifacts: [] } })), workspace, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), currentStepId: null, }"
+  handler lang="ts" <<<
+    const id = `plan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    return {
+      id,
+      action,
+      state: 'draft',
+      steps: steps.map((s) => Object.assign({}, s, {
+        result: { state: 'pending' as StepState, attempts: [], artifacts: [] },
+      })),
+      workspace,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      currentStepId: null,
+    };
+  >>>
 
 fn name=advanceStep params="plan:Plan,stepId:string,result:StepResult" returns=Plan
-  handler lang="kern"
-    let name=stepIdx value="plan.steps.findIndex((s) => s.id === stepId)"
-    if cond="stepIdx === -1"
-      return value="plan"
-    let name=newSteps value="plan.steps.map((s, i) => i === stepIdx ? { ...s, result } : s)"
-    let name=newState kind=let value="plan.state"
-    let name=newCurrentStepId kind=let value="plan.currentStepId"
-    if cond="result.state === 'failed'"
-      assign target="newState" value="'paused'"
-      assign target="newCurrentStepId" value="stepId"
-    else
-      if cond="result.state === 'completed' || result.state === 'skipped'"
-        let name=nextPending value="newSteps.find((s) => s.result.state === 'pending')"
-        if cond="nextPending"
-          assign target="newCurrentStepId" value="nextPending.id"
-          assign target="newState" value="'running'"
-        else
-          assign target="newCurrentStepId" value="null"
-          assign target="newState" value="'completed'"
-    return value="{ ...plan, steps: newSteps, state: newState, currentStepId: newCurrentStepId, updatedAt: new Date().toISOString(), }"
+  handler lang="ts" <<<
+    const stepIdx = plan.steps.findIndex((s) => s.id === stepId);
+    if (stepIdx === -1) return plan;
+    const newSteps = plan.steps.map((s, i) => i === stepIdx ? { ...s, result } : s);
+    let newState = plan.state;
+    let newCurrentStepId = plan.currentStepId;
+    if (result.state === 'failed') {
+      newState = 'paused';
+      newCurrentStepId = stepId;
+    } else if (result.state === 'completed' || result.state === 'skipped') {
+      const nextPending = newSteps.find((s) => s.result.state === 'pending');
+      if (nextPending) {
+        newCurrentStepId = nextPending.id;
+        newState = 'running';
+      } else {
+        newCurrentStepId = null;
+        newState = 'completed';
+      }
+    }
+    return {
+      ...plan,
+      steps: newSteps,
+      state: newState,
+      currentStepId: newCurrentStepId,
+      updatedAt: new Date().toISOString(),
+    };
+  >>>
 
 fn name=canAutoApprove params="step:PlanStep,level:ApprovalLevel" returns=boolean
   handler lang="kern"
@@ -96,59 +116,91 @@ fn name=canAutoApprove params="step:PlanStep,level:ApprovalLevel" returns=boolea
     return value="step.effects.every((e) => e === 'read')"
 
 fn name=mergeStepResult params="plan:Plan,stepId:string,partial:Partial<StepResult>" returns=Plan
-  handler lang="kern"
-    let name=stepIdx value="plan.steps.findIndex((s) => s.id === stepId)"
-    if cond="stepIdx === -1"
-      return value="plan"
-    let name=existing value="plan.steps[stepIdx].result"
-    let name=merged type="StepResult" value="{ state: partial.state ?? existing.state, attempts: [...existing.attempts, ...(partial.attempts ?? [])], artifacts: [...existing.artifacts, ...(partial.artifacts ?? [])], engineId: partial.engineId ?? existing.engineId, score: partial.score ?? existing.score, durationMs: partial.durationMs ?? existing.durationMs, }"
-    let name=newSteps value="plan.steps.map((s, i) => i === stepIdx ? { ...s, result: merged } : s)"
-    let name=newState kind=let value="plan.state"
-    let name=newCurrentStepId kind=let value="plan.currentStepId"
-    if cond="merged.state === 'failed'"
-      assign target="newState" value="'paused'"
-      assign target="newCurrentStepId" value="stepId"
-    else
-      if cond="merged.state === 'completed' || merged.state === 'skipped'"
-        let name=nextPending value="newSteps.find((s) => s.result.state === 'pending')"
-        if cond="nextPending"
-          assign target="newCurrentStepId" value="nextPending.id"
-          assign target="newState" value="'running'"
-        else
-          assign target="newCurrentStepId" value="null"
-          assign target="newState" value="'completed'"
-    return value="{ ...plan, steps: newSteps, state: newState, currentStepId: newCurrentStepId, updatedAt: new Date().toISOString(), }"
+  handler lang="ts" <<<
+    const stepIdx = plan.steps.findIndex((s) => s.id === stepId);
+    if (stepIdx === -1) return plan;
+    const existing = plan.steps[stepIdx].result;
+    const merged: StepResult = {
+      state: partial.state ?? existing.state,
+      attempts: [...existing.attempts, ...(partial.attempts ?? [])],
+      artifacts: [...existing.artifacts, ...(partial.artifacts ?? [])],
+      engineId: partial.engineId ?? existing.engineId,
+      score: partial.score ?? existing.score,
+      durationMs: partial.durationMs ?? existing.durationMs,
+    };
+    const newSteps = plan.steps.map((s, i) => i === stepIdx ? { ...s, result: merged } : s);
+    let newState = plan.state;
+    let newCurrentStepId = plan.currentStepId;
+    if (merged.state === 'failed') {
+      newState = 'paused';
+      newCurrentStepId = stepId;
+    } else if (merged.state === 'completed' || merged.state === 'skipped') {
+      const nextPending = newSteps.find((s) => s.result.state === 'pending');
+      if (nextPending) {
+        newCurrentStepId = nextPending.id;
+        newState = 'running';
+      } else {
+        newCurrentStepId = null;
+        newState = 'completed';
+      }
+    }
+    return {
+      ...plan,
+      steps: newSteps,
+      state: newState,
+      currentStepId: newCurrentStepId,
+      updatedAt: new Date().toISOString(),
+    };
+  >>>
 
 fn name=approvePlan params="plan:Plan" returns=Plan
   handler lang="kern"
     if cond="plan.state !== 'draft'"
       throw value="new PlanStateError('draft', plan.state)"
-    return value="{ ...plan, state: 'approved', updatedAt: new Date().toISOString() }"
+    return value="{ ...plan, state: 'approved', updatedAt: hostNowIso() }"
 
 fn name=startPlan params="plan:Plan" returns=Plan
   handler lang="kern"
     if cond="plan.state !== 'approved'"
       throw value="new PlanStateError('approved', plan.state)"
     let name=firstPending value="plan.steps.find((s) => s.result.state === 'pending')"
-    return value="{ ...plan, state: 'running', currentStepId: firstPending?.id ?? null, updatedAt: new Date().toISOString(), }"
+    return value="{ ...plan, state: 'running', currentStepId: firstPending?.id ?? null, updatedAt: hostNowIso(), }"
 
 fn name=cancelPlan params="plan:Plan" returns=Plan
   handler lang="kern"
     if cond="plan.state === 'completed' || plan.state === 'cancelled'"
       throw value="new PlanStateError(['draft', 'approved', 'running', 'paused', 'failed'], plan.state)"
-    return value="{ ...plan, state: 'cancelled', updatedAt: new Date().toISOString() }"
+    return value="{ ...plan, state: 'cancelled', updatedAt: hostNowIso() }"
 
 fn name=failPlan params="plan:Plan,error?:string" returns=Plan
-  handler lang="kern"
-    if cond="plan.state !== 'running' && plan.state !== 'paused'"
-      throw value="new PlanStateError(['running', 'paused'], plan.state)"
-    let name=steps kind=let value="plan.steps"
-    if cond="plan.currentStepId && error"
-      let name=stepIdx value="plan.steps.findIndex((s) => s.id === plan.currentStepId)"
-      if cond="stepIdx !== -1"
-        let name=step value="plan.steps[stepIdx]"
-        assign target="steps" value="plan.steps.map((s, i) => i === stepIdx ? { ...s, result: { ...step.result, state: 'failed' as StepState, attempts: [ ...step.result.attempts, { startedAt: new Date().toISOString(), finishedAt: new Date().toISOString(), error }, ], }, } : s)"
-    return value="{ ...plan, steps, state: 'failed', updatedAt: new Date().toISOString() }"
+  handler lang="ts" <<<
+    if (plan.state !== 'running' && plan.state !== 'paused') {
+      throw new PlanStateError(['running', 'paused'], plan.state);
+    }
+    let steps = plan.steps;
+    if (plan.currentStepId && error) {
+      const stepIdx = plan.steps.findIndex((s) => s.id === plan.currentStepId);
+      if (stepIdx !== -1) {
+        const step = plan.steps[stepIdx];
+        steps = plan.steps.map((s, i) => i === stepIdx ? {
+          ...s,
+          result: {
+            ...step.result,
+            state: 'failed' as StepState,
+            attempts: [
+              ...step.result.attempts,
+              {
+                startedAt: new Date().toISOString(),
+                finishedAt: new Date().toISOString(),
+                error,
+              },
+            ],
+          },
+        } : s);
+      }
+    }
+    return { ...plan, steps, state: 'failed', updatedAt: new Date().toISOString() };
+  >>>
 
 fn name=resetStepForRetry params="plan:Plan,stepId:string" returns=Plan
   handler <<<

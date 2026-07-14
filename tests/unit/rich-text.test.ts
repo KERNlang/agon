@@ -62,6 +62,12 @@ describe('classifyLine', () => {
     expect(r.kind).toBe('bullet');
     expect(r.indent).toBe(1);
   });
+
+  it('recognizes ECMAScript Unicode whitespace after markdown markers', () => {
+    expect(classifyLine('#\u00a0Heading')).toMatchObject({ kind: 'h1', content: 'Heading' });
+    expect(classifyLine('-\u3000item')).toMatchObject({ kind: 'bullet', content: 'item' });
+    expect(classifyLine('>\u2028quoted')).toMatchObject({ kind: 'blockquote', content: 'quoted' });
+  });
 });
 
 describe('parseInlineSpans', () => {

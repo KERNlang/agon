@@ -10,7 +10,7 @@ import from="../dispatch.js" names="DispatchCallbacks" types=true
 // info notice so the user knows when Cesar reached for a heavy tool,
 // but the dispatch is no longer blocked — Cesar has autonomy. Slash
 // commands keep working as before (they bypass this announce path).
-const name=ORCHESTRATION_ACTIONS type="Set<string>" value={{ new Set(['forge', 'team-forge', 'brainstorm', 'team-brainstorm', 'tribunal', 'team-tribunal', 'campfire', 'pipeline', 'goal', 'review']) }}
+const name=ORCHESTRATION_ACTIONS type="Set<string>" value={{ new Set(['forge', 'team-forge', 'brainstorm', 'team-brainstorm', 'tribunal', 'team-tribunal', 'campfire', 'council', 'pipeline', 'goal', 'conquer', 'review']) }}
 
 fn name=slashCommandForOrchestrationAction params="action:string,task:string,fitnessCmd?:string|null,tribunalMode?:string" returns=string
   handler lang="kern"
@@ -30,6 +30,8 @@ fn name=slashCommandForOrchestrationAction params="action:string,task:string,fit
       return value="tribunalMode ? `/team-tribunal ${tribunalMode} ${safeTask}` : `/team-tribunal ${safeTask}`"
     if cond="action === 'campfire'"
       return value="`/campfire ${safeTask}`"
+    if cond="action === 'council'"
+      return value="`/council ${safeTask}`"
     if cond="action === 'pipeline'"
       return value="fitnessCmd ? `/pipeline ${safeTask} test with ${fitnessCmd}` : `/pipeline ${safeTask}`"
     if cond="action === 'review'"
@@ -170,4 +172,3 @@ fn name=extractExecutionSpec params="input:string" returns="{ task:string; fitne
     let name=fitnessCmd value="fitnessMatch ? fitnessMatch[1].trim() : null"
     let name=task value="fitnessCmd ? input.replace(FITNESS_PATTERN, '').trim() : input.trim()"
     return value="{ task, fitnessCmd }"
-

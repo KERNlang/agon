@@ -2,7 +2,7 @@ import from="node:fs" names="writeFileSync,mkdirSync"
 import from="node:path" names="join,dirname"
 import from="@kernlang/agon-core" names="EngineAdapter,EngineDefinition,DispatchOptions,DispatchResult,AgentDispatchResult" types=true
 import from="@kernlang/agon-core" names="EngineRegistry,spawnWithTimeout,spawnStream,EngineNotFoundError,readOnlyDiff,diffLineCount,apiDispatch,apiDispatchTools,apiDispatchToolsHistory,attachVisionToMessages,apiStreamDispatch,companionDispatch,runHooks,hooksFailed,runApiAgentLoop,sessionContext,resolveWorkingDir,engineHealth,classifyDispatchFailure"
-import from="./adapter-helpers.js" names="buildCommand,checkEnvVars,resolveModel,stripStreamJson,usesStreamJson,recordDispatchHealth,shouldUseCompanionForAgent,shouldUseClaudePty,runClaudePtyDispatch,runClaudePtyStreamDispatch,resolveClaudePtyExtraArgs,computeEngineIsolation"
+import from="./adapter-helpers.js" names="buildCommand,checkEnvVars,resolveModel,stripStreamJson,usesStreamJson,recordDispatchHealth,shouldUseCompanionForAgent,shouldUseClaudePty,runClaudePtyDispatch,runClaudePtyStreamDispatch,resolveClaudePtyExtraArgs,computeEngineIsolation,hasEnvVar,nowMs,createStringSet"
 
 service name=CliAdapter implements=EngineAdapter
   field name=registry type=EngineRegistry private=true
@@ -32,7 +32,7 @@ service name=CliAdapter implements=EngineAdapter
       let name=binaryPath value="options.engine.binary ? this.registry.findBinary(options.engine) : null"
       if cond="!binaryPath"
         comment raw="// No CLI binary — use API ONLY when a usable key is present, otherwise fail. Gating on the key (not just the api block) is what keeps binary-missing + no-key from mis-reporting as \"Missing API key\" for codex/claude/agy (which all declare an api block): without a key it falls through to the EngineNotFoundError(missingBinary) throw, while binary-missing + valid key still uses the api fallback (a feature). A possibly-absent apiKeyEnv → process.env[undefined] → undefined (falsy), correctly treated as no usable key."
-        if cond="options.engine.api && process.env[options.engine.api.apiKeyEnv]"
+        if cond="options.engine.api && hasEnvVar(options.engine.api.apiKeyEnv)"
           let name=resolvedModel value="resolveModel(options.engine, options.cwd)"
           let name=apiConfig value="{ ...options.engine.api, ...(resolvedModel ? { model: resolvedModel } : {}), ...(options.maxTokens ? { maxTokens: options.maxTokens } : {}) }"
           comment raw="// Inject project context for API engines so they know the codebase"
@@ -116,7 +116,7 @@ service name=CliAdapter implements=EngineAdapter
       return value="result"
 
   method name=dispatchStream params="options:DispatchOptions" returns="string, DispatchResult, void" async=true stream=true
-    handler <<<
+    handler lang="ts" <<<
       options = this.withEngineTimeout(options);
       // workspace-pure isolation, resolved once for every dispatch path below.
       const iso = computeEngineIsolation(options.engine, { isolation: options.isolation, cwd: options.cwd });
@@ -148,7 +148,7 @@ service name=CliAdapter implements=EngineAdapter
 
       if (!binaryPath) {
         // API fallback ONLY when a usable key is present — binary-missing + no-key falls through to EngineNotFoundError(missingBinary) instead of mis-reporting "Missing API key". (Absent apiKeyEnv → process.env[undefined] → undefined → no usable key.)
-        if (options.engine.api && process.env[options.engine.api.apiKeyEnv]) {
+        if (options.engine.api && hasEnvVar(options.engine.api.apiKeyEnv)) {
           const resolvedModel = resolveModel(options.engine, options.cwd);
           const apiConfig = { ...options.engine.api, ...(resolvedModel ? { model: resolvedModel } : {}), ...(options.maxTokens ? { maxTokens: options.maxTokens } : {}) };
           // NOTE: this STREAMING API fallback is prompt-only — it carries neither native tools nor
@@ -227,7 +227,7 @@ service name=CliAdapter implements=EngineAdapter
       comment raw="// Subscription pty path for claude (agent mode: tools + bypassed perms)."
       comment raw="// We still diff the cwd before/after so callers get filesChanged/diffLines."
       if cond="shouldUseClaudePty(options.engine, options.cwd)"
-        let name=ptyStart value="Date.now()"
+        let name=ptyStart value="nowMs()"
         let name=ptyBaseline value="readOnlyDiff(options.cwd)"
         let name=ptyResult value="await runClaudePtyDispatch(options.prompt, options.timeout, options.signal, 'agent', options.cwd, options.systemPrompt, iso.env, resolveClaudePtyExtraArgs(options.engine, options.cwd))"
         if cond="!ptyResult.unavailable"
@@ -235,7 +235,7 @@ service name=CliAdapter implements=EngineAdapter
           do value="mkdirSync(dirname(outputPath), { recursive: true })"
           do value="writeFileSync(outputPath, ptyResult.stdout)"
           let name=postDiff value="readOnlyDiff(options.cwd)"
-          let name=baselineFiles value="new Set(ptyBaseline.split('\\n').filter((l: string) => l.startsWith('diff --git')))"
+          let name=baselineFiles value="createStringSet(ptyBaseline.split('\\n').filter((l: string) => l.startsWith('diff --git')))"
           let name=postLines value="postDiff.split('\\n')"
           let name=newDiffLines type="string[]" value="[]"
           let name=inNewFile kind=let value="false"
@@ -251,17 +251,17 @@ service name=CliAdapter implements=EngineAdapter
           return value="{ ...ptyResult, diff, diffLines: lines, filesChanged: files }"
       comment raw="// API fallback: use API agent loop when binary is declared but not installed AND a usable key is present. Without a key, fall through to the EngineNotFoundError(missingBinary) throw below rather than mis-reporting \"Missing API key\". (Absent apiKeyEnv → process.env[undefined] → undefined → no usable key.)"
       let name=agentBinaryPath value="options.engine.binary ? this.registry.findBinary(options.engine) : null"
-      if cond="options.engine.api && !agentBinaryPath && process.env[options.engine.api.apiKeyEnv]"
+      if cond="options.engine.api && !agentBinaryPath && hasEnvVar(options.engine.api.apiKeyEnv)"
         let name=resolvedModel value="resolveModel(options.engine, options.cwd)"
         let name=apiConfig value="{ ...options.engine.api, ...(resolvedModel ? { model: resolvedModel } : {}), ...(options.maxTokens ? { maxTokens: options.maxTokens } : {}) }"
         let name=cwd value="options.cwd || resolveWorkingDir()"
         let name=projectCtx value="sessionContext.get(cwd)"
         let name=systemPrompt value="[ options.systemPrompt ?? 'You are an AI coding assistant. Be direct and concise.', projectCtx ? `## PROJECT CONTEXT\\n${projectCtx}` : '', ].filter(Boolean).join('\\n\\n')"
-        let name=startTime value="Date.now()"
+        let name=startTime value="nowMs()"
         let name=baselineDiff value="readOnlyDiff(cwd)"
         let name=result value="await runApiAgentLoop({ api: apiConfig, prompt: options.prompt, systemPrompt, cwd, timeout: options.timeout, signal: options.signal, maxSteps: 200, permissionMode: options.permissionMode, allowedCommands: options.allowedCommands, toolPermissions: options.toolPermissions, onPermissionAsk: options.onApproval, onTodos: options.onTodos, })"
         let name=postDiff value="readOnlyDiff(cwd)"
-        let name=baselineFiles value="new Set(baselineDiff.split('\\n').filter((l: string) => l.startsWith('diff --git')))"
+        let name=baselineFiles value="createStringSet(baselineDiff.split('\\n').filter((l: string) => l.startsWith('diff --git')))"
         let name=postLines value="postDiff.split('\\n')"
         let name=newDiffLines type="string[]" value="[]"
         let name=inNewFile kind=let value="false"
@@ -283,7 +283,7 @@ service name=CliAdapter implements=EngineAdapter
         let name=respText value="result.response ?? ''"
         let name=looksLikeAuth value="/\\b401\\b|invalid api key|invalid access token|token (expired|invalid)|unauthori[sz]ed|authentication (failed|error)/i.test(respText.slice(0, 500))"
         do value="recordDispatchHealth(options.engine.id, looksLikeAuth ? { exitCode: 1, stderr: respText.slice(0, 500), timedOut: false } : { exitCode: 0, stderr: '', timedOut: false })"
-        return value="{ exitCode: 0, stdout: result.response, stderr: '', durationMs: Date.now() - startTime, timedOut: false, diff, diffLines: lines, filesChanged: files, }"
+        return value="{ exitCode: 0, stdout: result.response, stderr: '', durationMs: nowMs() - startTime, timedOut: false, diff, diffLines: lines, filesChanged: files, }"
       let name=binaryPath value="this.registry.findBinary(options.engine)"
       if cond="!binaryPath"
         comment raw="// Binary check BEFORE env-var check: a missing binary must never report as a missing key."
@@ -301,7 +301,7 @@ service name=CliAdapter implements=EngineAdapter
           do value="mkdirSync(dirname(outputPath), { recursive: true })"
           do value="writeFileSync(outputPath, companionResult.stdout)"
           let name=postDiff value="readOnlyDiff(options.cwd)"
-          let name=baselineFiles value="new Set(baselineDiff.split('\\n').filter((l: string) => l.startsWith('diff --git')))"
+          let name=baselineFiles value="createStringSet(baselineDiff.split('\\n').filter((l: string) => l.startsWith('diff --git')))"
           let name=postLines value="postDiff.split('\\n')"
           let name=newDiffLines type="string[]" value="[]"
           let name=inNewFile kind=let value="false"
@@ -341,7 +341,7 @@ service name=CliAdapter implements=EngineAdapter
       do value="writeFileSync(outputPath, result.stdout)"
       let name=postDiff value="readOnlyDiff(options.cwd)"
       comment raw="// Only count new changes by excluding baseline"
-      let name=baselineFiles value="new Set(baselineDiff.split('\\n').filter((l: string) => l.startsWith('diff --git')))"
+      let name=baselineFiles value="createStringSet(baselineDiff.split('\\n').filter((l: string) => l.startsWith('diff --git')))"
       let name=postLines value="postDiff.split('\\n')"
       let name=newDiffLines type="string[]" value="[]"
       let name=inNewFile kind=let value="false"
@@ -357,7 +357,7 @@ service name=CliAdapter implements=EngineAdapter
       return value="{ ...result, diff, diffLines: lines, filesChanged: files }"
 
   method name=dispatchAgentStream params="options:DispatchOptions" returns="string, AgentDispatchResult, void" async=true stream=true
-    handler <<<
+    handler lang="ts" <<<
       options = this.withEngineTimeout(options);
       // workspace-pure isolation, resolved once for every agent-stream path below.
       const iso = computeEngineIsolation(options.engine, { isolation: options.isolation, cwd: options.cwd });
@@ -400,7 +400,7 @@ service name=CliAdapter implements=EngineAdapter
 
       const streamBinaryPath = options.engine.binary ? this.registry.findBinary(options.engine) : null;
       // API-only-stream notice ONLY when a usable key is present — binary-missing + no-key falls through to EngineNotFoundError(missingBinary) instead of mis-reporting "Missing API key". (Absent apiKeyEnv → process.env[undefined] → undefined → no usable key.)
-      if (options.engine.api && !streamBinaryPath && process.env[options.engine.api.apiKeyEnv]) {
+      if (options.engine.api && !streamBinaryPath && hasEnvVar(options.engine.api.apiKeyEnv)) {
         yield `Engine "${options.engine.id}" is API-only and does not support streaming agent mode. Use non-streaming dispatch or install the CLI binary.`;
         return {
           exitCode: 1,
@@ -477,7 +477,7 @@ service name=CliAdapter implements=EngineAdapter
       return value="this.registry.isAvailable(engine)"
 
   method name=getVersion params="engine:EngineDefinition" returns="Promise<string|null>" async=true
-    handler <<<
+    handler lang="ts" <<<
     if (engine.api) return resolveModel(engine) ?? engine.api.model;
       const binaryPath = this.registry.findBinary(engine);
       if (!binaryPath) return null;

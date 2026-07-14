@@ -5,6 +5,8 @@ import {
   buildCesarTurnRecapEvent,
   shouldEmitCesarRecap,
   classifyConsequence,
+  formatCesarRecapToolSummary,
+  readRecapConfidence,
 } from '../../packages/cli/src/generated/cesar/recap.js';
 
 const bashCall = (command: string, status: string, output = '') => ({
@@ -13,6 +15,21 @@ const bashCall = (command: string, status: string, output = '') => ({
   input: JSON.stringify({ command }),
   status,
   output,
+});
+
+describe('formatCesarRecapToolSummary', () => {
+  it('keeps the full tool count while bounding labels to eight', () => {
+    const tools = Array.from({ length: 10 }, (_, index) => `Tool${index + 1}`);
+    expect(formatCesarRecapToolSummary(14, tools)).toBe(
+      '14 tools: Tool1, Tool2, Tool3, Tool4, Tool5, Tool6, Tool7, Tool8, ...',
+    );
+  });
+});
+
+describe('readRecapConfidence', () => {
+  it('reads a numbered percentage capture through KERN regex match groups', () => {
+    expect(readRecapConfidence('Confidence: 92%')).toEqual({ value: 92, reasoning: '' });
+  });
 });
 
 describe('shouldEmitCesarRecap — turn-recap skip gate', () => {
@@ -142,6 +159,17 @@ describe('buildCesarTurnRecapEvent — todo delta capture', () => {
   });
 });
 
+describe('buildCesarTurnRecapEvent — duration capture', () => {
+  it('does not let a zero-duration confirmation follow-up erase the real turn duration', () => {
+    const capture = createCesarRecapCapture('scope it', Date.now() - 120_000);
+    recordCesarRecapEvent(capture, { type: 'response-meta', engineId: 'zai', elapsed: 120_000 });
+    recordCesarRecapEvent(capture, { type: 'response-meta', engineId: 'zai', elapsed: 0 });
+
+    const recap = buildCesarTurnRecapEvent(capture, { responded: true, terminalState: 'completed' }, [], []);
+    expect(recap.durationMs).toBe(120_000);
+  });
+});
+
 describe('classifyConsequence — consequential vs plumbing', () => {
   it('treats navigation/inspection/staging/probes as plumbing (null)', () => {
     for (const cmd of ['cd /foo', 'ls -la', 'echo hi', 'cat x.ts', 'pwd', 'mkdir d', 'git status', 'git add -A', 'git diff', 'git log --oneline', 'node --check x.js', 'command -v foo']) {
@@ -227,13 +255,199 @@ describe('classifyConsequence — consequential vs plumbing', () => {
 });
 
 describe('buildCesarTurnRecapEvent — failure surfacing & headline status', () => {
-  it('headline FAILED only when the engine did not respond, never from tool exits', () => {
+  it('keeps null confidence absent while preserving an explicit zero', () => {
+    const missing = createCesarRecapCapture('x', Date.now());
+    recordCesarRecapEvent(missing, { type: 'confidence-update', value: null });
+    expect(buildCesarTurnRecapEvent(missing, { responded: true }, [], []).confidence).toBeNull();
+
+    const zero = createCesarRecapCapture('x', Date.now());
+    recordCesarRecapEvent(zero, { type: 'confidence-update', value: 0 });
+    expect(buildCesarTurnRecapEvent(zero, { responded: true }, [], []).confidence).toBe(0);
+  });
+
+  it('treats policy-skipped checks as neutral and later executed successes as final truth', () => {
+    const capture = createCesarRecapCapture('x', Date.now());
+    for (const command of [
+      'npm run kern:compile 2>&1 | tail -20',
+      'npm run build 2>&1 | tail -15',
+      'npm run typecheck 2>&1 | tail -15',
+    ]) {
+      recordCesarRecapEvent(capture, {
+        ...bashCall(command, 'error', '[Investigation phase] Bash command skipped — mutating commands available after confidence check.'),
+        toolCallId: `skip-${command}`,
+        terminalReason: 'skipped_policy',
+      });
+    }
+    for (const command of ['npm run kern:compile', 'npm run build', 'npm run typecheck']) {
+      recordCesarRecapEvent(capture, {
+        ...bashCall(command, 'done', 'ok'),
+        toolCallId: `pass-${command}`,
+        terminalReason: 'succeeded',
+      });
+    }
+
+    const recap = buildCesarTurnRecapEvent(capture, { responded: true, terminalState: 'completed' }, [], []);
+    expect(recap.outcome).toBe('Done');
+    expect(recap.failedTools).toBe(0);
+    expect(recap.skippedTools).toBe(3);
+    expect(recap.failureLines).toEqual([]);
+    expect(recap.verification).toEqual([
+      { label: 'compile', ok: true, state: 'passed' },
+      { label: 'build', ok: true, state: 'passed' },
+      { label: 'typecheck', ok: true, state: 'passed' },
+    ]);
+  });
+
+  it('reconciles equivalent verification commands by logical label', () => {
+    const capture = createCesarRecapCapture('x', Date.now());
+    recordCesarRecapEvent(capture, { ...bashCall('npm run build --silent', 'error', 'boom'), toolCallId: 'build-1', terminalReason: 'failed' });
+    recordCesarRecapEvent(capture, { ...bashCall('npm run build', 'done', 'ok'), toolCallId: 'build-2', terminalReason: 'succeeded' });
+    const recap = buildCesarTurnRecapEvent(capture, { responded: true, terminalState: 'completed' }, [], []);
+    expect(recap.failureLines).toEqual([]);
+    expect(recap.failedTools).toBe(0);
+    expect(recap.verification).toEqual([{ label: 'build', ok: true, state: 'passed' }]);
+  });
+
+  it('treats a later successful retry as final truth for consequential commands', () => {
+    const capture = createCesarRecapCapture('x', Date.now());
+    recordCesarRecapEvent(capture, { ...bashCall('./deploy.sh', 'error', 'temporary failure'), toolCallId: 'deploy-1', terminalReason: 'failed' });
+    recordCesarRecapEvent(capture, { ...bashCall('./deploy.sh', 'done', 'deployed'), toolCallId: 'deploy-2', terminalReason: 'succeeded' });
+
+    const recap = buildCesarTurnRecapEvent(capture, { responded: true, terminalState: 'completed' }, [], []);
+    expect(recap.failureLines).toEqual([]);
+    expect(recap.failedTools).toBe(0);
+  });
+
+  it('does not invent success for a non-terminal running tool event', () => {
+    const capture = createCesarRecapCapture('x', Date.now());
+    recordCesarRecapEvent(capture, {
+      ...bashCall('npm run build', 'running', ''),
+      toolCallId: 'build-running',
+    });
+
+    const recap = buildCesarTurnRecapEvent(capture, { responded: false, terminalState: 'failed' }, [], []);
+    expect(recap.verification).toEqual([]);
+    expect(recap.failedTools).toBe(0);
+  });
+
+  it('counts a failed non-command tool without crashing and forces a recap', () => {
+    const capture = createCesarRecapCapture('x', Date.now());
+    recordCesarRecapEvent(capture, {
+      type: 'tool-call', tool: 'Read', input: 'missing.ts', status: 'error',
+      output: 'Error: missing', toolCallId: 'read-1', terminalReason: 'failed',
+    });
+
+    const recap = buildCesarTurnRecapEvent(capture, { responded: true, terminalState: 'completed' }, [], []);
+    expect(recap.failedTools).toBe(1);
+    expect(recap.nonFatalCount).toBe(1);
+    expect(recap.failureLines).toEqual([]);
+    expect(recap.failed).toBe(false);
+    expect(recap.outcome).toBe('Done');
+    expect(shouldEmitCesarRecap(recap)).toBe(true);
+  });
+
+  it('marks a failed write tool as Failed even without a command-shaped input', () => {
+    const capture = createCesarRecapCapture('x', Date.now());
+    recordCesarRecapEvent(capture, {
+      type: 'tool-call', tool: 'Edit', input: { file_path: 'src/app.ts' }, status: 'error',
+      output: 'old_string not found', toolCallId: 'edit-1', terminalReason: 'failed',
+    });
+
+    const recap = buildCesarTurnRecapEvent(capture, { responded: true, terminalState: 'completed' }, [], []);
+    expect(recap.failedTools).toBe(1);
+    expect(recap.nonFatalCount).toBe(0);
+    expect(recap.failed).toBe(true);
+    expect(recap.outcome).toBe('Failed');
+  });
+
+  it('uses the completed streamed input for a correlated tool call', () => {
+    const capture = createCesarRecapCapture('x', Date.now());
+    recordCesarRecapEvent(capture, { type: 'tool-call', tool: 'Bash', input: '', status: 'running', toolCallId: 'bash-1' });
+    recordCesarRecapEvent(capture, { type: 'tool-call', tool: 'Bash', input: '{"command":"npm test"}', status: 'done', output: 'ok', toolCallId: 'bash-1', terminalReason: 'succeeded' });
+
+    const recap = buildCesarTurnRecapEvent(capture, { responded: true, terminalState: 'completed' }, [], []);
+    expect(recap.commands[0].command).toContain('npm test');
+  });
+
+  it('records a streamed eager tool terminal event as the correlated final result', () => {
+    const capture = createCesarRecapCapture('x', Date.now());
+    recordCesarRecapEvent(capture, {
+      type: 'tool-call', tool: 'Bash', input: '{"command":"npm test"}',
+      status: 'running', toolCallId: 'bash-streamed',
+    });
+    recordCesarRecapEvent(capture, {
+      type: 'tool-stream-end', streamId: 'eager-stream-bash-streamed',
+      tool: 'Bash', input: '{"command":"npm test"}', status: 'done', output: 'passed',
+      toolCallId: 'bash-streamed', terminalReason: 'succeeded',
+    });
+
+    const recap = buildCesarTurnRecapEvent(capture, { responded: true, terminalState: 'completed' }, [], []);
+    expect(recap.failedTools).toBe(0);
+    expect(recap.verification).toEqual([{ label: 'tests', ok: true, state: 'passed' }]);
+    expect(recap.commands[0]).toMatchObject({ status: 'done', terminalReason: 'succeeded' });
+  });
+
+  it('hydrates an uncorrelated stream end from its stream start contract', () => {
+    const capture = createCesarRecapCapture('x', Date.now());
+    recordCesarRecapEvent(capture, {
+      type: 'tool-stream-start', streamId: 'stream-contract', engineId: 'cesar',
+      tool: 'Bash', input: '{"command":"npm test"}',
+    });
+    // tool/input/toolCallId are optional on OutputEvent.tool-stream-end. The
+    // streamId must therefore be sufficient to retain the start metadata.
+    recordCesarRecapEvent(capture, {
+      type: 'tool-stream-end', streamId: 'stream-contract', status: 'done',
+      output: 'passed', terminalReason: 'succeeded',
+    });
+
+    const recap = buildCesarTurnRecapEvent(capture, { responded: true, terminalState: 'completed' }, [], []);
+    expect(recap.toolCount).toBe(1);
+    expect(recap.verification).toEqual([{ label: 'tests', ok: true, state: 'passed' }]);
+    expect(recap.commands[0]).toMatchObject({ status: 'done', terminalReason: 'succeeded' });
+  });
+
+  it('correlates prototype-like stream IDs without mutating object prototypes', () => {
+    const capture = createCesarRecapCapture('x', Date.now());
+    recordCesarRecapEvent(capture, {
+      type: 'tool-stream-start', streamId: '__proto__', engineId: 'cesar',
+      tool: 'Bash', input: '{"command":"npm test"}',
+    });
+    recordCesarRecapEvent(capture, {
+      type: 'tool-stream-end', streamId: '__proto__', status: 'done',
+      output: 'passed', terminalReason: 'succeeded',
+    });
+
+    const recap = buildCesarTurnRecapEvent(capture, { responded: true, terminalState: 'completed' }, [], []);
+    expect(recap.verification).toEqual([{ label: 'tests', ok: true, state: 'passed' }]);
+    expect(Object.getPrototypeOf(capture.toolStreamsById)).toBe(Object.prototype);
+  });
+
+  it('marks an unrecovered consequential failure red while keeping non-command failures non-fatal', () => {
     const capture = createCesarRecapCapture('x', Date.now());
     recordCesarRecapEvent(capture, bashCall('git commit -m "x"', 'error', 'nothing to commit'));
-    // Engine responded → completed (green), even though a tool failed.
-    expect(buildCesarTurnRecapEvent(capture, { responded: true }, [], []).failed).toBe(false);
-    // Engine did not respond → genuine failure (amber).
+    const consequential = buildCesarTurnRecapEvent(capture, { responded: true, terminalState: 'completed' }, [], []);
+    expect(consequential.failed).toBe(true);
+    expect(consequential.outcome).toBe('Failed');
+
+    const nonFatal = createCesarRecapCapture('x', Date.now());
+    recordCesarRecapEvent(nonFatal, {
+      type: 'tool-call', tool: 'Read', input: 'missing.ts', status: 'error',
+      output: 'missing', toolCallId: 'read-nonfatal', terminalReason: 'failed',
+    });
+    expect(buildCesarTurnRecapEvent(nonFatal, { responded: true, terminalState: 'completed' }, [], []).failed).toBe(false);
     expect(buildCesarTurnRecapEvent(capture, { responded: false }, [], []).failed).toBe(true);
+  });
+
+  it('renders a no-output timeout as an amber partial result, not a red failure', () => {
+    const capture = createCesarRecapCapture('x', Date.now());
+    const recap = buildCesarTurnRecapEvent(
+      capture,
+      { responded: false, terminalState: 'timed_out' },
+      [],
+      [],
+    );
+    expect(recap.outcome).toBe('Partial');
+    expect(recap.failed).toBe(false);
   });
 
   it('promotes an unrecovered CONSEQUENTIAL failure to a red failure line with reason', () => {
@@ -251,8 +465,10 @@ describe('buildCesarTurnRecapEvent — failure surfacing & headline status', () 
     recordCesarRecapEvent(capture, bashCall('node --check renderer.js', 'error', 'SyntaxError'));
     const recap = buildCesarTurnRecapEvent(capture, { responded: true }, [], []);
     expect(recap.failureLines).toHaveLength(0);
+    expect(recap.failedTools).toBe(0);
     expect(recap.nonFatalCount).toBe(1);
     expect(recap.failed).toBe(false);
+    expect(shouldEmitCesarRecap(recap)).toBe(false);
   });
 
   it('a recovered failure (exact retry later succeeded) is neither a red line nor counted', () => {

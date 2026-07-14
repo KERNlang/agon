@@ -43,8 +43,29 @@ module name=ShellParsing
       return value="((lower) => DANGEROUS_COMMANDS.some((dangerous: string) => lower.includes(dangerous)) || DANGEROUS_PREFIXES.some((prefix: string) => lower.startsWith(prefix)))(command.toLowerCase().trim())"
 
   fn name=isReadOnlyCommand params="command:string" returns=boolean
-    handler lang="kern"
-      return value="((readonlyCommand, commandSeparator) => ((readonlyCommand.includes('&&') || readonlyCommand.includes('||') || readonlyCommand.includes(commandSeparator) || /&(?!&)/.test(readonlyCommand)) && !/^\\|/.test(readonlyCommand)) ? readonlyCommand.replace(/&&|\\|\\||&(?!&)/g, commandSeparator).split(commandSeparator).every((p: string) => p.trim() && isReadOnlyCommand(p.trim())) : readonlyCommand.includes('|') ? readonlyCommand.split('|').map((p: string) => p.trim()).every((p: string) => p && isReadOnlyCommand(p)) : [...READONLY_COMMANDS].some((safe: string) => readonlyCommand === safe || readonlyCommand.startsWith(safe + ' ')))(stripShellRedirections(stripShellWrappers(command)).trim(), String.fromCharCode(59))"
+    handler lang="ts" <<<
+      return ((readonlyCommand, commandSeparator) =>
+        ((readonlyCommand.includes('&&')
+          || readonlyCommand.includes('||')
+          || readonlyCommand.includes(commandSeparator)
+          || /&(?!&)/.test(readonlyCommand))
+          && !/^\|/.test(readonlyCommand))
+          ? readonlyCommand
+              .replace(/&&|\|\||&(?!&)/g, commandSeparator)
+              .split(commandSeparator)
+              .every((p: string) => p.trim() && isReadOnlyCommand(p.trim()))
+          : readonlyCommand.includes('|')
+            ? readonlyCommand
+                .split('|')
+                .map((p: string) => p.trim())
+                .every((p: string) => p && isReadOnlyCommand(p))
+            : [...READONLY_COMMANDS].some(
+                (safe: string) => readonlyCommand === safe || readonlyCommand.startsWith(safe + ' '),
+              ))(
+        stripShellRedirections(stripShellWrappers(command)).trim(),
+        String.fromCharCode(59),
+      );
+    >>>
 
 // ── Git-Dirty File Cache (for smart mode) ─────────────────────────
 

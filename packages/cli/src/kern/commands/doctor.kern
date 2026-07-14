@@ -315,6 +315,25 @@ fn name=buildHarnessDoctorReport params="registry:EngineRegistry, config:any, ce
     }
     rows.push(['Backend', `${backendPref} -> ${backend}`, backendStatus, backendDetail]);
 
+    const apiTiming = engine?.api;
+    if (apiTiming) {
+      const seconds = (value: unknown) => typeof value === 'number' && Number.isFinite(value)
+        ? `${Number(value) / 1000}s`
+        : 'provider default';
+      const retryCount = typeof apiTiming.firstChunkRetryCount === 'number'
+        ? String(apiTiming.firstChunkRetryCount)
+        : 'default';
+      const retryBackoff = typeof apiTiming.firstChunkRetryBackoffMs === 'number'
+        ? `${apiTiming.firstChunkRetryBackoffMs}ms`
+        : 'default';
+      rows.push([
+        'Latency policy',
+        selected,
+        typeof apiTiming.firstChunkTimeoutMs === 'number' && typeof apiTiming.idleTimeoutMs === 'number' ? 'ok' : 'warn',
+        `first=${seconds(apiTiming.firstChunkTimeoutMs)}, idle=${seconds(apiTiming.idleTimeoutMs)}, retry=${retryCount}, backoff=${retryBackoff}`,
+      ]);
+    }
+
     const hasNative = cesar?.hasNativeTools === true;
     const hasMcpSignal = typeof cesar?.mcpSignalPath === 'string' && cesar.mcpSignalPath.length > 0;
     rows.push(['Native tools', selected, hasNative ? 'ok' : 'warn', hasNative ? 'active in current Cesar session' : 'not active yet; send a Cesar turn to test native tool streaming']);

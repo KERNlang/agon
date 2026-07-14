@@ -1,4 +1,5 @@
 import from="./context-scanner.js" names="scanProjectContext"
+import from="./host-runtime.js" names="hostNowMs"
 
 service name=SessionContext
   doc "Memoized project context — gathered once per session, reused across dispatches. Inspired by Claude Code's immutable context pattern: capture directory structure, git status, project type at startup and cache for the session lifetime."
@@ -14,14 +15,14 @@ service name=SessionContext
     handler lang="kern"
       let name=extraVal value="extra ?? null"
       let name=formatVal value="format ?? null"
-      let name=stale value="this.capturedAt !== null && (Date.now() - this.capturedAt) > 300000"
+      let name=stale value="this.capturedAt !== null && (hostNowMs() - this.capturedAt) > 300000"
       if cond="this.cache !== null && this.cachedCwd === cwd && this.cachedExtra === extraVal && this.cachedFormat === formatVal && !stale"
         return value="this.cache"
       assign target="this.cache" value="scanProjectContext(cwd, extra, format)"
       assign target="this.cachedCwd" value="cwd"
       assign target="this.cachedExtra" value="extraVal"
       assign target="this.cachedFormat" value="formatVal"
-      assign target="this.capturedAt" value="Date.now()"
+      assign target="this.capturedAt" value="hostNowMs()"
       return value="this.cache"
 
   method name=invalidate returns=void
@@ -38,7 +39,7 @@ service name=SessionContext
     handler lang="kern"
       if cond="this.capturedAt === null"
         return value="Infinity"
-      return value="Date.now() - this.capturedAt"
+      return value="hostNowMs() - this.capturedAt"
 
   method name=isStale params="maxAgeMs?:number" returns=boolean
     doc "Returns true if context is older than maxAgeMs (default 5 minutes)."

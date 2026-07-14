@@ -119,6 +119,11 @@ describe('doctor command helpers', () => {
         exec: { args: [], stdin: true },
         agent: { args: [], stdin: true },
         companion: { protocol: 'mcp' },
+        api: {
+          model: 'opus-test', apiKeyEnv: 'TEST_KEY', baseUrl: 'https://example.invalid',
+          firstChunkTimeoutMs: 120000, idleTimeoutMs: 180000,
+          firstChunkRetryCount: 1, firstChunkRetryBackoffMs: 1000,
+        },
       }),
       findBinary: () => '/usr/local/bin/claude',
     } as any;
@@ -133,6 +138,7 @@ describe('doctor command helpers', () => {
     expect(report.rows.some((row) => row[0] === 'Capability profile' && row[3].includes('agent'))).toBe(true);
     expect(report.rows.some((row) => row[0] === 'Native tools' && row[2] === 'ok')).toBe(true);
     expect(report.rows.some((row) => row[0] === 'MCP side-channel' && row[2] === 'warn')).toBe(true);
+    expect(report.rows.some((row) => row[0] === 'Latency policy' && row[3].includes('first=120s') && row[3].includes('retry=1'))).toBe(true);
     expect(report.summary).toContain('warn');
   });
 });

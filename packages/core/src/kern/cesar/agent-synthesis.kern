@@ -517,4 +517,4 @@ fn name=detectSynthesisInsightMention params="opts:{responseExcerpt:string, lose
     each name=id in="opts.loserEngineIds"
       if cond="excerpt.includes(id.toLowerCase())"
         do value="mentioned.push(id)"
-    return value="{ hasAnyMention: mentioned.length > 0, mentionedEngineIds: mentioned, }"
+    return value="{ hasAnyMention: mentioned.length > 0, mentionedEngineIds: mentioned.slice(), }"

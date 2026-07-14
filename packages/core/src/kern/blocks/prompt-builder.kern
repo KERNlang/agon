@@ -1,6 +1,7 @@
 import from="../models/types.js" names="Critique" types=true
 import from="../models/context-parts.js" names="StageContext" types=true
 import from="../models/context-parts.js" names="renderStageContext"
+import from="./host-runtime.js" names="hostRegexSplit,hostRegexTest"
 
 interface name=PromptBlock
   doc "A cacheable prompt block. Stable blocks (system instructions, constraints) are cached across turns; dynamic blocks (task, diff) are not."
@@ -12,13 +13,13 @@ fn name=splitPromptBlocks params="prompt:string" returns="PromptBlock[]"
   doc "Split a prompt into cacheable blocks by ## section headers. Sections like CONSTRAINTS and INSTRUCTIONS are stable and cacheable; TASK, DIFF, QUESTION are dynamic."
   handler lang="kern"
     let name=STABLE_HEADERS value="/^##\\s*(CONSTRAINTS|INSTRUCTIONS|FITNESS TEST|REVIEW REQUEST)/i"
-    let name=sections value="prompt.split(/(?=^## )/m)"
+    let name=sections value="hostRegexSplit(prompt, /(?=^## )/m)"
     let name=blocks type="PromptBlock[]" value="[]"
     each name=section in="sections"
       let name=trimmed value="section.trim()"
       if cond="!trimmed"
         continue
-      let name=isStable value="STABLE_HEADERS.test(trimmed)"
+      let name=isStable value="hostRegexTest(trimmed, STABLE_HEADERS)"
       do value="blocks.push({ role: isStable ? 'system' : 'user', content: trimmed, cacheable: isStable, })"
     comment raw="// If no sections found, return whole prompt as a single user block"
     if cond="blocks.length === 0"

@@ -14,6 +14,7 @@ import from="./markdown.js" names="truncateCodeLine"
 import from="./arena.js" names="ForgeArena,BrainstormStorm,CampfireFire,TribunalCourt"
 import from="./plan-view.js" names="PlanProposalView,PlanExecutionView"
 import from="./engine-helpers.js" names="parseToolInputPayload,extractPatchText,parsePatchPreview,extractSummary,formatDuration"
+import from="../cesar/recap.js" names="formatCesarRecapToolSummary"
 import from="node:module" names="createRequire"
 import from="node:fs" names="readFileSync,existsSync"
 import from="node:path" names="dirname,join"
@@ -186,14 +187,17 @@ screen name=CesarRecapBlock target=ink memo=true
       const toolSummary = Array.isArray((event as any).toolSummary) ? (event as any).toolSummary : [];
       const checkpoints = Array.isArray((event as any).checkpoints) ? (event as any).checkpoints : [];
       const diffFiles = Array.isArray((event as any).diffPreview?.files) ? (event as any).diffPreview.files : [];
-      const confidence = typeof (event as any).confidence === 'number' ? `${Math.round((event as any).confidence)}% confidence` : '';
+      const confidenceValue = (event as any).confidence;
+      const confidence = typeof confidenceValue === 'number' && Number.isFinite(confidenceValue) ? `${Math.round(confidenceValue)}% confidence` : '';
       const seconds = typeof (event as any).durationMs === 'number' ? `${(((event as any).durationMs) / 1000).toFixed(1)}s` : '';
       const failed = (event as any).failed === true;
-      const nonFatalCount = Number((event as any).nonFatalCount ?? 0);
+      const terminalState = String((event as any).terminalState ?? '');
       const failureLines = Array.isArray((event as any).failureLines) ? (event as any).failureLines : [];
       const failureOverflow = Number((event as any).failureOverflow ?? 0);
-      const statusColor = failed ? '#fbbf24' : '#4ade80';
-      const statusIcon = failed ? icons().warning : icons().success;
+      const partial = terminalState === 'partial' || terminalState === 'waiting' || terminalState === 'timed_out';
+      const interrupted = terminalState === 'cancelled' || terminalState === 'superseded';
+      const statusColor = failed ? '#ef4444' : partial ? '#fbbf24' : interrupted ? '#a8a8a8' : '#4ade80';
+      const statusIcon = failed ? icons().fail : partial || interrupted ? icons().warning : icons().success;
       const change = (event as any).changeSummary ?? { created: 0, edited: 0, read: 0 };
       const createdCount = Number(change.created ?? 0);
       const editedCount = Number(change.edited ?? 0);
@@ -202,11 +206,24 @@ screen name=CesarRecapBlock target=ink memo=true
       const changeParts: string[] = [];
       if (createdCount > 0) changeParts.push(`+${createdCount} created`);
       if (editedCount > 0) changeParts.push(`~${editedCount} edited`);
-      const verification = Array.isArray((event as any).verification) ? (event as any).verification : [];
+      const verification = Array.isArray((event as any).verification)
+        ? (event as any).verification.filter((value: unknown) => value !== null && typeof value === 'object')
+        : [];
+      const passedVerification = verification.filter((v: any) => v.state === 'passed' || (v.state === undefined && v.ok === true));
+      const failedVerification = verification.filter((v: any) => v.state === 'failed' || (v.state === undefined && v.ok === false));
+      const notRunVerification = verification.filter((v: any) => v.state === 'not_run' || v.state === 'pending');
       const changedFiles = files.filter((f: any) => String(f.status) !== 'read');
-      const toolLine = toolSummary.length > 0
-        ? `${(event as any).toolCount ?? toolSummary.length} tools: ${toolSummary.slice(0, 8).join(', ')}${toolSummary.length > 8 ? ', ...' : ''}`
-        : `${(event as any).toolCount ?? 0} tools`;
+      const toolCount = (event as any).toolCount ?? toolSummary.length;
+      const toolParts = [formatCesarRecapToolSummary(toolCount, toolSummary)];
+      const skippedTools = Number((event as any).skippedTools ?? 0);
+      const deniedTools = Number((event as any).deniedTools ?? 0);
+      const cancelledTools = Number((event as any).cancelledTools ?? 0);
+      const nonFatalCount = Number((event as any).nonFatalCount ?? 0);
+      if (skippedTools > 0) toolParts.push(`${skippedTools} skipped`);
+      if (deniedTools > 0) toolParts.push(`${deniedTools} denied`);
+      if (cancelledTools > 0) toolParts.push(`${cancelledTools} cancelled`);
+      if (nonFatalCount > 0) toolParts.push(`${nonFatalCount} non-fatal`);
+      const toolLine = toolParts.join(' · ');
       const fileGlyph = (status: string) => status === 'edited' ? 'M' : status === 'created' ? '+' : 'r';
       return (
         <Box flexDirection="column" paddingLeft={1} marginTop={1}>
@@ -231,28 +248,34 @@ screen name=CesarRecapBlock target=ink memo=true
           ) : null}
           {changedTotal > 0 ? (
             <Text>
-              <Text color="#4ade80" bold>{'  changes: '}</Text>
+              <Text dimColor>{'  workspace: '}</Text>
               <Text color="#4ade80">{changeParts.join(', ')}</Text>
               {readCount > 0 ? <Text dimColor>{' · '}{readCount}{' read'}</Text> : null}
             </Text>
           ) : (
             <Text>
-              <Text color="#fbbf24" bold>{'  changes: '}</Text>
-              <Text color="#fbbf24">{'none (explored only)'}</Text>
+              <Text dimColor>{'  workspace: '}</Text>
+              <Text>{'unchanged'}</Text>
               {readCount > 0 ? <Text dimColor>{' · '}{readCount}{' read'}</Text> : null}
             </Text>
           )}
-          {verification.length > 0 ? (
+          {passedVerification.length > 0 ? (
             <Text>
               <Text dimColor>{'  verified: '}</Text>
-              {verification.map((v: any, i: number) => (
+              {passedVerification.map((v: any, i: number) => (
                 <Text key={`verify-${i}`}>
-                  <Text color={v.ok ? '#4ade80' : '#ef4444'}>{v.ok ? icons().success : icons().fail}</Text>
+                  <Text color="#4ade80">{'✓'}</Text>
                   <Text>{' '}{v.label}</Text>
-                  {i < verification.length - 1 ? <Text dimColor>{' · '}</Text> : null}
+                  {i < passedVerification.length - 1 ? <Text dimColor>{' · '}</Text> : null}
                 </Text>
               ))}
             </Text>
+          ) : null}
+          {failedVerification.length > 0 ? (
+            <Text color="#ef4444">{'  verification failed'}{` · ${failedVerification.map((v: any) => v.label).join(', ')}`}</Text>
+          ) : null}
+          {notRunVerification.length > 0 ? (
+            <Text color="#fbbf24">{'  verification: not run'}{` · ${notRunVerification.map((v: any) => v.label).join(', ')}`}</Text>
           ) : null}
           {(event as any).todos && Number((event as any).todos.total ?? 0) > 0 ? (
             <Text>
@@ -260,7 +283,8 @@ screen name=CesarRecapBlock target=ink memo=true
               <Text color={Number((event as any).todos.done ?? 0) >= Number((event as any).todos.total ?? 0) ? '#4ade80' : '#fbbf24'}>{Number((event as any).todos.done ?? 0)}{'/'}{Number((event as any).todos.total ?? 0)}{' done'}</Text>
             </Text>
           ) : null}
-          <Text dimColor>{'  '}{toolLine}{nonFatalCount > 0 ? ` · ${nonFatalCount} non-fatal` : ''}</Text>
+          {(event as any).remaining ? <Text color="#fbbf24">{'  remaining: '}{String((event as any).remaining)}</Text> : null}
+          <Text dimColor>{'  '}{toolLine}</Text>
           {(event as any).confidenceReasoning ? (
             <Text italic color="#a8a8a8">{'  why: '}{(event as any).confidenceReasoning}</Text>
           ) : null}

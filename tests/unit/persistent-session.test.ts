@@ -99,6 +99,52 @@ afterEach(() => {
 });
 
 describe('persistent session streaming dedupe', () => {
+  it('threads the active turn and stable RPC id into companion approvals', async () => {
+    const approvals: Array<Record<string, unknown> | undefined> = [];
+    spawnMock.mockImplementationOnce(() => createMockProcess((line, stdout) => {
+      const msg = JSON.parse(line);
+      if (msg.id && msg.method === 'initialize') {
+        stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: {} }) + '\n');
+      } else if (msg.id && msg.method === 'thread/start') {
+        stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { thread: { id: 'thread-approval' } } }) + '\n');
+      } else if (msg.id && msg.method === 'turn/start') {
+        stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: {} }) + '\n');
+        stdout.write(JSON.stringify({
+          jsonrpc: '2.0',
+          id: 77,
+          method: 'item/commandExecution/requestApproval',
+          params: { command: { command: 'npm test' } },
+        }) + '\n');
+        stdout.write(JSON.stringify({ jsonrpc: '2.0', method: 'turn/completed', params: {} }) + '\n');
+      }
+    }));
+
+    const { createCompanionSession } = await import('../../packages/core/src/persistent-session.js');
+    const session = createCompanionSession({
+      engine: { id: 'codex', binary: 'codex', companion: { protocol: 'jsonrpc', serverCmd: ['app-server'] } } as any,
+      binaryPath: '/usr/local/bin/codex',
+      cwd: process.cwd(),
+      onApproval: async (_tool, _command, controlPlane) => {
+        approvals.push(controlPlane as unknown as Record<string, unknown> | undefined);
+        return true;
+      },
+    });
+    const envelope = {
+      schemaVersion: 1 as const,
+      sessionId: 'chat-approval',
+      turnId: 'turn-approval',
+      leaseEpoch: 4,
+      attempt: 1,
+      producerId: 'cesar-brain',
+    };
+
+    await session.start();
+    await collectTextChunks(session.send({ message: 'test', controlPlane: envelope }));
+    await vi.waitFor(() => expect(approvals).toHaveLength(1));
+
+    expect(approvals[0]).toEqual({ ...envelope, toolCallId: '77', stepId: 'approval:77' });
+  });
+
   it('dedupes Codex companion completed messages after deltas and forwards MCP servers on thread start', async () => {
     let threadStartParams: Record<string, unknown> | null = null;
     spawnMock.mockImplementationOnce(() => createMockProcess((line, stdout) => {
@@ -699,6 +745,68 @@ describe('persistent session streaming dedupe', () => {
     expect(chunks.some((chunk: any) => chunk.type === 'text' && /Recovered after a transient empty/.test(chunk.content))).toBe(true);
   }, 15000);
 
+  it('retries a first-chunk timeout once when no side effect has started', async () => {
+    const { createResumeSession } = await import('../../packages/core/src/persistent-session.js');
+    apiStreamDispatchWithHistoryMock
+      .mockImplementationOnce(async function* () {
+        return { stderr: 'API stream first-chunk idle timeout after 1s (received 0 chunks, 0 text chars)' };
+      })
+      .mockImplementationOnce(async function* () {
+        yield 'Recovered after safe retry.';
+        return {};
+      });
+    const session = createResumeSession({
+      engine: {
+        id: 'api-first-chunk-retry',
+        api: {
+          baseURL: 'https://example.invalid', apiKeyEnv: 'TEST_KEY', model: 'api-test',
+          firstChunkRetryCount: 1, firstChunkRetryBackoffMs: 0,
+        },
+      } as any,
+      binaryPath: '', cwd: process.cwd(), systemPrompt: 'You are Cesar.', onToolCall: async () => 'unused',
+    });
+
+    await session.start();
+    const chunks = [];
+    for await (const chunk of session.send({ message: 'retry safely' })) chunks.push(chunk);
+
+    expect(apiStreamDispatchWithHistoryMock).toHaveBeenCalledTimes(2);
+    expect(chunks.some((chunk: any) => chunk.type === 'status' && /safe retry 1\/1/.test(chunk.content))).toBe(true);
+    expect(chunks.some((chunk: any) => chunk.type === 'text' && /Recovered after safe retry/.test(chunk.content))).toBe(true);
+  });
+
+  it('does not retry a later first-chunk timeout after an unsafe tool was initiated', async () => {
+    const { createResumeSession } = await import('../../packages/core/src/persistent-session.js');
+    apiStreamDispatchWithHistoryMock
+      .mockImplementationOnce(() => streamStructuredToolCall('Bash', { command: 'npm run build' }, 'build-1'))
+      .mockImplementationOnce(async function* () {
+        return { stderr: 'API stream first-chunk idle timeout after 1s (received 0 chunks, 0 text chars)' };
+      })
+      .mockImplementationOnce(async function* () {
+        yield 'This retry must never run.';
+        return {};
+      });
+    const session = createResumeSession({
+      engine: {
+        id: 'api-first-chunk-no-retry',
+        api: {
+          baseURL: 'https://example.invalid', apiKeyEnv: 'TEST_KEY', model: 'api-test',
+          firstChunkRetryCount: 1, firstChunkRetryBackoffMs: 0,
+        },
+      } as any,
+      binaryPath: '', cwd: process.cwd(), systemPrompt: 'You are Cesar.', onToolCall: async () => 'build complete',
+      toolLoopBaseBudget: 3, toolLoopMaxBudget: 3,
+    });
+
+    await session.start();
+    const chunks = [];
+    for await (const chunk of session.send({ message: 'build then continue' })) chunks.push(chunk);
+
+    expect(apiStreamDispatchWithHistoryMock).toHaveBeenCalledTimes(2);
+    expect(chunks.some((chunk: any) => chunk.type === 'error' && /first-chunk idle timeout/.test(chunk.content))).toBe(true);
+    expect(chunks.some((chunk: any) => /This retry must never run/.test(chunk.content))).toBe(false);
+  });
+
   it('still surfaces the empty-response error after exhausting retries', async () => {
     const { createResumeSession } = await import('../../packages/core/src/persistent-session.js');
     apiStreamDispatchWithHistoryMock.mockImplementation(async function* () { return {}; }); // always empty
@@ -781,6 +889,12 @@ describe('persistent session streaming dedupe', () => {
       // The gate fired (blocked the write) and the circuit breaker ended the turn.
       expect(chunks.some((c: any) => c.type === 'status' && /solo-coding gate/.test(c.content))).toBe(true);
       expect(chunks.some((c: any) => c.type === 'error' && /circuit breaker/.test(c.content))).toBe(true);
+      const blockedChunk = chunks.find((c: any) => c.type === 'tool_call' && c.metadata?.output === 'Blocked: investigate first');
+      expect(blockedChunk?.metadata).toEqual(expect.objectContaining({
+        toolCallId: 'call_w1',
+        terminalReason: 'skipped_policy',
+        executionOwner: 'session',
+      }));
 
       // The grounded-write fire flushed as UNRESOLVED (aborted finalize), not averted.
       const counters = readGuardCounters();

@@ -1,0 +1,8 @@
+fn name=classifyRuntimePilotChange params="changeKind:string" returns=string export=true
+  doc "Pure, non-authoritative pilot policy for KERN 4.5 direct source execution. No safety, approval, filesystem, network, or mutation decision consumes this result."
+  handler lang="kern"
+    if cond="changeKind === 'docs'"
+      return value="'live'"
+    if cond="changeKind === 'bounded-code'"
+      return value="'review'"
+    return value="'plan'"

@@ -7,6 +7,7 @@ import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="./brain-helpers.js" names="recordCesarTurn"
 import from="./confidence.js" names="CONFIDENCE_TIERS,confidenceBadge,parseConfidence"
 import from="./session.js" names="CESAR_SYSTEM_PROMPT"
+import from="./task-execution-lease.js" names="approveTaskAction,buildTaskActionTarget,claimTaskActionPrompt,evaluateTaskAction,taskExplicitlyRequestsAction"
 
 type name=QuickNeroDecision values="self|tribunal|brainstorm|campfire|forge"
 
@@ -20,10 +21,10 @@ fn name=parseQuickNeroDecision params="text:string" returns="{decision:QuickNero
     let name=breadthMatch value="cleaned.match(/(?:^|\\n)\\s*BREADTH:\\s*(solo|team)\\b/i)"
     let name=scopeMatch value="cleaned.match(/(?:^|\\n)\\s*(?:FORGE_SCOPE|SCOPE):\\s*(none|slice|full)\\b/i)"
     let name=whyMatch value="cleaned.match(/(?:^|\\n)\\s*WHY:\\s*([\\s\\S]*?)(?:\\n[A-Z_]+:|$)/i)"
-    let name=decision value="(decisionMatch?.[1]?.toLowerCase() ?? 'self') as QuickNeroDecision"
-    let name=breadth value="(breadthMatch?.[1]?.toLowerCase() ?? 'solo') === 'team'"
-    let name=scope value="(scopeMatch?.[1]?.toLowerCase() ?? 'none') as QuickNeroScope"
-    let name=rationale value="(whyMatch?.[1] ?? cleaned).trim()"
+    let name=decision value="(decisionMatch?.groups[0]?.toLowerCase() ?? 'self') as QuickNeroDecision"
+    let name=breadth value="(breadthMatch?.groups[0]?.toLowerCase() ?? 'solo') === 'team'"
+    let name=scope value="(scopeMatch?.groups[0]?.toLowerCase() ?? 'none') as QuickNeroScope"
+    let name=rationale value="(whyMatch?.groups[0] ?? cleaned).trim()"
     return value="{ decision, team: breadth, scope, rationale }"
 
 fn name=pickBestAdvisor params="input:string, ctx:HandlerContext" returns="{engineId:string, color:number}|null"
@@ -270,18 +271,40 @@ fn name=deactivateNero params="ctx:HandlerContext, dispatch:Dispatch" returns=vo
     do value="ctx.eventBus?.emit('cesar:nero', { active: false }).catch(() => { })"
 
 
-fn name=promptDelegation async=true params="action:string, dispatch:Dispatch, hardened?:boolean, tribunalMode?:string, team?:boolean" returns="Promise<{approved:boolean, action?:string, hardened?:boolean, tribunalMode?:string, team?:boolean, userContext?:string}>"
-  doc "Ask user to confirm a suggested delegation with a simple yes/no prompt."
+fn name=promptDelegation async=true params="action:string, dispatch:Dispatch, hardened?:boolean, tribunalMode?:string, team?:boolean, ctx?:HandlerContext, target?:string, details?:Record<string,unknown>" returns="Promise<{approved:boolean, action?:string, hardened?:boolean, tribunalMode?:string, team?:boolean, userContext?:string}>"
+  doc "Apply Cesar's task authority lease to a chosen delegation. Read-only thinking is always free; routine AUTO execution is free; important and dangerous boundaries ask only when required."
   handler <<<
+    const normalizedAction = String(action ?? '').replace(/^team-/, '').toLowerCase();
+    const thinkingActions = new Set(['brainstorm', 'tribunal', 'campfire', 'council', 'review']);
+    if (thinkingActions.has(normalizedAction)) return { approved: true, action, hardened, tribunalMode, team };
+
+    const lease = ctx?.cesar?.taskExecutionLease;
+    if (lease) {
+      if ((normalizedAction === 'goal' || normalizedAction === 'conquer')
+          && !taskExplicitlyRequestsAction(lease, normalizedAction)) {
+        dispatch({ type: 'info', message: `${normalizedAction === 'goal' ? 'Goal' : 'Conquer'} requires an explicit user request — skipped.` });
+        return { approved: false };
+      }
+      const authorityTarget = buildTaskActionTarget(lease, String(target ?? ''), details);
+      const evaluation = evaluateTaskAction(lease, normalizedAction, authorityTarget);
+      if (evaluation.decision === 'deny') {
+        dispatch({ type: 'info', message: `${action} is outside this task's authority lease — skipped.` });
+        return { approved: false };
+      }
+      if (evaluation.decision === 'allow') return { approved: true, action, hardened, tribunalMode, team };
+      if (!claimTaskActionPrompt(lease, evaluation.signature)) return { approved: false };
+    }
+
     const confirmLabel = hardened ? `${action} (hardened)` : action;
     const answer = await new Promise<string>((resolve) => {
-      dispatch({ type: 'question', prompt: `Cesar suggests: ${confirmLabel}${tribunalMode ? ` [${tribunalMode}]` : ''}`, choices: [
+      dispatch({ type: 'question', prompt: lease ? `Approve ${confirmLabel} for this task${tribunalMode ? ` [${tribunalMode}]` : ''}` : `Cesar suggests: ${confirmLabel}${tribunalMode ? ` [${tribunalMode}]` : ''}`, choices: [
         { key: 'y', label: 'Yes', color: '#4ade80' },
         { key: 'n', label: 'No', color: '#ef4444' },
       ], resolve } as any);
     });
 
-    return { approved: answer === 'y' };
+    if (answer === 'y' && lease) approveTaskAction(lease, normalizedAction, buildTaskActionTarget(lease, String(target ?? ''), details));
+    return { approved: answer === 'y', action, hardened, tribunalMode, team };
   >>>
 
 fn name=promptProtocolEnforcement async=true params="input:string, parsedConfidence:number|null, ctx:HandlerContext, dispatch:Dispatch" returns="Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, team?:boolean, tribunalMode?:string}|null>"

@@ -40,6 +40,8 @@ import from="../blocks/todo-list.js" names="TodoList"
 import from="../signals/todos.js" names="Todo" types=true
 import from="../signals/todos.js" names="clearTodos"
 import from="../cesar/session.js" names="saveCesarConversationSnapshot"
+import from="../cesar/turn-runtime.js" names="createDurableCesarTurnRuntimeHost"
+import from="../cesar/turn-runtime.js" names="CesarTurnRuntimeHost" types=true
 import from="../../generated/surfaces/status.js" names="SpinnerBlock,BackgroundJobRail,ExecutionRailPanel"
 import from="../../generated/blocks/controls.js" names="EnginePicker,ModelPicker,ReviewBlock,CesarPicker"
 import from="../../generated/blocks/rendering.js" names="contentWidth,withContentWidthOverride,color256toHex,engineColor,CODE_RAIL,CODE_RAIL_COLOR,MAX_CODE_LINES"
@@ -61,6 +63,7 @@ import from="../../stable-input.js" names="useStableInput"
 import from="../blocks/rich-text.js" names="parseProseToRichLines"
 import from="../services/update-check.js" names="saveDismissedVersion"
 import from="../lib/terminal-notify.js" names="bell,setWindowTitle"
+import from="../lib/kern-host.js" names="hostNowMs,hostObjectValues,hostSet"
 // ── Domain-specific helper imports (refactored from monolithic app-helpers) ──
 import from="./app-composer.js" names="loadComposerInputHistory"
 import from="./app-tool-detail.js" names="toolDetailViewportRows,findLatestToolDetailEvent,findLatestToolEvent,findLatestFailedToolEvent,buildFailedToolRetryDraft,buildToolDetailView"
@@ -104,7 +107,7 @@ screen name=App target=ink
   state name=steeringCount type=number initial=0
   state name=historyIndex type=number initial=-1 safe=false
   state name=mode type="'chat'|'campfire'|'brainstorm'|'tribunal'" initial="'chat'"
-  state name=sessionStartTime type=number initial="Date.now()"
+  state name=sessionStartTime type=number initial="hostNowMs()"
   state name=liveSpinner type=any initial="null" throttle=120
   state name=liveProgress type="EngineProgress[]|null" initial="null" throttle=120
   state name=slashPickerOpen type=boolean initial=false safe=false
@@ -213,7 +216,8 @@ screen name=App target=ink
   ref name=pasteHashesRef type="Map<string,string>" initial="new Map()"
   ref name=activeAbortRef type="AbortController|null" initial="null"
   ref name=activeTurnRef type="{ input:string; engineId:string; retried:boolean }|null" initial="null"
-  ref name=lastActivityTimeRef type=number initial="Date.now()"
+  ref name=cesarRuntimeHostRef type=CesarTurnRuntimeHost initial="createDurableCesarTurnRuntimeHost(chatSession.id)"
+  ref name=lastActivityTimeRef type=number initial="hostNowMs()"
   // Single-shot bell guard: set true when we ring on done/await, cleared on
   // the next user keystroke or next dispatch. Prevents double-bell when both
   // a question and a plan-approval land in the same render.
@@ -221,14 +225,14 @@ screen name=App target=ink
   // Tracks whether we've already announced a given plan-approval state so a
   // re-render of the same awaiting_approval state doesn't re-ring the bell.
   ref name=awaitingPlanAnnouncedRef type=string initial="''"
-  ref name=blockArchivePathRef type=string initial="makeBlockArchivePath(Date.now())"
+  ref name=blockArchivePathRef type=string initial="makeBlockArchivePath(hostNowMs())"
   ref name=nestedCtrlShortcutRef type="{ key: string; at: number }" initial="{ key: '', at: 0 }"
   ref name=displayRowCountRef type=number initial=0
   ref name=mouseInputBufferRef type=string initial="''"
   ref name=wheelDeltaRef type=number initial=0
   ref name=wheelFlushTimerRef type="ReturnType<typeof setTimeout>|null" initial="null"
   ref name=mouseSelectionRef type="{ anchorRow: number | null; anchorCol: number | null; focusRow: number | null; focusCol: number | null; active: boolean; moved: boolean }" initial="{ anchorRow: null, anchorCol: null, focusRow: null, focusCol: null, active: false, moved: false }"
-  ref name=lastTerminalInputAtRef type=number initial="Date.now()"
+  ref name=lastTerminalInputAtRef type=number initial="hostNowMs()"
   ref name=scrollBoxRef type="any" initial="null"
   ref name=nativeTranscriptBlockCountRef type=number initial=0
   // engines dir is at packages/cli/engines from the bundled dist/index.js
@@ -274,7 +278,7 @@ screen name=App target=ink
       let name=skillCmds value="[...dynamicSkills, ...extensionSkills].map((s: {trigger:string,description?:string,name:string}) => Object.assign({}, { cmd: s.trigger, desc: s.description || s.name }))"
       comment raw="// Dedupe across builtins, registry-provided commands, and dynamic skills."
       let name=mergedBase value="[...builtinCmds, ...registryCmds].filter((cmd: any, index: number, all: any[]) => all.findIndex((other: any) => other.cmd === cmd.cmd) === index)"
-      let name=seen value="new Set(mergedBase.map((c: any) => c.cmd))"
+      let name=seen value="hostSet(mergedBase.map((c: any) => c.cmd))"
       let name=uniqueSkills value="skillCmds.filter((s: any) => !seen.has(s.cmd))"
       return value="[...mergedBase, ...uniqueSkills]"
 
@@ -325,7 +329,7 @@ screen name=App target=ink
 
   memo name=activeStream deps="streamingText"
     handler lang="kern"
-      let name=entries value="Object.values(streamingText)"
+      let name=entries value="hostObjectValues(streamingText)"
       if cond="entries.length === 0"
         return value="null"
       let name=latest type="StreamingEntry | null" kind=let value="null"
@@ -835,7 +839,7 @@ screen name=App target=ink
       do value="teeOutputEvent(chatSession.id, event)"
       let name=et value="(event as any).type"
       if cond="et === 'streaming-chunk' || et === 'thinking-chunk' || et === 'progress-update' || et === 'tool-call' || et === 'spinner-start' || et === 'spinner-update'"
-        assign target="lastActivityTimeRef.current" value="Date.now()"
+        assign target="lastActivityTimeRef.current" value="hostNowMs()"
       comment raw="// Feed FileTracker: only tool-call events with file-touching tools"
       comment raw="// actually populate it (others are no-ops inside the tracker)."
       if cond="et === 'tool-call'"
@@ -861,10 +865,13 @@ screen name=App target=ink
 
   callback name=interruptActiveRun params="message:string, clearChat:boolean" deps="replState,dispatch,trackAbort,outputActions"
     handler lang="kern"
-      do value="runInterruptActiveRun({ activeAbortRef, activePlanRef, setActiveAbort, setActivePlan, setLiveSpinner, setLiveProgress, outputActions, setQuestionState, setQuestionAnswer, setPendingPlanProposal, setSlashPickerOpen, setEnginePickerOpen, setModelPickerOpen, setCesarPickerOpen, setReviewEvent, replState, dispatch, setReplState, pendingBellRef, bell, setWindowTitle }, message, clearChat)"
+      do value="runInterruptActiveRun({ activeAbortRef, activePlanRef, cesarRuntimeHost: cesarRuntimeHostRef.current, setActiveAbort, setActivePlan, setLiveSpinner, setLiveProgress, outputActions, setQuestionState, setQuestionAnswer, setPendingPlanProposal, setSlashPickerOpen, setEnginePickerOpen, setModelPickerOpen, setCesarPickerOpen, setReviewEvent, replState, dispatch, setReplState, pendingBellRef, bell, setWindowTitle }, message, clearChat)"
 
   callback name=buildContext params="" deps="registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,extensionPromptFragments,sessionMcpServers,telemetryVitals,recentFallbacks,setActivePlanWrapped"
     handler <<<
+      if (cesarRuntimeHostRef.current.sessionId !== chatSession.id) {
+        cesarRuntimeHostRef.current = createDurableCesarTurnRuntimeHost(chatSession.id);
+      }
       return {
         registry, adapter, activeEngines,
         get inputEpoch() { return inputEpochRef.current; },
@@ -886,6 +893,7 @@ screen name=App target=ink
         telemetryVitals,
         telemetrySnapshot: () => telemetryPollerRef.current?.snapshot?.() ?? telemetryVitals,
         recentFallbacks,
+        cesarRuntimeHost: cesarRuntimeHostRef.current,
       };
     >>>
 
@@ -1467,7 +1475,7 @@ screen name=App target=ink
   effect deps="setActiveAbort,outputActions"
     handler <<<
       _cancelCallback.fn = buildCancelCallback({
-        activeAbortRef, activePlanRef, setActiveAbort, setActivePlan,
+        activeAbortRef, activePlanRef, cesarRuntimeHost: cesarRuntimeHostRef.current, setActiveAbort, setActivePlan,
         setLiveSpinner, setLiveProgress, outputActions,
         agentProgressRef, setAgentProgress,
         setQuestionState, setQuestionAnswer, setPendingPlanProposal,

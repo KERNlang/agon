@@ -3,6 +3,7 @@
 import from="node:fs" names="mkdirSync,writeFileSync,readFileSync,readdirSync,renameSync,unlinkSync,existsSync"
 import from="node:path" names="join,resolve"
 import from="../utils/paths.js" names="runtimeAgonPath"
+import from="../blocks/host-runtime.js" names="hostNowIso"
 
 fn name=getCesarPlansDir returns=string export=true expr={{ return runtimeAgonPath('plans'); }}
   doc "Canonical directory for Cesar execution plans. Markdown and JSON live together so the user can inspect and edit the exact plan Cesar proposed."
@@ -104,18 +105,35 @@ interface name=CesarPlan
 
 fn name=createCesarPlan params="intent:string,steps:CesarPlanStep[]" returns=CesarPlan
   doc "Create a new CesarPlan in 'planning' state. Steps with dependsOn are marked 'blocked', others 'pending'."
-  handler lang="kern"
-    fmt name=id template="cplan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}"
-    let name=initializedSteps value="steps.map(s => Object.assign({}, s, { state: (s.dependsOn && s.dependsOn.length > 0 ? 'blocked' : 'pending') as CesarStepState }))"
-    let name=totalEstimatedTokens value="steps.reduce((sum, s) => sum + s.estimatedTokens, 0)"
-    let name=totalEstimatedCostUsd value="steps.reduce((sum, s) => sum + s.estimatedCostUsd, 0)"
-    let name=now value="new Date().toISOString()"
-    return value="{ id, state: 'planning', intent, steps: initializedSteps, totalEstimatedTokens, totalEstimatedCostUsd, totalActualTokens: 0, totalActualCostUsd: 0, stepContext: {}, createdAt: now, updatedAt: now, activeStepId: null, currentStepId: null, }"
+  handler lang="ts" <<<
+    const id = `cplan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const initializedSteps = steps.map(s => Object.assign({}, s, {
+      state: (s.dependsOn && s.dependsOn.length > 0 ? 'blocked' : 'pending') as CesarStepState,
+    }));
+    const totalEstimatedTokens = steps.reduce((sum, s) => sum + s.estimatedTokens, 0);
+    const totalEstimatedCostUsd = steps.reduce((sum, s) => sum + s.estimatedCostUsd, 0);
+    const now = new Date().toISOString();
+    return {
+      id,
+      state: 'planning',
+      intent,
+      steps: initializedSteps,
+      totalEstimatedTokens,
+      totalEstimatedCostUsd,
+      totalActualTokens: 0,
+      totalActualCostUsd: 0,
+      stepContext: {},
+      createdAt: now,
+      updatedAt: now,
+      activeStepId: null,
+      currentStepId: null,
+    };
+  >>>
 
 fn name=approveCesarPlan params="plan:CesarPlan" returns=CesarPlan
   doc "Transition plan from 'awaiting_approval' to 'running', set approvedAt."
   handler lang="kern"
-    return value="{ ...plan, state: 'running' as CesarPlanState, approvedAt: new Date().toISOString(), updatedAt: new Date().toISOString(), }"
+    return value="{ ...plan, state: 'running' as CesarPlanState, approvedAt: hostNowIso(), updatedAt: hostNowIso(), }"
 
 fn name=advanceCesarStep params="plan:CesarPlan,stepId:string,result:CesarStepResult" returns=CesarPlan
   doc "Mark a step done/failed, unblock dependents, determine plan state."

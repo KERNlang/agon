@@ -11,6 +11,7 @@
 import from="@kernlang/agon-core" names="EngineRegistry"
 import from="./telemetry.js" names="STALL_THRESHOLD_MS,markEngineStalled,updateEngineVitals"
 import from="./telemetry.js" names="EngineVitals,EngineVitalState" types=true
+import from="../lib/kern-host.js" names="hostNowMs,hostSet"
 
 // ── Defaults ──────────────────────────────────────────────────────────
 
@@ -70,8 +71,8 @@ service name=TelemetryPoller export=true
       assign target="this.taskClass" value="opts.taskClass"
       assign target="this.activeEngineIds" value="opts.activeEngineIds"
       assign target="this.vitals" value="new Map()"
-      assign target="this.subscribers" value="new Set()"
-      assign target="this.stalledIds" value="new Set()"
+      assign target="this.subscribers" value="hostSet()"
+      assign target="this.stalledIds" value="hostSet()"
       assign target="this.timer" value="undefined"
       assign target="this.tickInFlight" value="false"
       assign target="this.catchUpTimer" value="undefined"
@@ -249,7 +250,7 @@ service name=TelemetryPoller export=true
         let name=fromVitals value="this.vitals.get(engineId)"
         if cond="fromVitals"
           do value="this.vitals.set(engineId, { ...fromVitals, state: 'fallback' as EngineVitalState, fallbackTo: candidate, fallbackReason: reason })"
-        let name=toPrev value="this.vitals.get(candidate) ?? { engineId: candidate, state: 'idle' as EngineVitalState, lastHeartbeatAt: Date.now() }"
+        let name=toPrev value="this.vitals.get(candidate) ?? { engineId: candidate, state: 'idle' as EngineVitalState, lastHeartbeatAt: hostNowMs() }"
         do value="this.vitals.set(candidate, { ...toPrev, state: 'busy' as EngineVitalState, task: `fallback from ${engineId}` })"
         do value="this.notify()"
         return
@@ -260,7 +261,7 @@ service name=TelemetryPoller export=true
             let name=fromVitals value="this.vitals.get(engineId)"
             if cond="fromVitals"
               do value="this.vitals.set(engineId, { ...fromVitals, state: 'fallback' as EngineVitalState, fallbackTo: candidate, fallbackReason: reason })"
-            let name=toPrev value="this.vitals.get(candidate) ?? { engineId: candidate, state: 'idle' as EngineVitalState, lastHeartbeatAt: Date.now() }"
+            let name=toPrev value="this.vitals.get(candidate) ?? { engineId: candidate, state: 'idle' as EngineVitalState, lastHeartbeatAt: hostNowMs() }"
             do value="this.vitals.set(candidate, { ...toPrev, state: 'busy' as EngineVitalState, task: `fallback from ${engineId}` })"
             do value="this.notify()"
           catch name=e

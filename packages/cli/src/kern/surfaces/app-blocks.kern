@@ -6,6 +6,7 @@ import from="@kernlang/agon-core" names="EngineRegistry"
 import from="../blocks/markdown.js" names="cleanEngineOutput"
 import from="../signals/block-archive.js" names="appendBlockWithCap"
 import from="../signals/runs-store.js" names="runsStore"
+import from="../lib/kern-host.js" names="hostNowMs,hostRandom"
 import from="../../generated/blocks/engine.js" names="OutputBlock" types=true
 import from="../../handlers/types.js" names="OutputEvent" types=true
 import from="./app-layout.js" names="estimateOutputEventRows"
@@ -243,4 +244,4 @@ module name=AppBlocks
     handler lang="kern"
       if cond="isDuplicateEngineBlock(blocks, event)"
         return value="blocks"
-      return value="appendBlockWithCap(blocks, { id: Date.now() + Math.random(), event }, archivePath)"
+      return value="appendBlockWithCap(blocks, { id: hostNowMs() + hostRandom(), event }, archivePath)"

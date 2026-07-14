@@ -57,6 +57,11 @@ describe('safe text input helpers', () => {
     expect(findWordBoundaryRight('src/kern/surfaces/app.kern', 3)).toBe(4);
   });
 
+  it('treats Unicode whitespace as a prompt word separator', () => {
+    expect(findWordBoundaryRight('hello\u00a0world', 5)).toBe(11);
+    expect(findWordBoundaryRight('hello\u3000world', 5)).toBe(11);
+  });
+
   it('deletes the previous word and keeps the cursor aligned', () => {
     expect(deleteWordBackward('hello brave new world', 11)).toEqual({
       value: 'hello new world',

@@ -16,17 +16,19 @@ import { createPtySession } from './session-pty.js';
 
 import { claudeBrainUsesPty } from './claude-backend.js';
 
+import type { ControlPlaneEnvelopeV1 } from './turn-protocol.js';
+
 /**
  * A streamed unit from a PersistentSession.send() turn. 'text' is the authoritative answer; 'preview' is a SPECULATIVE, best-effort live draft (currently emitted only by the PTY brain while it waits for the DeliverAnswer channel). A 'preview' chunk may ONLY update the live/dynamic streaming pane — it must NEVER be committed to the transcript or accumulated into the final answer. Every consumer that does not understand 'preview' must ignore it (all current consumers accumulate only 'text' and break on 'done'/'error', so a new 'preview' falls through harmlessly).
  */
-// @kern-source: persistent-session:10
+// @kern-source: persistent-session:11
 export interface SessionChunk {
   type: 'text'|'preview'|'status'|'tool_call'|'error'|'done';
   content: string;
   metadata?: Record<string,unknown>;
 }
 
-// @kern-source: persistent-session:16
+// @kern-source: persistent-session:17
 export interface SessionSendOptions {
   message: string;
   images?: string[];
@@ -34,17 +36,18 @@ export interface SessionSendOptions {
   systemPrompt?: string;
   toolLoopBaseBudget?: number;
   toolLoopMaxBudget?: number;
+  controlPlane?: ControlPlaneEnvelopeV1;
 }
 
-// @kern-source: persistent-session:24
+// @kern-source: persistent-session:26
 export interface PersistentSessionConfig {
   engine: EngineDefinition;
   binaryPath: string;
   cwd: string;
   systemPrompt?: string;
-  onApproval?: (tool: string, command: string) => Promise<boolean|string>;
+  onApproval?: (tool: string, command: string, controlPlane?: ControlPlaneEnvelopeV1) => Promise<boolean|string>;
   nativeTools?: Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>;
-  onToolCall?: (name: string, args: Record<string,unknown>, callId: string) => Promise<string>;
+  onToolCall?: (name: string, args: Record<string,unknown>, callId: string, controlPlane?: ControlPlaneEnvelopeV1) => Promise<string>;
   onTurnEnd?: (learnings: {filesRead:string[], filesModified:string[], decisions:string[], discoveries:string[], toolsUsed:string[]}) => void;
   mcpServers?: Array<Record<string,unknown>>;
   sessionContinuity?: boolean;
@@ -55,7 +58,7 @@ export interface PersistentSessionConfig {
   diagnosticDeps?: DiagnosticDeps;
 }
 
-// @kern-source: persistent-session:42
+// @kern-source: persistent-session:44
 export interface PersistentSession {
   alive: boolean;
   sessionId: string|null;
@@ -72,14 +75,38 @@ export interface PersistentSession {
 }
 
 /**
+ * Decorate one persistent adapter in place so every streamed chunk carries the caller's immutable turn identity. Mutating only send preserves adapter-specific live getters such as pid, alive, and sessionId.
+ */
+// @kern-source: persistent-session:62
+export function withControlPlaneEnvelope(session: PersistentSession): PersistentSession {
+  const originalSend = session.send;
+  session.send = async function* (opts: SessionSendOptions): AsyncGenerator<SessionChunk, void, void> {
+    for await (const chunk of originalSend.call(session, opts)) {
+      if (!opts.controlPlane) {
+        yield chunk;
+        continue;
+      }
+      yield {
+        ...chunk,
+        metadata: {
+          ...(chunk.metadata ?? {}),
+          controlPlane: opts.controlPlane,
+        },
+      };
+    }
+  };
+  return session;
+}
+
+/**
  * Factory: picks the right session implementation based on engine config.
  */
-// @kern-source: persistent-session:60
+// @kern-source: persistent-session:84
 export function createPersistentSession(config: PersistentSessionConfig): PersistentSession {
   const engine = config.engine;
   // API path: engine has API config and no binary path provided → use stateless resume session
   if (engine.api && !config.binaryPath) {
-    return createResumeSession(config);
+    return withControlPlaneEnvelope(createResumeSession(config));
   }
   // Claude: `claude --print` (stream-json) brain by DEFAULT — Anthropic no longer meters -p under
   // the subscription, and -p is far more reliable than the TUI scrape. Opt INTO the PTY subscription
@@ -90,18 +117,18 @@ export function createPersistentSession(config: PersistentSessionConfig): Persis
     // claude PTY, so it is not coupled to claude's AGON_CLAUDE_PTY / claudeBackend setting.
     const isClaude = engine.id === 'claude' || engine.binary === 'claude';
     if (isClaude && claudeBrainUsesPty(config.cwd)) {
-      return createPtySession(config);
+      return withControlPlaneEnvelope(createPtySession(config));
     }
-    return createStreamJsonSession(config);
+    return withControlPlaneEnvelope(createStreamJsonSession(config));
   }
   // Engines with ACP protocol (OpenCode, Gemini)
   if (engine.companion && engine.companion.protocol === 'acp') {
-    return createAcpSession(config);
+    return withControlPlaneEnvelope(createAcpSession(config));
   }
   // Engines with JSONRPC companion (Codex)
   if (engine.companion && engine.companion.protocol === 'jsonrpc') {
-    return createCompanionSession(config);
+    return withControlPlaneEnvelope(createCompanionSession(config));
   }
   // Fallback: resume-based (spawn per turn with --resume/--continue)
-  return createResumeSession(config);
+  return withControlPlaneEnvelope(createResumeSession(config));
 }

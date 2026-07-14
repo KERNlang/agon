@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
   describeCandidate,
+  enforceStrictCompileArgs,
   readEffectiveKernVersion,
   selectCandidate,
 } from '../../scripts/kern-cli-resolver.mjs';
@@ -39,6 +40,22 @@ afterEach(() => {
 });
 
 describe('kern cli resolver', () => {
+  it('forces strict compile diagnostics unless tolerant recovery is explicit', () => {
+    expect(enforceStrictCompileArgs(['--target=auto', '--recursive'])).toEqual([
+      '--target=auto',
+      '--recursive',
+      '--strict-parse',
+    ]);
+    expect(enforceStrictCompileArgs(['--target=auto', '--strict-parse'])).toEqual([
+      '--target=auto',
+      '--strict-parse',
+    ]);
+    expect(enforceStrictCompileArgs(['--target=auto', '--tolerant'])).toEqual([
+      '--target=auto',
+      '--tolerant',
+    ]);
+  });
+
   it('uses resolved package family versions instead of the stale spec KERN_VERSION constant', () => {
     const root = makeTempRoot();
     const cliRoot = writeKernPackage(root, 'cli', '3.2.3', {

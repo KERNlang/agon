@@ -3,6 +3,7 @@ import from="node:path" names="join,resolve"
 import from="node:os" names="homedir"
 import from="./config.js" names="ensureAgonHome"
 import from="../blocks/plan.js" names="Plan" types=true
+import from="../blocks/host-runtime.js" names="hostPrettyJson"
 
 fn name=getPlansDir returns=string export=false
   handler <<<
@@ -30,7 +31,7 @@ fn name=savePlan params="plan:Plan" returns=void
     do value="ensurePlansDir()"
     let name=target value="safePlanPath(plan.id)"
     let name=tmpPath value="target + '.tmp'"
-    do value="writeFileSync(tmpPath, JSON.stringify(plan, null, 2) + '\\n')"
+    do value="writeFileSync(tmpPath, hostPrettyJson(plan) + '\\n')"
     do value="renameSync(tmpPath, target)"
 
 fn name=loadPlan params="id:string" returns="Plan|null"

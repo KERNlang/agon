@@ -1,0 +1,38 @@
+interface name=CesarPlanControlSignalResult export=true
+  field name=handled type=boolean
+  field name=planProposed type=boolean
+  field name=plan type=any optional=true
+  field name=error type=string optional=true
+
+fn name=consumeCesarPlanControlSignals params="opts:{ctx:any,dispatch:any,engineId:string,dispatchToolCall:(event:any)=>void,proposePlan:(args:any,dispatch:any,ctx:any)=>Promise<any>,exitPlanMode:(reason:string,dispatch:any,ctx:any)=>string}" returns="Promise<CesarPlanControlSignalResult>" async=true export=true
+  doc "Consume the ProposePlan and ExitPlanMode scratch signals produced by an XML tool loop in the same turn. Clearing happens before invoking handlers so a failed handler cannot leak a stale control action into a later unrelated turn."
+  handler lang="kern"
+    let name=proposeArgs value="opts.ctx.cesar?._proposePlanArgs"
+    let name=exitArgs value="opts.ctx.cesar?._exitPlanModeArgs"
+    comment raw="// processToolResponse reports every call in a batch before honoring its"
+    comment raw="// stop flag. Clear both scratch slots up front so a malformed response with"
+    comment raw="// two handoff controls cannot execute the second one on a later turn."
+    if cond="proposeArgs || exitArgs"
+      assign target="opts.ctx.cesar._proposePlanArgs" value="undefined"
+      assign target="opts.ctx.cesar._exitPlanModeArgs" value="undefined"
+    if cond="proposeArgs"
+      let name=activePlan value="opts.ctx.activePlan"
+      if cond="activePlan && ['planning', 'running', 'paused'].includes(activePlan.state)"
+        do value="opts.dispatchToolCall({ type: 'tool-call', engineId: opts.engineId, tool: 'ProposePlan', input: JSON.stringify(proposeArgs ?? {}), status: 'error', output: 'A Cesar plan is already active; nested plans are blocked. Resume or cancel the current plan before proposing another.' })"
+        return value="{ handled: true, planProposed: false }"
+      try
+        let name=plan value="await opts.proposePlan(proposeArgs, opts.ctx.cesar.planDispatch ?? opts.dispatch, opts.ctx)"
+        if cond="opts.ctx.setActivePlan"
+          do value="opts.ctx.setActivePlan(plan)"
+        assign target="opts.ctx.cesar.proposedPlan" value="plan"
+        return value="{ handled: true, planProposed: true, plan }"
+        catch name=e
+          return value="{ handled: true, planProposed: false, error: e instanceof Error ? e.message : String(e) }"
+    if cond="exitArgs"
+      try
+        let name=exitResult value="opts.exitPlanMode(String(exitArgs?.reason ?? ''), opts.ctx.cesar.planDispatch ?? opts.dispatch, opts.ctx)"
+        do value="opts.dispatchToolCall({ type: 'tool-call', engineId: opts.engineId, tool: 'ExitPlanMode', input: JSON.stringify(exitArgs ?? {}), status: 'done', output: exitResult })"
+        return value="{ handled: true, planProposed: false }"
+        catch name=e
+          return value="{ handled: true, planProposed: false, error: e instanceof Error ? e.message : String(e) }"
+    return value="{ handled: false, planProposed: false }"

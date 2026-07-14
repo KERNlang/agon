@@ -4,6 +4,7 @@
 // Works with Claude, Codex, Gemini, OpenCode — any LLM that can follow instructions.
 
 import from="../models/tool-types.js" names="ToolCall" types=true
+import from="../blocks/host-runtime.js" names="hostNowMs"
 
 interface name=ParsedToolCall
   field name=name type=string
@@ -401,7 +402,7 @@ fn name=parseToolCalls params="text:string" returns=ParseResult
 fn name=toolCallsToApiFormat params="parsed:ParsedToolCall[]" returns="ToolCall[]"
   doc "Convert parsed text-based tool calls to ToolCall format for the executor."
   handler lang="kern"
-    return value="parsed.map((tc, i) => Object.assign({}, { id: `tc_${Date.now()}_${i}`, name: tc.name, input: tc.input }))"
+    return value="parsed.map((tc, i) => Object.assign({}, { id: `tc_${hostNowMs()}_${i}`, name: tc.name, input: tc.input }))"
 
 // KERN-GAP: lang="kern" — `return value="\`...\`"` (template-literal as the whole RHS) fails parse in kern 3.5.1 with "Unexpected character '\\'". Backticks mid-string work (cf. gitTruncatedDiff). Reverted to raw body until leading-backtick parsing lands.
 fn name=formatToolResult params="toolName:string, result:string, isError?:boolean" returns=string

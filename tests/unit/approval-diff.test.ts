@@ -10,7 +10,7 @@ import {
 
 describe('approvalToolIsFileMutating', () => {
   it('matches the file-mutating tools (raw + Agon-mapped names)', () => {
-    for (const t of ['Edit', 'Write', 'AgonEdit', 'AgonWrite', 'edit', 'write', 'MultiEdit', 'multiedit', 'AgonMultiEdit']) {
+    for (const t of ['Edit', 'Write', 'AgonEdit', 'AgonWrite', 'edit', 'write', 'MultiEdit', 'multiedit', 'AgonMultiEdit', 'NotebookEdit', 'AgonNotebookEdit']) {
       expect(approvalToolIsFileMutating(t)).toBe(true);
     }
   });

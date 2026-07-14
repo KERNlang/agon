@@ -9,7 +9,7 @@ interface name=CorpusRecord
   field name=lastUpdated type=string
 
 fn name=loadCorpus returns=CorpusRecord
-  handler <<<
+  handler lang="ts" <<<
     try {
       return JSON.parse(readFileSync(CORPUS_PATH, 'utf-8')) as CorpusRecord;
     } catch (err) {
@@ -21,15 +21,16 @@ fn name=loadCorpus returns=CorpusRecord
   >>>
 
 fn name=saveCorpus params="record:CorpusRecord" returns=void
-  handler lang="kern"
-    do value="mkdirSync(dirname(CORPUS_PATH), { recursive: true })"
-    assign target="record.lastUpdated" value="new Date().toISOString()"
-    let name=tmpPath value="CORPUS_PATH + '.tmp'"
-    do value="writeFileSync(tmpPath, JSON.stringify(record, null, 2) + '\\n')"
-    do value="renameSync(tmpPath, CORPUS_PATH)"
+  handler lang="ts" <<<
+    mkdirSync(dirname(CORPUS_PATH), { recursive: true });
+    record.lastUpdated = new Date().toISOString();
+    const tmpPath = CORPUS_PATH + '.tmp';
+    writeFileSync(tmpPath, JSON.stringify(record, null, 2) + '\n');
+    renameSync(tmpPath, CORPUS_PATH);
+  >>>
 
 fn name=addToCorpus params="forgeId:string, taskClass:TaskClass, artifacts:BreakerArtifact[]" returns=number
-  handler <<<
+  handler lang="ts" <<<
     if (artifacts.length === 0) return 0;
 
     const record = loadCorpus();
@@ -109,7 +110,7 @@ fn name=extractPattern params="failureMessage:string, testScript:string" returns
   >>>
 
 fn name=getCorpusForReplay params="taskClass:TaskClass, limit:number" returns="CorpusEntry[]"
-  handler <<<
+  handler lang="ts" <<<
     const record = loadCorpus();
 
     // Filter entries matching task class, sort by most recent

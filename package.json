@@ -18,6 +18,8 @@
     "guard:reexport": "node scripts/guard/reexport-surface.mjs",
     "kern:review": "node scripts/run-kern-review.mjs",
     "kern:test": "node scripts/run-kern-test.mjs",
+    "kern:coverage": "node scripts/check-kern-native-coverage.mjs",
+    "kern:self-coverage": "node scripts/check-kern-self-coverage.mjs",
     "kern-gaps": "node scripts/run-kern-gaps.mjs",
     "docs:modes": "npm run build:cli && node scripts/generate-mode-docs.mjs",
     "rebuild": "npm run kern:compile && npm run build",
@@ -31,7 +33,7 @@
     "release:cli": "npm run build:cli && node scripts/release/publish-if-new.mjs packages/cli",
     "release": "npm run release:dedup && npm run release:cli",
     "typecheck": "tsc -b",
-    "test": "npm run kern:test && npm run test:ts",
+    "test": "npm run kern:coverage && npm run kern:self-coverage && npm run test:ts",
     "test:ts": "node scripts/run-node22.mjs vitest run",
     "test:watch": "node scripts/run-node22.mjs vitest"
   },
@@ -47,27 +49,27 @@
     "@vitest/coverage-v8": "^3.2.4",
     "patch-package": "^8.0.1",
     "tsup": "^8.4.0",
-    "typescript": "^5.7.0",
+    "typescript": "^6.0.3",
     "vitest": "^3.0.0"
   },
   "dependencies": {
     "zod": "^4.3.6"
   },
   "optionalDependencies": {
-    "@kernlang/cli": "~4.0.0",
-    "@kernlang/core": "~4.0.0",
-    "@kernlang/evolve": "~4.0.0",
-    "@kernlang/express": "~4.0.0",
-    "@kernlang/mcp": "~4.0.0",
-    "@kernlang/metrics": "~4.0.0",
-    "@kernlang/native": "~4.0.0",
-    "@kernlang/protocol": "~4.0.0",
-    "@kernlang/python": "~4.0.0",
-    "@kernlang/react": "~4.0.0",
-    "@kernlang/review": "~4.0.0",
-    "@kernlang/review-mcp": "~4.0.0",
-    "@kernlang/terminal": "~4.0.0",
-    "@kernlang/test": "~4.0.0",
-    "@kernlang/vue": "~4.0.0"
+    "@kernlang/cli": "~4.5.0",
+    "@kernlang/core": "~4.5.0",
+    "@kernlang/evolve": "~4.5.0",
+    "@kernlang/express": "~4.5.0",
+    "@kernlang/mcp": "~4.5.0",
+    "@kernlang/metrics": "~4.5.0",
+    "@kernlang/native": "~4.5.0",
+    "@kernlang/protocol": "~4.5.0",
+    "@kernlang/python": "~4.5.0",
+    "@kernlang/react": "~4.5.0",
+    "@kernlang/review": "~4.5.0",
+    "@kernlang/review-mcp": "~4.5.0",
+    "@kernlang/terminal": "~4.5.0",
+    "@kernlang/test": "~4.5.0",
+    "@kernlang/vue": "~4.5.0"
   }
 }

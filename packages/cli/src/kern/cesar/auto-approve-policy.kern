@@ -12,13 +12,14 @@
 
 import from="@kernlang/agon-core" names="CesarPlan,AgonConfig" types=true
 import from="@kernlang/agon-core" names="planCostEstimator"
+import from="../lib/kern-host.js" names="hostStringSet"
 
 interface name=AutoApproveDecision export=true
   field name=approve type=boolean
   field name=reason type=string
   field name=adjustedCostUsd type=number
 
-const name=MUTATING_STEP_TYPES type="Set<string>" value={{ new Set(['forge', 'teamforge', 'pipeline', 'agent', 'team-agent', 'delegate', 'self']) }}
+const name=MUTATING_STEP_TYPES type="Set<string>" value={{ hostStringSet(['forge', 'teamforge', 'pipeline', 'agent', 'team-agent', 'delegate', 'self']) }}
 
 fn name=applyAutoApprovePolicy params="plan:CesarPlan, config:AgonConfig" returns=AutoApproveDecision export=true
   doc "Decide whether a plan qualifies for autonomous execution without user confirmation."
@@ -34,7 +35,7 @@ fn name=applyAutoApprovePolicy params="plan:CesarPlan, config:AgonConfig" return
     comment raw="// Gate 2: whitelist floor — safe-only rejects any mutating step type"
     let name=mutatingSteps value="plan.steps.filter((s) => MUTATING_STEP_TYPES.has(s.type))"
     if cond="mode === 'safe-only' && mutatingSteps.length > 0"
-      let name=types value="Array.from(new Set(mutatingSteps.map((s) => s.type))).join(', ')"
+      let name=types value="Array.from(hostStringSet(mutatingSteps.map((s) => s.type))).join(', ')"
       return value="{ approve: false, reason: `safe-only mode rejects mutating step types: ${types}`, adjustedCostUsd: plan.totalEstimatedCostUsd, }"
     comment raw="// Gate 3: fitnessCmd interlock — shell commands need user inspect"
     comment raw="// unless the user explicitly opted into 'always'"
@@ -47,8 +48,9 @@ fn name=applyAutoApprovePolicy params="plan:CesarPlan, config:AgonConfig" return
     if cond="wantsReview"
       let name=reviewEstimate value="planCostEstimator.estimate('review', [])"
       assign target="adjustedCostUsd" op="+=" value="2 * reviewEstimate.costUsd"
+    let name=costCeilingUsd value="maxCostUsd ?? adjustedCostUsd"
     if cond="(mode === 'cost-bounded' || mode === 'always') && maxCostUsd != null"
-      if cond="adjustedCostUsd > maxCostUsd"
-        return value="{ approve: false, reason: `estimated cost $${adjustedCostUsd.toFixed(2)} exceeds ceiling $${maxCostUsd.toFixed(2)}`, adjustedCostUsd, }"
+      if cond="adjustedCostUsd > costCeilingUsd"
+        return value="{ approve: false, reason: `estimated cost $${adjustedCostUsd.toFixed(2)} exceeds ceiling $${costCeilingUsd.toFixed(2)}`, adjustedCostUsd, }"
     comment raw="// cost-bounded with no ceiling configured = same as 'always' but explicit"
     return value="{ approve: true, reason: `${mode} policy passed (cost $${adjustedCostUsd.toFixed(4)})`, adjustedCostUsd, }"

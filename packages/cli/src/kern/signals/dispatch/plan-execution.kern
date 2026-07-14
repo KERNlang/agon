@@ -10,6 +10,7 @@ import from="../../../handlers/types.js" names="Dispatch" types=true
 import from="../todos.js" names="todosFromPlanSteps"
 import from="../dispatch.js" names="DispatchCallbacks" types=true
 import from="./plan-queries.js" names="findPendingCesarPlan,buildResumePromptContext,skipCompletedSteps,askChoiceQuestion"
+import from="../../lib/kern-host.js" names="hostConsoleWarn"
 
 fn name=resumeCesarPlan async=true params="plan:CesarPlan, cb:DispatchCallbacks" returns="Promise<void>" export=true
   doc "Resume a paused or stale-running Cesar plan through the shared executor path. Shows a resume prompt with context before executing."
@@ -82,7 +83,7 @@ fn name=approvePendingCesarPlan async=true params="cb:DispatchCallbacks" returns
       try
         do value="writeFileSync(approved.planFilePath, formatCesarPlanMarkdown(approved))"
         catch name=err
-          do value="console.warn('[plan] failed to write approved Cesar plan file:', (err as Error).message ?? err)"
+          do value="hostConsoleWarn(`[plan] failed to write approved Cesar plan file: ${(err as Error).message ?? err}`)"
     do value="await executeApprovedPlan(approved, cb)"
     return value="true"
 

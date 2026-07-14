@@ -26,7 +26,7 @@ fn name=approvalToolIsFileMutating params="tool:unknown" returns=boolean export=
   doc "True for the tools whose approval prompt should carry a diff preview. AgonEdit/AgonWrite arrive mapped to Edit/Write at the dispatch sites; native engines emit edit/write directly."
   handler lang="kern"
     let name=key value="String(tool ?? '').toLowerCase()"
-    return value="key === 'edit' || key === 'write' || key === 'agonedit' || key === 'agonwrite' || key === 'multiedit' || key === 'agonmultiedit'"
+    return value="key === 'edit' || key === 'write' || key === 'agonedit' || key === 'agonwrite' || key === 'multiedit' || key === 'agonmultiedit' || key === 'notebookedit' || key === 'agonnotebookedit'"
 
 fn name=isProbablyBinary params="text:string" returns=boolean
   doc "Cheap binary heuristic: a NUL byte in the sampled prefix."

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseMarkdownBlocks } from '../../packages/cli/src/markdown.js';
+import { cleanEngineOutput, parseMarkdownBlocks } from '../../packages/cli/src/markdown.js';
 
 describe('parseMarkdownBlocks', () => {
   it('prose only → single prose segment', () => {
@@ -146,5 +146,37 @@ describe('parseMarkdownBlocks', () => {
     if (result[0].type === 'table') {
       expect(result[0].alignments).toEqual(['left', 'center', 'right']);
     }
+  });
+
+  it('keeps escaped pipes inside markdown table cells', () => {
+    const input = '| Pattern | Meaning |\n|---|---|\n| alpha \\| beta | choice |';
+    const result = parseMarkdownBlocks(input);
+    expect(result).toHaveLength(1);
+    expect(result[0].type).toBe('table');
+    if (result[0].type === 'table') {
+      expect(result[0].rows[0]).toEqual(['alpha | beta', 'choice']);
+    }
+  });
+});
+
+describe('cleanEngineOutput', () => {
+  it('strips multiline tool and reasoning tags containing Unicode whitespace', () => {
+    const tagged = '<tool_calls><tool_result>hidden\u00a0payload\u2028line</tool_result></tool_calls>\u3000Final answer.';
+    expect(cleanEngineOutput(tagged)).toBe('Final answer.');
+  });
+
+  it('preserves repeated non-consecutive paragraphs', () => {
+    const text = 'Same finding.\n\nDifferent context.\n\nSame finding.';
+    expect(cleanEngineOutput(text)).toBe(text);
+  });
+
+  it('preserves legitimate repeated identifier prefixes', () => {
+    const text = 'tokenstokens are distinct fixture names.';
+    expect(cleanEngineOutput(text)).toBe(text);
+  });
+
+  it('extracts KERN-shaped Codex structured summaries and sections', () => {
+    const text = 'summary: "Top line" sections { 1: "Checks" { content: "All green" } }';
+    expect(cleanEngineOutput(text)).toBe('Top line\n\n## Checks\nAll green');
   });
 });

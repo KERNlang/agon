@@ -210,5 +210,5 @@ if (isSetup && isTty) {
     void importRepl().then((startRepl) => startRepl(), reportInteractiveLoadFailure);
   }
 } else {
-  runMain(main);
+  await runMain(main);
 }

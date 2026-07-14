@@ -100,6 +100,37 @@ afterEach(async () => {
 });
 
 describeMaybe('agond survival — the daemon outlives its launcher', () => {
+  it('submits the first job while starting an absent daemon', async () => {
+    const child = spawn(
+      process.execPath,
+      [CLI_ENTRY, 'job', 'submit', 'brainstorm', 'cold-start job', '--wait', '--json'],
+      {
+        env: { ...process.env, AGON_HOME: home, AGON_DAEMON_ECHO: '1', AGON_NO_STACK_TRACE_MAPPER: '1' },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    let stdout = '';
+    let stderr = '';
+    child.stdout?.setEncoding('utf-8');
+    child.stderr?.setEncoding('utf-8');
+    child.stdout?.on('data', (chunk: string) => { stdout += chunk; });
+    child.stderr?.on('data', (chunk: string) => { stderr += chunk; });
+
+    const exitCode = await new Promise<number | null>((resolve, reject) => {
+      child.once('error', reject);
+      child.once('close', resolve);
+    });
+
+    expect(exitCode, stderr).toBe(0);
+    expect(JSON.parse(stdout)).toMatchObject({
+      job: { kind: 'brainstorm', label: 'cold-start job', state: 'succeeded' },
+      outcome: {
+        state: 'succeeded',
+        value: { ok: true, kind: 'brainstorm', label: 'cold-start job' },
+      },
+    });
+  }, 30_000);
+
   it('survives the launching process exiting, serves over the socket, and a prompt lands in the ledger', async () => {
     // 1) Launch the daemon via the real CLI. AGON_DAEMON_ECHO=1 makes a prompt
     //    turn echo into the ledger instead of dispatching a real engine — a

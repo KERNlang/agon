@@ -545,7 +545,7 @@ export async function startDaemon(foreground: boolean): Promise<void> {
     if (spawnErr.msg) break;
     info0 = readPidFile();
     if (info0 && isProcessAlive(info0.pid)) break;
-    await new Promise<void>((r) => { const t = setTimeout(r, 50); if (typeof (t as any).unref === 'function') (t as any).unref(); });
+    await new Promise<void>((r) => { setTimeout(r, 50); });
   }
 
   if (spawnErr.msg) {

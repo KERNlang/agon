@@ -487,9 +487,9 @@ const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs
       {jobs.length > 0 ? <Text dimColor>{'jobs: '}</Text> : null}
       {jobs.map((job: Job, i: number) => (
         <Text key={job.id}>
-          <Text color={job.state === 'running' ? 'yellow' : job.state === 'done' ? 'green' : 'red'}>
+          <Text color={job.state === 'queued' ? 'cyan' : job.state === 'running' ? 'yellow' : job.state === 'done' ? 'green' : 'red'}>
             {'['}{job.id}{'] '}{job.type}{' '}
-            {job.state === 'running' ? '...' : job.state === 'done' ? 'done' : 'failed'}
+            {job.state === 'queued' ? 'queued' : job.state === 'running' ? '...' : job.state === 'done' ? 'done' : job.state}
           </Text>
           {i < jobs.length - 1 && <Text dimColor>{'  '}</Text>}
         </Text>

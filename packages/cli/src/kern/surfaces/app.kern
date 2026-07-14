@@ -15,6 +15,7 @@ import from="../signals/runs-store.js" names="runsStore"
 import from="@kernlang/agon-core" names="CommandRegistry,registerBuiltinCommands,EventBus,bridgeShellHooks"
 import from="../signals/job-manager.js" names="JobManager"
 import from="../signals/job-manager.js" names="Job" types=true
+import from="../signals/job-abort-scope.js" names="trackJobAbortController"
 import from="../blocks/output-format.js" names="shortToolPath,isCesarTelemetryLine,formatConfidenceToolLabel"
 import from="../signals/icons.js" names="icons"
 import from="../blocks/markdown.js" names="cleanEngineOutput,parseMarkdownBlocks,truncateCodeLine"
@@ -150,7 +151,7 @@ screen name=App target=ink
   state name=pendingPlanProposal type="OutputEvent|null" initial="null"
   state name=lastReviewResult type="{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | null" initial="null"
   state name=toolDetailEvent type="any|null" initial="null"
-  state name=jobManager type=any initial="new JobManager()"
+  state name=jobManager type=any initial="() => { const cfg = loadConfig(); return new JobManager({ eventLimit: cfg.jobEventLimit, retentionLimit: cfg.jobRetentionLimit, maxConcurrency: cfg.jobMaxConcurrency }); }"
   state name=jobList type="Job[]" initial="[]"
   state name=lastUndoToken type="string|null" initial="null"
   state name=sessionEngines type="string[]|null" initial="() => { const cfg = loadConfig(); return cfg.engineActivationMode === 'explicit' ? cfg.forgeEnabledEngines : null; }"
@@ -325,7 +326,7 @@ screen name=App target=ink
 
   memo name=runningJobs deps="jobList"
     handler lang="kern"
-      return value="jobList.filter((j: Job) => j.state === 'running')"
+      return value="jobList.filter((j: Job) => j.state === 'queued' || j.state === 'running')"
 
   memo name=activeStream deps="streamingText"
     handler lang="kern"
@@ -727,6 +728,8 @@ screen name=App target=ink
 
   callback name=trackAbort params="abort:AbortController|null"
     handler lang="kern"
+      if cond="trackJobAbortController(abort)"
+        return
       do value="runTrackAbort(abort, activeAbortRef, setActiveAbort)"
 
   callback name=setCesarSessionWrapped params="session:PersistentSession|null" deps="chatSession,config"

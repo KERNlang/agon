@@ -205,6 +205,9 @@ export {
   parseDaemonRequest, parseDaemonResponse, splitFrames,
 } from './generated/sessions/daemon-protocol.js';
 export type { DaemonRequest, DaemonResponse } from './generated/sessions/daemon-protocol.js';
+// ── JobService — cancellable autonomous execution + bounded replay ──
+export { JobService } from './generated/jobs/job-service.js';
+export type { JobState, JobSnapshot, JobEvent, JobEventPage, JobOutcome, JobTaskContext, JobExecutor, JobServiceOptions } from './generated/jobs/job-service.js';
 // ── BrainClient — daemon↔brain boundary for the Agon Everywhere bridge (client/server split M4) ──
 export { canonicalCapabilityInputDigest, conservativeControlCapabilities } from './generated/sessions/brain-client.js';
 export type {

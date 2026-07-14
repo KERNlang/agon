@@ -4,6 +4,11 @@ import { detectIntent, SLASH_COMMANDS } from '../../packages/cli/src/intent.js';
 // ── Slash Commands ──────────────────────────────────────────────────
 
 describe('Intent Detection — Slash Commands', () => {
+  it('/jobs cancel parses the target job id', () => {
+    const r = detectIntent('/jobs cancel 42');
+    expect(r).toMatchObject({ type: 'jobs', action: 'cancel', jobId: '42' });
+  });
+
   it('/forge <task> parses task', () => {
     const r = detectIntent('/forge fix the auth bug');
     expect(r.type).toBe('forge');

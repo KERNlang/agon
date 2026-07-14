@@ -252,6 +252,12 @@ config name=AgonConfig
   field name=approvalLevel type="'plan'|'task'|'write'|'none'" default=plan
   field name=agentTimeout type=number default=600
   field name=agentPermissionLevel type="'full'|'plan'|'read-only'" default=full
+  field name=jobEventLimit type=number default=256
+    doc "Maximum replayable events retained per autonomous job. Older events are evicted while sequence cursors remain monotonic."
+  field name=jobRetentionLimit type=number default=100
+    doc "Maximum fully-settled terminal autonomous jobs retained in memory by a JobService instance."
+  field name=jobMaxConcurrency type=number default=4
+    doc "Maximum autonomous job executors active at once. Cancelled executors retain their slot until their promise settles."
   field name=gauntletEnabled type=boolean default=false
   field name=gauntletMaxBreakers type=number default=3
   field name=gauntletRepairTimeout type=number default=300

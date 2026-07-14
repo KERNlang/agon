@@ -30,27 +30,29 @@ import { setWindowTitle } from '../lib/terminal-notify.js';
 
 import { extractFileMentions } from '../signals/app-input.js';
 
+import { runInJobAbortScope } from '../signals/job-abort-scope.js';
+
 import { join, resolve, relative, sep, isAbsolute } from 'node:path';
 
 import { mkdirSync, readFileSync, statSync, realpathSync, openSync, readSync, closeSync } from 'node:fs';
 
 // ── Module: AppSubmit ──
 
-// @kern-source: app-submit:75
+// @kern-source: app-submit:76
 export const MENTION_MAX_FILE_BYTES: number = 65536;
 
-// @kern-source: app-submit:76
+// @kern-source: app-submit:77
 export const MENTION_MAX_TOTAL_BYTES: number = 262144;
 
-// @kern-source: app-submit:77
+// @kern-source: app-submit:78
 export const MENTION_MAX_FILES: number = 20;
 
-// @kern-source: app-submit:86
+// @kern-source: app-submit:87
 export function isLiteralCommandLine(input: string): boolean {
   return input.startsWith('/') || input.startsWith('! ');
 }
 
-// @kern-source: app-submit:96
+// @kern-source: app-submit:97
 export function buildMentionedFilesContext(text: string, cwd: string): string {
   const allMentions = extractFileMentions(text);
   const mentions = allMentions.slice(0, MENTION_MAX_FILES);
@@ -127,7 +129,7 @@ export function buildMentionedFilesContext(text: string, cwd: string): string {
   return `\n\n[Attached files referenced with @ in the message above]\n${blocks.join('\n\n')}${note}`;
 }
 
-// @kern-source: app-submit:177
+// @kern-source: app-submit:178
 export function runProcessInputQueue(replState: ReplStateState, inputQueue: string[], setInputQueue: (updater:(prev:string[]) => string[]) => void, handleSubmit: (value:string) => void, setSteeringCount: (n:number) => void): void {
   if (replState !== 'idle') return;
   // The turn is over — clear the mid-turn steering hint count.
@@ -154,7 +156,7 @@ export function runProcessInputQueue(replState: ReplStateState, inputQueue: stri
 /**
  * Explicit dependencies for runSendBtwMessage — the context builder + live runtime signals (mode/replState/streams/transcript/plan/jobs) it folds into the side-chat prompt, the prior btwPanel it continues, the separate btwAbortRef it swaps, and the panel setter + dispatch it drives. Passed in rather than captured from component scope; values read at call time so staleness matches the original closure.
  */
-// @kern-source: app-submit:209
+// @kern-source: app-submit:210
 export interface SendBtwMessageDeps {
   buildContext: () => any;
   btwPanel: any;
@@ -169,7 +171,7 @@ export interface SendBtwMessageDeps {
   dispatch: (event:any) => void;
 }
 
-// @kern-source: app-submit:234
+// @kern-source: app-submit:235
 export function runSendBtwMessage(opts: SendBtwMessageDeps, question: string): void {
   const q = (question ?? '').trim();
         if (!q) return;
@@ -264,7 +266,7 @@ export function runSendBtwMessage(opts: SendBtwMessageDeps, question: string): v
 /**
  * Explicit dependencies for runHandleSubmit — the refs it consults (epoch/paste/bell/plan/turn/job-timing), the composer + history + queue + mode state it resets, every modal/picker/engine setter the DispatchCallbacks object wires, and the callbacks it delegates to. Passed in rather than captured from component scope; values read at call time so staleness matches the original closure.
  */
-// @kern-source: app-submit:334
+// @kern-source: app-submit:335
 export interface HandleSubmitDeps {
   inputEpochRef: {current: number};
   pendingBellRef: {current: boolean};
@@ -332,7 +334,7 @@ export interface HandleSubmitDeps {
   bell: () => void;
 }
 
-// @kern-source: app-submit:417
+// @kern-source: app-submit:418
 export async function runHandleSubmit(opts: HandleSubmitDeps, value: string): Promise<void> {
   opts.inputEpochRef.current += 1;
   let input = cleanSubmitValue(value);
@@ -546,16 +548,26 @@ export async function runHandleSubmit(opts: HandleSubmitDeps, value: string): Pr
     : null;
   const cb: DispatchCallbacks = {
     dispatch: opts.dispatch, ctx, commandRegistry: opts.commandRegistry, eventBus: opts.eventBus, loadedExtensions: opts.loadedExtensions, setWorkspacePath: opts.setWorkspacePath,
-    runAsJob: (type: string, label: string, fn: () => Promise<void>) => {
-      const job = opts.jobManager.create(type, label);
+    runAsJob: (type: string, label: string, fn: (signal: AbortSignal) => Promise<void>) => {
+      const job = opts.jobManager.run(type, label, (signal: AbortSignal) => runInJobAbortScope(signal, () => fn(signal)));
       opts.chatStartTimeRef.current = Date.now();
       opts.setJobList([...opts.jobManager.list()]);
-      opts.dispatch({ type: 'info', message: `Started background job [${job.id}] ${type}: ${label || type}` } as any);
+      opts.dispatch({ type: 'info', message: `${job.state === 'queued' ? 'Queued' : 'Started'} background job [${job.id}] ${type}: ${label || type}` } as any);
       // Transition to idle so user can submit new commands while job runs
-      // Strip stays active via jobList.some(j => j.state === 'running') check
+      // Strip stays active while the snapshot is queued or running.
       opts.setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
-      fn().then(() => { opts.jobManager.complete(job.id); opts.setJobList([...opts.jobManager.list()]); opts.bell(); setWindowTitle('agon'); })
-        .catch((err: any) => { opts.jobManager.fail(job.id, err instanceof Error ? err.message : String(err)); opts.setJobList([...opts.jobManager.list()]); opts.dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); opts.bell(); setWindowTitle('agon'); });
+      opts.jobManager.wait(job.id)
+        .then((finished: any) => {
+          opts.setJobList([...opts.jobManager.list()]);
+          if (!finished) opts.dispatch({ type: 'error', message: `Job ${job.id} finished but its result was unavailable.` } as any);
+          else if (finished.state === 'failed') opts.dispatch({ type: 'error', message: finished.error ?? `${type} failed` } as any);
+          opts.bell();
+          setWindowTitle('agon');
+        })
+        .catch((err: any) => {
+          opts.setJobList([...opts.jobManager.list()]);
+          opts.dispatch({ type: 'error', message: `Job ${job.id} tracking failed: ${err instanceof Error ? err.message : String(err)}` } as any);
+        });
     },
     setMode: opts.setMode, setPendingImages: opts.setPendingImages, setSessionEngines: opts.setSessionEngines, setEnginePickerOpen: opts.setEnginePickerOpen, setModelPickerOpen: opts.setModelPickerOpen, setModelPickerEntries: opts.setModelPickerEntries, setModelPickerLoading: opts.setModelPickerLoading, setCesarPickerOpen: opts.setCesarPickerOpen, setChatSession: opts.setChatSession, setLastUndoToken: opts.setLastUndoToken, askQuestion: opts.askQuestion, exit: () => process.exit(0),
     setModelPickerTargetEngine: opts.setModelPickerTargetEngine, setModelPickerInitialFilter: opts.setModelPickerInitialFilter, setModelPickerTitle: opts.setModelPickerTitle, setModelPickerCliGroups: opts.setModelPickerCliGroups,

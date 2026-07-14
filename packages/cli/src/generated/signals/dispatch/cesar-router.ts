@@ -555,19 +555,21 @@ export async function handleDelegatedAction(result: any, input: string, cb: Disp
             case 'agent':
               cb.dispatch({ type: 'info', message: `Cesar → agent${hardened ? ' (hardened)' : ''}` });
               // Cesar called the Agent tool with team:false (or omitted). Solo agent.
-              cb.runAsJob('agent', label, () => runAgentJobWithAutoResume(taskInput, cb, () => runAgentMode(taskInput, cb.dispatch, cb.ctx, {
+              cb.runAsJob('agent', label, (signal) => runAgentJobWithAutoResume(taskInput, cb, () => runAgentMode(taskInput, cb.dispatch, cb.ctx, {
                 maxTurns: result.maxTurns as number | undefined,
                 systemPrompt: undefined,
+                parentSignal: signal,
               })));
               return true;
             case 'team-agent':
               cb.dispatch({ type: 'info', message: `Cesar → team-agent${hardened ? ' (hardened)' : ''}` });
               // Cesar called the Agent tool with team:true. Spawn AgentTeam with the
               // engines list (or auto-pick) and the taskKind discriminator.
-              cb.runAsJob('team-agent', label, () => runAgentJobWithAutoResume(taskInput, cb, () => runAgentTeam(taskInput, cb.dispatch, cb.ctx, {
+              cb.runAsJob('team-agent', label, (signal) => runAgentJobWithAutoResume(taskInput, cb, () => runAgentTeam(taskInput, cb.dispatch, cb.ctx, {
                 engines: result.engines as string[] | undefined,
                 taskKind: result.taskKind as 'edit' | 'investigate' | undefined,
                 maxTurns: result.maxTurns as number | undefined,
+                parentSignal: signal,
               })));
               return true;
             case 'delegate': {
@@ -611,7 +613,7 @@ export async function handleDelegatedAction(result: any, input: string, cb: Disp
 /**
  * Confirm + run a delegation recovered from a crashed Cesar session: TTL stale-check, askQuestion confirm, then the recovered-action switch. Extracted from routeWithCesar; kept SAME-FILE to avoid the ESM cycle. The caller has already nulled cb.ctx.cesar.pendingDelegation. Returns true if a recovery job was dispatched; false on stale/declined/unmatched so the caller falls through to the brain fallback.
  */
-// @kern-source: cesar-router:555
+// @kern-source: cesar-router:557
 export async function handleRecoveredDelegation(crashDel: any, input: string, cb: DispatchCallbacks): Promise<boolean> {
   if (!crashDel) return false;
     // TTL: discard stale delegations older than 60 seconds
@@ -719,7 +721,7 @@ export async function handleRecoveredDelegation(crashDel: any, input: string, cb
 /**
  * Last-resort Cesar recovery when the brain returned no usable response: api-backend silent same-engine retry, non-api session rebuild + retry, fresh one-shot dispatch (with suggestion parsing), then cross-engine acting-Cesar. Extracted from routeWithCesar; kept SAME-FILE to avoid the ESM cycle. crashDel is passed ONLY to preserve the pre-existing coupling where a pending delegation s engines seed a fresh fallback pipeline suggestion (behavior preserved verbatim; latent coupling flagged for a follow-up, per nero Ch.3).
  */
-// @kern-source: cesar-router:661
+// @kern-source: cesar-router:663
 export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks, crashDel: any, priorDeterministic: boolean): Promise<boolean> {
   // Cesar truly didn't respond — try fresh CLI dispatch
   const cesarConfig = cb.ctx.config;
@@ -1024,7 +1026,7 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
 /**
  * Unified Cesar brain routing. Returns true if a background job was dispatched.
  */
-// @kern-source: cesar-router:964
+// @kern-source: cesar-router:966
 export async function routeWithCesar(input: string, images: ImageAttachment[], cb: DispatchCallbacks): Promise<boolean> {
   cb.setPendingImages(() => []);
   const turnStartedAt = Date.now();

@@ -38,11 +38,21 @@ interface name=StreamingEntry
   doc "True when this entry holds ONLY a SPECULATIVE preview draft (from a PTY 'preview' chunk), never authoritative engine text. A draft-only entry is NEVER committed to the transcript at streaming-end (it is dropped), and the first authoritative streaming-chunk REPLACES the draft content rather than appending to it. This is the contamination firewall: a speculative preview can update the live pane but can never become — or prefix — the committed answer."
   field name=draft type=boolean optional=true
 
+interface name=LiveToolStreamEntry
+  doc "Typed in-flight tool stream shared by output state, the frame-limited bridge, and the live renderer."
+  field name=streamId type=string
+  field name=engineId type=string
+  field name=tool type=string
+  field name=input type=string
+  field name=output type=string
+  field name=status type=string
+  field name=startedAt type=number
+
 interface name=OutputState
   field name=liveSpinner type="{message:string,color?:number,engineId?:string}|null"
   field name=liveProgress type="EngineProgress[]|null"
   field name=streamingText type="Record<string,StreamingEntry>"
-  field name=liveToolStreams type="Record<string,any>"
+  field name=liveToolStreams type="Record<string,LiveToolStreamEntry>"
   field name=agentProgress type="Record<string,AgentProgressSnapshot>"
   field name=todos type="Todo[]"
 
@@ -50,7 +60,7 @@ interface name=OutputActions
   field name=setLiveSpinner type="(val:any) => void"
   field name=setLiveProgress type="(val:EngineProgress[]|null) => void"
   field name=setStreamingText type="(updater:Record<string,StreamingEntry> | ((prev:Record<string,StreamingEntry>) => Record<string,StreamingEntry>)) => void"
-  field name=setLiveToolStreams type="(updater:Record<string,any> | ((prev:Record<string,any>) => Record<string,any>)) => void"
+  field name=setLiveToolStreams type="(updater:Record<string,LiveToolStreamEntry> | ((prev:Record<string,LiveToolStreamEntry>) => Record<string,LiveToolStreamEntry>)) => void"
   field name=addBlock type="(event:OutputEvent) => void"
   field name=replaceBlocksOfType type="(eventType:string, event:OutputEvent) => void"
   field name=clearBlocks type="() => void"
@@ -104,7 +114,7 @@ const name=_pendingToolCalls type="any[]" value={{ [] as any[] }}
 const name=_pendingFlushTimer type="{ timer: any, actions: any }" value={{ ({ timer: null, actions: null }) as any }}
 
 // ── Live tool-stream buffers — tracks in-progress inline tool calls keyed by streamId
-const name=_liveToolStreams type="Record<string,any>" value={{ {} as Record<string, any> }}
+const name=_liveToolStreams type="Record<string,LiveToolStreamEntry>" value={{ {} }}
 
 // Holds the plan-proposal event currently pinned in the live pane, so a
 // later 'plan-dismiss' can demote the exact same proposal into scrollback
@@ -747,8 +757,8 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
       }
       case 'tool-stream-end': {
         const e = event as any;
-        const existing = _liveToolStreams[e.streamId] ?? {};
-        const output = e.output ?? existing.output;
+        const existing = _liveToolStreams[e.streamId];
+        const output = e.output ?? existing?.output ?? '';
         delete _liveToolStreams[e.streamId];
         actions.setLiveToolStreams((prev) => {
           const next = { ...prev };
@@ -758,9 +768,9 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         // Convert to a normal tool-call block for scrollback
         const toolCallEvent = {
           type: 'tool-call',
-          engineId: e.engineId ?? existing.engineId ?? '',
-          tool: e.tool ?? existing.tool ?? '',
-          input: e.input ?? existing.input ?? '',
+          engineId: e.engineId ?? existing?.engineId ?? '',
+          tool: e.tool ?? existing?.tool ?? '',
+          input: e.input ?? existing?.input ?? '',
           status: e.status,
           output,
           ...(e.durationMs !== undefined ? { durationMs: e.durationMs } : {}),

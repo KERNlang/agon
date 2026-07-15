@@ -7,6 +7,7 @@ import from="@kernlang/agon-core" names="CesarPlan" types=true
 import from="../../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="../../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../../../handlers/index.js" names="handleForge,handleBrainstorm,handleCampfire,handleTribunal,handleBuild,handleReviewMany,runAgentMode,runAgentTeam"
+import from="../../../generated/handlers/agent.js" names="AgentContinuationResult" types=true
 import from="../../handlers/forge.js" names="prepareForgeFitnessCommand,inferProjectFitnessCommand"
 import from="../../handlers/team-tribunal.js" names="handleTeamTribunal"
 import from="../../handlers/team-forge.js" names="handleTeamForge"
@@ -37,21 +38,25 @@ fn name=absorbReviewResultIntoCesar async=true params="sourceInput:string, cb:Di
 
 fn name=continueCesarAfterResult async=true params="message:string, cb:DispatchCallbacks, launchInputEpoch?:number, launchUserTurns?:number" returns="Promise<void>"
   doc "Feed a delegated result back through the full Cesar path, not the lightweight summarizer. This lets Cesar call tools, propose plans, or launch follow-up agents instead of being cut off after another model returns."
-  handler <<<
-    if (!shouldAutoContinueDelegatedResult(launchInputEpoch, launchUserTurns, cb.ctx)) {
-      cb.dispatch({ type: 'info', message: 'Skipped Cesar follow-up — user moved on while delegated job was running.' });
-      return;
-    }
-    const prompt = buildDelegatedContinuationPrompt(message);
-    const priorDepth = Number((cb.ctx as any).delegatedContinuationDepth ?? 0) || 0;
-    (cb.ctx as any).delegatedContinuationDepth = priorDepth + 1;
-    try {
-      await routeWithCesar(prompt, [], cb);
-    } finally {
-      if (priorDepth > 0) (cb.ctx as any).delegatedContinuationDepth = priorDepth;
-      else delete (cb.ctx as any).delegatedContinuationDepth;
-    }
-  >>>
+  handler lang="kern"
+    if cond="!shouldAutoContinueDelegatedResult(launchInputEpoch, launchUserTurns, cb.ctx)"
+      do value="cb.dispatch({ type: 'info', message: 'Skipped Cesar follow-up — user moved on while delegated job was running.' })"
+      return
+    let name=prompt value="buildDelegatedContinuationPrompt(message)"
+    let name=priorDepth value="Number(cb.ctx.delegatedContinuationDepth ?? 0) || 0"
+    assign target="cb.ctx.delegatedContinuationDepth" value="priorDepth + 1"
+    try
+      do value="await routeWithCesar(prompt, [], cb)"
+      catch name=error
+        if cond="priorDepth > 0"
+          assign target="cb.ctx.delegatedContinuationDepth" value="priorDepth"
+        else
+          assign target="cb.ctx.delegatedContinuationDepth" value="undefined"
+        throw value="error"
+    if cond="priorDepth > 0"
+      assign target="cb.ctx.delegatedContinuationDepth" value="priorDepth"
+    else
+      assign target="cb.ctx.delegatedContinuationDepth" value="undefined"
 
 fn name=runDelegatedJobThenContinue async=true params="cb:DispatchCallbacks, run:()=>Promise<any>, buildPrompt:(info:DelegatedContinuationInfo)=>(string|null), launchInputEpoch?:number, launchUserTurns?:number, maxChars?:number" returns="Promise<any>"
   doc "Run a delegated orchestration handler and GUARANTEE a Cesar continuation afterward — even when the handler throws (exception paths used to dead-end) and even when no engine transcript was captured. Context is scoped to messages produced DURING this job (by id-snapshot diff), not the global recent tail, so concurrent jobs can't contaminate each other's continuation (codex review)."
@@ -123,18 +128,12 @@ fn name=handleModeSwitch params="intentType:string, topic:string|undefined, ques
     return false;
   >>>
 
-fn name=shouldAutoResumeAgentResult params="result:any, launchInputEpoch:number, launchUserTurns:number, ctx:HandlerContext" returns=boolean export=true
+fn name=shouldAutoResumeAgentResult params="result:AgentContinuationResult|null, launchInputEpoch:number, launchUserTurns:number, ctx:HandlerContext" returns=boolean export=true
   handler lang="kern"
-    if cond="!result || typeof result !== 'object'"
+    if cond="!result"
       return value="false"
-    let name=status value="String((result as any).status ?? '').trim()"
+    let name=status value="String(result.status ?? '').trim()"
     if cond="!status || status === 'cancelled'"
-      return value="false"
-    comment raw="// RC3: a failed agent (permanent fault — e.g. an engine with no/invalid"
-    comment raw="// credentials, or a dispatch that died after retries) must NOT auto-resume."
-    comment raw="// Re-feeding 'continue from this result' just re-delegates into the same"
-    comment raw="// dead engine and spins. The failure is already surfaced by the handler."
-    if cond="status === 'failed'"
       return value="false"
     if cond="(ctx.inputEpoch ?? 0) !== launchInputEpoch"
       return value="false"
@@ -143,19 +142,19 @@ fn name=shouldAutoResumeAgentResult params="result:any, launchInputEpoch:number,
     comment raw="// drift the count and falsely suppress the post-run resume."
     return value="true"
 
-fn name=buildAgentAutoResumePrompt params="originalTask:string, result:any" returns=string export=true
+fn name=buildAgentAutoResumePrompt params="originalTask:string, result:AgentContinuationResult|null" returns=string export=true
   handler lang="kern"
-    if cond="!result || typeof result !== 'object'"
+    if cond="!result"
       return value="''"
-    let name=kind value="String((result as any).kind ?? 'agent')"
-    let name=status value="String((result as any).status ?? 'completed')"
+    let name=kind value="String(result.kind ?? 'agent')"
+    let name=status value="String(result.status ?? 'completed')"
     if cond="!status || status === 'cancelled'"
       return value="''"
-    let name=summary value="String((result as any).summary ?? '').trim()"
-    let name=taskKind value="String((result as any).taskKind ?? 'unknown').trim()"
-    let name=patchPath value="String((result as any).patchPath ?? '').trim()"
+    let name=summary value="String(result.summary ?? '').trim()"
+    let name=taskKind value="String(result.taskKind ?? 'unknown').trim()"
+    let name=patchPath value="String(result.patchPath ?? '').trim()"
     let name=modeLabel value="kind === 'team-agent' ? 'team-agent' : 'solo agent'"
-    let name=lines value="[ `AUTOMATIC FOLLOW-UP: your delegated ${modeLabel} run has finished.`, `Do not ask the user what happened, whether the agent finished, or what needs fixing. Continue from this result.`, '', `Original delegated task:\\n${originalTask.trim().slice(0, 4000)}`, '', `Completion status: ${status}`, `Delegation mode: ${modeLabel}`, ]"
+    let name=lines value="[ `AUTOMATIC FOLLOW-UP: your delegated ${modeLabel} run has ${status === 'failed' ? 'failed' : 'finished'}.`, `Do not ask the user what happened, whether the agent finished, or what needs fixing. Continue from this result.`, '', `Original delegated task:\\n${originalTask.trim().slice(0, 4000)}`, '', `Completion status: ${status}`, `Delegation mode: ${modeLabel}`, ]"
     if cond="taskKind && taskKind !== 'unknown'"
       do value="lines.push(`Task kind: ${taskKind}`)"
     if cond="summary"
@@ -165,29 +164,44 @@ fn name=buildAgentAutoResumePrompt params="originalTask:string, result:any" retu
       do value="lines.push(`If you need to continue from the team result, inspect/apply the winner patch or use the latest [team-agent] / [agent-team-diff] context instead of asking the user to repeat themselves.`)"
     else
       do value="lines.push(`Important: solo agent runs work directly in the main workspace. Inspect the current files/diff before follow-up edits.`)"
-    do value="lines.push('', `Continue autonomously now. If the task is already complete, summarize the concrete outcome and remaining risk. If more work is needed, do it now.`)"
+    if cond="status === 'failed'"
+      do value="lines.push('', `The delegation failure is evidence, not a terminal answer. Inspect the current workspace and error, then continue directly with local tools or choose a genuinely different healthy engine/path. Do not send the identical task back to the same failed delegation.`)"
+    else
+      do value="lines.push('', `Continue autonomously now. If the task is already complete, summarize the concrete outcome and remaining risk. If more work is needed, do it now.`)"
     return value="lines.join('\\n')"
 
-fn name=resumeCesarAfterAgent async=true params="originalTask:string, launchInputEpoch:number, launchUserTurns:number, result:any, cb:DispatchCallbacks" returns="Promise<void>"
+fn name=resumeCesarAfterAgent async=true params="originalTask:string, launchInputEpoch:number, launchUserTurns:number, result:AgentContinuationResult|null, cb:DispatchCallbacks" returns="Promise<void>"
   handler lang="kern"
     if cond="!shouldAutoResumeAgentResult(result, launchInputEpoch, launchUserTurns, cb.ctx)"
-      comment raw="// Make a genuine failure visible: explain WHY Cesar is stopping rather"
-      comment raw="// than silently dropping the turn (vs a cancel/stale-epoch skip)."
-      if cond="result && typeof result === 'object' && String((result as any).status ?? '') === 'failed'"
-        do value="cb.dispatch({ type: 'warning', message: 'Agent failed — Cesar will not auto-continue. Fix the cause (e.g. engine credentials via /engines) and retry.' })"
       return
     let name=prompt value="buildAgentAutoResumePrompt(originalTask, result)"
     if cond="!prompt.trim()"
       return
-    do value="cb.dispatch({ type: 'info', message: `Cesar continuing after ${String((result as any).kind ?? 'agent')} completion` })"
+    do value="cb.dispatch({ type: 'info', message: `Cesar resuming after ${String(result?.kind ?? 'agent')} ${result?.status === 'failed' ? 'failure' : 'completion'}` })"
     do value="await routeWithCesar(prompt, [], cb)"
 
-fn name=runAgentJobWithAutoResume async=true params="originalTask:string, cb:DispatchCallbacks, runner:()=>Promise<any>" returns="Promise<void>"
-  handler lang="kern"
-    let name=launchInputEpoch value="cb.ctx.inputEpoch ?? 0"
-    let name=launchUserTurns value="countTrackedUserTurns(cb.ctx)"
-    let name=result value="await runner()"
-    do value="await resumeCesarAfterAgent(originalTask, launchInputEpoch, launchUserTurns, result, cb)"
+fn name=runAgentJobWithAutoResume async=true params="originalTask:string, cb:DispatchCallbacks, runner:()=>Promise<AgentContinuationResult|null>" returns="Promise<void>"
+  handler <<<
+    const launchInputEpoch = cb.ctx.inputEpoch ?? 0;
+    const launchUserTurns = countTrackedUserTurns(cb.ctx);
+    try {
+      const result = await runner();
+      await resumeCesarAfterAgent(originalTask, launchInputEpoch, launchUserTurns, result, cb);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const failure: AgentContinuationResult = {
+        kind: 'agent', status: 'failed', task: originalTask, taskKind: 'unknown',
+        summary: message, engineId: null, winnerId: null, response: null,
+        patchPath: null, patchAvailable: false, workspaceChangedInPlace: false,
+      };
+      try {
+        await resumeCesarAfterAgent(originalTask, launchInputEpoch, launchUserTurns, failure, cb);
+      } catch (continuationError) {
+        console.warn(`[agon] agent failure continuation failed: ${continuationError instanceof Error ? continuationError.message : String(continuationError)}`);
+      }
+      throw error;
+    }
+  >>>
 
 fn name=buildReviewAbsorptionPrompt params="sourceInput:string, review:{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number }" returns=string export=true
   doc "Build the message used to feed completed review findings back into Cesar so the orchestrator knows what the reviewer found and can propose the fix path."
@@ -215,7 +229,7 @@ fn name=handleDelegatedAction async=true params="result:any, input:string, cb:Di
         // P2 fix: normalize team prefix — brain may return action='forge' + team=true
         let routeAction = result.action;
         if (result.team && !routeAction.startsWith('team-')) routeAction = `team-${routeAction}`;
-        const inDelegatedContinuation = Number((cb.ctx as any).delegatedContinuationDepth ?? 0) > 0;
+        const inDelegatedContinuation = Number(cb.ctx.delegatedContinuationDepth ?? 0) > 0;
         // 'review' belongs here too: it absorbs its findings back through
         // continueCesarAfterResult (which bumps the continuation depth), so without
         // this guard Cesar re-dispatches review on every synthesis turn and loops

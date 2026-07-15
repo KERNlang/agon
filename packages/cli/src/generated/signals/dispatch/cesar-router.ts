@@ -16,6 +16,8 @@ import { ENGINE_COLORS } from '../../blocks/output-format.js';
 
 import { handleForge, handleBrainstorm, handleCampfire, handleTribunal, handleBuild, handleReviewMany, runAgentMode, runAgentTeam } from '../../../handlers/index.js';
 
+import type { AgentContinuationResult } from '../../../generated/handlers/agent.js';
+
 import { prepareForgeFitnessCommand, inferProjectFitnessCommand } from '../../handlers/forge.js';
 
 import { handleTeamTribunal } from '../../handlers/team-tribunal.js';
@@ -53,7 +55,7 @@ import { handleProposedCesarPlan } from './plan-execution.js';
 /**
  * After /review or Review() finishes, feed ctx.lastReviewResult back into Cesar so the orchestrator can reason about findings and the fix plan.
  */
-// @kern-source: cesar-router:28
+// @kern-source: cesar-router:29
 export async function absorbReviewResultIntoCesar(sourceInput: string, cb: DispatchCallbacks, launchInputEpoch?: number, launchUserTurns?: number): Promise<void> {
   const review = cb.ctx.lastReviewResult;
   if (!review) {
@@ -67,27 +69,36 @@ export async function absorbReviewResultIntoCesar(sourceInput: string, cb: Dispa
 /**
  * Feed a delegated result back through the full Cesar path, not the lightweight summarizer. This lets Cesar call tools, propose plans, or launch follow-up agents instead of being cut off after another model returns.
  */
-// @kern-source: cesar-router:38
+// @kern-source: cesar-router:39
 export async function continueCesarAfterResult(message: string, cb: DispatchCallbacks, launchInputEpoch?: number, launchUserTurns?: number): Promise<void> {
   if (!shouldAutoContinueDelegatedResult(launchInputEpoch, launchUserTurns, cb.ctx)) {
     cb.dispatch({ type: 'info', message: 'Skipped Cesar follow-up — user moved on while delegated job was running.' });
     return;
   }
   const prompt = buildDelegatedContinuationPrompt(message);
-  const priorDepth = Number((cb.ctx as any).delegatedContinuationDepth ?? 0) || 0;
-  (cb.ctx as any).delegatedContinuationDepth = priorDepth + 1;
+  const priorDepth = Number(cb.ctx.delegatedContinuationDepth ?? 0) || 0;
+  cb.ctx.delegatedContinuationDepth = priorDepth + 1;
   try {
     await routeWithCesar(prompt, [], cb);
-  } finally {
-    if (priorDepth > 0) (cb.ctx as any).delegatedContinuationDepth = priorDepth;
-    else delete (cb.ctx as any).delegatedContinuationDepth;
+  } catch (error) {
+    if (priorDepth > 0) {
+      cb.ctx.delegatedContinuationDepth = priorDepth;
+    } else {
+      cb.ctx.delegatedContinuationDepth = undefined;
+    }
+    throw error;
+  }
+  if (priorDepth > 0) {
+    cb.ctx.delegatedContinuationDepth = priorDepth;
+  } else {
+    cb.ctx.delegatedContinuationDepth = undefined;
   }
 }
 
 /**
  * Run a delegated orchestration handler and GUARANTEE a Cesar continuation afterward — even when the handler throws (exception paths used to dead-end) and even when no engine transcript was captured. Context is scoped to messages produced DURING this job (by id-snapshot diff), not the global recent tail, so concurrent jobs can't contaminate each other's continuation (codex review).
  */
-// @kern-source: cesar-router:56
+// @kern-source: cesar-router:61
 export async function runDelegatedJobThenContinue(cb: DispatchCallbacks, run: ()=>Promise<any>, buildPrompt: (info:DelegatedContinuationInfo)=>(string|null), launchInputEpoch?: number, launchUserTurns?: number, maxChars?: number): Promise<any> {
   const ctx = cb.ctx;
   // Snapshot message ids BEFORE the job runs; diff after so the continuation
@@ -131,7 +142,7 @@ export async function runDelegatedJobThenContinue(cb: DispatchCallbacks, run: ()
 /**
  * Handle mode-switching intents. Returns true if consumed.
  */
-// @kern-source: cesar-router:98
+// @kern-source: cesar-router:103
 export function handleModeSwitch(intentType: string, topic: string|undefined, question: string|undefined, cb: DispatchCallbacks): boolean {
   if (intentType === 'campfire' && !topic) {
     cb.setMode('campfire');
@@ -158,20 +169,13 @@ export function handleModeSwitch(intentType: string, topic: string|undefined, qu
   return false;
 }
 
-// @kern-source: cesar-router:126
-export function shouldAutoResumeAgentResult(result: any, launchInputEpoch: number, launchUserTurns: number, ctx: HandlerContext): boolean {
-  if (!result || typeof result !== 'object') {
+// @kern-source: cesar-router:131
+export function shouldAutoResumeAgentResult(result: AgentContinuationResult|null, launchInputEpoch: number, launchUserTurns: number, ctx: HandlerContext): boolean {
+  if (!result) {
     return false;
   }
-  const status = String((result as any).status ?? '').trim();
+  const status = String(result.status ?? '').trim();
   if (!status || status === 'cancelled') {
-    return false;
-  }
-  // RC3: a failed agent (permanent fault — e.g. an engine with no/invalid
-  // credentials, or a dispatch that died after retries) must NOT auto-resume.
-  // Re-feeding 'continue from this result' just re-delegates into the same
-  // dead engine and spins. The failure is already surfaced by the handler.
-  if (status === 'failed') {
     return false;
   }
   if ((ctx.inputEpoch ?? 0) !== launchInputEpoch) {
@@ -183,21 +187,21 @@ export function shouldAutoResumeAgentResult(result: any, launchInputEpoch: numbe
   return true;
 }
 
-// @kern-source: cesar-router:146
-export function buildAgentAutoResumePrompt(originalTask: string, result: any): string {
-  if (!result || typeof result !== 'object') {
+// @kern-source: cesar-router:145
+export function buildAgentAutoResumePrompt(originalTask: string, result: AgentContinuationResult|null): string {
+  if (!result) {
     return '';
   }
-  const kind = String((result as any).kind ?? 'agent');
-  const status = String((result as any).status ?? 'completed');
+  const kind = String(result.kind ?? 'agent');
+  const status = String(result.status ?? 'completed');
   if (!status || status === 'cancelled') {
     return '';
   }
-  const summary = String((result as any).summary ?? '').trim();
-  const taskKind = String((result as any).taskKind ?? 'unknown').trim();
-  const patchPath = String((result as any).patchPath ?? '').trim();
+  const summary = String(result.summary ?? '').trim();
+  const taskKind = String(result.taskKind ?? 'unknown').trim();
+  const patchPath = String(result.patchPath ?? '').trim();
   const modeLabel = (kind === 'team-agent') ? 'team-agent' : 'solo agent';
-  const lines = [`AUTOMATIC FOLLOW-UP: your delegated ${modeLabel} run has finished.`, `Do not ask the user what happened, whether the agent finished, or what needs fixing. Continue from this result.`, '', `Original delegated task:\n${originalTask.trim().slice(0, 4000)}`, '', `Completion status: ${status}`, `Delegation mode: ${modeLabel}`];
+  const lines = [`AUTOMATIC FOLLOW-UP: your delegated ${modeLabel} run has ${(status === 'failed') ? 'failed' : 'finished'}.`, `Do not ask the user what happened, whether the agent finished, or what needs fixing. Continue from this result.`, '', `Original delegated task:\n${originalTask.trim().slice(0, 4000)}`, '', `Completion status: ${status}`, `Delegation mode: ${modeLabel}`];
   if (taskKind && taskKind !== 'unknown') {
     lines.push(`Task kind: ${taskKind}`);
   }
@@ -210,40 +214,54 @@ export function buildAgentAutoResumePrompt(originalTask: string, result: any): s
   } else {
     lines.push(`Important: solo agent runs work directly in the main workspace. Inspect the current files/diff before follow-up edits.`);
   }
-  lines.push('', `Continue autonomously now. If the task is already complete, summarize the concrete outcome and remaining risk. If more work is needed, do it now.`);
+  if (status === 'failed') {
+    lines.push('', `The delegation failure is evidence, not a terminal answer. Inspect the current workspace and error, then continue directly with local tools or choose a genuinely different healthy engine/path. Do not send the identical task back to the same failed delegation.`);
+  } else {
+    lines.push('', `Continue autonomously now. If the task is already complete, summarize the concrete outcome and remaining risk. If more work is needed, do it now.`);
+  }
   return lines.join('\n');
 }
 
-// @kern-source: cesar-router:171
-export async function resumeCesarAfterAgent(originalTask: string, launchInputEpoch: number, launchUserTurns: number, result: any, cb: DispatchCallbacks): Promise<void> {
+// @kern-source: cesar-router:173
+export async function resumeCesarAfterAgent(originalTask: string, launchInputEpoch: number, launchUserTurns: number, result: AgentContinuationResult|null, cb: DispatchCallbacks): Promise<void> {
   if (!shouldAutoResumeAgentResult(result, launchInputEpoch, launchUserTurns, cb.ctx)) {
-    // Make a genuine failure visible: explain WHY Cesar is stopping rather
-    // than silently dropping the turn (vs a cancel/stale-epoch skip).
-    if (result && typeof result === 'object' && String((result as any).status ?? '') === 'failed') {
-      cb.dispatch({ type: 'warning', message: 'Agent failed — Cesar will not auto-continue. Fix the cause (e.g. engine credentials via /engines) and retry.' });
-    }
     return;
   }
   const prompt = buildAgentAutoResumePrompt(originalTask, result);
   if (!prompt.trim()) {
     return;
   }
-  cb.dispatch({ type: 'info', message: `Cesar continuing after ${String((result as any).kind ?? 'agent')} completion` });
+  cb.dispatch({ type: 'info', message: `Cesar resuming after ${String(result?.kind ?? 'agent')} ${(result?.status === 'failed') ? 'failure' : 'completion'}` });
   await routeWithCesar(prompt, [], cb);
 }
 
-// @kern-source: cesar-router:185
-export async function runAgentJobWithAutoResume(originalTask: string, cb: DispatchCallbacks, runner: ()=>Promise<any>): Promise<void> {
+// @kern-source: cesar-router:183
+export async function runAgentJobWithAutoResume(originalTask: string, cb: DispatchCallbacks, runner: ()=>Promise<AgentContinuationResult|null>): Promise<void> {
   const launchInputEpoch = cb.ctx.inputEpoch ?? 0;
   const launchUserTurns = countTrackedUserTurns(cb.ctx);
-  const result = await runner();
-  await resumeCesarAfterAgent(originalTask, launchInputEpoch, launchUserTurns, result, cb);
+  try {
+    const result = await runner();
+    await resumeCesarAfterAgent(originalTask, launchInputEpoch, launchUserTurns, result, cb);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const failure: AgentContinuationResult = {
+      kind: 'agent', status: 'failed', task: originalTask, taskKind: 'unknown',
+      summary: message, engineId: null, winnerId: null, response: null,
+      patchPath: null, patchAvailable: false, workspaceChangedInPlace: false,
+    };
+    try {
+      await resumeCesarAfterAgent(originalTask, launchInputEpoch, launchUserTurns, failure, cb);
+    } catch (continuationError) {
+      console.warn(`[agon] agent failure continuation failed: ${continuationError instanceof Error ? continuationError.message : String(continuationError)}`);
+    }
+    throw error;
+  }
 }
 
 /**
  * Build the message used to feed completed review findings back into Cesar so the orchestrator knows what the reviewer found and can propose the fix path.
  */
-// @kern-source: cesar-router:192
+// @kern-source: cesar-router:206
 export function buildReviewAbsorptionPrompt(sourceInput: string, review: { engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number }): string {
   const output = String(review.reviewOutput ?? '').trim();
   const cappedOutput = (output.length > 12000) ? `${output.slice(0, 12000)}\n... [review output truncated]` : output;
@@ -255,7 +273,7 @@ export function buildReviewAbsorptionPrompt(sourceInput: string, review: { engin
 /**
  * Execute a delegated Cesar action (the big routeAction switch). Extracted from routeWithCesar; kept SAME-FILE to avoid the continueCesarAfterResult<->routeWithCesar ESM cycle. Returns true = a background job was dispatched; false = the in-delegated-continuation recursive-thinking skip; null = the switch fell through (delegate with no target, or an unmatched action) so the caller continues to the responded/crash-recovery tail.
  */
-// @kern-source: cesar-router:201
+// @kern-source: cesar-router:215
 export async function handleDelegatedAction(result: any, input: string, cb: DispatchCallbacks): Promise<boolean | null> {
   if (!result) return null;
           const labelSource = (result.task && result.task.trim())
@@ -271,7 +289,7 @@ export async function handleDelegatedAction(result: any, input: string, cb: Disp
           // P2 fix: normalize team prefix — brain may return action='forge' + team=true
           let routeAction = result.action;
           if (result.team && !routeAction.startsWith('team-')) routeAction = `team-${routeAction}`;
-          const inDelegatedContinuation = Number((cb.ctx as any).delegatedContinuationDepth ?? 0) > 0;
+          const inDelegatedContinuation = Number(cb.ctx.delegatedContinuationDepth ?? 0) > 0;
           // 'review' belongs here too: it absorbs its findings back through
           // continueCesarAfterResult (which bumps the continuation depth), so without
           // this guard Cesar re-dispatches review on every synthesis turn and loops
@@ -613,7 +631,7 @@ export async function handleDelegatedAction(result: any, input: string, cb: Disp
 /**
  * Confirm + run a delegation recovered from a crashed Cesar session: TTL stale-check, askQuestion confirm, then the recovered-action switch. Extracted from routeWithCesar; kept SAME-FILE to avoid the ESM cycle. The caller has already nulled cb.ctx.cesar.pendingDelegation. Returns true if a recovery job was dispatched; false on stale/declined/unmatched so the caller falls through to the brain fallback.
  */
-// @kern-source: cesar-router:557
+// @kern-source: cesar-router:571
 export async function handleRecoveredDelegation(crashDel: any, input: string, cb: DispatchCallbacks): Promise<boolean> {
   if (!crashDel) return false;
     // TTL: discard stale delegations older than 60 seconds
@@ -721,7 +739,7 @@ export async function handleRecoveredDelegation(crashDel: any, input: string, cb
 /**
  * Last-resort Cesar recovery when the brain returned no usable response: api-backend silent same-engine retry, non-api session rebuild + retry, fresh one-shot dispatch (with suggestion parsing), then cross-engine acting-Cesar. Extracted from routeWithCesar; kept SAME-FILE to avoid the ESM cycle. crashDel is passed ONLY to preserve the pre-existing coupling where a pending delegation s engines seed a fresh fallback pipeline suggestion (behavior preserved verbatim; latent coupling flagged for a follow-up, per nero Ch.3).
  */
-// @kern-source: cesar-router:663
+// @kern-source: cesar-router:677
 export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks, crashDel: any, priorDeterministic: boolean): Promise<boolean> {
   // Cesar truly didn't respond — try fresh CLI dispatch
   const cesarConfig = cb.ctx.config;
@@ -1026,7 +1044,7 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
 /**
  * Unified Cesar brain routing. Returns true if a background job was dispatched.
  */
-// @kern-source: cesar-router:966
+// @kern-source: cesar-router:980
 export async function routeWithCesar(input: string, images: ImageAttachment[], cb: DispatchCallbacks): Promise<boolean> {
   cb.setPendingImages(() => []);
   const turnStartedAt = Date.now();

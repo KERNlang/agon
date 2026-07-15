@@ -12,6 +12,7 @@ import { hostNowIso, hostNowMs } from '../blocks/host-runtime.js';
 
 // @kern-source: chat-store:7
 export interface ChatMessage {
+  id?: string;
   role: 'user'|'engine';
   engineId?: string;
   content: string;
@@ -19,7 +20,7 @@ export interface ChatMessage {
   images?: string[];
 }
 
-// @kern-source: chat-store:14
+// @kern-source: chat-store:15
 export interface ChatSession {
   id: string;
   startedAt: string;
@@ -31,32 +32,32 @@ export interface ChatSession {
   summarizedMessageCount?: number;
 }
 
-// @kern-source: chat-store:24
+// @kern-source: chat-store:25
 export function chatsDir(): string {
   return runtimeAgonPath('chats');
 }
 
-// @kern-source: chat-store:26
+// @kern-source: chat-store:27
 export function ensureChatsDir(): void {
   mkdirSync(chatsDir(), { recursive: true });
 }
 
-// @kern-source: chat-store:28
+// @kern-source: chat-store:29
 export const CHAT_RETENTION: number = 50;
 
-// @kern-source: chat-store:30
+// @kern-source: chat-store:31
 export const CHAT_SUMMARY_TAIL_MESSAGES: number = 12;
 
-// @kern-source: chat-store:32
+// @kern-source: chat-store:33
 export const CHAT_SUMMARY_MAX_CHARS: number = 5000;
 
-// @kern-source: chat-store:34
+// @kern-source: chat-store:35
 export const CHAT_SUMMARY_ENTRY_CHARS: number = 320;
 
 /**
  * Remove old chat files beyond the retention limit. Keeps the most recent CHAT_RETENTION sessions.
  */
-// @kern-source: chat-store:36
+// @kern-source: chat-store:37
 export function pruneChats(): void {
   try {
     const dir = chatsDir();
@@ -78,7 +79,7 @@ export function pruneChats(): void {
   } catch { /* dir doesn't exist yet or read failed — not critical */ }
 }
 
-// @kern-source: chat-store:59
+// @kern-source: chat-store:60
 export function startChatSession(opts?: {cwd?:string,branch?:string,engineIds?:string[]}): ChatSession {
   ensureChatsDir();
   pruneChats();
@@ -99,7 +100,7 @@ export function startChatSession(opts?: {cwd?:string,branch?:string,engineIds?:s
   return session;
 }
 
-// @kern-source: chat-store:76
+// @kern-source: chat-store:77
 export function appendMessage(session: ChatSession, msg: ChatMessage): void {
   session.messages.push(msg);
   const filePath = join(chatsDir(), `${session.id}.ndjson`);
@@ -112,7 +113,7 @@ export function appendMessage(session: ChatSession, msg: ChatMessage): void {
 /**
  * Idempotently persist a user turn. If the last message is already an identical user message, do nothing and return false. Otherwise append and return true. Used by the Cesar fallback ladder — brain, dispatch, and acting-Cesar all try to save the user's message on empty responses, and this helper prevents double-persist when multiple layers fire for the same turn.
  */
-// @kern-source: chat-store:84
+// @kern-source: chat-store:85
 export function appendUserTurnIfAbsent(session: ChatSession|null|undefined, input: string): boolean {
   if (!session) {
     return false;
@@ -135,7 +136,7 @@ export function appendUserTurnIfAbsent(session: ChatSession|null|undefined, inpu
   return true;
 }
 
-// @kern-source: chat-store:103
+// @kern-source: chat-store:104
 function truncateMiddle(value: string, limit: number): string {
   const text = String(value ?? '');
   if (text.length <= limit) return text;
@@ -146,14 +147,14 @@ function truncateMiddle(value: string, limit: number): string {
   return text.slice(0, head) + marker + text.slice(text.length - tail);
 }
 
-// @kern-source: chat-store:114
+// @kern-source: chat-store:115
 function compactChatMessage(msg: ChatMessage): string {
   const speaker = (msg.role === 'user') ? 'User' : (msg.engineId ? String(msg.engineId) : 'Assistant');
   const content = String(msg.content ?? '').replace(/\u0000/g, '').replace(/[ \t\n\r\f\v]+/g, ' ').trim();
   return `${speaker}: ${truncateMiddle(content, CHAT_SUMMARY_ENTRY_CHARS)}`;
 }
 
-// @kern-source: chat-store:120
+// @kern-source: chat-store:121
 function trimChatSummary(summary: string): string {
   const text = String(summary ?? '').trim();
   if (text.length <= CHAT_SUMMARY_MAX_CHARS) {
@@ -166,7 +167,7 @@ function trimChatSummary(summary: string): string {
   return text.slice(0, head).trimEnd() + marker + text.slice(text.length - tail).trimStart();
 }
 
-// @kern-source: chat-store:131
+// @kern-source: chat-store:132
 function appendSummaryRecord(session: ChatSession): void {
   const filePath = join(chatsDir(), `${session.id}.ndjson`);
   appendFileSync(filePath, JSON.stringify({ _type: 'summary', summary: session.summary ?? '', summarizedMessageCount: session.summarizedMessageCount ?? 0, timestamp: hostNowIso() }) + '\n');
@@ -175,7 +176,7 @@ function appendSummaryRecord(session: ChatSession): void {
 /**
  * Null out the in-memory content of messages[from..to). Those turns are already folded into the rolling summary AND persisted to disk (appendMessage writes the ndjson), so dropping their bodies bounds session RAM without losing anything callers need. Objects are kept so indices/summarizedMessageCount/resume accounting stay valid.
  */
-// @kern-source: chat-store:136
+// @kern-source: chat-store:137
 function freeSummarizedMessageBodies(messages: ChatMessage[], from: number, to: number): void {
   for (let i = from; i < to; i++) {
     const m = messages[i];
@@ -186,7 +187,7 @@ function freeSummarizedMessageBodies(messages: ChatMessage[], from: number, to: 
 /**
  * Incrementally compact older current-session chat into a bounded summary. The newest tail remains available as raw capped turns; older turns become a compact digest for Cesar/API respawns without replaying the full transcript.
  */
-// @kern-source: chat-store:145
+// @kern-source: chat-store:146
 export function updateChatSummary(session: ChatSession): boolean {
   if (!session || !Array.isArray(session.messages)) {
     return false;
@@ -218,7 +219,7 @@ export function updateChatSummary(session: ChatSession): boolean {
 /**
  * Format recent chat history for prompts with hard token-waste bounds. Keeps newest messages first and truncates oversized turns so fallback/chat prompts cannot replay a huge transcript forever.
  */
-// @kern-source: chat-store:171
+// @kern-source: chat-store:172
 export function formatChatHistoryForPrompt(messages: ChatMessage[], opts?: {maxMessages?:number,maxChars?:number,maxMessageChars?:number}): string {
   const source = Array.isArray(messages) ? messages : [];
   const maxMessages = Math.max(0, opts?.maxMessages ?? 20);
@@ -259,7 +260,7 @@ export function formatChatHistoryForPrompt(messages: ChatMessage[], opts?: {maxM
 /**
  * Format compact session context for prompts: rolling summary of older turns plus capped recent turns.
  */
-// @kern-source: chat-store:210
+// @kern-source: chat-store:211
 export function formatChatContextForPrompt(session: ChatSession|null|undefined, opts?: {maxMessages?:number,maxChars?:number,maxMessageChars?:number,maxSummaryChars?:number}): string {
   if (!session) {
     return '';
@@ -281,7 +282,7 @@ export function formatChatContextForPrompt(session: ChatSession|null|undefined, 
 /**
  * Hydrate an empty ChatSession from a durable ContextThread so a fresh process can continue a prior conversation (the `--continue` path). Seeded turns go through appendMessage, so they are persisted to this session's ndjson too — keeping `/chats resume` and loadChatSession consistent with what is in memory. Maps thread roles to chat roles (user->user, assistant->engine) and skips system/tool turns, which chat sessions do not render. No-op when the session already has messages, so it never clobbers an active conversation. The default limit (last 40 turns) bounds rehydration cost; the prompt formatter caps it further at render time.
  */
-// @kern-source: chat-store:226
+// @kern-source: chat-store:227
 export function seedChatSessionFromThread(session: ChatSession, thread: ContextThread, opts?: {limit?:number}): void {
   if (session.messages.length > 0) return;
   const recent = thread.recentMessages(opts?.limit ?? 40);
@@ -299,7 +300,7 @@ export function seedChatSessionFromThread(session: ChatSession, thread: ContextT
 /**
  * Concatenate recent conversation history with the current input so one-shot dispatches keep continuity. Used by fallback paths that bypass PersistentSession — API-only engines (no CLI binary) still get multi-turn context this way. Default: last 10 turns (20 messages).
  */
-// @kern-source: chat-store:242
+// @kern-source: chat-store:243
 export function buildHistoryPrimedPrompt(session: ChatSession, input: string, maxTurns?: number): string {
   const limit = (maxTurns ?? 10) * 2;
   const context = formatChatContextForPrompt(session, { maxMessages: limit, maxChars: 12000, maxMessageChars: 1200, maxSummaryChars: 5000 });
@@ -314,7 +315,7 @@ export function buildHistoryPrimedPrompt(session: ChatSession, input: string, ma
   return lines.join('\n');
 }
 
-// @kern-source: chat-store:256
+// @kern-source: chat-store:257
 export function loadChatSession(id: string): ChatSession|null {
   try {
     const filePath = join(chatsDir(), `${id}.ndjson`);
@@ -364,12 +365,12 @@ export function loadChatSession(id: string): ChatSession|null {
 /**
  * Load an existing session for continued use. Returns null if not found.
  */
-// @kern-source: chat-store:303
+// @kern-source: chat-store:304
 export function resumeChatSession(id: string): ChatSession|null {
   return loadChatSession(id);
 }
 
-// @kern-source: chat-store:306
+// @kern-source: chat-store:307
 export function listChatSessions(limit: number): ChatSession[] {
   ensureChatsDir();
   try {
@@ -393,7 +394,7 @@ export function listChatSessions(limit: number): ChatSession[] {
   }
 }
 
-// @kern-source: chat-store:330
+// @kern-source: chat-store:331
 export function latestChatSession(): ChatSession|null {
   const sessions = listChatSessions(1);
   return (sessions.length > 0) ? sessions[0] : null;

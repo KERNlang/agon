@@ -29,7 +29,7 @@ interface name=RunAgentOptions
   field name=systemPrompt type=string optional=true
   field name=parentSignal type=AbortSignal optional=true
 
-interface name=AgentContinuationResult
+interface name=AgentContinuationResult export=true
   field name=kind type=string
   field name=status type=string
   field name=task type=string

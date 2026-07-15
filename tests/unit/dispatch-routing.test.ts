@@ -722,7 +722,26 @@ describe('Dispatch routing helpers', () => {
     expect(shouldAutoResumeAgentResult({ status: 'completed' }, 5, 1, ctx)).toBe(false); // user typed → new epoch
     expect(shouldAutoResumeAgentResult({ status: 'completed' }, 4, 2, ctx)).toBe(true);  // turn drift, same epoch → still resume
     expect(shouldAutoResumeAgentResult({ status: 'cancelled' }, 4, 1, ctx)).toBe(false);
-    expect(shouldAutoResumeAgentResult({ status: 'failed' }, 4, 1, ctx)).toBe(false); // RC3: a failed agent must NOT re-delegate into the same dead engine
+    expect(shouldAutoResumeAgentResult({ status: 'failed' }, 4, 1, ctx)).toBe(true); // failure returns to Cesar for direct/different-path recovery
+  });
+
+  it('turns an agent failure into recovery work instead of task abandonment', () => {
+    const prompt = buildAgentAutoResumePrompt('finish the migration', {
+      kind: 'agent',
+      status: 'failed',
+      task: 'finish the migration',
+      taskKind: 'edit',
+      summary: 'engine credentials unavailable',
+      engineId: 'broken-engine',
+      winnerId: null,
+      response: null,
+      patchPath: null,
+      patchAvailable: false,
+      workspaceChangedInPlace: false,
+    });
+    expect(prompt).toContain('delegation failure is evidence, not a terminal answer');
+    expect(prompt).toContain('different healthy engine/path');
+    expect(prompt).toContain('Do not send the identical task back to the same failed delegation');
   });
 
   it('continues delegated results while the input epoch is unchanged (turn-count drift does NOT suppress)', () => {

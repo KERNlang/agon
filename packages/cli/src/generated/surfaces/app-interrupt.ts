@@ -20,21 +20,23 @@ import { cancelReplState, finishReplState } from '../signals/app-state.js';
 
 import type { ReplStateState } from '../signals/app-state.js';
 
+import type { JobManager, Job } from '../signals/job-manager.js';
+
 // ── Module: AppInterrupt ──
 
-// @kern-source: app-interrupt:47
+// @kern-source: app-interrupt:48
 export const _activeAborts: Set<AbortController> = new Set<AbortController>();
 
-// @kern-source: app-interrupt:49
+// @kern-source: app-interrupt:50
 export const _cancelCallback: { fn: (() => void) | null } = { fn: null };
 
-// @kern-source: app-interrupt:51
+// @kern-source: app-interrupt:52
 export const _lastSigintAt: { value: number } = { value: 0 };
 
-// @kern-source: app-interrupt:53
+// @kern-source: app-interrupt:54
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app-interrupt:59
+// @kern-source: app-interrupt:60
 export function runTrackAbort(abort: AbortController | null, activeAbortRef: {current: AbortController | null}, setActiveAbort: (abort:AbortController | null) => void): void {
   if (activeAbortRef.current) {
     _activeAborts.delete(activeAbortRef.current);
@@ -49,13 +51,17 @@ export function runTrackAbort(abort: AbortController | null, activeAbortRef: {cu
 /**
  * Explicit dependencies for runInterruptActiveRun — the active-run refs, the output bridge, and the modal/repl setState fns the interrupt path resets, passed in rather than captured from component scope.
  */
-// @kern-source: app-interrupt:71
+// @kern-source: app-interrupt:72
 export interface InterruptRunDeps {
   activeAbortRef: {current: AbortController | null};
   activePlanRef: {current: any};
+  activeTurnRef: {current: {input:string;engineId:string;retried:boolean} | null};
+  interruptedTurnRef: {current: {input:string;source:'foreground'|'job';at:number} | null};
   cesarRuntimeHost: any;
+  jobManager: JobManager;
   setActiveAbort: (abort:AbortController | null) => void;
   setActivePlan: (plan:any) => void;
+  setJobList: (val:Job[]) => void;
   setLiveSpinner: (val:any) => void;
   setLiveProgress: (val:any) => void;
   outputActions: OutputActions;
@@ -75,27 +81,57 @@ export interface InterruptRunDeps {
   setWindowTitle: (title:string) => void;
 }
 
-// @kern-source: app-interrupt:105
+// @kern-source: app-interrupt:108
+export function cancelLatestRunningJob(jobManager: JobManager, reason?: string): Job|null {
+  const running = jobManager?.running?.() ?? [];
+  const target = running.length > 0 ? running[running.length - 1] : null;
+  if (!target) return null;
+  return jobManager.cancel(target.id, reason ?? 'Interrupted by user') ? target : null;
+}
+
+// @kern-source: app-interrupt:121
 export function runInterruptActiveRun(opts: InterruptRunDeps, message: string, clearChat: boolean): void {
   const abort = opts.activeAbortRef.current;
+  const foregroundTurn = opts.activeTurnRef.current;
+  let interruptedInput = String(foregroundTurn?.input ?? '').trim();
+  let interruptedSource: 'foreground' | 'job' = 'foreground';
+  let interruptedJob: Job | null = null;
+
   const activeRuntime = opts.cesarRuntimeHost?.active;
   if (activeRuntime && activeRuntime.state === 'running') {
     transitionCesarTurn(opts.cesarRuntimeHost, activeRuntime.envelope, 'cancelling');
   }
   if (abort) {
     abort.abort();
+  } else if (opts.replState === 'idle') {
+    interruptedJob = cancelLatestRunningJob(opts.jobManager, 'Interrupted by user');
+    if (interruptedJob) {
+      interruptedInput = String(interruptedJob.label ?? interruptedJob.type ?? '').trim();
+      interruptedSource = 'job';
+      opts.setJobList([...opts.jobManager.list()]);
+    }
+  }
+
+  // Null this synchronously. A fast submit after Esc must become a fresh
+  // redirect, never steering aimed at the already-aborted turn.
+  opts.activeTurnRef.current = null;
+  if (interruptedInput) {
+    opts.interruptedTurnRef.current = {
+      input: interruptedInput,
+      source: interruptedSource,
+      at: Date.now(),
+    };
   }
   runTrackAbort(null, opts.activeAbortRef, opts.setActiveAbort);
-  // Interrupt drops any mid-turn steering — no silent carryover to the
-  // next turn (spec point 3). The brain's own turn-end release path is
-  // bypassed on an abort, so the drop must happen here.
+
+  // Drop unconsumed mid-turn steering. The next user message is carried as
+  // an explicit redirect instead, so stale queued instructions cannot leak.
   clearSteering();
   opts.setLiveSpinner(null);
   opts.setLiveProgress(null);
   // Commit any in-flight streams before wiping. In main-buffer mode the
-  // partial text has already been written to the terminal; dropping it
-  // from React state without flushing causes logUpdate.eraseLines to
-  // wipe visible output the user was just reading.
+  // partial text has already been written to the terminal; dropping it from
+  // React state without flushing can erase visible output.
   opts.outputActions.flushStream();
   clearPermissionQueue();
   clearThinkingBuffer();
@@ -107,35 +143,39 @@ export function runInterruptActiveRun(opts: InterruptRunDeps, message: string, c
   opts.setModelPickerOpen(false);
   opts.setCesarPickerOpen(false);
   opts.setReviewEvent(null);
+
   const pendingPlan = opts.activePlanRef.current;
   if (pendingPlan && ['planning', 'awaiting_approval'].includes(String(pendingPlan.state ?? ''))) {
-    try {
-      saveCesarPlan(cancelCesarPlan(pendingPlan));
-    } catch (_err) {
-    }
+    try { saveCesarPlan(cancelCesarPlan(pendingPlan)); } catch (_err) {}
     opts.activePlanRef.current = null;
     opts.setActivePlan(null);
   }
+
   if (opts.replState !== 'idle') {
-    if (message) {
-      opts.dispatch({ type: 'warning', message: message } as any);
-    }
-    opts.setReplState((prev: any) => (prev === 'idle') ? prev : cancelReplState({ state: prev }).state);
+    if (message) opts.dispatch({ type: 'warning', message });
+    opts.setReplState((prev: ReplStateState) => prev === 'idle' ? prev : cancelReplState({ state: prev }).state);
     if (!opts.pendingBellRef.current) {
       opts.bell();
       opts.pendingBellRef.current = true;
     }
     opts.setWindowTitle('agon');
+  } else if (interruptedJob) {
+    opts.dispatch({
+      type: 'info',
+      message: `Interrupted background job [${interruptedJob.id}]. Type the new direction and press Enter.`,
+    });
+    opts.setWindowTitle('agon');
   }
   if (clearChat) {
-    opts.dispatch({ type: 'clear' } as any);
+    opts.interruptedTurnRef.current = null;
+    opts.dispatch({ type: 'clear' });
   }
 }
 
 /**
  * Explicit dependencies for buildCancelCallback — the refs and setState fns the SIGINT hard-cancel callback resets. Distinct from InterruptRunDeps: also clears agent-progress + tool-detail and FINISHES the repl (vs cancel).
  */
-// @kern-source: app-interrupt:157
+// @kern-source: app-interrupt:208
 export interface CancelCallbackDeps {
   activeAbortRef: {current: AbortController | null};
   activePlanRef: {current: any};
@@ -159,7 +199,7 @@ export interface CancelCallbackDeps {
   setReplState: (updater:(prev:any) => any) => void;
 }
 
-// @kern-source: app-interrupt:191
+// @kern-source: app-interrupt:242
 export function buildCancelCallback(opts: CancelCallbackDeps): () => void {
   return () => {
     const activeRuntime = opts.cesarRuntimeHost?.active;
@@ -199,7 +239,7 @@ export function buildCancelCallback(opts: CancelCallbackDeps): () => void {
   };
 }
 
-// @kern-source: app-interrupt:239
+// @kern-source: app-interrupt:290
 export function handleSigint(cesarSessionHolder: {session: PersistentSession | null}): void {
   const now = Date.now();
   if (now - _lastSigintAt.value < 1200) {

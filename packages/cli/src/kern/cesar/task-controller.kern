@@ -1,0 +1,120 @@
+import from="../../handlers/types.js" names="HandlerContext" types=true
+import from="@kernlang/agon-core" names="isReadOnlyCommand"
+import from="./brain-helpers.js" names="isBashToolName,isWriteToolName"
+
+type name=CesarHarnessProfile values="legacy|agentic" export=true
+type name=AgenticTaskState values="running|tool_in_flight|waiting_on_delegation|verifying|checkpointing|verified|blocked|interrupted|budget_exhausted|context_exhausted|failed" export=true
+
+interface name=AgenticTaskSnapshot export=true
+  field name=toolActivity type=boolean
+  field name=toolInFlight type=boolean optional=true
+  field name=pendingDelegation type=boolean optional=true
+  field name=successfulMutations type=number
+  field name=failedTools type=number
+  field name=verificationRequired type=boolean
+  field name=verificationPassed type=boolean
+  field name=verificationFailed type=boolean optional=true
+  field name=answerDelivered type=boolean
+  field name=continuationIntent type=boolean optional=true
+  field name=todosRemaining type=boolean optional=true
+  field name=awaitingUser type=boolean
+  field name=interrupted type=boolean optional=true
+  field name=budgetExhausted type=boolean optional=true
+  field name=contextExhausted type=boolean optional=true
+  field name=engineFailed type=boolean optional=true
+  field name=noProgressCycles type=number optional=true
+
+interface name=AgenticTaskDecision export=true
+  field name=state type=AgenticTaskState
+  field name=continueWork type=boolean
+  field name=terminal type=boolean
+  field name=reason type=string
+
+fn name=resolveCesarHarnessProfile params="ctx:HandlerContext" returns=CesarHarnessProfile export=true
+  doc "Select the ownership-oriented harness only for AUTO turns. cesarAutoHarnessProfile=legacy is the instant rollback; ordinary/non-AUTO turns retain the legacy controller."
+  handler <<<
+    const auto = ctx.autoModeQueued === true || ctx.cesar?.autoModeQueued === true;
+    const configured = String(ctx.config?.cesarAutoHarnessProfile ?? 'agentic').toLowerCase();
+    return auto && configured !== 'legacy' ? 'agentic' : 'legacy';
+  >>>
+
+fn name=isAgenticAutoMode params="ctx:HandlerContext" returns=boolean export=true
+  handler lang="kern"
+    return value="resolveCesarHarnessProfile(ctx) === 'agentic'"
+
+fn name=resolveCesarToolReadOnlyMode params="agenticAuto:boolean,inPlanMode:boolean,explorationMode:boolean" returns=boolean export=true
+  doc "Agentic AUTO may mutate the current workspace immediately. Explicit plan/exploration modes stay read-only, while legacy turns preserve the historical investigation gate."
+  handler lang="kern"
+    return value="agenticAuto ? inPlanMode || explorationMode : true"
+
+fn name=extractAgenticBashCommand params="input:string" returns=string export=true
+  doc "Normalize raw and JSON-encoded Bash inputs without unsafe casts. Native, XML, and companion tool paths do not all use the same input envelope."
+  handler lang="typescript" reason="JSON tool envelopes require runtime unknown-record narrowing" <<<
+    let command = String(input ?? '');
+    try {
+      const parsed: unknown = JSON.parse(command);
+      if (parsed && typeof parsed === 'object' && 'command' in parsed && typeof parsed.command === 'string') {
+        command = parsed.command;
+      }
+    } catch {}
+    return command;
+  >>>
+
+fn name=isAgenticMutationOutcome params="name:string,input:string,status:string" returns=boolean export=true
+  doc "Count structural mutation evidence across native, XML, and companion paths. Shell commands are conservative: explicit output redirection and any successful non-read-only command may have changed the workspace."
+  handler <<<
+    if (!/^(?:done|ok|completed)$/i.test(status)) return false;
+    if (isWriteToolName(name)) return true;
+    if (!isBashToolName(name)) return false;
+    const command = extractAgenticBashCommand(input).trim();
+    if (!command) return false;
+    const writesThroughRedirection = /(?:^|[\s;|&])\d*(?:>>?|&>)\s*(?!\/dev\/null\b|&\d\b)/.test(command);
+    return writesThroughRedirection || !isReadOnlyCommand(command);
+  >>>
+
+fn name=evaluateAgenticTaskState params="snapshot:AgenticTaskSnapshot" returns=AgenticTaskDecision export=true
+  doc "Closed, ordered task-state decision. Structural tool/mutation/verification evidence owns completion; prose is only an answer-delivery signal and can never finish a mutating task by itself."
+  handler <<<
+    if (snapshot.interrupted) return { state: 'interrupted', continueWork: false, terminal: true, reason: 'user_interrupt' };
+    if (snapshot.pendingDelegation) return { state: 'waiting_on_delegation', continueWork: false, terminal: false, reason: 'delegation_in_flight' };
+    if (snapshot.toolInFlight) return { state: 'tool_in_flight', continueWork: false, terminal: false, reason: 'tool_in_flight' };
+    if (snapshot.engineFailed) return { state: 'failed', continueWork: false, terminal: true, reason: 'engine_failure' };
+    if (snapshot.contextExhausted) return { state: 'context_exhausted', continueWork: false, terminal: true, reason: 'context_checkpoint' };
+    if (snapshot.budgetExhausted) return { state: 'budget_exhausted', continueWork: false, terminal: true, reason: 'budget_checkpoint' };
+    if (snapshot.awaitingUser) return { state: 'blocked', continueWork: false, terminal: true, reason: 'awaiting_user' };
+
+    if (snapshot.successfulMutations > 0) {
+      if (snapshot.continuationIntent) return { state: 'running', continueWork: true, terminal: false, reason: 'model_reports_more_work' };
+      if (snapshot.todosRemaining) return { state: 'running', continueWork: true, terminal: false, reason: 'todos_remaining' };
+      if (!snapshot.answerDelivered) return { state: 'running', continueWork: true, terminal: false, reason: 'final_answer_required' };
+      if (snapshot.verificationFailed) return { state: 'running', continueWork: true, terminal: false, reason: 'verification_failed_fix_required' };
+      if (snapshot.verificationRequired && !snapshot.verificationPassed) return { state: 'verifying', continueWork: true, terminal: false, reason: 'verification_required' };
+      return { state: 'verified', continueWork: false, terminal: true, reason: snapshot.verificationRequired ? 'mutation_verified' : 'mutation_completed_no_gate' };
+    }
+
+    if ((snapshot.noProgressCycles ?? 0) >= 3) {
+      return { state: 'blocked', continueWork: false, terminal: true, reason: 'no_progress' };
+    }
+    if (snapshot.toolActivity && snapshot.answerDelivered) {
+      return { state: 'verified', continueWork: false, terminal: true, reason: 'read_only_answer_delivered' };
+    }
+    return { state: 'running', continueWork: true, terminal: false, reason: snapshot.failedTools > 0 ? 'recover_tool_failure' : 'work_incomplete' };
+  >>>
+
+fn name=buildAgenticProgressSignature params="parts:{toolEventCount:number,successfulMutations:number,failedTools:number,todoRevision:number,verificationPassed:boolean,pendingDelegation:boolean}" returns=string export=true
+  doc "Progress identity deliberately excludes prose length: changing narration is not progress. Tool outcomes, mutations, TODO transitions, verification, and delegation are."
+  handler <<<
+    return [
+      parts.toolEventCount,
+      parts.successfulMutations,
+      parts.failedTools,
+      parts.todoRevision,
+      parts.verificationPassed ? 1 : 0,
+      parts.pendingDelegation ? 1 : 0,
+    ].join(':');
+  >>>
+
+fn name=buildAgenticAutoTurnDirective params="input:string" returns=string export=true
+  doc "Per-turn ownership overlay for agentic AUTO. Kept concise because the deterministic controller and tool lease enforce the mechanics."
+  handler lang="kern"
+    return value="[ '[AGENTIC AUTO — TASK OWNERSHIP]', 'Own the latest user objective until it is verified, genuinely blocked on missing user information/authority, interrupted, or safely checkpointed for a real resource limit.', '- Act directly: inspect only what is needed, edit routine workspace files, run the narrowest useful verification, fix failures, and continue. Do not stop after narration, a confidence report, partial reads, or one intermediate edit.', '- ReportConfidence is optional telemetry and never a prerequisite. Do not call it ritually.', '- Routine in-workspace edits, builds, tests, formatting, and local inspection need no confirmation. The runtime will still fence explicit deny rules, workspace escapes, destructive commands, pushes, publishing, deployments, and external side effects.', '- Planning is optional. Use ProposePlan only when staged execution materially helps. Routine AUTO plans may execute immediately; boundary-bearing steps remain interactive.', '- Delegation is a yield, not abandonment. After an orchestration call, end the current send; the runtime will return success/failure to this same task. Integrate it and continue. Do not tell the user to restart.', '- A mutating task is done only with structural mutation evidence plus a successful applicable verification gate (or no discoverable gate). A read-only task is done when the requested answer is delivered. Never self-certify completion from a prose phrase alone.', '- If a tool fails, diagnose and take a different useful action. Do not repeat an identical failed call or delegate to the same failed path in a loop.', '- Ask one concise question only when progress truly requires user information or authority. Otherwise keep working.', '', 'Latest objective:', input, ].join('\\n')"

@@ -295,6 +295,14 @@ config name=AgonConfig
     doc "When cesarAutoApproveMode is 'cost-bounded' or 'always', the maximum estimated USD cost (including 2× review cycle estimate for mutating plans) that can be auto-approved without user confirmation."
   field name=cesarAutoMode type=boolean default=false
     doc "When true, plain chat turns run with Cesar autonomous mode enabled by default until the user disables it."
+  field name=cesarAutoHarnessProfile type="'legacy'|'agentic'" default=agentic
+    doc "AUTO harness implementation. 'agentic' gives Cesar task ownership, structural continuation, normal budgets, and tool-layer safety. 'legacy' is the instant rollback and preserves the prior prompt/guard behavior. Non-AUTO turns always use legacy semantics."
+  field name=cesarAgenticContinuationLimit type=number default=12
+    doc "Safety ceiling for agentic AUTO continuation cycles. Progress is checkpointed with an explicit terminal reason at the ceiling; the old legacy controller remains capped at five."
+  field name=cesarImportantTaskPattern type=string optional=true
+    doc "Optional task-risk regex override used by the legacy AUTO approval profile. Agentic AUTO does not prompt merely because a task is important."
+  field name=cesarDangerousTaskPattern type=string optional=true
+    doc "Optional dangerous-boundary regex override shared by both AUTO harness profiles."
   field name=cesarAutoModePrompted type=boolean default=false
     doc "Tracks whether the CLI has asked the first-run question for enabling default Cesar autonomous mode."
   field name=resumePausedPlanOnStartup type=boolean default=false
@@ -327,8 +335,8 @@ config name=AgonConfig
     doc "How much of the user's personal tooling a dispatched engine inherits. 'workspace-pure' (default) strips the personal/global layer (global CLAUDE.md, Claude Code plugins/hooks, user MCP servers) via a clean per-engine config dir (auth preserved), but KEEPS the repo's project CLAUDE.md/.mcp.json so engines still see task-relevant rules. 'inherit' is the legacy behavior — inherit everything (your full ~/.claude). A competitive arena should be clean of private user augmentation, not ignorant of the repo it operates on. Override per dispatch with --pure/--impure/--isolation or AGON_ENGINE_ISOLATION."
   field name=isolationMigrationNotified type=boolean default=false
     doc "Internal: set true once the one-time 'engines now run workspace-pure by default' migration notice has been shown, so it isn't repeated."
-  field name=terminalMode type="'native'|'fullscreen'" default=native
-    doc "Terminal scroll behavior. 'native' uses the terminal's own scrollback and OS scrollbar. 'fullscreen' matches Codex/Claude-style app-captured scrolling."
+  field name=terminalMode type="'auto'|'native'|'fullscreen'" default=auto
+    doc "Terminal scroll behavior. 'auto' (default) uses fullscreen on a capable interactive terminal while preserving native scrollback in Zellij, dumb/non-TTY terminals, CI, or when AGON_NO_ALT_SCREEN is set. Explicit 'native' and 'fullscreen' always win."
   field name=uiMotion type="'full'|'reduced'|'off'" default=reduced
     doc "TUI repaint cadence. 'full' keeps responsive one-second activity clocks and higher-rate streaming, 'reduced' (default) uses coarse clocks and bounded stream frames for a steadier terminal, and 'off' disables cosmetic timers while preserving low-rate live output."
   field name=statusLine type=string default=""

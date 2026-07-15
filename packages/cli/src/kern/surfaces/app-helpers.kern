@@ -9,7 +9,7 @@ import from="./app-display-utils.js" names="maxScrollOffsetForRowCount,nextWheel
 import from="./app-selection.js" names="normalizeRowSelection,normalizeTextSelection,richLineToPlainText,transcriptRowToPlainText,transcriptRowTextStartColumn,resolveTranscriptColumnFromMouse,transcriptRowsToPlainText,resolveTranscriptRowFromMouse"
 import from="./app-layout.js" names="estimateVisibleBlockBudget,estimateWrappedRowCount,estimateQuestionReservedRows,estimateBottomChromeExtraRows,estimatePinnedLiveRows,estimateWrappedRows,estimateToolCallRows,estimateOutputEventRows,estimateDisplayItemRows"
 import from="./app-blocks.js" names="buildDisplayItems,isToolCallLikeBlock,coalesceToolCallBlocks,effectiveNativeArchiveBlockCount,historyBlocksForTranscript,nativeTranscriptBlocksForStatic,nativeArchiveBlockCount,isDuplicateEngineBlock,appendTranscriptBlock,buildDashboardBlock,summarizeBtwTranscriptEvent"
-import from="./app-terminal.js" names="createInitialRegistry,drainStdinBuffer,normalizeTerminalMode,fileRailWidthForTerminal,fileRailMaxRowsForTerminal,buildTerminalReplaySnapshot"
+import from="./app-terminal.js" names="createInitialRegistry,drainStdinBuffer,normalizeTerminalMode,resolveTerminalMode,normalizeTerminalSize,fileRailWidthForTerminal,fileRailMaxRowsForTerminal,buildTerminalReplaySnapshot"
 import from="./app-rendering.js" names="parseMarkdownToRows,buildToolCallRows,buildCollapsedToolGroupRows,buildTranscriptRows,buildExecutionRailStats"
 
 module name=AppHelpers
@@ -35,7 +35,7 @@ module name=AppHelpers
   export from="./app-blocks.js" names="buildDisplayItems,isToolCallLikeBlock,coalesceToolCallBlocks,effectiveNativeArchiveBlockCount,historyBlocksForTranscript,nativeTranscriptBlocksForStatic,nativeArchiveBlockCount,isDuplicateEngineBlock,appendTranscriptBlock,buildDashboardBlock,summarizeBtwTranscriptEvent"
 
   // ── Re-exports: terminal ──
-  export from="./app-terminal.js" names="createInitialRegistry,drainStdinBuffer,normalizeTerminalMode,fileRailWidthForTerminal,fileRailMaxRowsForTerminal,buildTerminalReplaySnapshot"
+  export from="./app-terminal.js" names="createInitialRegistry,drainStdinBuffer,normalizeTerminalMode,resolveTerminalMode,normalizeTerminalSize,fileRailWidthForTerminal,fileRailMaxRowsForTerminal,buildTerminalReplaySnapshot"
 
   // ── Re-exports: rendering ──
   export from="./app-rendering.js" names="parseMarkdownToRows,buildToolCallRows,buildCollapsedToolGroupRows,buildTranscriptRows,buildExecutionRailStats"

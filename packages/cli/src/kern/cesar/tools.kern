@@ -2,7 +2,7 @@ import from="@kernlang/agon-core" names="ToolRegistry,getProjectFileStateCache,c
 import from="@kernlang/agon-core" names="ToolContext,ToolCallResult" types=true
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="./council-tool.js" names="createCouncilTool"
-import from="./task-execution-lease.js" names="authorizeTaskAction,isTaskFileMutationAction"
+import from="./task-execution-lease.js" names="authorizeTaskAction,isTaskFileMutationAction,taskActionApprovalMessage"
 import from="./brain-helpers.js" names="isBashToolName"
 
 fn name=createCesarToolRegistry params="engineId?:string" returns="ToolRegistry"
@@ -133,9 +133,7 @@ fn name=executeEagerTool async=true params="toolName:string, meta:Record<string,
         target,
         (evaluation: any) => requestTaskApproval(
           tool,
-          evaluation.decision === 'ask_task_once'
-            ? 'Approve this important task once'
-            : 'Approve this dangerous action boundary',
+          taskActionApprovalMessage(evaluation),
         ),
       );
       return authorization.decision === 'allow'

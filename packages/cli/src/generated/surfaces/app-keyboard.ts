@@ -10,6 +10,10 @@ import type { OutputBlock } from '../../generated/blocks/engine.js';
 
 import type { ReplStateState } from '../signals/app-state.js';
 
+import type { JobManager } from '../signals/job-manager.js';
+
+import type { LiveToolStreamEntry } from '../signals/output.js';
+
 import { _lastSigintAt } from './app-interrupt.js';
 
 import { spawnSync } from 'node:child_process';
@@ -19,7 +23,7 @@ import { spawnSync } from 'node:child_process';
 /**
  * Explicit dependencies for runHandleCancelOrExit — the question/repl/input state the Ctrl+C cancel path inspects, the active-abort ref it reads for the cancel-vs-interrupt message, and the setters/callbacks/dispatch it fires.
  */
-// @kern-source: app-keyboard:58
+// @kern-source: app-keyboard:60
 export interface CancelOrExitDeps {
   questionState: any;
   replState: ReplStateState;
@@ -34,7 +38,7 @@ export interface CancelOrExitDeps {
   dispatch: (event:any) => void;
 }
 
-// @kern-source: app-keyboard:81
+// @kern-source: app-keyboard:83
 export function runHandleCancelOrExit(opts: CancelOrExitDeps): void {
   if (opts.questionState) { opts.questionState.resolve(''); opts.setQuestionState(null); opts.setQuestionAnswer(''); opts.setSelectedChoiceIndex(0); opts.setQuestionOtherActive(false); }
   if (opts.replState !== 'idle') {
@@ -61,7 +65,7 @@ export function runHandleCancelOrExit(opts: CancelOrExitDeps): void {
 /**
  * Explicit dependencies for runHandleComposerCtrlShortcut — the chord/handled refs it flips, the rail + composer + tool-output setters, and the cancel/submit/tool callbacks the per-key cases delegate to.
  */
-// @kern-source: app-keyboard:112
+// @kern-source: app-keyboard:114
 export interface ComposerCtrlShortcutDeps {
   nestedCtrlShortcutRef: {current: { key: string; at: number }};
   ctrlKeyHandledRef: {current: boolean};
@@ -77,7 +81,7 @@ export interface ComposerCtrlShortcutDeps {
   draftLatestFailedToolRetry: () => void;
 }
 
-// @kern-source: app-keyboard:135
+// @kern-source: app-keyboard:137
 export function runHandleComposerCtrlShortcut(opts: ComposerCtrlShortcutDeps, shortcut: string): void {
   opts.nestedCtrlShortcutRef.current = { key: shortcut, at: Date.now() };
   switch (shortcut) {
@@ -130,7 +134,7 @@ export function runHandleComposerCtrlShortcut(opts: ComposerCtrlShortcutDeps, sh
 /**
  * Explicit dependencies for runHandleKeyboardInput — the UI-state snapshot fed to resolveKeyboardInput, the refs the router consults/flips, and every setter/callback/dispatch the action switch fires. Passed in rather than captured from component scope; values are read at call time so staleness matches the original closure.
  */
-// @kern-source: app-keyboard:192
+// @kern-source: app-keyboard:194
 export interface KeyboardInputDeps {
   modelPickerOpen: boolean;
   cesarPickerOpen: boolean;
@@ -145,6 +149,7 @@ export interface KeyboardInputDeps {
   selectedChoiceIndex: number;
   questionOtherActive: boolean;
   replState: ReplStateState;
+  jobManager: JobManager;
   inputValue: string;
   inputHistory: string[];
   historyIndex: number;
@@ -167,7 +172,7 @@ export interface KeyboardInputDeps {
   ctrlKeyHandledRef: {current: boolean};
   btwAbortRef: {current: AbortController | null};
   scrollBoxRef: {current: any};
-  liveToolStreamsRef: {current: Record<string, any>};
+  liveToolStreamsRef: {current: Record<string,LiveToolStreamEntry>};
   activePlanRef: {current: any};
   setBtwPanel: (val:any) => void;
   setStatusDashboardOpen: (val:boolean) => void;
@@ -201,7 +206,7 @@ export interface KeyboardInputDeps {
   dispatch: (event:any) => void;
 }
 
-// @kern-source: app-keyboard:280
+// @kern-source: app-keyboard:283
 export function runHandleKeyboardInput(opts: KeyboardInputDeps, input: string, key: any): void {
   if (isTerminalFocusReport(input)) return;
   if (key?.paste) return;
@@ -320,7 +325,8 @@ export function runHandleKeyboardInput(opts: KeyboardInputDeps, input: string, k
     toolDetailOpen: !!opts.toolDetailEvent,
     questionState: opts.questionState, questionChoiceIndex: opts.selectedChoiceIndex, questionOtherActive: opts.questionOtherActive,
     updateInfo: opts.updateInfo,
-    replState: opts.replState, inputValue: opts.inputValue, inputHistory: opts.inputHistory, historyIndex: opts.historyIndex,
+    replState: opts.replState, runningJobCount: opts.jobManager.running().length,
+    inputValue: opts.inputValue, inputHistory: opts.inputHistory, historyIndex: opts.historyIndex,
     planModeQueued: opts.planModeQueued, autoModeQueued: opts.autoModeQueued, activePlanState: opts.activePlanRef.current?.state ?? null,
     planApprovalIndex: opts.planApprovalIndex,
     outputBlockCount: opts.outputBlocks.length,

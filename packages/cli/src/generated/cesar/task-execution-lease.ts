@@ -8,20 +8,24 @@ export type TaskRisk = 'routine' | 'important' | 'dangerous';
 // @kern-source: task-execution-lease:4
 export type TaskActionDecision = 'allow' | 'ask_task_once' | 'ask_boundary_once' | 'deny';
 
+// @kern-source: task-execution-lease:5
+export type TaskHarnessProfile = 'legacy' | 'agentic';
+
 /**
  * Normalize the REPL permission UI contract: y approves once, a approves the session, booleans pass through.
  */
-// @kern-source: task-execution-lease:6
+// @kern-source: task-execution-lease:7
 export function isApprovedPermissionResponse(value: boolean|string): boolean {
   return (typeof value === 'string') ? (value === 'y' || value === 'a') : (value === true);
 }
 
-// @kern-source: task-execution-lease:11
+// @kern-source: task-execution-lease:12
 export interface TaskExecutionLease {
   input: string;
   autoMode: boolean;
   workspace: string;
   risk: TaskRisk;
+  profile: TaskHarnessProfile;
   importantPattern: string;
   dangerousPattern: string;
   taskApproved: boolean;
@@ -30,20 +34,34 @@ export interface TaskExecutionLease {
   approvalPromises: Map<string,Promise<boolean>>;
 }
 
-// @kern-source: task-execution-lease:23
+// @kern-source: task-execution-lease:25
 export interface TaskActionEvaluation {
   decision: TaskActionDecision;
   signature: string;
   reason: string;
 }
 
-// @kern-source: task-execution-lease:28
+/**
+ * Describe the actual lease gate. AUTO-off routine writes are not dangerous and must not be labeled as dangerous boundaries.
+ */
+// @kern-source: task-execution-lease:30
+export function taskActionApprovalMessage(evaluation: TaskActionEvaluation): string {
+  if (evaluation.decision === 'ask_task_once') {
+    return 'Approve this important task once';
+  }
+  if (evaluation.reason === 'auto_off') {
+    return 'AUTO is off for this task — approve this action once';
+  }
+  return 'Approve this dangerous action boundary';
+}
+
+// @kern-source: task-execution-lease:39
 export const DEFAULT_IMPORTANT_PATTERN: string = '\\b(auth|session|permission|migration|database|shared\\s+contract|public\\s+api|billing|security)\\b';
 
-// @kern-source: task-execution-lease:29
-export const DEFAULT_DANGEROUS_PATTERN: string = '\\b(push|deploy|publish|release|production|prod|pull\\s+request|pr|external\\s+queue|drop\\s+database|reset\\s+--hard|force[- ]push|rm\\s+-rf)\\b';
+// @kern-source: task-execution-lease:40
+export const DEFAULT_DANGEROUS_PATTERN: string = '\\b(git\\s+push|push|deploy|publish|pull\\s+request|create\\s+(?:a\\s+)?pr|external\\s+queue|drop\\s+database|reset\\s+--hard|force[- ]push|rm\\s+-rf)\\b';
 
-// @kern-source: task-execution-lease:31
+// @kern-source: task-execution-lease:42
 export function canonicalTaskActionSignature(action: string, target: string): string {
   const normalizedAction = String(action ?? '').trim().toLowerCase();
   const fileMutation = ['edit', 'write', 'multiedit', 'notebookedit'].includes(normalizedAction.replace(/^agon/, ''));
@@ -51,8 +69,8 @@ export function canonicalTaskActionSignature(action: string, target: string): st
   return `${normalizedAction}:${fileMutation ? normalizedTarget.replace(/\\/g, '/') : normalizedTarget}`;
 }
 
-// @kern-source: task-execution-lease:39
-export function createTaskExecutionLease(input: string, autoMode: boolean, workspace: string, patterns?: {important?:string,dangerous?:string}): TaskExecutionLease {
+// @kern-source: task-execution-lease:50
+export function createTaskExecutionLease(input: string, autoMode: boolean, workspace: string, patterns?: {important?:string,dangerous?:string}, profile?: TaskHarnessProfile): TaskExecutionLease {
   const importantPattern = patterns?.important || DEFAULT_IMPORTANT_PATTERN;
   const dangerousPattern = patterns?.dangerous || DEFAULT_DANGEROUS_PATTERN;
   const text = String(input ?? '');
@@ -68,6 +86,7 @@ export function createTaskExecutionLease(input: string, autoMode: boolean, works
     autoMode,
     workspace: resolve(workspace),
     risk,
+    profile: profile ?? 'legacy',
     importantPattern,
     dangerousPattern,
     taskApproved: false,
@@ -77,7 +96,7 @@ export function createTaskExecutionLease(input: string, autoMode: boolean, works
   };
 }
 
-// @kern-source: task-execution-lease:65
+// @kern-source: task-execution-lease:77
 function buildAuthorizationTokenCounts(clause: string, semanticPush: boolean): Map<string,number> {
   const tokens = new Map<string, number>();
   const normalizedClause = (semanticPush ? clause.replace(/\bforce-push\b/g, 'force push') : clause).replace(/\\/g, '/');
@@ -102,7 +121,7 @@ function buildAuthorizationTokenCounts(clause: string, semanticPush: boolean): M
   return tokens;
 }
 
-// @kern-source: task-execution-lease:90
+// @kern-source: task-execution-lease:102
 export function taskExplicitlyAuthorizes(lease: TaskExecutionLease, action: string, target: string): boolean {
   const input = lease.input.toLowerCase();
   const normalizedAction = String(action ?? '').trim().toLowerCase();
@@ -149,7 +168,7 @@ export function taskExplicitlyAuthorizes(lease: TaskExecutionLease, action: stri
 /**
  * Goal and Conquer use this action-level check for their explicit-user-only boundary; side effects are evaluated separately against the full delegation target.
  */
-// @kern-source: task-execution-lease:134
+// @kern-source: task-execution-lease:146
 export function taskExplicitlyRequestsAction(lease: TaskExecutionLease, action: string): boolean {
   const token = String(action ?? '').trim().toLowerCase();
   if (!token) return false;
@@ -159,7 +178,7 @@ export function taskExplicitlyRequestsAction(lease: TaskExecutionLease, action: 
 /**
  * Recognize a path.relative result that crosses the workspace root on either POSIX or Windows. The optional separator keeps the platform rule directly testable.
  */
-// @kern-source: task-execution-lease:142
+// @kern-source: task-execution-lease:154
 export function relativePathEscapesWorkspace(rel: string, pathSeparator?: string): boolean {
   const separator = pathSeparator || sep;
   return rel === '..' || rel.startsWith(`..${separator}`) || rel.startsWith('../') || rel.startsWith('..\\') || isAbsolute(rel);
@@ -168,7 +187,7 @@ export function relativePathEscapesWorkspace(rel: string, pathSeparator?: string
 /**
  * Bind every delegation field that can widen authority into one auditable lease target. External queues and external actions remain visible to the dangerous-boundary policy.
  */
-// @kern-source: task-execution-lease:149
+// @kern-source: task-execution-lease:161
 export function buildTaskActionTarget(lease: TaskExecutionLease, primary: string, details?: Record<string,unknown>): string {
   const parts = [String(primary ?? '').trim()].filter(Boolean);
   const d = details ?? {};
@@ -191,7 +210,7 @@ export function buildTaskActionTarget(lease: TaskExecutionLease, primary: string
 /**
  * Canonical authority classifier for native, XML, eager, and mapped file-mutation tool names.
  */
-// @kern-source: task-execution-lease:170
+// @kern-source: task-execution-lease:182
 export function isTaskFileMutationAction(action: string): boolean {
   const normalized = String(action ?? '').trim().toLowerCase().replace(/^agon/, '');
   return normalized === 'edit'
@@ -200,7 +219,7 @@ export function isTaskFileMutationAction(action: string): boolean {
     || normalized === 'notebookedit';
 }
 
-// @kern-source: task-execution-lease:180
+// @kern-source: task-execution-lease:192
 function targetEscapesWorkspace(lease: TaskExecutionLease, action: string, target: string): boolean {
   const candidate = String(target ?? '').trim();
   if (!candidate || !isTaskFileMutationAction(action)) return false;
@@ -209,10 +228,64 @@ function targetEscapesWorkspace(lease: TaskExecutionLease, action: string, targe
   return relativePathEscapesWorkspace(rel);
 }
 
-// @kern-source: task-execution-lease:189
+/**
+ * Best-effort shell boundary classifier for destructive/output-bearing commands. It catches common rm/rmdir/unlink, cp/mv/install destinations, tee targets, and redirections without pretending to be a full shell parser. Unknown dynamic paths fail closed to the interactive boundary.
+ */
+// @kern-source: task-execution-lease:201
+export function shellMutationEscapesWorkspace(lease: TaskExecutionLease, command: string): boolean {
+  const raw = String(command ?? '').trim();
+  if (!raw) return false;
+  const words = raw.match(/"[^"]*"|'[^']*'|[^\s;&|]+/g)?.map((word) => word.replace(/^['"]|['"]$/g, '')) ?? [];
+  const outside = (candidate: string): boolean => {
+    const value = candidate.replace(/^\d*(?:>>?|<)\s*/, '').trim();
+    if (!value || value === '/dev/null' || value === '/dev/stdout' || value === '/dev/stderr') return false;
+    if (/[`$*?{}]/.test(value)) return true;
+    const absolute = isAbsolute(value) ? resolve(value) : resolve(lease.workspace, value);
+    return relativePathEscapesWorkspace(relative(lease.workspace, absolute));
+  };
+  for (let i = 0; i < words.length; i++) {
+    const token = words[i];
+    const base = token.split('/').pop()?.toLowerCase() ?? '';
+    if (['rm', 'rmdir', 'unlink'].includes(base)) {
+      for (let j = i + 1; j < words.length; j++) {
+        if (!words[j].startsWith('-') && outside(words[j])) return true;
+      }
+    }
+    if (['cp', 'mv', 'install'].includes(base)) {
+      const operands = words.slice(i + 1).filter((word) => !word.startsWith('-'));
+      if (operands.length >= 2 && outside(operands[operands.length - 1])) return true;
+    }
+    if (base === 'tee') {
+      const target = words.slice(i + 1).find((word) => !word.startsWith('-'));
+      if (target && outside(target)) return true;
+    }
+    if (/^\d*(?:>>?)/.test(token)) {
+      const attached = token.replace(/^\d*(?:>>?)\s*/, '');
+      const target = attached || words[i + 1] || '';
+      if (outside(target)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Classify shell network/publishing actions that can change systems outside the workspace. Read-only HTTP GETs remain routine.
+ */
+// @kern-source: task-execution-lease:239
+export function isExternalSideEffectCommand(command: string): boolean {
+  const cmd = String(command ?? '').trim();
+  return /\b(?:git\s+push|npm\s+publish|pnpm\s+publish|yarn\s+npm\s+publish|gh\s+pr\s+create|gh\s+release\s+create)\b/i.test(cmd)
+    || /\bcurl\b[^\n]*(?:-X\s*(?:POST|PUT|PATCH|DELETE)\b|--request\s+(?:POST|PUT|PATCH|DELETE)\b|(?:^|\s)(?:-d|--data(?:-[a-z-]+)?|-T|--upload-file)(?:\s|=))/i.test(cmd)
+    || /\bwget\b[^\n]*(?:--post-data|--post-file|--method\s*=\s*(?:POST|PUT|PATCH|DELETE))/i.test(cmd);
+}
+
+// @kern-source: task-execution-lease:248
 function isDangerousTaskAction(lease: TaskExecutionLease, action: string, target: string): boolean {
   const normalizedAction = String(action ?? '').trim().replace(/^agon/i, '');
   const authorityTargetBearing = /^(bash|shell|goal|conquer|forge|agent|pipeline)$/i.test(normalizedAction);
+  if (/^(bash|shell)$/i.test(normalizedAction)) {
+    if (shellMutationEscapesWorkspace(lease, target) || isExternalSideEffectCommand(target)) return true;
+  }
   try {
     const pattern = new RegExp(lease.dangerousPattern, 'i');
     return pattern.test(normalizedAction)
@@ -223,7 +296,7 @@ function isDangerousTaskAction(lease: TaskExecutionLease, action: string, target
 
 // ── Module: TaskAuthorization ──
 
-// @kern-source: task-execution-lease:202
+// @kern-source: task-execution-lease:264
 export function evaluateTaskAction(lease: TaskExecutionLease, action: string, target: string, options?: {hardDeny?:boolean,prohibited?:boolean}): TaskActionEvaluation {
   const signature = canonicalTaskActionSignature(action, target);
   if (options?.hardDeny || options?.prohibited) return { decision: 'deny', signature, reason: 'hard_deny' };
@@ -236,7 +309,7 @@ export function evaluateTaskAction(lease: TaskExecutionLease, action: string, ta
     return { decision: 'ask_boundary_once', signature, reason: 'dangerous_boundary' };
   }
   if (!lease.autoMode) return { decision: 'ask_boundary_once', signature, reason: 'auto_off' };
-  if (lease.risk === 'important' && !lease.taskApproved) return { decision: 'ask_task_once', signature, reason: 'important_task' };
+  if (lease.profile === 'legacy' && lease.risk === 'important' && !lease.taskApproved) return { decision: 'ask_task_once', signature, reason: 'important_task' };
   if (lease.risk === 'important' && lease.taskApproved) return { decision: 'allow', signature, reason: 'task_approved' };
   return { decision: 'allow', signature, reason: 'routine_auto' };
 }
@@ -244,7 +317,7 @@ export function evaluateTaskAction(lease: TaskExecutionLease, action: string, ta
 /**
  * Resolve one task-lease decision before an authority-bearing tool can execute. This sits above tool-specific auto-allow rules so native, API, companion, and eager adapters cannot bypass the task boundary.
  */
-// @kern-source: task-execution-lease:220
+// @kern-source: task-execution-lease:282
 export async function authorizeTaskAction(lease: TaskExecutionLease|undefined, action: string, target: string, requestApproval: (evaluation:TaskActionEvaluation)=>Promise<boolean>): Promise<TaskActionEvaluation> {
   if (!lease) {
     return { decision: 'allow', signature: canonicalTaskActionSignature(action, target), reason: 'no_task_lease' };
@@ -271,14 +344,14 @@ export async function authorizeTaskAction(lease: TaskExecutionLease|undefined, a
   return { ...evaluateTaskAction(lease, action, target), reason: 'user_approved' };
 }
 
-// @kern-source: task-execution-lease:248
+// @kern-source: task-execution-lease:310
 export function claimTaskActionPrompt(lease: TaskExecutionLease, signature: string): boolean {
   if (!signature || lease.promptedSignatures.has(signature)) return false;
   lease.promptedSignatures.add(signature);
   return true;
 }
 
-// @kern-source: task-execution-lease:255
+// @kern-source: task-execution-lease:317
 export function approveTaskAction(lease: TaskExecutionLease, action: string, target: string): void {
   const signature = canonicalTaskActionSignature(action, target);
   lease.approvedSignatures.add(signature);

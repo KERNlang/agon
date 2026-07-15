@@ -5,7 +5,8 @@ import from="@kernlang/agon-core" names="resolveWorkingDir,loadConfig,gitChanged
 import from="@kernlang/agon-core" names="approveCesarPlan,saveCesarPlan,executePlan,formatCesarPlanMarkdown,planCostEstimator"
 import from="@kernlang/agon-core" names="CesarPlan,CesarPlanStep,CesarStepResult,StepExecutor" types=true
 import from="../../handlers/plan-mode.js" names="buildStepExecutors"
-import from="../../cesar/auto-approve-policy.js" names="applyAutoApprovePolicy"
+import from="../../cesar/auto-approve-policy.js" names="applyAutoApprovePolicy,applyAgenticAutoApprovePolicy"
+import from="../../cesar/task-controller.js" names="isAgenticAutoMode"
 import from="../../../handlers/types.js" names="Dispatch" types=true
 import from="../todos.js" names="todosFromPlanSteps"
 import from="../dispatch.js" names="DispatchCallbacks" types=true
@@ -96,7 +97,9 @@ fn name=handleProposedCesarPlan async=true params="proposed:CesarPlan, cb:Dispat
       cb.dispatch({ type: 'info', message: `Plan saved: ${proposed.planFilePath}` });
     }
 
-    const policy = applyAutoApprovePolicy(proposed, cb.ctx.config as any);
+    const policy = isAgenticAutoMode(cb.ctx)
+      ? applyAgenticAutoApprovePolicy(proposed, cb.ctx.config, cb.ctx.cesar?.taskExecutionLease)
+      : applyAutoApprovePolicy(proposed, cb.ctx.config);
     let decided = false;
     const persistPlanMarkdown = (plan: CesarPlan) => {
       if (!plan.planFilePath) return;

@@ -8,13 +8,31 @@ import {
   createTaskExecutionLease,
   evaluateTaskAction,
   isTaskFileMutationAction,
+  isExternalSideEffectCommand,
   isApprovedPermissionResponse,
   relativePathEscapesWorkspace,
+  shellMutationEscapesWorkspace,
   taskExplicitlyAuthorizes,
   taskExplicitlyRequestsAction,
+  taskActionApprovalMessage,
 } from '../../packages/cli/src/generated/cesar/task-execution-lease.js';
 
 describe('Cesar task execution lease', () => {
+  it('labels AUTO-off routine actions accurately instead of calling them dangerous', () => {
+    const manual = createTaskExecutionLease('create the homepage', false, '/repo');
+    const routineWrite = evaluateTaskAction(manual, 'Write', '/repo/app/page.tsx');
+    expect(routineWrite).toMatchObject({ decision: 'ask_boundary_once', reason: 'auto_off' });
+    expect(taskActionApprovalMessage(routineWrite)).toBe('AUTO is off for this task — approve this action once');
+
+    const important = createTaskExecutionLease('change auth permissions', true, '/repo');
+    expect(taskActionApprovalMessage(evaluateTaskAction(important, 'Edit', '/repo/auth.ts')))
+      .toBe('Approve this important task once');
+
+    const dangerous = createTaskExecutionLease('finish the task', true, '/repo');
+    expect(taskActionApprovalMessage(evaluateTaskAction(dangerous, 'Bash', 'git push origin main')))
+      .toBe('Approve this dangerous action boundary');
+  });
+
   it('treats explicitly naming Goal or Conquer as the authority boundary despite target paraphrasing', () => {
     const conquer = createTaskExecutionLease('use conquer to fix the recap', true, '/repo');
     expect(taskExplicitlyRequestsAction(conquer, 'conquer')).toBe(true);
@@ -56,6 +74,33 @@ describe('Cesar task execution lease', () => {
     for (const [action, target] of [['Edit', '/repo/a.ts'], ['Write', '/repo/b.ts'], ['Bash', 'npm test'], ['Forge', 'recap fix']] as const) {
       expect(evaluateTaskAction(lease, action, target)).toEqual({ decision: 'allow', signature: expect.any(String), reason: 'routine_auto' });
     }
+  });
+
+  it('does not prompt merely because an agentic AUTO task is important', () => {
+    const lease = createTaskExecutionLease('change the auth session contract', true, '/repo', undefined, 'agentic');
+    expect(lease.risk).toBe('important');
+    expect(evaluateTaskAction(lease, 'Edit', '/repo/auth.ts')).toMatchObject({
+      decision: 'allow', reason: 'routine_auto',
+    });
+  });
+
+  it('fences external side effects but keeps read-only network inspection routine', () => {
+    expect(isExternalSideEffectCommand('curl https://example.com/status')).toBe(false);
+    expect(isExternalSideEffectCommand('curl -X POST https://example.com/deploy')).toBe(true);
+    expect(isExternalSideEffectCommand('git push origin main')).toBe(true);
+
+    const lease = createTaskExecutionLease('inspect and fix the local code', true, '/repo', undefined, 'agentic');
+    expect(evaluateTaskAction(lease, 'Bash', 'curl https://example.com/status').decision).toBe('allow');
+    expect(evaluateTaskAction(lease, 'Bash', 'curl -X POST https://example.com/deploy').decision).toBe('ask_boundary_once');
+  });
+
+  it('fences shell writes outside the workspace without misclassifying ordinary release files', () => {
+    const lease = createTaskExecutionLease('finish the implementation', true, '/repo', undefined, 'agentic');
+    expect(shellMutationEscapesWorkspace(lease, 'rm /tmp/outside.txt')).toBe(true);
+    expect(shellMutationEscapesWorkspace(lease, 'printf ok > ../outside.txt')).toBe(true);
+    expect(shellMutationEscapesWorkspace(lease, 'rm src/generated.ts')).toBe(false);
+    expect(evaluateTaskAction(lease, 'Edit', '/repo/release.ts').decision).toBe('allow');
+    expect(evaluateTaskAction(lease, 'Bash', 'printf ok > ../outside.txt').decision).toBe('ask_boundary_once');
   });
 
   it('asks once for an important task and then covers matching task work', () => {

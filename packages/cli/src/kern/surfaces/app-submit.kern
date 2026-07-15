@@ -69,6 +69,25 @@ import from="node:fs" names="mkdirSync,readFileSync,statSync,realpathSync,openSy
 
 module name=AppSubmit
 
+  // Source: new — preserve continuity across Esc without carrying stale
+  // steering into the replacement turn. The transcript still shows only the
+  // user's latest text; this context is engine-only dispatch input.
+  fn name=buildInterruptedTurnRedirect params="previous:string,latest:string,source?:'foreground'|'job'" returns=string export=true
+    handler <<<
+      const previousLabel = source === 'job' ? 'Interrupted background task' : 'Interrupted request';
+      return [
+        '[INTERRUPTED TURN REDIRECT]',
+        'The user interrupted the previous work to redirect it.',
+        `${previousLabel}:`,
+        previous.trim().slice(0, 4000),
+        '',
+        'Latest instruction (authoritative):',
+        latest.trim(),
+        '',
+        'Continue from the existing conversation, completed tool work, and current workspace state. Preserve useful progress. Do not restart from zero or repeat reads/checks unless files changed or the latest instruction requires it. Stop superseded work and follow the latest instruction now.',
+      ].join('\n');
+    >>>
+
   // ── @-file mention attachment ───────────────────────────────────────
   // Caps so a stray "@huge-file" or a flood of mentions can't blow the turn's
   // token budget. Per-file is generous (most source files fit); the total cap
@@ -343,6 +362,7 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
     field name=inputValueRef type="{current: string}"
     field name=activePlanRef type="{current: any}"
     field name=activeTurnRef type="{current: { input:string; engineId:string; retried:boolean } | null}"
+    field name=interruptedTurnRef type="{current: { input:string;source:'foreground'|'job';at:number } | null}"
     field name=chatStartTimeRef type="{current: number}"
     // ── Repl / composer / queue / mode state read by the router ──
     field name=replState type=ReplStateState
@@ -605,13 +625,22 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
       const mentionContext = literalCommandLine
         ? ''
         : buildMentionedFilesContext(input, resolveWorkingDir());
-      const dispatchInput = mentionContext ? input + mentionContext : input;
+      let dispatchInput = mentionContext ? input + mentionContext : input;
       let intent = detectIntent(cleanInput || input, opts.commandRegistry);
       if (intent.type === 'status') {
         opts.setStatusDashboardOpen(true);
         opts.dispatch({ type: 'info', message: 'Status dashboard open. Press q or Esc to close.' } as any);
         opts.transition(finishReplState);
         return;
+      }
+      const interruptedTurn = opts.interruptedTurnRef.current;
+      const interruptedTurnIsFresh = !!interruptedTurn && Date.now() - interruptedTurn.at <= 5 * 60_000;
+      if (interruptedTurn && !interruptedTurnIsFresh) {
+        opts.interruptedTurnRef.current = null;
+      } else if (interruptedTurnIsFresh && opts.mode === 'chat' && !literalCommandLine) {
+        dispatchInput = buildInterruptedTurnRedirect(interruptedTurn!.input, dispatchInput, interruptedTurn!.source);
+        opts.interruptedTurnRef.current = null;
+        opts.dispatch({ type: 'info', message: 'Redirecting interrupted work with your new instruction…' });
       }
       const ctx = opts.buildContext();
       (ctx as any).autoModeQueued = autoModeForTurn;
@@ -624,9 +653,10 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
           if (visionNote) opts.dispatch({ type: 'warning', message: visionNote } as any);
         } catch { /* unknown engine id — the dispatch-time status note still covers it */ }
       }
-      opts.activeTurnRef.current = (!input.startsWith('/') && opts.mode === 'chat')
+      const activeTurn = (!input.startsWith('/') && opts.mode === 'chat')
         ? { input, engineId: cesarEngineForTurn, retried: false }
         : null;
+      opts.activeTurnRef.current = activeTurn;
       const cb: DispatchCallbacks = {
         dispatch: opts.dispatch, ctx, commandRegistry: opts.commandRegistry, eventBus: opts.eventBus, loadedExtensions: opts.loadedExtensions, setWorkspacePath: opts.setWorkspacePath,
         runAsJob: (type: string, label: string, fn: (signal: AbortSignal) => Promise<void>) => {
@@ -672,7 +702,7 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
         if (result.ranAsJob) return;
       } catch (err: any) { opts.dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); }
       finally {
-        if (opts.activeTurnRef.current?.input === input) opts.activeTurnRef.current = null;
+        if (opts.activeTurnRef.current === activeTurn) opts.activeTurnRef.current = null;
         // Route through transition() so a normally-completed turn rings the
         // done-bell. A direct setReplState here bypassed transition's bell hook,
         // so the MAIN completion path (every non-job turn) was silent — only the

@@ -2,7 +2,7 @@
 
 import type { OutputEvent, EngineProgress } from '../../handlers/types.js';
 
-import type { OutputActions, AgentProgressSnapshot, StreamingEntry } from '../signals/output.js';
+import type { OutputActions, AgentProgressSnapshot, StreamingEntry, LiveToolStreamEntry } from '../signals/output.js';
 
 import type { Todo } from '../signals/todos.js';
 
@@ -31,8 +31,8 @@ export interface OutputBridgeDeps {
   setLiveProgress: (val:EngineProgress[]|null) => void;
   streamingTextRef: {current: Record<string,StreamingEntry>};
   setStreamingText: (val:Record<string,StreamingEntry>) => void;
-  liveToolStreamsRef: {current: Record<string,any>};
-  setLiveToolStreams: (val:Record<string,any>) => void;
+  liveToolStreamsRef: {current: Record<string,LiveToolStreamEntry>};
+  setLiveToolStreams: (val:Record<string,LiveToolStreamEntry>) => void;
   setOutputBlocks: (updater:OutputBlock[] | ((prev:OutputBlock[]) => OutputBlock[])) => void;
   blockArchivePathRef: {current: string};
   setClearEpoch: (updater:(epoch:number) => number) => void;
@@ -50,7 +50,86 @@ export interface OutputBridgeDeps {
   setTodos: (updater:Todo[] | ((prev:Todo[]) => Todo[])) => void;
 }
 
-// @kern-source: app-output-bridge:71
+// @kern-source: app-output-bridge:68
+export interface TranscriptCommitBatcher {
+  enqueue: (update:(prev:OutputBlock[]) => OutputBlock[]) => void;
+  flush: () => void;
+  discard: () => void;
+  pendingCount: () => number;
+}
+
+/**
+ * Coalesce ordered transcript mutations into one React state commit per frame. Refs/live state remain immediate; flush() is used before prompts and stream boundaries so semantic ordering never waits on the frame timer.
+ */
+// @kern-source: app-output-bridge:74
+export function createTranscriptCommitBatcher(commit: (updater:OutputBlock[] | ((prev:OutputBlock[]) => OutputBlock[])) => void, delayMs: number = 16): TranscriptCommitBatcher {
+  type BlockUpdater = (prev: OutputBlock[]) => OutputBlock[];
+  const pending: BlockUpdater[] = [];
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const safeDelay = Math.max(0, Math.min(100, Math.floor(Number(delayMs) || 16)));
+  const flush = () => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    if (pending.length === 0) return;
+    const batch = pending.splice(0, pending.length);
+    commit((prev: OutputBlock[]) => batch.reduce((next, update) => update(next), prev));
+  };
+  const enqueue = (update: BlockUpdater) => {
+    pending.push(update);
+    if (!timer) timer = setTimeout(flush, safeDelay);
+  };
+  const discard = () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+    pending.length = 0;
+  };
+  return { enqueue, flush, discard, pendingCount: () => pending.length };
+}
+
+// @kern-source: app-output-bridge:102
+export const createLatestUiCommitter: <T>(commit:(value:T) => void,delayMs:number) => {enqueue:(value:T) => void;discard:() => void;commitNow:(value:T) => void;hasPending:() => boolean} = <T>(commit: (value: T) => void, delayMs: number) => {
+      const safeDelay = Math.max(0, Math.min(250, Math.floor(Number(delayMs) || 0)));
+      let lastCommitAt = 0;
+      let pending: T | undefined;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const enqueue = (value: T) => {
+        const now = Date.now();
+        const elapsed = now - lastCommitAt;
+        if (safeDelay === 0 || elapsed >= safeDelay) {
+          if (timer) clearTimeout(timer);
+          timer = null;
+          pending = undefined;
+          lastCommitAt = now;
+          commit(value);
+          return;
+        }
+        pending = value;
+        if (!timer) {
+          timer = setTimeout(() => {
+            timer = null;
+            lastCommitAt = Date.now();
+            const next = pending;
+            pending = undefined;
+            if (next !== undefined) commit(next);
+          }, safeDelay - elapsed);
+        }
+      };
+      const discard = () => {
+        if (timer) clearTimeout(timer);
+        timer = null;
+        pending = undefined;
+      };
+      const commitNow = (value: T) => {
+        discard();
+        lastCommitAt = Date.now();
+        commit(value);
+      };
+      return { enqueue, discard, commitNow, hasPending: () => timer !== null };
+    };
+
+// @kern-source: app-output-bridge:147
 export function buildOutputActions(opts: OutputBridgeDeps): OutputActions {
   const {
     setLiveSpinner,
@@ -75,6 +154,9 @@ export function buildOutputActions(opts: OutputBridgeDeps): OutputActions {
     setAgentProgress,
     setTodos,
   } = opts;
+  const transcriptBatcher = createTranscriptCommitBatcher(setOutputBlocks, 16);
+  const streamingUiCommitter = createLatestUiCommitter(setStreamingText, 66);
+  const toolStreamUiCommitter = createLatestUiCommitter(setLiveToolStreams, 75);
   return {
     setLiveSpinner,
     setLiveProgress,
@@ -85,7 +167,7 @@ export function buildOutputActions(opts: OutputBridgeDeps): OutputActions {
       // the complete answer from it. React state only drives the live preview,
       // so push a bounded tail: rendering grows O(tail), not O(total) per
       // throttled tick (a long single answer was quadratic — concat + full
-      // re-render every 33ms). Short streams reuse `next` (no extra alloc).
+      // re-render every frame). Short streams reuse `next` (no extra alloc).
       streamingTextRef.current = next;
       const LIVE_TAIL = 4000;
       let bounded: Record<string,StreamingEntry> = next;
@@ -96,20 +178,22 @@ export function buildOutputActions(opts: OutputBridgeDeps): OutputActions {
           bounded[eid] = { ...e, content: e.content.slice(-LIVE_TAIL) };
         }
       }
-      setStreamingText(bounded);
+      if (Object.keys(next).length === 0) streamingUiCommitter.commitNow(bounded);
+      else streamingUiCommitter.enqueue(bounded);
     },
-    setLiveToolStreams: (updater: Record<string,any> | ((prev: Record<string,any>) => Record<string,any>)) => {
+    setLiveToolStreams: (updater: Record<string,LiveToolStreamEntry> | ((prev: Record<string,LiveToolStreamEntry>) => Record<string,LiveToolStreamEntry>)) => {
       const prev = liveToolStreamsRef.current;
-      const next = typeof updater === 'function' ? (updater as (p: Record<string,any>) => Record<string,any>)(prev) : updater;
+      const next = typeof updater === 'function' ? updater(prev) : updater;
       liveToolStreamsRef.current = next;
-      setLiveToolStreams(next);
+      if (Object.keys(next).length === 0) toolStreamUiCommitter.commitNow(next);
+      else toolStreamUiCommitter.enqueue(next);
     },
     addBlock: (event: any) => {
-      setOutputBlocks((prev: any) => appendTranscriptBlock(prev, event, blockArchivePathRef.current));
+      transcriptBatcher.enqueue((prev: OutputBlock[]) => appendTranscriptBlock(prev, event, blockArchivePathRef.current));
     },
     replaceBlocksOfType: (eventType: string, event: any) => {
-      setOutputBlocks((prev: any) => {
-        const filtered = prev.filter((b: any) => b.event.type !== eventType);
+      transcriptBatcher.enqueue((prev: OutputBlock[]) => {
+        const filtered = prev.filter((b: OutputBlock) => b.event.type !== eventType);
         return appendTranscriptBlock(filtered, event, blockArchivePathRef.current);
       });
     },
@@ -118,14 +202,24 @@ export function buildOutputActions(opts: OutputBridgeDeps): OutputActions {
       // session reset all dispatch OutputEvent {type:'clear'} → clearBlocks).
       // Bump the epoch HERE so the <Static> remount is tied to the cause, not
       // inferred from the array shrinking (which a cap-spill also does).
+      transcriptBatcher.discard();
       setOutputBlocks([]);
       setClearEpoch((epoch: number) => nextStaticEpoch(epoch, 'reset'));
       setNativeArchiveCount(0);
       clearBlockRowCache();
     },
-    setPendingPlanProposal: (val: OutputEvent | null) => setPendingPlanProposal(val),
-    setReviewEvent,
-    setQuestionState,
+    setPendingPlanProposal: (val: OutputEvent | null) => {
+      if (val) transcriptBatcher.flush();
+      setPendingPlanProposal(val);
+    },
+    setReviewEvent: (val) => {
+      if (val) transcriptBatcher.flush();
+      setReviewEvent(val);
+    },
+    setQuestionState: (val) => {
+      if (val) transcriptBatcher.flush();
+      setQuestionState(val);
+    },
     setChatStartTime: (val: number) => { chatStartTimeRef.current = val; },
     flushStream: () => {
       // Flush every in-flight engine's stream to the transcript. Multi-agent
@@ -139,12 +233,14 @@ export function buildOutputActions(opts: OutputBridgeDeps): OutputActions {
         // transcript — it is dropped, not committed (same rule as streaming-end).
         if (entry.draft) continue;
         const color = ENGINE_COLORS[entry.engineId] ?? 124;
-        setOutputBlocks((blocks: any) => appendTranscriptBlock(blocks, { type: 'engine-block', engineId: entry.engineId, color, content: entry.content } as any, blockArchivePathRef.current));
+        const streamEvent: OutputEvent = { type: 'engine-block', engineId: entry.engineId, color, content: entry.content };
+        transcriptBatcher.enqueue((blocks: OutputBlock[]) => appendTranscriptBlock(blocks, streamEvent, blockArchivePathRef.current));
       }
+      transcriptBatcher.flush();
       streamingTextRef.current = {};
-      setStreamingText({});
+      streamingUiCommitter.commitNow({});
       liveToolStreamsRef.current = {};
-      setLiveToolStreams({});
+      toolStreamUiCommitter.commitNow({});
     },
     getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 124,
     setCesarConfidence,

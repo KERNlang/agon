@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { convertMessagesForSdk, convertToolsForSdk, buildModel } from '../../packages/core/src/generated/api/dispatch.js';
+import { convertMessagesForSdk, convertToolsForSdk, buildModel, isIgnorableAnthropicEmptyDeltaError } from '../../packages/core/src/generated/api/dispatch.js';
 
 // --- Usage capture tests (mocked generateText) ---
 
@@ -507,6 +507,75 @@ describe('apiStreamDispatchWithHistory reasoning visibility', () => {
       { kind: 'text', text: 'Visible answer.' },
       { kind: 'reasoning', text: 'The user has not asked a new question.' },
     ]);
+  });
+});
+
+describe('apiStreamDispatchWithHistory Anthropic-compatible terminal deltas', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.TEST_API_KEY = 'test-key';
+  });
+
+  const miniMaxEmptyDeltaError = Object.assign(
+    new Error('Type validation failed: Value: {"type":"message_delta","delta":{"stop_reason":""}}. Error message: expected object'),
+    {
+      name: 'AI_TypeValidationError',
+      value: { type: 'message_delta', delta: { stop_reason: '' } },
+    },
+  );
+
+  it('recognizes only the Anthropic missing-usage empty delta quirk', () => {
+    const anthropic = { baseUrl: 'http://test', apiKeyEnv: 'TEST_API_KEY', model: 'test-model', format: 'anthropic' as const };
+    expect(isIgnorableAnthropicEmptyDeltaError(miniMaxEmptyDeltaError, anthropic)).toBe(true);
+    expect(isIgnorableAnthropicEmptyDeltaError(miniMaxEmptyDeltaError, { ...anthropic, format: 'openai' })).toBe(false);
+    expect(isIgnorableAnthropicEmptyDeltaError(
+      Object.assign(new Error('different validation error'), { value: { type: 'message_delta', delta: { stop_reason: 'end_turn' } } }),
+      anthropic,
+    )).toBe(false);
+  });
+
+  it('continues past the malformed MiniMax terminal delta after productive output', async () => {
+    async function* fullStream() {
+      yield { type: 'text-delta', text: 'Completed useful work.' };
+      yield { type: 'error', error: miniMaxEmptyDeltaError };
+      yield { type: 'finish', finishReason: 'stop', totalUsage: { inputTokens: 20, outputTokens: 4 } };
+    }
+
+    mockStreamText.mockReturnValueOnce({
+      fullStream: fullStream(),
+      usage: Promise.resolve({ inputTokens: 20, outputTokens: 4 }),
+    } as unknown as ReturnType<typeof streamText>);
+
+    const { chunks, result } = await collectApiStream(apiStreamDispatchWithHistory(
+      { baseUrl: 'http://test', apiKeyEnv: 'TEST_API_KEY', model: 'test-model', format: 'anthropic' },
+      [{ role: 'user', content: 'finish the task' }],
+      30,
+    ));
+
+    expect(chunks.join('')).toBe('Completed useful work.');
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.finishReason).toBe('stop');
+  });
+
+  it('keeps the same malformed delta fatal when the stream made no progress', async () => {
+    async function* fullStream() {
+      yield { type: 'error', error: miniMaxEmptyDeltaError };
+    }
+
+    mockStreamText.mockReturnValueOnce({
+      fullStream: fullStream(),
+      usage: Promise.resolve(undefined),
+    } as unknown as ReturnType<typeof streamText>);
+
+    const { result } = await collectApiStream(apiStreamDispatchWithHistory(
+      { baseUrl: 'http://test', apiKeyEnv: 'TEST_API_KEY', model: 'test-model', format: 'anthropic' },
+      [{ role: 'user', content: 'start' }],
+      30,
+    ));
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain('Stream error: AI_TypeValidationError');
   });
 });
 

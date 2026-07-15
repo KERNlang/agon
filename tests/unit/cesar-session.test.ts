@@ -4,8 +4,9 @@ import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ToolRegistry } from '@kernlang/agon-core';
 import type { ToolContext, ToolHandler } from '@kernlang/agon-core';
-import { buildCesarConversationSnapshot, buildCesarSystemPrompt, buildOnApproval, buildOnToolCall, canUseCesarMcp, loadCesarMcpServers, normalizeCesarMcpServers, prepareCesarSystemPrompt } from '../../packages/cli/src/generated/cesar/session.js';
+import { buildCesarConversationSnapshot, buildCesarSystemPrompt, buildOnApproval, buildOnToolCall, canUseCesarMcp, loadCesarMcpServers, normalizeCesarMcpServers, prepareCesarSystemPrompt, resolveCesarGuardMode } from '../../packages/cli/src/generated/cesar/session.js';
 import { applyInvariantsRule1, _resetInvariantsRule1DriftWarning, CESAR_RULE_1_STRICT, CESAR_RULE_1_INVARIANTS, CESAR_SYSTEM_PROMPT } from '../../packages/cli/src/generated/cesar/session.js';
+import { CESAR_AGENTIC_SYSTEM_PROMPT } from '../../packages/cli/src/generated/cesar/session.js';
 import { createTaskExecutionLease } from '../../packages/cli/src/generated/cesar/task-execution-lease.js';
 import { beginCesarTurn, createCesarTurnRuntimeHost } from '../../packages/cli/src/generated/cesar/turn-runtime.js';
 
@@ -76,6 +77,35 @@ describe('Cesar KERN context spine', () => {
     ctx.cesar.kernContextSpine = '## PROJECT MAP\n<kern_map>primed</kern_map>';
 
     expect(buildCesarSystemPrompt(ctx)).toContain('<kern_map>primed</kern_map>');
+  });
+});
+
+describe('agentic AUTO session profile', () => {
+  it('uses a compact ownership prompt and shadow-only advisory guards', () => {
+    const ctx = makePromptContext();
+    ctx.autoModeQueued = true;
+    ctx.config.cesarAutoHarnessProfile = 'agentic';
+
+    expect(CESAR_AGENTIC_SYSTEM_PROMPT.length).toBeLessThan(10_000);
+    expect(CESAR_AGENTIC_SYSTEM_PROMPT).toContain('Own the latest user objective');
+    expect(CESAR_AGENTIC_SYSTEM_PROMPT).not.toContain('Call ReportConfidence(value) FIRST');
+    expect(resolveCesarGuardMode(ctx)).toBe('shadow');
+    expect(buildCesarSystemPrompt(ctx)).toContain(CESAR_AGENTIC_SYSTEM_PROMPT);
+  });
+
+  it('lets routine companion writes proceed without a confidence ritual', async () => {
+    const ctx = makePromptContext();
+    ctx.autoModeQueued = true;
+    ctx.config = { permissionMode: 'ask', cesarAutoHarnessProfile: 'agentic' };
+    ctx.cesar = {
+      confidenceSatisfied: false,
+      taskExecutionLease: createTaskExecutionLease('fix the renderer', true, process.cwd(), undefined, 'agentic'),
+      lastDispatch: () => { throw new Error('routine agentic AUTO work must not prompt'); },
+    };
+
+    const onApproval = buildOnApproval(ctx, 'claude');
+    await expect(onApproval('Bash', 'npm test')).resolves.toBe(true);
+    expect(ctx.cesar.confidenceSatisfied).toBe(false);
   });
 });
 

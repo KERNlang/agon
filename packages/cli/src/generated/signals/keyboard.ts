@@ -18,6 +18,7 @@ export interface KeyboardCtx {
   questionOtherActive: boolean;
   updateInfo: any;
   replState: string;
+  runningJobCount?: number;
   inputValue: string;
   inputHistory: string[];
   historyIndex: number;
@@ -34,7 +35,7 @@ export interface KeyboardCtx {
   liveToolStreamCount: number;
 }
 
-// @kern-source: keyboard:37
+// @kern-source: keyboard:38
 export type KeyboardAction =
   | { type: 'none' }
   | { type: 'exit' }
@@ -80,7 +81,7 @@ export type KeyboardAction =
 /**
  * Pure keyboard decision tree. Takes current state, returns action to execute.
  */
-// @kern-source: keyboard:89
+// @kern-source: keyboard:90
 export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
   const { input, key } = ctx;
   const keyName = typeof key.name === 'string' ? key.name.toLowerCase() : '';
@@ -326,6 +327,7 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
       slashPickerOpen: ctx.slashPickerOpen,
       enginePickerOpen: ctx.enginePickerOpen,
       questionOpen: !!ctx.questionState,
+      runningJobCount: ctx.runningJobCount ?? 0,
     });
     switch (decision.action) {
       case 'close-slash': return { type: 'closeSlash' };

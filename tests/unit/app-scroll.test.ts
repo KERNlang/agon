@@ -19,7 +19,9 @@ import {
   maxScrollOffsetForRowCount,
   nativeArchiveBlockCount,
   nativeTranscriptBlocksForStatic,
+  normalizeTerminalSize,
   normalizeTerminalMode,
+  resolveTerminalMode,
   nextWheelAnimationStep,
   stringDisplayWidth,
   transcriptRowsToPlainText,
@@ -39,6 +41,7 @@ import {
   contextualizeSlicedMarkdown,
 } from '../../packages/cli/src/generated/surfaces/app-views.js';
 import { cleanupTestAgonHome } from '../helpers/agon-home.js';
+import type { OutputBlock } from '../../packages/cli/src/generated/blocks/engine.js';
 
 let testHome: string | undefined;
 
@@ -159,10 +162,25 @@ describe('app scroll helpers', () => {
     expect(nativeArchiveBlockCount(blocks, 'chat', 3, false, true)).toBe(1);
   });
 
-  it('defaults unknown terminal mode values to native scrollback', () => {
-    expect(normalizeTerminalMode(undefined)).toBe('native');
+  it('resolves automatic terminal mode without overriding explicit choices', () => {
+    expect(normalizeTerminalMode(undefined)).toBe('auto');
+    expect(normalizeTerminalMode('unknown')).toBe('auto');
+    expect(normalizeTerminalMode('auto')).toBe('auto');
     expect(normalizeTerminalMode('native')).toBe('native');
     expect(normalizeTerminalMode('fullscreen')).toBe('fullscreen');
+    expect(resolveTerminalMode('native', {}, true)).toBe('native');
+    expect(resolveTerminalMode('fullscreen', { ZELLIJ: '1' }, false)).toBe('fullscreen');
+    expect(resolveTerminalMode('auto', {}, true)).toBe('fullscreen');
+    expect(resolveTerminalMode('auto', { ZELLIJ: '1' }, true)).toBe('native');
+    expect(resolveTerminalMode('auto', { TERM: 'dumb' }, true)).toBe('native');
+    expect(resolveTerminalMode('auto', { AGON_NO_ALT_SCREEN: '1' }, true)).toBe('native');
+    expect(resolveTerminalMode('auto', {}, false)).toBe('native');
+  });
+
+  it('normalizes width and height as one atomic resize value', () => {
+    expect(normalizeTerminalSize(120, 36)).toEqual({ width: 120, height: 36 });
+    expect(normalizeTerminalSize(0, 0)).toEqual({ width: 100, height: 24 });
+    expect(normalizeTerminalSize(20, 4)).toEqual({ width: 40, height: 8 });
   });
 
   it('gives the expanded file rail enough room on wide native terminals', () => {
@@ -367,6 +385,38 @@ describe('app scroll helpers', () => {
     const wide = buildTerminalReplaySnapshot(blocks, { terminalMode: 'fullscreen', mode: 'chat', termWidth: 180, termHeight: 24 });
 
     expect(narrow.transcriptRowCount).toBeGreaterThan(wide.transcriptRowCount);
+  });
+
+  it('keeps fixed chrome and valid budgets across a streaming resize sequence', () => {
+    const blocks = [{
+      id: 1,
+      event: {
+        type: 'engine-block',
+        engineId: 'cesar',
+        color: 124,
+        content: Array.from({ length: 12 }, (_, index) => `stream frame ${index + 1} with stable wrapping`).join('\n'),
+      },
+    }] satisfies OutputBlock[];
+    const sizes = [[120, 36], [48, 16], [90, 28], [40, 12]] as const;
+    const frames = sizes.map(([termWidth, termHeight]) => buildTerminalReplaySnapshot(blocks, {
+      terminalMode: 'auto',
+      env: {},
+      isTTY: true,
+      mode: 'chat',
+      termWidth,
+      termHeight,
+      hasStream: true,
+      hasProgress: true,
+      toolStreamCount: 1,
+    }));
+    for (const frame of frames) {
+      expect(frame.terminalMode).toBe('fullscreen');
+      expect(frame.lowerChromeRows).toBe(6);
+      expect(frame.visibleBudget).toBeGreaterThan(0);
+      expect(frame.termWidth).toBeGreaterThanOrEqual(40);
+      expect(frame.termHeight).toBeGreaterThanOrEqual(8);
+    }
+    expect(frames.map((frame) => [frame.termWidth, frame.termHeight])).toEqual(sizes.map(([w, h]) => [w, h]));
   });
 
   it('renders the dashboard through transcript rows when it is the only visible block', () => {

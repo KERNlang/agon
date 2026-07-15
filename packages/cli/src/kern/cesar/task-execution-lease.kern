@@ -2,6 +2,7 @@ import from="node:path" names="resolve,relative,isAbsolute,sep"
 
 type name=TaskRisk values="routine|important|dangerous" export=true
 type name=TaskActionDecision values="allow|ask_task_once|ask_boundary_once|deny" export=true
+type name=TaskHarnessProfile values="legacy|agentic" export=true
 
 fn name=isApprovedPermissionResponse params="value:boolean|string" returns=boolean export=true
   doc "Normalize the REPL permission UI contract: y approves once, a approves the session, booleans pass through."
@@ -13,6 +14,7 @@ interface name=TaskExecutionLease export=true
   field name=autoMode type=boolean
   field name=workspace type=string
   field name=risk type=TaskRisk
+  field name=profile type=TaskHarnessProfile
   field name=importantPattern type=string
   field name=dangerousPattern type=string
   field name=taskApproved type=boolean
@@ -25,8 +27,17 @@ interface name=TaskActionEvaluation export=true
   field name=signature type=string
   field name=reason type=string
 
+fn name=taskActionApprovalMessage params="evaluation:TaskActionEvaluation" returns=string export=true
+  doc "Describe the actual lease gate. AUTO-off routine writes are not dangerous and must not be labeled as dangerous boundaries."
+  handler lang="kern"
+    if cond="evaluation.decision === 'ask_task_once'"
+      return value="'Approve this important task once'"
+    if cond="evaluation.reason === 'auto_off'"
+      return value="'AUTO is off for this task — approve this action once'"
+    return value="'Approve this dangerous action boundary'"
+
 const name=DEFAULT_IMPORTANT_PATTERN type=string value={{ '\\b(auth|session|permission|migration|database|shared\\s+contract|public\\s+api|billing|security)\\b' }} export=true
-const name=DEFAULT_DANGEROUS_PATTERN type=string value={{ '\\b(push|deploy|publish|release|production|prod|pull\\s+request|pr|external\\s+queue|drop\\s+database|reset\\s+--hard|force[- ]push|rm\\s+-rf)\\b' }} export=true
+const name=DEFAULT_DANGEROUS_PATTERN type=string value={{ '\\b(git\\s+push|push|deploy|publish|pull\\s+request|create\\s+(?:a\\s+)?pr|external\\s+queue|drop\\s+database|reset\\s+--hard|force[- ]push|rm\\s+-rf)\\b' }} export=true
 
 fn name=canonicalTaskActionSignature params="action:string,target:string" returns=string export=true
   handler <<<
@@ -36,7 +47,7 @@ fn name=canonicalTaskActionSignature params="action:string,target:string" return
     return `${normalizedAction}:${fileMutation ? normalizedTarget.replace(/\\/g, '/') : normalizedTarget}`;
   >>>
 
-fn name=createTaskExecutionLease params="input:string,autoMode:boolean,workspace:string,patterns?:{important?:string,dangerous?:string}" returns=TaskExecutionLease export=true
+fn name=createTaskExecutionLease params="input:string,autoMode:boolean,workspace:string,patterns?:{important?:string,dangerous?:string},profile?:TaskHarnessProfile" returns=TaskExecutionLease export=true
   handler <<<
     const importantPattern = patterns?.important || DEFAULT_IMPORTANT_PATTERN;
     const dangerousPattern = patterns?.dangerous || DEFAULT_DANGEROUS_PATTERN;
@@ -53,6 +64,7 @@ fn name=createTaskExecutionLease params="input:string,autoMode:boolean,workspace
       autoMode,
       workspace: resolve(workspace),
       risk,
+      profile: profile ?? 'legacy',
       importantPattern,
       dangerousPattern,
       taskApproved: false,
@@ -186,10 +198,60 @@ fn name=targetEscapesWorkspace params="lease:TaskExecutionLease,action:string,ta
     return relativePathEscapesWorkspace(rel);
   >>>
 
+fn name=shellMutationEscapesWorkspace params="lease:TaskExecutionLease,command:string" returns=boolean export=true
+  doc "Best-effort shell boundary classifier for destructive/output-bearing commands. It catches common rm/rmdir/unlink, cp/mv/install destinations, tee targets, and redirections without pretending to be a full shell parser. Unknown dynamic paths fail closed to the interactive boundary."
+  handler <<<
+    const raw = String(command ?? '').trim();
+    if (!raw) return false;
+    const words = raw.match(/"[^"]*"|'[^']*'|[^\s;&|]+/g)?.map((word) => word.replace(/^['"]|['"]$/g, '')) ?? [];
+    const outside = (candidate: string): boolean => {
+      const value = candidate.replace(/^\d*(?:>>?|<)\s*/, '').trim();
+      if (!value || value === '/dev/null' || value === '/dev/stdout' || value === '/dev/stderr') return false;
+      if (/[`$*?{}]/.test(value)) return true;
+      const absolute = isAbsolute(value) ? resolve(value) : resolve(lease.workspace, value);
+      return relativePathEscapesWorkspace(relative(lease.workspace, absolute));
+    };
+    for (let i = 0; i < words.length; i++) {
+      const token = words[i];
+      const base = token.split('/').pop()?.toLowerCase() ?? '';
+      if (['rm', 'rmdir', 'unlink'].includes(base)) {
+        for (let j = i + 1; j < words.length; j++) {
+          if (!words[j].startsWith('-') && outside(words[j])) return true;
+        }
+      }
+      if (['cp', 'mv', 'install'].includes(base)) {
+        const operands = words.slice(i + 1).filter((word) => !word.startsWith('-'));
+        if (operands.length >= 2 && outside(operands[operands.length - 1])) return true;
+      }
+      if (base === 'tee') {
+        const target = words.slice(i + 1).find((word) => !word.startsWith('-'));
+        if (target && outside(target)) return true;
+      }
+      if (/^\d*(?:>>?)/.test(token)) {
+        const attached = token.replace(/^\d*(?:>>?)\s*/, '');
+        const target = attached || words[i + 1] || '';
+        if (outside(target)) return true;
+      }
+    }
+    return false;
+  >>>
+
+fn name=isExternalSideEffectCommand params="command:string" returns=boolean export=true
+  doc "Classify shell network/publishing actions that can change systems outside the workspace. Read-only HTTP GETs remain routine."
+  handler <<<
+    const cmd = String(command ?? '').trim();
+    return /\b(?:git\s+push|npm\s+publish|pnpm\s+publish|yarn\s+npm\s+publish|gh\s+pr\s+create|gh\s+release\s+create)\b/i.test(cmd)
+      || /\bcurl\b[^\n]*(?:-X\s*(?:POST|PUT|PATCH|DELETE)\b|--request\s+(?:POST|PUT|PATCH|DELETE)\b|(?:^|\s)(?:-d|--data(?:-[a-z-]+)?|-T|--upload-file)(?:\s|=))/i.test(cmd)
+      || /\bwget\b[^\n]*(?:--post-data|--post-file|--method\s*=\s*(?:POST|PUT|PATCH|DELETE))/i.test(cmd);
+  >>>
+
 fn name=isDangerousTaskAction params="lease:TaskExecutionLease,action:string,target:string" returns=boolean export=false
   handler <<<
     const normalizedAction = String(action ?? '').trim().replace(/^agon/i, '');
     const authorityTargetBearing = /^(bash|shell|goal|conquer|forge|agent|pipeline)$/i.test(normalizedAction);
+    if (/^(bash|shell)$/i.test(normalizedAction)) {
+      if (shellMutationEscapesWorkspace(lease, target) || isExternalSideEffectCommand(target)) return true;
+    }
     try {
       const pattern = new RegExp(lease.dangerousPattern, 'i');
       return pattern.test(normalizedAction)
@@ -212,7 +274,7 @@ module name=TaskAuthorization
         return { decision: 'ask_boundary_once', signature, reason: 'dangerous_boundary' };
       }
       if (!lease.autoMode) return { decision: 'ask_boundary_once', signature, reason: 'auto_off' };
-      if (lease.risk === 'important' && !lease.taskApproved) return { decision: 'ask_task_once', signature, reason: 'important_task' };
+      if (lease.profile === 'legacy' && lease.risk === 'important' && !lease.taskApproved) return { decision: 'ask_task_once', signature, reason: 'important_task' };
       if (lease.risk === 'important' && lease.taskApproved) return { decision: 'allow', signature, reason: 'task_approved' };
       return { decision: 'allow', signature, reason: 'routine_auto' };
     >>>

@@ -13,6 +13,8 @@
 import from="@kernlang/agon-core" names="CesarPlan,AgonConfig" types=true
 import from="@kernlang/agon-core" names="planCostEstimator"
 import from="../lib/kern-host.js" names="hostStringSet"
+import from="./task-execution-lease.js" names="evaluateTaskAction"
+import from="./task-execution-lease.js" names="TaskExecutionLease" types=true
 
 interface name=AutoApproveDecision export=true
   field name=approve type=boolean
@@ -24,8 +26,8 @@ const name=MUTATING_STEP_TYPES type="Set<string>" value={{ hostStringSet(['forge
 fn name=applyAutoApprovePolicy params="plan:CesarPlan, config:AgonConfig" returns=AutoApproveDecision export=true
   doc "Decide whether a plan qualifies for autonomous execution without user confirmation."
   handler lang="kern"
-    let name=mode value="(config as any).cesarAutoApproveMode ?? 'safe-only'"
-    let name=maxCostUsd value="(config as any).cesarAutoApproveMaxCostUsd as number | undefined"
+    let name=mode value="config.cesarAutoApproveMode ?? 'safe-only'"
+    let name=maxCostUsd value="config.cesarAutoApproveMaxCostUsd"
     comment raw="// Gate 0: global off switch"
     if cond="mode === 'off'"
       return value="{ approve: false, reason: 'autoApprove disabled (cesarAutoApproveMode=off)', adjustedCostUsd: plan.totalEstimatedCostUsd }"
@@ -54,3 +56,28 @@ fn name=applyAutoApprovePolicy params="plan:CesarPlan, config:AgonConfig" return
         return value="{ approve: false, reason: `estimated cost $${adjustedCostUsd.toFixed(2)} exceeds ceiling $${costCeilingUsd.toFixed(2)}`, adjustedCostUsd, }"
     comment raw="// cost-bounded with no ceiling configured = same as 'always' but explicit"
     return value="{ approve: true, reason: `${mode} policy passed (cost $${adjustedCostUsd.toFixed(4)})`, adjustedCostUsd, }"
+
+fn name=applyAgenticAutoApprovePolicy params="plan:CesarPlan,config:AgonConfig,lease:TaskExecutionLease|undefined" returns=AutoApproveDecision export=true
+  doc "Agentic AUTO executes routine plans without a second approval loop, but only after every step description and command passes the same task lease used by direct tools. Explicit autoApprove=off remains a kill switch."
+  handler <<<
+    if (config.cesarAutoApproveMode === 'off') return applyAutoApprovePolicy(plan, config);
+    if (!lease) return { approve: false, reason: 'agentic task lease unavailable', adjustedCostUsd: plan.totalEstimatedCostUsd };
+    if (plan.autoApprove !== true) return { approve: false, reason: 'plan did not request autoApprove', adjustedCostUsd: plan.totalEstimatedCostUsd };
+
+    for (const step of plan.steps) {
+      const boundaryText = [step.description, step.fitnessCmd, step.verifyCmd].filter((value): value is string => typeof value === 'string' && value.trim().length > 0).join('\n');
+      const actionDecision = evaluateTaskAction(lease, step.type, boundaryText);
+      if (actionDecision.decision !== 'allow') {
+        return { approve: false, reason: `step ${step.id} requires boundary approval (${actionDecision.reason})`, adjustedCostUsd: plan.totalEstimatedCostUsd };
+      }
+      if (boundaryText) {
+        const commandDecision = evaluateTaskAction(lease, 'Bash', boundaryText);
+        if (commandDecision.decision !== 'allow') {
+          return { approve: false, reason: `step ${step.id} contains an interactive boundary (${commandDecision.reason})`, adjustedCostUsd: plan.totalEstimatedCostUsd };
+        }
+      }
+    }
+
+    const agenticConfig: AgonConfig = { ...config, cesarAutoApproveMode: 'always' };
+    return applyAutoApprovePolicy(plan, agenticConfig);
+  >>>

@@ -25,7 +25,34 @@ module name=AppTerminal
       } while (chunk !== null);
     >>>
 
-  fn name=normalizeTerminalMode params="value:any" returns="'native'|'fullscreen'" export=true expr={{ return value === 'fullscreen' ? 'fullscreen' : 'native'; }}
+  fn name=normalizeTerminalMode params="value:unknown" returns="'auto'|'native'|'fullscreen'" export=true
+    doc "Normalize the configured terminal policy without inspecting process state. Invalid/missing values use the Codex-like auto policy."
+    handler <<<
+      return value === 'native' || value === 'fullscreen' ? value : 'auto';
+    >>>
+
+  fn name=resolveTerminalMode params="value:unknown,env?:Record<string,string|undefined>,isTTY?:boolean" returns="'native'|'fullscreen'" export=true
+    doc "Resolve auto terminal policy deterministically. Explicit modes win; auto avoids alternate-screen rendering where scrollback or terminal capability would be harmed."
+    handler <<<
+      const configured = normalizeTerminalMode(value);
+      if (configured === 'native' || configured === 'fullscreen') return configured;
+      const runtimeEnv = env ?? process.env;
+      const runtimeIsTTY = isTTY ?? Boolean(process.stdout.isTTY);
+      const truthy = (raw: unknown) => ['1', 'true', 'yes', 'on'].includes(String(raw ?? '').trim().toLowerCase());
+      if (!runtimeIsTTY) return 'native';
+      if (truthy(runtimeEnv?.AGON_NO_ALT_SCREEN) || truthy(runtimeEnv?.CI)) return 'native';
+      if (String(runtimeEnv?.TERM ?? '').trim().toLowerCase() === 'dumb') return 'native';
+      if (String(runtimeEnv?.ZELLIJ ?? '').trim() || String(runtimeEnv?.ZELLIJ_SESSION_NAME ?? '').trim()) return 'native';
+      return 'fullscreen';
+    >>>
+
+  fn name=normalizeTerminalSize params="columns:unknown,rows:unknown" returns="{width:number,height:number}" export=true
+    doc "Clamp a terminal resize into one atomic viewport value so width and height never render as mismatched frames."
+    handler <<<
+      const width = Math.max(40, Math.floor(Number(columns) || 100));
+      const height = Math.max(8, Math.floor(Number(rows) || 24));
+      return { width, height };
+    >>>
 
   fn name=fileRailWidthForTerminal params="termWidth:number, expanded:boolean" returns=number export=true
     handler lang="kern"
@@ -48,10 +75,11 @@ module name=AppTerminal
   fn name=buildTerminalReplaySnapshot params="blocks:OutputBlock[], opts:any" returns="{terminalMode:'native'|'fullscreen'; mode:string; termWidth:number; termHeight:number; visibleBudget:number; transcriptRowCount:number; staticBlockCount:number; liveBlockCount:number; fileRailWidth:number; fileRailRows:number; headerRows:number; lowerChromeRows:number}" export=true
     doc "Pure terminal replay harness: summarizes the layout-sensitive parts of the REPL for fixed viewport sizes so unit tests can catch native/fullscreen regressions without launching an interactive TTY."
     handler lang="kern"
-      let name=terminalMode value="normalizeTerminalMode(opts?.terminalMode)"
+      let name=terminalMode value="resolveTerminalMode(opts?.terminalMode, opts?.env ?? {}, opts?.isTTY ?? true)"
       let name=mode value="String(opts?.mode ?? 'chat')"
-      let name=termWidth value="Math.max(40, Math.floor(Number(opts?.termWidth) || 100))"
-      let name=termHeight value="Math.max(8, Math.floor(Number(opts?.termHeight) || 24))"
+      let name=terminalSize value="normalizeTerminalSize(opts?.termWidth, opts?.termHeight)"
+      let name=termWidth value="terminalSize.width"
+      let name=termHeight value="terminalSize.height"
       let name=toolOutputExpanded value="opts?.toolOutputExpanded !== false"
       let name=thinkingExpanded value="opts?.thinkingExpanded !== false"
       let name=questionState value="opts?.questionState ?? null"

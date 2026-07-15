@@ -20,7 +20,7 @@ import from="../../generated/surfaces/agent.js" names="AgentProgressView"
 import from="../../generated/surfaces/status.js" names="SpinnerBlock,StatusBar,CesarStatusStrip,StatusDashboard,ExecutionRailPanel"
 import from="../../generated/blocks/composer.js" names="ComposerView"
 import from="../blocks/file-rail.js" names="FileRail"
-import from="../signals/output.js" names="AgentProgressSnapshot" types=true
+import from="../signals/output.js" names="AgentProgressSnapshot,LiveToolStreamEntry" types=true
 
 fn name=renderSelectedText params="text:string,start:number,end:number,keyPrefix:string" returns="any"
   handler <<<
@@ -394,7 +394,7 @@ screen name=StreamingView target=ink memo=true
   prop name=streamingText type="{engineId:string,content:string,draft?:boolean} | null"
   prop name=mode type="string"
   prop name=liveProgress type="EngineProgress[] | null"
-  prop name=liveToolStreams type="Record<string,any>" optional=true
+  prop name=liveToolStreams type="Record<string,LiveToolStreamEntry>" optional=true
   prop name=liveToolTailFrozen type="Record<string,boolean>" optional=true
   render
     handler <<<
@@ -464,8 +464,8 @@ screen name=StreamingView target=ink memo=true
       }, [streamingText ? streamingText.engineId : null, textFrameMs]);
 
       // ── Throttled rendered state for tool streams ──
-      const [renderedToolStreams, setRenderedToolStreams] = useState<Record<string, any>>({});
-      const toolRef = useRef<Record<string, any>>({});
+      const [renderedToolStreams, setRenderedToolStreams] = useState<Record<string, LiveToolStreamEntry>>({});
+      const toolRef = useRef<Record<string, LiveToolStreamEntry>>({});
       toolRef.current = liveToolStreams ?? {};
 
       useEffect(() => {
@@ -665,7 +665,7 @@ screen name=LiveStreamSection target=ink memo=true
   prop name=activeStream type="{engineId:string,content:string,draft?:boolean} | null"
   prop name=mode type="string"
   prop name=liveProgress type="EngineProgress[] | null"
-  prop name=liveToolStreams type="Record<string,any>" optional=true
+  prop name=liveToolStreams type="Record<string,LiveToolStreamEntry>" optional=true
   prop name=liveToolTailFrozen type="Record<string,boolean>" optional=true
   prop name=agentProgress type="Record<string,AgentProgressSnapshot>"
   render
@@ -891,6 +891,7 @@ screen name=BottomChromeSection target=ink memo=true
   prop name=toolOutputExpanded type="boolean"
   prop name=fullscreenEnabled type="boolean"
   prop name=uiMotion type="'full'|'reduced'|'off'" optional=true
+  prop name=interactionActive type=boolean optional=true
   render
     handler <<<
       const isActive = replState !== 'idle' || runningJobs.length > 0;
@@ -960,8 +961,8 @@ screen name=BottomChromeSection target=ink memo=true
               termHeight={termHeight}
               onCtrlShortcut={onCtrlShortcut} />
           )}
-          <CesarStatusStrip cesarId={cesarId} confidence={cesarConfidence} context={cesarContext} spinner={liveSpinner} engines={liveProgress} jobs={runningJobs} startTime={chatStartTime} streamSnippet={streamSnippet} isActive={isActive} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} activePlan={activePlan} scoreboard={null} rationale={null} uiMotion={uiMotion} />
-          {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} meteredCostUsd={(statusStats as any).meteredCostUsd} hasPlanApiUsage={(statusStats as any).hasPlanApiUsage} hasCliUsage={(statusStats as any).hasCliUsage} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} autoModeQueued={autoModeQueued} isActive={replState !== 'idle'} fullscreenEnabled={fullscreenEnabled} telemetryVitals={telemetryVitals} context={cesarContext} />}
+          <CesarStatusStrip cesarId={cesarId} confidence={cesarConfidence} context={cesarContext} spinner={liveSpinner} engines={liveProgress} jobs={runningJobs} startTime={chatStartTime} streamSnippet={streamSnippet} isActive={isActive} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} activePlan={activePlan} scoreboard={null} rationale={null} uiMotion={uiMotion} interactionActive={interactionActive} />
+          {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} meteredCostUsd={statusStats.meteredCostUsd} hasPlanApiUsage={statusStats.hasPlanApiUsage} hasCliUsage={statusStats.hasCliUsage} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} autoModeQueued={autoModeQueued} isActive={replState !== 'idle'} fullscreenEnabled={fullscreenEnabled} telemetryVitals={telemetryVitals} context={cesarContext} termWidth={termWidth} />}
         </Box>
       );
     >>>

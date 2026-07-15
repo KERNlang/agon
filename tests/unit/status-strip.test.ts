@@ -7,6 +7,9 @@ import {
   buildHeartbeatSig,
   buildHeartbeatSuffix,
   buildCompactStatusTail,
+  buildPriorityStatusLine,
+  buildPriorityStatusSegments,
+  cosmeticUiIntervalMs,
   formatTokenCostStatus,
   formatStatusLine,
   normalizeUiMotion,
@@ -29,6 +32,14 @@ describe('stable TUI motion and footer helpers', () => {
     expect(streamFrameIntervalMs('off', 'chat')).toBe(250);
   });
 
+  it('pauses cosmetic clocks during typing/selection without changing the motion policy', () => {
+    expect(cosmeticUiIntervalMs('full', true, false)).toBe(1000);
+    expect(cosmeticUiIntervalMs('reduced', true, false)).toBe(5000);
+    expect(cosmeticUiIntervalMs('reduced', true, true)).toBe(0);
+    expect(cosmeticUiIntervalMs('full', false, false)).toBe(0);
+    expect(cosmeticUiIntervalMs('off', true, false)).toBe(0);
+  });
+
   it('builds a single-line metric tail without permanent shortcut noise', () => {
     const tail = buildCompactStatusTail({
       context: { pct: 15, source: 'estimate' },
@@ -41,6 +52,72 @@ describe('stable TUI motion and footer helpers', () => {
     expect(tail).toBe(' · ctx ~15% · 0.2k tok · 4 msgs · cost included in plan (api) · AUTO · ● idle');
     expect(tail).not.toContain('\n');
     expect(tail).not.toContain('Ctrl+');
+  });
+
+  it('keeps context and cost ahead of location on narrow terminals', () => {
+    const narrow = buildPriorityStatusLine({
+      width: 40,
+      cwd: '~/KERN/agon',
+      branch: 'feature/very-long-render-stability-name',
+      context: { pct: 15, source: 'estimate' },
+      tokens: 240,
+      messages: 4,
+      cost: 'cost included in plan (api)',
+      telemetry: '● idle',
+    });
+    expect(narrow).toContain('ctx ~15%');
+    expect(narrow).toContain('cost included in plan (api)');
+    expect(narrow.length).toBeLessThanOrEqual(40);
+    expect(narrow).not.toContain('Ctrl+');
+  });
+
+  it('fills a wide footer with lower-priority location and counters', () => {
+    const wide = buildPriorityStatusLine({
+      width: 120,
+      exploration: true,
+      cwd: '~/KERN/agon',
+      branch: 'main',
+      context: { pct: 15 },
+      tokens: 240,
+      messages: 4,
+      cost: 'cost included in plan (api)',
+      auto: true,
+      telemetry: '● idle',
+    });
+    expect(wide).toContain('ctx 15% · cost included in plan (api)');
+    expect(wide).toContain('AUTO');
+    expect(wide).toContain('[explore] ~/KERN/agon on main');
+    expect(wide).toContain('0.2k tok · 4 msgs · ● idle');
+    expect(wide.length).toBeLessThanOrEqual(120);
+  });
+
+  it('retains semantic segment identities so the colored footer can survive truncation', () => {
+    const segments = buildPriorityStatusSegments({
+      width: 120,
+      exploration: true,
+      cwd: '~/KERN/agon',
+      branch: 'main',
+      context: { pct: 15 },
+      cost: 'cost included in plan (api)',
+      auto: true,
+      telemetry: '● idle',
+    });
+    expect(segments.map((segment) => segment.kind)).toEqual([
+      'context', 'cost', 'auto', 'location', 'healthy',
+    ]);
+    expect(segments.find((segment) => segment.kind === 'location')?.text)
+      .toBe('[explore] ~/KERN/agon on main');
+    expect(segments.map((segment) => segment.text).join(' · '))
+      .toBe(buildPriorityStatusLine({
+        width: 120,
+        exploration: true,
+        cwd: '~/KERN/agon',
+        branch: 'main',
+        context: { pct: 15 },
+        cost: 'cost included in plan (api)',
+        auto: true,
+        telemetry: '● idle',
+      }));
   });
 });
 

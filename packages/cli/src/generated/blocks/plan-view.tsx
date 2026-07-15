@@ -26,6 +26,22 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
     const stepEst = est?.steps?.find((e: any) => e.id === s.id);
     return stepEst?.tokens ?? s.estimatedTokens ?? 0;
   };
+  // Keep approval controls BEFORE the plan body. Long markdown/structured
+  // plans can exceed the terminal viewport; when the controls lived at the
+  // bottom, Ink clipped them and the user saw a plan with no apparent way
+  // to accept or reject it. The explicit slash commands also provide a
+  // keyboard fallback even when terminal navigation keys are intercepted.
+  const approvalControls = committed ? (
+    <Text dimColor>{'Plan moved to history.'}</Text>
+  ) : (
+    <Box flexDirection="column" marginBottom={1}>
+      <Text color="#fbbf24" bold>{'Awaiting approval'}</Text>
+      <Text color={(selectedIndex ?? 0) === 0 ? '#4ade80' : '#6b7280'} bold={(selectedIndex ?? 0) === 0}>{(selectedIndex ?? 0) === 0 ? '❯ ' : '  '}{'1. Approve & run'}</Text>
+      <Text color={(selectedIndex ?? 0) === 1 ? '#60a5fa' : '#6b7280'} bold={(selectedIndex ?? 0) === 1}>{(selectedIndex ?? 0) === 1 ? '❯ ' : '  '}{'2. Other — revise the plan'}</Text>
+      <Text color={(selectedIndex ?? 0) === 2 ? '#ef4444' : '#6b7280'} bold={(selectedIndex ?? 0) === 2}>{(selectedIndex ?? 0) === 2 ? '❯ ' : '  '}{'3. Reject'}</Text>
+      <Text dimColor>{'  ↑↓ move · Enter select · /approve run · /cancel reject'}</Text>
+    </Box>
+  );
 
   // Claude-Code-style markdown rendering for the plan body. The
   // structured step boxes below are kept as a fallback when no
@@ -52,19 +68,9 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
           </Box>
         )}
         <Text dimColor>{thinBar}</Text>
+        {approvalControls}
         <RenderedSegments segments={segments} borderColor="" wrapWidth={wrapWidth} />
         <Text dimColor>{thinBar}</Text>
-        {committed ? (
-          <Text dimColor>{'Plan moved to history.'}</Text>
-        ) : (
-          <Box flexDirection="column">
-            <Text color="#fbbf24" bold>{'Awaiting approval'}</Text>
-            <Text color={(selectedIndex ?? 0) === 0 ? '#4ade80' : '#6b7280'} bold={(selectedIndex ?? 0) === 0}>{(selectedIndex ?? 0) === 0 ? '❯ ' : '  '}{'1. Approve & run'}</Text>
-            <Text color={(selectedIndex ?? 0) === 1 ? '#60a5fa' : '#6b7280'} bold={(selectedIndex ?? 0) === 1}>{(selectedIndex ?? 0) === 1 ? '❯ ' : '  '}{'2. Other — revise the plan'}</Text>
-            <Text color={(selectedIndex ?? 0) === 2 ? '#ef4444' : '#6b7280'} bold={(selectedIndex ?? 0) === 2}>{(selectedIndex ?? 0) === 2 ? '❯ ' : '  '}{'3. Reject'}</Text>
-            <Text dimColor>{'  ↑↓ move · Enter select · 1/2/3 jump · y/o/n · /approve · /cancel'}</Text>
-          </Box>
-        )}
       </Box>
     );
   }
@@ -87,6 +93,7 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
         </Box>
       )}
       <Text dimColor>{thinBar}</Text>
+      {approvalControls}
 
       {/* ── Steps ── */}
       {steps.map((s: any, i: number) => {
@@ -183,23 +190,12 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
       })}
 
       <Text dimColor>{thinBar}</Text>
-      {committed ? (
-        <Text dimColor>{'Plan moved to history.'}</Text>
-      ) : (
-        <Box flexDirection="column">
-          <Text color="#fbbf24" bold>{'Awaiting approval'}</Text>
-          <Text color={(selectedIndex ?? 0) === 0 ? '#4ade80' : '#6b7280'} bold={(selectedIndex ?? 0) === 0}>{(selectedIndex ?? 0) === 0 ? '❯ ' : '  '}{'1. Approve & run'}</Text>
-          <Text color={(selectedIndex ?? 0) === 1 ? '#60a5fa' : '#6b7280'} bold={(selectedIndex ?? 0) === 1}>{(selectedIndex ?? 0) === 1 ? '❯ ' : '  '}{'2. Other — revise the plan'}</Text>
-          <Text color={(selectedIndex ?? 0) === 2 ? '#ef4444' : '#6b7280'} bold={(selectedIndex ?? 0) === 2}>{(selectedIndex ?? 0) === 2 ? '❯ ' : '  '}{'3. Reject'}</Text>
-          <Text dimColor>{'  ↑↓ move · Enter select · 1/2/3 jump · y/o/n · /approve · /cancel'}</Text>
-        </Box>
-      )}
     </Box>
   );
 });
 export { PlanProposalView };
 
-// @kern-source: plan-view:222
+// @kern-source: plan-view:218
 export function PlanExecutionView({ plan }: { plan:any }) {
   const steps: any[] = plan.steps ?? [];
   const doneSteps = steps.filter((s: any) => s.state === 'done');

@@ -116,7 +116,7 @@ export interface EscapeDecision {
  * Resolve Esc behavior without destructive transcript clearing.
  */
 // @kern-source: app-input:81
-export function resolveEscapeAction(opts: {replState:string,inputValue:string,slashPickerOpen:boolean,enginePickerOpen:boolean,questionOpen:boolean}): EscapeDecision {
+export function resolveEscapeAction(opts: {replState:string,inputValue:string,slashPickerOpen:boolean,enginePickerOpen:boolean,questionOpen:boolean,runningJobCount?:number}): EscapeDecision {
   if (opts.slashPickerOpen) {
     return { action: 'close-slash' };
   }
@@ -126,7 +126,7 @@ export function resolveEscapeAction(opts: {replState:string,inputValue:string,sl
   if (opts.questionOpen) {
     return { action: 'cancel-question' };
   }
-  if (opts.replState !== 'idle') {
+  if (opts.replState !== 'idle' || (opts.runningJobCount ?? 0) > 0) {
     return { action: 'interrupt' };
   }
   if (opts.inputValue) {

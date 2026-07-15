@@ -7,8 +7,9 @@ import from="../../handlers/types.js" names="Dispatch,HandlerContext,EngineProgr
 import from="./review.js" names="runReviewCore,resolveReviewTarget,selectReviewEngine"
 import from="./agent.js" names="runAgentMode,runAgentTeam"
 import from="../cesar/brain.js" names="handleCesarBrain"
+import from="../cesar/task-controller.js" names="isAgenticAutoMode"
 
-fn name=handleProposePlan params="args:any, dispatch:Dispatch, ctx:HandlerContext" returns="Promise<CesarPlan>" async=true export=true
+fn name=handleProposePlan params="args:Record<string,unknown>, dispatch:Dispatch, ctx:HandlerContext" returns="Promise<CesarPlan>" async=true export=true
   handler <<<
     // Validate LLM-controlled steps at the boundary (core: sanitizePlanSteps).
     // Cesar occasionally emits malformed step objects with no `type`/`description`
@@ -25,13 +26,13 @@ fn name=handleProposePlan params="args:any, dispatch:Dispatch, ctx:HandlerContex
       dispatch({ type: 'info', message: `Dropped ${dropped} malformed plan step${dropped === 1 ? '' : 's'} from the proposal.` } as any);
     }
 
-    let plan = createCesarPlan(args.intent, steps);
+    let plan = createCesarPlan(typeof args.intent === 'string' ? args.intent : '', steps);
     plan = {
       ...plan,
       // Gemini fix (f1): planningCost is no longer accepted from the LLM.
       // Cost trust model is estimator-only — Cesar cannot self-report cost.
       state: 'awaiting_approval' as any,
-      autoApprove: args.autoApprove === true ? true : undefined,
+      autoApprove: isAgenticAutoMode(ctx) || args.autoApprove === true ? true : undefined,
       selfReview: typeof args.selfReview === 'boolean' ? args.selfReview : undefined,
     };
 

@@ -28,7 +28,7 @@ import from="../cesar/scoreboard.js" names="Scoreboard" types=true
 import from="../cesar/mode-rationale.js" names="ModeRationale" types=true
 import from="../signals/paste-handler.js" names="processPasteContent,recordPastePlaceholder"
 import from="../signals/output.js" names="handleOutputEvent"
-import from="../signals/output.js" names="OutputActions,OutputState,AgentProgressSnapshot,StreamingEntry" types=true
+import from="../signals/output.js" names="OutputActions,OutputState,AgentProgressSnapshot,StreamingEntry,LiveToolStreamEntry" types=true
 import from="../signals/event-log-tee.js" names="teeOutputEvent"
 import from="@kernlang/agon-core" names="resetEventLogState"
 import from="../signals/app-input.js" names="cleanInputValue,findInputChange,parseActiveAtMention,safeCollectSourceFiles"
@@ -68,7 +68,7 @@ import from="../lib/kern-host.js" names="hostNowMs,hostObjectValues,hostSet"
 // ── Domain-specific helper imports (refactored from monolithic app-helpers) ──
 import from="./app-composer.js" names="loadComposerInputHistory"
 import from="./app-tool-detail.js" names="toolDetailViewportRows,findLatestToolDetailEvent,findLatestToolEvent,findLatestFailedToolEvent,buildFailedToolRetryDraft,buildToolDetailView"
-import from="./app-terminal.js" names="createInitialRegistry,drainStdinBuffer,normalizeTerminalMode,fileRailWidthForTerminal,fileRailMaxRowsForTerminal"
+import from="./app-terminal.js" names="createInitialRegistry,drainStdinBuffer,resolveTerminalMode,normalizeTerminalSize,fileRailWidthForTerminal,fileRailMaxRowsForTerminal"
 import from="./app-selection.js" names="normalizeTextSelection"
 import from="./app-layout.js" names="estimateVisibleBlockBudget,estimateBottomChromeExtraRows,estimatePinnedLiveRows"
 import from="./status-helpers.js" names="normalizeUiMotion"
@@ -82,7 +82,7 @@ import from="./app-keyboard.js" names="runHandleCancelOrExit,runHandleComposerCt
 import from="./app-submit.js" names="runProcessInputQueue,runSendBtwMessage,runHandleSubmit"
 
 module name=AppHelperExports
-  export from="./app-helpers.js" names="COMPOSER_HISTORY_LIMIT,isMutatingToolCall,probeEngineVitals,parseToolCallPayload,toolPreviewWindow,toolCallSupportsDetailView,detailViewerSupportsEvent,toolDetailViewportRows,findLatestToolDetailEvent,findLatestToolEvent,buildExecutionRailStats,composerHistoryPath,loadComposerInputHistory,saveComposerInputHistory,findLatestFailedToolEvent,buildFailedToolRetryDraft,buildToolDetailView,createInitialRegistry,drainStdinBuffer,maxScrollOffsetForRowCount,nextWheelAnimationStep,clampNumber,charDisplayWidth,stringDisplayWidth,displayColumnToStringIndex,normalizeRowSelection,normalizeTextSelection,richLineToPlainText,transcriptRowToPlainText,transcriptRowTextStartColumn,resolveTranscriptColumnFromMouse,transcriptRowsToPlainText,resolveTranscriptRowFromMouse,estimateVisibleBlockBudget,estimateWrappedRowCount,estimateQuestionReservedRows,estimateBottomChromeExtraRows,summarizeBtwTranscriptEvent,buildDashboardBlock,estimatePinnedLiveRows,estimateWrappedRows,estimateToolCallRows,estimateOutputEventRows,buildDisplayItems,isToolCallLikeBlock,coalesceToolCallBlocks,effectiveNativeArchiveBlockCount,estimateDisplayItemRows,historyBlocksForTranscript,nativeTranscriptBlocksForStatic,nativeArchiveBlockCount,isDuplicateEngineBlock,appendTranscriptBlock,normalizeTerminalMode,fileRailWidthForTerminal,fileRailMaxRowsForTerminal,buildTerminalReplaySnapshot,parseMarkdownToRows,buildToolCallRows,buildCollapsedToolGroupRows,buildTranscriptRows"
+  export from="./app-helpers.js" names="COMPOSER_HISTORY_LIMIT,isMutatingToolCall,probeEngineVitals,parseToolCallPayload,toolPreviewWindow,toolCallSupportsDetailView,detailViewerSupportsEvent,toolDetailViewportRows,findLatestToolDetailEvent,findLatestToolEvent,buildExecutionRailStats,composerHistoryPath,loadComposerInputHistory,saveComposerInputHistory,findLatestFailedToolEvent,buildFailedToolRetryDraft,buildToolDetailView,createInitialRegistry,drainStdinBuffer,maxScrollOffsetForRowCount,nextWheelAnimationStep,clampNumber,charDisplayWidth,stringDisplayWidth,displayColumnToStringIndex,normalizeRowSelection,normalizeTextSelection,richLineToPlainText,transcriptRowToPlainText,transcriptRowTextStartColumn,resolveTranscriptColumnFromMouse,transcriptRowsToPlainText,resolveTranscriptRowFromMouse,estimateVisibleBlockBudget,estimateWrappedRowCount,estimateQuestionReservedRows,estimateBottomChromeExtraRows,summarizeBtwTranscriptEvent,buildDashboardBlock,estimatePinnedLiveRows,estimateWrappedRows,estimateToolCallRows,estimateOutputEventRows,buildDisplayItems,isToolCallLikeBlock,coalesceToolCallBlocks,effectiveNativeArchiveBlockCount,estimateDisplayItemRows,historyBlocksForTranscript,nativeTranscriptBlocksForStatic,nativeArchiveBlockCount,isDuplicateEngineBlock,appendTranscriptBlock,normalizeTerminalMode,resolveTerminalMode,normalizeTerminalSize,fileRailWidthForTerminal,fileRailMaxRowsForTerminal,buildTerminalReplaySnapshot,parseMarkdownToRows,buildToolCallRows,buildCollapsedToolGroupRows,buildTranscriptRows"
 
 // ── Module-level mutable refs for SIGINT ──
 // The interrupt singletons (_activeAborts, _cancelCallback, _lastSigintAt,
@@ -101,6 +101,7 @@ screen name=App target=ink
   state name=replState type="ReplStateState" initial="'idle'"
   state name=outputBlocks type="OutputBlock[]" initial="() => { const cfg = loadConfig(); const saved = cfg.engineActivationMode === 'explicit' ? cfg.forgeEnabledEngines : null; return [buildDashboardBlock(saved)]; }"
   state name=inputValue type=string initial="''" safe=false
+  state name=uiInteractionActive type=boolean initial=false safe=false
   state name=inputHistory type="string[]" initial="loadComposerInputHistory()"
   state name=inputQueue type="string[]" initial="[]"
   // Count of messages steered into the RUNNING Cesar turn (buffered in the
@@ -144,8 +145,10 @@ screen name=App target=ink
   state name=modelPickerTargetEngine type="string|null" initial="null"
   state name=modelPickerCliGroups type="any[]" initial="[]"
   state name=cesarPickerOpen type=boolean initial=false
-  state name=streamingText type="Record<string,StreamingEntry>" initial="{}" throttle=33
-  state name=liveToolStreams type="Record<string,any>" initial="{}" throttle=50
+  // Live refs update synchronously in the output bridge. React preview commits
+  // are frame-limited there so semantic boundaries can still clear immediately.
+  state name=streamingText type="Record<string,StreamingEntry>" initial="{}"
+  state name=liveToolStreams type="Record<string,LiveToolStreamEntry>" initial="{}"
   state name=liveToolTailFrozen type="Record<string,boolean>" initial="{}"
   state name=pendingImages type="ImageAttachment[]" initial="[]"
   state name=reviewEvent type="ReviewEvent|null" initial="null"
@@ -202,12 +205,13 @@ screen name=App target=ink
   // In-flight BTW side-chat dispatch — aborted when the panel closes so an
   // orphaned answer can't resolve into a later conversation.
   ref name=btwAbortRef type="AbortController|null" initial="null"
-  ref name=liveToolStreamsRef type="Record<string,any>" initial="{}"
+  ref name=liveToolStreamsRef type="Record<string,LiveToolStreamEntry>" initial="{}"
   ref name=agentProgressRef type="Record<string,AgentProgressSnapshot>" initial="{}"
   ref name=lastReviewResultRef type="{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | null" initial="null"
   ref name=modeRef type="'chat'|'campfire'|'brainstorm'|'tribunal'" initial="'chat'"
   ref name=inputEpochRef type=number initial=0
   ref name=inputValueRef type=string initial="''"
+  ref name=uiInteractionTimerRef type="ReturnType<typeof setTimeout>|null" initial="null"
   comment raw="// Mirror of atPickerPrefix so the stable (dep-free) @-picker select/cancel callbacks can read the prefix without re-creating per render and breaking ComposerView's memo."
   ref name=atPickerPrefixRef type=string initial="''"
   // Diagnostic: keystroke t0 captured at handleInputChange, read post-commit by
@@ -218,6 +222,7 @@ screen name=App target=ink
   ref name=pasteHashesRef type="Map<string,string>" initial="new Map()"
   ref name=activeAbortRef type="AbortController|null" initial="null"
   ref name=activeTurnRef type="{ input:string; engineId:string; retried:boolean }|null" initial="null"
+  ref name=interruptedTurnRef type="{ input:string; source:'foreground'|'job'; at:number }|null" initial="null"
   ref name=cesarRuntimeHostRef type=CesarTurnRuntimeHost initial="createDurableCesarTurnRuntimeHost(chatSession.id)"
   ref name=lastActivityTimeRef type=number initial="hostNowMs()"
   // Single-shot bell guard: set true when we ring on done/await, cleared on
@@ -250,8 +255,7 @@ screen name=App target=ink
   state name=extensionPromptFragments type="string[]" initial="[]"
   state name=loadedExtensions type="any[]" initial="[]"
   state name=workspacePath type=string initial="resolveWorkingDir()"
-  state name=termWidth type=number initial="process.stdout.columns || 100" throttle=100
-  state name=termHeight type=number initial="process.stdout.rows || 24" throttle=100
+  state name=terminalSize type="{width:number,height:number}" initial="normalizeTerminalSize(process.stdout.columns, process.stdout.rows)" throttle=100
   // Drives the native <Static> remount key. Incremented ONLY by clearBlocks
   // (a true transcript reset: /clear, /clean, session reset). Append and cap-spill
   // must NEVER advance it — remounting <Static> repaints the full sealed region.
@@ -301,11 +305,27 @@ screen name=App target=ink
 
   memo name=terminalMode deps="config"
     handler lang="kern"
-      return value="normalizeTerminalMode((config as any).terminalMode)"
+      return value="resolveTerminalMode(config.terminalMode)"
+
+  memo name=termWidth deps="terminalSize"
+    handler lang="kern"
+      return value="terminalSize.width"
+
+  memo name=termHeight deps="terminalSize"
+    handler lang="kern"
+      return value="terminalSize.height"
 
   memo name=uiMotion deps="config"
     handler lang="kern"
       return value="normalizeUiMotion((config as any).uiMotion)"
+
+  // Native terminal selection is intentionally not mouse-tracked: capturing
+  // mouse events breaks ordinary OS selection. Only observable app interaction
+  // (typing) gates cosmetics; uiMotion=off remains the selection-safe no-clock
+  // policy for terminals that repaint selections on any status update.
+  memo name=cosmeticUiPaused deps="uiInteractionActive"
+    handler lang="kern"
+      return value="uiInteractionActive"
 
   memo name=nativeTranscriptBlocks deps="outputBlocks"
     handler lang="kern"
@@ -364,11 +384,15 @@ screen name=App target=ink
         return value="null"
       return value="{ engineId: activeStream.engineId, line: lines[lines.length - 1].trim() }"
 
+  memo name=chromeStreamSnippet deps="streamSnippet,cosmeticUiPaused"
+    handler lang="kern"
+      return value="cosmeticUiPaused ? null : streamSnippet"
+
   memo name=newestLiveToolStreamId deps="liveToolStreams"
     handler <<<
       let newestId = '';
       let newestStartedAt = -1;
-      for (const entry of Object.values(liveToolStreams ?? {}) as any[]) {
+      for (const entry of Object.values(liveToolStreams ?? {})) {
         const id = String(entry?.streamId ?? '');
         if (!id) continue;
         const startedAt = typeof entry?.startedAt === 'number' ? entry.startedAt : 0;
@@ -873,9 +897,9 @@ screen name=App target=ink
 
   callback name=interruptActiveRun params="message:string, clearChat:boolean" deps="replState,dispatch,trackAbort,outputActions"
     handler lang="kern"
-      do value="runInterruptActiveRun({ activeAbortRef, activePlanRef, cesarRuntimeHost: cesarRuntimeHostRef.current, setActiveAbort, setActivePlan, setLiveSpinner, setLiveProgress, outputActions, setQuestionState, setQuestionAnswer, setPendingPlanProposal, setSlashPickerOpen, setEnginePickerOpen, setModelPickerOpen, setCesarPickerOpen, setReviewEvent, replState, dispatch, setReplState, pendingBellRef, bell, setWindowTitle }, message, clearChat)"
+      do value="runInterruptActiveRun({ activeAbortRef, activePlanRef, activeTurnRef, interruptedTurnRef, cesarRuntimeHost: cesarRuntimeHostRef.current, jobManager, setActiveAbort, setActivePlan, setJobList, setLiveSpinner, setLiveProgress, outputActions, setQuestionState, setQuestionAnswer, setPendingPlanProposal, setSlashPickerOpen, setEnginePickerOpen, setModelPickerOpen, setCesarPickerOpen, setReviewEvent, replState, dispatch, setReplState, pendingBellRef, bell, setWindowTitle }, message, clearChat)"
 
-  callback name=buildContext params="" deps="registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,extensionPromptFragments,sessionMcpServers,telemetryVitals,recentFallbacks,setActivePlanWrapped"
+  callback name=buildContext params="" deps="registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,extensionPromptFragments,sessionMcpServers,autoModeQueued,telemetryVitals,recentFallbacks,setActivePlanWrapped"
     handler <<<
       if (cesarRuntimeHostRef.current.sessionId !== chatSession.id) {
         cesarRuntimeHostRef.current = createDurableCesarTurnRuntimeHost(chatSession.id);
@@ -898,6 +922,7 @@ screen name=App target=ink
         get activePlan() { return activePlanRef.current; }, setActivePlan: setActivePlanWrapped,
         extensionPromptFragments,
         sessionMcpServers, setSessionMcpServers,
+        autoModeQueued,
         telemetryVitals,
         telemetrySnapshot: () => telemetryPollerRef.current?.snapshot?.() ?? telemetryVitals,
         recentFallbacks,
@@ -906,11 +931,10 @@ screen name=App target=ink
     >>>
 
   // ── Terminal resize handling ──
-  effect deps="[]"
+  effect deps=""
     handler <<<
       const onResize = () => {
-        setTermWidth(process.stdout.columns || 100);
-        setTermHeight(process.stdout.rows || 24);
+        setTerminalSize(normalizeTerminalSize(process.stdout.columns, process.stdout.rows));
       };
       process.stdout.on('resize', onResize);
       return () => { process.stdout.off('resize', onResize); };
@@ -1043,6 +1067,14 @@ screen name=App target=ink
     handler lang="kern"
       assign target="inputValueRef.current" value="inputValue"
 
+  effect deps=""
+    handler <<<
+      return () => {
+        if (uiInteractionTimerRef.current) clearTimeout(uiInteractionTimerRef.current);
+        uiInteractionTimerRef.current = null;
+      };
+    >>>
+
   // Diagnostic (AGON_PERF=1): record keystroke→commit latency vs block/archive/
   // live counts + input length. Inert when not profiling (keyT0Ref stays 0).
   effect deps="inputValue"
@@ -1066,6 +1098,12 @@ screen name=App target=ink
     handler lang="kern"
       comment raw="// Diagnostic: stamp keystroke arrival; read post-commit by the AGON_PERF effect (0 when off)."
       assign target="keyT0Ref.current" value="perfNow()"
+      comment raw="// Freeze cosmetic clocks while the user is actively typing. Semantic"
+      comment raw="// streaming/tool events continue; only timer-driven chrome is paused."
+      do value="setUiInteractionActive(true)"
+      if cond="uiInteractionTimerRef.current"
+        do value="clearTimeout(uiInteractionTimerRef.current)"
+      assign target="uiInteractionTimerRef.current" value="setTimeout(() => { uiInteractionTimerRef.current = null; setUiInteractionActive(false); }, 350)"
       comment raw="// User is back at the keyboard — clear the pending bell so the NEXT await"
       comment raw="// (after this turn) can ring again, and announce this new plan approval."
       assign target="pendingBellRef.current" value="false"
@@ -1152,7 +1190,7 @@ screen name=App target=ink
   callback name=handleSubmit async=true params="value:string" deps="replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued,autoModeQueued,setPersistentAutoMode,setActivePlanWrapped,outputBlocks,btwPanel,sendBtwMessage,pendingBellRef,awaitingPlanAnnouncedRef"
     handler <<<
       runHandleSubmit({
-        inputEpochRef, pendingBellRef, awaitingPlanAnnouncedRef, pasteHashesRef, pendingPasteTransformRef, inputValueRef, activePlanRef, activeTurnRef, chatStartTimeRef,
+        inputEpochRef, pendingBellRef, awaitingPlanAnnouncedRef, pasteHashesRef, pendingPasteTransformRef, inputValueRef, activePlanRef, activeTurnRef, interruptedTurnRef, chatStartTimeRef,
         replState, mode, planModeQueued, autoModeQueued, btwPanel, pendingImages, outputBlocks, allSlashCommands, dynamicSkills, extensionSkills, lastUndoToken, sessionStartTime, explorationMode, neroMode,
         jobManager, commandRegistry, eventBus, loadedExtensions,
         setInputValue, setInputHistory, setHistoryIndex, setInputQueue, setSteeringCount, setSlashPickerOpen, setStatusDashboardOpen, setPlanModeQueued, setPersistentAutoMode, setMode, setWorkspacePath, setReplState, setJobList, setBtwPanel,
@@ -1500,7 +1538,7 @@ screen name=App target=ink
         modelPickerOpen, cesarPickerOpen, slashPickerOpen, atPickerOpen, enginePickerOpen,
         reviewEvent, toolDetailEvent, btwPanel, statusDashboardOpen,
         questionState, selectedChoiceIndex, questionOtherActive,
-        replState, inputValue, inputHistory, historyIndex,
+        replState, jobManager, inputValue, inputHistory, historyIndex,
         planModeQueued, autoModeQueued, planApprovalIndex,
         outputBlocks, allSlashCommands, availableEngines, updateInfo, terminalMode,
         newestLiveToolStreamId, fileRailOpen, fileRailExpandedPath, fileRailSelectedIdx,
@@ -1839,14 +1877,15 @@ screen name=App target=ink
             liveProgress={liveProgress}
             runningJobs={runningJobs}
             chatStartTime={chatStartTimeRef.current || 0}
-            streamSnippet={streamSnippet}
+            streamSnippet={chromeStreamSnippet}
             statusStats={statusStats}
             statusCwd={statusCwd}
             statusBranch={statusBranch}
             explorationMode={explorationMode}
             toolOutputExpanded={toolOutputExpanded}
             fullscreenEnabled={terminalMode === 'fullscreen'}
-            uiMotion={uiMotion} />
+            uiMotion={uiMotion}
+            interactionActive={cosmeticUiPaused} />
         )}
       </Box>
       );

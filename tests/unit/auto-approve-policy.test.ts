@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { applyAutoApprovePolicy } from '../../packages/cli/src/generated/cesar/auto-approve-policy.js';
+import { applyAgenticAutoApprovePolicy, applyAutoApprovePolicy } from '../../packages/cli/src/generated/cesar/auto-approve-policy.js';
+import { createTaskExecutionLease } from '../../packages/cli/src/generated/cesar/task-execution-lease.js';
 import { createCesarPlan } from '../../packages/core/src/generated/cesar/plan.js';
-import type { CesarPlan, CesarPlanStep } from '../../packages/core/src/generated/cesar/plan.js';
+import type { AgonConfig } from '../../packages/core/src/generated/models/types.js';
+import type { CesarPlan, CesarPlanStep, CesarStepType } from '../../packages/core/src/generated/cesar/plan.js';
 
-const makeStep = (id: string, type: any, overrides?: Partial<CesarPlanStep>): CesarPlanStep => ({
+const makeStep = (id: string, type: CesarStepType, overrides?: Partial<CesarPlanStep>): CesarPlanStep => ({
   id,
   type,
   description: `${type} step`,
@@ -27,10 +29,10 @@ const makePlan = (
   };
 };
 
-const cfg = (overrides: any = {}) => ({
+const cfg = (overrides: Partial<AgonConfig> = {}) => ({
   cesarAutoApproveMode: 'safe-only',
   ...overrides,
-} as any);
+} as AgonConfig);
 
 describe('applyAutoApprovePolicy', () => {
   describe('Gate 0 — global off switch', () => {
@@ -218,9 +220,38 @@ describe('applyAutoApprovePolicy', () => {
   describe('default mode is safe-only', () => {
     it('falls back to safe-only when cesarAutoApproveMode is unset', () => {
       const plan = makePlan([makeStep('s', 'forge')], { autoApprove: true });
-      const decision = applyAutoApprovePolicy(plan, {} as any);
+      const decision = applyAutoApprovePolicy(plan, {} as AgonConfig);
       expect(decision.approve).toBe(false);
       expect(decision.reason).toContain('safe-only');
+    });
+  });
+
+  describe('agentic AUTO ownership', () => {
+    it('executes a routine mutating plan without a second approval loop', () => {
+      const plan = makePlan([
+        makeStep('edit', 'self', { description: 'Update the local renderer', verifyCmd: 'npm test' }),
+      ], { autoApprove: true });
+      const lease = createTaskExecutionLease('update the renderer and test it', true, '/repo', undefined, 'agentic');
+
+      const decision = applyAgenticAutoApprovePolicy(plan, cfg(), lease);
+      expect(decision.approve).toBe(true);
+    });
+
+    it('stops at an external side-effect boundary', () => {
+      const plan = makePlan([
+        makeStep('publish', 'self', { description: 'Push the finished branch', verifyCmd: 'git push origin main' }),
+      ], { autoApprove: true });
+      const lease = createTaskExecutionLease('finish the local implementation', true, '/repo', undefined, 'agentic');
+
+      const decision = applyAgenticAutoApprovePolicy(plan, cfg(), lease);
+      expect(decision.approve).toBe(false);
+      expect(decision.reason).toContain('boundary');
+    });
+
+    it('respects the explicit plan auto-approval kill switch', () => {
+      const plan = makePlan([makeStep('edit', 'self')], { autoApprove: true });
+      const lease = createTaskExecutionLease('update the renderer', true, '/repo', undefined, 'agentic');
+      expect(applyAgenticAutoApprovePolicy(plan, cfg({ cesarAutoApproveMode: 'off' }), lease).approve).toBe(false);
     });
   });
 });

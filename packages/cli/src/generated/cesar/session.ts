@@ -38,11 +38,13 @@ import { approvalToolIsFileMutating, buildApprovalDiffPreview } from './approval
 
 import { isActiveCesarTurn, runTurnPermissionOnce, runTurnToolOnce } from './turn-runtime.js';
 
-import { approveTaskAction, authorizeTaskAction, claimTaskActionPrompt, evaluateTaskAction, isTaskFileMutationAction } from './task-execution-lease.js';
+import { approveTaskAction, authorizeTaskAction, claimTaskActionPrompt, evaluateTaskAction, isTaskFileMutationAction, taskActionApprovalMessage } from './task-execution-lease.js';
 
 import { recordCesarApprovalDecision, recordCesarToolTimeline, recordCesarConfidence, buildToolErrorDiagnostic } from './tool-observability.js';
 
-// @kern-source: session:23
+import { resolveCesarHarnessProfile, isAgenticAutoMode } from './task-controller.js';
+
+// @kern-source: session:24
 export const CESAR_SYSTEM_PROMPT: string = `You are Cesar, Agon AI orchestrator.
 
 CHARACTER — the most trusted advisor who doesn't need you to like him.
@@ -198,27 +200,63 @@ RULE 10 — TURN CLOSURE: End every turn with one clear closing line so the user
   If you END the turn still below ~85%, write CONFIDENCE: NN% once near your closing line — the UI uses that exact shape to offer the user an escalation (nero/tribunal).`;
 
 /**
+ * Compact controller prompt for agentic AUTO. Deterministic tool leases, task state, epochs, and verification enforce the mechanics; this prompt states intent instead of duplicating the implementation manual. Keep below 10,000 characters before project/tool context.
+ */
+// @kern-source: session:181
+export const CESAR_AGENTIC_SYSTEM_PROMPT: string = [
+    "You are Cesar, Agon's autonomous coding orchestrator. Be precise, direct, calm, and useful. Match the user's language and level. Lead with outcomes, not process narration.",
+    '', 'TASK OWNERSHIP',
+    '- Own the latest user objective until it is verified, genuinely blocked on missing information or authority, interrupted, or safely checkpointed at a real resource limit.',
+    '- Act instead of promising: inspect only what is needed, edit, run the narrowest useful verification, fix failures, and continue.',
+    '- Do not stop after confidence telemetry, exploration chatter, partial reads, one intermediate edit, or a delegated result.',
+    '- Preserve useful existing work and conversation context. Never restart from zero after a redirect unless the new instruction requires it.',
+    '', 'TOOLS AND SAFETY',
+    '- Use Read/Grep/Glob for workspace discovery, Edit/Write for files, and Bash for commands. Do not narrate calls you can make.',
+    '- Routine in-workspace edits, tests, builds, formatting, and local inspection are expected in AUTO and require no request for confirmation.',
+    '- Runtime policy is authoritative: explicit deny rules, workspace escapes, destructive commands, pushes, publishing, deployments, credential changes, and external side effects remain fenced. Never bypass or disguise a denied boundary.',
+    '- ReportConfidence is optional telemetry. Use it only for genuine uncertainty or risk; it is never completion and never a prerequisite.',
+    '- Keep a short [TODOS] checklist for work with more than two steps and update it when state changes.',
+    '', 'VERIFICATION AND COMPLETION',
+    '- A mutating task is complete only after structural mutation evidence and a successful applicable verification command. If no project gate exists, use the narrowest meaningful check and state that limitation.',
+    '- A read-only task is complete when the requested answer is delivered with concrete evidence.',
+    '- Tool failure is not completion. Diagnose, change approach, and continue. Never repeat an identical failed call in a loop.',
+    '- Ask one concise question only when user information or authority is truly required. Otherwise keep working.',
+    '', 'PLANNING',
+    '- Planning is optional, not a gateway. Stay live when direct execution remains coherent.',
+    '- Use ProposePlan for dependent stages, expensive orchestration, or resumability. Routine AUTO plans can execute immediately; boundary-bearing steps still pause at the exact boundary.',
+    '- Never ask the user to re-approve a routine plan or action already authorized by AUTO.',
+    '', 'DELEGATION',
+    '- Use orchestration only when it materially improves the result: Delegate for one bounded specialist, Review for read-only review, Pipeline for review-and-fix, Tribunal for a real tradeoff, Brainstorm for divergent approaches, Campfire for fuzzy framing, Forge for competing implementations, Agent for a multi-turn bounded task.',
+    '- Delegation is a yield, not abandonment. After an orchestration call, end the current send. The runtime returns success, failure, timeout, or cancellation to this same task; integrate it, then continue or close with an explicit terminal reason.',
+    '- Do not fabricate running work. If no tool was called, nothing was delegated.',
+    '', 'INTERRUPTS AND CLOSURE',
+    '- The latest user instruction is authoritative. On redirected work, stop superseded steps, retain useful results, and re-plan from current workspace state.',
+    '- End only in one clear state: verified result, one genuine blocker question, interruption acknowledgement, or explicit resource/failure checkpoint. Never manufacture "done" because a continuation limit was reached.',
+    '- Final answers are concise: what changed or what was found, verification evidence, and any real remaining risk.',
+  ].join('\n');
+
+/**
  * The EXACT RULE 1 — CONFIDENCE paragraph baked into CESAR_SYSTEM_PROMPT (the every-turn ReportConfidence ceremony). Held here verbatim so the invariants-mode rewrite is an exact string replacement: strict/shadow keep CESAR_SYSTEM_PROMPT byte-identical, invariants swaps this paragraph for CESAR_RULE_1_INVARIANTS. If RULE 1's wording in CESAR_SYSTEM_PROMPT ever changes, this const MUST change in lockstep or the replacement silently no-ops (the prompt stays strict). applyInvariantsRule1 fail-safes to the strict prompt on a mismatch AND emits a one-time console.warn so the drift is observable instead of silent.
  */
-// @kern-source: session:180
+// @kern-source: session:214
 export const CESAR_RULE_1_STRICT: string = `RULE 1 — CONFIDENCE: Call ReportConfidence(value) FIRST on every turn. If you cannot call tools, write ~X% at the very start instead. No exceptions. On the FIRST turn about a topic, low confidence is expected — investigate, then report your INFORMED confidence. BUT you carry the whole conversation: files you already read, searches you already ran, and conclusions you already reached EARLIER THIS SESSION are still valid context — build on them and report informed confidence immediately. Re-read a file ONLY if it changed or you never saw it. Do NOT restart every turn from zero with "let me check what's going on" when the answer is already in your history — re-discovering what you already know makes you look lost and wastes the user's time.`;
 
 /**
  * RULE 1 rewrite for guard mode 'invariants'. The GuardPipeline's grounded-write/evidence invariants now ENFORCE the confidence signal structurally (a well-formed Edit after a Read IS the proof), so the every-turn ReportConfidence ceremony is demoted to on-demand. RULE 1b is kept verbatim via the strict template — only this paragraph is swapped.
  */
-// @kern-source: session:186
+// @kern-source: session:220
 export const CESAR_RULE_1_INVARIANTS: string = `RULE 1 — CONFIDENCE: Report confidence via ReportConfidence ONLY when you are about to run a risky command (Bash mutations, multi-file writes, delegation) or when genuinely uncertain. Do NOT call it ritually every turn — a well-formed Edit after reading the file IS the confidence signal.`;
 
 /**
  * FIX 3 (R4) — module-level once-flag for applyInvariantsRule1's drift warning. A mutable {warned} holder (mutated in place, never frozen at module load) so the console.warn fires AT MOST ONCE per process even though buildCesarSystemPrompt calls applyInvariantsRule1 on every invariants-mode prompt assembly. Resettable in tests via the exported _resetInvariantsRule1DriftWarning seam.
  */
-// @kern-source: session:192
+// @kern-source: session:226
 export const invariantsRule1DriftState = { warned: false };
 
 /**
  * Test-only seam: reset the once-flag so a unit test can re-trigger applyInvariantsRule1's drift warning with a deliberately drifted prompt. Not used in production.
  */
-// @kern-source: session:195
+// @kern-source: session:229
 export function _resetInvariantsRule1DriftWarning(): void {
   invariantsRule1DriftState.warned = false;
 }
@@ -226,7 +264,7 @@ export function _resetInvariantsRule1DriftWarning(): void {
 /**
  * Rewrite the every-turn RULE 1 — CONFIDENCE ceremony to the on-demand 'invariants' form. Pure string transform on the assembled CESAR_SYSTEM_PROMPT: replaces the exact CESAR_RULE_1_STRICT paragraph with CESAR_RULE_1_INVARIANTS, leaving RULE 1b and everything else byte-identical. Only called on guard mode 'invariants' — strict/shadow never reach here, so the base prompt stays byte-identical for them by construction. If the strict text isn't found (RULE 1 wording in CESAR_SYSTEM_PROMPT drifted out of sync with the CESAR_RULE_1_STRICT const) it FAILS SAFE: it returns the prompt UNCHANGED (serving the stricter every-turn ceremony rather than silently dropping RULE 1) AND emits a one-time console.warn so the drift is observable instead of passing unnoticed. The warning is gated by a module-level once-flag (invariantsRule1DriftState) so it fires at most once per process despite the per-turn call cadence.
  */
-// @kern-source: session:201
+// @kern-source: session:235
 export function applyInvariantsRule1(prompt: string): string {
   if (!prompt.includes(CESAR_RULE_1_STRICT)) {
     if (!invariantsRule1DriftState.warned) {
@@ -241,19 +279,19 @@ export function applyInvariantsRule1(prompt: string): string {
 /**
  * FIX 6a — re-read ~/.agon/config.json's guardModes at most once per 60s. resolveCesarGuardMode runs on EVERY prompt assembly; the config rarely changes mid-session, so a minute-stale view is fine and keeps the synchronous file read off the per-turn prompt-build path. Mirrors GUARD_TELEMETRY_SNAPSHOT_TTL_MS in status-helpers.
  */
-// @kern-source: session:214
+// @kern-source: session:248
 export const GUARD_MODES_CONFIG_TTL_MS: number = 60 * 1000;
 
 /**
  * FIX 6a — module-level {at, home, value} memo for readGuardModesFromConfig(). `home` keys the entry to the AGON_HOME that produced it so an in-process AGON_HOME change (tests, embedded use) can never serve another home's config for up to a TTL. Mutated in place; never frozen at module load.
  */
-// @kern-source: session:217
+// @kern-source: session:251
 export const guardModesConfigCache = { at: 0, home: '', value: null as (ReturnType<typeof readGuardModesFromConfig>) };
 
 /**
  * FIX 6a — memoized wrapper over readGuardModesFromConfig(): the synchronous ~/.agon/config.json read happens at most once per GUARD_MODES_CONFIG_TTL_MS, keyed by AGON_HOME so an in-process home change invalidates. Best-effort: a read failure caches null for the TTL. Mirrors loadGuardTelemetrySnapshot's memo pattern in status-helpers.kern.
  */
-// @kern-source: session:220
+// @kern-source: session:254
 function readGuardModesFromConfigMemoized(): ReturnType<typeof readGuardModesFromConfig> {
   const now = Date.now();
   const home = process.env.AGON_HOME?.trim() ?? '';
@@ -279,11 +317,16 @@ function readGuardModesFromConfigMemoized(): ReturnType<typeof readGuardModesFro
 /**
  * Resolve the effective guard mode for the engine Cesar's brain is actually running on. Engine id = the live session's engineId (most accurate) → config.cesarEngine → config.forgeFixedStarter → 'claude', mirroring resolveCesarBackend. The engine def's `guards` field is read straight off the typed EngineDefinition (D3 added `guards?: GuardMode` to the type + the engine-schema zod), so no cast is needed. The user-config read is MEMOIZED (FIX 6a — readGuardModesFromConfigMemoized, 60s TTL) so prompt assembly no longer hits ~/.agon/config.json every turn. Best-effort: any registry/config failure degrades to 'strict' (the byte-identical default), never throws into prompt assembly.
  */
-// @kern-source: session:244
+// @kern-source: session:278
 export function resolveCesarGuardMode(ctx: HandlerContext): GuardMode {
   try {
-    const config = ctx.config as any;
-    const engineId = ctx.cesarSession?.engineId ?? config?.cesarEngine ?? config?.forgeFixedStarter ?? 'claude';
+    // Agentic AUTO moves confidence/grounded-write heuristics to shadow-only
+    // telemetry. Deterministic task leases and tool permissions still enforce
+    // real safety boundaries, while advisory guards cannot re-arm a write loop.
+    // The legacy profile keeps configured per-engine resolution byte-for-byte.
+    if (isAgenticAutoMode(ctx)) return 'shadow';
+    const config = ctx.config;
+    const engineId = ctx.cesarSession?.engineId ?? config.cesarEngine ?? config.forgeFixedStarter ?? 'claude';
     let engineGuards: GuardMode | undefined;
     try {
       const engineDef = ctx.registry.get(engineId);
@@ -300,7 +343,7 @@ export function resolveCesarGuardMode(ctx: HandlerContext): GuardMode {
 /**
  * Build the full Cesar system prompt with project context, engine list, and mode flags.
  */
-// @kern-source: session:263
+// @kern-source: session:302
 export function buildCesarSystemPrompt(ctx: HandlerContext): string {
   const config = ctx.config;
       const cesarCwd = resolveWorkingDir();
@@ -319,8 +362,11 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
       // ReportConfidence ceremony is demoted to on-demand. strict AND shadow keep
       // CESAR_SYSTEM_PROMPT byte-identical (shadow MEASURES the old prompt's
       // behavior) — only 'invariants' rewrites RULE 1, by construction.
+      const harnessProfile = resolveCesarHarnessProfile(ctx);
       const guardMode = resolveCesarGuardMode(ctx);
-      const basePrompt = guardMode === 'invariants' ? applyInvariantsRule1(CESAR_SYSTEM_PROMPT) : CESAR_SYSTEM_PROMPT;
+      const basePrompt = harnessProfile === 'agentic'
+        ? CESAR_AGENTIC_SYSTEM_PROMPT
+        : guardMode === 'invariants' ? applyInvariantsRule1(CESAR_SYSTEM_PROMPT) : CESAR_SYSTEM_PROMPT;
       const systemParts: string[] = [basePrompt];
       if (projectCtx) systemParts.push(`## PROJECT CONTEXT\n${projectCtx}`);
       // Codebase atlas: a compact "where things live" index so Cesar locates code
@@ -519,7 +565,7 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
 /**
  * Prepare the compiler-derived project spine once at the fresh-session boundary, store it on Cesar state for sync fallback/budget callers, and return the complete prompt. Best-effort: empty or failed builds clear any stale spine and preserve normal startup.
  */
-// @kern-source: session:480
+// @kern-source: session:522
 export async function prepareCesarSystemPrompt(ctx: HandlerContext, cwd?: string, spineBuilder?: (cwd:string)=>Promise<string>): Promise<string> {
   const targetCwd = cwd ?? resolveWorkingDir();
   let spine = '';
@@ -532,19 +578,19 @@ export async function prepareCesarSystemPrompt(ctx: HandlerContext, cwd?: string
   return buildCesarSystemPrompt(ctx);
 }
 
-// @kern-source: session:494
+// @kern-source: session:536
 export const CESAR_SNAPSHOT_MSG_CHAR_CAP: number = 4000;
 
-// @kern-source: session:496
+// @kern-source: session:538
 export const CONFIDENCE_BLOCK_LIMIT: number = 2;
 
-// @kern-source: session:498
+// @kern-source: session:540
 export const SEARCH_NUDGE_THRESHOLD: number = 40;
 
 /**
  * Bound one message's text to CESAR_SNAPSHOT_MSG_CHAR_CAP with a truncation marker. Applied on BOTH snapshot paths (direct session history AND the chat-transcript fallback) so oversized content never floods Cesar's continuity context regardless of which path produced it.
  */
-// @kern-source: session:500
+// @kern-source: session:542
 export function capSnapshotMessageContent(content: string): string {
   if (content.length <= CESAR_SNAPSHOT_MSG_CHAR_CAP) return content;
   return `${content.slice(0, CESAR_SNAPSHOT_MSG_CHAR_CAP)}\n… [${content.length - CESAR_SNAPSHOT_MSG_CHAR_CAP} chars truncated for Cesar context]`;
@@ -553,7 +599,7 @@ export function capSnapshotMessageContent(content: string): string {
 /**
  * Render the `command` string shown in a Cesar permission prompt for a tool call. SaveMemory renders the human-readable '[<section>] <memory>' (the durable fact the user is confirming) instead of an opaque JSON args blob; every other tool keeps the existing precedence: args.command -> args.file_path -> JSON.stringify(args). Shared across the API-native and both XML-loop permission builders so they render identically (the MCP watcher in brain.kern already special-cases SaveMemory the same way). Pure; tolerant of non-object args.
  */
-// @kern-source: session:507
+// @kern-source: session:549
 export function renderToolPermissionCommand(tool: string, args: unknown): string {
   const a = (args && typeof args === 'object') ? (args as Record<string, unknown>) : {};
   if (tool === 'SaveMemory') {
@@ -571,7 +617,7 @@ export function renderToolPermissionCommand(tool: string, args: unknown): string
 /**
  * Build a normalized continuity snapshot. Prefer the session's internal history; fall back to the visible chat transcript. Per-message string content is capped on EITHER path so review/brainstorm spam (or a huge tool result) doesn't flood Cesar's context; tool_calls/tool_call_id and non-string content are preserved untouched.
  */
-// @kern-source: session:523
+// @kern-source: session:565
 export function buildCesarConversationSnapshot(session: PersistentSession|null, chatSession: any): Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}> {
   const directHistory = session?.getMessageHistory?.() ?? [];
   if (directHistory.length > 0) {
@@ -604,7 +650,7 @@ export function buildCesarConversationSnapshot(session: PersistentSession|null, 
 /**
  * Persist the active Cesar conversation before the session is discarded.
  */
-// @kern-source: session:548
+// @kern-source: session:590
 export function saveCesarConversationSnapshot(session: PersistentSession|null, chatSession: any): void {
   if (!session) return;
   const snapshot = buildCesarConversationSnapshot(session, chatSession);
@@ -626,7 +672,7 @@ export function saveCesarConversationSnapshot(session: PersistentSession|null, c
 /**
  * Build the onToolCall callback for API engines with native function calling.
  */
-// @kern-source: session:568
+// @kern-source: session:610
 export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry, config: any): ((name:string, args:Record<string,unknown>, callId:string, controlPlane?:any) => Promise<string>) | undefined {
   const cwd = resolveWorkingDir();
   const fsc = getProjectFileStateCache(cwd);
@@ -847,7 +893,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
     const CONFIDENCE_INVESTIGATION_TOOLS = new Set(['Read', 'Grep', 'Glob', 'ReportConfidence', 'Delegate']);
     const _isInvestigation = CONFIDENCE_INVESTIGATION_TOOLS.has(name)
       || (name === 'Bash' && isReadOnlyCommand(String((args as any).command ?? '')));
-    if (!ctx.cesar!.confidenceSatisfied && !_isInvestigation) {
+    if (!isAgenticAutoMode(ctx) && !ctx.cesar!.confidenceSatisfied && !_isInvestigation) {
       const blocks = (ctx.cesar!.confidenceBlockCount ?? 0) + 1;
       ctx.cesar!.confidenceBlockCount = blocks;
       if (blocks <= CONFIDENCE_BLOCK_LIMIT) {
@@ -890,7 +936,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
         try { permDiffPreview = buildApprovalDiffPreview(String(tool), args as Record<string, unknown>); }
         catch { /* diff is best-effort — fall back to command preview */ }
       }
-      d({ type: 'permission-ask', tool, command: cmd, reason: evaluation.decision === 'ask_task_once' ? 'Approve this important task once' : 'Approve this dangerous action boundary', diffPreview: permDiffPreview && Array.isArray(permDiffPreview.files) ? permDiffPreview : undefined, fallbackNote: permDiffPreview && typeof permDiffPreview.fallback === 'string' ? permDiffPreview.fallback : undefined, resolve: (approved: boolean | string) => resolve(typeof approved === 'string' ? approved === 'y' || approved === 'a' : !!approved) } as any);
+      d({ type: 'permission-ask', tool, command: cmd, reason: taskActionApprovalMessage(evaluation), diffPreview: permDiffPreview && Array.isArray(permDiffPreview.files) ? permDiffPreview : undefined, fallbackNote: permDiffPreview && typeof permDiffPreview.fallback === 'string' ? permDiffPreview.fallback : undefined, resolve: (approved: boolean) => resolve(approved) });
     });
     // Tool handlers can auto-allow in-workspace writes or permissionMode=auto
     // Bash without invoking their permission callback. Enforce the turn lease
@@ -1002,7 +1048,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
 /**
  * Build the onApproval callback for engine tool approvals. Returns true to approve, false to deny silently, or a string to deny with a reason the engine can see.
  */
-// @kern-source: session:942
+// @kern-source: session:984
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string, controlPlane?:any) => Promise<boolean|string> {
   const engine = ctx.registry.get(engineId);
   const evaluateApproval = async (tool: string, command: string): Promise<boolean | string> => {
@@ -1099,7 +1145,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
 
     // R1 enforcement for companion engines: block file writes until confidence is reported
     // Bash commands flow through to the normal permission UI — user's settings.json controls approval
-    if (!ctx.cesar!.confidenceSatisfied) {
+    if (!isAgenticAutoMode(ctx) && !ctx.cesar!.confidenceSatisfied) {
       const WRITE_TOOLS = ['Edit', 'Write', 'MultiEdit'];
       if (WRITE_TOOLS.includes(agonTool)) {
         const blocks = (ctx.cesar!.confidenceBlockCount ?? 0) + 1;
@@ -1166,7 +1212,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
           try { permDiffPreview = buildApprovalDiffPreview(agonTool, approvalArgsFromCommand(agonTool, command)); }
           catch { /* diff is best-effort — fall back to command preview */ }
         }
-        dispatch({ type: 'permission-ask', tool: agonTool, command, reason: evaluation.decision === 'ask_task_once' ? 'Approve this important task once' : 'Approve this dangerous action boundary', diffPreview: permDiffPreview && Array.isArray(permDiffPreview.files) ? permDiffPreview : undefined, fallbackNote: permDiffPreview && typeof permDiffPreview.fallback === 'string' ? permDiffPreview.fallback : undefined, resolve: (approved: boolean | string) => {
+        dispatch({ type: 'permission-ask', tool: agonTool, command, reason: taskActionApprovalMessage(evaluation), diffPreview: permDiffPreview && Array.isArray(permDiffPreview.files) ? permDiffPreview : undefined, fallbackNote: permDiffPreview && typeof permDiffPreview.fallback === 'string' ? permDiffPreview.fallback : undefined, resolve: (approved: boolean | string) => {
           const wasApproved = typeof approved === 'string' ? approved === 'y' || approved === 'a' : !!approved;
           if (wasApproved) approveTaskAction(taskLease, agonTool, taskTarget);
           logApproval(wasApproved ? 'approved' : 'denied', 'task-lease', wasApproved ? 'user approved' : 'user denied');
@@ -1268,7 +1314,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:1209
+// @kern-source: session:1251
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -1302,7 +1348,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:1243
+// @kern-source: session:1285
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
 
@@ -1326,7 +1372,7 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:1267
+// @kern-source: session:1309
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) {
     return false;
@@ -1338,7 +1384,7 @@ export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
-// @kern-source: session:1274
+// @kern-source: session:1316
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -1358,7 +1404,7 @@ export function mcpConfigFingerprint(config: any): string {
 /**
  * Resolve the agon-orchestration MCP server entry. The CLI ships as a tsup BUNDLE that ALSO emits the MCP server to <cli-dist>/mcp/index.js (see tsup.config.ts), so the published install is self-contained — no @kernlang/agon-mcp npm dependency. Resolution order: (0) the bundled sibling <cli-dist>/mcp/index.js (the published, self-contained path), (1) node module resolution of @kernlang/agon-mcp (monorepo-via-symlink / legacy installs), (2) walk up to the repo root containing packages/mcp/dist/index.js (monorepo without a symlink), (3) the original relative guess as a last resort. `fromUrl` is for tests; defaults to this module's URL.
  */
-// @kern-source: session:1292
+// @kern-source: session:1334
 export function resolveAgonMcpServerPath(fromUrl?: string): string {
   const raw = fromUrl ?? import.meta.url;
   // Accept either a file: URL (normal) or a bare path (defensive): fileURLToPath
@@ -1392,7 +1438,7 @@ export function resolveAgonMcpServerPath(fromUrl?: string): string {
 /**
  * Single source of truth for which backend a Cesar engine will actually use. Honours config.cesarBackend preference ('auto' | 'cli' | 'api'). Pure — no side effects beyond registry lookups. Returns backend='none' when the engine has neither a usable binary nor an API key; callers decide how to handle that.
  */
-// @kern-source: session:1324
+// @kern-source: session:1366
 export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { backend: 'cli'|'api'|'none', binaryPath: string, hasBinary: boolean, hasApi: boolean, engine: any } {
   const config = ctx.config;
   const cesarEngineId = engineId ?? (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -1417,11 +1463,12 @@ export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { b
   return { backend: 'none', binaryPath: '', hasBinary, hasApi, engine };
 }
 
-// @kern-source: session:1350
+// @kern-source: session:1392
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
   const cwd = resolveWorkingDir();
+  const harnessProfile = resolveCesarHarnessProfile(ctx);
 
   // Ensure cesar state bag exists
   if (!ctx.cesar) {
@@ -1435,14 +1482,18 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
     };
   }
 
-  // Return existing alive session IF it's for the same engine AND MCP config hasn't changed
+  // Return an existing alive session only when engine, MCP wiring, and harness
+  // profile all match. AUTO may be toggled mid-session; recreating here is what
+  // prevents a legacy 25k controller prompt from silently surviving into an
+  // agentic turn (chat history is replayed into the fresh session below).
   const currentMcpFp = mcpConfigFingerprint(config);
   if (ctx.cesarSession && ctx.cesarSession.alive && ctx.cesarSession.engineId === cesarEngineId) {
     const storedFp = ctx.cesar!.mcpFingerprint as string | undefined;
-    if (storedFp === currentMcpFp) {
+    const storedProfile = String(ctx.cesar!.harnessProfile ?? 'legacy');
+    if (storedFp === currentMcpFp && storedProfile === harnessProfile) {
       return ctx.cesarSession;
     }
-    // MCP config changed — close stale session and recreate
+    // MCP config or harness profile changed — close and recreate.
     ctx.cesarSession.close();
     ctx.setCesarSession(null);
   }
@@ -1558,12 +1609,16 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
     fullPrompt += '\n\nYou have tools available via function calling. Call them directly — do NOT describe them in XML or narrate what you would call. Just call the function.';
   } else if (isCompanion) {
     // CLI companion with MCP orchestration: reference MCP tools, no XML for orchestration
-    fullPrompt += '\n\nYou have tools available via the agon-orchestration MCP server:\n- Orchestration: Tribunal, Brainstorm, Campfire, Council, Forge, Pipeline, Review, Agent, Conquer, Delegate, QuickNero, ReportConfidence, ProposePlan, ExitPlanMode\n- Write operations: AgonBash (shell commands), AgonEdit (file edits), AgonWrite (file creation)\n\nCall them as MCP tools — NEVER via your native Bash/Edit/Write. Your native write tools are disabled. Use AgonBash for ALL shell commands (git, npm, etc.), AgonEdit for file edits, AgonWrite for new files. The user will be asked to approve write operations. After calling any orchestration tool except Delegate, QuickNero, and ReportConfidence: STOP and wait.';
+    fullPrompt += harnessProfile === 'agentic'
+      ? '\n\nUse the agon-orchestration MCP tools directly. Use AgonBash for shell commands, AgonEdit for edits, and AgonWrite for new files; native Bash/Edit/Write are disabled. Routine workspace work is AUTO-authorized by the task lease. After an orchestration call, end this send: the controller will return its structured outcome and resume the same task. ReportConfidence is optional.'
+      : '\n\nYou have tools available via the agon-orchestration MCP server:\n- Orchestration: Tribunal, Brainstorm, Campfire, Council, Forge, Pipeline, Review, Agent, Conquer, Delegate, QuickNero, ReportConfidence, ProposePlan, ExitPlanMode\n- Write operations: AgonBash (shell commands), AgonEdit (file edits), AgonWrite (file creation)\n\nCall them as MCP tools — NEVER via your native Bash/Edit/Write. Your native write tools are disabled. Use AgonBash for ALL shell commands (git, npm, etc.), AgonEdit for file edits, AgonWrite for new files. The user will be asked to approve write operations. After calling any orchestration tool except Delegate, QuickNero, and ReportConfidence: STOP and wait.';
     if (isClaudePtyBrain) {
       // PTY brain: the user reads your reply ONLY via DeliverAnswer (TUI text is
       // an unreliable preview). Required every turn that doesn't STOP for an
       // orchestration tool / plan / delegation.
-      fullPrompt += '\n\nIMPORTANT — DELIVERING YOUR REPLY: You are running under a PTY answer-channel. DeliverAnswer is REQUIRED and is the FASTEST way to reply — calling it returns your answer to the user INSTANTLY. To show the user your response you MUST call the DeliverAnswer tool with your complete reply (markdown) in the `text` argument, then STOP. Plain printed/streamed text is only a draft preview, may not reach the user, AND is SLOWER (Agon then has to wait for the terminal to go idle before it can read anything). NEVER "respond directly", skip the tool, or avoid "tool round-trips" to save time — skipping DeliverAnswer makes the turn SLOWER and risks losing your reply entirely. Even a one-word answer goes through DeliverAnswer. Call it exactly once at the end of every turn — EXCEPT on turns where you STOP for an orchestration tool (Forge/Tribunal/Brainstorm/Campfire/Council/Pipeline/Review/Agent/Conquer/Delegate), ProposePlan, or ExitPlanMode (those already end your turn and Agon handles the rest). Always call ReportConfidence first as usual.';
+      fullPrompt += harnessProfile === 'agentic'
+        ? '\n\nIMPORTANT — DELIVERING YOUR REPLY: This PTY answer channel requires DeliverAnswer for the final user-facing reply. Call it exactly once after the task reaches a structured terminal state. Do not call it while work, verification, or delegated-result integration remains. ReportConfidence is optional.'
+        : '\n\nIMPORTANT — DELIVERING YOUR REPLY: You are running under a PTY answer-channel. DeliverAnswer is REQUIRED and is the FASTEST way to reply — calling it returns your answer to the user INSTANTLY. To show the user your response you MUST call the DeliverAnswer tool with your complete reply (markdown) in the `text` argument, then STOP. Plain printed/streamed text is only a draft preview, may not reach the user, AND is SLOWER (Agon then has to wait for the terminal to go idle before it can read anything). NEVER "respond directly", skip the tool, or avoid "tool round-trips" to save time — skipping DeliverAnswer makes the turn SLOWER and risks losing your reply entirely. Even a one-word answer goes through DeliverAnswer. Call it exactly once at the end of every turn — EXCEPT on turns where you STOP for an orchestration tool (Forge/Tribunal/Brainstorm/Campfire/Council/Pipeline/Review/Agent/Conquer/Delegate), ProposePlan, or ExitPlanMode (those already end your turn and Agon handles the rest). Always call ReportConfidence first as usual.';
     }
   } else {
     // Fallback: XML tool descriptions for engines without native tools or MCP
@@ -1593,6 +1648,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
   ctx.setCesarSession(session);
   // Store MCP config fingerprint so we can detect changes on next reuse check
   ctx.cesar!.mcpFingerprint = currentMcpFp;
+  ctx.cesar!.harnessProfile = harnessProfile;
   // Fresh session → reset the once-per-session context-budget warn flag so the
   // next time usage crosses warnAt the user gets a nudge again (the pre-turn
   // budget gate sets it true after warning). A new session starts near-empty.

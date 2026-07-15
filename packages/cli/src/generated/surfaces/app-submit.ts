@@ -38,21 +38,37 @@ import { mkdirSync, readFileSync, statSync, realpathSync, openSync, readSync, cl
 
 // ── Module: AppSubmit ──
 
-// @kern-source: app-submit:76
+// @kern-source: app-submit:75
+export function buildInterruptedTurnRedirect(previous: string, latest: string, source?: 'foreground'|'job'): string {
+  const previousLabel = source === 'job' ? 'Interrupted background task' : 'Interrupted request';
+  return [
+    '[INTERRUPTED TURN REDIRECT]',
+    'The user interrupted the previous work to redirect it.',
+    `${previousLabel}:`,
+    previous.trim().slice(0, 4000),
+    '',
+    'Latest instruction (authoritative):',
+    latest.trim(),
+    '',
+    'Continue from the existing conversation, completed tool work, and current workspace state. Preserve useful progress. Do not restart from zero or repeat reads/checks unless files changed or the latest instruction requires it. Stop superseded work and follow the latest instruction now.',
+  ].join('\n');
+}
+
+// @kern-source: app-submit:95
 export const MENTION_MAX_FILE_BYTES: number = 65536;
 
-// @kern-source: app-submit:77
+// @kern-source: app-submit:96
 export const MENTION_MAX_TOTAL_BYTES: number = 262144;
 
-// @kern-source: app-submit:78
+// @kern-source: app-submit:97
 export const MENTION_MAX_FILES: number = 20;
 
-// @kern-source: app-submit:87
+// @kern-source: app-submit:106
 export function isLiteralCommandLine(input: string): boolean {
   return input.startsWith('/') || input.startsWith('! ');
 }
 
-// @kern-source: app-submit:97
+// @kern-source: app-submit:116
 export function buildMentionedFilesContext(text: string, cwd: string): string {
   const allMentions = extractFileMentions(text);
   const mentions = allMentions.slice(0, MENTION_MAX_FILES);
@@ -129,7 +145,7 @@ export function buildMentionedFilesContext(text: string, cwd: string): string {
   return `\n\n[Attached files referenced with @ in the message above]\n${blocks.join('\n\n')}${note}`;
 }
 
-// @kern-source: app-submit:178
+// @kern-source: app-submit:197
 export function runProcessInputQueue(replState: ReplStateState, inputQueue: string[], setInputQueue: (updater:(prev:string[]) => string[]) => void, handleSubmit: (value:string) => void, setSteeringCount: (n:number) => void): void {
   if (replState !== 'idle') return;
   // The turn is over — clear the mid-turn steering hint count.
@@ -156,7 +172,7 @@ export function runProcessInputQueue(replState: ReplStateState, inputQueue: stri
 /**
  * Explicit dependencies for runSendBtwMessage — the context builder + live runtime signals (mode/replState/streams/transcript/plan/jobs) it folds into the side-chat prompt, the prior btwPanel it continues, the separate btwAbortRef it swaps, and the panel setter + dispatch it drives. Passed in rather than captured from component scope; values read at call time so staleness matches the original closure.
  */
-// @kern-source: app-submit:210
+// @kern-source: app-submit:229
 export interface SendBtwMessageDeps {
   buildContext: () => any;
   btwPanel: any;
@@ -171,7 +187,7 @@ export interface SendBtwMessageDeps {
   dispatch: (event:any) => void;
 }
 
-// @kern-source: app-submit:235
+// @kern-source: app-submit:254
 export function runSendBtwMessage(opts: SendBtwMessageDeps, question: string): void {
   const q = (question ?? '').trim();
         if (!q) return;
@@ -266,7 +282,7 @@ export function runSendBtwMessage(opts: SendBtwMessageDeps, question: string): v
 /**
  * Explicit dependencies for runHandleSubmit — the refs it consults (epoch/paste/bell/plan/turn/job-timing), the composer + history + queue + mode state it resets, every modal/picker/engine setter the DispatchCallbacks object wires, and the callbacks it delegates to. Passed in rather than captured from component scope; values read at call time so staleness matches the original closure.
  */
-// @kern-source: app-submit:335
+// @kern-source: app-submit:354
 export interface HandleSubmitDeps {
   inputEpochRef: {current: number};
   pendingBellRef: {current: boolean};
@@ -276,6 +292,7 @@ export interface HandleSubmitDeps {
   inputValueRef: {current: string};
   activePlanRef: {current: any};
   activeTurnRef: {current: { input:string; engineId:string; retried:boolean } | null};
+  interruptedTurnRef: {current: { input:string;source:'foreground'|'job';at:number } | null};
   chatStartTimeRef: {current: number};
   replState: ReplStateState;
   mode: string;
@@ -334,7 +351,7 @@ export interface HandleSubmitDeps {
   bell: () => void;
 }
 
-// @kern-source: app-submit:418
+// @kern-source: app-submit:438
 export async function runHandleSubmit(opts: HandleSubmitDeps, value: string): Promise<void> {
   opts.inputEpochRef.current += 1;
   let input = cleanSubmitValue(value);
@@ -524,13 +541,22 @@ export async function runHandleSubmit(opts: HandleSubmitDeps, value: string): Pr
   const mentionContext = literalCommandLine
     ? ''
     : buildMentionedFilesContext(input, resolveWorkingDir());
-  const dispatchInput = mentionContext ? input + mentionContext : input;
+  let dispatchInput = mentionContext ? input + mentionContext : input;
   let intent = detectIntent(cleanInput || input, opts.commandRegistry);
   if (intent.type === 'status') {
     opts.setStatusDashboardOpen(true);
     opts.dispatch({ type: 'info', message: 'Status dashboard open. Press q or Esc to close.' } as any);
     opts.transition(finishReplState);
     return;
+  }
+  const interruptedTurn = opts.interruptedTurnRef.current;
+  const interruptedTurnIsFresh = !!interruptedTurn && Date.now() - interruptedTurn.at <= 5 * 60_000;
+  if (interruptedTurn && !interruptedTurnIsFresh) {
+    opts.interruptedTurnRef.current = null;
+  } else if (interruptedTurnIsFresh && opts.mode === 'chat' && !literalCommandLine) {
+    dispatchInput = buildInterruptedTurnRedirect(interruptedTurn!.input, dispatchInput, interruptedTurn!.source);
+    opts.interruptedTurnRef.current = null;
+    opts.dispatch({ type: 'info', message: 'Redirecting interrupted work with your new instruction…' });
   }
   const ctx = opts.buildContext();
   (ctx as any).autoModeQueued = autoModeForTurn;
@@ -543,9 +569,10 @@ export async function runHandleSubmit(opts: HandleSubmitDeps, value: string): Pr
       if (visionNote) opts.dispatch({ type: 'warning', message: visionNote } as any);
     } catch { /* unknown engine id — the dispatch-time status note still covers it */ }
   }
-  opts.activeTurnRef.current = (!input.startsWith('/') && opts.mode === 'chat')
+  const activeTurn = (!input.startsWith('/') && opts.mode === 'chat')
     ? { input, engineId: cesarEngineForTurn, retried: false }
     : null;
+  opts.activeTurnRef.current = activeTurn;
   const cb: DispatchCallbacks = {
     dispatch: opts.dispatch, ctx, commandRegistry: opts.commandRegistry, eventBus: opts.eventBus, loadedExtensions: opts.loadedExtensions, setWorkspacePath: opts.setWorkspacePath,
     runAsJob: (type: string, label: string, fn: (signal: AbortSignal) => Promise<void>) => {
@@ -591,7 +618,7 @@ export async function runHandleSubmit(opts: HandleSubmitDeps, value: string): Pr
     if (result.ranAsJob) return;
   } catch (err: any) { opts.dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); }
   finally {
-    if (opts.activeTurnRef.current?.input === input) opts.activeTurnRef.current = null;
+    if (opts.activeTurnRef.current === activeTurn) opts.activeTurnRef.current = null;
     // Route through transition() so a normally-completed turn rings the
     // done-bell. A direct setReplState here bypassed transition's bell hook,
     // so the MAIN completion path (every non-job turn) was silent — only the

@@ -50,6 +50,29 @@ fn name=buildModel params="config:ApiConfig" returns="any"
     return model;
   >>>
 
+fn name=isIgnorableAnthropicEmptyDeltaError params="error:unknown, config:ApiConfig" returns=boolean export=true
+  doc "Recognize the MiniMax Anthropic-stream compatibility quirk where a no-op terminal message_delta contains delta.stop_reason='' but omits Anthropic's required usage object. The AI SDK surfaces that one SSE frame as AI_TypeValidationError and continues parsing later frames, so callers may ignore it only after productive output. Deliberately exact and Anthropic-only: every other validation error remains fatal."
+  handler lang="typescript" reason="provider SDK exposes validation payloads as unknown nested records" <<<
+    if (config.format !== 'anthropic') return false;
+    const value = error && typeof error === 'object' && 'value' in error ? error.value : undefined;
+    if (value && typeof value === 'object') {
+      const type = 'type' in value ? value.type : undefined;
+      const delta = 'delta' in value ? value.delta : undefined;
+      const stopReason = delta && typeof delta === 'object' && 'stop_reason' in delta
+        ? delta.stop_reason
+        : undefined;
+      return type === 'message_delta'
+        && stopReason === ''
+        && !Object.prototype.hasOwnProperty.call(value, 'usage');
+    }
+    const rendered = String(error ?? '');
+    const valueText = rendered.split(/Error message:/i, 1)[0] ?? rendered;
+    return /AI_TypeValidationError|Type validation failed/i.test(rendered)
+      && /["']type["']\s*:\s*["']message_delta["']/i.test(valueText)
+      && /["']stop_reason["']\s*:\s*["']["']/i.test(valueText)
+      && !/["']usage["']\s*:/.test(valueText);
+  >>>
+
 fn name=convertToolsForSdk params="tools:Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>" returns="Record<string,any>"
   doc "Convert OpenAI-format tool definitions to AI SDK tool format."
   handler <<<
@@ -542,8 +565,21 @@ fn name=apiStreamDispatchWithHistory generator=true async=true params="config:Ap
             break;
           }
           case 'error': {
+            const streamError = part.error;
+            // MiniMax's Anthropic-compatible endpoint sometimes emits one
+            // schema-incomplete no-op message_delta after otherwise productive
+            // output. The AI SDK keeps parsing after this error part, so ignore
+            // only that exact provider quirk and let message_stop/finish close
+            // the stream normally. Never turn an empty/broken stream into a
+            // success, and never suppress unrelated validation failures.
+            const hasProductiveOutput = stdout.length > 0
+              || currentReasoningBuf.length > 0
+              || capturedParts.length > 0;
+            if (hasProductiveOutput && isIgnorableAnthropicEmptyDeltaError(streamError, config)) {
+              break;
+            }
             clearTimeout(timer);
-            const errStr = String((part as any).error);
+            const errStr = String(streamError);
             // A 404/not-found before any output is almost always a wrong baseUrl
             // path or a wire-format mismatch (e.g. format='anthropic' on a host
             // whose Anthropic endpoint isn't at /v1/messages — MiniMax, etc.).

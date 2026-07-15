@@ -30,7 +30,7 @@ import { ComposerView } from '../../generated/blocks/composer.js';
 
 import { FileRail } from '../blocks/file-rail.js';
 
-import type { AgentProgressSnapshot } from '../signals/output.js';
+import type { AgentProgressSnapshot, LiveToolStreamEntry } from '../signals/output.js';
 
 // @kern-source: app-views:101
 const PlanChip = React.memo(function PlanChip({ activePlan, activePlanState, planModeQueued, autoModeQueued }: { activePlan?:any; activePlanState?:string|null; planModeQueued?:boolean; autoModeQueued?:boolean }) {
@@ -299,7 +299,7 @@ export function ToolDetailBlock({ title, subtitle, accentColor, rows, maxVisible
 }
 
 // @kern-source: app-views:393
-const StreamingView = React.memo(function StreamingView({ streamingText, mode, liveProgress, liveToolStreams, liveToolTailFrozen }: { streamingText:{engineId:string,content:string,draft?:boolean} | null; mode:string; liveProgress:EngineProgress[] | null; liveToolStreams?:Record<string,any>; liveToolTailFrozen?:Record<string,boolean> }) {
+const StreamingView = React.memo(function StreamingView({ streamingText, mode, liveProgress, liveToolStreams, liveToolTailFrozen }: { streamingText:{engineId:string,content:string,draft?:boolean} | null; mode:string; liveProgress:EngineProgress[] | null; liveToolStreams?:Record<string,LiveToolStreamEntry>; liveToolTailFrozen?:Record<string,boolean> }) {
   const frozenToolOutputRef = useRef<Record<string, string>>({});
 
   // Narration-fold policy (off|safe|aggressive) — read once per mount so a
@@ -366,8 +366,8 @@ const StreamingView = React.memo(function StreamingView({ streamingText, mode, l
   }, [streamingText ? streamingText.engineId : null, textFrameMs]);
 
   // ── Throttled rendered state for tool streams ──
-  const [renderedToolStreams, setRenderedToolStreams] = useState<Record<string, any>>({});
-  const toolRef = useRef<Record<string, any>>({});
+  const [renderedToolStreams, setRenderedToolStreams] = useState<Record<string, LiveToolStreamEntry>>({});
+  const toolRef = useRef<Record<string, LiveToolStreamEntry>>({});
   toolRef.current = liveToolStreams ?? {};
 
   useEffect(() => {
@@ -560,7 +560,7 @@ const StreamingView = React.memo(function StreamingView({ streamingText, mode, l
 export { StreamingView };
 
 // @kern-source: app-views:664
-const LiveStreamSection = React.memo(function LiveStreamSection({ activeStream, mode, liveProgress, liveToolStreams, liveToolTailFrozen, agentProgress }: { activeStream:{engineId:string,content:string,draft?:boolean} | null; mode:string; liveProgress:EngineProgress[] | null; liveToolStreams?:Record<string,any>; liveToolTailFrozen?:Record<string,boolean>; agentProgress:Record<string,AgentProgressSnapshot> }) {
+const LiveStreamSection = React.memo(function LiveStreamSection({ activeStream, mode, liveProgress, liveToolStreams, liveToolTailFrozen, agentProgress }: { activeStream:{engineId:string,content:string,draft?:boolean} | null; mode:string; liveProgress:EngineProgress[] | null; liveToolStreams?:Record<string,LiveToolStreamEntry>; liveToolTailFrozen?:Record<string,boolean>; agentProgress:Record<string,AgentProgressSnapshot> }) {
   return (
     <>
       <StreamingView streamingText={activeStream} mode={mode} liveProgress={liveProgress} liveToolStreams={liveToolStreams} liveToolTailFrozen={liveToolTailFrozen} />
@@ -688,7 +688,7 @@ const UpdateBanner = React.memo(function UpdateBanner({ updateInfo, updateChecki
 export { UpdateBanner };
 
 // @kern-source: app-views:838
-const BottomChromeSection = React.memo(function BottomChromeSection({ updateInfo, updateChecking, questionState, pendingImages, imageVisionNote, inputQueue, steeringCount, liveSpinner, mode, statusDashboardOpen, telemetryVitals, recentFallbacks, termWidth, termHeight, statusDashboardFilter, replState, planModeQueued, autoModeQueued, activePlan, slashPickerOpen, atPickerOpen, atPickerFiles, atPickerPrefix, atPickerQuery, onAtSelect, onAtCancel, inputValue, handleInputChange, handlePasteInput, handleSubmit, allSlashCommands, availableEngines, onSlashSelect, onSlashCancel, questionAnswer, selectedChoiceIndex, questionOtherActive, onQuestionAnswerChange, onQuestionAnswerSubmit, updateBannerActive, onCtrlShortcut, cesarId, cesarConfidence, cesarContext, liveProgress, runningJobs, chatStartTime, streamSnippet, statusStats, statusCwd, statusBranch, explorationMode, toolOutputExpanded, fullscreenEnabled, uiMotion }: { updateInfo:any; updateChecking:boolean; questionState:any; pendingImages:any[]; imageVisionNote?:string|null; inputQueue:string[]; steeringCount:number; liveSpinner:any; mode:'chat'|'campfire'|'brainstorm'|'tribunal'; statusDashboardOpen:boolean; telemetryVitals:Map<string, any>; recentFallbacks:any[]; termWidth:number; termHeight:number; statusDashboardFilter:any; replState:string; planModeQueued:boolean; autoModeQueued:boolean; activePlan:any; slashPickerOpen:boolean; atPickerOpen:boolean; atPickerFiles:string[]; atPickerPrefix:string; atPickerQuery:string; onAtSelect:(path:string) => void; onAtCancel:(typed:string) => void; inputValue:string; handleInputChange:(value:string) => void; handlePasteInput:(raw:string) => string; handleSubmit:(value:string) => void; allSlashCommands:any[]; availableEngines:string[]; onSlashSelect:(cmd:string) => void; onSlashCancel:() => void; questionAnswer:string; selectedChoiceIndex:number; questionOtherActive:boolean; onQuestionAnswerChange:(value:string) => void; onQuestionAnswerSubmit:(value:string) => void; updateBannerActive:boolean; onCtrlShortcut:(shortcut:string) => void; cesarId:string; cesarConfidence:any; cesarContext:any; liveProgress:EngineProgress[] | null; runningJobs:Job[]; chatStartTime:number; streamSnippet:any; statusStats:any; statusCwd:string; statusBranch:string; explorationMode:any; toolOutputExpanded:boolean; fullscreenEnabled:boolean; uiMotion?:'full'|'reduced'|'off' }) {
+const BottomChromeSection = React.memo(function BottomChromeSection({ updateInfo, updateChecking, questionState, pendingImages, imageVisionNote, inputQueue, steeringCount, liveSpinner, mode, statusDashboardOpen, telemetryVitals, recentFallbacks, termWidth, termHeight, statusDashboardFilter, replState, planModeQueued, autoModeQueued, activePlan, slashPickerOpen, atPickerOpen, atPickerFiles, atPickerPrefix, atPickerQuery, onAtSelect, onAtCancel, inputValue, handleInputChange, handlePasteInput, handleSubmit, allSlashCommands, availableEngines, onSlashSelect, onSlashCancel, questionAnswer, selectedChoiceIndex, questionOtherActive, onQuestionAnswerChange, onQuestionAnswerSubmit, updateBannerActive, onCtrlShortcut, cesarId, cesarConfidence, cesarContext, liveProgress, runningJobs, chatStartTime, streamSnippet, statusStats, statusCwd, statusBranch, explorationMode, toolOutputExpanded, fullscreenEnabled, uiMotion, interactionActive }: { updateInfo:any; updateChecking:boolean; questionState:any; pendingImages:any[]; imageVisionNote?:string|null; inputQueue:string[]; steeringCount:number; liveSpinner:any; mode:'chat'|'campfire'|'brainstorm'|'tribunal'; statusDashboardOpen:boolean; telemetryVitals:Map<string, any>; recentFallbacks:any[]; termWidth:number; termHeight:number; statusDashboardFilter:any; replState:string; planModeQueued:boolean; autoModeQueued:boolean; activePlan:any; slashPickerOpen:boolean; atPickerOpen:boolean; atPickerFiles:string[]; atPickerPrefix:string; atPickerQuery:string; onAtSelect:(path:string) => void; onAtCancel:(typed:string) => void; inputValue:string; handleInputChange:(value:string) => void; handlePasteInput:(raw:string) => string; handleSubmit:(value:string) => void; allSlashCommands:any[]; availableEngines:string[]; onSlashSelect:(cmd:string) => void; onSlashCancel:() => void; questionAnswer:string; selectedChoiceIndex:number; questionOtherActive:boolean; onQuestionAnswerChange:(value:string) => void; onQuestionAnswerSubmit:(value:string) => void; updateBannerActive:boolean; onCtrlShortcut:(shortcut:string) => void; cesarId:string; cesarConfidence:any; cesarContext:any; liveProgress:EngineProgress[] | null; runningJobs:Job[]; chatStartTime:number; streamSnippet:any; statusStats:any; statusCwd:string; statusBranch:string; explorationMode:any; toolOutputExpanded:boolean; fullscreenEnabled:boolean; uiMotion?:'full'|'reduced'|'off'; interactionActive?:boolean }) {
   const isActive = replState !== 'idle' || runningJobs.length > 0;
   return (
     <Box flexDirection="column" paddingX={1} marginTop={1}>
@@ -756,8 +756,8 @@ const BottomChromeSection = React.memo(function BottomChromeSection({ updateInfo
           termHeight={termHeight}
           onCtrlShortcut={onCtrlShortcut} />
       )}
-      <CesarStatusStrip cesarId={cesarId} confidence={cesarConfidence} context={cesarContext} spinner={liveSpinner} engines={liveProgress} jobs={runningJobs} startTime={chatStartTime} streamSnippet={streamSnippet} isActive={isActive} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} activePlan={activePlan} scoreboard={null} rationale={null} uiMotion={uiMotion} />
-      {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} meteredCostUsd={(statusStats as any).meteredCostUsd} hasPlanApiUsage={(statusStats as any).hasPlanApiUsage} hasCliUsage={(statusStats as any).hasCliUsage} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} autoModeQueued={autoModeQueued} isActive={replState !== 'idle'} fullscreenEnabled={fullscreenEnabled} telemetryVitals={telemetryVitals} context={cesarContext} />}
+      <CesarStatusStrip cesarId={cesarId} confidence={cesarConfidence} context={cesarContext} spinner={liveSpinner} engines={liveProgress} jobs={runningJobs} startTime={chatStartTime} streamSnippet={streamSnippet} isActive={isActive} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} activePlan={activePlan} scoreboard={null} rationale={null} uiMotion={uiMotion} interactionActive={interactionActive} />
+      {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} meteredCostUsd={statusStats.meteredCostUsd} hasPlanApiUsage={statusStats.hasPlanApiUsage} hasCliUsage={statusStats.hasCliUsage} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} autoModeQueued={autoModeQueued} isActive={replState !== 'idle'} fullscreenEnabled={fullscreenEnabled} telemetryVitals={telemetryVitals} context={cesarContext} termWidth={termWidth} />}
     </Box>
   );
 });

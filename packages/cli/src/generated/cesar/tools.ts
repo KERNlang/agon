@@ -8,7 +8,7 @@ import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
 import { createCouncilTool } from './council-tool.js';
 
-import { authorizeTaskAction, isTaskFileMutationAction } from './task-execution-lease.js';
+import { authorizeTaskAction, isTaskFileMutationAction, taskActionApprovalMessage } from './task-execution-lease.js';
 
 import { isBashToolName } from './brain-helpers.js';
 
@@ -150,9 +150,7 @@ export async function executeEagerTool(toolName: string, meta: Record<string,unk
       target,
       (evaluation: any) => requestTaskApproval(
         tool,
-        evaluation.decision === 'ask_task_once'
-          ? 'Approve this important task once'
-          : 'Approve this dangerous action boundary',
+        taskActionApprovalMessage(evaluation),
       ),
     );
     return authorization.decision === 'allow'

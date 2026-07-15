@@ -1,5 +1,6 @@
 import from="@kernlang/agon-core" names="EngineRegistry,EngineAdapter,Plan,AgonConfig,ChatSession,PersistentSession,CesarMemory,EventBus,ToolRegistry,DiscoveredGate" types=true
 import from="../cesar/telemetry.js" names="EngineVitals" types=true
+import from="../cesar/task-execution-lease.js" names="TaskExecutionLease" types=true
 
 interface name=EngineProgress
   field name=id type=string
@@ -380,7 +381,8 @@ interface name=CesarState
   field name=turnId type="string | undefined" optional=true
   field name=sessionMcpServers type="Array<{name:string, type?:string, url?:string, command?:string, args?:string[]}>"
   field name=autoModeQueued type=boolean optional=true
-  field name=taskExecutionLease type="any | undefined" optional=true doc="Turn-scoped AUTO authority shared by native, companion, XML, and MCP execution adapters."
+  field name=harnessProfile type="'legacy'|'agentic' | undefined" optional=true doc="Controller profile used to create the current persistent Cesar session; changing it forces a clean session rebuild with history replay."
+  field name=taskExecutionLease type="TaskExecutionLease | undefined" optional=true doc="Turn-scoped AUTO authority shared by native, companion, XML, and MCP execution adapters."
   field name=discoveredGate type="DiscoveredGate | undefined" optional=true doc="The verification gate discovered for the current turn's cwd (command + loose matchers). command==='' means gateAbsent."
   field name=gateWaived type=boolean optional=true doc="Session-sticky: when true, the verify-before-done gate nudge is suppressed for the rest of the session. Set on /nogate, on a user skip-signal after a nudge, or when no gate could be discovered (gateAbsent)."
   field name=gateNudgedClaim type="string | undefined" optional=true doc="Signature of the most recent done-claim that already received a gate nudge — guards one nudge per distinct claim so a repeated/identical 'done' doesn't re-nudge, while a NEW done-claim (different signature) can."
@@ -413,6 +415,7 @@ interface name=HandlerContext
   field name=sessionMcpServers type="Array<Record<string,unknown>>" optional=true
   field name=setSessionMcpServers type="((servers: Array<Record<string,unknown>>) => void) | undefined" optional=true
   field name=autoModeQueued type=boolean optional=true
+  field name=delegatedContinuationDepth type=number optional=true doc="Depth guard for delegated-result synthesis. Typed on the shared context so continuations do not need unsafe casts."
   field name=telemetryVitals type="Map<string, EngineVitals> | undefined" optional=true
   field name=telemetrySnapshot type="(() => Map<string, EngineVitals>) | undefined" optional=true doc="Live read of the telemetry poller's current vitals map. telemetryVitals (React state) is repaint-deduped and may lag by a signature bucket while the /status dashboard is closed; on-demand consumers (the /status text snapshot) should prefer this getter."
   field name=recentFallbacks type="{from:string,to:string,reason:string,at:number}[] | undefined" optional=true

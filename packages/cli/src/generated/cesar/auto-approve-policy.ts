@@ -12,23 +12,27 @@ import { planCostEstimator } from '@kernlang/agon-core';
 
 import { hostStringSet } from '../lib/kern-host.js';
 
-// @kern-source: auto-approve-policy:17
+import { evaluateTaskAction } from './task-execution-lease.js';
+
+import type { TaskExecutionLease } from './task-execution-lease.js';
+
+// @kern-source: auto-approve-policy:19
 export interface AutoApproveDecision {
   approve: boolean;
   reason: string;
   adjustedCostUsd: number;
 }
 
-// @kern-source: auto-approve-policy:22
+// @kern-source: auto-approve-policy:24
 export const MUTATING_STEP_TYPES: Set<string> = hostStringSet(['forge', 'teamforge', 'pipeline', 'agent', 'team-agent', 'delegate', 'self']);
 
 /**
  * Decide whether a plan qualifies for autonomous execution without user confirmation.
  */
-// @kern-source: auto-approve-policy:24
+// @kern-source: auto-approve-policy:26
 export function applyAutoApprovePolicy(plan: CesarPlan, config: AgonConfig): AutoApproveDecision {
-  const mode = (config as any).cesarAutoApproveMode ?? 'safe-only';
-  const maxCostUsd = (config as any).cesarAutoApproveMaxCostUsd as number | undefined;
+  const mode = config.cesarAutoApproveMode ?? 'safe-only';
+  const maxCostUsd = config.cesarAutoApproveMaxCostUsd;
   // Gate 0: global off switch
   if (mode === 'off') {
     return { approve: false, reason: 'autoApprove disabled (cesarAutoApproveMode=off)', adjustedCostUsd: plan.totalEstimatedCostUsd };
@@ -64,4 +68,31 @@ export function applyAutoApprovePolicy(plan: CesarPlan, config: AgonConfig): Aut
   }
   // cost-bounded with no ceiling configured = same as 'always' but explicit
   return { approve: true, reason: `${mode} policy passed (cost $${adjustedCostUsd.toFixed(4)})`, adjustedCostUsd: adjustedCostUsd };
+}
+
+/**
+ * Agentic AUTO executes routine plans without a second approval loop, but only after every step description and command passes the same task lease used by direct tools. Explicit autoApprove=off remains a kill switch.
+ */
+// @kern-source: auto-approve-policy:60
+export function applyAgenticAutoApprovePolicy(plan: CesarPlan, config: AgonConfig, lease: TaskExecutionLease|undefined): AutoApproveDecision {
+  if (config.cesarAutoApproveMode === 'off') return applyAutoApprovePolicy(plan, config);
+  if (!lease) return { approve: false, reason: 'agentic task lease unavailable', adjustedCostUsd: plan.totalEstimatedCostUsd };
+  if (plan.autoApprove !== true) return { approve: false, reason: 'plan did not request autoApprove', adjustedCostUsd: plan.totalEstimatedCostUsd };
+
+  for (const step of plan.steps) {
+    const boundaryText = [step.description, step.fitnessCmd, step.verifyCmd].filter((value): value is string => typeof value === 'string' && value.trim().length > 0).join('\n');
+    const actionDecision = evaluateTaskAction(lease, step.type, boundaryText);
+    if (actionDecision.decision !== 'allow') {
+      return { approve: false, reason: `step ${step.id} requires boundary approval (${actionDecision.reason})`, adjustedCostUsd: plan.totalEstimatedCostUsd };
+    }
+    if (boundaryText) {
+      const commandDecision = evaluateTaskAction(lease, 'Bash', boundaryText);
+      if (commandDecision.decision !== 'allow') {
+        return { approve: false, reason: `step ${step.id} contains an interactive boundary (${commandDecision.reason})`, adjustedCostUsd: plan.totalEstimatedCostUsd };
+      }
+    }
+  }
+
+  const agenticConfig: AgonConfig = { ...config, cesarAutoApproveMode: 'always' };
+  return applyAutoApprovePolicy(plan, agenticConfig);
 }

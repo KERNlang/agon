@@ -46,7 +46,9 @@ import { markSteeringTurn, drainSteering, releaseSteeringTurn } from './steering
 
 import { beginCesarTurn, createCesarTurnRuntimeHost, resetStaleCesarTurnState, transitionCesarTurn, resolveCesarAbortOutcome, classifyCesarStreamError, releaseCesarTurnHandles, fenceStaleCesarTurn } from './turn-runtime.js';
 
-import { createTaskExecutionLease, authorizeTaskAction, isTaskFileMutationAction, isApprovedPermissionResponse } from './task-execution-lease.js';
+import { createTaskExecutionLease, authorizeTaskAction, isTaskFileMutationAction, isApprovedPermissionResponse, taskActionApprovalMessage } from './task-execution-lease.js';
+
+import { resolveCesarHarnessProfile, evaluateAgenticTaskState, buildAgenticProgressSignature, buildAgenticAutoTurnDirective, resolveCesarToolReadOnlyMode, extractAgenticBashCommand, isAgenticMutationOutcome } from './task-controller.js';
 
 import { yieldToInk, recordCesarTurn, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, createTodosDisplayStripper, createPreambleStripper, findTrailingUserQuestion, detectAwaitingUserInput, detectNarratedToolStall, detectMutationIntentStall, detectFabricatedDelegation, shouldDeescalateGuard, withEagerToolCallId, claimEagerToolExecution, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation, isBashToolName, isWriteToolName } from './brain-helpers.js';
 
@@ -56,7 +58,7 @@ import { consumeCesarPlanControlSignals } from './plan-control-signals.js';
 
 import { hostNowIso, hostWaitForInteractiveChoice } from '../lib/kern-host.js';
 
-// @kern-source: brain:30
+// @kern-source: brain:31
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>, turnAlreadyCommitted?: boolean): Promise<CesarTurnOutcome> {
   // streaming-end commits a real stream OR (when only a speculative preview
   // draft sits on the pane) drops the draft without committing — safe no-op when
@@ -89,7 +91,7 @@ export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input
   return { delegated: false, responded: true, decisionReason: 'delegation-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:57
+// @kern-source: brain:58
 export async function commitTurnAndSuggest(suggestion: {action:string, rest?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}, input: string, response: string, cesarEngineId: string, color: number, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   // streaming-end commits a real stream OR drops a lingering speculative preview
   // draft without committing — safe no-op when there's no entry at all.
@@ -120,10 +122,10 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
   return { delegated: false, responded: true, decisionReason: 'suggestion-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:82
+// @kern-source: brain:83
 export const _noBriefNudged: WeakMap<object, boolean> = new WeakMap<object, boolean>();
 
-// @kern-source: brain:84
+// @kern-source: brain:85
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<CesarTurnOutcome> {
   const abort = new AbortController();
       const _turnStart = Date.now();
@@ -195,6 +197,16 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       let _narratedToolStalls = 0;
       let _autoToolExecutions = 0;
       let _confidenceToolUsed = false;
+      let _successfulMutationCount = 0;
+      let _failedToolCount = 0;
+      let _verificationPassed = false;
+      let _verificationFailed = false;
+      let _todoRevision = 0;
+      let _lastTodoSignature = '';
+      let _todosRemaining = false;
+      let _agenticTaskState = 'running';
+      let _agenticTerminalReason = 'work_incomplete';
+      const _toolOutcomeKeys = new Set<string>();
       // Streaming adapters can emit the same correlated running chunk more than
       // once while arguments are assembled. Keep the claim for the whole turn so
       // fallback/retry streams cannot execute the same eager call again.
@@ -212,15 +224,35 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       let _actualCesarEngineId = '';
       let _actualCesarBackend = 'unknown';
       let _actualHasNativeTools = false;
-      let _timelineEnabled = (ctx.config as any).cesarToolTimeline !== false;
+      let _timelineEnabled = ctx.config.cesarToolTimeline !== false;
       let _turnTimelineClosed = false;
       let restoreFastPathMode: (() => void) | null = null;
       const recordTimeline = (record: any) => {
         if (!_timelineEnabled) return;
         recordCesarToolTimeline({ turnId: _turnId, ...record });
       };
+      const noteToolOutcome = (name: string, input?: string, status?: string) => {
+        if (!status || !/^(?:done|ok|error|rejected|failed|completed)$/i.test(status)) return;
+        const key = `${String(name).toLowerCase()}:${String(input ?? '').slice(0, 500)}:${status.toLowerCase()}`;
+        if (_toolOutcomeKeys.has(key)) return;
+        _toolOutcomeKeys.add(key);
+        if (/^(?:error|rejected|failed)$/i.test(status)) _failedToolCount++;
+        if (isAgenticMutationOutcome(name, String(input ?? ''), status)) _successfulMutationCount++;
+        if (isBashToolName(name) && _gate.matchers.length > 0) {
+          const command = extractAgenticBashCommand(String(input ?? ''));
+          if (bashRanGate(command, _gate.matchers)) {
+            if (/^(?:done|ok|completed)$/i.test(status)) {
+              _verificationPassed = true;
+              _verificationFailed = false;
+            } else if (/^(?:error|rejected|failed)$/i.test(status)) {
+              _verificationFailed = true;
+            }
+          }
+        }
+      };
       const recordToolUse = (name: string, source: 'native'|'mcp'|'xml'|'eager'|'auto'|'signal', input?: string, status?: string) => {
         const toolName = String(name || 'tool');
+        noteToolOutcome(toolName, input, status);
         // Verify-before-done: flag when a Bash call loosely matches the discovered
         // gate. Done from the central record point so EVERY tool path (native/mcp/
         // xml/eager + both tool loops + continuations) counts uniformly.
@@ -347,8 +379,15 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         // (model emitted [TODOS][]) wipes it. Either way the block is stripped.
         if (parsed.todos.length > 0) {
           _liveTodosEmitted = true;
+          _todosRemaining = parsed.todos.some((todo) => todo.state === 'pending' || todo.state === 'running');
+          const todoSignature = JSON.stringify(parsed.todos);
+          if (todoSignature !== _lastTodoSignature) {
+            _lastTodoSignature = todoSignature;
+            _todoRevision++;
+          }
           dispatch({ type: 'todos-set', todos: parsed.todos } as any);
         } else {
+          _todosRemaining = false;
           dispatch({ type: 'todos-clear', scope: 'live' } as any);
         }
         return parsed.rest;
@@ -383,6 +422,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         autoToolExecutions: _autoToolExecutions,
         confidenceToolUsed: _confidenceToolUsed,
         liveTodosEmitted: _liveTodosEmitted,
+        harnessProfile: resolveCesarHarnessProfile(ctx),
+        agenticTaskState: _agenticTaskState,
+        agenticTerminalReason: _agenticTerminalReason,
+        successfulMutations: _successfulMutationCount,
+        failedTools: _failedToolCount,
       });
 
       // Short follow-ups bypass escalation/delegation — they're conversation continuations
@@ -467,24 +511,27 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         if (ctx.eventBus) await ctx.eventBus.emit('pre:cesar-brain', { input });
         ensureAgonHome();
         const config = ctx.config;
-        _timelineEnabled = (config as any).cesarToolTimeline !== false;
+        const harnessProfile = resolveCesarHarnessProfile(ctx);
+        const agenticAuto = harnessProfile === 'agentic';
+        _timelineEnabled = config.cesarToolTimeline !== false;
         ctx.cesar!.taskExecutionLease = createTaskExecutionLease(
           input,
-          ctx.autoModeQueued === true || ctx.cesar!.autoModeQueued === true || (config as any).permissionMode === 'auto',
+          ctx.autoModeQueued === true || ctx.cesar!.autoModeQueued === true || config.permissionMode === 'auto',
           resolveWorkingDir(),
           {
-            important: (config as any).cesarImportantTaskPattern,
-            dangerous: (config as any).cesarDangerousTaskPattern,
+            important: config.cesarImportantTaskPattern,
+            dangerous: config.cesarDangerousTaskPattern,
           },
+          harnessProfile,
         );
 
-        if ((config as any).cesarEnabled === false) {
+        if (config.cesarEnabled === false) {
           ctx.cesar!.busy = false;
           _turnTerminalState = 'failed';
           return { turnId: _turnId, terminalState: 'failed', delegated: false, responded: false };
         }
 
-        const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
+        const cesarEngineId = config.cesarEngine ?? config.forgeFixedStarter ?? 'claude';
         _actualCesarEngineId = cesarEngineId;
         // ── Steering injection at a tool boundary ──
         // Drain any messages the user typed while this turn was running (buffered
@@ -757,7 +804,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           && !(images && images.length > 0)
           && !ctx.activePlan
           && !ctx.neroMode
-          && !ctx.explorationMode;
+          && !ctx.explorationMode
+          && !agenticAuto;
         const simpleEditFastPath = routingHints.recommendedFlow === 'quick-fix'
           && input.trim().length < 500
           && routingHints.recommendedBreadth !== 'team'
@@ -765,7 +813,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           && !(images && images.length > 0)
           && !ctx.activePlan
           && !ctx.neroMode
-          && !ctx.explorationMode;
+          && !ctx.explorationMode
+          && !agenticAuto;
         const cesarFastPath = answerFastPath || simpleEditFastPath;
         const fastPathMode = simpleEditFastPath ? 'edit' : (answerFastPath ? 'answer' : '');
         const fastPathBaseBudget = simpleEditFastPath ? 5 : 3;
@@ -817,10 +866,12 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           } catch { /* routing context is best-effort */ }
         }
         // Auto mode: user has pre-approved multi-step execution
-        if (ctx.autoModeQueued) {
+        if (agenticAuto) {
+          enrichedInput = buildAgenticAutoTurnDirective(enrichedInput);
+        } else if (ctx.autoModeQueued) {
           enrichedInput = `[AUTONOMOUS MODE ACTIVE]\nThe user has toggled autonomous mode. You may self-escalate to ProposePlan when the task benefits from structured multi-step execution. Use your judgment — stay live for simple tasks, propose a plan for complex or risky work. The auto-approve policy still gates individual tool permissions.\n\n${enrichedInput}`;
         }
-        if (routeReliability && routeDowngrade) {
+        if (routeReliability && routeDowngrade && !agenticAuto) {
           enrichedInput = `[CESAR TOOL RELIABILITY POLICY]\n${formatCesarReliabilityLine(routeReliability)}\nFor this tool-heavy task, do not pretend direct multi-step tooling happened. Prefer ProposePlan, Agent, Forge, Review, or another direct orchestration tool when execution is needed; if staying self, keep the answer advisory and explicit.\n\n${enrichedInput}`;
         }
 
@@ -1695,9 +1746,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             type: 'permission-ask',
             tool,
             command,
-            reason: evaluation.decision === 'ask_task_once'
-              ? 'Approve this important task once'
-              : 'Approve this dangerous action boundary',
+            reason: taskActionApprovalMessage(evaluation),
             diffPreview: diffPreview && Array.isArray(diffPreview.files) ? diffPreview : undefined,
             fallbackNote: diffPreview && typeof diffPreview.fallback === 'string' ? diffPreview.fallback : undefined,
             resolve: (approved: boolean | string) => resolve(typeof approved === 'string' ? approved === 'y' || approved === 'a' : !!approved),
@@ -1722,7 +1771,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               allowedCommands: (config as any).allowedCommands ?? [], toolPermissions: (config as any).toolPermissions ?? {},
               onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }),
               onTodos: (todos: any[]) => dispatch({ type: 'todos-set', todos }),
-              readOnlyMode: true, // Phase 1: investigate only — mutating tools blocked until after escalation check
+              // Agentic AUTO owns execution from the first tool step. The legacy
+              // two-phase loop deliberately starts read-only and unlocks later;
+              // that re-arming gate made strong models give up and delegate their
+              // own writes. Explicit plan/exploration modes remain read-only.
+              readOnlyMode: resolveCesarToolReadOnlyMode(agenticAuto, inPlanMode, explorationMode),
               source: 'orchestrator' as const,
               // CC-parity allow/deny rules reach all three XML runToolLoop paths via
               // this shared toolCtx (runToolLoop → executeToolCalls → executeToolCall
@@ -1761,6 +1814,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           const normalizedInput = typeof input === 'string'
             ? (() => { try { return JSON.parse(input); } catch { return { raw: input }; } })()
             : input;
+          noteToolOutcome(name, typeof input === 'string' ? input : JSON.stringify(input), status);
           if (status !== 'running') {
             recordTimeline({
               event: 'tool_result',
@@ -2356,7 +2410,30 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         // continuations after `baselineToolCount` — NOT writes from the initial turn.
         // Initial-turn writes alone are too weak a "done" signal: engine could have
         // edited 1 of 3 needed files and stopped (minimax/zai review consensus).
+        let _consecutiveNoProgress = 0;
         const _detectTurnState = (resp: string, baselineToolCount: number): 'asks-user' | 'done' | 'stuck' => {
+          if (agenticAuto) {
+            const decision = evaluateAgenticTaskState({
+              toolActivity: hadToolActivity || ranToolLoop || _toolEventCount > 0,
+              pendingDelegation: !!ctx.cesar!.pendingDelegation,
+              successfulMutations: _successfulMutationCount,
+              failedTools: _failedToolCount,
+              verificationRequired: _successfulMutationCount > 0 && !!ctx.cesar?.discoveredGate?.command,
+              verificationPassed: _verificationPassed || ctx.cesar?.gateWaived === true,
+              verificationFailed: _verificationFailed,
+              answerDelivered: resp.trim().length > 0 && !detectNarratedToolStall(resp.trim()),
+              continuationIntent: _AUTO_CONT_CONTINUE_RE.test(resp),
+              todosRemaining: _todosRemaining,
+              awaitingUser: !!findTrailingUserQuestion(resp),
+              interrupted: abort.signal.aborted,
+              engineFailed: _engineErrored,
+              noProgressCycles: _consecutiveNoProgress,
+            });
+            _agenticTaskState = decision.state;
+            _agenticTerminalReason = decision.reason;
+            if (decision.state === 'blocked' && decision.reason === 'awaiting_user') return 'asks-user';
+            return decision.terminal ? 'done' : 'stuck';
+          }
           const wroteSinceBaseline = _toolsUsed.slice(baselineToolCount).some((t: string) => isWriteToolName(t));
           // A question directed at the user (keyword-addressed OR an either/or fork)
           // means it's THEIR turn — stop, don't auto-continue. Scan the TAIL, not just
@@ -2392,7 +2469,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           const g = ctx.cesar?.discoveredGate;
           if (!g || !g.command || !g.matchers.length) return false; // gateAbsent
           if (ctx.cesar?.gateWaived) return false;
-          if (_ranGate) return false;
+          if (agenticAuto ? _verificationPassed : _ranGate) return false;
           // Only nudge when real WRITE work happened — a pure read-only "done" answer
           // has nothing to verify and must not be dragged into a gate nudge.
           if (!_toolsUsed.some((t: string) => isWriteToolName(t))) return false;
@@ -2448,16 +2525,26 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           && session.alive
           && !abort.signal.aborted
           && !_engineErrored
-          && response.trim().length > 0;
+          && (agenticAuto || response.trim().length > 0);
         if (_shouldAutoContinue) {
-          const MAX_CONTINUATIONS = 5;
+          const configuredAgenticLimit = Number(config.cesarAgenticContinuationLimit ?? 12);
+          const MAX_CONTINUATIONS = agenticAuto
+            ? Math.max(6, Math.min(30, Number.isFinite(configuredAgenticLimit) ? Math.floor(configuredAgenticLimit) : 12))
+            : 5;
           let _continuations = 0;
           // Baseline: tool count BEFORE the auto-continuation loop fires. Used by
           // _detectTurnState to distinguish "wrote during continuation" (a 'done'
           // signal) from "wrote in the initial turn" (insufficient evidence).
           const _loopStartToolCount = _toolsUsed.length;
           let _prevToolCount = _toolsUsed.length;
-          let _consecutiveNoProgress = 0;
+          let _previousProgressSignature = buildAgenticProgressSignature({
+            toolEventCount: _toolEventCount,
+            successfulMutations: _successfulMutationCount,
+            failedTools: _failedToolCount,
+            todoRevision: _todoRevision,
+            verificationPassed: _verificationPassed,
+            pendingDelegation: !!ctx.cesar!.pendingDelegation,
+          });
           while (
             _continuations < MAX_CONTINUATIONS
             && session.alive
@@ -2663,22 +2750,45 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: cleanCont });
               response = response + '\n\n' + cleanCont;
             }
-            // Stuck-detector: no new tool calls AND no substantive new text → bail
+            // Stuck detector. Agentic AUTO deliberately excludes changing prose
+            // from the progress signature: narration is not work. Legacy retains
+            // its prior text-length heuristic byte-for-byte.
             const newTools = _toolsUsed.length - _prevToolCount;
             const newSubstantive = cleanCont.length > 80;
-            if (newTools === 0 && !newSubstantive) {
+            const progressSignature = buildAgenticProgressSignature({
+              toolEventCount: _toolEventCount,
+              successfulMutations: _successfulMutationCount,
+              failedTools: _failedToolCount,
+              todoRevision: _todoRevision,
+              verificationPassed: _verificationPassed,
+              pendingDelegation: !!ctx.cesar!.pendingDelegation,
+            });
+            const noProgress = agenticAuto
+              ? progressSignature === _previousProgressSignature
+              : newTools === 0 && !newSubstantive;
+            if (noProgress) {
               _consecutiveNoProgress++;
-              if (_consecutiveNoProgress >= 2) {
-                dispatch({ type: 'warning', message: 'Cesar: no progress across 2 continuations — stopping.' });
+              const noProgressLimit = agenticAuto ? 3 : 2;
+              if (_consecutiveNoProgress >= noProgressLimit) {
+                _agenticTaskState = 'blocked';
+                _agenticTerminalReason = 'no_progress';
+                dispatch({ type: 'warning', message: `Cesar: no structural progress across ${noProgressLimit} continuations — checkpointing instead of looping.` });
                 break;
               }
             } else {
               _consecutiveNoProgress = 0;
             }
+            _previousProgressSignature = progressSignature;
             _prevToolCount = _toolsUsed.length;
           }
           if (_continuations >= MAX_CONTINUATIONS) {
-            dispatch({ type: 'warning', message: `Cesar reached the auto-continuation cap (${MAX_CONTINUATIONS}). Stopping — re-prompt if the task is incomplete.` });
+            if (agenticAuto) {
+              _agenticTaskState = 'budget_exhausted';
+              _agenticTerminalReason = 'continuation_checkpoint';
+              dispatch({ type: 'warning', message: `Cesar reached the agentic continuation checkpoint (${MAX_CONTINUATIONS}). Work state is preserved; no completion was claimed.` });
+            } else {
+              dispatch({ type: 'warning', message: `Cesar reached the auto-continuation cap (${MAX_CONTINUATIONS}). Stopping — re-prompt if the task is incomplete.` });
+            }
           }
           // Closure guarantee: a turn must NEVER end ambiguously. If the loop gave up
           // (cap or no-progress) while still 'stuck' — no done/asks-user signal — force
@@ -2691,7 +2801,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             const _errLine = `Engine ${cesarEngineId} stopped responding (${(_engineErrorMsg || 'no response').slice(0, 120)}). Nothing was lost — re-prompt, /compact to shrink context, or /engine to switch.`;
             dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: _errLine });
             response = response + '\n\n' + _errLine;
-          } else if (_detectTurnState(response, _loopStartToolCount) === 'stuck'
+          } else if (!agenticAuto && _detectTurnState(response, _loopStartToolCount) === 'stuck'
             && session.alive && !abort.signal.aborted && !ctx.cesar!.pendingDelegation) {
             dispatch({ type: 'spinner-start', message: 'Cesar wrapping up…', color });
             let _closure = '';
@@ -3031,6 +3141,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               mcpToolCalls: telemetry.mcpToolCalls,
               xmlToolCalls: telemetry.xmlToolCalls,
               confidenceToolUsed: telemetry.confidenceToolUsed,
+              harnessProfile: telemetry.harnessProfile,
+              agenticTaskState: telemetry.agenticTaskState,
+              agenticTerminalReason: telemetry.agenticTerminalReason,
+              successfulMutations: telemetry.successfulMutations,
+              failedTools: telemetry.failedTools,
             },
           });
         }

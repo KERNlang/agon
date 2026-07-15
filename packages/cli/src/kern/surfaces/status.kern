@@ -15,7 +15,7 @@ import from="../cesar/scoreboard.js" names="renderScoreboard"
 import from="../cesar/scoreboard.js" names="Scoreboard" types=true
 import from="../cesar/mode-rationale.js" names="formatModeRationale"
 import from="../cesar/mode-rationale.js" names="ModeRationale" types=true
-import from="./status-helpers.js" names="formatTokenCostStatus,buildCompactStatusTail,normalizeUiMotion,buildPlanPhaseGauge,buildExecutionRailTimeline,buildGuardTelemetryView,loadGuardTelemetrySnapshot,buildHeartbeatSuffix,buildHeartbeatSig,parseHeartbeatPhase"
+import from="./status-helpers.js" names="formatTokenCostStatus,buildPriorityStatusSegments,normalizeUiMotion,cosmeticUiIntervalMs,buildPlanPhaseGauge,buildExecutionRailTimeline,buildGuardTelemetryView,loadGuardTelemetrySnapshot,buildHeartbeatSuffix,buildHeartbeatSig,parseHeartbeatPhase"
 
 module name=StatusHelperExports
   export from="./status-helpers.js" names="formatTokenCostStatus,buildPlanPhaseGauge,buildExecutionRailTimeline,buildGuardTelemetryView,loadGuardTelemetrySnapshot,buildHeartbeatSuffix,buildHeartbeatSig,parseHeartbeatPhase"
@@ -77,6 +77,7 @@ screen name=StatusBar target=ink memo=true
   prop name=meteredCostUsd type=number optional=true
   prop name=hasPlanApiUsage type=boolean optional=true
   prop name=hasCliUsage type=boolean optional=true
+  prop name=termWidth type=number optional=true
   render
     handler <<<
       // Cost honesty: only REAL API token usage is billable per token. A
@@ -104,7 +105,11 @@ screen name=StatusBar target=ink memo=true
         : busy.length > 0 ? `\u25d0 ${busy.length} busy`
         : vitals.length > 0 ? '\u25cf idle'
         : '';
-      const tail = buildCompactStatusTail({
+      const segments = buildPriorityStatusSegments({
+        width: Math.max(12, Number(termWidth ?? 80) - 2),
+        exploration: Boolean(explorationMode),
+        cwd,
+        branch,
         context: ctx,
         tokens,
         messages: msgs,
@@ -115,10 +120,39 @@ screen name=StatusBar target=ink memo=true
       return (
         <Box height={1} flexShrink={0}>
           <Text wrap="truncate-end">
-            {explorationMode ? <Text color="#22d3ee" bold>{'[explore] '}</Text> : null}
-            <Text color="#60a5fa">{cwd}</Text>
-            {branch ? <Text dimColor>{' on '}<Text color="#34d399">{branch}</Text></Text> : null}
-            {tail ? <Text dimColor>{tail}</Text> : null}
+            {segments.map((segment, index: number) => {
+              const separator = index > 0 ? <Text dimColor>{' \u00b7 '}</Text> : null;
+              if (segment.kind === 'location') {
+                let rest = String(segment.text ?? '');
+                const explorePrefix = explorationMode ? '[explore] ' : '';
+                const shownExplore = explorePrefix ? rest.slice(0, Math.min(explorePrefix.length, rest.length)) : '';
+                rest = rest.slice(shownExplore.length);
+                const cleanCwd = String(cwd ?? '').replace(/\s+/g, ' ').trim();
+                const shownCwd = rest.slice(0, Math.min(cleanCwd.length, rest.length));
+                rest = rest.slice(shownCwd.length);
+                const shownJoin = rest.slice(0, Math.min(4, rest.length));
+                const shownBranch = rest.slice(shownJoin.length);
+                return (
+                  <React.Fragment key={`${segment.kind}-${index}`}>
+                    {separator}
+                    {shownExplore ? <Text color="#22d3ee" bold>{shownExplore}</Text> : null}
+                    {shownCwd ? <Text color="#60a5fa">{shownCwd}</Text> : null}
+                    {shownJoin ? <Text dimColor>{shownJoin}</Text> : null}
+                    {shownBranch ? <Text color="#34d399">{shownBranch}</Text> : null}
+                  </React.Fragment>
+                );
+              }
+              const color = segment.kind === 'alert' ? '#fbbf24'
+                : segment.kind === 'auto' ? '#fb923c'
+                : segment.kind === 'healthy' ? '#4ade80'
+                : undefined;
+              return (
+                <React.Fragment key={`${segment.kind}-${index}`}>
+                  {separator}
+                  <Text color={color} dimColor={!color}>{segment.text}</Text>
+                </React.Fragment>
+              );
+            })}
           </Text>
         </Box>
       );
@@ -551,18 +585,19 @@ screen name=CesarStatusStrip target=ink memo=true export=named
   prop name=scoreboard type="Scoreboard|null" optional=true
   prop name=rationale type="ModeRationale|null" optional=true
   prop name=uiMotion type="'full'|'reduced'|'off'" optional=true
+  prop name=interactionActive type=boolean optional=true
   state name=now type=number initial="Date.now()"
   ref name=heartbeatRef type="{ sig: string; at: number }" initial="{ sig: '', at: 0 }"
   render
     handler <<<
       const motion = normalizeUiMotion(uiMotion);
+      const timerMs = cosmeticUiIntervalMs(motion, isActive, Boolean(interactionActive));
       useEffect(() => {
-        if (!isActive || motion === 'off') return;
+        if (timerMs <= 0) return;
         setNow(Date.now());
-        const intervalMs = motion === 'full' ? 1000 : 5000;
-        const timer = setInterval(() => setNow(Date.now()), intervalMs);
+        const timer = setInterval(() => setNow(Date.now()), timerMs);
         return () => clearInterval(timer);
-      }, [isActive, motion]);
+      }, [timerMs]);
 
       // Idle: single dimmed line (no colored nesting issues)
       if (!isActive) {

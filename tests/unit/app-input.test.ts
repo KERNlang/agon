@@ -151,6 +151,17 @@ describe('resolveEscapeAction', () => {
     })).toEqual({ action: 'interrupt' });
   });
 
+  it('interrupts a background job even after the foreground composer returned idle', () => {
+    expect(resolveEscapeAction({
+      replState: 'idle',
+      runningJobCount: 1,
+      inputValue: '',
+      slashPickerOpen: false,
+      enginePickerOpen: false,
+      questionOpen: false,
+    })).toEqual({ action: 'interrupt' });
+  });
+
   it('still clears input on first escape while idle', () => {
     expect(resolveEscapeAction({
       replState: 'idle',

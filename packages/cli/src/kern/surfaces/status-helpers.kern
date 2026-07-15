@@ -12,6 +12,86 @@ fn name=normalizeUiMotion params="value:unknown" returns="'full'|'reduced'|'off'
     return motion === 'full' || motion === 'off' ? motion : 'reduced';
   >>>
 
+fn name=cosmeticUiIntervalMs params="uiMotion:unknown,isActive:boolean,interactionActive:boolean=false" returns=number export=true
+  doc "Return the cosmetic clock interval, or zero while idle, motion-off, or during observable app interaction such as typing. Semantic stream/tool updates are intentionally outside this gate."
+  handler <<<
+    if (!isActive || interactionActive) return 0;
+    const motion = normalizeUiMotion(uiMotion);
+    if (motion === 'off') return 0;
+    return motion === 'full' ? 1000 : 5000;
+  >>>
+
+fn name=cleanPriorityStatusText params="value:unknown" returns=string
+  handler <<<
+    return String(value ?? '').replace(/\s+/g, ' ').trim();
+  >>>
+
+fn name=clipPriorityStatusText params="value:string,max:number" returns=string
+  handler <<<
+    return max <= 0 ? '' : value.length <= max ? value : max === 1 ? '\u2026' : value.slice(0, max - 1) + '\u2026';
+  >>>
+
+fn name=appendPriorityStatusSegment params="segments:{kind:string,text:string}[],width:number,used:number,kind:string,value:string,allowClip:boolean" returns=number
+  handler <<<
+    if (!value) return used;
+    const separatorWidth = segments.length > 0 ? 3 : 0;
+    const remaining = width - used - separatorWidth;
+    if (remaining <= 0) return -1;
+    if (value.length <= remaining) {
+      segments.push({ kind, text: value });
+      return used + separatorWidth + value.length;
+    }
+    if (allowClip && remaining >= 2) {
+      const text = clipPriorityStatusText(value, remaining);
+      segments.push({ kind, text });
+      return used + separatorWidth + text.length;
+    }
+    return -1;
+  >>>
+
+fn name=buildPriorityStatusSegments params="parts:{width?:number,exploration?:boolean,cwd?:string,branch?:string,context?:{pct:number,source?:string}|null,tokens?:number,messages?:number,cost?:string,auto?:boolean,telemetry?:string}" returns="{kind:string,text:string}[]" export=true
+  doc "Allocate a width-bounded footer into typed semantic segments. The typed result lets Ink preserve colors without giving up context/cost priority or exact truncation."
+  handler <<<
+    const width = Math.max(12, Math.floor(Number(parts?.width) || 80));
+    const context = parts?.context && parts.context.pct > 0
+      ? `ctx ${parts.context.source === 'estimate' ? '~' : ''}${Math.round(parts.context.pct)}%`
+      : '';
+    const cost = cleanPriorityStatusText(parts?.cost);
+    const telemetry = cleanPriorityStatusText(parts?.telemetry);
+    const cleanCwd = cleanPriorityStatusText(parts?.cwd);
+    const cleanBranch = cleanPriorityStatusText(parts?.branch);
+    const location = `${parts?.exploration ? '[explore] ' : ''}${cleanCwd}${cleanBranch ? ` on ${cleanBranch}` : ''}`.trim();
+    const tokens = Math.max(0, Number(parts?.tokens) || 0);
+    const messages = Math.max(0, Math.floor(Number(parts?.messages) || 0));
+    const alert = telemetry && telemetry !== '\u25cf idle' ? telemetry : '';
+    const healthy = telemetry === '\u25cf idle' ? telemetry : '';
+    const segments: { kind: string; text: string }[] = [];
+    // Context and cost are the two accounting signals the narrow footer must
+    // never silently push behind location/help text.
+    let used = appendPriorityStatusSegment(segments, width, 0, 'context', context, true);
+    if (used < 0) return segments;
+    used = appendPriorityStatusSegment(segments, width, used, 'cost', cost, true);
+    if (used < 0) return segments;
+    used = appendPriorityStatusSegment(segments, width, used, 'alert', alert, false);
+    if (used < 0) return segments;
+    used = appendPriorityStatusSegment(segments, width, used, 'auto', parts?.auto ? 'AUTO' : '', false);
+    if (used < 0) return segments;
+    used = appendPriorityStatusSegment(segments, width, used, 'location', location, true);
+    if (used < 0) return segments;
+    used = appendPriorityStatusSegment(segments, width, used, 'tokens', tokens > 0 ? `${(tokens / 1000).toFixed(1)}k tok` : '', false);
+    if (used < 0) return segments;
+    used = appendPriorityStatusSegment(segments, width, used, 'messages', messages > 0 ? `${messages} msgs` : '', false);
+    if (used < 0) return segments;
+    appendPriorityStatusSegment(segments, width, used, 'healthy', healthy, false);
+    return segments;
+  >>>
+
+fn name=buildPriorityStatusLine params="parts:{width?:number,exploration?:boolean,cwd?:string,branch?:string,context?:{pct:number,source?:string}|null,tokens?:number,messages?:number,cost?:string,auto?:boolean,telemetry?:string}" returns=string export=true
+  doc "Build the plain-text form of the priority footer for terminal-frame checks and non-Ink consumers."
+  handler <<<
+    return buildPriorityStatusSegments(parts).map((segment) => segment.text).join(' \u00b7 ');
+  >>>
+
 fn name=buildCompactStatusTail params="parts:{context?:{pct:number,source?:string}|null,tokens?:number,messages?:number,cost?:string,auto?:boolean,telemetry?:string}" returns=string export=true
   doc "Build the stable metric tail for the one-row footer. It never emits newlines or permanent shortcut help; Ink owns terminal-width truncation."
   handler <<<

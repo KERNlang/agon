@@ -18,8 +18,10 @@ import { runAgentMode, runAgentTeam } from './agent.js';
 
 import { handleCesarBrain } from '../cesar/brain.js';
 
-// @kern-source: plan-mode:11
-export async function handleProposePlan(args: any, dispatch: Dispatch, ctx: HandlerContext): Promise<CesarPlan> {
+import { isAgenticAutoMode } from '../cesar/task-controller.js';
+
+// @kern-source: plan-mode:12
+export async function handleProposePlan(args: Record<string,unknown>, dispatch: Dispatch, ctx: HandlerContext): Promise<CesarPlan> {
   // Validate LLM-controlled steps at the boundary (core: sanitizePlanSteps).
   // Cesar occasionally emits malformed step objects with no `type`/`description`
   // (phantom entries), or even a non-array `steps`. Those are unexecutable —
@@ -35,13 +37,13 @@ export async function handleProposePlan(args: any, dispatch: Dispatch, ctx: Hand
     dispatch({ type: 'info', message: `Dropped ${dropped} malformed plan step${dropped === 1 ? '' : 's'} from the proposal.` } as any);
   }
 
-  let plan = createCesarPlan(args.intent, steps);
+  let plan = createCesarPlan(typeof args.intent === 'string' ? args.intent : '', steps);
   plan = {
     ...plan,
     // Gemini fix (f1): planningCost is no longer accepted from the LLM.
     // Cost trust model is estimator-only — Cesar cannot self-report cost.
     state: 'awaiting_approval' as any,
-    autoApprove: args.autoApprove === true ? true : undefined,
+    autoApprove: isAgenticAutoMode(ctx) || args.autoApprove === true ? true : undefined,
     selfReview: typeof args.selfReview === 'boolean' ? args.selfReview : undefined,
   };
 
@@ -76,7 +78,7 @@ export async function handleProposePlan(args: any, dispatch: Dispatch, ctx: Hand
 /**
  * Cesar's escape hatch from plan mode (shared by the native onToolCall path and the MCP/XML signal paths in brain.kern). Archives any pending/paused plan as cancelled-with-reason, clears all plan state so mutation guards lift and go/yes stop routing to /approve, and sets a one-turn ping-pong guard. Refuses to abandon a RUNNING plan (it may have in-flight jobs/worktrees) — the user must cancel that. The dispatch is only for UI events; the state cleanup above does not depend on it, so a null dispatch is non-fatal (both call paths then behave identically). Returns the tool-result string.
  */
-// @kern-source: plan-mode:66
+// @kern-source: plan-mode:67
 export function handleExitPlanMode(reason: string, dispatch: Dispatch|null, ctx: HandlerContext): string {
   const r = (reason && reason.trim()) ? reason.trim() : 'no reason given';
   const current = ctx.activePlan as CesarPlan | undefined;
@@ -102,7 +104,7 @@ export function handleExitPlanMode(reason: string, dispatch: Dispatch|null, ctx:
   return `[PLAN_EXITED] Left plan mode (${r}). You are now live: investigate and act directly with tools, or answer the user. Do NOT propose a plan again this turn.`;
 }
 
-// @kern-source: plan-mode:93
+// @kern-source: plan-mode:94
 export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch): Record<string,StepExecutor> {
   const cwd = resolveWorkingDir();
   const runsRoot = process.env.AGON_HOME?.trim() ? join(process.env.AGON_HOME.trim(), 'runs') : RUNS_DIR;

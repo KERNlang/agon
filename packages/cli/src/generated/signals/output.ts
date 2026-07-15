@@ -51,22 +51,36 @@ export interface StreamingEntry {
   draft?: boolean;
 }
 
+/**
+ * Typed in-flight tool stream shared by output state, the frame-limited bridge, and the live renderer.
+ */
 // @kern-source: output:41
+export interface LiveToolStreamEntry {
+  streamId: string;
+  engineId: string;
+  tool: string;
+  input: string;
+  output: string;
+  status: string;
+  startedAt: number;
+}
+
+// @kern-source: output:51
 export interface OutputState {
   liveSpinner: {message:string,color?:number,engineId?:string}|null;
   liveProgress: EngineProgress[]|null;
   streamingText: Record<string,StreamingEntry>;
-  liveToolStreams: Record<string,any>;
+  liveToolStreams: Record<string,LiveToolStreamEntry>;
   agentProgress: Record<string,AgentProgressSnapshot>;
   todos: Todo[];
 }
 
-// @kern-source: output:49
+// @kern-source: output:59
 export interface OutputActions {
   setLiveSpinner: (val:any) => void;
   setLiveProgress: (val:EngineProgress[]|null) => void;
   setStreamingText: (updater:Record<string,StreamingEntry> | ((prev:Record<string,StreamingEntry>) => Record<string,StreamingEntry>)) => void;
-  setLiveToolStreams: (updater:Record<string,any> | ((prev:Record<string,any>) => Record<string,any>)) => void;
+  setLiveToolStreams: (updater:Record<string,LiveToolStreamEntry> | ((prev:Record<string,LiveToolStreamEntry>) => Record<string,LiveToolStreamEntry>)) => void;
   addBlock: (event:OutputEvent) => void;
   replaceBlocksOfType: (eventType:string, event:OutputEvent) => void;
   clearBlocks: () => void;
@@ -85,16 +99,16 @@ export interface OutputActions {
   setTodos: (updater:Todo[] | ((prev:Todo[]) => Todo[])) => void;
 }
 
-// @kern-source: output:72
+// @kern-source: output:82
 export const _thinkingBuffer: {engineId:string,content:string} = { engineId: '', content: '' };
 
-// @kern-source: output:75
+// @kern-source: output:85
 export const _permissionQueue: Array<{tool:string,command:string,description?:string,reason:string,diffPreview?:any,fallbackNote?:string,resolve:(approved:boolean)=>void}> = [] as Array<{tool:string,command:string,description?:string,reason:string,diffPreview?:any,fallbackNote?:string,resolve:(approved:boolean)=>void}>;
 
-// @kern-source: output:77
+// @kern-source: output:87
 export const _sessionAllowList: string[] = [] as string[];
 
-// @kern-source: output:79
+// @kern-source: output:89
 export function getSessionAllowList(): string[] {
   return _sessionAllowList;
 }
@@ -102,7 +116,7 @@ export function getSessionAllowList(): string[] {
 /**
  * Reject all queued permissions and clear the queue. Called on interrupt/cancel.
  */
-// @kern-source: output:81
+// @kern-source: output:91
 export function clearPermissionQueue(): void {
   while (_permissionQueue.length > 0) {
     const entry = _permissionQueue.shift()!;
@@ -113,31 +127,31 @@ export function clearPermissionQueue(): void {
 /**
  * Drop any buffered thinking-chunk content. Called on interrupt / clear / SIGINT so the next turn doesn't emit stale content as a fresh block.
  */
-// @kern-source: output:88
+// @kern-source: output:98
 export function clearThinkingBuffer(): void {
   _thinkingBuffer.engineId = '';
   _thinkingBuffer.content = '';
 }
 
-// @kern-source: output:100
+// @kern-source: output:110
 export const TOOL_CALL_GROUP_FLUSH_MS: number = 500;
 
-// @kern-source: output:102
+// @kern-source: output:112
 export const _pendingToolCalls: any[] = [] as any[];
 
-// @kern-source: output:104
+// @kern-source: output:114
 export const _pendingFlushTimer: { timer: any, actions: any } = ({ timer: null, actions: null }) as any;
 
-// @kern-source: output:107
-export const _liveToolStreams: Record<string,any> = {} as Record<string, any>;
-
-// @kern-source: output:112
-export const _pinnedPlan: { event: any } = ({ event: null }) as { event: any };
-
-// @kern-source: output:120
-export const _planStepActive: { on: boolean } = ({ on: false }) as { on: boolean };
+// @kern-source: output:117
+export const _liveToolStreams: Record<string,LiveToolStreamEntry> = {};
 
 // @kern-source: output:122
+export const _pinnedPlan: { event: any } = ({ event: null }) as { event: any };
+
+// @kern-source: output:130
+export const _planStepActive: { on: boolean } = ({ on: false }) as { on: boolean };
+
+// @kern-source: output:132
 function toolCallKey(event: any): string {
   return [String(event?.engineId ?? ''), String(event?.tool ?? ''), String(event?.input ?? '')].join('\x00');
 }
@@ -145,7 +159,7 @@ function toolCallKey(event: any): string {
 /**
  * Emit any buffered tool-call events as a single tool-call-group block.
  */
-// @kern-source: output:126
+// @kern-source: output:136
 export function flushPendingToolCalls(actions: OutputActions): void {
   if (_pendingFlushTimer.timer) {
     clearTimeout(_pendingFlushTimer.timer);
@@ -160,7 +174,7 @@ export function flushPendingToolCalls(actions: OutputActions): void {
 /**
  * Debounce-flush pending tool-calls after a quiet period — covers turns that end on a tool-call without any trailing event.
  */
-// @kern-source: output:139
+// @kern-source: output:149
 export function schedulePendingFlush(actions: OutputActions): void {
   _pendingFlushTimer.actions = actions;
   if (_pendingFlushTimer.timer) clearTimeout(_pendingFlushTimer.timer);
@@ -173,7 +187,7 @@ export function schedulePendingFlush(actions: OutputActions): void {
 /**
  * Auto-approve queued permissions whose base command is already in allowedCommands.
  */
-// @kern-source: output:150
+// @kern-source: output:160
 function _drainAutoApproved(actions: OutputActions): void {
   const cfg = loadConfig();
   const allowed: string[] = (cfg as any).allowedCommands ?? [];
@@ -193,7 +207,7 @@ function _drainAutoApproved(actions: OutputActions): void {
   }
 }
 
-// @kern-source: output:167
+// @kern-source: output:177
 function _showNextPermission(actions: OutputActions): void {
   // First drain any that are now auto-approved (e.g. after "Always")
   _drainAutoApproved(actions);
@@ -256,7 +270,7 @@ function _showNextPermission(actions: OutputActions): void {
 /**
  * Apply engine-agnostic narration folding to engine-block content per the narrationFold config (off|safe|aggressive, default safe). On a fold, records the raw in the bounded ring (for /raw) and returns { content, foldedSteps } to spread onto the engine-block; clean text folds nothing and returns just { content }. Pure backstop — runs on every engine-block, structured engines simply fold nothing. The raw is NOT returned per-event; it lives in the ring to avoid unbounded per-block memory growth.
  */
-// @kern-source: output:227
+// @kern-source: output:237
 export function foldEngineContent(content: string): { content: string, foldedSteps?: number } {
   const cfg = loadConfig();
   const policy = String((cfg as any).narrationFold ?? 'safe');
@@ -269,7 +283,7 @@ export function foldEngineContent(content: string): { content: string, foldedSte
 /**
  * Process a single OutputEvent — updates spinner, streaming, and block state.
  */
-// @kern-source: output:238
+// @kern-source: output:248
 export function handleOutputEvent(event: OutputEvent, state: OutputState, actions: OutputActions, mode: string, chatStartTime: number): void {
   // Flush accumulated thinking buffer when any non-thinking event arrives
   if (event.type !== 'thinking-chunk' && _thinkingBuffer.content) {
@@ -780,8 +794,8 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
     }
     case 'tool-stream-end': {
       const e = event as any;
-      const existing = _liveToolStreams[e.streamId] ?? {};
-      const output = e.output ?? existing.output;
+      const existing = _liveToolStreams[e.streamId];
+      const output = e.output ?? existing?.output ?? '';
       delete _liveToolStreams[e.streamId];
       actions.setLiveToolStreams((prev) => {
         const next = { ...prev };
@@ -791,9 +805,9 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       // Convert to a normal tool-call block for scrollback
       const toolCallEvent = {
         type: 'tool-call',
-        engineId: e.engineId ?? existing.engineId ?? '',
-        tool: e.tool ?? existing.tool ?? '',
-        input: e.input ?? existing.input ?? '',
+        engineId: e.engineId ?? existing?.engineId ?? '',
+        tool: e.tool ?? existing?.tool ?? '',
+        input: e.input ?? existing?.input ?? '',
         status: e.status,
         output,
         ...(e.durationMs !== undefined ? { durationMs: e.durationMs } : {}),

@@ -36,12 +36,42 @@ export function drainStdinBuffer(): void {
   } while (chunk !== null);
 }
 
+/**
+ * Normalize the configured terminal policy without inspecting process state. Invalid/missing values use the Codex-like auto policy.
+ */
 // @kern-source: app-terminal:28
-export function normalizeTerminalMode(value: any): 'native'|'fullscreen' {
-  return value === 'fullscreen' ? 'fullscreen' : 'native';
+export function normalizeTerminalMode(value: unknown): 'auto'|'native'|'fullscreen' {
+  return value === 'native' || value === 'fullscreen' ? value : 'auto';
 }
 
-// @kern-source: app-terminal:30
+/**
+ * Resolve auto terminal policy deterministically. Explicit modes win; auto avoids alternate-screen rendering where scrollback or terminal capability would be harmed.
+ */
+// @kern-source: app-terminal:34
+export function resolveTerminalMode(value: unknown, env?: Record<string,string|undefined>, isTTY?: boolean): 'native'|'fullscreen' {
+  const configured = normalizeTerminalMode(value);
+  if (configured === 'native' || configured === 'fullscreen') return configured;
+  const runtimeEnv = env ?? process.env;
+  const runtimeIsTTY = isTTY ?? Boolean(process.stdout.isTTY);
+  const truthy = (raw: unknown) => ['1', 'true', 'yes', 'on'].includes(String(raw ?? '').trim().toLowerCase());
+  if (!runtimeIsTTY) return 'native';
+  if (truthy(runtimeEnv?.AGON_NO_ALT_SCREEN) || truthy(runtimeEnv?.CI)) return 'native';
+  if (String(runtimeEnv?.TERM ?? '').trim().toLowerCase() === 'dumb') return 'native';
+  if (String(runtimeEnv?.ZELLIJ ?? '').trim() || String(runtimeEnv?.ZELLIJ_SESSION_NAME ?? '').trim()) return 'native';
+  return 'fullscreen';
+}
+
+/**
+ * Clamp a terminal resize into one atomic viewport value so width and height never render as mismatched frames.
+ */
+// @kern-source: app-terminal:49
+export function normalizeTerminalSize(columns: unknown, rows: unknown): {width:number,height:number} {
+  const width = Math.max(40, Math.floor(Number(columns) || 100));
+  const height = Math.max(8, Math.floor(Number(rows) || 24));
+  return { width, height };
+}
+
+// @kern-source: app-terminal:57
 export function fileRailWidthForTerminal(termWidth: number, expanded: boolean): number {
   const safeWidth = Math.max(40, Math.floor((Number(termWidth) || 100)));
   if (expanded) {
@@ -50,7 +80,7 @@ export function fileRailWidthForTerminal(termWidth: number, expanded: boolean): 
   return Math.max(28, Math.min(42, Math.floor((safeWidth * 0.22))));
 }
 
-// @kern-source: app-terminal:37
+// @kern-source: app-terminal:64
 export function fileRailMaxRowsForTerminal(termHeight: number, terminalMode: string, expanded: boolean): number {
   const safeHeight = Math.max(8, Math.floor((Number(termHeight) || 24)));
   if (terminalMode === 'native') {
@@ -68,12 +98,13 @@ export function fileRailMaxRowsForTerminal(termHeight: number, terminalMode: str
 /**
  * Pure terminal replay harness: summarizes the layout-sensitive parts of the REPL for fixed viewport sizes so unit tests can catch native/fullscreen regressions without launching an interactive TTY.
  */
-// @kern-source: app-terminal:48
+// @kern-source: app-terminal:75
 export function buildTerminalReplaySnapshot(blocks: OutputBlock[], opts: any): {terminalMode:'native'|'fullscreen'; mode:string; termWidth:number; termHeight:number; visibleBudget:number; transcriptRowCount:number; staticBlockCount:number; liveBlockCount:number; fileRailWidth:number; fileRailRows:number; headerRows:number; lowerChromeRows:number} {
-  const terminalMode = normalizeTerminalMode(opts?.terminalMode);
+  const terminalMode = resolveTerminalMode(opts?.terminalMode, opts?.env ?? {}, opts?.isTTY ?? true);
   const mode = String(opts?.mode ?? 'chat');
-  const termWidth = Math.max(40, Math.floor((Number(opts?.termWidth) || 100)));
-  const termHeight = Math.max(8, Math.floor((Number(opts?.termHeight) || 24)));
+  const terminalSize = normalizeTerminalSize(opts?.termWidth, opts?.termHeight);
+  const termWidth = terminalSize.width;
+  const termHeight = terminalSize.height;
   const toolOutputExpanded = opts?.toolOutputExpanded !== false;
   const thinkingExpanded = opts?.thinkingExpanded !== false;
   const questionState = opts?.questionState ?? null;

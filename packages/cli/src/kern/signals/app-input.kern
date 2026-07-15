@@ -78,7 +78,7 @@ fn name=hasBtwSideChannelTarget params="opts:{replState:string,activePlanState?:
 interface name=EscapeDecision
   field name=action type="'close-slash'|'close-engine-picker'|'cancel-question'|'interrupt'|'clear-input'|'noop'"
 
-fn name=resolveEscapeAction params="opts:{replState:string,inputValue:string,slashPickerOpen:boolean,enginePickerOpen:boolean,questionOpen:boolean}" returns="EscapeDecision"
+fn name=resolveEscapeAction params="opts:{replState:string,inputValue:string,slashPickerOpen:boolean,enginePickerOpen:boolean,questionOpen:boolean,runningJobCount?:number}" returns="EscapeDecision"
   doc "Resolve Esc behavior without destructive transcript clearing."
   handler lang="kern"
     if cond="opts.slashPickerOpen"
@@ -87,7 +87,7 @@ fn name=resolveEscapeAction params="opts:{replState:string,inputValue:string,sla
       return value="{ action: 'close-engine-picker' }"
     if cond="opts.questionOpen"
       return value="{ action: 'cancel-question' }"
-    if cond="opts.replState !== 'idle'"
+    if cond="opts.replState !== 'idle' || (opts.runningJobCount ?? 0) > 0"
       return value="{ action: 'interrupt' }"
     if cond="opts.inputValue"
       return value="{ action: 'clear-input' }"

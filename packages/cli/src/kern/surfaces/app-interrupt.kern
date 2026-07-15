@@ -38,6 +38,7 @@ import from="../signals/output.js" names="OutputActions,AgentProgressSnapshot" t
 import from="../signals/output.js" names="clearPermissionQueue,clearThinkingBuffer"
 import from="../signals/app-state.js" names="cancelReplState,finishReplState"
 import from="../signals/app-state.js" names="ReplStateState" types=true
+import from="../signals/job-manager.js" names="JobManager,Job" types=true
 
 module name=AppInterrupt
 
@@ -73,9 +74,13 @@ module name=AppInterrupt
     // ── Active run handles (abort controller + pending plan) ──
     field name=activeAbortRef type="{current: AbortController | null}"
     field name=activePlanRef type="{current: any}"
+    field name=activeTurnRef type="{current: {input:string;engineId:string;retried:boolean} | null}"
+    field name=interruptedTurnRef type="{current: {input:string;source:'foreground'|'job';at:number} | null}"
     field name=cesarRuntimeHost type="any"
+    field name=jobManager type=JobManager
     field name=setActiveAbort type="(abort:AbortController | null) => void"
     field name=setActivePlan type="(plan:any) => void"
+    field name=setJobList type="(val:Job[]) => void"
     // ── Output / stream teardown (spinner, progress, in-flight stream flush) ──
     field name=setLiveSpinner type="(val:any) => void"
     field name=setLiveProgress type="(val:any) => void"
@@ -97,58 +102,104 @@ module name=AppInterrupt
     field name=bell type="() => void"
     field name=setWindowTitle type="(title:string) => void"
 
+  // Source: new — Esc must also reach delegated work after runAsJob returns the
+  // foreground REPL to idle. Prefer the newest queued/running job, matching the
+  // live strip and the work the user most recently launched.
+  fn name=cancelLatestRunningJob params="jobManager:JobManager,reason?:string" returns="Job|null" export=true
+    handler <<<
+      const running = jobManager?.running?.() ?? [];
+      const target = running.length > 0 ? running[running.length - 1] : null;
+      if (!target) return null;
+      return jobManager.cancel(target.id, reason ?? 'Interrupted by user') ? target : null;
+    >>>
+
   // ── interruptActiveRun: abort the active run and reset live/modal/repl state ──
   // Source: app.kern callback name=interruptActiveRun.
   // Aborts the active controller, flushes in-flight streams, dismisses all
   // modals/pickers, cancels a pending (planning/awaiting_approval) plan, resets
   // the repl to idle with a warning + bell, and optionally clears the chat.
   fn name=runInterruptActiveRun params="opts:InterruptRunDeps, message:string, clearChat:boolean" returns=void
-    handler lang="kern"
-      let name=abort value="opts.activeAbortRef.current"
-      let name=activeRuntime value="opts.cesarRuntimeHost?.active"
-      if cond="activeRuntime && activeRuntime.state === 'running'"
-        do value="transitionCesarTurn(opts.cesarRuntimeHost, activeRuntime.envelope, 'cancelling')"
-      if cond="abort"
-        do value="abort.abort()"
-      do value="runTrackAbort(null, opts.activeAbortRef, opts.setActiveAbort)"
-      comment raw="// Interrupt drops any mid-turn steering — no silent carryover to the"
-      comment raw="// next turn (spec point 3). The brain's own turn-end release path is"
-      comment raw="// bypassed on an abort, so the drop must happen here."
-      do value="clearSteering()"
-      do value="opts.setLiveSpinner(null)"
-      do value="opts.setLiveProgress(null)"
-      comment raw="// Commit any in-flight streams before wiping. In main-buffer mode the"
-      comment raw="// partial text has already been written to the terminal; dropping it"
-      comment raw="// from React state without flushing causes logUpdate.eraseLines to"
-      comment raw="// wipe visible output the user was just reading."
-      do value="opts.outputActions.flushStream()"
-      do value="clearPermissionQueue()"
-      do value="clearThinkingBuffer()"
-      do value="opts.setQuestionState(null)"
-      do value="opts.setQuestionAnswer('')"
-      do value="opts.setPendingPlanProposal(null)"
-      do value="opts.setSlashPickerOpen(false)"
-      do value="opts.setEnginePickerOpen(false)"
-      do value="opts.setModelPickerOpen(false)"
-      do value="opts.setCesarPickerOpen(false)"
-      do value="opts.setReviewEvent(null)"
-      let name=pendingPlan value="opts.activePlanRef.current"
-      if cond="pendingPlan && ['planning', 'awaiting_approval'].includes(String(pendingPlan.state ?? ''))"
-        try
-          do value="saveCesarPlan(cancelCesarPlan(pendingPlan))"
-          catch name=_err
-        assign target="opts.activePlanRef.current" value="null"
-        do value="opts.setActivePlan(null)"
-      if cond="opts.replState !== 'idle'"
-        if cond="message"
-          do value="opts.dispatch({ type: 'warning', message } as any)"
-        do value="opts.setReplState((prev: any) => prev === 'idle' ? prev : cancelReplState({ state: prev }).state)"
-        if cond="!opts.pendingBellRef.current"
-          do value="opts.bell()"
-          assign target="opts.pendingBellRef.current" value="true"
-        do value="opts.setWindowTitle('agon')"
-      if cond="clearChat"
-        do value="opts.dispatch({ type: 'clear' } as any)"
+    handler <<<
+      const abort = opts.activeAbortRef.current;
+      const foregroundTurn = opts.activeTurnRef.current;
+      let interruptedInput = String(foregroundTurn?.input ?? '').trim();
+      let interruptedSource: 'foreground' | 'job' = 'foreground';
+      let interruptedJob: Job | null = null;
+
+      const activeRuntime = opts.cesarRuntimeHost?.active;
+      if (activeRuntime && activeRuntime.state === 'running') {
+        transitionCesarTurn(opts.cesarRuntimeHost, activeRuntime.envelope, 'cancelling');
+      }
+      if (abort) {
+        abort.abort();
+      } else if (opts.replState === 'idle') {
+        interruptedJob = cancelLatestRunningJob(opts.jobManager, 'Interrupted by user');
+        if (interruptedJob) {
+          interruptedInput = String(interruptedJob.label ?? interruptedJob.type ?? '').trim();
+          interruptedSource = 'job';
+          opts.setJobList([...opts.jobManager.list()]);
+        }
+      }
+
+      // Null this synchronously. A fast submit after Esc must become a fresh
+      // redirect, never steering aimed at the already-aborted turn.
+      opts.activeTurnRef.current = null;
+      if (interruptedInput) {
+        opts.interruptedTurnRef.current = {
+          input: interruptedInput,
+          source: interruptedSource,
+          at: Date.now(),
+        };
+      }
+      runTrackAbort(null, opts.activeAbortRef, opts.setActiveAbort);
+
+      // Drop unconsumed mid-turn steering. The next user message is carried as
+      // an explicit redirect instead, so stale queued instructions cannot leak.
+      clearSteering();
+      opts.setLiveSpinner(null);
+      opts.setLiveProgress(null);
+      // Commit any in-flight streams before wiping. In main-buffer mode the
+      // partial text has already been written to the terminal; dropping it from
+      // React state without flushing can erase visible output.
+      opts.outputActions.flushStream();
+      clearPermissionQueue();
+      clearThinkingBuffer();
+      opts.setQuestionState(null);
+      opts.setQuestionAnswer('');
+      opts.setPendingPlanProposal(null);
+      opts.setSlashPickerOpen(false);
+      opts.setEnginePickerOpen(false);
+      opts.setModelPickerOpen(false);
+      opts.setCesarPickerOpen(false);
+      opts.setReviewEvent(null);
+
+      const pendingPlan = opts.activePlanRef.current;
+      if (pendingPlan && ['planning', 'awaiting_approval'].includes(String(pendingPlan.state ?? ''))) {
+        try { saveCesarPlan(cancelCesarPlan(pendingPlan)); } catch (_err) {}
+        opts.activePlanRef.current = null;
+        opts.setActivePlan(null);
+      }
+
+      if (opts.replState !== 'idle') {
+        if (message) opts.dispatch({ type: 'warning', message });
+        opts.setReplState((prev: ReplStateState) => prev === 'idle' ? prev : cancelReplState({ state: prev }).state);
+        if (!opts.pendingBellRef.current) {
+          opts.bell();
+          opts.pendingBellRef.current = true;
+        }
+        opts.setWindowTitle('agon');
+      } else if (interruptedJob) {
+        opts.dispatch({
+          type: 'info',
+          message: `Interrupted background job [${interruptedJob.id}]. Type the new direction and press Enter.`,
+        });
+        opts.setWindowTitle('agon');
+      }
+      if (clearChat) {
+        opts.interruptedTurnRef.current = null;
+        opts.dispatch({ type: 'clear' });
+      }
+    >>>
 
   // ── Closed-over deps for buildCancelCallback ──
   // The cancel-callback hard-resets MORE than interruptActiveRun (it also wipes

@@ -44,6 +44,8 @@ import from="../../input-utils.js" names="isTerminalFocusReport"
 import from="../signals/file-tracker.js" names="listFiles"
 import from="../../generated/blocks/engine.js" names="OutputBlock" types=true
 import from="../signals/app-state.js" names="ReplStateState" types=true
+import from="../signals/job-manager.js" names="JobManager" types=true
+import from="../signals/output.js" names="LiveToolStreamEntry" types=true
 import from="./app-interrupt.js" names="_lastSigintAt"
 import from="node:child_process" names="spawnSync"
 
@@ -207,6 +209,7 @@ module name=AppKeyboard
     field name=questionOtherActive type=boolean
     // ── Repl / composer / history state ──
     field name=replState type=ReplStateState
+    field name=jobManager type=JobManager
     field name=inputValue type=string
     field name=inputHistory type="string[]"
     field name=historyIndex type=number
@@ -232,7 +235,7 @@ module name=AppKeyboard
     field name=ctrlKeyHandledRef type="{current: boolean}"
     field name=btwAbortRef type="{current: AbortController | null}"
     field name=scrollBoxRef type="{current: any}"
-    field name=liveToolStreamsRef type="{current: Record<string, any>}"
+    field name=liveToolStreamsRef type="{current: Record<string,LiveToolStreamEntry>}"
     field name=activePlanRef type="{current: any}"
     // ── Picker / panel / status setters ──
     field name=setBtwPanel type="(val:any) => void"
@@ -396,7 +399,8 @@ module name=AppKeyboard
         toolDetailOpen: !!opts.toolDetailEvent,
         questionState: opts.questionState, questionChoiceIndex: opts.selectedChoiceIndex, questionOtherActive: opts.questionOtherActive,
         updateInfo: opts.updateInfo,
-        replState: opts.replState, inputValue: opts.inputValue, inputHistory: opts.inputHistory, historyIndex: opts.historyIndex,
+        replState: opts.replState, runningJobCount: opts.jobManager.running().length,
+        inputValue: opts.inputValue, inputHistory: opts.inputHistory, historyIndex: opts.historyIndex,
         planModeQueued: opts.planModeQueued, autoModeQueued: opts.autoModeQueued, activePlanState: opts.activePlanRef.current?.state ?? null,
         planApprovalIndex: opts.planApprovalIndex,
         outputBlockCount: opts.outputBlocks.length,

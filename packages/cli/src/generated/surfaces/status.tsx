@@ -22,7 +22,7 @@ import { formatModeRationale } from '../cesar/mode-rationale.js';
 
 import type { ModeRationale } from '../cesar/mode-rationale.js';
 
-import { formatTokenCostStatus, buildCompactStatusTail, normalizeUiMotion, buildPlanPhaseGauge, buildExecutionRailTimeline, buildGuardTelemetryView, loadGuardTelemetrySnapshot, buildHeartbeatSuffix, buildHeartbeatSig, parseHeartbeatPhase } from './status-helpers.js';
+import { formatTokenCostStatus, buildPriorityStatusSegments, normalizeUiMotion, cosmeticUiIntervalMs, buildPlanPhaseGauge, buildExecutionRailTimeline, buildGuardTelemetryView, loadGuardTelemetrySnapshot, buildHeartbeatSuffix, buildHeartbeatSig, parseHeartbeatPhase } from './status-helpers.js';
 
 // ── Module: StatusHelperExports ──
 
@@ -56,7 +56,7 @@ export function TokenGauge({ tokens, maxTokens }: { tokens:number; maxTokens:num
 }
 
 // @kern-source: status:63
-const StatusBar = React.memo(function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd, cwd, branch, explorationMode, toolOutputExpanded, autoModeQueued, isActive, fullscreenEnabled, telemetryVitals, context, meteredCostUsd, hasPlanApiUsage, hasCliUsage }: { cesarId:string; chatMessageCount:number; totalTokens:number; totalCostUsd:number; cwd:string; branch?:string; explorationMode?:boolean; toolOutputExpanded?:boolean; autoModeQueued?:boolean; isActive?:boolean; fullscreenEnabled?:boolean; telemetryVitals?:Map<string, any>; context?:{pct:number,used:number,limit:number,compacted:number,cached:number,source?:string}|null; meteredCostUsd?:number; hasPlanApiUsage?:boolean; hasCliUsage?:boolean }) {
+const StatusBar = React.memo(function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd, cwd, branch, explorationMode, toolOutputExpanded, autoModeQueued, isActive, fullscreenEnabled, telemetryVitals, context, meteredCostUsd, hasPlanApiUsage, hasCliUsage, termWidth }: { cesarId:string; chatMessageCount:number; totalTokens:number; totalCostUsd:number; cwd:string; branch?:string; explorationMode?:boolean; toolOutputExpanded?:boolean; autoModeQueued?:boolean; isActive?:boolean; fullscreenEnabled?:boolean; telemetryVitals?:Map<string, any>; context?:{pct:number,used:number,limit:number,compacted:number,cached:number,source?:string}|null; meteredCostUsd?:number; hasPlanApiUsage?:boolean; hasCliUsage?:boolean; termWidth?:number }) {
   // Cost honesty: only REAL API token usage is billable per token. A
   // coding-plan API has real tokens but its cost is included in the plan;
   // a subscription CLI brain has no countable per-turn cost. Keep those
@@ -82,7 +82,11 @@ const StatusBar = React.memo(function StatusBar({ cesarId, chatMessageCount, tot
     : busy.length > 0 ? `\u25d0 ${busy.length} busy`
     : vitals.length > 0 ? '\u25cf idle'
     : '';
-  const tail = buildCompactStatusTail({
+  const segments = buildPriorityStatusSegments({
+    width: Math.max(12, Number(termWidth ?? 80) - 2),
+    exploration: Boolean(explorationMode),
+    cwd,
+    branch,
     context: ctx,
     tokens,
     messages: msgs,
@@ -93,17 +97,46 @@ const StatusBar = React.memo(function StatusBar({ cesarId, chatMessageCount, tot
   return (
     <Box height={1} flexShrink={0}>
       <Text wrap="truncate-end">
-        {explorationMode ? <Text color="#22d3ee" bold>{'[explore] '}</Text> : null}
-        <Text color="#60a5fa">{cwd}</Text>
-        {branch ? <Text dimColor>{' on '}<Text color="#34d399">{branch}</Text></Text> : null}
-        {tail ? <Text dimColor>{tail}</Text> : null}
+        {segments.map((segment, index: number) => {
+          const separator = index > 0 ? <Text dimColor>{' \u00b7 '}</Text> : null;
+          if (segment.kind === 'location') {
+            let rest = String(segment.text ?? '');
+            const explorePrefix = explorationMode ? '[explore] ' : '';
+            const shownExplore = explorePrefix ? rest.slice(0, Math.min(explorePrefix.length, rest.length)) : '';
+            rest = rest.slice(shownExplore.length);
+            const cleanCwd = String(cwd ?? '').replace(/\s+/g, ' ').trim();
+            const shownCwd = rest.slice(0, Math.min(cleanCwd.length, rest.length));
+            rest = rest.slice(shownCwd.length);
+            const shownJoin = rest.slice(0, Math.min(4, rest.length));
+            const shownBranch = rest.slice(shownJoin.length);
+            return (
+              <React.Fragment key={`${segment.kind}-${index}`}>
+                {separator}
+                {shownExplore ? <Text color="#22d3ee" bold>{shownExplore}</Text> : null}
+                {shownCwd ? <Text color="#60a5fa">{shownCwd}</Text> : null}
+                {shownJoin ? <Text dimColor>{shownJoin}</Text> : null}
+                {shownBranch ? <Text color="#34d399">{shownBranch}</Text> : null}
+              </React.Fragment>
+            );
+          }
+          const color = segment.kind === 'alert' ? '#fbbf24'
+            : segment.kind === 'auto' ? '#fb923c'
+            : segment.kind === 'healthy' ? '#4ade80'
+            : undefined;
+          return (
+            <React.Fragment key={`${segment.kind}-${index}`}>
+              {separator}
+              <Text color={color} dimColor={!color}>{segment.text}</Text>
+            </React.Fragment>
+          );
+        })}
       </Text>
     </Box>
   );
 });
 export { StatusBar };
 
-// @kern-source: status:129
+// @kern-source: status:163
 const StatusDashboard = React.memo(function StatusDashboard({ telemetryVitals, recentFallbacks, width, height, filter }: { telemetryVitals:Map<string, any>; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; width?:number; height?:number; filter?:'all'|'problem' }) {
   const vitals = Array.from(telemetryVitals?.values?.() ?? []);
   const severity: Record<string, number> = { stalled: 5, fallback: 4, offline: 3, busy: 2, idle: 1 };
@@ -242,7 +275,7 @@ const StatusDashboard = React.memo(function StatusDashboard({ telemetryVitals, r
 });
 export { StatusDashboard };
 
-// @kern-source: status:275
+// @kern-source: status:309
 const ExecutionRail = React.memo(function ExecutionRail({ spinner, engines, activePlanState, activePlan, lastTool, stats, recentFallbacks, toolOutputExpanded, startTime, isActive }: { spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; activePlanState?:string|null; activePlan?:any; lastTool?:any; stats?:any; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; toolOutputExpanded?:boolean; startTime?:number; isActive?:boolean }) {
   const planGauge = buildPlanPhaseGauge(activePlan, 10);
   const now = Date.now();
@@ -346,7 +379,7 @@ const ExecutionRail = React.memo(function ExecutionRail({ spinner, engines, acti
 });
 export { ExecutionRail };
 
-// @kern-source: status:389
+// @kern-source: status:423
 const ExecutionRailPanel = React.memo(function ExecutionRailPanel({ spinner, engines, activePlanState, activePlan, lastTool, stats, recentFallbacks, toolOutputExpanded, startTime, isActive, width, maxRows, focused }: { spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; activePlanState?:string|null; activePlan?:any; lastTool?:any; stats?:any; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; toolOutputExpanded?:boolean; startTime?:number; isActive?:boolean; width?:number; maxRows?:number; focused?:boolean }) {
   const safeWidth = Math.max(32, Math.floor(Number(width ?? 42)));
   const safeRows = Math.max(8, Math.floor(Number(maxRows ?? 12)));
@@ -457,7 +490,7 @@ const ExecutionRailPanel = React.memo(function ExecutionRailPanel({ spinner, eng
 });
 export { ExecutionRailPanel };
 
-// @kern-source: status:515
+// @kern-source: status:549
 const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs:Job[] }) {
   return (
     <Box paddingX={1}>
@@ -476,8 +509,8 @@ const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs
 });
 export { BackgroundJobRail };
 
-// @kern-source: status:537
-const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confidence, context, spinner, engines, jobs, startTime, streamSnippet, isActive, planModeQueued, autoModeQueued, activePlanState, activePlan, scoreboard, rationale, uiMotion }: { cesarId:string; confidence?:number|null; context?:{pct:number,used:number,limit:number,compacted:number,cached:number,source?:string}|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; jobs?:Job[]; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; autoModeQueued?:boolean; activePlanState?:string|null; activePlan?:any; scoreboard?:Scoreboard|null; rationale?:ModeRationale|null; uiMotion?:'full'|'reduced'|'off' }) {
+// @kern-source: status:571
+const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confidence, context, spinner, engines, jobs, startTime, streamSnippet, isActive, planModeQueued, autoModeQueued, activePlanState, activePlan, scoreboard, rationale, uiMotion, interactionActive }: { cesarId:string; confidence?:number|null; context?:{pct:number,used:number,limit:number,compacted:number,cached:number,source?:string}|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; jobs?:Job[]; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; autoModeQueued?:boolean; activePlanState?:string|null; activePlan?:any; scoreboard?:Scoreboard|null; rationale?:ModeRationale|null; uiMotion?:'full'|'reduced'|'off'; interactionActive?:boolean }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
     return (value) => setTimeout(() => setter(value), 0);
@@ -489,13 +522,13 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
   const heartbeatRef = useRef<{ sig: string; at: number }>({ sig: '', at: 0 });
 
   const motion = normalizeUiMotion(uiMotion);
+  const timerMs = cosmeticUiIntervalMs(motion, isActive, Boolean(interactionActive));
   useEffect(() => {
-    if (!isActive || motion === 'off') return;
+    if (timerMs <= 0) return;
     setNow(Date.now());
-    const intervalMs = motion === 'full' ? 1000 : 5000;
-    const timer = setInterval(() => setNow(Date.now()), intervalMs);
+    const timer = setInterval(() => setNow(Date.now()), timerMs);
     return () => clearInterval(timer);
-  }, [isActive, motion]);
+  }, [timerMs]);
 
   // Idle: single dimmed line (no colored nesting issues)
   if (!isActive) {

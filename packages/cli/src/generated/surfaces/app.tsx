@@ -54,7 +54,7 @@ import { processPasteContent, recordPastePlaceholder } from '../signals/paste-ha
 
 import { handleOutputEvent } from '../signals/output.js';
 
-import type { OutputActions, OutputState, AgentProgressSnapshot, StreamingEntry } from '../signals/output.js';
+import type { OutputActions, OutputState, AgentProgressSnapshot, StreamingEntry, LiveToolStreamEntry } from '../signals/output.js';
 
 import { teeOutputEvent } from '../signals/event-log-tee.js';
 
@@ -132,7 +132,7 @@ import { loadComposerInputHistory } from './app-composer.js';
 
 import { toolDetailViewportRows, findLatestToolDetailEvent, findLatestToolEvent, findLatestFailedToolEvent, buildFailedToolRetryDraft, buildToolDetailView } from './app-tool-detail.js';
 
-import { createInitialRegistry, drainStdinBuffer, normalizeTerminalMode, fileRailWidthForTerminal, fileRailMaxRowsForTerminal } from './app-terminal.js';
+import { createInitialRegistry, drainStdinBuffer, resolveTerminalMode, normalizeTerminalSize, fileRailWidthForTerminal, fileRailMaxRowsForTerminal } from './app-terminal.js';
 
 import { normalizeTextSelection } from './app-selection.js';
 
@@ -158,7 +158,7 @@ import { runProcessInputQueue, runSendBtwMessage, runHandleSubmit } from './app-
 
 // ── Module: AppHelperExports ──
 
-export { COMPOSER_HISTORY_LIMIT, isMutatingToolCall, probeEngineVitals, parseToolCallPayload, toolPreviewWindow, toolCallSupportsDetailView, detailViewerSupportsEvent, toolDetailViewportRows, findLatestToolDetailEvent, findLatestToolEvent, buildExecutionRailStats, composerHistoryPath, loadComposerInputHistory, saveComposerInputHistory, findLatestFailedToolEvent, buildFailedToolRetryDraft, buildToolDetailView, createInitialRegistry, drainStdinBuffer, maxScrollOffsetForRowCount, nextWheelAnimationStep, clampNumber, charDisplayWidth, stringDisplayWidth, displayColumnToStringIndex, normalizeRowSelection, normalizeTextSelection, richLineToPlainText, transcriptRowToPlainText, transcriptRowTextStartColumn, resolveTranscriptColumnFromMouse, transcriptRowsToPlainText, resolveTranscriptRowFromMouse, estimateVisibleBlockBudget, estimateWrappedRowCount, estimateQuestionReservedRows, estimateBottomChromeExtraRows, summarizeBtwTranscriptEvent, buildDashboardBlock, estimatePinnedLiveRows, estimateWrappedRows, estimateToolCallRows, estimateOutputEventRows, buildDisplayItems, isToolCallLikeBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, estimateDisplayItemRows, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, isDuplicateEngineBlock, appendTranscriptBlock, normalizeTerminalMode, fileRailWidthForTerminal, fileRailMaxRowsForTerminal, buildTerminalReplaySnapshot, parseMarkdownToRows, buildToolCallRows, buildCollapsedToolGroupRows, buildTranscriptRows } from './app-helpers.js';
+export { COMPOSER_HISTORY_LIMIT, isMutatingToolCall, probeEngineVitals, parseToolCallPayload, toolPreviewWindow, toolCallSupportsDetailView, detailViewerSupportsEvent, toolDetailViewportRows, findLatestToolDetailEvent, findLatestToolEvent, buildExecutionRailStats, composerHistoryPath, loadComposerInputHistory, saveComposerInputHistory, findLatestFailedToolEvent, buildFailedToolRetryDraft, buildToolDetailView, createInitialRegistry, drainStdinBuffer, maxScrollOffsetForRowCount, nextWheelAnimationStep, clampNumber, charDisplayWidth, stringDisplayWidth, displayColumnToStringIndex, normalizeRowSelection, normalizeTextSelection, richLineToPlainText, transcriptRowToPlainText, transcriptRowTextStartColumn, resolveTranscriptColumnFromMouse, transcriptRowsToPlainText, resolveTranscriptRowFromMouse, estimateVisibleBlockBudget, estimateWrappedRowCount, estimateQuestionReservedRows, estimateBottomChromeExtraRows, summarizeBtwTranscriptEvent, buildDashboardBlock, estimatePinnedLiveRows, estimateWrappedRows, estimateToolCallRows, estimateOutputEventRows, buildDisplayItems, isToolCallLikeBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, estimateDisplayItemRows, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, isDuplicateEngineBlock, appendTranscriptBlock, normalizeTerminalMode, resolveTerminalMode, normalizeTerminalSize, fileRailWidthForTerminal, fileRailMaxRowsForTerminal, buildTerminalReplaySnapshot, parseMarkdownToRows, buildToolCallRows, buildCollapsedToolGroupRows, buildTranscriptRows } from './app-helpers.js';
 
 // @kern-source: app:99
 export function App() {
@@ -172,6 +172,7 @@ export function App() {
   const [outputBlocks, _setOutputBlocksRaw] = useState<OutputBlock[]>(() => { const cfg = loadConfig(); const saved = cfg.engineActivationMode === 'explicit' ? cfg.forgeEnabledEngines : null; return [buildDashboardBlock(saved)]; });
   const setOutputBlocks = useMemo(() => __inkSafe(_setOutputBlocksRaw), [_setOutputBlocksRaw]);
   const [inputValue, setInputValue] = useState<string>('');
+  const [uiInteractionActive, setUiInteractionActive] = useState<boolean>(false);
   const [inputHistory, _setInputHistoryRaw] = useState<string[]>(loadComposerInputHistory());
   const setInputHistory = useMemo(() => __inkSafe(_setInputHistoryRaw), [_setInputHistoryRaw]);
   const [inputQueue, _setInputQueueRaw] = useState<string[]>([]);
@@ -267,53 +268,9 @@ export function App() {
   const [cesarPickerOpen, _setCesarPickerOpenRaw] = useState<boolean>(false);
   const setCesarPickerOpen = useMemo(() => __inkSafe(_setCesarPickerOpenRaw), [_setCesarPickerOpenRaw]);
   const [streamingText, _setStreamingTextRaw] = useState<Record<string,StreamingEntry>>({});
-  const setStreamingText = useMemo(() => {
-    let _lastCall = 0;
-    let _pendingValue: React.SetStateAction<Record<string,StreamingEntry>>;
-    let _pendingTimer: ReturnType<typeof setTimeout> | null = null;
-    return (value: React.SetStateAction<Record<string,StreamingEntry>>) => {
-      const now = Date.now();
-      const elapsed = now - _lastCall;
-      if (elapsed >= 33) {
-        _lastCall = now;
-        if (_pendingTimer) { clearTimeout(_pendingTimer); _pendingTimer = null; }
-        setTimeout(() => _setStreamingTextRaw(value), 0);
-      } else {
-        _pendingValue = value;
-        if (!_pendingTimer) {
-          _pendingTimer = setTimeout(() => {
-            _lastCall = Date.now();
-            _pendingTimer = null;
-            _setStreamingTextRaw(_pendingValue);
-          }, 33 - elapsed);
-        }
-      }
-    };
-  }, []);
-  const [liveToolStreams, _setLiveToolStreamsRaw] = useState<Record<string,any>>({});
-  const setLiveToolStreams = useMemo(() => {
-    let _lastCall = 0;
-    let _pendingValue: React.SetStateAction<Record<string,any>>;
-    let _pendingTimer: ReturnType<typeof setTimeout> | null = null;
-    return (value: React.SetStateAction<Record<string,any>>) => {
-      const now = Date.now();
-      const elapsed = now - _lastCall;
-      if (elapsed >= 50) {
-        _lastCall = now;
-        if (_pendingTimer) { clearTimeout(_pendingTimer); _pendingTimer = null; }
-        setTimeout(() => _setLiveToolStreamsRaw(value), 0);
-      } else {
-        _pendingValue = value;
-        if (!_pendingTimer) {
-          _pendingTimer = setTimeout(() => {
-            _lastCall = Date.now();
-            _pendingTimer = null;
-            _setLiveToolStreamsRaw(_pendingValue);
-          }, 50 - elapsed);
-        }
-      }
-    };
-  }, []);
+  const setStreamingText = useMemo(() => __inkSafe(_setStreamingTextRaw), [_setStreamingTextRaw]);
+  const [liveToolStreams, _setLiveToolStreamsRaw] = useState<Record<string,LiveToolStreamEntry>>({});
+  const setLiveToolStreams = useMemo(() => __inkSafe(_setLiveToolStreamsRaw), [_setLiveToolStreamsRaw]);
   const [liveToolTailFrozen, _setLiveToolTailFrozenRaw] = useState<Record<string,boolean>>({});
   const setLiveToolTailFrozen = useMemo(() => __inkSafe(_setLiveToolTailFrozenRaw), [_setLiveToolTailFrozenRaw]);
   const [pendingImages, _setPendingImagesRaw] = useState<ImageAttachment[]>([]);
@@ -460,49 +417,25 @@ export function App() {
   const setLoadedExtensions = useMemo(() => __inkSafe(_setLoadedExtensionsRaw), [_setLoadedExtensionsRaw]);
   const [workspacePath, _setWorkspacePathRaw] = useState<string>(resolveWorkingDir());
   const setWorkspacePath = useMemo(() => __inkSafe(_setWorkspacePathRaw), [_setWorkspacePathRaw]);
-  const [termWidth, _setTermWidthRaw] = useState<number>(process.stdout.columns || 100);
-  const setTermWidth = useMemo(() => {
+  const [terminalSize, _setTerminalSizeRaw] = useState<{width:number,height:number}>(normalizeTerminalSize(process.stdout.columns, process.stdout.rows));
+  const setTerminalSize = useMemo(() => {
     let _lastCall = 0;
-    let _pendingValue: React.SetStateAction<number>;
+    let _pendingValue: React.SetStateAction<{width:number,height:number}>;
     let _pendingTimer: ReturnType<typeof setTimeout> | null = null;
-    return (value: React.SetStateAction<number>) => {
+    return (value: React.SetStateAction<{width:number,height:number}>) => {
       const now = Date.now();
       const elapsed = now - _lastCall;
       if (elapsed >= 100) {
         _lastCall = now;
         if (_pendingTimer) { clearTimeout(_pendingTimer); _pendingTimer = null; }
-        setTimeout(() => _setTermWidthRaw(value), 0);
+        setTimeout(() => _setTerminalSizeRaw(value), 0);
       } else {
         _pendingValue = value;
         if (!_pendingTimer) {
           _pendingTimer = setTimeout(() => {
             _lastCall = Date.now();
             _pendingTimer = null;
-            _setTermWidthRaw(_pendingValue);
-          }, 100 - elapsed);
-        }
-      }
-    };
-  }, []);
-  const [termHeight, _setTermHeightRaw] = useState<number>(process.stdout.rows || 24);
-  const setTermHeight = useMemo(() => {
-    let _lastCall = 0;
-    let _pendingValue: React.SetStateAction<number>;
-    let _pendingTimer: ReturnType<typeof setTimeout> | null = null;
-    return (value: React.SetStateAction<number>) => {
-      const now = Date.now();
-      const elapsed = now - _lastCall;
-      if (elapsed >= 100) {
-        _lastCall = now;
-        if (_pendingTimer) { clearTimeout(_pendingTimer); _pendingTimer = null; }
-        setTimeout(() => _setTermHeightRaw(value), 0);
-      } else {
-        _pendingValue = value;
-        if (!_pendingTimer) {
-          _pendingTimer = setTimeout(() => {
-            _lastCall = Date.now();
-            _pendingTimer = null;
-            _setTermHeightRaw(_pendingValue);
+            _setTerminalSizeRaw(_pendingValue);
           }, 100 - elapsed);
         }
       }
@@ -542,12 +475,13 @@ export function App() {
   const lastActivePlanSigRef = useRef<string>('');
   const streamingTextRef = useRef<Record<string,StreamingEntry>>({});
   const btwAbortRef = useRef<AbortController|null>(null);
-  const liveToolStreamsRef = useRef<Record<string,any>>({});
+  const liveToolStreamsRef = useRef<Record<string,LiveToolStreamEntry>>({});
   const agentProgressRef = useRef<Record<string,AgentProgressSnapshot>>({});
   const lastReviewResultRef = useRef<{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | null>(null);
   const modeRef = useRef<'chat'|'campfire'|'brainstorm'|'tribunal'>('chat');
   const inputEpochRef = useRef<number>(0);
   const inputValueRef = useRef<string>('');
+  const uiInteractionTimerRef = useRef<ReturnType<typeof setTimeout>|null>(null);
   const atPickerPrefixRef = useRef<string>('');
   const keyT0Ref = useRef<number>(0);
   const ctrlKeyHandledRef = useRef<boolean>(false);
@@ -555,6 +489,7 @@ export function App() {
   const pasteHashesRef = useRef<Map<string,string>>(new Map());
   const activeAbortRef = useRef<AbortController|null>(null);
   const activeTurnRef = useRef<{ input:string; engineId:string; retried:boolean }|null>(null);
+  const interruptedTurnRef = useRef<{ input:string; source:'foreground'|'job'; at:number }|null>(null);
   const cesarRuntimeHostRef = useRef<CesarTurnRuntimeHost>(createDurableCesarTurnRuntimeHost(chatSession.id));
   const lastActivityTimeRef = useRef<number>(hostNowMs());
   const pendingBellRef = useRef<boolean>(false);
@@ -591,12 +526,24 @@ export function App() {
   }, [configVersion]);
 
   const terminalMode = useMemo(() => {
-          return normalizeTerminalMode((config as any).terminalMode);
+          return resolveTerminalMode(config.terminalMode);
   }, [config]);
+
+  const termWidth = useMemo(() => {
+          return terminalSize.width;
+  }, [terminalSize]);
+
+  const termHeight = useMemo(() => {
+          return terminalSize.height;
+  }, [terminalSize]);
 
   const uiMotion = useMemo(() => {
           return normalizeUiMotion((config as any).uiMotion);
   }, [config]);
+
+  const cosmeticUiPaused = useMemo(() => {
+          return uiInteractionActive;
+  }, [uiInteractionActive]);
 
   const nativeTranscriptBlocks = useMemo(() => {
           return nativeTranscriptBlocksForStatic(outputBlocks);
@@ -660,10 +607,14 @@ export function App() {
           return { engineId: activeStream.engineId, line: lines[lines.length - 1].trim() };
   }, [activeStream]);
 
+  const chromeStreamSnippet = useMemo(() => {
+          return cosmeticUiPaused ? null : streamSnippet;
+  }, [streamSnippet,cosmeticUiPaused]);
+
   const newestLiveToolStreamId = useMemo(() => {
           let newestId = '';
           let newestStartedAt = -1;
-          for (const entry of Object.values(liveToolStreams ?? {}) as any[]) {
+          for (const entry of Object.values(liveToolStreams ?? {})) {
             const id = String(entry?.streamId ?? '');
             if (!id) continue;
             const startedAt = typeof entry?.startedAt === 'number' ? entry.startedAt : 0;
@@ -944,7 +895,7 @@ export function App() {
   }, [dispatch]);
 
   const interruptActiveRun = useCallback((message:string, clearChat:boolean) => {
-    runInterruptActiveRun({ activeAbortRef: activeAbortRef, activePlanRef: activePlanRef, cesarRuntimeHost: cesarRuntimeHostRef.current, setActiveAbort: setActiveAbort, setActivePlan: setActivePlan, setLiveSpinner: setLiveSpinner, setLiveProgress: setLiveProgress, outputActions: outputActions, setQuestionState: setQuestionState, setQuestionAnswer: setQuestionAnswer, setPendingPlanProposal: setPendingPlanProposal, setSlashPickerOpen: setSlashPickerOpen, setEnginePickerOpen: setEnginePickerOpen, setModelPickerOpen: setModelPickerOpen, setCesarPickerOpen: setCesarPickerOpen, setReviewEvent: setReviewEvent, replState: replState, dispatch: dispatch, setReplState: setReplState, pendingBellRef: pendingBellRef, bell: bell, setWindowTitle: setWindowTitle }, message, clearChat);
+    runInterruptActiveRun({ activeAbortRef: activeAbortRef, activePlanRef: activePlanRef, activeTurnRef: activeTurnRef, interruptedTurnRef: interruptedTurnRef, cesarRuntimeHost: cesarRuntimeHostRef.current, jobManager: jobManager, setActiveAbort: setActiveAbort, setActivePlan: setActivePlan, setJobList: setJobList, setLiveSpinner: setLiveSpinner, setLiveProgress: setLiveProgress, outputActions: outputActions, setQuestionState: setQuestionState, setQuestionAnswer: setQuestionAnswer, setPendingPlanProposal: setPendingPlanProposal, setSlashPickerOpen: setSlashPickerOpen, setEnginePickerOpen: setEnginePickerOpen, setModelPickerOpen: setModelPickerOpen, setCesarPickerOpen: setCesarPickerOpen, setReviewEvent: setReviewEvent, replState: replState, dispatch: dispatch, setReplState: setReplState, pendingBellRef: pendingBellRef, bell: bell, setWindowTitle: setWindowTitle }, message, clearChat);
   }, [replState,dispatch,trackAbort,outputActions]);
 
   const buildContext = useCallback(() => {
@@ -969,12 +920,13 @@ export function App() {
       get activePlan() { return activePlanRef.current; }, setActivePlan: setActivePlanWrapped,
       extensionPromptFragments,
       sessionMcpServers, setSessionMcpServers,
+      autoModeQueued,
       telemetryVitals,
       telemetrySnapshot: () => telemetryPollerRef.current?.snapshot?.() ?? telemetryVitals,
       recentFallbacks,
       cesarRuntimeHost: cesarRuntimeHostRef.current,
     };
-  }, [registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,extensionPromptFragments,sessionMcpServers,telemetryVitals,recentFallbacks,setActivePlanWrapped]);
+  }, [registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,extensionPromptFragments,sessionMcpServers,autoModeQueued,telemetryVitals,recentFallbacks,setActivePlanWrapped]);
 
   const handlePasteInput = useCallback((raw:string) => {
     const result = processPasteContent(String(raw ?? ''));
@@ -992,6 +944,13 @@ export function App() {
   const handleInputChange = useCallback((value:string) => {
     // Diagnostic: stamp keystroke arrival; read post-commit by the AGON_PERF effect (0 when off).
     keyT0Ref.current = perfNow();
+    // Freeze cosmetic clocks while the user is actively typing. Semantic
+    // streaming/tool events continue; only timer-driven chrome is paused.
+    setUiInteractionActive(true);
+    if (uiInteractionTimerRef.current) {
+      clearTimeout(uiInteractionTimerRef.current);
+    }
+    uiInteractionTimerRef.current = setTimeout(() => { uiInteractionTimerRef.current = null; setUiInteractionActive(false); }, 350);
     // User is back at the keyboard — clear the pending bell so the NEXT await
     // (after this turn) can ring again, and announce this new plan approval.
     pendingBellRef.current = false;
@@ -1087,7 +1046,7 @@ export function App() {
 
   const handleSubmit = useCallback(async (value:string) => {
     runHandleSubmit({
-      inputEpochRef, pendingBellRef, awaitingPlanAnnouncedRef, pasteHashesRef, pendingPasteTransformRef, inputValueRef, activePlanRef, activeTurnRef, chatStartTimeRef,
+      inputEpochRef, pendingBellRef, awaitingPlanAnnouncedRef, pasteHashesRef, pendingPasteTransformRef, inputValueRef, activePlanRef, activeTurnRef, interruptedTurnRef, chatStartTimeRef,
       replState, mode, planModeQueued, autoModeQueued, btwPanel, pendingImages, outputBlocks, allSlashCommands, dynamicSkills, extensionSkills, lastUndoToken, sessionStartTime, explorationMode, neroMode,
       jobManager, commandRegistry, eventBus, loadedExtensions,
       setInputValue, setInputHistory, setHistoryIndex, setInputQueue, setSteeringCount, setSlashPickerOpen, setStatusDashboardOpen, setPlanModeQueued, setPersistentAutoMode, setMode, setWorkspacePath, setReplState, setJobList, setBtwPanel,
@@ -1378,7 +1337,7 @@ export function App() {
       modelPickerOpen, cesarPickerOpen, slashPickerOpen, atPickerOpen, enginePickerOpen,
       reviewEvent, toolDetailEvent, btwPanel, statusDashboardOpen,
       questionState, selectedChoiceIndex, questionOtherActive,
-      replState, inputValue, inputHistory, historyIndex,
+      replState, jobManager, inputValue, inputHistory, historyIndex,
       planModeQueued, autoModeQueued, planApprovalIndex,
       outputBlocks, allSlashCommands, availableEngines, updateInfo, terminalMode,
       newestLiveToolStreamId, fileRailOpen, fileRailExpandedPath, fileRailSelectedIdx,
@@ -1567,12 +1526,11 @@ export function App() {
 
   useEffect(() => {
     const onResize = () => {
-      setTermWidth(process.stdout.columns || 100);
-      setTermHeight(process.stdout.rows || 24);
+      setTerminalSize(normalizeTerminalSize(process.stdout.columns, process.stdout.rows));
     };
     process.stdout.on('resize', onResize);
     return () => { process.stdout.off('resize', onResize); };
-  }, [[]]);
+  }, []);
 
   useEffect(() => {
     try {
@@ -1680,6 +1638,13 @@ export function App() {
   useEffect(() => {
     inputValueRef.current = inputValue;
   }, [inputValue]);
+
+  useEffect(() => {
+    return () => {
+      if (uiInteractionTimerRef.current) clearTimeout(uiInteractionTimerRef.current);
+      uiInteractionTimerRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     recordKeystrokeLatency(keyT0Ref.current, outputBlocks.length, effectiveNativeArchiveCount, nativeLiveBlocks.length, inputValue.length);
@@ -2028,14 +1993,15 @@ export function App() {
         liveProgress={liveProgress}
         runningJobs={runningJobs}
         chatStartTime={chatStartTimeRef.current || 0}
-        streamSnippet={streamSnippet}
+        streamSnippet={chromeStreamSnippet}
         statusStats={statusStats}
         statusCwd={statusCwd}
         statusBranch={statusBranch}
         explorationMode={explorationMode}
         toolOutputExpanded={toolOutputExpanded}
         fullscreenEnabled={terminalMode === 'fullscreen'}
-        uiMotion={uiMotion} />
+        uiMotion={uiMotion}
+        interactionActive={cosmeticUiPaused} />
     )}
   </Box>
   );
@@ -2092,7 +2058,7 @@ export function App() {
 // @kern-source: app:97
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:1904
+// @kern-source: app:1943
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   // Session-scoped grounding ONLY — deliberately does NOT call

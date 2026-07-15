@@ -5,6 +5,7 @@ import from="../cesar/context-thread.js" names="ContextThread" types=true
 import from="../blocks/host-runtime.js" names="hostNowIso,hostNowMs"
 
 interface name=ChatMessage
+  field name=id type=string optional=true
   field name=role type="'user'|'engine'"
   field name=engineId type=string optional=true
   field name=content type=string

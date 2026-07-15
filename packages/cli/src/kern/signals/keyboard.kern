@@ -19,6 +19,7 @@ interface name=KeyboardCtx
   field name=questionOtherActive type=boolean
   field name=updateInfo type=any
   field name=replState type=string
+  field name=runningJobCount type=number optional=true
   field name=inputValue type=string
   field name=inputHistory type="string[]"
   field name=historyIndex type=number
@@ -333,6 +334,7 @@ fn name=resolveKeyboardInput params="ctx:KeyboardCtx" returns="KeyboardAction"
         slashPickerOpen: ctx.slashPickerOpen,
         enginePickerOpen: ctx.enginePickerOpen,
         questionOpen: !!ctx.questionState,
+        runningJobCount: ctx.runningJobCount ?? 0,
       });
       switch (decision.action) {
         case 'close-slash': return { type: 'closeSlash' };

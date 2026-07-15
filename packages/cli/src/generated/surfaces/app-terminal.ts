@@ -95,7 +95,7 @@ export function buildTerminalReplaySnapshot(blocks: OutputBlock[], opts: any): {
   const fileRailExpanded = !(!opts?.fileRailExpanded);
   const fileRailWidth = fileRailOpen ? fileRailWidthForTerminal(termWidth, fileRailExpanded) : 0;
   const fileRailRows = fileRailOpen ? fileRailMaxRowsForTerminal(termHeight, terminalMode, fileRailExpanded) : 0;
-  const baseChromeRows = (mode === 'chat') ? 7 : 8;
+  const baseChromeRows = (mode === 'chat') ? 6 : 8;
   const lowerChromeRows = baseChromeRows + bottomChromeExtraRows;
   return { terminalMode: terminalMode, mode: mode, termWidth: termWidth, termHeight: termHeight, visibleBudget: visibleBudget, transcriptRowCount: transcriptRowCount, staticBlockCount: staticBlockCount, liveBlockCount: liveBlocks.length, fileRailWidth: fileRailWidth, fileRailRows: fileRailRows, headerRows: 1, lowerChromeRows: lowerChromeRows };
 }

@@ -10,6 +10,7 @@ import {
   effectiveNativeArchiveBlockCount,
   estimateBottomChromeExtraRows,
   estimateQuestionReservedRows,
+  estimateVisibleBlockBudget,
   fileRailMaxRowsForTerminal,
   fileRailWidthForTerminal,
   findLatestToolDetailEvent,
@@ -605,8 +606,8 @@ describe('app scroll helpers', () => {
     ).toBe(2);
   });
 
-  it('counts queued badges and chat spinner rows in the bottom chrome budget', () => {
-    expect(estimateBottomChromeExtraRows('chat', null, 100, 1, 1, true)).toBe(3);
+  it('counts queued badges without reserving a duplicate chat spinner row', () => {
+    expect(estimateBottomChromeExtraRows('chat', null, 100, 1, 1, true)).toBe(2);
     expect(
       estimateBottomChromeExtraRows(
         'chat',
@@ -627,8 +628,9 @@ describe('app scroll helpers', () => {
     expect(estimateBottomChromeExtraRows('chat', null, 100, 0, 0, false, false)).toBe(0);
     // The PlanChip pinned above the composer costs exactly one row.
     expect(estimateBottomChromeExtraRows('chat', null, 100, 0, 0, false, true)).toBe(1);
-    // It stacks with the other dynamic rows (image + queue + spinner + chip = 4).
-    expect(estimateBottomChromeExtraRows('chat', null, 100, 1, 1, true, true)).toBe(4);
+    // It stacks with the other dynamic rows (image + queue + chip = 3); spinner
+    // activity is already represented by the fixed CesarStatusStrip row.
+    expect(estimateBottomChromeExtraRows('chat', null, 100, 1, 1, true, true)).toBe(3);
     // Omitting the arg defaults to no chip — back-compat with pre-existing callers.
     expect(estimateBottomChromeExtraRows('chat', null, 100, 0, 0, false)).toBe(0);
   });
@@ -639,8 +641,15 @@ describe('app scroll helpers', () => {
     const withChip = buildTerminalReplaySnapshot([], { ...opts, hasPlanChip: true });
     // The chip's reserved row flows through both the lower-chrome height and the
     // transcript budget — so a plan running never over-allocates scrollback by a row.
+    expect(without.lowerChromeRows).toBe(6);
     expect(withChip.lowerChromeRows).toBe(without.lowerChromeRows + 1);
     expect(withChip.visibleBudget).toBe(without.visibleBudget - 1);
+  });
+
+  it('budgets the compact chat chrome as six deterministic rows', () => {
+    expect(estimateVisibleBlockBudget(30, 'chat', 0)).toBe(24);
+    expect(estimateVisibleBlockBudget(30, 'chat', 3)).toBe(21);
+    expect(estimateVisibleBlockBudget(30, 'brainstorm', 0)).toBe(22);
   });
 
   it('treats expanded bash output as multi-row transcript history', () => {

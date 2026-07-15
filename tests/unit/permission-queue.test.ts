@@ -87,11 +87,31 @@ describe('permission queue', () => {
     _permissionQueue.length = 0;
     loadConfigMock.mockReturnValue({});
     configSetMock.mockReset();
+    delete (handleOutputEvent as any)._lastSpinnerUpdate;
   });
 
   afterEach(() => {
     _permissionQueue.length = 0;
     vi.restoreAllMocks();
+  });
+
+  it('reuses spinner state when an update repeats the visible message', () => {
+    const actions = createMockActions();
+    handleOutputEvent(
+      { type: 'spinner-update', message: 'Cesar processing tool results…' } as any,
+      emptyState(),
+      actions,
+      'chat',
+      0,
+    );
+
+    const update = actions.calls.setLiveSpinner[0][0] as (prev: any) => any;
+    const unchanged = { message: 'Cesar processing tool results…', color: 214 };
+    expect(update(unchanged)).toBe(unchanged);
+    expect(update({ message: 'Cesar thinking…', color: 214 })).toEqual({
+      message: 'Cesar processing tool results…',
+      color: 214,
+    });
   });
 
   it('fires setQuestionState for the first permission immediately', () => {

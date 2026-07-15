@@ -161,4 +161,12 @@ describe('loadConfig() memoization', () => {
     const second = loadConfig();
     expect(second.commitCoAuthor).toBe('via-configset');
   });
+
+  it('normalizes invalid UI motion config to the reduced-motion default', async () => {
+    home = setupTestAgonHome('config-memo-ui-motion');
+    writeFileSync(agonHomePath('config.json'), JSON.stringify({ uiMotion: 'jitter' }));
+
+    const { loadConfig } = await import('../../packages/core/src/config.js');
+    expect(loadConfig().uiMotion).toBe('reduced');
+  });
 });

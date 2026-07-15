@@ -318,7 +318,11 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       const now = Date.now();
       if ((handleOutputEvent as any)._lastSpinnerUpdate && now - (handleOutputEvent as any)._lastSpinnerUpdate < 200) return;
       (handleOutputEvent as any)._lastSpinnerUpdate = now;
-      actions.setLiveSpinner((prev: any) => prev ? { ...prev, message: (event as any).message } : null);
+      const message = String((event as any).message ?? '');
+      actions.setLiveSpinner((prev: any) => {
+        if (!prev || prev.message === message) return prev;
+        return { ...prev, message };
+      });
       return;
     }
     case 'progress-update':

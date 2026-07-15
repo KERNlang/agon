@@ -71,6 +71,7 @@ import from="./app-tool-detail.js" names="toolDetailViewportRows,findLatestToolD
 import from="./app-terminal.js" names="createInitialRegistry,drainStdinBuffer,normalizeTerminalMode,fileRailWidthForTerminal,fileRailMaxRowsForTerminal"
 import from="./app-selection.js" names="normalizeTextSelection"
 import from="./app-layout.js" names="estimateVisibleBlockBudget,estimateBottomChromeExtraRows,estimatePinnedLiveRows"
+import from="./status-helpers.js" names="normalizeUiMotion"
 import from="./app-blocks.js" names="buildDashboardBlock,coalesceToolCallBlocks,effectiveNativeArchiveBlockCount,historyBlocksForTranscript,nativeTranscriptBlocksForStatic,nativeArchiveBlockCount"
 import from="./app-rendering.js" names="buildExecutionRailStats,buildTranscriptRows"
 import from="./app-lifecycle.js" names="loadExtensionsForWorkspace,startPlanSyncWatcher,startUpdateCheck,subscribeOrchestrationResults,startTelemetryPoller"
@@ -301,6 +302,10 @@ screen name=App target=ink
   memo name=terminalMode deps="config"
     handler lang="kern"
       return value="normalizeTerminalMode((config as any).terminalMode)"
+
+  memo name=uiMotion deps="config"
+    handler lang="kern"
+      return value="normalizeUiMotion((config as any).uiMotion)"
 
   memo name=nativeTranscriptBlocks deps="outputBlocks"
     handler lang="kern"
@@ -1840,7 +1845,8 @@ screen name=App target=ink
             statusBranch={statusBranch}
             explorationMode={explorationMode}
             toolOutputExpanded={toolOutputExpanded}
-            fullscreenEnabled={terminalMode === 'fullscreen'} />
+            fullscreenEnabled={terminalMode === 'fullscreen'}
+            uiMotion={uiMotion} />
         )}
       </Box>
       );

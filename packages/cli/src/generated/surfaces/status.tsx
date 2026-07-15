@@ -22,13 +22,13 @@ import { formatModeRationale } from '../cesar/mode-rationale.js';
 
 import type { ModeRationale } from '../cesar/mode-rationale.js';
 
-import { formatTokenCostStatus, buildPlanPhaseGauge, buildExecutionRailTimeline, buildGuardTelemetryView, loadGuardTelemetrySnapshot, buildHeartbeatSuffix, buildHeartbeatSig, parseHeartbeatPhase } from './status-helpers.js';
+import { formatTokenCostStatus, buildCompactStatusTail, normalizeUiMotion, buildPlanPhaseGauge, buildExecutionRailTimeline, buildGuardTelemetryView, loadGuardTelemetrySnapshot, buildHeartbeatSuffix, buildHeartbeatSig, parseHeartbeatPhase } from './status-helpers.js';
 
 // ── Module: StatusHelperExports ──
 
 export { formatTokenCostStatus, buildPlanPhaseGauge, buildExecutionRailTimeline, buildGuardTelemetryView, loadGuardTelemetrySnapshot, buildHeartbeatSuffix, buildHeartbeatSig, parseHeartbeatPhase } from './status-helpers.js';
 
-// @kern-source: status:26
+// @kern-source: status:25
 export function SpinnerBlock({ message, color }: { message:string; color?:number }) {
   return (
     <Text>
@@ -38,7 +38,7 @@ export function SpinnerBlock({ message, color }: { message:string; color?:number
   );
 }
 
-// @kern-source: status:42
+// @kern-source: status:41
 export function TokenGauge({ tokens, maxTokens }: { tokens:number; maxTokens:number }) {
   const pct = Math.min(100, Math.round((tokens / maxTokens) * 100));
   const barWidth = 12;
@@ -55,8 +55,8 @@ export function TokenGauge({ tokens, maxTokens }: { tokens:number; maxTokens:num
   );
 }
 
-// @kern-source: status:65
-export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd, cwd, branch, explorationMode, toolOutputExpanded, autoModeQueued, isActive, fullscreenEnabled, telemetryVitals, context, meteredCostUsd, hasPlanApiUsage, hasCliUsage }: { cesarId:string; chatMessageCount:number; totalTokens:number; totalCostUsd:number; cwd:string; branch?:string; explorationMode?:boolean; toolOutputExpanded?:boolean; autoModeQueued?:boolean; isActive?:boolean; fullscreenEnabled?:boolean; telemetryVitals?:Map<string, any>; context?:{pct:number,used:number,limit:number,compacted:number,cached:number,source?:string}|null; meteredCostUsd?:number; hasPlanApiUsage?:boolean; hasCliUsage?:boolean }) {
+// @kern-source: status:63
+const StatusBar = React.memo(function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd, cwd, branch, explorationMode, toolOutputExpanded, autoModeQueued, isActive, fullscreenEnabled, telemetryVitals, context, meteredCostUsd, hasPlanApiUsage, hasCliUsage }: { cesarId:string; chatMessageCount:number; totalTokens:number; totalCostUsd:number; cwd:string; branch?:string; explorationMode?:boolean; toolOutputExpanded?:boolean; autoModeQueued?:boolean; isActive?:boolean; fullscreenEnabled?:boolean; telemetryVitals?:Map<string, any>; context?:{pct:number,used:number,limit:number,compacted:number,cached:number,source?:string}|null; meteredCostUsd?:number; hasPlanApiUsage?:boolean; hasCliUsage?:boolean }) {
   // Cost honesty: only REAL API token usage is billable per token. A
   // coding-plan API has real tokens but its cost is included in the plan;
   // a subscription CLI brain has no countable per-turn cost. Keep those
@@ -71,61 +71,39 @@ export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd
   // the gauge is hidden rather than shown wrong; the cumulative `tok`
   // counter below stays (it's spend, a different axis than occupancy).
   const ctx = context && context.limit > 0 ? context : null;
+  const vitals = Array.from(telemetryVitals?.values?.() ?? []);
+  const stalled = vitals.filter((v: any) => v.state === 'stalled');
+  const offline = vitals.filter((v: any) => v.state === 'offline');
+  const fallback = vitals.filter((v: any) => v.state === 'fallback' || v.fallbackTo);
+  const busy = vitals.filter((v: any) => v.state === 'busy');
+  const telemetry = stalled.length > 0 ? `\u26a0 ${stalled.length} stalled`
+    : offline.length > 0 ? `\u2718 ${offline.length} offline`
+    : fallback.length > 0 ? `\u21c4 ${fallback.length} fallback`
+    : busy.length > 0 ? `\u25d0 ${busy.length} busy`
+    : vitals.length > 0 ? '\u25cf idle'
+    : '';
+  const tail = buildCompactStatusTail({
+    context: ctx,
+    tokens,
+    messages: msgs,
+    cost,
+    auto: Boolean(autoModeQueued),
+    telemetry,
+  });
   return (
-    <Box paddingTop={0} flexDirection="column">
-      <Text>
+    <Box height={1} flexShrink={0}>
+      <Text wrap="truncate-end">
         {explorationMode ? <Text color="#22d3ee" bold>{'[explore] '}</Text> : null}
         <Text color="#60a5fa">{cwd}</Text>
         {branch ? <Text dimColor>{' on '}<Text color="#34d399">{branch}</Text></Text> : null}
-      </Text>
-      <Text>
-        {ctx ? <TokenGauge tokens={ctx.used} maxTokens={ctx.limit} /> : null}
-        {ctx && ctx.source === 'estimate' ? <Text dimColor>{'~'}</Text> : null}
-        {tokens > 0 ? <Text dimColor>{`${ctx ? ' | ' : ''}${(tokens / 1000).toFixed(1)}k tok`}</Text> : null}
-        {msgs > 0 ? <Text dimColor>{` \u00b7 ${msgs} msgs`}</Text> : null}
-        {cost ? <Text dimColor>{` \u00b7 ${cost}`}</Text> : null}
-        {toolOutputExpanded !== undefined && <Text dimColor>{' \u00b7 '}{toolOutputExpanded ? 'tools expanded (' : 'tools collapsed ('}</Text>}
-        {toolOutputExpanded !== undefined && <Text color="#f59e0b">{'Ctrl+E'}</Text>}
-        {toolOutputExpanded !== undefined && <Text dimColor>{')'}</Text>}
-        <Text dimColor>{' \u00b7 files ('}</Text>
-        <Text color="#f59e0b">{'Ctrl+B'}</Text>
-        <Text dimColor>{')'}</Text>
-        <Text dimColor>{' \u00b7 live ('}</Text>
-        <Text color="#f59e0b">{'Ctrl+G'}</Text>
-        <Text dimColor>{')'}</Text>
-        <Text dimColor>{' \u00b7 '}</Text>
-        {autoModeQueued ? <Text color="#f97316" bold>{'AUTO ON'}</Text> : <Text dimColor>{'auto'}</Text>}
-        <Text dimColor>{' ('}</Text>
-        <Text color="#f59e0b">{'Ctrl+A'}</Text>
-        <Text dimColor>{')'}</Text>
-        {isActive ? <Text dimColor>{' \u00b7 /btw ask'}</Text> : null}
-        {(() => {
-          const vitals = Array.from(telemetryVitals?.values?.() ?? []);
-          if (vitals.length === 0) return null;
-          const stalled = vitals.filter((v: any) => v.state === 'stalled');
-          const offline = vitals.filter((v: any) => v.state === 'offline');
-          const fallback = vitals.filter((v: any) => v.state === 'fallback' || v.fallbackTo);
-          const busy = vitals.filter((v: any) => v.state === 'busy');
-          if (stalled.length > 0) {
-            return <Text dimColor>{' \u00b7 '}<Text color="#ef4444">{`\u26a0 ${stalled.length} stalled`}</Text></Text>;
-          }
-          if (offline.length > 0) {
-            return <Text dimColor>{' \u00b7 '}<Text color="#9ca3af">{`\u2718 ${offline.length} offline`}</Text></Text>;
-          }
-          if (fallback.length > 0) {
-            return <Text dimColor>{' \u00b7 '}<Text color="#f97316">{`\u21c4 ${fallback.length} fallback`}</Text></Text>;
-          }
-          if (busy.length > 0) {
-            return <Text dimColor>{' \u00b7 '}<Text color="#fbbf24">{`\u25d0 ${busy.length} busy`}</Text></Text>;
-          }
-          return <Text dimColor>{' \u00b7 '}<Text color="#4ade80">{'\u25cf all idle'}</Text></Text>;
-        })()}
+        {tail ? <Text dimColor>{tail}</Text> : null}
       </Text>
     </Box>
   );
-}
+});
+export { StatusBar };
 
-// @kern-source: status:154
+// @kern-source: status:129
 const StatusDashboard = React.memo(function StatusDashboard({ telemetryVitals, recentFallbacks, width, height, filter }: { telemetryVitals:Map<string, any>; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; width?:number; height?:number; filter?:'all'|'problem' }) {
   const vitals = Array.from(telemetryVitals?.values?.() ?? []);
   const severity: Record<string, number> = { stalled: 5, fallback: 4, offline: 3, busy: 2, idle: 1 };
@@ -264,7 +242,7 @@ const StatusDashboard = React.memo(function StatusDashboard({ telemetryVitals, r
 });
 export { StatusDashboard };
 
-// @kern-source: status:300
+// @kern-source: status:275
 const ExecutionRail = React.memo(function ExecutionRail({ spinner, engines, activePlanState, activePlan, lastTool, stats, recentFallbacks, toolOutputExpanded, startTime, isActive }: { spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; activePlanState?:string|null; activePlan?:any; lastTool?:any; stats?:any; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; toolOutputExpanded?:boolean; startTime?:number; isActive?:boolean }) {
   const planGauge = buildPlanPhaseGauge(activePlan, 10);
   const now = Date.now();
@@ -368,7 +346,7 @@ const ExecutionRail = React.memo(function ExecutionRail({ spinner, engines, acti
 });
 export { ExecutionRail };
 
-// @kern-source: status:414
+// @kern-source: status:389
 const ExecutionRailPanel = React.memo(function ExecutionRailPanel({ spinner, engines, activePlanState, activePlan, lastTool, stats, recentFallbacks, toolOutputExpanded, startTime, isActive, width, maxRows, focused }: { spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; activePlanState?:string|null; activePlan?:any; lastTool?:any; stats?:any; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; toolOutputExpanded?:boolean; startTime?:number; isActive?:boolean; width?:number; maxRows?:number; focused?:boolean }) {
   const safeWidth = Math.max(32, Math.floor(Number(width ?? 42)));
   const safeRows = Math.max(8, Math.floor(Number(maxRows ?? 12)));
@@ -479,7 +457,7 @@ const ExecutionRailPanel = React.memo(function ExecutionRailPanel({ spinner, eng
 });
 export { ExecutionRailPanel };
 
-// @kern-source: status:540
+// @kern-source: status:515
 const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs:Job[] }) {
   return (
     <Box paddingX={1}>
@@ -498,8 +476,8 @@ const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs
 });
 export { BackgroundJobRail };
 
-// @kern-source: status:562
-const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confidence, context, spinner, engines, jobs, startTime, streamSnippet, isActive, planModeQueued, autoModeQueued, activePlanState, activePlan, scoreboard, rationale }: { cesarId:string; confidence?:number|null; context?:{pct:number,used:number,limit:number,compacted:number,cached:number,source?:string}|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; jobs?:Job[]; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; autoModeQueued?:boolean; activePlanState?:string|null; activePlan?:any; scoreboard?:Scoreboard|null; rationale?:ModeRationale|null }) {
+// @kern-source: status:537
+const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confidence, context, spinner, engines, jobs, startTime, streamSnippet, isActive, planModeQueued, autoModeQueued, activePlanState, activePlan, scoreboard, rationale, uiMotion }: { cesarId:string; confidence?:number|null; context?:{pct:number,used:number,limit:number,compacted:number,cached:number,source?:string}|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; jobs?:Job[]; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; autoModeQueued?:boolean; activePlanState?:string|null; activePlan?:any; scoreboard?:Scoreboard|null; rationale?:ModeRationale|null; uiMotion?:'full'|'reduced'|'off' }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
     return (value) => setTimeout(() => setter(value), 0);
@@ -510,13 +488,14 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
 
   const heartbeatRef = useRef<{ sig: string; at: number }>({ sig: '', at: 0 });
 
+  const motion = normalizeUiMotion(uiMotion);
   useEffect(() => {
-    if (!(isActive)) return;
-    const _animId = setInterval(() => {
-      setNow(Date.now());
-    }, 1000);
-    return () => clearInterval(_animId);
-  }, [isActive]);
+    if (!isActive || motion === 'off') return;
+    setNow(Date.now());
+    const intervalMs = motion === 'full' ? 1000 : 5000;
+    const timer = setInterval(() => setNow(Date.now()), intervalMs);
+    return () => clearInterval(timer);
+  }, [isActive, motion]);
 
   // Idle: single dimmed line (no colored nesting issues)
   if (!isActive) {
@@ -525,8 +504,8 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
     // usage, or real-anchored projection) render without it.
     const ctxPart = (context && context.pct > 0) ? ` \u2502 ctx ${context.source === 'estimate' ? '~' : ''}${context.pct}%` : '';
     return (
-      <Box paddingTop={0} flexDirection="column">
-        <Text>
+      <Box height={1} flexShrink={0}>
+        <Text wrap="truncate-end">
           <Text dimColor>{'\u25c6 '}{cesarId}{confPart}{ctxPart}{' \u2502 idle'}</Text>
         </Text>
       </Box>
@@ -569,7 +548,7 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
 
   // Elapsed time (from operation start, not last activity)
   let elapsedStr = '';
-  if (startTime > 0) {
+  if (startTime > 0 && motion !== 'off') {
     const elapsed = Math.max(0, Math.floor((now - startTime) / 1000));
     if (elapsed > 0) {
       const mins = Math.floor(elapsed / 60);
@@ -615,10 +594,9 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
   // can still lag the true last byte by up to one throttle interval \u2014 well
   // under the 2s silent gate, so the suffix stays correct in practice.
   // codex 0.99: fingerprint on a NORMALIZED phase identity, NOT the raw
-  // spinner text. The brain re-emits the spinner every ~2s during a wait
-  // with an embedded elapsed counter ('Cesar thinking… 4s' → '… 6s';
-  // 'Cesar timed out after Ns' — brain.kern heartbeat setInterval). Hashing
-  // the raw message ticked the fingerprint on every counter mutation, which
+  // spinner text. Legacy/provider status messages may carry embedded elapsed
+  // counters ('Cesar thinking… 4s' → '… 6s'; 'timed out after Ns'). Hashing
+  // the raw message would tick the fingerprint on every counter mutation, which
   // reset the dead-air anchor each tick so buildHeartbeatSuffix could NEVER
   // clear its 2s gate during a long thinking wait — the feature's primary
   // use case. buildHeartbeatSig keys the phase component off
@@ -662,24 +640,25 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
   // jobs-only strip suppresses the suffix entirely (buildHeartbeatSuffix returns null
   // when turnActive is false) while every genuine wait is unchanged.
   const _hbGenuineWait = isActive && (!!spinner || (Array.isArray(engines) && engines.length > 0));
-  const heartbeatStr = buildHeartbeatSuffix(now, _hbAnchor, _hbPhase, _hbGenuineWait);
+  const heartbeatStr = motion === 'off' ? null : buildHeartbeatSuffix(now, _hbAnchor, _hbPhase, _hbGenuineWait);
 
   const scoreboardLines = scoreboard ? renderScoreboard(scoreboard) : '';
   const rationaleStr = rationale ? formatModeRationale(rationale) : '';
 
   return (
     <Box paddingTop={0} flexDirection="column">
-      <Box>
-        <Text>
+      <Box height={1} flexShrink={0}>
+        <Text wrap="truncate-end">
           <Text color={cesarColor} bold>{'\u25c6 '}{cesarId}</Text>
           {confStr ? <Text color={confColor} bold>{confStr}</Text> : null}
           {ctxStr ? <Text color={ctxColor}>{ctxStr}</Text> : null}
           <Text dimColor>{' \u2502 '}</Text>
           <Text color="#fbbf24">{activityStr}</Text>
           {elapsedStr ? <Text dimColor>{elapsedStr}</Text> : null}
-          {heartbeatStr ? <Text dimColor>{' '}{heartbeatStr}</Text> : null}
-        </Text>
-        <Text>
+          {/* elapsedStr already carries the operation timer. Only fall back
+              to the phase heartbeat when no operation start time exists, so
+              the row never repeats "17s · processing… 17s". */}
+          {heartbeatStr && !elapsedStr ? <Text dimColor>{' '}{heartbeatStr}</Text> : null}
           {snippetStr ? <><Text dimColor>{' \u2502 '}</Text><Text dimColor wrap="truncate">{snippetStr}</Text></> : null}
         </Text>
       </Box>

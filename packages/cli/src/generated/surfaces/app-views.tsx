@@ -8,7 +8,7 @@ import { EngineProgressView, BRAND, VERSION } from '../../generated/blocks/engin
 
 import { RenderedSegments, contentWidth, engineColor, RichLineView, DiffLine, SyntaxLine, AnsiLine, GradientLine } from '../../generated/blocks/rendering.js';
 
-import { buildPlanPhaseGauge } from './status-helpers.js';
+import { buildPlanPhaseGauge, normalizeUiMotion } from './status-helpers.js';
 
 import type { EngineProgress } from '../../handlers/types.js';
 
@@ -32,7 +32,7 @@ import { FileRail } from '../blocks/file-rail.js';
 
 import type { AgentProgressSnapshot } from '../signals/output.js';
 
-// @kern-source: app-views:92
+// @kern-source: app-views:101
 const PlanChip = React.memo(function PlanChip({ activePlan, activePlanState, planModeQueued, autoModeQueued }: { activePlan?:any; activePlanState?:string|null; planModeQueued?:boolean; autoModeQueued?:boolean }) {
   const planChrome = buildPlanChromeSummary(activePlan, activePlanState, planModeQueued, autoModeQueued);
   if (!planChrome.visible) return null;
@@ -58,7 +58,7 @@ const PlanChip = React.memo(function PlanChip({ activePlan, activePlanState, pla
 });
 export { PlanChip };
 
-// @kern-source: app-views:123
+// @kern-source: app-views:132
 const ChromeBar = React.memo(function ChromeBar({ mode, cwdLabel, engineCount, replState, runningJobs }: { mode:string; cwdLabel:string; engineCount:number; replState:string; runningJobs:Job[] }) {
   if (mode === 'chat') {
     return (
@@ -89,7 +89,7 @@ const ChromeBar = React.memo(function ChromeBar({ mode, cwdLabel, engineCount, r
 });
 export { ChromeBar };
 
-// @kern-source: app-views:160
+// @kern-source: app-views:169
 const TranscriptRowView = React.memo(function TranscriptRowView({ row }: { row:any }) {
   const borderPrefix = row.borderColor ? <Text color={row.borderColor}>{'\u2502 '}</Text> : null;
   const selectionRail = <Text color={row.selected ? '#60a5fa' : '#2b2b2b'}>{row.selected ? '\u258c' : ' '}</Text>;
@@ -221,7 +221,7 @@ const TranscriptRowView = React.memo(function TranscriptRowView({ row }: { row:a
 });
 export { TranscriptRowView };
 
-// @kern-source: app-views:294
+// @kern-source: app-views:303
 export function ToolDetailBlock({ title, subtitle, accentColor, rows, maxVisibleRows, onClose }: { title:string; subtitle:string; accentColor:string; rows:any[]; maxVisibleRows:number; onClose:() => void }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -298,7 +298,7 @@ export function ToolDetailBlock({ title, subtitle, accentColor, rows, maxVisible
   );
 }
 
-// @kern-source: app-views:384
+// @kern-source: app-views:393
 const StreamingView = React.memo(function StreamingView({ streamingText, mode, liveProgress, liveToolStreams, liveToolTailFrozen }: { streamingText:{engineId:string,content:string,draft?:boolean} | null; mode:string; liveProgress:EngineProgress[] | null; liveToolStreams?:Record<string,any>; liveToolTailFrozen?:Record<string,boolean> }) {
   const frozenToolOutputRef = useRef<Record<string, string>>({});
 
@@ -308,6 +308,11 @@ const StreamingView = React.memo(function StreamingView({ streamingText, mode, l
   const narrationPolicy = useMemo(() => {
     try { return String((loadConfig() as any).narrationFold ?? 'safe'); } catch { return 'safe'; }
   }, []);
+  const uiMotion = useMemo(() => {
+    try { return normalizeUiMotion((loadConfig() as any).uiMotion); } catch { return 'reduced' as const; }
+  }, []);
+  const textFrameMs = streamFrameIntervalMs(uiMotion, mode === 'chat' ? 'chat' : 'detail');
+  const toolFrameMs = streamFrameIntervalMs(uiMotion, 'tool');
 
   // ── Throttled rendered state for main engine stream ──
   const [renderedText, setRenderedText] = useState<{engineId:string;content:string;draft?:boolean} | null>(null);
@@ -348,7 +353,7 @@ const StreamingView = React.memo(function StreamingView({ streamingText, mode, l
         }
       }
 
-      frameTimer = setTimeout(updateTick, 42); // ~24fps frame rate
+      frameTimer = setTimeout(updateTick, textFrameMs);
     };
 
     updateTick();
@@ -358,7 +363,7 @@ const StreamingView = React.memo(function StreamingView({ streamingText, mode, l
         clearTimeout(frameTimer);
       }
     };
-  }, [streamingText ? streamingText.engineId : null]);
+  }, [streamingText ? streamingText.engineId : null, textFrameMs]);
 
   // ── Throttled rendered state for tool streams ──
   const [renderedToolStreams, setRenderedToolStreams] = useState<Record<string, any>>({});
@@ -404,7 +409,7 @@ const StreamingView = React.memo(function StreamingView({ streamingText, mode, l
         }
       }
 
-      frameTimer = setTimeout(updateTick, 50); // ~20fps for tool streams
+      frameTimer = setTimeout(updateTick, toolFrameMs);
     };
 
     updateTick();
@@ -414,7 +419,7 @@ const StreamingView = React.memo(function StreamingView({ streamingText, mode, l
         clearTimeout(frameTimer);
       }
     };
-  }, [liveToolStreams ? Object.keys(liveToolStreams).join(',') : null]);
+  }, [liveToolStreams ? Object.keys(liveToolStreams).join(',') : null, toolFrameMs]);
 
   const toolStreams = Object.values(renderedToolStreams ?? {});
 
@@ -554,7 +559,7 @@ const StreamingView = React.memo(function StreamingView({ streamingText, mode, l
 });
 export { StreamingView };
 
-// @kern-source: app-views:650
+// @kern-source: app-views:664
 const LiveStreamSection = React.memo(function LiveStreamSection({ activeStream, mode, liveProgress, liveToolStreams, liveToolTailFrozen, agentProgress }: { activeStream:{engineId:string,content:string,draft?:boolean} | null; mode:string; liveProgress:EngineProgress[] | null; liveToolStreams?:Record<string,any>; liveToolTailFrozen?:Record<string,boolean>; agentProgress:Record<string,AgentProgressSnapshot> }) {
   return (
     <>
@@ -587,7 +592,7 @@ const LiveStreamSection = React.memo(function LiveStreamSection({ activeStream, 
 });
 export { LiveStreamSection };
 
-// @kern-source: app-views:693
+// @kern-source: app-views:707
 const BtwSidePanel = React.memo(function BtwSidePanel({ btwPanel }: { btwPanel:any }) {
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="#22d3ee" paddingX={1} marginY={1}>
@@ -627,7 +632,7 @@ const BtwSidePanel = React.memo(function BtwSidePanel({ btwPanel }: { btwPanel:a
 });
 export { BtwSidePanel };
 
-// @kern-source: app-views:738
+// @kern-source: app-views:752
 const RailTakeoverPanel = React.memo(function RailTakeoverPanel({ showFileRail, showExecutionRail, fileRailFiles, sideRailMaxRows, termWidth, fileRailOpen, fileRailSelectedIdx, fileRailExpandedPath, liveSpinner, liveProgress, activePlan, latestToolEvent, recentFallbacks, executionRailStats, toolOutputExpanded, chatStartTime, isActive, executionRailOpen }: { showFileRail:boolean; showExecutionRail:boolean; fileRailFiles:any[]; sideRailMaxRows:number; termWidth:number; fileRailOpen:boolean; fileRailSelectedIdx:number; fileRailExpandedPath:string|null; liveSpinner:any; liveProgress:EngineProgress[] | null; activePlan:any; latestToolEvent:any; recentFallbacks:any[]; executionRailStats:any; toolOutputExpanded:boolean; chatStartTime:number; isActive:boolean; executionRailOpen:boolean }) {
   return (
     <>
@@ -656,7 +661,7 @@ const RailTakeoverPanel = React.memo(function RailTakeoverPanel({ showFileRail, 
 });
 export { RailTakeoverPanel };
 
-// @kern-source: app-views:789
+// @kern-source: app-views:803
 const UpdateBanner = React.memo(function UpdateBanner({ updateInfo, updateChecking }: { updateInfo:any; updateChecking:boolean }) {
   return (
     <Box flexDirection="row" borderStyle="round" borderColor="#fbbf24" paddingX={1} marginBottom={1}>
@@ -682,8 +687,8 @@ const UpdateBanner = React.memo(function UpdateBanner({ updateInfo, updateChecki
 });
 export { UpdateBanner };
 
-// @kern-source: app-views:824
-const BottomChromeSection = React.memo(function BottomChromeSection({ updateInfo, updateChecking, questionState, pendingImages, imageVisionNote, inputQueue, steeringCount, liveSpinner, mode, statusDashboardOpen, telemetryVitals, recentFallbacks, termWidth, termHeight, statusDashboardFilter, replState, planModeQueued, autoModeQueued, activePlan, slashPickerOpen, atPickerOpen, atPickerFiles, atPickerPrefix, atPickerQuery, onAtSelect, onAtCancel, inputValue, handleInputChange, handlePasteInput, handleSubmit, allSlashCommands, availableEngines, onSlashSelect, onSlashCancel, questionAnswer, selectedChoiceIndex, questionOtherActive, onQuestionAnswerChange, onQuestionAnswerSubmit, updateBannerActive, onCtrlShortcut, cesarId, cesarConfidence, cesarContext, liveProgress, runningJobs, chatStartTime, streamSnippet, statusStats, statusCwd, statusBranch, explorationMode, toolOutputExpanded, fullscreenEnabled }: { updateInfo:any; updateChecking:boolean; questionState:any; pendingImages:any[]; imageVisionNote?:string|null; inputQueue:string[]; steeringCount:number; liveSpinner:any; mode:'chat'|'campfire'|'brainstorm'|'tribunal'; statusDashboardOpen:boolean; telemetryVitals:Map<string, any>; recentFallbacks:any[]; termWidth:number; termHeight:number; statusDashboardFilter:any; replState:string; planModeQueued:boolean; autoModeQueued:boolean; activePlan:any; slashPickerOpen:boolean; atPickerOpen:boolean; atPickerFiles:string[]; atPickerPrefix:string; atPickerQuery:string; onAtSelect:(path:string) => void; onAtCancel:(typed:string) => void; inputValue:string; handleInputChange:(value:string) => void; handlePasteInput:(raw:string) => string; handleSubmit:(value:string) => void; allSlashCommands:any[]; availableEngines:string[]; onSlashSelect:(cmd:string) => void; onSlashCancel:() => void; questionAnswer:string; selectedChoiceIndex:number; questionOtherActive:boolean; onQuestionAnswerChange:(value:string) => void; onQuestionAnswerSubmit:(value:string) => void; updateBannerActive:boolean; onCtrlShortcut:(shortcut:string) => void; cesarId:string; cesarConfidence:any; cesarContext:any; liveProgress:EngineProgress[] | null; runningJobs:Job[]; chatStartTime:number; streamSnippet:any; statusStats:any; statusCwd:string; statusBranch:string; explorationMode:any; toolOutputExpanded:boolean; fullscreenEnabled:boolean }) {
+// @kern-source: app-views:838
+const BottomChromeSection = React.memo(function BottomChromeSection({ updateInfo, updateChecking, questionState, pendingImages, imageVisionNote, inputQueue, steeringCount, liveSpinner, mode, statusDashboardOpen, telemetryVitals, recentFallbacks, termWidth, termHeight, statusDashboardFilter, replState, planModeQueued, autoModeQueued, activePlan, slashPickerOpen, atPickerOpen, atPickerFiles, atPickerPrefix, atPickerQuery, onAtSelect, onAtCancel, inputValue, handleInputChange, handlePasteInput, handleSubmit, allSlashCommands, availableEngines, onSlashSelect, onSlashCancel, questionAnswer, selectedChoiceIndex, questionOtherActive, onQuestionAnswerChange, onQuestionAnswerSubmit, updateBannerActive, onCtrlShortcut, cesarId, cesarConfidence, cesarContext, liveProgress, runningJobs, chatStartTime, streamSnippet, statusStats, statusCwd, statusBranch, explorationMode, toolOutputExpanded, fullscreenEnabled, uiMotion }: { updateInfo:any; updateChecking:boolean; questionState:any; pendingImages:any[]; imageVisionNote?:string|null; inputQueue:string[]; steeringCount:number; liveSpinner:any; mode:'chat'|'campfire'|'brainstorm'|'tribunal'; statusDashboardOpen:boolean; telemetryVitals:Map<string, any>; recentFallbacks:any[]; termWidth:number; termHeight:number; statusDashboardFilter:any; replState:string; planModeQueued:boolean; autoModeQueued:boolean; activePlan:any; slashPickerOpen:boolean; atPickerOpen:boolean; atPickerFiles:string[]; atPickerPrefix:string; atPickerQuery:string; onAtSelect:(path:string) => void; onAtCancel:(typed:string) => void; inputValue:string; handleInputChange:(value:string) => void; handlePasteInput:(raw:string) => string; handleSubmit:(value:string) => void; allSlashCommands:any[]; availableEngines:string[]; onSlashSelect:(cmd:string) => void; onSlashCancel:() => void; questionAnswer:string; selectedChoiceIndex:number; questionOtherActive:boolean; onQuestionAnswerChange:(value:string) => void; onQuestionAnswerSubmit:(value:string) => void; updateBannerActive:boolean; onCtrlShortcut:(shortcut:string) => void; cesarId:string; cesarConfidence:any; cesarContext:any; liveProgress:EngineProgress[] | null; runningJobs:Job[]; chatStartTime:number; streamSnippet:any; statusStats:any; statusCwd:string; statusBranch:string; explorationMode:any; toolOutputExpanded:boolean; fullscreenEnabled:boolean; uiMotion?:'full'|'reduced'|'off' }) {
   const isActive = replState !== 'idle' || runningJobs.length > 0;
   return (
     <Box flexDirection="column" paddingX={1} marginTop={1}>
@@ -712,11 +717,6 @@ const BottomChromeSection = React.memo(function BottomChromeSection({ updateInfo
           will be injected at the next tool boundary. One dim line; shows the
           count when more than one is queued. Only while a turn is running. */}
       {replState !== 'idle' && steeringCount > 0 && (<Box><Text dimColor>{'▎'}{'Queued'}{steeringCount > 1 ? ` (${steeringCount})` : ''}{' — injects at next step · esc to interrupt'}</Text></Box>)}
-      {liveSpinner && mode === 'chat' && !questionState && (
-        <Box paddingLeft={1}>
-          <Text color="#fbbf24">{liveSpinner.message}</Text>
-        </Box>
-      )}
       {/* One-line plan glance pinned directly above the composer — the
           chip relocated out of the top ChromeBar so plan state sits at the
           user's point of focus (the input). Renders nothing when no plan. */}
@@ -756,7 +756,7 @@ const BottomChromeSection = React.memo(function BottomChromeSection({ updateInfo
           termHeight={termHeight}
           onCtrlShortcut={onCtrlShortcut} />
       )}
-      <CesarStatusStrip cesarId={cesarId} confidence={cesarConfidence} context={cesarContext} spinner={liveSpinner} engines={liveProgress} jobs={runningJobs} startTime={chatStartTime} streamSnippet={streamSnippet} isActive={isActive} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} activePlan={activePlan} scoreboard={null} rationale={null} />
+      <CesarStatusStrip cesarId={cesarId} confidence={cesarConfidence} context={cesarContext} spinner={liveSpinner} engines={liveProgress} jobs={runningJobs} startTime={chatStartTime} streamSnippet={streamSnippet} isActive={isActive} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} activePlan={activePlan} scoreboard={null} rationale={null} uiMotion={uiMotion} />
       {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} meteredCostUsd={(statusStats as any).meteredCostUsd} hasPlanApiUsage={(statusStats as any).hasPlanApiUsage} hasCliUsage={(statusStats as any).hasCliUsage} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} autoModeQueued={autoModeQueued} isActive={replState !== 'idle'} fullscreenEnabled={fullscreenEnabled} telemetryVitals={telemetryVitals} context={cesarContext} />}
     </Box>
   );
@@ -781,9 +781,20 @@ export function renderSelectedText(text: string, start: number, end: number, key
 }
 
 /**
- * Compact sticky plan chip for the top chrome. Keeps plan progress out of the noisy bottom status strip.
+ * Bound live repaint cadence by motion policy. Output still advances in off mode, but cosmetic frame pressure drops to four updates per second.
  */
 // @kern-source: app-views:42
+export function streamFrameIntervalMs(uiMotion: unknown, kind: 'chat'|'detail'|'tool' = 'chat'): number {
+  const motion = normalizeUiMotion(uiMotion);
+  if (motion === 'off') return 250;
+  if (motion === 'reduced') return kind === 'detail' ? 66 : kind === 'tool' ? 75 : 100;
+  return kind === 'detail' ? 42 : kind === 'tool' ? 50 : 60;
+}
+
+/**
+ * Compact sticky plan chip for the top chrome. Keeps plan progress out of the noisy bottom status strip.
+ */
+// @kern-source: app-views:51
 export function buildPlanChromeSummary(activePlan: any, activePlanState?: string|null, planModeQueued?: boolean, autoModeQueued?: boolean): any {
   const gauge = buildPlanPhaseGauge(activePlan, 8);
   const displayState = (gauge.visible && gauge.phase === 'complete') ? 'done' : String(activePlanState ?? '');
@@ -821,7 +832,7 @@ export function buildPlanChromeSummary(activePlan: any, activePlanState?: string
   return { visible: true, label: label, color: gauge.visible ? gauge.color : '#c084fc', shortId: gauge.shortId ?? '', bar: gauge.bar ?? '', pct: Number(gauge.pct ?? 0), stepLabel: gauge.label ?? '', current: gauge.current ?? '', failed: failed, action: action };
 }
 
-// @kern-source: app-views:371
+// @kern-source: app-views:380
 export function contextualizeSlicedMarkdown(prefix: string, slicedText: string): string {
   const parts = prefix.split('```');
   if (parts.length % 2 === 0) {

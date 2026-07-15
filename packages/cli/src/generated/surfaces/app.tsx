@@ -138,6 +138,8 @@ import { normalizeTextSelection } from './app-selection.js';
 
 import { estimateVisibleBlockBudget, estimateBottomChromeExtraRows, estimatePinnedLiveRows } from './app-layout.js';
 
+import { normalizeUiMotion } from './status-helpers.js';
+
 import { buildDashboardBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount } from './app-blocks.js';
 
 import { buildExecutionRailStats, buildTranscriptRows } from './app-rendering.js';
@@ -158,7 +160,7 @@ import { runProcessInputQueue, runSendBtwMessage, runHandleSubmit } from './app-
 
 export { COMPOSER_HISTORY_LIMIT, isMutatingToolCall, probeEngineVitals, parseToolCallPayload, toolPreviewWindow, toolCallSupportsDetailView, detailViewerSupportsEvent, toolDetailViewportRows, findLatestToolDetailEvent, findLatestToolEvent, buildExecutionRailStats, composerHistoryPath, loadComposerInputHistory, saveComposerInputHistory, findLatestFailedToolEvent, buildFailedToolRetryDraft, buildToolDetailView, createInitialRegistry, drainStdinBuffer, maxScrollOffsetForRowCount, nextWheelAnimationStep, clampNumber, charDisplayWidth, stringDisplayWidth, displayColumnToStringIndex, normalizeRowSelection, normalizeTextSelection, richLineToPlainText, transcriptRowToPlainText, transcriptRowTextStartColumn, resolveTranscriptColumnFromMouse, transcriptRowsToPlainText, resolveTranscriptRowFromMouse, estimateVisibleBlockBudget, estimateWrappedRowCount, estimateQuestionReservedRows, estimateBottomChromeExtraRows, summarizeBtwTranscriptEvent, buildDashboardBlock, estimatePinnedLiveRows, estimateWrappedRows, estimateToolCallRows, estimateOutputEventRows, buildDisplayItems, isToolCallLikeBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, estimateDisplayItemRows, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, isDuplicateEngineBlock, appendTranscriptBlock, normalizeTerminalMode, fileRailWidthForTerminal, fileRailMaxRowsForTerminal, buildTerminalReplaySnapshot, parseMarkdownToRows, buildToolCallRows, buildCollapsedToolGroupRows, buildTranscriptRows } from './app-helpers.js';
 
-// @kern-source: app:98
+// @kern-source: app:99
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -590,6 +592,10 @@ export function App() {
 
   const terminalMode = useMemo(() => {
           return normalizeTerminalMode((config as any).terminalMode);
+  }, [config]);
+
+  const uiMotion = useMemo(() => {
+          return normalizeUiMotion((config as any).uiMotion);
   }, [config]);
 
   const nativeTranscriptBlocks = useMemo(() => {
@@ -2028,7 +2034,8 @@ export function App() {
         statusBranch={statusBranch}
         explorationMode={explorationMode}
         toolOutputExpanded={toolOutputExpanded}
-        fullscreenEnabled={terminalMode === 'fullscreen'} />
+        fullscreenEnabled={terminalMode === 'fullscreen'}
+        uiMotion={uiMotion} />
     )}
   </Box>
   );
@@ -2082,10 +2089,10 @@ export function App() {
   );
 }
 
-// @kern-source: app:96
+// @kern-source: app:97
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:1898
+// @kern-source: app:1904
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   // Session-scoped grounding ONLY — deliberately does NOT call

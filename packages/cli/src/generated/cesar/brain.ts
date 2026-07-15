@@ -1027,10 +1027,13 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         const mcpWatcherInterval = signalDir ? setInterval(processMcpSideChannel, 150) : null;
         processMcpSideChannel();
 
-        // ── Heartbeat timer + turn timeout ──
+        // ── Silent turn-timeout watchdog ──
         // Start this immediately before the protected stream block. Setup above
         // is synchronous and may throw; creating the timer earlier would leave a
-        // live interval behind when that happens.
+        // live interval behind when that happens. This timer enforces the timeout
+        // only: elapsed UI updates are owned by CesarStatusStrip. Emitting a new
+        // spinner message every two seconds repainted the whole lower UI and also
+        // overwrote real phases such as "processing tool results" with "thinking".
         const cesarTimeout = (config as any).cesarTimeout ?? 300;
         const heartbeat = setInterval(() => {
           const elapsed = Math.round((Date.now() - _turnStart) / 1000);
@@ -1040,8 +1043,6 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             abort.abort();
             clearInterval(heartbeat);
             dispatch({ type: 'spinner-update', message: `Cesar timed out after ${elapsed}s` });
-          } else {
-            dispatch({ type: 'spinner-update', message: `Cesar thinking… ${elapsed}s` });
           }
         }, 2_000);
 

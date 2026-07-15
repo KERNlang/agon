@@ -119,6 +119,7 @@ fn name=loadConfig params="cwd?:string" returns="Required<AgonConfig>"
     if (!Array.isArray((merged as any).removedEngines)) (merged as any).removedEngines = [];
     if (!Array.isArray((merged as any).browserExtensionIds)) (merged as any).browserExtensionIds = [];
     if (!['auto', 'explicit'].includes(String((merged as any).engineActivationMode))) (merged as any).engineActivationMode = 'auto';
+    if (!['full', 'reduced', 'off'].includes(String((merged as any).uiMotion))) (merged as any).uiMotion = 'reduced';
     if (!merged.hooks || typeof merged.hooks === 'string') (merged as any).hooks = {};
     if (!merged.allowedCommands || typeof merged.allowedCommands === 'string') (merged as any).allowedCommands = [];
     if (!merged.engineModels || typeof merged.engineModels === 'string') (merged as any).engineModels = {};

@@ -5,6 +5,33 @@
 import from="@kernlang/agon-core" names="readGuardCounters,recommendGuardAction"
 import from="@kernlang/agon-core" names="GuardCounters,GuardCounterCell,GuardTurnAggregate" types=true
 
+fn name=normalizeUiMotion params="value:unknown" returns="'full'|'reduced'|'off'" export=true
+  doc "Normalize the TUI motion policy at render boundaries. Invalid or missing values fail steady to the reduced-motion default."
+  handler <<<
+    const motion = String(value ?? '').trim().toLowerCase();
+    return motion === 'full' || motion === 'off' ? motion : 'reduced';
+  >>>
+
+fn name=buildCompactStatusTail params="parts:{context?:{pct:number,source?:string}|null,tokens?:number,messages?:number,cost?:string,auto?:boolean,telemetry?:string}" returns=string export=true
+  doc "Build the stable metric tail for the one-row footer. It never emits newlines or permanent shortcut help; Ink owns terminal-width truncation."
+  handler <<<
+    const segments: string[] = [];
+    const context = parts?.context;
+    if (context && context.pct > 0) {
+      segments.push(`ctx ${context.source === 'estimate' ? '~' : ''}${Math.round(context.pct)}%`);
+    }
+    const tokens = Math.max(0, Number(parts?.tokens) || 0);
+    if (tokens > 0) segments.push(`${(tokens / 1000).toFixed(1)}k tok`);
+    const messages = Math.max(0, Math.floor(Number(parts?.messages) || 0));
+    if (messages > 0) segments.push(`${messages} msgs`);
+    const cost = String(parts?.cost ?? '').replace(/\s+/g, ' ').trim();
+    if (cost) segments.push(cost);
+    if (parts?.auto) segments.push('AUTO');
+    const telemetry = String(parts?.telemetry ?? '').replace(/\s+/g, ' ').trim();
+    if (telemetry) segments.push(telemetry);
+    return segments.length > 0 ? ` \u00b7 ${segments.join(' \u00b7 ')}` : '';
+  >>>
+
 fn name=formatTokenCostStatus params="meteredCostUsd:number,totalCostUsd:number,hasPlanApiUsage:boolean,hasCliUsage:boolean" returns=string export=true
   doc "Format the status-bar cost without conflating flat-rate plan API usage with CLI usage."
   handler <<<
@@ -230,7 +257,7 @@ fn name=parseHeartbeatPhase params="spinnerMessage:string|null|undefined" return
   >>>
 
 fn name=buildHeartbeatSig params="phase:{kind:'waiting'|'tools', names:string[], wait?:string}, engineSig:string, planSig:string, streamSig:string" returns="string" export=true
-  doc "Build the dead-air heartbeat fingerprint from a NORMALIZED phase identity (NOT raw spinner text). The brain re-emits the spinner every ~2s during a wait with an embedded elapsed counter ('Cesar thinking… 4s' → '… 6s', 'Cesar timed out after Ns'); fingerprinting the raw message would tick on every counter mutation, continuously resetting the dead-air anchor so buildHeartbeatSuffix could never clear its 2s gate during a long wait — killing the feature's primary use case. Instead the phase component is parseHeartbeatPhase's output (kind + wait verb + tool names joined): a genuine phase change (thinking→responding→tools→different tools) flips it, but the volatile counter does not. Combined with the engine/plan/stream signals the strip already holds. PURE so the fingerprint identity is unit-tested independent of Ink."
+  doc "Build the dead-air heartbeat fingerprint from a NORMALIZED phase identity (NOT raw spinner text). Legacy/provider status messages can contain volatile elapsed counters ('Cesar thinking… 4s' → '… 6s', 'timed out after Ns'); fingerprinting the raw message would reset the dead-air anchor on every counter mutation. Instead the phase component uses parseHeartbeatPhase output (kind + wait verb + tool names): genuine phase changes still flip it, but volatile counters do not. Combined with the engine/plan/stream signals the strip already holds. PURE so the fingerprint identity is unit-tested independent of Ink."
   handler <<<
     const names = Array.isArray(phase?.names) ? phase.names.join(',') : '';
     const wait = (phase && typeof phase.wait === 'string') ? phase.wait : '';

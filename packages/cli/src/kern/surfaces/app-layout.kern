@@ -10,15 +10,14 @@ import from="../../handlers/types.js" names="OutputEvent" types=true
 module name=AppLayout
   fn name=estimateVisibleBlockBudget params="rows:number, mode:string, overlayReservedRows:number" returns=number
     handler lang="kern"
-      comment raw="// Chat mode keeps 7 rows for the composer/status chrome at minimum:"
-      comment raw="// margin + bordered composer (3) + Cesar strip + two-line status bar."
-      comment raw="// Using 6 makes the startup dashboard overflow by one line."
+      comment raw="// Chat mode keeps 6 rows for the fixed composer/status chrome:"
+      comment raw="// margin + bordered composer (3) + Cesar strip + one-line footer."
       // KERN-GAP: codegen — `(mode === 'chat' ? 7 : 8) + Math.max(...)` compiled to
       // `(mode === 'chat') ? 7 : 8 + Math.max(...)`, so for chat mode the reserved
       // rows IGNORED overlayReservedRows entirely (pickers/images/spinner/question/
       // plan-chip reservations were all swallowed — the transcript over-budgeted).
       // Split the bare ternary into its own `let` so the `+` binds correctly.
-      let name=baseReserved value="mode === 'chat' ? 7 : 8"
+      let name=baseReserved value="mode === 'chat' ? 6 : 8"
       let name=reservedRows value="baseReserved + Math.max(0, overlayReservedRows)"
       return value="Math.max(1, rows - reservedRows)"
 
@@ -78,15 +77,13 @@ module name=AppLayout
       return promptRows + 1;
     >>>
 
-  fn name=estimateBottomChromeExtraRows params="mode:string, questionState:any, termWidth:number, pendingImageCount:number, inputQueueCount:number, hasLiveSpinner:boolean, hasPlanChip:boolean=false" returns=number export=true
-    doc "Reserve extra rows above the base composer/status chrome for stacked prompt cards, queued-input badges, chat spinner rows, and the one-line plan chip (PlanChip) pinned directly above the composer."
+  fn name=estimateBottomChromeExtraRows params="_mode:string, questionState:any, termWidth:number, pendingImageCount:number, inputQueueCount:number, _hasLiveSpinner:boolean, hasPlanChip:boolean=false" returns=number export=true
+    doc "Reserve extra rows above the base composer/status chrome for stacked prompt cards, queued-input badges, and the one-line plan chip. The legacy spinner argument is retained for call compatibility, but spinner activity now renders only in CesarStatusStrip and consumes no duplicate row."
     handler lang="kern"
       let name=extraRows kind=let value="0"
       if cond="pendingImageCount > 0"
         assign target="extraRows" op="+=" value="1"
       if cond="inputQueueCount > 0"
-        assign target="extraRows" op="+=" value="1"
-      if cond="mode === 'chat' && hasLiveSpinner && !questionState"
         assign target="extraRows" op="+=" value="1"
       if cond="hasPlanChip"
         assign target="extraRows" op="+=" value="1"

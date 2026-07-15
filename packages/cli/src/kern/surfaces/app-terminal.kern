@@ -75,10 +75,10 @@ module name=AppTerminal
       let name=fileRailRows value="fileRailOpen ? fileRailMaxRowsForTerminal(termHeight, terminalMode, fileRailExpanded) : 0"
       // KERN-GAP: codegen — a parenthesized ternary as the LEFT operand of a binary
       // op inside an object-literal value loses its grouping: the source
-      // `(mode === 'chat' ? 7 : 8) + bottomChromeExtraRows` emits as
-      // `(mode === 'chat') ? 7 : 8 + bottomChromeExtraRows`, so the `+` wrongly binds
+      // `(mode === 'chat' ? 6 : 8) + bottomChromeExtraRows` emits as
+      // `(mode === 'chat') ? 6 : 8 + bottomChromeExtraRows`, so the `+` wrongly binds
       // to the false branch only. Worked around by computing the base in its own
       // `let` (a bare ternary emits correctly) and adding two identifiers.
-      let name=baseChromeRows value="mode === 'chat' ? 7 : 8"
+      let name=baseChromeRows value="mode === 'chat' ? 6 : 8"
       let name=lowerChromeRows value="baseChromeRows + bottomChromeExtraRows"
       return value="{ terminalMode, mode, termWidth, termHeight, visibleBudget, transcriptRowCount, staticBlockCount, liveBlockCount: liveBlocks.length, fileRailWidth, fileRailRows, headerRows: 1, lowerChromeRows, }"

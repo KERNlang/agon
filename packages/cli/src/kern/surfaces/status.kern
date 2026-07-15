@@ -1,9 +1,8 @@
 // ── UI Status: status bar, status line, token gauge, tips, jobs rail, spinner ──
 // Note: Kern 3.2.3 now honors `memo=true` on these surface screens.
-// BackgroundJobRail / CesarStatusStrip can stay memoized in generated output.
-// StatusBar is intentionally NOT memoized — it reads global mutable state
-// (tracker, chatSession.messages, resolveWorkingDir, currentBranch) that is not
-// in its props, so shallow-equal would make it go stale.
+// BackgroundJobRail / CesarStatusStrip / StatusBar stay memoized in generated
+// output. StatusBar receives all changing state through props, so streaming a
+// transcript chunk does not need to rebuild the fixed footer.
 
 import from="react" default="React" names="useState,useEffect"
 import from="ink" names="Box,Text"
@@ -16,7 +15,7 @@ import from="../cesar/scoreboard.js" names="renderScoreboard"
 import from="../cesar/scoreboard.js" names="Scoreboard" types=true
 import from="../cesar/mode-rationale.js" names="formatModeRationale"
 import from="../cesar/mode-rationale.js" names="ModeRationale" types=true
-import from="./status-helpers.js" names="formatTokenCostStatus,buildPlanPhaseGauge,buildExecutionRailTimeline,buildGuardTelemetryView,loadGuardTelemetrySnapshot,buildHeartbeatSuffix,buildHeartbeatSig,parseHeartbeatPhase"
+import from="./status-helpers.js" names="formatTokenCostStatus,buildCompactStatusTail,normalizeUiMotion,buildPlanPhaseGauge,buildExecutionRailTimeline,buildGuardTelemetryView,loadGuardTelemetrySnapshot,buildHeartbeatSuffix,buildHeartbeatSig,parseHeartbeatPhase"
 
 module name=StatusHelperExports
   export from="./status-helpers.js" names="formatTokenCostStatus,buildPlanPhaseGauge,buildExecutionRailTimeline,buildGuardTelemetryView,loadGuardTelemetrySnapshot,buildHeartbeatSuffix,buildHeartbeatSig,parseHeartbeatPhase"
@@ -61,8 +60,7 @@ screen name=TokenGauge target=ink
 
 // ── Screen: StatusBar ───────────────────────────────────────────────
 
-// NOTE: no memo=true on StatusBar — see rationale above.
-screen name=StatusBar target=ink
+screen name=StatusBar target=ink memo=true
   prop name=cesarId type=string
   prop name=chatMessageCount type=number
   prop name=totalTokens type=number
@@ -95,55 +93,32 @@ screen name=StatusBar target=ink
       // the gauge is hidden rather than shown wrong; the cumulative `tok`
       // counter below stays (it's spend, a different axis than occupancy).
       const ctx = context && context.limit > 0 ? context : null;
+      const vitals = Array.from(telemetryVitals?.values?.() ?? []);
+      const stalled = vitals.filter((v: any) => v.state === 'stalled');
+      const offline = vitals.filter((v: any) => v.state === 'offline');
+      const fallback = vitals.filter((v: any) => v.state === 'fallback' || v.fallbackTo);
+      const busy = vitals.filter((v: any) => v.state === 'busy');
+      const telemetry = stalled.length > 0 ? `\u26a0 ${stalled.length} stalled`
+        : offline.length > 0 ? `\u2718 ${offline.length} offline`
+        : fallback.length > 0 ? `\u21c4 ${fallback.length} fallback`
+        : busy.length > 0 ? `\u25d0 ${busy.length} busy`
+        : vitals.length > 0 ? '\u25cf idle'
+        : '';
+      const tail = buildCompactStatusTail({
+        context: ctx,
+        tokens,
+        messages: msgs,
+        cost,
+        auto: Boolean(autoModeQueued),
+        telemetry,
+      });
       return (
-        <Box paddingTop={0} flexDirection="column">
-          <Text>
+        <Box height={1} flexShrink={0}>
+          <Text wrap="truncate-end">
             {explorationMode ? <Text color="#22d3ee" bold>{'[explore] '}</Text> : null}
             <Text color="#60a5fa">{cwd}</Text>
             {branch ? <Text dimColor>{' on '}<Text color="#34d399">{branch}</Text></Text> : null}
-          </Text>
-          <Text>
-            {ctx ? <TokenGauge tokens={ctx.used} maxTokens={ctx.limit} /> : null}
-            {ctx && ctx.source === 'estimate' ? <Text dimColor>{'~'}</Text> : null}
-            {tokens > 0 ? <Text dimColor>{`${ctx ? ' | ' : ''}${(tokens / 1000).toFixed(1)}k tok`}</Text> : null}
-            {msgs > 0 ? <Text dimColor>{` \u00b7 ${msgs} msgs`}</Text> : null}
-            {cost ? <Text dimColor>{` \u00b7 ${cost}`}</Text> : null}
-            {toolOutputExpanded !== undefined && <Text dimColor>{' \u00b7 '}{toolOutputExpanded ? 'tools expanded (' : 'tools collapsed ('}</Text>}
-            {toolOutputExpanded !== undefined && <Text color="#f59e0b">{'Ctrl+E'}</Text>}
-            {toolOutputExpanded !== undefined && <Text dimColor>{')'}</Text>}
-            <Text dimColor>{' \u00b7 files ('}</Text>
-            <Text color="#f59e0b">{'Ctrl+B'}</Text>
-            <Text dimColor>{')'}</Text>
-            <Text dimColor>{' \u00b7 live ('}</Text>
-            <Text color="#f59e0b">{'Ctrl+G'}</Text>
-            <Text dimColor>{')'}</Text>
-            <Text dimColor>{' \u00b7 '}</Text>
-            {autoModeQueued ? <Text color="#f97316" bold>{'AUTO ON'}</Text> : <Text dimColor>{'auto'}</Text>}
-            <Text dimColor>{' ('}</Text>
-            <Text color="#f59e0b">{'Ctrl+A'}</Text>
-            <Text dimColor>{')'}</Text>
-            {isActive ? <Text dimColor>{' \u00b7 /btw ask'}</Text> : null}
-            {(() => {
-              const vitals = Array.from(telemetryVitals?.values?.() ?? []);
-              if (vitals.length === 0) return null;
-              const stalled = vitals.filter((v: any) => v.state === 'stalled');
-              const offline = vitals.filter((v: any) => v.state === 'offline');
-              const fallback = vitals.filter((v: any) => v.state === 'fallback' || v.fallbackTo);
-              const busy = vitals.filter((v: any) => v.state === 'busy');
-              if (stalled.length > 0) {
-                return <Text dimColor>{' \u00b7 '}<Text color="#ef4444">{`\u26a0 ${stalled.length} stalled`}</Text></Text>;
-              }
-              if (offline.length > 0) {
-                return <Text dimColor>{' \u00b7 '}<Text color="#9ca3af">{`\u2718 ${offline.length} offline`}</Text></Text>;
-              }
-              if (fallback.length > 0) {
-                return <Text dimColor>{' \u00b7 '}<Text color="#f97316">{`\u21c4 ${fallback.length} fallback`}</Text></Text>;
-              }
-              if (busy.length > 0) {
-                return <Text dimColor>{' \u00b7 '}<Text color="#fbbf24">{`\u25d0 ${busy.length} busy`}</Text></Text>;
-              }
-              return <Text dimColor>{' \u00b7 '}<Text color="#4ade80">{'\u25cf all idle'}</Text></Text>;
-            })()}
+            {tail ? <Text dimColor>{tail}</Text> : null}
           </Text>
         </Box>
       );
@@ -575,11 +550,20 @@ screen name=CesarStatusStrip target=ink memo=true export=named
   prop name=activePlan type=any optional=true
   prop name=scoreboard type="Scoreboard|null" optional=true
   prop name=rationale type="ModeRationale|null" optional=true
+  prop name=uiMotion type="'full'|'reduced'|'off'" optional=true
   state name=now type=number initial="Date.now()"
-  animation name=now interval=1000 update="Date.now()" active="isActive"
   ref name=heartbeatRef type="{ sig: string; at: number }" initial="{ sig: '', at: 0 }"
   render
     handler <<<
+      const motion = normalizeUiMotion(uiMotion);
+      useEffect(() => {
+        if (!isActive || motion === 'off') return;
+        setNow(Date.now());
+        const intervalMs = motion === 'full' ? 1000 : 5000;
+        const timer = setInterval(() => setNow(Date.now()), intervalMs);
+        return () => clearInterval(timer);
+      }, [isActive, motion]);
+
       // Idle: single dimmed line (no colored nesting issues)
       if (!isActive) {
         const confPart = (confidence !== null && confidence !== undefined) ? ` ${confidence}%` : '';
@@ -587,8 +571,8 @@ screen name=CesarStatusStrip target=ink memo=true export=named
         // usage, or real-anchored projection) render without it.
         const ctxPart = (context && context.pct > 0) ? ` \u2502 ctx ${context.source === 'estimate' ? '~' : ''}${context.pct}%` : '';
         return (
-          <Box paddingTop={0} flexDirection="column">
-            <Text>
+          <Box height={1} flexShrink={0}>
+            <Text wrap="truncate-end">
               <Text dimColor>{'\u25c6 '}{cesarId}{confPart}{ctxPart}{' \u2502 idle'}</Text>
             </Text>
           </Box>
@@ -631,7 +615,7 @@ screen name=CesarStatusStrip target=ink memo=true export=named
 
       // Elapsed time (from operation start, not last activity)
       let elapsedStr = '';
-      if (startTime > 0) {
+      if (startTime > 0 && motion !== 'off') {
         const elapsed = Math.max(0, Math.floor((now - startTime) / 1000));
         if (elapsed > 0) {
           const mins = Math.floor(elapsed / 60);
@@ -677,10 +661,9 @@ screen name=CesarStatusStrip target=ink memo=true export=named
       // can still lag the true last byte by up to one throttle interval \u2014 well
       // under the 2s silent gate, so the suffix stays correct in practice.
       // codex 0.99: fingerprint on a NORMALIZED phase identity, NOT the raw
-      // spinner text. The brain re-emits the spinner every ~2s during a wait
-      // with an embedded elapsed counter ('Cesar thinking… 4s' → '… 6s';
-      // 'Cesar timed out after Ns' — brain.kern heartbeat setInterval). Hashing
-      // the raw message ticked the fingerprint on every counter mutation, which
+      // spinner text. Legacy/provider status messages may carry embedded elapsed
+      // counters ('Cesar thinking… 4s' → '… 6s'; 'timed out after Ns'). Hashing
+      // the raw message would tick the fingerprint on every counter mutation, which
       // reset the dead-air anchor each tick so buildHeartbeatSuffix could NEVER
       // clear its 2s gate during a long thinking wait — the feature's primary
       // use case. buildHeartbeatSig keys the phase component off
@@ -724,24 +707,25 @@ screen name=CesarStatusStrip target=ink memo=true export=named
       // jobs-only strip suppresses the suffix entirely (buildHeartbeatSuffix returns null
       // when turnActive is false) while every genuine wait is unchanged.
       const _hbGenuineWait = isActive && (!!spinner || (Array.isArray(engines) && engines.length > 0));
-      const heartbeatStr = buildHeartbeatSuffix(now, _hbAnchor, _hbPhase, _hbGenuineWait);
+      const heartbeatStr = motion === 'off' ? null : buildHeartbeatSuffix(now, _hbAnchor, _hbPhase, _hbGenuineWait);
 
       const scoreboardLines = scoreboard ? renderScoreboard(scoreboard) : '';
       const rationaleStr = rationale ? formatModeRationale(rationale) : '';
 
       return (
         <Box paddingTop={0} flexDirection="column">
-          <Box>
-            <Text>
+          <Box height={1} flexShrink={0}>
+            <Text wrap="truncate-end">
               <Text color={cesarColor} bold>{'\u25c6 '}{cesarId}</Text>
               {confStr ? <Text color={confColor} bold>{confStr}</Text> : null}
               {ctxStr ? <Text color={ctxColor}>{ctxStr}</Text> : null}
               <Text dimColor>{' \u2502 '}</Text>
               <Text color="#fbbf24">{activityStr}</Text>
               {elapsedStr ? <Text dimColor>{elapsedStr}</Text> : null}
-              {heartbeatStr ? <Text dimColor>{' '}{heartbeatStr}</Text> : null}
-            </Text>
-            <Text>
+              {/* elapsedStr already carries the operation timer. Only fall back
+                  to the phase heartbeat when no operation start time exists, so
+                  the row never repeats "17s · processing… 17s". */}
+              {heartbeatStr && !elapsedStr ? <Text dimColor>{' '}{heartbeatStr}</Text> : null}
               {snippetStr ? <><Text dimColor>{' \u2502 '}</Text><Text dimColor wrap="truncate">{snippetStr}</Text></> : null}
             </Text>
           </Box>

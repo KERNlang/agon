@@ -5,9 +5,40 @@ import { readGuardCounters, recommendGuardAction } from '@kernlang/agon-core';
 import type { GuardCounters, GuardCounterCell, GuardTurnAggregate } from '@kernlang/agon-core';
 
 /**
- * Format the status-bar cost without conflating flat-rate plan API usage with CLI usage.
+ * Normalize the TUI motion policy at render boundaries. Invalid or missing values fail steady to the reduced-motion default.
  */
 // @kern-source: status-helpers:8
+export function normalizeUiMotion(value: unknown): 'full'|'reduced'|'off' {
+  const motion = String(value ?? '').trim().toLowerCase();
+  return motion === 'full' || motion === 'off' ? motion : 'reduced';
+}
+
+/**
+ * Build the stable metric tail for the one-row footer. It never emits newlines or permanent shortcut help; Ink owns terminal-width truncation.
+ */
+// @kern-source: status-helpers:15
+export function buildCompactStatusTail(parts: {context?:{pct:number,source?:string}|null,tokens?:number,messages?:number,cost?:string,auto?:boolean,telemetry?:string}): string {
+  const segments: string[] = [];
+  const context = parts?.context;
+  if (context && context.pct > 0) {
+    segments.push(`ctx ${context.source === 'estimate' ? '~' : ''}${Math.round(context.pct)}%`);
+  }
+  const tokens = Math.max(0, Number(parts?.tokens) || 0);
+  if (tokens > 0) segments.push(`${(tokens / 1000).toFixed(1)}k tok`);
+  const messages = Math.max(0, Math.floor(Number(parts?.messages) || 0));
+  if (messages > 0) segments.push(`${messages} msgs`);
+  const cost = String(parts?.cost ?? '').replace(/\s+/g, ' ').trim();
+  if (cost) segments.push(cost);
+  if (parts?.auto) segments.push('AUTO');
+  const telemetry = String(parts?.telemetry ?? '').replace(/\s+/g, ' ').trim();
+  if (telemetry) segments.push(telemetry);
+  return segments.length > 0 ? ` \u00b7 ${segments.join(' \u00b7 ')}` : '';
+}
+
+/**
+ * Format the status-bar cost without conflating flat-rate plan API usage with CLI usage.
+ */
+// @kern-source: status-helpers:35
 export function formatTokenCostStatus(meteredCostUsd: number, totalCostUsd: number, hasPlanApiUsage: boolean, hasCliUsage: boolean): string {
   if (meteredCostUsd > 0) {
     return `$${meteredCostUsd.toFixed(2)}${hasPlanApiUsage ? ' +plan api' : ''}${hasCliUsage ? ' +cli' : ''}`;
@@ -22,7 +53,7 @@ export function formatTokenCostStatus(meteredCostUsd: number, totalCostUsd: numb
 /**
  * Build a compact phase/progress gauge from a CesarPlan-like object. Pure helper so tests can verify plan progress without rendering Ink.
  */
-// @kern-source: status-helpers:21
+// @kern-source: status-helpers:48
 export function buildPlanPhaseGauge(plan: any, width: number = 12): any {
   const steps = Array.isArray(plan?.steps) ? plan.steps : [];
   if (!plan || steps.length === 0) {
@@ -66,7 +97,7 @@ export function buildPlanPhaseGauge(plan: any, width: number = 12): any {
 /**
  * Render the configurable Cesar one-line status (engine/model · context % · git branch). Pure so tests verify placeholder substitution without rendering Ink. `config`: falsy/'' = off (returns null); true/'default' = standard line; any other string = format with {engine},{model},{context},{branch},{cwd} placeholders. Unknown placeholders pass through literally; a missing/empty value renders empty so a failed git-branch read just leaves {branch} blank (never crashes).
  */
-// @kern-source: status-helpers:59
+// @kern-source: status-helpers:86
 export function formatStatusLine(config: string|boolean|null|undefined, parts: {engine?:string,model?:string,context?:string,branch?:string,cwd?:string}): string|null {
   if (config === false || config === null || config === undefined || config === '') return null;
 
@@ -101,7 +132,7 @@ export function formatStatusLine(config: string|boolean|null|undefined, parts: {
 /**
  * Build compact live rail rows from plan, tool, engine, and fallback state. Kept pure so the rail can evolve without baking logic into JSX.
  */
-// @kern-source: status-helpers:92
+// @kern-source: status-helpers:119
 export function buildExecutionRailTimeline(activePlan: any, lastTool: any, engines: any, recentFallbacks: any, limit: number = 5): any[] {
   const rows: any[] = [];
   const maxRows = Math.max(1, Math.min(8, Math.floor(Number(limit) || 5)));
@@ -193,19 +224,19 @@ export function buildExecutionRailTimeline(activePlan: any, lastTool: any, engin
 /**
  * Below this much dead air since the last meaningful event, the heartbeat suffix stays silent — no flicker on fast turns.
  */
-// @kern-source: status-helpers:193
+// @kern-source: status-helpers:220
 export const HEARTBEAT_GATE_MS: number = 2000;
 
 /**
  * At/after this many seconds the displayed counter stops growing (renders '120s+') and a 'still working — engine not stalled' reassurance is appended (on every tick while capped, not once), so a slow-but-healthy engine never reads as an alarm. Nothing is ever cancelled.
  */
-// @kern-source: status-helpers:196
+// @kern-source: status-helpers:223
 export const HEARTBEAT_CAP_S: number = 120;
 
 /**
  * Derive the heartbeat phase from the brain's existing spinner text — no new event. The brain encodes the live phase in spinner.message: provider-wait states ('Cesar thinking…', 'Cesar responding…', 'Cesar processing tool results…', 'Cesar: retrying <tool>…', 'Cesar executing…', 'Cesar grounding…', 'Cesar building plan…', 'Cesar finishing the answer…') vs in-flight tools ('Cesar: <tool>…', 'Cesar: awaiting N tool results…'). For a waiting phase the actual verb is preserved in `wait` (thinking/responding/processing/retrying/executing/grounding/finishing/planning) so buildHeartbeatSuffix renders the SAME word the strip already shows — no contradictory 'Cesar responding… · thinking…' strip. Anything unrecognized falls back to waiting/thinking. PURE so the screen stays declarative and the parser is unit-tested. NOTE: the brain's real spinner strings live in cesar/brain.kern (spinner-start/spinner-update messages) — keep this parse aligned with them.
  */
-// @kern-source: status-helpers:199
+// @kern-source: status-helpers:226
 export function parseHeartbeatPhase(spinnerMessage: string|null|undefined): {kind:'waiting'|'tools', names:string[], wait?:'thinking'|'responding'|'processing'|'retrying'|'executing'|'grounding'|'finishing'|'planning'} {
   const msg = String(spinnerMessage ?? '').trim();
   if (!msg) return { kind: 'waiting', names: [], wait: 'thinking' };
@@ -238,9 +269,9 @@ export function parseHeartbeatPhase(spinnerMessage: string|null|undefined): {kin
 }
 
 /**
- * Build the dead-air heartbeat fingerprint from a NORMALIZED phase identity (NOT raw spinner text). The brain re-emits the spinner every ~2s during a wait with an embedded elapsed counter ('Cesar thinking… 4s' → '… 6s', 'Cesar timed out after Ns'); fingerprinting the raw message would tick on every counter mutation, continuously resetting the dead-air anchor so buildHeartbeatSuffix could never clear its 2s gate during a long wait — killing the feature's primary use case. Instead the phase component is parseHeartbeatPhase's output (kind + wait verb + tool names joined): a genuine phase change (thinking→responding→tools→different tools) flips it, but the volatile counter does not. Combined with the engine/plan/stream signals the strip already holds. PURE so the fingerprint identity is unit-tested independent of Ink.
+ * Build the dead-air heartbeat fingerprint from a NORMALIZED phase identity (NOT raw spinner text). Legacy/provider status messages can contain volatile elapsed counters ('Cesar thinking… 4s' → '… 6s', 'timed out after Ns'); fingerprinting the raw message would reset the dead-air anchor on every counter mutation. Instead the phase component uses parseHeartbeatPhase output (kind + wait verb + tool names): genuine phase changes still flip it, but volatile counters do not. Combined with the engine/plan/stream signals the strip already holds. PURE so the fingerprint identity is unit-tested independent of Ink.
  */
-// @kern-source: status-helpers:232
+// @kern-source: status-helpers:259
 export function buildHeartbeatSig(phase: {kind:'waiting'|'tools', names:string[], wait?:string}, engineSig: string, planSig: string, streamSig: string): string {
   const names = Array.isArray(phase?.names) ? phase.names.join(',') : '';
   const wait = (phase && typeof phase.wait === 'string') ? phase.wait : '';
@@ -251,7 +282,7 @@ export function buildHeartbeatSig(phase: {kind:'waiting'|'tools', names:string[]
 /**
  * Build the adaptive dead-air suffix for the active-turn status line. UI-ONLY, PURE, no I/O. Returns null when the turn is inactive OR less than HEARTBEAT_GATE_MS (2s) has elapsed since the last meaningful event (silent gate — no flicker on fast turns). At/after the gate it returns a leading '· '-prefixed segment whose label matches the live phase so it never contradicts the activity line the strip already shows: '· <wait>… Ns' for a provider-wait (the actual verb the brain emitted — thinking/responding/processing/retrying/… — preserved by parseHeartbeatPhase.wait, defaulting to 'thinking'), '· running <tool>… Ns' for one in-flight tool, or '· running N tools… Ns' for several. The counter is capped at HEARTBEAT_CAP_S: from 120s it renders '120s+' and appends a dim reassurance '· still working — engine not stalled' while capped (on every tick at/after the cap, not once). Nothing here cancels or aborts anything — it is display only. Caller resets lastEventAt to now on any meaningful event (text chunk, status, tool running/done) so the gate and elapsed restart per phase.
  */
-// @kern-source: status-helpers:241
+// @kern-source: status-helpers:268
 export function buildHeartbeatSuffix(now: number, lastEventAt: number, phase: {kind:'waiting'|'tools', names:string[], wait?:string}, turnActive: boolean): string|null {
   if (!turnActive) return null;
   const elapsedMs = Math.max(0, now - lastEventAt);
@@ -280,19 +311,19 @@ export function buildHeartbeatSuffix(now: number, lastEventAt: number, phase: {k
 /**
  * Re-read guard-counters.json at most once per 60s for the dashboard. Counters only change when a turn finalizes, so a minute-stale view is fine and keeps the synchronous file read off the hot poll path.
  */
-// @kern-source: status-helpers:281
+// @kern-source: status-helpers:308
 export const GUARD_TELEMETRY_SNAPSHOT_TTL_MS: number = 60 * 1000;
 
 /**
  * Module-level {at, home, value} memo for the dashboard's guard-counters snapshot. `home` keys the entry to the AGON_HOME that produced it so an in-process AGON_HOME change (tests, embedded use) can never serve another home's counters for up to a TTL. Mutated in place by loadGuardTelemetrySnapshot; never frozen at module load.
  */
-// @kern-source: status-helpers:284
+// @kern-source: status-helpers:311
 export const guardTelemetrySnapshotCache = { at: 0, home: '', value: null as (import('@kernlang/agon-core').GuardCounters | null) };
 
 /**
  * Memoized accessor for the guard-telemetry counters used by the StatusDashboard. Calls the synchronous readGuardCounters() at most once per GUARD_TELEMETRY_SNAPSHOT_TTL_MS; returns the cached value (or null when the counters file is absent) on every call in between. Safe to call from the render path — at most one file read per 60s, never per poll tick. Best-effort: any read failure surfaces as null and the section hides.
  */
-// @kern-source: status-helpers:287
+// @kern-source: status-helpers:314
 export function loadGuardTelemetrySnapshot(): GuardCounters | null {
   const now = Date.now();
   // readGuardCounters resolves AGON_HOME per call — key the memo to the
@@ -321,7 +352,7 @@ export function loadGuardTelemetrySnapshot(): GuardCounters | null {
 /**
  * Fold the guard-counters snapshot into compact, render-ready rows for the StatusDashboard. PURE (no I/O) so it's fully unit-testable from synthetic counters. Returns { visible, guardRows, engineRows }. visible is false when counters is null OR has no engine-guard cells AND no turn aggregates. codex FIX 3c: guardRows are PER-GUARD so no row shows a permanently-0% column. Each guardRow carries two GENERIC signal cells (sig1Label/sig1Pct, sig2Label/sig2Pct) whose meaning depends on the guard, plus fires, avgOverheadMs (-1 renders as 'n/a'), and the per-guard recommendation. grounded-write -> CER/PRV over resolved=ceremony+prevented, overhead=overheadMsTotal/fires. read-spin -> WHR/STL over resolved=wouldHaveRecovered+stalled+recovered. report-confidence -> HI-HIT (highConfHit/(highConfHit+highConfMiss)) / LO-HIT (lowConfHit/(lowConfHit+lowConfMiss)), avgOverheadMs=-1, recommendation insufficient-data in Phase 0. The P1 GuardPipeline guards evidence + confidence-escalation carry only fires (no ceremony/prevented/whr/calibration split), so both signal cells render as a PLACEHOLDER: sig*Label '—' + sentinel sig*Pct -1 (the dashboard renders -1 as a dim '—', not a fabricated 0% CER/PRV) — FIRES is their only honest signal. Each non-placeholder pct is 0 when its denominator is 0. Per-engine engineRow: { key, engineId, parallelRatePct, avgRoundTripMs, avgAssembleMs } each 0 when its denominator is 0.
  */
-// @kern-source: status-helpers:314
+// @kern-source: status-helpers:341
 export function buildGuardTelemetryView(counters: GuardCounters | null): any {
   const byEngineGuard: Record<string, Record<string, GuardCounterCell>> = (counters && counters.byEngineGuard) ? counters.byEngineGuard : {};
   const byEngineTurns: Record<string, GuardTurnAggregate> = (counters && counters.byEngineTurns) ? counters.byEngineTurns : {};

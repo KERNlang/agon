@@ -1,15 +1,48 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildPlanChromeSummary } from '../../packages/cli/src/generated/surfaces/app-views.js';
+import { buildPlanChromeSummary, streamFrameIntervalMs } from '../../packages/cli/src/generated/surfaces/app-views.js';
 import { buildExecutionRailTimeline, buildPlanPhaseGauge } from '../../packages/cli/src/generated/surfaces/status.js';
 import {
   buildGuardTelemetryView,
   buildHeartbeatSig,
   buildHeartbeatSuffix,
+  buildCompactStatusTail,
   formatTokenCostStatus,
   formatStatusLine,
+  normalizeUiMotion,
   parseHeartbeatPhase,
 } from '../../packages/cli/src/generated/surfaces/status-helpers.js';
+
+describe('stable TUI motion and footer helpers', () => {
+  it('defaults invalid motion values to the steady reduced policy', () => {
+    expect(normalizeUiMotion(undefined)).toBe('reduced');
+    expect(normalizeUiMotion('unexpected')).toBe('reduced');
+    expect(normalizeUiMotion('FULL')).toBe('full');
+    expect(normalizeUiMotion('off')).toBe('off');
+  });
+
+  it('bounds chat, detail, and tool stream repaint cadence', () => {
+    expect(streamFrameIntervalMs('full', 'chat')).toBe(60);
+    expect(streamFrameIntervalMs('reduced', 'chat')).toBe(100);
+    expect(streamFrameIntervalMs('reduced', 'detail')).toBe(66);
+    expect(streamFrameIntervalMs('reduced', 'tool')).toBe(75);
+    expect(streamFrameIntervalMs('off', 'chat')).toBe(250);
+  });
+
+  it('builds a single-line metric tail without permanent shortcut noise', () => {
+    const tail = buildCompactStatusTail({
+      context: { pct: 15, source: 'estimate' },
+      tokens: 240,
+      messages: 4,
+      cost: 'cost included in plan (api)',
+      auto: true,
+      telemetry: '● idle',
+    });
+    expect(tail).toBe(' · ctx ~15% · 0.2k tok · 4 msgs · cost included in plan (api) · AUTO · ● idle');
+    expect(tail).not.toContain('\n');
+    expect(tail).not.toContain('Ctrl+');
+  });
+});
 
 describe('formatTokenCostStatus', () => {
   it('identifies a flat-rate coding-plan API as plan usage, not CLI usage', () => {
@@ -424,14 +457,14 @@ describe('parseHeartbeatPhase', () => {
 
 describe('buildHeartbeatSig', () => {
   // The strip resets the dead-air anchor whenever this fingerprint changes. The
-  // brain re-emits the spinner every ~2s during a wait with an embedded elapsed
-  // counter ('Cesar thinking… 4s' → '… 6s'; 'Cesar timed out after Ns'), so the
+  // Legacy/provider status text can carry an embedded elapsed counter
+  // ('Cesar thinking… 4s' → '… 6s'; 'Cesar timed out after Ns'), so the
   // fingerprint MUST key off a normalized phase identity (parseHeartbeatPhase
   // output), NOT the raw message — otherwise the counter tick resets the anchor
-  // every 2s and the heartbeat suffix can never clear its 2s gate during a long
+  // on each counter change and the heartbeat suffix can never clear its 2s gate during a long
   // thinking wait (the feature's primary use case).
 
-  it('is STABLE across the brain\'s 2s elapsed-counter re-emits (Cesar thinking… 4s → 6s)', () => {
+  it('is STABLE across volatile elapsed-counter messages (Cesar thinking… 4s → 6s)', () => {
     const sig4 = buildHeartbeatSig(parseHeartbeatPhase('Cesar thinking… 4s'), '', '', '');
     const sig6 = buildHeartbeatSig(parseHeartbeatPhase('Cesar thinking… 6s'), '', '', '');
     const sig30 = buildHeartbeatSig(parseHeartbeatPhase('Cesar thinking… 30s'), '', '', '');
@@ -472,7 +505,7 @@ describe('buildHeartbeatSig', () => {
 
   // Model the strip's exact anchor bookkeeping (status.kern): on a sig change OR
   // the uninitialized sentinel (at === 0), anchor := now; otherwise the anchor is
-  // preserved. With the OLD raw-message fingerprint the sig changed every 2s tick,
+  // preserved. With the OLD raw-message fingerprint the sig changed every counter tick,
   // so `at` was reset to `now` each tick and elapsed never reached the gate. With
   // the normalized fingerprint the sig is stable, so the anchor holds. Real
   // `now`/`Date.now()` is never literally 0, so use a non-zero wall-clock base.
@@ -486,7 +519,7 @@ describe('buildHeartbeatSig', () => {
       ref.sig = sig;
       return buildHeartbeatSuffix(now, ref.at, parseHeartbeatPhase(msg), true);
     };
-    // Brain emits the spinner at t=0,2,4,6,8s during a long thinking wait.
+    // Simulate legacy counter-bearing messages at t=0,2,4,6,8s.
     expect(advance('Cesar thinking… 0s', T0)).toBeNull();        // gate not yet reached
     expect(advance('Cesar thinking… 2s', T0 + 2_000)).toBe('· thinking… 2s');
     expect(advance('Cesar thinking… 4s', T0 + 4_000)).toBe('· thinking… 4s');

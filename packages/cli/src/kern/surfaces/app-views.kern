@@ -8,7 +8,7 @@ import from="react" names="useEffect,useMemo,useState,useRef"
 import from="ink" names="Box,Text,useInput"
 import from="../../generated/blocks/engine.js" names="EngineProgressView,BRAND,VERSION"
 import from="../../generated/blocks/rendering.js" names="RenderedSegments,contentWidth,engineColor,RichLineView,DiffLine,SyntaxLine,AnsiLine,GradientLine"
-import from="./status-helpers.js" names="buildPlanPhaseGauge"
+import from="./status-helpers.js" names="buildPlanPhaseGauge,normalizeUiMotion"
 import from="../../handlers/types.js" names="EngineProgress" types=true
 import from="../signals/job-manager.js" names="Job" types=true
 import from="../blocks/markdown.js" names="parseMarkdownBlocks,cleanEngineOutput"
@@ -37,6 +37,15 @@ fn name=renderSelectedText params="text:string,start:number,end:number,keyPrefix
         {after ? <Text key={`${keyPrefix}-after`}>{after}</Text> : null}
       </Text>
     );
+  >>>
+
+fn name=streamFrameIntervalMs params="uiMotion:unknown,kind:'chat'|'detail'|'tool'='chat'" returns=number export=true
+  doc "Bound live repaint cadence by motion policy. Output still advances in off mode, but cosmetic frame pressure drops to four updates per second."
+  handler <<<
+    const motion = normalizeUiMotion(uiMotion);
+    if (motion === 'off') return 250;
+    if (motion === 'reduced') return kind === 'detail' ? 66 : kind === 'tool' ? 75 : 100;
+    return kind === 'detail' ? 42 : kind === 'tool' ? 50 : 60;
   >>>
 
 fn name=buildPlanChromeSummary params="activePlan:any,activePlanState?:string|null,planModeQueued?:boolean,autoModeQueued?:boolean" returns=any export=true
@@ -397,6 +406,11 @@ screen name=StreamingView target=ink memo=true
       const narrationPolicy = useMemo(() => {
         try { return String((loadConfig() as any).narrationFold ?? 'safe'); } catch { return 'safe'; }
       }, []);
+      const uiMotion = useMemo(() => {
+        try { return normalizeUiMotion((loadConfig() as any).uiMotion); } catch { return 'reduced' as const; }
+      }, []);
+      const textFrameMs = streamFrameIntervalMs(uiMotion, mode === 'chat' ? 'chat' : 'detail');
+      const toolFrameMs = streamFrameIntervalMs(uiMotion, 'tool');
 
       // ── Throttled rendered state for main engine stream ──
       const [renderedText, setRenderedText] = useState<{engineId:string;content:string;draft?:boolean} | null>(null);
@@ -437,7 +451,7 @@ screen name=StreamingView target=ink memo=true
             }
           }
 
-          frameTimer = setTimeout(updateTick, 42); // ~24fps frame rate
+          frameTimer = setTimeout(updateTick, textFrameMs);
         };
 
         updateTick();
@@ -447,7 +461,7 @@ screen name=StreamingView target=ink memo=true
             clearTimeout(frameTimer);
           }
         };
-      }, [streamingText ? streamingText.engineId : null]);
+      }, [streamingText ? streamingText.engineId : null, textFrameMs]);
 
       // ── Throttled rendered state for tool streams ──
       const [renderedToolStreams, setRenderedToolStreams] = useState<Record<string, any>>({});
@@ -493,7 +507,7 @@ screen name=StreamingView target=ink memo=true
             }
           }
 
-          frameTimer = setTimeout(updateTick, 50); // ~20fps for tool streams
+          frameTimer = setTimeout(updateTick, toolFrameMs);
         };
 
         updateTick();
@@ -503,7 +517,7 @@ screen name=StreamingView target=ink memo=true
             clearTimeout(frameTimer);
           }
         };
-      }, [liveToolStreams ? Object.keys(liveToolStreams).join(',') : null]);
+      }, [liveToolStreams ? Object.keys(liveToolStreams).join(',') : null, toolFrameMs]);
 
       const toolStreams = Object.values(renderedToolStreams ?? {});
 
@@ -876,6 +890,7 @@ screen name=BottomChromeSection target=ink memo=true
   prop name=explorationMode type="any"
   prop name=toolOutputExpanded type="boolean"
   prop name=fullscreenEnabled type="boolean"
+  prop name=uiMotion type="'full'|'reduced'|'off'" optional=true
   render
     handler <<<
       const isActive = replState !== 'idle' || runningJobs.length > 0;
@@ -906,11 +921,6 @@ screen name=BottomChromeSection target=ink memo=true
               will be injected at the next tool boundary. One dim line; shows the
               count when more than one is queued. Only while a turn is running. */}
           {replState !== 'idle' && steeringCount > 0 && (<Box><Text dimColor>{'▎'}{'Queued'}{steeringCount > 1 ? ` (${steeringCount})` : ''}{' — injects at next step · esc to interrupt'}</Text></Box>)}
-          {liveSpinner && mode === 'chat' && !questionState && (
-            <Box paddingLeft={1}>
-              <Text color="#fbbf24">{liveSpinner.message}</Text>
-            </Box>
-          )}
           {/* One-line plan glance pinned directly above the composer — the
               chip relocated out of the top ChromeBar so plan state sits at the
               user's point of focus (the input). Renders nothing when no plan. */}
@@ -950,7 +960,7 @@ screen name=BottomChromeSection target=ink memo=true
               termHeight={termHeight}
               onCtrlShortcut={onCtrlShortcut} />
           )}
-          <CesarStatusStrip cesarId={cesarId} confidence={cesarConfidence} context={cesarContext} spinner={liveSpinner} engines={liveProgress} jobs={runningJobs} startTime={chatStartTime} streamSnippet={streamSnippet} isActive={isActive} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} activePlan={activePlan} scoreboard={null} rationale={null} />
+          <CesarStatusStrip cesarId={cesarId} confidence={cesarConfidence} context={cesarContext} spinner={liveSpinner} engines={liveProgress} jobs={runningJobs} startTime={chatStartTime} streamSnippet={streamSnippet} isActive={isActive} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} activePlan={activePlan} scoreboard={null} rationale={null} uiMotion={uiMotion} />
           {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} meteredCostUsd={(statusStats as any).meteredCostUsd} hasPlanApiUsage={(statusStats as any).hasPlanApiUsage} hasCliUsage={(statusStats as any).hasCliUsage} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} autoModeQueued={autoModeQueued} isActive={replState !== 'idle'} fullscreenEnabled={fullscreenEnabled} telemetryVitals={telemetryVitals} context={cesarContext} />}
         </Box>
       );

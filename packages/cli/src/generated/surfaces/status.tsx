@@ -22,11 +22,11 @@ import { formatModeRationale } from '../cesar/mode-rationale.js';
 
 import type { ModeRationale } from '../cesar/mode-rationale.js';
 
-import { buildPlanPhaseGauge, buildExecutionRailTimeline, buildGuardTelemetryView, loadGuardTelemetrySnapshot, buildHeartbeatSuffix, buildHeartbeatSig, parseHeartbeatPhase } from './status-helpers.js';
+import { formatTokenCostStatus, buildPlanPhaseGauge, buildExecutionRailTimeline, buildGuardTelemetryView, loadGuardTelemetrySnapshot, buildHeartbeatSuffix, buildHeartbeatSig, parseHeartbeatPhase } from './status-helpers.js';
 
 // ── Module: StatusHelperExports ──
 
-export { buildPlanPhaseGauge, buildExecutionRailTimeline, buildGuardTelemetryView, loadGuardTelemetrySnapshot, buildHeartbeatSuffix, buildHeartbeatSig, parseHeartbeatPhase } from './status-helpers.js';
+export { formatTokenCostStatus, buildPlanPhaseGauge, buildExecutionRailTimeline, buildGuardTelemetryView, loadGuardTelemetrySnapshot, buildHeartbeatSuffix, buildHeartbeatSig, parseHeartbeatPhase } from './status-helpers.js';
 
 // @kern-source: status:26
 export function SpinnerBlock({ message, color }: { message:string; color?:number }) {
@@ -56,14 +56,13 @@ export function TokenGauge({ tokens, maxTokens }: { tokens:number; maxTokens:num
 }
 
 // @kern-source: status:65
-export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd, cwd, branch, explorationMode, toolOutputExpanded, autoModeQueued, isActive, fullscreenEnabled, telemetryVitals, context, meteredCostUsd, hasUnmetered }: { cesarId:string; chatMessageCount:number; totalTokens:number; totalCostUsd:number; cwd:string; branch?:string; explorationMode?:boolean; toolOutputExpanded?:boolean; autoModeQueued?:boolean; isActive?:boolean; fullscreenEnabled?:boolean; telemetryVitals?:Map<string, any>; context?:{pct:number,used:number,limit:number,compacted:number,cached:number,source?:string}|null; meteredCostUsd?:number; hasUnmetered?:boolean }) {
+export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd, cwd, branch, explorationMode, toolOutputExpanded, autoModeQueued, isActive, fullscreenEnabled, telemetryVitals, context, meteredCostUsd, hasPlanApiUsage, hasCliUsage }: { cesarId:string; chatMessageCount:number; totalTokens:number; totalCostUsd:number; cwd:string; branch?:string; explorationMode?:boolean; toolOutputExpanded?:boolean; autoModeQueued?:boolean; isActive?:boolean; fullscreenEnabled?:boolean; telemetryVitals?:Map<string, any>; context?:{pct:number,used:number,limit:number,compacted:number,cached:number,source?:string}|null; meteredCostUsd?:number; hasPlanApiUsage?:boolean; hasCliUsage?:boolean }) {
   // Cost honesty: only REAL API token usage is billable per token. A
-  // subscription CLI brain (claude/codex binary) has no countable per-turn
-  // cost — show that instead of a fabricated estimate-times-flat-rate $.
+  // coding-plan API has real tokens but its cost is included in the plan;
+  // a subscription CLI brain has no countable per-turn cost. Keep those
+  // cases distinct instead of labeling every unmetered dispatch as CLI.
   const metered = meteredCostUsd ?? 0;
-  const cost = metered > 0
-    ? `$${metered.toFixed(2)}${hasUnmetered ? ' +cli' : ''}`
-    : (hasUnmetered ? 'cost not countable (cli)' : (totalCostUsd > 0 ? `$${totalCostUsd.toFixed(2)}` : ''));
+  const cost = formatTokenCostStatus(metered, totalCostUsd, Boolean(hasPlanApiUsage), Boolean(hasCliUsage));
   const msgs = chatMessageCount;
   const tokens = totalTokens;
   // Context gauge: REAL window occupancy from the session's context-usage

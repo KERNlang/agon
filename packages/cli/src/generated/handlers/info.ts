@@ -4,7 +4,7 @@ import { readdirSync, readFileSync, existsSync, rmSync } from 'node:fs';
 
 import { join } from 'node:path';
 
-import { ensureAgonHome, RUNS_DIR, getAgonHome, getRatings, tracker, loadConfig, configSet, DEFAULT_CONFIG, discoverEngines, addWorkspace, removeWorkspace, switchWorkspace, listWorkspaces, getActiveWorkspace, listChatSessions, loadChatSession, resolveWorkingDir, setSessionRoot } from '@kernlang/agon-core';
+import { ensureAgonHome, RUNS_DIR, getAgonHome, getRatings, tracker, isFlatRateEngine, loadConfig, configSet, DEFAULT_CONFIG, discoverEngines, addWorkspace, removeWorkspace, switchWorkspace, listWorkspaces, getActiveWorkspace, listChatSessions, loadChatSession, resolveWorkingDir, setSessionRoot } from '@kernlang/agon-core';
 
 import type { AgonConfig, ForgeManifest } from '@kernlang/agon-core';
 
@@ -769,6 +769,7 @@ export function handleTokens(dispatch: Dispatch): void {
   };
 
   const costLabel = (costUsd: number, id: string): string => {
+    if (isFlatRateEngine(id)) return 'included in plan';
     if (costUsd <= 0) return 'free';
     const src = sourceLabel(id);
     if (src === 'sdk') return `$${costUsd.toFixed(4)}`;
@@ -789,16 +790,18 @@ export function handleTokens(dispatch: Dispatch): void {
   ]);
   dispatch({ type: 'table', headers: ['Engine', 'Calls', 'Prompt', 'Response', 'Total', 'Cost', 'Source'], rows });
 
-  // Cost honesty: only sdk-sourced usage is real per-token billing.
-  // Subscription CLI engines have no countable cost — say so instead of
-  // presenting a chars/4 × flat-rate guess as a dollar figure.
+  // Cost honesty: separate flat-rate plan APIs (real token counts, cost
+  // included in the plan) from CLI engines (per-turn cost not countable).
   const metered = (stats as any).meteredCostUsd ?? 0;
-  const unmetered = (stats as any).unmeteredDispatches ?? 0;
+  const planApi = (stats as any).flatRateApiDispatches ?? 0;
+  const cli = (stats as any).cliDispatches ?? 0;
   let totalCost: string;
   if (metered > 0) {
-    totalCost = `metered $${metered.toFixed(4)}${unmetered > 0 ? ` (+${unmetered} cli/subscription dispatch${unmetered === 1 ? '' : 'es'}, not countable)` : ''}`;
-  } else if (unmetered > 0) {
-    totalCost = `not countable (subscription/CLI engines — rough estimate ~$${stats.totalCostUsd.toFixed(4)})`;
+    totalCost = `metered $${metered.toFixed(4)}${planApi > 0 ? ` (+${planApi} plan API dispatch${planApi === 1 ? '' : 'es'}, included)` : ''}${cli > 0 ? ` (+${cli} CLI dispatch${cli === 1 ? '' : 'es'}, not countable)` : ''}`;
+  } else if (planApi > 0 && cli === 0) {
+    totalCost = `included in plan (${planApi} API dispatch${planApi === 1 ? '' : 'es'})`;
+  } else if (cli > 0) {
+    totalCost = `${planApi > 0 ? `${planApi} plan API dispatch${planApi === 1 ? '' : 'es'} included; ` : ''}${cli} CLI dispatch${cli === 1 ? '' : 'es'} not countable (rough estimate ~$${stats.totalCostUsd.toFixed(4)})`;
   } else {
     totalCost = 'free';
   }
@@ -806,7 +809,7 @@ export function handleTokens(dispatch: Dispatch): void {
   dispatch({ type: 'info', message: `${stats.dispatches} dispatches across ${Object.keys(stats.byEngine).length} engines` });
 }
 
-// @kern-source: info:784
+// @kern-source: info:787
 export function handleWorkspace(action: string, dispatch: Dispatch, ctx: HandlerContext, path?: string): void {
   switch (action) {
     case 'add': {
@@ -863,7 +866,7 @@ export function handleWorkspace(action: string, dispatch: Dispatch, ctx: Handler
   }
 }
 
-// @kern-source: info:841
+// @kern-source: info:844
 export function handleChats(dispatch: Dispatch, sessionId?: string): void {
   if (sessionId) {
     const session = loadChatSession(sessionId);
@@ -897,7 +900,7 @@ export function handleChats(dispatch: Dispatch, sessionId?: string): void {
   dispatch({ type: 'table', headers: ['Session', 'Msgs', 'Date', 'First Message'], rows });
 }
 
-// @kern-source: info:875
+// @kern-source: info:878
 export function handleModels(dispatch: Dispatch, ctx: HandlerContext): void {
   dispatch({ type: 'header', title: 'Models & Engines' });
   const config = ctx.config;

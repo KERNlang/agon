@@ -16,10 +16,10 @@ import from="../cesar/scoreboard.js" names="renderScoreboard"
 import from="../cesar/scoreboard.js" names="Scoreboard" types=true
 import from="../cesar/mode-rationale.js" names="formatModeRationale"
 import from="../cesar/mode-rationale.js" names="ModeRationale" types=true
-import from="./status-helpers.js" names="buildPlanPhaseGauge,buildExecutionRailTimeline,buildGuardTelemetryView,loadGuardTelemetrySnapshot,buildHeartbeatSuffix,buildHeartbeatSig,parseHeartbeatPhase"
+import from="./status-helpers.js" names="formatTokenCostStatus,buildPlanPhaseGauge,buildExecutionRailTimeline,buildGuardTelemetryView,loadGuardTelemetrySnapshot,buildHeartbeatSuffix,buildHeartbeatSig,parseHeartbeatPhase"
 
 module name=StatusHelperExports
-  export from="./status-helpers.js" names="buildPlanPhaseGauge,buildExecutionRailTimeline,buildGuardTelemetryView,loadGuardTelemetrySnapshot,buildHeartbeatSuffix,buildHeartbeatSig,parseHeartbeatPhase"
+  export from="./status-helpers.js" names="formatTokenCostStatus,buildPlanPhaseGauge,buildExecutionRailTimeline,buildGuardTelemetryView,loadGuardTelemetrySnapshot,buildHeartbeatSuffix,buildHeartbeatSig,parseHeartbeatPhase"
 
 // ── Screen: SpinnerBlock ────────────────────────────────────────────
 
@@ -77,16 +77,16 @@ screen name=StatusBar target=ink
   prop name=telemetryVitals type="Map<string, any>" optional=true
   prop name=context type="{pct:number,used:number,limit:number,compacted:number,cached:number,source?:string}|null" optional=true
   prop name=meteredCostUsd type=number optional=true
-  prop name=hasUnmetered type=boolean optional=true
+  prop name=hasPlanApiUsage type=boolean optional=true
+  prop name=hasCliUsage type=boolean optional=true
   render
     handler <<<
       // Cost honesty: only REAL API token usage is billable per token. A
-      // subscription CLI brain (claude/codex binary) has no countable per-turn
-      // cost — show that instead of a fabricated estimate-times-flat-rate $.
+      // coding-plan API has real tokens but its cost is included in the plan;
+      // a subscription CLI brain has no countable per-turn cost. Keep those
+      // cases distinct instead of labeling every unmetered dispatch as CLI.
       const metered = meteredCostUsd ?? 0;
-      const cost = metered > 0
-        ? `$${metered.toFixed(2)}${hasUnmetered ? ' +cli' : ''}`
-        : (hasUnmetered ? 'cost not countable (cli)' : (totalCostUsd > 0 ? `$${totalCostUsd.toFixed(2)}` : ''));
+      const cost = formatTokenCostStatus(metered, totalCostUsd, Boolean(hasPlanApiUsage), Boolean(hasCliUsage));
       const msgs = chatMessageCount;
       const tokens = totalTokens;
       // Context gauge: REAL window occupancy from the session's context-usage

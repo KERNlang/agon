@@ -5,6 +5,19 @@
 import from="@kernlang/agon-core" names="readGuardCounters,recommendGuardAction"
 import from="@kernlang/agon-core" names="GuardCounters,GuardCounterCell,GuardTurnAggregate" types=true
 
+fn name=formatTokenCostStatus params="meteredCostUsd:number,totalCostUsd:number,hasPlanApiUsage:boolean,hasCliUsage:boolean" returns=string export=true
+  doc "Format the status-bar cost without conflating flat-rate plan API usage with CLI usage."
+  handler <<<
+    if (meteredCostUsd > 0) {
+      return `$${meteredCostUsd.toFixed(2)}${hasPlanApiUsage ? ' +plan api' : ''}${hasCliUsage ? ' +cli' : ''}`;
+    }
+    if (hasPlanApiUsage) {
+      return hasCliUsage ? 'plan api included; cli not countable' : 'cost included in plan (api)';
+    }
+    if (hasCliUsage) return 'cost not countable (cli)';
+    return totalCostUsd > 0 ? `$${totalCostUsd.toFixed(2)}` : '';
+  >>>
+
 fn name=buildPlanPhaseGauge params="plan:any,width:number=12" returns=any export=true
   doc "Build a compact phase/progress gauge from a CesarPlan-like object. Pure helper so tests can verify plan progress without rendering Ink."
   handler lang="kern"

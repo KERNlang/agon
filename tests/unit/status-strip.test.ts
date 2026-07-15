@@ -6,9 +6,21 @@ import {
   buildGuardTelemetryView,
   buildHeartbeatSig,
   buildHeartbeatSuffix,
+  formatTokenCostStatus,
   formatStatusLine,
   parseHeartbeatPhase,
 } from '../../packages/cli/src/generated/surfaces/status-helpers.js';
+
+describe('formatTokenCostStatus', () => {
+  it('identifies a flat-rate coding-plan API as plan usage, not CLI usage', () => {
+    expect(formatTokenCostStatus(0, 0, true, false)).toBe('cost included in plan (api)');
+  });
+
+  it('keeps genuine CLI usage and mixed metered usage distinct', () => {
+    expect(formatTokenCostStatus(0, 0.25, false, true)).toBe('cost not countable (cli)');
+    expect(formatTokenCostStatus(1.25, 1.25, true, true)).toBe('$1.25 +plan api +cli');
+  });
+});
 
 describe('buildPlanPhaseGauge', () => {
   it('shows the running step and completion percentage', () => {

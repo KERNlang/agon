@@ -18,7 +18,11 @@ interface name=SessionStats
     doc "Cost from REAL API token usage only (source 'sdk'). This is the only number that corresponds to actual per-token billing. Subscription CLI engines (claude/codex binaries) never contribute here — their per-turn cost is not countable."
   field name=meteredDispatches type=number
   field name=unmeteredDispatches type=number
-    doc "Recordings with estimated or cli-reported tokens — flat-rate/subscription engines whose real cost is not countable."
+    doc "All dispatches without a per-token dollar cost: flat-rate plan API calls plus estimated or CLI-reported calls."
+  field name=flatRateApiDispatches type=number
+    doc "API dispatches to flat-rate coding-plan engines. Token counts are real, but their cost is included in the plan rather than billed per token."
+  field name=cliDispatches type=number
+    doc "Estimated or CLI-reported dispatches whose per-turn cost cannot be counted."
   field name=byEngine type="Record<string,{promptTokens:number;responseTokens:number;totalTokens:number;costUsd:number;dispatches:number}>"
   field name=dispatches type=number
 
@@ -94,6 +98,7 @@ service name=TokenTracker
       const byEngine: SessionStats['byEngine'] = {};
       let totalPromptTokens = 0, totalResponseTokens = 0, totalCostUsd = 0;
       let meteredCostUsd = 0, meteredDispatches = 0, unmeteredDispatches = 0;
+      let flatRateApiDispatches = 0, cliDispatches = 0;
       for (const u of this.usages) {
         totalPromptTokens += u.promptTokens;
         totalResponseTokens += u.responseTokens;
@@ -102,14 +107,22 @@ service name=TokenTracker
         // billing. 'estimated'/'cli-reported' come from subscription CLI engines,
         // and flat-rate coding-plan endpoints report real SDK token COUNTS but
         // zero marginal dollars — both are unmetered.
-        if (u.source === 'sdk' && !isFlatRateEngine(u.engineId)) { meteredCostUsd += u.costUsd; meteredDispatches += 1; }
-        else { unmeteredDispatches += 1; }
+        if (isFlatRateEngine(u.engineId)) {
+          unmeteredDispatches += 1;
+          flatRateApiDispatches += 1;
+        } else if (u.source === 'sdk') {
+          meteredCostUsd += u.costUsd;
+          meteredDispatches += 1;
+        } else {
+          unmeteredDispatches += 1;
+          cliDispatches += 1;
+        }
         if (!byEngine[u.engineId]) byEngine[u.engineId] = { promptTokens: 0, responseTokens: 0, totalTokens: 0, costUsd: 0, dispatches: 0 };
         const e = byEngine[u.engineId];
         e.promptTokens += u.promptTokens; e.responseTokens += u.responseTokens;
         e.totalTokens += u.promptTokens + u.responseTokens; e.costUsd += u.costUsd; e.dispatches += 1;
       }
-      return { totalPromptTokens, totalResponseTokens, totalTokens: totalPromptTokens + totalResponseTokens, totalCostUsd, meteredCostUsd, meteredDispatches, unmeteredDispatches, byEngine, dispatches: this.usages.length };
+      return { totalPromptTokens, totalResponseTokens, totalTokens: totalPromptTokens + totalResponseTokens, totalCostUsd, meteredCostUsd, meteredDispatches, unmeteredDispatches, flatRateApiDispatches, cliDispatches, byEngine, dispatches: this.usages.length };
     >>>
 
   method name=recent params="n:number=5" returns="TokenUsage[]"

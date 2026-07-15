@@ -1,6 +1,6 @@
 import from="node:fs" names="readdirSync,readFileSync,existsSync,rmSync"
 import from="node:path" names="join"
-import from="@kernlang/agon-core" names="ensureAgonHome,RUNS_DIR,getAgonHome,getRatings,tracker,loadConfig,configSet,DEFAULT_CONFIG,discoverEngines,addWorkspace,removeWorkspace,switchWorkspace,listWorkspaces,getActiveWorkspace,listChatSessions,loadChatSession,resolveWorkingDir,setSessionRoot"
+import from="@kernlang/agon-core" names="ensureAgonHome,RUNS_DIR,getAgonHome,getRatings,tracker,isFlatRateEngine,loadConfig,configSet,DEFAULT_CONFIG,discoverEngines,addWorkspace,removeWorkspace,switchWorkspace,listWorkspaces,getActiveWorkspace,listChatSessions,loadChatSession,resolveWorkingDir,setSessionRoot"
 import from="@kernlang/agon-core" names="AgonConfig,ForgeManifest" types=true
 import from="../signals/intent.js" names="Intent" types=true
 import from="../signals/icons.js" names="icons"
@@ -744,6 +744,7 @@ module name=InfoHandlers
       };
 
       const costLabel = (costUsd: number, id: string): string => {
+        if (isFlatRateEngine(id)) return 'included in plan';
         if (costUsd <= 0) return 'free';
         const src = sourceLabel(id);
         if (src === 'sdk') return `$${costUsd.toFixed(4)}`;
@@ -764,16 +765,18 @@ module name=InfoHandlers
       ]);
       dispatch({ type: 'table', headers: ['Engine', 'Calls', 'Prompt', 'Response', 'Total', 'Cost', 'Source'], rows });
 
-      // Cost honesty: only sdk-sourced usage is real per-token billing.
-      // Subscription CLI engines have no countable cost — say so instead of
-      // presenting a chars/4 × flat-rate guess as a dollar figure.
+      // Cost honesty: separate flat-rate plan APIs (real token counts, cost
+      // included in the plan) from CLI engines (per-turn cost not countable).
       const metered = (stats as any).meteredCostUsd ?? 0;
-      const unmetered = (stats as any).unmeteredDispatches ?? 0;
+      const planApi = (stats as any).flatRateApiDispatches ?? 0;
+      const cli = (stats as any).cliDispatches ?? 0;
       let totalCost: string;
       if (metered > 0) {
-        totalCost = `metered $${metered.toFixed(4)}${unmetered > 0 ? ` (+${unmetered} cli/subscription dispatch${unmetered === 1 ? '' : 'es'}, not countable)` : ''}`;
-      } else if (unmetered > 0) {
-        totalCost = `not countable (subscription/CLI engines — rough estimate ~$${stats.totalCostUsd.toFixed(4)})`;
+        totalCost = `metered $${metered.toFixed(4)}${planApi > 0 ? ` (+${planApi} plan API dispatch${planApi === 1 ? '' : 'es'}, included)` : ''}${cli > 0 ? ` (+${cli} CLI dispatch${cli === 1 ? '' : 'es'}, not countable)` : ''}`;
+      } else if (planApi > 0 && cli === 0) {
+        totalCost = `included in plan (${planApi} API dispatch${planApi === 1 ? '' : 'es'})`;
+      } else if (cli > 0) {
+        totalCost = `${planApi > 0 ? `${planApi} plan API dispatch${planApi === 1 ? '' : 'es'} included; ` : ''}${cli} CLI dispatch${cli === 1 ? '' : 'es'} not countable (rough estimate ~$${stats.totalCostUsd.toFixed(4)})`;
       } else {
         totalCost = 'free';
       }

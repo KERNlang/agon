@@ -21,11 +21,13 @@ export interface SessionStats {
   meteredCostUsd: number;
   meteredDispatches: number;
   unmeteredDispatches: number;
+  flatRateApiDispatches: number;
+  cliDispatches: number;
   byEngine: Record<string,{promptTokens:number;responseTokens:number;totalTokens:number;costUsd:number;dispatches:number}>;
   dispatches: number;
 }
 
-// @kern-source: token-tracker:25
+// @kern-source: token-tracker:29
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
@@ -33,7 +35,7 @@ export function estimateTokens(text: string): number {
 /**
  * True for engines billed by SUBSCRIPTION, not per token — coding-plan API endpoints (kimi-for-coding-*, *-coding-plan-*) where the marginal cost of a dispatch is $0 regardless of token count. Their SDK-reported token numbers are real COUNTS but must never be multiplied by a per-token price (that invents money — the $8.79-vs-$0.07 budget-warning incident, 2026-06-11). Naming-convention heuristic until EngineDefinition carries a structured billing field; the convention is stable across the roster (kimi-for-coding-k2p6, minimax-coding-plan-minimax-m3, zai-coding-plan-glm-5.1).
  */
-// @kern-source: token-tracker:27
+// @kern-source: token-tracker:31
 export function isFlatRateEngine(engineId: string): boolean {
   return /(?:for-coding|coding-plan)/i.test(String(engineId ?? ''));
 }
@@ -41,7 +43,7 @@ export function isFlatRateEngine(engineId: string): boolean {
 /**
  * Per-token BALLPARK price for metered engines. Flat-rate subscription engines (isFlatRateEngine) always return 0 — their real marginal cost IS zero; pricing their tokens at any rate fabricates spend. Unknown metered engines fall back to a generic $2/Mtok ballpark — acceptable for the display-only totalCostUsd, never for budget enforcement (which reads meteredCostUsd).
  */
-// @kern-source: token-tracker:33
+// @kern-source: token-tracker:37
 export function estimateCost(engineId: string, tokens: number, model?: string): number {
   if (isFlatRateEngine(engineId)) {
     return 0;
@@ -58,7 +60,7 @@ export function estimateCost(engineId: string, tokens: number, model?: string): 
 /**
  * Cache-aware pricing: AI-SDK promptTokens INCLUDE cache reads, and a multi-turn tool loop re-reads the whole context every call — pricing those at the full input rate inflates 'actual' cost ~10-25x. Cached tokens are priced at 10% of the base rate (the standard provider cache-read discount) and clamped against promptTokens ONLY — cache reads are input-side, so a malformed cached count must never discount completion/output tokens (review finding 0.86). Flat-rate engines still return 0 via estimateCost.
  */
-// @kern-source: token-tracker:45
+// @kern-source: token-tracker:49
 export function estimateCostCacheAware(engineId: string, promptTokens: number, completionTokens: number, cachedInputTokens?: number, model?: string): number {
   const prompt = Math.max(0, Number(promptTokens ?? 0));
   const completion = Math.max(0, Number(completionTokens ?? 0));
@@ -66,7 +68,7 @@ export function estimateCostCacheAware(engineId: string, promptTokens: number, c
   return estimateCost(engineId, prompt - cached + completion, model) + 0.1 * estimateCost(engineId, cached, model);
 }
 
-// @kern-source: token-tracker:54
+// @kern-source: token-tracker:58
 export class TokenTracker {
   private usages: TokenUsage[] = [];
 
@@ -108,6 +110,7 @@ export class TokenTracker {
     const byEngine: SessionStats['byEngine'] = {};
     let totalPromptTokens = 0, totalResponseTokens = 0, totalCostUsd = 0;
     let meteredCostUsd = 0, meteredDispatches = 0, unmeteredDispatches = 0;
+    let flatRateApiDispatches = 0, cliDispatches = 0;
     for (const u of this.usages) {
       totalPromptTokens += u.promptTokens;
       totalResponseTokens += u.responseTokens;
@@ -116,14 +119,22 @@ export class TokenTracker {
       // billing. 'estimated'/'cli-reported' come from subscription CLI engines,
       // and flat-rate coding-plan endpoints report real SDK token COUNTS but
       // zero marginal dollars — both are unmetered.
-      if (u.source === 'sdk' && !isFlatRateEngine(u.engineId)) { meteredCostUsd += u.costUsd; meteredDispatches += 1; }
-      else { unmeteredDispatches += 1; }
+      if (isFlatRateEngine(u.engineId)) {
+        unmeteredDispatches += 1;
+        flatRateApiDispatches += 1;
+      } else if (u.source === 'sdk') {
+        meteredCostUsd += u.costUsd;
+        meteredDispatches += 1;
+      } else {
+        unmeteredDispatches += 1;
+        cliDispatches += 1;
+      }
       if (!byEngine[u.engineId]) byEngine[u.engineId] = { promptTokens: 0, responseTokens: 0, totalTokens: 0, costUsd: 0, dispatches: 0 };
       const e = byEngine[u.engineId];
       e.promptTokens += u.promptTokens; e.responseTokens += u.responseTokens;
       e.totalTokens += u.promptTokens + u.responseTokens; e.costUsd += u.costUsd; e.dispatches += 1;
     }
-    return { totalPromptTokens, totalResponseTokens, totalTokens: totalPromptTokens + totalResponseTokens, totalCostUsd, meteredCostUsd, meteredDispatches, unmeteredDispatches, byEngine, dispatches: this.usages.length };
+    return { totalPromptTokens, totalResponseTokens, totalTokens: totalPromptTokens + totalResponseTokens, totalCostUsd, meteredCostUsd, meteredDispatches, unmeteredDispatches, flatRateApiDispatches, cliDispatches, byEngine, dispatches: this.usages.length };
   }
 
   recent(n: number = 5): TokenUsage[] {

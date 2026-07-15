@@ -60,6 +60,8 @@ describe('TokenTracker', () => {
     const stats = tracker.getStats();
     expect(stats.meteredDispatches).toBe(1);
     expect(stats.unmeteredDispatches).toBe(2);
+    expect(stats.cliDispatches).toBe(2);
+    expect(stats.flatRateApiDispatches).toBe(0);
     expect(stats.meteredCostUsd).toBeCloseTo(sdk.costUsd, 10);
     expect(stats.totalCostUsd).toBeGreaterThan(stats.meteredCostUsd);
   });
@@ -111,6 +113,8 @@ describe('TokenTracker', () => {
       expect(stats.meteredCostUsd).toBe(0);
       expect(stats.meteredDispatches).toBe(0);
       expect(stats.unmeteredDispatches).toBe(1);
+      expect(stats.flatRateApiDispatches).toBe(1);
+      expect(stats.cliDispatches).toBe(0);
     });
 
     it('cache reads are priced at 10% of the base rate, not full input price', () => {

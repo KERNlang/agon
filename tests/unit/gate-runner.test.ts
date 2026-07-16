@@ -16,6 +16,7 @@ import {
   buildGateSuccessNote,
   gateAutoRunLimit,
   gateAutoRunPermitted,
+  gateAutoRunTriggered,
   gateOutputTailChars,
   gateTimeoutMs,
   runDiscoveredGate,
@@ -146,6 +147,37 @@ describe('gateAutoRunPermitted', () => {
   it('a deny rule wins over mode auto', () => {
     const config = { agonPermissionMode: 'auto', permissions: { allow: [], deny: ['Bash(npm test:*)'] } };
     expect(gateAutoRunPermitted('npm test', WS, config)).toBe(false);
+  });
+
+  it('a redirecting gate is refused outside mode auto even when classified read-only', () => {
+    expect(gateAutoRunPermitted('npm test > /tmp/out.txt', WS, { agonPermissionMode: 'ask' })).toBe(false);
+    expect(gateAutoRunPermitted('npm test > /tmp/out.txt', WS, { agonPermissionMode: 'auto-edit' })).toBe(false);
+  });
+
+  it('redirection stays allowed in mode auto, and >/dev/null anywhere', () => {
+    expect(gateAutoRunPermitted('npm test > /tmp/out.txt', WS, { agonPermissionMode: 'auto' })).toBe(true);
+    expect(gateAutoRunPermitted('npm test > /dev/null', WS, { agonPermissionMode: 'ask' })).toBe(true);
+  });
+});
+
+describe('gateAutoRunTriggered', () => {
+  it('legacy fires only on an explicit done-claim', () => {
+    expect(gateAutoRunTriggered({ agenticAuto: false, agenticTaskState: 'running', agenticReason: 'work_incomplete', legacyState: 'done' })).toBe(true);
+    expect(gateAutoRunTriggered({ agenticAuto: false, agenticTaskState: 'verifying', agenticReason: 'verification_required', legacyState: 'stuck' })).toBe(false);
+  });
+
+  it('agentic fires on the verifying state', () => {
+    expect(gateAutoRunTriggered({ agenticAuto: true, agenticTaskState: 'verifying', agenticReason: 'verification_required', legacyState: 'stuck' })).toBe(true);
+  });
+
+  it('agentic re-fires on the settled post-fix state after a red run', () => {
+    expect(gateAutoRunTriggered({ agenticAuto: true, agenticTaskState: 'running', agenticReason: 'verification_failed_fix_required', legacyState: 'stuck' })).toBe(true);
+  });
+
+  it('agentic mid-work states never trigger', () => {
+    expect(gateAutoRunTriggered({ agenticAuto: true, agenticTaskState: 'running', agenticReason: 'model_reports_more_work', legacyState: 'stuck' })).toBe(false);
+    expect(gateAutoRunTriggered({ agenticAuto: true, agenticTaskState: 'running', agenticReason: 'todos_remaining', legacyState: 'stuck' })).toBe(false);
+    expect(gateAutoRunTriggered({ agenticAuto: true, agenticTaskState: 'blocked', agenticReason: 'awaiting_user', legacyState: 'done' })).toBe(false);
   });
 });
 

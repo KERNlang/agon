@@ -9,7 +9,7 @@
 
 import from="@kernlang/agon-core" names="spawnWithTimeout"
 import from="@kernlang/agon-core" names="DiscoveredGate" types=true
-import from="./permission-resolver.js" names="resolvePermissionDecision"
+import from="./permission-resolver.js" names="resolvePermissionDecision,resolveAgonPermissionMode"
 
 interface name=GateRunResult export=true
   field name=ok type=boolean
@@ -66,10 +66,24 @@ fn name=shouldAutoRunGate params="snapshot:GateAutoRunSnapshot" returns=boolean 
     return snapshot.permitted === true;
   >>>
 
+const name=GATE_REDIRECTION_RE type=RegExp value={{ /(?:^|[\s;|&])\d*(?:>>?|&>)\s*(?!\s|\/dev\/null\b|&\d\b)/ }}
+  doc "Output-redirection detector (mirrors isAgenticMutationOutcome). Read-only command CLASSIFICATION strips redirections, so `npm test > file` resolves 'allow' in ask mode even though it mutates the workspace — in non-auto modes a redirecting gate falls back to the prompt nudge instead of auto-running. >/dev/null and fd-dup stay allowed."
+
+fn name=gateAutoRunTriggered params="signals:{agenticAuto:boolean, agenticTaskState:string, agenticReason:string, legacyState:string}" returns=boolean export=true
+  doc "When a continuation-loop evaluation is a gate-run trigger point. Legacy fires on an explicit done-claim. Agentic fires on the controller's 'verifying' state (mutations done, answer delivered, gate outstanding) AND on 'verification_failed_fix_required' — the settled post-fix state after a red gate run; without the latter, fail → fix → re-run never re-triggers because verificationFailed routes evaluateAgenticTaskState to 'running', never back to 'verifying'. Mid-work states (continuation intent, todos remaining) never trigger."
+  handler <<<
+    if (signals.agenticAuto) {
+      if (signals.agenticTaskState === 'verifying') return true;
+      return signals.agenticReason === 'verification_failed_fix_required';
+    }
+    return signals.legacyState === 'done';
+  >>>
+
 fn name=gateAutoRunPermitted params="command:string, cwd:string, config:any" returns=boolean export=true
-  doc "The harness may only run the gate when the unified resolver would ALLOW the command outright — mode auto for routine gates, or a persisted/session allow rule (the Always artifact, e.g. Bash(npm test:*)) in any mode. A resolver 'ask' (ask/auto-edit without a covering rule, or a gate command that trips a dangerous boundary even in auto) falls back to the prompt nudge — this path never prompts and never bypasses a boundary."
+  doc "The harness may only run the gate when the unified resolver would ALLOW the command outright — mode auto for routine gates, or a persisted/session allow rule (the Always artifact, e.g. Bash(npm test:*)) in any mode. A resolver 'ask' (ask/auto-edit without a covering rule, or a gate command that trips a dangerous boundary even in auto) falls back to the prompt nudge — this path never prompts and never bypasses a boundary. Additionally, outside mode auto a gate command containing output redirection is refused even when the read-only classifier would allow it (the classifier strips redirections, so `npm test > file` would otherwise mutate under an ask posture)."
   handler <<<
     try {
+      if (resolveAgonPermissionMode(config) !== 'auto' && GATE_REDIRECTION_RE.test(command)) return false;
       const resolution = resolvePermissionDecision({ tool: 'Bash', target: command, cwd, source: 'native', config });
       return resolution.decision === 'allow';
     } catch {
@@ -125,5 +139,5 @@ fn name=buildGateSuccessNote params="result:GateRunResult, command:string" retur
   doc "One-line user-facing confirmation after a green harness-side gate run."
   handler <<<
     const seconds = Math.max(1, Math.round(result.durationMs / 1000));
-    return `Verification gate passed: ${command} (${seconds}s) — change is green.`;
+    return `[HARNESS] Verification gate passed: ${command} (${seconds}s) — change is green.`;
   >>>

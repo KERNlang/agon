@@ -4,7 +4,7 @@ import { spawnWithTimeout } from '@kernlang/agon-core';
 
 import type { DiscoveredGate } from '@kernlang/agon-core';
 
-import { resolvePermissionDecision } from './permission-resolver.js';
+import { resolvePermissionDecision, resolveAgonPermissionMode } from './permission-resolver.js';
 
 // @kern-source: gate-runner:14
 export interface GateRunResult {
@@ -74,11 +74,30 @@ export function shouldAutoRunGate(snapshot: GateAutoRunSnapshot): boolean {
 }
 
 /**
- * The harness may only run the gate when the unified resolver would ALLOW the command outright — mode auto for routine gates, or a persisted/session allow rule (the Always artifact, e.g. Bash(npm test:*)) in any mode. A resolver 'ask' (ask/auto-edit without a covering rule, or a gate command that trips a dangerous boundary even in auto) falls back to the prompt nudge — this path never prompts and never bypasses a boundary.
+ * Output-redirection detector (mirrors isAgenticMutationOutcome). Read-only command CLASSIFICATION strips redirections, so `npm test > file` resolves 'allow' in ask mode even though it mutates the workspace — in non-auto modes a redirecting gate falls back to the prompt nudge instead of auto-running. >/dev/null and fd-dup stay allowed.
  */
 // @kern-source: gate-runner:69
+export const GATE_REDIRECTION_RE: RegExp = /(?:^|[\s;|&])\d*(?:>>?|&>)\s*(?!\s|\/dev\/null\b|&\d\b)/;
+
+/**
+ * When a continuation-loop evaluation is a gate-run trigger point. Legacy fires on an explicit done-claim. Agentic fires on the controller's 'verifying' state (mutations done, answer delivered, gate outstanding) AND on 'verification_failed_fix_required' — the settled post-fix state after a red gate run; without the latter, fail → fix → re-run never re-triggers because verificationFailed routes evaluateAgenticTaskState to 'running', never back to 'verifying'. Mid-work states (continuation intent, todos remaining) never trigger.
+ */
+// @kern-source: gate-runner:72
+export function gateAutoRunTriggered(signals: {agenticAuto:boolean, agenticTaskState:string, agenticReason:string, legacyState:string}): boolean {
+  if (signals.agenticAuto) {
+    if (signals.agenticTaskState === 'verifying') return true;
+    return signals.agenticReason === 'verification_failed_fix_required';
+  }
+  return signals.legacyState === 'done';
+}
+
+/**
+ * The harness may only run the gate when the unified resolver would ALLOW the command outright — mode auto for routine gates, or a persisted/session allow rule (the Always artifact, e.g. Bash(npm test:*)) in any mode. A resolver 'ask' (ask/auto-edit without a covering rule, or a gate command that trips a dangerous boundary even in auto) falls back to the prompt nudge — this path never prompts and never bypasses a boundary. Additionally, outside mode auto a gate command containing output redirection is refused even when the read-only classifier would allow it (the classifier strips redirections, so `npm test > file` would otherwise mutate under an ask posture).
+ */
+// @kern-source: gate-runner:82
 export function gateAutoRunPermitted(command: string, cwd: string, config: any): boolean {
   try {
+    if (resolveAgonPermissionMode(config) !== 'auto' && GATE_REDIRECTION_RE.test(command)) return false;
     const resolution = resolvePermissionDecision({ tool: 'Bash', target: command, cwd, source: 'native', config });
     return resolution.decision === 'allow';
   } catch {
@@ -89,7 +108,7 @@ export function gateAutoRunPermitted(command: string, cwd: string, config: any):
 /**
  * Execute the discovered gate via /bin/sh -c (same shell contract as tool-bash) with stdout+stderr captured and tail-capped. Never throws — spawn failures come back as a failed result so the caller's continuation flow stays uniform.
  */
-// @kern-source: gate-runner:80
+// @kern-source: gate-runner:94
 export async function runDiscoveredGate(opts: {command:string, cwd:string, timeoutMs:number, tailChars:number, signal?:AbortSignal}): Promise<GateRunResult> {
   const startedAt = Date.now();
   try {
@@ -124,7 +143,7 @@ export async function runDiscoveredGate(opts: {command:string, cwd:string, timeo
 /**
  * The [SYSTEM] continuation injected after a failed harness-side gate run — real exit code and output tail, so the engine fixes actual failures instead of guessing.
  */
-// @kern-source: gate-runner:113
+// @kern-source: gate-runner:127
 export function buildGateFailureMessage(result: GateRunResult, command: string): string {
   const seconds = Math.max(1, Math.round(result.durationMs / 1000));
   const status = result.timedOut
@@ -137,8 +156,8 @@ export function buildGateFailureMessage(result: GateRunResult, command: string):
 /**
  * One-line user-facing confirmation after a green harness-side gate run.
  */
-// @kern-source: gate-runner:124
+// @kern-source: gate-runner:138
 export function buildGateSuccessNote(result: GateRunResult, command: string): string {
   const seconds = Math.max(1, Math.round(result.durationMs / 1000));
-  return `Verification gate passed: ${command} (${seconds}s) — change is green.`;
+  return `[HARNESS] Verification gate passed: ${command} (${seconds}s) — change is green.`;
 }

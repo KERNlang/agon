@@ -50,7 +50,7 @@ import { createTaskExecutionLease, isTaskFileMutationAction, isApprovedPermissio
 
 import { resolveAgonPermissionMode, resolvePermissionDecision, authorizeResolvedTaskAction } from './permission-resolver.js';
 
-import { shouldAutoRunGate, gateAutoRunPermitted, gateAutoRunLimit, gateTimeoutMs, gateOutputTailChars, runDiscoveredGate, buildGateFailureMessage, buildGateSuccessNote } from './gate-runner.js';
+import { shouldAutoRunGate, gateAutoRunTriggered, gateAutoRunPermitted, gateAutoRunLimit, gateTimeoutMs, gateOutputTailChars, runDiscoveredGate, buildGateFailureMessage, buildGateSuccessNote } from './gate-runner.js';
 
 import { getSessionAllowList } from '../signals/output.js';
 
@@ -2545,10 +2545,12 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             const g = ctx.cesar?.discoveredGate;
             if (!g?.command) return false;
             // Trigger points differ by harness: legacy fires on an explicit
-            // done-claim; agentic fires on the controller's 'verifying' state
-            // (mutations done, answer delivered, gate outstanding — the state
-            // that previously fell through to the generic "you paused" nudge).
-            const triggered = agenticAuto ? _agenticTaskState === 'verifying' : state === 'done';
+            // done-claim; agentic fires on 'verifying' AND on the settled
+            // post-fix state after a red run (verification_failed_fix_required)
+            // — verificationFailed routes evaluateAgenticTaskState to 'running',
+            // never back to 'verifying', so without the second trigger the
+            // fail → fix → re-run loop would end after the first failure.
+            const triggered = gateAutoRunTriggered({ agenticAuto, agenticTaskState: _agenticTaskState, agenticReason: _agenticTerminalReason, legacyState: state });
             if (!triggered) return false;
             // Never burn a run re-checking identical work: after the first run,
             // require NEW successful mutations since the last harness execution.
@@ -2571,6 +2573,10 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           // previously inlined nudge behavior.
           const _injectSystemContinuation = async (message: string, spinnerMsg: string): Promise<boolean> => {
             dispatch({ type: 'spinner-start', message: spinnerMsg, color });
+            // Reset per send (mirrors the tool-loop inner senders): the flag must
+            // reflect THIS round-trip, not a stale error from a prior continuation.
+            _engineErrored = false;
+            _engineErrorMsg = '';
             let _sysResp = '';
             try {
               const _sysGen = session.send({
@@ -2691,6 +2697,16 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 // genuinely NEW later claim (different toolCount/tail) still nudges.
                 if (ctx.cesar) ctx.cesar.gateNudgedClaim = _doneClaimSignature(response);
                 continue; // re-evaluate turn state; this exact claim won't re-nudge (sig re-stamped above).
+              }
+              // Red-gate honesty (review: kimi/claude): a done-claim after a RED
+              // gate run must never end the turn LOOKING verified. The nudge is
+              // suppressed here (_ranGate flips once the harness ran the gate),
+              // and re-prompting an engine that already received the failure
+              // output is spam — so surface the state loudly instead.
+              if (_verificationFailed && !_verificationPassed) {
+                const _redNote = '[HARNESS] Turn ended with the verification gate still RED — the last gate run failed. Review the change before trusting this done-claim.';
+                dispatch({ type: 'warning', message: 'Verification gate is still RED — the done-claim is unverified.' });
+                response = response + '\n\n' + _redNote;
               }
               break;
             }

@@ -15,6 +15,8 @@ import from="./tools.js" names="createCesarToolRegistry,createEagerToolContext,e
 import from="./escalation.js" names="fireQuickNero,fireNero,fireAdvisor,handleSecondOpinion,activateNero,deactivateNero,promptDelegation,promptProtocolEnforcement"
 import from="./routing.js" names="buildRoutingContext,deriveRoutingHints,shouldSpeculate"
 import from="./grounding.js" names="shouldGroundInput,buildGroundingBlock"
+import from="./experience.js" names="episodesFromRunRecords,retrieveExperience,buildExperienceBlock,experienceRetrievalOptions"
+import from="../../telemetry/index.js" names="recentRunRecords"
 import from="./reliability.js" names="readCesarToolReliability,formatCesarReliabilityLine,shouldDowngradeCesarToolWork,buildWhatHappenedSummary"
 import from="./self-turn-approval.js" names="applyCesarSelfTurnApproval"
 import from="./approval-diff.js" names="approvalToolIsFileMutating,buildApprovalDiffPreview"
@@ -859,6 +861,21 @@ ${reviewFollowup.prompt}`;
             dispatch({ type: 'info', message: 'ground: injected cited doc context for this turn' });
           }
         } catch { /* grounding is best-effort */ }
+      }
+
+      // ── Experience precedent (advisory, default-on: config.cesarExperience) ──
+      // RAG roadmap 1b: similar PAST RUN episodes (mode/winner/outcome) injected
+      // as evidence, never authority. Purely lexical (no sidecar spawn on the hot
+      // path), gated on min-N qualifying matches + a similarity floor, and
+      // fail-open — any error injects nothing. Reuses shouldGroundInput so slash
+      // commands and trivial prompts never retrieve.
+      if ((config as any).cesarExperience !== false && shouldGroundInput(input)) {
+        try {
+          const _expOpts = experienceRetrievalOptions(config);
+          const _expEpisodes = episodesFromRunRecords(recentRunRecords(_expOpts.window));
+          const _expBlock = buildExperienceBlock(retrieveExperience(input, _expEpisodes, _expOpts));
+          if (_expBlock) enrichedInput = `${_expBlock}\n\n${enrichedInput}`;
+        } catch { /* experience is best-effort */ }
       }
 
       // ── Sequential-thinking scaffold (opt-in: config.cesarThinkFirst) ──

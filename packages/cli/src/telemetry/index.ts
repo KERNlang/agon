@@ -8,6 +8,7 @@ import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { tracker } from '@kernlang/agon-core';
 import { runsStore } from '../generated/signals/runs-store.js';
+import { summarizeIntentForEpisode } from '../generated/cesar/experience.js';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -46,6 +47,7 @@ export interface RunRecord {
   engineIds: string[];
   completionState: string;
   costEstimateUsd?: number;
+  intentSummary?: string;
 }
 
 export interface TelemetryFile {
@@ -190,6 +192,12 @@ const defaultLedger = new TelemetryLedger();
  * Record an orchestration run. Uses a process-wide TelemetryLedger singleton
  * writing to ~/.agon/telemetry.json.
  */
+/** Read recent run records (newest last) from the process-wide ledger — the
+ *  experience-precedent retrieval feed. */
+export function recentRunRecords(limit: number = 200): RunRecord[] {
+  return defaultLedger.recentRuns(limit);
+}
+
 export function recordRun(result: OrchestrationResult): RunRecord {
   const stats = typeof tracker?.getStats === 'function' ? tracker.getStats() : null;
   const record: RunRecord = {
@@ -203,6 +211,7 @@ export function recordRun(result: OrchestrationResult): RunRecord {
     engineIds: result.engineIds ?? [],
     completionState: result.completionState,
     costEstimateUsd: stats?.totalCostUsd ?? undefined,
+    intentSummary: summarizeIntentForEpisode(result.intent ?? '') || undefined,
   };
   defaultLedger.append(record);
   // A run record was written — forge also writes a ${forgeId}.json into

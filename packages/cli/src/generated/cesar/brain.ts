@@ -34,6 +34,10 @@ import { buildRoutingContext, deriveRoutingHints, shouldSpeculate } from './rout
 
 import { shouldGroundInput, buildGroundingBlock } from './grounding.js';
 
+import { episodesFromRunRecords, retrieveExperience, buildExperienceBlock, experienceRetrievalOptions } from './experience.js';
+
+import { recentRunRecords } from '../../telemetry/index.js';
+
 import { readCesarToolReliability, formatCesarReliabilityLine, shouldDowngradeCesarToolWork, buildWhatHappenedSummary } from './reliability.js';
 
 import { applyCesarSelfTurnApproval } from './self-turn-approval.js';
@@ -58,7 +62,7 @@ import { consumeCesarPlanControlSignals } from './plan-control-signals.js';
 
 import { hostNowIso, hostWaitForInteractiveChoice } from '../lib/kern-host.js';
 
-// @kern-source: brain:31
+// @kern-source: brain:33
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>, turnAlreadyCommitted?: boolean): Promise<CesarTurnOutcome> {
   // streaming-end commits a real stream OR (when only a speculative preview
   // draft sits on the pane) drops the draft without committing — safe no-op when
@@ -91,7 +95,7 @@ export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input
   return { delegated: false, responded: true, decisionReason: 'delegation-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:58
+// @kern-source: brain:60
 export async function commitTurnAndSuggest(suggestion: {action:string, rest?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}, input: string, response: string, cesarEngineId: string, color: number, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   // streaming-end commits a real stream OR drops a lingering speculative preview
   // draft without committing — safe no-op when there's no entry at all.
@@ -122,10 +126,10 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
   return { delegated: false, responded: true, decisionReason: 'suggestion-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:83
+// @kern-source: brain:85
 export const _noBriefNudged: WeakMap<object, boolean> = new WeakMap<object, boolean>();
 
-// @kern-source: brain:85
+// @kern-source: brain:87
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<CesarTurnOutcome> {
   const abort = new AbortController();
       const _turnStart = Date.now();
@@ -902,6 +906,21 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               dispatch({ type: 'info', message: 'ground: injected cited doc context for this turn' });
             }
           } catch { /* grounding is best-effort */ }
+        }
+
+        // ── Experience precedent (advisory, default-on: config.cesarExperience) ──
+        // RAG roadmap 1b: similar PAST RUN episodes (mode/winner/outcome) injected
+        // as evidence, never authority. Purely lexical (no sidecar spawn on the hot
+        // path), gated on min-N qualifying matches + a similarity floor, and
+        // fail-open — any error injects nothing. Reuses shouldGroundInput so slash
+        // commands and trivial prompts never retrieve.
+        if ((config as any).cesarExperience !== false && shouldGroundInput(input)) {
+          try {
+            const _expOpts = experienceRetrievalOptions(config);
+            const _expEpisodes = episodesFromRunRecords(recentRunRecords(_expOpts.window));
+            const _expBlock = buildExperienceBlock(retrieveExperience(input, _expEpisodes, _expOpts));
+            if (_expBlock) enrichedInput = `${_expBlock}\n\n${enrichedInput}`;
+          } catch { /* experience is best-effort */ }
         }
 
         // ── Sequential-thinking scaffold (opt-in: config.cesarThinkFirst) ──

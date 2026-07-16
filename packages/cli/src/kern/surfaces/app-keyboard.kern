@@ -40,6 +40,7 @@
 // returns (never any); // Source: breadcrumb per fn; raw `<<<` kept for the
 // dense decision-tree bodies where structured KERN would distort the logic.
 import from="../signals/keyboard.js" names="resolveKeyboardInput"
+import from="../cesar/permission-resolver.js" names="cycleAgonPermissionMode,describeAgonPermissionMode"
 import from="../../input-utils.js" names="isTerminalFocusReport"
 import from="../signals/file-tracker.js" names="listFiles"
 import from="../../generated/blocks/engine.js" names="OutputBlock" types=true
@@ -216,6 +217,8 @@ module name=AppKeyboard
     // ── Mode + plan queue + plan approval ──
     field name=planModeQueued type=boolean
     field name=autoModeQueued type=boolean
+    field name=permissionMode type=string
+    field name=applyPermissionMode type="(mode:string) => void"
     field name=planApprovalIndex type=number
     // ── Derived snapshots consumed by resolveKeyboardInput ──
     field name=outputBlocks type="OutputBlock[]"
@@ -445,17 +448,26 @@ module name=AppKeyboard
           return;
         case 'togglePlanQueued':
           opts.setPlanModeQueued((prev: boolean) => !prev); return;
-        case 'toggleAutoQueued':
+        case 'toggleAutoQueued': {
           const nextAutoModeQueued = !opts.autoModeQueued;
           opts.setPlanModeQueued(false);
-          opts.setPersistentAutoMode(nextAutoModeQueued);
+          opts.applyPermissionMode(nextAutoModeQueued ? 'auto' : 'auto-edit');
           opts.dispatch({
             type: 'info',
             message: nextAutoModeQueued
               ? 'AUTO ON by default. Plain tasks may self-escalate through Cesar. Ctrl+A toggles it off.'
-              : 'AUTO OFF by default.',
+              : 'AUTO OFF — permission mode auto-edit (workspace file edits auto-approved). Shift+Tab cycles modes.',
           } as any);
           return;
+        }
+        case 'cyclePermissionMode': {
+          const nextMode = cycleAgonPermissionMode(opts.permissionMode as any);
+          opts.setPlanModeQueued(false);
+          opts.applyPermissionMode(nextMode);
+          const described = describeAgonPermissionMode(nextMode);
+          opts.dispatch({ type: 'info', message: `Permission mode: ${described.label} — ${described.hint}. Shift+Tab cycles.` } as any);
+          return;
+        }
         case 'submit':
           opts.handleSubmit(action.value); return;
         case 'planControl':

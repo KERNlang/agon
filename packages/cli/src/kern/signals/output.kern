@@ -6,7 +6,8 @@ import from="../../handlers/types.js" names="OutputEvent,EngineProgress" types=t
 import from="../blocks/markdown.js" names="parseMarkdownBlocks,cleanEngineOutput"
 import from="../blocks/narration-fold.js" names="foldNarration,setLastFoldedRaw"
 import from="../../code-buffer.js" names="codeBlockBuffer"
-import from="@kernlang/agon-core" names="loadConfig,configSet"
+import from="@kernlang/agon-core" names="loadConfig,configSet,resolveWorkingDir,evaluateToolRules"
+import from="../cesar/permission-resolver.js" names="synthesizePermissionRule,validateSynthesizedRule,persistPermissionRule,addSessionPermissionRule,buildEffectivePermissionRuleSet"
 import from="./todos.js" names="Todo" types=true
 import from="./todos.js" names="setTodos,updateTodoState,clearTodos,clearLiveTodos"
 
@@ -157,24 +158,39 @@ fn name=schedulePendingFlush params="actions:OutputActions" returns=void
     }, TOOL_CALL_GROUP_FLUSH_MS);
   >>>
 
+fn name=_permissionRuleTarget params="entry:{tool:string,command:string,diffPreview?:any}" returns=string export=false
+  doc "Best-effort raw target for rule synthesis/evaluation. Bash prompts carry the real command; file-tool prompts carry a rendered preview string, so the structured diff preview's file path is the truthful target when present."
+  handler <<<
+    if (entry.tool === 'Bash') return String(entry.command ?? '');
+    const previewPath = entry.diffPreview?.files?.[0]?.path;
+    return typeof previewPath === 'string' && previewPath.trim() ? previewPath : String(entry.command ?? '');
+  >>>
+
 fn name=_drainAutoApproved params="actions:OutputActions" returns=void export=false
-  doc "Auto-approve queued permissions whose base command is already in allowedCommands."
-  handler lang="kern"
-    let name=cfg value="loadConfig()"
-    let name=allowed type="string[]" value="(cfg as any).allowedCommands ?? []"
-    if cond="allowed.length === 0"
-      return
-    comment raw="// Drain from the front: auto-approve entries matching the allow-list."
-    while cond="_permissionQueue.length > 0"
-      let name=head value="_permissionQueue[0]"
-      let name=base value="head.command.trim().split(/\\s+/)[0]"
-      if cond="base && allowed.some((a: string) => base.toLowerCase().startsWith(a.toLowerCase()))"
-        do value="_permissionQueue.shift()"
-        do value="head.resolve(true)"
-      else
-        break
+  doc "Auto-approve queued permissions already covered by an allow source: the legacy allowedCommands base-token list, or a persisted/session allow rule (so one Always/Yes-for-session answer drains coalesced sibling prompts for the same pattern)."
+  handler <<<
+    const cfg = loadConfig();
+    const allowed: string[] = (cfg as any).allowedCommands ?? [];
+    const rules = buildEffectivePermissionRuleSet(cfg);
+    if (allowed.length === 0 && rules.allow.length === 0) return;
+    const cwd = resolveWorkingDir();
+    while (_permissionQueue.length > 0) {
+      const head = _permissionQueue[0];
+      const base = head.command.trim().split(/\s+/)[0];
+      const legacyHit = head.tool === 'Bash' && base && allowed.some((a: string) => base.toLowerCase().startsWith(a.toLowerCase()));
+      const target = _permissionRuleTarget(head);
+      const ruleHit = target && evaluateToolRules(head.tool, target, cwd, rules) === 'allow';
+      if (legacyHit || ruleHit) {
+        _permissionQueue.shift();
+        head.resolve(true);
+      } else {
+        break;
+      }
+    }
+  >>>
 
 fn name=_showNextPermission params="actions:OutputActions" returns=void export=false
+  doc "Claude-Code-parity prompt: Yes / Yes-for-session / Always (persists a validated scoped rule like Bash(git push:*)) / No / Never (persists a deny rule) / tell-Cesar. Always/Never only appear when a rule can be synthesized AND re-validates against the originating action — bare-verb rules are never persisted. Yes approves exactly once."
   handler <<<
     // First drain any that are now auto-approved (e.g. after "Always")
     _drainAutoApproved(actions);
@@ -183,6 +199,20 @@ fn name=_showNextPermission params="actions:OutputActions" returns=void export=f
     actions.addBlock({ type: 'permission-ask', tool: next.tool, command: next.command, description: next.description, reason: next.reason, diffPreview: next.diffPreview, fallbackNote: next.fallbackNote, resolve: next.resolve } as any);
     const permResolve = next.resolve;
     const permCommand = next.command;
+    const permTool = next.tool;
+    const ruleCwd = resolveWorkingDir();
+    const ruleTarget = _permissionRuleTarget(next);
+    const candidateRule = synthesizePermissionRule(permTool, ruleTarget, ruleCwd);
+    const rule = candidateRule && validateSynthesizedRule(candidateRule, permTool, ruleTarget, ruleCwd) ? candidateRule : null;
+    const sessionBase = permTool === 'Bash' ? (permCommand.trim().split(/\s+/)[0] ?? '') : '';
+    const choices: Array<{ key: string; label: string; color: string }> = [
+      { key: 'y', label: 'Yes', color: '#4ade80' },
+    ];
+    if (rule || sessionBase) choices.push({ key: 's', label: 'Yes for this session', color: '#4ade80' });
+    if (rule) choices.push({ key: 'a', label: `Always allow ${rule}`, color: '#60a5fa' });
+    choices.push({ key: 'n', label: 'No', color: '#ef4444' });
+    if (rule) choices.push({ key: 'x', label: `Never (deny ${rule})`, color: '#ef4444' });
+    choices.push({ key: '__other', label: 'No, tell Cesar what to do instead', color: '#9ca3af' });
     actions.setQuestionState({
       kind: 'permission',
       prompt: `Approve ${next.tool}`,
@@ -192,36 +222,29 @@ fn name=_showNextPermission params="actions:OutputActions" returns=void export=f
       reason: next.reason,
       diffPreview: next.diffPreview,
       fallbackNote: next.fallbackNote,
-      choices: [
-        { key: 'y', label: 'Yes', color: '#4ade80' },
-        { key: 'n', label: 'No', color: '#ef4444' },
-        { key: 'a', label: 'Always', color: '#60a5fa' },
-        { key: '__other', label: 'No, tell Cesar what to do instead', color: '#9ca3af' },
-      ],
+      choices,
       resolve: (answer: string) => {
         _permissionQueue.shift();
         const lower = answer.toLowerCase().trim();
-        if (lower === 'a') {
-          const cfg = loadConfig();
-          const allowed = (cfg as any).allowedCommands ?? [];
-          const base = permCommand.trim().split(/\s+/)[0];
-          if (base && !allowed.includes(base)) {
-            allowed.push(base);
-            configSet('allowedCommands' as any, allowed);
+        if (lower === 'a' && rule) {
+          persistPermissionRule('allow', rule);
+          permResolve(true);
+          actions.addBlock({ type: 'success', message: `Always allowed: ${rule}` } as any);
+        } else if (lower === 's') {
+          if (rule) {
+            addSessionPermissionRule(rule);
+            actions.addBlock({ type: 'success', message: `Allowed for this session: ${rule}` } as any);
+          } else if (sessionBase) {
+            if (!_sessionAllowList.includes(sessionBase)) _sessionAllowList.push(sessionBase);
+            actions.addBlock({ type: 'success', message: `Allowed for this session: ${sessionBase}` } as any);
           }
           permResolve(true);
-          actions.addBlock({ type: 'success', message: `Always allowed: ${base}` } as any);
         } else if (lower === 'y') {
-          // Smart mode: add to session allowlist (memory-only, not persisted)
-          const cfg = loadConfig();
-          const mode = (cfg as any).permissionMode ?? 'smart';
-          if (mode === 'smart') {
-            const base = permCommand.trim().split(/\s+/)[0];
-            if (base && !_sessionAllowList.includes(base)) {
-              _sessionAllowList.push(base);
-            }
-          }
           permResolve(true);
+        } else if (lower === 'x' && rule) {
+          persistPermissionRule('deny', rule);
+          permResolve(false);
+          actions.addBlock({ type: 'warning', message: `Never allowed (deny rule persisted): ${rule}` } as any);
         } else {
           permResolve(false);
           actions.addBlock({ type: 'warning', message: 'Denied' } as any);

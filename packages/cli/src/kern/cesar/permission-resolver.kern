@@ -1,0 +1,304 @@
+// ── Unified permission resolver ─────────────────────────────────────
+// ONE ordered decision pipeline for every approval seam (native/API tool
+// preflight, companion buildOnApproval, delegated agent callbacks, MCP
+// side-channel). Stages: hard-deny → deny rules → task lease → allow
+// sources (toolPermissions / rules / allowedCommands / session) → lease
+// boundary asks → mode policy. Replaces the three divergent gates that
+// each re-derived decisions from overlapping config reads.
+
+import from="node:path" names="resolve,relative,isAbsolute"
+import from="@kernlang/agon-core" names="parsePermissionRuleSet,parsePermissionRule,evaluateToolRules,hasShellControl,isReadOnlyCommand,loadConfig,configSet"
+import from="@kernlang/agon-core" names="PermissionRuleSet" types=true
+import from="./task-execution-lease.js" names="evaluateTaskAction,authorizeTaskAction,canonicalTaskActionSignature,isTaskFileMutationAction,relativePathEscapesWorkspace,isExternalSideEffectCommand,DEFAULT_DANGEROUS_PATTERN"
+import from="./task-execution-lease.js" names="TaskExecutionLease,TaskActionEvaluation" types=true
+
+type name=AgonPermissionMode values="ask|auto-edit|auto" export=true
+type name=PermissionRequestSource values="native|delegated|self-turn" export=true
+type name=PermissionDecisionKind values="allow|ask|deny" export=true
+
+interface name=PermissionResolutionRequest export=true
+  field name=tool type=string
+  field name=target type=string
+  field name=cwd type=string
+  field name=source type=PermissionRequestSource
+  field name=config type=any
+  field name=lease type="TaskExecutionLease|undefined" optional=true
+  field name=sessionAllowList type="string[]" optional=true
+
+interface name=PermissionResolution export=true
+  field name=decision type=PermissionDecisionKind
+  field name=reason type=string
+  field name=stage type=string
+  field name=signature type=string
+
+const name=AGON_PERMISSION_MODES type="AgonPermissionMode[]" value={{ ['ask', 'auto-edit', 'auto'] as AgonPermissionMode[] }} export=true
+
+const name=READ_ONLY_PERMISSION_TOOLS type="Set<string>" value={{ new Set(['read', 'grep', 'glob', 'ls', 'notebookread', 'webfetch', 'websearch']) }}
+
+fn name=resolveAgonPermissionMode params="config:any" returns=AgonPermissionMode export=true
+  doc "Resolve the effective permission mode from config. `agonPermissionMode` is the source of truth; when absent, legacy `permissionMode` migrates in place: auto→auto, smart→auto-edit (smart's heuristics auto-approved enough that ask would read as a regression), ask/deny-all→ask. deny-all additionally hard-denies via isPermissionHardDeny before the mode is ever consulted."
+  handler <<<
+    const raw = String(config?.agonPermissionMode ?? '').trim().toLowerCase();
+    if ((AGON_PERMISSION_MODES as string[]).includes(raw)) return raw as AgonPermissionMode;
+    const legacy = String(config?.permissionMode ?? 'smart').trim().toLowerCase();
+    if (legacy === 'auto') return 'auto';
+    if (legacy === 'ask' || legacy === 'deny-all') return 'ask';
+    return 'auto-edit';
+  >>>
+
+fn name=isPermissionHardDeny params="config:any" returns=boolean export=true
+  doc "Legacy deny-all kill switch. Kept out of the Shift+Tab cycle; the resolver checks it FIRST so a stray allow rule can never re-open a deny-all session."
+  handler lang="kern"
+    return value="String(config?.permissionMode ?? '').trim().toLowerCase() === 'deny-all'"
+
+fn name=cycleAgonPermissionMode params="mode:AgonPermissionMode" returns=AgonPermissionMode export=true
+  handler <<<
+    const index = AGON_PERMISSION_MODES.indexOf(mode);
+    return AGON_PERMISSION_MODES[(index + 1) % AGON_PERMISSION_MODES.length] ?? 'ask';
+  >>>
+
+fn name=clampDelegatedPermissionMode params="mode:AgonPermissionMode" returns=AgonPermissionMode export=true
+  doc "Delegated-agent floor clamp (brainstorm 5/6 consensus): orchestration runs execute at least auto-edit so a 3-engine forge run does not queue dozens of file-edit prompts, while Bash mutations still prompt. Strictly tighter than the retired smart-mode blanket approve."
+  handler lang="kern"
+    return value="mode === 'ask' ? 'auto-edit' : mode"
+
+fn name=describeAgonPermissionMode params="mode:AgonPermissionMode" returns="{label:string,hint:string}" export=true
+  handler <<<
+    if (mode === 'auto') return { label: 'AUTO', hint: 'workspace autonomy — pushes, publishing, and workspace escapes still prompt' };
+    if (mode === 'auto-edit') return { label: 'auto-edit', hint: 'workspace file edits auto-approved — Bash mutations still prompt' };
+    return { label: 'ask', hint: 'prompts before file edits and mutating commands' };
+  >>>
+
+// Session-scoped allow rules ("Yes for session" prompt choice). Memory-only,
+// evaluated through the same CC-parity rule engine as persisted rules so one
+// approval covers the same tool + target pattern across sibling agents in the
+// current run (prompt coalescing).
+const name=_sessionPermissionRules type="string[]" value={{ [] as string[] }}
+
+fn name=getSessionPermissionRules returns="string[]" export=true expr={{ return _sessionPermissionRules.slice(); }}
+
+fn name=addSessionPermissionRule params="rule:string" returns=boolean export=true
+  handler <<<
+    const trimmed = String(rule ?? '').trim();
+    if (!trimmed || !parsePermissionRule(trimmed)) return false;
+    if (!_sessionPermissionRules.includes(trimmed)) _sessionPermissionRules.push(trimmed);
+    return true;
+  >>>
+
+fn name=clearSessionPermissionRules returns=void export=true
+  handler lang="kern"
+    assign target="_sessionPermissionRules.length" value="0"
+
+fn name=buildEffectivePermissionRuleSet params="config:any" returns=PermissionRuleSet export=true
+  doc "Parse the persisted permissions object and merge in session-scoped allow rules. Deny rules are persisted-only: a session grant can widen, never narrow."
+  handler <<<
+    const persisted = (config?.permissions && typeof config.permissions === 'object') ? config.permissions : {};
+    const allow = Array.isArray((persisted as any).allow) ? (persisted as any).allow : [];
+    const deny = Array.isArray((persisted as any).deny) ? (persisted as any).deny : [];
+    return parsePermissionRuleSet({ allow: [...allow, ..._sessionPermissionRules], deny });
+  >>>
+
+fn name=fileTargetInsideWorkspace params="cwd:string,target:string" returns=boolean export=true
+  doc "Containment check for the auto-edit/auto mode policy. Missing targets fail closed. With an empty cwd only a relative, non-escaping path passes (it resolves under the executing agent's own cwd by construction); absolute and ~ paths fail closed — an unknown workspace must never approve edits anywhere on disk (review blocking finding)."
+  handler <<<
+    const candidate = String(target ?? '').trim();
+    if (!candidate) return false;
+    if (!cwd) {
+      if (isAbsolute(candidate) || /^~/.test(candidate)) return false;
+      const probe = resolve('/agon-probe');
+      return !relativePathEscapesWorkspace(relative(probe, resolve(probe, candidate)));
+    }
+    const absolute = isAbsolute(candidate) ? resolve(candidate) : resolve(cwd, candidate);
+    return !relativePathEscapesWorkspace(relative(resolve(cwd), absolute));
+  >>>
+
+fn name=isLeaselessBashBoundary params="command:string" returns=boolean export=true
+  doc "Boundary backstop for approval seams that carry no task lease (delegated agent callbacks). Auto mode must not blanket-approve pushes, publishing, or other external side effects just because the lease classifier is out of reach."
+  handler <<<
+    const cmd = String(command ?? '');
+    if (isExternalSideEffectCommand(cmd)) return true;
+    try { return new RegExp(DEFAULT_DANGEROUS_PATTERN, 'i').test(cmd); }
+    catch { return true; }
+  >>>
+
+fn name=resolvePermissionDecision params="request:PermissionResolutionRequest" returns=PermissionResolution export=true
+  doc "The ONE seam where mode, rules, allowlists, and the task lease combine. Ordered: hard-deny → toolPermissions deny → deny rules → lease deny/allow → allow sources (toolPermissions allow, allow rules incl. session, allowedCommands compat, session base tokens) → lease boundary asks (dangerous/important — never absorbed by any mode) → mode policy with the delegated floor clamp. Callers map allow/deny directly and route ask into their prompt surface."
+  handler <<<
+    const tool = String(request.tool ?? '').trim();
+    const target = String(request.target ?? '');
+    const cwd = String(request.cwd ?? '');
+    const cfg = request.config ?? {};
+    const signature = canonicalTaskActionSignature(tool, target);
+
+    if (isPermissionHardDeny(cfg)) {
+      return { decision: 'deny', reason: 'permissionMode=deny-all', stage: 'hard-deny', signature };
+    }
+    const toolPermissions = (cfg.toolPermissions && typeof cfg.toolPermissions === 'object') ? cfg.toolPermissions : {};
+    if (toolPermissions[tool] === 'deny') {
+      return { decision: 'deny', reason: `${tool} denied in settings`, stage: 'tool-permissions', signature };
+    }
+
+    const ruleSet = buildEffectivePermissionRuleSet(cfg);
+    const ruleDecision = evaluateToolRules(tool, target, cwd || process.cwd(), ruleSet);
+    if (ruleDecision === 'deny') {
+      return { decision: 'deny', reason: `${tool} denied by permissions rule`, stage: 'deny-rule', signature };
+    }
+
+    let leaseEvaluation: TaskActionEvaluation | null = null;
+    if (request.lease) {
+      leaseEvaluation = evaluateTaskAction(request.lease, tool, target);
+      if (leaseEvaluation.decision === 'deny') {
+        return { decision: 'deny', reason: leaseEvaluation.reason, stage: 'lease', signature };
+      }
+      if (leaseEvaluation.decision === 'allow') {
+        return { decision: 'allow', reason: leaseEvaluation.reason, stage: 'lease', signature };
+      }
+    }
+
+    // Scoped rules (user-authored via Always / .agon.json, incl. session
+    // rules) are the ONE allow source deliberately strong enough to cover a
+    // lease boundary — that is the whole point of persisting Bash(git push:*).
+    if (ruleDecision === 'allow') {
+      return { decision: 'allow', reason: `${tool} allowed by permissions rule`, stage: 'allow-rule', signature };
+    }
+
+    // Dangerous/important boundaries ask BEFORE the blunt allow sources:
+    // a legacy bare base token ('git' in allowedCommands) or a tool-level
+    // toolPermissions allow must never auto-approve a push/publish boundary
+    // (review blocking finding — the old gates never let them, either).
+    if (leaseEvaluation && (leaseEvaluation.reason === 'dangerous_boundary' || leaseEvaluation.reason === 'important_task')) {
+      return { decision: 'ask', reason: leaseEvaluation.reason, stage: 'lease', signature };
+    }
+    if (tool === 'Bash' && !request.lease && isLeaselessBashBoundary(target)) {
+      return { decision: 'ask', reason: 'dangerous_boundary', stage: 'mode', signature };
+    }
+
+    if (toolPermissions[tool] === 'allow') {
+      return { decision: 'allow', reason: `${tool} allowed in settings`, stage: 'tool-permissions', signature };
+    }
+    if (tool === 'Bash') {
+      const commandLower = target.trim().toLowerCase();
+      const base = target.trim().split(/\s+/)[0] ?? '';
+      const allowedCommands: string[] = Array.isArray(cfg.allowedCommands) ? cfg.allowedCommands : [];
+      if (commandLower && allowedCommands.some((entry: string) => commandLower.startsWith(String(entry).toLowerCase()))) {
+        return { decision: 'allow', reason: 'command matched allowedCommands', stage: 'allowed-commands', signature };
+      }
+      const sessionList = Array.isArray(request.sessionAllowList) ? request.sessionAllowList : [];
+      if (commandLower && sessionList.some((entry: string) => commandLower.startsWith(String(entry).toLowerCase()) || base === entry)) {
+        return { decision: 'allow', reason: 'command matched session allowlist', stage: 'session-allowlist', signature };
+      }
+    }
+
+    const baseMode = resolveAgonPermissionMode(cfg);
+    const mode = request.source === 'delegated' ? clampDelegatedPermissionMode(baseMode) : baseMode;
+    const containedFileMutation = isTaskFileMutationAction(tool) && fileTargetInsideWorkspace(cwd, target);
+    if (mode === 'auto') {
+      // Without a lease the resolver owns workspace containment itself: a
+      // file mutation escaping the workspace must not ride auto mode.
+      if (!request.lease && isTaskFileMutationAction(tool) && !containedFileMutation) {
+        return { decision: 'ask', reason: 'workspace_boundary', stage: 'mode', signature };
+      }
+      return { decision: 'allow', reason: 'auto mode', stage: 'mode', signature };
+    }
+    const normalizedTool = tool.toLowerCase().replace(/^agon/, '');
+    if (READ_ONLY_PERMISSION_TOOLS.has(normalizedTool)) {
+      return { decision: 'allow', reason: 'read-only tool', stage: 'mode', signature };
+    }
+    if (tool === 'Bash' && isReadOnlyCommand(target)) {
+      return { decision: 'allow', reason: 'read-only command', stage: 'mode', signature };
+    }
+    if (mode === 'auto-edit' && containedFileMutation) {
+      return { decision: 'allow', reason: 'auto-edit mode approves workspace file edits', stage: 'mode', signature };
+    }
+    return { decision: 'ask', reason: leaseEvaluation ? leaseEvaluation.reason : `${mode} mode requires approval`, stage: 'mode', signature };
+  >>>
+
+fn name=authorizeResolvedTaskAction async=true params="request:PermissionResolutionRequest,requestApproval:(evaluation:TaskActionEvaluation)=>Promise<boolean>" returns="Promise<{decision:'allow'|'deny',reason:string}>" export=true
+  doc "Resolver-first replacement for raw authorizeTaskAction at the native/XML/eager preflights. allow/deny map straight through (an Always rule now suppresses the lease prompt instead of double-gating); ask routes into the lease's join/claim machinery when a lease exists so concurrent identical boundaries share ONE prompt, and falls back to a single direct approval otherwise."
+  handler <<<
+    const resolution = resolvePermissionDecision(request);
+    if (resolution.decision === 'allow') return { decision: 'allow', reason: resolution.reason };
+    if (resolution.decision === 'deny') return { decision: 'deny', reason: resolution.reason };
+    if (request.lease) {
+      const authorization = await authorizeTaskAction(request.lease, request.tool, request.target, requestApproval);
+      return authorization.decision === 'allow'
+        ? { decision: 'allow', reason: authorization.reason }
+        : { decision: 'deny', reason: authorization.reason };
+    }
+    const approved = await requestApproval({ decision: 'ask_boundary_once', signature: resolution.signature, reason: resolution.reason });
+    return approved ? { decision: 'allow', reason: 'user_approved' } : { decision: 'deny', reason: 'user_denied' };
+  >>>
+
+// ── Rule synthesis ("Always"/"Never" prompt choices) ─────────────────
+
+fn name=synthesizePermissionRule params="tool:string,target:string,cwd:string" returns="string|null" export=true
+  doc "Synthesize a Claude-Code-parity rule string from an approved action. Bash uses the two-token scope (binary + first non-flag argument → 'Bash(git push:*)'); compound commands, substitution, globs, and bare single verbs synthesize nothing (fall back to a one-time approval). File tools synthesize an exact resolved-path rule so 'Always' never silently widens to a directory."
+  handler <<<
+    const t = String(tool ?? '').trim();
+    const raw = String(target ?? '').trim();
+    if (!t || !raw) return null;
+    if (t === 'Bash') {
+      if (hasShellControl(raw)) return null;
+      const tokens = raw.split(/\s+/).map((token) => token.replace(/^['"]|['"]$/g, ''));
+      const base = tokens[0] ?? '';
+      const sub = tokens.slice(1).find((token) => !token.startsWith('-') && !token.includes('=')) ?? '';
+      if (!base || !sub) return null;
+      if (/[*?`$(){}\[\]\\]/.test(base) || /[*?`$(){}\[\]\\]/.test(sub)) return null;
+      return `Bash(${base} ${sub}:*)`;
+    }
+    if (t === 'Edit' || t === 'Write' || t === 'MultiEdit' || t === 'Read') {
+      if (/[*?`$(){}\[\]\n]/.test(raw)) return null;
+      const absolute = isAbsolute(raw) ? resolve(raw) : resolve(cwd || process.cwd(), raw);
+      return `${t}(${absolute})`;
+    }
+    return null;
+  >>>
+
+fn name=validateSynthesizedRule params="rule:string,tool:string,target:string,cwd:string" returns=boolean export=true
+  doc "Hard guard before persisting a synthesized rule: it must parse, a Bash rule must carry a two-token scope (never a bare verb like 'Bash(git)' or a star), and re-running the rule engine against the originating action must yield allow."
+  handler <<<
+    const parsed = parsePermissionRule(rule);
+    if (!parsed || !parsed.command) return false;
+    if (parsed.command.includes('*')) return false;
+    if (parsed.tool === 'Bash' && parsed.command.trim().split(/\s+/).length < 2) return false;
+    const outcome = evaluateToolRules(tool, target, cwd || process.cwd(), { allow: [parsed], deny: [] });
+    return outcome === 'allow';
+  >>>
+
+fn name=persistPermissionRule params="kind:'allow'|'deny',rule:string" returns=boolean export=true
+  doc "Append one rule string to the persisted permissions object (config scope resolution is configSet's job). The same rule is removed from the opposite bucket first — an Always after a Never must not leave a deny that silently keeps winning. Returns false without writing when nothing changes."
+  handler <<<
+    const cfg = loadConfig() as any;
+    const current = (cfg.permissions && typeof cfg.permissions === 'object') ? cfg.permissions : {};
+    let allow: string[] = Array.isArray(current.allow) ? current.allow.slice() : [];
+    let deny: string[] = Array.isArray(current.deny) ? current.deny.slice() : [];
+    const hadOpposite = (kind === 'deny' ? allow : deny).includes(rule);
+    if (kind === 'deny') allow = allow.filter((entry: string) => entry !== rule);
+    else deny = deny.filter((entry: string) => entry !== rule);
+    const bucket = kind === 'deny' ? deny : allow;
+    if (bucket.includes(rule) && !hadOpposite) return false;
+    if (!bucket.includes(rule)) bucket.push(rule);
+    configSet('permissions' as any, { allow, deny } as any);
+    return true;
+  >>>
+
+fn name=removePermissionRule params="rule:string" returns=boolean export=true
+  doc "Remove a rule string from BOTH persisted buckets and the session store. Returns true when anything was actually removed."
+  handler <<<
+    let removed = false;
+    const cfg = loadConfig() as any;
+    const current = (cfg.permissions && typeof cfg.permissions === 'object') ? cfg.permissions : {};
+    const allow: string[] = Array.isArray(current.allow) ? current.allow.filter((entry: string) => entry !== rule) : [];
+    const deny: string[] = Array.isArray(current.deny) ? current.deny.filter((entry: string) => entry !== rule) : [];
+    if ((Array.isArray(current.allow) ? current.allow.length : 0) !== allow.length
+      || (Array.isArray(current.deny) ? current.deny.length : 0) !== deny.length) {
+      configSet('permissions' as any, { allow, deny } as any);
+      removed = true;
+    }
+    const sessionIndex = _sessionPermissionRules.indexOf(rule);
+    if (sessionIndex >= 0) {
+      _sessionPermissionRules.splice(sessionIndex, 1);
+      removed = true;
+    }
+    return removed;
+  >>>

@@ -25,6 +25,7 @@ import from="../../code-buffer.js" names="codeBlockBuffer"
 import from="../signals/app-state.js" names="finishReplState"
 import from="../signals/app-state.js" names="ReplStateState" types=true
 import from="../cesar/scoreboard.js" names="Scoreboard" types=true
+import from="../cesar/permission-resolver.js" names="resolveAgonPermissionMode"
 import from="../cesar/mode-rationale.js" names="ModeRationale" types=true
 import from="../signals/paste-handler.js" names="processPasteContent,recordPastePlaceholder"
 import from="../signals/output.js" names="handleOutputEvent"
@@ -176,6 +177,7 @@ screen name=App target=ink
   state name=todos type="Todo[]" initial="[]"
   state name=planModeQueued type=boolean initial=false safe=false
   state name=autoModeQueued type=boolean initial="() => loadConfig().cesarAutoMode === true" safe=false
+  state name=permissionMode type=string initial="() => resolveAgonPermissionMode(loadConfig())" safe=false
   state name=cesarMemory type=any initial="() => createCesarMemory()"
   state name=sessionMcpServers type="Array<Record<string,unknown>>" initial="[]"
   state name=telemetryVitals type="Map<string,any>" initial="new Map()" throttle=500
@@ -782,6 +784,13 @@ screen name=App target=ink
       do value="setAutoModeQueued(enabled)"
       do value="setConfigVersion((v: number) => v + 1)"
 
+  callback name=applyPermissionMode params="mode:string" deps="setPersistentAutoMode"
+    doc "Single writer for the permission posture: persists agonPermissionMode, updates the footer state, and keeps the AUTO toggle coherent (mode auto ⇔ AUTO on) so the lease, harness profile, and footer never disagree."
+    handler lang="kern"
+      do value="configSet('agonPermissionMode' as any, mode as any)"
+      do value="setPermissionMode(mode)"
+      do value="setPersistentAutoMode(mode === 'auto')"
+
   callback name=setActivePlanWrapped params="plan:any" deps=""
     handler <<<
       if (activePlanClearTimerRef.current) {
@@ -1187,13 +1196,13 @@ screen name=App target=ink
       }, question);
     >>>
 
-  callback name=handleSubmit async=true params="value:string" deps="replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued,autoModeQueued,setPersistentAutoMode,setActivePlanWrapped,outputBlocks,btwPanel,sendBtwMessage,pendingBellRef,awaitingPlanAnnouncedRef"
+  callback name=handleSubmit async=true params="value:string" deps="replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued,autoModeQueued,permissionMode,applyPermissionMode,setPersistentAutoMode,setActivePlanWrapped,outputBlocks,btwPanel,sendBtwMessage,pendingBellRef,awaitingPlanAnnouncedRef"
     handler <<<
       runHandleSubmit({
         inputEpochRef, pendingBellRef, awaitingPlanAnnouncedRef, pasteHashesRef, pendingPasteTransformRef, inputValueRef, activePlanRef, activeTurnRef, interruptedTurnRef, chatStartTimeRef,
-        replState, mode, planModeQueued, autoModeQueued, btwPanel, pendingImages, outputBlocks, allSlashCommands, dynamicSkills, extensionSkills, lastUndoToken, sessionStartTime, explorationMode, neroMode,
+        replState, mode, planModeQueued, autoModeQueued, permissionMode, btwPanel, pendingImages, outputBlocks, allSlashCommands, dynamicSkills, extensionSkills, lastUndoToken, sessionStartTime, explorationMode, neroMode,
         jobManager, commandRegistry, eventBus, loadedExtensions,
-        setInputValue, setInputHistory, setHistoryIndex, setInputQueue, setSteeringCount, setSlashPickerOpen, setStatusDashboardOpen, setPlanModeQueued, setPersistentAutoMode, setMode, setWorkspacePath, setReplState, setJobList, setBtwPanel,
+        setInputValue, setInputHistory, setHistoryIndex, setInputQueue, setSteeringCount, setSlashPickerOpen, setStatusDashboardOpen, setPlanModeQueued, setPersistentAutoMode, applyPermissionMode, setMode, setWorkspacePath, setReplState, setJobList, setBtwPanel,
         setPendingImages, setSessionEngines, setEnginePickerOpen, setModelPickerOpen, setModelPickerEntries, setModelPickerLoading, setCesarPickerOpen, setChatSession, setLastUndoToken, setModelPickerTargetEngine, setModelPickerInitialFilter, setModelPickerTitle, setModelPickerCliGroups, setExplorationMode, setNeroMode,
         dispatch, buildContext, sendBtwMessage, handleSubmit, transition, setActivePlanWrapped, askQuestion, bell,
       }, value);
@@ -1532,14 +1541,14 @@ screen name=App target=ink
     >>>
 
   // ── Keyboard handling — pure decision tree + thin dispatcher ──
-  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,atPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,btwPanel,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen,updateInfo,triggerUpdatePrompt,dismissUpdateBanner,selectedChoiceIndex,questionOtherActive,newestLiveToolStreamId"
+  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,atPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,btwPanel,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,permissionMode,applyPermissionMode,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen,updateInfo,triggerUpdatePrompt,dismissUpdateBanner,selectedChoiceIndex,questionOtherActive,newestLiveToolStreamId"
     handler <<<
       runHandleKeyboardInput({
         modelPickerOpen, cesarPickerOpen, slashPickerOpen, atPickerOpen, enginePickerOpen,
         reviewEvent, toolDetailEvent, btwPanel, statusDashboardOpen,
         questionState, selectedChoiceIndex, questionOtherActive,
         replState, jobManager, inputValue, inputHistory, historyIndex,
-        planModeQueued, autoModeQueued, planApprovalIndex,
+        planModeQueued, autoModeQueued, permissionMode, applyPermissionMode, planApprovalIndex,
         outputBlocks, allSlashCommands, availableEngines, updateInfo, terminalMode,
         newestLiveToolStreamId, fileRailOpen, fileRailExpandedPath, fileRailSelectedIdx,
         executionRailOpen, currentVisibleRowBudget, startupOnly,
@@ -1848,6 +1857,7 @@ screen name=App target=ink
             replState={replState}
             planModeQueued={planModeQueued}
             autoModeQueued={autoModeQueued}
+            permissionMode={permissionMode}
             activePlan={activePlan}
             slashPickerOpen={slashPickerOpen}
             atPickerOpen={atPickerOpen}

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { appendInputHistory, cleanInputValue, cleanSubmitValue, findInputChange, getSlashMatches, hasBtwSideChannelTarget, movePickerCursor, parseAutoModeCommand, resolveEscapeAction, shouldQueuePlanModeOnTab, tryGhostComplete } from '../../packages/cli/src/generated/signals/app-input.js';
+import { appendInputHistory, cleanInputValue, cleanSubmitValue, findInputChange, getSlashMatches, hasBtwSideChannelTarget, movePickerCursor, parseAutoModeCommand, parsePermissionModeCommand, resolveEscapeAction, shouldQueuePlanModeOnTab, tryGhostComplete } from '../../packages/cli/src/generated/signals/app-input.js';
 import { expandPastePlaceholders, processPasteContent, recordPastePlaceholder } from '../../packages/cli/src/generated/signals/paste-handler.js';
 import { pasteStore } from '@kernlang/agon-core';
 
@@ -60,6 +60,16 @@ describe('app input helpers', () => {
     expect(parseAutoModeCommand('/autonomous off')).toBe('off');
     expect(parseAutoModeCommand('/auto status')).toBe('status');
     expect(parseAutoModeCommand('/auto fix login')).toBeNull();
+  });
+
+  it('parses first-class /mode controls without stealing unrelated input', () => {
+    expect(parsePermissionModeCommand('/mode')).toBe('cycle');
+    expect(parsePermissionModeCommand('/mode ask')).toBe('ask');
+    expect(parsePermissionModeCommand('/mode auto-edit')).toBe('auto-edit');
+    expect(parsePermissionModeCommand('/mode auto')).toBe('auto');
+    expect(parsePermissionModeCommand('/mode status')).toBe('status');
+    expect(parsePermissionModeCommand('/mode yolo')).toBeNull();
+    expect(parsePermissionModeCommand('/models')).toBeNull();
   });
 
   it('allows /btw while a plan or background job is active even if the composer is idle', () => {

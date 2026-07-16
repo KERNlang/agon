@@ -49,8 +49,8 @@ fn name=appendPriorityStatusSegment params="segments:{kind:string,text:string}[]
     return -1;
   >>>
 
-fn name=buildPriorityStatusSegments params="parts:{width?:number,exploration?:boolean,cwd?:string,branch?:string,context?:{pct:number,source?:string}|null,tokens?:number,messages?:number,cost?:string,auto?:boolean,telemetry?:string}" returns="{kind:string,text:string}[]" export=true
-  doc "Allocate a width-bounded footer into typed semantic segments. The typed result lets Ink preserve colors without giving up context/cost priority or exact truncation."
+fn name=buildPriorityStatusSegments params="parts:{width?:number,exploration?:boolean,cwd?:string,branch?:string,context?:{pct:number,source?:string}|null,tokens?:number,messages?:number,cost?:string,auto?:boolean,permissionMode?:string,telemetry?:string}" returns="{kind:string,text:string}[]" export=true
+  doc "Allocate a width-bounded footer into typed semantic segments. The typed result lets Ink preserve colors without giving up context/cost priority or exact truncation. The permission posture renders as one always-present mode segment ('AUTO' when the AUTO harness is queued or the mode is auto, else the mode label + shift+tab hint) so the approval stance is never invisible."
   handler <<<
     const width = Math.max(12, Math.floor(Number(parts?.width) || 80));
     const context = parts?.context && parts.context.pct > 0
@@ -65,6 +65,10 @@ fn name=buildPriorityStatusSegments params="parts:{width?:number,exploration?:bo
     const messages = Math.max(0, Math.floor(Number(parts?.messages) || 0));
     const alert = telemetry && telemetry !== '\u25cf idle' ? telemetry : '';
     const healthy = telemetry === '\u25cf idle' ? telemetry : '';
+    const cleanMode = cleanPriorityStatusText(parts?.permissionMode);
+    const modeText = parts?.auto || cleanMode === 'auto' ? 'AUTO'
+      : cleanMode ? `${cleanMode} (shift+tab)`
+      : '';
     const segments: { kind: string; text: string }[] = [];
     // Context and cost are the two accounting signals the narrow footer must
     // never silently push behind location/help text.
@@ -74,7 +78,7 @@ fn name=buildPriorityStatusSegments params="parts:{width?:number,exploration?:bo
     if (used < 0) return segments;
     used = appendPriorityStatusSegment(segments, width, used, 'alert', alert, false);
     if (used < 0) return segments;
-    used = appendPriorityStatusSegment(segments, width, used, 'auto', parts?.auto ? 'AUTO' : '', false);
+    used = appendPriorityStatusSegment(segments, width, used, 'auto', modeText, false);
     if (used < 0) return segments;
     used = appendPriorityStatusSegment(segments, width, used, 'location', location, true);
     if (used < 0) return segments;
@@ -86,7 +90,7 @@ fn name=buildPriorityStatusSegments params="parts:{width?:number,exploration?:bo
     return segments;
   >>>
 
-fn name=buildPriorityStatusLine params="parts:{width?:number,exploration?:boolean,cwd?:string,branch?:string,context?:{pct:number,source?:string}|null,tokens?:number,messages?:number,cost?:string,auto?:boolean,telemetry?:string}" returns=string export=true
+fn name=buildPriorityStatusLine params="parts:{width?:number,exploration?:boolean,cwd?:string,branch?:string,context?:{pct:number,source?:string}|null,tokens?:number,messages?:number,cost?:string,auto?:boolean,permissionMode?:string,telemetry?:string}" returns=string export=true
   doc "Build the plain-text form of the priority footer for terminal-frame checks and non-Ink consumers."
   handler <<<
     return buildPriorityStatusSegments(parts).map((segment) => segment.text).join(' \u00b7 ');

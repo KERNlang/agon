@@ -2,6 +2,8 @@
 
 import { resolveKeyboardInput } from '../signals/keyboard.js';
 
+import { cycleAgonPermissionMode, describeAgonPermissionMode } from '../cesar/permission-resolver.js';
+
 import { isTerminalFocusReport } from '../../input-utils.js';
 
 import { listFiles } from '../signals/file-tracker.js';
@@ -23,7 +25,7 @@ import { spawnSync } from 'node:child_process';
 /**
  * Explicit dependencies for runHandleCancelOrExit — the question/repl/input state the Ctrl+C cancel path inspects, the active-abort ref it reads for the cancel-vs-interrupt message, and the setters/callbacks/dispatch it fires.
  */
-// @kern-source: app-keyboard:60
+// @kern-source: app-keyboard:61
 export interface CancelOrExitDeps {
   questionState: any;
   replState: ReplStateState;
@@ -38,7 +40,7 @@ export interface CancelOrExitDeps {
   dispatch: (event:any) => void;
 }
 
-// @kern-source: app-keyboard:83
+// @kern-source: app-keyboard:84
 export function runHandleCancelOrExit(opts: CancelOrExitDeps): void {
   if (opts.questionState) { opts.questionState.resolve(''); opts.setQuestionState(null); opts.setQuestionAnswer(''); opts.setSelectedChoiceIndex(0); opts.setQuestionOtherActive(false); }
   if (opts.replState !== 'idle') {
@@ -65,7 +67,7 @@ export function runHandleCancelOrExit(opts: CancelOrExitDeps): void {
 /**
  * Explicit dependencies for runHandleComposerCtrlShortcut — the chord/handled refs it flips, the rail + composer + tool-output setters, and the cancel/submit/tool callbacks the per-key cases delegate to.
  */
-// @kern-source: app-keyboard:114
+// @kern-source: app-keyboard:115
 export interface ComposerCtrlShortcutDeps {
   nestedCtrlShortcutRef: {current: { key: string; at: number }};
   ctrlKeyHandledRef: {current: boolean};
@@ -81,7 +83,7 @@ export interface ComposerCtrlShortcutDeps {
   draftLatestFailedToolRetry: () => void;
 }
 
-// @kern-source: app-keyboard:137
+// @kern-source: app-keyboard:138
 export function runHandleComposerCtrlShortcut(opts: ComposerCtrlShortcutDeps, shortcut: string): void {
   opts.nestedCtrlShortcutRef.current = { key: shortcut, at: Date.now() };
   switch (shortcut) {
@@ -134,7 +136,7 @@ export function runHandleComposerCtrlShortcut(opts: ComposerCtrlShortcutDeps, sh
 /**
  * Explicit dependencies for runHandleKeyboardInput — the UI-state snapshot fed to resolveKeyboardInput, the refs the router consults/flips, and every setter/callback/dispatch the action switch fires. Passed in rather than captured from component scope; values are read at call time so staleness matches the original closure.
  */
-// @kern-source: app-keyboard:194
+// @kern-source: app-keyboard:195
 export interface KeyboardInputDeps {
   modelPickerOpen: boolean;
   cesarPickerOpen: boolean;
@@ -155,6 +157,8 @@ export interface KeyboardInputDeps {
   historyIndex: number;
   planModeQueued: boolean;
   autoModeQueued: boolean;
+  permissionMode: string;
+  applyPermissionMode: (mode:string) => void;
   planApprovalIndex: number;
   outputBlocks: OutputBlock[];
   allSlashCommands: any[];
@@ -206,7 +210,7 @@ export interface KeyboardInputDeps {
   dispatch: (event:any) => void;
 }
 
-// @kern-source: app-keyboard:283
+// @kern-source: app-keyboard:286
 export function runHandleKeyboardInput(opts: KeyboardInputDeps, input: string, key: any): void {
   if (isTerminalFocusReport(input)) return;
   if (key?.paste) return;
@@ -371,17 +375,26 @@ export function runHandleKeyboardInput(opts: KeyboardInputDeps, input: string, k
       return;
     case 'togglePlanQueued':
       opts.setPlanModeQueued((prev: boolean) => !prev); return;
-    case 'toggleAutoQueued':
+    case 'toggleAutoQueued': {
       const nextAutoModeQueued = !opts.autoModeQueued;
       opts.setPlanModeQueued(false);
-      opts.setPersistentAutoMode(nextAutoModeQueued);
+      opts.applyPermissionMode(nextAutoModeQueued ? 'auto' : 'auto-edit');
       opts.dispatch({
         type: 'info',
         message: nextAutoModeQueued
           ? 'AUTO ON by default. Plain tasks may self-escalate through Cesar. Ctrl+A toggles it off.'
-          : 'AUTO OFF by default.',
+          : 'AUTO OFF — permission mode auto-edit (workspace file edits auto-approved). Shift+Tab cycles modes.',
       } as any);
       return;
+    }
+    case 'cyclePermissionMode': {
+      const nextMode = cycleAgonPermissionMode(opts.permissionMode as any);
+      opts.setPlanModeQueued(false);
+      opts.applyPermissionMode(nextMode);
+      const described = describeAgonPermissionMode(nextMode);
+      opts.dispatch({ type: 'info', message: `Permission mode: ${described.label} — ${described.hint}. Shift+Tab cycles.` } as any);
+      return;
+    }
     case 'submit':
       opts.handleSubmit(action.value); return;
     case 'planControl':

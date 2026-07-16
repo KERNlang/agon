@@ -48,6 +48,7 @@ export type KeyboardAction =
   | { type: 'ghostComplete'; ghost: string }
   | { type: 'togglePlanQueued' }
   | { type: 'toggleAutoQueued' }
+  | { type: 'cyclePermissionMode' }
   | { type: 'submit'; value: string }
   | { type: 'toggleToolExpand' }
   | { type: 'openToolDetail' }
@@ -81,7 +82,7 @@ export type KeyboardAction =
 /**
  * Pure keyboard decision tree. Takes current state, returns action to execute.
  */
-// @kern-source: keyboard:90
+// @kern-source: keyboard:91
 export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
   const { input, key } = ctx;
   const keyName = typeof key.name === 'string' ? key.name.toLowerCase() : '';
@@ -221,10 +222,12 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
     && !ctx.questionState
   ) return { type: 'toggleLiveToolTail' };
 
-  // Shift+Tab: queue auto mode
+  // Shift+Tab: cycle the permission mode (ask → auto-edit → auto).
+  // Ctrl+A above stays the direct AUTO toggle for muscle memory and for
+  // terminals that collapse Shift+Tab into a plain Tab.
   if (isShiftTab && !ctx.slashPickerOpen && !ctx.enginePickerOpen && !ctx.questionState && !ctx.reviewEventOpen) {
     if (canQueueMode) {
-      return { type: 'toggleAutoQueued' };
+      return { type: 'cyclePermissionMode' };
     }
     return { type: 'none' };
   }

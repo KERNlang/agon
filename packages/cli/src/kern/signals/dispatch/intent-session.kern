@@ -127,7 +127,7 @@ fn name=dispatchSessionInfoIntent async=true params="intent:any, input:string, c
       case 'discover': await handleDiscover(cb.dispatch, cb.ctx); break;
       case 'provider': await handleProvider(intent.action, intent.args, cb.dispatch, cb.ctx); break;
       case 'config': handleConfig(intent, cb.dispatch, cb.ctx); break;
-      case 'permissions': handlePermissions(cb.dispatch); break;
+      case 'permissions': handlePermissions(cb.dispatch, intent); break;
       case 'use': handleUse(intent.engineIds, cb.dispatch, cb.ctx, cb.setSessionEngines); break;
       case 'cesar': {
         const cesarTarget = (intent.engineIds ?? []).join(' ').trim();

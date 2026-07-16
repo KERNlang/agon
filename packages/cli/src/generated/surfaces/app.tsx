@@ -48,6 +48,8 @@ import type { ReplStateState } from '../signals/app-state.js';
 
 import type { Scoreboard } from '../cesar/scoreboard.js';
 
+import { resolveAgonPermissionMode } from '../cesar/permission-resolver.js';
+
 import type { ModeRationale } from '../cesar/mode-rationale.js';
 
 import { processPasteContent, recordPastePlaceholder } from '../signals/paste-handler.js';
@@ -160,7 +162,7 @@ import { runProcessInputQueue, runSendBtwMessage, runHandleSubmit } from './app-
 
 export { COMPOSER_HISTORY_LIMIT, isMutatingToolCall, probeEngineVitals, parseToolCallPayload, toolPreviewWindow, toolCallSupportsDetailView, detailViewerSupportsEvent, toolDetailViewportRows, findLatestToolDetailEvent, findLatestToolEvent, buildExecutionRailStats, composerHistoryPath, loadComposerInputHistory, saveComposerInputHistory, findLatestFailedToolEvent, buildFailedToolRetryDraft, buildToolDetailView, createInitialRegistry, drainStdinBuffer, maxScrollOffsetForRowCount, nextWheelAnimationStep, clampNumber, charDisplayWidth, stringDisplayWidth, displayColumnToStringIndex, normalizeRowSelection, normalizeTextSelection, richLineToPlainText, transcriptRowToPlainText, transcriptRowTextStartColumn, resolveTranscriptColumnFromMouse, transcriptRowsToPlainText, resolveTranscriptRowFromMouse, estimateVisibleBlockBudget, estimateWrappedRowCount, estimateQuestionReservedRows, estimateBottomChromeExtraRows, summarizeBtwTranscriptEvent, buildDashboardBlock, estimatePinnedLiveRows, estimateWrappedRows, estimateToolCallRows, estimateOutputEventRows, buildDisplayItems, isToolCallLikeBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, estimateDisplayItemRows, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, isDuplicateEngineBlock, appendTranscriptBlock, normalizeTerminalMode, resolveTerminalMode, normalizeTerminalSize, fileRailWidthForTerminal, fileRailMaxRowsForTerminal, buildTerminalReplaySnapshot, parseMarkdownToRows, buildToolCallRows, buildCollapsedToolGroupRows, buildTranscriptRows } from './app-helpers.js';
 
-// @kern-source: app:99
+// @kern-source: app:100
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -367,6 +369,7 @@ export function App() {
   const setTodos = useMemo(() => __inkSafe(_setTodosRaw), [_setTodosRaw]);
   const [planModeQueued, setPlanModeQueued] = useState<boolean>(false);
   const [autoModeQueued, setAutoModeQueued] = useState<boolean>(() => loadConfig().cesarAutoMode === true);
+  const [permissionMode, setPermissionMode] = useState<string>(() => resolveAgonPermissionMode(loadConfig()));
   const [cesarMemory, _setCesarMemoryRaw] = useState<any>(() => createCesarMemory());
   const setCesarMemory = useMemo(() => __inkSafe(_setCesarMemoryRaw), [_setCesarMemoryRaw]);
   const [sessionMcpServers, _setSessionMcpServersRaw] = useState<Array<Record<string,unknown>>>([]);
@@ -816,6 +819,12 @@ export function App() {
     setConfigVersion((v: number) => v + 1);
   }, []);
 
+  const applyPermissionMode = useCallback((mode:string) => {
+    configSet('agonPermissionMode' as any, mode as any);
+    setPermissionMode(mode);
+    setPersistentAutoMode(mode === 'auto');
+  }, [setPersistentAutoMode]);
+
   const setActivePlanWrapped = useCallback((plan:any) => {
     if (activePlanClearTimerRef.current) {
       clearTimeout(activePlanClearTimerRef.current);
@@ -1047,13 +1056,13 @@ export function App() {
   const handleSubmit = useCallback(async (value:string) => {
     runHandleSubmit({
       inputEpochRef, pendingBellRef, awaitingPlanAnnouncedRef, pasteHashesRef, pendingPasteTransformRef, inputValueRef, activePlanRef, activeTurnRef, interruptedTurnRef, chatStartTimeRef,
-      replState, mode, planModeQueued, autoModeQueued, btwPanel, pendingImages, outputBlocks, allSlashCommands, dynamicSkills, extensionSkills, lastUndoToken, sessionStartTime, explorationMode, neroMode,
+      replState, mode, planModeQueued, autoModeQueued, permissionMode, btwPanel, pendingImages, outputBlocks, allSlashCommands, dynamicSkills, extensionSkills, lastUndoToken, sessionStartTime, explorationMode, neroMode,
       jobManager, commandRegistry, eventBus, loadedExtensions,
-      setInputValue, setInputHistory, setHistoryIndex, setInputQueue, setSteeringCount, setSlashPickerOpen, setStatusDashboardOpen, setPlanModeQueued, setPersistentAutoMode, setMode, setWorkspacePath, setReplState, setJobList, setBtwPanel,
+      setInputValue, setInputHistory, setHistoryIndex, setInputQueue, setSteeringCount, setSlashPickerOpen, setStatusDashboardOpen, setPlanModeQueued, setPersistentAutoMode, applyPermissionMode, setMode, setWorkspacePath, setReplState, setJobList, setBtwPanel,
       setPendingImages, setSessionEngines, setEnginePickerOpen, setModelPickerOpen, setModelPickerEntries, setModelPickerLoading, setCesarPickerOpen, setChatSession, setLastUndoToken, setModelPickerTargetEngine, setModelPickerInitialFilter, setModelPickerTitle, setModelPickerCliGroups, setExplorationMode, setNeroMode,
       dispatch, buildContext, sendBtwMessage, handleSubmit, transition, setActivePlanWrapped, askQuestion, bell,
     }, value);
-  }, [replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued,autoModeQueued,setPersistentAutoMode,setActivePlanWrapped,outputBlocks,btwPanel,sendBtwMessage,pendingBellRef,awaitingPlanAnnouncedRef]);
+  }, [replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued,autoModeQueued,permissionMode,applyPermissionMode,setPersistentAutoMode,setActivePlanWrapped,outputBlocks,btwPanel,sendBtwMessage,pendingBellRef,awaitingPlanAnnouncedRef]);
 
   const handleReviewActionCb = useCallback((action:'apply'|'edit'|'reject'|'copy') => {
     if (!reviewEvent) {
@@ -1338,7 +1347,7 @@ export function App() {
       reviewEvent, toolDetailEvent, btwPanel, statusDashboardOpen,
       questionState, selectedChoiceIndex, questionOtherActive,
       replState, jobManager, inputValue, inputHistory, historyIndex,
-      planModeQueued, autoModeQueued, planApprovalIndex,
+      planModeQueued, autoModeQueued, permissionMode, applyPermissionMode, planApprovalIndex,
       outputBlocks, allSlashCommands, availableEngines, updateInfo, terminalMode,
       newestLiveToolStreamId, fileRailOpen, fileRailExpandedPath, fileRailSelectedIdx,
       executionRailOpen, currentVisibleRowBudget, startupOnly,
@@ -1354,7 +1363,7 @@ export function App() {
       openLatestToolDetail, openResultsPager, draftLatestFailedToolRetry,
       triggerUpdatePrompt, dismissUpdateBanner, dispatch,
     }, input, key);
-  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,atPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,btwPanel,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen,updateInfo,triggerUpdatePrompt,dismissUpdateBanner,selectedChoiceIndex,questionOtherActive,newestLiveToolStreamId]);
+  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,atPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,btwPanel,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,permissionMode,applyPermissionMode,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen,updateInfo,triggerUpdatePrompt,dismissUpdateBanner,selectedChoiceIndex,questionOtherActive,newestLiveToolStreamId]);
 
   useEffect(() => {
     const activeIds = new Set(Object.keys(liveToolStreams ?? {}));
@@ -1964,6 +1973,7 @@ export function App() {
         replState={replState}
         planModeQueued={planModeQueued}
         autoModeQueued={autoModeQueued}
+        permissionMode={permissionMode}
         activePlan={activePlan}
         slashPickerOpen={slashPickerOpen}
         atPickerOpen={atPickerOpen}
@@ -2055,10 +2065,10 @@ export function App() {
   );
 }
 
-// @kern-source: app:97
+// @kern-source: app:98
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:1943
+// @kern-source: app:1953
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   // Session-scoped grounding ONLY — deliberately does NOT call

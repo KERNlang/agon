@@ -1,8 +1,10 @@
-import from="@kernlang/agon-core" names="ToolRegistry,getProjectFileStateCache,createReadTool,createEditTool,createMultiEditTool,createWriteTool,createBashTool,createGrepTool,createGlobTool,createForgeTool,createBrainstormTool,createTribunalTool,createCampfireTool,createPipelineTool,createGoalTool,createConquerTool,createReviewTool,createDelegateTool,createAgentTool,createReportConfidenceTool,createProposePlanTool,createExitPlanModeTool,createListPlansTool,createRetrieveResultTool,createQuickNeroTool,createTodoWriteTool,createSaveMemoryTool,executeToolCall,resolveWorkingDir,parsePermissionRuleSet,parseToolHooks,isReadOnlyCommand"
+import from="@kernlang/agon-core" names="ToolRegistry,getProjectFileStateCache,createReadTool,createEditTool,createMultiEditTool,createWriteTool,createBashTool,createGrepTool,createGlobTool,createForgeTool,createBrainstormTool,createTribunalTool,createCampfireTool,createPipelineTool,createGoalTool,createConquerTool,createReviewTool,createDelegateTool,createAgentTool,createReportConfidenceTool,createProposePlanTool,createExitPlanModeTool,createListPlansTool,createRetrieveResultTool,createQuickNeroTool,createTodoWriteTool,createSaveMemoryTool,executeToolCall,resolveWorkingDir,parsePermissionRuleSet,parseToolHooks,isReadOnlyCommand,loadConfig"
 import from="@kernlang/agon-core" names="ToolContext,ToolCallResult" types=true
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="./council-tool.js" names="createCouncilTool"
-import from="./task-execution-lease.js" names="authorizeTaskAction,isTaskFileMutationAction,taskActionApprovalMessage"
+import from="./task-execution-lease.js" names="isTaskFileMutationAction,taskActionApprovalMessage,isApprovedPermissionResponse"
+import from="./permission-resolver.js" names="authorizeResolvedTaskAction"
+import from="../signals/output.js" names="getSessionAllowList"
 import from="./brain-helpers.js" names="isBashToolName"
 
 fn name=createCesarToolRegistry params="engineId?:string" returns="ToolRegistry"
@@ -117,7 +119,7 @@ fn name=executeEagerTool async=true params="toolName:string, meta:Record<string,
     const requestTaskApproval = (tool: string, message: string) => new Promise<boolean>((resolve) => {
       const command = (parsedInput as any).command ?? (parsedInput as any).file_path ?? toolInput;
       dispatch({ type: 'permission-ask', tool, command, reason: message, resolve: (approved: boolean | string) => {
-        resolve(typeof approved === 'string' ? approved === 'y' || approved === 'a' : !!approved);
+        resolve(isApprovedPermissionResponse(approved));
       } } as any);
     });
     const authorizeEagerTaskAction = async (tool: string, input: Record<string, unknown>): Promise<boolean | string> => {
@@ -127,10 +129,8 @@ fn name=executeEagerTool async=true params="toolName:string, meta:Record<string,
       const needsAuthorization = isTaskFileMutationAction(tool)
         || (isBashToolName(tool) && !isReadOnlyCommand(target));
       if (!lease || !needsAuthorization) return true;
-      const authorization = await authorizeTaskAction(
-        lease,
-        tool,
-        target,
+      const authorization = await authorizeResolvedTaskAction(
+        { tool, target, cwd: (toolCtx as any).cwd ?? resolveWorkingDir(), source: 'native', config: loadConfig(), lease, sessionAllowList: getSessionAllowList() },
         (evaluation: any) => requestTaskApproval(
           tool,
           taskActionApprovalMessage(evaluation),

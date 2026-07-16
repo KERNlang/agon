@@ -12,11 +12,11 @@ export type TaskActionDecision = 'allow' | 'ask_task_once' | 'ask_boundary_once'
 export type TaskHarnessProfile = 'legacy' | 'agentic';
 
 /**
- * Normalize the REPL permission UI contract: y approves once, a approves the session, booleans pass through.
+ * Normalize the REPL permission UI contract: y approves once, s approves for the session, a persists an allow rule, booleans pass through.
  */
 // @kern-source: task-execution-lease:7
 export function isApprovedPermissionResponse(value: boolean|string): boolean {
-  return (typeof value === 'string') ? (value === 'y' || value === 'a') : (value === true);
+  return (typeof value === 'string') ? (value === 'y' || value === 'a' || value === 's') : (value === true);
 }
 
 // @kern-source: task-execution-lease:12

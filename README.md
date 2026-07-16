@@ -390,7 +390,25 @@ Also available as interactive `/conquer` in the REPL (with full CLI flag parity:
 
 Launching `agon` starts a powerful terminal REPL equipped with native scrollback, command history, and a file rail. 
 
-Available commands include: `/forge`, `/synthesis`, `/brainstorm`, `/tribunal`, `/campfire`, `/pipeline`, `/review`, `/agent`, `/speculate`, `/team-forge`, `/status`, `/leaderboard`, `/history`, `/config`, `/plan`, `/models`, `/engines`, `/doctor`, `/help`, and `/exit`.
+Available commands include: `/forge`, `/synthesis`, `/brainstorm`, `/tribunal`, `/campfire`, `/pipeline`, `/review`, `/agent`, `/speculate`, `/team-forge`, `/status`, `/leaderboard`, `/history`, `/config`, `/plan`, `/mode`, `/permissions`, `/models`, `/engines`, `/doctor`, `/help`, and `/exit`.
+
+### Permission modes
+
+Agon uses a Claude-Code-style permission mode, cycled with **Shift+Tab** (or `/mode`) and always visible in the footer:
+
+| Mode | Behavior |
+|---|---|
+| `ask` | Prompts before file edits and mutating commands. Read-only tools and commands run freely. |
+| `auto-edit` | Workspace file edits are auto-approved; Bash mutations still prompt. (Default — migrated from the legacy `smart` mode.) |
+| `auto` (AUTO) | Workspace autonomy. Boundaries still prompt: pushes, publishing, deployments, workspace escapes, and deny rules always win. |
+
+Permission prompts offer **Yes / Yes for this session / Always / No / Never**. *Always* persists a scoped rule such as `Bash(git push:*)` into `permissions.allow` (never a bare verb); *Never* persists a deny rule. Inspect and edit rules with `/permissions`, `/permissions add allow|deny <rule>`, and `/permissions remove <rule>`. Delegated engine runs (forge, tribunal, agent teams) execute at least at `auto-edit` so multi-engine dispatches don't queue dozens of file-edit prompts — their Bash mutations still prompt once per pattern.
+
+### Self-verifying turns
+
+When Cesar finishes a turn that edited files, Agon doesn't take "done" on faith. If the permission posture already allows the project's verification gate (the `test`/`typecheck` script from `package.json`, or a `fitness:` line in your project brief), **the harness runs the gate itself**: a green run confirms the claim; a red run feeds the real exit code and output tail straight back to Cesar as a continuation so it fixes actual failures — up to `cesarGateAutoRunLimit` runs per turn (default 3), each re-run gated on fresh edits since the last one. A turn that still ends with a red gate is flagged loudly rather than presented as done.
+
+Note the posture semantics: a gate command classified read-only (like plain `npm test`) auto-runs in **every** mode, because the resolver lets read-only commands run freely — the same command Cesar could already execute unprompted. Mutating gate commands (compound `&&` gates, scripts the classifier can't clear) auto-run only in `auto` mode or under a covering allow rule; gates with output redirection are additionally refused outside `auto`. Everything else falls back to the previous behavior: a one-time nudge asking Cesar to verify. Tune with `cesarGateAutoRun` (on by default), `cesarGateAutoRunLimit`, `cesarGateTimeoutSec`, and `cesarGateOutputTailChars`.
 
 **Example Session:**
 ```text

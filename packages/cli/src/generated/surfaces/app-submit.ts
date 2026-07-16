@@ -14,7 +14,9 @@ import { startCommandReplState, finishReplState } from '../signals/app-state.js'
 
 import type { ReplStateState } from '../signals/app-state.js';
 
-import { appendInputHistory, cleanSubmitValue, hasBtwSideChannelTarget, parseAutoModeCommand } from '../signals/app-input.js';
+import { appendInputHistory, cleanSubmitValue, hasBtwSideChannelTarget, parseAutoModeCommand, parsePermissionModeCommand } from '../signals/app-input.js';
+
+import { cycleAgonPermissionMode, describeAgonPermissionMode } from '../cesar/permission-resolver.js';
 
 import { pushSteering, peekSteeringCount, drainLeftoverSteering } from '../cesar/steering.js';
 
@@ -38,7 +40,7 @@ import { mkdirSync, readFileSync, statSync, realpathSync, openSync, readSync, cl
 
 // ── Module: AppSubmit ──
 
-// @kern-source: app-submit:75
+// @kern-source: app-submit:76
 export function buildInterruptedTurnRedirect(previous: string, latest: string, source?: 'foreground'|'job'): string {
   const previousLabel = source === 'job' ? 'Interrupted background task' : 'Interrupted request';
   return [
@@ -54,21 +56,21 @@ export function buildInterruptedTurnRedirect(previous: string, latest: string, s
   ].join('\n');
 }
 
-// @kern-source: app-submit:95
+// @kern-source: app-submit:96
 export const MENTION_MAX_FILE_BYTES: number = 65536;
 
-// @kern-source: app-submit:96
+// @kern-source: app-submit:97
 export const MENTION_MAX_TOTAL_BYTES: number = 262144;
 
-// @kern-source: app-submit:97
+// @kern-source: app-submit:98
 export const MENTION_MAX_FILES: number = 20;
 
-// @kern-source: app-submit:106
+// @kern-source: app-submit:107
 export function isLiteralCommandLine(input: string): boolean {
   return input.startsWith('/') || input.startsWith('! ');
 }
 
-// @kern-source: app-submit:116
+// @kern-source: app-submit:117
 export function buildMentionedFilesContext(text: string, cwd: string): string {
   const allMentions = extractFileMentions(text);
   const mentions = allMentions.slice(0, MENTION_MAX_FILES);
@@ -145,7 +147,7 @@ export function buildMentionedFilesContext(text: string, cwd: string): string {
   return `\n\n[Attached files referenced with @ in the message above]\n${blocks.join('\n\n')}${note}`;
 }
 
-// @kern-source: app-submit:197
+// @kern-source: app-submit:198
 export function runProcessInputQueue(replState: ReplStateState, inputQueue: string[], setInputQueue: (updater:(prev:string[]) => string[]) => void, handleSubmit: (value:string) => void, setSteeringCount: (n:number) => void): void {
   if (replState !== 'idle') return;
   // The turn is over — clear the mid-turn steering hint count.
@@ -172,7 +174,7 @@ export function runProcessInputQueue(replState: ReplStateState, inputQueue: stri
 /**
  * Explicit dependencies for runSendBtwMessage — the context builder + live runtime signals (mode/replState/streams/transcript/plan/jobs) it folds into the side-chat prompt, the prior btwPanel it continues, the separate btwAbortRef it swaps, and the panel setter + dispatch it drives. Passed in rather than captured from component scope; values read at call time so staleness matches the original closure.
  */
-// @kern-source: app-submit:229
+// @kern-source: app-submit:230
 export interface SendBtwMessageDeps {
   buildContext: () => any;
   btwPanel: any;
@@ -187,7 +189,7 @@ export interface SendBtwMessageDeps {
   dispatch: (event:any) => void;
 }
 
-// @kern-source: app-submit:254
+// @kern-source: app-submit:255
 export function runSendBtwMessage(opts: SendBtwMessageDeps, question: string): void {
   const q = (question ?? '').trim();
         if (!q) return;
@@ -282,7 +284,7 @@ export function runSendBtwMessage(opts: SendBtwMessageDeps, question: string): v
 /**
  * Explicit dependencies for runHandleSubmit — the refs it consults (epoch/paste/bell/plan/turn/job-timing), the composer + history + queue + mode state it resets, every modal/picker/engine setter the DispatchCallbacks object wires, and the callbacks it delegates to. Passed in rather than captured from component scope; values read at call time so staleness matches the original closure.
  */
-// @kern-source: app-submit:354
+// @kern-source: app-submit:355
 export interface HandleSubmitDeps {
   inputEpochRef: {current: number};
   pendingBellRef: {current: boolean};
@@ -298,6 +300,7 @@ export interface HandleSubmitDeps {
   mode: string;
   planModeQueued: boolean;
   autoModeQueued: boolean;
+  permissionMode: string;
   btwPanel: any;
   pendingImages: ImageAttachment[];
   outputBlocks: any[];
@@ -321,6 +324,7 @@ export interface HandleSubmitDeps {
   setStatusDashboardOpen: (val:boolean) => void;
   setPlanModeQueued: (val:boolean) => void;
   setPersistentAutoMode: (enabled:boolean) => void;
+  applyPermissionMode: (mode:string) => void;
   setMode: (val:any) => void;
   setWorkspacePath: (val:string) => void;
   setReplState: (updater:any) => void;
@@ -351,7 +355,7 @@ export interface HandleSubmitDeps {
   bell: () => void;
 }
 
-// @kern-source: app-submit:438
+// @kern-source: app-submit:441
 export async function runHandleSubmit(opts: HandleSubmitDeps, value: string): Promise<void> {
   opts.inputEpochRef.current += 1;
   let input = cleanSubmitValue(value);
@@ -377,6 +381,22 @@ export async function runHandleSubmit(opts: HandleSubmitDeps, value: string): Pr
   });
   opts.setHistoryIndex(-1);
 
+  const modeControl = parsePermissionModeCommand(input);
+  if (modeControl) {
+    const currentMode = String(opts.permissionMode || 'auto-edit');
+    if (modeControl === 'status') {
+      const current = describeAgonPermissionMode(currentMode as any);
+      opts.dispatch({ type: 'info', message: `Permission mode: ${current.label} — ${current.hint}. Shift+Tab cycles ask → auto-edit → auto.` } as any);
+      return;
+    }
+    const nextMode = modeControl === 'cycle' ? cycleAgonPermissionMode(currentMode as any) : modeControl;
+    opts.setPlanModeQueued(false);
+    opts.applyPermissionMode(nextMode);
+    const described = describeAgonPermissionMode(nextMode as any);
+    opts.dispatch({ type: 'info', message: `Permission mode: ${described.label} — ${described.hint}.` } as any);
+    return;
+  }
+
   const autoControl = parseAutoModeCommand(input);
   if (autoControl) {
     if (autoControl === 'status') {
@@ -385,12 +405,12 @@ export async function runHandleSubmit(opts: HandleSubmitDeps, value: string): Pr
     }
     const nextAutoModeQueued = autoControl === 'toggle' ? !opts.autoModeQueued : autoControl === 'on';
     opts.setPlanModeQueued(false);
-    opts.setPersistentAutoMode(nextAutoModeQueued);
+    opts.applyPermissionMode(nextAutoModeQueued ? 'auto' : 'auto-edit');
     opts.dispatch({
       type: 'info',
       message: nextAutoModeQueued
         ? 'AUTO ON by default. Plain tasks may self-escalate through Cesar. Use /auto off or Ctrl+A to disable.'
-        : 'AUTO OFF by default.',
+        : 'AUTO OFF — permission mode auto-edit. Use /mode or Shift+Tab to change it.',
     } as any);
     return;
   }

@@ -28,6 +28,7 @@ import {
   _permissionQueue,
 } from '../../packages/cli/src/generated/signals/output.js';
 import type { OutputActions, OutputState } from '../../packages/cli/src/generated/signals/output.js';
+import { clearSessionPermissionRules } from '../../packages/cli/src/generated/cesar/permission-resolver.js';
 
 function createMockActions(): OutputActions & { calls: Record<string, unknown[][]> } {
   const calls: Record<string, unknown[][]> = {
@@ -85,6 +86,7 @@ describe('permission queue', () => {
   beforeEach(() => {
     // Drain any residual queue state between tests
     _permissionQueue.length = 0;
+    clearSessionPermissionRules();
     loadConfigMock.mockReturnValue({});
     configSetMock.mockReset();
     delete (handleOutputEvent as any)._lastSpinnerUpdate;
@@ -175,7 +177,7 @@ describe('permission queue', () => {
     });
   });
 
-  it('"Always" auto-resolves next queued permission with same base command', async () => {
+  it('"Always" persists a scoped two-token rule and drains queued siblings it covers', async () => {
     loadConfigMock.mockReturnValue({ allowedCommands: [] });
 
     const actions = createMockActions();
@@ -183,22 +185,57 @@ describe('permission queue', () => {
     const resolve2 = vi.fn();
 
     firePermission(actions, 'Bash', 'npm test --watch', resolve1);
-    firePermission(actions, 'Bash', 'npm install express', resolve2);
+    firePermission(actions, 'Bash', 'npm test --coverage', resolve2);
 
-    // Answer first with "Always" — this should add "npm" to allowedCommands
+    // Answer first with "Always" — persists Bash(npm test:*), never a bare token
     const firstQuestion = actions.calls.setQuestionState[0][0] as { resolve: (answer: string) => void };
     firstQuestion.resolve('a');
 
     expect(resolve1).toHaveBeenCalledWith(true);
-    expect(configSetMock).toHaveBeenCalledWith('allowedCommands', ['npm']);
+    expect(configSetMock).toHaveBeenCalledWith('permissions', { allow: ['Bash(npm test:*)'], deny: [] });
 
-    // After "Always", the drain function should auto-approve the next queued "npm ..." command
-    // loadConfig needs to return the updated allowedCommands for the drain
-    loadConfigMock.mockReturnValue({ allowedCommands: ['npm'] });
+    // After "Always", the drain auto-approves the next queued command the rule covers
+    loadConfigMock.mockReturnValue({ permissions: { allow: ['Bash(npm test:*)'] } });
 
     await new Promise(r => setTimeout(r, 100));
 
     // The second permission should have been auto-resolved (drained)
+    expect(resolve2).toHaveBeenCalledWith(true);
+  });
+
+  it('"Always" never persists a bare-verb rule — flags-only commands fall back to a one-time Yes', () => {
+    loadConfigMock.mockReturnValue({ allowedCommands: [] });
+
+    const actions = createMockActions();
+    const resolve1 = vi.fn();
+    firePermission(actions, 'Bash', 'ls -la', resolve1);
+
+    const question = actions.calls.setQuestionState[0][0] as { choices: Array<{ key: string }>; resolve: (answer: string) => void };
+    expect(question.choices.some((c) => c.key === 'a')).toBe(false);
+    expect(question.choices.some((c) => c.key === 'x')).toBe(false);
+
+    question.resolve('y');
+    expect(resolve1).toHaveBeenCalledWith(true);
+    expect(configSetMock).not.toHaveBeenCalledWith('permissions', expect.anything());
+  });
+
+  it('"Yes for session" covers coalesced sibling prompts without persisting to disk', async () => {
+    loadConfigMock.mockReturnValue({ allowedCommands: [] });
+
+    const actions = createMockActions();
+    const resolve1 = vi.fn();
+    const resolve2 = vi.fn();
+
+    firePermission(actions, 'Bash', 'cargo fmt --all', resolve1);
+    firePermission(actions, 'Bash', 'cargo fmt --check', resolve2);
+
+    const firstQuestion = actions.calls.setQuestionState[0][0] as { resolve: (answer: string) => void };
+    firstQuestion.resolve('s');
+
+    expect(resolve1).toHaveBeenCalledWith(true);
+    expect(configSetMock).not.toHaveBeenCalledWith('permissions', expect.anything());
+
+    await new Promise(r => setTimeout(r, 100));
     expect(resolve2).toHaveBeenCalledWith(true);
   });
 

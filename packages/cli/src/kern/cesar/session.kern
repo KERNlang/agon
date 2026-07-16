@@ -5,7 +5,7 @@ import from="node:fs" names="mkdirSync"
 import from="node:url" names="fileURLToPath,pathToFileURL"
 import from="node:module" names="createRequire"
 import from="@kernlang/agon-core" names="PersistentSession,PersistentSessionConfig" types=true
-import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,ensureAgonHome,getAgonHome,resolveWorkingDir,scanProjectContext,buildCodebaseMap,buildKernContextSpine,buildProjectMemoryBlock,createPersistentSession,ToolRegistry,getProjectFileStateCache,buildToolSystemPrompt,toolsToOpenAIFormat,executeToolCall,RUNS_DIR,tracker,discoverMcpServers,mcpDiscoveryFingerprint,mcpServersToWireFormat,listCesarPlans,saveConversation,formatChatContextForPrompt,isReadOnlyCommand,AGON_MODE_NAMES,parsePermissionRuleSet,parseToolHooks,evaluatePermissionRules,evaluateToolRules,PERMISSION_DENIED_MESSAGE,claudeBrainUsesPty"
+import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,ensureAgonHome,getAgonHome,resolveWorkingDir,scanProjectContext,buildCodebaseMap,buildKernContextSpine,buildProjectMemoryBlock,createPersistentSession,ToolRegistry,getProjectFileStateCache,buildToolSystemPrompt,toolsToOpenAIFormat,executeToolCall,RUNS_DIR,tracker,discoverMcpServers,mcpDiscoveryFingerprint,mcpServersToWireFormat,listCesarPlans,saveConversation,formatChatContextForPrompt,isReadOnlyCommand,AGON_MODE_NAMES,parsePermissionRuleSet,parseToolHooks,PERMISSION_DENIED_MESSAGE,claudeBrainUsesPty"
 import from="@kernlang/agon-core" names="ToolContext,ToolCallResult" types=true
 import from="@kernlang/agon-core" names="resolveGuardMode,readGuardModesFromConfig"
 import from="@kernlang/agon-core" names="GuardMode" types=true
@@ -17,7 +17,8 @@ import from="./brain-helpers.js" names="extractDelegation"
 import from="./self-turn-approval.js" names="applyCesarSelfTurnApproval,approvalArgsFromCommand"
 import from="./approval-diff.js" names="approvalToolIsFileMutating,buildApprovalDiffPreview"
 import from="./turn-runtime.js" names="isActiveCesarTurn,runTurnPermissionOnce,runTurnToolOnce"
-import from="./task-execution-lease.js" names="approveTaskAction,authorizeTaskAction,claimTaskActionPrompt,evaluateTaskAction,isTaskFileMutationAction,taskActionApprovalMessage"
+import from="./task-execution-lease.js" names="approveTaskAction,claimTaskActionPrompt,isTaskFileMutationAction,taskActionApprovalMessage,isApprovedPermissionResponse"
+import from="./permission-resolver.js" names="resolvePermissionDecision,authorizeResolvedTaskAction"
 import from="./tool-observability.js" names="recordCesarApprovalDecision,recordCesarToolTimeline,recordCesarConfidence,buildToolErrorDiagnostic"
 import from="./task-controller.js" names="resolveCesarHarnessProfile,isAgenticAutoMode"
 
@@ -880,7 +881,10 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
       const needsLeasePreflight = isTaskFileMutationAction(name)
         || (name === 'Bash' && !isReadOnlyCommand(taskTarget));
       if (lease && needsLeasePreflight) {
-        const authorization = await authorizeTaskAction(lease, name, taskTarget, (evaluation: any) => requestTaskApproval(name, evaluation));
+        const authorization = await authorizeResolvedTaskAction(
+          { tool: name, target: taskTarget, cwd: resolveWorkingDir(), source: 'native', config: ctx.config, lease, sessionAllowList: getSessionAllowList() },
+          (evaluation: any) => requestTaskApproval(name, evaluation),
+        );
         if (authorization.decision !== 'allow') return `DENIED: ${name} was not executed (${authorization.reason}).`;
       }
 
@@ -893,7 +897,10 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
             ? String((args as any).command ?? '')
             : String((args as any).file_path ?? (args as any).path ?? (args as any).task ?? '');
           if (lease) {
-            const authorization = await authorizeTaskAction(lease, tool, target, (evaluation: any) => requestTaskApproval(tool, evaluation));
+            const authorization = await authorizeResolvedTaskAction(
+              { tool, target, cwd: resolveWorkingDir(), source: 'native', config: ctx.config, lease, sessionAllowList: getSessionAllowList() },
+              (evaluation: any) => requestTaskApproval(tool, evaluation),
+            );
             if (authorization.decision === 'deny') return false;
             if (authorization.decision === 'allow') return true;
           }
@@ -994,18 +1001,14 @@ fn name=buildOnApproval params="ctx:HandlerContext, engineId:string" returns="(t
       // Map engine tool names to Agon tool names
       const toolMap: Record<string, string> = { shell: 'Bash', bash: 'Bash', edit: 'Edit', write: 'Write', multiedit: 'MultiEdit', read: 'Read', grep: 'Grep', glob: 'Glob' };
       const agonTool = toolMap[tool.toLowerCase()] ?? tool;
-      const perm = perms[agonTool];
-      // CC-parity allow/deny rules (.agon.json permissions). For Bash the
-      // rule command is the shell command (F2: compound `a && b` is split so a
-      // prefix-allow can't approve an appended `rm -rf /`); for file tools it is
-      // the path argument, resolved absolute + symlink-canonical so `Edit(/etc:*)`
-      // blocks `/etc/passwd` and `../` escapes are caught (F3). A bare tool rule
-      // (Edit/Write) matches any invocation. deny ALWAYS wins.
-      const ruleSet = parsePermissionRuleSet((cfg as any).permissions);
+      // For Bash the resolver target is the shell command (F2: compound
+      // `a && b` is split so a prefix-allow can't approve an appended
+      // `rm -rf /`); for file tools it is the path argument, resolved
+      // absolute + symlink-canonical (F3). Rule evaluation itself happens
+      // inside resolvePermissionDecision.
       const ruleArg = agonTool === 'Bash'
         ? command
         : String((approvalArgsFromCommand(agonTool, command) as any)?.file_path ?? '');
-      const ruleDecision = evaluateToolRules(agonTool, ruleArg, resolveWorkingDir(), ruleSet);
       const turnId = ctx.cesar?.turnId;
       const cwd = resolveWorkingDir();
       const logApproval = (decision: 'approved'|'denied'|'prompted'|'blocked', source: string, reason?: string, args?: Record<string, unknown> | string) => {
@@ -1095,70 +1098,38 @@ fn name=buildOnApproval params="ctx:HandlerContext, engineId:string" returns="(t
         }
       }
 
-      // CC-parity deny rule → refuse without prompting (deny ALWAYS wins).
-      if (ruleDecision === 'deny') {
-        logApproval('denied', 'settings.permissions', `${agonTool} denied by permissions rule`);
-        return `DENIED: ${agonTool}${agonTool === 'Bash' ? ` (${command})` : ''} is blocked by a deny rule in .agon.json permissions. Do not retry this — choose a different approach or ask the user to amend the rule.`;
-      }
-
-      // deny → block immediately
-      if (perm === 'deny' || mode === 'deny-all') {
-        logApproval('denied', perm === 'deny' ? 'settings.toolPermissions' : 'settings.permissionMode', perm === 'deny' ? `${agonTool} denied in settings` : 'permissionMode=deny-all');
+      // Unified permission decision — the ONE seam where hard-deny, CC-parity
+      // rules (deny always wins), the turn's task lease, allow sources, and the
+      // agonPermissionMode policy combine. The retired per-gate mode reads
+      // (deny-all, allow/auto, smart blanket-approve, allowedCommands) all live
+      // inside resolvePermissionDecision now.
+      const taskLease = ctx.cesar?.taskExecutionLease;
+      const taskTarget = agonTool === 'Bash' ? command : ruleArg;
+      const resolution = resolvePermissionDecision({
+        tool: agonTool,
+        target: taskTarget,
+        cwd,
+        source: 'native',
+        config: cfg,
+        lease: taskLease,
+        sessionAllowList: getSessionAllowList(),
+      });
+      if (resolution.decision === 'deny') {
+        logApproval('denied', `resolver.${resolution.stage}`, resolution.reason);
+        if (resolution.stage === 'deny-rule') {
+          return `DENIED: ${agonTool}${agonTool === 'Bash' ? ` (${command})` : ''} is blocked by a deny rule in .agon.json permissions. Do not retry this — choose a different approach or ask the user to amend the rule.`;
+        }
         return false;
       }
-
-      // CC-parity allow rule → auto-approve without prompting.
-      if (ruleDecision === 'allow') {
-        logApproval('approved', 'settings.permissions', `${agonTool} allowed by permissions rule`);
+      if (resolution.decision === 'allow') {
+        logApproval('approved', `resolver.${resolution.stage}`, resolution.reason);
         return true;
-      }
-
-      // One turn-scoped authority decision shared by companion and native
-      // adapters. Routine AUTO work proceeds without keyboard prompts;
-      // important work asks once for the task; dangerous boundaries ask for
-      // the exact action+target unless the user's request already named both.
-      const taskLease = ctx.cesar?.taskExecutionLease;
-      if (taskLease) {
-        const taskTarget = agonTool === 'Bash' ? command : ruleArg;
-        const evaluation = evaluateTaskAction(taskLease, agonTool, taskTarget);
-        if (evaluation.decision === 'deny') {
-          logApproval('denied', 'task-lease', evaluation.reason);
-          return false;
-        }
-        if (evaluation.decision === 'allow') {
-          logApproval('approved', 'task-lease', evaluation.reason);
-          return true;
-        }
-        if (!claimTaskActionPrompt(taskLease, evaluation.signature)) {
-          logApproval('denied', 'task-lease', 'duplicate or previously declined approval boundary');
-          return false;
-        }
-        return new Promise<boolean>((resolve) => {
-          const dispatch = ctx.cesar!.lastDispatch;
-          if (!dispatch) {
-            logApproval('denied', 'task-lease', 'approval required but no prompt surface is available');
-            resolve(false);
-            return;
-          }
-          logApproval('prompted', 'task-lease', evaluation.reason);
-          let permDiffPreview: any = undefined;
-          if (approvalToolIsFileMutating(agonTool)) {
-            try { permDiffPreview = buildApprovalDiffPreview(agonTool, approvalArgsFromCommand(agonTool, command)); }
-            catch { /* diff is best-effort — fall back to command preview */ }
-          }
-          dispatch({ type: 'permission-ask', tool: agonTool, command, reason: taskActionApprovalMessage(evaluation), diffPreview: permDiffPreview && Array.isArray(permDiffPreview.files) ? permDiffPreview : undefined, fallbackNote: permDiffPreview && typeof permDiffPreview.fallback === 'string' ? permDiffPreview.fallback : undefined, resolve: (approved: boolean | string) => {
-            const wasApproved = typeof approved === 'string' ? approved === 'y' || approved === 'a' : !!approved;
-            if (wasApproved) approveTaskAction(taskLease, agonTool, taskTarget);
-            logApproval(wasApproved ? 'approved' : 'denied', 'task-lease', wasApproved ? 'user approved' : 'user denied');
-            resolve(wasApproved);
-          } } as any);
-        });
       }
 
       // Cesar self-turn fast path: bounded edits/writes on files already read
       // in the project cache do not need to interrupt the stream for another
-      // Y/N prompt. This intentionally runs after exploration/plan/confidence
-      // gates and explicit denies, and before the generic ask-mode fallback.
+      // Y/N prompt. Runs only after the resolver said ask, so explicit denies
+      // and read-only modes can never be bypassed by it.
       if (agonTool === 'Edit' || agonTool === 'Write' || agonTool === 'MultiEdit') {
         const approvalCwd = resolveWorkingDir();
         const approvalCache = getProjectFileStateCache(approvalCwd);
@@ -1180,43 +1151,20 @@ fn name=buildOnApproval params="ctx:HandlerContext, engineId:string" returns="(t
         }
       }
 
-      // allow → auto-approve
-      if (perm === 'allow' || mode === 'auto') {
-        logApproval('approved', perm === 'allow' ? 'settings.toolPermissions' : 'settings.permissionMode', perm === 'allow' ? `${agonTool} allowed in settings` : 'permissionMode=auto');
-        return true;
+      // ask → one prompt per lease signature (duplicate/declined boundaries
+      // do not re-prompt), then the same permission UI as Claude Code.
+      if (taskLease && !claimTaskActionPrompt(taskLease, resolution.signature)) {
+        logApproval('denied', 'task-lease', 'duplicate or previously declined approval boundary');
+        return false;
       }
-
-      // smart → auto-approve orchestrator context and session allowlist, ask otherwise
-      if (mode === 'smart') {
-        // Session allowlist check
-        const sessionList = getSessionAllowList();
-        if (agonTool === 'Bash' && sessionList.length > 0) {
-          const cmdLower = command.toLowerCase();
-          const base = command.trim().split(/\s+/)[0];
-          if (sessionList.some((a: string) => cmdLower.startsWith(a.toLowerCase()) || base === a)) {
-            logApproval('approved', 'session-allowlist', 'Bash command matched session allowlist');
-            return true;
-          }
-        }
-        // Cesar tool loop is always orchestrator — auto-approve non-dangerous
-        logApproval('approved', 'settings.smart-orchestrator', 'permissionMode=smart orchestrator context');
-        return true;
-      }
-
-      // For Bash: check allowedCommands whitelist
-      if (agonTool === 'Bash' && allowed.length > 0) {
-        const cmdLower = command.toLowerCase();
-        if (allowed.some((a: string) => cmdLower.startsWith(a.toLowerCase()))) {
-          logApproval('approved', 'settings.allowedCommands', 'Bash command matched allowedCommands');
-          return true;
-        }
-      }
-
-      // ask → show permission prompt (same UI as Claude Code)
+      const boundaryReasons = ['auto_off', 'dangerous_boundary', 'important_task'];
+      const promptReason = boundaryReasons.includes(resolution.reason)
+        ? taskActionApprovalMessage({ decision: resolution.reason === 'important_task' ? 'ask_task_once' : 'ask_boundary_once', signature: resolution.signature, reason: resolution.reason })
+        : `Cesar (${engineId}) wants to execute (${resolution.reason})`;
       return new Promise<boolean>((resolve) => {
         const dispatch = ctx.cesar!.lastDispatch;
         if (dispatch) {
-          logApproval('prompted', 'user-prompt', `Cesar (${engineId}) wants to execute`);
+          logApproval('prompted', 'user-prompt', promptReason);
           // File-mutating tools carry a unified diff (computed from the tool
           // input before execution) so the approval shows the real change.
           let permDiffPreview: any = undefined;
@@ -1224,14 +1172,15 @@ fn name=buildOnApproval params="ctx:HandlerContext, engineId:string" returns="(t
             try { permDiffPreview = buildApprovalDiffPreview(agonTool, approvalArgsFromCommand(agonTool, command)); }
             catch { /* diff is best-effort — fall back to command preview */ }
           }
-          dispatch({ type: 'permission-ask', tool: agonTool, command, reason: `Cesar (${engineId}) wants to execute`, diffPreview: permDiffPreview && Array.isArray(permDiffPreview.files) ? permDiffPreview : undefined, fallbackNote: permDiffPreview && typeof permDiffPreview.fallback === 'string' ? permDiffPreview.fallback : undefined, resolve: (approved: boolean | string) => {
-            const wasApproved = typeof approved === 'string' ? approved === 'y' || approved === 'a' : !!approved;
+          dispatch({ type: 'permission-ask', tool: agonTool, command, reason: promptReason, diffPreview: permDiffPreview && Array.isArray(permDiffPreview.files) ? permDiffPreview : undefined, fallbackNote: permDiffPreview && typeof permDiffPreview.fallback === 'string' ? permDiffPreview.fallback : undefined, resolve: (approved: boolean | string) => {
+            const wasApproved = isApprovedPermissionResponse(approved);
+            if (wasApproved && taskLease) approveTaskAction(taskLease, agonTool, taskTarget);
             logApproval(wasApproved ? 'approved' : 'denied', 'user-prompt', wasApproved ? 'user approved' : 'user denied');
             resolve(wasApproved);
           } } as any);
         } else {
-          logApproval('approved', 'fallback.no-dispatch', 'no dispatch available for approval prompt');
-          resolve(true);
+          logApproval('denied', 'fallback.no-dispatch', 'approval required but no prompt surface is available');
+          resolve(false);
         }
       });
     };

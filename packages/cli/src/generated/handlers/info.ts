@@ -18,13 +18,17 @@ import { EngineRegistry } from '@kernlang/agon-core';
 
 import { deriveRoutingHints, buildRoutingContext } from '../cesar/routing.js';
 
+import { persistPermissionRule, removePermissionRule, getSessionPermissionRules, resolveAgonPermissionMode, describeAgonPermissionMode } from '../cesar/permission-resolver.js';
+
+import { parsePermissionRule } from '@kernlang/agon-core';
+
 import { summarizeAllCesarToolReliability, readCesarDecisionRecords, summarizeCesarLatency } from '../cesar/reliability.js';
 
 import { getLastFoldedRaw, getFoldedRaw, getFoldedRawCount } from '../blocks/narration-fold.js';
 
 // ── Module: InfoHandlers ──
 
-// @kern-source: info:14
+// @kern-source: info:16
 export function handleLeaderboard(dispatch: Dispatch): void {
   const ratings = getRatings();
   dispatch({ type: 'header', title: 'Global Leaderboard' });
@@ -58,7 +62,7 @@ export function handleLeaderboard(dispatch: Dispatch): void {
   }
 }
 
-// @kern-source: info:48
+// @kern-source: info:50
 export function handleCesarReport(dispatch: Dispatch): void {
   // The report renders only the latest 200 decisions. Bound both JSONL
   // tails so a long-lived installation never reparses its entire history.
@@ -227,7 +231,7 @@ export function handleCesarReport(dispatch: Dispatch): void {
   dispatch({ type: 'table', headers: ['Recent Mode', 'Intake', 'Flow', 'Tools', 'Stalls', 'Family', 'Hint', 'Breadth', 'Forge Scope'], rows: recentTail });
 }
 
-// @kern-source: info:217
+// @kern-source: info:219
 export function handleCesarHints(input: string, dispatch: Dispatch, ctx: HandlerContext): void {
   const trimmed = input.trim();
   if (!trimmed) {
@@ -245,7 +249,7 @@ export function handleCesarHints(input: string, dispatch: Dispatch, ctx: Handler
   dispatch({ type: 'text', content: routingCtx });
 }
 
-// @kern-source: info:233
+// @kern-source: info:235
 function showRunDetail(dispatch: Dispatch, id: string): void {
   let files: string[];
   try {
@@ -278,7 +282,7 @@ function showRunDetail(dispatch: Dispatch, id: string): void {
   }
 }
 
-// @kern-source: info:266
+// @kern-source: info:268
 export function handleHistory(dispatch: Dispatch, id?: string): void {
   ensureAgonHome();
 
@@ -321,7 +325,7 @@ export function handleHistory(dispatch: Dispatch, id?: string): void {
   dispatch({ type: 'info', message: 'Use /history <id> for details' });
 }
 
-// @kern-source: info:309
+// @kern-source: info:311
 export async function handleEngines(dispatch: Dispatch, ctx: HandlerContext, intent?: Intent&{type:'engines'}): Promise<void> {
   const action = String((intent as any)?.action ?? '').toLowerCase();
   if (action && action !== 'list') {
@@ -469,7 +473,7 @@ export async function handleEngines(dispatch: Dispatch, ctx: HandlerContext, int
   }
 }
 
-// @kern-source: info:457
+// @kern-source: info:459
 export async function handleDiscover(dispatch: Dispatch, ctx: HandlerContext): Promise<void> {
   dispatch({ type: 'header', title: 'Engine Discovery' });
   dispatch({ type: 'spinner-start', message: 'Scanning installed engines...' });
@@ -498,7 +502,7 @@ export async function handleDiscover(dispatch: Dispatch, ctx: HandlerContext): P
   }
 }
 
-// @kern-source: info:486
+// @kern-source: info:488
 export function handleConfig(intent: Intent&{type:'config'}, dispatch: Dispatch, ctx?: HandlerContext): void {
   ensureAgonHome();
   const action = (intent as any).action ?? 'list';
@@ -561,11 +565,31 @@ export function handleConfig(intent: Intent&{type:'config'}, dispatch: Dispatch,
 }
 
 /**
- * Render the loaded CC-parity allow/deny permission rules, their source scope file, and which scope wins. Mirrors Claude Code's /permissions inspection. deny ALWAYS wins over allow.
+ * Render the loaded CC-parity allow/deny permission rules, their source scope file, and which scope wins — plus session-scoped rules, the legacy allowedCommands compat list, and the active permission mode. /permissions add allow|deny <rule> persists a validated rule; /permissions remove <rule> revokes from every bucket. deny ALWAYS wins over allow.
  */
-// @kern-source: info:548
-export function handlePermissions(dispatch: Dispatch): void {
+// @kern-source: info:550
+export function handlePermissions(dispatch: Dispatch, intent?: any): void {
   ensureAgonHome();
+  const permAction = String(intent?.action ?? '');
+  if (permAction === 'add') {
+    const rule = String(intent?.value ?? '').trim();
+    const kind = String(intent?.key ?? 'allow') === 'deny' ? 'deny' : 'allow';
+    if (!parsePermissionRule(rule)) {
+      dispatch({ type: 'error', message: `Malformed rule: ${rule}. Expected e.g. Bash(git push:*) or Edit(/path/to/file).` });
+      return;
+    }
+    dispatch(persistPermissionRule(kind as any, rule)
+      ? { type: 'success', message: `Persisted ${kind} rule: ${rule}` }
+      : { type: 'info', message: `${kind} rule already present: ${rule}` });
+    return;
+  }
+  if (permAction === 'remove') {
+    const rule = String(intent?.value ?? '').trim();
+    dispatch(removePermissionRule(rule)
+      ? { type: 'success', message: `Removed rule: ${rule}` }
+      : { type: 'warning', message: `Rule not found in any bucket: ${rule}` });
+    return;
+  }
   // Use the resolved active workspace dir, not the raw process cwd, so
   // /permissions inspects the same .agon.json/.agon.local.json scope the
   // approval gate actually loads (workspace switch / subdir invocation safe).
@@ -605,13 +629,24 @@ export function handlePermissions(dispatch: Dispatch): void {
   const effAllow: string[] = Array.isArray(eff.allow) ? eff.allow : [];
   const effDeny: string[] = Array.isArray(eff.deny) ? eff.deny : [];
   if (effAllow.length === 0 && effDeny.length === 0) {
-    dispatch({ type: 'info', message: 'No permission rules configured. Add a "permissions" block with allow/deny arrays to .agon.json, e.g. { "permissions": { "allow": ["Bash(npm test:*)"], "deny": ["Bash(rm:*)"] } }' });
+    dispatch({ type: 'info', message: 'No permission rules configured. Add one with /permissions add allow "Bash(npm test:*)" or a "permissions" block in .agon.json.' });
   } else {
     dispatch({ type: 'text', content: `Effective (all scopes merged): ${effDeny.length} deny, ${effAllow.length} allow. Deny rules take precedence.` });
   }
+  const sessionRules = getSessionPermissionRules();
+  if (sessionRules.length > 0) {
+    dispatch({ type: 'text', content: `Session allow rules (this run only): ${sessionRules.join(', ')}` });
+  }
+  const legacyAllowed: string[] = Array.isArray((cfg as any).allowedCommands) ? (cfg as any).allowedCommands : [];
+  if (legacyAllowed.length > 0) {
+    dispatch({ type: 'text', content: `Legacy allowedCommands (base-token prefixes, still honored): ${legacyAllowed.join(', ')} — upgrade with /permissions add allow "Bash(<cmd> <sub>:*)" then /config set allowedCommands [].` });
+  }
+  const modeInfo = describeAgonPermissionMode(resolveAgonPermissionMode(cfg));
+  dispatch({ type: 'text', content: `Permission mode: ${modeInfo.label} — ${modeInfo.hint}. Shift+Tab or /mode cycles ask → auto-edit → auto.` });
+  dispatch({ type: 'text', content: 'Edit rules with /permissions add allow|deny <rule> and /permissions remove <rule>.' });
 }
 
-// @kern-source: info:597
+// @kern-source: info:630
 export function handleUse(engineIds: string[], dispatch: Dispatch, ctx: HandlerContext, setSessionEngines: (engines:string[]|null)=>void): void {
   if (engineIds.length === 0 || engineIds.length === 1 && engineIds[0] === 'all') {
     setSessionEngines(null);
@@ -646,7 +681,7 @@ export function handleUse(engineIds: string[], dispatch: Dispatch, ctx: HandlerC
   dispatch({ type: 'info', message: 'Saved — persists across sessions. Use /cesar <engine> to change Cesar brain separately.' });
 }
 
-// @kern-source: info:626
+// @kern-source: info:659
 export function handleCesar(engineId: string, dispatch: Dispatch, ctx: HandlerContext): void {
   // Parse: "/cesar claude api" or "/cesar claude cli" or "/cesar claude" or "/cesar"
   const parts = engineId.trim().split(/\s+/);
@@ -723,7 +758,7 @@ export function handleCesar(engineId: string, dispatch: Dispatch, ctx: HandlerCo
 /**
  * Reprint the untouched raw text of a recently narration-folded engine-block. The compact '▸ N reasoning steps folded · /raw' placeholder points here; native scrollback rows cannot expand in place, so /raw re-emits the full original as a fresh block. Bare /raw shows the most recent fold; /raw <n> pages back (1 = most recent) through the last 20. foldedSteps:0 marks it pre-processed so output.kern does not re-fold it.
  */
-// @kern-source: info:700
+// @kern-source: info:733
 export function handleRaw(dispatch: Dispatch, index?: number): void {
   const count = getFoldedRawCount();
   if (count === 0) {
@@ -740,7 +775,7 @@ export function handleRaw(dispatch: Dispatch, index?: number): void {
   dispatch({ type: 'engine-block', engineId: 'raw', color: 244, content: raw, foldedSteps: 0 });
 }
 
-// @kern-source: info:718
+// @kern-source: info:751
 export function handleTokens(dispatch: Dispatch): void {
   const stats = tracker.getStats();
   dispatch({ type: 'header', title: 'Token Usage — This Session' });
@@ -809,7 +844,7 @@ export function handleTokens(dispatch: Dispatch): void {
   dispatch({ type: 'info', message: `${stats.dispatches} dispatches across ${Object.keys(stats.byEngine).length} engines` });
 }
 
-// @kern-source: info:787
+// @kern-source: info:820
 export function handleWorkspace(action: string, dispatch: Dispatch, ctx: HandlerContext, path?: string): void {
   switch (action) {
     case 'add': {
@@ -866,7 +901,7 @@ export function handleWorkspace(action: string, dispatch: Dispatch, ctx: Handler
   }
 }
 
-// @kern-source: info:844
+// @kern-source: info:877
 export function handleChats(dispatch: Dispatch, sessionId?: string): void {
   if (sessionId) {
     const session = loadChatSession(sessionId);
@@ -900,7 +935,7 @@ export function handleChats(dispatch: Dispatch, sessionId?: string): void {
   dispatch({ type: 'table', headers: ['Session', 'Msgs', 'Date', 'First Message'], rows });
 }
 
-// @kern-source: info:878
+// @kern-source: info:911
 export function handleModels(dispatch: Dispatch, ctx: HandlerContext): void {
   dispatch({ type: 'header', title: 'Models & Engines' });
   const config = ctx.config;

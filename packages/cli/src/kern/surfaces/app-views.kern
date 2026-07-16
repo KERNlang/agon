@@ -854,6 +854,7 @@ screen name=BottomChromeSection target=ink memo=true
   prop name=replState type="string"
   prop name=planModeQueued type="boolean"
   prop name=autoModeQueued type="boolean"
+  prop name=permissionMode type="string" optional=true
   prop name=activePlan type="any"
   prop name=slashPickerOpen type="boolean"
   prop name=atPickerOpen type="boolean"
@@ -962,7 +963,7 @@ screen name=BottomChromeSection target=ink memo=true
               onCtrlShortcut={onCtrlShortcut} />
           )}
           <CesarStatusStrip cesarId={cesarId} confidence={cesarConfidence} context={cesarContext} spinner={liveSpinner} engines={liveProgress} jobs={runningJobs} startTime={chatStartTime} streamSnippet={streamSnippet} isActive={isActive} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} activePlan={activePlan} scoreboard={null} rationale={null} uiMotion={uiMotion} interactionActive={interactionActive} />
-          {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} meteredCostUsd={statusStats.meteredCostUsd} hasPlanApiUsage={statusStats.hasPlanApiUsage} hasCliUsage={statusStats.hasCliUsage} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} autoModeQueued={autoModeQueued} isActive={replState !== 'idle'} fullscreenEnabled={fullscreenEnabled} telemetryVitals={telemetryVitals} context={cesarContext} termWidth={termWidth} />}
+          {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} meteredCostUsd={statusStats.meteredCostUsd} hasPlanApiUsage={statusStats.hasPlanApiUsage} hasCliUsage={statusStats.hasCliUsage} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} autoModeQueued={autoModeQueued} permissionMode={permissionMode} isActive={replState !== 'idle'} fullscreenEnabled={fullscreenEnabled} telemetryVitals={telemetryVitals} context={cesarContext} termWidth={termWidth} />}
         </Box>
       );
     >>>

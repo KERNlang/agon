@@ -5,9 +5,9 @@ type name=TaskActionDecision values="allow|ask_task_once|ask_boundary_once|deny"
 type name=TaskHarnessProfile values="legacy|agentic" export=true
 
 fn name=isApprovedPermissionResponse params="value:boolean|string" returns=boolean export=true
-  doc "Normalize the REPL permission UI contract: y approves once, a approves the session, booleans pass through."
+  doc "Normalize the REPL permission UI contract: y approves once, s approves for the session, a persists an allow rule, booleans pass through."
   handler lang="kern"
-    return value="typeof value === 'string' ? value === 'y' || value === 'a' : value === true"
+    return value="typeof value === 'string' ? value === 'y' || value === 'a' || value === 's' : value === true"
 
 interface name=TaskExecutionLease export=true
   field name=input type=string

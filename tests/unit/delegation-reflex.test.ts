@@ -63,12 +63,26 @@ describe('assessDelegationShape — veto-first fan-out detection', () => {
 });
 
 describe('buildDelegationAdvisory', () => {
-  it('renders the advisory for a suggest decision', () => {
+  it('renders the advisory for a suggest decision, using the canonical team-agent action', () => {
     const advisory = buildDelegationAdvisory(assessDelegationShape(listTask));
     expect(advisory).toContain('[DELEGATION SHAPE]');
     expect(advisory).toContain('3 explicit list items');
-    expect(advisory).toContain('SUGGEST:agent-team');
+    // 'team-agent' is the action routing.kern/parseSuggestion actually
+    // recognize (team- prefix + agent) — NOT 'agent-team' (review: kimi).
+    expect(advisory).toContain('SUGGEST:team-agent');
     expect(advisory).toContain('ignore this note');
+  });
+
+  it('plural shared-artifact mentions veto too', () => {
+    const shape = assessDelegationShape(`${listTask}\nCareful: all of them touch the schemas and lockfiles.`);
+    expect(shape.decision).toBe('none');
+    expect(shape.vetoes).toContain('shared-artifact-mention');
+  });
+
+  it('an unrelated far-apart first/then pair does not over-veto', () => {
+    const text = `${listTask}\nThe first item is the most valuable one for users.\nOverall this is not urgent; there is more work coming eventually.`;
+    const shape = assessDelegationShape(text);
+    expect(shape.vetoes).not.toContain('sequential-markers');
   });
 
   it('returns null for a none decision', () => {

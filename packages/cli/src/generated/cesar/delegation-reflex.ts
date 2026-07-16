@@ -9,10 +9,10 @@ export interface DelegationShape {
 }
 
 /**
- * Sequential-dependency markers: ordered work must never be pitched as parallel.
+ * Sequential-dependency markers: ordered work must never be pitched as parallel. The first…then pair is windowed to one sentence-ish span so unrelated mentions across a long prompt don't over-veto (review: kimi).
  */
 // @kern-source: delegation-reflex:17
-export const DELEGATION_SEQUENTIAL_RE: RegExp = /\b(?:then|after (?:that|this|which)|once (?:that|this|it)|depends on|followed by|first\b[\s\S]*\bthen)\b/i;
+export const DELEGATION_SEQUENTIAL_RE: RegExp = /\b(?:then|after (?:that|this|which)|once (?:that|this|it)|depends on|followed by|first\b[^\n.]{0,120}\bthen)\b/i;
 
 /**
  * The user saying the work is small is a hard veto — spawning a team for a typo fix burns money.
@@ -24,7 +24,7 @@ export const DELEGATION_SMALL_RE: RegExp = /\b(?:quick(?:ly)?|just|tiny|small|si
  * Shared-artifact mentions: list-shaped prompts whose items converge on one artifact look parallel but are not.
  */
 // @kern-source: delegation-reflex:23
-export const DELEGATION_SHARED_STATE_RE: RegExp = /\b(?:lockfile|package\.json|package-lock|migration|schema|generated|shared (?:type|module|config|state)|same file)\b/i;
+export const DELEGATION_SHARED_STATE_RE: RegExp = /\b(?:lockfiles?|package\.json|package-lock|migrations?|schemas?|generated|shared (?:types?|modules?|configs?|state)|same files?)\b/i;
 
 /**
  * Explicit list items only (numbered or bulleted lines). Deliberately strict for the first slice: comma-series and 'for each X' phrasings under-trigger rather than over-trigger.
@@ -64,5 +64,5 @@ export function assessDelegationShape(input: string): DelegationShape {
 // @kern-source: delegation-reflex:53
 export function buildDelegationAdvisory(shape: DelegationShape): string | null {
   if (shape.decision !== 'suggest' || shape.items.length < 3) return null;
-  return `[DELEGATION SHAPE] This request contains ${shape.items.length} explicit list items with no sequential or shared-state markers — it MAY decompose into independent parallel subtasks. If, after reading them, you judge them genuinely independent (disjoint files, no ordering), you can offer parallel execution via [SUGGEST:agent-team] (worktree-isolated, user confirms before anything spawns) or background jobs. If they share state or order matters, ignore this note entirely — do not mention it.`;
+  return `[DELEGATION SHAPE] This request contains ${shape.items.length} explicit list items with no sequential or shared-state markers — it MAY decompose into independent parallel subtasks. If, after reading them, you judge them genuinely independent (disjoint files, no ordering), you can offer parallel execution via [SUGGEST:team-agent] (worktree-isolated agent team; the user confirms before anything spawns) or background jobs. If they share state or order matters, ignore this note entirely — do not mention it.`;
 }

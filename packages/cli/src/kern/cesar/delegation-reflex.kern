@@ -14,13 +14,13 @@ interface name=DelegationShape export=true
   field name=reasons type="string[]"
   field name=vetoes type="string[]"
 
-const name=DELEGATION_SEQUENTIAL_RE type=RegExp value={{ /\b(?:then|after (?:that|this|which)|once (?:that|this|it)|depends on|followed by|first\b[\s\S]*\bthen)\b/i }}
-  doc "Sequential-dependency markers: ordered work must never be pitched as parallel."
+const name=DELEGATION_SEQUENTIAL_RE type=RegExp value={{ /\b(?:then|after (?:that|this|which)|once (?:that|this|it)|depends on|followed by|first\b[^\n.]{0,120}\bthen)\b/i }}
+  doc "Sequential-dependency markers: ordered work must never be pitched as parallel. The first…then pair is windowed to one sentence-ish span so unrelated mentions across a long prompt don't over-veto (review: kimi)."
 
 const name=DELEGATION_SMALL_RE type=RegExp value={{ /\b(?:quick(?:ly)?|just|tiny|small|simple|typo|one[- ]liner|minor)\b/i }}
   doc "The user saying the work is small is a hard veto — spawning a team for a typo fix burns money."
 
-const name=DELEGATION_SHARED_STATE_RE type=RegExp value={{ /\b(?:lockfile|package\.json|package-lock|migration|schema|generated|shared (?:type|module|config|state)|same file)\b/i }}
+const name=DELEGATION_SHARED_STATE_RE type=RegExp value={{ /\b(?:lockfiles?|package\.json|package-lock|migrations?|schemas?|generated|shared (?:types?|modules?|configs?|state)|same files?)\b/i }}
   doc "Shared-artifact mentions: list-shaped prompts whose items converge on one artifact look parallel but are not."
 
 const name=DELEGATION_ITEM_RE type=RegExp value={{ /^\s*(?:\d+[.)]\s+|[-*•]\s+)(.+)$/gm }}
@@ -54,5 +54,5 @@ fn name=buildDelegationAdvisory params="shape:DelegationShape" returns="string |
   doc "The in-prompt advisory injected ahead of the user message when the shape suggests fan-out. Deliberately framed as a structural observation Cesar may reject: the model owns the judgment, the existing [SUGGEST:agent-team] → user-confirm flow owns the UX, and nothing spawns without the user saying yes."
   handler <<<
     if (shape.decision !== 'suggest' || shape.items.length < 3) return null;
-    return `[DELEGATION SHAPE] This request contains ${shape.items.length} explicit list items with no sequential or shared-state markers — it MAY decompose into independent parallel subtasks. If, after reading them, you judge them genuinely independent (disjoint files, no ordering), you can offer parallel execution via [SUGGEST:agent-team] (worktree-isolated, user confirms before anything spawns) or background jobs. If they share state or order matters, ignore this note entirely — do not mention it.`;
+    return `[DELEGATION SHAPE] This request contains ${shape.items.length} explicit list items with no sequential or shared-state markers — it MAY decompose into independent parallel subtasks. If, after reading them, you judge them genuinely independent (disjoint files, no ordering), you can offer parallel execution via [SUGGEST:team-agent] (worktree-isolated agent team; the user confirms before anything spawns) or background jobs. If they share state or order matters, ignore this note entirely — do not mention it.`;
   >>>

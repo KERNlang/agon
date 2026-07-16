@@ -315,6 +315,14 @@ config name=AgonConfig
     doc "When true, write compact JSONL permission-decision records for Cesar tool approvals, prompts, and blocks."
   field name=cesarToolTimeline type=boolean default=true
     doc "When true, write compact JSONL per-turn tool timeline records for Cesar tool calls, results, and summaries."
+  field name=cesarGateAutoRun type=boolean default=true
+    doc "When true, the harness executes the discovered verification gate itself at a done-claim whenever the permission posture already allows the command (mode auto, or an allow rule covering it), instead of only nudging the engine to run it."
+  field name=cesarGateAutoRunLimit type=number default=3
+    doc "Maximum harness-side gate executions per turn (headroom for fail → fix → pass). Clamped to [0,10]; 0 disables auto-runs via the limit."
+  field name=cesarGateTimeoutSec type=number default=300
+    doc "Wall-clock budget in seconds for one harness-side gate execution. Capped at 3600."
+  field name=cesarGateOutputTailChars type=number default=2000
+    doc "How many trailing characters of gate output are fed back to the engine when a harness-side gate run fails. Clamped to [200,20000]."
   field name=cesarStreamingXmlTools type=boolean default=true
     doc "When true, interrupt text streaming as soon as a complete XML tool call is parsed so XML fallback tools can execute live instead of waiting for the whole response."
   field name=campfireObserverStrategy type="'lead-first'|'all-respond'" default=lead-first

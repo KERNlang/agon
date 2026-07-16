@@ -404,6 +404,10 @@ Agon uses a Claude-Code-style permission mode, cycled with **Shift+Tab** (or `/m
 
 Permission prompts offer **Yes / Yes for this session / Always / No / Never**. *Always* persists a scoped rule such as `Bash(git push:*)` into `permissions.allow` (never a bare verb); *Never* persists a deny rule. Inspect and edit rules with `/permissions`, `/permissions add allow|deny <rule>`, and `/permissions remove <rule>`. Delegated engine runs (forge, tribunal, agent teams) execute at least at `auto-edit` so multi-engine dispatches don't queue dozens of file-edit prompts — their Bash mutations still prompt once per pattern.
 
+### Self-verifying turns
+
+When Cesar finishes a turn that edited files, Agon doesn't take "done" on faith. If the permission posture already allows the project's verification gate (the `test`/`typecheck` script from `package.json`, or a `fitness:` line in your project brief), **the harness runs the gate itself**: a green run confirms the claim; a red run feeds the real exit code and output tail straight back to Cesar as a continuation so it fixes actual failures — up to `cesarGateAutoRunLimit` runs per turn (default 3), each gated on fresh edits since the last run. Postures that would require consent (e.g. a mutating gate command in `ask` mode with no covering rule) fall back to the previous behavior: a one-time nudge asking Cesar to verify. Tune with `cesarGateAutoRun` (on by default), `cesarGateAutoRunLimit`, `cesarGateTimeoutSec`, and `cesarGateOutputTailChars`.
+
 **Example Session:**
 ```text
 $ agon

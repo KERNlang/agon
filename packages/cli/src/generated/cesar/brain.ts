@@ -50,6 +50,8 @@ import { createTaskExecutionLease, isTaskFileMutationAction, isApprovedPermissio
 
 import { resolveAgonPermissionMode, resolvePermissionDecision, authorizeResolvedTaskAction } from './permission-resolver.js';
 
+import { shouldAutoRunGate, gateAutoRunPermitted, gateAutoRunLimit, gateTimeoutMs, gateOutputTailChars, runDiscoveredGate, buildGateFailureMessage, buildGateSuccessNote } from './gate-runner.js';
+
 import { getSessionAllowList } from '../signals/output.js';
 
 import { resolveCesarHarnessProfile, evaluateAgenticTaskState, buildAgenticProgressSignature, buildAgenticAutoTurnDirective, resolveCesarToolReadOnlyMode, extractAgenticBashCommand, isAgenticMutationOutcome } from './task-controller.js';
@@ -62,7 +64,7 @@ import { consumeCesarPlanControlSignals } from './plan-control-signals.js';
 
 import { hostNowIso, hostWaitForInteractiveChoice } from '../lib/kern-host.js';
 
-// @kern-source: brain:33
+// @kern-source: brain:34
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>, turnAlreadyCommitted?: boolean): Promise<CesarTurnOutcome> {
   // streaming-end commits a real stream OR (when only a speculative preview
   // draft sits on the pane) drops the draft without committing — safe no-op when
@@ -95,7 +97,7 @@ export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input
   return { delegated: false, responded: true, decisionReason: 'delegation-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:60
+// @kern-source: brain:61
 export async function commitTurnAndSuggest(suggestion: {action:string, rest?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}, input: string, response: string, cesarEngineId: string, color: number, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   // streaming-end commits a real stream OR drops a lingering speculative preview
   // draft without committing — safe no-op when there's no entry at all.
@@ -126,10 +128,10 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
   return { delegated: false, responded: true, decisionReason: 'suggestion-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:85
+// @kern-source: brain:86
 export const _noBriefNudged: WeakMap<object, boolean> = new WeakMap<object, boolean>();
 
-// @kern-source: brain:87
+// @kern-source: brain:88
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<CesarTurnOutcome> {
   const abort = new AbortController();
       const _turnStart = Date.now();
@@ -2534,6 +2536,98 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             verificationPassed: _verificationPassed,
             pendingDelegation: !!ctx.cesar!.pendingDelegation,
           });
+          // Harness-side gate runs this turn (self-verifying turns). Counted
+          // separately from _continuations: a green run costs no continuation;
+          // only failure feedback that re-engages the engine consumes a slot.
+          let _gateAutoRuns = 0;
+          let _mutationsAtLastGateRun = -1;
+          const _gateAutoRunEligible = (state: 'asks-user' | 'done' | 'stuck'): boolean => {
+            const g = ctx.cesar?.discoveredGate;
+            if (!g?.command) return false;
+            // Trigger points differ by harness: legacy fires on an explicit
+            // done-claim; agentic fires on the controller's 'verifying' state
+            // (mutations done, answer delivered, gate outstanding — the state
+            // that previously fell through to the generic "you paused" nudge).
+            const triggered = agenticAuto ? _agenticTaskState === 'verifying' : state === 'done';
+            if (!triggered) return false;
+            // Never burn a run re-checking identical work: after the first run,
+            // require NEW successful mutations since the last harness execution.
+            if (_gateAutoRuns > 0 && _successfulMutationCount <= _mutationsAtLastGateRun) return false;
+            return shouldAutoRunGate({
+              gate: g,
+              config,
+              waived: ctx.cesar?.gateWaived === true,
+              alreadyVerified: _verificationPassed,
+              wroteWork: _successfulMutationCount > 0 || _toolsUsed.some((t: string) => isWriteToolName(t)),
+              runsSoFar: _gateAutoRuns,
+              permitted: gateAutoRunPermitted(g.command, _turnCwd, config),
+            });
+          };
+          // Shared engine round-trip for harness-injected [SYSTEM] continuations
+          // (the verify nudge + harness gate-failure feedback). Sends the message,
+          // executes any tool calls the engine emits via the continuation tool
+          // loop, and appends the outcome to `response`. Returns false when the
+          // engine errored — callers break the continuation loop, matching the
+          // previously inlined nudge behavior.
+          const _injectSystemContinuation = async (message: string, spinnerMsg: string): Promise<boolean> => {
+            dispatch({ type: 'spinner-start', message: spinnerMsg, color });
+            let _sysResp = '';
+            try {
+              const _sysGen = session.send({
+                message,
+                signal: abort.signal,
+                controlPlane: _turnRuntime.envelope,
+                toolLoopBaseBudget: cesarFastPath ? fastPathBaseBudget : undefined,
+                toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined,
+              });
+              for await (const _c of _sysGen) {
+                if (abort.signal.aborted) break;
+                if (_c.type === 'text') _sysResp += _c.content;
+                if (_c.type === 'error' && !_sysResp.trim()) { _engineErrored = true; _engineErrorMsg = String(_c.content ?? '').slice(0, 300); }
+                if (_c.type === 'done' || _c.type === 'error') break;
+              }
+            } catch (sysErr) {
+              dispatch({ type: 'spinner-stop' });
+              _engineErrored = true;
+              _engineErrorMsg = sysErr instanceof Error ? sysErr.message : String(sysErr);
+              return false;
+            }
+            dispatch({ type: 'spinner-stop' });
+            if (_engineErrored) return false;
+            const _cleanSys = _sysResp.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+            // If the engine emitted tool calls, re-enter the tool loop so they
+            // actually execute (recordToolUse flips _ranGate/_verification*).
+            // Otherwise append the text (e.g. its explanation of a gate skip).
+            try {
+              const _parsedSys = parseToolCalls(_cleanSys);
+              if (_parsedSys.hasToolCalls && toolRegistry) {
+                const _sysResult = await runToolLoop(
+                  async (nextMessage: string) => {
+                    if (!session.alive || abort.signal.aborted) return '';
+                    _engineErrored = false; _engineErrorMsg = '';
+                    let _nr = '';
+                    const _g2 = session.send({ message: nextMessage, signal: abort.signal, controlPlane: _turnRuntime.envelope, toolLoopBaseBudget: cesarFastPath ? fastPathBaseBudget : undefined, toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined });
+                    for await (const _ch of _g2) {
+                      if (_ch.type === 'text') _nr += _ch.content;
+                      if (_ch.type === 'error' && !_nr.trim()) { _engineErrored = true; _engineErrorMsg = String(_ch.content ?? '').slice(0, 300); }
+                      if (_ch.type === 'done' || _ch.type === 'error') break;
+                    }
+                    return _nr.trim() || (_engineErrorMsg ? `[Engine error: ${_engineErrorMsg}]` : '[No response from engine]');
+                  },
+                  _cleanSys, toolCtx, toolRegistry, _buildContToolLoopOpts(),
+                );
+                response = response + '\n\n' + (_sysResult.finalText?.trim() ?? '');
+                _toolCallTurns += _sysResult.turns ?? 0;
+              } else if (_cleanSys) {
+                dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: _cleanSys });
+                response = response + '\n\n' + _cleanSys;
+              }
+            } catch {
+              if (_cleanSys) { dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: _cleanSys }); response = response + '\n\n' + _cleanSys; }
+            }
+            _prevToolCount = _toolsUsed.length;
+            return true;
+          };
           while (
             _continuations < MAX_CONTINUATIONS
             && session.alive
@@ -2542,6 +2636,39 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           ) {
             const state = _detectTurnState(response, _loopStartToolCount);
             if (state === 'asks-user') break;
+            // ── Self-verifying turn: the harness runs the gate ITSELF ──
+            // Fires on a legacy done-claim or the agentic 'verifying' state, but
+            // ONLY when the unified permission resolver already ALLOWS the gate
+            // command (mode auto, or an Always/session rule covering it). A
+            // resolver 'ask' falls through to the prompt-nudge/generic paths —
+            // this block never prompts and never bypasses a boundary. Green →
+            // the done-claim stands verified. Red → the REAL output tail goes
+            // back to the engine as a [SYSTEM] continuation so it fixes actual
+            // failures instead of being asked to please run the gate.
+            if (_gateAutoRunEligible(state)) {
+              _gateAutoRuns++;
+              _mutationsAtLastGateRun = _successfulMutationCount;
+              const _g = ctx.cesar!.discoveredGate!;
+              dispatch({ type: 'info', message: `Running the verification gate: ${_g.command} (${_gateAutoRuns}/${gateAutoRunLimit(config)})` });
+              dispatch({ type: 'spinner-start', message: `Verifying (${_g.command})…`, color });
+              const _gateRun = await runDiscoveredGate({ command: _g.command, cwd: _turnCwd, timeoutMs: gateTimeoutMs(config), tailChars: gateOutputTailChars(config), signal: abort.signal });
+              dispatch({ type: 'spinner-stop' });
+              if (abort.signal.aborted) break;
+              // Route the result through recordToolUse so every existing verify
+              // flag (_ranGate/_verificationPassed/_verificationFailed), the tool
+              // timeline, and the counters flip exactly as if the engine ran it.
+              recordToolUse('Bash', 'auto', JSON.stringify({ command: _g.command }), _gateRun.ok ? 'done' : 'error');
+              if (_gateRun.ok) {
+                const _note = buildGateSuccessNote(_gateRun, _g.command);
+                dispatch({ type: 'success', message: _note });
+                response = response + '\n\n' + _note;
+                continue; // re-evaluate: agentic reaches its 'verified' terminal; legacy re-hits 'done' with the nudge now satisfied.
+              }
+              _continuations++;
+              dispatch({ type: 'warning', message: `Verification gate failed (exit ${_gateRun.exitCode}${_gateRun.timedOut ? ', timed out' : ''}) — sending the failure back to Cesar (${_continuations}/${MAX_CONTINUATIONS}).` });
+              if (!(await _injectSystemContinuation(buildGateFailureMessage(_gateRun, _g.command), `${cesarEngineId} fixing gate failures…`))) break;
+              continue; // re-evaluate: a new done-claim with fresh mutations re-runs the gate within the limit.
+            }
             if (state === 'done') {
               // Verify-before-done: Cesar claims done. If it made edits but never ran
               // the discovered gate, inject ONE nudge and give it a continuation to
@@ -2553,62 +2680,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 const _gateNudge = `[SYSTEM] You claimed the task is done but never ran the project's verification gate (${_g.command}) this turn. Run it now to confirm the change is green, or tell me in one sentence why it should be skipped.`;
                 _continuations++;
                 dispatch({ type: 'warning', message: `Cesar claimed done without running the gate (${_g.command}) — nudging to verify (${_continuations}/${MAX_CONTINUATIONS}).` });
-                dispatch({ type: 'spinner-start', message: `${cesarEngineId} verifying…`, color });
-                let _gateResp = '';
-                try {
-                  const _gateGen = session.send({
-                    message: _gateNudge,
-                    signal: abort.signal,
-                    controlPlane: _turnRuntime.envelope,
-                    toolLoopBaseBudget: cesarFastPath ? fastPathBaseBudget : undefined,
-                    toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined,
-                  });
-                  for await (const _c of _gateGen) {
-                    if (abort.signal.aborted) break;
-                    if (_c.type === 'text') _gateResp += _c.content;
-                    if (_c.type === 'error' && !_gateResp.trim()) { _engineErrored = true; _engineErrorMsg = String(_c.content ?? '').slice(0, 300); }
-                    if (_c.type === 'done' || _c.type === 'error') break;
-                  }
-                } catch (gateErr) {
-                  dispatch({ type: 'spinner-stop' });
-                  _engineErrored = true;
-                  _engineErrorMsg = gateErr instanceof Error ? gateErr.message : String(gateErr);
-                  break;
-                }
-                dispatch({ type: 'spinner-stop' });
-                if (_engineErrored) break;
-                const _cleanGate = _gateResp.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
-                // If Cesar emitted gate-running tool calls, re-enter the tool loop so
-                // they actually execute (recordToolUse will flip _ranGate). Otherwise
-                // append the text (its explanation of why the gate is skipped).
-                try {
-                  const _parsedGate = parseToolCalls(_cleanGate);
-                  if (_parsedGate.hasToolCalls && toolRegistry) {
-                    const _gateResult = await runToolLoop(
-                      async (message: string) => {
-                        if (!session.alive || abort.signal.aborted) return '';
-                        _engineErrored = false; _engineErrorMsg = '';
-                        let _nr = '';
-                        const _g2 = session.send({ message, signal: abort.signal, controlPlane: _turnRuntime.envelope, toolLoopBaseBudget: cesarFastPath ? fastPathBaseBudget : undefined, toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined });
-                        for await (const _ch of _g2) {
-                          if (_ch.type === 'text') _nr += _ch.content;
-                          if (_ch.type === 'error' && !_nr.trim()) { _engineErrored = true; _engineErrorMsg = String(_ch.content ?? '').slice(0, 300); }
-                          if (_ch.type === 'done' || _ch.type === 'error') break;
-                        }
-                        return _nr.trim() || (_engineErrorMsg ? `[Engine error: ${_engineErrorMsg}]` : '[No response from engine]');
-                      },
-                      _cleanGate, toolCtx, toolRegistry, _buildContToolLoopOpts(),
-                    );
-                    response = response + '\n\n' + (_gateResult.finalText?.trim() ?? '');
-                    _toolCallTurns += _gateResult.turns ?? 0;
-                  } else if (_cleanGate) {
-                    dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: _cleanGate });
-                    response = response + '\n\n' + _cleanGate;
-                  }
-                } catch {
-                  if (_cleanGate) { dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: _cleanGate }); response = response + '\n\n' + _cleanGate; }
-                }
-                _prevToolCount = _toolsUsed.length;
+                if (!(await _injectSystemContinuation(_gateNudge, `${cesarEngineId} verifying…`))) break;
                 // Re-stamp the claim signature AGAINST THE MUTATED response/toolCount.
                 // The nudge handler appended Cesar's reply (its skip-explanation, or the
                 // gate-loop's finalText) to `response` and may have grown _toolsUsed — so

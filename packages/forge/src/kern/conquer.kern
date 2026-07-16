@@ -94,6 +94,21 @@ fn name=summarizeConsultForBuilder params="consult:{ mode: string; verdict: stri
     return `[Cesar consulted ${consult.mode}]${conf} ${body}`;
   >>>
 
+const name=DEFAULT_PROTECTED_PUSH_BRANCHES type="string[]" value={{ ['main', 'master'] }} export=true
+  doc "Branches an unattended conquer --push must never land on. Overridable via config protectedPushBranches."
+
+fn name=isProtectedPushBranch params="branch:string, config?:any" returns=boolean export=true
+  doc "Guard for the unattended --push path (agy review follow-up): a conquer run normally pushes its own isolated conquer/<slug> branch, but if the worktree HEAD ever resolves to a protected branch (builder switched branches, odd isolation state) the push is refused rather than landing an unreviewed build on main. protectedPushBranches (string[]) in config overrides the default ['main','master'] ONLY when non-empty — an empty/absent list means 'use the defaults', never 'protect nothing' (KERN codegen emits optional array fields as [] into DEFAULT_AGON_CONFIG, so an empty-array-disables rule would silently kill the guard for every real loadConfig() caller — 5/6-engine review consensus). Matching is exact after trim, case-insensitive; an empty/unresolvable branch name is protected (fail-closed). Pure — exported for testing."
+  handler <<<
+    const name = String(branch ?? '').trim().toLowerCase();
+    if (!name) return true;
+    const raw = Array.isArray(config?.protectedPushBranches)
+      ? config.protectedPushBranches.map((b: unknown) => String(b).trim().toLowerCase()).filter(Boolean)
+      : [];
+    const configured = raw.length > 0 ? raw : DEFAULT_PROTECTED_PUSH_BRANCHES;
+    return configured.includes(name);
+  >>>
+
 // ── Phase 2/3: the supervisory loop + the done-oracle ───────────────────────
 
 interface name=ConquerCaps

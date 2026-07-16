@@ -382,9 +382,9 @@ agon conquer "..." --push                           # on success, commit + push 
 - **Cesar consults on forks.** When the builder hits a genuine fork it emits `CONQUER_ASK: <question>`; Cesar classifies it and convenes the _cheapest sufficient_ panel — `nero` (quick), `tribunal` (a choice), `brainstorm` (open), `council` (high-stakes) — then feeds back a compact verdict. A normal agent loop re-prompts itself with the same blind spots; conquer brings the whole heterogeneous panel to bear.
 - **A layered done-oracle, not a self-claim.** On `CONQUER_DONE: <claim>` the cheap deterministic layers run first — the `--gate` command (L0), a diff acceptance-drift check that blocks weakened/rewritten existing tests (L1), and an empty-claim guard (L2). Only when those pass does the **evidence-based falsifier** run (L4/L5): a _tool-enabled_ critic clones the working tree into a throwaway sandbox, reads the real code and runs commands to hunt a counterexample, then Cesar **mechanically re-runs** that counterexample in the sandbox and blocks "done" _only_ when it actually reproduces a failure — never on a bare opinion or confidence score. The adversary's findings are surfaced to your merge gate whether or not they blocked. A red gate, a weakened/tampered test, or a _verified_ counterexample blocks "done."
 - **Runs in an isolated worktree.** conquer creates a persistent `conquer/*` branch and worktree from `HEAD`, so the builder never edits your source checkout and uncommitted source changes are not silently included. The final summary prints both locations and the cleanup command.
-- **Stops at a human merge gate.** conquer never auto-merges to main. By default it leaves the isolated branch and worktree for you to review; `--push` commits + pushes that branch, then prints an **engine-written PR title/body** (from the real branch diff) and a **prefilled GitHub PR link** (`…/compare/…?quick_pull=1&title=…&body=…`) — click it, the form is already filled, review + merge. No `gh` CLI or token needed. The done-oracle is irreducible for open-ended work, so the human merge gate is load-bearing — it holds the original product intent no automated layer can reconstruct.
+- **Stops at a human merge gate.** conquer never auto-merges to main. By default it leaves the isolated branch and worktree for you to review; `--push` commits + pushes that branch, then prints an **engine-written PR title/body** (from the real branch diff) and a **prefilled GitHub PR link** (`…/compare/…?quick_pull=1&title=…&body=…`) — click it, the form is already filled, review + merge. No `gh` CLI or token needed. `--push` additionally **refuses protected branches** (`main`/`master` by default; override with `protectedPushBranches` in config) — if the worktree HEAD somehow resolves to one, the work stays committed locally for a human push. The done-oracle is irreducible for open-ended work, so the human merge gate is load-bearing — it holds the original product intent no automated layer can reconstruct.
 
-Also available as interactive `/conquer` in the REPL and `agon call conquer` for external CLIs.
+Also available as interactive `/conquer` in the REPL (with full CLI flag parity: `--max-turns`, `--gate-timeout`, `--max-hours`, `--timeout`) and `agon call conquer` for external CLIs.
 
 ## Interactive REPL
 
@@ -607,6 +607,14 @@ If you want manual control, you can easily override Cesar's routing:
 # Manually switch the active engine for the session
 /cesar agy
 ```
+
+### Delegation reflex
+
+When a prompt is explicitly list-shaped (three or more numbered/bulleted items) with no sequential-dependency, shared-artifact, or small-task markers, Cesar receives a structural note that the work may decompose into parallel subtasks — it can then offer an agent team (worktree-isolated, running under the delegated permission floor). Detection is veto-first and advisory-only: nothing ever spawns without your confirmation, and prose or ordered work never triggers it. Disable with `cesarDelegationReflex false`.
+
+### Experience precedent
+
+Cesar learns from its own history beyond ratings: when your prompt resembles past runs, the matching episodes are injected into the turn as **advisory precedent** — `"fix the CSV parser crash" — mode=forge → codex, succeeded, 4m`. It's framed as evidence, never authority: nothing is shown unless at least `cesarExperienceMinEpisodes` (default 3) past runs clear the similarity gate, matching is purely lexical (no model or sidecar on the hot path), and any failure injects nothing. Disable with `cesarExperience false`; tune with `cesarExperienceMinSimilarity`, `cesarExperienceTopK`, and `cesarExperienceWindow`. Episodes accumulate from run telemetry as you use agon — older records without an intent summary are simply skipped.
 
 ## Configuration
 

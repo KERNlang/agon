@@ -179,6 +179,25 @@ describe('Intent Detection — Slash Commands', () => {
     expect((r as any).maxTurns).toBe(20);
   });
 
+  it('/conquer parses the CLI-parity timing flags out of the task', () => {
+    const r = detectIntent('/conquer add OAuth --gate "npm test" --gate-timeout 900 --max-hours 2.5 --timeout 300');
+    expect(r.type).toBe('conquer');
+    expect((r as any).task).toBe('add OAuth');
+    expect((r as any).gate).toBe('npm test');
+    expect((r as any).gateTimeout).toBe(900);
+    expect((r as any).maxHours).toBe(2.5);
+    expect((r as any).turnTimeout).toBe(300);
+  });
+
+  it('/conquer --gate-timeout does not get swallowed by the --gate or --timeout parsers', () => {
+    const r = detectIntent('/conquer fix parser --gate-timeout 900');
+    expect(r.type).toBe('conquer');
+    expect((r as any).task).toBe('fix parser');
+    expect((r as any).gate).toBeUndefined();
+    expect((r as any).gateTimeout).toBe(900);
+    expect((r as any).turnTimeout).toBeUndefined();
+  });
+
   it('think/council/synthesis/conquer appear in the /help slash list', () => {
     for (const cmd of ['/think', '/council', '/synthesis', '/conquer']) {
       expect(SLASH_COMMANDS.some((c) => c.cmd === cmd)).toBe(true);

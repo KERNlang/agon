@@ -101,13 +101,33 @@ export function summarizeConsultForBuilder(consult: { mode: string; verdict: str
   return `[Cesar consulted ${consult.mode}]${conf} ${body}`;
 }
 
-// @kern-source: conquer:99
+/**
+ * Branches an unattended conquer --push must never land on. Overridable via config protectedPushBranches.
+ */
+// @kern-source: conquer:97
+export const DEFAULT_PROTECTED_PUSH_BRANCHES: string[] = ['main', 'master'];
+
+/**
+ * Guard for the unattended --push path (agy review follow-up): a conquer run normally pushes its own isolated conquer/<slug> branch, but if the worktree HEAD ever resolves to a protected branch (builder switched branches, odd isolation state) the push is refused rather than landing an unreviewed build on main. protectedPushBranches (string[]) in config overrides the default ['main','master'] ONLY when non-empty — an empty/absent list means 'use the defaults', never 'protect nothing' (KERN codegen emits optional array fields as [] into DEFAULT_AGON_CONFIG, so an empty-array-disables rule would silently kill the guard for every real loadConfig() caller — 5/6-engine review consensus). Matching is exact after trim, case-insensitive; an empty/unresolvable branch name is protected (fail-closed). Pure — exported for testing.
+ */
+// @kern-source: conquer:100
+export function isProtectedPushBranch(branch: string, config?: any): boolean {
+  const name = String(branch ?? '').trim().toLowerCase();
+  if (!name) return true;
+  const raw = Array.isArray(config?.protectedPushBranches)
+    ? config.protectedPushBranches.map((b: unknown) => String(b).trim().toLowerCase()).filter(Boolean)
+    : [];
+  const configured = raw.length > 0 ? raw : DEFAULT_PROTECTED_PUSH_BRANCHES;
+  return configured.includes(name);
+}
+
+// @kern-source: conquer:114
 export interface ConquerCaps {
   maxTurns: number;
   maxWallClockMs: number;
 }
 
-// @kern-source: conquer:103
+// @kern-source: conquer:118
 export interface ConquerState {
   turn: number;
   spentUsd: number;
@@ -115,7 +135,7 @@ export interface ConquerState {
   consults: number;
 }
 
-// @kern-source: conquer:109
+// @kern-source: conquer:124
 export interface ConquerTurn {
   n: number;
   engineId: string;
@@ -123,7 +143,7 @@ export interface ConquerTurn {
   detail: string;
 }
 
-// @kern-source: conquer:115
+// @kern-source: conquer:130
 export interface ConquerOptions {
   task: string;
   builderEngine: string;
@@ -140,7 +160,7 @@ export interface ConquerOptions {
   signal?: AbortSignal | undefined;
 }
 
-// @kern-source: conquer:130
+// @kern-source: conquer:145
 export interface ConquerResult {
   ok: boolean;
   task: string;
@@ -157,7 +177,7 @@ export interface ConquerResult {
   observed: string;
 }
 
-// @kern-source: conquer:145
+// @kern-source: conquer:160
 export interface ConquerIsolation {
   repoRoot: string;
   branch: string;
@@ -167,7 +187,7 @@ export interface ConquerIsolation {
 /**
  * Create a persistent named worktree for one Conquer run. It branches from HEAD, so uncommitted source-checkout work remains untouched and is intentionally not copied into the build. The worktree is kept after success/failure for the human merge gate and crash recovery.
  */
-// @kern-source: conquer:150
+// @kern-source: conquer:165
 export function createConquerIsolation(task: string, cwd?: string, runId?: string): ConquerIsolation {
   const sourceCwd = cwd ?? resolveWorkingDir();
   const root = repoRoot(sourceCwd);
@@ -178,7 +198,7 @@ export function createConquerIsolation(task: string, cwd?: string, runId?: strin
   return { repoRoot: root, branch, path: worktree.path };
 }
 
-// @kern-source: conquer:162
+// @kern-source: conquer:177
 export interface DoneOracleInput {
   gateOk: boolean;
   oracleTampered: boolean;
@@ -190,7 +210,7 @@ export interface DoneOracleInput {
 /**
  * Pure cap check: the run stops when it has used maxTurns or exceeded maxWallClockMs (0 = no wall-clock cap). Budget-USD is intentionally NOT enforced here — DispatchResult carries token usage, not price, so spend is best-effort until a cost-bearing result exists. Pure — exported for testing.
  */
-// @kern-source: conquer:169
+// @kern-source: conquer:184
 export function capBreached(state: ConquerState, caps: ConquerCaps, nowMs: number): '' | 'cap-turns' | 'cap-time' {
   if (state.turn >= caps.maxTurns) return 'cap-turns';
   if (caps.maxWallClockMs > 0 && (nowMs - state.startedAtMs) >= caps.maxWallClockMs) return 'cap-time';
@@ -200,7 +220,7 @@ export function capBreached(state: ConquerState, caps: ConquerCaps, nowMs: numbe
 /**
  * Parse a builder turn for the conquer sentinels: a line starting CONQUER_DONE claims completion (the rest of that line is the disprovable claim for the done-oracle); a line `CONQUER_ASK: <question>` is a fork to resolve. Pure — exported for testing.
  */
-// @kern-source: conquer:177
+// @kern-source: conquer:192
 export function parseBuilderSignals(turnText: string): { claimedDone: boolean; ask: string | null; claim: string } {
   const lines = turnText.split('\n');
   let claimedDone = false;
@@ -223,7 +243,7 @@ export function parseBuilderSignals(turnText: string): { claimedDone: boolean; a
 /**
  * Heuristically classify a builder ASK into a fork kind so pickEscalationMode can route it: high-stakes cues (irreversible/schema/security/architecture) -> high-stakes; >=2 enumerated options -> choice; open 'how/where do I' phrasing -> ideation; else approach-doubt. Pure — exported for testing.
  */
-// @kern-source: conquer:198
+// @kern-source: conquer:213
 export function classifyAsk(ask: string): { kind: 'approach-doubt' | 'choice' | 'ideation' | 'high-stakes'; optionCount: number } {
   const lower = ask.toLowerCase();
   const optMatches = ask.match(/(?:^|\s)(?:\d+[.)]|[a-d][.)]|\bor\b)/gi);
@@ -237,7 +257,7 @@ export function classifyAsk(ask: string): { kind: 'approach-doubt' | 'choice' | 
 /**
  * The protocol Cesar gives the builder: work autonomously in this repo toward the task; when you hit a genuine fork you cannot resolve, emit a single line `CONQUER_ASK: <question + options>` and STOP for guidance; when finished and the project's tests pass, emit `CONQUER_DONE: <one disprovable claim about what now works>`. Pure — exported for testing.
  */
-// @kern-source: conquer:210
+// @kern-source: conquer:225
 export function buildConquerSystemPrompt(): string {
   return [
     'You are an autonomous build agent supervised by Cesar (you do NOT talk to a human directly).',
@@ -253,7 +273,7 @@ export function buildConquerSystemPrompt(): string {
 /**
  * Build a bounded supervisor envelope for every builder turn. The original task is repeated verbatim on every dispatch, while only recent state and a capped previous output are carried forward so a long run neither loses its objective nor grows prompt context without bound.
  */
-// @kern-source: conquer:224
+// @kern-source: conquer:239
 export function buildConquerTurnPrompt(opts: {task:string, turn:number, kernSpine?:string, previousOutput?:string, instruction:string, transcript?:string[]}): string {
   const recentState = (opts.transcript ?? []).slice(-6).join('\n') || '(first turn)';
   const previous = String(opts.previousOutput ?? '');
@@ -276,7 +296,7 @@ export function buildConquerTurnPrompt(opts: {task:string, turn:number, kernSpin
 /**
  * Convene the chosen agon mode on a builder fork/stuck (or as the done-oracle's nero falsification round) and normalize its output to { verdict text, confidence, flawed }. Reuses runNero/runTribunal/runBrainstorm/runCouncil. `flawed` is true only for a nero verdict of 'flawed' (a found counterexample). Defensive field access survives result-shape drift.
  */
-// @kern-source: conquer:245
+// @kern-source: conquer:260
 export async function dispatchConsult(opts: { mode: 'nero' | 'tribunal' | 'brainstorm' | 'council'; question: string; engines: string[]; registry: EngineRegistry; adapter: EngineAdapter; timeout: number; outputDir: string; cwd?: string; signal?: AbortSignal }): Promise<{ mode: string; verdict: string; confidence: number | null; flawed: boolean }> {
   const base: any = { engines: opts.engines, registry: opts.registry, adapter: opts.adapter, timeout: opts.timeout, outputDir: opts.outputDir, cwd: opts.cwd, signal: opts.signal };
   let r: any;
@@ -303,7 +323,7 @@ export async function dispatchConsult(opts: { mode: 'nero' | 'tribunal' | 'brain
 /**
  * Mechanical, layered done decision (the design's L0/L1/L2/L5). A tampered frozen oracle, weakened existing tests, a red gate, an empty claim, or a reproducible nero counterexample each BLOCK; otherwise the work passes the AUTOMATED bar and proceeds to the human merge gate (L6). Pure — exported for testing. Gate execution + diff classification + nero are done outside and passed in.
  */
-// @kern-source: conquer:270
+// @kern-source: conquer:285
 export function doneOracleDecision(i: DoneOracleInput): { passed: boolean; reason: string } {
   if (i.oracleTampered) return { passed: false, reason: 'L0: the frozen baseline oracle was modified' };
   if (i.weakenedTests) return { passed: false, reason: 'L1: existing tests were weakened or rewritten (acceptance drift)' };
@@ -313,14 +333,14 @@ export function doneOracleDecision(i: DoneOracleInput): { passed: boolean; reaso
   return { passed: true, reason: 'L0–L5 clean — ready for the human merge gate' };
 }
 
-// @kern-source: conquer:287
+// @kern-source: conquer:302
 export interface SandboxOps {
   clone: (src: string, dest: string, signal?: AbortSignal) => Promise<boolean>;
   exec: (cmd: string, cwd: string, timeoutMs: number, signal?: AbortSignal) => Promise<{ exitCode: number; stdout: string; stderr: string; timedOut: boolean }>;
   remove: (dir: string) => Promise<void>;
 }
 
-// @kern-source: conquer:295
+// @kern-source: conquer:310
 export interface FalsifierResult {
   falsified: boolean;
   counterexample: string | null;
@@ -334,7 +354,7 @@ export interface FalsifierResult {
 /**
  * True when an engine can act as a TOOL-ENABLED agent critic in the done-falsifier — i.e. it has a real CLI binary that supports agent mode (codex/claude/agy/aider). API-only coding-plan engines (kimi/minimax/zai) have no binary and no agent-mode config, so they cannot reliably read code + run commands in the sandbox; the falsifier skips them and falls back to advisory. Pure — exported for testing. (FOLLOW-UP: an explicit `agentCapable` flag on EngineDefinition would beat this structural inference.)
  */
-// @kern-source: conquer:304
+// @kern-source: conquer:319
 export function isAgentCapableEngine(engine: { binary?: string; agent?: unknown; modes?: readonly string[] }): boolean {
   if (!engine || !engine.binary) return false;
   if (engine.agent) return true;
@@ -344,7 +364,7 @@ export function isAgentCapableEngine(engine: { binary?: string; agent?: unknown;
 /**
  * Build the tool-enabled falsifier prompt. Unlike the tool-LESS nero prompt, it grants full sandbox tool access and DEMANDS a self-asserting, re-runnable counterexample (exit non-zero iff the bug is present) so the verdict can be mechanically verified rather than trusted. Pure — exported for testing.
  */
-// @kern-source: conquer:312
+// @kern-source: conquer:327
 export function buildFalsifierPrompt(opts: { claim:string; gate?:string }): string {
   const lines: string[] = [];
   lines.push('You are a falsification critic with FULL tool access to this repository — a disposable sandbox copy. You may read any file and run any shell command.');
@@ -371,7 +391,7 @@ export function buildFalsifierPrompt(opts: { claim:string; gate?:string }): stri
 /**
  * Parse a done-falsifier reply: the LAST COUNTEREXAMPLE: line (the runnable command), the LAST OBSERVED: line, and the verdict (via parseNeroVerdict — last VERDICT: marker wins). Tolerant of casing + surrounding whitespace. Pure — exported for testing.
  */
-// @kern-source: conquer:337
+// @kern-source: conquer:352
 export function parseFalsifierOutput(text: string): { counterexample: string | null; observed: string | null; verdict: 'flawed' | 'proceed-with-caution' | 'sound' | 'unknown' } {
   const ceMatches = [...text.matchAll(/^[ \t]*COUNTEREXAMPLE:[ \t]*(.+?)[ \t]*$/gim)];
   const obMatches = [...text.matchAll(/^[ \t]*OBSERVED:[ \t]*(.+?)[ \t]*$/gim)];
@@ -383,7 +403,7 @@ export function parseFalsifierOutput(text: string): { counterexample: string | n
 /**
  * Defence-in-depth gate on the LLM-proposed counterexample before AUTO-EXECUTING it (codex/minimax review, blocking). Even inside the CoW sandbox, `sh -c` would otherwise let a confused/hallucinating critic escape to the wider filesystem or network. Rejects the catastrophic patterns a legitimate self-asserting behavioural check NEVER needs — privilege escalation, recursive force-deletes, fork bombs, device/disk clobber, host control, network/exfil tools, recursive perm changes, remote git mutation, and write-redirects into absolute system dirs. A rejected counterexample is NOT executed → treated as advisory (surfaced to the human), erring safe. Pairs with HOME/TMPDIR confinement + the CoW sandbox + the gate-green precondition. Returns true = safe to run. Pure — exported for testing. (FOLLOW-UP: real OS/container confinement — sandbox-exec/bwrap with denied network — for untrusted tasks; this denylist + env-confinement is the v1 floor.)
  */
-// @kern-source: conquer:347
+// @kern-source: conquer:362
 export function isSafeCounterexample(cmd: string): boolean {
   const c = cmd.toLowerCase();
   const danger: RegExp[] = [
@@ -403,7 +423,7 @@ export function isSafeCounterexample(cmd: string): boolean {
 /**
  * The L4/L5 done-oracle: an EVIDENCE-BASED, mechanically-verified falsifier. (1) Pick the top-rated AGENT-CAPABLE critic from the advisor pool via the same critique->tribunal->global cascade nero uses, skipping API-only engines that can't read code/run commands (advisory fallback if none). (2) Clone the live working tree into a throwaway CoW sandbox. (3) Dispatch the critic in AGENT mode against the sandbox to find a runnable counterexample. (4) MECHANICALLY re-run the proposed COUNTEREXAMPLE in the sandbox — `falsified` is true ONLY when the verdict is FLAWED with a counterexample, the command passes the isSafeCounterexample auto-exec gate, AND the re-run reproduces a failure (non-zero exit). An opinion with no reproducible command NEVER blocks. The full attack text is returned as advisory for the human merge gate. SECURITY: auto-exec runs ONLY inside the disposable sandbox with HOME/TMPDIR confined to it, never the live tree; the command is denylist-screened; time-bounded + abort-aware; ANY unexpected error fails SAFE to advisory (never blocks, never crashes the conquer loop). (FOLLOW-UP: real OS/container confinement with denied network for untrusted tasks; non-APFS sandbox strategy.) Sandbox + exec injected (SandboxOps) for unit-testing.
  */
-// @kern-source: conquer:365
+// @kern-source: conquer:380
 export async function runDoneFalsifier(opts: { claim:string; gate?:string; cwd:string; engines:string[]; registry:EngineRegistry; adapter:EngineAdapter; timeout:number; outputDir:string; ratings?:RatingRecord; signal?:AbortSignal; sandbox?:SandboxOps }): Promise<FalsifierResult> {
   const advisory = (over: Partial<FalsifierResult>): FalsifierResult => ({ falsified: false, counterexample: null, observed: null, attackText: '', critic: '', advisoryOnly: true, note: '', ...over });
   if (opts.signal?.aborted) return advisory({ note: 'aborted before falsification' });
@@ -518,7 +538,7 @@ export async function runDoneFalsifier(opts: { claim:string; gate?:string; cwd:s
 /**
  * Run the conquer done-oracle for a completion claim. CHEAP DETERMINISTIC LAYERS FIRST (L0/L1/L2): a tampered oracle, weakened existing tests, a red gate, or an empty claim each block immediately — WITHOUT cloning the repo or dispatching an agent (so a premature CONQUER_DONE never burns a full falsifier run). Only when those pass does the L4/L5 EVIDENCE-BASED falsifier run (a tool-enabled agent critic tries to reproduce a runnable counterexample in a throwaway sandbox; blocks ONLY on a mechanically-verified failure — never on a bare opinion). gateOk + oracleTampered are computed by the caller in the worktree. Returns `falsified` (was the block a verified reproduction?) plus the falsifier's attack text + counterexample for the human merge gate, whether or not they blocked.
  */
-// @kern-source: conquer:478
+// @kern-source: conquer:493
 export async function runDoneOracle(opts: { claim: string; diff: string; gate?: string; gateOk: boolean; oracleTampered: boolean; engines: string[]; registry: EngineRegistry; adapter: EngineAdapter; timeout: number; outputDir: string; cwd: string; ratings?: RatingRecord; signal?: AbortSignal; sandbox?: SandboxOps }): Promise<{ passed: boolean; reason: string; falsified: boolean; attackText: string; counterexample: string | null; observed: string | null; critic: string; advisoryOnly: boolean }> {
   const changed = parseChangedLines(opts.diff);
   const newSet = new Set(newFilesInDiff(opts.diff));
@@ -547,7 +567,7 @@ export async function runDoneOracle(opts: { claim: string; diff: string; gate?: 
 /**
  * The supervised-autonomous build loop. Drives the builder engine in agent mode turn-by-turn; on a CONQUER_ASK fork, classifies it and convenes the cheapest sufficient consult (nero→tribunal→brainstorm→council), feeding back a compact verdict; on a CONQUER_DONE claim, runs the done-oracle via the injected evaluateDone seam (the caller computes diff/gate/oracle in the worktree). Stops on done, a turn/wall-clock cap, abort, or builder failure. Auto-approve + worktree isolation + the human merge gate live in the CLI surface. Composes the injected adapter + the agon mode runners; no environment ops here (kept testable).
  */
-// @kern-source: conquer:505
+// @kern-source: conquer:520
 export async function runConquer(opts: ConquerOptions): Promise<ConquerResult> {
   const cwd = opts.cwd ?? resolveWorkingDir();
   const caps = opts.caps ?? { maxTurns: 40, maxWallClockMs: 0 };

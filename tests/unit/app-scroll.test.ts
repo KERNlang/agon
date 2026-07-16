@@ -170,7 +170,10 @@ describe('app scroll helpers', () => {
     expect(normalizeTerminalMode('fullscreen')).toBe('fullscreen');
     expect(resolveTerminalMode('native', {}, true)).toBe('native');
     expect(resolveTerminalMode('fullscreen', { ZELLIJ: '1' }, false)).toBe('fullscreen');
-    expect(resolveTerminalMode('auto', {}, true)).toBe('fullscreen');
+    // Auto is NATIVE: real scrollback + pinned composer (the Codex/Claude-Code
+    // mix). Fullscreen is opt-in only — an auto→fullscreen default shipped once
+    // and broke scroll-up for every user (2026-07-16).
+    expect(resolveTerminalMode('auto', {}, true)).toBe('native');
     expect(resolveTerminalMode('auto', { ZELLIJ: '1' }, true)).toBe('native');
     expect(resolveTerminalMode('auto', { TERM: 'dumb' }, true)).toBe('native');
     expect(resolveTerminalMode('auto', { AGON_NO_ALT_SCREEN: '1' }, true)).toBe('native');
@@ -399,7 +402,9 @@ describe('app scroll helpers', () => {
     }] satisfies OutputBlock[];
     const sizes = [[120, 36], [48, 16], [90, 28], [40, 12]] as const;
     const frames = sizes.map(([termWidth, termHeight]) => buildTerminalReplaySnapshot(blocks, {
-      terminalMode: 'auto',
+      // Fullscreen is opt-in only (auto resolves to native) — this test
+      // exercises the fullscreen viewport budgets, so request it explicitly.
+      terminalMode: 'fullscreen',
       env: {},
       isTTY: true,
       mode: 'chat',

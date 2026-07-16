@@ -32,18 +32,11 @@ module name=AppTerminal
     >>>
 
   fn name=resolveTerminalMode params="value:unknown,env?:Record<string,string|undefined>,isTTY?:boolean" returns="'native'|'fullscreen'" export=true
-    doc "Resolve auto terminal policy deterministically. Explicit modes win; auto avoids alternate-screen rendering where scrollback or terminal capability would be harmed."
+    doc "Resolve the terminal policy deterministically. Explicit modes win. Auto is NATIVE: the Static-sealed transcript lives in real terminal scrollback with the composer/status pinned at the bottom (the Claude-Code/Codex mix). Fullscreen (alternate screen) kills terminal scrollback, so it is strictly opt-in via `agon config terminalMode fullscreen` — never a default (regression 2026-07-16: auto→fullscreen shipped and broke scroll-up for every user)."
     handler <<<
       const configured = normalizeTerminalMode(value);
       if (configured === 'native' || configured === 'fullscreen') return configured;
-      const runtimeEnv = env ?? process.env;
-      const runtimeIsTTY = isTTY ?? Boolean(process.stdout.isTTY);
-      const truthy = (raw: unknown) => ['1', 'true', 'yes', 'on'].includes(String(raw ?? '').trim().toLowerCase());
-      if (!runtimeIsTTY) return 'native';
-      if (truthy(runtimeEnv?.AGON_NO_ALT_SCREEN) || truthy(runtimeEnv?.CI)) return 'native';
-      if (String(runtimeEnv?.TERM ?? '').trim().toLowerCase() === 'dumb') return 'native';
-      if (String(runtimeEnv?.ZELLIJ ?? '').trim() || String(runtimeEnv?.ZELLIJ_SESSION_NAME ?? '').trim()) return 'native';
-      return 'fullscreen';
+      return 'native';
     >>>
 
   fn name=normalizeTerminalSize params="columns:unknown,rows:unknown" returns="{width:number,height:number}" export=true

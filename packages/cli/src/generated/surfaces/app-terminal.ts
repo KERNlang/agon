@@ -45,33 +45,26 @@ export function normalizeTerminalMode(value: unknown): 'auto'|'native'|'fullscre
 }
 
 /**
- * Resolve auto terminal policy deterministically. Explicit modes win; auto avoids alternate-screen rendering where scrollback or terminal capability would be harmed.
+ * Resolve the terminal policy deterministically. Explicit modes win. Auto is NATIVE: the Static-sealed transcript lives in real terminal scrollback with the composer/status pinned at the bottom (the Claude-Code/Codex mix). Fullscreen (alternate screen) kills terminal scrollback, so it is strictly opt-in via `agon config terminalMode fullscreen` — never a default (regression 2026-07-16: auto→fullscreen shipped and broke scroll-up for every user).
  */
 // @kern-source: app-terminal:34
 export function resolveTerminalMode(value: unknown, env?: Record<string,string|undefined>, isTTY?: boolean): 'native'|'fullscreen' {
   const configured = normalizeTerminalMode(value);
   if (configured === 'native' || configured === 'fullscreen') return configured;
-  const runtimeEnv = env ?? process.env;
-  const runtimeIsTTY = isTTY ?? Boolean(process.stdout.isTTY);
-  const truthy = (raw: unknown) => ['1', 'true', 'yes', 'on'].includes(String(raw ?? '').trim().toLowerCase());
-  if (!runtimeIsTTY) return 'native';
-  if (truthy(runtimeEnv?.AGON_NO_ALT_SCREEN) || truthy(runtimeEnv?.CI)) return 'native';
-  if (String(runtimeEnv?.TERM ?? '').trim().toLowerCase() === 'dumb') return 'native';
-  if (String(runtimeEnv?.ZELLIJ ?? '').trim() || String(runtimeEnv?.ZELLIJ_SESSION_NAME ?? '').trim()) return 'native';
-  return 'fullscreen';
+  return 'native';
 }
 
 /**
  * Clamp a terminal resize into one atomic viewport value so width and height never render as mismatched frames.
  */
-// @kern-source: app-terminal:49
+// @kern-source: app-terminal:42
 export function normalizeTerminalSize(columns: unknown, rows: unknown): {width:number,height:number} {
   const width = Math.max(40, Math.floor(Number(columns) || 100));
   const height = Math.max(8, Math.floor(Number(rows) || 24));
   return { width, height };
 }
 
-// @kern-source: app-terminal:57
+// @kern-source: app-terminal:50
 export function fileRailWidthForTerminal(termWidth: number, expanded: boolean): number {
   const safeWidth = Math.max(40, Math.floor((Number(termWidth) || 100)));
   if (expanded) {
@@ -80,7 +73,7 @@ export function fileRailWidthForTerminal(termWidth: number, expanded: boolean): 
   return Math.max(28, Math.min(42, Math.floor((safeWidth * 0.22))));
 }
 
-// @kern-source: app-terminal:64
+// @kern-source: app-terminal:57
 export function fileRailMaxRowsForTerminal(termHeight: number, terminalMode: string, expanded: boolean): number {
   const safeHeight = Math.max(8, Math.floor((Number(termHeight) || 24)));
   if (terminalMode === 'native') {
@@ -98,7 +91,7 @@ export function fileRailMaxRowsForTerminal(termHeight: number, terminalMode: str
 /**
  * Pure terminal replay harness: summarizes the layout-sensitive parts of the REPL for fixed viewport sizes so unit tests can catch native/fullscreen regressions without launching an interactive TTY.
  */
-// @kern-source: app-terminal:75
+// @kern-source: app-terminal:68
 export function buildTerminalReplaySnapshot(blocks: OutputBlock[], opts: any): {terminalMode:'native'|'fullscreen'; mode:string; termWidth:number; termHeight:number; visibleBudget:number; transcriptRowCount:number; staticBlockCount:number; liveBlockCount:number; fileRailWidth:number; fileRailRows:number; headerRows:number; lowerChromeRows:number} {
   const terminalMode = resolveTerminalMode(opts?.terminalMode, opts?.env ?? {}, opts?.isTTY ?? true);
   const mode = String(opts?.mode ?? 'chat');

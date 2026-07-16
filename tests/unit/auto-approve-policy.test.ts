@@ -253,5 +253,21 @@ describe('applyAutoApprovePolicy', () => {
       const lease = createTaskExecutionLease('update the renderer', true, '/repo', undefined, 'agentic');
       expect(applyAgenticAutoApprovePolicy(plan, cfg({ cesarAutoApproveMode: 'off' }), lease).approve).toBe(false);
     });
+
+    it('does not treat prose descriptions as shell commands', () => {
+      const plan = makePlan([
+        makeStep('state', 'self', { description: 'Push the selected items into component state and re-render' }),
+      ], { autoApprove: true });
+      const lease = createTaskExecutionLease('update the picker state handling', true, '/repo', undefined, 'agentic');
+      expect(applyAgenticAutoApprovePolicy(plan, cfg(), lease).approve).toBe(true);
+    });
+
+    it('still fences real commands in fitness and verify fields', () => {
+      const plan = makePlan([
+        makeStep('escape', 'self', { description: 'Snapshot the config', verifyCmd: 'cp config.json ../backup/config.json' }),
+      ], { autoApprove: true });
+      const lease = createTaskExecutionLease('snapshot the config', true, '/repo', undefined, 'agentic');
+      expect(applyAgenticAutoApprovePolicy(plan, cfg(), lease).approve).toBe(false);
+    });
   });
 });

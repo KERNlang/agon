@@ -128,4 +128,14 @@ describe('agentic Cesar task controller', () => {
     expect(isAgenticMutationOutcome('Write', '{"file_path":"src/a.ts"}', 'failed')).toBe(false);
     expect(extractAgenticBashCommand('{"command":"git status"}')).toBe('git status');
   });
+
+  it('terminates a prose-only answer after one quiet continuation instead of blocking', () => {
+    const proseAnswer = { ...baseSnapshot, answerDelivered: true };
+    expect(evaluateAgenticTaskState({ ...proseAnswer, noProgressCycles: 0 }))
+      .toMatchObject({ state: 'running', continueWork: true, terminal: false });
+    expect(evaluateAgenticTaskState({ ...proseAnswer, noProgressCycles: 1 }))
+      .toMatchObject({ state: 'verified', continueWork: false, terminal: true, reason: 'answer_delivered_without_tools' });
+    expect(evaluateAgenticTaskState({ ...baseSnapshot, noProgressCycles: 3 }))
+      .toMatchObject({ state: 'blocked', terminal: true, reason: 'no_progress' });
+  });
 });

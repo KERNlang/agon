@@ -92,6 +92,11 @@ fn name=evaluateAgenticTaskState params="snapshot:AgenticTaskSnapshot" returns=A
       return { state: 'verified', continueWork: false, terminal: true, reason: snapshot.verificationRequired ? 'mutation_verified' : 'mutation_completed_no_gate' };
     }
 
+    if (snapshot.answerDelivered && !snapshot.toolActivity && (snapshot.noProgressCycles ?? 0) >= 1) {
+      // A prose-only answer that survives one continuation nudge without new
+      // work is a delivered answer, not a stall — don't spin it into 'blocked'.
+      return { state: 'verified', continueWork: false, terminal: true, reason: 'answer_delivered_without_tools' };
+    }
     if ((snapshot.noProgressCycles ?? 0) >= 3) {
       return { state: 'blocked', continueWork: false, terminal: true, reason: 'no_progress' };
     }

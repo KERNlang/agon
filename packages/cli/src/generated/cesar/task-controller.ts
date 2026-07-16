@@ -115,6 +115,11 @@ export function evaluateAgenticTaskState(snapshot: AgenticTaskSnapshot): Agentic
     return { state: 'verified', continueWork: false, terminal: true, reason: snapshot.verificationRequired ? 'mutation_verified' : 'mutation_completed_no_gate' };
   }
 
+  if (snapshot.answerDelivered && !snapshot.toolActivity && (snapshot.noProgressCycles ?? 0) >= 1) {
+    // A prose-only answer that survives one continuation nudge without new
+    // work is a delivered answer, not a stall — don't spin it into 'blocked'.
+    return { state: 'verified', continueWork: false, terminal: true, reason: 'answer_delivered_without_tools' };
+  }
   if ((snapshot.noProgressCycles ?? 0) >= 3) {
     return { state: 'blocked', continueWork: false, terminal: true, reason: 'no_progress' };
   }
@@ -127,7 +132,7 @@ export function evaluateAgenticTaskState(snapshot: AgenticTaskSnapshot): Agentic
 /**
  * Progress identity deliberately excludes prose length: changing narration is not progress. Tool outcomes, mutations, TODO transitions, verification, and delegation are.
  */
-// @kern-source: task-controller:104
+// @kern-source: task-controller:109
 export function buildAgenticProgressSignature(parts: {toolEventCount:number,successfulMutations:number,failedTools:number,todoRevision:number,verificationPassed:boolean,pendingDelegation:boolean}): string {
   return [
     parts.toolEventCount,
@@ -142,7 +147,7 @@ export function buildAgenticProgressSignature(parts: {toolEventCount:number,succ
 /**
  * Per-turn ownership overlay for agentic AUTO. Kept concise because the deterministic controller and tool lease enforce the mechanics.
  */
-// @kern-source: task-controller:117
+// @kern-source: task-controller:122
 export function buildAgenticAutoTurnDirective(input: string): string {
   return ['[AGENTIC AUTO — TASK OWNERSHIP]', 'Own the latest user objective until it is verified, genuinely blocked on missing user information/authority, interrupted, or safely checkpointed for a real resource limit.', '- Act directly: inspect only what is needed, edit routine workspace files, run the narrowest useful verification, fix failures, and continue. Do not stop after narration, a confidence report, partial reads, or one intermediate edit.', '- ReportConfidence is optional telemetry and never a prerequisite. Do not call it ritually.', '- Routine in-workspace edits, builds, tests, formatting, and local inspection need no confirmation. The runtime will still fence explicit deny rules, workspace escapes, destructive commands, pushes, publishing, deployments, and external side effects.', '- Planning is optional. Use ProposePlan only when staged execution materially helps. Routine AUTO plans may execute immediately; boundary-bearing steps remain interactive.', '- Delegation is a yield, not abandonment. After an orchestration call, end the current send; the runtime will return success/failure to this same task. Integrate it and continue. Do not tell the user to restart.', '- A mutating task is done only with structural mutation evidence plus a successful applicable verification gate (or no discoverable gate). A read-only task is done when the requested answer is delivered. Never self-certify completion from a prose phrase alone.', '- If a tool fails, diagnose and take a different useful action. Do not repeat an identical failed call or delegate to the same failed path in a loop.', '- Ask one concise question only when progress truly requires user information or authority. Otherwise keep working.', '', 'Latest objective:', input].join('\n');
 }

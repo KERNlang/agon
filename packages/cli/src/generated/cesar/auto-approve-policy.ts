@@ -85,8 +85,11 @@ export function applyAgenticAutoApprovePolicy(plan: CesarPlan, config: AgonConfi
     if (actionDecision.decision !== 'allow') {
       return { approve: false, reason: `step ${step.id} requires boundary approval (${actionDecision.reason})`, adjustedCostUsd: plan.totalEstimatedCostUsd };
     }
-    if (boundaryText) {
-      const commandDecision = evaluateTaskAction(lease, 'Bash', boundaryText);
+    // Only real shell commands go through the Bash boundary classifier — step
+    // descriptions are prose, and words like "push" in them are not commands.
+    const commandText = [step.fitnessCmd, step.verifyCmd].filter((value): value is string => typeof value === 'string' && value.trim().length > 0).join('\n');
+    if (commandText) {
+      const commandDecision = evaluateTaskAction(lease, 'Bash', commandText);
       if (commandDecision.decision !== 'allow') {
         return { approve: false, reason: `step ${step.id} contains an interactive boundary (${commandDecision.reason})`, adjustedCostUsd: plan.totalEstimatedCostUsd };
       }

@@ -139,7 +139,7 @@ fn name=dispatchOrchestrationIntent async=true params="intent:any, input:string,
         const cqEpoch = cb.ctx.inputEpoch ?? 0;
         const cqUserTurns = countTrackedUserTurns(cb.ctx);
         cb.runAsJob('conquer', _cqLabel, withThreadOutcome(_cqCwd, 'conquer', _cqLabel, async () => {
-          await handleConquer(intent.task ?? '', cb.dispatch, cb.ctx, { gate: intent.gate, builder: intent.builder, engineIds: intent.engineIds, maxTurns: intent.maxTurns });
+          await handleConquer(intent.task ?? '', cb.dispatch, cb.ctx, { gate: intent.gate, builder: intent.builder, engineIds: intent.engineIds, maxTurns: intent.maxTurns, gateTimeoutSec: intent.gateTimeout, maxHours: intent.maxHours, turnTimeoutSec: intent.turnTimeout });
           const chatContext = collectRecentEngineContext(cb.ctx, 14, 1500);
           if (chatContext) await continueCesarAfterResult(`Conquer build on: "${(intent.task ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize what was built + the done-oracle outcome, and recommend the next step (review/merge or keep going).`, cb, cqEpoch, cqUserTurns);
         }, cb.ctx));

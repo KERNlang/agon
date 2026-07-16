@@ -3,11 +3,12 @@
 // mode, task type, pass/fail, and timing. Rolling win rates are computed
 // over the last N runs per mode.
 
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
-import { tracker } from '@kernlang/agon-core';
+import { tracker, resolveWorkingDir } from '@kernlang/agon-core';
 import { runsStore } from '../generated/signals/runs-store.js';
+import { summarizeIntentForEpisode } from '../generated/cesar/experience.js';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -46,7 +47,14 @@ export interface RunRecord {
   engineIds: string[];
   completionState: string;
   costEstimateUsd?: number;
+  intentSummary?: string;
+  projectKey?: string;
 }
+
+/** Ledger size cap: append() trims to the newest MAX_LEDGER_RUNS so
+ *  telemetry.json cannot grow unbounded (win-rate windows and experience
+ *  retrieval both look at far fewer records than this). */
+export const MAX_LEDGER_RUNS = 2000;
 
 export interface TelemetryFile {
   version: 1;
@@ -115,15 +123,31 @@ export class TelemetryLedger {
     this.filePath = filePath ?? telemetryPath();
   }
 
-  /** Read the entire ledger file, returning an empty structure if missing/malformed. */
+  private cached: TelemetryFile | null = null;
+  private cachedStamp = '';
+
+  /** Read the entire ledger file, returning an empty structure if missing/malformed.
+   *  Cached on (mtimeMs, size): experience retrieval reads the ledger on hot
+   *  interactive turns, and re-parsing an unchanged file every turn is pure
+   *  waste. Any writer (this process via write(), or another agon process)
+   *  changes the stamp and invalidates the cache. */
   read(): TelemetryFile {
     try {
+      const stat = statSync(this.filePath);
+      const stamp = `${stat.mtimeMs}:${stat.size}`;
+      if (this.cached && stamp === this.cachedStamp) return this.cached;
       const raw = readFileSync(this.filePath, 'utf-8');
       const parsed = JSON.parse(raw) as TelemetryFile;
-      if (parsed && Array.isArray(parsed.runs)) return parsed;
+      if (parsed && Array.isArray(parsed.runs)) {
+        this.cached = parsed;
+        this.cachedStamp = stamp;
+        return parsed;
+      }
     } catch {
       // file missing or malformed — return empty
     }
+    this.cached = null;
+    this.cachedStamp = '';
     return { version: 1, runs: [] };
   }
 
@@ -134,10 +158,11 @@ export class TelemetryLedger {
     writeFileSync(this.filePath, JSON.stringify(data, null, 2));
   }
 
-  /** Append a single run record. */
+  /** Append a single run record, trimming the ledger to MAX_LEDGER_RUNS. */
   append(record: RunRecord): void {
     const data = this.read();
-    this.write({ ...data, runs: [...data.runs, record] });
+    const runs = [...data.runs, record];
+    this.write({ ...data, runs: runs.length > MAX_LEDGER_RUNS ? runs.slice(-MAX_LEDGER_RUNS) : runs });
   }
 
   /** Return the last N runs, optionally filtered by mode. */
@@ -190,6 +215,23 @@ const defaultLedger = new TelemetryLedger();
  * Record an orchestration run. Uses a process-wide TelemetryLedger singleton
  * writing to ~/.agon/telemetry.json.
  */
+/** The project scope a run record belongs to: the resolved working dir.
+ *  Experience retrieval filters on this — telemetry.json is global, and
+ *  precedent from another repo must never leak into this repo's turns. */
+export function currentProjectKey(): string {
+  try {
+    return resolve(resolveWorkingDir());
+  } catch {
+    return resolve(process.cwd());
+  }
+}
+
+/** Read recent run records (newest last) from the process-wide ledger — the
+ *  experience-precedent retrieval feed. */
+export function recentRunRecords(limit: number = 200): RunRecord[] {
+  return defaultLedger.recentRuns(limit);
+}
+
 export function recordRun(result: OrchestrationResult): RunRecord {
   const stats = typeof tracker?.getStats === 'function' ? tracker.getStats() : null;
   const record: RunRecord = {
@@ -203,6 +245,8 @@ export function recordRun(result: OrchestrationResult): RunRecord {
     engineIds: result.engineIds ?? [],
     completionState: result.completionState,
     costEstimateUsd: stats?.totalCostUsd ?? undefined,
+    intentSummary: summarizeIntentForEpisode(result.intent ?? '') || undefined,
+    projectKey: currentProjectKey(),
   };
   defaultLedger.append(record);
   // A run record was written — forge also writes a ${forgeId}.json into

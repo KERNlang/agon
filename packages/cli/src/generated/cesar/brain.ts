@@ -34,6 +34,12 @@ import { buildRoutingContext, deriveRoutingHints, shouldSpeculate } from './rout
 
 import { shouldGroundInput, buildGroundingBlock } from './grounding.js';
 
+import { episodesFromRunRecords, retrieveExperience, buildExperienceBlock, experienceRetrievalOptions } from './experience.js';
+
+import { assessDelegationShape, buildDelegationAdvisory } from './delegation-reflex.js';
+
+import { recentRunRecords, currentProjectKey } from '../../telemetry/index.js';
+
 import { readCesarToolReliability, formatCesarReliabilityLine, shouldDowngradeCesarToolWork, buildWhatHappenedSummary } from './reliability.js';
 
 import { applyCesarSelfTurnApproval } from './self-turn-approval.js';
@@ -64,7 +70,7 @@ import { consumeCesarPlanControlSignals } from './plan-control-signals.js';
 
 import { hostNowIso, hostWaitForInteractiveChoice } from '../lib/kern-host.js';
 
-// @kern-source: brain:34
+// @kern-source: brain:37
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>, turnAlreadyCommitted?: boolean): Promise<CesarTurnOutcome> {
   // streaming-end commits a real stream OR (when only a speculative preview
   // draft sits on the pane) drops the draft without committing — safe no-op when
@@ -97,7 +103,7 @@ export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input
   return { delegated: false, responded: true, decisionReason: 'delegation-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:61
+// @kern-source: brain:64
 export async function commitTurnAndSuggest(suggestion: {action:string, rest?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}, input: string, response: string, cesarEngineId: string, color: number, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   // streaming-end commits a real stream OR drops a lingering speculative preview
   // draft without committing — safe no-op when there's no entry at all.
@@ -128,10 +134,10 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
   return { delegated: false, responded: true, decisionReason: 'suggestion-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:86
+// @kern-source: brain:89
 export const _noBriefNudged: WeakMap<object, boolean> = new WeakMap<object, boolean>();
 
-// @kern-source: brain:88
+// @kern-source: brain:91
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<CesarTurnOutcome> {
   const abort = new AbortController();
       const _turnStart = Date.now();
@@ -908,6 +914,35 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               dispatch({ type: 'info', message: 'ground: injected cited doc context for this turn' });
             }
           } catch { /* grounding is best-effort */ }
+        }
+
+        // ── Experience precedent (advisory, default-on: config.cesarExperience) ──
+        // RAG roadmap 1b: similar PAST RUN episodes (mode/winner/outcome) injected
+        // as evidence, never authority. Purely lexical (no sidecar spawn on the hot
+        // path), gated on min-N qualifying matches + a similarity floor, and
+        // fail-open — any error injects nothing. Reuses shouldGroundInput so slash
+        // commands and trivial prompts never retrieve.
+        if ((config as any).cesarExperience !== false && shouldGroundInput(input)) {
+          try {
+            const _expOpts = experienceRetrievalOptions(config);
+            // Scoped to THIS project: global telemetry must never leak another
+            // repo's task text into this turn (review blocker: codex).
+            const _expEpisodes = episodesFromRunRecords(recentRunRecords(_expOpts.window), currentProjectKey());
+            const _expBlock = buildExperienceBlock(retrieveExperience(input, _expEpisodes, _expOpts));
+            if (_expBlock) enrichedInput = `${_expBlock}\n\n${enrichedInput}`;
+          } catch { /* experience is best-effort */ }
+        }
+
+        // ── Delegation reflex (advisory-only: config.cesarDelegationReflex) ──
+        // Structural fan-out detection (explicit ≥3-item lists, veto-first). The
+        // advisory rides the prompt; surfacing stays with Cesar's existing
+        // [SUGGEST:agent-team] → promptDelegation flow, so the user always
+        // confirms and nothing auto-spawns. Fail-open like its siblings.
+        if ((config as any).cesarDelegationReflex !== false && shouldGroundInput(input)) {
+          try {
+            const _delAdvisory = buildDelegationAdvisory(assessDelegationShape(input));
+            if (_delAdvisory) enrichedInput = `${_delAdvisory}\n\n${enrichedInput}`;
+          } catch { /* delegation reflex is best-effort */ }
         }
 
         // ── Sequential-thinking scaffold (opt-in: config.cesarThinkFirst) ──

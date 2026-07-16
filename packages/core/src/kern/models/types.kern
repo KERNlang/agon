@@ -315,6 +315,20 @@ config name=AgonConfig
     doc "When true, write compact JSONL permission-decision records for Cesar tool approvals, prompts, and blocks."
   field name=cesarToolTimeline type=boolean default=true
     doc "When true, write compact JSONL per-turn tool timeline records for Cesar tool calls, results, and summaries."
+  field name=protectedPushBranches type="string[]" optional=true
+    doc "Branches unattended pushes (conquer --push) refuse to land on. Default when absent OR empty: main, master (an empty list never disables the guard). Case-insensitive exact match. KERN-GAP: codegen — optional array fields are emitted as [] into DEFAULT_AGON_CONFIG and as required (non-?) TS fields, so consumers must treat [] as 'unset'."
+  field name=cesarExperience type=boolean default=true
+    doc "When true, similar past run episodes (mode/winner/outcome) are injected into Cesar turns as advisory precedent — evidence, not authority. Lexical similarity, min-N + similarity gated, fail-open."
+  field name=cesarExperienceMinSimilarity type=number optional=true
+    doc "Similarity gate (0..1 Jaccard) an episode must clear to count as precedent. Default 0.2. Non-positive = unset (KERN codegen emits optional numbers as 0)."
+  field name=cesarExperienceMinEpisodes type=number optional=true
+    doc "Minimum qualifying episodes before ANY precedent is shown (the min-N evidence rule). Default 3. Non-positive = unset."
+  field name=cesarExperienceTopK type=number optional=true
+    doc "Maximum precedent lines injected per turn. Default 3. Non-positive = unset."
+  field name=cesarExperienceWindow type=number optional=true
+    doc "How many recent run records the precedent retrieval scans. Default 200. Non-positive = unset."
+  field name=cesarDelegationReflex type=boolean default=true
+    doc "When true, list-shaped prompts with no sequential/shared-state markers get an in-prompt structural advisory telling Cesar the task may decompose — Cesar may then offer [SUGGEST:agent-team]; the user always confirms before anything spawns. Advisory-only; nothing auto-spawns."
   field name=cesarGateAutoRun type=boolean default=true
     doc "When true, the harness executes the discovered verification gate itself at a done-claim whenever the permission posture already allows the command (mode auto, or an allow rule covering it), instead of only nudging the engine to run it."
   field name=cesarGateAutoRunLimit type=number default=3

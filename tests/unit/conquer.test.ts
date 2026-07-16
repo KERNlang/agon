@@ -7,6 +7,7 @@ import {
   classifyStuck,
   shouldEscalate,
   shouldAutoApprove,
+  isProtectedPushBranch,
   summarizeConsultForBuilder,
   capBreached,
   parseBuilderSignals,
@@ -122,6 +123,44 @@ describe('shouldAutoApprove — worktree-gated', () => {
     }
     expect(shouldAutoApprove({ kind: 'push' }, true)).toBe(false);
     expect(shouldAutoApprove({ kind: 'network-install' }, true)).toBe(false);
+  });
+});
+
+describe('isProtectedPushBranch — unattended --push guard', () => {
+  it('protects main and master by default, case-insensitively', () => {
+    expect(isProtectedPushBranch('main', {})).toBe(true);
+    expect(isProtectedPushBranch('master', {})).toBe(true);
+    expect(isProtectedPushBranch('Main', {})).toBe(true);
+    expect(isProtectedPushBranch(' main ', {})).toBe(true);
+  });
+
+  it('lets a normal conquer branch through', () => {
+    expect(isProtectedPushBranch('conquer/add-oauth-x1', {})).toBe(false);
+    expect(isProtectedPushBranch('feat/parser', {})).toBe(false);
+  });
+
+  it('config protectedPushBranches overrides the default list', () => {
+    const config = { protectedPushBranches: ['release', 'dev'] };
+    expect(isProtectedPushBranch('dev', config)).toBe(true);
+    expect(isProtectedPushBranch('release', config)).toBe(true);
+    expect(isProtectedPushBranch('main', config)).toBe(false);
+  });
+
+  it('an EMPTY protectedPushBranches array means defaults, never protect-nothing — the DEFAULT_AGON_CONFIG production state', () => {
+    // KERN codegen emits optional array fields as [] into DEFAULT_AGON_CONFIG,
+    // so every real loadConfig() caller passes { protectedPushBranches: [] }.
+    // 5/6-engine review consensus: an empty-array-disables rule silently kills
+    // the guard in production. Empty MUST fall back to main/master.
+    expect(isProtectedPushBranch('main', { protectedPushBranches: [] })).toBe(true);
+    expect(isProtectedPushBranch('master', { protectedPushBranches: [] })).toBe(true);
+    expect(isProtectedPushBranch('conquer/x', { protectedPushBranches: [] })).toBe(false);
+    // Whitespace-only entries filter out and also fall back to the defaults.
+    expect(isProtectedPushBranch('main', { protectedPushBranches: ['  '] })).toBe(true);
+  });
+
+  it('fails closed on an empty or unresolvable branch name', () => {
+    expect(isProtectedPushBranch('', {})).toBe(true);
+    expect(isProtectedPushBranch('   ', undefined as any)).toBe(true);
   });
 });
 

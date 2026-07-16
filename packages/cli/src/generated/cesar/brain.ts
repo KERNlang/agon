@@ -36,7 +36,7 @@ import { shouldGroundInput, buildGroundingBlock } from './grounding.js';
 
 import { episodesFromRunRecords, retrieveExperience, buildExperienceBlock, experienceRetrievalOptions } from './experience.js';
 
-import { recentRunRecords } from '../../telemetry/index.js';
+import { recentRunRecords, currentProjectKey } from '../../telemetry/index.js';
 
 import { readCesarToolReliability, formatCesarReliabilityLine, shouldDowngradeCesarToolWork, buildWhatHappenedSummary } from './reliability.js';
 
@@ -917,7 +917,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         if ((config as any).cesarExperience !== false && shouldGroundInput(input)) {
           try {
             const _expOpts = experienceRetrievalOptions(config);
-            const _expEpisodes = episodesFromRunRecords(recentRunRecords(_expOpts.window));
+            // Scoped to THIS project: global telemetry must never leak another
+            // repo's task text into this turn (review blocker: codex).
+            const _expEpisodes = episodesFromRunRecords(recentRunRecords(_expOpts.window), currentProjectKey());
             const _expBlock = buildExperienceBlock(retrieveExperience(input, _expEpisodes, _expOpts));
             if (_expBlock) enrichedInput = `${_expBlock}\n\n${enrichedInput}`;
           } catch { /* experience is best-effort */ }

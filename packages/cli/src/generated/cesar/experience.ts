@@ -9,15 +9,16 @@ export interface ExperienceEpisode {
   success: boolean;
   durationMs: number;
   timestamp: number;
+  projectKey: string;
 }
 
-// @kern-source: experience:19
+// @kern-source: experience:20
 export interface ExperienceMatch {
   episode: ExperienceEpisode;
   similarity: number;
 }
 
-// @kern-source: experience:23
+// @kern-source: experience:24
 export interface ExperienceRetrievalOptions {
   minSimilarity: number;
   minEpisodes: number;
@@ -28,13 +29,13 @@ export interface ExperienceRetrievalOptions {
 /**
  * Common filler words removed before similarity scoring — generic verbs like add/use/run appear in most engineering prompts and would inflate Jaccard overlap between unrelated tasks.
  */
-// @kern-source: experience:29
+// @kern-source: experience:30
 export const EXPERIENCE_STOPWORDS: Set<string> = new Set(['the', 'and', 'for', 'with', 'that', 'this', 'from', 'into', 'when', 'then', 'them', 'they', 'have', 'has', 'had', 'was', 'were', 'will', 'would', 'should', 'could', 'can', 'not', 'but', 'are', 'you', 'your', 'our', 'its', 'all', 'any', 'each', 'also', 'via', 'per', 'about', 'after', 'before', 'make', 'made', 'use', 'using', 'used', 'add', 'new', 'get', 'set', 'run', 'runs', 'please']);
 
 /**
  * Normalize a run intent into a compact, storable episode summary: whitespace collapsed, control characters stripped, capped at 160 chars. Empty result (< 8 meaningful chars) means the run stores NO summary and never becomes an episode — a bare mode invocation carries no precedent signal.
  */
-// @kern-source: experience:32
+// @kern-source: experience:33
 export function summarizeIntentForEpisode(intent: string): string {
   const collapsed = String(intent ?? '')
     .replace(/[\u0000-\u001f\u007f]+/g, ' ')
@@ -45,24 +46,22 @@ export function summarizeIntentForEpisode(intent: string): string {
 }
 
 /**
- * Lowercased alphanumeric tokens, ≥3 chars, stopwords removed, deduplicated — the unit of Jaccard similarity.
+ * Lowercased word tokens (unicode letters + digits, so non-English prompts score too — review: kimi), ≥3 chars, stopwords removed, deduplicated — the unit of Jaccard similarity.
  */
-// @kern-source: experience:43
+// @kern-source: experience:44
 export function tokenizeExperienceText(text: string): Set<string> {
   const tokens = String(text ?? '')
     .toLowerCase()
-    .split(/[^a-z0-9]+/)
+    .split(/[^\p{L}\p{N}]+/u)
     .filter((t) => t.length >= 3 && !EXPERIENCE_STOPWORDS.has(t));
   return new Set(tokens);
 }
 
 /**
- * Token-set Jaccard similarity in [0,1]. Deterministic and cheap — precedent retrieval must never cost a sidecar spawn on the hot turn path.
+ * Jaccard over pre-tokenized sets — retrieveExperience tokenizes the prompt ONCE and reuses the set across every episode (review: agy).
  */
-// @kern-source: experience:53
-export function scoreExperienceSimilarity(a: string, b: string): number {
-  const ta = tokenizeExperienceText(a);
-  const tb = tokenizeExperienceText(b);
+// @kern-source: experience:54
+export function scoreTokenSetSimilarity(ta: Set<string>, tb: Set<string>): number {
   if (ta.size === 0 || tb.size === 0) return 0;
   let shared = 0;
   for (const t of ta) { if (tb.has(t)) shared++; }
@@ -71,31 +70,42 @@ export function scoreExperienceSimilarity(a: string, b: string): number {
 }
 
 /**
+ * Token-set Jaccard similarity in [0,1]. Deterministic and cheap — precedent retrieval must never cost a sidecar spawn on the hot turn path.
+ */
+// @kern-source: experience:64
+export function scoreExperienceSimilarity(a: string, b: string): number {
+  return scoreTokenSetSimilarity(tokenizeExperienceText(a), tokenizeExperienceText(b));
+}
+
+/**
  * Resolve the retrieval gates from config with safe defaults in ONE place: cesarExperienceMinSimilarity (default 0.2), cesarExperienceMinEpisodes (default 3 — the brainstorm's min-N gate), cesarExperienceTopK (default 3), cesarExperienceWindow (default 200 recent runs). Non-positive / non-finite values mean 'unset' (KERN codegen emits optional number fields as 0 into DEFAULT_AGON_CONFIG).
  */
-// @kern-source: experience:65
+// @kern-source: experience:70
 export function experienceRetrievalOptions(config: any): ExperienceRetrievalOptions {
-  const num = (v: unknown, fallback: number) => {
-    const n = Number(v);
-    return Number.isFinite(n) && n > 0 ? n : fallback;
-  };
+  const rawSim = Number(config?.cesarExperienceMinSimilarity);
+  const rawMin = Number(config?.cesarExperienceMinEpisodes);
+  const rawTop = Number(config?.cesarExperienceTopK);
+  const rawWin = Number(config?.cesarExperienceWindow);
   return {
-    minSimilarity: Math.min(1, num(config?.cesarExperienceMinSimilarity, 0.2)),
-    minEpisodes: Math.floor(num(config?.cesarExperienceMinEpisodes, 3)),
-    topK: Math.floor(num(config?.cesarExperienceTopK, 3)),
-    window: Math.floor(num(config?.cesarExperienceWindow, 200)),
+    minSimilarity: Math.min(1, Number.isFinite(rawSim) && rawSim > 0 ? rawSim : 0.2),
+    minEpisodes: Math.floor(Number.isFinite(rawMin) && rawMin > 0 ? rawMin : 3),
+    topK: Math.floor(Number.isFinite(rawTop) && rawTop > 0 ? rawTop : 3),
+    window: Math.floor(Number.isFinite(rawWin) && rawWin > 0 ? rawWin : 200),
   };
 }
 
 /**
- * Map telemetry RunRecords into episodes, keeping only records that stored an intentSummary (older records predate the field and carry no precedent signal).
+ * Map telemetry RunRecords into episodes, keeping only records that stored an intentSummary (older records predate the field and carry no precedent signal). When projectKey is given, ONLY records from that project qualify — telemetry.json is global, and precedent from another repo must never leak its task text into this repo's turn (review blocker: codex). Records without a projectKey are excluded from a scoped query (fail-closed).
  */
-// @kern-source: experience:80
-export function episodesFromRunRecords(records: any[]): ExperienceEpisode[] {
+// @kern-source: experience:85
+export function episodesFromRunRecords(records: any[], projectKey?: string): ExperienceEpisode[] {
+  const scope = typeof projectKey === 'string' ? projectKey.trim() : '';
   const episodes: ExperienceEpisode[] = [];
   for (const r of Array.isArray(records) ? records : []) {
     const intentSummary = typeof r?.intentSummary === 'string' ? r.intentSummary.trim() : '';
     if (!intentSummary) continue;
+    const recordProject = typeof r.projectKey === 'string' ? r.projectKey.trim() : '';
+    if (scope && recordProject !== scope) continue;
     episodes.push({
       mode: String(r.mode ?? ''),
       taskType: String(r.taskType ?? 'other'),
@@ -104,6 +114,7 @@ export function episodesFromRunRecords(records: any[]): ExperienceEpisode[] {
       success: r.success === true,
       durationMs: Number.isFinite(Number(r.durationMs)) ? Number(r.durationMs) : 0,
       timestamp: Number.isFinite(Number(r.timestamp)) ? Number(r.timestamp) : 0,
+      projectKey: recordProject,
     });
   }
   return episodes;
@@ -112,11 +123,12 @@ export function episodesFromRunRecords(records: any[]): ExperienceEpisode[] {
 /**
  * Score every episode against the prompt and return the top-K — but ONLY when at least minEpisodes clear the similarity gate. Below that support threshold precedent is noise, not evidence, and nothing is returned (the brainstorm's min-N≥3 rule). Ties break toward the more recent episode.
  */
-// @kern-source: experience:100
+// @kern-source: experience:109
 export function retrieveExperience(prompt: string, episodes: ExperienceEpisode[], opts: ExperienceRetrievalOptions): ExperienceMatch[] {
+  const promptTokens = tokenizeExperienceText(prompt);
   const scored: ExperienceMatch[] = [];
   for (const e of episodes) {
-    const similarity = scoreExperienceSimilarity(prompt, e.intentSummary);
+    const similarity = scoreTokenSetSimilarity(promptTokens, tokenizeExperienceText(e.intentSummary));
     if (similarity >= opts.minSimilarity) scored.push({ episode: e, similarity });
   }
   if (scored.length < opts.minEpisodes) return [];
@@ -127,16 +139,20 @@ export function retrieveExperience(prompt: string, episodes: ExperienceEpisode[]
 /**
  * Render the advisory precedent block injected ahead of the user prompt. The framing is deliberate: evidence, not authority — the model judges the current task on its own merits.
  */
-// @kern-source: experience:113
+// @kern-source: experience:123
 export function buildExperienceBlock(matches: ExperienceMatch[]): string | null {
   if (!matches.length) return null;
-  const lines = matches.map((m) => {
+  const lines: string[] = [];
+  for (const m of matches) {
     const e = m.episode;
     const outcome = e.success ? 'succeeded' : 'did not succeed';
     const winner = e.winner ? ` → ${e.winner}` : '';
     const mins = Math.round(e.durationMs / 60000);
     const dur = e.durationMs > 0 ? (mins > 0 ? `, ${mins}m` : `, <1m`) : '';
-    return `- "${e.intentSummary}" — mode=${e.mode}${winner}, ${outcome}${dur} (similarity ${m.similarity.toFixed(2)})`;
-  });
+    // Rendering hygiene: summaries are the user's OWN past prompts (same
+    // local trust domain as the live prompt), but keep the quoting intact.
+    const quoted = e.intentSummary.replace(/"/g, "'");
+    lines.push(`- "${quoted}" — mode=${e.mode}${winner}, ${outcome}${dur} (similarity ${m.similarity.toFixed(2)})`);
+  }
   return `[EXPERIENCE] Precedent from similar past agon runs — evidence, not authority:\n${lines.join('\n')}\nWeigh these outcomes when choosing a mode or engine, but judge the current task on its own merits.`;
 }

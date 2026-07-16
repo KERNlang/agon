@@ -15,6 +15,7 @@ interface name=ExperienceEpisode export=true
   field name=success type=boolean
   field name=durationMs type=number
   field name=timestamp type=number
+  field name=projectKey type=string
 
 interface name=ExperienceMatch export=true
   field name=episode type=ExperienceEpisode
@@ -41,20 +42,18 @@ fn name=summarizeIntentForEpisode params="intent:string" returns=string export=t
   >>>
 
 fn name=tokenizeExperienceText params="text:string" returns="Set<string>" export=true
-  doc "Lowercased alphanumeric tokens, ≥3 chars, stopwords removed, deduplicated — the unit of Jaccard similarity."
+  doc "Lowercased word tokens (unicode letters + digits, so non-English prompts score too — review: kimi), ≥3 chars, stopwords removed, deduplicated — the unit of Jaccard similarity."
   handler <<<
     const tokens = String(text ?? '')
       .toLowerCase()
-      .split(/[^a-z0-9]+/)
+      .split(/[^\p{L}\p{N}]+/u)
       .filter((t) => t.length >= 3 && !EXPERIENCE_STOPWORDS.has(t));
     return new Set(tokens);
   >>>
 
-fn name=scoreExperienceSimilarity params="a:string, b:string" returns=number export=true
-  doc "Token-set Jaccard similarity in [0,1]. Deterministic and cheap — precedent retrieval must never cost a sidecar spawn on the hot turn path."
+fn name=scoreTokenSetSimilarity params="ta:Set<string>, tb:Set<string>" returns=number export=true
+  doc "Jaccard over pre-tokenized sets — retrieveExperience tokenizes the prompt ONCE and reuses the set across every episode (review: agy)."
   handler <<<
-    const ta = tokenizeExperienceText(a);
-    const tb = tokenizeExperienceText(b);
     if (ta.size === 0 || tb.size === 0) return 0;
     let shared = 0;
     for (const t of ta) { if (tb.has(t)) shared++; }
@@ -62,28 +61,37 @@ fn name=scoreExperienceSimilarity params="a:string, b:string" returns=number exp
     return unionSize > 0 ? shared / unionSize : 0;
   >>>
 
+fn name=scoreExperienceSimilarity params="a:string, b:string" returns=number export=true
+  doc "Token-set Jaccard similarity in [0,1]. Deterministic and cheap — precedent retrieval must never cost a sidecar spawn on the hot turn path."
+  handler <<<
+    return scoreTokenSetSimilarity(tokenizeExperienceText(a), tokenizeExperienceText(b));
+  >>>
+
 fn name=experienceRetrievalOptions params="config:any" returns=ExperienceRetrievalOptions export=true
   doc "Resolve the retrieval gates from config with safe defaults in ONE place: cesarExperienceMinSimilarity (default 0.2), cesarExperienceMinEpisodes (default 3 — the brainstorm's min-N gate), cesarExperienceTopK (default 3), cesarExperienceWindow (default 200 recent runs). Non-positive / non-finite values mean 'unset' (KERN codegen emits optional number fields as 0 into DEFAULT_AGON_CONFIG)."
   handler <<<
-    const num = (v: unknown, fallback: number) => {
-      const n = Number(v);
-      return Number.isFinite(n) && n > 0 ? n : fallback;
-    };
+    const rawSim = Number(config?.cesarExperienceMinSimilarity);
+    const rawMin = Number(config?.cesarExperienceMinEpisodes);
+    const rawTop = Number(config?.cesarExperienceTopK);
+    const rawWin = Number(config?.cesarExperienceWindow);
     return {
-      minSimilarity: Math.min(1, num(config?.cesarExperienceMinSimilarity, 0.2)),
-      minEpisodes: Math.floor(num(config?.cesarExperienceMinEpisodes, 3)),
-      topK: Math.floor(num(config?.cesarExperienceTopK, 3)),
-      window: Math.floor(num(config?.cesarExperienceWindow, 200)),
+      minSimilarity: Math.min(1, Number.isFinite(rawSim) && rawSim > 0 ? rawSim : 0.2),
+      minEpisodes: Math.floor(Number.isFinite(rawMin) && rawMin > 0 ? rawMin : 3),
+      topK: Math.floor(Number.isFinite(rawTop) && rawTop > 0 ? rawTop : 3),
+      window: Math.floor(Number.isFinite(rawWin) && rawWin > 0 ? rawWin : 200),
     };
   >>>
 
-fn name=episodesFromRunRecords params="records:any[]" returns="ExperienceEpisode[]" export=true
-  doc "Map telemetry RunRecords into episodes, keeping only records that stored an intentSummary (older records predate the field and carry no precedent signal)."
+fn name=episodesFromRunRecords params="records:any[], projectKey?:string" returns="ExperienceEpisode[]" export=true
+  doc "Map telemetry RunRecords into episodes, keeping only records that stored an intentSummary (older records predate the field and carry no precedent signal). When projectKey is given, ONLY records from that project qualify — telemetry.json is global, and precedent from another repo must never leak its task text into this repo's turn (review blocker: codex). Records without a projectKey are excluded from a scoped query (fail-closed)."
   handler <<<
+    const scope = typeof projectKey === 'string' ? projectKey.trim() : '';
     const episodes: ExperienceEpisode[] = [];
     for (const r of Array.isArray(records) ? records : []) {
       const intentSummary = typeof r?.intentSummary === 'string' ? r.intentSummary.trim() : '';
       if (!intentSummary) continue;
+      const recordProject = typeof r.projectKey === 'string' ? r.projectKey.trim() : '';
+      if (scope && recordProject !== scope) continue;
       episodes.push({
         mode: String(r.mode ?? ''),
         taskType: String(r.taskType ?? 'other'),
@@ -92,6 +100,7 @@ fn name=episodesFromRunRecords params="records:any[]" returns="ExperienceEpisode
         success: r.success === true,
         durationMs: Number.isFinite(Number(r.durationMs)) ? Number(r.durationMs) : 0,
         timestamp: Number.isFinite(Number(r.timestamp)) ? Number(r.timestamp) : 0,
+        projectKey: recordProject,
       });
     }
     return episodes;
@@ -100,9 +109,10 @@ fn name=episodesFromRunRecords params="records:any[]" returns="ExperienceEpisode
 fn name=retrieveExperience params="prompt:string, episodes:ExperienceEpisode[], opts:ExperienceRetrievalOptions" returns="ExperienceMatch[]" export=true
   doc "Score every episode against the prompt and return the top-K — but ONLY when at least minEpisodes clear the similarity gate. Below that support threshold precedent is noise, not evidence, and nothing is returned (the brainstorm's min-N≥3 rule). Ties break toward the more recent episode."
   handler <<<
+    const promptTokens = tokenizeExperienceText(prompt);
     const scored: ExperienceMatch[] = [];
     for (const e of episodes) {
-      const similarity = scoreExperienceSimilarity(prompt, e.intentSummary);
+      const similarity = scoreTokenSetSimilarity(promptTokens, tokenizeExperienceText(e.intentSummary));
       if (similarity >= opts.minSimilarity) scored.push({ episode: e, similarity });
     }
     if (scored.length < opts.minEpisodes) return [];
@@ -114,13 +124,17 @@ fn name=buildExperienceBlock params="matches:ExperienceMatch[]" returns="string 
   doc "Render the advisory precedent block injected ahead of the user prompt. The framing is deliberate: evidence, not authority — the model judges the current task on its own merits."
   handler <<<
     if (!matches.length) return null;
-    const lines = matches.map((m) => {
+    const lines: string[] = [];
+    for (const m of matches) {
       const e = m.episode;
       const outcome = e.success ? 'succeeded' : 'did not succeed';
       const winner = e.winner ? ` → ${e.winner}` : '';
       const mins = Math.round(e.durationMs / 60000);
       const dur = e.durationMs > 0 ? (mins > 0 ? `, ${mins}m` : `, <1m`) : '';
-      return `- "${e.intentSummary}" — mode=${e.mode}${winner}, ${outcome}${dur} (similarity ${m.similarity.toFixed(2)})`;
-    });
+      // Rendering hygiene: summaries are the user's OWN past prompts (same
+      // local trust domain as the live prompt), but keep the quoting intact.
+      const quoted = e.intentSummary.replace(/"/g, "'");
+      lines.push(`- "${quoted}" — mode=${e.mode}${winner}, ${outcome}${dur} (similarity ${m.similarity.toFixed(2)})`);
+    }
     return `[EXPERIENCE] Precedent from similar past agon runs — evidence, not authority:\n${lines.join('\n')}\nWeigh these outcomes when choosing a mode or engine, but judge the current task on its own merits.`;
   >>>

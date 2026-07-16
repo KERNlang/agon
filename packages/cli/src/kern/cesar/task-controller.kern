@@ -73,7 +73,7 @@ fn name=isAgenticMutationOutcome params="name:string,input:string,status:string"
   >>>
 
 fn name=evaluateAgenticTaskState params="snapshot:AgenticTaskSnapshot" returns=AgenticTaskDecision export=true
-  doc "Closed, ordered task-state decision. Structural tool/mutation/verification evidence owns completion; prose is only an answer-delivery signal and can never finish a mutating task by itself."
+  doc "Closed, ordered task-state decision. Structural tool/mutation/verification evidence owns completion; prose is only an answer-delivery signal and can never finish a mutating task by itself. A prose-only answer that survives one quiet continuation is treated as delivered (answer_delivered_without_tools) rather than spun into a blocked checkpoint."
   handler <<<
     if (snapshot.interrupted) return { state: 'interrupted', continueWork: false, terminal: true, reason: 'user_interrupt' };
     if (snapshot.pendingDelegation) return { state: 'waiting_on_delegation', continueWork: false, terminal: false, reason: 'delegation_in_flight' };
@@ -93,8 +93,6 @@ fn name=evaluateAgenticTaskState params="snapshot:AgenticTaskSnapshot" returns=A
     }
 
     if (snapshot.answerDelivered && !snapshot.toolActivity && (snapshot.noProgressCycles ?? 0) >= 1) {
-      // A prose-only answer that survives one continuation nudge without new
-      // work is a delivered answer, not a stall — don't spin it into 'blocked'.
       return { state: 'verified', continueWork: false, terminal: true, reason: 'answer_delivered_without_tools' };
     }
     if ((snapshot.noProgressCycles ?? 0) >= 3) {

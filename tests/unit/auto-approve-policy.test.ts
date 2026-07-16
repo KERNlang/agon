@@ -257,9 +257,33 @@ describe('applyAutoApprovePolicy', () => {
     it('does not treat prose descriptions as shell commands', () => {
       const plan = makePlan([
         makeStep('state', 'self', { description: 'Push the selected items into component state and re-render' }),
+        makeStep('notes', 'self', { description: 'Release the new version notes into the changelog draft' }),
       ], { autoApprove: true });
       const lease = createTaskExecutionLease('update the picker state handling', true, '/repo', undefined, 'agentic');
       expect(applyAgenticAutoApprovePolicy(plan, cfg(), lease).approve).toBe(true);
+    });
+
+    it('still rejects a destructive fitness command', () => {
+      const plan = makePlan([
+        makeStep('reset', 'self', { description: 'Clean the sandbox', fitnessCmd: 'rm -rf ~/sandbox' }),
+      ], { autoApprove: true });
+      const lease = createTaskExecutionLease('clean the sandbox', true, '/repo', undefined, 'agentic');
+      expect(applyAgenticAutoApprovePolicy(plan, cfg(), lease).approve).toBe(false);
+    });
+
+    it('gates dangerous delegation payloads even as prose', () => {
+      const plan = makePlan([
+        makeStep('ship', 'delegate', { description: 'Deploy the docs site to production' }),
+      ], { autoApprove: true });
+      const lease = createTaskExecutionLease('refresh the docs', true, '/repo', undefined, 'agentic');
+      expect(applyAgenticAutoApprovePolicy(plan, cfg(), lease).approve).toBe(false);
+    });
+
+    it('clamps unrecognized cesarAutoApproveMode values to safe-only', () => {
+      const mutating = makePlan([makeStep('build', 'forge')], { autoApprove: true });
+      const decision = applyAutoApprovePolicy(mutating, cfg({ cesarAutoApproveMode: 'safeonly' as never }));
+      expect(decision.approve).toBe(false);
+      expect(decision.reason).toContain('safe-only');
     });
 
     it('still fences real commands in fitness and verify fields', () => {

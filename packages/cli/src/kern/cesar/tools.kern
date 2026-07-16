@@ -2,7 +2,7 @@ import from="@kernlang/agon-core" names="ToolRegistry,getProjectFileStateCache,c
 import from="@kernlang/agon-core" names="ToolContext,ToolCallResult" types=true
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="./council-tool.js" names="createCouncilTool"
-import from="./task-execution-lease.js" names="isTaskFileMutationAction,taskActionApprovalMessage"
+import from="./task-execution-lease.js" names="isTaskFileMutationAction,taskActionApprovalMessage,isApprovedPermissionResponse"
 import from="./permission-resolver.js" names="authorizeResolvedTaskAction"
 import from="../signals/output.js" names="getSessionAllowList"
 import from="./brain-helpers.js" names="isBashToolName"
@@ -119,7 +119,7 @@ fn name=executeEagerTool async=true params="toolName:string, meta:Record<string,
     const requestTaskApproval = (tool: string, message: string) => new Promise<boolean>((resolve) => {
       const command = (parsedInput as any).command ?? (parsedInput as any).file_path ?? toolInput;
       dispatch({ type: 'permission-ask', tool, command, reason: message, resolve: (approved: boolean | string) => {
-        resolve(typeof approved === 'string' ? approved === 'y' || approved === 'a' : !!approved);
+        resolve(isApprovedPermissionResponse(approved));
       } } as any);
     });
     const authorizeEagerTaskAction = async (tool: string, input: Record<string, unknown>): Promise<boolean | string> => {

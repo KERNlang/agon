@@ -14,7 +14,7 @@ import { createRequire } from 'node:module';
 
 import type { PersistentSession, PersistentSessionConfig } from '@kernlang/agon-core';
 
-import { EngineRegistry, loadConfig, ensureAgonHome, getAgonHome, resolveWorkingDir, scanProjectContext, buildCodebaseMap, buildKernContextSpine, buildProjectMemoryBlock, createPersistentSession, ToolRegistry, getProjectFileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat, listCesarPlans, saveConversation, formatChatContextForPrompt, isReadOnlyCommand, AGON_MODE_NAMES, parsePermissionRuleSet, parseToolHooks, evaluatePermissionRules, evaluateToolRules, PERMISSION_DENIED_MESSAGE, claudeBrainUsesPty } from '@kernlang/agon-core';
+import { EngineRegistry, loadConfig, ensureAgonHome, getAgonHome, resolveWorkingDir, scanProjectContext, buildCodebaseMap, buildKernContextSpine, buildProjectMemoryBlock, createPersistentSession, ToolRegistry, getProjectFileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat, listCesarPlans, saveConversation, formatChatContextForPrompt, isReadOnlyCommand, AGON_MODE_NAMES, parsePermissionRuleSet, parseToolHooks, PERMISSION_DENIED_MESSAGE, claudeBrainUsesPty } from '@kernlang/agon-core';
 
 import type { ToolContext, ToolCallResult } from '@kernlang/agon-core';
 
@@ -38,7 +38,7 @@ import { approvalToolIsFileMutating, buildApprovalDiffPreview } from './approval
 
 import { isActiveCesarTurn, runTurnPermissionOnce, runTurnToolOnce } from './turn-runtime.js';
 
-import { approveTaskAction, claimTaskActionPrompt, isTaskFileMutationAction, taskActionApprovalMessage } from './task-execution-lease.js';
+import { approveTaskAction, claimTaskActionPrompt, isTaskFileMutationAction, taskActionApprovalMessage, isApprovedPermissionResponse } from './task-execution-lease.js';
 
 import { resolvePermissionDecision, authorizeResolvedTaskAction } from './permission-resolver.js';
 
@@ -1227,7 +1227,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
     const boundaryReasons = ['auto_off', 'dangerous_boundary', 'important_task'];
     const promptReason = boundaryReasons.includes(resolution.reason)
       ? taskActionApprovalMessage({ decision: resolution.reason === 'important_task' ? 'ask_task_once' : 'ask_boundary_once', signature: resolution.signature, reason: resolution.reason })
-      : `Cesar (${engineId}) wants to execute`;
+      : `Cesar (${engineId}) wants to execute (${resolution.reason})`;
     return new Promise<boolean>((resolve) => {
       const dispatch = ctx.cesar!.lastDispatch;
       if (dispatch) {
@@ -1240,7 +1240,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
           catch { /* diff is best-effort — fall back to command preview */ }
         }
         dispatch({ type: 'permission-ask', tool: agonTool, command, reason: promptReason, diffPreview: permDiffPreview && Array.isArray(permDiffPreview.files) ? permDiffPreview : undefined, fallbackNote: permDiffPreview && typeof permDiffPreview.fallback === 'string' ? permDiffPreview.fallback : undefined, resolve: (approved: boolean | string) => {
-          const wasApproved = typeof approved === 'string' ? approved === 'y' || approved === 'a' || approved === 's' : !!approved;
+          const wasApproved = isApprovedPermissionResponse(approved);
           if (wasApproved && taskLease) approveTaskAction(taskLease, agonTool, taskTarget);
           logApproval(wasApproved ? 'approved' : 'denied', 'user-prompt', wasApproved ? 'user approved' : 'user denied');
           resolve(wasApproved);

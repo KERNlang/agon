@@ -1695,7 +1695,7 @@ ${reviewFollowup.prompt}`;
           reason: taskActionApprovalMessage(evaluation),
           diffPreview: diffPreview && Array.isArray(diffPreview.files) ? diffPreview : undefined,
           fallbackNote: diffPreview && typeof diffPreview.fallback === 'string' ? diffPreview.fallback : undefined,
-          resolve: (approved: boolean | string) => resolve(typeof approved === 'string' ? approved === 'y' || approved === 'a' : !!approved),
+          resolve: (approved: boolean | string) => resolve(isApprovedPermissionResponse(approved)),
         } as any);
       });
       const authorizeXmlTaskAction = async (tool: string, args: Record<string, unknown>): Promise<boolean | string> => {

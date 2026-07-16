@@ -21,6 +21,7 @@ import from="node:fs" names="writeFileSync,mkdirSync,existsSync"
 import from="node:path" names="join"
 import from="../signals/output.js" names="getSessionAllowList"
 import from="../cesar/permission-resolver.js" names="resolvePermissionDecision"
+import from="../cesar/self-turn-approval.js" names="approvalArgsFromCommand"
 
 interface name=RunAgentOptions
   field name=engineId type=string optional=true
@@ -77,10 +78,14 @@ fn name=buildAgentApprovalCallback params="dispatch:Dispatch, ctx:HandlerContext
         }
       }
 
+      // cwd is the real workspace root: solo agents run in it directly and
+      // team worktrees live under <repo>/.agon/agent-worktrees/, so the
+      // containment check holds for both. Relative paths resolve inside the
+      // executing agent's own cwd; absolute escapes fall back to the prompt.
       const resolution = resolvePermissionDecision({
         tool: agonTool,
-        target: command,
-        cwd: '',
+        target: agonTool === 'Bash' ? command : String((approvalArgsFromCommand(agonTool, command) as any)?.file_path ?? command),
+        cwd: resolveWorkingDir(),
         source: 'delegated',
         config: cfg,
         sessionAllowList: getSessionAllowList(),

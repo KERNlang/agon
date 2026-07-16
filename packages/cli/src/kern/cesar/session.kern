@@ -5,7 +5,7 @@ import from="node:fs" names="mkdirSync"
 import from="node:url" names="fileURLToPath,pathToFileURL"
 import from="node:module" names="createRequire"
 import from="@kernlang/agon-core" names="PersistentSession,PersistentSessionConfig" types=true
-import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,ensureAgonHome,getAgonHome,resolveWorkingDir,scanProjectContext,buildCodebaseMap,buildKernContextSpine,buildProjectMemoryBlock,createPersistentSession,ToolRegistry,getProjectFileStateCache,buildToolSystemPrompt,toolsToOpenAIFormat,executeToolCall,RUNS_DIR,tracker,discoverMcpServers,mcpDiscoveryFingerprint,mcpServersToWireFormat,listCesarPlans,saveConversation,formatChatContextForPrompt,isReadOnlyCommand,AGON_MODE_NAMES,parsePermissionRuleSet,parseToolHooks,evaluatePermissionRules,evaluateToolRules,PERMISSION_DENIED_MESSAGE,claudeBrainUsesPty"
+import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,ensureAgonHome,getAgonHome,resolveWorkingDir,scanProjectContext,buildCodebaseMap,buildKernContextSpine,buildProjectMemoryBlock,createPersistentSession,ToolRegistry,getProjectFileStateCache,buildToolSystemPrompt,toolsToOpenAIFormat,executeToolCall,RUNS_DIR,tracker,discoverMcpServers,mcpDiscoveryFingerprint,mcpServersToWireFormat,listCesarPlans,saveConversation,formatChatContextForPrompt,isReadOnlyCommand,AGON_MODE_NAMES,parsePermissionRuleSet,parseToolHooks,PERMISSION_DENIED_MESSAGE,claudeBrainUsesPty"
 import from="@kernlang/agon-core" names="ToolContext,ToolCallResult" types=true
 import from="@kernlang/agon-core" names="resolveGuardMode,readGuardModesFromConfig"
 import from="@kernlang/agon-core" names="GuardMode" types=true
@@ -17,7 +17,7 @@ import from="./brain-helpers.js" names="extractDelegation"
 import from="./self-turn-approval.js" names="applyCesarSelfTurnApproval,approvalArgsFromCommand"
 import from="./approval-diff.js" names="approvalToolIsFileMutating,buildApprovalDiffPreview"
 import from="./turn-runtime.js" names="isActiveCesarTurn,runTurnPermissionOnce,runTurnToolOnce"
-import from="./task-execution-lease.js" names="approveTaskAction,claimTaskActionPrompt,isTaskFileMutationAction,taskActionApprovalMessage"
+import from="./task-execution-lease.js" names="approveTaskAction,claimTaskActionPrompt,isTaskFileMutationAction,taskActionApprovalMessage,isApprovedPermissionResponse"
 import from="./permission-resolver.js" names="resolvePermissionDecision,authorizeResolvedTaskAction"
 import from="./tool-observability.js" names="recordCesarApprovalDecision,recordCesarToolTimeline,recordCesarConfidence,buildToolErrorDiagnostic"
 import from="./task-controller.js" names="resolveCesarHarnessProfile,isAgenticAutoMode"
@@ -1160,7 +1160,7 @@ fn name=buildOnApproval params="ctx:HandlerContext, engineId:string" returns="(t
       const boundaryReasons = ['auto_off', 'dangerous_boundary', 'important_task'];
       const promptReason = boundaryReasons.includes(resolution.reason)
         ? taskActionApprovalMessage({ decision: resolution.reason === 'important_task' ? 'ask_task_once' : 'ask_boundary_once', signature: resolution.signature, reason: resolution.reason })
-        : `Cesar (${engineId}) wants to execute`;
+        : `Cesar (${engineId}) wants to execute (${resolution.reason})`;
       return new Promise<boolean>((resolve) => {
         const dispatch = ctx.cesar!.lastDispatch;
         if (dispatch) {
@@ -1173,7 +1173,7 @@ fn name=buildOnApproval params="ctx:HandlerContext, engineId:string" returns="(t
             catch { /* diff is best-effort — fall back to command preview */ }
           }
           dispatch({ type: 'permission-ask', tool: agonTool, command, reason: promptReason, diffPreview: permDiffPreview && Array.isArray(permDiffPreview.files) ? permDiffPreview : undefined, fallbackNote: permDiffPreview && typeof permDiffPreview.fallback === 'string' ? permDiffPreview.fallback : undefined, resolve: (approved: boolean | string) => {
-            const wasApproved = typeof approved === 'string' ? approved === 'y' || approved === 'a' || approved === 's' : !!approved;
+            const wasApproved = isApprovedPermissionResponse(approved);
             if (wasApproved && taskLease) approveTaskAction(taskLease, agonTool, taskTarget);
             logApproval(wasApproved ? 'approved' : 'denied', 'user-prompt', wasApproved ? 'user approved' : 'user denied');
             resolve(wasApproved);

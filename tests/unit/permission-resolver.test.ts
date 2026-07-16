@@ -1,4 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+// Mock ONLY the config I/O — rule evaluation, path resolution, and command
+// classification stay real. persistPermissionRule must never touch the
+// developer's actual ~/.agon/config.json from a unit test.
+const { loadConfigMock, configSetMock } = vi.hoisted(() => ({
+  loadConfigMock: vi.fn().mockReturnValue({}),
+  configSetMock: vi.fn(),
+}));
+vi.mock('@kernlang/agon-core', async () => {
+  const actual = await vi.importActual<Record<string, unknown>>('@kernlang/agon-core');
+  return { ...actual, loadConfig: loadConfigMock, configSet: configSetMock };
+});
+
 import {
   addSessionPermissionRule,
   authorizeResolvedTaskAction,
@@ -16,6 +29,7 @@ import {
   synthesizePermissionRule,
   validateSynthesizedRule,
 } from '../../packages/cli/src/generated/cesar/permission-resolver.js';
+import { persistPermissionRule } from '../../packages/cli/src/generated/cesar/permission-resolver.js';
 import { createTaskExecutionLease } from '../../packages/cli/src/generated/cesar/task-execution-lease.js';
 
 const WS = process.cwd();
@@ -37,7 +51,11 @@ const request = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-beforeEach(() => clearSessionPermissionRules());
+beforeEach(() => {
+  clearSessionPermissionRules();
+  loadConfigMock.mockReturnValue({});
+  configSetMock.mockReset();
+});
 
 describe('resolveAgonPermissionMode', () => {
   it('honors an explicit agonPermissionMode', () => {
@@ -114,12 +132,32 @@ describe('resolvePermissionDecision — allow sources', () => {
     }));
     expect(r).toMatchObject({ decision: 'allow', stage: 'allow-rule' });
   });
-  it('legacy allowedCommands base-prefix still auto-approves', () => {
+  it('legacy allowedCommands base-prefix still auto-approves routine commands', () => {
     const r = resolvePermissionDecision(request({
       target: 'npm run build',
       config: cfg({ permissionMode: 'ask', allowedCommands: ['npm run'] }),
     }));
     expect(r).toMatchObject({ decision: 'allow', stage: 'allowed-commands' });
+  });
+  it('legacy bare tokens and tool-level allows never cover a dangerous boundary', () => {
+    const lease = createTaskExecutionLease('build the feature', true, WS);
+    const viaToken = resolvePermissionDecision(request({
+      target: 'git push origin main',
+      lease,
+      config: cfg({ allowedCommands: ['git'] }),
+    }));
+    expect(viaToken).toMatchObject({ decision: 'ask', reason: 'dangerous_boundary' });
+    const viaToolAllow = resolvePermissionDecision(request({
+      target: 'git push origin main',
+      lease,
+      config: cfg({ toolPermissions: { Bash: 'allow' } }),
+    }));
+    expect(viaToolAllow).toMatchObject({ decision: 'ask', reason: 'dangerous_boundary' });
+    const leaseless = resolvePermissionDecision(request({
+      target: 'npm publish',
+      config: cfg({ allowedCommands: ['npm'] }),
+    }));
+    expect(leaseless).toMatchObject({ decision: 'ask', reason: 'dangerous_boundary' });
   });
   it('the session allowlist auto-approves Bash', () => {
     const r = resolvePermissionDecision(request({
@@ -199,6 +237,17 @@ describe('resolvePermissionDecision — mode policy', () => {
     expect(resolvePermissionDecision(request({ target: 'npm run build', cwd: '', source: 'delegated', config })).decision).toBe('ask');
     expect(resolvePermissionDecision(request({ target: 'git status', cwd: '', source: 'delegated', config })).decision).toBe('allow');
   });
+  it('delegated file mutations never auto-approve absolute paths outside the workspace', () => {
+    const config = cfg({ agonPermissionMode: 'ask' });
+    expect(resolvePermissionDecision(request({ tool: 'Edit', target: '/etc/passwd', cwd: '', source: 'delegated', config })).decision).toBe('ask');
+    expect(resolvePermissionDecision(request({ tool: 'Write', target: '../outside.ts', cwd: '', source: 'delegated', config })).decision).toBe('ask');
+    expect(resolvePermissionDecision(request({ tool: 'Edit', target: '/etc/passwd', cwd: WS, source: 'delegated', config })).decision).toBe('ask');
+  });
+  it('auto mode without a lease still fences file mutations to the workspace', () => {
+    const config = cfg({ agonPermissionMode: 'auto' });
+    expect(resolvePermissionDecision(request({ tool: 'Edit', target: '/etc/passwd', config })).decision).toBe('ask');
+    expect(resolvePermissionDecision(request({ tool: 'Edit', target: 'src/index.ts', config })).decision).toBe('allow');
+  });
   it('same action resolves identically from native and self-turn sources', () => {
     const config = cfg({ agonPermissionMode: 'ask' });
     const native = resolvePermissionDecision(request({ tool: 'Edit', target: 'src/index.ts', config, source: 'native' }));
@@ -208,8 +257,11 @@ describe('resolvePermissionDecision — mode policy', () => {
 });
 
 describe('workspace containment helper', () => {
-  it('passes with an empty cwd (delegated worktrees own containment)', () => {
-    expect(fileTargetInsideWorkspace('', '/anywhere/file.ts')).toBe(true);
+  it('with an empty cwd only relative, non-escaping paths pass', () => {
+    expect(fileTargetInsideWorkspace('', 'src/file.ts')).toBe(true);
+    expect(fileTargetInsideWorkspace('', '/anywhere/file.ts')).toBe(false);
+    expect(fileTargetInsideWorkspace('', '../escape.ts')).toBe(false);
+    expect(fileTargetInsideWorkspace('', '~/notes.md')).toBe(false);
   });
   it('fails closed on empty targets and escapes', () => {
     expect(fileTargetInsideWorkspace(WS, '')).toBe(false);
@@ -222,6 +274,9 @@ describe('rule synthesis', () => {
   it('synthesizes two-token Bash rules', () => {
     expect(synthesizePermissionRule('Bash', 'git push origin main', WS)).toBe('Bash(git push:*)');
     expect(synthesizePermissionRule('Bash', 'npm run build', WS)).toBe('Bash(npm run:*)');
+  });
+  it('skips key=value option tokens when picking the subcommand', () => {
+    expect(synthesizePermissionRule('Bash', 'git -c user.name=Agon push origin', WS)).toBe('Bash(git push:*)');
   });
   it('refuses bare verbs, flags-only, compounds, and substitution', () => {
     expect(synthesizePermissionRule('Bash', 'ls', WS)).toBeNull();
@@ -239,6 +294,24 @@ describe('rule synthesis', () => {
     expect(validateSynthesizedRule('Bash(git)', 'Bash', 'git push origin main', WS)).toBe(false);
     expect(validateSynthesizedRule('Bash(*)', 'Bash', 'git push origin main', WS)).toBe(false);
     expect(validateSynthesizedRule('Bash(npm test:*)', 'Bash', 'git push', WS)).toBe(false);
+  });
+});
+
+describe('persistPermissionRule', () => {
+  it('appends to the requested bucket and dedupes', () => {
+    loadConfigMock.mockReturnValue({ permissions: { allow: [], deny: [] } });
+    expect(persistPermissionRule('allow', 'Bash(git push:*)')).toBe(true);
+    expect(configSetMock).toHaveBeenCalledWith('permissions', { allow: ['Bash(git push:*)'], deny: [] });
+    loadConfigMock.mockReturnValue({ permissions: { allow: ['Bash(git push:*)'], deny: [] } });
+    expect(persistPermissionRule('allow', 'Bash(git push:*)')).toBe(false);
+  });
+  it('removes the rule from the opposite bucket so Always after Never actually wins', () => {
+    loadConfigMock.mockReturnValue({ permissions: { allow: [], deny: ['Bash(git push:*)'] } });
+    expect(persistPermissionRule('allow', 'Bash(git push:*)')).toBe(true);
+    expect(configSetMock).toHaveBeenCalledWith('permissions', { allow: ['Bash(git push:*)'], deny: [] });
+    loadConfigMock.mockReturnValue({ permissions: { allow: ['Bash(npm test:*)'], deny: [] } });
+    expect(persistPermissionRule('deny', 'Bash(npm test:*)')).toBe(true);
+    expect(configSetMock).toHaveBeenCalledWith('permissions', { allow: [], deny: ['Bash(npm test:*)'] });
   });
 });
 

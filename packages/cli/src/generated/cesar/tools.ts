@@ -8,7 +8,7 @@ import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
 import { createCouncilTool } from './council-tool.js';
 
-import { isTaskFileMutationAction, taskActionApprovalMessage } from './task-execution-lease.js';
+import { isTaskFileMutationAction, taskActionApprovalMessage, isApprovedPermissionResponse } from './task-execution-lease.js';
 
 import { authorizeResolvedTaskAction } from './permission-resolver.js';
 
@@ -138,7 +138,7 @@ export async function executeEagerTool(toolName: string, meta: Record<string,unk
   const requestTaskApproval = (tool: string, message: string) => new Promise<boolean>((resolve) => {
     const command = (parsedInput as any).command ?? (parsedInput as any).file_path ?? toolInput;
     dispatch({ type: 'permission-ask', tool, command, reason: message, resolve: (approved: boolean | string) => {
-      resolve(typeof approved === 'string' ? approved === 'y' || approved === 'a' : !!approved);
+      resolve(isApprovedPermissionResponse(approved));
     } } as any);
   });
   const authorizeEagerTaskAction = async (tool: string, input: Record<string, unknown>): Promise<boolean | string> => {

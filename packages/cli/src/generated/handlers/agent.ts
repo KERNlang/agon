@@ -14,7 +14,9 @@ import { getSessionAllowList } from '../signals/output.js';
 
 import { resolvePermissionDecision } from '../cesar/permission-resolver.js';
 
-// @kern-source: agent:25
+import { approvalArgsFromCommand } from '../cesar/self-turn-approval.js';
+
+// @kern-source: agent:26
 export interface RunAgentOptions {
   engineId?: string;
   maxTurns?: number;
@@ -24,7 +26,7 @@ export interface RunAgentOptions {
   parentSignal?: AbortSignal;
 }
 
-// @kern-source: agent:33
+// @kern-source: agent:34
 export interface AgentContinuationResult {
   kind: string;
   status: string;
@@ -39,7 +41,7 @@ export interface AgentContinuationResult {
   workspaceChangedInPlace: boolean;
 }
 
-// @kern-source: agent:46
+// @kern-source: agent:47
 export function clipAgentText(text: string|null|undefined, limit: number): string {
   const raw = String(text ?? '').trim();
   if (!raw) {
@@ -51,7 +53,7 @@ export function clipAgentText(text: string|null|undefined, limit: number): strin
 /**
  * Shared approval callback for delegated agent runs, routed through the unified permission resolver with source='delegated' (floor-clamped to auto-edit: file edits run free, Bash mutations still prompt — the old smart-mode blanket auto-approve is retired). Exploration and plan-mode read-only blocks stay in front with instructive messages. cwd is intentionally empty: delegated agents execute in their own worktrees whose containment the executing tool layer owns.
  */
-// @kern-source: agent:53
+// @kern-source: agent:54
 export function buildAgentApprovalCallback(dispatch: Dispatch, ctx: HandlerContext, engineId: string): (tool:string, command:string, reason?:string)=>Promise<boolean|string> {
   return async (tool: string, command: string, reason?: string): Promise<boolean | string> => {
     const cfg = ctx.config;
@@ -77,10 +79,14 @@ export function buildAgentApprovalCallback(dispatch: Dispatch, ctx: HandlerConte
       }
     }
 
+    // cwd is the real workspace root: solo agents run in it directly and
+    // team worktrees live under <repo>/.agon/agent-worktrees/, so the
+    // containment check holds for both. Relative paths resolve inside the
+    // executing agent's own cwd; absolute escapes fall back to the prompt.
     const resolution = resolvePermissionDecision({
       tool: agonTool,
-      target: command,
-      cwd: '',
+      target: agonTool === 'Bash' ? command : String((approvalArgsFromCommand(agonTool, command) as any)?.file_path ?? command),
+      cwd: resolveWorkingDir(),
       source: 'delegated',
       config: cfg,
       sessionAllowList: getSessionAllowList(),
@@ -103,7 +109,7 @@ export function buildAgentApprovalCallback(dispatch: Dispatch, ctx: HandlerConte
 /**
  * Run one autonomous agent invocation. Creates a session, calls session.step() once (which internally loops up to maxInnerSteps tool calls), emits OutputEvents throughout, handles Ctrl+C via the KERN-generated abort signal bridged to session.cancel().
  */
-// @kern-source: agent:103
+// @kern-source: agent:108
 export async function runAgentMode(input: string, dispatch: Dispatch, ctx: HandlerContext, opts?: RunAgentOptions): Promise<AgentContinuationResult|null> {
   const abort = new AbortController();
   // ── Resolve engine ─────────────────────────────────────────
@@ -500,7 +506,7 @@ export async function runAgentMode(input: string, dispatch: Dispatch, ctx: Handl
   return followUp;
 }
 
-// @kern-source: agent:508
+// @kern-source: agent:513
 export interface RunAgentTeamOptions {
   engines?: string[];
   taskKind?: 'edit'|'investigate';
@@ -519,7 +525,7 @@ export interface RunAgentTeamOptions {
 /**
  * Run an autonomous agent team: N AgentSession instances in N worktrees with shared budget, synthesis, and explicit transcript events. Used by Cesar-driven team mode and by /agent-team slash command. Wraps AgentTeam from core/cesar/agent-team.kern.
  */
-// @kern-source: agent:522
+// @kern-source: agent:527
 export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: HandlerContext, opts?: RunAgentTeamOptions): Promise<AgentContinuationResult|null> {
   const abort = new AbortController();
   // ── Resolve members ───────────────────────────────────────

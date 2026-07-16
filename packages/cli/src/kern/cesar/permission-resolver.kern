@@ -99,11 +99,15 @@ fn name=buildEffectivePermissionRuleSet params="config:any" returns=PermissionRu
   >>>
 
 fn name=fileTargetInsideWorkspace params="cwd:string,target:string" returns=boolean export=true
-  doc "Containment check for the auto-edit mode policy. An empty cwd means the executing layer owns containment (delegated agents run in their own worktrees whose path this seam cannot know) and passes. Missing targets fail closed."
+  doc "Containment check for the auto-edit/auto mode policy. Missing targets fail closed. With an empty cwd only a relative, non-escaping path passes (it resolves under the executing agent's own cwd by construction); absolute and ~ paths fail closed — an unknown workspace must never approve edits anywhere on disk (review blocking finding)."
   handler <<<
-    if (!cwd) return true;
     const candidate = String(target ?? '').trim();
     if (!candidate) return false;
+    if (!cwd) {
+      if (isAbsolute(candidate) || /^~/.test(candidate)) return false;
+      const probe = resolve('/agon-probe');
+      return !relativePathEscapesWorkspace(relative(probe, resolve(probe, candidate)));
+    }
     const absolute = isAbsolute(candidate) ? resolve(candidate) : resolve(cwd, candidate);
     return !relativePathEscapesWorkspace(relative(resolve(cwd), absolute));
   >>>
@@ -151,11 +155,26 @@ fn name=resolvePermissionDecision params="request:PermissionResolutionRequest" r
       }
     }
 
-    if (toolPermissions[tool] === 'allow') {
-      return { decision: 'allow', reason: `${tool} allowed in settings`, stage: 'tool-permissions', signature };
-    }
+    // Scoped rules (user-authored via Always / .agon.json, incl. session
+    // rules) are the ONE allow source deliberately strong enough to cover a
+    // lease boundary — that is the whole point of persisting Bash(git push:*).
     if (ruleDecision === 'allow') {
       return { decision: 'allow', reason: `${tool} allowed by permissions rule`, stage: 'allow-rule', signature };
+    }
+
+    // Dangerous/important boundaries ask BEFORE the blunt allow sources:
+    // a legacy bare base token ('git' in allowedCommands) or a tool-level
+    // toolPermissions allow must never auto-approve a push/publish boundary
+    // (review blocking finding — the old gates never let them, either).
+    if (leaseEvaluation && (leaseEvaluation.reason === 'dangerous_boundary' || leaseEvaluation.reason === 'important_task')) {
+      return { decision: 'ask', reason: leaseEvaluation.reason, stage: 'lease', signature };
+    }
+    if (tool === 'Bash' && !request.lease && isLeaselessBashBoundary(target)) {
+      return { decision: 'ask', reason: 'dangerous_boundary', stage: 'mode', signature };
+    }
+
+    if (toolPermissions[tool] === 'allow') {
+      return { decision: 'allow', reason: `${tool} allowed in settings`, stage: 'tool-permissions', signature };
     }
     if (tool === 'Bash') {
       const commandLower = target.trim().toLowerCase();
@@ -170,15 +189,14 @@ fn name=resolvePermissionDecision params="request:PermissionResolutionRequest" r
       }
     }
 
-    if (leaseEvaluation && (leaseEvaluation.reason === 'dangerous_boundary' || leaseEvaluation.reason === 'important_task')) {
-      return { decision: 'ask', reason: leaseEvaluation.reason, stage: 'lease', signature };
-    }
-
     const baseMode = resolveAgonPermissionMode(cfg);
     const mode = request.source === 'delegated' ? clampDelegatedPermissionMode(baseMode) : baseMode;
+    const containedFileMutation = isTaskFileMutationAction(tool) && fileTargetInsideWorkspace(cwd, target);
     if (mode === 'auto') {
-      if (tool === 'Bash' && !request.lease && isLeaselessBashBoundary(target)) {
-        return { decision: 'ask', reason: 'dangerous_boundary', stage: 'mode', signature };
+      // Without a lease the resolver owns workspace containment itself: a
+      // file mutation escaping the workspace must not ride auto mode.
+      if (!request.lease && isTaskFileMutationAction(tool) && !containedFileMutation) {
+        return { decision: 'ask', reason: 'workspace_boundary', stage: 'mode', signature };
       }
       return { decision: 'allow', reason: 'auto mode', stage: 'mode', signature };
     }
@@ -189,7 +207,7 @@ fn name=resolvePermissionDecision params="request:PermissionResolutionRequest" r
     if (tool === 'Bash' && isReadOnlyCommand(target)) {
       return { decision: 'allow', reason: 'read-only command', stage: 'mode', signature };
     }
-    if (mode === 'auto-edit' && isTaskFileMutationAction(tool) && fileTargetInsideWorkspace(cwd, target)) {
+    if (mode === 'auto-edit' && containedFileMutation) {
       return { decision: 'allow', reason: 'auto-edit mode approves workspace file edits', stage: 'mode', signature };
     }
     return { decision: 'ask', reason: leaseEvaluation ? leaseEvaluation.reason : `${mode} mode requires approval`, stage: 'mode', signature };
@@ -223,7 +241,7 @@ fn name=synthesizePermissionRule params="tool:string,target:string,cwd:string" r
       if (hasShellControl(raw)) return null;
       const tokens = raw.split(/\s+/).map((token) => token.replace(/^['"]|['"]$/g, ''));
       const base = tokens[0] ?? '';
-      const sub = tokens.slice(1).find((token) => !token.startsWith('-')) ?? '';
+      const sub = tokens.slice(1).find((token) => !token.startsWith('-') && !token.includes('=')) ?? '';
       if (!base || !sub) return null;
       if (/[*?`$(){}\[\]\\]/.test(base) || /[*?`$(){}\[\]\\]/.test(sub)) return null;
       return `Bash(${base} ${sub}:*)`;
@@ -248,15 +266,18 @@ fn name=validateSynthesizedRule params="rule:string,tool:string,target:string,cw
   >>>
 
 fn name=persistPermissionRule params="kind:'allow'|'deny',rule:string" returns=boolean export=true
-  doc "Append one rule string to the persisted permissions object (config scope resolution is configSet's job). Returns false without writing when the rule is already present."
+  doc "Append one rule string to the persisted permissions object (config scope resolution is configSet's job). The same rule is removed from the opposite bucket first — an Always after a Never must not leave a deny that silently keeps winning. Returns false without writing when nothing changes."
   handler <<<
     const cfg = loadConfig() as any;
     const current = (cfg.permissions && typeof cfg.permissions === 'object') ? cfg.permissions : {};
-    const allow: string[] = Array.isArray(current.allow) ? current.allow.slice() : [];
-    const deny: string[] = Array.isArray(current.deny) ? current.deny.slice() : [];
+    let allow: string[] = Array.isArray(current.allow) ? current.allow.slice() : [];
+    let deny: string[] = Array.isArray(current.deny) ? current.deny.slice() : [];
+    const hadOpposite = (kind === 'deny' ? allow : deny).includes(rule);
+    if (kind === 'deny') allow = allow.filter((entry: string) => entry !== rule);
+    else deny = deny.filter((entry: string) => entry !== rule);
     const bucket = kind === 'deny' ? deny : allow;
-    if (bucket.includes(rule)) return false;
-    bucket.push(rule);
+    if (bucket.includes(rule) && !hadOpposite) return false;
+    if (!bucket.includes(rule)) bucket.push(rule);
     configSet('permissions' as any, { allow, deny } as any);
     return true;
   >>>

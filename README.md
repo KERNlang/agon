@@ -596,6 +596,14 @@ If you want manual control, you can easily override Cesar's routing:
 /cesar agy
 ```
 
+### Delegation reflex
+
+When a prompt is explicitly list-shaped (three or more numbered/bulleted items) with no sequential-dependency, shared-artifact, or small-task markers, Cesar receives a structural note that the work may decompose into parallel subtasks — it can then offer an agent team (worktree-isolated, running under the delegated permission floor). Detection is veto-first and advisory-only: nothing ever spawns without your confirmation, and prose or ordered work never triggers it. Disable with `cesarDelegationReflex false`.
+
+### Experience precedent
+
+Cesar learns from its own history beyond ratings: when your prompt resembles past runs, the matching episodes are injected into the turn as **advisory precedent** — `"fix the CSV parser crash" — mode=forge → codex, succeeded, 4m`. It's framed as evidence, never authority: nothing is shown unless at least `cesarExperienceMinEpisodes` (default 3) past runs clear the similarity gate, matching is purely lexical (no model or sidecar on the hot path), and any failure injects nothing. Disable with `cesarExperience false`; tune with `cesarExperienceMinSimilarity`, `cesarExperienceTopK`, and `cesarExperienceWindow`. Episodes accumulate from run telemetry as you use agon — older records without an intent summary are simply skipped.
+
 ## Configuration
 
 Global configuration, engine selection, model preferences, and telemetry settings are managed via your personal config file located at `~/.agon/AGON.md`. Project-specific settings can be defined in a local `AGON.md` within your repository.

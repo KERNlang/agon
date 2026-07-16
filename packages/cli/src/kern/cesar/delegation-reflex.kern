@@ -1,0 +1,58 @@
+// ── Delegation reflex (first slice: advisory-only) ──────────────────
+// Structural detection of fan-out-shaped tasks — 6/6-engine brainstorm
+// (label delegation-reflex, 2026-07-16) converged on: pure scorer, vetoes
+// first (false positives are worse than misses), explicit list shape with
+// a ≥3-item floor, advisory-only surfacing through the EXISTING suggestion
+// machinery ([SUGGEST:agent-team] → promptDelegation → user confirms).
+// This module never spawns anything: it only tells Cesar, in-prompt, that
+// the task LOOKS parallelizable; auto-spawn thresholds are a deliberately
+// unbuilt follow-up.
+
+interface name=DelegationShape export=true
+  field name=decision type="'none' | 'suggest'"
+  field name=items type="string[]"
+  field name=reasons type="string[]"
+  field name=vetoes type="string[]"
+
+const name=DELEGATION_SEQUENTIAL_RE type=RegExp value={{ /\b(?:then|after (?:that|this|which)|once (?:that|this|it)|depends on|followed by|first\b[\s\S]*\bthen)\b/i }}
+  doc "Sequential-dependency markers: ordered work must never be pitched as parallel."
+
+const name=DELEGATION_SMALL_RE type=RegExp value={{ /\b(?:quick(?:ly)?|just|tiny|small|simple|typo|one[- ]liner|minor)\b/i }}
+  doc "The user saying the work is small is a hard veto — spawning a team for a typo fix burns money."
+
+const name=DELEGATION_SHARED_STATE_RE type=RegExp value={{ /\b(?:lockfile|package\.json|package-lock|migration|schema|generated|shared (?:type|module|config|state)|same file)\b/i }}
+  doc "Shared-artifact mentions: list-shaped prompts whose items converge on one artifact look parallel but are not."
+
+const name=DELEGATION_ITEM_RE type=RegExp value={{ /^\s*(?:\d+[.)]\s+|[-*•]\s+)(.+)$/gm }}
+  doc "Explicit list items only (numbered or bulleted lines). Deliberately strict for the first slice: comma-series and 'for each X' phrasings under-trigger rather than over-trigger."
+
+fn name=assessDelegationShape params="input:string" returns=DelegationShape export=true
+  doc "Pure fan-out-shape assessment of a user prompt. Suggests ONLY when: ≥3 explicit list items, every item clears a 20-char size floor, and NO veto fires (sequential markers, small-task language, shared-artifact mentions, prompt too short overall). Vetoes are reported so the advisory can be debugged; the caller decides how to surface the result."
+  handler <<<
+    const text = String(input ?? '');
+    const vetoes: string[] = [];
+    const reasons: string[] = [];
+    const items: string[] = [];
+    const re = new RegExp(DELEGATION_ITEM_RE.source, 'gm');
+    for (const m of text.matchAll(re)) {
+      const item = (m[1] ?? '').trim();
+      if (item) items.push(item.length > 120 ? item.slice(0, 119).trimEnd() + '…' : item);
+    }
+    if (text.trim().length < 80) vetoes.push('prompt-too-short');
+    if (items.length < 3) vetoes.push('fewer-than-3-items');
+    if (items.some((i) => i.length < 20)) vetoes.push('item-below-size-floor');
+    if (DELEGATION_SEQUENTIAL_RE.test(text)) vetoes.push('sequential-markers');
+    if (DELEGATION_SMALL_RE.test(text)) vetoes.push('small-task-language');
+    if (DELEGATION_SHARED_STATE_RE.test(text)) vetoes.push('shared-artifact-mention');
+    if (vetoes.length > 0) return { decision: 'none', items, reasons, vetoes };
+    reasons.push(`${items.length} explicit list items`);
+    reasons.push('no sequential/shared-state/small-task markers');
+    return { decision: 'suggest', items, reasons, vetoes };
+  >>>
+
+fn name=buildDelegationAdvisory params="shape:DelegationShape" returns="string | null" export=true
+  doc "The in-prompt advisory injected ahead of the user message when the shape suggests fan-out. Deliberately framed as a structural observation Cesar may reject: the model owns the judgment, the existing [SUGGEST:agent-team] → user-confirm flow owns the UX, and nothing spawns without the user saying yes."
+  handler <<<
+    if (shape.decision !== 'suggest' || shape.items.length < 3) return null;
+    return `[DELEGATION SHAPE] This request contains ${shape.items.length} explicit list items with no sequential or shared-state markers — it MAY decompose into independent parallel subtasks. If, after reading them, you judge them genuinely independent (disjoint files, no ordering), you can offer parallel execution via [SUGGEST:agent-team] (worktree-isolated, user confirms before anything spawns) or background jobs. If they share state or order matters, ignore this note entirely — do not mention it.`;
+  >>>

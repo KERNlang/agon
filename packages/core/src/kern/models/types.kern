@@ -327,6 +327,8 @@ config name=AgonConfig
     doc "Maximum precedent lines injected per turn. Default 3. Non-positive = unset."
   field name=cesarExperienceWindow type=number optional=true
     doc "How many recent run records the precedent retrieval scans. Default 200. Non-positive = unset."
+  field name=cesarDelegationReflex type=boolean default=true
+    doc "When true, list-shaped prompts with no sequential/shared-state markers get an in-prompt structural advisory telling Cesar the task may decompose — Cesar may then offer [SUGGEST:agent-team]; the user always confirms before anything spawns. Advisory-only; nothing auto-spawns."
   field name=cesarStreamingXmlTools type=boolean default=true
     doc "When true, interrupt text streaming as soon as a complete XML tool call is parsed so XML fallback tools can execute live instead of waiting for the whole response."
   field name=campfireObserverStrategy type="'lead-first'|'all-respond'" default=lead-first

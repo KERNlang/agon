@@ -16,6 +16,7 @@ import from="./escalation.js" names="fireQuickNero,fireNero,fireAdvisor,handleSe
 import from="./routing.js" names="buildRoutingContext,deriveRoutingHints,shouldSpeculate"
 import from="./grounding.js" names="shouldGroundInput,buildGroundingBlock"
 import from="./experience.js" names="episodesFromRunRecords,retrieveExperience,buildExperienceBlock,experienceRetrievalOptions"
+import from="./delegation-reflex.js" names="assessDelegationShape,buildDelegationAdvisory"
 import from="../../telemetry/index.js" names="recentRunRecords,currentProjectKey"
 import from="./reliability.js" names="readCesarToolReliability,formatCesarReliabilityLine,shouldDowngradeCesarToolWork,buildWhatHappenedSummary"
 import from="./self-turn-approval.js" names="applyCesarSelfTurnApproval"
@@ -878,6 +879,18 @@ ${reviewFollowup.prompt}`;
           const _expBlock = buildExperienceBlock(retrieveExperience(input, _expEpisodes, _expOpts));
           if (_expBlock) enrichedInput = `${_expBlock}\n\n${enrichedInput}`;
         } catch { /* experience is best-effort */ }
+      }
+
+      // ── Delegation reflex (advisory-only: config.cesarDelegationReflex) ──
+      // Structural fan-out detection (explicit ≥3-item lists, veto-first). The
+      // advisory rides the prompt; surfacing stays with Cesar's existing
+      // [SUGGEST:agent-team] → promptDelegation flow, so the user always
+      // confirms and nothing auto-spawns. Fail-open like its siblings.
+      if ((config as any).cesarDelegationReflex !== false && shouldGroundInput(input)) {
+        try {
+          const _delAdvisory = buildDelegationAdvisory(assessDelegationShape(input));
+          if (_delAdvisory) enrichedInput = `${_delAdvisory}\n\n${enrichedInput}`;
+        } catch { /* delegation reflex is best-effort */ }
       }
 
       // ── Sequential-thinking scaffold (opt-in: config.cesarThinkFirst) ──

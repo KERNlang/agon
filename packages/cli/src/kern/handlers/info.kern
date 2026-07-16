@@ -7,6 +7,8 @@ import from="../signals/icons.js" names="icons"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="@kernlang/agon-core" names="EngineRegistry"
 import from="../cesar/routing.js" names="deriveRoutingHints,buildRoutingContext"
+import from="../cesar/permission-resolver.js" names="persistPermissionRule,removePermissionRule,getSessionPermissionRules,resolveAgonPermissionMode,describeAgonPermissionMode"
+import from="@kernlang/agon-core" names="parsePermissionRule"
 import from="../cesar/reliability.js" names="summarizeAllCesarToolReliability,readCesarDecisionRecords,summarizeCesarLatency"
 import from="../blocks/narration-fold.js" names="getLastFoldedRaw,getFoldedRaw,getFoldedRawCount"
 
@@ -545,10 +547,30 @@ module name=InfoHandlers
       }
     >>>
 
-  fn name=handlePermissions params="dispatch:Dispatch" returns=void
-    doc "Render the loaded CC-parity allow/deny permission rules, their source scope file, and which scope wins. Mirrors Claude Code's /permissions inspection. deny ALWAYS wins over allow."
+  fn name=handlePermissions params="dispatch:Dispatch,intent?:any" returns=void
+    doc "Render the loaded CC-parity allow/deny permission rules, their source scope file, and which scope wins — plus session-scoped rules, the legacy allowedCommands compat list, and the active permission mode. /permissions add allow|deny <rule> persists a validated rule; /permissions remove <rule> revokes from every bucket. deny ALWAYS wins over allow."
     handler <<<
       ensureAgonHome();
+      const permAction = String(intent?.action ?? '');
+      if (permAction === 'add') {
+        const rule = String(intent?.value ?? '').trim();
+        const kind = String(intent?.key ?? 'allow') === 'deny' ? 'deny' : 'allow';
+        if (!parsePermissionRule(rule)) {
+          dispatch({ type: 'error', message: `Malformed rule: ${rule}. Expected e.g. Bash(git push:*) or Edit(/path/to/file).` });
+          return;
+        }
+        dispatch(persistPermissionRule(kind as any, rule)
+          ? { type: 'success', message: `Persisted ${kind} rule: ${rule}` }
+          : { type: 'info', message: `${kind} rule already present: ${rule}` });
+        return;
+      }
+      if (permAction === 'remove') {
+        const rule = String(intent?.value ?? '').trim();
+        dispatch(removePermissionRule(rule)
+          ? { type: 'success', message: `Removed rule: ${rule}` }
+          : { type: 'warning', message: `Rule not found in any bucket: ${rule}` });
+        return;
+      }
       // Use the resolved active workspace dir, not the raw process cwd, so
       // /permissions inspects the same .agon.json/.agon.local.json scope the
       // approval gate actually loads (workspace switch / subdir invocation safe).
@@ -588,10 +610,21 @@ module name=InfoHandlers
       const effAllow: string[] = Array.isArray(eff.allow) ? eff.allow : [];
       const effDeny: string[] = Array.isArray(eff.deny) ? eff.deny : [];
       if (effAllow.length === 0 && effDeny.length === 0) {
-        dispatch({ type: 'info', message: 'No permission rules configured. Add a "permissions" block with allow/deny arrays to .agon.json, e.g. { "permissions": { "allow": ["Bash(npm test:*)"], "deny": ["Bash(rm:*)"] } }' });
+        dispatch({ type: 'info', message: 'No permission rules configured. Add one with /permissions add allow "Bash(npm test:*)" or a "permissions" block in .agon.json.' });
       } else {
         dispatch({ type: 'text', content: `Effective (all scopes merged): ${effDeny.length} deny, ${effAllow.length} allow. Deny rules take precedence.` });
       }
+      const sessionRules = getSessionPermissionRules();
+      if (sessionRules.length > 0) {
+        dispatch({ type: 'text', content: `Session allow rules (this run only): ${sessionRules.join(', ')}` });
+      }
+      const legacyAllowed: string[] = Array.isArray((cfg as any).allowedCommands) ? (cfg as any).allowedCommands : [];
+      if (legacyAllowed.length > 0) {
+        dispatch({ type: 'text', content: `Legacy allowedCommands (base-token prefixes, still honored): ${legacyAllowed.join(', ')} — upgrade with /permissions add allow "Bash(<cmd> <sub>:*)" then /config set allowedCommands [].` });
+      }
+      const modeInfo = describeAgonPermissionMode(resolveAgonPermissionMode(cfg));
+      dispatch({ type: 'text', content: `Permission mode: ${modeInfo.label} — ${modeInfo.hint}. Shift+Tab or /mode cycles ask → auto-edit → auto.` });
+      dispatch({ type: 'text', content: 'Edit rules with /permissions add allow|deny <rule> and /permissions remove <rule>.' });
     >>>
 
   fn name=handleUse params="engineIds:string[], dispatch:Dispatch, ctx:HandlerContext, setSessionEngines:(engines:string[]|null)=>void" returns=void

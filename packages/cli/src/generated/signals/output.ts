@@ -8,7 +8,9 @@ import { foldNarration, setLastFoldedRaw } from '../blocks/narration-fold.js';
 
 import { codeBlockBuffer } from '../../code-buffer.js';
 
-import { loadConfig, configSet } from '@kernlang/agon-core';
+import { loadConfig, configSet, resolveWorkingDir, evaluateToolRules } from '@kernlang/agon-core';
+
+import { synthesizePermissionRule, validateSynthesizedRule, persistPermissionRule, addSessionPermissionRule, buildEffectivePermissionRuleSet } from '../cesar/permission-resolver.js';
 
 import type { Todo } from './todos.js';
 
@@ -17,7 +19,7 @@ import { setTodos, updateTodoState, clearTodos, clearLiveTodos } from './todos.j
 /**
  * Live state for a running autonomous agent session. Fed by agent-* OutputEvents, rendered by surfaces/agent.kern::AgentProgressView. teamId groups members of a single AgentTeam run for explicit clear-by-team. completedAt is set by agent-step-end and consumed by the TTL pruner in app.kern.
  */
-// @kern-source: output:13
+// @kern-source: output:14
 export interface AgentProgressSnapshot {
   engineId: string;
   turnIndex: number;
@@ -43,7 +45,7 @@ export interface AgentProgressSnapshot {
  *
  * True when this entry holds ONLY a SPECULATIVE preview draft (from a PTY 'preview' chunk), never authoritative engine text. A draft-only entry is NEVER committed to the transcript at streaming-end (it is dropped), and the first authoritative streaming-chunk REPLACES the draft content rather than appending to it. This is the contamination firewall: a speculative preview can update the live pane but can never become — or prefix — the committed answer.
  */
-// @kern-source: output:33
+// @kern-source: output:34
 export interface StreamingEntry {
   engineId: string;
   content: string;
@@ -54,7 +56,7 @@ export interface StreamingEntry {
 /**
  * Typed in-flight tool stream shared by output state, the frame-limited bridge, and the live renderer.
  */
-// @kern-source: output:41
+// @kern-source: output:42
 export interface LiveToolStreamEntry {
   streamId: string;
   engineId: string;
@@ -65,7 +67,7 @@ export interface LiveToolStreamEntry {
   startedAt: number;
 }
 
-// @kern-source: output:51
+// @kern-source: output:52
 export interface OutputState {
   liveSpinner: {message:string,color?:number,engineId?:string}|null;
   liveProgress: EngineProgress[]|null;
@@ -75,7 +77,7 @@ export interface OutputState {
   todos: Todo[];
 }
 
-// @kern-source: output:59
+// @kern-source: output:60
 export interface OutputActions {
   setLiveSpinner: (val:any) => void;
   setLiveProgress: (val:EngineProgress[]|null) => void;
@@ -99,16 +101,16 @@ export interface OutputActions {
   setTodos: (updater:Todo[] | ((prev:Todo[]) => Todo[])) => void;
 }
 
-// @kern-source: output:82
+// @kern-source: output:83
 export const _thinkingBuffer: {engineId:string,content:string} = { engineId: '', content: '' };
 
-// @kern-source: output:85
+// @kern-source: output:86
 export const _permissionQueue: Array<{tool:string,command:string,description?:string,reason:string,diffPreview?:any,fallbackNote?:string,resolve:(approved:boolean)=>void}> = [] as Array<{tool:string,command:string,description?:string,reason:string,diffPreview?:any,fallbackNote?:string,resolve:(approved:boolean)=>void}>;
 
-// @kern-source: output:87
+// @kern-source: output:88
 export const _sessionAllowList: string[] = [] as string[];
 
-// @kern-source: output:89
+// @kern-source: output:90
 export function getSessionAllowList(): string[] {
   return _sessionAllowList;
 }
@@ -116,7 +118,7 @@ export function getSessionAllowList(): string[] {
 /**
  * Reject all queued permissions and clear the queue. Called on interrupt/cancel.
  */
-// @kern-source: output:91
+// @kern-source: output:92
 export function clearPermissionQueue(): void {
   while (_permissionQueue.length > 0) {
     const entry = _permissionQueue.shift()!;
@@ -127,31 +129,31 @@ export function clearPermissionQueue(): void {
 /**
  * Drop any buffered thinking-chunk content. Called on interrupt / clear / SIGINT so the next turn doesn't emit stale content as a fresh block.
  */
-// @kern-source: output:98
+// @kern-source: output:99
 export function clearThinkingBuffer(): void {
   _thinkingBuffer.engineId = '';
   _thinkingBuffer.content = '';
 }
 
-// @kern-source: output:110
+// @kern-source: output:111
 export const TOOL_CALL_GROUP_FLUSH_MS: number = 500;
 
-// @kern-source: output:112
+// @kern-source: output:113
 export const _pendingToolCalls: any[] = [] as any[];
 
-// @kern-source: output:114
+// @kern-source: output:115
 export const _pendingFlushTimer: { timer: any, actions: any } = ({ timer: null, actions: null }) as any;
 
-// @kern-source: output:117
+// @kern-source: output:118
 export const _liveToolStreams: Record<string,LiveToolStreamEntry> = {};
 
-// @kern-source: output:122
+// @kern-source: output:123
 export const _pinnedPlan: { event: any } = ({ event: null }) as { event: any };
 
-// @kern-source: output:130
+// @kern-source: output:131
 export const _planStepActive: { on: boolean } = ({ on: false }) as { on: boolean };
 
-// @kern-source: output:132
+// @kern-source: output:133
 function toolCallKey(event: any): string {
   return [String(event?.engineId ?? ''), String(event?.tool ?? ''), String(event?.input ?? '')].join('\x00');
 }
@@ -159,7 +161,7 @@ function toolCallKey(event: any): string {
 /**
  * Emit any buffered tool-call events as a single tool-call-group block.
  */
-// @kern-source: output:136
+// @kern-source: output:137
 export function flushPendingToolCalls(actions: OutputActions): void {
   if (_pendingFlushTimer.timer) {
     clearTimeout(_pendingFlushTimer.timer);
@@ -174,7 +176,7 @@ export function flushPendingToolCalls(actions: OutputActions): void {
 /**
  * Debounce-flush pending tool-calls after a quiet period — covers turns that end on a tool-call without any trailing event.
  */
-// @kern-source: output:149
+// @kern-source: output:150
 export function schedulePendingFlush(actions: OutputActions): void {
   _pendingFlushTimer.actions = actions;
   if (_pendingFlushTimer.timer) clearTimeout(_pendingFlushTimer.timer);
@@ -185,20 +187,32 @@ export function schedulePendingFlush(actions: OutputActions): void {
 }
 
 /**
- * Auto-approve queued permissions whose base command is already in allowedCommands.
+ * Best-effort raw target for rule synthesis/evaluation. Bash prompts carry the real command; file-tool prompts carry a rendered preview string, so the structured diff preview's file path is the truthful target when present.
  */
-// @kern-source: output:160
+// @kern-source: output:161
+function _permissionRuleTarget(entry: {tool:string,command:string,diffPreview?:any}): string {
+  if (entry.tool === 'Bash') return String(entry.command ?? '');
+  const previewPath = entry.diffPreview?.files?.[0]?.path;
+  return typeof previewPath === 'string' && previewPath.trim() ? previewPath : String(entry.command ?? '');
+}
+
+/**
+ * Auto-approve queued permissions already covered by an allow source: the legacy allowedCommands base-token list, or a persisted/session allow rule (so one Always/Yes-for-session answer drains coalesced sibling prompts for the same pattern).
+ */
+// @kern-source: output:169
 function _drainAutoApproved(actions: OutputActions): void {
   const cfg = loadConfig();
   const allowed: string[] = (cfg as any).allowedCommands ?? [];
-  if (allowed.length === 0) {
-    return;
-  }
-  // Drain from the front: auto-approve entries matching the allow-list.
+  const rules = buildEffectivePermissionRuleSet(cfg);
+  if (allowed.length === 0 && rules.allow.length === 0) return;
+  const cwd = resolveWorkingDir();
   while (_permissionQueue.length > 0) {
     const head = _permissionQueue[0];
-    const base = head.command.trim().split(/[ \t\n\r\f\v]+/)[0];
-    if (base && allowed.some((a: string) => base.toLowerCase().startsWith(a.toLowerCase()))) {
+    const base = head.command.trim().split(/\s+/)[0];
+    const legacyHit = head.tool === 'Bash' && base && allowed.some((a: string) => base.toLowerCase().startsWith(a.toLowerCase()));
+    const target = _permissionRuleTarget(head);
+    const ruleHit = target && evaluateToolRules(head.tool, target, cwd, rules) === 'allow';
+    if (legacyHit || ruleHit) {
       _permissionQueue.shift();
       head.resolve(true);
     } else {
@@ -207,7 +221,10 @@ function _drainAutoApproved(actions: OutputActions): void {
   }
 }
 
-// @kern-source: output:177
+/**
+ * Claude-Code-parity prompt: Yes / Yes-for-session / Always (persists a validated scoped rule like Bash(git push:*)) / No / Never (persists a deny rule) / tell-Cesar. Always/Never only appear when a rule can be synthesized AND re-validates against the originating action — bare-verb rules are never persisted. Yes approves exactly once.
+ */
+// @kern-source: output:192
 function _showNextPermission(actions: OutputActions): void {
   // First drain any that are now auto-approved (e.g. after "Always")
   _drainAutoApproved(actions);
@@ -216,6 +233,20 @@ function _showNextPermission(actions: OutputActions): void {
   actions.addBlock({ type: 'permission-ask', tool: next.tool, command: next.command, description: next.description, reason: next.reason, diffPreview: next.diffPreview, fallbackNote: next.fallbackNote, resolve: next.resolve } as any);
   const permResolve = next.resolve;
   const permCommand = next.command;
+  const permTool = next.tool;
+  const ruleCwd = resolveWorkingDir();
+  const ruleTarget = _permissionRuleTarget(next);
+  const candidateRule = synthesizePermissionRule(permTool, ruleTarget, ruleCwd);
+  const rule = candidateRule && validateSynthesizedRule(candidateRule, permTool, ruleTarget, ruleCwd) ? candidateRule : null;
+  const sessionBase = permTool === 'Bash' ? (permCommand.trim().split(/\s+/)[0] ?? '') : '';
+  const choices: Array<{ key: string; label: string; color: string }> = [
+    { key: 'y', label: 'Yes', color: '#4ade80' },
+  ];
+  if (rule || sessionBase) choices.push({ key: 's', label: 'Yes for this session', color: '#4ade80' });
+  if (rule) choices.push({ key: 'a', label: `Always allow ${rule}`, color: '#60a5fa' });
+  choices.push({ key: 'n', label: 'No', color: '#ef4444' });
+  if (rule) choices.push({ key: 'x', label: `Never (deny ${rule})`, color: '#ef4444' });
+  choices.push({ key: '__other', label: 'No, tell Cesar what to do instead', color: '#9ca3af' });
   actions.setQuestionState({
     kind: 'permission',
     prompt: `Approve ${next.tool}`,
@@ -225,36 +256,29 @@ function _showNextPermission(actions: OutputActions): void {
     reason: next.reason,
     diffPreview: next.diffPreview,
     fallbackNote: next.fallbackNote,
-    choices: [
-      { key: 'y', label: 'Yes', color: '#4ade80' },
-      { key: 'n', label: 'No', color: '#ef4444' },
-      { key: 'a', label: 'Always', color: '#60a5fa' },
-      { key: '__other', label: 'No, tell Cesar what to do instead', color: '#9ca3af' },
-    ],
+    choices,
     resolve: (answer: string) => {
       _permissionQueue.shift();
       const lower = answer.toLowerCase().trim();
-      if (lower === 'a') {
-        const cfg = loadConfig();
-        const allowed = (cfg as any).allowedCommands ?? [];
-        const base = permCommand.trim().split(/\s+/)[0];
-        if (base && !allowed.includes(base)) {
-          allowed.push(base);
-          configSet('allowedCommands' as any, allowed);
+      if (lower === 'a' && rule) {
+        persistPermissionRule('allow', rule);
+        permResolve(true);
+        actions.addBlock({ type: 'success', message: `Always allowed: ${rule}` } as any);
+      } else if (lower === 's') {
+        if (rule) {
+          addSessionPermissionRule(rule);
+          actions.addBlock({ type: 'success', message: `Allowed for this session: ${rule}` } as any);
+        } else if (sessionBase) {
+          if (!_sessionAllowList.includes(sessionBase)) _sessionAllowList.push(sessionBase);
+          actions.addBlock({ type: 'success', message: `Allowed for this session: ${sessionBase}` } as any);
         }
         permResolve(true);
-        actions.addBlock({ type: 'success', message: `Always allowed: ${base}` } as any);
       } else if (lower === 'y') {
-        // Smart mode: add to session allowlist (memory-only, not persisted)
-        const cfg = loadConfig();
-        const mode = (cfg as any).permissionMode ?? 'smart';
-        if (mode === 'smart') {
-          const base = permCommand.trim().split(/\s+/)[0];
-          if (base && !_sessionAllowList.includes(base)) {
-            _sessionAllowList.push(base);
-          }
-        }
         permResolve(true);
+      } else if (lower === 'x' && rule) {
+        persistPermissionRule('deny', rule);
+        permResolve(false);
+        actions.addBlock({ type: 'warning', message: `Never allowed (deny rule persisted): ${rule}` } as any);
       } else {
         permResolve(false);
         actions.addBlock({ type: 'warning', message: 'Denied' } as any);
@@ -270,7 +294,7 @@ function _showNextPermission(actions: OutputActions): void {
 /**
  * Apply engine-agnostic narration folding to engine-block content per the narrationFold config (off|safe|aggressive, default safe). On a fold, records the raw in the bounded ring (for /raw) and returns { content, foldedSteps } to spread onto the engine-block; clean text folds nothing and returns just { content }. Pure backstop — runs on every engine-block, structured engines simply fold nothing. The raw is NOT returned per-event; it lives in the ring to avoid unbounded per-block memory growth.
  */
-// @kern-source: output:237
+// @kern-source: output:260
 export function foldEngineContent(content: string): { content: string, foldedSteps?: number } {
   const cfg = loadConfig();
   const policy = String((cfg as any).narrationFold ?? 'safe');
@@ -283,7 +307,7 @@ export function foldEngineContent(content: string): { content: string, foldedSte
 /**
  * Process a single OutputEvent — updates spinner, streaming, and block state.
  */
-// @kern-source: output:248
+// @kern-source: output:271
 export function handleOutputEvent(event: OutputEvent, state: OutputState, actions: OutputActions, mode: string, chatStartTime: number): void {
   // Flush accumulated thinking buffer when any non-thinking event arrives
   if (event.type !== 'thinking-chunk' && _thinkingBuffer.content) {

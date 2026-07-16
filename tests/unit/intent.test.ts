@@ -713,3 +713,30 @@ describe('Intent Detection — natural-language review dispatch (no slash)', () 
     expect(detectIntent('fix the bug then review with codex').type).not.toBe('review');
   });
 });
+
+describe('/permissions rule editing', () => {
+  it('parses the bare listing form', () => {
+    expect(detectIntent('/permissions')).toMatchObject({ type: 'permissions' });
+    expect(detectIntent('/perms')).toMatchObject({ type: 'permissions' });
+  });
+
+  it('parses add allow/deny with the rule preserved verbatim', () => {
+    expect(detectIntent('/permissions add allow Bash(git push:*)')).toMatchObject({
+      type: 'permissions', action: 'add', key: 'allow', value: 'Bash(git push:*)',
+    });
+    expect(detectIntent('/permissions add deny Bash(rm:*)')).toMatchObject({
+      type: 'permissions', action: 'add', key: 'deny', value: 'Bash(rm:*)',
+    });
+  });
+
+  it('parses remove', () => {
+    expect(detectIntent('/permissions remove Bash(git push:*)')).toMatchObject({
+      type: 'permissions', action: 'remove', value: 'Bash(git push:*)',
+    });
+  });
+
+  it('falls back to listing on malformed subcommands', () => {
+    expect(detectIntent('/permissions add Bash(git push:*)')).toMatchObject({ type: 'permissions' });
+    expect((detectIntent('/permissions add Bash(git push:*)') as any).action).toBeUndefined();
+  });
+});

@@ -390,7 +390,19 @@ Also available as interactive `/conquer` in the REPL and `agon call conquer` for
 
 Launching `agon` starts a powerful terminal REPL equipped with native scrollback, command history, and a file rail. 
 
-Available commands include: `/forge`, `/synthesis`, `/brainstorm`, `/tribunal`, `/campfire`, `/pipeline`, `/review`, `/agent`, `/speculate`, `/team-forge`, `/status`, `/leaderboard`, `/history`, `/config`, `/plan`, `/models`, `/engines`, `/doctor`, `/help`, and `/exit`.
+Available commands include: `/forge`, `/synthesis`, `/brainstorm`, `/tribunal`, `/campfire`, `/pipeline`, `/review`, `/agent`, `/speculate`, `/team-forge`, `/status`, `/leaderboard`, `/history`, `/config`, `/plan`, `/mode`, `/permissions`, `/models`, `/engines`, `/doctor`, `/help`, and `/exit`.
+
+### Permission modes
+
+Agon uses a Claude-Code-style permission mode, cycled with **Shift+Tab** (or `/mode`) and always visible in the footer:
+
+| Mode | Behavior |
+|---|---|
+| `ask` | Prompts before file edits and mutating commands. Read-only tools and commands run freely. |
+| `auto-edit` | Workspace file edits are auto-approved; Bash mutations still prompt. (Default — migrated from the legacy `smart` mode.) |
+| `auto` (AUTO) | Workspace autonomy. Boundaries still prompt: pushes, publishing, deployments, workspace escapes, and deny rules always win. |
+
+Permission prompts offer **Yes / Yes for this session / Always / No / Never**. *Always* persists a scoped rule such as `Bash(git push:*)` into `permissions.allow` (never a bare verb); *Never* persists a deny rule. Inspect and edit rules with `/permissions`, `/permissions add allow|deny <rule>`, and `/permissions remove <rule>`. Delegated engine runs (forge, tribunal, agent teams) execute at least at `auto-edit` so multi-engine dispatches don't queue dozens of file-edit prompts — their Bash mutations still prompt once per pattern.
 
 **Example Session:**
 ```text

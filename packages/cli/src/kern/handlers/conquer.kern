@@ -39,6 +39,12 @@ fn name=handleConquer params="task:string, dispatch:Dispatch, ctx:HandlerContext
       advisors = resolved.filter((id) => id !== builder);
     }
 
+    // CLI parity: `agon conquer` rejects --max-turns < 1 instead of silently
+    // running 40 turns the user tried to cap at 0.
+    if (opts?.maxTurns !== undefined && (!Number.isFinite(opts.maxTurns) || opts.maxTurns < 1)) {
+      dispatch({ type: 'error', message: `Invalid --max-turns: ${opts.maxTurns}` });
+      return;
+    }
     const maxTurns = opts?.maxTurns && opts.maxTurns > 0 ? opts.maxTurns : 40;
     // CLI-parity knobs (previously hardcoded in this handler — review follow-up):
     // defaults mirror `agon conquer` (gate 1800s, per-builder-turn 600s, no wall cap).

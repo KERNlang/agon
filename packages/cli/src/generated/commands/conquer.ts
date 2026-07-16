@@ -93,8 +93,10 @@ export const conquerCommand: any = defineCommand({
       maxHours = parseFloat(String(args.maxHours));
       if (Number.isNaN(maxHours) || maxHours < 0) { console.error(`Invalid --max-hours: ${args.maxHours}`); process.exitCode = 1; return; }
     }
-    const turnTimeout = parseInt(String(args.timeout ?? '600'), 10) || 600;
-    const gateTimeout = parseInt(String(args.gateTimeout ?? '1800'), 10) || 1800;
+    const turnTimeoutRaw = parseInt(String(args.timeout ?? '600'), 10);
+    const turnTimeout = Number.isFinite(turnTimeoutRaw) && turnTimeoutRaw > 0 ? turnTimeoutRaw : 600;
+    const gateTimeoutRaw = parseInt(String(args.gateTimeout ?? '1800'), 10);
+    const gateTimeout = Number.isFinite(gateTimeoutRaw) && gateTimeoutRaw > 0 ? gateTimeoutRaw : 1800;
 
     const { path: outputDir } = createRunDir({ mode: 'conquer', label: args.label, announce: false });
     let isolation;

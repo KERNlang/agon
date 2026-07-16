@@ -31,6 +31,39 @@ fn name=createAcpSession params="config:PersistentSessionConfig" returns="Persis
       });
     }
 
+    function toAcpMcpServers(servers: Array<Record<string, unknown>> | undefined): Array<Record<string, unknown>> {
+      // ACP spec wire shape: stdio servers carry env as EnvVariable[] ({name,value})
+      // and REQUIRE args/env arrays; http/sse servers carry headers the same way.
+      // Agon's internal shape uses Record<string,string> env — strict ACP agents
+      // (kimi) reject that with -32602 Invalid params, lenient ones ignored it.
+      const toPairs = (rec: unknown): Array<{ name: string; value: string }> =>
+        Object.entries((rec ?? {}) as Record<string, unknown>).map(([name, value]) => ({ name, value: String(value) }));
+      const out: Array<Record<string, unknown>> = [];
+      for (const s of (servers ?? []) as any[]) {
+        // A malformed entry (http-typed without url, or stdio without command)
+        // would emit a wire object with undefined required fields — the exact
+        // -32602 class this normalizer exists to prevent. Skip it instead.
+        if (s.url || s.type === 'http' || s.type === 'sse') {
+          if (!s.url) continue;
+          out.push({
+            type: s.type === 'sse' ? 'sse' : 'http',
+            name: s.name,
+            url: s.url,
+            headers: Array.isArray(s.headers) ? s.headers : toPairs(s.headers),
+          });
+          continue;
+        }
+        if (!s.command) continue;
+        out.push({
+          name: s.name,
+          command: s.command,
+          args: Array.isArray(s.args) ? s.args : [],
+          env: Array.isArray(s.env) ? s.env : toPairs(s.env),
+        });
+      }
+      return out;
+    }
+
     function killProc(): void {
       if (!proc) return;
       try {
@@ -241,7 +274,7 @@ fn name=createAcpSession params="config:PersistentSessionConfig" returns="Persis
         // Create session (pass system prompt if available)
         const sessParams: Record<string, unknown> = {
           cwd: config.cwd,
-          mcpServers: config.mcpServers ?? [],
+          mcpServers: toAcpMcpServers(config.mcpServers),
         };
         if (config.systemPrompt) {
           sessParams.systemPrompt = config.systemPrompt;

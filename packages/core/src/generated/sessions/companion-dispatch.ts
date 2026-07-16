@@ -81,6 +81,7 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
   let nextId = 1;
   const pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
   const agentMessages: string[] = [];
+  let lastAcpPushWasChunk = false;
   let turnCompleted: Record<string, unknown> | null = null;
   let turnError: Record<string, unknown> | null = null;
   let threadId: string | null = null;
@@ -244,16 +245,32 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
       const item = (msg.params as any)?.item;
       if (item?.type === 'agentMessage') {
         agentMessages.push(item.text);
+        lastAcpPushWasChunk = false;
       }
       if (item?.type === 'enteredReviewMode') {
         agentMessages.push(item.review);
+        lastAcpPushWasChunk = false;
       }
     } else if (msg.method === 'session/update') {
       // ACP protocol notifications
       const update = (msg.params as any)?.update;
       if (update?.sessionUpdate === 'agent_message_chunk') {
+        // Chunks are token-level DELTAS of one agent message (kimi streams
+        // per-word) — concatenate consecutive chunks into a single entry.
+        // Pushing each delta separately rendered one word per '\n\n' paragraph.
         const text = update.content?.text ?? '';
-        if (text) agentMessages.push(text);
+        if (text) {
+          if (lastAcpPushWasChunk && agentMessages.length > 0) {
+            agentMessages[agentMessages.length - 1] += text;
+          } else {
+            agentMessages.push(text);
+          }
+          lastAcpPushWasChunk = true;
+        }
+      } else if (update?.sessionUpdate === 'tool_call') {
+        // A tool call ends the contiguous text run — the next chunk starts a
+        // new message (kept as a separate '\n\n'-joined paragraph block).
+        lastAcpPushWasChunk = false;
       }
     } else if (msg.method === 'error') {
       turnError = (msg.params as Record<string, unknown>);
@@ -364,8 +381,10 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
         prompt: [{ type: 'text', text: opts.prompt }],
       }) as any;
 
-      // ACP returns text directly in the prompt response
-      if (promptResult?.text) agentMessages.push(promptResult.text);
+      // Some ACP servers return the text directly in the prompt response —
+      // but only as a fallback when nothing was streamed via
+      // agent_message_chunk, else the trailing text would duplicate.
+      if (promptResult?.text && agentMessages.length === 0) agentMessages.push(promptResult.text);
       turnCompleted = promptResult ?? {};
     } else {
       // JSONRPC protocol (Codex)

@@ -3158,6 +3158,19 @@ ${reviewFollowup.prompt}`;
         // owns the screen — same guard as emitLiveTodos), falling through to the
         // normal end-of-turn path.
         const _planSurfaceActive = !!(ctx.activePlan && ['planning', 'awaiting_approval', 'running', 'paused'].includes(ctx.activePlan.state));
+        // NEVER-LOSE-AN-ASK fallback (agon-review, codex+kimi consensus): the
+        // [ASK] block was already stripped from the streamed AND committed text,
+        // so when the interactive overlay can't render (plan surface owns the
+        // screen, or the session died) the question must be surfaced as plain
+        // visible text — otherwise a well-formed ask vanishes without a trace.
+        // A user interrupt (abort) is the one deliberate skip: they cancelled
+        // the turn, re-asking would be noise.
+        if (_pendingAsk && (_planSurfaceActive || !session.alive) && !abort.signal.aborted) {
+          const _lostAsk = _pendingAsk as { question: string; options: { label: string; description?: string }[] };
+          const _lostLines = _lostAsk.options.map((o, i) => `  ${i + 1}. ${o.label}${o.description ? ` — ${o.description}` : ''}`);
+          dispatch({ type: 'info', message: `Cesar asks: ${_lostAsk.question}\n${_lostLines.join('\n')}\n(answer in the composer when ready)` });
+          _pendingAsk = null;
+        }
         if (_pendingAsk && !_planSurfaceActive && session.alive && !abort.signal.aborted) {
           const _askColors = ['#4ade80', '#22d3ee', '#fbbf24', '#a78bfa', '#f97316', '#ef4444'];
           const _ask = _pendingAsk as { question: string; options: { label: string; description?: string }[] };

@@ -50,6 +50,7 @@ union name=KeyboardAction discriminant=type
     field name=ghost type=string
   variant name=togglePlanQueued
   variant name=toggleAutoQueued
+  variant name=cyclePermissionMode
   variant name=submit
     field name=value type=string
   variant name=toggleToolExpand
@@ -228,10 +229,12 @@ fn name=resolveKeyboardInput params="ctx:KeyboardCtx" returns="KeyboardAction"
       && !ctx.questionState
     ) return { type: 'toggleLiveToolTail' };
 
-    // Shift+Tab: queue auto mode
+    // Shift+Tab: cycle the permission mode (ask → auto-edit → auto).
+    // Ctrl+A above stays the direct AUTO toggle for muscle memory and for
+    // terminals that collapse Shift+Tab into a plain Tab.
     if (isShiftTab && !ctx.slashPickerOpen && !ctx.enginePickerOpen && !ctx.questionState && !ctx.reviewEventOpen) {
       if (canQueueMode) {
-        return { type: 'toggleAutoQueued' };
+        return { type: 'cyclePermissionMode' };
       }
       return { type: 'none' };
     }

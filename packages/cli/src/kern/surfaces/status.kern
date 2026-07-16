@@ -70,6 +70,7 @@ screen name=StatusBar target=ink memo=true
   prop name=explorationMode type=boolean optional=true
   prop name=toolOutputExpanded type=boolean optional=true
   prop name=autoModeQueued type=boolean optional=true
+  prop name=permissionMode type=string optional=true
   prop name=isActive type=boolean optional=true
   prop name=fullscreenEnabled type=boolean optional=true
   prop name=telemetryVitals type="Map<string, any>" optional=true
@@ -115,6 +116,7 @@ screen name=StatusBar target=ink memo=true
         messages: msgs,
         cost,
         auto: Boolean(autoModeQueued),
+        permissionMode: String(permissionMode ?? ''),
         telemetry,
       });
       return (
@@ -143,7 +145,8 @@ screen name=StatusBar target=ink memo=true
                 );
               }
               const color = segment.kind === 'alert' ? '#fbbf24'
-                : segment.kind === 'auto' ? '#fb923c'
+                : segment.kind === 'auto' && segment.text === 'AUTO' ? '#fb923c'
+                : segment.kind === 'auto' && segment.text.startsWith('auto-edit') ? '#60a5fa'
                 : segment.kind === 'healthy' ? '#4ade80'
                 : undefined;
               return (

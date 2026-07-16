@@ -55,7 +55,8 @@ import from="../signals/dispatch.js" names="dispatchIntent,handleModeSwitch,isCe
 import from="../signals/dispatch.js" names="DispatchCallbacks" types=true
 import from="../signals/app-state.js" names="startCommandReplState,finishReplState"
 import from="../signals/app-state.js" names="ReplStateState" types=true
-import from="../signals/app-input.js" names="appendInputHistory,cleanSubmitValue,hasBtwSideChannelTarget,parseAutoModeCommand"
+import from="../signals/app-input.js" names="appendInputHistory,cleanSubmitValue,hasBtwSideChannelTarget,parseAutoModeCommand,parsePermissionModeCommand"
+import from="../cesar/permission-resolver.js" names="cycleAgonPermissionMode,describeAgonPermissionMode"
 import from="../cesar/steering.js" names="pushSteering,peekSteeringCount,drainLeftoverSteering"
 import from="../signals/paste-handler.js" names="expandPastePlaceholders"
 import from="../signals/output.js" names="StreamingEntry" types=true
@@ -369,6 +370,7 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
     field name=mode type=string
     field name=planModeQueued type=boolean
     field name=autoModeQueued type=boolean
+    field name=permissionMode type=string
     field name=btwPanel type=any
     field name=pendingImages type="ImageAttachment[]"
     field name=outputBlocks type="any[]"
@@ -394,6 +396,7 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
     field name=setStatusDashboardOpen type="(val:boolean) => void"
     field name=setPlanModeQueued type="(val:boolean) => void"
     field name=setPersistentAutoMode type="(enabled:boolean) => void"
+    field name=applyPermissionMode type="(mode:string) => void"
     field name=setMode type="(val:any) => void"
     field name=setWorkspacePath type="(val:string) => void"
     field name=setReplState type="(updater:any) => void"
@@ -461,6 +464,22 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
       });
       opts.setHistoryIndex(-1);
 
+      const modeControl = parsePermissionModeCommand(input);
+      if (modeControl) {
+        const currentMode = String(opts.permissionMode || 'auto-edit');
+        if (modeControl === 'status') {
+          const current = describeAgonPermissionMode(currentMode as any);
+          opts.dispatch({ type: 'info', message: `Permission mode: ${current.label} — ${current.hint}. Shift+Tab cycles ask → auto-edit → auto.` } as any);
+          return;
+        }
+        const nextMode = modeControl === 'cycle' ? cycleAgonPermissionMode(currentMode as any) : modeControl;
+        opts.setPlanModeQueued(false);
+        opts.applyPermissionMode(nextMode);
+        const described = describeAgonPermissionMode(nextMode as any);
+        opts.dispatch({ type: 'info', message: `Permission mode: ${described.label} — ${described.hint}.` } as any);
+        return;
+      }
+
       const autoControl = parseAutoModeCommand(input);
       if (autoControl) {
         if (autoControl === 'status') {
@@ -469,12 +488,12 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
         }
         const nextAutoModeQueued = autoControl === 'toggle' ? !opts.autoModeQueued : autoControl === 'on';
         opts.setPlanModeQueued(false);
-        opts.setPersistentAutoMode(nextAutoModeQueued);
+        opts.applyPermissionMode(nextAutoModeQueued ? 'auto' : 'auto-edit');
         opts.dispatch({
           type: 'info',
           message: nextAutoModeQueued
             ? 'AUTO ON by default. Plain tasks may self-escalate through Cesar. Use /auto off or Ctrl+A to disable.'
-            : 'AUTO OFF by default.',
+            : 'AUTO OFF — permission mode auto-edit. Use /mode or Shift+Tab to change it.',
         } as any);
         return;
       }

@@ -181,18 +181,18 @@ describe('resolveKeyboardInput', () => {
     }))).toEqual({ type: 'togglePlanQueued' });
   });
 
-  it('routes shift+tab to queued auto mode before the plain tab handler', () => {
+  it('routes shift+tab to the permission-mode cycle before the plain tab handler', () => {
     expect(resolveKeyboardInput(baseCtx({
       input: '\t',
       key: { tab: true, shift: true },
-    }))).toEqual({ type: 'toggleAutoQueued' });
+    }))).toEqual({ type: 'cyclePermissionMode' });
   });
 
-  it('routes raw terminal shift+tab escape sequence to queued auto mode', () => {
+  it('routes raw terminal shift+tab escape sequence to the permission-mode cycle', () => {
     expect(resolveKeyboardInput(baseCtx({
       input: '\x1b[Z',
       key: {},
-    }))).toEqual({ type: 'toggleAutoQueued' });
+    }))).toEqual({ type: 'cyclePermissionMode' });
   });
 
   it('routes ctrl+a on an idle empty composer to queued auto mode', () => {

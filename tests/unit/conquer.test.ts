@@ -7,6 +7,7 @@ import {
   classifyStuck,
   shouldEscalate,
   shouldAutoApprove,
+  isProtectedPushBranch,
   summarizeConsultForBuilder,
   capBreached,
   parseBuilderSignals,
@@ -122,6 +123,32 @@ describe('shouldAutoApprove — worktree-gated', () => {
     }
     expect(shouldAutoApprove({ kind: 'push' }, true)).toBe(false);
     expect(shouldAutoApprove({ kind: 'network-install' }, true)).toBe(false);
+  });
+});
+
+describe('isProtectedPushBranch — unattended --push guard', () => {
+  it('protects main and master by default, case-insensitively', () => {
+    expect(isProtectedPushBranch('main', {})).toBe(true);
+    expect(isProtectedPushBranch('master', {})).toBe(true);
+    expect(isProtectedPushBranch('Main', {})).toBe(true);
+    expect(isProtectedPushBranch(' main ', {})).toBe(true);
+  });
+
+  it('lets a normal conquer branch through', () => {
+    expect(isProtectedPushBranch('conquer/add-oauth-x1', {})).toBe(false);
+    expect(isProtectedPushBranch('feat/parser', {})).toBe(false);
+  });
+
+  it('config protectedPushBranches overrides the default list', () => {
+    const config = { protectedPushBranches: ['release', 'dev'] };
+    expect(isProtectedPushBranch('dev', config)).toBe(true);
+    expect(isProtectedPushBranch('release', config)).toBe(true);
+    expect(isProtectedPushBranch('main', config)).toBe(false);
+  });
+
+  it('fails closed on an empty or unresolvable branch name', () => {
+    expect(isProtectedPushBranch('', {})).toBe(true);
+    expect(isProtectedPushBranch('   ', undefined as any)).toBe(true);
   });
 });
 

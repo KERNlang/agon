@@ -17,7 +17,7 @@ import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 import { filterDefaultOrchestrationEngines } from './engine-filter.js';
 
 // @kern-source: conquer:17
-export async function handleConquer(task: string, dispatch: Dispatch, ctx: HandlerContext, opts?: {gate?:string, builder?:string, engineIds?:string[], maxTurns?:number}): Promise<void> {
+export async function handleConquer(task: string, dispatch: Dispatch, ctx: HandlerContext, opts?: {gate?:string, builder?:string, engineIds?:string[], maxTurns?:number, gateTimeoutSec?:number, maxHours?:number, turnTimeoutSec?:number}): Promise<void> {
   const cqAbort = new AbortController();
   try {
     ensureAgonHome();
@@ -43,6 +43,11 @@ export async function handleConquer(task: string, dispatch: Dispatch, ctx: Handl
     }
 
     const maxTurns = opts?.maxTurns && opts.maxTurns > 0 ? opts.maxTurns : 40;
+    // CLI-parity knobs (previously hardcoded in this handler — review follow-up):
+    // defaults mirror `agon conquer` (gate 1800s, per-builder-turn 600s, no wall cap).
+    const gateTimeoutSec = opts?.gateTimeoutSec && Number.isFinite(opts.gateTimeoutSec) && opts.gateTimeoutSec > 0 ? Math.floor(opts.gateTimeoutSec) : 1800;
+    const turnTimeoutSec = opts?.turnTimeoutSec && Number.isFinite(opts.turnTimeoutSec) && opts.turnTimeoutSec > 0 ? Math.floor(opts.turnTimeoutSec) : 600;
+    const maxWallClockMs = opts?.maxHours && Number.isFinite(opts.maxHours) && opts.maxHours > 0 ? Math.round(opts.maxHours * 3_600_000) : 0;
     const outputDir = join(RUNS_DIR, `conquer-${Date.now()}`);
     mkdirSync(outputDir, { recursive: true });
     let isolation;
@@ -72,7 +77,7 @@ export async function handleConquer(task: string, dispatch: Dispatch, ctx: Handl
     const evaluateDone = async (_claim: string) => {
       try {
         const diffRes = await spawnWithTimeout({ command: 'git', args: ['diff'], cwd: worktreeCwd, timeout: 30_000 });
-        const gateRes = await spawnWithTimeout({ command: 'sh', args: ['-c', gate], cwd: worktreeCwd, timeout: 1_800_000 });
+        const gateRes = await spawnWithTimeout({ command: 'sh', args: ['-c', gate], cwd: worktreeCwd, timeout: gateTimeoutSec * 1000 });
         return { diff: String(diffRes.stdout ?? ''), gateOk: gateRes.exitCode === 0, oracleTampered: false };
       } catch (err) {
         dispatch({ type: 'info', message: `done-check gate errored: ${err instanceof Error ? err.message : String(err)} — treating as not-done.` });
@@ -84,8 +89,8 @@ export async function handleConquer(task: string, dispatch: Dispatch, ctx: Handl
     try {
       result = await runConquer({
         task, builderEngine: builder, advisorEngines: advisors,
-        registry: ctx.registry, adapter: ctx.adapter, timeout: 600, outputDir, cwd: worktreeCwd, gate,
-        caps: { maxTurns, maxWallClockMs: 0 },
+        registry: ctx.registry, adapter: ctx.adapter, timeout: turnTimeoutSec, outputDir, cwd: worktreeCwd, gate,
+        caps: { maxTurns, maxWallClockMs },
         evaluateDone,
         onTurn: (t: ConquerTurn) => dispatch({ type: 'info', message: `turn ${t.n} · ${t.action}${t.action === 'consult' || t.action === 'done-check' ? ` — ${t.detail.slice(0, 80)}` : ''}` }),
         signal: cqAbort.signal,

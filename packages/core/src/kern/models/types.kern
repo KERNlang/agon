@@ -315,6 +315,8 @@ config name=AgonConfig
     doc "When true, write compact JSONL permission-decision records for Cesar tool approvals, prompts, and blocks."
   field name=cesarToolTimeline type=boolean default=true
     doc "When true, write compact JSONL per-turn tool timeline records for Cesar tool calls, results, and summaries."
+  field name=protectedPushBranches type="string[]" optional=true
+    doc "Branches unattended pushes (conquer --push) refuse to land on. Default when absent: main, master. Case-insensitive exact match."
   field name=cesarStreamingXmlTools type=boolean default=true
     doc "When true, interrupt text streaming as soon as a complete XML tool call is parsed so XML fallback tools can execute live instead of waiting for the whole response."
   field name=campfireObserverStrategy type="'lead-first'|'all-respond'" default=lead-first

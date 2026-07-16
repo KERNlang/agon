@@ -10,7 +10,7 @@
 
 import from="citty" names="defineCommand"
 import from="@kernlang/agon-core" names="EngineRegistry,ensureAgonHome,loadConfig,createRunDir,spawnWithTimeout,appendAttribution,appendPrAttribution,githubRepoUrl,defaultBaseBranch,prefilledPrUrl"
-import from="@kernlang/agon-forge" names="runConquer,runPrText,createConquerIsolation"
+import from="@kernlang/agon-forge" names="runConquer,runPrText,createConquerIsolation,isProtectedPushBranch"
 import from="@kernlang/agon-forge" names="ConquerResult,ConquerTurn" types=true
 import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
 import from="@kernlang/agon-adapter-cli" names="createCliAdapter"
@@ -195,6 +195,14 @@ const name=conquerCommand type=any
           const headBranch = String(branchRes.stdout ?? '').trim();
           if (branchRes.exitCode !== 0 || !headBranch || headBranch === 'HEAD') {
             info(dim('Could not resolve a branch to push (detached HEAD?). The builder\'s changes are uncommitted in the tree — review + commit + push manually.'));
+            process.exitCode = 1;
+          } else if (isProtectedPushBranch(headBranch, config)) {
+            // Unattended pushes never land on a protected branch (main/master by
+            // default, protectedPushBranches to override) — a conquer worktree
+            // normally sits on its own conquer/<slug> branch, so a protected HEAD
+            // here means something unexpected happened. Leave the work committed
+            // locally and hand the push to the human.
+            info(dim(`Refusing to push protected branch '${headBranch}' from an unattended run. The work is in the worktree at ${worktreeCwd} — review and push it manually (or set protectedPushBranches in config).`));
             process.exitCode = 1;
           } else {
             const add = await git(['add', '-A'], 30_000);

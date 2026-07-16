@@ -38,13 +38,15 @@ import { approvalToolIsFileMutating, buildApprovalDiffPreview } from './approval
 
 import { isActiveCesarTurn, runTurnPermissionOnce, runTurnToolOnce } from './turn-runtime.js';
 
-import { approveTaskAction, authorizeTaskAction, claimTaskActionPrompt, evaluateTaskAction, isTaskFileMutationAction, taskActionApprovalMessage } from './task-execution-lease.js';
+import { approveTaskAction, claimTaskActionPrompt, isTaskFileMutationAction, taskActionApprovalMessage } from './task-execution-lease.js';
+
+import { resolvePermissionDecision, authorizeResolvedTaskAction } from './permission-resolver.js';
 
 import { recordCesarApprovalDecision, recordCesarToolTimeline, recordCesarConfidence, buildToolErrorDiagnostic } from './tool-observability.js';
 
 import { resolveCesarHarnessProfile, isAgenticAutoMode } from './task-controller.js';
 
-// @kern-source: session:24
+// @kern-source: session:25
 export const CESAR_SYSTEM_PROMPT: string = `You are Cesar, Agon AI orchestrator.
 
 CHARACTER — the most trusted advisor who doesn't need you to like him.
@@ -202,7 +204,7 @@ RULE 10 — TURN CLOSURE: End every turn with one clear closing line so the user
 /**
  * Compact controller prompt for agentic AUTO. Deterministic tool leases, task state, epochs, and verification enforce the mechanics; this prompt states intent instead of duplicating the implementation manual. Keep below 10,000 characters before project/tool context.
  */
-// @kern-source: session:181
+// @kern-source: session:182
 export const CESAR_AGENTIC_SYSTEM_PROMPT: string = [
     "You are Cesar, Agon's autonomous coding orchestrator. Be precise, direct, calm, and useful. Match the user's language and level. Lead with outcomes, not process narration.",
     '', 'TASK OWNERSHIP',
@@ -238,25 +240,25 @@ export const CESAR_AGENTIC_SYSTEM_PROMPT: string = [
 /**
  * The EXACT RULE 1 — CONFIDENCE paragraph baked into CESAR_SYSTEM_PROMPT (the every-turn ReportConfidence ceremony). Held here verbatim so the invariants-mode rewrite is an exact string replacement: strict/shadow keep CESAR_SYSTEM_PROMPT byte-identical, invariants swaps this paragraph for CESAR_RULE_1_INVARIANTS. If RULE 1's wording in CESAR_SYSTEM_PROMPT ever changes, this const MUST change in lockstep or the replacement silently no-ops (the prompt stays strict). applyInvariantsRule1 fail-safes to the strict prompt on a mismatch AND emits a one-time console.warn so the drift is observable instead of silent.
  */
-// @kern-source: session:214
+// @kern-source: session:215
 export const CESAR_RULE_1_STRICT: string = `RULE 1 — CONFIDENCE: Call ReportConfidence(value) FIRST on every turn. If you cannot call tools, write ~X% at the very start instead. No exceptions. On the FIRST turn about a topic, low confidence is expected — investigate, then report your INFORMED confidence. BUT you carry the whole conversation: files you already read, searches you already ran, and conclusions you already reached EARLIER THIS SESSION are still valid context — build on them and report informed confidence immediately. Re-read a file ONLY if it changed or you never saw it. Do NOT restart every turn from zero with "let me check what's going on" when the answer is already in your history — re-discovering what you already know makes you look lost and wastes the user's time.`;
 
 /**
  * RULE 1 rewrite for guard mode 'invariants'. The GuardPipeline's grounded-write/evidence invariants now ENFORCE the confidence signal structurally (a well-formed Edit after a Read IS the proof), so the every-turn ReportConfidence ceremony is demoted to on-demand. RULE 1b is kept verbatim via the strict template — only this paragraph is swapped.
  */
-// @kern-source: session:220
+// @kern-source: session:221
 export const CESAR_RULE_1_INVARIANTS: string = `RULE 1 — CONFIDENCE: Report confidence via ReportConfidence ONLY when you are about to run a risky command (Bash mutations, multi-file writes, delegation) or when genuinely uncertain. Do NOT call it ritually every turn — a well-formed Edit after reading the file IS the confidence signal.`;
 
 /**
  * FIX 3 (R4) — module-level once-flag for applyInvariantsRule1's drift warning. A mutable {warned} holder (mutated in place, never frozen at module load) so the console.warn fires AT MOST ONCE per process even though buildCesarSystemPrompt calls applyInvariantsRule1 on every invariants-mode prompt assembly. Resettable in tests via the exported _resetInvariantsRule1DriftWarning seam.
  */
-// @kern-source: session:226
+// @kern-source: session:227
 export const invariantsRule1DriftState = { warned: false };
 
 /**
  * Test-only seam: reset the once-flag so a unit test can re-trigger applyInvariantsRule1's drift warning with a deliberately drifted prompt. Not used in production.
  */
-// @kern-source: session:229
+// @kern-source: session:230
 export function _resetInvariantsRule1DriftWarning(): void {
   invariantsRule1DriftState.warned = false;
 }
@@ -264,7 +266,7 @@ export function _resetInvariantsRule1DriftWarning(): void {
 /**
  * Rewrite the every-turn RULE 1 — CONFIDENCE ceremony to the on-demand 'invariants' form. Pure string transform on the assembled CESAR_SYSTEM_PROMPT: replaces the exact CESAR_RULE_1_STRICT paragraph with CESAR_RULE_1_INVARIANTS, leaving RULE 1b and everything else byte-identical. Only called on guard mode 'invariants' — strict/shadow never reach here, so the base prompt stays byte-identical for them by construction. If the strict text isn't found (RULE 1 wording in CESAR_SYSTEM_PROMPT drifted out of sync with the CESAR_RULE_1_STRICT const) it FAILS SAFE: it returns the prompt UNCHANGED (serving the stricter every-turn ceremony rather than silently dropping RULE 1) AND emits a one-time console.warn so the drift is observable instead of passing unnoticed. The warning is gated by a module-level once-flag (invariantsRule1DriftState) so it fires at most once per process despite the per-turn call cadence.
  */
-// @kern-source: session:235
+// @kern-source: session:236
 export function applyInvariantsRule1(prompt: string): string {
   if (!prompt.includes(CESAR_RULE_1_STRICT)) {
     if (!invariantsRule1DriftState.warned) {
@@ -279,19 +281,19 @@ export function applyInvariantsRule1(prompt: string): string {
 /**
  * FIX 6a — re-read ~/.agon/config.json's guardModes at most once per 60s. resolveCesarGuardMode runs on EVERY prompt assembly; the config rarely changes mid-session, so a minute-stale view is fine and keeps the synchronous file read off the per-turn prompt-build path. Mirrors GUARD_TELEMETRY_SNAPSHOT_TTL_MS in status-helpers.
  */
-// @kern-source: session:248
+// @kern-source: session:249
 export const GUARD_MODES_CONFIG_TTL_MS: number = 60 * 1000;
 
 /**
  * FIX 6a — module-level {at, home, value} memo for readGuardModesFromConfig(). `home` keys the entry to the AGON_HOME that produced it so an in-process AGON_HOME change (tests, embedded use) can never serve another home's config for up to a TTL. Mutated in place; never frozen at module load.
  */
-// @kern-source: session:251
+// @kern-source: session:252
 export const guardModesConfigCache = { at: 0, home: '', value: null as (ReturnType<typeof readGuardModesFromConfig>) };
 
 /**
  * FIX 6a — memoized wrapper over readGuardModesFromConfig(): the synchronous ~/.agon/config.json read happens at most once per GUARD_MODES_CONFIG_TTL_MS, keyed by AGON_HOME so an in-process home change invalidates. Best-effort: a read failure caches null for the TTL. Mirrors loadGuardTelemetrySnapshot's memo pattern in status-helpers.kern.
  */
-// @kern-source: session:254
+// @kern-source: session:255
 function readGuardModesFromConfigMemoized(): ReturnType<typeof readGuardModesFromConfig> {
   const now = Date.now();
   const home = process.env.AGON_HOME?.trim() ?? '';
@@ -317,7 +319,7 @@ function readGuardModesFromConfigMemoized(): ReturnType<typeof readGuardModesFro
 /**
  * Resolve the effective guard mode for the engine Cesar's brain is actually running on. Engine id = the live session's engineId (most accurate) → config.cesarEngine → config.forgeFixedStarter → 'claude', mirroring resolveCesarBackend. The engine def's `guards` field is read straight off the typed EngineDefinition (D3 added `guards?: GuardMode` to the type + the engine-schema zod), so no cast is needed. The user-config read is MEMOIZED (FIX 6a — readGuardModesFromConfigMemoized, 60s TTL) so prompt assembly no longer hits ~/.agon/config.json every turn. Best-effort: any registry/config failure degrades to 'strict' (the byte-identical default), never throws into prompt assembly.
  */
-// @kern-source: session:278
+// @kern-source: session:279
 export function resolveCesarGuardMode(ctx: HandlerContext): GuardMode {
   try {
     // Agentic AUTO moves confidence/grounded-write heuristics to shadow-only
@@ -343,7 +345,7 @@ export function resolveCesarGuardMode(ctx: HandlerContext): GuardMode {
 /**
  * Build the full Cesar system prompt with project context, engine list, and mode flags.
  */
-// @kern-source: session:302
+// @kern-source: session:303
 export function buildCesarSystemPrompt(ctx: HandlerContext): string {
   const config = ctx.config;
       const cesarCwd = resolveWorkingDir();
@@ -565,7 +567,7 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
 /**
  * Prepare the compiler-derived project spine once at the fresh-session boundary, store it on Cesar state for sync fallback/budget callers, and return the complete prompt. Best-effort: empty or failed builds clear any stale spine and preserve normal startup.
  */
-// @kern-source: session:522
+// @kern-source: session:523
 export async function prepareCesarSystemPrompt(ctx: HandlerContext, cwd?: string, spineBuilder?: (cwd:string)=>Promise<string>): Promise<string> {
   const targetCwd = cwd ?? resolveWorkingDir();
   let spine = '';
@@ -578,19 +580,19 @@ export async function prepareCesarSystemPrompt(ctx: HandlerContext, cwd?: string
   return buildCesarSystemPrompt(ctx);
 }
 
-// @kern-source: session:536
+// @kern-source: session:537
 export const CESAR_SNAPSHOT_MSG_CHAR_CAP: number = 4000;
 
-// @kern-source: session:538
+// @kern-source: session:539
 export const CONFIDENCE_BLOCK_LIMIT: number = 2;
 
-// @kern-source: session:540
+// @kern-source: session:541
 export const SEARCH_NUDGE_THRESHOLD: number = 40;
 
 /**
  * Bound one message's text to CESAR_SNAPSHOT_MSG_CHAR_CAP with a truncation marker. Applied on BOTH snapshot paths (direct session history AND the chat-transcript fallback) so oversized content never floods Cesar's continuity context regardless of which path produced it.
  */
-// @kern-source: session:542
+// @kern-source: session:543
 export function capSnapshotMessageContent(content: string): string {
   if (content.length <= CESAR_SNAPSHOT_MSG_CHAR_CAP) return content;
   return `${content.slice(0, CESAR_SNAPSHOT_MSG_CHAR_CAP)}\n… [${content.length - CESAR_SNAPSHOT_MSG_CHAR_CAP} chars truncated for Cesar context]`;
@@ -599,7 +601,7 @@ export function capSnapshotMessageContent(content: string): string {
 /**
  * Render the `command` string shown in a Cesar permission prompt for a tool call. SaveMemory renders the human-readable '[<section>] <memory>' (the durable fact the user is confirming) instead of an opaque JSON args blob; every other tool keeps the existing precedence: args.command -> args.file_path -> JSON.stringify(args). Shared across the API-native and both XML-loop permission builders so they render identically (the MCP watcher in brain.kern already special-cases SaveMemory the same way). Pure; tolerant of non-object args.
  */
-// @kern-source: session:549
+// @kern-source: session:550
 export function renderToolPermissionCommand(tool: string, args: unknown): string {
   const a = (args && typeof args === 'object') ? (args as Record<string, unknown>) : {};
   if (tool === 'SaveMemory') {
@@ -617,7 +619,7 @@ export function renderToolPermissionCommand(tool: string, args: unknown): string
 /**
  * Build a normalized continuity snapshot. Prefer the session's internal history; fall back to the visible chat transcript. Per-message string content is capped on EITHER path so review/brainstorm spam (or a huge tool result) doesn't flood Cesar's context; tool_calls/tool_call_id and non-string content are preserved untouched.
  */
-// @kern-source: session:565
+// @kern-source: session:566
 export function buildCesarConversationSnapshot(session: PersistentSession|null, chatSession: any): Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}> {
   const directHistory = session?.getMessageHistory?.() ?? [];
   if (directHistory.length > 0) {
@@ -650,7 +652,7 @@ export function buildCesarConversationSnapshot(session: PersistentSession|null, 
 /**
  * Persist the active Cesar conversation before the session is discarded.
  */
-// @kern-source: session:590
+// @kern-source: session:591
 export function saveCesarConversationSnapshot(session: PersistentSession|null, chatSession: any): void {
   if (!session) return;
   const snapshot = buildCesarConversationSnapshot(session, chatSession);
@@ -672,7 +674,7 @@ export function saveCesarConversationSnapshot(session: PersistentSession|null, c
 /**
  * Build the onToolCall callback for API engines with native function calling.
  */
-// @kern-source: session:610
+// @kern-source: session:611
 export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry, config: any): ((name:string, args:Record<string,unknown>, callId:string, controlPlane?:any) => Promise<string>) | undefined {
   const cwd = resolveWorkingDir();
   const fsc = getProjectFileStateCache(cwd);
@@ -944,7 +946,10 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
     const needsLeasePreflight = isTaskFileMutationAction(name)
       || (name === 'Bash' && !isReadOnlyCommand(taskTarget));
     if (lease && needsLeasePreflight) {
-      const authorization = await authorizeTaskAction(lease, name, taskTarget, (evaluation: any) => requestTaskApproval(name, evaluation));
+      const authorization = await authorizeResolvedTaskAction(
+        { tool: name, target: taskTarget, cwd: resolveWorkingDir(), source: 'native', config: ctx.config, lease, sessionAllowList: getSessionAllowList() },
+        (evaluation: any) => requestTaskApproval(name, evaluation),
+      );
       if (authorization.decision !== 'allow') return `DENIED: ${name} was not executed (${authorization.reason}).`;
     }
 
@@ -957,7 +962,10 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
           ? String((args as any).command ?? '')
           : String((args as any).file_path ?? (args as any).path ?? (args as any).task ?? '');
         if (lease) {
-          const authorization = await authorizeTaskAction(lease, tool, target, (evaluation: any) => requestTaskApproval(tool, evaluation));
+          const authorization = await authorizeResolvedTaskAction(
+            { tool, target, cwd: resolveWorkingDir(), source: 'native', config: ctx.config, lease, sessionAllowList: getSessionAllowList() },
+            (evaluation: any) => requestTaskApproval(tool, evaluation),
+          );
           if (authorization.decision === 'deny') return false;
           if (authorization.decision === 'allow') return true;
         }
@@ -1048,7 +1056,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
 /**
  * Build the onApproval callback for engine tool approvals. Returns true to approve, false to deny silently, or a string to deny with a reason the engine can see.
  */
-// @kern-source: session:984
+// @kern-source: session:991
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string, controlPlane?:any) => Promise<boolean|string> {
   const engine = ctx.registry.get(engineId);
   const evaluateApproval = async (tool: string, command: string): Promise<boolean | string> => {
@@ -1060,18 +1068,14 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
     // Map engine tool names to Agon tool names
     const toolMap: Record<string, string> = { shell: 'Bash', bash: 'Bash', edit: 'Edit', write: 'Write', multiedit: 'MultiEdit', read: 'Read', grep: 'Grep', glob: 'Glob' };
     const agonTool = toolMap[tool.toLowerCase()] ?? tool;
-    const perm = perms[agonTool];
-    // CC-parity allow/deny rules (.agon.json permissions). For Bash the
-    // rule command is the shell command (F2: compound `a && b` is split so a
-    // prefix-allow can't approve an appended `rm -rf /`); for file tools it is
-    // the path argument, resolved absolute + symlink-canonical so `Edit(/etc:*)`
-    // blocks `/etc/passwd` and `../` escapes are caught (F3). A bare tool rule
-    // (Edit/Write) matches any invocation. deny ALWAYS wins.
-    const ruleSet = parsePermissionRuleSet((cfg as any).permissions);
+    // For Bash the resolver target is the shell command (F2: compound
+    // `a && b` is split so a prefix-allow can't approve an appended
+    // `rm -rf /`); for file tools it is the path argument, resolved
+    // absolute + symlink-canonical (F3). Rule evaluation itself happens
+    // inside resolvePermissionDecision.
     const ruleArg = agonTool === 'Bash'
       ? command
       : String((approvalArgsFromCommand(agonTool, command) as any)?.file_path ?? '');
-    const ruleDecision = evaluateToolRules(agonTool, ruleArg, resolveWorkingDir(), ruleSet);
     const turnId = ctx.cesar?.turnId;
     const cwd = resolveWorkingDir();
     const logApproval = (decision: 'approved'|'denied'|'prompted'|'blocked', source: string, reason?: string, args?: Record<string, unknown> | string) => {
@@ -1161,70 +1165,38 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
       }
     }
 
-    // CC-parity deny rule → refuse without prompting (deny ALWAYS wins).
-    if (ruleDecision === 'deny') {
-      logApproval('denied', 'settings.permissions', `${agonTool} denied by permissions rule`);
-      return `DENIED: ${agonTool}${agonTool === 'Bash' ? ` (${command})` : ''} is blocked by a deny rule in .agon.json permissions. Do not retry this — choose a different approach or ask the user to amend the rule.`;
-    }
-
-    // deny → block immediately
-    if (perm === 'deny' || mode === 'deny-all') {
-      logApproval('denied', perm === 'deny' ? 'settings.toolPermissions' : 'settings.permissionMode', perm === 'deny' ? `${agonTool} denied in settings` : 'permissionMode=deny-all');
+    // Unified permission decision — the ONE seam where hard-deny, CC-parity
+    // rules (deny always wins), the turn's task lease, allow sources, and the
+    // agonPermissionMode policy combine. The retired per-gate mode reads
+    // (deny-all, allow/auto, smart blanket-approve, allowedCommands) all live
+    // inside resolvePermissionDecision now.
+    const taskLease = ctx.cesar?.taskExecutionLease;
+    const taskTarget = agonTool === 'Bash' ? command : ruleArg;
+    const resolution = resolvePermissionDecision({
+      tool: agonTool,
+      target: taskTarget,
+      cwd,
+      source: 'native',
+      config: cfg,
+      lease: taskLease,
+      sessionAllowList: getSessionAllowList(),
+    });
+    if (resolution.decision === 'deny') {
+      logApproval('denied', `resolver.${resolution.stage}`, resolution.reason);
+      if (resolution.stage === 'deny-rule') {
+        return `DENIED: ${agonTool}${agonTool === 'Bash' ? ` (${command})` : ''} is blocked by a deny rule in .agon.json permissions. Do not retry this — choose a different approach or ask the user to amend the rule.`;
+      }
       return false;
     }
-
-    // CC-parity allow rule → auto-approve without prompting.
-    if (ruleDecision === 'allow') {
-      logApproval('approved', 'settings.permissions', `${agonTool} allowed by permissions rule`);
+    if (resolution.decision === 'allow') {
+      logApproval('approved', `resolver.${resolution.stage}`, resolution.reason);
       return true;
-    }
-
-    // One turn-scoped authority decision shared by companion and native
-    // adapters. Routine AUTO work proceeds without keyboard prompts;
-    // important work asks once for the task; dangerous boundaries ask for
-    // the exact action+target unless the user's request already named both.
-    const taskLease = ctx.cesar?.taskExecutionLease;
-    if (taskLease) {
-      const taskTarget = agonTool === 'Bash' ? command : ruleArg;
-      const evaluation = evaluateTaskAction(taskLease, agonTool, taskTarget);
-      if (evaluation.decision === 'deny') {
-        logApproval('denied', 'task-lease', evaluation.reason);
-        return false;
-      }
-      if (evaluation.decision === 'allow') {
-        logApproval('approved', 'task-lease', evaluation.reason);
-        return true;
-      }
-      if (!claimTaskActionPrompt(taskLease, evaluation.signature)) {
-        logApproval('denied', 'task-lease', 'duplicate or previously declined approval boundary');
-        return false;
-      }
-      return new Promise<boolean>((resolve) => {
-        const dispatch = ctx.cesar!.lastDispatch;
-        if (!dispatch) {
-          logApproval('denied', 'task-lease', 'approval required but no prompt surface is available');
-          resolve(false);
-          return;
-        }
-        logApproval('prompted', 'task-lease', evaluation.reason);
-        let permDiffPreview: any = undefined;
-        if (approvalToolIsFileMutating(agonTool)) {
-          try { permDiffPreview = buildApprovalDiffPreview(agonTool, approvalArgsFromCommand(agonTool, command)); }
-          catch { /* diff is best-effort — fall back to command preview */ }
-        }
-        dispatch({ type: 'permission-ask', tool: agonTool, command, reason: taskActionApprovalMessage(evaluation), diffPreview: permDiffPreview && Array.isArray(permDiffPreview.files) ? permDiffPreview : undefined, fallbackNote: permDiffPreview && typeof permDiffPreview.fallback === 'string' ? permDiffPreview.fallback : undefined, resolve: (approved: boolean | string) => {
-          const wasApproved = typeof approved === 'string' ? approved === 'y' || approved === 'a' : !!approved;
-          if (wasApproved) approveTaskAction(taskLease, agonTool, taskTarget);
-          logApproval(wasApproved ? 'approved' : 'denied', 'task-lease', wasApproved ? 'user approved' : 'user denied');
-          resolve(wasApproved);
-        } } as any);
-      });
     }
 
     // Cesar self-turn fast path: bounded edits/writes on files already read
     // in the project cache do not need to interrupt the stream for another
-    // Y/N prompt. This intentionally runs after exploration/plan/confidence
-    // gates and explicit denies, and before the generic ask-mode fallback.
+    // Y/N prompt. Runs only after the resolver said ask, so explicit denies
+    // and read-only modes can never be bypassed by it.
     if (agonTool === 'Edit' || agonTool === 'Write' || agonTool === 'MultiEdit') {
       const approvalCwd = resolveWorkingDir();
       const approvalCache = getProjectFileStateCache(approvalCwd);
@@ -1246,43 +1218,20 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
       }
     }
 
-    // allow → auto-approve
-    if (perm === 'allow' || mode === 'auto') {
-      logApproval('approved', perm === 'allow' ? 'settings.toolPermissions' : 'settings.permissionMode', perm === 'allow' ? `${agonTool} allowed in settings` : 'permissionMode=auto');
-      return true;
+    // ask → one prompt per lease signature (duplicate/declined boundaries
+    // do not re-prompt), then the same permission UI as Claude Code.
+    if (taskLease && !claimTaskActionPrompt(taskLease, resolution.signature)) {
+      logApproval('denied', 'task-lease', 'duplicate or previously declined approval boundary');
+      return false;
     }
-
-    // smart → auto-approve orchestrator context and session allowlist, ask otherwise
-    if (mode === 'smart') {
-      // Session allowlist check
-      const sessionList = getSessionAllowList();
-      if (agonTool === 'Bash' && sessionList.length > 0) {
-        const cmdLower = command.toLowerCase();
-        const base = command.trim().split(/\s+/)[0];
-        if (sessionList.some((a: string) => cmdLower.startsWith(a.toLowerCase()) || base === a)) {
-          logApproval('approved', 'session-allowlist', 'Bash command matched session allowlist');
-          return true;
-        }
-      }
-      // Cesar tool loop is always orchestrator — auto-approve non-dangerous
-      logApproval('approved', 'settings.smart-orchestrator', 'permissionMode=smart orchestrator context');
-      return true;
-    }
-
-    // For Bash: check allowedCommands whitelist
-    if (agonTool === 'Bash' && allowed.length > 0) {
-      const cmdLower = command.toLowerCase();
-      if (allowed.some((a: string) => cmdLower.startsWith(a.toLowerCase()))) {
-        logApproval('approved', 'settings.allowedCommands', 'Bash command matched allowedCommands');
-        return true;
-      }
-    }
-
-    // ask → show permission prompt (same UI as Claude Code)
+    const boundaryReasons = ['auto_off', 'dangerous_boundary', 'important_task'];
+    const promptReason = boundaryReasons.includes(resolution.reason)
+      ? taskActionApprovalMessage({ decision: resolution.reason === 'important_task' ? 'ask_task_once' : 'ask_boundary_once', signature: resolution.signature, reason: resolution.reason })
+      : `Cesar (${engineId}) wants to execute`;
     return new Promise<boolean>((resolve) => {
       const dispatch = ctx.cesar!.lastDispatch;
       if (dispatch) {
-        logApproval('prompted', 'user-prompt', `Cesar (${engineId}) wants to execute`);
+        logApproval('prompted', 'user-prompt', promptReason);
         // File-mutating tools carry a unified diff (computed from the tool
         // input before execution) so the approval shows the real change.
         let permDiffPreview: any = undefined;
@@ -1290,14 +1239,15 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
           try { permDiffPreview = buildApprovalDiffPreview(agonTool, approvalArgsFromCommand(agonTool, command)); }
           catch { /* diff is best-effort — fall back to command preview */ }
         }
-        dispatch({ type: 'permission-ask', tool: agonTool, command, reason: `Cesar (${engineId}) wants to execute`, diffPreview: permDiffPreview && Array.isArray(permDiffPreview.files) ? permDiffPreview : undefined, fallbackNote: permDiffPreview && typeof permDiffPreview.fallback === 'string' ? permDiffPreview.fallback : undefined, resolve: (approved: boolean | string) => {
-          const wasApproved = typeof approved === 'string' ? approved === 'y' || approved === 'a' : !!approved;
+        dispatch({ type: 'permission-ask', tool: agonTool, command, reason: promptReason, diffPreview: permDiffPreview && Array.isArray(permDiffPreview.files) ? permDiffPreview : undefined, fallbackNote: permDiffPreview && typeof permDiffPreview.fallback === 'string' ? permDiffPreview.fallback : undefined, resolve: (approved: boolean | string) => {
+          const wasApproved = typeof approved === 'string' ? approved === 'y' || approved === 'a' || approved === 's' : !!approved;
+          if (wasApproved && taskLease) approveTaskAction(taskLease, agonTool, taskTarget);
           logApproval(wasApproved ? 'approved' : 'denied', 'user-prompt', wasApproved ? 'user approved' : 'user denied');
           resolve(wasApproved);
         } } as any);
       } else {
-        logApproval('approved', 'fallback.no-dispatch', 'no dispatch available for approval prompt');
-        resolve(true);
+        logApproval('denied', 'fallback.no-dispatch', 'approval required but no prompt surface is available');
+        resolve(false);
       }
     });
   };
@@ -1314,7 +1264,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:1251
+// @kern-source: session:1200
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -1348,7 +1298,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:1285
+// @kern-source: session:1234
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
 
@@ -1372,7 +1322,7 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:1309
+// @kern-source: session:1258
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) {
     return false;
@@ -1384,7 +1334,7 @@ export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
-// @kern-source: session:1316
+// @kern-source: session:1265
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -1404,7 +1354,7 @@ export function mcpConfigFingerprint(config: any): string {
 /**
  * Resolve the agon-orchestration MCP server entry. The CLI ships as a tsup BUNDLE that ALSO emits the MCP server to <cli-dist>/mcp/index.js (see tsup.config.ts), so the published install is self-contained — no @kernlang/agon-mcp npm dependency. Resolution order: (0) the bundled sibling <cli-dist>/mcp/index.js (the published, self-contained path), (1) node module resolution of @kernlang/agon-mcp (monorepo-via-symlink / legacy installs), (2) walk up to the repo root containing packages/mcp/dist/index.js (monorepo without a symlink), (3) the original relative guess as a last resort. `fromUrl` is for tests; defaults to this module's URL.
  */
-// @kern-source: session:1334
+// @kern-source: session:1283
 export function resolveAgonMcpServerPath(fromUrl?: string): string {
   const raw = fromUrl ?? import.meta.url;
   // Accept either a file: URL (normal) or a bare path (defensive): fileURLToPath
@@ -1438,7 +1388,7 @@ export function resolveAgonMcpServerPath(fromUrl?: string): string {
 /**
  * Single source of truth for which backend a Cesar engine will actually use. Honours config.cesarBackend preference ('auto' | 'cli' | 'api'). Pure — no side effects beyond registry lookups. Returns backend='none' when the engine has neither a usable binary nor an API key; callers decide how to handle that.
  */
-// @kern-source: session:1366
+// @kern-source: session:1315
 export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { backend: 'cli'|'api'|'none', binaryPath: string, hasBinary: boolean, hasApi: boolean, engine: any } {
   const config = ctx.config;
   const cesarEngineId = engineId ?? (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -1463,7 +1413,7 @@ export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { b
   return { backend: 'none', binaryPath: '', hasBinary, hasApi, engine };
 }
 
-// @kern-source: session:1392
+// @kern-source: session:1341
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

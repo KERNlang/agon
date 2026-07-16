@@ -321,6 +321,12 @@ config name=AgonConfig
   field name=hooks type="Record<string,Array<{command:string,engines?:string[],matcher?:string,timeout?:number}>>" optional=true
     doc "Shell hook commands keyed by event. Dispatch-lifecycle events (pre_dispatch, post_forge, …) use {command, engines?, timeout?}. CC-parity tool-call events `preToolUse`/`postToolUse` use {matcher?, command, timeout?}: a pre-hook gets {tool_name, tool_input} on stdin and may BLOCK with exit 2 (stderr = refusal); a post-hook gets {tool_name, tool_input, tool_response} and never blocks. All hooks are fail-safe (timeout/spawn-failure/other-exit → proceed)."
   field name=permissionMode type="'auto'|'smart'|'ask'|'deny-all'" default=smart
+    doc "LEGACY mode enum kept for compat + the deny-all kill switch. New sessions steer via agonPermissionMode; when that is unset this value migrates in place (auto→auto, smart→auto-edit, ask/deny-all→ask). deny-all stays honored as a hard-deny override in every mode."
+  // KERN-GAP: codegen — an OPTIONAL union-literal field emits `''` into
+  // DEFAULT_CONFIG, which is not assignable to the union type. Typed as plain
+  // string; resolveAgonPermissionMode validates and clamps every read.
+  field name=agonPermissionMode type=string optional=true
+    doc "Claude-Code-style permission mode ('ask'|'auto-edit'|'auto') cycled with Shift+Tab in the REPL. ask = prompt before file edits and mutating commands; auto-edit = workspace file edits auto-approved, Bash mutations still prompt; auto = workspace autonomy with lease boundaries (push/publish/escape) still interactive. Deny rules win in every mode. Unset/invalid values migrate from the legacy permissionMode (auto→auto, smart→auto-edit, ask/deny-all→ask)."
   field name=allowedCommands type="string[]" optional=true
   field name=toolPermissions type="Record<string,'allow'|'ask'|'deny'>" optional=true
   field name=permissions type="{allow?:string[],deny?:string[]}" optional=true

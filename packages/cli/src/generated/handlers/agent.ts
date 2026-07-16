@@ -12,7 +12,9 @@ import { join } from 'node:path';
 
 import { getSessionAllowList } from '../signals/output.js';
 
-// @kern-source: agent:24
+import { resolvePermissionDecision } from '../cesar/permission-resolver.js';
+
+// @kern-source: agent:25
 export interface RunAgentOptions {
   engineId?: string;
   maxTurns?: number;
@@ -22,7 +24,7 @@ export interface RunAgentOptions {
   parentSignal?: AbortSignal;
 }
 
-// @kern-source: agent:32
+// @kern-source: agent:33
 export interface AgentContinuationResult {
   kind: string;
   status: string;
@@ -37,7 +39,7 @@ export interface AgentContinuationResult {
   workspaceChangedInPlace: boolean;
 }
 
-// @kern-source: agent:45
+// @kern-source: agent:46
 export function clipAgentText(text: string|null|undefined, limit: number): string {
   const raw = String(text ?? '').trim();
   if (!raw) {
@@ -47,18 +49,14 @@ export function clipAgentText(text: string|null|undefined, limit: number): strin
 }
 
 /**
- * Shared approval callback for delegated agent runs. Applies config-level allow/deny rules first, then falls back to the UI permission prompt.
+ * Shared approval callback for delegated agent runs, routed through the unified permission resolver with source='delegated' (floor-clamped to auto-edit: file edits run free, Bash mutations still prompt — the old smart-mode blanket auto-approve is retired). Exploration and plan-mode read-only blocks stay in front with instructive messages. cwd is intentionally empty: delegated agents execute in their own worktrees whose containment the executing tool layer owns.
  */
-// @kern-source: agent:52
+// @kern-source: agent:53
 export function buildAgentApprovalCallback(dispatch: Dispatch, ctx: HandlerContext, engineId: string): (tool:string, command:string, reason?:string)=>Promise<boolean|string> {
   return async (tool: string, command: string, reason?: string): Promise<boolean | string> => {
     const cfg = ctx.config;
-    const perms = (cfg as any).toolPermissions ?? {};
-    const allowed = (cfg as any).allowedCommands ?? [];
-    const mode = (cfg as any).permissionMode ?? 'ask';
     const toolMap: Record<string, string> = { shell: 'Bash', bash: 'Bash', edit: 'Edit', write: 'Write', multiedit: 'MultiEdit', read: 'Read', grep: 'Grep', glob: 'Glob' };
     const agonTool = toolMap[tool.toLowerCase()] ?? tool;
-    const perm = perms[agonTool];
 
     if (ctx.explorationMode) {
       const WRITE_TOOLS = ['Edit', 'Write', 'MultiEdit', 'Bash'];
@@ -79,25 +77,16 @@ export function buildAgentApprovalCallback(dispatch: Dispatch, ctx: HandlerConte
       }
     }
 
-    if (perm === 'deny' || mode === 'deny-all') return false;
-    if (perm === 'allow' || mode === 'auto') return true;
-
-    // smart mode: auto-approve session allowlist, ask for user-sourced mutating ops
-    if (mode === 'smart') {
-      const sessionList = getSessionAllowList();
-      if (agonTool === 'Bash' && sessionList.length > 0) {
-        const cmdLower = command.toLowerCase();
-        const base = command.trim().split(/\s+/)[0];
-        if (sessionList.some((a: string) => cmdLower.startsWith(a.toLowerCase()) || base === a)) return true;
-      }
-      // Delegated agent runs are orchestrator context — auto-approve
-      return true;
-    }
-
-    if (agonTool === 'Bash' && allowed.length > 0) {
-      const cmdLower = command.toLowerCase();
-      if (allowed.some((a: string) => cmdLower.startsWith(a.toLowerCase()))) return true;
-    }
+    const resolution = resolvePermissionDecision({
+      tool: agonTool,
+      target: command,
+      cwd: '',
+      source: 'delegated',
+      config: cfg,
+      sessionAllowList: getSessionAllowList(),
+    });
+    if (resolution.decision === 'deny') return false;
+    if (resolution.decision === 'allow') return true;
 
     return new Promise<boolean>((resolve) => {
       dispatch({
@@ -114,7 +103,7 @@ export function buildAgentApprovalCallback(dispatch: Dispatch, ctx: HandlerConte
 /**
  * Run one autonomous agent invocation. Creates a session, calls session.step() once (which internally loops up to maxInnerSteps tool calls), emits OutputEvents throughout, handles Ctrl+C via the KERN-generated abort signal bridged to session.cancel().
  */
-// @kern-source: agent:115
+// @kern-source: agent:103
 export async function runAgentMode(input: string, dispatch: Dispatch, ctx: HandlerContext, opts?: RunAgentOptions): Promise<AgentContinuationResult|null> {
   const abort = new AbortController();
   // ── Resolve engine ─────────────────────────────────────────
@@ -511,7 +500,7 @@ export async function runAgentMode(input: string, dispatch: Dispatch, ctx: Handl
   return followUp;
 }
 
-// @kern-source: agent:520
+// @kern-source: agent:508
 export interface RunAgentTeamOptions {
   engines?: string[];
   taskKind?: 'edit'|'investigate';
@@ -530,7 +519,7 @@ export interface RunAgentTeamOptions {
 /**
  * Run an autonomous agent team: N AgentSession instances in N worktrees with shared budget, synthesis, and explicit transcript events. Used by Cesar-driven team mode and by /agent-team slash command. Wraps AgentTeam from core/cesar/agent-team.kern.
  */
-// @kern-source: agent:534
+// @kern-source: agent:522
 export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: HandlerContext, opts?: RunAgentTeamOptions): Promise<AgentContinuationResult|null> {
   const abort = new AbortController();
   // ── Resolve members ───────────────────────────────────────

@@ -46,7 +46,11 @@ import { markSteeringTurn, drainSteering, releaseSteeringTurn } from './steering
 
 import { beginCesarTurn, createCesarTurnRuntimeHost, resetStaleCesarTurnState, transitionCesarTurn, resolveCesarAbortOutcome, classifyCesarStreamError, releaseCesarTurnHandles, fenceStaleCesarTurn } from './turn-runtime.js';
 
-import { createTaskExecutionLease, authorizeTaskAction, isTaskFileMutationAction, isApprovedPermissionResponse, taskActionApprovalMessage } from './task-execution-lease.js';
+import { createTaskExecutionLease, isTaskFileMutationAction, isApprovedPermissionResponse, taskActionApprovalMessage, approveTaskAction } from './task-execution-lease.js';
+
+import { resolveAgonPermissionMode, resolvePermissionDecision, authorizeResolvedTaskAction } from './permission-resolver.js';
+
+import { getSessionAllowList } from '../signals/output.js';
 
 import { resolveCesarHarnessProfile, evaluateAgenticTaskState, buildAgenticProgressSignature, buildAgenticAutoTurnDirective, resolveCesarToolReadOnlyMode, extractAgenticBashCommand, isAgenticMutationOutcome } from './task-controller.js';
 
@@ -58,7 +62,7 @@ import { consumeCesarPlanControlSignals } from './plan-control-signals.js';
 
 import { hostNowIso, hostWaitForInteractiveChoice } from '../lib/kern-host.js';
 
-// @kern-source: brain:31
+// @kern-source: brain:33
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>, turnAlreadyCommitted?: boolean): Promise<CesarTurnOutcome> {
   // streaming-end commits a real stream OR (when only a speculative preview
   // draft sits on the pane) drops the draft without committing — safe no-op when
@@ -91,7 +95,7 @@ export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input
   return { delegated: false, responded: true, decisionReason: 'delegation-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:58
+// @kern-source: brain:60
 export async function commitTurnAndSuggest(suggestion: {action:string, rest?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}, input: string, response: string, cesarEngineId: string, color: number, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   // streaming-end commits a real stream OR drops a lingering speculative preview
   // draft without committing — safe no-op when there's no entry at all.
@@ -122,10 +126,10 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
   return { delegated: false, responded: true, decisionReason: 'suggestion-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:83
+// @kern-source: brain:85
 export const _noBriefNudged: WeakMap<object, boolean> = new WeakMap<object, boolean>();
 
-// @kern-source: brain:85
+// @kern-source: brain:87
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<CesarTurnOutcome> {
   const abort = new AbortController();
       const _turnStart = Date.now();
@@ -516,7 +520,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         _timelineEnabled = config.cesarToolTimeline !== false;
         ctx.cesar!.taskExecutionLease = createTaskExecutionLease(
           input,
-          ctx.autoModeQueued === true || ctx.cesar!.autoModeQueued === true || config.permissionMode === 'auto',
+          ctx.autoModeQueued === true || ctx.cesar!.autoModeQueued === true || resolveAgonPermissionMode(config) === 'auto',
           resolveWorkingDir(),
           {
             important: config.cesarImportantTaskPattern,
@@ -955,10 +959,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               // Check if already responded
               const respPath = reqPath.replace('.json', '-response.json');
               if (existsSync(respPath)) continue;
-              // Check auto-approved commands
               const cfg = loadConfig();
-              const allowed: string[] = (cfg as any).allowedCommands ?? [];
-              const cmdBase = (req.args?.command ?? '').toString().trim().split(/\s+/)[0];
               const reqTool = String(req.tool ?? 'tool');
               const reqArgs = (req.args ?? {}) as Record<string, unknown>;
               const logMcpApproval = (decision: 'approved'|'denied'|'prompted'|'blocked', source: string, reason?: string) => {
@@ -988,35 +989,29 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   input: reqArgs,
                 });
               };
-              // deny-all kill-switch wins over everything, including an allow rule.
-              // Checked BEFORE the rule gate so a permissionMode=deny-all session
-              // cannot be re-opened by a stray allow rule in .agon.json (F4).
-              if (String((cfg as any).permissionMode ?? 'ask') === 'deny-all') {
-                logMcpApproval('denied', 'settings.permissionMode', 'permissionMode=deny-all');
-                writeFileSync(respPath, JSON.stringify({ type: 'permission-response', id: req.id, approved: false, reason: 'All tool execution is denied (permissionMode=deny-all)' }));
-                continue;
-              }
-              // CC-parity allow/deny rules (.agon.json permissions) — deny ALWAYS
-              // wins and refuses without prompting; allow auto-approves; neither
-              // falls through to allowedCommands / self-turn / UI prompt. Uses the
-              // F2/F3-hardened gate: Bash compound-splitting + file-path resolution.
-              const mcpRuleSet = parsePermissionRuleSet((cfg as any).permissions);
+              // Unified resolver decision — same seam as the native preflight and
+              // buildOnApproval: deny-all kill switch first, then CC-parity rules
+              // (deny always wins, F2/F3-hardened), the turn's task lease, allow
+              // sources incl. allowedCommands compat, then the mode policy.
               const mcpRuleArg = reqTool === 'Bash'
                 ? String(req.args?.command ?? '')
                 : String(req.args?.file_path ?? '');
-              const mcpRuleDecision = evaluateToolRules(reqTool, mcpRuleArg, resolveWorkingDir(), mcpRuleSet);
-              if (mcpRuleDecision === 'deny') {
-                logMcpApproval('denied', 'settings.permissions', `${reqTool} denied by permissions rule`);
-                writeFileSync(respPath, JSON.stringify({ type: 'permission-response', id: req.id, approved: false, reason: `${reqTool} blocked by deny rule in .agon.json permissions` }));
+              const mcpResolution = resolvePermissionDecision({
+                tool: reqTool,
+                target: mcpRuleArg,
+                cwd: resolveWorkingDir(),
+                source: 'native',
+                config: cfg,
+                lease: ctx.cesar?.taskExecutionLease,
+                sessionAllowList: getSessionAllowList(),
+              });
+              if (mcpResolution.decision === 'deny') {
+                logMcpApproval('denied', `resolver.${mcpResolution.stage}`, mcpResolution.reason);
+                writeFileSync(respPath, JSON.stringify({ type: 'permission-response', id: req.id, approved: false, reason: `${reqTool} blocked (${mcpResolution.reason})` }));
                 continue;
               }
-              if (mcpRuleDecision === 'allow') {
-                logMcpApproval('approved', 'settings.permissions', `${reqTool} allowed by permissions rule`);
-                writeFileSync(respPath, JSON.stringify({ type: 'permission-response', id: req.id, approved: true }));
-                continue;
-              }
-              if (cmdBase && allowed.some((a: string) => cmdBase.toLowerCase().startsWith(a.toLowerCase()))) {
-                logMcpApproval('approved', 'mcp.allowedCommands', 'command matched allowedCommands');
+              if (mcpResolution.decision === 'allow') {
+                logMcpApproval('approved', `resolver.${mcpResolution.stage}`, mcpResolution.reason);
                 writeFileSync(respPath, JSON.stringify({ type: 'permission-response', id: req.id, approved: true }));
                 continue;
               }
@@ -1029,7 +1024,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   readFileState: (approvalCache as any).cache,
                   permissionMode: ((cfg as any).permissionMode ?? 'ask') as any,
                   explorationMode: ctx.explorationMode ?? false,
-                  allowedCommands: allowed,
+                  allowedCommands: (cfg as any).allowedCommands ?? [],
                   toolPermissions: (cfg as any).toolPermissions ?? {},
                   readOnlyMode: !!(activePlan && ['planning', 'awaiting_approval'].includes(activePlan.state)),
                   source: 'orchestrator' as const,
@@ -1058,17 +1053,13 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 catch { /* diff is best-effort — fall back to command preview */ }
               }
               dispatch({ type: 'permission-ask', tool: req.tool, command: askCommand, reason: askReason, diffPreview: permDiffPreview && Array.isArray(permDiffPreview.files) ? permDiffPreview : undefined, fallbackNote: permDiffPreview && typeof permDiffPreview.fallback === 'string' ? permDiffPreview.fallback : undefined, resolve: (approved: boolean | string) => {
-                const wasApproved = typeof approved === 'string' ? approved === 'y' || approved === 'a' : approved;
+                const wasApproved = isApprovedPermissionResponse(approved);
                 logMcpApproval(wasApproved ? 'approved' : 'denied', 'mcp.user-prompt', wasApproved ? 'user approved' : 'user denied');
-                // Handle "Always" — persist to config
-                if ((typeof approved === 'string' && approved === 'a') || approved === true) {
-                  if (cmdBase && typeof approved === 'string' && approved === 'a') {
-                    const curAllowed: string[] = (loadConfig() as any).allowedCommands ?? [];
-                    if (!curAllowed.includes(cmdBase)) {
-                      curAllowed.push(cmdBase);
-                      configSet('allowedCommands', curAllowed);
-                    }
-                  }
+                // Rule persistence for Always/Never is owned by the permission
+                // UI (signals/output.kern); here we only record the lease
+                // approval so the same boundary does not re-prompt this turn.
+                if (wasApproved && ctx.cesar?.taskExecutionLease) {
+                  approveTaskAction(ctx.cesar.taskExecutionLease, reqTool, mcpRuleArg);
                 }
                 writeFileSync(respPath, JSON.stringify({ type: 'permission-response', id: req.id, approved: wasApproved, reason: wasApproved ? undefined : 'User denied' }));
               }} as any);
@@ -1755,10 +1746,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         const authorizeXmlTaskAction = async (tool: string, args: Record<string, unknown>): Promise<boolean | string> => {
           if (!taskExecutionLease || !needsTaskAuthorization(tool, args)) return true;
           const target = taskActionTarget(tool, args);
-          const authorization = await authorizeTaskAction(
-            taskExecutionLease,
-            tool,
-            target,
+          const authorization = await authorizeResolvedTaskAction(
+            { tool, target, cwd: resolveWorkingDir(), source: 'native', config, lease: taskExecutionLease, sessionAllowList: getSessionAllowList() },
             (evaluation: any) => requestXmlTaskApproval(tool, args, evaluation),
           );
           return authorization.decision === 'allow'

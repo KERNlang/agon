@@ -20,6 +20,7 @@ import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="node:fs" names="writeFileSync,mkdirSync,existsSync"
 import from="node:path" names="join"
 import from="../signals/output.js" names="getSessionAllowList"
+import from="../cesar/permission-resolver.js" names="resolvePermissionDecision"
 
 interface name=RunAgentOptions
   field name=engineId type=string optional=true
@@ -50,16 +51,12 @@ fn name=clipAgentText params="text:string|null|undefined, limit:number" returns=
     return value="raw.length > limit ? raw.slice(0, limit) + `\\n\\n[... ${raw.length - limit} more chars truncated]` : raw"
 
 fn name=buildAgentApprovalCallback params="dispatch:Dispatch, ctx:HandlerContext, engineId:string" returns="(tool:string, command:string, reason?:string)=>Promise<boolean|string>" export=true
-  doc "Shared approval callback for delegated agent runs. Applies config-level allow/deny rules first, then falls back to the UI permission prompt."
+  doc "Shared approval callback for delegated agent runs, routed through the unified permission resolver with source='delegated' (floor-clamped to auto-edit: file edits run free, Bash mutations still prompt — the old smart-mode blanket auto-approve is retired). Exploration and plan-mode read-only blocks stay in front with instructive messages. cwd is intentionally empty: delegated agents execute in their own worktrees whose containment the executing tool layer owns."
   handler <<<
     return async (tool: string, command: string, reason?: string): Promise<boolean | string> => {
       const cfg = ctx.config;
-      const perms = (cfg as any).toolPermissions ?? {};
-      const allowed = (cfg as any).allowedCommands ?? [];
-      const mode = (cfg as any).permissionMode ?? 'ask';
       const toolMap: Record<string, string> = { shell: 'Bash', bash: 'Bash', edit: 'Edit', write: 'Write', multiedit: 'MultiEdit', read: 'Read', grep: 'Grep', glob: 'Glob' };
       const agonTool = toolMap[tool.toLowerCase()] ?? tool;
-      const perm = perms[agonTool];
 
       if (ctx.explorationMode) {
         const WRITE_TOOLS = ['Edit', 'Write', 'MultiEdit', 'Bash'];
@@ -80,25 +77,16 @@ fn name=buildAgentApprovalCallback params="dispatch:Dispatch, ctx:HandlerContext
         }
       }
 
-      if (perm === 'deny' || mode === 'deny-all') return false;
-      if (perm === 'allow' || mode === 'auto') return true;
-
-      // smart mode: auto-approve session allowlist, ask for user-sourced mutating ops
-      if (mode === 'smart') {
-        const sessionList = getSessionAllowList();
-        if (agonTool === 'Bash' && sessionList.length > 0) {
-          const cmdLower = command.toLowerCase();
-          const base = command.trim().split(/\s+/)[0];
-          if (sessionList.some((a: string) => cmdLower.startsWith(a.toLowerCase()) || base === a)) return true;
-        }
-        // Delegated agent runs are orchestrator context — auto-approve
-        return true;
-      }
-
-      if (agonTool === 'Bash' && allowed.length > 0) {
-        const cmdLower = command.toLowerCase();
-        if (allowed.some((a: string) => cmdLower.startsWith(a.toLowerCase()))) return true;
-      }
+      const resolution = resolvePermissionDecision({
+        tool: agonTool,
+        target: command,
+        cwd: '',
+        source: 'delegated',
+        config: cfg,
+        sessionAllowList: getSessionAllowList(),
+      });
+      if (resolution.decision === 'deny') return false;
+      if (resolution.decision === 'allow') return true;
 
       return new Promise<boolean>((resolve) => {
         dispatch({

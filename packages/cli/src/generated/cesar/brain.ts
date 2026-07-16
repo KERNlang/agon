@@ -22,6 +22,8 @@ import { extractAdjacentForkOptions } from './fork-options.js';
 
 import { parseLiveTodos, parsePreamble } from './todos-marker.js';
 
+import { parseAskMarker } from './ask-marker.js';
+
 import { ensureCesarSession, CESAR_SYSTEM_PROMPT, buildCesarSystemPrompt, resolveCesarBackend, renderToolPermissionCommand } from './session.js';
 
 import { enforceContextBudget } from './context-budget.js';
@@ -62,7 +64,7 @@ import { getSessionAllowList } from '../signals/output.js';
 
 import { resolveCesarHarnessProfile, evaluateAgenticTaskState, buildAgenticProgressSignature, buildAgenticAutoTurnDirective, resolveCesarToolReadOnlyMode, extractAgenticBashCommand, isAgenticMutationOutcome } from './task-controller.js';
 
-import { yieldToInk, recordCesarTurn, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, createTodosDisplayStripper, createPreambleStripper, findTrailingUserQuestion, detectAwaitingUserInput, detectNarratedToolStall, detectMutationIntentStall, detectFabricatedDelegation, shouldDeescalateGuard, withEagerToolCallId, claimEagerToolExecution, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation, isBashToolName, isWriteToolName } from './brain-helpers.js';
+import { yieldToInk, recordCesarTurn, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, createTodosDisplayStripper, createAskDisplayStripper, createPreambleStripper, findTrailingUserQuestion, detectAwaitingUserInput, detectNarratedToolStall, detectMutationIntentStall, detectFabricatedDelegation, shouldDeescalateGuard, withEagerToolCallId, claimEagerToolExecution, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation, isBashToolName, isWriteToolName } from './brain-helpers.js';
 
 import { runCesarConfirmationFollowUp } from './confirmation-follow-up.js';
 
@@ -70,7 +72,7 @@ import { consumeCesarPlanControlSignals } from './plan-control-signals.js';
 
 import { hostNowIso, hostWaitForInteractiveChoice } from '../lib/kern-host.js';
 
-// @kern-source: brain:37
+// @kern-source: brain:38
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>, turnAlreadyCommitted?: boolean): Promise<CesarTurnOutcome> {
   // streaming-end commits a real stream OR (when only a speculative preview
   // draft sits on the pane) drops the draft without committing — safe no-op when
@@ -103,7 +105,7 @@ export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input
   return { delegated: false, responded: true, decisionReason: 'delegation-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:64
+// @kern-source: brain:65
 export async function commitTurnAndSuggest(suggestion: {action:string, rest?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}, input: string, response: string, cesarEngineId: string, color: number, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   // streaming-end commits a real stream OR drops a lingering speculative preview
   // draft without committing — safe no-op when there's no entry at all.
@@ -134,10 +136,10 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
   return { delegated: false, responded: true, decisionReason: 'suggestion-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:89
+// @kern-source: brain:90
 export const _noBriefNudged: WeakMap<object, boolean> = new WeakMap<object, boolean>();
 
-// @kern-source: brain:91
+// @kern-source: brain:92
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<CesarTurnOutcome> {
   const abort = new AbortController();
       const _turnStart = Date.now();
@@ -379,6 +381,27 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         if (!_preambleEmitted) {
           _preambleEmitted = true;
           dispatch({ type: 'cesar-preamble', engineId: _actualCesarEngineId || undefined, intent: parsed.intent } as any);
+        }
+        return parsed.rest;
+      };
+      // ── Structured ask extraction (the [ASK] marker, RULE 7d) ──
+      // Parse an [ASK]…[/ASK] block out of the brain's text (ask-marker.kern) and
+      // stash it; the end-of-turn interactive section renders it through the
+      // existing question overlay — the SAME chokepoint as the heuristic fork /
+      // confirm pickers, so a deliberate ask suppresses both and the turn can
+      // never double-prompt. Unlike [TODOS], a located-but-malformed block keeps
+      // a flag so the turn surfaces a visible warning instead of silently never
+      // asking (a lost ask is not recoverable; a lost todo list is).
+      let _pendingAsk: any = null;
+      let _askMalformed = false;
+      const extractAsk = (text: string): string => {
+        const parsed = parseAskMarker(text);
+        if (!parsed.found) return text;
+        if (parsed.ask) {
+          _pendingAsk = parsed.ask;
+          _askMalformed = false;
+        } else {
+          _askMalformed = true;
         }
         return parsed.rest;
       };
@@ -749,6 +772,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         // Per-turn native-path [TODOS] display stripper (state encapsulated in the
         // factory closure: hold buffer + insideBlock). Flushed at stream end.
         const stripTodosForDisplay = createTodosDisplayStripper();
+        // Per-turn native-path [ASK] display stripper — same machinery, own state;
+        // chained after the todos stripper on every native display path + flush.
+        const stripAskForDisplay = createAskDisplayStripper();
         // Per-turn native-path [INTENT] preamble display stripper. Holds the leading
         // text until it can decide whether the response opens with an [INTENT] line,
         // suppressing that line from the streamed display. Flushed at stream end.
@@ -1382,7 +1408,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   cleanFirst = split.visible;
                   if (split.hasToolMarkup) suppressXmlToolDisplay = true;
                 } else {
-                  cleanFirst = stripTodosForDisplay(cleanFirst);
+                  cleanFirst = stripAskForDisplay(stripTodosForDisplay(cleanFirst));
                 }
                 if (cleanFirst.trim()) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: cleanFirst });
               } else {
@@ -1399,8 +1425,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   if (!displayChunk) continue;
                 } else {
                   // Native path: XML markup suppression doesn't run, so strip the
-                  // live-todos marker here before it reaches the display dispatch.
-                  displayChunk = stripTodosForDisplay(displayChunk);
+                  // live-todos + structured-ask markers here before display dispatch.
+                  displayChunk = stripAskForDisplay(stripTodosForDisplay(displayChunk));
                   if (!displayChunk && !insideThinkBlock) continue;
                 }
                 if (insideThinkBlock) {
@@ -1445,7 +1471,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           const trailingPreambleSafe = stripPreambleForDisplay('', true);
           if (streaming && trailingPreambleSafe) {
             const routed = ctx.cesar!.hasNativeTools
-              ? stripTodosForDisplay(trailingPreambleSafe)
+              ? stripAskForDisplay(stripTodosForDisplay(trailingPreambleSafe))
               : takeXmlSafeDisplayChunk(trailingPreambleSafe);
             if (routed.trim()) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: routed });
           }
@@ -1453,13 +1479,19 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           if (streaming && trailingXmlSafe.trim()) {
             dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: trailingXmlSafe });
           }
-          // Native path: flush any held partial-marker tail from the todos stripper
-          // (force=true bypasses holds, returns held text verbatim) so a final chunk
-          // ending in a legit prefix like "… see [" isn't silently dropped.
+          // Native path: flush any held partial-marker tails (force=true bypasses
+          // holds, returns held text verbatim) so a final chunk ending in a legit
+          // prefix like "… see [" isn't silently dropped. The todos flush is routed
+          // through the ask stripper non-forced first (its verbatim tail may still
+          // contain ask markers), then the ask stripper force-flushes its own hold.
           if (ctx.cesar!.hasNativeTools) {
-            const trailingTodosSafe = stripTodosForDisplay('', true);
+            const trailingTodosSafe = stripAskForDisplay(stripTodosForDisplay('', true));
             if (streaming && trailingTodosSafe.trim()) {
               dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: trailingTodosSafe });
+            }
+            const trailingAskSafe = stripAskForDisplay('', true);
+            if (streaming && trailingAskSafe.trim()) {
+              dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: trailingAskSafe });
             }
           }
           } catch (err) {
@@ -1520,6 +1552,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         // the source:'live' checklist, and keep only the stripped text. Safe no-op
         // when no block is present or a plan is active (emitLiveTodos guards both).
         response = emitLiveTodos(response);
+        // Extract a structured [ASK] block (RULE 7d) — stashed for the end-of-turn
+        // interactive section; the marker never reaches the committed transcript.
+        response = extractAsk(response);
 
         // ── Await eager tool results ──
         if (eagerPromises.length > 0 && !ctx.cesar!.hasNativeTools && session.alive && !abort.signal.aborted) {
@@ -1590,7 +1625,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             // leaks into committed text on a tool-result continuation. emitPreamble is
             // idempotent (the _preambleEmitted latch suppresses a duplicate block) and
             // still strips the marker from the text on every call.
-            if (continuation.trim()) response = emitLiveTodos(emitPreamble(continuation.trim()));
+            if (continuation.trim()) response = extractAsk(emitLiveTodos(emitPreamble(continuation.trim())));
           }
         }
 
@@ -2789,7 +2824,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             // mirroring the main commit path) so the marker never leaks into the
             // committed/displayed text on an auto-continuation turn. emitPreamble is
             // idempotent — the _preambleEmitted latch suppresses a duplicate block.
-            const cleanCont = emitLiveTodos(emitPreamble(contResponse.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim()));
+            const cleanCont = extractAsk(emitLiveTodos(emitPreamble(contResponse.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim())));
             // Engine failed to produce a continuation (overflow / rate limit / dead
             // session). Surface the REAL reason and stop — don't keep nudging into
             // the misleading canned "paused mid-task" closure (the spin bug).
@@ -3157,7 +3192,57 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               dispatch({ type: 'spinner-stop' });
             }
           };
-          if (isForkQuestion) {
+          // A located-but-malformed [ASK] block was stripped from the display; a
+          // lost ask is not recoverable (the user would silently never be asked),
+          // so surface it instead of proceeding as if nothing happened. The turn
+          // still ends normally — the prose (and the awaitingUserInput tail-scan)
+          // remain the fallback question path.
+          if (_askMalformed && !_pendingAsk) {
+            dispatch({ type: 'warning', message: 'Cesar emitted a malformed [ASK] block (stripped). Answer its question in plain text instead.' });
+          }
+          // Deliberate structured ask (RULE 7d): takes precedence over the fork /
+          // confirm HEURISTICS below — one chokepoint, so a turn can never
+          // double-prompt. Deliberate asks fire even on chat turns (the chat gate
+          // exists to stop heuristics boxing users in, not intentional questions).
+          // Skipped while a plan surface is active (proposal approval / execution
+          // owns the screen — same guard as emitLiveTodos), falling through to the
+          // normal end-of-turn path.
+          const _planSurfaceActive = !!(ctx.activePlan && ['planning', 'awaiting_approval', 'running', 'paused'].includes(ctx.activePlan.state));
+          if (_pendingAsk && !_planSurfaceActive && session.alive && !abort.signal.aborted) {
+            const _askColors = ['#4ade80', '#22d3ee', '#fbbf24', '#a78bfa', '#f97316', '#ef4444'];
+            const _ask = _pendingAsk as { question: string; options: { label: string; description?: string }[] };
+            // Keys are the 1-based positions; keyboard.kern already resolves digits.
+            // The composer auto-appends the "Other" free-text row (output.kern), so
+            // the user is never boxed into the listed options.
+            const _askChoices = _ask.options.map((o, i) => ({
+              key: String(i + 1),
+              label: o.label,
+              ...(o.description ? { description: o.description } : {}),
+              color: _askColors[i % _askColors.length],
+            }));
+            const picked = String(await hostWaitForInteractiveChoice(abort.signal, (resolve) => {
+              dispatch({ type: 'question', prompt: `${cesarEngineId} asks: ${_ask.question}`, choices: _askChoices, resolve } as any);
+            })).toLowerCase();
+            // '__other:<text>' routes the typed answer as a fresh user turn via
+            // handleSubmit (app.kern); Esc resolves 'n'/'' — both leave chosen null.
+            const _chosenIdx = _askChoices.findIndex((c) => c.key === picked);
+            const chosen = _chosenIdx >= 0 ? _ask.options[_chosenIdx] : null;
+            if (chosen && session.alive && !abort.signal.aborted) {
+              await _runInteractiveChoice(picked, `Answer to your question "${_ask.question}": ${chosen.label}${chosen.description ? ` (${chosen.description})` : ''}. Continue with this choice.`);
+              if (interactivePlanControl?.error) console.warn(`[agon] Interactive plan control failed: ${interactivePlanControl.error}`);
+              if (interactivePlanControl?.planProposed) {
+                return { mode: 'self', delegated: false, responded: true, decisionReason: 'plan-proposed', ...buildToolTelemetry() };
+              }
+              const interactiveDelegation = ctx.cesar?.pendingDelegation;
+              if (interactiveDelegation) {
+                ctx.cesar!.pendingDelegation = null;
+                return await commitTurnAndDelegate(interactiveDelegation, input, response, cesarEngineId, false, dispatch, ctx, buildToolTelemetry(), true);
+              }
+              if (_turnTerminalState === 'failed') {
+                return { delegated: false, responded: true, decisionReason: 'interactive-follow-up-incomplete', ...buildToolTelemetry() };
+              }
+            }
+          } else if (isForkQuestion) {
             const _forkColors = ['#4ade80', '#22d3ee', '#fbbf24', '#a78bfa', '#f97316', '#ef4444'];
             // The composer auto-appends an "Other" row so the user is never boxed
             // into the listed options — picking it opens an inline text field and

@@ -29,7 +29,7 @@ fn name=recordCesarTurn params="ctx:HandlerContext, cesarEngineId:string, input:
 const name=splitBeforeToolMarkup type="(text:string) => { visible:string, hasToolMarkup:boolean }" export=true
   handler <<<
     (text: string) => {
-      const markers = ['<tool ', '<invoke ', '<tool_call', '<toolcall', '<tool_call_tool>', '<function=', '[TOOL_CALLS]', '[TODOS]'];
+      const markers = ['<tool ', '<invoke ', '<tool_call', '<toolcall', '<tool_call_tool>', '<function=', '[TOOL_CALLS]', '[TODOS]', '[ASK]'];
       const lower = text.toLowerCase();
       let idx = -1;
       for (const marker of markers) {
@@ -43,32 +43,35 @@ const name=splitBeforeToolMarkup type="(text:string) => { visible:string, hasToo
 
 const name=XML_TOOL_MARKUP_HOLD_CHARS type=number value=24 export=true
 
-// ── Live-todos incremental display stripper (factory) ─────────────────
-// Strips [TODOS]…[/TODOS] blocks from a NATIVE-tool streaming chunk so the
-// live-checklist marker never leaks into the visible/committed answer. The
-// XML path is already covered by splitBeforeToolMarkup (which lists '[TODOS]'
-// as markup) + takeXmlSafeDisplayChunk's suppression; this is the native
-// analogue, mirroring the <think> incremental handling: complete blocks are
-// removed, an open block suppresses display until '[/TODOS]', and a partial
-// trailing marker prefix (of EITHER '[todos]' or '[/todos]') is held back so a
-// marker split across chunks isn't shown / doesn't latch the block open forever.
+// ── Block-marker incremental display stripper (generic factory) ────────
+// Strips [TAG]…[/TAG] blocks from a NATIVE-tool streaming chunk so a block
+// marker ([TODOS], [ASK]) never leaks into the visible/committed answer. The
+// XML path is already covered by splitBeforeToolMarkup (which lists the open
+// markers as markup) + takeXmlSafeDisplayChunk's suppression; this is the
+// native analogue, mirroring the <think> incremental handling: complete blocks
+// are removed, an open block suppresses display until the close tag, and a
+// partial trailing marker prefix (of EITHER the open or close tag) is held
+// back so a marker split across chunks isn't shown / doesn't latch the block
+// open forever.
 //
-// createTodosDisplayStripper() returns ONE strip function closing over its own
-// per-turn state (hold buffer + insideBlock). brain.kern creates one instance
-// per turn. The returned fn is `(chunk: string, force?: boolean) => string`:
+// Each bound factory (createTodosDisplayStripper / createAskDisplayStripper)
+// returns ONE strip function closing over its own per-turn state (hold buffer
+// + insideBlock). brain.kern creates one instance of each per turn — chaining
+// stateful strippers on the same stream is safe because each holds only its
+// own marker prefixes. The returned fn is `(chunk: string, force?: boolean) => string`:
 //   - force=false (streaming): hold partial-marker tails for the next chunk.
 //   - force=true (stream end): flush — bypass all holds and return held+combined
 //     text verbatim (no further suppression). Must be called once with ('', true)
 //     at stream end (next to the XML flush) so a final chunk ending in a legit
 //     prefix like "… see [" is not silently dropped.
-const name=createTodosDisplayStripper type="() => ((chunk: string, force?: boolean) => string)" export=true
-  doc "Factory for the native-path [TODOS]…[/TODOS] incremental display stripper. Returns a stateful strip fn (chunk, force?) => string closing over its own hold buffer + insideBlock flag — one instance per turn. force=true flushes any held tail verbatim (bypassing holds) for the stream-end flush; force=false holds partial-marker prefixes (open '[todos]' AND close '[/todos]') across chunks so a marker split mid-stream neither leaks nor latches the block open forever."
+const name=createBlockDisplayStripper type="(open: string, close: string) => ((chunk: string, force?: boolean) => string)" export=true
+  doc "Generic factory for a [TAG]…[/TAG] incremental display stripper — the shared machinery behind createTodosDisplayStripper and createAskDisplayStripper. Takes the lowercase open/close markers; returns a stateful strip fn (chunk, force?) => string closing over its own hold buffer + insideBlock flag — one instance per turn per marker. force=true flushes any held tail verbatim (bypassing holds) for the stream-end flush; force=false holds partial-marker prefixes (open AND close) across chunks so a marker split mid-stream neither leaks nor latches the block open forever."
   handler <<<
-    () => {
-      let insideBlock = false;  // between [TODOS] and [/TODOS]
+    (open: string, close: string) => {
+      let insideBlock = false;  // between [TAG] and [/TAG]
       let hold = '';            // partial trailing marker prefix carried to next chunk
-      const OPEN = '[todos]';
-      const CLOSE = '[/todos]';
+      const OPEN = open.toLowerCase();
+      const CLOSE = close.toLowerCase();
       // Longest suffix of `combined` that is a strict prefix of `marker` (len < marker.length).
       const trailingPrefixLen = (combined: string, marker: string): number => {
         const lower = combined.toLowerCase();
@@ -113,7 +116,7 @@ const name=createTodosDisplayStripper type="() => ((chunk: string, force?: boole
           combined = combined.slice(start + OPEN.length);
         }
         if (!insideBlock) {
-          // Guard a partial trailing '[todos]' (or shorter prefix) split mid-marker.
+          // Guard a partial trailing open marker (or shorter prefix) split mid-marker.
           const p = trailingPrefixLen(combined, OPEN);
           if (p > 0) {
             hold = combined.slice(combined.length - p);
@@ -124,6 +127,18 @@ const name=createTodosDisplayStripper type="() => ((chunk: string, force?: boole
         return out;
       };
     }
+  >>>
+
+const name=createTodosDisplayStripper type="() => ((chunk: string, force?: boolean) => string)" export=true
+  doc "Per-turn [TODOS]…[/TODOS] display stripper — createBlockDisplayStripper bound to the live-todos marker."
+  handler <<<
+    () => createBlockDisplayStripper('[todos]', '[/todos]')
+  >>>
+
+const name=createAskDisplayStripper type="() => ((chunk: string, force?: boolean) => string)" export=true
+  doc "Per-turn [ASK]…[/ASK] display stripper — createBlockDisplayStripper bound to the structured-ask marker (RULE 7d), so the JSON question block never leaks into the streamed display."
+  handler <<<
+    () => createBlockDisplayStripper('[ask]', '[/ask]')
   >>>
 
 // ── Preamble [INTENT] incremental display stripper (factory) ──────────

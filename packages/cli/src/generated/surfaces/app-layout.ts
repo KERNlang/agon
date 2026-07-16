@@ -73,12 +73,21 @@ export function estimateQuestionReservedRows(questionState: any, termWidth: numb
       const label = String(choice?.label ?? '').trim();
       return sum + stringDisplayWidth(`[${fmtChoiceKey(choice, index)}] ${label}`.trim()) + (index > 0 ? 2 : 0);
     }, 0);
-    if (questionState.choices.length <= 3 && inlineChoiceWidth <= safeWidth) {
+    // Structured-ask choices ([ASK] marker) render a dim description line
+    // under each label, so they never qualify for the single-inline-row
+    // shortcut and each description reserves its own wrapped rows.
+    const hasDescriptions = questionState.choices.some((choice: any) => String(choice?.description ?? '').trim());
+    if (!hasDescriptions && questionState.choices.length <= 3 && inlineChoiceWidth <= safeWidth) {
       return promptRows + 1;
     }
     const choiceRows = questionState.choices.reduce((sum: number, choice: any, index: number) => {
       const label = String(choice?.label ?? '').trim();
-      return sum + estimateWrappedRowCount(`[${fmtChoiceKey(choice, index)}] ${label}`.trim(), safeWidth);
+      // The composer renders each description truncated to ONE line
+      // (truncateCodeLine), so reserve exactly one row per description.
+      const description = String(choice?.description ?? '').trim();
+      return sum
+        + estimateWrappedRowCount(`[${fmtChoiceKey(choice, index)}] ${label}`.trim(), safeWidth)
+        + (description ? 1 : 0);
     }, 0);
     return promptRows + Math.max(1, choiceRows);
   }
@@ -88,7 +97,7 @@ export function estimateQuestionReservedRows(questionState: any, termWidth: numb
 /**
  * Reserve extra rows above the base composer/status chrome for stacked prompt cards, queued-input badges, and the one-line plan chip. The legacy spinner argument is retained for call compatibility, but spinner activity now renders only in CesarStatusStrip and consumes no duplicate row.
  */
-// @kern-source: app-layout:80
+// @kern-source: app-layout:89
 export function estimateBottomChromeExtraRows(_mode: string, questionState: any, termWidth: number, pendingImageCount: number, inputQueueCount: number, _hasLiveSpinner: boolean, hasPlanChip: boolean = false): number {
   let extraRows = 0;
   if (pendingImageCount > 0) {
@@ -104,7 +113,7 @@ export function estimateBottomChromeExtraRows(_mode: string, questionState: any,
   return extraRows;
 }
 
-// @kern-source: app-layout:93
+// @kern-source: app-layout:102
 export function estimatePinnedLiveRows(mode: string, hasStream: boolean, hasProgress: boolean, agentCount: number, toolStreamCount?: number): number {
   const streamRows = hasStream ? ((mode === 'chat') ? 3 : 6) : 0;
   const progressRows = hasProgress ? ((mode === 'chat') ? 3 : 5) : 0;
@@ -116,7 +125,7 @@ export function estimatePinnedLiveRows(mode: string, hasStream: boolean, hasProg
   return streamRows + progressRows + agentRows + toolRows;
 }
 
-// @kern-source: app-layout:104
+// @kern-source: app-layout:113
 export function estimateWrappedRows(text: string, width: number): number {
   const safeWidth = Math.max(1, width);
   if (!text) return 0;
@@ -126,7 +135,7 @@ export function estimateWrappedRows(text: string, width: number): number {
   }, 0);
 }
 
-// @kern-source: app-layout:114
+// @kern-source: app-layout:123
 export function estimateToolCallRows(event: any, toolOutputExpanded: boolean, codeWidth: number): number {
   if (!event || event.type !== 'tool-call') {
     return 0;
@@ -218,7 +227,7 @@ export function estimateToolCallRows(event: any, toolOutputExpanded: boolean, co
   return rows;
 }
 
-// @kern-source: app-layout:186
+// @kern-source: app-layout:195
 export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   const proseWidth = contentWidth(4);
   const chatWidth = contentWidth(2);
@@ -330,7 +339,7 @@ export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOu
   }
 }
 
-// @kern-source: app-layout:298
+// @kern-source: app-layout:307
 export function estimateDisplayItemRows(item: OutputBlock, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   return estimateOutputEventRows(item.event, mode, toolOutputExpanded, thinkingExpanded);
 }

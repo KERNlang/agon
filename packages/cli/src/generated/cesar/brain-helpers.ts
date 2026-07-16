@@ -31,7 +31,7 @@ export function recordCesarTurn(ctx: HandlerContext, cesarEngineId: string, inpu
 
 // @kern-source: brain-helpers:29
 export const splitBeforeToolMarkup: (text:string) => { visible:string, hasToolMarkup:boolean } = (text: string) => {
-  const markers = ['<tool ', '<invoke ', '<tool_call', '<toolcall', '<tool_call_tool>', '<function=', '[TOOL_CALLS]', '[TODOS]'];
+  const markers = ['<tool ', '<invoke ', '<tool_call', '<toolcall', '<tool_call_tool>', '<function=', '[TOOL_CALLS]', '[TODOS]', '[ASK]'];
   const lower = text.toLowerCase();
   let idx = -1;
   for (const marker of markers) {
@@ -46,14 +46,14 @@ export const splitBeforeToolMarkup: (text:string) => { visible:string, hasToolMa
 export const XML_TOOL_MARKUP_HOLD_CHARS: number = 24;
 
 /**
- * Factory for the native-path [TODOS]…[/TODOS] incremental display stripper. Returns a stateful strip fn (chunk, force?) => string closing over its own hold buffer + insideBlock flag — one instance per turn. force=true flushes any held tail verbatim (bypassing holds) for the stream-end flush; force=false holds partial-marker prefixes (open '[todos]' AND close '[/todos]') across chunks so a marker split mid-stream neither leaks nor latches the block open forever.
+ * Generic factory for a [TAG]…[/TAG] incremental display stripper — the shared machinery behind createTodosDisplayStripper and createAskDisplayStripper. Takes the lowercase open/close markers; returns a stateful strip fn (chunk, force?) => string closing over its own hold buffer + insideBlock flag — one instance per turn per marker. force=true flushes any held tail verbatim (bypassing holds) for the stream-end flush; force=false holds partial-marker prefixes (open AND close) across chunks so a marker split mid-stream neither leaks nor latches the block open forever.
  */
-// @kern-source: brain-helpers:64
-export const createTodosDisplayStripper: () => ((chunk: string, force?: boolean) => string) = () => {
-  let insideBlock = false;  // between [TODOS] and [/TODOS]
+// @kern-source: brain-helpers:67
+export const createBlockDisplayStripper: (open: string, close: string) => ((chunk: string, force?: boolean) => string) = (open: string, close: string) => {
+  let insideBlock = false;  // between [TAG] and [/TAG]
   let hold = '';            // partial trailing marker prefix carried to next chunk
-  const OPEN = '[todos]';
-  const CLOSE = '[/todos]';
+  const OPEN = open.toLowerCase();
+  const CLOSE = close.toLowerCase();
   // Longest suffix of `combined` that is a strict prefix of `marker` (len < marker.length).
   const trailingPrefixLen = (combined: string, marker: string): number => {
     const lower = combined.toLowerCase();
@@ -98,7 +98,7 @@ export const createTodosDisplayStripper: () => ((chunk: string, force?: boolean)
       combined = combined.slice(start + OPEN.length);
     }
     if (!insideBlock) {
-      // Guard a partial trailing '[todos]' (or shorter prefix) split mid-marker.
+      // Guard a partial trailing open marker (or shorter prefix) split mid-marker.
       const p = trailingPrefixLen(combined, OPEN);
       if (p > 0) {
         hold = combined.slice(combined.length - p);
@@ -111,9 +111,21 @@ export const createTodosDisplayStripper: () => ((chunk: string, force?: boolean)
 };
 
 /**
+ * Per-turn [TODOS]…[/TODOS] display stripper — createBlockDisplayStripper bound to the live-todos marker.
+ */
+// @kern-source: brain-helpers:132
+export const createTodosDisplayStripper: () => ((chunk: string, force?: boolean) => string) = () => createBlockDisplayStripper('[todos]', '[/todos]');
+
+/**
+ * Per-turn [ASK]…[/ASK] display stripper — createBlockDisplayStripper bound to the structured-ask marker (RULE 7d), so the JSON question block never leaks into the streamed display.
+ */
+// @kern-source: brain-helpers:138
+export const createAskDisplayStripper: () => ((chunk: string, force?: boolean) => string) = () => createBlockDisplayStripper('[ask]', '[/ask]');
+
+/**
  * Factory for the native-path START-anchored [INTENT] preamble display stripper. Returns a stateful strip fn (chunk, force?) => string closing over its own decision flags + hold buffer — one instance per turn. Holds leading text until it can decide whether the response opens with an [INTENT] line; suppresses the matched line; once decided (matched-and-consumed, or provably-not-a-marker) it is a pass-through. force=true flushes any held tail verbatim for the stream-end flush. Mirrors createTodosDisplayStripper's hold/flush guarantees for the single-line, no-close-tag marker shape.
  */
-// @kern-source: brain-helpers:151
+// @kern-source: brain-helpers:166
 export const createPreambleStripper: () => ((chunk: string, force?: boolean) => string) = () => {
   const MARKER = '[intent]';
   let decided = false;   // start-anchored decision resolved → pass-through
@@ -195,7 +207,7 @@ export const createPreambleStripper: () => ((chunk: string, force?: boolean) => 
 /**
  * True when the last line of a Cesar turn is a question directed at the USER — either keyword-addressed (which/should/want/your call/…) OR an either/or fork ('A, or B?'). Auto-continuation uses this to STOP and wait for the user instead of treating the question as a mid-task stall and re-prompting Cesar (which caused fork questions like 'plan it all, or start with X?' to loop).
  */
-// @kern-source: brain-helpers:233
+// @kern-source: brain-helpers:248
 export function isUserDirectedQuestion(lastLine: string): boolean {
   const last = String(lastLine ?? '').trim();
   if (!/\?\s*$/.test(last)) return false;
@@ -209,7 +221,7 @@ export function isUserDirectedQuestion(lastLine: string): boolean {
 /**
  * Return the nearest user-directed question in the TAIL of a Cesar turn (last 6 non-empty lines), or null. Unlike checking only the LAST line, this catches the common 'ask, then advise' shape — a question FOLLOWED BY a recommendation / rationale / confidence line (esp. minimax) — so auto-continuation recognizes it as the user's turn instead of barreling through it ('asked but never got a chance to answer'). Bounded to the last 6 non-empty lines so a question buried mid-narration does NOT stop the loop; reuses isUserDirectedQuestion for the per-line test. NOTE: we deliberately do NOT try to detect 'the model proceeded past its own question' (matching done / I'll / 'I renamed …') — every anchored attempt produced false positives ('ill', 'I'll wait for your input', 'this is not done yet') that SUPPRESS real questions and reintroduce the very bug this fixes. A stale trailing question merely STOPS the auto-continuation loop when the model is already done, which is benign — the done/effect logic in _detectTurnState already classifies genuine completions. (2 rounds of multi-engine agon review, 2026-06-07.)
  */
-// @kern-source: brain-helpers:245
+// @kern-source: brain-helpers:260
 export function findTrailingUserQuestion(text: string): string | null {
   const lines = String(text ?? '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const TAIL = 6;
@@ -223,7 +235,7 @@ export function findTrailingUserQuestion(text: string): string | null {
 /**
  * True when a Cesar turn ENDS awaiting user input — either a trailing user-directed question (findTrailingUserQuestion) OR a 'holding / awaiting your approval / greenlight' STATEMENT in the tail (which has no '?'). PLAN EXECUTION uses this to pause an approved plan to idle when the brain stalls asking for input it cannot receive mid-run (the weak-brain 'I'll hold for your greenlight' re-ask of already-granted approval). Scoped to plan execution only; a false positive merely causes a recoverable pause (the one-shot executor override + /plan resume recover it), so the statement pattern is tuned to catch that shape without firing on ordinary completion text.
  */
-// @kern-source: brain-helpers:257
+// @kern-source: brain-helpers:272
 export function detectAwaitingUserInput(text: string): boolean {
   const body = String(text ?? '');
   if (findTrailingUserQuestion(body)) return true;
@@ -259,7 +271,7 @@ export function detectAwaitingUserInput(text: string): boolean {
 /**
  * Detect responses where a model narrates tool intent instead of actually calling tools. Used for Cesar tool-use telemetry, especially API models with weak function calling.
  */
-// @kern-source: brain-helpers:291
+// @kern-source: brain-helpers:306
 export function detectNarratedToolStall(text: string): boolean {
   const body = String(text ?? '').trim();
   if (!body) {
@@ -277,7 +289,7 @@ export function detectNarratedToolStall(text: string): boolean {
 /**
  * Layer 1 of the watchdog pipeline (brainstorm-validated 2026-06-11): remove NON-ASSERTED spans before any guard regex runs, so quoted/demonstrated text can never read as a claim. Strips fenced code blocks, inline backtick spans, double/curly-quoted spans, and parenthesized capitalized enumerations like '(Read/Edit/Write/Bash)' — the exact shape that false-fired the guards on a description OF the harness. Carve-out: a backticked/quoted span that is ITSELF an active first-person/imperative claim ('I'll edit foo') is kept, so an engine cannot hide a real stall inside quotes. Straight single-quoted spans are deliberately NOT stripped — apostrophes in contractions (can't … don't) would pair up and delete real assertions. Pure; exported for unit tests.
  */
-// @kern-source: brain-helpers:305
+// @kern-source: brain-helpers:320
 export function stripNonAssertionSpans(text: string): string {
   let body = String(text ?? '');
   // A span that is itself a claim stays visible to the guards.
@@ -296,7 +308,7 @@ export function stripNonAssertionSpans(text: string): string {
 /**
  * Detect a 'false read-only hand-back': the orchestrator narrated a concrete change (claim-shaped: first-person intent, result-first 'patch ready', or an apply-it-yourself instruction) AND claimed it cannot write / delegated the write to an agent / pushed the apply to the user — WITHOUT emitting a mutating tool call. CLAIM-SHAPED matching (Layer 2, brainstorm-validated 2026-06-11): bare nouns like 'Edit/Write tools' or 'read-only investigation phase' in a DESCRIPTION of the harness must NOT fire — only inability/hand-back/intent CLAIMS do. Runs on stripNonAssertionSpans output so quoted failure text can't trip it. Result-first phrasing ('Patch ready. Please apply it manually; this environment is read-only.') is the recall-preserving branch — real stalls are often not first-person.
  */
-// @kern-source: brain-helpers:322
+// @kern-source: brain-helpers:337
 export function detectMutationIntentStall(text: string): boolean {
   const body = stripNonAssertionSpans(String(text ?? '')).trim();
   if (!body) return false;
@@ -325,7 +337,7 @@ export function detectMutationIntentStall(text: string): boolean {
 /**
  * Detect a response that CLAIMS an async review/forge/tribunal/brainstorm/agent or background job was dispatched or is now running — e.g. 'review delegated to codex, claude, agy', 'three reviewers are reading the diff in parallel', 'I kicked off the review'. CLAIM-SHAPED matching (Layer 2, brainstorm-validated 2026-06-11): descriptive prose like 'Forge dispatches engines that work in parallel and report back with a winner' must NOT fire — the dispatch/running claim must be first-person ('I kicked off…'), a delegated-to statement, a present-continuous running state adjacent to a delegable target ('the review is still running', 'background review in progress'), or a they-will-report promise. Runs on stripNonAssertionSpans output. The caller pairs this with 'no delegation was actually emitted this turn' (ctx.cesar.pendingDelegation is null).
  */
-// @kern-source: brain-helpers:349
+// @kern-source: brain-helpers:364
 export function detectFabricatedDelegation(text: string): boolean {
   const body = stripNonAssertionSpans(String(text ?? '')).trim();
   if (!body) return false;
@@ -350,7 +362,7 @@ export function detectFabricatedDelegation(text: string): boolean {
 /**
  * Layer 3 of the watchdog pipeline: NEVER suppresses a guard, only converts a positive match into a visible warning WITHOUT the injected corrective nudge. True only when every available signal says conversational: router intake chat (with its 'answer' flow — chat is the router's DEFAULT bucket, so a chat intake the router escalated to any other flow does NOT de-escalate) or a positively-classified exploration intake (campfire/brainstorm/answer flows), AND no mutating tool (Write/Edit/Bash family) ran this turn. Missing/unknown signals return false → full nudge (the nero-validated answer to 'frame it as chat' bypasses). HONEST LIMIT (review finding, 0.60): chat+answer is the router's no-signal default, so a genuinely stalling work turn the router failed to classify can land here — the deliberate trade is that de-escalation is WARN-ONLY (the match is still surfaced, the claim-shaped detector already had to fire, and no nudge is injected); it can never silently swallow a stall. The confidence self-report ('informational') joins as a third positive signal once ReportConfidence carries a structured task type.
  */
-// @kern-source: brain-helpers:372
+// @kern-source: brain-helpers:387
 export function shouldDeescalateGuard(opts: {intakeKind?:string, recommendedFlow?:string, usedMutatingTool?:boolean}): boolean {
   const kind = String(opts.intakeKind ?? '');
   const flow = String(opts.recommendedFlow ?? '');
@@ -364,7 +376,7 @@ export function shouldDeescalateGuard(opts: {intakeKind?:string, recommendedFlow
 /**
  * Give an uncorrelated eager streaming call one stable identity before any lifecycle event is emitted. The same enriched metadata must feed the running event and executeEagerTool terminal event so recap correlation cannot split one call into two records.
  */
-// @kern-source: brain-helpers:384
+// @kern-source: brain-helpers:399
 export function withEagerToolCallId(meta: Record<string,unknown>, fallbackId: string): Record<string,unknown> {
   const existing = typeof meta?.toolCallId === 'string' ? meta.toolCallId.trim() : '';
   if (existing) return meta;
@@ -374,7 +386,7 @@ export function withEagerToolCallId(meta: Record<string,unknown>, fallbackId: st
 /**
  * Claim one correlated eager tool execution for the current Cesar turn. Streaming adapters may repeat a running chunk while assembling arguments; a stable toolCallId executes once. Uncorrelated calls remain fail-open because a tool name or payload cannot safely distinguish duplicates from independent calls.
  */
-// @kern-source: brain-helpers:392
+// @kern-source: brain-helpers:407
 export function claimEagerToolExecution(claimed: Set<string>, toolCallId: unknown): boolean {
   const id = String(toolCallId ?? '').trim();
   if (!id) {
@@ -390,7 +402,7 @@ export function claimEagerToolExecution(claimed: Set<string>, toolCallId: unknow
 /**
  * Return unique tool names from failed eager tool results. Used to restrict one-shot repair retries to the tool that just failed.
  */
-// @kern-source: brain-helpers:403
+// @kern-source: brain-helpers:418
 export function eagerFailedToolNames(results: ToolCallResult[]): string[] {
   const names: string[] = [];
   for (const result of results ?? []) {
@@ -408,7 +420,7 @@ export function eagerFailedToolNames(results: ToolCallResult[]): string[] {
 /**
  * Gate eager tool repair retries. A corrected tool call may run once only if the same tool failed in the immediately previous eager batch.
  */
-// @kern-source: brain-helpers:415
+// @kern-source: brain-helpers:430
 export function shouldRunEagerRepairTool(toolName: string, meta: any, failedToolNames: string[], usedToolNames: string[]): boolean {
   const name = String(toolName ?? '').trim();
   if (!name) return false;
@@ -423,7 +435,7 @@ export function shouldRunEagerRepairTool(toolName: string, meta: any, failedTool
 /**
  * Return true for XML tools that hand control back to the Agon dispatcher. These tools do not produce inline results; continuing the XML tool loop after them can make Cesar claim a delegation happened while the actual forge/brainstorm/etc. job has not started yet.
  */
-// @kern-source: brain-helpers:428
+// @kern-source: brain-helpers:443
 export function shouldStopAfterXmlToolCall(toolName: string): boolean {
   const HANDOFF_TOOLS = hostStringSet(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Council', 'Pipeline', 'Review', 'Agent', 'Goal', 'Conquer', 'ProposePlan', 'ExitPlanMode']);
   return HANDOFF_TOOLS.has(String(toolName ?? ''));
@@ -432,7 +444,7 @@ export function shouldStopAfterXmlToolCall(toolName: string): boolean {
 /**
  * Strip the 'Agon' orchestration alias prefix from a tool name. The default companion/MCP path surfaces write/bash tools as AgonBash/AgonEdit/AgonWrite (the MCP completion's done.tool is the ORIGINAL alias, not the mapped kern tool — see agon-orchestration.kern handleWriteToolCall), while the native/XML loop uses the bare names. Case-insensitive prefix match; returns the un-prefixed remainder so both paths classify identically.
  */
-// @kern-source: brain-helpers:434
+// @kern-source: brain-helpers:449
 export function stripAgonToolPrefix(name: string): string {
   const n = String(name ?? '');
   return n.toLowerCase().startsWith('agon') ? n.slice(4) : n;
@@ -441,18 +453,18 @@ export function stripAgonToolPrefix(name: string): string {
 /**
  * True when a tool name denotes a shell/bash call on EITHER path — bare 'Bash' (native/XML) or 'AgonBash' (MCP). Path-agnostic so the verify-before-done gate arms on the default companion path, not only the native one.
  */
-// @kern-source: brain-helpers:440
+// @kern-source: brain-helpers:455
 export function isBashToolName(name: string): boolean {
   return stripAgonToolPrefix(name).toLowerCase() === 'bash';
 }
 
-// @kern-source: brain-helpers:445
+// @kern-source: brain-helpers:460
 export const WRITE_TOOL_NAMES: Set<string> = hostStringSet(['edit', 'write', 'multiedit', 'notebookedit']);
 
 /**
  * True when a tool name denotes project write-work (file edit/create) on EITHER path — bare Edit/Write/MultiEdit/NotebookEdit (native/XML) or the AgonEdit/AgonWrite MCP aliases. SaveMemory is deliberately NOT write-work: it appends to .agon/project.md (durable memory), not the project tree, so the project's verification gate has nothing to verify for it.
  */
-// @kern-source: brain-helpers:447
+// @kern-source: brain-helpers:462
 export function isWriteToolName(name: string): boolean {
   return WRITE_TOOL_NAMES.has(stripAgonToolPrefix(name).toLowerCase());
 }
@@ -460,7 +472,7 @@ export function isWriteToolName(name: string): boolean {
 /**
  * Expand a bare 'fix it' follow-up into an explicit prompt grounded in the most recent stored review result. This avoids making Cesar guess which reviewer findings the user means, especially because /review runs outside Cesar's live session history.
  */
-// @kern-source: brain-helpers:452
+// @kern-source: brain-helpers:467
 export function buildReviewFollowupPrompt(input: string, ctx: HandlerContext): { matched: boolean; prompt: string } {
   const trimmed = input.trim();
   const match = ((__m) => __m === null ? null : { full: __m[0], groups: Array.from(__m).slice(1).map((g) => g === undefined ? null : g), index: __m.index, named: __m.groups ? Object.fromEntries(Object.entries(__m.groups).map(([__k, __v]) => [__k, __v === undefined ? null : __v])) : {} })(trimmed.match(/^fix it(?:[ \t\n\r\f\v]+with[ \t\n\r\f\v]+([a-z0-9._-]+))?[ \t\n\r\f\v?!.,;:]*$/i));
@@ -481,7 +493,7 @@ export function buildReviewFollowupPrompt(input: string, ctx: HandlerContext): {
   return { matched: true, prompt: prompt };
 }
 
-// @kern-source: brain-helpers:471
+// @kern-source: brain-helpers:486
 export function extractDelegation(toolName: string, args: Record<string,unknown>): PendingDelegation {
   const argsRecord = args as Record<string, unknown>;
   const taskKindRaw = argsRecord.taskKind;

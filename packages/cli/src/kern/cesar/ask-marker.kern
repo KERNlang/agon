@@ -1,0 +1,99 @@
+// ── Cesar Structured Ask: parse the [ASK]…[/ASK] question marker ───────
+// The THIRD sanctioned marker idiom (RULE 7d): when the brain is genuinely
+// unsure between concrete alternatives it ENDS its turn with one [ASK] block —
+// a single JSON object — and the runtime strips it and renders the existing
+// question overlay (selectable options + the auto-appended "Other" free-text
+// row) instead. Same settled design as [TODOS]/[INTENT]: no engine round-trip,
+// no new MCP/XML tool — the brain owns the parse, the model just writes text.
+//
+// FORMAT (one JSON object per block; the LAST well-formed block wins):
+//   [ASK]
+//   {"question":"Which storage backend?",
+//    "options":[{"label":"SQLite","description":"zero-dep, single file"},
+//               {"label":"Postgres","description":"needs a server, scales"}]}
+//   [/ASK]
+//
+// Robustness contract — STRICTER than [TODOS] because a lost ask is not
+// recoverable (the user is silently never asked): malformed input is still
+// ignored (ask:null) and stripped, but `found` stays true so the caller can
+// surface a visible warning instead of proceeding as if nothing happened.
+
+interface name=AskOption export=true
+  doc "One selectable answer: short label plus an optional one-line trade-off description rendered dim under the row."
+  field name=label type=string
+  field name=description type=string optional=true
+
+interface name=StructuredAsk export=true
+  doc "A validated structured question: the prompt line and 2–6 options."
+  field name=question type=string
+  field name=options type="AskOption[]"
+
+interface name=AskMarkerResult export=true
+  field name=ask type="StructuredAsk | null"
+  doc "The parsed ask from the LAST well-formed block, or null when absent/malformed."
+  field name=found type=boolean
+  doc "True when an [ASK]…[/ASK] block was located (even if its body was malformed) — so the caller knows to strip it and can warn on ask:null."
+  field name=rest type=string
+  doc "Response text with every [ASK]…[/ASK] block removed, ready to display."
+
+const name=MAX_ASK_OPTIONS type=number value=6 export=true
+const name=MIN_ASK_OPTIONS type=number value=2 export=true
+const name=MAX_ASK_LABEL_CHARS type=number value=100 export=true
+const name=MAX_ASK_DESCRIPTION_CHARS type=number value=200 export=true
+const name=MAX_ASK_QUESTION_CHARS type=number value=300 export=true
+
+fn name=parseAskMarker params="response:string" returns="AskMarkerResult" export=true
+  doc "Extract a structured ask from [ASK]…[/ASK] blocks. The last well-formed block wins; ALL blocks are stripped from rest. A located-but-malformed block (bad JSON, missing question, fewer than 2 valid options) returns ask:null with found:true so the caller can warn. Options are capped at 6; labels/descriptions/question are length-clamped."
+  handler <<<
+    const text = String(response ?? '');
+    const blockRe = /\[ASK\]([\s\S]*?)\[\/ASK\]/gi;
+    const matches = text.match(blockRe);
+    if (!matches || matches.length === 0) {
+      return { ask: null, found: false, rest: text };
+    }
+    const rest = text.replace(blockRe, '').trim();
+    // Re-scan to capture bodies (match() loses capture groups). Walk ALL blocks
+    // and keep the LAST one that validates — a model that changed its mind
+    // mid-stream re-emits, and the latest snapshot is authoritative (same
+    // last-wins contract as [TODOS]).
+    const clamp = (value: string, max: number): string =>
+      value.length > max ? value.slice(0, max - 1).trimEnd() + '…' : value;
+    let ask: StructuredAsk | null = null;
+    const re2 = /\[ASK\]([\s\S]*?)\[\/ASK\]/gi;
+    const bodies: string[] = [];
+    let m = re2.exec(text);
+    while (m !== null) {
+      bodies.push(String(m[1] ?? '').trim());
+      m = re2.exec(text);
+    }
+    for (const body of bodies) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(body);
+      } catch {
+        continue; // malformed body — keep scanning; found stays true
+      }
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
+      const obj = parsed as Record<string, unknown>;
+      const question = obj.question !== undefined && obj.question !== null ? String(obj.question).trim() : '';
+      if (!question) continue;
+      if (!Array.isArray(obj.options)) continue;
+      const options: AskOption[] = [];
+      for (const raw of (obj.options as unknown[]).slice(0, MAX_ASK_OPTIONS)) {
+        if (!raw || typeof raw !== 'object') continue;
+        const r = raw as Record<string, unknown>;
+        const label = r.label !== undefined && r.label !== null ? String(r.label).trim() : '';
+        if (!label) continue;
+        const description = r.description !== undefined && r.description !== null
+          ? String(r.description).trim()
+          : '';
+        options.push({
+          label: clamp(label, MAX_ASK_LABEL_CHARS),
+          ...(description ? { description: clamp(description, MAX_ASK_DESCRIPTION_CHARS) } : {}),
+        });
+      }
+      if (options.length < MIN_ASK_OPTIONS) continue;
+      ask = { question: clamp(question, MAX_ASK_QUESTION_CHARS), options };
+    }
+    return { ask, found: true, rest };
+  >>>

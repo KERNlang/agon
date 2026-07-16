@@ -26,7 +26,10 @@ const name=MUTATING_STEP_TYPES type="Set<string>" value={{ hostStringSet(['forge
 fn name=applyAutoApprovePolicy params="plan:CesarPlan, config:AgonConfig" returns=AutoApproveDecision export=true
   doc "Decide whether a plan qualifies for autonomous execution without user confirmation."
   handler lang="kern"
-    let name=mode value="config.cesarAutoApproveMode ?? 'safe-only'"
+    comment raw="// An unrecognized mode value must not fall through the whitelist gates"
+    comment raw="// (it would behave like 'always' without a ceiling) — clamp to safe-only."
+    let name=rawMode value="config.cesarAutoApproveMode ?? 'safe-only'"
+    let name=mode value="['off', 'safe-only', 'cost-bounded', 'always'].includes(rawMode) ? rawMode : 'safe-only'"
     let name=maxCostUsd value="config.cesarAutoApproveMaxCostUsd"
     comment raw="// Gate 0: global off switch"
     if cond="mode === 'off'"
@@ -58,7 +61,7 @@ fn name=applyAutoApprovePolicy params="plan:CesarPlan, config:AgonConfig" return
     return value="{ approve: true, reason: `${mode} policy passed (cost $${adjustedCostUsd.toFixed(4)})`, adjustedCostUsd, }"
 
 fn name=applyAgenticAutoApprovePolicy params="plan:CesarPlan,config:AgonConfig,lease:TaskExecutionLease|undefined" returns=AutoApproveDecision export=true
-  doc "Agentic AUTO executes routine plans without a second approval loop, but only after every step description and command passes the same task lease used by direct tools. Explicit autoApprove=off remains a kill switch."
+  doc "Agentic AUTO executes routine plans without a second approval loop, but only after every step passes the same task lease used by direct tools: the step type + full boundary text at the action level, and ONLY the real shell commands (fitnessCmd/verifyCmd, never prose descriptions) through the Bash boundary classifier. Explicit autoApprove=off remains a kill switch."
   handler <<<
     if (config.cesarAutoApproveMode === 'off') return applyAutoApprovePolicy(plan, config);
     if (!lease) return { approve: false, reason: 'agentic task lease unavailable', adjustedCostUsd: plan.totalEstimatedCostUsd };
@@ -70,8 +73,9 @@ fn name=applyAgenticAutoApprovePolicy params="plan:CesarPlan,config:AgonConfig,l
       if (actionDecision.decision !== 'allow') {
         return { approve: false, reason: `step ${step.id} requires boundary approval (${actionDecision.reason})`, adjustedCostUsd: plan.totalEstimatedCostUsd };
       }
-      if (boundaryText) {
-        const commandDecision = evaluateTaskAction(lease, 'Bash', boundaryText);
+      const commandText = [step.fitnessCmd, step.verifyCmd].filter((value): value is string => typeof value === 'string' && value.trim().length > 0).join('\n');
+      if (commandText) {
+        const commandDecision = evaluateTaskAction(lease, 'Bash', commandText);
         if (commandDecision.decision !== 'allow') {
           return { approve: false, reason: `step ${step.id} contains an interactive boundary (${commandDecision.reason})`, adjustedCostUsd: plan.totalEstimatedCostUsd };
         }

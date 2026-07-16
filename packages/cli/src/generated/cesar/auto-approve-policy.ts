@@ -31,7 +31,10 @@ export const MUTATING_STEP_TYPES: Set<string> = hostStringSet(['forge', 'teamfor
  */
 // @kern-source: auto-approve-policy:26
 export function applyAutoApprovePolicy(plan: CesarPlan, config: AgonConfig): AutoApproveDecision {
-  const mode = config.cesarAutoApproveMode ?? 'safe-only';
+  // An unrecognized mode value must not fall through the whitelist gates
+  // (it would behave like 'always' without a ceiling) — clamp to safe-only.
+  const rawMode = config.cesarAutoApproveMode ?? 'safe-only';
+  const mode = ['off', 'safe-only', 'cost-bounded', 'always'].includes(rawMode) ? rawMode : 'safe-only';
   const maxCostUsd = config.cesarAutoApproveMaxCostUsd;
   // Gate 0: global off switch
   if (mode === 'off') {
@@ -71,9 +74,9 @@ export function applyAutoApprovePolicy(plan: CesarPlan, config: AgonConfig): Aut
 }
 
 /**
- * Agentic AUTO executes routine plans without a second approval loop, but only after every step description and command passes the same task lease used by direct tools. Explicit autoApprove=off remains a kill switch.
+ * Agentic AUTO executes routine plans without a second approval loop, but only after every step passes the same task lease used by direct tools: the step type + full boundary text at the action level, and ONLY the real shell commands (fitnessCmd/verifyCmd, never prose descriptions) through the Bash boundary classifier. Explicit autoApprove=off remains a kill switch.
  */
-// @kern-source: auto-approve-policy:60
+// @kern-source: auto-approve-policy:63
 export function applyAgenticAutoApprovePolicy(plan: CesarPlan, config: AgonConfig, lease: TaskExecutionLease|undefined): AutoApproveDecision {
   if (config.cesarAutoApproveMode === 'off') return applyAutoApprovePolicy(plan, config);
   if (!lease) return { approve: false, reason: 'agentic task lease unavailable', adjustedCostUsd: plan.totalEstimatedCostUsd };
@@ -85,8 +88,9 @@ export function applyAgenticAutoApprovePolicy(plan: CesarPlan, config: AgonConfi
     if (actionDecision.decision !== 'allow') {
       return { approve: false, reason: `step ${step.id} requires boundary approval (${actionDecision.reason})`, adjustedCostUsd: plan.totalEstimatedCostUsd };
     }
-    if (boundaryText) {
-      const commandDecision = evaluateTaskAction(lease, 'Bash', boundaryText);
+    const commandText = [step.fitnessCmd, step.verifyCmd].filter((value): value is string => typeof value === 'string' && value.trim().length > 0).join('\n');
+    if (commandText) {
+      const commandDecision = evaluateTaskAction(lease, 'Bash', commandText);
       if (commandDecision.decision !== 'allow') {
         return { approve: false, reason: `step ${step.id} contains an interactive boundary (${commandDecision.reason})`, adjustedCostUsd: plan.totalEstimatedCostUsd };
       }

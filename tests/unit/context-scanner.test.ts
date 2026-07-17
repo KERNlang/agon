@@ -77,22 +77,50 @@ describe('context-scanner', () => {
     }
     afterEach(() => { while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true }); });
 
-    it('prefers .agon/project.md over AGON.md (first match wins)', () => {
+    it('injects BOTH .agon/project.md (config slot) and AGENTS.md (instructions slot)', () => {
       const root = tmpRepo();
       mkdirSync(join(root, '.agon'), { recursive: true });
       writeFileSync(join(root, '.agon/project.md'), 'SENTINEL_DOTAGON_PROJECT');
-      writeFileSync(join(root, 'AGON.md'), 'SENTINEL_PLAIN_AGON');
+      writeFileSync(join(root, 'AGENTS.md'), 'SENTINEL_PLAIN_AGON');
       const ctx = scanProjectContext(root);
+      // The agon config must never SHADOW the instructions brief — SaveMemory
+      // auto-creates .agon/project.md, and the documented split (instructions in
+      // AGENTS.md, agon extras in project.md) relies on both being injected.
       expect(ctx).toContain('Project instructions (.agon/project.md)');
       expect(ctx).toContain('SENTINEL_DOTAGON_PROJECT');
-      expect(ctx).not.toContain('SENTINEL_PLAIN_AGON');
+      expect(ctx).toContain('Project instructions (AGENTS.md)');
+      expect(ctx).toContain('SENTINEL_PLAIN_AGON');
+      // Config slot renders before the instructions slot.
+      expect(ctx.indexOf('SENTINEL_DOTAGON_PROJECT')).toBeLessThan(ctx.indexOf('SENTINEL_PLAIN_AGON'));
     });
 
-    it('gives a dedicated brief (AGON.md) a 4000-char budget — content past 2000 survives', () => {
+    it('prefers AGENTS.md over CLAUDE.md (source of truth, then fallback)', () => {
+      const root = tmpRepo();
+      writeFileSync(join(root, 'AGENTS.md'), 'SENTINEL_AGENTS');
+      writeFileSync(join(root, 'CLAUDE.md'), 'SENTINEL_CLAUDE');
+      const ctx = scanProjectContext(root);
+      expect(ctx).toContain('Project instructions (AGENTS.md)');
+      expect(ctx).toContain('SENTINEL_AGENTS');
+      expect(ctx).not.toContain('SENTINEL_CLAUDE');
+    });
+
+    it('no longer recognizes the retired brief files (AGON.md, AGENT.md, CODEX.md)', () => {
+      const root = tmpRepo();
+      writeFileSync(join(root, 'AGON.md'), 'SENTINEL_RETIRED_AGON');
+      writeFileSync(join(root, 'AGENT.md'), 'SENTINEL_RETIRED_AGENT');
+      writeFileSync(join(root, 'CODEX.md'), 'SENTINEL_RETIRED_CODEX');
+      const ctx = scanProjectContext(root);
+      expect(ctx).not.toContain('SENTINEL_RETIRED_AGON');
+      expect(ctx).not.toContain('SENTINEL_RETIRED_AGENT');
+      expect(ctx).not.toContain('SENTINEL_RETIRED_CODEX');
+      expect(hasProjectBrief(root)).toBe(false);
+    });
+
+    it('gives a dedicated brief (AGENTS.md) a 4000-char budget — content past 2000 survives', () => {
       const root = tmpRepo();
       // ~2600 chars: would be cut mid-brief under the old flat 2000 cap, fits under 4000.
       const body = 'HEAD_MARK' + 'x'.repeat(2600) + 'TAIL_MARK_PAST_2000';
-      writeFileSync(join(root, 'AGON.md'), body);
+      writeFileSync(join(root, 'AGENTS.md'), body);
       const ctx = scanProjectContext(root);
       expect(ctx).toContain('TAIL_MARK_PAST_2000'); // survives the raised cap
       expect(ctx).not.toContain('truncated at 2000 chars'); // not cut at the old cap
@@ -138,15 +166,15 @@ describe('context-scanner', () => {
       expect(ctx).not.toContain('node 20 floor');
     });
 
-    it('leaves other brief files (AGON.md) untouched — their ## sections are NOT stripped', () => {
+    it('leaves other brief files (AGENTS.md) untouched — their ## sections are NOT stripped', () => {
       const root = tmpRepo();
-      // Same shape but in AGON.md, which is not the SaveMemory store.
+      // Same shape but in AGENTS.md, which is not the SaveMemory store.
       writeFileSync(
-        join(root, 'AGON.md'),
+        join(root, 'AGENTS.md'),
         '# Brief\n\n## Decisions\n- a real heading in a hand-written brief\n',
       );
       const ctx = scanProjectContext(root);
-      expect(ctx).toContain('Project instructions (AGON.md)');
+      expect(ctx).toContain('Project instructions (AGENTS.md)');
       expect(ctx).toContain('## Decisions');
       expect(ctx).toContain('a real heading in a hand-written brief');
     });
@@ -163,7 +191,7 @@ describe('context-scanner', () => {
 
     it('is true when a recognized brief exists', () => {
       const root = tmpRepo('agon-hasbrief-');
-      writeFileSync(join(root, 'AGON.md'), '# brief');
+      writeFileSync(join(root, 'AGENTS.md'), '# brief');
       expect(hasProjectBrief(root)).toBe(true);
     });
 
@@ -181,7 +209,7 @@ describe('context-scanner', () => {
 
     it('is false when the only brief file is empty (mirrors the scanner)', () => {
       const root = tmpRepo('agon-emptybrief-');
-      writeFileSync(join(root, 'AGON.md'), '   \n  ');
+      writeFileSync(join(root, 'AGENTS.md'), '   \n  ');
       expect(hasProjectBrief(root)).toBe(false);
     });
   });

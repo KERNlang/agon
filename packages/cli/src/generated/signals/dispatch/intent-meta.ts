@@ -260,7 +260,7 @@ export async function dispatchMetaIntent(intent: any, input: string, cb: Dispatc
       break;
     }
 
-    // ── AGON.md init wizard ──
+    // ── AGENTS.md init wizard ──
     default: return null;
   }
   // break-path cases land here — mirrors the original switch's shared _emitPost() tail

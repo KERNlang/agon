@@ -9,16 +9,23 @@ import from="../cesar/memory.js" names="stripProjectMemorySections"
 
 type name=ContextFormat values="plain|kern"
 
-const name=PROJECT_BRIEF_FILES value={{ [".agon/project.md", "AGON.md", "AGENT.md", "CLAUDE.md", "CODEX.md"] }}
+const name=AGON_CONFIG_BRIEF value={{ ".agon/project.md" }}
+  doc "The agon-specific config slot: fitness: gate line + SaveMemory-managed project memory. Injected ALONGSIDE the instructions brief, never instead of it."
+
+const name=INSTRUCTION_BRIEF_FILES value={{ ["AGENTS.md", "CLAUDE.md"] }}
+  doc "The instructions slot, first match wins: the standard AGENTS.md is the source of truth, CLAUDE.md is the read-only fallback."
+
+const name=PROJECT_BRIEF_FILES value={{ [".agon/project.md", "AGENTS.md", "CLAUDE.md"] }}
+  doc "All recognized brief files (config slot + instruction slot), for existence checks like hasProjectBrief."
 
 const name=MAX_PROJECT_BRIEF_BYTES type=number value={{ 512 * 1024 }}
   doc "Upper bound for reading a brief file into memory in hasProjectBrief — a file bigger than this is clearly non-empty, so count it without a full read."
 
-fn name=projectBriefCap params="file:string" returns=number export=false expr={{ return (file === ".agon/project.md" || file === "AGON.md") ? 4000 : 2000; }}
-  doc "Larger budget for dedicated Agon briefs (.agon/project.md, AGON.md); generic agent files stay tight."
+fn name=projectBriefCap params="file:string" returns=number export=false expr={{ return (file === ".agon/project.md" || file === "AGENTS.md") ? 4000 : 2000; }}
+  doc "Larger budget for the Agon config (.agon/project.md) and the canonical AGENTS.md brief; the CLAUDE.md fallback stays tight."
 
 fn name=hasProjectBrief params="cwd:string" returns=boolean export=true
-  doc "True if cwd has a recognized project-brief file with non-empty content. Mirrors the cascade in scanProjectContext so the no-brief nudge agrees with what actually gets injected — an empty AGON.md/.agon/project.md is NOT a usable brief."
+  doc "True if cwd has a recognized project-brief file with non-empty content. Mirrors the cascade in scanProjectContext so the no-brief nudge agrees with what actually gets injected — an empty AGENTS.md/.agon/project.md is NOT a usable brief."
   handler <<<
     for (const file of PROJECT_BRIEF_FILES) {
       try {
@@ -54,18 +61,30 @@ fn name=parseFitnessLine params="content:string" returns="string | null" export=
     return m ? m[1].trim() || null : null;
   >>>
 
-fn name=parseFitnessOverride params="cwd:string" returns="string | null" export=false
-  doc "Read the FIRST recognized project-brief file and extract an explicit `fitness: <cmd>` override line (case-insensitive, leading whitespace / markdown bullet tolerated). Returns the trimmed command or null. First brief in the cascade that EXISTS is authoritative — an existing brief without a fitness: line returns null (no fall-through to a later brief), mirroring scanProjectContext's first-match-wins."
+fn name=readBriefContent params="cwd:string, file:string" returns="string | null" export=false
+  doc "Read one brief file's content, or null when it is missing, empty, oversized, unreadable, or not a regular file. Shared by parseFitnessOverride and scanProjectContext's slot injection so both agree on what counts as a usable brief."
   handler <<<
-    for (const file of PROJECT_BRIEF_FILES) {
-      try {
-        const path = join(cwd, file);
-        const st = existsSync(path) ? statSync(path) : null;
-        if (!st || !st.isFile() || st.size === 0) continue;
-        if (st.size > MAX_PROJECT_BRIEF_BYTES) return null;
-        const content = readFileSync(path, "utf-8");
-        return parseFitnessLine(content);
-      } catch { /* unreadable brief — keep scanning the cascade */ }
+    try {
+      const path = join(cwd, file);
+      const st = existsSync(path) ? statSync(path) : null;
+      if (!st || !st.isFile() || st.size === 0) return null;
+      if (st.size > MAX_PROJECT_BRIEF_BYTES) return null;
+      const content = readFileSync(path, "utf-8");
+      return content.trim().length > 0 ? content : null;
+    } catch { return null; }
+  >>>
+
+fn name=parseFitnessOverride params="cwd:string" returns="string | null" export=false
+  doc "Extract an explicit `fitness: <cmd>` override line (case-insensitive, leading whitespace / markdown bullet tolerated). The agon config slot (.agon/project.md) wins when it carries a fitness: line, but DOES fall through when it has none — SaveMemory auto-creates that file, and a memory-only config must not hide a fitness: line in AGENTS.md. Within the instructions slot the first existing brief is authoritative: an AGENTS.md without a fitness: line returns null with no fall-through to CLAUDE.md, mirroring scanProjectContext's first-match-wins for that slot."
+  handler <<<
+    const cfg = readBriefContent(cwd, AGON_CONFIG_BRIEF);
+    if (cfg) {
+      const override = parseFitnessLine(cfg);
+      if (override) return override;
+    }
+    for (const file of INSTRUCTION_BRIEF_FILES) {
+      const content = readBriefContent(cwd, file);
+      if (content !== null) return parseFitnessLine(content);
     }
     return null;
   >>>
@@ -308,29 +327,32 @@ fn name=scanProjectContext params="cwd:string,extraContext?:string,format?:Conte
       }
     }
 
-    // Project instructions — cascade: first match wins.
-    // Dedicated Agon briefs (.agon/project.md, AGON.md) outrank generic agent files
-    // and get a larger budget; generic compatibility files stay tight.
-    for (const file of PROJECT_BRIEF_FILES) {
-      try {
-        const path = join(cwd, file);
-        if (existsSync(path)) {
-          const raw = readFileSync(path, "utf-8");
-          // For the dedicated Agon brief, strip the SaveMemory-managed sections
-          // (## Decisions / ## Constraints / ## Conventions / ## Session Notes):
-          // those bullets are injected separately as the [PROJECT MEMORY] block, so
-          // leaving them here would double-inject ~2k duplicate tokens per turn. The
-          // brief prose + the `fitness:` line are kept. Other brief files (AGON.md,
-          // CLAUDE.md, …) are passed through untouched.
-          const content = (file === ".agon/project.md" ? stripProjectMemorySections(raw) : raw).trim();
-          if (content) {
-            const cap = projectBriefCap(file);
-            const capped = content.length > cap ? content.slice(0, cap) + `\n... (truncated at ${cap} chars)` : content;
-            sections.push(`Project instructions (${file}):\n${capped}`);
-            break; // first match wins — stop looking
-          }
-        }
-      } catch {}
+    // Project instructions — TWO slots, both injected when present:
+    //   (1) the agon config (.agon/project.md): fitness: line + SaveMemory prose;
+    //   (2) the instructions brief — AGENTS.md, else the CLAUDE.md fallback.
+    // Slot 1 must never SHADOW slot 2: SaveMemory auto-creates .agon/project.md,
+    // and a repo following the documented split (instructions in AGENTS.md, agon
+    // extras in .agon/project.md) would otherwise silently lose its instructions.
+    const injectBrief = (file: string): void => {
+      const raw = readBriefContent(cwd, file);
+      if (raw === null) return;
+      // For the agon config, strip the SaveMemory-managed sections
+      // (## Decisions / ## Constraints / ## Conventions / ## Session Notes):
+      // those bullets are injected separately as the [PROJECT MEMORY] block, so
+      // leaving them here would double-inject ~2k duplicate tokens per turn. The
+      // brief prose + the `fitness:` line are kept. Instruction briefs (AGENTS.md,
+      // CLAUDE.md) are passed through untouched.
+      const content = (file === AGON_CONFIG_BRIEF ? stripProjectMemorySections(raw) : raw).trim();
+      if (!content) return;
+      const cap = projectBriefCap(file);
+      const capped = content.length > cap ? content.slice(0, cap) + `\n... (truncated at ${cap} chars)` : content;
+      sections.push(`Project instructions (${file}):\n${capped}`);
+    };
+    injectBrief(AGON_CONFIG_BRIEF);
+    for (const file of INSTRUCTION_BRIEF_FILES) {
+      const before = sections.length;
+      injectBrief(file);
+      if (sections.length > before) break; // instructions slot: first match wins
     }
 
     if (extraContext && extraContext.trim()) {

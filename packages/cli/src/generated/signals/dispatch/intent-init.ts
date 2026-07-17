@@ -23,23 +23,23 @@ export async function dispatchInitIntent(intent: any, input: string, cb: Dispatc
       // Determine target path
       let targets: { label: string; path: string }[] = [];
       if (scopeArg === 'global' || scopeArg === 'agon') {
-        targets = [{ label: 'Global (~/.agon/AGON.md)', path: join(getAgonHome(), 'AGON.md') }];
+        targets = [{ label: 'Global (~/.agon/AGENTS.md)', path: join(getAgonHome(), 'AGENTS.md') }];
       } else if (scopeArg === 'user' || scopeArg === 'home') {
-        targets = [{ label: 'User home (~/AGON.md)', path: join(home, 'AGON.md') }];
+        targets = [{ label: 'User home (~/AGENTS.md)', path: join(home, 'AGENTS.md') }];
       } else if (scopeArg === 'project' || scopeArg === 'cwd') {
-        targets = [{ label: 'Project (./AGON.md)', path: join(resolveWorkingDir(), 'AGON.md') }];
+        targets = [{ label: 'Project (./AGENTS.md)', path: join(resolveWorkingDir(), 'AGENTS.md') }];
       } else {
         // No scope arg — show options
         targets = [
-          { label: 'Global (~/.agon/AGON.md)', path: join(getAgonHome(), 'AGON.md') },
-          { label: 'User home (~/AGON.md)', path: join(home, 'AGON.md') },
-          { label: 'Project (./AGON.md)', path: join(resolveWorkingDir(), 'AGON.md') },
+          { label: 'Global (~/.agon/AGENTS.md)', path: join(getAgonHome(), 'AGENTS.md') },
+          { label: 'User home (~/AGENTS.md)', path: join(home, 'AGENTS.md') },
+          { label: 'Project (./AGENTS.md)', path: join(resolveWorkingDir(), 'AGENTS.md') },
         ];
       }
 
       if (targets.length > 1) {
-        cb.dispatch({ type: 'header', title: 'AGON.md Setup' });
-        cb.dispatch({ type: 'info', message: 'Choose where to create your AGON.md:' });
+        cb.dispatch({ type: 'header', title: 'AGENTS.md Setup' });
+        cb.dispatch({ type: 'info', message: 'Choose where to create your AGENTS.md:' });
         const rows = targets.map((t: any, i: number) => [String(i + 1), t.label, t.path]);
         cb.dispatch({ type: 'table', headers: ['#', 'Scope', 'Path'], rows });
         cb.dispatch({ type: 'info', message: 'Usage: /init global | /init user | /init project' });
@@ -52,7 +52,7 @@ export async function dispatchInitIntent(intent: any, input: string, cb: Dispatc
       // Check if file already exists
       const { existsSync, mkdirSync, writeFileSync } = await import('node:fs');
       if (existsSync(targetPath)) {
-        cb.dispatch({ type: 'warning', message: `AGON.md already exists: ${targetPath}` });
+        cb.dispatch({ type: 'warning', message: `AGENTS.md already exists: ${targetPath}` });
         cb.dispatch({ type: 'info', message: 'Edit it directly or delete it first to regenerate.' });
         break;
       }
@@ -69,16 +69,16 @@ export async function dispatchInitIntent(intent: any, input: string, cb: Dispatc
         try { return cp.execSync('git config user.name', { encoding: 'utf-8' }).trim(); } catch { return 'YourName'; }
       });
 
-      // Build AGON.md content based on scope
+      // Build AGENTS.md content based on scope
       let content = '';
       const isGlobal = targetPath.includes('.agon');
-      const isUserHome = targetPath === join(home, 'AGON.md');
+      const isUserHome = targetPath === join(home, 'AGENTS.md');
 
       if (isGlobal) {
         content = [
-          '# AGON.md — Personal (global)',
+          '# AGENTS.md — Personal (global)',
           '',
-          'Applies to every workspace. Project-specific overrides go in `PROJECT_ROOT/AGON.md`.',
+          'Applies to every workspace. Project-specific overrides go in `PROJECT_ROOT/AGENTS.md`.',
           '',
           '## User',
           '',
@@ -130,9 +130,9 @@ export async function dispatchInitIntent(intent: any, input: string, cb: Dispatc
           workspaceLines.push('- `~/dev/experiments` — prototypes and research');
         }
         content = [
-          '# AGON.md — User Home',
+          '# AGENTS.md — User Home',
           '',
-          'Personal context loaded for every project. Global config: `~/.agon/AGON.md`',
+          'Personal notes for agents run from your home directory. Engine/model settings live in `~/.agon/config.json` (`agon config`).',
           '',
           '## Workspace',
           '',
@@ -260,11 +260,11 @@ export async function dispatchInitIntent(intent: any, input: string, cb: Dispatc
 
         // Build lines
         const lines: string[] = [
-          `# AGON.md -- ${projectName}`,
+          `# AGENTS.md -- ${projectName}`,
           '',
         ];
         if (projectDesc) lines.push(projectDesc, '');
-        lines.push(`Global config: \`~/.agon/AGON.md\``, '');
+        lines.push(`Engine/model settings: \`agon config\` (~/.agon/config.json)`, '');
 
         // KERN section (if detected)
         if (hasKern) {

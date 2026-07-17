@@ -8,7 +8,7 @@ import type { ForgeOptions, EngineAdapter, EngineResult, ForgeEvent, TaskClass }
 
 import type { TeamSpec, TeamFormat, TeamComposeMode, TeamMember, TeamRoundTrace, TeamSubmission, TeamScoreCard, TeamMatchResult, TeamEvent } from '@kernlang/agon-core';
 
-import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, stashSnapshot, worktreeCreate, worktreeRemoveBestEffort, classifyTask, createSidechainLogger, composeTeams, makeFormat, computeContributionWeights, spawnWithTimeout } from '@kernlang/agon-core';
+import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, stashSnapshot, worktreeCreate, worktreeRemoveBestEffort, classifyTask, createSidechainLogger, composeTeams, makeFormat, computeContributionWeights, spawnWithTimeout, tiebreak } from '@kernlang/agon-core';
 
 import { updateTeamElo } from '@kernlang/agon-core';
 
@@ -111,7 +111,25 @@ export function writeTeamForgeResultBundle(matchId: string, options: TeamForgeOp
   return bundlePath;
 }
 
+/**
+ * Pure winner rule for a team-forge match. Pass beats fail; higher composite score wins; a score TIE between two PASSING teams is settled by core's multi-axis tiebreak (composite → lint → style → diff size → files → duration) — coarse composites tie often (pass dominates the weights) and a draw is a dead end with no applicable patch. Returns null only when both teams failed the gate (neither patch is safe to offer) or on an absolute dead-heat across every axis.
+ */
 // @kern-source: team-forge:106
+export function decideTeamWinner(resultA: EngineResult, resultB: EngineResult, teamAId: string, teamBId: string): string | null {
+  if (resultA.pass && !resultB.pass) return teamAId;
+  if (!resultA.pass && resultB.pass) return teamBId;
+  // Both failed: ALWAYS a draw, even on unequal scores — a "winner" here
+  // would put a gate-failing patch behind the /apply prompt.
+  if (!resultA.pass && !resultB.pass) return null;
+  if (resultA.score > resultB.score) return teamAId;
+  if (resultB.score > resultA.score) return teamBId;
+  const tb = tiebreak(resultA as any, resultB as any);
+  if (tb < 0) return teamAId;
+  if (tb > 0) return teamBId;
+  return null;
+}
+
+// @kern-source: team-forge:122
 export interface TeamForgeOptions {
   task: string;
   fitnessCmd: string;
@@ -127,7 +145,7 @@ export interface TeamForgeOptions {
   signal?: AbortSignal;
 }
 
-// @kern-source: team-forge:120
+// @kern-source: team-forge:136
 export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd: string, forgePrompt: string, registry: EngineRegistry, adapter: EngineAdapter, cwd: string, baseSha: string, forgeDir: string, worktrees: WorktreeEntry[], timeout: number, fitnessTimeout: number, maxReviewLoops: number, onEvent?: (event:ForgeEvent|TeamEvent)=>void, signal?: AbortSignal): Promise<TeamSubmission> {
   const trace: TeamRoundTrace[] = [];
   const start = Date.now();
@@ -437,7 +455,7 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
   };
 }
 
-// @kern-source: team-forge:430
+// @kern-source: team-forge:446
 export async function runTeamForge(options: TeamForgeOptions, registry: EngineRegistry, adapter: EngineAdapter, onEvent?: (event:ForgeEvent|TeamEvent)=>void): Promise<TeamMatchResult> {
   const config = loadConfig(options.cwd);
   const matchId = randomUUID().slice(0, 8);
@@ -581,13 +599,9 @@ export async function runTeamForge(options: TeamForgeOptions, registry: EngineRe
     onEvent?.({ type: 'team:score' as any, data: { teamId: teamA.teamId, score: resultA.score } });
     onEvent?.({ type: 'team:score' as any, data: { teamId: teamB.teamId, score: resultB.score } });
 
-    // Determine winner
-    let winnerTeamId: string | null = null;
-    if (resultA.pass && !resultB.pass) winnerTeamId = teamA.teamId;
-    else if (!resultA.pass && resultB.pass) winnerTeamId = teamB.teamId;
-    else if (resultA.score > resultB.score) winnerTeamId = teamA.teamId;
-    else if (resultB.score > resultA.score) winnerTeamId = teamB.teamId;
-    // else draw — winnerTeamId stays null
+    // Determine winner — see decideTeamWinner for the full rule (pass beats
+    // fail, higher score wins, passing-tie settled by core's tiebreak).
+    const winnerTeamId: string | null = decideTeamWinner(resultA, resultB, teamA.teamId, teamB.teamId);
 
     onEvent?.({ type: 'team:winner' as any, data: { winnerTeamId } });
 

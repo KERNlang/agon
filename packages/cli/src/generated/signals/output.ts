@@ -309,6 +309,12 @@ export function foldEngineContent(content: string): { content: string, foldedSte
  */
 // @kern-source: output:271
 export function handleOutputEvent(event: OutputEvent, state: OutputState, actions: OutputActions, mode: string, chatStartTime: number): void {
+  // Control-plane events consumed by App.dispatch (the active-engine pid map
+  // for kill/cleanup) — never transcript content and no rendering side
+  // effects. Without this early return they fall through to the default
+  // addBlock and render as literal "[engine-pid-clear]" walls (team-forge).
+  const _ctrlType = (event as any).type;
+  if (_ctrlType === 'engine-pid' || _ctrlType === 'engine-pid-clear') return;
   // Flush accumulated thinking buffer when any non-thinking event arrives
   if (event.type !== 'thinking-chunk' && _thinkingBuffer.content) {
     actions.addBlock({ type: 'thinking-chunk', engineId: _thinkingBuffer.engineId, chunk: _thinkingBuffer.content } as any);

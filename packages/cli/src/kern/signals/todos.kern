@@ -43,6 +43,13 @@ fn name=clearLiveTodos params="todos:Todo[]" returns="Todo[]" export=true
     return todos.filter((t) => t.source !== 'live');
   >>>
 
+fn name=asLiveTodos params="todos:any[]" returns="Todo[]" export=true
+  doc "Tag a TodoWrite-tool checklist as source:'live' before dispatching todos-set. TodoWrite todos are per-turn self-declared lists exactly like [TODOS]-marker todos, so they must share the marker's lifecycle: cleared by the next turn's todos-clear scope:'live' (no stale checklist lingering across turns) and suppressed inline while a plan chip owns the screen. Without the tag they masquerade as plan todos (absent source ⇒ plan) and survive forever."
+  handler <<<
+    if (!Array.isArray(todos)) return [];
+    return todos.filter((t) => t && typeof t === 'object').map((t) => ({ ...t, source: 'live' as const }));
+  >>>
+
 fn name=todosFromPlanSteps params="steps:any[]" returns="Todo[]" export=true
   doc "Convert plan steps into todo items so an executing plan auto-populates the rolling list. Plan-step states map directly; anything else falls through to 'pending'."
   handler <<<

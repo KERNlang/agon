@@ -22,6 +22,8 @@ import { extractAdjacentForkOptions } from './fork-options.js';
 
 import { parseLiveTodos, parsePreamble } from './todos-marker.js';
 
+import { asLiveTodos } from '../signals/todos.js';
+
 import { parseAskMarker } from './ask-marker.js';
 
 import { ensureCesarSession, CESAR_SYSTEM_PROMPT, buildCesarSystemPrompt, resolveCesarBackend, renderToolPermissionCommand } from './session.js';
@@ -72,7 +74,7 @@ import { consumeCesarPlanControlSignals } from './plan-control-signals.js';
 
 import { hostNowIso, hostWaitForInteractiveChoice } from '../lib/kern-host.js';
 
-// @kern-source: brain:38
+// @kern-source: brain:39
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>, turnAlreadyCommitted?: boolean): Promise<CesarTurnOutcome> {
   // streaming-end commits a real stream OR (when only a speculative preview
   // draft sits on the pane) drops the draft without committing — safe no-op when
@@ -105,7 +107,7 @@ export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input
   return { delegated: false, responded: true, decisionReason: 'delegation-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:65
+// @kern-source: brain:66
 export async function commitTurnAndSuggest(suggestion: {action:string, rest?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}, input: string, response: string, cesarEngineId: string, color: number, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   // streaming-end commits a real stream OR drops a lingering speculative preview
   // draft without committing — safe no-op when there's no entry at all.
@@ -136,10 +138,10 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
   return { delegated: false, responded: true, decisionReason: 'suggestion-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:90
+// @kern-source: brain:91
 export const _noBriefNudged: WeakMap<object, boolean> = new WeakMap<object, boolean>();
 
-// @kern-source: brain:92
+// @kern-source: brain:93
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<CesarTurnOutcome> {
   const abort = new AbortController();
       const _turnStart = Date.now();
@@ -1861,7 +1863,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               permissionMode: (config as any).permissionMode ?? 'ask', explorationMode,
               allowedCommands: (config as any).allowedCommands ?? [], toolPermissions: (config as any).toolPermissions ?? {},
               onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }),
-              onTodos: (todos: any[]) => dispatch({ type: 'todos-set', todos }),
+              onTodos: (todos: any[]) => dispatch({ type: 'todos-set', todos: asLiveTodos(todos) }),
               // Agentic AUTO owns execution from the first tool step. The legacy
               // two-phase loop deliberately starts read-only and unlocks later;
               // that re-arming gate made strong models give up and delegate their

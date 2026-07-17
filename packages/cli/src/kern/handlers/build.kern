@@ -5,6 +5,7 @@ import from="@kernlang/agon-core" names="AgentDispatchResult,Plan,PlanStepInput,
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="./agent.js" names="buildAgentApprovalCallback"
+import from="../signals/todos.js" names="asLiveTodos"
 import from="../cesar/brain-helpers.js" names="yieldToInk"
 
 fn name=injectFileReferences params="input:string, cwd:string" returns=string export=false
@@ -147,7 +148,7 @@ fn name=handleBuild params="input:string, dispatch:Dispatch, ctx:HandlerContext,
       outputDir,
       signal: abort.signal,
       onApproval: buildAgentApprovalCallback(dispatch, ctx, engineId),
-      onTodos: (todos: { id: string; text: string; state: string }[]) => dispatch({ type: 'todos-set', todos }),
+      onTodos: (todos: { id: string; text: string; state: string }[]) => dispatch({ type: 'todos-set', todos: asLiveTodos(todos) }),
       permissionMode: (config as any).permissionMode ?? 'ask',
       allowedCommands: (config as any).allowedCommands ?? [],
       toolPermissions: (config as any).toolPermissions ?? {},

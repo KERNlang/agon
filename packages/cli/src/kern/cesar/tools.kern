@@ -5,6 +5,7 @@ import from="./council-tool.js" names="createCouncilTool"
 import from="./task-execution-lease.js" names="isTaskFileMutationAction,taskActionApprovalMessage,isApprovedPermissionResponse"
 import from="./permission-resolver.js" names="authorizeResolvedTaskAction"
 import from="../signals/output.js" names="getSessionAllowList"
+import from="../signals/todos.js" names="asLiveTodos"
 import from="./brain-helpers.js" names="isBashToolName"
 
 fn name=createCesarToolRegistry params="engineId?:string" returns="ToolRegistry"
@@ -45,7 +46,7 @@ fn name=createEagerToolContext params="ctx:HandlerContext, config:any, signal:Ab
     let name=cwd value="resolveWorkingDir()"
     let name=fsc value="getProjectFileStateCache(cwd)"
     let name=explorationMode value="(ctx as any).explorationMode ?? false"
-    return value="{ cwd, readFileState: (fsc as any).cache, abortSignal: signal, permissionMode: (config as any).permissionMode ?? 'ask', explorationMode, allowedCommands: (config as any).allowedCommands ?? [], toolPermissions: (config as any).toolPermissions ?? {}, source: 'orchestrator' as const, permissionRules: parsePermissionRuleSet((config as any).permissions), toolHooks: parseToolHooks((config as any).hooks), taskExecutionLease: ctx.cesar?.taskExecutionLease, onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }), } as any"
+    return value="{ cwd, readFileState: (fsc as any).cache, abortSignal: signal, permissionMode: (config as any).permissionMode ?? 'ask', explorationMode, allowedCommands: (config as any).allowedCommands ?? [], toolPermissions: (config as any).toolPermissions ?? {}, source: 'orchestrator' as const, permissionRules: parsePermissionRuleSet((config as any).permissions), toolHooks: parseToolHooks((config as any).hooks), taskExecutionLease: ctx.cesar?.taskExecutionLease, onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }), onTodos: (todos: any[]) => dispatch({ type: 'todos-set', todos: asLiveTodos(todos) } as any), } as any"
 
 fn name=parseEagerToolInput params="toolName:string,input:unknown" returns="{ok:boolean,input?:Record<string,unknown>,error?:string,raw:string}" export=true
   doc "Parse a streaming tool input into a JSON object. Malformed input is returned as an explicit retryable error instead of being silently coerced."

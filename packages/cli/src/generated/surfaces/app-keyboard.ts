@@ -18,6 +18,10 @@ import type { LiveToolStreamEntry } from '../signals/output.js';
 
 import { _lastSigintAt } from './app-interrupt.js';
 
+import { popSteering } from '../cesar/steering.js';
+
+import type { ImageAttachment } from '@kernlang/agon-core';
+
 import { spawnSync } from 'node:child_process';
 
 // ── Module: AppKeyboard ──
@@ -25,7 +29,7 @@ import { spawnSync } from 'node:child_process';
 /**
  * Explicit dependencies for runHandleCancelOrExit — the question/repl/input state the Ctrl+C cancel path inspects, the active-abort ref it reads for the cancel-vs-interrupt message, and the setters/callbacks/dispatch it fires.
  */
-// @kern-source: app-keyboard:61
+// @kern-source: app-keyboard:63
 export interface CancelOrExitDeps {
   questionState: any;
   replState: ReplStateState;
@@ -40,7 +44,7 @@ export interface CancelOrExitDeps {
   dispatch: (event:any) => void;
 }
 
-// @kern-source: app-keyboard:84
+// @kern-source: app-keyboard:86
 export function runHandleCancelOrExit(opts: CancelOrExitDeps): void {
   if (opts.questionState) { opts.questionState.resolve(''); opts.setQuestionState(null); opts.setQuestionAnswer(''); opts.setSelectedChoiceIndex(0); opts.setQuestionOtherActive(false); }
   if (opts.replState !== 'idle') {
@@ -67,7 +71,7 @@ export function runHandleCancelOrExit(opts: CancelOrExitDeps): void {
 /**
  * Explicit dependencies for runHandleComposerCtrlShortcut — the chord/handled refs it flips, the rail + composer + tool-output setters, and the cancel/submit/tool callbacks the per-key cases delegate to.
  */
-// @kern-source: app-keyboard:115
+// @kern-source: app-keyboard:117
 export interface ComposerCtrlShortcutDeps {
   nestedCtrlShortcutRef: {current: { key: string; at: number }};
   ctrlKeyHandledRef: {current: boolean};
@@ -83,7 +87,7 @@ export interface ComposerCtrlShortcutDeps {
   draftLatestFailedToolRetry: () => void;
 }
 
-// @kern-source: app-keyboard:138
+// @kern-source: app-keyboard:140
 export function runHandleComposerCtrlShortcut(opts: ComposerCtrlShortcutDeps, shortcut: string): void {
   opts.nestedCtrlShortcutRef.current = { key: shortcut, at: Date.now() };
   switch (shortcut) {
@@ -136,7 +140,7 @@ export function runHandleComposerCtrlShortcut(opts: ComposerCtrlShortcutDeps, sh
 /**
  * Explicit dependencies for runHandleKeyboardInput — the UI-state snapshot fed to resolveKeyboardInput, the refs the router consults/flips, and every setter/callback/dispatch the action switch fires. Passed in rather than captured from component scope; values are read at call time so staleness matches the original closure.
  */
-// @kern-source: app-keyboard:195
+// @kern-source: app-keyboard:197
 export interface KeyboardInputDeps {
   modelPickerOpen: boolean;
   cesarPickerOpen: boolean;
@@ -155,6 +159,8 @@ export interface KeyboardInputDeps {
   inputValue: string;
   inputHistory: string[];
   historyIndex: number;
+  steeringCount: number;
+  setPendingImages: (images:ImageAttachment[]) => void;
   planModeQueued: boolean;
   autoModeQueued: boolean;
   permissionMode: string;
@@ -210,7 +216,7 @@ export interface KeyboardInputDeps {
   dispatch: (event:any) => void;
 }
 
-// @kern-source: app-keyboard:286
+// @kern-source: app-keyboard:290
 export function runHandleKeyboardInput(opts: KeyboardInputDeps, input: string, key: any): void {
   if (isTerminalFocusReport(input)) return;
   if (key?.paste) return;
@@ -331,6 +337,7 @@ export function runHandleKeyboardInput(opts: KeyboardInputDeps, input: string, k
     updateInfo: opts.updateInfo,
     replState: opts.replState, runningJobCount: opts.jobManager.running().length,
     inputValue: opts.inputValue, inputHistory: opts.inputHistory, historyIndex: opts.historyIndex,
+    steeringCount: opts.steeringCount,
     planModeQueued: opts.planModeQueued, autoModeQueued: opts.autoModeQueued, activePlanState: opts.activePlanRef.current?.state ?? null,
     planApprovalIndex: opts.planApprovalIndex,
     outputBlockCount: opts.outputBlocks.length,
@@ -498,6 +505,17 @@ export function runHandleKeyboardInput(opts: KeyboardInputDeps, input: string, k
       return;
     case 'interrupt':
       opts.interruptActiveRun('Interrupted.', false); return;
+    case 'interruptSubmit': {
+      // Esc with typed text during a run: stop the current work AND hand the
+      // text straight in. handleSubmit lands while the brain is still winding
+      // down, so it rides the existing interrupt-queue ('your message is up
+      // next…') path in runCesarChat — the redirect is one keystroke.
+      opts.interruptActiveRun('Interrupted — sending your new message…', false);
+      opts.setInputValue('');
+      opts.setHistoryIndex(-1);
+      opts.handleSubmit(action.value);
+      return;
+    }
     case 'clearInput':
       opts.setInputValue(''); return;
     case 'insertNewline':
@@ -507,6 +525,23 @@ export function runHandleKeyboardInput(opts: KeyboardInputDeps, input: string, k
       // value is always a string — empty string means "return to blank composer".
       opts.setInputValue(action.value);
       return;
+    case 'popSteering': {
+      // ↑ on an empty composer while steering is queued: pull the newest
+      // queued message back into the composer for edit/removal. The steering
+      // listener (onSteeringChange → setSteeringCount) updates the banner.
+      const entry = popSteering();
+      if (entry) {
+        opts.setHistoryIndex(-1);
+        opts.setInputValue(entry.input);
+        // Restore the entry's image state wholesale — an empty result also
+        // CLEARS any stale composer attachments so they can't ride along
+        // with the popped text. Inline paths are re-extracted on resubmit,
+        // so images the text still references are excluded (no double-attach).
+        const images = (entry.images ?? []).filter((img) => !entry.input.includes(img.path));
+        opts.setPendingImages(images);
+      }
+      return;
+    }
     case 'cancelOrExit':
       opts.handleCancelOrExit();
       return;

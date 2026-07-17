@@ -15,7 +15,7 @@ import from="../cesar/scoreboard.js" names="renderScoreboard"
 import from="../cesar/scoreboard.js" names="Scoreboard" types=true
 import from="../cesar/mode-rationale.js" names="formatModeRationale"
 import from="../cesar/mode-rationale.js" names="ModeRationale" types=true
-import from="./status-helpers.js" names="formatTokenCostStatus,buildPriorityStatusSegments,normalizeUiMotion,cosmeticUiIntervalMs,buildPlanPhaseGauge,buildExecutionRailTimeline,buildGuardTelemetryView,loadGuardTelemetrySnapshot,buildHeartbeatSuffix,buildHeartbeatSig,parseHeartbeatPhase"
+import from="./status-helpers.js" names="formatTokenCostStatus,buildPriorityStatusSegments,normalizeUiMotion,cosmeticUiIntervalMs,buildPlanPhaseGauge,buildExecutionRailTimeline,buildGuardTelemetryView,loadGuardTelemetrySnapshot,buildHeartbeatSuffix,buildHeartbeatSig,parseHeartbeatPhase,buildFleetTelemetryText,formatContextStatus"
 
 module name=StatusHelperExports
   export from="./status-helpers.js" names="formatTokenCostStatus,buildPlanPhaseGauge,buildExecutionRailTimeline,buildGuardTelemetryView,loadGuardTelemetrySnapshot,buildHeartbeatSuffix,buildHeartbeatSig,parseHeartbeatPhase"
@@ -96,16 +96,10 @@ screen name=StatusBar target=ink memo=true
       // counter below stays (it's spend, a different axis than occupancy).
       const ctx = context && context.limit > 0 ? context : null;
       const vitals = Array.from(telemetryVitals?.values?.() ?? []);
-      const stalled = vitals.filter((v: any) => v.state === 'stalled');
-      const offline = vitals.filter((v: any) => v.state === 'offline');
-      const fallback = vitals.filter((v: any) => v.state === 'fallback' || v.fallbackTo);
-      const busy = vitals.filter((v: any) => v.state === 'busy');
-      const telemetry = stalled.length > 0 ? `\u26a0 ${stalled.length} stalled`
-        : offline.length > 0 ? `\u2718 ${offline.length} offline`
-        : fallback.length > 0 ? `\u21c4 ${fallback.length} fallback`
-        : busy.length > 0 ? `\u25d0 ${busy.length} busy`
-        : vitals.length > 0 ? '\u25cf idle'
-        : '';
+      // Fleet health + the Cesar turn folded together: while the brain is
+      // mid-turn the footer must never claim '\u25cf idle' just because no FLEET
+      // engine is dispatched \u2014 that contradicted the active status strip.
+      const telemetry = buildFleetTelemetryText(vitals, Boolean(isActive));
       const segments = buildPriorityStatusSegments({
         width: Math.max(12, Number(termWidth ?? 80) - 2),
         exploration: Boolean(explorationMode),
@@ -606,8 +600,10 @@ screen name=CesarStatusStrip target=ink memo=true export=named
       if (!isActive) {
         const confPart = (confidence !== null && confidence !== undefined) ? ` ${confidence}%` : '';
         // '~' marks a chars-based estimate; exact numbers (real API token
-        // usage, or real-anchored projection) render without it.
-        const ctxPart = (context && context.pct > 0) ? ` \u2502 ctx ${context.source === 'estimate' ? '~' : ''}${context.pct}%` : '';
+        // usage, or real-anchored projection) render without it. '(used/limit)'
+        // answers pct-of-WHAT whenever the session reported real numbers.
+        const idleCtxText = formatContextStatus(context);
+        const ctxPart = idleCtxText ? ` \u2502 ${idleCtxText}` : '';
         return (
           <Box height={1} flexShrink={0}>
             <Text wrap="truncate-end">
@@ -635,7 +631,7 @@ screen name=CesarStatusStrip target=ink memo=true export=named
       let ctxStr = '';
       let ctxColor = '#6b7280';
       if (context && context.pct > 0) {
-        ctxStr = ` ctx ${context.source === 'estimate' ? '~' : ''}${context.pct}%${context.compacted > 0 ? '⤵' : ''}`;
+        ctxStr = ` ${formatContextStatus(context)}`;
         ctxColor = context.pct >= 80 ? '#ef4444' : context.pct >= 60 ? '#fbbf24' : '#4ade80';
       }
 

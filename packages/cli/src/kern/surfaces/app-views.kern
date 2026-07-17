@@ -922,7 +922,7 @@ screen name=BottomChromeSection target=ink memo=true
           {/* Mid-turn steering hint: a message was typed while Cesar works and
               will be injected at the next tool boundary. One dim line; shows the
               count when more than one is queued. Only while a turn is running. */}
-          {replState !== 'idle' && steeringCount > 0 && (<Box><Text dimColor>{'▎'}{'Queued'}{steeringCount > 1 ? ` (${steeringCount})` : ''}{' — injects at next step · esc to interrupt'}</Text></Box>)}
+          {replState !== 'idle' && steeringCount > 0 && (<Box><Text dimColor>{'▎'}{'Queued'}{steeringCount > 1 ? ` (${steeringCount})` : ''}{' — injects at next step · ↑ edit/remove · esc to interrupt'}</Text></Box>)}
           {/* One-line plan glance pinned directly above the composer — the
               chip relocated out of the top ChromeBar so plan state sits at the
               user's point of focus (the input). Renders nothing when no plan. */}

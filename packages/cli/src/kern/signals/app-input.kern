@@ -85,10 +85,10 @@ fn name=hasBtwSideChannelTarget params="opts:{replState:string,activePlanState?:
     return value="['planning', 'awaiting_approval', 'running', 'paused'].includes(planState)"
 
 interface name=EscapeDecision
-  field name=action type="'close-slash'|'close-engine-picker'|'cancel-question'|'interrupt'|'clear-input'|'noop'"
+  field name=action type="'close-slash'|'close-engine-picker'|'cancel-question'|'interrupt'|'interrupt-submit'|'clear-input'|'noop'"
 
 fn name=resolveEscapeAction params="opts:{replState:string,inputValue:string,slashPickerOpen:boolean,enginePickerOpen:boolean,questionOpen:boolean,runningJobCount?:number}" returns="EscapeDecision"
-  doc "Resolve Esc behavior without destructive transcript clearing."
+  doc "Resolve Esc behavior without destructive transcript clearing. Esc during an active run with TEXT in the composer is 'interrupt-submit': stop the run AND hand the typed text in as the next message (one keystroke, Claude-style redirect) — never silently drop what the user typed. Esc with an empty composer stays a plain interrupt."
   handler lang="kern"
     if cond="opts.slashPickerOpen"
       return value="{ action: 'close-slash' }"
@@ -97,7 +97,7 @@ fn name=resolveEscapeAction params="opts:{replState:string,inputValue:string,sla
     if cond="opts.questionOpen"
       return value="{ action: 'cancel-question' }"
     if cond="opts.replState !== 'idle' || (opts.runningJobCount ?? 0) > 0"
-      return value="{ action: 'interrupt' }"
+      return value="{ action: opts.inputValue.trim() ? 'interrupt-submit' : 'interrupt' }"
     if cond="opts.inputValue"
       return value="{ action: 'clear-input' }"
     return value="{ action: 'noop' }"

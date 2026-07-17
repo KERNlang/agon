@@ -48,6 +48,8 @@ import from="../signals/app-state.js" names="ReplStateState" types=true
 import from="../signals/job-manager.js" names="JobManager" types=true
 import from="../signals/output.js" names="LiveToolStreamEntry" types=true
 import from="./app-interrupt.js" names="_lastSigintAt"
+import from="../cesar/steering.js" names="popSteering"
+import from="@kernlang/agon-core" names="ImageAttachment" types=true
 import from="node:child_process" names="spawnSync"
 
 module name=AppKeyboard
@@ -214,6 +216,8 @@ module name=AppKeyboard
     field name=inputValue type=string
     field name=inputHistory type="string[]"
     field name=historyIndex type=number
+    field name=steeringCount type=number
+    field name=setPendingImages type="(images:ImageAttachment[]) => void"
     // ── Mode + plan queue + plan approval ──
     field name=planModeQueued type=boolean
     field name=autoModeQueued type=boolean
@@ -404,6 +408,7 @@ module name=AppKeyboard
         updateInfo: opts.updateInfo,
         replState: opts.replState, runningJobCount: opts.jobManager.running().length,
         inputValue: opts.inputValue, inputHistory: opts.inputHistory, historyIndex: opts.historyIndex,
+        steeringCount: opts.steeringCount,
         planModeQueued: opts.planModeQueued, autoModeQueued: opts.autoModeQueued, activePlanState: opts.activePlanRef.current?.state ?? null,
         planApprovalIndex: opts.planApprovalIndex,
         outputBlockCount: opts.outputBlocks.length,
@@ -571,6 +576,17 @@ module name=AppKeyboard
           return;
         case 'interrupt':
           opts.interruptActiveRun('Interrupted.', false); return;
+        case 'interruptSubmit': {
+          // Esc with typed text during a run: stop the current work AND hand the
+          // text straight in. handleSubmit lands while the brain is still winding
+          // down, so it rides the existing interrupt-queue ('your message is up
+          // next…') path in runCesarChat — the redirect is one keystroke.
+          opts.interruptActiveRun('Interrupted — sending your new message…', false);
+          opts.setInputValue('');
+          opts.setHistoryIndex(-1);
+          opts.handleSubmit(action.value);
+          return;
+        }
         case 'clearInput':
           opts.setInputValue(''); return;
         case 'insertNewline':
@@ -580,6 +596,23 @@ module name=AppKeyboard
           // value is always a string — empty string means "return to blank composer".
           opts.setInputValue(action.value);
           return;
+        case 'popSteering': {
+          // ↑ on an empty composer while steering is queued: pull the newest
+          // queued message back into the composer for edit/removal. The steering
+          // listener (onSteeringChange → setSteeringCount) updates the banner.
+          const entry = popSteering();
+          if (entry) {
+            opts.setHistoryIndex(-1);
+            opts.setInputValue(entry.input);
+            // Restore the entry's image state wholesale — an empty result also
+            // CLEARS any stale composer attachments so they can't ride along
+            // with the popped text. Inline paths are re-extracted on resubmit,
+            // so images the text still references are excluded (no double-attach).
+            const images = (entry.images ?? []).filter((img) => !entry.input.includes(img.path));
+            opts.setPendingImages(images);
+          }
+          return;
+        }
         case 'cancelOrExit':
           opts.handleCancelOrExit();
           return;

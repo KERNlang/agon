@@ -33,9 +33,10 @@ export interface KeyboardCtx {
   fileRailExpanded: boolean;
   executionRailFocused: boolean;
   liveToolStreamCount: number;
+  steeringCount?: number;
 }
 
-// @kern-source: keyboard:38
+// @kern-source: keyboard:39
 export type KeyboardAction =
   | { type: 'none' }
   | { type: 'exit' }
@@ -71,6 +72,8 @@ export type KeyboardAction =
   | { type: 'unqueueAuto' }
   | { type: 'insertNewline' }
   | { type: 'historySet'; index: number; value: string }
+  | { type: 'popSteering' }
+  | { type: 'interruptSubmit'; value: string }
   | { type: 'cancelOrExit' }
   | { type: 'togglePauseMenu' }
   | { type: 'movePauseCursor'; direction: 'up'|'down' }
@@ -82,7 +85,7 @@ export type KeyboardAction =
 /**
  * Pure keyboard decision tree. Takes current state, returns action to execute.
  */
-// @kern-source: keyboard:91
+// @kern-source: keyboard:95
 export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
   const { input, key } = ctx;
   const keyName = typeof key.name === 'string' ? key.name.toLowerCase() : '';
@@ -337,6 +340,7 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
       case 'close-engine-picker': return { type: 'closeEnginePicker' };
       case 'cancel-question': return { type: 'cancelQuestion' };
       case 'interrupt': return { type: 'interrupt' };
+      case 'interrupt-submit': return { type: 'interruptSubmit', value: ctx.inputValue };
       case 'clear-input': return { type: 'clearInput' };
       case 'noop': return { type: 'none' };
     }
@@ -347,6 +351,13 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
 
   // Arrow keys: navigate history
   if (!ctx.enginePickerOpen && !ctx.questionState) {
+    // ↑ with an EMPTY composer while steering is queued pops the newest queued
+    // message back into the composer (edit/remove) — the queue must never be a
+    // black box the user can only esc-interrupt out of. History nav still owns
+    // ↑ once the composer has text (including the just-popped message).
+    if (key.upArrow && !ctx.slashPickerOpen && (ctx.steeringCount ?? 0) > 0 && ctx.inputValue.trim().length === 0) {
+      return { type: 'popSteering' };
+    }
     if (key.upArrow && ctx.inputHistory.length > 0 && !ctx.slashPickerOpen) {
       const r = navigateHistory('up', ctx.historyIndex, ctx.inputHistory);
       return { type: 'historySet', index: r.index, value: r.value || ctx.inputValue };

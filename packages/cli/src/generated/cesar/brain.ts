@@ -64,7 +64,7 @@ import { getSessionAllowList } from '../signals/output.js';
 
 import { resolveCesarHarnessProfile, evaluateAgenticTaskState, buildAgenticProgressSignature, buildAgenticAutoTurnDirective, resolveCesarToolReadOnlyMode, extractAgenticBashCommand, isAgenticMutationOutcome } from './task-controller.js';
 
-import { yieldToInk, recordCesarTurn, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, createTodosDisplayStripper, createAskDisplayStripper, createPreambleStripper, findTrailingUserQuestion, detectAwaitingUserInput, detectNarratedToolStall, detectMutationIntentStall, detectFabricatedDelegation, shouldDeescalateGuard, withEagerToolCallId, claimEagerToolExecution, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation, isBashToolName, isWriteToolName } from './brain-helpers.js';
+import { yieldToInk, recordCesarTurn, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, createTodosDisplayStripper, createAskDisplayStripper, createPreambleStripper, findTrailingUserQuestion, detectAwaitingUserInput, detectNarratedToolStall, detectMutationIntentStall, detectFabricatedDelegation, shouldDeescalateGuard, withEagerToolCallId, claimEagerToolExecution, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation, isBashToolName, isWriteToolName, forwardContinuationStatus } from './brain-helpers.js';
 
 import { runCesarConfirmationFollowUp } from './confirmation-follow-up.js';
 
@@ -2806,6 +2806,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               });
               for await (const chunk of contGen) {
                 if (abort.signal.aborted) break;
+                // Live activity during the continuation — tools/thinking/context
+                // gauge keep flowing to the strip instead of freezing 'continuing…'.
+                if (forwardContinuationStatus(chunk, dispatch)) continue;
                 if (chunk.type === 'text') contResponse += chunk.content;
                 if (chunk.type === 'error' && !contResponse.trim()) {
                   _engineErrored = true;
@@ -3117,6 +3120,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           let interactivePlanControl: any = null;
           const _runInteractiveChoice = async (answer: string, message?: string) => {
             dispatch({ type: 'spinner-start', message: `${cesarEngineId} continuing…`, color });
+            // The follow-up is a fresh stream — it needs its own display strippers
+            // so a [TODOS]/[ASK] block emitted mid-follow-up never leaks raw into
+            // the transcript (the bug: a pretty-printed [ASK] JSON wall on screen).
+            const stripFollowUpTodos = createTodosDisplayStripper();
+            const stripFollowUpAsk = createAskDisplayStripper();
             try {
               const followUp = await runCesarConfirmationFollowUp({
                 answer,
@@ -3127,6 +3135,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   const gen = session.send({ message: nextMessage, signal: abort.signal, controlPlane: _turnRuntime.envelope });
                   for await (const chunk of gen) {
                     if (abort.signal.aborted) break;
+                    if (forwardContinuationStatus(chunk, dispatch)) continue;
                     if (chunk.type === 'text') text += chunk.content;
                     if (chunk.type === 'error') streamError = String(chunk.content ?? 'Cesar follow-up stream failed.');
                     if (chunk.type === 'done' || chunk.type === 'error') break;
@@ -3146,6 +3155,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                         toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined,
                       });
                       for await (const chunk of gen) {
+                        if (forwardContinuationStatus(chunk, dispatch)) continue;
                         const chunkType = String((chunk as any).type);
                         if (chunkType === 'text') next += chunk.content;
                         if (chunkType === 'error') {
@@ -3164,7 +3174,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   return { finalText: toolResult.finalText?.trim() ?? '', turns: toolResult.turns ?? 0, rendered: true };
                 } : undefined,
                 onText: (text: string) => {
-                  dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: text });
+                  const visible = stripFollowUpAsk(stripFollowUpTodos(text));
+                  if (visible) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: visible });
                 },
                 onExchange: (nextMessage: string, exchange: any) => {
                   appendMessage(ctx.chatSession, { role: 'user', content: nextMessage, timestamp: hostNowIso() });
@@ -3174,8 +3185,18 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   recordCesarTurn(ctx, cesarEngineId, nextMessage, String(exchange.content ?? ''));
                 },
               });
+              // Stream-end flush: release any held partial-marker tail so display
+              // text is never silently dropped (mirrors the main path's force flush).
+              const heldTail = stripFollowUpAsk(stripFollowUpTodos('', true), true).trim();
+              if (heldTail) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: heldTail });
               _toolCallTurns += Number.isFinite(followUp.turns) ? followUp.turns : 0;
-              if (followUp.content) response = `${response}\n\n${followUp.content}`;
+              if (followUp.content) {
+                // Same extraction as every other send path — a follow-up can carry
+                // its own [ASK]/[TODOS]/[INTENT] markup; the committed transcript
+                // must never contain raw marker JSON.
+                const cleanFollowUp = extractAsk(emitLiveTodos(emitPreamble(followUp.content)));
+                if (cleanFollowUp.trim()) response = `${response}\n\n${cleanFollowUp.trim()}`;
+              }
               const missingToolResult = followUp.status === 'tools' && !followUp.content && !ctx.cesar!.pendingDelegation && !interactivePlanControl?.handled;
               if (followUp.status === 'empty' || followUp.status === 'incomplete' || followUp.status === 'error' || missingToolResult) {
                 _turnTerminalState = 'failed';
@@ -3199,6 +3220,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           // remain the fallback question path.
           if (_askMalformed && !_pendingAsk) {
             dispatch({ type: 'warning', message: 'Cesar emitted a malformed [ASK] block (stripped). Answer its question in plain text instead.' });
+            // Consumed — the tail check below must only fire for a NEW malformed
+            // ask arriving via a follow-up send, never re-warn this one.
+            _askMalformed = false;
           }
           // Deliberate structured ask (RULE 7d): takes precedence over the fork /
           // confirm HEURISTICS below — one chokepoint, so a turn can never
@@ -3224,6 +3248,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           if (_pendingAsk && !_planSurfaceActive && session.alive && !abort.signal.aborted) {
             const _askColors = ['#4ade80', '#22d3ee', '#fbbf24', '#a78bfa', '#f97316', '#ef4444'];
             const _ask = _pendingAsk as { question: string; options: { label: string; description?: string }[] };
+            // This ask is being presented now — clear the slot so the tail check
+            // below only sees a NEW ask captured from a follow-up send.
+            _pendingAsk = null;
             // Keys are the 1-based positions; keyboard.kern already resolves digits.
             // The composer auto-appends the "Other" free-text row (output.kern), so
             // the user is never boxed into the listed options.
@@ -3240,6 +3267,13 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             // handleSubmit (app.kern); Esc resolves 'n'/'' — both leave chosen null.
             const _chosenIdx = _askChoices.findIndex((c) => c.key === picked);
             const chosen = _chosenIdx >= 0 ? _ask.options[_chosenIdx] : null;
+            if (!chosen && !picked.startsWith('__other:') && !abort.signal.aborted) {
+              // Esc / decide-later: the overlay is gone, so keep the question
+              // findable in the transcript via the same never-lose fallback.
+              // '__other:' is excluded — that answer already routes as a new turn.
+              const _dismissLines = _ask.options.map((o, i) => `  ${i + 1}. ${o.label}${o.description ? ` — ${o.description}` : ''}`);
+              dispatch({ type: 'info', message: `Cesar asks: ${_ask.question}\n${_dismissLines.join('\n')}\n(answer in the composer when ready)` });
+            }
             if (chosen && session.alive && !abort.signal.aborted) {
               await _runInteractiveChoice(picked, `Answer to your question "${_ask.question}": ${chosen.label}${chosen.description ? ` (${chosen.description})` : ''}. Continue with this choice.`);
               if (interactivePlanControl?.error) console.warn(`[agon] Interactive plan control failed: ${interactivePlanControl.error}`);
@@ -3307,6 +3341,22 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 return { delegated: false, responded: true, decisionReason: 'interactive-follow-up-incomplete', ...buildToolTelemetry() };
               }
             }
+          }
+
+          // NEVER-LOSE-AN-ASK, follow-up edition: a confirmation/fork/ask follow-up
+          // send can itself end in a fresh [ASK]. extractAsk stripped it from the
+          // committed text above, but the single overlay chokepoint has already
+          // passed — surface it as the plain-text fallback (same shape as the
+          // plan-surface fallback) instead of dropping it silently.
+          if (_askMalformed && !_pendingAsk) {
+            dispatch({ type: 'warning', message: 'Cesar emitted a malformed [ASK] block (stripped). Answer its question in plain text instead.' });
+            _askMalformed = false;
+          }
+          if (_pendingAsk && !abort.signal.aborted) {
+            const _tailAsk = _pendingAsk as { question: string; options: { label: string; description?: string }[] };
+            const _tailLines = _tailAsk.options.map((o, i) => `  ${i + 1}. ${o.label}${o.description ? ` — ${o.description}` : ''}`);
+            dispatch({ type: 'info', message: `Cesar asks: ${_tailAsk.question}\n${_tailLines.join('\n')}\n(answer in the composer when ready)` });
+            _pendingAsk = null;
           }
 
         return { mode: usedQuickNero ? 'self-nero' : 'self', delegated: false, responded: true, decisionReason: usedQuickNero ? 'self-challenge' : 'self-executed', awaitingUserInput: detectAwaitingUserInput(response), ...buildToolTelemetry() };

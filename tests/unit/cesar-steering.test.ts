@@ -11,6 +11,7 @@ import {
   drainLeftoverSteering,
   clearSteering,
   onSteeringChange,
+  popSteering,
 } from '../../packages/cli/src/generated/cesar/steering.js';
 
 describe('Cesar steering buffer', () => {
@@ -186,6 +187,41 @@ describe('Cesar steering buffer', () => {
       expect(ok[ok.length - 1]).toBe(1);
       offBad();
       offOk();
+    });
+  });
+
+  describe('popSteering (↑ edit/remove affordance)', () => {
+    it('pops the NEWEST entry of the active turn and removes it from the queue', () => {
+      markSteeringTurn('t1');
+      pushSteering('first');
+      pushSteering('second');
+      expect(popSteering()).toEqual({ input: 'second', images: undefined });
+      expect(peekSteeringCount()).toBe(1);
+      // The remaining entry still drains normally.
+      expect(drainSteering('t1')).toEqual([{ input: 'first', images: undefined }]);
+    });
+
+    it('returns null when no turn is active or the queue is empty', () => {
+      expect(popSteering()).toBeNull();
+      markSteeringTurn('t1');
+      expect(popSteering()).toBeNull();
+    });
+
+    it('notifies listeners so the queued banner updates on pop', () => {
+      markSteeringTurn('t1');
+      pushSteering('msg');
+      const counts: number[] = [];
+      const off = onSteeringChange((n) => counts.push(n));
+      popSteering();
+      off();
+      expect(counts[counts.length - 1]).toBe(0);
+    });
+
+    it('carries images back with the popped entry', () => {
+      markSteeringTurn('t1');
+      const img = { path: '/tmp/a.png', filename: 'a.png', mimeType: 'image/png' };
+      pushSteering('look at this', [img]);
+      expect(popSteering()).toEqual({ input: 'look at this', images: [img] });
     });
   });
 });

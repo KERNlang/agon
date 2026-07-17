@@ -4,6 +4,7 @@ import from="node:readline" names="createInterface"
 import from="node:crypto" names="randomUUID"
 import from="node:fs" names="existsSync,statSync"
 import from="../api/dispatch.js" names="apiStreamDispatchWithHistory,apiDispatch"
+import from="../signals/models-registry.js" names="engineSupportsVision"
 import from="./compaction.js" names="findSafeKeepStart,buildCompactionSummary,renderCompactionText,buildSummarizationContext,buildCompactionPrompt"
 import from="./compaction.js" names="WorkingSetInput" types=true
 import from="../blocks/image.js" names="encodeImagesForDispatch"
@@ -743,9 +744,10 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
           // base64 is attached at dispatch time (see withImages below), NEVER stored
           // in messageHistory — that history is persisted, re-sent every turn, and run
           // through compaction, so inlining base64 there would blow the context window.
-          // Gated by the engine's declared vision capability; a text-only engine gets a
+          // Gated by engineSupportsVision (declared capability OR models.dev catalog
+          // attachment); a text-only engine gets a
           // clear note instead of a file path it would otherwise try to Read as bytes.
-          const hasVision = !!config.engine.capabilities?.includes('vision');
+          const hasVision = engineSupportsVision(config.engine);
           let turnImageParts: Array<{type:'image',image:string,mediaType:string}> = [];
           if (opts.images?.length) {
             if (hasVision) {

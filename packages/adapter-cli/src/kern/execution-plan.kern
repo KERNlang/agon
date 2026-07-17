@@ -1,5 +1,5 @@
 import from="@kernlang/agon-core" names="ApiAgentResult,ApiConfig,DispatchOptions,EngineDefinition" types=true
-import from="@kernlang/agon-core" names="attachVisionToMessages,sessionContext,resolveWorkingDir"
+import from="@kernlang/agon-core" names="attachVisionToMessages,sessionContext,resolveWorkingDir,engineSupportsVision"
 import from="node:events" names="EventEmitter,once"
 
 type name=ExecutionBackend values="cli|api|missing"
@@ -112,7 +112,7 @@ fn name=buildApiAgentContext params="options:DispatchOptions" returns=ApiAgentCo
     const synthesized = options.images?.length ? [{ role: 'user', content: options.prompt }] : undefined;
     const base = options.messages?.length ? options.messages : synthesized;
     const historyMessages = base && options.images?.length
-      ? attachVisionToMessages(base, options.images.map((image) => image.path), options.engine.capabilities?.includes('vision') === true)
+      ? attachVisionToMessages(base, options.images.map((image) => image.path), engineSupportsVision(options.engine))
       : base;
     return { cwd, systemPrompt, historyMessages };
   >>>

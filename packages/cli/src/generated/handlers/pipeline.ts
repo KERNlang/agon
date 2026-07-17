@@ -14,7 +14,9 @@ import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
 import { buildAgentApprovalCallback } from './agent.js';
 
-// @kern-source: pipeline:9
+import { asLiveTodos } from '../signals/todos.js';
+
+// @kern-source: pipeline:10
 export async function handlePipeline(input: string, dispatch: Dispatch, ctx: HandlerContext, fitnessCmd?: string, opts?: {quiet?:boolean,reviewEngines?:string[]}): Promise<void> {
   const abort = new AbortController();
   try {
@@ -166,7 +168,7 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
             outputDir,
             signal: abort.signal,
             onApproval: buildAgentApprovalCallback(dispatch, ctx, buildEngine),
-            onTodos: (todos: { id: string; text: string; state: string }[]) => dispatch({ type: 'todos-set', todos }),
+            onTodos: (todos: { id: string; text: string; state: string }[]) => dispatch({ type: 'todos-set', todos: asLiveTodos(todos) }),
             permissionMode: (config as any).permissionMode ?? 'ask',
             allowedCommands: (config as any).allowedCommands ?? [],
             toolPermissions: (config as any).toolPermissions ?? {},

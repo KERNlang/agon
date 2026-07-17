@@ -95,10 +95,26 @@ export function estimateQuestionReservedRows(questionState: any, termWidth: numb
 }
 
 /**
- * Reserve extra rows above the base composer/status chrome for stacked prompt cards, queued-input badges, and the one-line plan chip. The legacy spinner argument is retained for call compatibility, but spinner activity now renders only in CesarStatusStrip and consumes no duplicate row.
+ * Terminal rows the pinned TodoList will occupy: mirrors the component's own visibility filter (plan chip showing ⇒ only source:'live' rows render inline) and its layout (paddingLeft 2 + icon + space ⇒ text width termWidth-4, marginTop row + header row above the items). Wrap-aware per item (agon-review: a 1-row-per-item estimate under-reserves for long todo text on narrow terminals and re-introduces the top-clipping this exists to prevent). Returns 0 when nothing will render.
  */
 // @kern-source: app-layout:89
-export function estimateBottomChromeExtraRows(_mode: string, questionState: any, termWidth: number, pendingImageCount: number, inputQueueCount: number, _hasLiveSpinner: boolean, hasPlanChip: boolean = false): number {
+export function estimateTodoListRows(todos: any[], planActive: boolean, termWidth: number): number {
+  const list = Array.isArray(todos) ? todos.filter((t) => t && typeof t === 'object') : [];
+  const shown = planActive ? list.filter((t) => t.source === 'live') : list;
+  if (shown.length === 0) return 0;
+  const textWidth = Math.max(8, termWidth - 4);
+  const itemRows = shown.reduce((sum: number, t: any) => {
+    const line = `${String(t.text ?? '')}${t.note ? ` — ${String(t.note)}` : ''}` || ' ';
+    return sum + Math.max(1, estimateWrappedRows(line, textWidth));
+  }, 0);
+  return itemRows + 2;
+}
+
+/**
+ * Reserve extra rows above the base composer/status chrome for stacked prompt cards, queued-input badges, the one-line plan chip, and the pinned TodoList. todoReserveRows comes from estimateTodoListRows (already wrap-aware and post plan-chip filtering). Without this reserve the Ink live region overflows the terminal the moment a checklist pins, and the terminal clips the TOP of the frame — ChromeBar and the TodoList itself — which read as 'my todolist never shows'. The legacy spinner argument is retained for call compatibility, but spinner activity now renders only in CesarStatusStrip and consumes no duplicate row.
+ */
+// @kern-source: app-layout:103
+export function estimateBottomChromeExtraRows(_mode: string, questionState: any, termWidth: number, pendingImageCount: number, inputQueueCount: number, _hasLiveSpinner: boolean, hasPlanChip: boolean = false, todoReserveRows: number = 0): number {
   let extraRows = 0;
   if (pendingImageCount > 0) {
     extraRows += 1;
@@ -109,11 +125,14 @@ export function estimateBottomChromeExtraRows(_mode: string, questionState: any,
   if (hasPlanChip) {
     extraRows += 1;
   }
+  if (todoReserveRows > 0) {
+    extraRows += todoReserveRows;
+  }
   extraRows += estimateQuestionReservedRows(questionState, termWidth);
   return extraRows;
 }
 
-// @kern-source: app-layout:102
+// @kern-source: app-layout:118
 export function estimatePinnedLiveRows(mode: string, hasStream: boolean, hasProgress: boolean, agentCount: number, toolStreamCount?: number): number {
   const streamRows = hasStream ? ((mode === 'chat') ? 3 : 6) : 0;
   const progressRows = hasProgress ? ((mode === 'chat') ? 3 : 5) : 0;
@@ -125,7 +144,7 @@ export function estimatePinnedLiveRows(mode: string, hasStream: boolean, hasProg
   return streamRows + progressRows + agentRows + toolRows;
 }
 
-// @kern-source: app-layout:113
+// @kern-source: app-layout:129
 export function estimateWrappedRows(text: string, width: number): number {
   const safeWidth = Math.max(1, width);
   if (!text) return 0;
@@ -135,7 +154,7 @@ export function estimateWrappedRows(text: string, width: number): number {
   }, 0);
 }
 
-// @kern-source: app-layout:123
+// @kern-source: app-layout:139
 export function estimateToolCallRows(event: any, toolOutputExpanded: boolean, codeWidth: number): number {
   if (!event || event.type !== 'tool-call') {
     return 0;
@@ -227,7 +246,7 @@ export function estimateToolCallRows(event: any, toolOutputExpanded: boolean, co
   return rows;
 }
 
-// @kern-source: app-layout:195
+// @kern-source: app-layout:211
 export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   const proseWidth = contentWidth(4);
   const chatWidth = contentWidth(2);
@@ -339,7 +358,7 @@ export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOu
   }
 }
 
-// @kern-source: app-layout:307
+// @kern-source: app-layout:323
 export function estimateDisplayItemRows(item: OutputBlock, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   return estimateOutputEventRows(item.event, mode, toolOutputExpanded, thinkingExpanded);
 }

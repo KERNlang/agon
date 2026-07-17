@@ -14,12 +14,14 @@ import { authorizeResolvedTaskAction } from './permission-resolver.js';
 
 import { getSessionAllowList } from '../signals/output.js';
 
+import { asLiveTodos } from '../signals/todos.js';
+
 import { isBashToolName } from './brain-helpers.js';
 
 /**
  * Create and populate the standard Cesar tool registry. Single source of truth — no more duplication.
  */
-// @kern-source: tools:10
+// @kern-source: tools:11
 export function createCesarToolRegistry(engineId?: string): ToolRegistry {
   const toolRegistry = new ToolRegistry();
   toolRegistry.register(createReadTool());
@@ -54,18 +56,18 @@ export function createCesarToolRegistry(engineId?: string): ToolRegistry {
 /**
  * Create a shared ToolContext for eager tool execution during streaming.
  */
-// @kern-source: tools:42
+// @kern-source: tools:43
 export function createEagerToolContext(ctx: HandlerContext, config: any, signal: AbortSignal, dispatch: Dispatch): ToolContext {
   const cwd = resolveWorkingDir();
   const fsc = getProjectFileStateCache(cwd);
   const explorationMode = (ctx as any).explorationMode ?? false;
-  return { cwd: cwd, readFileState: (fsc as any).cache, abortSignal: signal, permissionMode: (config as any).permissionMode ?? 'ask', explorationMode: explorationMode, allowedCommands: (config as any).allowedCommands ?? [], toolPermissions: (config as any).toolPermissions ?? {}, source: 'orchestrator' as const, permissionRules: parsePermissionRuleSet((config as any).permissions), toolHooks: parseToolHooks((config as any).hooks), taskExecutionLease: ctx.cesar?.taskExecutionLease, onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }) } as any;
+  return { cwd: cwd, readFileState: (fsc as any).cache, abortSignal: signal, permissionMode: (config as any).permissionMode ?? 'ask', explorationMode: explorationMode, allowedCommands: (config as any).allowedCommands ?? [], toolPermissions: (config as any).toolPermissions ?? {}, source: 'orchestrator' as const, permissionRules: parsePermissionRuleSet((config as any).permissions), toolHooks: parseToolHooks((config as any).hooks), taskExecutionLease: ctx.cesar?.taskExecutionLease, onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }), onTodos: (todos: any[]) => dispatch({ type: 'todos-set', todos: asLiveTodos(todos) } as any) } as any;
 }
 
 /**
  * Parse a streaming tool input into a JSON object. Malformed input is returned as an explicit retryable error instead of being silently coerced.
  */
-// @kern-source: tools:50
+// @kern-source: tools:51
 export function parseEagerToolInput(toolName: string, input: unknown): {ok:boolean,input?:Record<string,unknown>,error?:string,raw:string} {
   const raw = typeof input === 'string'
     ? input
@@ -117,7 +119,7 @@ export function parseEagerToolInput(toolName: string, input: unknown): {ok:boole
 /**
  * Execute a tool eagerly during streaming — parse input, run, dispatch result.
  */
-// @kern-source: tools:100
+// @kern-source: tools:101
 export async function executeEagerTool(toolName: string, meta: Record<string,unknown>, toolRegistry: ToolRegistry, toolCtx: ToolContext, dispatch: Dispatch, cesarEngineId: string): Promise<ToolCallResult> {
   const callId = (meta.toolCallId as string) ?? `eager-${Date.now()}`;
   const parsed = parseEagerToolInput(toolName, meta.input);

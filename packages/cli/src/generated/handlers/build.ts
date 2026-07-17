@@ -14,9 +14,11 @@ import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
 import { buildAgentApprovalCallback } from './agent.js';
 
+import { asLiveTodos } from '../signals/todos.js';
+
 import { yieldToInk } from '../cesar/brain-helpers.js';
 
-// @kern-source: build:10
+// @kern-source: build:11
 function injectFileReferences(input: string, cwd: string): string {
   const FILE_REF = /(?:^|\s)([\w./-]+\.\w{1,10})\b/g;
   let result = input;
@@ -41,7 +43,7 @@ function injectFileReferences(input: string, cwd: string): string {
   return result;
 }
 
-// @kern-source: build:35
+// @kern-source: build:36
 export async function handleBuild(input: string, dispatch: Dispatch, ctx: HandlerContext, existingPlan?: Plan, skipPlanApproval?: boolean): Promise<void> {
   const abort = new AbortController();
   try {
@@ -157,7 +159,7 @@ export async function handleBuild(input: string, dispatch: Dispatch, ctx: Handle
       outputDir,
       signal: abort.signal,
       onApproval: buildAgentApprovalCallback(dispatch, ctx, engineId),
-      onTodos: (todos: { id: string; text: string; state: string }[]) => dispatch({ type: 'todos-set', todos }),
+      onTodos: (todos: { id: string; text: string; state: string }[]) => dispatch({ type: 'todos-set', todos: asLiveTodos(todos) }),
       permissionMode: (config as any).permissionMode ?? 'ask',
       allowedCommands: (config as any).allowedCommands ?? [],
       toolPermissions: (config as any).toolPermissions ?? {},

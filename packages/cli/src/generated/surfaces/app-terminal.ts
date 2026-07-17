@@ -6,7 +6,7 @@ import { EngineRegistry, loadConfig } from '@kernlang/agon-core';
 
 import { clampNumber } from './app-display-utils.js';
 
-import { estimateVisibleBlockBudget, estimateBottomChromeExtraRows, estimatePinnedLiveRows } from './app-layout.js';
+import { estimateVisibleBlockBudget, estimateBottomChromeExtraRows, estimatePinnedLiveRows, estimateTodoListRows } from './app-layout.js';
 
 import { nativeTranscriptBlocksForStatic, nativeArchiveBlockCount } from './app-blocks.js';
 
@@ -108,7 +108,8 @@ export function buildTerminalReplaySnapshot(blocks: OutputBlock[], opts: any): {
   const hasStream = !(!opts?.hasStream);
   const hasProgress = !(!opts?.hasProgress);
   const agentCount = Math.max(0, Math.floor((Number(opts?.agentCount) || 0)));
-  const bottomChromeExtraRows = estimateBottomChromeExtraRows(mode, questionState, termWidth, pendingImageCount, inputQueueCount, hasLiveSpinner, hasPlanChip);
+  const todoReserveRows = estimateTodoListRows(Array.isArray(opts?.todos) ? opts.todos : [], hasPlanChip, termWidth);
+  const bottomChromeExtraRows = estimateBottomChromeExtraRows(mode, questionState, termWidth, pendingImageCount, inputQueueCount, hasLiveSpinner, hasPlanChip, todoReserveRows);
   const pinnedLiveRows = estimatePinnedLiveRows(mode, hasStream, hasProgress, agentCount, Math.max(0, Math.floor((Number(opts?.toolStreamCount) || 0))));
   const visibleBudget = estimateVisibleBlockBudget(termHeight, mode, bottomChromeExtraRows + pinnedLiveRows);
   const transcriptBlocks = (terminalMode === 'native') ? nativeTranscriptBlocksForStatic(blocks) : historyBlocksForTranscript(blocks);

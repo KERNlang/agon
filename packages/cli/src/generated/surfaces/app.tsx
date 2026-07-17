@@ -138,7 +138,7 @@ import { createInitialRegistry, drainStdinBuffer, resolveTerminalMode, normalize
 
 import { normalizeTextSelection } from './app-selection.js';
 
-import { estimateVisibleBlockBudget, estimateBottomChromeExtraRows, estimatePinnedLiveRows } from './app-layout.js';
+import { estimateVisibleBlockBudget, estimateBottomChromeExtraRows, estimatePinnedLiveRows, estimateTodoListRows } from './app-layout.js';
 
 import { normalizeUiMotion } from './status-helpers.js';
 
@@ -652,8 +652,8 @@ export function App() {
   }, [activePlan,planModeQueued,autoModeQueued]);
 
   const bottomChromeReservedRows = useMemo(() => {
-          return estimateBottomChromeExtraRows(mode, questionState, termWidth, pendingImages.length, inputQueue.length, !(!liveSpinner), planChipVisible);
-  }, [mode,questionState,termWidth,pendingImages,inputQueue,liveSpinner,planChipVisible]);
+          return estimateBottomChromeExtraRows(mode, questionState, termWidth, pendingImages.length, inputQueue.length, !(!liveSpinner), planChipVisible, estimateTodoListRows(todos, planChipVisible, termWidth));
+  }, [mode,questionState,termWidth,pendingImages,inputQueue,liveSpinner,planChipVisible,todos]);
 
   const overlayActive = useMemo(() => {
           return enginePickerOpen || modelPickerOpen || cesarPickerOpen || !(!reviewEvent) || !(!toolDetailEvent);

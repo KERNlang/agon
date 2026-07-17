@@ -42,7 +42,9 @@ fn name=extractAdjacentForkOptions params="response:string,maxLabel?:number" ret
       if (!seen.has(key)) {
         seen.add(key);
         const full = m[3].trim();
-        let label = full;
+        // Picker rows render as plain terminal text, so markdown emphasis from
+        // the model ("**Label** — detail") would show as literal asterisks.
+        let label = full.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/`([^`]+)`/g, '$1');
         if (label.length > limit) {
           const cut = label.slice(0, limit);
           const lastSpace = cut.lastIndexOf(' ');

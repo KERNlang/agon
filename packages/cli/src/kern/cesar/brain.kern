@@ -9,6 +9,7 @@ import from="./confidence.js" names="CONFIDENCE_TIERS,parseConfidence,confidence
 import from="./suggestion.js" names="parseSuggestion"
 import from="./fork-options.js" names="extractAdjacentForkOptions"
 import from="./todos-marker.js" names="parseLiveTodos,parsePreamble"
+import from="../signals/todos.js" names="asLiveTodos"
 import from="./ask-marker.js" names="parseAskMarker"
 import from="./session.js" names="ensureCesarSession,CESAR_SYSTEM_PROMPT,buildCesarSystemPrompt,resolveCesarBackend,renderToolPermissionCommand"
 import from="./context-budget.js" names="enforceContextBudget"
@@ -1811,7 +1812,7 @@ ${reviewFollowup.prompt}`;
             permissionMode: (config as any).permissionMode ?? 'ask', explorationMode,
             allowedCommands: (config as any).allowedCommands ?? [], toolPermissions: (config as any).toolPermissions ?? {},
             onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }),
-            onTodos: (todos: any[]) => dispatch({ type: 'todos-set', todos }),
+            onTodos: (todos: any[]) => dispatch({ type: 'todos-set', todos: asLiveTodos(todos) }),
             // Agentic AUTO owns execution from the first tool step. The legacy
             // two-phase loop deliberately starts read-only and unlocks later;
             // that re-arming gate made strong models give up and delegate their

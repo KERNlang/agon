@@ -18,7 +18,7 @@ fn name=recordCesarTurn params="ctx:HandlerContext, cesarEngineId:string, input:
       const u = s && typeof s.getTurnUsage === 'function' ? s.getTurnUsage() : null;
       if (u && u.totalTokens > 0) {
         return tracker.record(cesarEngineId, {
-          usage: { promptTokens: u.promptTokens, completionTokens: u.completionTokens, totalTokens: u.totalTokens, source: u.source ?? 'sdk' },
+          usage: { promptTokens: u.promptTokens, completionTokens: u.completionTokens, totalTokens: u.totalTokens, cachedInputTokens: u.cachedInputTokens, source: u.source ?? 'sdk' },
           model: u.model,
         });
       }
@@ -524,4 +524,25 @@ fn name=extractDelegation params="toolName:string, args:Record<string,unknown>" 
       budget: typeof argsRecord.budget === 'number' ? (argsRecord.budget as number) : undefined,
       createdAt: Date.now(),
     };
+  >>>
+
+fn name=forwardContinuationStatus params="chunk:any, dispatch:(event:any) => void" returns=boolean export=true
+  doc "Forward a session-stream 'status' chunk from a CONTINUATION send (the auto-continue nudge, the confirmation/steering follow-up, and its tool-loop sends) to the UI exactly like the main turn loop does: a context-usage metadata chunk becomes the context-usage event (live gauge), any other status becomes a spinner-update ('Cesar <status>'). Returns true when the chunk was a status chunk (the caller `continue`s past it). Without this, a follow-up that runs tools or thinks for minutes sits on a frozen '<engine> continuing…' spinner — a black box to the user."
+  handler <<<
+    if (String((chunk as any)?.type) !== 'status') return false;
+    const meta = ((chunk as any).metadata ?? {}) as Record<string, unknown>;
+    if (meta.kind === 'context-usage') {
+      dispatch({
+        type: 'context-usage',
+        pct: Number(meta.pct ?? 0),
+        used: Number(meta.used ?? 0),
+        limit: Number(meta.limit ?? 0),
+        compacted: Number(meta.compacted ?? 0),
+        cached: Number(meta.cached ?? 0),
+        source: typeof meta.source === 'string' ? meta.source : undefined,
+      });
+      return true;
+    }
+    dispatch({ type: 'spinner-update', message: `Cesar ${String((chunk as any).content ?? '')}` });
+    return true;
   >>>

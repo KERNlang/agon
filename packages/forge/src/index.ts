@@ -27,7 +27,7 @@ export { runGauntlet } from './generated/gauntlet.js';
 export { addToCorpus, getCorpusForReplay, getGapPatterns, getCorpusStats, loadCorpus } from './generated/corpus.js';
 export type { CorpusRecord } from './generated/corpus.js';
 // ── Team Competition ──
-export { runTeamForge } from './generated/team-forge.js';
+export { runTeamForge, decideTeamWinner } from './generated/team-forge.js';
 export type { TeamForgeOptions } from './generated/team-forge.js';
 export { runTeamTribunal } from './generated/team-tribunal.js';
 export type { TeamTribunalOptions } from './generated/team-tribunal.js';

@@ -22,7 +22,7 @@ import { formatModeRationale } from '../cesar/mode-rationale.js';
 
 import type { ModeRationale } from '../cesar/mode-rationale.js';
 
-import { formatTokenCostStatus, buildPriorityStatusSegments, normalizeUiMotion, cosmeticUiIntervalMs, buildPlanPhaseGauge, buildExecutionRailTimeline, buildGuardTelemetryView, loadGuardTelemetrySnapshot, buildHeartbeatSuffix, buildHeartbeatSig, parseHeartbeatPhase } from './status-helpers.js';
+import { formatTokenCostStatus, buildPriorityStatusSegments, normalizeUiMotion, cosmeticUiIntervalMs, buildPlanPhaseGauge, buildExecutionRailTimeline, buildGuardTelemetryView, loadGuardTelemetrySnapshot, buildHeartbeatSuffix, buildHeartbeatSig, parseHeartbeatPhase, buildFleetTelemetryText, formatContextStatus } from './status-helpers.js';
 
 // ── Module: StatusHelperExports ──
 
@@ -72,16 +72,10 @@ const StatusBar = React.memo(function StatusBar({ cesarId, chatMessageCount, tot
   // counter below stays (it's spend, a different axis than occupancy).
   const ctx = context && context.limit > 0 ? context : null;
   const vitals = Array.from(telemetryVitals?.values?.() ?? []);
-  const stalled = vitals.filter((v: any) => v.state === 'stalled');
-  const offline = vitals.filter((v: any) => v.state === 'offline');
-  const fallback = vitals.filter((v: any) => v.state === 'fallback' || v.fallbackTo);
-  const busy = vitals.filter((v: any) => v.state === 'busy');
-  const telemetry = stalled.length > 0 ? `\u26a0 ${stalled.length} stalled`
-    : offline.length > 0 ? `\u2718 ${offline.length} offline`
-    : fallback.length > 0 ? `\u21c4 ${fallback.length} fallback`
-    : busy.length > 0 ? `\u25d0 ${busy.length} busy`
-    : vitals.length > 0 ? '\u25cf idle'
-    : '';
+  // Fleet health + the Cesar turn folded together: while the brain is
+  // mid-turn the footer must never claim '\u25cf idle' just because no FLEET
+  // engine is dispatched \u2014 that contradicted the active status strip.
+  const telemetry = buildFleetTelemetryText(vitals, Boolean(isActive));
   const segments = buildPriorityStatusSegments({
     width: Math.max(12, Number(termWidth ?? 80) - 2),
     exploration: Boolean(explorationMode),
@@ -138,7 +132,7 @@ const StatusBar = React.memo(function StatusBar({ cesarId, chatMessageCount, tot
 });
 export { StatusBar };
 
-// @kern-source: status:166
+// @kern-source: status:160
 const StatusDashboard = React.memo(function StatusDashboard({ telemetryVitals, recentFallbacks, width, height, filter }: { telemetryVitals:Map<string, any>; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; width?:number; height?:number; filter?:'all'|'problem' }) {
   const vitals = Array.from(telemetryVitals?.values?.() ?? []);
   const severity: Record<string, number> = { stalled: 5, fallback: 4, offline: 3, busy: 2, idle: 1 };
@@ -277,7 +271,7 @@ const StatusDashboard = React.memo(function StatusDashboard({ telemetryVitals, r
 });
 export { StatusDashboard };
 
-// @kern-source: status:312
+// @kern-source: status:306
 const ExecutionRail = React.memo(function ExecutionRail({ spinner, engines, activePlanState, activePlan, lastTool, stats, recentFallbacks, toolOutputExpanded, startTime, isActive }: { spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; activePlanState?:string|null; activePlan?:any; lastTool?:any; stats?:any; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; toolOutputExpanded?:boolean; startTime?:number; isActive?:boolean }) {
   const planGauge = buildPlanPhaseGauge(activePlan, 10);
   const now = Date.now();
@@ -381,7 +375,7 @@ const ExecutionRail = React.memo(function ExecutionRail({ spinner, engines, acti
 });
 export { ExecutionRail };
 
-// @kern-source: status:426
+// @kern-source: status:420
 const ExecutionRailPanel = React.memo(function ExecutionRailPanel({ spinner, engines, activePlanState, activePlan, lastTool, stats, recentFallbacks, toolOutputExpanded, startTime, isActive, width, maxRows, focused }: { spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; activePlanState?:string|null; activePlan?:any; lastTool?:any; stats?:any; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; toolOutputExpanded?:boolean; startTime?:number; isActive?:boolean; width?:number; maxRows?:number; focused?:boolean }) {
   const safeWidth = Math.max(32, Math.floor(Number(width ?? 42)));
   const safeRows = Math.max(8, Math.floor(Number(maxRows ?? 12)));
@@ -492,7 +486,7 @@ const ExecutionRailPanel = React.memo(function ExecutionRailPanel({ spinner, eng
 });
 export { ExecutionRailPanel };
 
-// @kern-source: status:552
+// @kern-source: status:546
 const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs:Job[] }) {
   return (
     <Box paddingX={1}>
@@ -511,7 +505,7 @@ const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs
 });
 export { BackgroundJobRail };
 
-// @kern-source: status:574
+// @kern-source: status:568
 const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confidence, context, spinner, engines, jobs, startTime, streamSnippet, isActive, planModeQueued, autoModeQueued, activePlanState, activePlan, scoreboard, rationale, uiMotion, interactionActive }: { cesarId:string; confidence?:number|null; context?:{pct:number,used:number,limit:number,compacted:number,cached:number,source?:string}|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; jobs?:Job[]; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; autoModeQueued?:boolean; activePlanState?:string|null; activePlan?:any; scoreboard?:Scoreboard|null; rationale?:ModeRationale|null; uiMotion?:'full'|'reduced'|'off'; interactionActive?:boolean }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -536,8 +530,10 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
   if (!isActive) {
     const confPart = (confidence !== null && confidence !== undefined) ? ` ${confidence}%` : '';
     // '~' marks a chars-based estimate; exact numbers (real API token
-    // usage, or real-anchored projection) render without it.
-    const ctxPart = (context && context.pct > 0) ? ` \u2502 ctx ${context.source === 'estimate' ? '~' : ''}${context.pct}%` : '';
+    // usage, or real-anchored projection) render without it. '(used/limit)'
+    // answers pct-of-WHAT whenever the session reported real numbers.
+    const idleCtxText = formatContextStatus(context);
+    const ctxPart = idleCtxText ? ` \u2502 ${idleCtxText}` : '';
     return (
       <Box height={1} flexShrink={0}>
         <Text wrap="truncate-end">
@@ -565,7 +561,7 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
   let ctxStr = '';
   let ctxColor = '#6b7280';
   if (context && context.pct > 0) {
-    ctxStr = ` ctx ${context.source === 'estimate' ? '~' : ''}${context.pct}%${context.compacted > 0 ? '⤵' : ''}`;
+    ctxStr = ` ${formatContextStatus(context)}`;
     ctxColor = context.pct >= 80 ? '#ef4444' : context.pct >= 60 ? '#fbbf24' : '#4ade80';
   }
 

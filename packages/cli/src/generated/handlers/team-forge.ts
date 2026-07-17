@@ -131,7 +131,18 @@ export async function handleTeamForge(task: string, fitnessCmd: string|null, dis
         dispatch({ type: 'info', message: `Winner worktree cleaned up — no patch file available` });
       }
     } else {
-      dispatch({ type: 'header', title: 'Draw — no clear winner' });
+      // A null winner has two very different meanings — say which one, and
+      // never leave the user at a dead end with no actionable patch.
+      const drawOutA = result.submissions[teamA.teamId]?.finalOutput as any;
+      const drawOutB = result.submissions[teamB.teamId]?.finalOutput as any;
+      if (!drawOutA?.pass && !drawOutB?.pass) {
+        dispatch({ type: 'header', title: 'No winner — both teams failed the fitness gate' });
+        dispatch({ type: 'info', message: `Neither patch passed \`${fitnessCmd}\`, so neither is safe to apply. Both attempts are preserved in the run dir below — inspect them or re-run with a refined task.` });
+      } else {
+        dispatch({ type: 'header', title: 'Draw — identical on every tiebreak axis' });
+        if (drawOutA?.patchPath) dispatch({ type: 'info', message: `Team Alpha patch: ${drawOutA.patchPath} (apply manually with git apply)` });
+        if (drawOutB?.patchPath) dispatch({ type: 'info', message: `Team Beta patch: ${drawOutB.patchPath} (apply manually with git apply)` });
+      }
     }
 
     dispatch({ type: 'info', message: `Full results saved: ${forgeDir}` });

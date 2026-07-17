@@ -151,10 +151,30 @@ describe('processPasteContent', () => {
 });
 
 describe('resolveEscapeAction', () => {
-  it('interrupts active work on a single escape', () => {
+  it('interrupts active work on a single escape (empty composer)', () => {
     expect(resolveEscapeAction({
       replState: 'streaming',
-      inputValue: 'draft text',
+      inputValue: '',
+      slashPickerOpen: false,
+      enginePickerOpen: false,
+      questionOpen: false,
+    })).toEqual({ action: 'interrupt' });
+  });
+
+  it('interrupt-submits when the composer holds a typed redirect (Claude-style esc)', () => {
+    expect(resolveEscapeAction({
+      replState: 'streaming',
+      inputValue: 'do this instead',
+      slashPickerOpen: false,
+      enginePickerOpen: false,
+      questionOpen: false,
+    })).toEqual({ action: 'interrupt-submit' });
+  });
+
+  it('whitespace-only composer text still counts as a plain interrupt', () => {
+    expect(resolveEscapeAction({
+      replState: 'busy',
+      inputValue: '   ',
       slashPickerOpen: false,
       enginePickerOpen: false,
       questionOpen: false,

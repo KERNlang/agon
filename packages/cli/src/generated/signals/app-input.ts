@@ -120,11 +120,11 @@ export function hasBtwSideChannelTarget(opts: {replState:string,activePlanState?
 
 // @kern-source: app-input:87
 export interface EscapeDecision {
-  action: 'close-slash'|'close-engine-picker'|'cancel-question'|'interrupt'|'clear-input'|'noop';
+  action: 'close-slash'|'close-engine-picker'|'cancel-question'|'interrupt'|'interrupt-submit'|'clear-input'|'noop';
 }
 
 /**
- * Resolve Esc behavior without destructive transcript clearing.
+ * Resolve Esc behavior without destructive transcript clearing. Esc during an active run with TEXT in the composer is 'interrupt-submit': stop the run AND hand the typed text in as the next message (one keystroke, Claude-style redirect) — never silently drop what the user typed. Esc with an empty composer stays a plain interrupt.
  */
 // @kern-source: app-input:90
 export function resolveEscapeAction(opts: {replState:string,inputValue:string,slashPickerOpen:boolean,enginePickerOpen:boolean,questionOpen:boolean,runningJobCount?:number}): EscapeDecision {
@@ -138,7 +138,7 @@ export function resolveEscapeAction(opts: {replState:string,inputValue:string,sl
     return { action: 'cancel-question' };
   }
   if (opts.replState !== 'idle' || (opts.runningJobCount ?? 0) > 0) {
-    return { action: 'interrupt' };
+    return { action: opts.inputValue.trim() ? 'interrupt-submit' : 'interrupt' };
   }
   if (opts.inputValue) {
     return { action: 'clear-input' };

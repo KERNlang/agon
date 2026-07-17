@@ -21,6 +21,47 @@ fn name=cosmeticUiIntervalMs params="uiMotion:unknown,isActive:boolean,interacti
     return motion === 'full' ? 1000 : 5000;
   >>>
 
+fn name=formatCompactTokens params="value:number" returns=string export=true
+  doc "Render a token count in the shortest honest form for one-line status surfaces: 830 → '830', 46_200 → '46k', 1_240_000 → '1.2M'. Rounds, never pads."
+  handler <<<
+    const n = Math.max(0, Math.round(Number(value) || 0));
+    if (n < 1000) return String(n);
+    if (n < 999500) return `${Math.round(n / 1000)}k`;
+    return `${(n / 1e6).toFixed(1)}M`;
+  >>>
+
+fn name=formatContextStatus params="context:{pct:number,used?:number,limit?:number,compacted?:number,source?:string}|null|undefined" returns=string export=true
+  doc "Shared one-line context-gauge text for the footer and the Cesar strip: 'ctx ~15% (46k/300k)⤵'. The '~' marks a chars-based estimate; '(used/limit)' answers 15%-of-WHAT and appears only when both numbers are known (>0), so callers passing a bare {pct} keep the old 'ctx 15%' form; '⤵' marks that older turns were compacted into the window. Returns '' when there is no gauge to show (pct <= 0)."
+  handler <<<
+    if (!context || !(Number(context.pct) > 0)) return '';
+    const approx = context.source === 'estimate' ? '~' : '';
+    const used = Math.max(0, Number(context.used) || 0);
+    const limit = Math.max(0, Number(context.limit) || 0);
+    const amounts = used > 0 && limit > 0 ? ` (${formatCompactTokens(used)}/${formatCompactTokens(limit)})` : '';
+    const compacted = Number(context.compacted) > 0 ? '⤵' : '';
+    return `ctx ${approx}${Math.round(Number(context.pct))}%${amounts}${compacted}`;
+  >>>
+
+const name=FOOTER_CTX_AMOUNTS_MIN_WIDTH type=number value={{ 60 }}
+  doc "Narrowest footer (columns) that still renders the context gauge's '(used/limit)' amounts. Below this the gauge degrades to the bare percentage so the cost segment is never clipped away."
+
+fn name=buildFleetTelemetryText params="vitals:any[],cesarTurnActive:boolean" returns=string export=true
+  doc "Fold the engine-fleet vitals + the CESAR TURN state into the footer's one-word health text. Fleet problems outrank everything (stalled > offline > fallback > busy); otherwise an active Cesar turn renders '◐ cesar working' — NEVER '● idle' — so the footer cannot contradict the status strip while the brain is mid-turn (the fleet being idle is not the same as agon being idle). '● idle' only when the fleet exists, nothing is busy, and no turn is running; '' when there is nothing to report at all."
+  handler <<<
+    const list = Array.isArray(vitals) ? vitals : [];
+    const count = (state: string) => list.filter((v: any) => v?.state === state || (state === 'fallback' && v?.fallbackTo)).length;
+    const stalled = count('stalled');
+    if (stalled > 0) return `⚠ ${stalled} stalled`;
+    const offline = count('offline');
+    if (offline > 0) return `✘ ${offline} offline`;
+    const fallback = count('fallback');
+    if (fallback > 0) return `⇄ ${fallback} fallback`;
+    const busy = count('busy');
+    if (busy > 0) return `◐ ${busy} busy`;
+    if (cesarTurnActive) return '◐ cesar working';
+    return list.length > 0 ? '● idle' : '';
+  >>>
+
 fn name=cleanPriorityStatusText params="value:unknown" returns=string
   handler <<<
     return String(value ?? '').replace(/\s+/g, ' ').trim();
@@ -49,13 +90,13 @@ fn name=appendPriorityStatusSegment params="segments:{kind:string,text:string}[]
     return -1;
   >>>
 
-fn name=buildPriorityStatusSegments params="parts:{width?:number,exploration?:boolean,cwd?:string,branch?:string,context?:{pct:number,source?:string}|null,tokens?:number,messages?:number,cost?:string,auto?:boolean,permissionMode?:string,telemetry?:string}" returns="{kind:string,text:string}[]" export=true
-  doc "Allocate a width-bounded footer into typed semantic segments. The typed result lets Ink preserve colors without giving up context/cost priority or exact truncation. The permission posture renders as one always-present mode segment ('AUTO' when the AUTO harness is queued or the mode is auto, else the mode label + shift+tab hint) so the approval stance is never invisible."
+fn name=buildPriorityStatusSegments params="parts:{width?:number,exploration?:boolean,cwd?:string,branch?:string,context?:{pct:number,used?:number,limit?:number,compacted?:number,source?:string}|null,tokens?:number,messages?:number,cost?:string,auto?:boolean,permissionMode?:string,telemetry?:string}" returns="{kind:string,text:string}[]" export=true
+  doc "Allocate a width-bounded footer into typed semantic segments. The typed result lets Ink preserve colors without giving up context/cost priority or exact truncation. The permission posture renders as one always-present mode segment ('AUTO' when the AUTO harness is queued or the mode is auto, else the mode label + shift+tab hint) so the approval stance is never invisible. The context gauge carries its (used/limit) amounts only on terminals >= FOOTER_CTX_AMOUNTS_MIN_WIDTH cols — on narrower footers it degrades to the bare percentage instead of clipping the cost segment (both accounting signals must survive)."
   handler <<<
     const width = Math.max(12, Math.floor(Number(parts?.width) || 80));
-    const context = parts?.context && parts.context.pct > 0
-      ? `ctx ${parts.context.source === 'estimate' ? '~' : ''}${Math.round(parts.context.pct)}%`
-      : '';
+    const context = width >= FOOTER_CTX_AMOUNTS_MIN_WIDTH
+      ? formatContextStatus(parts?.context)
+      : formatContextStatus(parts?.context ? { ...parts.context, used: 0, limit: 0 } : parts?.context);
     const cost = cleanPriorityStatusText(parts?.cost);
     const telemetry = cleanPriorityStatusText(parts?.telemetry);
     const cleanCwd = cleanPriorityStatusText(parts?.cwd);
@@ -90,20 +131,18 @@ fn name=buildPriorityStatusSegments params="parts:{width?:number,exploration?:bo
     return segments;
   >>>
 
-fn name=buildPriorityStatusLine params="parts:{width?:number,exploration?:boolean,cwd?:string,branch?:string,context?:{pct:number,source?:string}|null,tokens?:number,messages?:number,cost?:string,auto?:boolean,permissionMode?:string,telemetry?:string}" returns=string export=true
+fn name=buildPriorityStatusLine params="parts:{width?:number,exploration?:boolean,cwd?:string,branch?:string,context?:{pct:number,used?:number,limit?:number,compacted?:number,source?:string}|null,tokens?:number,messages?:number,cost?:string,auto?:boolean,permissionMode?:string,telemetry?:string}" returns=string export=true
   doc "Build the plain-text form of the priority footer for terminal-frame checks and non-Ink consumers."
   handler <<<
     return buildPriorityStatusSegments(parts).map((segment) => segment.text).join(' \u00b7 ');
   >>>
 
-fn name=buildCompactStatusTail params="parts:{context?:{pct:number,source?:string}|null,tokens?:number,messages?:number,cost?:string,auto?:boolean,telemetry?:string}" returns=string export=true
+fn name=buildCompactStatusTail params="parts:{context?:{pct:number,used?:number,limit?:number,compacted?:number,source?:string}|null,tokens?:number,messages?:number,cost?:string,auto?:boolean,telemetry?:string}" returns=string export=true
   doc "Build the stable metric tail for the one-row footer. It never emits newlines or permanent shortcut help; Ink owns terminal-width truncation."
   handler <<<
     const segments: string[] = [];
-    const context = parts?.context;
-    if (context && context.pct > 0) {
-      segments.push(`ctx ${context.source === 'estimate' ? '~' : ''}${Math.round(context.pct)}%`);
-    }
+    const contextText = formatContextStatus(parts?.context);
+    if (contextText) segments.push(contextText);
     const tokens = Math.max(0, Number(parts?.tokens) || 0);
     if (tokens > 0) segments.push(`${(tokens / 1000).toFixed(1)}k tok`);
     const messages = Math.max(0, Math.floor(Number(parts?.messages) || 0));

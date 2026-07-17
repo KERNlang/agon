@@ -66,7 +66,20 @@ export function drainSteering(turnId: string): Array<{ input: string; images?: I
   return mine;
 }
 
-// @kern-source: steering:145
+// @kern-source: steering:149
+export function popSteering(): { input: string; images?: ImageAttachment[] } | null {
+  const active = _activeTurnId.value;
+  if (!active) return null;
+  // Last matching index via reduce — findLastIndex needs an ES2023 lib
+  // target, and a raw for-statement would trip the kern self-coverage gate.
+  const index = _queue.reduce((last: number, entry, i: number) => (entry.turnId === active ? i : last), -1);
+  if (index < 0) return null;
+  const [entry] = _queue.splice(index, 1);
+  _notify();
+  return { input: entry.input, images: entry.images };
+}
+
+// @kern-source: steering:164
 export function peekSteeringCount(): number {
   const active = _activeTurnId.value;
   if (!active) return 0;
@@ -75,7 +88,7 @@ export function peekSteeringCount(): number {
   return n;
 }
 
-// @kern-source: steering:159
+// @kern-source: steering:178
 export function releaseSteeringTurn(turnId: string): void {
   if (_activeTurnId.value === turnId) {
     _activeTurnId.value = null;
@@ -83,7 +96,7 @@ export function releaseSteeringTurn(turnId: string): void {
   }
 }
 
-// @kern-source: steering:170
+// @kern-source: steering:189
 export function drainLeftoverSteering(): Array<{ input: string; images?: ImageAttachment[] }> {
   const all = _queue.map((e) => ({ input: e.input, images: e.images }));
   _queue.length = 0;
@@ -91,7 +104,7 @@ export function drainLeftoverSteering(): Array<{ input: string; images?: ImageAt
   return all;
 }
 
-// @kern-source: steering:181
+// @kern-source: steering:200
 export function clearSteering(): void {
   _queue.length = 0;
   _activeTurnId.value = null;

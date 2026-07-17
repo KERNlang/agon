@@ -140,6 +140,25 @@ module name=CesarSteering
       return mine;
     >>>
 
+  // ── popSteering: app pulls the NEWEST queued message back for editing ──
+  // The remove/adjust affordance: ↑ in an empty composer pops the most recent
+  // entry the ACTIVE turn owns OUT of the queue and back into the composer —
+  // the user edits and resubmits (adjust) or clears it (remove). LIFO on
+  // purpose: the message you want back is the one you just typed. Returns null
+  // when no turn is active or the active turn owns no entries.
+  fn name=popSteering returns="{ input: string; images?: ImageAttachment[] } | null" export=true
+    handler <<<
+      const active = _activeTurnId.value;
+      if (!active) return null;
+      // Last matching index via reduce — findLastIndex needs an ES2023 lib
+      // target, and a raw for-statement would trip the kern self-coverage gate.
+      const index = _queue.reduce((last: number, entry, i: number) => (entry.turnId === active ? i : last), -1);
+      if (index < 0) return null;
+      const [entry] = _queue.splice(index, 1);
+      _notify();
+      return { input: entry.input, images: entry.images };
+    >>>
+
   // ── peekSteeringCount: how many messages are queued for the active turn ──
   // Used by the UI hint (it only matters while a turn is active).
   fn name=peekSteeringCount returns=number export=true

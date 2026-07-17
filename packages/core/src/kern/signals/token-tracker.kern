@@ -1,3 +1,5 @@
+import from="./models-registry.js" names="lookupCatalogModelCost"
+
 interface name=TokenUsage
   field name=engineId type=string
   field name=promptTokens type=number
@@ -35,10 +37,13 @@ fn name=isFlatRateEngine params="engineId:string" returns=boolean export=true
   >>>
 
 fn name=estimateCost params="engineId:string, tokens:number, model?:string" returns=number
-  doc "Per-token BALLPARK price for metered engines. Flat-rate subscription engines (isFlatRateEngine) always return 0 — their real marginal cost IS zero; pricing their tokens at any rate fabricates spend. Unknown metered engines fall back to a generic $2/Mtok ballpark — acceptable for the display-only totalCostUsd, never for budget enforcement (which reads meteredCostUsd)."
+  doc "Per-token BALLPARK price for metered engines. Flat-rate subscription engines (isFlatRateEngine) always return 0 — their real marginal cost IS zero; pricing their tokens at any rate fabricates spend. A user API engine that resolves REAL rates from the models.dev catalog (exact engine-id match only) is priced from those, blended 75/25 input/output since this totals-only path cannot split — the split-aware path is estimateCostCacheAware. Everything else falls back to the legacy tables, and unknown metered engines to a generic $2/Mtok ballpark — acceptable for the display-only totalCostUsd, never for budget enforcement (which reads meteredCostUsd)."
   handler lang="kern"
     if cond="isFlatRateEngine(engineId)"
       return value="0"
+    let name=catalogCost value="lookupCatalogModelCost(engineId)"
+    if cond="catalogCost"
+      return value="(tokens / 1000000) * (0.75 * catalogCost.input + 0.25 * catalogCost.output)"
     let name=MODEL_COST type="Record<string, number>" value="{ 'claude-opus-4-6': 45.00, 'claude-sonnet-4-6': 9.00, 'claude-haiku-4-5': 2.00, 'gpt-4.1': 6.00, 'gpt-4.1-mini': 1.20, 'gpt-4.1-nano': 0.30, 'gemini-3.1-pro': 5.00, 'gemini-3.5-flash': 0.60, 'o3': 30.00, 'o4-mini': 2.80, }"
     if cond="model && MODEL_COST[model]"
       return value="(tokens / 1000000) * MODEL_COST[model]"
@@ -52,6 +57,16 @@ fn name=estimateCostCacheAware params="engineId:string, promptTokens:number, com
     const prompt = Math.max(0, Number(promptTokens ?? 0));
     const completion = Math.max(0, Number(completionTokens ?? 0));
     const cached = Math.max(0, Math.min(Number(cachedInputTokens ?? 0), prompt));
+    if (isFlatRateEngine(engineId)) return 0;
+    // Real split rates from the models.dev catalog (exact engine-id match):
+    // uncached input at the input rate, output at the output rate, cache reads
+    // at the provider's actual cache-read rate — no blended approximation.
+    const catalogCost = lookupCatalogModelCost(engineId);
+    if (catalogCost) {
+      return ((prompt - cached) / 1_000_000) * catalogCost.input
+        + (completion / 1_000_000) * catalogCost.output
+        + (cached / 1_000_000) * catalogCost.cacheRead;
+    }
     return estimateCost(engineId, prompt - cached + completion, model) + 0.1 * estimateCost(engineId, cached, model);
   >>>
 

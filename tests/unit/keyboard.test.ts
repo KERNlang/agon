@@ -426,4 +426,56 @@ describe('resolveKeyboardInput', () => {
       }
     });
   });
+
+  describe('↑ pops queued steering back into the composer (edit/remove)', () => {
+    it('returns popSteering on ↑ with an empty composer while steering is queued', () => {
+      const result = resolveKeyboardInput(baseCtx({
+        key: { upArrow: true },
+        replState: 'busy',
+        steeringCount: 1,
+        inputHistory: ['older entry'],
+      }));
+      expect(result).toEqual({ type: 'popSteering' });
+    });
+
+    it('keeps ↑ on history navigation once the composer has text', () => {
+      const result = resolveKeyboardInput(baseCtx({
+        key: { upArrow: true },
+        replState: 'busy',
+        steeringCount: 1,
+        inputValue: 'popped message being edited',
+        inputHistory: ['older entry'],
+      }));
+      expect(result).toEqual(expect.objectContaining({ type: 'historySet' }));
+    });
+
+    it('keeps ↑ on history navigation when nothing is queued', () => {
+      const result = resolveKeyboardInput(baseCtx({
+        key: { upArrow: true },
+        steeringCount: 0,
+        inputHistory: ['older entry'],
+      }));
+      expect(result).toEqual(expect.objectContaining({ type: 'historySet' }));
+    });
+  });
+
+  describe('esc with typed text interrupts AND submits the redirect', () => {
+    it('maps escape during a run with composer text to interruptSubmit carrying the text', () => {
+      const result = resolveKeyboardInput(baseCtx({
+        key: { escape: true },
+        replState: 'busy',
+        inputValue: 'stop — check the auth flow instead',
+      }));
+      expect(result).toEqual({ type: 'interruptSubmit', value: 'stop — check the auth flow instead' });
+    });
+
+    it('keeps plain interrupt on escape with an empty composer', () => {
+      const result = resolveKeyboardInput(baseCtx({
+        key: { escape: true },
+        replState: 'busy',
+        inputValue: '',
+      }));
+      expect(result).toEqual({ type: 'interrupt' });
+    });
+  });
 });

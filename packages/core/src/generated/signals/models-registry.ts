@@ -241,7 +241,115 @@ export function normalizeBaseUrl(url: string, format: 'openai'|'anthropic'): str
   }
 }
 
+/**
+ * Module-level memo for the parsed models-dev.json shared by the catalog lookups, keyed by cache-file PATH + mtime — one synchronous parse per catalog refresh, and an in-process AGON_HOME change (tests, embedded use) can never serve another home's catalog.
+ */
 // @kern-source: models-registry:225
+export const catalogWindowMemo = { file: '', mtimeMs: -1, data: null as (Record<string, any> | null) };
+
+/**
+ * Shared synchronous, memoized read of the models.dev cache for the catalog lookups. Null when the cache file is absent or unreadable.
+ */
+// @kern-source: models-registry:228
+function readCatalogData(): Record<string, any> | null {
+  try {
+    const cacheFile = join(getCacheDir(), 'models-dev.json');
+    if (!existsSync(cacheFile)) return null;
+    const mtimeMs = statSync(cacheFile).mtimeMs;
+    if (catalogWindowMemo.file !== cacheFile || catalogWindowMemo.mtimeMs !== mtimeMs || !catalogWindowMemo.data) {
+      catalogWindowMemo.data = JSON.parse(readFileSync(cacheFile, 'utf-8'));
+      catalogWindowMemo.file = cacheFile;
+      catalogWindowMemo.mtimeMs = mtimeMs;
+    }
+    return catalogWindowMemo.data as Record<string, any>;
+  } catch { return null; }
+}
+
+/**
+ * Resolve a model's REAL context window from the locally cached models.dev catalog (~/.agon/cache/models-dev.json), synchronously and best-effort. Match order: (1) the provider+model pair whose sanitized `${providerId}-${modelId}` equals engineId — exact, since user engine ids are built that way; (2) exact modelId across all providers — unique hit wins, and a collision takes the CONSERVATIVE MINIMUM (a too-high limit overflows the real window before compaction fires; a too-low one merely compacts early). A STALE cache is still used (a months-old real window beats a guess-table). Returns null when the cache is absent/unreadable or the model is unknown — callers fall back to their own inference.
+ */
+// @kern-source: models-registry:244
+export function lookupCatalogContextWindow(engineId: string, modelId: string): number | null {
+  try {
+    const data = readCatalogData();
+    if (!data) return null;
+    const sanitize = (value: string): string => value.replace(/[^a-zA-Z0-9._-]/g, '-').toLowerCase();
+    const wantEngine = sanitize(String(engineId ?? ''));
+    const wantModel = String(modelId ?? '');
+    const window = (m: any): number => Math.floor(Number(m?.limit?.context) || 0);
+    const modelHits: number[] = [];
+    for (const pid of Object.keys(data)) {
+      const models = data[pid]?.models ?? {};
+      for (const mid of Object.keys(models)) {
+        const w = window(models[mid]);
+        if (w <= 0) continue;
+        if (wantEngine && sanitize(`${pid}-${mid}`) === wantEngine) return w;
+        if (wantModel && mid === wantModel) modelHits.push(w);
+      }
+    }
+    if (modelHits.length > 0) return Math.min(...modelHits);
+    return null;
+  } catch { return null; }
+}
+
+/**
+ * Per-model price rates from the models.dev catalog, in USD per 1M tokens. All-zero rates are VALID and meaningful: a coding-plan model's marginal cost really is $0.
+ */
+// @kern-source: models-registry:269
+export interface CatalogModelCost {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+}
+
+/**
+ * Resolve a model's REAL split pricing from the cached models.dev catalog, synchronously and best-effort. Deliberately matches ONLY the exact sanitized `${providerId}-${modelId}` === engineId pair (how user API engines are named) — never a loose cross-provider model-id fallback, so CLI engines ('claude', 'codex') and their deliberate subscription ballparks are untouched and unit tests stay machine-independent. Returns null when the cache is absent, the engine is unknown, the model carries no cost object, or the cost object lacks the base input/output rates (missing is NOT free — null routes the caller to legacy pricing); all-zero rates return as zeros (plan-included), not null.
+ */
+// @kern-source: models-registry:276
+export function lookupCatalogModelCost(engineId: string): CatalogModelCost | null {
+  try {
+    const data = readCatalogData();
+    if (!data) return null;
+    const sanitize = (value: string): string => value.replace(/[^a-zA-Z0-9._-]/g, '-').toLowerCase();
+    const wantEngine = sanitize(String(engineId ?? ''));
+    if (!wantEngine) return null;
+    for (const pid of Object.keys(data)) {
+      const models = data[pid]?.models ?? {};
+      for (const mid of Object.keys(models)) {
+        if (sanitize(`${pid}-${mid}`) !== wantEngine) continue;
+        const cost = models[mid]?.cost;
+        if (!cost || typeof cost !== 'object') return null;
+        // MISSING is not FREE: absent base rates (input/output) mean the
+        // catalog entry is unusable — return null so the caller falls back to
+        // legacy pricing instead of billing $0. Absent CACHE fields fall back
+        // to conservative defaults (cache reads at the standard ~10% of
+        // input, cache writes at the input rate) — only an explicit 0 means
+        // plan-included/free.
+        const rate = (value: unknown): number | null => {
+          if (value === undefined || value === null) return null;
+          const n = Number(value);
+          return Number.isFinite(n) && n >= 0 ? n : null;
+        };
+        const input = rate(cost.input);
+        const output = rate(cost.output);
+        if (input === null || output === null) return null;
+        return {
+          input,
+          output,
+          cacheRead: rate(cost.cache_read) ?? input * 0.1,
+          cacheWrite: rate(cost.cache_write) ?? input,
+        };
+      }
+    }
+    return null;
+  } catch { return null; }
+}
+
+/**
+ * Persist the catalog's real contextWindow into the saved engine definition — session compaction and the ctx gauge size against api.contextWindow, and dropping it here is what sent 1M-window models to the 128k guess-table.
+ */
+// @kern-source: models-registry:317
 export function modelEntryToEngineDef(entry: ModelEntry): Record<string, any> {
-  return { schemaVersion: 3, id: `${entry.providerId}-${entry.modelId}`.replace(/[^a-zA-Z0-9._-]/g, '-').toLowerCase(), displayName: `${entry.providerName} — ${entry.modelName}`, isLocal: false, tier: 'user', timeout: 180, exec: { args: [] }, review: { args: [] }, api: { baseUrl: normalizeBaseUrl(entry.baseUrl, entry.format ?? 'openai'), apiKeyEnv: entry.apiKeyEnv, model: entry.modelId, maxTokens: Math.min((entry.contextWindow ? Math.floor((entry.contextWindow / 4)) : 4096), 16384), format: entry.format ?? 'openai' } };
+  return { schemaVersion: 3, id: `${entry.providerId}-${entry.modelId}`.replace(/[^a-zA-Z0-9._-]/g, '-').toLowerCase(), displayName: `${entry.providerName} — ${entry.modelName}`, isLocal: false, tier: 'user', timeout: 180, exec: { args: [] }, review: { args: [] }, api: { baseUrl: normalizeBaseUrl(entry.baseUrl, entry.format ?? 'openai'), apiKeyEnv: entry.apiKeyEnv, model: entry.modelId, maxTokens: Math.min((entry.contextWindow ? Math.floor((entry.contextWindow / 4)) : 4096), 16384), contextWindow: (Number.isFinite(entry.contextWindow) && (entry.contextWindow ?? 0) > 0) ? Math.floor(entry.contextWindow as number) : undefined, format: entry.format ?? 'openai' } };
 }

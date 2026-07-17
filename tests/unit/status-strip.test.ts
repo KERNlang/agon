@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { buildPlanChromeSummary, streamFrameIntervalMs } from '../../packages/cli/src/generated/surfaces/app-views.js';
 import { buildExecutionRailTimeline, buildPlanPhaseGauge } from '../../packages/cli/src/generated/surfaces/status.js';
 import {
+  buildFleetTelemetryText,
   buildGuardTelemetryView,
   buildHeartbeatSig,
   buildHeartbeatSuffix,
@@ -10,11 +11,72 @@ import {
   buildPriorityStatusLine,
   buildPriorityStatusSegments,
   cosmeticUiIntervalMs,
+  formatCompactTokens,
+  formatContextStatus,
   formatTokenCostStatus,
   formatStatusLine,
   normalizeUiMotion,
   parseHeartbeatPhase,
 } from '../../packages/cli/src/generated/surfaces/status-helpers.js';
+
+describe('context gauge amounts (pct-of-WHAT)', () => {
+  it('renders used/limit alongside the percentage when both are known', () => {
+    expect(formatContextStatus({ pct: 15, used: 46200, limit: 300000, source: 'api' })).toBe('ctx 15% (46k/300k)');
+  });
+
+  it('keeps the bare form when amounts are unknown (backward compatible)', () => {
+    expect(formatContextStatus({ pct: 15, source: 'estimate' })).toBe('ctx ~15%');
+    expect(formatContextStatus({ pct: 15 })).toBe('ctx 15%');
+  });
+
+  it('marks compaction with ⤵ and estimates with ~', () => {
+    expect(formatContextStatus({ pct: 42, used: 120000, limit: 200000, compacted: 2 })).toBe('ctx 42% (120k/200k)⤵');
+    expect(formatContextStatus({ pct: 42, used: 120000, limit: 200000, compacted: 2, source: 'estimate' })).toBe('ctx ~42% (120k/200k)⤵');
+  });
+
+  it('hides the gauge entirely without a positive percentage', () => {
+    expect(formatContextStatus(null)).toBe('');
+    expect(formatContextStatus({ pct: 0, used: 10, limit: 100 })).toBe('');
+  });
+
+  it('formats token counts compactly', () => {
+    expect(formatCompactTokens(830)).toBe('830');
+    expect(formatCompactTokens(46200)).toBe('46k');
+    expect(formatCompactTokens(1240000)).toBe('1.2M');
+  });
+
+  it('flows the amounts into the footer segments and compact tail', () => {
+    const line = buildPriorityStatusLine({
+      width: 120,
+      cwd: '~/repo',
+      context: { pct: 15, used: 46200, limit: 300000, source: 'api' },
+    });
+    expect(line).toContain('ctx 15% (46k/300k)');
+    const tail = buildCompactStatusTail({ context: { pct: 15, used: 46200, limit: 300000 } });
+    expect(tail).toContain('ctx 15% (46k/300k)');
+  });
+});
+
+describe('fleet telemetry folds in the Cesar turn', () => {
+  const idleFleet = [{ state: 'idle' }, { state: 'idle' }];
+
+  it('never reads ● idle while a Cesar turn is active', () => {
+    expect(buildFleetTelemetryText(idleFleet, true)).toBe('◐ cesar working');
+    expect(buildFleetTelemetryText([], true)).toBe('◐ cesar working');
+  });
+
+  it('reads ● idle only when the fleet exists, nothing is busy, and no turn runs', () => {
+    expect(buildFleetTelemetryText(idleFleet, false)).toBe('● idle');
+    expect(buildFleetTelemetryText([], false)).toBe('');
+  });
+
+  it('fleet problems outrank the working label', () => {
+    expect(buildFleetTelemetryText([{ state: 'stalled' }], true)).toBe('⚠ 1 stalled');
+    expect(buildFleetTelemetryText([{ state: 'offline' }], true)).toBe('✘ 1 offline');
+    expect(buildFleetTelemetryText([{ state: 'idle', fallbackTo: 'codex' }], true)).toBe('⇄ 1 fallback');
+    expect(buildFleetTelemetryText([{ state: 'busy' }, { state: 'idle' }], true)).toBe('◐ 1 busy');
+  });
+});
 
 describe('stable TUI motion and footer helpers', () => {
   it('defaults invalid motion values to the steady reduced policy', () => {

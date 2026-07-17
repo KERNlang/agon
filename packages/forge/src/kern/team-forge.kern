@@ -6,7 +6,7 @@ import from="node:crypto" names="randomUUID"
 import from="node:fs" names="mkdirSync,writeFileSync,renameSync"
 import from="@kernlang/agon-core" names="ForgeOptions,EngineAdapter,EngineResult,ForgeEvent,TaskClass" types=true
 import from="@kernlang/agon-core" names="TeamSpec,TeamFormat,TeamComposeMode,TeamMember,TeamRoundTrace,TeamSubmission,TeamScoreCard,TeamMatchResult,TeamEvent" types=true
-import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,buildForgePrompt,repoRoot,stashSnapshot,worktreeCreate,worktreeRemoveBestEffort,classifyTask,createSidechainLogger,composeTeams,makeFormat,computeContributionWeights,spawnWithTimeout"
+import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,buildForgePrompt,repoRoot,stashSnapshot,worktreeCreate,worktreeRemoveBestEffort,classifyTask,createSidechainLogger,composeTeams,makeFormat,computeContributionWeights,spawnWithTimeout,tiebreak"
 import from="@kernlang/agon-core" names="updateTeamElo"
 import from="./fitness.js" names="runFitness"
 import from="../types.js" names="WorktreeEntry" types=true
@@ -101,6 +101,22 @@ fn name=writeTeamForgeResultBundle params="matchId:string, options:TeamForgeOpti
     writeFileSync(bundleTmp, bundleBody);
     renameSync(bundleTmp, bundlePath);
     return bundlePath;
+  >>>
+
+fn name=decideTeamWinner params="resultA:EngineResult, resultB:EngineResult, teamAId:string, teamBId:string" returns="string | null" export=true
+  doc "Pure winner rule for a team-forge match. Pass beats fail; higher composite score wins; a score TIE between two PASSING teams is settled by core's multi-axis tiebreak (composite → lint → style → diff size → files → duration) — coarse composites tie often (pass dominates the weights) and a draw is a dead end with no applicable patch. Returns null only when both teams failed the gate (neither patch is safe to offer) or on an absolute dead-heat across every axis."
+  handler <<<
+    if (resultA.pass && !resultB.pass) return teamAId;
+    if (!resultA.pass && resultB.pass) return teamBId;
+    // Both failed: ALWAYS a draw, even on unequal scores — a "winner" here
+    // would put a gate-failing patch behind the /apply prompt.
+    if (!resultA.pass && !resultB.pass) return null;
+    if (resultA.score > resultB.score) return teamAId;
+    if (resultB.score > resultA.score) return teamBId;
+    const tb = tiebreak(resultA as any, resultB as any);
+    if (tb < 0) return teamAId;
+    if (tb > 0) return teamBId;
+    return null;
   >>>
 
 interface name=TeamForgeOptions
@@ -571,13 +587,9 @@ fn name=runTeamForge async=true params="options:TeamForgeOptions, registry:Engin
       onEvent?.({ type: 'team:score' as any, data: { teamId: teamA.teamId, score: resultA.score } });
       onEvent?.({ type: 'team:score' as any, data: { teamId: teamB.teamId, score: resultB.score } });
 
-      // Determine winner
-      let winnerTeamId: string | null = null;
-      if (resultA.pass && !resultB.pass) winnerTeamId = teamA.teamId;
-      else if (!resultA.pass && resultB.pass) winnerTeamId = teamB.teamId;
-      else if (resultA.score > resultB.score) winnerTeamId = teamA.teamId;
-      else if (resultB.score > resultA.score) winnerTeamId = teamB.teamId;
-      // else draw — winnerTeamId stays null
+      // Determine winner — see decideTeamWinner for the full rule (pass beats
+      // fail, higher score wins, passing-tie settled by core's tiebreak).
+      const winnerTeamId: string | null = decideTeamWinner(resultA, resultB, teamA.teamId, teamB.teamId);
 
       onEvent?.({ type: 'team:winner' as any, data: { winnerTeamId } });
 

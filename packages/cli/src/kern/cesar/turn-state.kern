@@ -1,0 +1,59 @@
+// ── Cesar Turn State — Phase 0c spike (cesar-turn-runtime spec) ───────
+// The declarative layer: the CesarTurn machine (the KERN `machine`
+// primitive generates immutable per-transition fns with illegal-transition
+// errors) plus the event/effect unions and the snapshot shape. The PURE
+// reducer and the sequential effect driver that consume these live in
+// turn-reducer.kern, which imports the machine's generated fns explicitly.
+// NOT wired into brain.kern yet — Phase 3 migrates the real flags onto
+// this skeleton after the Phase-0 gate re-review.
+
+machine name=CesarTurn
+  state name=streaming initial=true
+  state name=toolLoop
+  state name=continuing
+  state name=verifying
+  state name=asking
+  state name=committing
+  state name=done
+  state name=failed
+  state name=interrupted
+  transition name=enterToolLoop from=streaming to=toolLoop
+  transition name=requestContinuation from="streaming|toolLoop|verifying" to=continuing
+  transition name=resumeStream from=continuing to=streaming
+  transition name=startVerification from="streaming|toolLoop|continuing" to=verifying
+  transition name=captureAsk from="streaming|toolLoop|continuing|verifying" to=asking
+  transition name=commit from="streaming|toolLoop|verifying|asking" to=committing
+  transition name=complete from=committing to=done
+  transition name=fail from="streaming|toolLoop|continuing|verifying|asking|committing" to=failed
+  transition name=interrupt from="streaming|toolLoop|continuing|verifying|asking|committing" to=interrupted
+
+union name=TurnEvent discriminant=type
+  variant name=tool-loop-entered
+  variant name=continuation-requested
+    field name=reason type=string
+  variant name=stream-resumed
+  variant name=verification-started
+  variant name=ask-captured
+    field name=payload type=string
+    field name=malformed type=boolean
+  variant name=engine-errored
+    field name=message type=string
+  variant name=commit-requested
+  variant name=committed
+  variant name=aborted
+
+union name=TurnEffect discriminant=type
+  variant name=present-ask
+    field name=payload type=string
+    field name=malformed type=boolean
+  variant name=surface-error
+    field name=message type=string
+  variant name=send-continuation
+    field name=reason type=string
+
+interface name=TurnSnapshot
+  field name=state type="'streaming'|'toolLoop'|'continuing'|'verifying'|'asking'|'committing'|'done'|'failed'|'interrupted'"
+  field name=pendingAsk type="string | null"
+  field name=askMalformed type=boolean
+  field name=engineError type="string | null"
+  field name=continuations type=number

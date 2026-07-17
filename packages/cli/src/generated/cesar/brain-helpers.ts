@@ -21,7 +21,7 @@ export function recordCesarTurn(ctx: HandlerContext, cesarEngineId: string, inpu
     const u = s && typeof s.getTurnUsage === 'function' ? s.getTurnUsage() : null;
     if (u && u.totalTokens > 0) {
       return tracker.record(cesarEngineId, {
-        usage: { promptTokens: u.promptTokens, completionTokens: u.completionTokens, totalTokens: u.totalTokens, source: u.source ?? 'sdk' },
+        usage: { promptTokens: u.promptTokens, completionTokens: u.completionTokens, totalTokens: u.totalTokens, cachedInputTokens: u.cachedInputTokens, source: u.source ?? 'sdk' },
         model: u.model,
       });
     }

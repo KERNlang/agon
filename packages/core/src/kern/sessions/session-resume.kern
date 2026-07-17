@@ -110,7 +110,7 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
     // fires extra sends through the same session (quick-nero self-challenge)
     // or a path skips recording: undrained tokens are attributed to the next
     // record call instead of being lost or double-counted.
-    let turnUsage: { promptTokens: number; completionTokens: number } = { promptTokens: 0, completionTokens: 0 };
+    let turnUsage: { promptTokens: number; completionTokens: number; cachedInputTokens: number } = { promptTokens: 0, completionTokens: 0, cachedInputTokens: 0 };
 
     // ── Token estimation + context limit (config-only — hoisted out of send()
     // so getContextUsage() shares the same math) ──
@@ -1135,8 +1135,11 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                       historyLength: sentHistoryLength,
                     };
                     // Every step bills its own input — accumulate for the turn's cost.
+                    // cachedInputTokens ride along so the tracker prices cache
+                    // reads at the cache rate instead of full input.
                     turnUsage.promptTokens += lastRealUsage.promptTokens;
                     turnUsage.completionTokens += lastRealUsage.completionTokens;
+                    turnUsage.cachedInputTokens += lastRealUsage.cachedInputTokens;
                     const realUsed = lastRealUsage.promptTokens + lastRealUsage.completionTokens;
                     const realPct = Math.round((realUsed / CONTEXT_LIMIT) * 100);
                     yield {
@@ -2633,12 +2636,13 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
           promptTokens: turnUsage.promptTokens,
           completionTokens: turnUsage.completionTokens,
           totalTokens: turnUsage.promptTokens + turnUsage.completionTokens,
+          cachedInputTokens: turnUsage.cachedInputTokens,
           source: 'sdk' as const,
           // Model id so the tracker can apply model-specific pricing instead
           // of the generic per-engine fallback rate.
           model: config.engine.api?.model,
         };
-        turnUsage = { promptTokens: 0, completionTokens: 0 };
+        turnUsage = { promptTokens: 0, completionTokens: 0, cachedInputTokens: 0 };
         return drained;
       },
 

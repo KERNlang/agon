@@ -5,7 +5,7 @@ import {
   EngineRegistry, ensureAgonHome, loadConfig,
   createRunDir, writeRunStatus, printRunSummary,
 } from '@kernlang/agon-core';
-import type { RunStatusEngine } from '@kernlang/agon-core';
+import type { EngineDefinition, RunStatusEngine } from '@kernlang/agon-core';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
 import {
@@ -16,6 +16,13 @@ import {
   selectReviewEngines,
   shouldRetryReviewAttempt,
 } from '../generated/handlers/review.js';
+import {
+  routeReviewers,
+  serializeReviewRoutingManifest,
+  type ReviewRiskRequest,
+  type ReviewRoutingEngine,
+  type ReviewRoutingManifest,
+} from '../generated/handlers/review-router.js';
 import { buildConsensus, formatConsensusRow } from '../generated/blocks/consensus.js';
 import { fail, header, info, warn, bold } from '../output.js';
 
@@ -64,12 +71,21 @@ export const reviewCommand = defineCommand({
     },
     engine: {
       type: 'string',
-      description: 'Use one specific engine instead of the default full Review panel',
+      description: 'Use one specific engine and bypass automatic risk routing',
     },
     engines: {
       type: 'string',
       alias: 'e',
-      description: 'Use a strict explicit engine subset instead of the default full Review panel; invalid or unavailable entries abort rather than silently shrinking it',
+      description: 'Use a strict explicit engine subset and bypass automatic risk routing; invalid or unavailable entries abort rather than silently shrinking it',
+    },
+    risk: {
+      type: 'string',
+      description: 'Automatic routing risk: auto, low, medium, or high. Sensitive diff evidence can only raise the requested risk. Ignored with --engine/--engines.',
+      default: 'auto',
+    },
+    'primary-engine': {
+      type: 'string',
+      description: 'Engine that implemented the diff. Automatic routing excludes its adapter identity from required independent review seats; omission widens to high risk.',
     },
     label: {
       type: 'string',
@@ -142,18 +158,83 @@ export const reviewCommand = defineCommand({
       return;
     }
 
-    // No engine flag means the full active panel. Narrowing to
-    // one reviewer or a subset must be explicit. Selection also dedupes after
-    // alias resolution so two aliases cannot race on one engine output file.
+    // Explicit engine flags retain their strict legacy behavior. Without one,
+    // the pure router determines breadth from objective risk evidence and the
+    // live usable roster. It never consults ratings or a named preference.
     let requested: string[];
+    let routingManifest: ReviewRoutingManifest | undefined;
     try {
       const explicit = args.engines != null
         ? args.engines.split(',')
         : args.engine != null ? [args.engine] : undefined;
-      requested = selectReviewEngines(explicit, ctx);
+      if (explicit !== undefined) {
+        requested = selectReviewEngines(explicit, ctx);
+      } else {
+        const rawRisk = String(args.risk ?? 'auto').trim().toLowerCase();
+        const validRisks: ReviewRiskRequest[] = ['auto', 'low', 'medium', 'high'];
+        if (!validRisks.includes(rawRisk as ReviewRiskRequest)) {
+          throw new Error(`Unknown review risk "${rawRisk}". Use auto, low, medium, or high.`);
+        }
+
+        const rawPrimary = args['primary-engine'] == null ? '' : String(args['primary-engine']).trim();
+        if (args['primary-engine'] != null && !rawPrimary) {
+          throw new Error('--primary-engine cannot be empty. Omit it to widen automatic routing to high risk.');
+        }
+        let primaryEngine: EngineDefinition | undefined;
+        if (rawPrimary) {
+          try {
+            primaryEngine = registry.get(rawPrimary);
+          } catch {
+            throw new Error(`Unknown --primary-engine "${rawPrimary}". Use a registered engine id, or omit the flag to widen to high risk.`);
+          }
+        }
+        const toRoutingEngine = (engine: EngineDefinition): ReviewRoutingEngine => ({
+          engine,
+          backend: engine.binary && registry.findBinary(engine) !== null ? 'cli' : 'api',
+        });
+        routingManifest = routeReviewers(
+          target.diff,
+          rawRisk as ReviewRiskRequest,
+          primaryEngine ? toRoutingEngine(primaryEngine) : undefined,
+          registry.activeEngines(config).map(toRoutingEngine),
+        );
+        requested = routingManifest.selected.map((candidate) => candidate.engineId);
+      }
     } catch (err) {
       fail(err instanceof Error ? err.message : String(err));
       process.exit(1);
+    }
+
+    const startedAt = new Date().toISOString();
+    const { path: outputDir } = createRunDir({
+      mode: 'review',
+      label: args.label,
+    });
+    const routingManifestPath = routingManifest
+      ? join(outputDir, 'review-routing.json')
+      : undefined;
+    if (routingManifest && routingManifestPath) {
+      writeFileSync(routingManifestPath, serializeReviewRoutingManifest(routingManifest));
+      if (routingManifest.shortfall) {
+        const shortfall = routingManifest.shortfall;
+        const summary = `routing shortfall: ${shortfall.available}/${shortfall.required} independent adapter identities (${shortfall.reason})`;
+        const status = {
+          mode: 'review',
+          label: args.label,
+          startedAt,
+          endedAt: new Date().toISOString(),
+          engines: [] as RunStatusEngine[],
+          requested,
+          timeoutSec,
+          summary,
+          ok: false,
+        };
+        writeRunStatus(outputDir, status);
+        printRunSummary(status);
+        fail(`${summary}. Routing manifest: ${routingManifestPath}`);
+        process.exitCode = 1;
+        return;
+      }
     }
 
     const parsedParallel = args.maxParallel != null ? Number(String(args.maxParallel).trim()) : NaN;
@@ -162,11 +243,6 @@ export const reviewCommand = defineCommand({
       : requested.length;
 
     if (args.quiet) process.env.AGON_QUIET = '1';
-    const startedAt = new Date().toISOString();
-    const { path: outputDir } = createRunDir({
-      mode: 'review',
-      label: args.label,
-    });
 
     const quiet = process.env.AGON_QUIET === '1';
     const concurrencyNote = requested.length > 1
@@ -175,6 +251,11 @@ export const reviewCommand = defineCommand({
     if (!quiet) {
       header(`Review: ${target.label}`);
       info(`Repo: ${cwd}`);
+      if (routingManifest) {
+        info(`Routing: ${routingManifest.risk.final} risk (${routingManifest.selected.length} selected from ${routingManifest.candidates.length} usable)`);
+        info(`Primary implementer: ${routingManifest.primary?.engineId ?? 'unknown — breadth widened to high'}`);
+        info(`Routing manifest: ${routingManifestPath}`);
+      }
       info(`Engines: ${requested.join(', ')} (${concurrencyNote})`);
       info(`Per-engine timeout: ${timeoutSec}s (auto-cancel, others unaffected)`);
     }

@@ -240,7 +240,7 @@ export { apiDispatch, apiDispatchTools, apiDispatchToolsHistory, apiStreamDispat
 export type { ApiConfig } from './api-dispatch.js';
 export { companionDispatch } from './companion-dispatch.js';
 export type { CompanionResult } from './companion-dispatch.js';
-export { fetchModelsRegistry, buildModelEntries, searchModels, modelEntryToEngineDef } from './models-registry.js';
+export { fetchModelsRegistry, buildModelEntries, searchModels, modelEntryToEngineDef, lookupCatalogContextWindow } from './models-registry.js';
 export type { ModelEntry, ModelsDevProvider, ModelsDevModel } from './models-registry.js';
 export { buildCliModelGroups, buildCliModelGroupsAsync, buildCliGroupsImmediate, refreshCliGroup, refreshCliGroupVersion, getBinaryVersionAsync, discoverCliModelsAsync, findBinary, getBinaryVersion, readProbedCliModels, refreshProbedCliModels } from './cli-models-registry.js';
 export type { CliModelEntry, CliProviderGroup } from './cli-models-registry.js';

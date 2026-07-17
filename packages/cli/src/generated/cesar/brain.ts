@@ -2793,8 +2793,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               nudge = '[SYSTEM] You paused without finishing or asking me a question. Either complete the task using Edit/Write/Bash tools, or ask me a direct question ending with "?" if you need information.';
             }
             _continuations++;
-            dispatch({ type: 'warning', message: `Cesar paused mid-task — auto-continuing (${_continuations}/${MAX_CONTINUATIONS}).`, transient: true });
-            dispatch({ type: 'spinner-start', message: `${cesarEngineId} continuing…`, color });
+            // Harness plumbing, not user-actionable: the auto-continue keeps the
+            // SAME session (full context) and just nudges the model onward. It
+            // lives in the spinner strip, never as a transcript warning row —
+            // failures still surface loudly through the error paths below.
+            dispatch({ type: 'spinner-start', message: `${cesarEngineId} continuing (${_continuations}/${MAX_CONTINUATIONS})…`, color });
             let contResponse = '';
             try {
               const contGen = session.send({

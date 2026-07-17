@@ -20,6 +20,8 @@ import { encodeImagesForDispatch } from '../blocks/image.js';
 
 import { saveSessionState, loadSessionState, saveToolResultToDisk, loadToolResultFromDisk, pruneToolCache, loadConversation } from '../signals/session-store.js';
 
+import { lookupCatalogContextWindow } from '../signals/models-registry.js';
+
 import { parseToolCalls, toolCallsToApiFormat } from '../tools/tool-parser.js';
 
 import { createTurnTracker, contentHashOf } from '../telemetry/guard-telemetry.js';
@@ -59,7 +61,7 @@ import { decideFirstChunkRetry } from './first-chunk-retry-policy.js';
 /**
  * Fallback: spawn per turn with --resume/--continue. Works for any CLI engine.
  */
-// @kern-source: session-resume:30
+// @kern-source: session-resume:31
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
   let alive = false;
   let sessionId: string | null = null;
@@ -169,13 +171,16 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
   // Context limit: PER-ENGINE, not a hardcoded 128k. maxTokens is the
   // OUTPUT cap (4096-8192), NOT the context window — different axis.
   // Priority: explicit engine.api.contextWindow → engine.sessionBudget →
-  // inferred from the model id → conservative 128k default. A wrong
-  // (too-high) limit is what let the request overflow the real window
-  // before compaction fired.
+  // the models.dev catalog cache (REAL per-model windows; this is what keeps
+  // a 1M-window model like kimi k3 off the 128k guess-table) → inferred from
+  // the model id → conservative 128k default. A wrong (too-high) limit is
+  // what let the request overflow the real window before compaction fired.
   const inferContextWindow = (modelId: string): number => {
     const m = (modelId ?? '').toLowerCase();
     // Generous frontier windows
     if (/gpt-4\.1|gpt-5|o3|o4|gemini|claude|sonnet|opus|haiku|grok/.test(m)) return 200_000;
+    // kimi k3 is a 1M-context model everywhere it is served.
+    if (/kimi-k3|(?:^|[^a-z0-9])k3(?:$|[^a-z0-9])/.test(m)) return 1_048_576;
     if (/glm-4\.6|glm-5|glm-4\.5|kimi|moonshot|k2|qwen.*max|qwen3|deepseek|minimax/.test(m)) return 128_000;
     if (/glm-4\b|glm-4-/.test(m)) return 128_000;
     if (/mistral|mixtral|llama-3|llama3/.test(m)) return 128_000;
@@ -186,6 +191,8 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
     if (Number.isFinite(explicit) && explicit > 0) return Math.floor(explicit);
     const budgeted = Number((config.engine as any)?.sessionBudget?.contextWindow);
     if (Number.isFinite(budgeted) && budgeted > 0) return Math.floor(budgeted);
+    const catalog = lookupCatalogContextWindow(config.engine.id ?? '', config.engine.api?.model ?? '');
+    if (catalog !== null && catalog > 0) return catalog;
     return inferContextWindow(config.engine.api?.model ?? config.engine.id ?? '');
   })();
   // Reserve headroom that scales with the window (≥20k, ~15% of window),

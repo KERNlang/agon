@@ -1,0 +1,186 @@
+// ── Cesar Turn State — Phase 0c spike (cesar-turn-runtime spec) ───────
+// Proves the tribunal-mandated shape: a PURE transition layer (the KERN
+// `machine` primitive generates immutable per-transition fns with illegal-
+// transition errors) wrapped by a PURE reducer that emits declarative
+// EFFECT INTENTS, executed by a separate sequential driver. No awaits in
+// transitions; abort/steering/stream events land in a FIFO queue and are
+// applied between transitions, never mid-mutation. NOT wired into
+// brain.kern yet — Phase 3 migrates the real flags onto this skeleton
+// after the Phase-0 gate re-review.
+
+machine name=CesarTurn
+  state name=streaming initial=true
+  state name=toolLoop
+  state name=continuing
+  state name=verifying
+  state name=asking
+  state name=committing
+  state name=done
+  state name=failed
+  state name=interrupted
+  transition name=enterToolLoop from=streaming to=toolLoop
+  transition name=requestContinuation from="streaming|toolLoop|verifying" to=continuing
+  transition name=resumeStream from=continuing to=streaming
+  transition name=startVerification from="streaming|toolLoop|continuing" to=verifying
+  transition name=captureAsk from="streaming|toolLoop|continuing|verifying" to=asking
+  transition name=commit from="streaming|toolLoop|verifying|asking" to=committing
+  transition name=complete from=committing to=done
+  transition name=fail from="streaming|toolLoop|continuing|verifying|asking|committing" to=failed
+  transition name=interrupt from="streaming|toolLoop|continuing|verifying|asking|committing" to=interrupted
+
+union name=TurnEvent discriminant=type
+  variant name=tool-loop-entered
+  variant name=continuation-requested
+    field name=reason type=string
+  variant name=stream-resumed
+  variant name=verification-started
+  variant name=ask-captured
+    field name=payload type=string
+    field name=malformed type=boolean
+  variant name=engine-errored
+    field name=message type=string
+  variant name=commit-requested
+  variant name=committed
+  variant name=aborted
+
+union name=TurnEffect discriminant=type
+  variant name=present-ask
+    field name=payload type=string
+    field name=malformed type=boolean
+  variant name=surface-error
+    field name=message type=string
+  variant name=send-continuation
+    field name=reason type=string
+
+interface name=TurnSnapshot
+  field name=state type="'streaming'|'toolLoop'|'continuing'|'verifying'|'asking'|'committing'|'done'|'failed'|'interrupted'"
+  field name=pendingAsk type="string | null"
+  field name=askMalformed type=boolean
+  field name=engineError type="string | null"
+  field name=continuations type=number
+
+fn name=initialTurnSnapshot returns=TurnSnapshot
+  doc "Fresh turn snapshot — replaces the scattered `let` flag initializers."
+  handler lang="kern"
+    return value="{ state: 'streaming', pendingAsk: null, askMalformed: false, engineError: null, continuations: 0 }"
+
+fn name=attemptTurnStep params="step:(s: TurnSnapshot) => TurnSnapshot, s:TurnSnapshot" returns="TurnSnapshot | null"
+  doc "Run one machine transition; an ILLEGAL transition (CesarTurnStateError) returns null so the reducer stays total, anything else rethrows."
+  handler <<<
+    try {
+      return step(s);
+    } catch (err) {
+      if (err instanceof CesarTurnStateError) return null;
+      throw err;
+    }
+  >>>
+
+fn name=reduceTurn params="snapshot:TurnSnapshot, event:TurnEvent" returns="{ next: TurnSnapshot, effects: TurnEffect[] }" export=true
+  doc "PURE and TOTAL turn reducer — no awaits, no IO, and NEVER throws (agon-review: the machine's transition fns throw on illegal transitions; attemptStep converts that into a no-op so a stray or duplicate event can never crash the driver). Centralizes the guards that today live as scattered flag checks in brain.kern: a captured ask ALWAYS wins over a continuation request AND is re-surfaced at commit if it was parked (never-lose); terminal states absorb further events; engine errors surface a reason instead of a silent canned closure. Effects are declarative intents for the driver — the reducer never performs them."
+  handler <<<
+    const noop = { next: snapshot, effects: [] as TurnEffect[] };
+
+    const terminal = snapshot.state === 'done' || snapshot.state === 'failed' || snapshot.state === 'interrupted';
+    // Terminal absorption: late chunks from an abandoned generator must not
+    // resurrect a finished turn (the wedged-compaction bug class).
+    if (terminal) return noop;
+
+    if (event.type === 'ask-captured') {
+      // THE load-bearing guard: an ask always parks the turn. Already asking
+      // (duplicate/refined ask) or committing (late capture): update the
+      // payload in place, no transition — the parked payload is re-surfaced
+      // by the `committed` branch below, so it is never lost.
+      if (snapshot.state === 'asking' || snapshot.state === 'committing') {
+        return { next: { ...snapshot, pendingAsk: event.payload, askMalformed: event.malformed }, effects: [] };
+      }
+      const next = attemptTurnStep(captureAskCesarTurn, { ...snapshot, pendingAsk: event.payload, askMalformed: event.malformed });
+      if (!next) return { next: { ...snapshot, pendingAsk: event.payload, askMalformed: event.malformed }, effects: [] };
+      return { next, effects: [{ type: 'present-ask', payload: event.payload, malformed: event.malformed }] };
+    }
+    if (event.type === 'continuation-requested') {
+      // An auto-continue can NEVER barrel past a pending ask — and an illegal
+      // request (already continuing, mid-commit) is a no-op, never a throw.
+      if (snapshot.pendingAsk !== null || snapshot.askMalformed) return noop;
+      const next = attemptTurnStep(requestContinuationCesarTurn, { ...snapshot, continuations: snapshot.continuations + 1 });
+      if (!next) return noop; // continuations NOT incremented on a refused request
+      return { next, effects: [{ type: 'send-continuation', reason: event.reason }] };
+    }
+    if (event.type === 'engine-errored') {
+      // fail is legal from every non-terminal state (incl. asking) by machine
+      // shape; attemptTurnStep is belt-and-braces against future state additions.
+      const next = attemptTurnStep(failCesarTurn, { ...snapshot, engineError: event.message });
+      if (!next) return { next: { ...snapshot, engineError: event.message }, effects: [] };
+      return { next, effects: [{ type: 'surface-error', message: event.message }] };
+    }
+    if (event.type === 'committed') {
+      const next = attemptTurnStep(completeCesarTurn, snapshot);
+      if (!next) return noop;
+      // Never-lose: an ask parked during committing is re-surfaced at the
+      // end-of-turn chokepoint instead of dying with the transition to done.
+      if (snapshot.pendingAsk !== null) {
+        return { next, effects: [{ type: 'present-ask', payload: snapshot.pendingAsk, malformed: snapshot.askMalformed }] };
+      }
+      return { next, effects: [] };
+    }
+    let step: ((s: TurnSnapshot) => TurnSnapshot) | null = null;
+    if (event.type === 'tool-loop-entered') step = enterToolLoopCesarTurn;
+    if (event.type === 'stream-resumed') step = resumeStreamCesarTurn;
+    if (event.type === 'verification-started') step = startVerificationCesarTurn;
+    if (event.type === 'commit-requested') step = commitCesarTurn;
+    if (event.type === 'aborted') step = interruptCesarTurn;
+    if (!step) return noop;
+    const next = attemptTurnStep(step, snapshot);
+    return next ? { next, effects: [] } : noop;
+  >>>
+
+service name=TurnDriver
+  doc "Sequential effect driver for the pure turn reducer. dispatch() chains the event onto a single promise tail, so events apply strictly one at a time in arrival order and `await dispatch(e)` ALWAYS means e (and its effects) have been applied — including for calls made while another event is mid-flight (agon-review: the earlier queue+pump resolved non-owning dispatches early). Effect exceptions never poison the chain: they are converted into an engine-errored event (fire-and-forget, ordered behind the current one). Follow-up events returned by effects are dispatched the same way — never awaited inline (that would deadlock on the tail). Only the tail mutates the snapshot, always between awaits, never across one — the R5 abort-mid-effect race lands behind the in-flight event by construction."
+  field name=snapshot type=TurnSnapshot
+  field name=tail type="Promise<void>"
+  field name=executeEffect type="(effect: TurnEffect) => Promise<TurnEvent | null>"
+
+  constructor params="executeEffect:(effect: TurnEffect) => Promise<TurnEvent | null>"
+    handler <<<
+      this.snapshot = initialTurnSnapshot();
+      this.tail = Promise.resolve();
+      this.executeEffect = executeEffect;
+    >>>
+
+  method name=current returns=TurnSnapshot
+    handler <<<
+      return this.snapshot;
+    >>>
+
+  method name=settled returns="Promise<void>"
+    doc "Resolves when every event dispatched SO FAR — including effect-produced follow-ups already chained — has been applied. Test/shutdown aid."
+    handler <<<
+      return this.tail;
+    >>>
+
+  method name=applyEvent params="event:TurnEvent" returns="Promise<void>" async=true
+    doc "Internal: reduce one event and run its effects. Only ever executed on the tail — do not call directly; use dispatch()."
+    handler <<<
+      const result = reduceTurn(this.snapshot, event);
+      this.snapshot = result.next;
+      for (const effect of result.effects) {
+        let followUp: TurnEvent | null = null;
+        try {
+          followUp = await this.executeEffect(effect);
+        } catch (err) {
+          // A throwing effect must not poison the tail: surface it as a real
+          // turn event (terminal states absorb it if we already failed).
+          this.dispatch({ type: 'engine-errored', message: String((err as Error)?.message ?? err) }).catch(() => undefined);
+          continue;
+        }
+        if (followUp) this.dispatch(followUp).catch(() => undefined);
+      }
+    >>>
+
+  method name=dispatch params="event:TurnEvent" returns="Promise<void>" async=true
+    handler <<<
+      const applied = this.tail.then(() => this.applyEvent(event));
+      // The tail must never reject (one bad effect would wedge every later
+      // dispatch); applyEvent already routes effect errors into events.
+      this.tail = applied.catch(() => undefined);
+      return applied;
+    >>>

@@ -624,7 +624,7 @@ Cesar learns from its own history beyond ratings: when your prompt resembles pas
 
 ## Configuration
 
-Global configuration, engine selection, model preferences, and telemetry settings are managed via your personal config file located at `~/.agon/AGON.md`. Project-specific settings can be defined in a local `AGON.md` within your repository.
+Global configuration — engine selection, model preferences, and telemetry settings — is managed with `agon config` and stored in `~/.agon/config.json`. Project instructions live in your repository's standard `AGENTS.md` (with `CLAUDE.md` as a read-only fallback). Agon-specific extras — the `fitness:` gate line and saved project memory — go in `.agon/project.md`; when both files exist, both are injected.
 
 ### Commit attribution & PR text
 

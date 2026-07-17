@@ -158,7 +158,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           // growth (so no crude size-cap wipe needed). Mark first (race-safe).
           _noBriefNudged.set(_session, true);
           if (!hasProjectBrief(_turnCwd)) {
-            dispatch({ type: 'warning', message: 'No project brief found in this repo. Create AGON.md or .agon/project.md so Cesar has project context from turn 1.' });
+            dispatch({ type: 'warning', message: 'No project brief found in this repo. Create AGENTS.md or .agon/project.md so Cesar has project context from turn 1.' });
           }
         }
       } catch { /* nudge is best-effort — never block a turn */ }

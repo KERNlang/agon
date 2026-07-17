@@ -19,27 +19,42 @@ import { stripProjectMemorySections } from '../cesar/memory.js';
 // @kern-source: context-scanner:10
 export type ContextFormat = 'plain' | 'kern';
 
+/**
+ * The agon-specific config slot: fitness: gate line + SaveMemory-managed project memory. Injected ALONGSIDE the instructions brief, never instead of it.
+ */
 // @kern-source: context-scanner:12
-export const PROJECT_BRIEF_FILES = [".agon/project.md", "AGON.md", "AGENT.md", "CLAUDE.md", "CODEX.md"];
+export const AGON_CONFIG_BRIEF = ".agon/project.md";
+
+/**
+ * The instructions slot, first match wins: the standard AGENTS.md is the source of truth, CLAUDE.md is the read-only fallback.
+ */
+// @kern-source: context-scanner:15
+export const INSTRUCTION_BRIEF_FILES = ["AGENTS.md", "CLAUDE.md"];
+
+/**
+ * All recognized brief files (config slot + instruction slot), for existence checks like hasProjectBrief.
+ */
+// @kern-source: context-scanner:18
+export const PROJECT_BRIEF_FILES = [".agon/project.md", "AGENTS.md", "CLAUDE.md"];
 
 /**
  * Upper bound for reading a brief file into memory in hasProjectBrief — a file bigger than this is clearly non-empty, so count it without a full read.
  */
-// @kern-source: context-scanner:14
+// @kern-source: context-scanner:21
 export const MAX_PROJECT_BRIEF_BYTES: number = 512 * 1024;
 
 /**
- * Larger budget for dedicated Agon briefs (.agon/project.md, AGON.md); generic agent files stay tight.
+ * Larger budget for the Agon config (.agon/project.md) and the canonical AGENTS.md brief; the CLAUDE.md fallback stays tight.
  */
-// @kern-source: context-scanner:17
+// @kern-source: context-scanner:24
 function projectBriefCap(file: string): number {
-  return (file === ".agon/project.md" || file === "AGON.md") ? 4000 : 2000;
+  return (file === ".agon/project.md" || file === "AGENTS.md") ? 4000 : 2000;
 }
 
 /**
- * True if cwd has a recognized project-brief file with non-empty content. Mirrors the cascade in scanProjectContext so the no-brief nudge agrees with what actually gets injected — an empty AGON.md/.agon/project.md is NOT a usable brief.
+ * True if cwd has a recognized project-brief file with non-empty content. Mirrors the cascade in scanProjectContext so the no-brief nudge agrees with what actually gets injected — an empty AGENTS.md/.agon/project.md is NOT a usable brief.
  */
-// @kern-source: context-scanner:20
+// @kern-source: context-scanner:27
 export function hasProjectBrief(cwd: string): boolean {
   for (const file of PROJECT_BRIEF_FILES) {
     try {
@@ -57,7 +72,7 @@ export function hasProjectBrief(cwd: string): boolean {
   return false;
 }
 
-// @kern-source: context-scanner:39
+// @kern-source: context-scanner:46
 export interface DiscoveredGate {
   command: string;
   matchers: string[];
@@ -67,38 +82,52 @@ export interface DiscoveredGate {
 /**
  * Order in which package.json scripts are considered the project's verification gate. fitness/test first (the canonical fitness command), then typecheck, build, lint as fallbacks. First present script wins as the command; ALL present scripts contribute matchers so any of them counts as 'ran the gate'.
  */
-// @kern-source: context-scanner:44
+// @kern-source: context-scanner:51
 export const GATE_SCRIPT_PRIORITY: string[] = ['fitness', 'test', 'typecheck', 'build', 'lint'];
 
 /**
  * Well-known test/check runner tokens. If a discovered package.json script body invokes one of these, the runner token is added as an extra loose matcher so Cesar running the bare tool (e.g. 'npx vitest run x') still counts as ranGate even if it didn't type the npm-script alias.
  */
-// @kern-source: context-scanner:47
+// @kern-source: context-scanner:54
 export const GATE_RUNNER_TOKENS: string[] = ['vitest', 'jest', 'mocha', 'pytest', 'tsc', 'eslint', 'playwright', 'ava', 'tap', 'cargo test', 'go test', 'pnpm test', 'yarn test', 'make test'];
 
 /**
  * Extract an explicit `fitness: <cmd>` line from brief CONTENT (case-insensitive, leading whitespace / markdown bullet/quote tolerated). Returns the trimmed command or null. Pure — the regex is shared by parseFitnessOverride and kept testable in isolation so SaveMemory's `## Decisions` etc. sections in the same file provably don't break gate discovery.
  */
-// @kern-source: context-scanner:50
+// @kern-source: context-scanner:57
 export function parseFitnessLine(content: string): string | null {
   const m = String(content ?? '').match(/^[ \t>*-]*fitness:[ \t]*(.+?)[ \t]*$/im);
   return m ? m[1].trim() || null : null;
 }
 
 /**
- * Read the FIRST recognized project-brief file and extract an explicit `fitness: <cmd>` override line (case-insensitive, leading whitespace / markdown bullet tolerated). Returns the trimmed command or null. First brief in the cascade that EXISTS is authoritative — an existing brief without a fitness: line returns null (no fall-through to a later brief), mirroring scanProjectContext's first-match-wins.
+ * Read one brief file's content, or null when it is missing, empty, oversized, unreadable, or not a regular file. Shared by parseFitnessOverride and scanProjectContext's slot injection so both agree on what counts as a usable brief.
  */
-// @kern-source: context-scanner:57
+// @kern-source: context-scanner:64
+function readBriefContent(cwd: string, file: string): string | null {
+  try {
+    const path = join(cwd, file);
+    const st = existsSync(path) ? statSync(path) : null;
+    if (!st || !st.isFile() || st.size === 0) return null;
+    if (st.size > MAX_PROJECT_BRIEF_BYTES) return null;
+    const content = readFileSync(path, "utf-8");
+    return content.trim().length > 0 ? content : null;
+  } catch { return null; }
+}
+
+/**
+ * Extract an explicit `fitness: <cmd>` override line (case-insensitive, leading whitespace / markdown bullet tolerated). The agon config slot (.agon/project.md) wins when it carries a fitness: line, but DOES fall through when it has none — SaveMemory auto-creates that file, and a memory-only config must not hide a fitness: line in AGENTS.md. Within the instructions slot the first existing brief is authoritative: an AGENTS.md without a fitness: line returns null with no fall-through to CLAUDE.md, mirroring scanProjectContext's first-match-wins for that slot.
+ */
+// @kern-source: context-scanner:77
 function parseFitnessOverride(cwd: string): string | null {
-  for (const file of PROJECT_BRIEF_FILES) {
-    try {
-      const path = join(cwd, file);
-      const st = existsSync(path) ? statSync(path) : null;
-      if (!st || !st.isFile() || st.size === 0) continue;
-      if (st.size > MAX_PROJECT_BRIEF_BYTES) return null;
-      const content = readFileSync(path, "utf-8");
-      return parseFitnessLine(content);
-    } catch { /* unreadable brief — keep scanning the cascade */ }
+  const cfg = readBriefContent(cwd, AGON_CONFIG_BRIEF);
+  if (cfg) {
+    const override = parseFitnessLine(cfg);
+    if (override) return override;
+  }
+  for (const file of INSTRUCTION_BRIEF_FILES) {
+    const content = readBriefContent(cwd, file);
+    if (content !== null) return parseFitnessLine(content);
   }
   return null;
 }
@@ -106,7 +135,7 @@ function parseFitnessOverride(cwd: string): string | null {
 /**
  * Derive loose lowercased matchers from a gate command string: the npm-script aliases it invokes (e.g. 'npm run typecheck' -> 'npm run typecheck' + 'typecheck') plus any well-known runner tokens (vitest/tsc/...) that appear in it. Dedupes; used so a Bash call loosely matching ANY part counts as having run the gate.
  */
-// @kern-source: context-scanner:73
+// @kern-source: context-scanner:92
 function gateMatchersForCommand(command: string): string[] {
   const out = new Set<string>();
   const lower = String(command ?? '').toLowerCase().trim();
@@ -128,7 +157,7 @@ function gateMatchersForCommand(command: string): string[] {
 /**
  * Discover the project's verification gate at session/turn time. Precedence: (1) an explicit `fitness: <cmd>` line in the first project-brief file wins outright; else (2) package.json scripts in GATE_SCRIPT_PRIORITY order — first present script is the command, ALL present scripts + their runner tokens become loose matchers. Returns a DiscoveredGate; an empty command + empty matchers means gateAbsent (no scripts, no override) — callers treat that as 'never nudge'. Pure read-only; swallows all IO errors toward silence.
  */
-// @kern-source: context-scanner:93
+// @kern-source: context-scanner:112
 export function discoverGate(cwd: string): DiscoveredGate {
   const override = parseFitnessOverride(cwd);
   if (override) {
@@ -157,7 +186,7 @@ export function discoverGate(cwd: string): DiscoveredGate {
 /**
  * True if a Bash invocation loosely matches the discovered gate. Two matcher classes: MULTI-WORD matchers ('npm run test', 'npm test', 'npx vitest run') match as a boundary-delimited substring anywhere — already specific, but boundary-checked so 'npm test' does NOT match 'npm testify'. BARE single-token matchers ('test','build','lint','vitest','tsc') match ONLY as a standalone shell token in COMMAND POSITION of a &&/;/|/newline-delimited segment — the leading token, or the script right after a package-runner ('npm'|'pnpm'|'yarn'|'bun'|'npx', optionally 'run'). So 'ls tests/', 'git commit -m "add tests"', 'cat latest.log', 'grep test foo' and 'npm testify' do NOT spuriously count as having run the gate, while 'npm test', 'yarn test', 'npm run test && echo ok', 'npx vitest run' do. Empty matchers -> false (no gate to run).
  */
-// @kern-source: context-scanner:120
+// @kern-source: context-scanner:139
 export function bashRanGate(bashCommand: string, matchers: string[]): boolean {
   const lower = String(bashCommand ?? '').toLowerCase();
   if (!lower.trim()) return false;
@@ -212,18 +241,18 @@ export function bashRanGate(bashCommand: string, matchers: string[]): boolean {
 /**
  * User skip-signal IN THE MESSAGE RIGHT AFTER a gate nudge — turns gateWaived sticky for the session so Cesar stops re-nudging once the user has said the gate doesn't apply. Only phrases that clearly reference skipping the gate/tests/verification qualify; deliberately NOT bare 'later'/'nevermind'/'leave it' (those caused 'we'll do docs later' to permanently kill the feature).
  */
-// @kern-source: context-scanner:173
+// @kern-source: context-scanner:192
 export const GATE_SKIP_SIGNAL_RE: RegExp = /\b(?:skip\s+(?:it|(?:the\s+)?(?:gate|tests?|build|lint|checks?|verification|verifying|testing))|don'?t\s+bother(?:\s+\w+){0,3}\s+(?:gate|tests?|build|lint|checks?|verification)|don'?t\s+run\s+(?:the\s+)?(?:gate|tests?|build|lint|checks?|verification)|no\s+need\s+to\s+(?:run|test|verify|build|lint)|not?\s+necessary\s+to\s+(?:run|test|verify)|no\s+(?:gate|tests?|verification)|without\s+(?:the\s+)?(?:gate|tests?|verification))\b/i;
 
 /**
  * True if the user's message reads as 'skip the gate / no need / later' — used to make gateWaived sticky after a nudge.
  */
-// @kern-source: context-scanner:176
+// @kern-source: context-scanner:195
 export function isGateSkipSignal(userInput: string): boolean {
   return GATE_SKIP_SIGNAL_RE.test(String(userInput ?? ''));
 }
 
-// @kern-source: context-scanner:179
+// @kern-source: context-scanner:198
 export function isKernProject(cwd: string): boolean {
   if (existsSync(join(cwd, 'kern.config.ts'))) return true;
   try {
@@ -251,7 +280,7 @@ export function isKernProject(cwd: string): boolean {
 /**
  * Read-only file tree, 2 levels deep, excluding noise directories.
  */
-// @kern-source: context-scanner:204
+// @kern-source: context-scanner:223
 function buildFileTree(cwd: string, maxDepth?: number): string {
   const IGNORE = new Set(['node_modules', '.git', 'dist', '.next', '.cache', '.turbo', '__pycache__', '.venv', 'coverage', '.kern-gaps', '.kern']);
   const depth = maxDepth ?? 2;
@@ -285,7 +314,7 @@ function buildFileTree(cwd: string, maxDepth?: number): string {
   return lines.join('\n');
 }
 
-// @kern-source: context-scanner:239
+// @kern-source: context-scanner:258
 function detectProjectType(cwd: string): string {
   const markers: string[] = [];
   try {
@@ -310,7 +339,7 @@ function detectProjectType(cwd: string): string {
   return markers.join(', ') || 'unrecognized project type';
 }
 
-// @kern-source: context-scanner:264
+// @kern-source: context-scanner:283
 export function scanProjectContext(cwd: string, extraContext?: string, format?: ContextFormat): string {
   const MAX_CHARS = 6000;
   const sections: string[] = [];
@@ -357,29 +386,32 @@ export function scanProjectContext(cwd: string, extraContext?: string, format?: 
     }
   }
 
-  // Project instructions — cascade: first match wins.
-  // Dedicated Agon briefs (.agon/project.md, AGON.md) outrank generic agent files
-  // and get a larger budget; generic compatibility files stay tight.
-  for (const file of PROJECT_BRIEF_FILES) {
-    try {
-      const path = join(cwd, file);
-      if (existsSync(path)) {
-        const raw = readFileSync(path, "utf-8");
-        // For the dedicated Agon brief, strip the SaveMemory-managed sections
-        // (## Decisions / ## Constraints / ## Conventions / ## Session Notes):
-        // those bullets are injected separately as the [PROJECT MEMORY] block, so
-        // leaving them here would double-inject ~2k duplicate tokens per turn. The
-        // brief prose + the `fitness:` line are kept. Other brief files (AGON.md,
-        // CLAUDE.md, …) are passed through untouched.
-        const content = (file === ".agon/project.md" ? stripProjectMemorySections(raw) : raw).trim();
-        if (content) {
-          const cap = projectBriefCap(file);
-          const capped = content.length > cap ? content.slice(0, cap) + `\n... (truncated at ${cap} chars)` : content;
-          sections.push(`Project instructions (${file}):\n${capped}`);
-          break; // first match wins — stop looking
-        }
-      }
-    } catch {}
+  // Project instructions — TWO slots, both injected when present:
+  //   (1) the agon config (.agon/project.md): fitness: line + SaveMemory prose;
+  //   (2) the instructions brief — AGENTS.md, else the CLAUDE.md fallback.
+  // Slot 1 must never SHADOW slot 2: SaveMemory auto-creates .agon/project.md,
+  // and a repo following the documented split (instructions in AGENTS.md, agon
+  // extras in .agon/project.md) would otherwise silently lose its instructions.
+  const injectBrief = (file: string): void => {
+    const raw = readBriefContent(cwd, file);
+    if (raw === null) return;
+    // For the agon config, strip the SaveMemory-managed sections
+    // (## Decisions / ## Constraints / ## Conventions / ## Session Notes):
+    // those bullets are injected separately as the [PROJECT MEMORY] block, so
+    // leaving them here would double-inject ~2k duplicate tokens per turn. The
+    // brief prose + the `fitness:` line are kept. Instruction briefs (AGENTS.md,
+    // CLAUDE.md) are passed through untouched.
+    const content = (file === AGON_CONFIG_BRIEF ? stripProjectMemorySections(raw) : raw).trim();
+    if (!content) return;
+    const cap = projectBriefCap(file);
+    const capped = content.length > cap ? content.slice(0, cap) + `\n... (truncated at ${cap} chars)` : content;
+    sections.push(`Project instructions (${file}):\n${capped}`);
+  };
+  injectBrief(AGON_CONFIG_BRIEF);
+  for (const file of INSTRUCTION_BRIEF_FILES) {
+    const before = sections.length;
+    injectBrief(file);
+    if (sections.length > before) break; // instructions slot: first match wins
   }
 
   if (extraContext && extraContext.trim()) {
@@ -397,7 +429,7 @@ export function scanProjectContext(cwd: string, extraContext?: string, format?: 
   return result;
 }
 
-// @kern-source: context-scanner:351
+// @kern-source: context-scanner:373
 export interface SpineCacheEntry {
   fp: string;
   ts: number;
@@ -407,25 +439,25 @@ export interface SpineCacheEntry {
 /**
  * Memo lifetime for a cwd's kern-context spine. Bounds how stale the navigational map can get from uncommitted builder edits within a single HEAD (see KERN_SPINE_CACHE).
  */
-// @kern-source: context-scanner:356
+// @kern-source: context-scanner:378
 export const KERN_SPINE_TTL_MS: number = 5 * 60 * 1000;
 
 /**
  * Per-cwd memo for buildKernContextSpine. The spine is a whole-project ts-morph pass (seconds); conquer/goal drive the builder for many turns per run, so an un-memoized rebuild every turn would dominate wall-clock. Keyed by cwd; invalidated when HEAD moves or after KERN_SPINE_TTL_MS. Deliberately HEAD-only (NOT a working-tree fingerprint): the map is navigational structure that changes slowly versus line-edits, so reusing it across uncommitted edits is the intended trade — keying on a dirty fingerprint would invalidate every turn and defeat the memo. Stores Promise<string> so parallel dispatches share one spawn.
  */
-// @kern-source: context-scanner:359
+// @kern-source: context-scanner:381
 export const KERN_SPINE_CACHE: Map<string, SpineCacheEntry> = new Map();
 
 /**
  * cwds already warned about a genuine spine failure (under AGON_DEBUG) — keeps the best-effort fallback diagnosable without spamming a warning every turn.
  */
-// @kern-source: context-scanner:362
+// @kern-source: context-scanner:384
 export const KERN_SPINE_WARNED: Set<string> = new Set();
 
 /**
  * The actual spine build behind buildKernContextSpine's memo. Spawns the released `kern context` CLI and renders the compact <kern-map>. Never throws — returns '' on any failure (best-effort).
  */
-// @kern-source: context-scanner:365
+// @kern-source: context-scanner:387
 async function computeKernContextSpine(cwd: string): Promise<string> {
   const debugFail = (msg: string): void => {
     if (process.env.AGON_DEBUG && !KERN_SPINE_WARNED.has(cwd)) {
@@ -491,7 +523,7 @@ async function computeKernContextSpine(cwd: string): Promise<string> {
 /**
  * Compact <kern-map> cross-file usage spine for a target repo, rendered from the released `kern context` CLI (TypeScript sources). Prepended to a build engine's context (forge/conquer/goal) so it starts with whole-project structure — which symbols exist and who calls/uses each (blast radius) — instead of cold-reading files. Memoized per cwd by HEAD sha + a 5-min TTL so a multi-turn conquer/goal run pays the ts-morph pass once, not per turn; concurrent dispatches share one spawn. Best-effort: returns '' for non-TS targets, when the kern CLI isn't resolvable, on timeout, or on any error, so a build run is never blocked. AGON_NO_KERN_CONTEXT=1 disables; AGON_KERN_CONTEXT_TIMEOUT_MS / AGON_KERN_CONTEXT_BUDGET tune it.
  */
-// @kern-source: context-scanner:429
+// @kern-source: context-scanner:451
 export async function buildKernContextSpine(cwd: string): Promise<string> {
   if (process.env.AGON_NO_KERN_CONTEXT) return '';
   let fp = 'nogit';

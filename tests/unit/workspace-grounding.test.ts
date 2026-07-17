@@ -160,10 +160,7 @@ describe('project brief discovery follows the session root', () => {
     const dirA = makeTempDir('brief-a');
     writeFileSync(join(dirA, 'CLAUDE.md'), 'PROJECT-A instructions');
     const dirB = makeTempDir('brief-b');
-    // NOTE: the project-brief cascade (context-scanner.kern PROJECT_BRIEF_FILES)
-    // recognizes AGENT.md (singular), not AGENTS.md — using the actual supported
-    // filename here.
-    writeFileSync(join(dirB, 'AGENT.md'), 'PROJECT-B instructions');
+    writeFileSync(join(dirB, 'AGENTS.md'), 'PROJECT-B instructions');
 
     setSessionRoot(dirA);
     const ctxA = scanProjectContext(resolveWorkingDir());

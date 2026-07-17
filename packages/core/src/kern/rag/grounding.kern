@@ -27,7 +27,7 @@ fn name=formatCitedBlocks params="result:RagQueryResult" returns=string export=t
   >>>
 
 fn name=formatCitationFootnotes params="hits:RagHit[]" returns=string export=true
-  doc "Compact one-line-per-source footnotes (`[1] AGON.md L88-104`) — the copy-paste-safe ⟨file:line⟩ form consumers append under a grounded answer."
+  doc "Compact one-line-per-source footnotes (`[1] AGENTS.md L88-104`) — the copy-paste-safe ⟨file:line⟩ form consumers append under a grounded answer."
   handler <<<
     return hits.map((hit, i) => `[${i + 1}] ${hit.source} L${hit.startLine}-${hit.endLine}`).join('\n');
   >>>

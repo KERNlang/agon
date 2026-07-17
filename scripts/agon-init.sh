@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# agon-init — Generate an AGON.md file with an interactive wizard
+# agon-init — Generate an AGENTS.md file with an interactive wizard
 # Usage: agon-init [--global|--project]
-#   --global   → ~/.agon/AGON.md (personal config, applies everywhere)
-#   --project  → ./AGON.md (project-specific, overrides global)
+#   --global   → ~/.agon/AGENTS.md (personal config, applies everywhere)
+#   --project  → ./AGENTS.md (project-specific, overrides global)
 #   (default)  → auto-detect based on current directory
 
 set -euo pipefail
@@ -22,23 +22,23 @@ dim()   { echo -e "${DIM}$*${RESET}"; }
 # ── Determine target ──
 MODE="${1:-}"
 if [[ "$MODE" == "--global" ]]; then
-  TARGET="$HOME/.agon/AGON.md"
+  TARGET="$HOME/.agon/AGENTS.md"
   KIND="global"
 elif [[ "$MODE" == "--project" ]]; then
-  TARGET="$(pwd)/AGON.md"
+  TARGET="$(pwd)/AGENTS.md"
   KIND="project"
 elif [[ -d ".git" || -f "package.json" || -f "Cargo.toml" ]]; then
-  TARGET="$(pwd)/AGON.md"
+  TARGET="$(pwd)/AGENTS.md"
   KIND="project"
 else
-  TARGET="$HOME/.agon/AGON.md"
+  TARGET="$HOME/.agon/AGENTS.md"
   KIND="global"
 fi
 
 mkdir -p "$(dirname "$TARGET")"
 
 echo ""
-echo -e "${BOLD}AGON.md Generator (${KIND})${RESET}"
+echo -e "${BOLD}AGENTS.md Generator (${KIND})${RESET}"
 echo -e "${DIM}Target: ${TARGET}${RESET}"
 echo ""
 
@@ -113,9 +113,9 @@ info "Generating ${TARGET}..."
 {
   if [[ "$KIND" == "global" ]]; then
     cat <<HEADER
-# AGON.md — Personal (global)
+# AGENTS.md — Personal (global)
 
-Applies to every workspace. Project-specific overrides go in \`PROJECT_ROOT/AGON.md\`.
+Applies to every workspace. Project-specific overrides go in \`PROJECT_ROOT/AGENTS.md\`.
 
 ## User
 
@@ -126,11 +126,11 @@ HEADER
     [[ "$NOTIFICATIONS" == true ]] && echo "- Notifications: \`done\` function in .zshrc (\`osascript\` macOS notifications)"
   else
     cat <<HEADER
-# AGON.md — $(basename "$(pwd)")
+# AGENTS.md — $(basename "$(pwd)")
 
 ${PROJECT_DESC:+${PROJECT_DESC}}
 
-Global config: \`~/.agon/AGON.md\`
+Engine/model settings: \`agon config\` (~/.agon/config.json)
 HEADER
   fi
 

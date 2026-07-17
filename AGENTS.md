@@ -1,8 +1,8 @@
-# Agon AI — Agent Instructions
+# AGENTS.md — Agon AI
 
 > Any AI can join. They compete. You ship.
 
-Agon is a multi-AI orchestration framework. Engines (Claude, Codex, Antigravity, MiniMax, Qwen, etc.) compete via forge, debate via tribunal, ideate via brainstorm. Cesar orchestrates — delegates based on confidence, Glicko-2 ratings, and task classification.
+Agon is a multi-AI orchestration framework. Engines (Claude, Codex, Antigravity, MiniMax, Qwen, etc.) compete via forge, debate via tribunal, ideate via brainstorm. Cesar orchestrates — delegates based on confidence, Glicko-2 ratings, and task classification. Global doctrine: `~/.agon/AGENTS.md`.
 
 ## Using Agon From Codex
 
@@ -41,7 +41,7 @@ agon call <workflow> "<input>" [flags]
 
 Example workflows: `forge`, `brainstorm`, `synthesis`, `tribunal`, `campfire`, `pipeline`, `review`, `goal`, and `team-*`.
 
-Excluded engines for Agon orchestration (never use unless the user explicitly asks): `qwen`, `opencode`, `ollama`, and vanilla `minimax`. When a multi-engine mode is dispatched, use the FULL usable roster — currently `claude`, `codex`, `agy`, plus the kimi (`kimi-for-coding-*`), minimax (`minimax-coding-plan-*`), and zai (`zai-coding-plan-*`) coding-plan engines. The coding-plan id suffixes drift; re-resolve via `agon engine list` before pinning. Canonical doctrine: `~/.agon/AGON.md`.
+Excluded engines for Agon orchestration (never use unless the user explicitly asks): `qwen`, `opencode`, `ollama`, and vanilla `minimax`. When a multi-engine mode is dispatched, use the FULL usable roster — currently `claude`, `codex`, `agy`, plus the kimi (`kimi-for-coding-*`), minimax (`minimax-coding-plan-*`), and zai (`zai-coding-plan-*`) coding-plan engines. The coding-plan id suffixes drift; re-resolve via `agon engine list` before pinning. Canonical doctrine: `~/.agon/AGENTS.md`.
 
 ### Agon Mode Guide
 
@@ -171,6 +171,12 @@ npm run build          # build CLI and types
 npm test               # Kern tests + vitest
 ```
 
+## Git Workflow — NEVER commit/push to main
+
+- NEVER commit or push directly to `main`/`master`. Always: feature branch → push → open PR. This applies to **Cesar/builder auto-commits too** — an autonomous build leaves work for a human merge gate; it does not land on main.
+- Stage explicit paths; never `git add -A` in the shared working tree (it sweeps other sessions' WIP).
+- Run the gate (`npm run kern:compile && npm run test`) green before committing; "done" from a builder is unverified until the gate passes.
+
 ## Architecture
 
 ```
@@ -190,6 +196,18 @@ tests/           — Unit + integration tests (vitest)
 - `models/` — types, interfaces, schemas
 - Feature domains: `cesar/`, `tools/`, `api/`, `sessions/`, `teams/`, `handlers/`, `commands/`
 
+## Scrollback Architecture
+
+Agon runs in the **terminal's main buffer** (no alt-screen). Past transcript rows commit to Ink's `<Static>` → flow into native scrollback. Mouse wheel scrolls the terminal natively; plain-drag + Cmd+C selects and copies.
+
+- `<Static items={displayRows}>` owns committed history
+- Dynamic region renders below Static (live streaming, file rail, composer, status)
+- No `<AlternateScreen>`, no `<ScrollBox>`, no mouse tracking (SGR 1000/1002/1006 never emitted)
+- `patches/ink+5.2.1.patch` removes Ink's `outputHeight >= stdout.rows → clearTerminal` branch so scrollback is preserved when output fills the viewport
+- Bracketed paste (`ESC[?2004h/l`) is the only raw escape written from app.kern
+- File rail: Ctrl+B toggles. When rail open + composer empty: ↑/↓ select, →/← expand/collapse, Esc closes
+- Ctrl+G toggles "selection mode" state — vestigial from alt-screen days; no longer changes mouse tracking since terminal always owns the mouse
+
 ## Conventions
 
 - ESM only (`"type": "module"`) — use `.js` extensions in imports
@@ -197,6 +215,13 @@ tests/           — Unit + integration tests (vitest)
 - Engine definitions: `engines/*.json`
 - Tests: `tests/unit/*.test.ts`, `tests/integration/*.test.ts`
 - Vitest for testing, tsc for type checking
+
+## Error Handling Philosophy
+
+- Silent `catch {}` is **intentional** for: feature detection (file probes), optional metadata reads (package.json, Cargo.toml), best-effort cleanup (unlinkSync temp files), JSON parse fallbacks
+- **Do log** (`console.warn`) for: session close failures, process kill failures, state persistence errors — anything where silent failure could corrupt state or leak resources
+- Pattern: `console.warn(\`[agon] context: \${e instanceof Error ? e.message : String(e)}\`)`
+- The `generated/` catch blocks are intentionally silent — do not flag as issues
 
 ## Dispatch Chain
 
@@ -221,3 +246,7 @@ All handlers support `AbortSignal` for cancellation.
 1. Create `engines/<name>.json` with the engine definition schema
 2. The engine is auto-discovered via `EngineRegistry.load()`
 3. No code changes needed — the adapter resolves commands from the JSON definition
+
+## RAG
+
+Shipped: docs corpus retrieval (`agon rag index|query|stats`), the `ProjectContext` MCP tool, opt-in `agon --ground` Cesar grounding, and the generated `docs/modes.md` page. Future direction is tracked locally (untracked `docs/`), not in this file.

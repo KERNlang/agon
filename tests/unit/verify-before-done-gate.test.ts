@@ -71,9 +71,9 @@ describe('discoverGate — fitness: override in a project brief', () => {
   beforeEach(() => { dir = tmpProject(); });
   afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
 
-  it('an AGON.md fitness: line overrides package.json scripts', () => {
+  it('an AGENTS.md fitness: line overrides package.json scripts', () => {
     writePkg(dir, { test: 'vitest run' });
-    writeFileSync(join(dir, 'AGON.md'), '# Project\n\nfitness: npm run build && npm test\n');
+    writeFileSync(join(dir, 'AGENTS.md'), '# Project\n\nfitness: npm run build && npm test\n');
     const g = discoverGate(dir);
     expect(g.source).toBe('fitness-override');
     expect(g.command).toBe('npm run build && npm test');
@@ -82,24 +82,43 @@ describe('discoverGate — fitness: override in a project brief', () => {
     expect(g.matchers.some((m) => m.includes('npm test'))).toBe(true);
   });
 
-  it('.agon/project.md outranks AGON.md (first in the cascade wins)', () => {
+  it('.agon/project.md outranks AGENTS.md (config slot wins when it has a fitness: line)', () => {
     mkdirSync(join(dir, '.agon'));
     writeFileSync(join(dir, '.agon', 'project.md'), 'fitness: pnpm verify\n');
-    writeFileSync(join(dir, 'AGON.md'), 'fitness: npm test\n');
+    writeFileSync(join(dir, 'AGENTS.md'), 'fitness: npm test\n');
     const g = discoverGate(dir);
     expect(g.command).toBe('pnpm verify');
     expect(g.matchers).toContain('verify');
   });
 
+  it('a memory-only .agon/project.md does NOT hide a fitness: line in AGENTS.md', () => {
+    // SaveMemory auto-creates .agon/project.md with no fitness: line — the
+    // config slot must fall through to the instructions slot, not swallow it.
+    mkdirSync(join(dir, '.agon'));
+    writeFileSync(join(dir, '.agon', 'project.md'), '## Decisions\n- 2026-07-17 something remembered\n');
+    writeFileSync(join(dir, 'AGENTS.md'), '# Project\n\nfitness: make gate\n');
+    const g = discoverGate(dir);
+    expect(g.source).toBe('fitness-override');
+    expect(g.command).toBe('make gate');
+  });
+
+  it('an existing AGENTS.md without a fitness: line does not fall through to CLAUDE.md', () => {
+    writeFileSync(join(dir, 'AGENTS.md'), '# Project\nNo gate line.\n');
+    writeFileSync(join(dir, 'CLAUDE.md'), 'fitness: npm run sneaky\n');
+    const g = discoverGate(dir);
+    expect(g.source).toBe('none');
+    expect(g.command).toBe('');
+  });
+
   it('tolerates a leading markdown bullet on the fitness: line', () => {
-    writeFileSync(join(dir, 'AGON.md'), '## Commands\n- fitness: make test\n');
+    writeFileSync(join(dir, 'AGENTS.md'), '## Commands\n- fitness: make test\n');
     const g = discoverGate(dir);
     expect(g.command).toBe('make test');
   });
 
   it('an existing brief WITHOUT a fitness: line does NOT override package scripts', () => {
     writePkg(dir, { test: 'vitest run' });
-    writeFileSync(join(dir, 'AGON.md'), '# Project\nNo gate line here.\n');
+    writeFileSync(join(dir, 'AGENTS.md'), '# Project\nNo gate line here.\n');
     const g = discoverGate(dir);
     expect(g.source).toBe('package-scripts');
     expect(g.command).toBe('npm run test');

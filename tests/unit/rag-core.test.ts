@@ -69,13 +69,13 @@ describe('rag — corpus', () => {
   it('collects root *.md + docs recursively, skips other extensions', () => {
     const repo = tempRepo();
     writeFileSync(join(repo, 'README.md'), '# readme');
-    writeFileSync(join(repo, 'AGON.md'), '# agon');
+    writeFileSync(join(repo, 'AGENTS.md'), '# agon');
     writeFileSync(join(repo, 'index.ts'), 'export {}');
     mkdirSync(join(repo, 'docs', 'deep'), { recursive: true });
     writeFileSync(join(repo, 'docs', 'guide.md'), '# guide');
     writeFileSync(join(repo, 'docs', 'deep', 'nested.md'), '# nested');
     const files = collectCorpusFiles(repo);
-    expect(files).toEqual(['AGON.md', 'README.md', join('docs', 'deep', 'nested.md'), join('docs', 'guide.md')]);
+    expect(files).toEqual(['AGENTS.md', 'README.md', join('docs', 'deep', 'nested.md'), join('docs', 'guide.md')]);
   });
 
   it('corpus hash is stable for same content and changes when a file changes', () => {

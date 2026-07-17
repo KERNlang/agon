@@ -6,7 +6,7 @@ import { resolve, relative } from 'node:path';
 
 import type { ToolResult, ToolContext, ToolHandler, ToolDefinition, PermissionDecision, FileState } from '../models/tool-types.js';
 
-import { evaluateFilePathRules } from './tool-permissions.js';
+import { evaluateFilePathRules, resolveRulePath } from './tool-permissions.js';
 
 import { PERMISSION_DENIED_MESSAGE } from '../signals/tool-registry.js';
 
@@ -59,16 +59,19 @@ export function createReadTool(): ToolHandler {
 
   const checkPermission = (input: Record<string, unknown>, ctx: ToolContext): PermissionDecision => {
     const filePath = resolve(ctx.cwd, input.file_path as string);
-    const rel = relative(ctx.cwd, filePath);
 
-    // Deny if path escapes cwd (starts with '..' or is absolute outside cwd)
-    if (rel.startsWith('..') || resolve(ctx.cwd, rel) !== filePath) {
-      return {
-        behavior: 'deny',
-        message: `Read denied: ${filePath} is outside the working directory`,
-        reason: 'path-outside-cwd',
-      };
-    }
+    // Outside-cwd is an ASK, not a jail (Claude parity: the user can send
+    // Cesar to a sibling repo — "check the backend"). Rules run FIRST so a
+    // deny rule still wins and a persisted allow rule (e.g. Read(~/proj:*))
+    // whitelists the other repo without re-asking.
+    // Symlink-canonical boundary (codex review): a workspace symlink that
+    // RESOLVES outside cwd must count as outside — the lexical relative()
+    // alone lets it slip past the ask. resolveRulePath realpaths the longest
+    // existing ancestor, so not-yet-created paths are canonicalized too.
+    const canonicalPath = resolveRulePath(input.file_path as string, ctx.cwd);
+    const canonicalCwd = resolveRulePath('.', ctx.cwd);
+    const relCanonical = relative(canonicalCwd, canonicalPath);
+    const outsideCwd = relCanonical.startsWith('..') || resolve(canonicalCwd, relCanonical) !== canonicalPath;
 
     // CC-parity allow/deny rules (.agon.json permissions): deny FIRST, allow
     // before the auto-allow. Gate on the API / XML execution path. F3 path-aware.
@@ -81,6 +84,14 @@ export function createReadTool(): ToolHandler {
       if (ruleDecision === 'allow' && ctx.permissionMode !== 'deny-all') {
         return { behavior: 'allow' };
       }
+    }
+
+    if (outsideCwd) {
+      return {
+        behavior: 'ask',
+        message: `Allow Read outside the workspace: ${canonicalPath}?`,
+        reason: 'path-outside-cwd',
+      };
     }
 
     return { behavior: 'allow' };

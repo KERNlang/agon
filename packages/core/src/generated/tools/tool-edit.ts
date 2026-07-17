@@ -8,7 +8,7 @@ import type { ToolResult, ToolContext, ToolHandler, ToolDefinition, PermissionDe
 
 import { takeSnapshot } from '../blocks/file-history.js';
 
-import { evaluateFilePathRules } from './tool-permissions.js';
+import { evaluateFilePathRules, resolveRulePath } from './tool-permissions.js';
 
 import { PERMISSION_DENIED_MESSAGE } from '../signals/tool-registry.js';
 
@@ -83,15 +83,17 @@ export function createEditTool(): ToolHandler {
     }
 
     const filePath = resolve(ctx.cwd, input.file_path as string);
-    const rel = relative(ctx.cwd, filePath);
 
-    if (rel.startsWith('..') || resolve(ctx.cwd, rel) !== filePath) {
-      return {
-        behavior: 'deny',
-        message: `Edit denied: ${filePath} is outside the working directory`,
-        reason: 'path-outside-cwd',
-      };
-    }
+    // Outside-cwd is an ASK (below, after rules), not a jail — Claude parity
+    // for cross-repo work; a deny rule still wins, an allow rule persists.
+    // Symlink-canonical boundary (codex review): a workspace symlink that
+    // RESOLVES outside cwd must count as outside — the lexical relative()
+    // alone lets it slip past the ask. resolveRulePath realpaths the longest
+    // existing ancestor, so not-yet-created paths are canonicalized too.
+    const canonicalPath = resolveRulePath(input.file_path as string, ctx.cwd);
+    const canonicalCwd = resolveRulePath('.', ctx.cwd);
+    const relCanonical = relative(canonicalCwd, canonicalPath);
+    const outsideCwd = relCanonical.startsWith('..') || resolve(canonicalCwd, relCanonical) !== canonicalPath;
 
     // CC-parity allow/deny rules (.agon.json permissions): deny FIRST — before
     // the agent-mode auto-allow below — and allow before any ask. This is the
@@ -107,6 +109,14 @@ export function createEditTool(): ToolHandler {
       if (ruleDecision === 'allow' && ctx.permissionMode !== 'deny-all') {
         return { behavior: 'allow' };
       }
+    }
+
+    if (outsideCwd) {
+      return {
+        behavior: 'ask',
+        message: `Allow Edit outside the workspace: ${canonicalPath}?`,
+        reason: 'path-outside-cwd',
+      };
     }
 
     // Auto-allow edits within CWD — agent mode (like Claude Code default)

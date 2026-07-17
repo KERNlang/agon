@@ -4,14 +4,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 // Source of truth: packages/core/src/kern/signals/models-registry.kern
-import { lookupCatalogContextWindow, lookupCatalogModelCost } from '../../packages/core/src/generated/signals/models-registry.js';
+import { lookupCatalogContextWindow, lookupCatalogModelCost, lookupCatalogModelAttachment, engineSupportsVision } from '../../packages/core/src/generated/signals/models-registry.js';
 import { estimateCost, estimateCostCacheAware } from '../../packages/core/src/generated/signals/token-tracker.js';
 
 const CATALOG = {
   'kimi-for-coding': {
     models: {
-      k3: { limit: { context: 1048576, output: 131072 }, cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 } },
-      k2p7: { limit: { context: 262144, output: 32768 } },
+      k3: { limit: { context: 1048576, output: 131072 }, cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }, attachment: false },
+      k2p7: { limit: { context: 262144, output: 32768 }, attachment: true },
     },
   },
   metered: {
@@ -127,5 +127,54 @@ describe('lookupCatalogModelCost — real split pricing from the catalog', () =>
 
   it('keeps plan-included engines at exactly $0 via catalog zeros', () => {
     expect(estimateCostCacheAware('kimi-for-coding-k3', 5_000_000, 500_000, 4_000_000)).toBe(0);
+  });
+});
+
+
+describe('engineSupportsVision — catalog-derived vision with declared override', () => {
+  let home: string;
+  let prevHome: string | undefined;
+
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), 'agon-catalog-'));
+    prevHome = process.env.AGON_HOME;
+    process.env.AGON_HOME = home;
+    mkdirSync(join(home, 'cache'), { recursive: true });
+    writeFileSync(join(home, 'cache', 'models-dev.json'), JSON.stringify(CATALOG));
+  });
+
+  afterEach(() => {
+    if (prevHome === undefined) delete process.env.AGON_HOME;
+    else process.env.AGON_HOME = prevHome;
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it('an API engine inherits catalog attachment: true without declaring capabilities', () => {
+    expect(lookupCatalogModelAttachment('kimi-for-coding-k2p7')).toBe(true);
+    expect(engineSupportsVision({ id: 'kimi-for-coding-k2p7' })).toBe(true);
+  });
+
+  it('a declared vision capability ALWAYS wins over a stale catalog attachment: false', () => {
+    expect(lookupCatalogModelAttachment('kimi-for-coding-k3')).toBe(false);
+    expect(engineSupportsVision({ id: 'kimi-for-coding-k3' })).toBe(false);
+    expect(engineSupportsVision({ id: 'kimi-for-coding-k3', capabilities: ['vision'] })).toBe(true);
+  });
+
+  it('engines the catalog does not know stay declaration-only', () => {
+    expect(lookupCatalogModelAttachment('claude')).toBeNull();
+    expect(engineSupportsVision({ id: 'claude' })).toBe(false);
+    expect(engineSupportsVision({ id: 'claude', capabilities: ['vision'] })).toBe(true);
+    expect(engineSupportsVision(null)).toBe(false);
+  });
+
+  it('a catalog entry without a boolean attachment resolves to null, not false-vision', () => {
+    expect(lookupCatalogModelAttachment('metered-sonnet-x')).toBeNull();
+    expect(engineSupportsVision({ id: 'metered-sonnet-x' })).toBe(false);
+  });
+
+  it('a missing cache file degrades to declaration-only', () => {
+    rmSync(join(home, 'cache', 'models-dev.json'));
+    expect(engineSupportsVision({ id: 'kimi-for-coding-k2p7' })).toBe(false);
+    expect(engineSupportsVision({ id: 'kimi-for-coding-k2p7', capabilities: ['vision'] })).toBe(true);
   });
 });

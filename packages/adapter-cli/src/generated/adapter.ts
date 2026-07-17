@@ -6,7 +6,7 @@ import { join, dirname } from 'node:path';
 
 import type { ApiAgentResult, ApiConfig, EngineAdapter, EngineDefinition, DispatchOptions, DispatchResult, AgentDispatchResult } from '@kernlang/agon-core';
 
-import { EngineRegistry, spawnWithTimeout, spawnStream, EngineNotFoundError, readOnlyDiff, apiDispatch, apiDispatchTools, apiDispatchToolsHistory, attachVisionToMessages, apiStreamDispatch, companionDispatch, runHooks, hooksFailed, runApiAgentLoop, safeAgentVisibleText, sessionContext, resolveWorkingDir } from '@kernlang/agon-core';
+import { EngineRegistry, spawnWithTimeout, spawnStream, EngineNotFoundError, readOnlyDiff, apiDispatch, apiDispatchTools, apiDispatchToolsHistory, attachVisionToMessages, apiStreamDispatch, companionDispatch, runHooks, hooksFailed, runApiAgentLoop, safeAgentVisibleText, sessionContext, resolveWorkingDir, engineSupportsVision } from '@kernlang/agon-core';
 
 import { buildCommand, checkEnvVars, resolveModel, stripStreamJson, usesStreamJson, recordDispatchHealth, shouldUseCompanionForAgent, shouldUseClaudePty, runClaudePtyDispatch, runClaudePtyStreamDispatch, resolveClaudePtyExtraArgs, computeEngineIsolation, hasEnvVar, nowMs, captureNewAgentDiff } from './adapter-helpers.js';
 
@@ -52,8 +52,8 @@ export class CliAdapter implements EngineAdapter {
         // Base thread: the reconstructed non-empty history if the caller sent one, else a single user-prompt turn synthesized for images. NOTE: synth is its OWN let — an inline `messages ?? (cond ? x : null)` mis-compiles via KERN's ?? / ternary precedence into `(messages ?? cond) ? x : null`, which would DISCARD a real thread.
         const synthMessages = (options.images && options.images.length) ? [{ role: 'user', content: options.prompt }] : null;
         const baseMessages = (options.messages && options.messages.length > 0) ? options.messages : synthMessages;
-        // VISION: splice a browser screenshot into the thread's last user turn so a vision-capable API engine (kimi/minimax) actually SEES the page. attachVisionToMessages is a no-op when the engine lacks the 'vision' capability (e.g. zai-coding silently ignores images) or there are no images, so non-vision turns are byte-identical.
-        const apiMessages = (baseMessages && options.images && options.images.length) ? attachVisionToMessages(baseMessages, options.images.map((i) => i.path), options.engine.capabilities?.includes('vision') === true) : baseMessages;
+        // VISION: splice a browser screenshot into the thread's last user turn so a vision-capable API engine (kimi/minimax) actually SEES the page. Vision = engineSupportsVision (declared capability OR models.dev catalog attachment); attachVisionToMessages is a no-op when the engine has neither (e.g. zai-coding silently ignores images) or there are no images, so non-vision turns are byte-identical.
+        const apiMessages = (baseMessages && options.images && options.images.length) ? attachVisionToMessages(baseMessages, options.images.map((i) => i.path), engineSupportsVision(options.engine)) : baseMessages;
         const result = apiMessages ? (await apiDispatchToolsHistory(apiConfig, apiMessages, options.timeout, options.signal, options.tools, sysPrompt)) : ((options.tools && options.tools.length) ? (await apiDispatchTools(apiConfig, options.prompt, options.timeout, options.signal, options.tools, sysPrompt)) : (await apiDispatch(apiConfig, options.prompt, options.timeout, options.signal, sysPrompt)));
         const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
         mkdirSync(dirname(outputPath), { recursive: true });

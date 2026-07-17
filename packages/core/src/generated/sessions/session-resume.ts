@@ -12,6 +12,8 @@ import { existsSync, statSync } from 'node:fs';
 
 import { apiStreamDispatchWithHistory, apiDispatch } from '../api/dispatch.js';
 
+import { engineSupportsVision } from '../signals/models-registry.js';
+
 import { findSafeKeepStart, buildCompactionSummary, renderCompactionText, buildSummarizationContext, buildCompactionPrompt } from './compaction.js';
 
 import type { WorkingSetInput } from './compaction.js';
@@ -61,7 +63,7 @@ import { decideFirstChunkRetry } from './first-chunk-retry-policy.js';
 /**
  * Fallback: spawn per turn with --resume/--continue. Works for any CLI engine.
  */
-// @kern-source: session-resume:31
+// @kern-source: session-resume:32
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
   let alive = false;
   let sessionId: string | null = null;
@@ -775,9 +777,10 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
         // base64 is attached at dispatch time (see withImages below), NEVER stored
         // in messageHistory — that history is persisted, re-sent every turn, and run
         // through compaction, so inlining base64 there would blow the context window.
-        // Gated by the engine's declared vision capability; a text-only engine gets a
+        // Gated by engineSupportsVision (declared capability OR models.dev catalog
+        // attachment); a text-only engine gets a
         // clear note instead of a file path it would otherwise try to Read as bytes.
-        const hasVision = !!config.engine.capabilities?.includes('vision');
+        const hasVision = engineSupportsVision(config.engine);
         let turnImageParts: Array<{type:'image',image:string,mediaType:string}> = [];
         if (opts.images?.length) {
           if (hasVision) {

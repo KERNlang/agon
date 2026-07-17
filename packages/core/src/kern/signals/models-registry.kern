@@ -314,6 +314,35 @@ fn name=lookupCatalogModelCost params="engineId:string" returns="CatalogModelCos
     } catch { return null; }
   >>>
 
+fn name=lookupCatalogModelAttachment params="engineId:string" returns="boolean | null" export=true
+  doc "Resolve a model's image-input support (models.dev `attachment`) from the cached catalog, synchronously and best-effort. Same exact-match policy as lookupCatalogModelCost: only the sanitized `${providerId}-${modelId}` === engineId pair matches, so CLI engines and hand-named engines are untouched. Returns null when the cache is absent, the engine is unknown, or the catalog entry carries no boolean — null means 'catalog does not know', never 'no vision'."
+  handler <<<
+    try {
+      const data = readCatalogData();
+      if (!data) return null;
+      const sanitize = (value: string): string => value.replace(/[^a-zA-Z0-9._-]/g, '-').toLowerCase();
+      const wantEngine = sanitize(String(engineId ?? ''));
+      if (!wantEngine) return null;
+      for (const pid of Object.keys(data)) {
+        const models = data[pid]?.models ?? {};
+        for (const mid of Object.keys(models)) {
+          if (sanitize(`${pid}-${mid}`) !== wantEngine) continue;
+          const attachment = models[mid]?.attachment;
+          return typeof attachment === 'boolean' ? attachment : null;
+        }
+      }
+      return null;
+    } catch { return null; }
+  >>>
+
+fn name=engineSupportsVision params="engine:any" returns=boolean export=true
+  doc "Single source of truth for 'can this engine see images'. A declared 'vision' capability in the engine definition ALWAYS wins — it is the user override for stale catalog rows (e.g. the kimi-for-coding/k3 coding-plan entry says attachment:false while the underlying kimi-k3 is multimodal). Otherwise API catalog engines inherit models.dev's `attachment` flag via the exact providerId-modelId match, so a freshly added catalog model gets vision without anyone hand-editing capabilities. Engines the catalog does not know (CLI binaries, hand-named engines) fall back to declaration-only — unchanged behavior."
+  handler <<<
+    if (!engine) return false;
+    if (engine.capabilities?.includes('vision')) return true;
+    return lookupCatalogModelAttachment(String(engine.id ?? '')) === true;
+  >>>
+
 fn name=modelEntryToEngineDef params="entry:ModelEntry" returns="Record<string, any>"
   doc "Persist the catalog's real contextWindow into the saved engine definition — session compaction and the ctx gauge size against api.contextWindow, and dropping it here is what sent 1M-window models to the 128k guess-table."
   handler lang="kern"

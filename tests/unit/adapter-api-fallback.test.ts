@@ -30,6 +30,13 @@ vi.mock('@kernlang/agon-core', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@kernlang/agon-core')>();
   return {
     ...actual,
+    // Mirror the real contract (declared capability OR models.dev catalog
+    // attachment) deterministically: the marker id stands in for a catalog
+    // model with attachment:true and NO declared capabilities. Explicit here
+    // because the spread `actual` resolves to the built dist, which may
+    // predate the helper.
+    engineSupportsVision: (engine: { capabilities?: string[]; id?: string } | null) =>
+      engine?.capabilities?.includes('vision') === true || engine?.id === 'catalog-attachment-engine',
     apiDispatch: async () => {
       mockState.apiCalled = true;
       return { exitCode: 0, stdout: 'api-fallback-output', stderr: '', durationMs: 1, timedOut: false };
@@ -145,6 +152,20 @@ describe('CliAdapter.dispatch — api fallback gated on key presence (Finding 1)
     const result = await adapter.dispatch(makeOptions());
     expect(mockState.apiCalled).toBe(true);
     expect(result.stdout).toBe('api-fallback-output');
+  });
+
+  it('catalog-derived vision (attachment:true, NO declared capabilities) still attaches images — codex regression', async () => {
+    process.env.FINDING1_FIXTURE_KEY = 'sk-test-123';
+    const catalogEngine = { ...ENGINE, id: 'catalog-attachment-engine' } as unknown as EngineDefinition;
+    expect((catalogEngine as { capabilities?: string[] }).capabilities).toBeUndefined();
+    await makeAdapter().dispatch({
+      ...makeOptions(),
+      engine: catalogEngine,
+      images: [{ path: '/tmp/browser-shot.png', mimeType: 'image/png' }],
+    });
+    const visionTurn = (mockState.apiHistoryMessages ?? []).find((m) => m.role === 'vision-test');
+    expect(visionTurn).toBeTruthy();
+    expect(visionTurn?.content).toEqual(['/tmp/browser-shot.png']);
   });
 
   it('keeps image-only API turns on the structured history path without requiring tools', async () => {

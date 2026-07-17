@@ -347,9 +347,42 @@ export function lookupCatalogModelCost(engineId: string): CatalogModelCost | nul
 }
 
 /**
- * Persist the catalog's real contextWindow into the saved engine definition — session compaction and the ctx gauge size against api.contextWindow, and dropping it here is what sent 1M-window models to the 128k guess-table.
+ * Resolve a model's image-input support (models.dev `attachment`) from the cached catalog, synchronously and best-effort. Same exact-match policy as lookupCatalogModelCost: only the sanitized `${providerId}-${modelId}` === engineId pair matches, so CLI engines and hand-named engines are untouched. Returns null when the cache is absent, the engine is unknown, or the catalog entry carries no boolean — null means 'catalog does not know', never 'no vision'.
  */
 // @kern-source: models-registry:317
+export function lookupCatalogModelAttachment(engineId: string): boolean | null {
+  try {
+    const data = readCatalogData();
+    if (!data) return null;
+    const sanitize = (value: string): string => value.replace(/[^a-zA-Z0-9._-]/g, '-').toLowerCase();
+    const wantEngine = sanitize(String(engineId ?? ''));
+    if (!wantEngine) return null;
+    for (const pid of Object.keys(data)) {
+      const models = data[pid]?.models ?? {};
+      for (const mid of Object.keys(models)) {
+        if (sanitize(`${pid}-${mid}`) !== wantEngine) continue;
+        const attachment = models[mid]?.attachment;
+        return typeof attachment === 'boolean' ? attachment : null;
+      }
+    }
+    return null;
+  } catch { return null; }
+}
+
+/**
+ * Single source of truth for 'can this engine see images'. A declared 'vision' capability in the engine definition ALWAYS wins — it is the user override for stale catalog rows (e.g. the kimi-for-coding/k3 coding-plan entry says attachment:false while the underlying kimi-k3 is multimodal). Otherwise API catalog engines inherit models.dev's `attachment` flag via the exact providerId-modelId match, so a freshly added catalog model gets vision without anyone hand-editing capabilities. Engines the catalog does not know (CLI binaries, hand-named engines) fall back to declaration-only — unchanged behavior.
+ */
+// @kern-source: models-registry:338
+export function engineSupportsVision(engine: any): boolean {
+  if (!engine) return false;
+  if (engine.capabilities?.includes('vision')) return true;
+  return lookupCatalogModelAttachment(String(engine.id ?? '')) === true;
+}
+
+/**
+ * Persist the catalog's real contextWindow into the saved engine definition — session compaction and the ctx gauge size against api.contextWindow, and dropping it here is what sent 1M-window models to the 128k guess-table.
+ */
+// @kern-source: models-registry:346
 export function modelEntryToEngineDef(entry: ModelEntry): Record<string, any> {
   return { schemaVersion: 3, id: `${entry.providerId}-${entry.modelId}`.replace(/[^a-zA-Z0-9._-]/g, '-').toLowerCase(), displayName: `${entry.providerName} — ${entry.modelName}`, isLocal: false, tier: 'user', timeout: 180, exec: { args: [] }, review: { args: [] }, api: { baseUrl: normalizeBaseUrl(entry.baseUrl, entry.format ?? 'openai'), apiKeyEnv: entry.apiKeyEnv, model: entry.modelId, maxTokens: Math.min((entry.contextWindow ? Math.floor((entry.contextWindow / 4)) : 4096), 16384), contextWindow: (Number.isFinite(entry.contextWindow) && (entry.contextWindow ?? 0) > 0) ? Math.floor(entry.contextWindow as number) : undefined, format: entry.format ?? 'openai' } };
 }

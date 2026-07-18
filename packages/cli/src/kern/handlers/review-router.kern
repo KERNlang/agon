@@ -1,0 +1,245 @@
+// Pure reviewer breadth router. Model/vendor quality is deliberately absent:
+// selection uses only risk evidence, the live usable roster, adapter identity,
+// primary-implementer independence, and a deterministic diff-derived rotation.
+
+import from="node:crypto" names="createHash"
+import from="@kernlang/agon-core" names="EngineDefinition" types=true
+
+const name=REVIEW_ROUTER_VERSION type=string value="review-router-v1" export=true
+
+type name=ReviewRiskLevel values="low|medium|high" export=true
+type name=ReviewRiskRequest values="auto|low|medium|high" export=true
+type name=ReviewExecutionBackend values="cli|api" export=true
+
+interface name=ReviewRoutingEngine export=true
+  field name=engine type=EngineDefinition
+  field name=backend type=ReviewExecutionBackend
+
+interface name=ReviewAdapterIdentity export=true
+  field name=key type=string
+  field name=source type="'api-origin'|'cli-binary'|'engine-id-fallback'"
+  field name=confidence type="'high'|'low'"
+
+interface name=ReviewRoutingCandidate export=true
+  field name=engineId type=string
+  field name=identityKey type=string
+  field name=identitySource type="ReviewAdapterIdentity['source']"
+  field name=identityConfidence type="ReviewAdapterIdentity['confidence']"
+  field name=backend type=ReviewExecutionBackend
+  field name=selectionKey type=string
+  field name=capabilities type="string[]"
+
+interface name=ReviewRiskDecision export=true
+  field name=requested type=ReviewRiskRequest
+  field name=inferred type=ReviewRiskLevel
+  field name=final type=ReviewRiskLevel
+  field name=triggers type="string[]"
+
+interface name=ReviewRoutingExclusion export=true
+  field name=engineId type=string
+  field name=reason type=string
+
+interface name=ReviewRoutingShortfall export=true
+  field name=required type=number
+  field name=available type=number
+  field name=reason type=string
+
+interface name=ReviewRoutingManifest export=true
+  field name=routerVersion type=string
+  field name=mode type="'automatic'"
+  field name=diffHash type=string
+  field name=risk type=ReviewRiskDecision
+  field name=primary type="{engineId:string,identityKey:string,identitySource:ReviewAdapterIdentity['source'],backend:ReviewExecutionBackend} | null"
+  field name=candidates type="ReviewRoutingCandidate[]"
+  field name=selected type="ReviewRoutingCandidate[]"
+  field name=excluded type="ReviewRoutingExclusion[]"
+  field name=shortfall type="ReviewRoutingShortfall | null"
+
+fn name=reviewRiskRank params="risk:ReviewRiskLevel" returns=number export=false
+  handler <<<
+    if (risk === 'high') return 3;
+    if (risk === 'medium') return 2;
+    return 1;
+  >>>
+
+fn name=maxReviewRisk params="left:ReviewRiskLevel,right:ReviewRiskLevel" returns=ReviewRiskLevel export=false expr={{ return reviewRiskRank(left) >= reviewRiskRank(right) ? left : right; }}
+
+fn name=reviewDiffPaths params="diff:string" returns="string[]" export=true
+  handler <<<
+    const paths: string[] = [];
+    const pattern = /^diff --git a\/(.+?) b\/(.+)$/gm;
+    for (const match of diff.matchAll(pattern)) {
+      const path = String(match[2] ?? '').trim();
+      if (path && !paths.includes(path)) paths.push(path);
+    }
+    return paths.sort((a, b) => a.localeCompare(b));
+  >>>
+
+fn name=inferReviewRisk params="diff:string,requested:ReviewRiskRequest" returns=ReviewRiskDecision export=true
+  handler <<<
+    const paths = reviewDiffPaths(diff);
+    const triggers: string[] = [];
+
+    const addTrigger = (value: string) => {
+      if (!triggers.includes(value)) triggers.push(value);
+    };
+
+    const reviewOnlyPath = (path: string) =>
+      /(^|\/)(docs?|tests?|__tests__)(\/|$)/i.test(path)
+      || /(^|\/)(README|CHANGELOG|CONTRIBUTING|SECURITY)(?:\.[^/]*)?$/i.test(path)
+      || /\.(?:md|mdx|txt|test\.[^.]+|spec\.[^.]+)$/i.test(path);
+    const sensitivePath = /(^|\/)(auth|authentication|sessions?|tokens?|oauth|oidc|passwords?|passkeys?|permissions?|rbac|acl|migrations?|schemas?|database|db|prisma|drizzle|protocols?|contracts?|deploy|deployment|releases?|publishing)(\/|[._-]|$)/i;
+    const sharedSurface = /(^|\/)(package\.json|exports?\.(?:ts|js|json)|openapi[^/]*|.*\.proto|.*\.sql|.*\.graphql)$/i;
+    const packageEntrySurface = /(^|\/)(?:src|lib)\/index\.(?:ts|js)$/i;
+    const destructiveContent = /\b(DROP\s+(?:TABLE|DATABASE)\b|TRUNCATE\s+(?:TABLE\s+)?["`\[]?[A-Za-z_]|rm\s+-rf\s+(?:\/|~\/|\.{1,2}\/)|reset\s+--hard\b)/i;
+
+    for (const path of paths) {
+      if (sensitivePath.test(path)) addTrigger(`sensitive-path:${path}`);
+      if (sharedSurface.test(path) || packageEntrySurface.test(path)) addTrigger(`shared-surface:${path}`);
+    }
+    let currentPath = '';
+    for (const line of diff.split('\n')) {
+      const header = /^diff --git a\/(.+?) b\/(.+)$/.exec(line);
+      if (header) {
+        currentPath = String(header[2] ?? '').trim();
+        continue;
+      }
+      if (line.startsWith('+') && !line.startsWith('+++') && !reviewOnlyPath(currentPath) && destructiveContent.test(line.slice(1))) {
+        addTrigger('destructive-change');
+      }
+    }
+    if (paths.length === 0) addTrigger('missing-changed-path-evidence');
+
+    const onlyDocsOrTests = paths.length > 0 && paths.every(reviewOnlyPath);
+
+    let inferred: ReviewRiskLevel = onlyDocsOrTests ? 'low' : 'medium';
+    if (triggers.length > 0) inferred = 'high';
+
+    const declared: ReviewRiskLevel = requested === 'auto' ? inferred : requested;
+    const final = maxReviewRisk(declared, inferred);
+    return { requested, inferred, final, triggers: triggers.sort((a, b) => a.localeCompare(b)) };
+  >>>
+
+fn name=reviewAdapterIdentity params="engine:EngineDefinition,backend:ReviewExecutionBackend" returns=ReviewAdapterIdentity export=true
+  handler <<<
+    if (backend === 'cli') {
+      const binary = String(engine.binary ?? '').trim().toLowerCase();
+      if (binary) return { key: `cli:${binary}`, source: 'cli-binary', confidence: 'high' };
+    }
+
+    if (backend === 'api' && engine.api?.baseUrl) {
+      try {
+        const origin = new URL(engine.api.baseUrl).origin.toLowerCase();
+        if (origin) return { key: `api:${origin}`, source: 'api-origin', confidence: 'high' };
+      } catch { /* fall through to the unverified identity */ }
+    }
+
+    return {
+      key: `engine:${String(engine.id ?? '').trim().toLowerCase()}`,
+      source: 'engine-id-fallback',
+      confidence: 'low',
+    };
+  >>>
+
+fn name=routeReviewers params="diff:string,requestedRisk:ReviewRiskRequest,primaryInput:ReviewRoutingEngine|undefined,inputs:ReviewRoutingEngine[]" returns=ReviewRoutingManifest export=true
+  handler <<<
+    const diffHash = createHash('sha256').update(diff).digest('hex');
+    const risk = inferReviewRisk(diff, requestedRisk);
+    const primaryEngine = primaryInput?.engine;
+    const primaryIdentity = primaryInput ? reviewAdapterIdentity(primaryInput.engine, primaryInput.backend) : undefined;
+    const primaryVerified = primaryIdentity?.confidence === 'high';
+    const seenIds = new Set<string>();
+
+    const candidates: ReviewRoutingCandidate[] = [];
+    for (const input of inputs) {
+      const engine = input.engine;
+      const engineId = String(engine.id ?? '').trim();
+      if (!engineId || seenIds.has(engineId)) continue;
+      seenIds.add(engineId);
+      const identity = reviewAdapterIdentity(engine, input.backend);
+      candidates.push({
+        engineId,
+        identityKey: identity.key,
+        identitySource: identity.source,
+        identityConfidence: identity.confidence,
+        backend: input.backend,
+        selectionKey: createHash('sha256')
+          .update(`${REVIEW_ROUTER_VERSION}\u0000${diffHash}\u0000${engineId}`)
+          .digest('hex'),
+        capabilities: [...(engine.capabilities ?? [])].map(String).sort((a, b) => a.localeCompare(b)),
+      });
+    }
+    candidates.sort((a, b) => a.selectionKey.localeCompare(b.selectionKey) || a.engineId.localeCompare(b.engineId));
+
+    if (!primaryVerified) {
+      if (risk.final !== 'high') risk.final = 'high';
+      const trigger = primaryEngine ? 'primary-implementer-identity-unverified' : 'primary-implementer-unknown';
+      if (!risk.triggers.includes(trigger)) risk.triggers.push(trigger);
+      risk.triggers.sort((a, b) => a.localeCompare(b));
+    }
+
+    const excluded: ReviewRoutingExclusion[] = [];
+    let selected: ReviewRoutingCandidate[];
+    let shortfall: ReviewRoutingShortfall | null = null;
+    if (risk.final === 'high') {
+      selected = candidates.slice();
+      const independentIdentityCount = primaryVerified && primaryIdentity
+        ? new Set(candidates.filter((c) => c.identityKey !== primaryIdentity.key && c.identityConfidence === 'high').map((c) => c.identityKey)).size
+        : new Set(candidates.filter((c) => c.identityConfidence === 'high').map((c) => c.identityKey)).size;
+      const required = primaryVerified ? 1 : 2;
+      if (independentIdentityCount < required) {
+        shortfall = {
+          required,
+          available: independentIdentityCount,
+          reason: primaryVerified ? 'no-independent-reviewer' : 'primary-unknown-needs-two-adapter-identities',
+        };
+      }
+    } else {
+      const independent: ReviewRoutingCandidate[] = [];
+      const usedIdentity = new Set<string>();
+      for (const candidate of candidates) {
+        if (primaryIdentity && candidate.identityKey === primaryIdentity.key) {
+          excluded.push({ engineId: candidate.engineId, reason: 'primary-implementer-identity' });
+          continue;
+        }
+        if (candidate.identityConfidence === 'low') {
+          excluded.push({ engineId: candidate.engineId, reason: 'unverified-adapter-identity' });
+          continue;
+        }
+        if (usedIdentity.has(candidate.identityKey)) {
+          excluded.push({ engineId: candidate.engineId, reason: 'duplicate-adapter-identity' });
+          continue;
+        }
+        usedIdentity.add(candidate.identityKey);
+        independent.push(candidate);
+      }
+      const required = risk.final === 'low' ? 1 : 2;
+      selected = independent.slice(0, required);
+      if (selected.length < required) {
+        shortfall = { required, available: selected.length, reason: 'insufficient-independent-adapter-identities' };
+      }
+      const selectedIds = new Set(selected.map((candidate) => candidate.engineId));
+      for (const candidate of independent) {
+        if (!selectedIds.has(candidate.engineId)) {
+          excluded.push({ engineId: candidate.engineId, reason: 'not-selected-by-deterministic-breadth' });
+        }
+      }
+    }
+
+    excluded.sort((a, b) => a.engineId.localeCompare(b.engineId) || a.reason.localeCompare(b.reason));
+    return {
+      routerVersion: REVIEW_ROUTER_VERSION,
+      mode: 'automatic',
+      diffHash,
+      risk,
+      primary: primaryInput && primaryIdentity
+        ? { engineId: primaryInput.engine.id, identityKey: primaryIdentity.key, identitySource: primaryIdentity.source, backend: primaryInput.backend }
+        : null,
+      candidates,
+      selected,
+      excluded,
+      shortfall,
+    };
+  >>>
+
+fn name=serializeReviewRoutingManifest params="manifest:ReviewRoutingManifest" returns=string export=true expr={{ return JSON.stringify(manifest, null, 2) + '\n'; }}

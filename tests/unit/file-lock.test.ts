@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync, utimesSync } from 'node:fs';
 import { tmpdir, hostname } from 'node:os';
 import { join, resolve } from 'node:path';
 import { execFile } from 'node:child_process';
@@ -94,6 +94,51 @@ describe('withFileLock', () => {
     let ran = false;
     withFileLock(lockPath, () => { ran = true; }, { timeoutMs: 500 });
     expect(ran).toBe(true);
+  });
+
+  it('waits out a fresh EMPTY lock file (in-flight O_EXCL create) instead of reclaiming it', () => {
+    // An empty file is a holder between open() and write() — liveness unknowable.
+    writeFileSync(lockPath, '', { flag: 'wx' });
+    expect(() => withFileLock(lockPath, () => {}, { timeoutMs: 80 })).toThrow(/file lock timeout/);
+    expect(existsSync(lockPath)).toBe(true); // never reclaimed a pending create
+  });
+
+  it('reclaims an EMPTY lock file older than the TTL (crash between open and write)', () => {
+    writeFileSync(lockPath, '', { flag: 'wx' });
+    const old = new Date(Date.now() - 60_000);
+    utimesSync(lockPath, old, old);
+    let ran = false;
+    withFileLock(lockPath, () => { ran = true; }, { timeoutMs: 500, staleMs: 10_000 });
+    expect(ran).toBe(true);
+  });
+
+  it('backs out of an acquisition made while a reclaim fence is up', () => {
+    // A live reclaim marker means a reclaimer may be about to blind-rename the
+    // slot: acquirers must not keep a lock taken inside that window.
+    const markerPath = `${lockPath}.reclaim`;
+    writeFileSync(markerPath, JSON.stringify({
+      pid: process.pid, uuid: 'reclaimer', hostname: hostname(), acquiredAt: new Date().toISOString(),
+    }));
+    expect(() => withFileLock(lockPath, () => {}, { timeoutMs: 120 })).toThrow(/file lock timeout/);
+    expect(existsSync(lockPath)).toBe(false); // backed out, no lock left behind
+    // Fence dropped → same acquire succeeds.
+    rmSync(markerPath);
+    let ran = false;
+    withFileLock(lockPath, () => { ran = true; }, { timeoutMs: 500 });
+    expect(ran).toBe(true);
+  });
+
+  it('clears a reclaim fence whose owner died and reclaims the stale lock behind it', () => {
+    writeFileSync(lockPath, JSON.stringify({
+      pid: 2 ** 30, uuid: 'dead-holder', hostname: hostname(), acquiredAt: new Date().toISOString(),
+    }), { flag: 'wx' });
+    writeFileSync(`${lockPath}.reclaim`, JSON.stringify({
+      pid: 2 ** 30, uuid: 'dead-reclaimer', hostname: hostname(), acquiredAt: new Date().toISOString(),
+    }));
+    let ran = false;
+    withFileLock(lockPath, () => { ran = true; }, { timeoutMs: 1000 });
+    expect(ran).toBe(true);
+    expect(existsSync(`${lockPath}.reclaim`)).toBe(false);
   });
 
   it('release is owner-checked: never unlinks a lock it no longer owns', () => {

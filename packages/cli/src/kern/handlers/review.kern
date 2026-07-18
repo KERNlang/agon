@@ -15,35 +15,38 @@ import from="./engine-filter.js" names="filterDefaultOrchestrationEngines"
 import from="../blocks/engine-helpers.js" names="stripReasoning,stripTuiChrome"
 import from="../lib/kern-host.js" names="hostNowMs"
 
+fn name=refResolvesToCommit params="ref:string, cwd:string" returns=boolean export=false
+  doc "True when `ref^{commit}` resolves to a real commit in the given repo (best-effort: a git failure means it does not)."
+  handler lang="kern"
+    try
+      do value="execFileSync('git', ['rev-parse', '--verify', `${ref}^{commit}`], { cwd, encoding: 'utf-8' })"
+      return value="true"
+      catch name=e
+        return value="false"
+
 fn name=resolveAutoReviewBase params="cwd:string, branch:string" returns="string|null" export=true
   doc "Resolve the base ref for reviewing the currently checked-out branch: the repo's default branch via origin/HEAD, falling back to origin/main, origin/master, main, master. Returns null when the only candidates ARE the branch being reviewed (i.e. you are on the default branch) or nothing resolves — callers keep the loud no-base error for that case."
-  handler <<<
-    const stripOrigin = (ref: string) => ref.replace(/^origin\//, '');
-    const resolvesToCommit = (ref: string): boolean => {
-      try {
-        execFileSync('git', ['rev-parse', '--verify', `${ref}^{commit}`], { cwd, encoding: 'utf-8' });
-        return true;
-      } catch { return false; }
-    };
-    try {
-      const sym = execFileSync('git', ['symbolic-ref', 'refs/remotes/origin/HEAD'], { cwd, encoding: 'utf-8' }).trim();
-      if (sym) {
-        const cand = sym.replace(/^refs\/remotes\//, ''); // origin/main
-        // The reviewed branch IS the repo default branch → there is no base;
-        // return null (loud error) instead of falling through to a possibly
-        // unrelated legacy main/master (agon-review blocking finding).
-        if (stripOrigin(cand) === branch || cand === branch) return null;
-        // A stale origin/HEAD pointing at a pruned ref must not short-circuit
-        // the fallback chain — verify it resolves before trusting it.
-        if (resolvesToCommit(cand)) return cand;
-      }
-    } catch { /* no origin/HEAD (local-only repo) — fall through to candidates */ }
-    for (const cand of ['origin/main', 'origin/master', 'main', 'master']) {
-      if (stripOrigin(cand) === branch || cand === branch) continue;
-      if (resolvesToCommit(cand)) return cand;
-    }
-    return null;
-  >>>
+  handler lang="kern"
+    let name=stripOrigin value="(ref: string) => ref.replace(/^origin\\//, '')"
+    try
+      let name=sym value="execFileSync('git', ['symbolic-ref', 'refs/remotes/origin/HEAD'], { cwd, encoding: 'utf-8' }).trim()"
+      if cond="sym"
+        comment raw="// origin/main"
+        let name=cand value="sym.replace(/^refs\\/remotes\\//, '')"
+        comment raw="// The reviewed branch IS the repo default branch → there is no base; return null (loud error) instead of falling through to a possibly unrelated legacy main/master (agon-review blocking finding)."
+        if cond="stripOrigin(cand) === branch || cand === branch"
+          return value="null"
+        comment raw="// A stale origin/HEAD pointing at a pruned ref must not short-circuit the fallback chain — verify it resolves before trusting it."
+        if cond="refResolvesToCommit(cand, cwd)"
+          return value="cand"
+      catch name=e
+        comment raw="// no origin/HEAD (local-only repo) — fall through to candidates"
+    each name=fallbackCand in="['origin/main', 'origin/master', 'main', 'master']"
+      if cond="stripOrigin(fallbackCand) === branch || fallbackCand === branch"
+        continue
+      if cond="refResolvesToCommit(fallbackCand, cwd)"
+        return value="fallbackCand"
+    return value="null"
 
 fn name=resolveReviewTarget params="target:string|undefined, cwd:string, base:string|undefined" returns="{diff:string, label:string}"
   handler <<<

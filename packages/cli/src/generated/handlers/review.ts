@@ -27,38 +27,53 @@ import { stripReasoning, stripTuiChrome } from '../blocks/engine-helpers.js';
 import { hostNowMs } from '../lib/kern-host.js';
 
 /**
- * Resolve the base ref for reviewing the currently checked-out branch: the repo's default branch via origin/HEAD, falling back to origin/main, origin/master, main, master. Returns null when the only candidates ARE the branch being reviewed (i.e. you are on the default branch) or nothing resolves — callers keep the loud no-base error for that case.
+ * True when `ref^{commit}` resolves to a real commit in the given repo (best-effort: a git failure means it does not).
  */
 // @kern-source: review:18
+function refResolvesToCommit(ref: string, cwd: string): boolean {
+  try {
+    execFileSync('git', ['rev-parse', '--verify', `${ref}^{commit}`], { cwd: cwd, encoding: 'utf-8' });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * Resolve the base ref for reviewing the currently checked-out branch: the repo's default branch via origin/HEAD, falling back to origin/main, origin/master, main, master. Returns null when the only candidates ARE the branch being reviewed (i.e. you are on the default branch) or nothing resolves — callers keep the loud no-base error for that case.
+ */
+// @kern-source: review:27
 export function resolveAutoReviewBase(cwd: string, branch: string): string|null {
   const stripOrigin = (ref: string) => ref.replace(/^origin\//, '');
-  const resolvesToCommit = (ref: string): boolean => {
-    try {
-      execFileSync('git', ['rev-parse', '--verify', `${ref}^{commit}`], { cwd, encoding: 'utf-8' });
-      return true;
-    } catch { return false; }
-  };
   try {
-    const sym = execFileSync('git', ['symbolic-ref', 'refs/remotes/origin/HEAD'], { cwd, encoding: 'utf-8' }).trim();
+    const sym = execFileSync('git', ['symbolic-ref', 'refs/remotes/origin/HEAD'], { cwd: cwd, encoding: 'utf-8' }).trim();
     if (sym) {
-      const cand = sym.replace(/^refs\/remotes\//, ''); // origin/main
-      // The reviewed branch IS the repo default branch → there is no base;
-      // return null (loud error) instead of falling through to a possibly
-      // unrelated legacy main/master (agon-review blocking finding).
-      if (stripOrigin(cand) === branch || cand === branch) return null;
-      // A stale origin/HEAD pointing at a pruned ref must not short-circuit
-      // the fallback chain — verify it resolves before trusting it.
-      if (resolvesToCommit(cand)) return cand;
+      // origin/main
+      const cand = sym.replace(/^refs\/remotes\//, '');
+      // The reviewed branch IS the repo default branch → there is no base; return null (loud error) instead of falling through to a possibly unrelated legacy main/master (agon-review blocking finding).
+      if (stripOrigin(cand) === branch || cand === branch) {
+        return null;
+      }
+      // A stale origin/HEAD pointing at a pruned ref must not short-circuit the fallback chain — verify it resolves before trusting it.
+      if (refResolvesToCommit(cand, cwd)) {
+        return cand;
+      }
     }
-  } catch { /* no origin/HEAD (local-only repo) — fall through to candidates */ }
-  for (const cand of ['origin/main', 'origin/master', 'main', 'master']) {
-    if (stripOrigin(cand) === branch || cand === branch) continue;
-    if (resolvesToCommit(cand)) return cand;
+  } catch (e) {
+    // no origin/HEAD (local-only repo) — fall through to candidates
+  }
+  for (const fallbackCand of ['origin/main', 'origin/master', 'main', 'master']) {
+    if (stripOrigin(fallbackCand) === branch || fallbackCand === branch) {
+      continue;
+    }
+    if (refResolvesToCommit(fallbackCand, cwd)) {
+      return fallbackCand;
+    }
   }
   return null;
 }
 
-// @kern-source: review:48
+// @kern-source: review:51
 export function resolveReviewTarget(target: string|undefined, cwd: string, base: string|undefined): {diff:string, label:string} {
   const t = (target ?? 'uncommitted').trim();
   const baseRef = (base ?? '').trim();
@@ -241,7 +256,7 @@ export function resolveReviewTarget(target: string|undefined, cwd: string, base:
 
 // ── Module: ReviewEngineSelection ──
 
-// @kern-source: review:230
+// @kern-source: review:233
 export function selectReviewEngine(requestedEngine: string|undefined, ctx: HandlerContext): string {
   const allActive = ctx.activeEngines();
 
@@ -289,7 +304,7 @@ export function selectReviewEngine(requestedEngine: string|undefined, ctx: Handl
 /**
  * Select the Review panel. With no explicit list, return EVERY active engine, preserving active-engine order; Review uses generic exec prompts, so a dedicated review block is not required. An explicit list is resolved through EngineRegistry.partitionRoster: hidden engines remain usable when named, removed engines fail loudly, unknown/unavailable engines are rejected, and aliases are deduplicated. This is the standard Review contract: the full active panel runs unless the caller explicitly narrows it with --engine/--engines.
  */
-// @kern-source: review:275
+// @kern-source: review:278
 export function selectReviewEngines(requestedEngines: string[]|undefined, ctx: HandlerContext): string[] {
   const allActive = ctx.activeEngines();
   if (requestedEngines !== undefined) {
@@ -321,7 +336,7 @@ export function selectReviewEngines(requestedEngines: string[]|undefined, ctx: H
   throw new Error('No active engines available for Review. Run `agon doctor review` to diagnose availability or pass an explicit engine.');
 }
 
-// @kern-source: review:308
+// @kern-source: review:311
 export interface ReviewCoreResult {
   response: string;
   blocking: boolean;
@@ -331,10 +346,10 @@ export interface ReviewCoreResult {
   usage?: {promptTokens:number,completionTokens:number,totalTokens:number,source:'sdk'|'cli-reported'|'estimated'};
 }
 
-// @kern-source: review:319
+// @kern-source: review:322
 export const REVIEW_SENTINEL: string = '<!--AGON_REVIEW_FINDINGS_v1-->';
 
-// @kern-source: review:321
+// @kern-source: review:324
 export interface ReviewSeverityCounts {
   blocking: number;
   important: number;
@@ -345,7 +360,7 @@ export interface ReviewSeverityCounts {
 /**
  * Sentinel-anchored, fail-closed extraction of the findings array — the single chokepoint shared by parseReviewBlocking (the blocking gate) and summarizeReviewFindings (severity counts). Returns the parsed array (possibly empty []) or null when no parseable block follows the LAST sentinel. Anti-injection: only text after the LAST sentinel is considered, so attacker brackets quoted earlier in the diff are ignored. Tolerant of almost-JSON (trailing commas, line and block JS-style comments) and fenced json code blocks.
  */
-// @kern-source: review:327
+// @kern-source: review:330
 export function extractReviewFindings(response: string): Array<{severity?:string, blocking?:boolean}> | null {
   if (!response || response.trim().length === 0) return null;
 
@@ -445,7 +460,7 @@ export function extractReviewFindings(response: string): Array<{severity?:string
 /**
  * Sentinel-anchored, fail-closed parser. The engine MUST end its response with a unique sentinel followed by a JSON array of findings. Without a parseable block the response is treated as blocking + parseFailed, so the user must explicitly approve. This blocks the prompt-injection attack where an attacker echoes `[{"blocking":false}]` inside diff content — only the engine's real structured output after the LAST sentinel is considered. Thin wrapper over extractReviewFindings.
  */
-// @kern-source: review:425
+// @kern-source: review:428
 export function parseReviewBlocking(response: string): {blocking:boolean, parseFailed:boolean} {
   const findings = extractReviewFindings(response);
   if (findings === null) return { blocking: true, parseFailed: true };
@@ -456,7 +471,7 @@ export function parseReviewBlocking(response: string): {blocking:boolean, parseF
 /**
  * Count findings by severity from the structured block, for human summaries like 'claude: ok, 1 important, 3 nits'. Returns all-zero when there is no parseable findings block (the caller renders that as unstructured/empty). A finding counts as blocking if blocking===true or severity==='blocking'; otherwise by its severity, with anything not 'important' falling to nit.
  */
-// @kern-source: review:434
+// @kern-source: review:437
 export function summarizeReviewFindings(response: string): ReviewSeverityCounts {
   const findings = extractReviewFindings(response);
   if (!findings) return { blocking: 0, important: 0, nit: 0, total: 0 };
@@ -475,7 +490,7 @@ export function summarizeReviewFindings(response: string): ReviewSeverityCounts 
 /**
  * Resolve the per-dispatch Review output budget. Positive reviewMaxTokens is an explicit user override. Zero/missing means automatic: keep an 8192 floor for CLI engines and honor a larger native api.maxTokens for reasoning-heavy API engines.
  */
-// @kern-source: review:451
+// @kern-source: review:454
 export function resolveReviewMaxTokens(config: any, engine: any): number {
   const configured = Number(config?.reviewMaxTokens);
   if (Number.isFinite(configured) && configured > 0) return Math.floor(configured);
@@ -486,7 +501,7 @@ export function resolveReviewMaxTokens(config: any, engine: any): number {
 /**
  * Return the whole seconds still available inside a Review engine's original wall-clock budget, clamped to that original budget so a backward clock adjustment cannot extend the advertised timeout.
  */
-// @kern-source: review:460
+// @kern-source: review:463
 export function remainingReviewRetrySeconds(startedAtMs: number, timeoutSec: number, nowMs?: number): number {
   const now = nowMs ?? Date.now();
   const limit = Math.max(0, Math.floor(timeoutSec));
@@ -496,7 +511,7 @@ export function remainingReviewRetrySeconds(startedAtMs: number, timeoutSec: num
 /**
  * Retry one hard dispatch error only when at least five seconds remain in the original wall-clock budget. Timeouts are final: the outer attempt already consumed the budget, and reserving retry time would prematurely abort legitimately slow reviewers.
  */
-// @kern-source: review:468
+// @kern-source: review:471
 export function shouldRetryReviewAttempt(kind: 'ok'|'timeout'|'error', remainingSec: number): boolean {
   return kind === 'error' && remainingSec >= 5;
 }
@@ -504,7 +519,7 @@ export function shouldRetryReviewAttempt(kind: 'ok'|'timeout'|'error', remaining
 /**
  * Repair pass (B): re-ask the engine for ONLY a bare JSON array of the findings it already wrote in prose. Asking for a bare array (no sentinel, no prose, no fence) is the format LLMs comply with most reliably — far better than 'an HTML-comment marker followed by JSON', which engines routinely truncate to just the marker. The caller (runReviewCore) prepends the sentinel itself before parsing, so the anti-injection anchor is preserved. Best-effort: if this still doesn't parse, the fail-closed/unstructured result stands. cwdOverride must match the main dispatch's cwd so the repair engine runs in the SAME repo (goal worktree / process.cwd()), never the active workspace.
  */
-// @kern-source: review:474
+// @kern-source: review:477
 export async function runReviewRepair(priorReview: string, engineId: string, ctx: HandlerContext, signal?: AbortSignal, cwdOverride?: string): Promise<string> {
   const config = ctx.config;
   const cwd = cwdOverride ?? resolveWorkingDir();
@@ -554,7 +569,7 @@ export async function runReviewRepair(priorReview: string, engineId: string, ctx
 /**
  * Repo grounding: read the CURRENT full content of each source file the diff touches and format it as a context block. A diff shows only the changed hunks, so reviewers raise false alarms that reading the whole file would kill instantly ('X is unhandled' when the wrapper handles it three lines down; 'unimported' when it's imported at the top). Bounded hard (per-file + total caps) to protect prompt size / TTFT, and skips generated/dist/min files (derived noise that would blow the budget). Best-effort: deleted/binary/unreadable files are skipped — the diff still covers them.
  */
-// @kern-source: review:512
+// @kern-source: review:515
 export function gatherReviewFileContext(diff: string, cwd: string): string {
   const PER_FILE_MAX = 20_000;
   const TOTAL_MAX = 60_000;
@@ -598,14 +613,14 @@ export function gatherReviewFileContext(diff: string, cwd: string): string {
   return sections.length ? sections.join('\n\n') : '';
 }
 
-// @kern-source: review:563
+// @kern-source: review:566
 export interface ReviewRole {
   id: string;
   title: string;
   focus: string;
 }
 
-// @kern-source: review:568
+// @kern-source: review:571
 export const REVIEW_ROLES: readonly ReviewRole[] = [
     { id: 'security', title: 'Security', focus: 'injection, authN/authZ, secret or credential exposure, unsafe deserialization, path traversal, SSRF, XSS, insecure crypto, data exfiltration, and trusting attacker-controlled input. Trace untrusted data from entry to sink.' },
     { id: 'correctness', title: 'Correctness', focus: 'logic errors, broken conditionals, off-by-one and boundary mistakes, null/undefined handling, error and exception paths, async/race conditions, and edge cases the change does not cover. This is the deepest lens — verify each suspected bug against the real code before flagging.' },
@@ -614,13 +629,13 @@ export const REVIEW_ROLES: readonly ReviewRole[] = [
     { id: 'overall', title: 'Overall (generalist backstop)', focus: 'the whole change with no narrowed lens — bugs, security, performance, quality, and missing edge cases. You are the safety net: catch whatever the focused roles miss.' },
   ] as const;
 
-// @kern-source: review:576
+// @kern-source: review:579
 export const REVIEW_ROLE_OUTSIDE_TAIL: string = "Even though that is your focus, if you notice a BLOCKING issue OUTSIDE your role, flag it too — never let a real blocker fall through the cracks.";
 
 /**
  * Look up a role by id (case-insensitive). Returns undefined for none/unknown so callers can fall back to the generic prompt.
  */
-// @kern-source: review:578
+// @kern-source: review:581
 export function resolveReviewRole(roleId: string|undefined): ReviewRole|undefined {
   if (!roleId) {
     return undefined;
@@ -637,7 +652,7 @@ export function resolveReviewRole(roleId: string|undefined): ReviewRole|undefine
 /**
  * Map each engine to a role. With an explicit roleIds list, zip engine i → roleIds[i] (extra engines cycle from the start; unknown ids → overall). Without one, seat the 'overall' generalist backstop FIRST whenever there are 2+ engines (a small panel must never lose the catch-all), then deal the specialist lenses (security, correctness, dryness, performance) in order; any engine past the roster also lands on 'overall'. A single engine gets the deepest lens (security) — it IS the whole panel.
  */
-// @kern-source: review:589
+// @kern-source: review:592
 export function assignReviewRoles(engineIds: string[], roleIds: string[]|undefined): Map<string, ReviewRole> {
   const out: Map<string, ReviewRole> = new Map();
   const fallback = resolveReviewRole('overall') ?? REVIEW_ROLES[REVIEW_ROLES.length - 1];
@@ -666,7 +681,7 @@ export function assignReviewRoles(engineIds: string[], roleIds: string[]|undefin
 /**
  * Role-scoped replacement for the INSTRUCTIONS lead. Keeps the same word/severity/confidence discipline and points at the SAME mandatory machine block the generic prompt uses (the caller appends the shared block verbatim after this).
  */
-// @kern-source: review:613
+// @kern-source: review:616
 export function buildRoleInstructions(role: ReviewRole): string {
   return `You are the ${role.title} reviewer on a multi-role review panel. Focus your review on: ${role.focus}\n\n${REVIEW_ROLE_OUTSIDE_TAIL}\n\nReport every verified blocking finding, then at most the 8 highest-priority, best-verified non-blocking findings so the mandatory machine block cannot be crowded out. Keep the prose under 1200 words. For each issue give file, line range, severity (blocking|important|nit), a 0.00-1.00 confidence, and a suggested fix.\n\nVERIFY before you flag: confirm each issue against the CURRENT FILE CONTENTS above — is the error really unhandled, the symbol really unused, the import really missing? Only mark a finding 'blocking' if you confirmed it in the code. Set confidence honestly: 1.0 means you verified it in the code; lower it the more you are inferring or guessing. If you could not verify it from the provided context, lower the confidence and downgrade the severity rather than guessing — unverified high-confidence blocking findings are the #1 source of review noise.`;
 }
@@ -674,7 +689,7 @@ export function buildRoleInstructions(role: ReviewRole): string {
 /**
  * Core review flow with no ctx side effects. Used by both handleReview (with streaming dispatch) and the plan executor's review step (silent). Does NOT touch ctx.setActiveAbort, ctx.lastReviewResult, ctx.chatSession, or tracker. signal is optional: callers that don't have an abort controller can pass undefined. cwdOverride pins the working directory the review engine runs in AND the repo file-context is gathered from — goal passes the per-task worktree so review engines never operate in (and write to) the parent repo; defaults to resolveWorkingDir() for the interactive/CLI review paths. roleId is optional: when it resolves to a known role the engine reviews through that focused lens (a ## ROLE block + role-scoped INSTRUCTIONS lead) over the SAME diff, grounding, and machine-block contract; when undefined/unknown the generic prompt is used unchanged.
  */
-// @kern-source: review:618
+// @kern-source: review:621
 export async function runReviewCore(diff: string, label: string, engineId: string, ctx: HandlerContext, signal?: AbortSignal, onProgress?: (chunk:string)=>void, cwdOverride?: string, roleId?: string): Promise<ReviewCoreResult> {
   const cwd = cwdOverride ?? resolveWorkingDir();
   const config = ctx.config;
@@ -790,7 +805,7 @@ export async function runReviewCore(diff: string, label: string, engineId: strin
 /**
  * Strip the trailing machine-readable findings block (sentinel + JSON) from a review so the Ctrl+R results pager shows clean prose — the consensus summary already encodes those findings. Cesar's copy (ctx.lastReviewResult.reviewOutput) keeps the full response, so 'fix it' still has the structured file/line/minimalFix data. No-op when there's no sentinel.
  */
-// @kern-source: review:711
+// @kern-source: review:714
 export function stripMachineBlock(response: string): string {
   const idx = response.lastIndexOf(REVIEW_SENTINEL);
   if (idx < 0) return response;
@@ -800,7 +815,7 @@ export function stripMachineBlock(response: string): string {
 /**
  * Build a consensus EngineOutcome from one engine's review. status!=='ok' yields an empty-findings failure lane (never a phantom blocker), carrying any diagnostic note (error message / timeout detail) through to ConsensusReport.engineFailures; 'ok' parses the engine's structured findings into RawFindings. Shared by the single- and multi-engine paths so the mapping lives in one place.
  */
-// @kern-source: review:719
+// @kern-source: review:722
 export function reviewOutcome(engineId: string, response: string, status: string, note?: string): any {
   if (status !== 'ok') return { engine: engineId, status, findings: [], note };
   // Guard against a model emitting a non-object element (e.g. `[null]` or a
@@ -819,7 +834,7 @@ export function reviewOutcome(engineId: string, response: string, status: string
 /**
  * Render a consensus report into the compact, human-facing summary lines (tiered: verified / needs-check / speculative / nits / failed). The single source of the summary text shown inline AND stored as ReviewResultData.consensusSummary, so the transcript and the Ctrl+R pager always agree. Each finding row carries compact engine badges ([codex][kimi]) instead of ×N, and disputed clusters get a `⚠ DISPUTED` prefix + indented per-engine stance lines — both via the shared formatConsensusRow so the REPL and the CLI render identically.
  */
-// @kern-source: review:736
+// @kern-source: review:739
 export function buildReviewConsensusLines(consensus: any): string[] {
   const lines: string[] = [`Consensus — ${consensus.summary}`];
   if (consensus.verified.length) { lines.push('VERIFIED (actionable):'); for (const f of consensus.verified) for (const l of formatConsensusRow(f)) lines.push(l); }
@@ -833,7 +848,7 @@ export function buildReviewConsensusLines(consensus: any): string[] {
 /**
  * One-line severity tail for a single engine's review: '2 important, 3 nits' (zero categories omitted; 'no findings' when empty).
  */
-// @kern-source: review:748
+// @kern-source: review:751
 export function formatReviewCounts(c: ReviewSeverityCounts|undefined): string {
   if (!c || c.total === 0) return 'no findings';
   const parts: string[] = [];
@@ -843,7 +858,7 @@ export function formatReviewCounts(c: ReviewSeverityCounts|undefined): string {
   return parts.join(', ');
 }
 
-// @kern-source: review:759
+// @kern-source: review:762
 export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, target?: string, requestedEngine?: string): Promise<void> {
   const abort = new AbortController();
   try {
@@ -972,7 +987,7 @@ export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, targ
 /**
  * Make the review's actual target unmistakable BEFORE engines run. Prints the repo name/path/branch being reviewed, and — critically — warns when the directory you're standing in is a DIFFERENT git repo than the one being reviewed. resolveWorkingDir() is session-scoped (set at launch to process.cwd(), or moved by an explicit /workspace switch mid-session) — it no longer silently inherits a stale workspace pinned by a PRIOR session/directory, but an explicit mid-session /workspace switch can still leave your shell's cwd pointed somewhere else. That divergence used to be silent (a launch in repo X kept reviewing whatever repo a previous session had pinned, producing a 6-engine review of agon's own repo instead of the user's code); this turns any remaining divergence into a loud, actionable signal instead of a silent wrong-repo pass.
  */
-// @kern-source: review:884
+// @kern-source: review:887
 function announceReviewTarget(dispatch: Dispatch, cwd: string, label: string): void {
   let reviewRoot = cwd;
   try { reviewRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf-8' }).trim() || cwd; } catch { /* not a git repo — keep cwd */ }
@@ -991,7 +1006,7 @@ function announceReviewTarget(dispatch: Dispatch, cwd: string, label: string): v
 /**
  * Run Review with the full active engine panel by default, or an explicitly requested subset. With 2+ engines they run in PARALLEL — each gets its own hard timeout, so a slow-but-excellent reviewer (codex) never blocks the others and a hung engine can't wedge the whole review. Each engine's block is dispatched as it finishes; findings are combined into ctx.lastReviewResult for Cesar follow-up/fix planning. A one-engine eligible/explicit panel delegates to the streaming handleReview path.
  */
-// @kern-source: review:901
+// @kern-source: review:904
 export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, target?: string, requestedEngines?: string[]): Promise<void> {
   const abort = new AbortController();
   try {
@@ -1147,7 +1162,7 @@ export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, 
 /**
  * Run /review role — the same parallel multi-engine review as handleReviewMany, but each engine reviews through a focused ROLE lens (security / correctness / dryness / performance) plus an 'overall' generalist backstop, so coverage is never partitioned away. Roles come from assignReviewRoles: an explicit roleIds list zips engine i → roleIds[i]; otherwise the fixed roster is assigned in order and extra engines fall back to 'overall'. The diff, grounding, sentinel JSON machine block, consensus merge, and results pager are identical to a normal review — roles only narrow each engine's ATTENTION via an extra ## ROLE block + role-scoped INSTRUCTIONS lead.
  */
-// @kern-source: review:1054
+// @kern-source: review:1057
 export async function handleReviewRoles(dispatch: Dispatch, ctx: HandlerContext, target?: string, requestedEngines?: string[], roleIds?: string[]): Promise<void> {
   const abort = new AbortController();
   try {

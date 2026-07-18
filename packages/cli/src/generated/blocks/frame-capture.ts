@@ -30,7 +30,7 @@ export function stripTerminalControl(value: string): string {
 /**
  * Create a fake TTY stdout/stderr/stdin trio that records each stdout write as a separate chunk.
  */
-// @kern-source: frame-capture:34
+// @kern-source: frame-capture:40
 export function createPseudoTty(width: number, height: number): PseudoTty {
   const stdout = new PassThrough() as PassThrough & { isTTY: boolean; columns: number; rows: number };
   stdout.isTTY = true;
@@ -69,7 +69,7 @@ export function createPseudoTty(width: number, height: number): PseudoTty {
 /**
  * Render an Ink component in an isolated pseudo-TTY at the given size and return the final ANSI-stripped frame. Unmounts before returning; leaves no open handles.
  */
-// @kern-source: frame-capture:71
+// @kern-source: frame-capture:77
 export async function captureSurfaceFrame(component: any, props: Record<string,unknown>, cols: number, rows: number): Promise<string> {
   const tty = createPseudoTty(cols, rows);
   const app = render(React.createElement(component, props as any), {

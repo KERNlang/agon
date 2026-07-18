@@ -117,23 +117,27 @@ fn name=delegateLedgerPath returns=string export=true
 
 fn name=deriveOutcomeCounts params="outcomes:AgentToolOutcome[]" returns=DelegateOutcomeCounts export=true
   doc "Tally NATIVE outcomes by status. Heuristic-provenance outcomes (narrated stalls) are counted in narratedStalls and EXCLUDED from total/ok/error/timeout/unknown, so a stall never inflates the tool-call count. Any unrecognized native status counts as 'unknown'. Non-array input ⇒ all-zero counts (never throws)."
-  handler <<<
-    const counts: DelegateOutcomeCounts = { total: 0, ok: 0, error: 0, timeout: 0, unknown: 0, narratedStalls: 0, dispatchFailed: 0 };
-    if (!Array.isArray(outcomes)) return counts;
-    for (const o of outcomes) {
-      // Heuristic (inferred) signals are NOT tool executions — tally them apart
-      // so a narrated stall can never be counted as an ok/error/unknown call.
-      if (o?.provenance === 'heuristic') { counts.narratedStalls++; continue; }
-      counts.total++;
-      switch (o?.status) {
-        case 'ok': counts.ok++; break;
-        case 'error': counts.error++; break;
-        case 'timeout': counts.timeout++; break;
-        default: counts.unknown++; break;
-      }
-    }
-    return counts;
-  >>>
+  handler lang="kern"
+    let name=counts type=DelegateOutcomeCounts value="{ total: 0, ok: 0, error: 0, timeout: 0, unknown: 0, narratedStalls: 0, dispatchFailed: 0 }"
+    if cond="!Array.isArray(outcomes)"
+      return value="counts"
+    each name=o in="outcomes"
+      comment raw="// Heuristic (inferred) signals are NOT tool executions — tally them apart so a narrated stall can never be counted as an ok/error/unknown call."
+      if cond="o?.provenance === 'heuristic'"
+        assign target="counts.narratedStalls" op="+=" value="1"
+        continue
+      assign target="counts.total" op="+=" value="1"
+      if cond="o?.status === 'ok'"
+        assign target="counts.ok" op="+=" value="1"
+      else
+        if cond="o?.status === 'error'"
+          assign target="counts.error" op="+=" value="1"
+        else
+          if cond="o?.status === 'timeout'"
+            assign target="counts.timeout" op="+=" value="1"
+          else
+            assign target="counts.unknown" op="+=" value="1"
+    return value="counts"
 
 fn name=newDispatchId returns=string export=false
   handler <<<
@@ -144,14 +148,12 @@ fn name=newDispatchId returns=string export=false
 
 fn name=recordDelegateDispatch params="record:DelegateLedgerRecord" returns=void export=true
   doc "Append one delegated-dispatch record to the ledger as a single JSONL line. Best-effort: any I/O failure is swallowed so the ledger never throws into a dispatch."
-  handler <<<
-    try {
-      mkdirSync(agonPath('runs'), { recursive: true });
-      appendFileSync(delegateLedgerPath(), JSON.stringify(record) + '\n');
-    } catch {
-      /* ledger is best-effort — swallow all I/O failures */
-    }
-  >>>
+  handler lang="kern"
+    try
+      do value="mkdirSync(agonPath('runs'), { recursive: true })"
+      do value="appendFileSync(delegateLedgerPath(), JSON.stringify(record) + '\n')"
+      catch name=e
+        comment raw="// ledger is best-effort — swallow all I/O failures"
 
 fn name=recordApiLoopDispatch params="engineId:string, mode:string, outcomes:AgentToolOutcome[], dispatchId?:string" returns=DelegateLedgerRecord export=true
   doc "Record one API agent-loop dispatch (native per-call visibility). Returns the record so callers can build a digest line from record.counts. Heuristic outcomes in `outcomes` (narrated stalls) are tallied into counts.narratedStalls, never into the tool-call total."
@@ -192,50 +194,45 @@ fn name=recordTextTransportDispatch params="engineId:string, mode:string, backen
 
 fn name=readDelegateLedgerRecords params="limit?:number" returns="DelegateLedgerRecord[]" export=true
   doc "Read the delegate ledger. Missing file ⇒ []; a positive limit reads only the tail window; corrupt lines (and non-object / array JSON) are skipped; never throws."
-  handler <<<
-    const path = delegateLedgerPath();
-    try {
-      if (!existsSync(path)) return [];
-      let raw = '';
-      if (typeof limit === 'number' && limit > 0) {
-        const stat = statSync(path);
-        const start = Math.max(0, stat.size - DELEGATE_LEDGER_TAIL_BYTES);
-        const length = stat.size - start;
-        if (length <= 0) return [];
-        const fd = openSync(path, 'r');
-        try {
-          const buffer = Buffer.alloc(length);
-          readSync(fd, buffer, 0, length, start);
-          raw = buffer.toString('utf-8');
-        } finally {
-          closeSync(fd);
-        }
-        // Dropped the first (possibly partial) line when we started mid-file.
-        if (start > 0) {
-          const nl = raw.indexOf('\n');
-          raw = nl >= 0 ? raw.slice(nl + 1) : '';
-        }
-      } else {
-        raw = readFileSync(path, 'utf-8');
-      }
-      const lines = raw.split('\n').map((l: string) => l.trim()).filter(Boolean);
-      const selected = typeof limit === 'number' && limit > 0 ? lines.slice(-limit) : lines;
-      const out: DelegateLedgerRecord[] = [];
-      for (const line of selected) {
-        try {
-          const rec = JSON.parse(line) as DelegateLedgerRecord;
-          // Only plain objects are records. A valid-JSON array / scalar is not a
-          // record and is skipped — the summarizer never sees a non-object.
-          if (rec && typeof rec === 'object' && !Array.isArray(rec)) out.push(rec);
-        } catch {
-          /* skip a corrupt/partial line — never poison the whole read */
-        }
-      }
-      return out;
-    } catch {
-      return [];
-    }
-  >>>
+  handler lang="kern"
+    let name=path value="delegateLedgerPath()"
+    try
+      if cond="!existsSync(path)"
+        return value="[]"
+      let name=raw kind=let value="''"
+      if cond="typeof limit === 'number' && limit > 0"
+        let name=stat value="statSync(path)"
+        let name=start value="Math.max(0, stat.size - DELEGATE_LEDGER_TAIL_BYTES)"
+        let name=length value="stat.size - start"
+        if cond="length <= 0"
+          return value="[]"
+        let name=fd value="openSync(path, 'r')"
+        try
+          let name=buffer value="Buffer.alloc(length)"
+          do value="readSync(fd, buffer, 0, length, start)"
+          assign target="raw" value="buffer.toString('utf-8')"
+          finally
+            do value="closeSync(fd)"
+        comment raw="// Dropped the first (possibly partial) line when we started mid-file."
+        if cond="start > 0"
+          let name=nl value="raw.indexOf('\\n')"
+          assign target="raw" value="nl >= 0 ? raw.slice(nl + 1) : ''"
+      else
+        assign target="raw" value="readFileSync(path, 'utf-8')"
+      let name=lines value="raw.split('\\n').map((l: string) => l.trim()).filter(Boolean)"
+      let name=selected value="typeof limit === 'number' && limit > 0 ? lines.slice(-limit) : lines"
+      let name=out type="DelegateLedgerRecord[]" value="[]"
+      each name=line in="selected"
+        try
+          let name=rec value="JSON.parse(line) as DelegateLedgerRecord"
+          comment raw="// Only plain objects are records. A valid-JSON array / scalar is not a record and is skipped — the summarizer never sees a non-object."
+          if cond="rec && typeof rec === 'object' && !Array.isArray(rec)"
+            do value="out.push(rec)"
+          catch name=e
+            comment raw="// skip a corrupt/partial line — never poison the whole read"
+      return value="out"
+      catch name=eo
+        return value="[]"
 
 // ── Summarizer (STRICTLY per-backend, per-engine — never blends signals) ──
 
@@ -287,22 +284,22 @@ fn name=summarizeDelegateReliability params="engineId?:string, limit?:number" re
 
 fn name=summarizeDelegateReliabilityByEngine params="engineId?:string, limit?:number" returns="DelegateReliabilitySummary[]" export=true
   doc "Per-engine reliability, grouped by engineId THEN per backend. Engines are NEVER merged with each other — one engine's api-loop stats stay separate from another's, preserving the per-engine reliability signal. With an engineId, returns just that engine (or [] if unseen); without, one summary per distinct engine sorted by dispatch volume. Missing ledger ⇒ []. Never throws."
-  handler <<<
-    const target = String(engineId ?? '').trim();
-    const records = readDelegateLedgerRecords(limit ?? 500);
-    const byEngine = new Map<string, DelegateLedgerRecord[]>();
-    for (const r of records) {
-      const id = typeof r?.engineId === 'string' ? r.engineId : 'unknown';
-      if (target && id !== target) continue;
-      const list = byEngine.get(id) ?? [];
-      list.push(r);
-      byEngine.set(id, list);
-    }
-    const summaries: DelegateReliabilitySummary[] = [];
-    for (const [id, recs] of Array.from(byEngine.entries())) summaries.push(summarizeRecords(recs, id));
-    summaries.sort((a, b) => b.dispatches - a.dispatches || a.engineId.localeCompare(b.engineId));
-    return summaries;
-  >>>
+  handler lang="kern"
+    let name=target value="String(engineId ?? '').trim()"
+    let name=records value="readDelegateLedgerRecords(limit ?? 500)"
+    let name=byEngine type="Map<string, DelegateLedgerRecord[]>" value="new Map()"
+    each name=r in="records"
+      let name=id value="typeof r?.engineId === 'string' ? r.engineId : 'unknown'"
+      if cond="target && id !== target"
+        continue
+      let name=list value="byEngine.get(id) ?? []"
+      do value="list.push(r)"
+      do value="byEngine.set(id, list)"
+    let name=summaries type="DelegateReliabilitySummary[]" value="[]"
+    each name=entry in="Array.from(byEngine.entries())"
+      do value="summaries.push(summarizeRecords(entry[1], entry[0]))"
+    do value="summaries.sort((a, b) => b.dispatches - a.dispatches || a.engineId.localeCompare(b.engineId))"
+    return value="summaries"
 
 // ── Formatters (digest lines + EngineReliability section) ──────────────
 

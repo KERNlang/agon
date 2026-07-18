@@ -102,23 +102,30 @@ export function delegateLedgerPath(): string {
 // @kern-source: delegate-ledger:118
 export function deriveOutcomeCounts(outcomes: AgentToolOutcome[]): DelegateOutcomeCounts {
   const counts: DelegateOutcomeCounts = { total: 0, ok: 0, error: 0, timeout: 0, unknown: 0, narratedStalls: 0, dispatchFailed: 0 };
-  if (!Array.isArray(outcomes)) return counts;
+  if (!Array.isArray(outcomes)) {
+    return counts;
+  }
   for (const o of outcomes) {
-    // Heuristic (inferred) signals are NOT tool executions — tally them apart
-    // so a narrated stall can never be counted as an ok/error/unknown call.
-    if (o?.provenance === 'heuristic') { counts.narratedStalls++; continue; }
-    counts.total++;
-    switch (o?.status) {
-      case 'ok': counts.ok++; break;
-      case 'error': counts.error++; break;
-      case 'timeout': counts.timeout++; break;
-      default: counts.unknown++; break;
+    // Heuristic (inferred) signals are NOT tool executions — tally them apart so a narrated stall can never be counted as an ok/error/unknown call.
+    if (o?.provenance === 'heuristic') {
+      counts.narratedStalls += 1;
+      continue;
+    }
+    counts.total += 1;
+    if (o?.status === 'ok') {
+      counts.ok += 1;
+    } else if (o?.status === 'error') {
+      counts.error += 1;
+    } else if (o?.status === 'timeout') {
+      counts.timeout += 1;
+    } else {
+      counts.unknown += 1;
     }
   }
   return counts;
 }
 
-// @kern-source: delegate-ledger:138
+// @kern-source: delegate-ledger:142
 function newDispatchId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -126,20 +133,20 @@ function newDispatchId(): string {
 /**
  * Append one delegated-dispatch record to the ledger as a single JSONL line. Best-effort: any I/O failure is swallowed so the ledger never throws into a dispatch.
  */
-// @kern-source: delegate-ledger:145
+// @kern-source: delegate-ledger:149
 export function recordDelegateDispatch(record: DelegateLedgerRecord): void {
   try {
     mkdirSync(agonPath('runs'), { recursive: true });
     appendFileSync(delegateLedgerPath(), JSON.stringify(record) + '\n');
-  } catch {
-    /* ledger is best-effort — swallow all I/O failures */
+  } catch (e) {
+    // ledger is best-effort — swallow all I/O failures
   }
 }
 
 /**
  * Record one API agent-loop dispatch (native per-call visibility). Returns the record so callers can build a digest line from record.counts. Heuristic outcomes in `outcomes` (narrated stalls) are tallied into counts.narratedStalls, never into the tool-call total.
  */
-// @kern-source: delegate-ledger:156
+// @kern-source: delegate-ledger:158
 export function recordApiLoopDispatch(engineId: string, mode: string, outcomes: AgentToolOutcome[], dispatchId?: string): DelegateLedgerRecord {
   const record: DelegateLedgerRecord = {
     ts: new Date().toISOString(),
@@ -157,7 +164,7 @@ export function recordApiLoopDispatch(engineId: string, mode: string, outcomes: 
 /**
  * Record one text-only (cli-print/companion) dispatch. Text transports give NO per-call tool visibility, so outcomes is always empty. A normal dispatch records a single 'unknown' (no visibility). A failed dispatch (opts.dispatchFailed) records counts.dispatchFailed instead — a STRONGER negative signal that must never be blended into 'unknown'. A fabricated ok/error is NEVER produced from prose. opts.dispatchId overrides the generated id.
  */
-// @kern-source: delegate-ledger:172
+// @kern-source: delegate-ledger:174
 export function recordTextTransportDispatch(engineId: string, mode: string, backend: DelegateBackend, opts?: TextTransportOpts): DelegateLedgerRecord {
   const failed = opts?.dispatchFailed === true;
   const record: DelegateLedgerRecord = {
@@ -178,17 +185,21 @@ export function recordTextTransportDispatch(engineId: string, mode: string, back
 /**
  * Read the delegate ledger. Missing file ⇒ []; a positive limit reads only the tail window; corrupt lines (and non-object / array JSON) are skipped; never throws.
  */
-// @kern-source: delegate-ledger:193
+// @kern-source: delegate-ledger:195
 export function readDelegateLedgerRecords(limit?: number): DelegateLedgerRecord[] {
   const path = delegateLedgerPath();
   try {
-    if (!existsSync(path)) return [];
+    if (!existsSync(path)) {
+      return [];
+    }
     let raw = '';
     if (typeof limit === 'number' && limit > 0) {
       const stat = statSync(path);
-      const start = Math.max(0, stat.size - DELEGATE_LEDGER_TAIL_BYTES);
+      const start = Math.max(0, (stat.size - DELEGATE_LEDGER_TAIL_BYTES));
       const length = stat.size - start;
-      if (length <= 0) return [];
+      if (length <= 0) {
+        return [];
+      }
       const fd = openSync(path, 'r');
       try {
         const buffer = Buffer.alloc(length);
@@ -200,26 +211,27 @@ export function readDelegateLedgerRecords(limit?: number): DelegateLedgerRecord[
       // Dropped the first (possibly partial) line when we started mid-file.
       if (start > 0) {
         const nl = raw.indexOf('\n');
-        raw = nl >= 0 ? raw.slice(nl + 1) : '';
+        raw = (nl >= 0) ? raw.slice(nl + 1) : '';
       }
     } else {
       raw = readFileSync(path, 'utf-8');
     }
     const lines = raw.split('\n').map((l: string) => l.trim()).filter(Boolean);
-    const selected = typeof limit === 'number' && limit > 0 ? lines.slice(-limit) : lines;
+    const selected = (typeof limit === 'number' && limit > 0) ? lines.slice(-limit) : lines;
     const out: DelegateLedgerRecord[] = [];
     for (const line of selected) {
       try {
         const rec = JSON.parse(line) as DelegateLedgerRecord;
-        // Only plain objects are records. A valid-JSON array / scalar is not a
-        // record and is skipped — the summarizer never sees a non-object.
-        if (rec && typeof rec === 'object' && !Array.isArray(rec)) out.push(rec);
-      } catch {
-        /* skip a corrupt/partial line — never poison the whole read */
+        // Only plain objects are records. A valid-JSON array / scalar is not a record and is skipped — the summarizer never sees a non-object.
+        if (rec && typeof rec === 'object' && !Array.isArray(rec)) {
+          out.push(rec);
+        }
+      } catch (e) {
+        // skip a corrupt/partial line — never poison the whole read
       }
     }
     return out;
-  } catch {
+  } catch (eo) {
     return [];
   }
 }
@@ -227,7 +239,7 @@ export function readDelegateLedgerRecords(limit?: number): DelegateLedgerRecord[
 /**
  * Group a pre-filtered record list per backend into one engine summary. Defensive by design: tolerates schema-invalid records (missing/wrong-typed counts or outcomes) — every field is coerced with a numeric fallback so summarization never throws.
  */
-// @kern-source: delegate-ledger:242
+// @kern-source: delegate-ledger:239
 function summarizeRecords(records: DelegateLedgerRecord[], label: string): DelegateReliabilitySummary {
   const byBackend = new Map<string, DelegateBackendSummary>();
   for (const r of records) {
@@ -266,7 +278,7 @@ function summarizeRecords(records: DelegateLedgerRecord[], label: string): Deleg
 /**
  * Aggregate reliability across the ledger. With an engineId, summarizes just that engine, grouped per backend. WITHOUT an engineId this returns a single merged 'all' total (a running grand-total, useful for a headline number) — for a per-engine breakdown that NEVER blends two engines together, use summarizeDelegateReliabilityByEngine. Missing ledger ⇒ empty summary, never throws.
  */
-// @kern-source: delegate-ledger:279
+// @kern-source: delegate-ledger:276
 export function summarizeDelegateReliability(engineId?: string, limit?: number): DelegateReliabilitySummary {
   const target = String(engineId ?? '').trim();
   const records = readDelegateLedgerRecords(limit ?? 500);
@@ -277,20 +289,24 @@ export function summarizeDelegateReliability(engineId?: string, limit?: number):
 /**
  * Per-engine reliability, grouped by engineId THEN per backend. Engines are NEVER merged with each other — one engine's api-loop stats stay separate from another's, preserving the per-engine reliability signal. With an engineId, returns just that engine (or [] if unseen); without, one summary per distinct engine sorted by dispatch volume. Missing ledger ⇒ []. Never throws.
  */
-// @kern-source: delegate-ledger:288
+// @kern-source: delegate-ledger:285
 export function summarizeDelegateReliabilityByEngine(engineId?: string, limit?: number): DelegateReliabilitySummary[] {
   const target = String(engineId ?? '').trim();
   const records = readDelegateLedgerRecords(limit ?? 500);
-  const byEngine = new Map<string, DelegateLedgerRecord[]>();
+  const byEngine: Map<string, DelegateLedgerRecord[]> = new Map();
   for (const r of records) {
-    const id = typeof r?.engineId === 'string' ? r.engineId : 'unknown';
-    if (target && id !== target) continue;
+    const id = (typeof r?.engineId === 'string') ? r.engineId : 'unknown';
+    if (target && id !== target) {
+      continue;
+    }
     const list = byEngine.get(id) ?? [];
     list.push(r);
     byEngine.set(id, list);
   }
   const summaries: DelegateReliabilitySummary[] = [];
-  for (const [id, recs] of Array.from(byEngine.entries())) summaries.push(summarizeRecords(recs, id));
+  for (const entry of Array.from(byEngine.entries())) {
+    summaries.push(summarizeRecords(entry[1], entry[0]));
+  }
   summaries.sort((a, b) => b.dispatches - a.dispatches || a.engineId.localeCompare(b.engineId));
   return summaries;
 }
@@ -298,7 +314,7 @@ export function summarizeDelegateReliabilityByEngine(engineId?: string, limit?: 
 /**
  * One-line digest of an api-loop dispatch's tool outcomes, e.g. `3 tool calls: 2 ok, 1 failed (native)`. Narrated stalls (heuristic) are appended separately and never counted in the tool-call total.
  */
-// @kern-source: delegate-ledger:309
+// @kern-source: delegate-ledger:306
 export function buildApiLoopDigest(counts: DelegateOutcomeCounts): string {
   const total = Number(counts?.total ?? 0) || 0;
   const ok = Number(counts?.ok ?? 0) || 0;
@@ -317,7 +333,7 @@ export function buildApiLoopDigest(counts: DelegateOutcomeCounts): string {
 /**
  * Digest for a text-only transport — Cesar had no per-call visibility, so it says exactly that instead of guessing outcomes.
  */
-// @kern-source: delegate-ledger:326
+// @kern-source: delegate-ledger:323
 export function textTransportDigest(): string {
   return 'no per-call visibility on this transport';
 }
@@ -325,7 +341,7 @@ export function textTransportDigest(): string {
 /**
  * Render ONE engine's delegated dispatch ledger as one line per backend, keeping api-loop reliability and text-transport unknowns visually separate. Narrated stalls (heuristic) are appended to their backend line as a distinct clause; failed dispatches get their own line — neither is ever blended into the native ok/failed numbers. Empty ⇒ a single 'no ledger records yet' line.
  */
-// @kern-source: delegate-ledger:332
+// @kern-source: delegate-ledger:329
 export function formatDelegateReliability(summary: DelegateReliabilitySummary): string[] {
   if (!summary || summary.dispatches <= 0 || summary.backends.length === 0) {
     return ['no ledger records yet'];
@@ -357,7 +373,7 @@ export function formatDelegateReliability(summary: DelegateReliabilitySummary): 
 /**
  * Render EVERY engine's per-backend ledger lines, keeping each engine (and each backend) on its own line so no two engines are ever blended into one number. Empty ⇒ a single 'no ledger records yet' line.
  */
-// @kern-source: delegate-ledger:362
+// @kern-source: delegate-ledger:359
 export function formatAllDelegateReliability(summaries: DelegateReliabilitySummary[]): string[] {
   if (!summaries || summaries.length === 0) return ['no ledger records yet'];
   const lines: string[] = [];

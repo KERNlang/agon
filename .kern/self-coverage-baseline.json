@@ -13,7 +13,7 @@
     "blockedHandlers": 620
   },
   "blockerMaximums": {
-    "comments-present": 185,
+    "comments-present": 186,
     "foreign-missing-reason": 70,
     "var-bad-expr": 62,
     "for-stmt": 61,

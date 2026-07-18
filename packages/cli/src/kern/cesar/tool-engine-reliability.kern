@@ -15,63 +15,48 @@ import from="@kernlang/agon-core" names="summarizeDelegateReliabilityByEngine,fo
 import from="./reliability.js" names="readCesarToolReliability,summarizeAllCesarToolReliability,formatCesarReliabilityLine,emptyCesarToolReliability"
 import from="./reliability.js" names="CesarToolReliability" types=true
 
+fn name=buildOwnReliabilityLines params="engineId:string|undefined" returns="string[]" export=true
+  doc "Render the CESAR OWN-TURN RELIABILITY lines. With an engineId, one line for that engine (an engine with no logged turns summarizes to an empty 'calibrating' record — never an error). Without one, a line per observed engine, or a single all/all empty line when nothing is logged yet."
+  handler lang="kern"
+    let name=ownLines type="string[]" value="[]"
+    if cond="engineId"
+      comment raw="// A specific engine with zero logged turns summarizes to an empty reliability record labeled 'calibrating' — never an error."
+      do value="ownLines.push(formatCesarReliabilityLine(readCesarToolReliability(engineId)))"
+    else
+      let name=summaries type="CesarToolReliability[]" value="summarizeAllCesarToolReliability()"
+      if cond="summaries.length === 0"
+        do value="ownLines.push(formatCesarReliabilityLine(emptyCesarToolReliability('all', 'all')))"
+      else
+        each name=summary in="summaries"
+          do value="ownLines.push(formatCesarReliabilityLine(summary))"
+    return value="ownLines"
+
+fn name=engineReliabilityDefinition returns=ToolDefinition export=true
+  doc "Static ToolDefinition for the EngineReliability tool (read-only, two labeled reliability sections)."
+  handler lang="kern"
+    return value="{ name: 'EngineReliability', description: 'Report observed tool reliability per engine. Returns two labeled sections: CESAR OWN-TURN RELIABILITY (tools Cesar itself produced, from logged decision turns) and DELEGATED DISPATCH LEDGER (per-call outcomes for engines Cesar delegated to). Read-only. Optional engineId narrows the own-turn section to one engine (an engine with no logged turns reports \"calibrating\", not an error).', inputSchema: { type: 'object', properties: { engineId: { type: 'string', description: 'Optional engine id to narrow the own-turn reliability section. Omit for every observed engine.' }, scope: { type: 'string', enum: ['summary', 'turns', 'all'], description: 'Optional reporting scope. Reserved for future turn-level detail; the default digest is always returned.' } }, required: [] }, maxResultSizeChars: 20000, isReadOnly: true, isConcurrencySafe: true }"
+
 fn name=createEngineReliabilityTool returns=ToolHandler export=true
   doc "Factory for the EngineReliability tool — a read-only digest of Cesar own-turn tool reliability plus a placeholder for the delegated dispatch ledger."
-  handler <<<
-    const definition: ToolDefinition = {
-      name: 'EngineReliability',
-      description: 'Report observed tool reliability per engine. Returns two labeled sections: CESAR OWN-TURN RELIABILITY (tools Cesar itself produced, from logged decision turns) and DELEGATED DISPATCH LEDGER (per-call outcomes for engines Cesar delegated to). Read-only. Optional engineId narrows the own-turn section to one engine (an engine with no logged turns reports "calibrating", not an error).',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          engineId: { type: 'string', description: 'Optional engine id to narrow the own-turn reliability section. Omit for every observed engine.' },
-          scope: { type: 'string', enum: ['summary', 'turns', 'all'], description: 'Optional reporting scope. Reserved for future turn-level detail; the default digest is always returned.' },
-        },
-        required: [],
-      },
-      maxResultSizeChars: 20000,
-      isReadOnly: true,
-      isConcurrencySafe: true,
-    };
+  handler lang="kern"
+    return value="{ definition: engineReliabilityDefinition(), validate: engineReliabilityValidate, checkPermission: engineReliabilityCheckPermission, execute: engineReliabilityExecute }"
 
-    const validate = (_input: Record<string, unknown>, _ctx: ToolContext): string | null => null;
+fn name=engineReliabilityValidate params="_input:Record<string,unknown>, _ctx:ToolContext" returns="string|null" export=true
+  doc "EngineReliability accepts any (optional) input — nothing to reject."
+  handler lang="kern"
+    return value="null"
 
-    const checkPermission = (_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => ({ behavior: 'allow' });
+fn name=engineReliabilityCheckPermission params="_input:Record<string,unknown>, _ctx:ToolContext" returns=PermissionDecision export=true
+  doc "EngineReliability is read-only — always allowed."
+  handler lang="kern"
+    return value="{ behavior: 'allow' }"
 
-    const execute = async (input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
-      const engineId = typeof input.engineId === 'string' && input.engineId.trim() ? input.engineId.trim() : undefined;
-
-      const ownLines: string[] = [];
-      if (engineId) {
-        // A specific engine with zero logged turns summarizes to an empty
-        // reliability record labeled 'calibrating' — never an error.
-        ownLines.push(formatCesarReliabilityLine(readCesarToolReliability(engineId)));
-      } else {
-        const summaries: CesarToolReliability[] = summarizeAllCesarToolReliability();
-        if (summaries.length === 0) {
-          ownLines.push(formatCesarReliabilityLine(emptyCesarToolReliability('all', 'all')));
-        } else {
-          for (const summary of summaries) ownLines.push(formatCesarReliabilityLine(summary));
-        }
-      }
-
-      // Delegated dispatch ledger (2b) — grouped engineId × backend. An engineId
-      // narrows the ledger to that engine; without one, EVERY engine is rendered
-      // on its own line(s) so two engines' api-loop stats are never merged into a
-      // single number. An engine with no ledger records (or an empty ledger)
-      // renders "no ledger records yet", never an error.
-      const ledgerLines = formatAllDelegateReliability(summarizeDelegateReliabilityByEngine(engineId));
-
-      const content = [
-        'CESAR OWN-TURN RELIABILITY',
-        ownLines.join('\n'),
-        '',
-        'DELEGATED DISPATCH LEDGER',
-        ledgerLines.join('\n'),
-      ].join('\n');
-
-      return { ok: true, content };
-    };
-
-    return { definition, validate, checkPermission, execute };
-  >>>
+fn name=engineReliabilityExecute async=true params="input:Record<string,unknown>, _ctx:ToolContext" returns="Promise<ToolResult>" export=true
+  doc "Render the two labeled reliability sections: CESAR OWN-TURN RELIABILITY and the per-engine DELEGATED DISPATCH LEDGER."
+  handler lang="kern"
+    let name=engineId value="typeof input.engineId === 'string' && input.engineId.trim() ? input.engineId.trim() : undefined"
+    let name=ownLines value="buildOwnReliabilityLines(engineId)"
+    comment raw="// Delegated dispatch ledger (2b) — grouped engineId × backend. An engineId narrows the ledger to that engine; without one, EVERY engine is rendered on its own line(s) so two engines' api-loop stats are never merged into a single number. An engine with no ledger records (or an empty ledger) renders \"no ledger records yet\", never an error."
+    let name=ledgerLines value="formatAllDelegateReliability(summarizeDelegateReliabilityByEngine(engineId))"
+    let name=content value="['CESAR OWN-TURN RELIABILITY', ownLines.join('\\n'), '', 'DELEGATED DISPATCH LEDGER', ledgerLines.join('\\n')].join('\\n')"
+    return value="{ ok: true, content }"

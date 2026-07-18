@@ -31,6 +31,12 @@ fn name=stripTerminalControl params="value:string" returns=string export=true
       .replace(/\r/g, '');
   >>>
 
+// KERN-GAP: native-record-closure-capture — a native handler cannot return a
+// record whose function-valued fields (lastFrame/read) close over a mutable
+// array binding (chunks); the compiler rejects it ("stale/fresh array binding
+// captured by a record field"). This factory IS a closure-over-mutable-buffer,
+// so it stays a raw TS handler until KERN gains an opt-out for intentional
+// mutable-capture in record fields (cf. `state safe=false` for Ink state).
 fn name=createPseudoTty params="width:number, height:number" returns=PseudoTty export=true
   doc "Create a fake TTY stdout/stderr/stdin trio that records each stdout write as a separate chunk."
   handler <<<

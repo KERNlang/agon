@@ -19,27 +19,27 @@ export const TUI_PROBE_INPUT_SAFELIST: readonly string[] = ['/help', '/status', 
 // @kern-source: tool-tui-probe:18
 export function resolveTuiProbePaths(): { script: string|null, agonBin: string|null } {
   const here = dirname(fileURLToPath(import.meta.url));
-  const roots = [
-    join(here, '..'),             // dist/<tsup-chunk>.js → pkg root (PACKAGED layout — tsup emits flat chunks directly under dist/; agon-review blocking finding)
-    join(here, '..', '..', '..'), // src/generated/cesar → pkg root (vitest/dev layout)
-    join(here, '..', '..'),
-    join(here, '..', '..', '..', '..'),
-  ];
-  let script: string | null = null;
-  let agonBin: string | null = null;
+  // Candidate package roots, most-specific first: dist/<tsup-chunk>.js → pkg root (PACKAGED layout — tsup emits flat chunks directly under dist/; agon-review blocking finding); src/generated/cesar → pkg root (vitest/dev layout); then two more fallback depths.
+  const roots = [join(here, '..'), join(here, '..', '..', '..'), join(here, '..', '..'), join(here, '..', '..', '..', '..')];
+  let script = null as string | null;
+  let agonBin = null as string | null;
   for (const root of roots) {
     const s = join(root, 'py', 'agon-tui-probe.py');
-    if (!script && existsSync(s)) script = s;
+    if (!script && existsSync(s)) {
+      script = s;
+    }
     const b = join(root, 'dist', 'index.js');
-    if (!agonBin && existsSync(b)) agonBin = b;
+    if (!agonBin && existsSync(b)) {
+      agonBin = b;
+    }
   }
-  return { script, agonBin };
+  return { script: script, agonBin: agonBin };
 }
 
 /**
  * Factory for the TuiProbe tool — spawns a throwaway isolated agon under a PTY, drives one safelisted input, and returns the final pyte-emulated screen grid.
  */
-// @kern-source: tool-tui-probe:39
+// @kern-source: tool-tui-probe:35
 export function createTuiProbeTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'TuiProbe',

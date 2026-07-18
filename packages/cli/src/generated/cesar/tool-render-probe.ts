@@ -62,66 +62,66 @@ export function renderProbeFixtures(): Record<string,RenderFixture> {
 }
 
 /**
- * Factory for the RenderProbe tool — renders a known Ink surface fixture and returns its final text frame.
+ * Render one fixture surface — caller props shallow-merged over the fixture defaults — and return its final text frame. A render error becomes an error ToolResult, never a throw.
  */
 // @kern-source: tool-render-probe:63
+export async function renderProbeSurface(surface: string, component: any, defaults: Record<string,unknown>, overrides: Record<string,unknown>, cols: number, rows: number): Promise<ToolResult> {
+  const props = Object.assign({}, defaults, overrides);
+  try {
+    const frame = await captureSurfaceFrame(component, props, cols, rows);
+    return { ok: true, content: frame };
+  } catch (err) {
+    return { ok: false, content: '', error: `RenderProbe failed to render '${surface}': ${(err instanceof Error) ? err.message : String(err)}` };
+  }
+}
+
+/**
+ * ToolDefinition for the RenderProbe tool, parameterized by the valid surface ids so the description and schema advertise the live fixture set.
+ */
+// @kern-source: tool-render-probe:73
+export function renderProbeDefinition(validIds: string[]): ToolDefinition {
+  return { name: 'RenderProbe', description: `Render a known Ink surface in-process and return its ANSI-stripped text frame so you can verify layout. Valid surface ids: ${validIds.join(', ')}. Input: { surface, cols?=100, rows?=30, props? } — props are shallow-merged over the fixture defaults. Read-only.`, inputSchema: { type: 'object', properties: { surface: { type: 'string', description: `Surface id to render. One of: ${validIds.join(', ')}.` }, cols: { type: 'number', description: 'Terminal columns. Optional, defaults to 100.' }, rows: { type: 'number', description: 'Terminal rows. Optional, defaults to 30.' }, props: { type: 'object', description: 'Optional props shallow-merged over the fixture defaults.' } }, required: ['surface'] }, maxResultSizeChars: 40000, isReadOnly: true, isConcurrencySafe: true };
+}
+
+/**
+ * Factory for the RenderProbe tool — renders a known Ink surface fixture and returns its final text frame.
+ */
+// @kern-source: tool-render-probe:78
 export function createRenderProbeTool(): ToolHandler {
+  return { definition: renderProbeDefinition(Object.keys(renderProbeFixtures())), validate: renderProbeValidate, checkPermission: renderProbeCheckPermission, execute: renderProbeExecute };
+}
+
+/**
+ * Require a non-empty `surface` id.
+ */
+// @kern-source: tool-render-probe:83
+export function renderProbeValidate(input: Record<string,unknown>, _ctx: ToolContext): string|null {
+  return (typeof input.surface === 'string' && input.surface.trim()) ? null : 'Missing required parameter: surface';
+}
+
+/**
+ * RenderProbe is read-only — always allowed.
+ */
+// @kern-source: tool-render-probe:88
+export function renderProbeCheckPermission(_input: Record<string,unknown>, _ctx: ToolContext): PermissionDecision {
+  return { behavior: 'allow' };
+}
+
+/**
+ * Resolve the requested fixture, clamp dimensions, and render its final text frame. An unknown surface returns the list of known ids rather than guessing.
+ */
+// @kern-source: tool-render-probe:93
+export async function renderProbeExecute(input: Record<string,unknown>, _ctx: ToolContext): Promise<ToolResult> {
   const fixtures = renderProbeFixtures();
   const validIds = Object.keys(fixtures);
-
-  const definition: ToolDefinition = {
-    name: 'RenderProbe',
-    description: `Render a known Ink surface in-process and return its ANSI-stripped text frame so you can verify layout. Valid surface ids: ${validIds.join(', ')}. Input: { surface, cols?=100, rows?=30, props? } — props are shallow-merged over the fixture defaults. Read-only.`,
-    inputSchema: {
-      type: 'object',
-      properties: {
-        surface: { type: 'string', description: `Surface id to render. One of: ${validIds.join(', ')}.` },
-        cols: { type: 'number', description: 'Terminal columns. Optional, defaults to 100.' },
-        rows: { type: 'number', description: 'Terminal rows. Optional, defaults to 30.' },
-        props: { type: 'object', description: 'Optional props shallow-merged over the fixture defaults.' },
-      },
-      required: ['surface'],
-    },
-    maxResultSizeChars: 40000,
-    isReadOnly: true,
-    isConcurrencySafe: true,
-  };
-
-  const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null =>
-    typeof input.surface === 'string' && input.surface.trim() ? null : 'Missing required parameter: surface';
-
-  const checkPermission = (_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => ({ behavior: 'allow' });
-
-  const execute = async (input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
-    const surface = String(input.surface ?? '').trim();
-    const fixture = fixtures[surface];
-    if (!fixture) {
-      return {
-        ok: false,
-        content: '',
-        error: `Unknown surface '${surface}'. Valid surface ids: ${validIds.join(', ')}.`,
-      };
-    }
-    // Clamp dimensions: an in-process Ink render allocates per-cell state, so
-    // model-controlled unbounded cols/rows is a memory-exhaustion vector
-    // (agon-review finding). 400x200 covers any real terminal.
-    const cols = typeof input.cols === 'number' && input.cols > 0 ? Math.min(Math.floor(input.cols), 400) : 100;
-    const rows = typeof input.rows === 'number' && input.rows > 0 ? Math.min(Math.floor(input.rows), 200) : 30;
-    const overrides = (input.props && typeof input.props === 'object' && !Array.isArray(input.props))
-      ? input.props as Record<string, unknown>
-      : {};
-    const props = { ...fixture.defaults, ...overrides };
-    try {
-      const frame = await captureSurfaceFrame(fixture.component, props, cols, rows);
-      return { ok: true, content: frame };
-    } catch (err) {
-      return {
-        ok: false,
-        content: '',
-        error: `RenderProbe failed to render '${surface}': ${err instanceof Error ? err.message : String(err)}`,
-      };
-    }
-  };
-
-  return { definition, validate, checkPermission, execute };
+  const surface = String(input.surface ?? '').trim();
+  const fixture = fixtures[surface];
+  if (!fixture) {
+    return { ok: false, content: '', error: `Unknown surface '${surface}'. Valid surface ids: ${validIds.join(', ')}.` };
+  }
+  // Clamp dimensions: an in-process Ink render allocates per-cell state, so model-controlled unbounded cols/rows is a memory-exhaustion vector (agon-review finding). 400x200 covers any real terminal.
+  const cols = (typeof input.cols === 'number' && input.cols > 0) ? Math.min(Math.floor(input.cols), 400) : 100;
+  const rows = (typeof input.rows === 'number' && input.rows > 0) ? Math.min(Math.floor(input.rows), 200) : 30;
+  const overrides = (input.props && typeof input.props === 'object' && !Array.isArray(input.props)) ? (input.props as Record<string, unknown>) : {};
+  return renderProbeSurface(surface, fixture.component, fixture.defaults, overrides, cols, rows);
 }

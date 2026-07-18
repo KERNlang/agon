@@ -9,6 +9,18 @@ type name=TurnExecutionOwner values="session|harness|mcp" export=true
 type name=TurnEffectClass values="read_only|mutation|external|unknown" export=true
 
 module name=TurnClassification
+  fn name=isReadOnlyToolCall params="name:string, args?:Record<string,unknown>, isReadOnlyCommand?:(command:string)=>boolean" returns=boolean export=true
+    doc "True when a tool call cannot mutate workspace or external state, so a stale/superseded turn lease must not reject it. Mirrors the read_only TurnEffectClass used by runTurnToolOnce — keep the two in lockstep. Bash is read-only only when its command is read-only (requires the isReadOnlyCommand predicate); everything not listed defaults to mutation-grade fencing."
+    handler <<<
+      const READ_ONLY_TOOLS = new Set(['Read', 'Grep', 'Glob', 'WebFetch', 'WebSearch', 'RetrieveResult', 'ListPlans']);
+      if (READ_ONLY_TOOLS.has(name)) return true;
+      if (name === 'Bash') {
+        const command = String((args as any)?.command ?? '');
+        return typeof isReadOnlyCommand === 'function' ? isReadOnlyCommand(command) : false;
+      }
+      return false;
+    >>>
+
   fn name=resolveCesarAbortOutcome params="timedOut:boolean,hasPartial:boolean" returns="{terminalState:'timed_out'|'cancelled',responded:boolean,decisionReason:string}" export=true
     doc "Keep harness timeouts distinct from user interrupts all the way into lifecycle persistence and recap rendering."
     handler <<<

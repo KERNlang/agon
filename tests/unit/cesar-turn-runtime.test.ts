@@ -13,6 +13,7 @@ import {
   releaseCesarTurnHandles,
   transitionCesarTurn,
   fenceStaleCesarTurn,
+  isReadOnlyToolCall,
 } from '../../packages/cli/src/generated/cesar/turn-runtime.js';
 import { appendControlPlaneEvent } from '../../packages/core/src/generated/sessions/control-plane-ledger.js';
 import { resetEventLogState } from '../../packages/core/src/generated/sessions/event-log.js';
@@ -131,6 +132,60 @@ describe('Cesar turn runtime host', () => {
     expect(second.envelope.leaseEpoch).toBe(2);
     expect(isActiveCesarTurn(host, first.envelope)).toBe(false);
     expect(isActiveCesarTurn(host, second.envelope)).toBe(true);
+  });
+
+  it('classifies read-only tool calls so a stale lease must not fence them', () => {
+    const readOnlyBash = (command: string) => ['ls', 'cat', 'git status', 'npm test', 'grep'].some((c) => command.startsWith(c));
+    // Pure read tools — no workspace/external mutation, safe on a superseded lease.
+    for (const tool of ['Read', 'Grep', 'Glob', 'WebFetch', 'WebSearch', 'RetrieveResult', 'ListPlans']) {
+      expect(isReadOnlyToolCall(tool, {}, readOnlyBash)).toBe(true);
+    }
+    // Bash is read-only only via the command predicate.
+    expect(isReadOnlyToolCall('Bash', { command: 'git status' }, readOnlyBash)).toBe(true);
+    expect(isReadOnlyToolCall('Bash', { command: 'npm test' }, readOnlyBash)).toBe(true);
+    // Mutation-class: file writes and non-read-only Bash must keep strict fencing.
+    for (const tool of ['Edit', 'Write', 'MultiEdit']) {
+      expect(isReadOnlyToolCall(tool, { file_path: 'x.ts' }, readOnlyBash)).toBe(false);
+    }
+    expect(isReadOnlyToolCall('Bash', { command: 'rm -rf dist' }, readOnlyBash)).toBe(false);
+    // Fail-closed: no predicate → Bash is NOT treated as read-only.
+    expect(isReadOnlyToolCall('Bash', { command: 'git status' })).toBe(false);
+  });
+
+  it('classifies read-only tool calls so a stale lease must not fence them', () => {
+    const readOnlyBash = (command: string) => ['ls', 'cat', 'git status', 'npm test', 'grep'].some((c) => command.startsWith(c));
+    // Pure read tools — no workspace/external mutation, safe on a superseded lease.
+    for (const tool of ['Read', 'Grep', 'Glob', 'WebFetch', 'WebSearch', 'RetrieveResult', 'ListPlans']) {
+      expect(isReadOnlyToolCall(tool, {}, readOnlyBash)).toBe(true);
+    }
+    // Bash is read-only only via the command predicate.
+    expect(isReadOnlyToolCall('Bash', { command: 'git status' }, readOnlyBash)).toBe(true);
+    expect(isReadOnlyToolCall('Bash', { command: 'npm test' }, readOnlyBash)).toBe(true);
+    // Mutation-class: file writes and non-read-only Bash must keep strict fencing.
+    for (const tool of ['Edit', 'Write', 'MultiEdit']) {
+      expect(isReadOnlyToolCall(tool, { file_path: 'x.ts' }, readOnlyBash)).toBe(false);
+    }
+    expect(isReadOnlyToolCall('Bash', { command: 'rm -rf dist' }, readOnlyBash)).toBe(false);
+    // Fail-closed: no predicate → Bash is NOT treated as read-only.
+    expect(isReadOnlyToolCall('Bash', { command: 'git status' })).toBe(false);
+  });
+
+  it('classifies read-only tool calls so a stale lease must not fence them', () => {
+    const readOnlyBash = (command: string) => ['ls', 'cat', 'git status', 'npm test', 'grep'].some((c) => command.startsWith(c));
+    // Pure read tools — no workspace/external mutation, safe on a superseded lease.
+    for (const tool of ['Read', 'Grep', 'Glob', 'WebFetch', 'WebSearch', 'RetrieveResult', 'ListPlans']) {
+      expect(isReadOnlyToolCall(tool, {}, readOnlyBash)).toBe(true);
+    }
+    // Bash is read-only only via the command predicate.
+    expect(isReadOnlyToolCall('Bash', { command: 'git status' }, readOnlyBash)).toBe(true);
+    expect(isReadOnlyToolCall('Bash', { command: 'npm test' }, readOnlyBash)).toBe(true);
+    // Mutation-class: file writes and non-read-only Bash must keep strict fencing.
+    for (const tool of ['Edit', 'Write', 'MultiEdit']) {
+      expect(isReadOnlyToolCall(tool, { file_path: 'x.ts' }, readOnlyBash)).toBe(false);
+    }
+    expect(isReadOnlyToolCall('Bash', { command: 'rm -rf dist' }, readOnlyBash)).toBe(false);
+    // Fail-closed: no predicate → Bash is NOT treated as read-only.
+    expect(isReadOnlyToolCall('Bash', { command: 'git status' })).toBe(false);
   });
 
   it('durably supersedes a cancelling producer before replacing its lease', () => {

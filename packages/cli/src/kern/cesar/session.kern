@@ -16,7 +16,7 @@ import from="./routing.js" names="buildRoutingContext"
 import from="./brain-helpers.js" names="extractDelegation"
 import from="./self-turn-approval.js" names="applyCesarSelfTurnApproval,approvalArgsFromCommand"
 import from="./approval-diff.js" names="approvalToolIsFileMutating,buildApprovalDiffPreview"
-import from="./turn-runtime.js" names="isActiveCesarTurn,runTurnPermissionOnce,runTurnToolOnce"
+import from="./turn-runtime.js" names="isActiveCesarTurn,runTurnPermissionOnce,runTurnToolOnce,isReadOnlyToolCall"
 import from="./task-execution-lease.js" names="approveTaskAction,claimTaskActionPrompt,isTaskFileMutationAction,taskActionApprovalMessage,isApprovedPermissionResponse"
 import from="./permission-resolver.js" names="resolvePermissionDecision,authorizeResolvedTaskAction"
 import from="./tool-observability.js" names="recordCesarApprovalDecision,recordCesarToolTimeline,recordCesarConfidence,buildToolErrorDiagnostic"
@@ -648,8 +648,16 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
       // Fence correlated callbacks before ANY plan, delegation, confidence, or
       // approval state can mutate. Legacy uncorrelated adapters retain their
       // existing path; once an envelope is present it must own the active lease.
+      //
+      // Read-only tools mutate nothing, so a stale/superseded lease is NOT a
+      // reason to reject them — doing so hard-fails harmless Read/Grep/Glob
+      // whenever the turn advanced between the model's batch and execution
+      // (sibling calls in one response can transition the lease). Run them
+      // against the session without a turn claim; mutation-class tools still
+      // fence strictly below.
       const runtime = ctx.cesarRuntimeHost?.active;
-      if (controlPlane && (!runtime || !isActiveCesarTurn(ctx.cesarRuntimeHost, controlPlane))) {
+      const _isReadOnlyTool = isReadOnlyToolCall(name, args, isReadOnlyCommand);
+      if (controlPlane && !_isReadOnlyTool && (!runtime || !isActiveCesarTurn(ctx.cesarRuntimeHost, controlPlane))) {
         return `Error: [STALE_TURN_REJECTED] ${name} was not executed because its Cesar turn lease expired.`;
       }
       // Plan mode: block execution tools and mutating shell commands before

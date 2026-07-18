@@ -1026,7 +1026,13 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
         // previously dead-stopped the turn. Capped per-turn so a deterministic
         // content-filter/format empty still surfaces the real error after retries.
         let emptyResponseRetries = 0;
-        const MAX_EMPTY_RETRIES = 2;
+        // Config-tunable: real rate-limit windows (Kimi coding plan, ZAI) often
+        // outlast the old fixed 2×1.2s, which surfaced "engine did not respond"
+        // mid-task. Backoff below is exponential (1.5s/3s/6s, capped 8s).
+        const requestedEmptyRetries = Number(config.engine.api?.emptyResponseRetryCount ?? 3);
+        const MAX_EMPTY_RETRIES = Number.isSafeInteger(requestedEmptyRetries) && requestedEmptyRetries >= 0
+          ? requestedEmptyRetries
+          : 3;
         let firstChunkRetries = 0;
         const requestedFirstChunkRetries = Number(config.engine.api?.firstChunkRetryCount ?? 1);
         const MAX_FIRST_CHUNK_RETRIES = Number.isSafeInteger(requestedFirstChunkRetries) && requestedFirstChunkRetries >= 0
@@ -1255,7 +1261,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               hadSideEffects: hadTurnSideEffects,
               aborted: opts.signal?.aborted === true,
             });
-            if (/API stream first-chunk idle timeout/i.test(lastStderr)) {
+            if (/API (?:stream )?first-chunk (?:idle )?timeout/i.test(lastStderr)) {
               if (firstChunkDecision.retry) {
                 firstChunkRetries++;
                 yield { type: 'status' as const, content: `first chunk timed out — safe retry ${firstChunkRetries}/${MAX_FIRST_CHUNK_RETRIES}…` };
@@ -1279,7 +1285,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             if (!opts.signal?.aborted && emptyResponseRetries < MAX_EMPTY_RETRIES) {
               emptyResponseRetries++;
               yield { type: 'status' as const, content: `engine returned empty — retrying (${emptyResponseRetries}/${MAX_EMPTY_RETRIES})…` };
-              await new Promise(r => setTimeout(r, 1200 * emptyResponseRetries));
+              await new Promise(r => setTimeout(r, Math.min(1500 * 2 ** (emptyResponseRetries - 1), 8000)));
               step--; // retry the same step
               continue;
             }

@@ -145,7 +145,7 @@ export interface EngineDefinition {
   imageFlag?: string;
   systemPromptFlag?: string;
   agent?: EngineModeConfig;
-  api?: {baseUrl:string, apiKeyEnv:string, model:string, maxTokens?:number, contextWindow?:number, format?:'openai'|'anthropic', firstChunkTimeoutMs?:number, idleTimeoutMs?:number, firstChunkRetryCount?:number, firstChunkRetryBackoffMs?:number};
+  api?: {baseUrl:string, apiKeyEnv:string, model:string, maxTokens?:number, contextWindow?:number, format?:'openai'|'anthropic', firstChunkTimeoutMs?:number, idleTimeoutMs?:number, firstChunkRetryCount?:number, firstChunkRetryBackoffMs?:number, emptyResponseRetryCount?:number};
   companion?: CompanionConfig;
   sessionBudget?: SessionBudget;
   cliModels?: EngineCliModelConfig;

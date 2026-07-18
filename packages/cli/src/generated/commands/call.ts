@@ -258,6 +258,9 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
       'review',
       opts.input?.trim() || 'uncommitted',
       ...textFlag('--engine', opts.engine),
+      // Role-lens review: 'auto' deals the fixed roster (security, correctness,
+      // dryness, performance, overall backstop); a comma list zips per engine.
+      ...textFlag('--roles', opts.roles),
       ...timeout,
       ...engines,
     ]);
@@ -317,12 +320,12 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
   return { cwd, commands };
 }
 
-// @kern-source: call:305
+// @kern-source: call:308
 export function writeJsonl(event: Record<string,unknown>): void {
   process.stdout.write(`${JSON.stringify({ ...event, timestamp: new Date().toISOString() })}\n`);
 }
 
-// @kern-source: call:310
+// @kern-source: call:313
 export async function runCommand(command: string, args: string[], cwd: string, jsonl: boolean, workflowMeta?: WorkflowCallMeta): Promise<number> {
   return new Promise((resolve) => {
     const startedAt = Date.now();
@@ -366,7 +369,7 @@ export async function runCommand(command: string, args: string[], cwd: string, j
   });
 }
 
-// @kern-source: call:354
+// @kern-source: call:357
 export const callCommand: any = defineCommand({
   meta: {
     name: 'call',
@@ -480,7 +483,7 @@ export const callCommand: any = defineCommand({
     },
     roles: {
       type: 'string',
-      description: 'For council: override advisor roles (comma-separated, priority order)',
+      description: "For council: override advisor roles (comma-separated, priority order). For review: role-lens review — 'auto' or a comma-separated role list (security, correctness, dryness, performance, overall)",
     },
     chairman: {
       type: 'string',

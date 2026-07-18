@@ -243,6 +243,9 @@ fn name=buildCallCommands params="opts:CallCommandOptions" returns="BuiltCallCom
         'review',
         opts.input?.trim() || 'uncommitted',
         ...textFlag('--engine', opts.engine),
+        // Role-lens review: 'auto' deals the fixed roster (security, correctness,
+        // dryness, performance, overall backstop); a comma list zips per engine.
+        ...textFlag('--roles', opts.roles),
         ...timeout,
         ...engines,
       ]);
@@ -466,7 +469,7 @@ const name=callCommand type="any"
         },
         roles: {
           type: 'string',
-          description: 'For council: override advisor roles (comma-separated, priority order)',
+          description: "For council: override advisor roles (comma-separated, priority order). For review: role-lens review — 'auto' or a comma-separated role list (security, correctness, dryness, performance, overall)",
         },
         chairman: {
           type: 'string',

@@ -299,6 +299,20 @@ Diff scope is deliberate, never implicit: `--base <ref>` pins the base for `unco
 
 Standard Review deliberately uses the full active panel even when the legacy `reviewDefaultEngine` preference is configured. Narrowing requires `--engine` or `--engines`. Explicit subsets are strict: an unknown, unavailable, or removed engine aborts the request instead of silently changing the committee.
 
+#### Role-lens review
+
+`/review role` (REPL) and `agon review --roles` (CLI) run the **same** parallel panel, but each engine reviews through a focused lens — `security`, `correctness`, `dryness`, `performance` — plus an `overall` generalist backstop so coverage is never partitioned away. Roles narrow each reviewer's *attention* only: the diff, repo grounding, machine findings block, consensus merge, and results pager are byte-identical to a standard review, and a reviewer who spots a blocking issue outside its role must still flag it.
+
+```bash
+/review role                                    # REPL: deal the default role roster
+/review role security,correctness uncommitted   # REPL: explicit roles, zipped per engine
+agon review --roles auto --risk auto            # CLI: roles composed with risk routing
+agon review --roles security,overall -e claude,codex
+agon call review uncommitted --roles auto       # external-CLI bridge (Claude Code, Codex, CI)
+```
+
+With `--roles auto` the fixed roster is dealt onto the selected panel in order and every extra engine lands on `overall`; an explicit comma list is zipped engine-by-engine (unknown role ids fall back to `overall`). Roles compose with `--risk`/`--primary-engine` routing — they change what each seat looks *at*, never how many seats there are.
+
 ### Agent
 An autonomous agent loop that can operate solo or in shadow mode, automatically routed to the best engine by Cesar based on task requirements.
 

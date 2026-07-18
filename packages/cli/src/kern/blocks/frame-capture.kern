@@ -1,0 +1,96 @@
+// ── Frame capture ────────────────────────────────────────────────────
+// In-process pseudo-TTY harness for rendering a generated Ink surface and
+// reading back its ANSI-stripped text frame. Extracted from
+// tests/unit/terminal-frame.test.ts so both the tests and the RenderProbe
+// tool share one implementation.
+//
+// Nero-mandated semantics: Ink render with `debug: true` rewrites the FULL
+// frame on every render, and the pseudo-TTY records each stdout write as a
+// SEPARATE chunk. `lastFrame()` returns only the final chunk (the settled
+// viewport); `read()` returns the concatenated transcript (stale intermediate
+// renders survive there) and exists only for the legacy substring-style tests.
+
+import from="node:stream" names="PassThrough"
+import from="react" default="React"
+import from="ink" names="render"
+
+interface name=PseudoTty export=true
+  field name=stdout type=any
+  field name=stderr type=any
+  field name=stdin type=any
+  field name=chunks type="string[]"
+  field name=lastFrame type="() => string"
+  field name=read type="() => string"
+
+fn name=stripTerminalControl params="value:string" returns=string export=true
+  doc "Strip OSC/CSI terminal control sequences and carriage returns from a captured stream."
+  handler <<<
+    return value
+      .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, '')
+      .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
+      .replace(/\r/g, '');
+  >>>
+
+fn name=createPseudoTty params="width:number, height:number" returns=PseudoTty export=true
+  doc "Create a fake TTY stdout/stderr/stdin trio that records each stdout write as a separate chunk."
+  handler <<<
+    const stdout = new PassThrough() as PassThrough & { isTTY: boolean; columns: number; rows: number };
+    stdout.isTTY = true;
+    stdout.columns = width;
+    stdout.rows = height;
+    const stderr = new PassThrough() as PassThrough & { isTTY: boolean };
+    stderr.isTTY = true;
+    const stdin = new PassThrough() as PassThrough & { isTTY: boolean; setRawMode: (mode: boolean) => void };
+    stdin.isTTY = true;
+    stdin.setRawMode = () => {};
+    const chunks: string[] = [];
+    stdout.on('data', (chunk: Buffer | string) => { chunks.push(chunk.toString()); });
+    return {
+      stdout,
+      stderr,
+      stdin,
+      chunks,
+      // Final settled frame: the LAST full-frame write with real content,
+      // ANSI-stripped. Never the concatenation — that is a transcript artifact
+      // with stale renders in it. We scan backwards for the last non-empty
+      // chunk because Ink's unmount appends a trailing clear write (an empty
+      // frame), which is not the settled viewport.
+      lastFrame: () => {
+        for (let i = chunks.length - 1; i >= 0; i--) {
+          const stripped = stripTerminalControl(chunks[i]);
+          if (stripped.trim().length > 0) return stripped;
+        }
+        return '';
+      },
+      // Legacy accumulator: the whole transcript joined. Substring-style tests
+      // that predate the final-frame fix rely on this.
+      read: () => stripTerminalControl(chunks.join('')),
+    };
+  >>>
+
+fn name=captureSurfaceFrame async=true params="component:any, props:Record<string,unknown>, cols:number, rows:number" returns="Promise<string>" export=true
+  doc "Render an Ink component in an isolated pseudo-TTY at the given size and return the final ANSI-stripped frame. Unmounts before returning; leaves no open handles."
+  handler <<<
+    const tty = createPseudoTty(cols, rows);
+    const app = render(React.createElement(component, props as any), {
+      stdout: tty.stdout as any,
+      stderr: tty.stderr as any,
+      stdin: tty.stdin as any,
+      debug: true,
+      exitOnCtrlC: false,
+      patchConsole: false,
+    });
+    let frame = '';
+    try {
+      // Let effects flush and the final frame settle before capturing. Capture
+      // the settled frame BEFORE unmount so a trailing clear write can never
+      // race the read.
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      frame = tty.lastFrame();
+    } finally {
+      app.unmount();
+    }
+    // Drain the unmount write so no listener fires after we return.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    return frame;
+  >>>

@@ -1,32 +1,10 @@
-import { PassThrough } from 'node:stream';
 import React from 'react';
 import { render } from 'ink';
 import { describe, expect, it } from 'vitest';
 
 import { StatusBar } from '../../packages/cli/src/generated/surfaces/status.js';
 import { buildPriorityStatusLine } from '../../packages/cli/src/generated/surfaces/status-helpers.js';
-
-function stripTerminalControl(value: string): string {
-  return value
-    .replace(/\u001b\][^\u0007]*(?:\u0007|\u001b\\)/g, '')
-    .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '')
-    .replace(/\r/g, '');
-}
-
-function createPseudoTty(width: number, height: number) {
-  const stdout = new PassThrough() as PassThrough & { isTTY: boolean; columns: number; rows: number };
-  stdout.isTTY = true;
-  stdout.columns = width;
-  stdout.rows = height;
-  const stderr = new PassThrough() as PassThrough & { isTTY: boolean };
-  stderr.isTTY = true;
-  const stdin = new PassThrough() as PassThrough & { isTTY: boolean; setRawMode: (mode: boolean) => void };
-  stdin.isTTY = true;
-  stdin.setRawMode = () => {};
-  let output = '';
-  stdout.on('data', (chunk) => { output += chunk.toString(); });
-  return { stdout, stderr, stdin, read: () => stripTerminalControl(output) };
-}
+import { createPseudoTty } from '../../packages/cli/src/generated/blocks/frame-capture.js';
 
 function statusProps(termWidth: number) {
   return {

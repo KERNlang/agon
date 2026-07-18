@@ -41,6 +41,7 @@
   },
   "files": [
     "dist",
+    "py",
     "README.md",
     "LICENSE"
   ],

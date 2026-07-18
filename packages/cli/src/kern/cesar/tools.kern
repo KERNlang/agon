@@ -2,6 +2,9 @@ import from="@kernlang/agon-core" names="ToolRegistry,getProjectFileStateCache,c
 import from="@kernlang/agon-core" names="ToolContext,ToolCallResult" types=true
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="./council-tool.js" names="createCouncilTool"
+import from="./tool-engine-reliability.js" names="createEngineReliabilityTool"
+import from="./tool-render-probe.js" names="createRenderProbeTool"
+import from="./tool-tui-probe.js" names="createTuiProbeTool"
 import from="./task-execution-lease.js" names="isTaskFileMutationAction,taskActionApprovalMessage,isApprovedPermissionResponse"
 import from="./permission-resolver.js" names="authorizeResolvedTaskAction"
 import from="../signals/output.js" names="getSessionAllowList"
@@ -38,6 +41,9 @@ fn name=createCesarToolRegistry params="engineId?:string" returns="ToolRegistry"
     do value="toolRegistry.register(createExitPlanModeTool())"
     do value="toolRegistry.register(createListPlansTool())"
     do value="toolRegistry.register(createRetrieveResultTool(engineId))"
+    do value="toolRegistry.register(createEngineReliabilityTool())"
+    do value="toolRegistry.register(createRenderProbeTool())"
+    do value="toolRegistry.register(createTuiProbeTool())"
     return value="toolRegistry"
 
 fn name=createEagerToolContext params="ctx:HandlerContext, config:any, signal:AbortSignal, dispatch:Dispatch" returns="ToolContext"

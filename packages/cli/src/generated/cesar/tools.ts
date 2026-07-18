@@ -8,6 +8,12 @@ import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
 import { createCouncilTool } from './council-tool.js';
 
+import { createEngineReliabilityTool } from './tool-engine-reliability.js';
+
+import { createRenderProbeTool } from './tool-render-probe.js';
+
+import { createTuiProbeTool } from './tool-tui-probe.js';
+
 import { isTaskFileMutationAction, taskActionApprovalMessage, isApprovedPermissionResponse } from './task-execution-lease.js';
 
 import { authorizeResolvedTaskAction } from './permission-resolver.js';
@@ -21,7 +27,7 @@ import { isBashToolName } from './brain-helpers.js';
 /**
  * Create and populate the standard Cesar tool registry. Single source of truth — no more duplication.
  */
-// @kern-source: tools:11
+// @kern-source: tools:14
 export function createCesarToolRegistry(engineId?: string): ToolRegistry {
   const toolRegistry = new ToolRegistry();
   toolRegistry.register(createReadTool());
@@ -50,13 +56,16 @@ export function createCesarToolRegistry(engineId?: string): ToolRegistry {
   toolRegistry.register(createExitPlanModeTool());
   toolRegistry.register(createListPlansTool());
   toolRegistry.register(createRetrieveResultTool(engineId));
+  toolRegistry.register(createEngineReliabilityTool());
+  toolRegistry.register(createRenderProbeTool());
+  toolRegistry.register(createTuiProbeTool());
   return toolRegistry;
 }
 
 /**
  * Create a shared ToolContext for eager tool execution during streaming.
  */
-// @kern-source: tools:43
+// @kern-source: tools:49
 export function createEagerToolContext(ctx: HandlerContext, config: any, signal: AbortSignal, dispatch: Dispatch): ToolContext {
   const cwd = resolveWorkingDir();
   const fsc = getProjectFileStateCache(cwd);
@@ -67,7 +76,7 @@ export function createEagerToolContext(ctx: HandlerContext, config: any, signal:
 /**
  * Parse a streaming tool input into a JSON object. Malformed input is returned as an explicit retryable error instead of being silently coerced.
  */
-// @kern-source: tools:51
+// @kern-source: tools:57
 export function parseEagerToolInput(toolName: string, input: unknown): {ok:boolean,input?:Record<string,unknown>,error?:string,raw:string} {
   const raw = typeof input === 'string'
     ? input
@@ -119,7 +128,7 @@ export function parseEagerToolInput(toolName: string, input: unknown): {ok:boole
 /**
  * Execute a tool eagerly during streaming — parse input, run, dispatch result.
  */
-// @kern-source: tools:101
+// @kern-source: tools:107
 export async function executeEagerTool(toolName: string, meta: Record<string,unknown>, toolRegistry: ToolRegistry, toolCtx: ToolContext, dispatch: Dispatch, cesarEngineId: string): Promise<ToolCallResult> {
   const callId = (meta.toolCallId as string) ?? `eager-${Date.now()}`;
   const parsed = parseEagerToolInput(toolName, meta.input);

@@ -54,7 +54,7 @@ import { createCesarTurnId, recordCesarApprovalDecision, recordCesarToolTimeline
 
 import { markSteeringTurn, drainSteering, releaseSteeringTurn } from './steering.js';
 
-import { beginCesarTurn, createCesarTurnRuntimeHost, resetStaleCesarTurnState, transitionCesarTurn, resolveCesarAbortOutcome, classifyCesarStreamError, releaseCesarTurnHandles, fenceStaleCesarTurn } from './turn-runtime.js';
+import { beginCesarTurn, createCesarTurnRuntimeHost, resetStaleCesarTurnState, transitionCesarTurn, resolveCesarAbortOutcome, classifyCesarStreamError, releaseCesarTurnHandles, fenceStaleCesarTurn, nextCesarResponseSeq } from './turn-runtime.js';
 
 import { createTaskExecutionLease, isTaskFileMutationAction, isApprovedPermissionResponse, taskActionApprovalMessage, approveTaskAction } from './task-execution-lease.js';
 
@@ -753,6 +753,14 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           return { turnId: _turnId, terminalState: 'failed', delegated: false, responded: false };
         }
 
+        // Per-response lease binding: every model round-trip (session.send) must
+        // carry a FRESH responseSeq so a mutation tool dispatched by a superseded
+        // response is fenced by isActiveCesarResponse even while the turn stays
+        // active. Wrap session.send once here so all ~20 send sites below stamp a
+        // new seq uniformly instead of threading nextCesarResponseSeq by hand. The
+        // wrapper forwards every option verbatim; only controlPlane is replaced.
+        const _cesarSend = (opts: any) => session.send({ ...opts, controlPlane: nextCesarResponseSeq(_turnRuntime) });
+
         // Ensure tool registry is always available
         if (!ctx.cesar!.toolRegistry) {
           ctx.cesar!.toolRegistry = createCesarToolRegistry();
@@ -1185,12 +1193,12 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
 
         // ── Stream response ──
         try {
-          const sendOptions: any = { message: enrichedInput, signal: abort.signal, images: images?.map(img => img.path), controlPlane: _turnRuntime.envelope };
+          const sendOptions: any = { message: enrichedInput, signal: abort.signal, images: images?.map(img => img.path) };
           if (cesarFastPath) {
             sendOptions.toolLoopBaseBudget = fastPathBaseBudget;
             sendOptions.toolLoopMaxBudget = fastPathMaxBudget;
           }
-          const gen = session.send(sendOptions);
+          const gen = _cesarSend(sendOptions);
 
           for await (const chunk of gen) {
             if (abort.signal.aborted) break;
@@ -1606,7 +1614,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             // session.send (not the string-only runToolLoop contract), so steering
             // image attachments drained alongside the text can be forwarded here.
             const _steerMsg = drainSteeringIntoSend(formatted, 'xml');
-            const contGen = session.send({ message: _steerMsg, signal: abort.signal, controlPlane: _turnRuntime.envelope, ...(_lastDrainedSteerImages ? { images: _lastDrainedSteerImages } : {}) });
+            const contGen = _cesarSend({ message: _steerMsg, signal: abort.signal, ...(_lastDrainedSteerImages ? { images: _lastDrainedSteerImages } : {}) });
             for await (const chunk of contGen) {
               if (chunk.type === 'text') continuation += chunk.content;
               if (chunk.type === 'tool_call') {
@@ -1637,7 +1645,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               if (repairFormatted) {
                 dispatch({ type: 'spinner-start', message: 'Cesar processing repaired tool result…', color });
                 let repairedContinuation = '';
-                const repairGen = session.send({ message: repairFormatted, signal: abort.signal, controlPlane: _turnRuntime.envelope });
+                const repairGen = _cesarSend({ message: repairFormatted, signal: abort.signal });
                 for await (const chunk of repairGen) {
                   if (chunk.type === 'text') repairedContinuation += chunk.content;
                   if (chunk.type === 'tool_call') {
@@ -1965,10 +1973,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 _engineErrored = false;
                 _engineErrorMsg = '';
                 let nextResponse = '';
-                const gen = session.send({
+                const gen = _cesarSend({
                   message: sendMessage,
                   signal: abort.signal,
-                  controlPlane: _turnRuntime.envelope,
                   toolLoopBaseBudget: cesarFastPath ? fastPathBaseBudget : undefined,
                   toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined,
                 });
@@ -2224,7 +2231,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           const _execNudge = mutationStallForced
             ? 'You HAVE Edit, Write, and Bash tools and you are NOT read-only. The investigation gate only DEFERS the first mutating call; calling Edit/Write/Bash is what unlocks execution — and it is unlocked now. Apply the change directly this turn with Edit/Write/Bash. Do NOT say you lack write tools, do NOT delegate to an Agent to do the writing, and do NOT ask the user to paste or apply it themselves.'
             : 'Investigation complete. You may now use write, edit, and bash tools to execute your plan. Proceed.';
-          const execGen = session.send({ message: _execNudge, signal: abort.signal, controlPlane: _turnRuntime.envelope });
+          const execGen = _cesarSend({ message: _execNudge, signal: abort.signal });
           for await (const chunk of execGen) {
             if (chunk.type === 'text') execResponse += chunk.content;
             if (chunk.type === 'done' || chunk.type === 'error') break;
@@ -2242,10 +2249,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   const sendMessage = drainSteeringIntoSend(message, 'exec');
                   dispatch({ type: 'spinner-start', message: 'Cesar executing…', color });
                   let nextResponse = '';
-                  const gen = session.send({
+                  const gen = _cesarSend({
                     message: sendMessage,
                     signal: abort.signal,
-                    controlPlane: _turnRuntime.envelope,
                     toolLoopBaseBudget: cesarFastPath ? fastPathBaseBudget : undefined,
                     toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined,
                   });
@@ -2299,10 +2305,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           dispatch({ type: 'spinner-start', message: 'Cesar building plan…', color });
           try {
             let planResponse = '';
-            const planGen = session.send({
+            const planGen = _cesarSend({
               message: '[SYSTEM] You are in PLAN MODE. You investigated enough. Now call ProposePlan with your structured plan.',
               signal: abort.signal,
-              controlPlane: _turnRuntime.envelope,
             });
             for await (const chunk of planGen) {
               if (chunk.type === 'text') planResponse += chunk.content;
@@ -2349,10 +2354,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           dispatch({ type: 'spinner-start', message: 'Cesar grounding…', color });
           try {
             let groundResponse = '';
-            const groundGen = session.send({
+            const groundGen = _cesarSend({
               message: '[SYSTEM] GROUNDING CHECK: You did NOT dispatch any review/forge/tribunal/brainstorm/agent/job this turn, and none is pending or running. Do NOT claim background work is "running", "in parallel", "kicked off", or that anyone "will report back" — that is false and misleads the user. If the user wants that work done, call the actual tool now (Review/Forge/Tribunal/Brainstorm/Agent). Otherwise tell the user plainly that nothing is currently running and ask whether to start it.',
               signal: abort.signal,
-              controlPlane: _turnRuntime.envelope,
             });
             for await (const chunk of groundGen) {
               if (chunk.type === 'text') groundResponse += chunk.content;
@@ -2396,10 +2400,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           dispatch({ type: 'spinner-start', message: 'Cesar finishing the answer…', color });
           try {
             let finalAnswer = '';
-            const finishGen = session.send({
+            const finishGen = _cesarSend({
               message: 'You finished investigating. Now answer the user directly in 2-6 sentences. Do not narrate your process, do not say "let me check", and do not continue exploring. Give the actual answer or recommendation now.',
               signal: abort.signal,
-              controlPlane: _turnRuntime.envelope,
             });
             for await (const chunk of finishGen) {
               if (chunk.type === 'text') finalAnswer += chunk.content;
@@ -2444,7 +2447,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           dispatch({ type: 'spinner-start', message: 'Cesar deciding next step…', color });
           try {
             let finalAction = '';
-            const finalActionGen = session.send({
+            const finalActionGen = _cesarSend({
               message: [
                 '[SYSTEM] You used tools but produced no user-facing answer.',
                 'Do exactly one thing now:',
@@ -2454,7 +2457,6 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 'Do not call ReportConfidence again. Do not keep reading unless one missing file is absolutely blocking. Do not stop with only a recap.',
               ].join('\n'),
               signal: abort.signal,
-              controlPlane: _turnRuntime.envelope,
             });
             for await (const chunk of finalActionGen) {
               if (chunk.type === 'text') finalAction += chunk.content;
@@ -2685,10 +2687,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             _engineErrorMsg = '';
             let _sysResp = '';
             try {
-              const _sysGen = session.send({
+              const _sysGen = _cesarSend({
                 message,
                 signal: abort.signal,
-                controlPlane: _turnRuntime.envelope,
                 toolLoopBaseBudget: cesarFastPath ? fastPathBaseBudget : undefined,
                 toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined,
               });
@@ -2719,7 +2720,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                     if (!session.alive || abort.signal.aborted) return '';
                     _engineErrored = false; _engineErrorMsg = '';
                     let _nr = '';
-                    const _g2 = session.send({ message: nextMessage, signal: abort.signal, controlPlane: _turnRuntime.envelope, toolLoopBaseBudget: cesarFastPath ? fastPathBaseBudget : undefined, toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined });
+                    const _g2 = _cesarSend({ message: nextMessage, signal: abort.signal, toolLoopBaseBudget: cesarFastPath ? fastPathBaseBudget : undefined, toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined });
                     for await (const _ch of _g2) {
                       if (_ch.type === 'text') _nr += _ch.content;
                       if (_ch.type === 'error' && !_nr.trim()) { _engineErrored = true; _engineErrorMsg = String(_ch.content ?? '').slice(0, 300); }
@@ -2843,10 +2844,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             dispatch({ type: 'spinner-start', message: `${cesarEngineId} continuing (${_continuations}/${MAX_CONTINUATIONS})…`, color });
             let contResponse = '';
             try {
-              const contGen = session.send({
+              const contGen = _cesarSend({
                 message: nudge,
                 signal: abort.signal,
-                controlPlane: _turnRuntime.envelope,
                 toolLoopBaseBudget: cesarFastPath ? fastPathBaseBudget : undefined,
                 toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined,
               });
@@ -2908,10 +2908,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                       _engineErrored = false;
                       _engineErrorMsg = '';
                       let nextResp = '';
-                      const gen = session.send({
+                      const gen = _cesarSend({
                         message: sendMessage,
                         signal: abort.signal,
-                        controlPlane: _turnRuntime.envelope,
                         toolLoopBaseBudget: cesarFastPath ? fastPathBaseBudget : undefined,
                         toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined,
                       });
@@ -3004,7 +3003,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             dispatch({ type: 'spinner-start', message: 'Cesar wrapping up…', color });
             let _closure = '';
             try {
-              const _closureGen = session.send({
+              const _closureGen = _cesarSend({
                 message: [
                   '[SYSTEM] Your turn is ending but you neither finished the task nor asked me anything. Write ONE short closing line (no tools, no recap) so I know exactly where things stand. Pick one:',
                   '- DONE: one past-tense sentence naming what you completed, or',
@@ -3012,7 +3011,6 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   'Do not call any tools.',
                 ].join('\n'),
                 signal: abort.signal,
-                controlPlane: _turnRuntime.envelope,
               });
               for await (const _chunk of _closureGen) {
                 if (abort.signal.aborted) break;
@@ -3180,7 +3178,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 send: async (nextMessage: string) => {
                   let text = '';
                   let streamError = '';
-                  const gen = session.send({ message: nextMessage, signal: abort.signal, controlPlane: _turnRuntime.envelope });
+                  const gen = _cesarSend({ message: nextMessage, signal: abort.signal });
                   for await (const chunk of gen) {
                     if (abort.signal.aborted) break;
                     if (forwardContinuationStatus(chunk, dispatch)) continue;
@@ -3196,10 +3194,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                     async (nextMessage: string) => {
                       if (ctx.cesar!.pendingDelegation || !session.alive || abort.signal.aborted) return '';
                       let next = '';
-                      const gen = session.send({
+                      const gen = _cesarSend({
                         message: drainSteeringIntoSend(nextMessage, 'auto'),
                         signal: abort.signal,
-                        controlPlane: _turnRuntime.envelope,
                         toolLoopBaseBudget: cesarFastPath ? fastPathBaseBudget : undefined,
                         toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined,
                       });

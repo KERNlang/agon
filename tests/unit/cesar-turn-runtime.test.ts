@@ -5,6 +5,8 @@ import {
   createDurableCesarTurnRuntimeHost,
   createCesarTurnRuntimeHost,
   isActiveCesarTurn,
+  isActiveCesarResponse,
+  nextCesarResponseSeq,
   runTurnPermissionOnce,
   runTurnToolOnce,
   resetStaleCesarTurnState,
@@ -132,6 +134,82 @@ describe('Cesar turn runtime host', () => {
     expect(second.envelope.leaseEpoch).toBe(2);
     expect(isActiveCesarTurn(host, first.envelope)).toBe(false);
     expect(isActiveCesarTurn(host, second.envelope)).toBe(true);
+  });
+
+  it('binds mutations to the latest response of an active turn, not just the turn', () => {
+    const host = createCesarTurnRuntimeHost('chat-response-binding');
+    const runtime = beginCesarTurn(host, 'turn-1', 'api-session');
+
+    // Response N claims seq 1; a mutation stamped with seq 1 is current.
+    const responseN = nextCesarResponseSeq(runtime);
+    expect(responseN.responseSeq).toBe(1);
+    expect(isActiveCesarResponse(host, responseN)).toBe(true);
+
+    // The model produces response N+1 — seq advances, the active envelope moves.
+    const responseN1 = nextCesarResponseSeq(runtime);
+    expect(responseN1.responseSeq).toBe(2);
+
+    // A mutation from the SUPERSEDED response N is now fenced even though the
+    // turn is still active; the latest response N+1 is not.
+    expect(isActiveCesarResponse(host, responseN)).toBe(false);
+    expect(isActiveCesarResponse(host, responseN1)).toBe(true);
+
+    // Turn-level activity still holds for both (responseSeq is ignored there) —
+    // only the response-scoped gate distinguishes them.
+    expect(isActiveCesarTurn(host, responseN)).toBe(true);
+    expect(isActiveCesarTurn(host, responseN1)).toBe(true);
+  });
+
+  it('treats a seq-less legacy envelope as current so older producers are not broken', () => {
+    const host = createCesarTurnRuntimeHost('chat-legacy-response');
+    const runtime = beginCesarTurn(host, 'turn-1', 'api-session');
+    // The active envelope has a seq after a send claims one...
+    nextCesarResponseSeq(runtime);
+    // ...but a legacy caller presenting the turn identity WITHOUT a responseSeq
+    // is still accepted (backward compatible).
+    const legacy = { ...runtime.envelope };
+    delete (legacy as any).responseSeq;
+    expect(isActiveCesarResponse(host, legacy)).toBe(true);
+    // A different turn id is still rejected outright.
+    expect(isActiveCesarResponse(host, { ...runtime.envelope, turnId: 'turn-other' })).toBe(false);
+  });
+
+  it('binds mutations to the latest response of an active turn, not just the turn', () => {
+    const host = createCesarTurnRuntimeHost('chat-response-binding');
+    const runtime = beginCesarTurn(host, 'turn-1', 'api-session');
+
+    // Response N claims seq 1; a mutation stamped with seq 1 is current.
+    const responseN = nextCesarResponseSeq(runtime);
+    expect(responseN.responseSeq).toBe(1);
+    expect(isActiveCesarResponse(host, responseN)).toBe(true);
+
+    // The model produces response N+1 — seq advances, the active envelope moves.
+    const responseN1 = nextCesarResponseSeq(runtime);
+    expect(responseN1.responseSeq).toBe(2);
+
+    // A mutation from the SUPERSEDED response N is now fenced even though the
+    // turn is still active; the latest response N+1 is not.
+    expect(isActiveCesarResponse(host, responseN)).toBe(false);
+    expect(isActiveCesarResponse(host, responseN1)).toBe(true);
+
+    // Turn-level activity still holds for both (responseSeq is ignored there) —
+    // only the response-scoped gate distinguishes them.
+    expect(isActiveCesarTurn(host, responseN)).toBe(true);
+    expect(isActiveCesarTurn(host, responseN1)).toBe(true);
+  });
+
+  it('treats a seq-less legacy envelope as current so older producers are not broken', () => {
+    const host = createCesarTurnRuntimeHost('chat-legacy-response');
+    const runtime = beginCesarTurn(host, 'turn-1', 'api-session');
+    // The active envelope has a seq after a send claims one...
+    nextCesarResponseSeq(runtime);
+    // ...but a legacy caller presenting the turn identity WITHOUT a responseSeq
+    // is still accepted (backward compatible).
+    const legacy = { ...runtime.envelope };
+    delete (legacy as any).responseSeq;
+    expect(isActiveCesarResponse(host, legacy)).toBe(true);
+    // A different turn id is still rejected outright.
+    expect(isActiveCesarResponse(host, { ...runtime.envelope, turnId: 'turn-other' })).toBe(false);
   });
 
   it('classifies read-only tool calls so a stale lease must not fence them', () => {

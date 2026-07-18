@@ -36,6 +36,7 @@ const completeEngine = {
     idleTimeoutMs: 120_000,
     firstChunkRetryCount: 2,
     firstChunkRetryBackoffMs: 1_500,
+    emptyResponseRetryCount: 4,
   },
 } as const;
 
@@ -64,6 +65,8 @@ describe('EngineDefinitionSchema execution metadata', () => {
     ['firstChunkRetryCount', -1],
     ['firstChunkRetryCount', 1.5],
     ['firstChunkRetryBackoffMs', -1],
+    ['emptyResponseRetryCount', -1],
+    ['emptyResponseRetryCount', 1.5],
   ])('rejects invalid api.%s values', (field, value) => {
     const result = validateEngineConfig({
       ...completeEngine,

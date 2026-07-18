@@ -1,0 +1,106 @@
+// ── RenderProbe tool ─────────────────────────────────────────────────
+// Read-only tool that renders a generated Ink surface in-process at a given
+// terminal size and returns the ANSI-stripped text frame, so Cesar can verify
+// its own UI layout instead of editing it blind. Backed by captureSurfaceFrame
+// (blocks/frame-capture), which returns the FINAL settled frame (not the
+// transcript). A fixture registry maps a small set of surface ids to their
+// component + default props; arbitrary surfaces need prop fixtures, so an
+// unknown id returns the list of known ids rather than guessing.
+
+import from="@kernlang/agon-core" names="ToolDefinition,ToolHandler,ToolContext,ToolResult,PermissionDecision" types=true
+import from="../blocks/frame-capture.js" names="captureSurfaceFrame"
+import from="../surfaces/status.js" names="StatusBar"
+import from="../blocks/todo-list.js" names="TodoList"
+import from="../surfaces/app-views.js" names="ChromeBar"
+
+interface name=RenderFixture
+  field name=component type=any
+  field name=defaults type="Record<string,unknown>"
+
+fn name=renderProbeFixtures returns="Record<string,RenderFixture>" export=true
+  doc "Fixture registry mapping RenderProbe surface ids to their generated component and default props."
+  handler <<<
+    return {
+      StatusBar: {
+        component: StatusBar,
+        defaults: {
+          cesarId: 'cesar-engine',
+          chatMessageCount: 0,
+          totalTokens: 0,
+          totalCostUsd: 0,
+          meteredCostUsd: 0,
+          hasPlanApiUsage: false,
+          hasCliUsage: false,
+          cwd: '~/workspace',
+          branch: 'main',
+          explorationMode: false,
+          autoModeQueued: false,
+          telemetryVitals: new Map(),
+          context: { pct: 0, used: 0, limit: 100000, compacted: 0, cached: 0, source: 'estimate' },
+          termWidth: 100,
+        },
+      },
+      TodoList: {
+        component: TodoList,
+        defaults: {
+          todos: [],
+          planActive: false,
+        },
+      },
+      ChromeBar: {
+        component: ChromeBar,
+        defaults: {
+          mode: 'chat',
+          cwdLabel: 'workspace',
+          engineCount: 0,
+          replState: 'idle',
+          runningJobs: [],
+        },
+      },
+    };
+  >>>
+
+fn name=renderProbeSurface async=true params="surface:string, component:any, defaults:Record<string,unknown>, overrides:Record<string,unknown>, cols:number, rows:number" returns="Promise<ToolResult>" export=true
+  doc "Render one fixture surface — caller props shallow-merged over the fixture defaults — and return its final text frame. A render error becomes an error ToolResult, never a throw."
+  handler lang="kern"
+    let name=props value="Object.assign({}, defaults, overrides)"
+    try
+      let name=frame value="await captureSurfaceFrame(component, props, cols, rows)"
+      return value="{ ok: true, content: frame }"
+      catch name=err
+        return value="{ ok: false, content: '', error: `RenderProbe failed to render '${surface}': ${err instanceof Error ? err.message : String(err)}` }"
+
+fn name=renderProbeDefinition params="validIds:string[]" returns=ToolDefinition export=true
+  doc "ToolDefinition for the RenderProbe tool, parameterized by the valid surface ids so the description and schema advertise the live fixture set."
+  handler lang="kern"
+    return value="{ name: 'RenderProbe', description: `Render a known Ink surface in-process and return its ANSI-stripped text frame so you can verify layout. Valid surface ids: ${validIds.join(', ')}. Input: { surface, cols?=100, rows?=30, props? } — props are shallow-merged over the fixture defaults. Read-only.`, inputSchema: { type: 'object', properties: { surface: { type: 'string', description: `Surface id to render. One of: ${validIds.join(', ')}.` }, cols: { type: 'number', description: 'Terminal columns. Optional, defaults to 100.' }, rows: { type: 'number', description: 'Terminal rows. Optional, defaults to 30.' }, props: { type: 'object', description: 'Optional props shallow-merged over the fixture defaults.' } }, required: ['surface'] }, maxResultSizeChars: 40000, isReadOnly: true, isConcurrencySafe: true }"
+
+fn name=createRenderProbeTool returns=ToolHandler export=true
+  doc "Factory for the RenderProbe tool — renders a known Ink surface fixture and returns its final text frame."
+  handler lang="kern"
+    return value="{ definition: renderProbeDefinition(Object.keys(renderProbeFixtures())), validate: renderProbeValidate, checkPermission: renderProbeCheckPermission, execute: renderProbeExecute }"
+
+fn name=renderProbeValidate params="input:Record<string,unknown>, _ctx:ToolContext" returns="string|null" export=true
+  doc "Require a non-empty `surface` id."
+  handler lang="kern"
+    return value="typeof input.surface === 'string' && input.surface.trim() ? null : 'Missing required parameter: surface'"
+
+fn name=renderProbeCheckPermission params="_input:Record<string,unknown>, _ctx:ToolContext" returns=PermissionDecision export=true
+  doc "RenderProbe is read-only — always allowed."
+  handler lang="kern"
+    return value="{ behavior: 'allow' }"
+
+fn name=renderProbeExecute async=true params="input:Record<string,unknown>, _ctx:ToolContext" returns="Promise<ToolResult>" export=true
+  doc "Resolve the requested fixture, clamp dimensions, and render its final text frame. An unknown surface returns the list of known ids rather than guessing."
+  handler lang="kern"
+    let name=fixtures value="renderProbeFixtures()"
+    let name=validIds value="Object.keys(fixtures)"
+    let name=surface value="String(input.surface ?? '').trim()"
+    let name=fixture value="fixtures[surface]"
+    if cond="!fixture"
+      return value="{ ok: false, content: '', error: `Unknown surface '${surface}'. Valid surface ids: ${validIds.join(', ')}.` }"
+    comment raw="// Clamp dimensions: an in-process Ink render allocates per-cell state, so model-controlled unbounded cols/rows is a memory-exhaustion vector (agon-review finding). 400x200 covers any real terminal."
+    let name=cols value="typeof input.cols === 'number' && input.cols > 0 ? Math.min(Math.max(1, Math.floor(input.cols)), 400) : 100"
+    let name=rows value="typeof input.rows === 'number' && input.rows > 0 ? Math.min(Math.max(1, Math.floor(input.rows)), 200) : 30"
+    let name=overrides value="(input.props && typeof input.props === 'object' && !Array.isArray(input.props)) ? input.props as Record<string, unknown> : {}"
+    return value="renderProbeSurface(surface, fixture.component, fixture.defaults, overrides, cols, rows)"

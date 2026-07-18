@@ -48,7 +48,9 @@ import type { ToolCacheEntry } from '../models/context-parts.js';
 
 import { safeAgentVisibleText } from './agent-visible.js';
 
-// @kern-source: agent-loop:31
+import type { AgentToolOutcome } from '../signals/delegate-ledger.js';
+
+// @kern-source: agent-loop:32
 export interface ApiAgentOptions {
   api: ApiConfig;
   prompt: string;
@@ -74,7 +76,7 @@ export interface ApiAgentOptions {
   retryBaseMs?: number;
 }
 
-// @kern-source: agent-loop:56
+// @kern-source: agent-loop:57
 export interface ApiAgentResult {
   response: string;
   toolCalls: number;
@@ -85,12 +87,13 @@ export interface ApiAgentResult {
   cancelled?: boolean;
   timedOut?: boolean;
   harvestable?: boolean;
+  toolOutcomes?: AgentToolOutcome[];
 }
 
 /**
  * Attempt to repair malformed JSON tool arguments. Handles common LLM mistakes: markdown fencing, trailing commas, single quotes, unquoted keys.
  */
-// @kern-source: agent-loop:67
+// @kern-source: agent-loop:70
 export function repairToolArgs(raw: string): Record<string,unknown>|null {
   let cleaned = raw.trim();
 
@@ -121,7 +124,7 @@ export function repairToolArgs(raw: string): Record<string,unknown>|null {
 /**
  * Auto-correct tool name case mismatches. Maps 'read' → 'Read', 'GREP' → 'Grep', etc.
  */
-// @kern-source: agent-loop:96
+// @kern-source: agent-loop:99
 export function repairToolName(name: string, registry?: any): string {
   // Prefer the registry's canonical spelling when one is available. ToolRegistry.get
   // already resolves case-insensitively, so custom registered tools stay authoritative.
@@ -144,7 +147,7 @@ export function repairToolName(name: string, registry?: any): string {
 /**
  * True when an API dispatch failure looks transient (worth a backoff+retry) rather than permanent. Transient: request timeout (exitCode 124), rate limit (429), upstream 5xx, stream errors, connection resets / DNS hiccups, overloaded. Permanent (never retried): missing/invalid API key, 401/403 auth, 400 bad request. Aborts (exitCode 130 / signal) are handled by the caller, not here.
  */
-// @kern-source: agent-loop:117
+// @kern-source: agent-loop:120
 export function isTransientDispatchFailure(stderr: string, exitCode?: number): boolean {
   const s = String(stderr ?? '').toLowerCase();
   if (exitCode === 124) return true; // request timed out
@@ -156,7 +159,7 @@ export function isTransientDispatchFailure(stderr: string, exitCode?: number): b
 /**
  * Run an API engine with full tool loop. Returns final response after all tool calls resolve.
  */
-// @kern-source: agent-loop:127
+// @kern-source: agent-loop:130
 export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentResult> {
   // Run-scoped cache ID: prevents concurrent forge runs from colliding
   const runCacheId = `${opts.api.model || 'api-agent'}-${randomUUID().slice(0, 8)}`;
@@ -245,6 +248,15 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
   const totalDeadline = Date.now() + opts.timeout * 1000; // Total timeout for entire loop
   let step = 0;
   let totalToolCalls = 0;
+  // Per-call outcome ledger for the delegate tool ledger (part 2b). Native
+  // provenance = we actually saw the call + result; heuristic = inferred (a
+  // narrated stall is NOT a tool execution). Accumulated across all steps and
+  // attached to EVERY return so a partial/aborted/failed run still reports the
+  // tool work it did produce.
+  const toolOutcomes: AgentToolOutcome[] = [];
+  const recordOutcome = (tool: string, status: 'ok' | 'error' | 'timeout' | 'unknown', durationMs: number, provenance: 'native' | 'heuristic' = 'native'): void => {
+    toolOutcomes.push({ tool, status, durationMs, provenance });
+  };
   let finalResponse = '';
   // Last visible assistant narration seen across steps. finalResponse is only
   // set on the terminal no-tool-call answer, so on the silent return paths
@@ -278,7 +290,7 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
       if (remainingRaw <= 0) {
         // The shared deadline is exhausted — bail out with what we have.
         const reason = 'API agent deadline exceeded';
-        return { response: finalResponse || lastVisibleText || '[Timeout — ran out of time]', toolCalls: totalToolCalls, steps: step, failed: true, timedOut: true, errorReason: reason };
+        return { response: finalResponse || lastVisibleText || '[Timeout — ran out of time]', toolCalls: totalToolCalls, steps: step, toolOutcomes, failed: true, timedOut: true, errorReason: reason };
       }
       // Short, explicitly configured turns must still get a dispatch. The
       // previous 30s floor paired with an <=30 bailout skipped every turn
@@ -299,7 +311,7 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
               const dispatchError = dispatchResult.stderr || `API dispatch exited with code ${dispatchResult.exitCode}`;
               // Caller abort → stop now (a cancel is not a failure to retry).
               if (opts.signal?.aborted || dispatchResult.exitCode === 130) {
-                return { response: `Error: ${dispatchError}`, toolCalls: totalToolCalls, steps: step, cancelled: true, errorReason: dispatchError || 'aborted by caller' };
+                return { response: `Error: ${dispatchError}`, toolCalls: totalToolCalls, steps: step, toolOutcomes, cancelled: true, errorReason: dispatchError || 'aborted by caller' };
               }
               // Only retry when nothing was streamed yet (a clean re-send).
               if (!fullResponse && isTransientDispatchFailure(dispatchError, dispatchResult.exitCode)) {
@@ -310,7 +322,7 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
                 // 400). Flag it so the session classifies this as an error
                 // turn and quarantines the engine — NOT a 0-tool 'completed'.
                 const timedOut = dispatchResult.timedOut === true || dispatchResult.exitCode === 124;
-                return { response: fullResponse || `Error: ${dispatchError}`, toolCalls: totalToolCalls, steps: step, failed: true, engineFault: !timedOut, timedOut, errorReason: dispatchError };
+                return { response: fullResponse || `Error: ${dispatchError}`, toolCalls: totalToolCalls, steps: step, toolOutcomes, failed: true, engineFault: !timedOut, timedOut, errorReason: dispatchError };
               }
             }
             break;
@@ -322,7 +334,7 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
         const msg = err?.message ?? String(err);
         const thrownTimedOut = /timed out|timeout|etimedout/i.test(msg);
         if (opts.signal?.aborted) {
-          return { response: fullResponse || `Error: ${msg}`, toolCalls: totalToolCalls, steps: step, cancelled: true, errorReason: msg || 'aborted by caller' };
+          return { response: fullResponse || `Error: ${msg}`, toolCalls: totalToolCalls, steps: step, toolOutcomes, cancelled: true, errorReason: msg || 'aborted by caller' };
         } else if (!fullResponse && isTransientDispatchFailure(msg, undefined)) {
           transientReason = msg;
           lastTransientTimedOut = thrownTimedOut;
@@ -330,7 +342,7 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
           // Preserve partial output, but never convert a broken stream into a
           // successful turn. Both clean and partial stream faults are engine
           // failures; the adapter keeps the partial stdout for diagnostics.
-          return { response: fullResponse || `Error: ${msg}`, toolCalls: totalToolCalls, steps: step, failed: true, engineFault: !thrownTimedOut, timedOut: thrownTimedOut, errorReason: msg };
+          return { response: fullResponse || `Error: ${msg}`, toolCalls: totalToolCalls, steps: step, toolOutcomes, failed: true, engineFault: !thrownTimedOut, timedOut: thrownTimedOut, errorReason: msg };
         }
       }
 
@@ -345,13 +357,13 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
         const aborted = !!opts.signal?.aborted;
         const reason = `API engine failed after ${dispatchAttempt} attempt(s) (${transientReason})`;
         return aborted
-          ? { response: `Error: ${reason}`, toolCalls: totalToolCalls, steps: step, cancelled: true, errorReason: reason }
-          : { response: `Error: ${reason}`, toolCalls: totalToolCalls, steps: step, failed: true, engineFault: true, timedOut: lastTransientTimedOut || Date.now() >= totalDeadline, errorReason: reason };
+          ? { response: `Error: ${reason}`, toolCalls: totalToolCalls, steps: step, toolOutcomes, cancelled: true, errorReason: reason }
+          : { response: `Error: ${reason}`, toolCalls: totalToolCalls, steps: step, toolOutcomes, failed: true, engineFault: true, timedOut: lastTransientTimedOut || Date.now() >= totalDeadline, errorReason: reason };
       }
       console.warn(`[agon] api-agent-loop: transient failure (${transientReason}); reconnecting attempt ${dispatchAttempt}/${maxDispatchRetries} in ${backoffMs}ms`);
       await new Promise((r) => setTimeout(r, backoffMs));
       if (opts.signal?.aborted) {
-        return { response: 'Error: aborted during reconnect', toolCalls: totalToolCalls, steps: step, cancelled: true, errorReason: 'aborted during reconnect' };
+        return { response: 'Error: aborted during reconnect', toolCalls: totalToolCalls, steps: step, toolOutcomes, cancelled: true, errorReason: 'aborted during reconnect' };
       }
     }
 
@@ -385,6 +397,7 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
           response: finalResponse || lastVisibleText || 'Error: API engine produced hidden reasoning but no visible answer or tool calls after retry.',
           toolCalls: totalToolCalls,
           steps: step,
+          toolOutcomes,
           failed: true,
           errorReason: 'API engine produced hidden reasoning but no visible answer or tool calls after retry.',
         };
@@ -401,6 +414,7 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
           response: finalResponse || lastVisibleText || 'Error: API engine produced no visible answer or tool calls.',
           toolCalls: totalToolCalls,
           steps: step,
+          toolOutcomes,
           failed: true,
           errorReason: 'API engine produced no visible answer or tool calls.',
         };
@@ -431,6 +445,18 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
       // Execute tools with repair for malformed args
       for (const tc of extractedCalls) {
         let wroteToolResult = false;
+        // INVARIANT (delegate-ledger honesty): every COUNTED tool call
+        // (writeToolResult ⇒ totalToolCalls++) gets EXACTLY ONE native
+        // outcome. recordOnce guards against both double-recording and the
+        // pre-execution paths (malformed args, semaphore abort, throw-before-
+        // execute) silently counting a call with no outcome. Heuristic signals
+        // (narrated stalls) use recordOutcome directly and are NOT counted.
+        let outcomeRecorded = false;
+        const recordOnce = (tool: string, status: 'ok' | 'error' | 'timeout' | 'unknown', durationMs: number): void => {
+          if (outcomeRecorded) return;
+          outcomeRecorded = true;
+          recordOutcome(tool, status, durationMs);
+        };
         const writeToolResult = (content: string) => {
           wroteToolResult = true;
           totalToolCalls++;
@@ -448,6 +474,8 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
               args = repaired;
             } else {
               // Still broken — send error feedback to model instead of silently passing { raw: ... }
+              // Natively observed: the tool call failed before execution (bad args).
+              recordOnce(tc.name, 'error', 0);
               writeToolResult(`Error: Malformed JSON arguments for tool "${tc.name}". Got: ${tc.arguments.slice(0, 200)}. Please retry with valid JSON.`);
               continue;
             }
@@ -487,6 +515,10 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
               )
             : undefined;
           const runToolCall = async () => {
+            // Time the EXECUTION itself (inside runToolCall), not the
+            // semaphore queue wait — the ledger wants how long the tool took
+            // to run, not how long it waited for a heavy-tool slot.
+            const t0 = Date.now();
             try {
               const callResult = await executeToolCall(
                 { id: tc.id, name: tc.name, input: args },
@@ -494,8 +526,10 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
                 registry,
                 permissionAsk,
               );
+              recordOnce(tc.name, callResult.result.ok ? 'ok' : 'error', Date.now() - t0);
               return callResult.result.ok ? callResult.result.content : (callResult.result.error ?? 'Tool execution failed');
             } catch (err: any) {
+              recordOnce(tc.name, 'error', Date.now() - t0);
               return `Error: ${err.message ?? String(err)}`;
             }
           };
@@ -508,6 +542,10 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
               result = (await opts.heavyToolSemaphore.runWith(runToolCall, opts.signal)) as string;
             } catch (err: any) {
               if (err?.name === 'AbortError') {
+                // Pre-execution failure: the tool never ran (semaphore rejected
+                // the waiter on abort). It is a KNOWN native failure, so record
+                // one 'error' outcome for the call we are about to count.
+                recordOnce(tc.name, 'error', 0);
                 result = `Tool execution cancelled while waiting for heavy-tool semaphore`;
               } else {
                 throw err;
@@ -531,6 +569,10 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
           }
           writeToolResult(histContent);
         } catch (err: any) {
+          // A throw before execute (e.g. onToolCall listener, name repair, or a
+          // non-abort semaphore fault) is a KNOWN pre-execution native failure.
+          // Record one outcome so the counted call (below) is never outcome-less.
+          recordOnce(tc.name, 'error', 0);
           if (!wroteToolResult) {
             writeToolResult(`Error: Tool loop failed before producing a result for "${tc.name}": ${err?.message ?? String(err)}`);
           }
@@ -543,6 +585,10 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
     const tail = fullResponse.slice(-300);
     const fakeGate = /\b(?:need (?:user )?(?:permission|approval)|await(?:ing)? approval|tool (?:keeps )?blocking me|(?:edit|write|bash|command) tool (?:keeps )?blocking me|blocked by (?:the )?(?:edit|write|bash) tool|let me try writing|try writing the full file)\b/i;
     if (fakeGate.test(fullResponse)) {
+      // A narrated stall is NOT a tool execution — record it honestly as a
+      // heuristic 'unknown' so the ledger can surface fake-gate behaviour
+      // without ever fabricating an ok/error outcome.
+      recordOutcome('narrated-stall', 'unknown', 0, 'heuristic');
       pushHistory({ role: 'assistant', content: fullResponse });
       pushHistory({ role: 'user', content: 'Do not narrate that a tool is blocked. If you need to read, edit, write, or run a command, call the tool now. Do not explain the tool system — use it.' });
       continue;
@@ -553,14 +599,17 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
       // Auto-execute the intent
       const callId = `auto_${Date.now()}`;
       let result: string;
+      const autoReadStart = Date.now();
       try {
         const callResult = await executeToolCall(
           { id: callId, name: 'Read', input: { file_path: readIntent[1] } },
           toolCtx,
           registry,
         );
+        recordOutcome('Read', callResult.result.ok ? 'ok' : 'error', Date.now() - autoReadStart);
         result = callResult.result.ok ? callResult.result.content : (callResult.result.error ?? 'File not found');
       } catch (err: any) {
+        recordOutcome('Read', 'error', Date.now() - autoReadStart);
         result = `Error: ${err.message ?? String(err)}`;
       }
       let histContent = result;
@@ -592,6 +641,7 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
       response: `${reason}; evaluating any candidate worktree changes with fitness.`,
       toolCalls: totalToolCalls,
       steps: step,
+      toolOutcomes,
       failed: true,
       harvestable: true,
       errorReason: reason,
@@ -604,10 +654,11 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
       response: `Error: ${reason}`,
       toolCalls: totalToolCalls,
       steps: step,
+      toolOutcomes,
       failed: true,
       errorReason: reason,
     };
   }
 
-  return { response: finalResponse, toolCalls: totalToolCalls, steps: step };
+  return { response: finalResponse, toolCalls: totalToolCalls, steps: step, toolOutcomes };
 }

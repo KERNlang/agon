@@ -1,0 +1,368 @@
+// ── Delegate Tool Ledger ──────────────────────────────────────────────
+// Per-dispatch record of what a delegated engine did with its tools, so Cesar
+// can route around engines that drop, fake, or stall tool calls.
+//
+// The LEDGER RECORD is the canonical unit — NOT ApiAgentResult (which only
+// exists on the API agent-loop path). Every record carries a `backend`
+// ('api-loop' | 'cli-print' | 'companion') and summaries are STRICTLY
+// per-backend: an engine's cli-print unknowns are reported as "no visibility
+// on this transport", never blended into api-loop reliability.
+//
+// HONESTY INVARIANT (nero-driven): text-only transports (cli-print/companion)
+// NEVER get fabricated ok/error outcomes. They record outcomes:[] and a single
+// 'unknown' — only the API agent-loop, which natively observes each call +
+// result, produces provenance:'native' ok/error/timeout outcomes.
+//
+// SIGNAL SEPARATION (review-driven): three distinct negatives never blend.
+//   - native ok/error/timeout/unknown  — real per-call outcomes (api-loop).
+//   - narratedStalls (heuristic)       — inferred non-executions (a fake gate);
+//     NEVER counted as tool calls, always rendered "N narrated stalls (heuristic)".
+//   - dispatchFailed (text transport)  — the engine never produced a usable turn;
+//     a STRONGER negative than 'no visibility' unknowns, rendered on its own line.
+//
+// PER-ENGINE SEPARATION (review-driven): reliability is grouped engineId × backend.
+// One engine's api-loop stats are NEVER merged with another engine's api-loop
+// stats — use summarizeDelegateReliabilityByEngine for the per-engine breakdown.
+//
+// BEST-EFFORT: every writer wraps I/O in try/catch and silently no-ops on
+// failure — a wedged disk degrades the ledger, never the live dispatch. The
+// reader normalizes a missing file to [] and skips corrupt lines, never throws.
+// The summarizer tolerates schema-invalid (but valid-JSON) records — missing or
+// wrong-typed fields are defaulted, never allowed to throw.
+//
+// AGON_HOME is resolved at CALL time (via agonPath) so per-test isolation
+// (process.env.AGON_HOME → tmpdir) always applies, mirroring guard-telemetry.
+
+import from="node:fs" names="appendFileSync,existsSync,mkdirSync,readFileSync,statSync,openSync,readSync,closeSync"
+import from="./config.js" names="agonPath"
+
+const name=DELEGATE_LEDGER_FILE type=string value={{ 'delegate-tool-ledger.jsonl' }}
+
+const name=DELEGATE_LEDGER_TAIL_BYTES type=number value={{ 256 * 1024 }}
+  doc "Tail window for a bounded read of the ledger — read only the last chunk when a limit is requested, dropping the first (possibly partial) line."
+
+// ── Shared shapes ─────────────────────────────────────────────────────
+
+type name=DelegateToolStatus values="ok|error|timeout|unknown"
+
+type name=DelegateBackend values="api-loop|cli-print|companion"
+
+type name=OutcomeProvenance values="native|heuristic"
+
+interface name=AgentToolOutcome export=true
+  doc "One tool call observed during a delegated dispatch. `native` provenance means the transport actually saw the call+result (API agent-loop); `heuristic` means it was inferred (e.g. a narrated stall) and is NEVER a fabricated ok/error."
+  field name=tool type=string
+  field name=status type=DelegateToolStatus
+  field name=durationMs type=number optional=true
+    doc "Wall-clock time for the tool call. NOTE: this INCLUDES any permission-prompt wait (human latency) — executeToolCall invokes the permission callback inside the timed region — so consumers must NOT read durationMs as pure execution time. It is call latency (queue-excluded, prompt-included), not CPU/IO cost."
+  field name=provenance type=OutcomeProvenance
+
+interface name=DelegateOutcomeCounts export=true
+  field name=total type=number
+    doc "Native tool calls only. Heuristic signals (narrated stalls) live in narratedStalls and are NEVER added here — a stall must never inflate the tool-call total."
+  field name=ok type=number
+  field name=error type=number
+  field name=timeout type=number
+  field name=unknown type=number
+  field name=narratedStalls type=number
+    doc "Inferred (provenance:'heuristic') non-executions — currently only narrated stalls. Kept separate so a fake-gate stall never masquerades as a real tool call."
+  field name=dispatchFailed type=number
+    doc "Failed dispatches on a text transport (the engine never produced a usable turn). A stronger negative than 'unknown' (no visibility) — never blended into unknown."
+
+interface name=TextTransportOpts export=true
+  doc "Options for recording a text-only (cli-print/companion) dispatch."
+  field name=dispatchId type=string optional=true
+  field name=dispatchFailed type=boolean optional=true
+    doc "True when the dispatch itself failed (the engine never produced a usable turn). Recorded as counts.dispatchFailed, distinct from the 'unknown' no-visibility tally."
+
+interface name=DelegateLedgerRecord export=true
+  doc "The canonical unit persisted to the ledger — one completed delegated dispatch."
+  field name=ts type=string
+  field name=dispatchId type=string
+  field name=engineId type=string
+  field name=mode type=string
+  field name=backend type=DelegateBackend
+  field name=outcomes type="AgentToolOutcome[]"
+  field name=counts type=DelegateOutcomeCounts
+
+interface name=DelegateBackendSummary export=true
+  field name=backend type=string
+  field name=dispatches type=number
+  field name=toolCalls type=number
+  field name=ok type=number
+  field name=error type=number
+  field name=timeout type=number
+  field name=unknown type=number
+  field name=narratedStalls type=number
+    doc "Inferred non-executions (narrated stalls) tallied across this engine×backend. Never part of toolCalls."
+  field name=dispatchFailed type=number
+    doc "Failed dispatches on this engine×backend — surfaced as its own line, never merged into unknown."
+  field name=hasPerCallVisibility type=boolean
+    doc "True only for api-loop, where each call+result was natively observed. False for text transports — their numbers are dispatch tallies, not per-call reliability."
+
+interface name=DelegateReliabilitySummary export=true
+  field name=engineId type=string
+  field name=dispatches type=number
+  field name=backends type="DelegateBackendSummary[]"
+
+// ── Path helper (call-time AGON_HOME) ─────────────────────────────────
+
+fn name=delegateLedgerPath returns=string export=true
+  doc "Absolute path to the delegate ledger, resolved at call time so AGON_HOME overrides (tests/sandboxes) apply."
+  handler <<<
+    return agonPath('runs', DELEGATE_LEDGER_FILE);
+  >>>
+
+// ── Counts derivation (pure, testable) ────────────────────────────────
+
+fn name=deriveOutcomeCounts params="outcomes:AgentToolOutcome[]" returns=DelegateOutcomeCounts export=true
+  doc "Tally NATIVE outcomes by status. Heuristic-provenance outcomes (narrated stalls) are counted in narratedStalls and EXCLUDED from total/ok/error/timeout/unknown, so a stall never inflates the tool-call count. Any unrecognized native status counts as 'unknown'. Non-array input ⇒ all-zero counts (never throws)."
+  handler lang="kern"
+    let name=counts type=DelegateOutcomeCounts value="{ total: 0, ok: 0, error: 0, timeout: 0, unknown: 0, narratedStalls: 0, dispatchFailed: 0 }"
+    if cond="!Array.isArray(outcomes)"
+      return value="counts"
+    each name=o in="outcomes"
+      comment raw="// Heuristic (inferred) signals are NOT tool executions — tally them apart so a narrated stall can never be counted as an ok/error/unknown call."
+      if cond="o?.provenance === 'heuristic'"
+        assign target="counts.narratedStalls" op="+=" value="1"
+        continue
+      assign target="counts.total" op="+=" value="1"
+      if cond="o?.status === 'ok'"
+        assign target="counts.ok" op="+=" value="1"
+      else
+        if cond="o?.status === 'error'"
+          assign target="counts.error" op="+=" value="1"
+        else
+          if cond="o?.status === 'timeout'"
+            assign target="counts.timeout" op="+=" value="1"
+          else
+            assign target="counts.unknown" op="+=" value="1"
+    return value="counts"
+
+fn name=newDispatchId returns=string export=false
+  handler <<<
+    return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  >>>
+
+// ── Writers (best-effort, never throw) ────────────────────────────────
+
+fn name=recordDelegateDispatch params="record:DelegateLedgerRecord" returns=void export=true
+  doc "Append one delegated-dispatch record to the ledger as a single JSONL line. Best-effort: any I/O failure is swallowed so the ledger never throws into a dispatch."
+  handler lang="kern"
+    try
+      do value="mkdirSync(agonPath('runs'), { recursive: true })"
+      do value="appendFileSync(delegateLedgerPath(), JSON.stringify(record) + '\n')"
+      catch name=e
+        comment raw="// ledger is best-effort — swallow all I/O failures"
+
+fn name=recordApiLoopDispatch params="engineId:string, mode:string, outcomes:AgentToolOutcome[], dispatchId?:string" returns=DelegateLedgerRecord export=true
+  doc "Record one API agent-loop dispatch (native per-call visibility). Returns the record so callers can build a digest line from record.counts. Heuristic outcomes in `outcomes` (narrated stalls) are tallied into counts.narratedStalls, never into the tool-call total."
+  handler <<<
+    const record: DelegateLedgerRecord = {
+      ts: new Date().toISOString(),
+      dispatchId: dispatchId ?? newDispatchId(),
+      engineId: String(engineId || 'unknown'),
+      mode: String(mode || 'unknown'),
+      backend: 'api-loop',
+      outcomes: outcomes ?? [],
+      counts: deriveOutcomeCounts(outcomes ?? []),
+    };
+    recordDelegateDispatch(record);
+    return record;
+  >>>
+
+fn name=recordTextTransportDispatch params="engineId:string, mode:string, backend:DelegateBackend, opts?:TextTransportOpts" returns=DelegateLedgerRecord export=true
+  doc "Record one text-only (cli-print/companion) dispatch. Text transports give NO per-call tool visibility, so outcomes is always empty. A normal dispatch records a single 'unknown' (no visibility). A failed dispatch (opts.dispatchFailed) records counts.dispatchFailed instead — a STRONGER negative signal that must never be blended into 'unknown'. A fabricated ok/error is NEVER produced from prose. opts.dispatchId overrides the generated id."
+  handler <<<
+    const failed = opts?.dispatchFailed === true;
+    const record: DelegateLedgerRecord = {
+      ts: new Date().toISOString(),
+      dispatchId: opts?.dispatchId ?? newDispatchId(),
+      engineId: String(engineId || 'unknown'),
+      mode: String(mode || 'unknown'),
+      backend: backend === 'companion' ? 'companion' : 'cli-print',
+      outcomes: [],
+      counts: failed
+        ? { total: 0, ok: 0, error: 0, timeout: 0, unknown: 0, narratedStalls: 0, dispatchFailed: 1 }
+        : { total: 0, ok: 0, error: 0, timeout: 0, unknown: 1, narratedStalls: 0, dispatchFailed: 0 },
+    };
+    recordDelegateDispatch(record);
+    return record;
+  >>>
+
+// ── Reader (tail-optimized, missing ⇒ [], corrupt lines skipped) ───────
+
+fn name=readDelegateLedgerRecords params="limit?:number" returns="DelegateLedgerRecord[]" export=true
+  doc "Read the delegate ledger. Missing file ⇒ []; a positive limit reads only the tail window; corrupt lines (and non-object / array JSON) are skipped; never throws."
+  handler lang="kern"
+    let name=path value="delegateLedgerPath()"
+    try
+      if cond="!existsSync(path)"
+        return value="[]"
+      let name=raw kind=let value="''"
+      if cond="typeof limit === 'number' && limit > 0"
+        let name=stat value="statSync(path)"
+        let name=start value="Math.max(0, stat.size - DELEGATE_LEDGER_TAIL_BYTES)"
+        let name=length value="stat.size - start"
+        if cond="length <= 0"
+          return value="[]"
+        let name=fd value="openSync(path, 'r')"
+        try
+          let name=buffer value="Buffer.alloc(length)"
+          do value="readSync(fd, buffer, 0, length, start)"
+          assign target="raw" value="buffer.toString('utf-8')"
+          finally
+            do value="closeSync(fd)"
+        comment raw="// Dropped the first (possibly partial) line when we started mid-file."
+        if cond="start > 0"
+          let name=nl value="raw.indexOf('\\n')"
+          assign target="raw" value="nl >= 0 ? raw.slice(nl + 1) : ''"
+      else
+        assign target="raw" value="readFileSync(path, 'utf-8')"
+      let name=lines value="raw.split('\\n').map((l: string) => l.trim()).filter(Boolean)"
+      let name=selected value="typeof limit === 'number' && limit > 0 ? lines.slice(-limit) : lines"
+      let name=out type="DelegateLedgerRecord[]" value="[]"
+      each name=line in="selected"
+        try
+          let name=rec value="JSON.parse(line) as DelegateLedgerRecord"
+          comment raw="// Only plain objects are records. A valid-JSON array / scalar is not a record and is skipped — the summarizer never sees a non-object."
+          if cond="rec && typeof rec === 'object' && !Array.isArray(rec)"
+            do value="out.push(rec)"
+          catch name=e
+            comment raw="// skip a corrupt/partial line — never poison the whole read"
+      return value="out"
+      catch name=eo
+        return value="[]"
+
+// ── Summarizer (STRICTLY per-backend, per-engine — never blends signals) ──
+
+fn name=summarizeRecords params="records:DelegateLedgerRecord[], label:string" returns=DelegateReliabilitySummary export=false
+  doc "Group a pre-filtered record list per backend into one engine summary. Defensive by design: tolerates schema-invalid records (missing/wrong-typed counts or outcomes) — every field is coerced with a numeric fallback so summarization never throws."
+  handler <<<
+    const byBackend = new Map<string, DelegateBackendSummary>();
+    for (const r of records) {
+      const backend = String(r?.backend ?? 'unknown');
+      const s = byBackend.get(backend) ?? {
+        backend,
+        dispatches: 0,
+        toolCalls: 0,
+        ok: 0,
+        error: 0,
+        timeout: 0,
+        unknown: 0,
+        narratedStalls: 0,
+        dispatchFailed: 0,
+        hasPerCallVisibility: backend === 'api-loop',
+      };
+      s.dispatches++;
+      // Counts must be a plain object; anything else (missing, number, array,
+      // string) falls back to deriving from outcomes (itself array-guarded).
+      const validCounts = !!r?.counts && typeof r.counts === 'object' && !Array.isArray(r.counts);
+      const c: any = validCounts ? r.counts : deriveOutcomeCounts(Array.isArray(r?.outcomes) ? r.outcomes : []);
+      s.toolCalls += Number(c?.total ?? 0) || 0;
+      s.ok += Number(c?.ok ?? 0) || 0;
+      s.error += Number(c?.error ?? 0) || 0;
+      s.timeout += Number(c?.timeout ?? 0) || 0;
+      s.unknown += Number(c?.unknown ?? 0) || 0;
+      s.narratedStalls += Number(c?.narratedStalls ?? 0) || 0;
+      s.dispatchFailed += Number(c?.dispatchFailed ?? 0) || 0;
+      byBackend.set(backend, s);
+    }
+    const backends = Array.from(byBackend.values())
+      .sort((a, b) => b.dispatches - a.dispatches || a.backend.localeCompare(b.backend));
+    return { engineId: label, dispatches: records.length, backends };
+  >>>
+
+fn name=summarizeDelegateReliability params="engineId?:string, limit?:number" returns=DelegateReliabilitySummary export=true
+  doc "Aggregate reliability across the ledger. With an engineId, summarizes just that engine, grouped per backend. WITHOUT an engineId this returns a single merged 'all' total (a running grand-total, useful for a headline number) — for a per-engine breakdown that NEVER blends two engines together, use summarizeDelegateReliabilityByEngine. Missing ledger ⇒ empty summary, never throws."
+  handler <<<
+    const target = String(engineId ?? '').trim();
+    const records = readDelegateLedgerRecords(limit ?? 500);
+    const filtered = target ? records.filter((r) => String(r?.engineId) === target) : records;
+    return summarizeRecords(filtered, target || 'all');
+  >>>
+
+fn name=summarizeDelegateReliabilityByEngine params="engineId?:string, limit?:number" returns="DelegateReliabilitySummary[]" export=true
+  doc "Per-engine reliability, grouped by engineId THEN per backend. Engines are NEVER merged with each other — one engine's api-loop stats stay separate from another's, preserving the per-engine reliability signal. With an engineId, returns just that engine (or [] if unseen); without, one summary per distinct engine sorted by dispatch volume. Missing ledger ⇒ []. Never throws."
+  handler lang="kern"
+    let name=target value="String(engineId ?? '').trim()"
+    let name=records value="readDelegateLedgerRecords(limit ?? 500)"
+    let name=byEngine type="Map<string, DelegateLedgerRecord[]>" value="new Map()"
+    each name=r in="records"
+      let name=id value="typeof r?.engineId === 'string' ? r.engineId : 'unknown'"
+      if cond="target && id !== target"
+        continue
+      let name=list value="byEngine.get(id) ?? []"
+      do value="list.push(r)"
+      do value="byEngine.set(id, list)"
+    let name=summaries type="DelegateReliabilitySummary[]" value="[]"
+    each name=entry in="Array.from(byEngine.entries())"
+      do value="summaries.push(summarizeRecords(entry[1], entry[0]))"
+    do value="summaries.sort((a, b) => b.dispatches - a.dispatches || a.engineId.localeCompare(b.engineId))"
+    return value="summaries"
+
+// ── Formatters (digest lines + EngineReliability section) ──────────────
+
+fn name=buildApiLoopDigest params="counts:DelegateOutcomeCounts" returns=string export=true
+  doc "One-line digest of an api-loop dispatch's tool outcomes, e.g. `3 tool calls: 2 ok, 1 failed (native)`. Narrated stalls (heuristic) are appended separately and never counted in the tool-call total."
+  handler <<<
+    const total = Number(counts?.total ?? 0) || 0;
+    const ok = Number(counts?.ok ?? 0) || 0;
+    const error = Number(counts?.error ?? 0) || 0;
+    const timeout = Number(counts?.timeout ?? 0) || 0;
+    const unknown = Number(counts?.unknown ?? 0) || 0;
+    const stalls = Number(counts?.narratedStalls ?? 0) || 0;
+    let s = `${total} tool call${total === 1 ? '' : 's'}: ${ok} ok, ${error} failed`;
+    if (timeout > 0) s += `, ${timeout} timeout`;
+    if (unknown > 0) s += `, ${unknown} unknown`;
+    s = `${s} (native)`;
+    if (stalls > 0) s += `; ${stalls} narrated stall${stalls === 1 ? '' : 's'} (heuristic)`;
+    return s;
+  >>>
+
+fn name=textTransportDigest returns=string export=true
+  doc "Digest for a text-only transport — Cesar had no per-call visibility, so it says exactly that instead of guessing outcomes."
+  handler <<<
+    return 'no per-call visibility on this transport';
+  >>>
+
+fn name=formatDelegateReliability params="summary:DelegateReliabilitySummary" returns="string[]" export=true
+  doc "Render ONE engine's delegated dispatch ledger as one line per backend, keeping api-loop reliability and text-transport unknowns visually separate. Narrated stalls (heuristic) are appended to their backend line as a distinct clause; failed dispatches get their own line — neither is ever blended into the native ok/failed numbers. Empty ⇒ a single 'no ledger records yet' line."
+  handler <<<
+    if (!summary || summary.dispatches <= 0 || summary.backends.length === 0) {
+      return ['no ledger records yet'];
+    }
+    const lines: string[] = [];
+    for (const b of summary.backends) {
+      const plural = b.dispatches === 1 ? '' : 'es';
+      if (b.hasPerCallVisibility) {
+        let extra = '';
+        if (b.timeout > 0) extra += `, ${b.timeout} timeout`;
+        if (b.unknown > 0) extra += `, ${b.unknown} unknown`;
+        let line = `${summary.engineId} [${b.backend}]: ${b.dispatches} dispatch${plural}, ${b.toolCalls} tool calls — ${b.ok} ok, ${b.error} failed${extra} (native)`;
+        if (b.narratedStalls > 0) line += `; ${b.narratedStalls} narrated stall${b.narratedStalls === 1 ? '' : 's'} (heuristic)`;
+        lines.push(line);
+      } else {
+        let line = `${summary.engineId} [${b.backend}]: ${b.dispatches} dispatch${plural} — no per-call visibility on this transport`;
+        if (b.narratedStalls > 0) line += `; ${b.narratedStalls} narrated stall${b.narratedStalls === 1 ? '' : 's'} (heuristic)`;
+        lines.push(line);
+      }
+      // A failed dispatch is a stronger negative than 'no visibility' — surface
+      // it on its own line so it is never mistaken for a plain unknown.
+      if (b.dispatchFailed > 0) {
+        lines.push(`${summary.engineId} [${b.backend}]: ${b.dispatchFailed} failed dispatch${b.dispatchFailed === 1 ? '' : 'es'} (dispatch never produced a usable turn)`);
+      }
+    }
+    return lines;
+  >>>
+
+fn name=formatAllDelegateReliability params="summaries:DelegateReliabilitySummary[]" returns="string[]" export=true
+  doc "Render EVERY engine's per-backend ledger lines, keeping each engine (and each backend) on its own line so no two engines are ever blended into one number. Empty ⇒ a single 'no ledger records yet' line."
+  handler <<<
+    if (!summaries || summaries.length === 0) return ['no ledger records yet'];
+    const lines: string[] = [];
+    for (const s of summaries) {
+      for (const l of formatDelegateReliability(s)) lines.push(l);
+    }
+    return lines.length > 0 ? lines : ['no ledger records yet'];
+  >>>

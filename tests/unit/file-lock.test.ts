@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync, utimesSync } from 'node:fs';
 import { tmpdir, hostname } from 'node:os';
 import { join, resolve } from 'node:path';
 import { execFile } from 'node:child_process';
@@ -94,6 +94,73 @@ describe('withFileLock', () => {
     let ran = false;
     withFileLock(lockPath, () => { ran = true; }, { timeoutMs: 500 });
     expect(ran).toBe(true);
+  });
+
+  it('waits out a fresh EMPTY lock file (in-flight O_EXCL create) instead of reclaiming it', () => {
+    // An empty file is a holder between open() and write() — liveness unknowable.
+    writeFileSync(lockPath, '', { flag: 'wx' });
+    expect(() => withFileLock(lockPath, () => {}, { timeoutMs: 80 })).toThrow(/file lock timeout/);
+    expect(existsSync(lockPath)).toBe(true); // never reclaimed a pending create
+  });
+
+  it('reclaims an EMPTY lock file older than the TTL (crash between open and write)', () => {
+    writeFileSync(lockPath, '', { flag: 'wx' });
+    const old = new Date(Date.now() - 60_000);
+    utimesSync(lockPath, old, old);
+    let ran = false;
+    withFileLock(lockPath, () => { ran = true; }, { timeoutMs: 500, staleMs: 10_000 });
+    expect(ran).toBe(true);
+  });
+
+  it('backs out of an acquisition made while a live reclaim fence is up', () => {
+    // A live reclaim fence means a reclaimer may be about to blind-rename the
+    // slot: acquirers must not keep a lock taken inside that window.
+    const fencePath = `${lockPath}.reclaim.other-live-reclaimer`;
+    writeFileSync(fencePath, JSON.stringify({
+      pid: process.pid, uuid: 'reclaimer', hostname: hostname(), acquiredAt: new Date().toISOString(),
+    }));
+    expect(() => withFileLock(lockPath, () => {}, { timeoutMs: 120 })).toThrow(/file lock timeout/);
+    expect(existsSync(lockPath)).toBe(false); // backed out, no lock left behind
+    // Fence dropped → same acquire succeeds.
+    rmSync(fencePath);
+    let ran = false;
+    withFileLock(lockPath, () => { ran = true; }, { timeoutMs: 500 });
+    expect(ran).toBe(true);
+  });
+
+  it('clears a reclaim fence whose owner died and reclaims the stale lock behind it', () => {
+    writeFileSync(lockPath, JSON.stringify({
+      pid: 2 ** 30, uuid: 'dead-holder', hostname: hostname(), acquiredAt: new Date().toISOString(),
+    }), { flag: 'wx' });
+    const deadFence = `${lockPath}.reclaim.dead-reclaimer`;
+    writeFileSync(deadFence, JSON.stringify({
+      pid: 2 ** 30, uuid: 'dead-reclaimer', hostname: hostname(), acquiredAt: new Date().toISOString(),
+    }));
+    let ran = false;
+    withFileLock(lockPath, () => { ran = true; }, { timeoutMs: 1000 });
+    expect(ran).toBe(true);
+    expect(existsSync(deadFence)).toBe(false);
+  });
+
+  it('publishes a fresh acquiredAt after out-waiting a live holder longer than staleMs', () => {
+    // Stale-at-birth guard: a contender that spins longer than staleMs before
+    // winning must re-stamp its payload, or the lock it publishes is instantly
+    // reclaimable while live. withFileLock spins SYNCHRONOUSLY, so the release
+    // must come from a child process — an in-process setTimeout would never run.
+    const staleMs = 250;
+    writeFileSync(lockPath, JSON.stringify({
+      pid: process.pid, uuid: 'holder', hostname: hostname(), acquiredAt: new Date().toISOString(),
+    }), { flag: 'wx' });
+    execFile(process.execPath, ['-e', `setTimeout(() => require('node:fs').unlinkSync(${JSON.stringify(lockPath)}), 300)`]);
+    const started = Date.now();
+    let observedAcquiredAt = '';
+    withFileLock(lockPath, () => {
+      observedAcquiredAt = JSON.parse(readFileSync(lockPath, 'utf-8')).acquiredAt;
+    }, { timeoutMs: 5000, staleMs });
+    const waited = Date.now() - started;
+    const age = Date.now() - new Date(observedAcquiredAt).getTime();
+    expect(waited).toBeGreaterThan(staleMs); // out-waited the holder past the TTL
+    expect(age).toBeLessThan(staleMs); // pre-fix this was ≈waited: stale at birth
   });
 
   it('release is owner-checked: never unlinks a lock it no longer owns', () => {

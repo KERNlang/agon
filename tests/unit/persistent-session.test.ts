@@ -807,14 +807,17 @@ describe('persistent session streaming dedupe', () => {
     expect(chunks.some((chunk: any) => /This retry must never run/.test(chunk.content))).toBe(false);
   });
 
-  it('still surfaces the empty-response error after exhausting retries', async () => {
+  it('still surfaces the empty-response error after exhausting the CONFIGURED retries', async () => {
     const { createResumeSession } = await import('../../packages/core/src/persistent-session.js');
     apiStreamDispatchWithHistoryMock.mockImplementation(async function* () { return {}; }); // always empty
 
     const session = createResumeSession({
       engine: {
         id: 'api-test',
-        api: { baseURL: 'https://example.invalid', apiKeyEnv: 'TEST_KEY', model: 'api-test' },
+        // emptyResponseRetryCount pins the retry budget (default is 3): proves
+        // the per-engine override plumbing AND keeps the exponential backoff
+        // (1.5s + 3s) inside the test timeout.
+        api: { baseURL: 'https://example.invalid', apiKeyEnv: 'TEST_KEY', model: 'api-test', emptyResponseRetryCount: 2 },
       } as any,
       binaryPath: '',
       cwd: process.cwd(),

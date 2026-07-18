@@ -86,6 +86,7 @@ export const ApiConfigSchema = z.object({
   idleTimeoutMs: z.number().int().positive().optional(),
   firstChunkRetryCount: z.number().int().nonnegative().optional(),
   firstChunkRetryBackoffMs: z.number().int().nonnegative().optional(),
+  emptyResponseRetryCount: z.number().int().nonnegative().optional(),
 });
 
 // Workspace-pure isolation knobs. MUST be modelled here or Zod silently strips

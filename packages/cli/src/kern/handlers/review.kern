@@ -15,6 +15,39 @@ import from="./engine-filter.js" names="filterDefaultOrchestrationEngines"
 import from="../blocks/engine-helpers.js" names="stripReasoning,stripTuiChrome"
 import from="../lib/kern-host.js" names="hostNowMs"
 
+fn name=refResolvesToCommit params="ref:string, cwd:string" returns=boolean export=false
+  doc "True when `ref^{commit}` resolves to a real commit in the given repo (best-effort: a git failure means it does not)."
+  handler lang="kern"
+    try
+      do value="execFileSync('git', ['rev-parse', '--verify', `${ref}^{commit}`], { cwd, encoding: 'utf-8' })"
+      return value="true"
+      catch name=e
+        return value="false"
+
+fn name=resolveAutoReviewBase params="cwd:string, branch:string" returns="string|null" export=true
+  doc "Resolve the base ref for reviewing the currently checked-out branch: the repo's default branch via origin/HEAD, falling back to origin/main, origin/master, main, master. Returns null when the only candidates ARE the branch being reviewed (i.e. you are on the default branch) or nothing resolves — callers keep the loud no-base error for that case."
+  handler lang="kern"
+    let name=stripOrigin value="(ref: string) => ref.replace(/^origin\\//, '')"
+    try
+      let name=sym value="execFileSync('git', ['symbolic-ref', 'refs/remotes/origin/HEAD'], { cwd, encoding: 'utf-8' }).trim()"
+      if cond="sym"
+        comment raw="// origin/main"
+        let name=cand value="sym.replace(/^refs\\/remotes\\//, '')"
+        comment raw="// The reviewed branch IS the repo default branch → there is no base; return null (loud error) instead of falling through to a possibly unrelated legacy main/master (agon-review blocking finding)."
+        if cond="stripOrigin(cand) === branch || cand === branch"
+          return value="null"
+        comment raw="// A stale origin/HEAD pointing at a pruned ref must not short-circuit the fallback chain — verify it resolves before trusting it."
+        if cond="refResolvesToCommit(cand, cwd)"
+          return value="cand"
+      catch name=e
+        comment raw="// no origin/HEAD (local-only repo) — fall through to candidates"
+    each name=fallbackCand in="['origin/main', 'origin/master', 'main', 'master']"
+      if cond="stripOrigin(fallbackCand) === branch || fallbackCand === branch"
+        continue
+      if cond="refResolvesToCommit(fallbackCand, cwd)"
+        return value="fallbackCand"
+    return value="null"
+
 fn name=resolveReviewTarget params="target:string|undefined, cwd:string, base:string|undefined" returns="{diff:string, label:string}"
   handler <<<
     const t = (target ?? 'uncommitted').trim();
@@ -147,12 +180,29 @@ fn name=resolveReviewTarget params="target:string|undefined, cwd:string, base:st
           throw new Error(`Failed to resolve branch "${branch}": ${err instanceof Error ? err.message : String(err)}`);
         }
         if (branchSha && branchSha === headSha) {
-          throw new Error(`branch:${branch} points at the commit you are currently on, so diffing it against HEAD yields nothing to review. Use "branch:main" (or your base branch) to review this branch's commits, or "uncommitted" to review working-tree changes.`);
-        }
-        try {
-          diff = execFileSync('git', ['diff', `${branch}...HEAD`], { cwd, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }).trim();
-        } catch (err) {
-          throw new Error(`Failed to get branch diff for ${branch}: ${err instanceof Error ? err.message : String(err)}`);
+          // Targeting the branch you are currently on. The previous behavior
+          // was a loud error (itself a fix for the silent empty self-diff that
+          // read as "clean review"), but the caller's question is unambiguous —
+          // "this branch's commits vs its base" — so ANSWER it: auto-resolve
+          // the base to the repo default branch and diff merge-base...branch.
+          // The loud error remains only when no base can be resolved (you are
+          // on the default branch itself, or there is no main/master anchor).
+          const autoBase = resolveAutoReviewBase(cwd, branch);
+          if (!autoBase) {
+            throw new Error(`branch:${branch} points at the commit you are currently on and no base branch could be auto-resolved (are you on the default branch?). Use "range:BASE...${branch}" for an explicit two-ref diff, or "uncommitted" to review working-tree changes.`);
+          }
+          label = `branch ${branch} vs ${autoBase} (auto-base)`;
+          try {
+            diff = execFileSync('git', ['diff', `${autoBase}...${branch}`], { cwd, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }).trim();
+          } catch (err) {
+            throw new Error(`Failed to diff ${autoBase}...${branch}: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        } else {
+          try {
+            diff = execFileSync('git', ['diff', `${branch}...HEAD`], { cwd, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }).trim();
+          } catch (err) {
+            throw new Error(`Failed to get branch diff for ${branch}: ${err instanceof Error ? err.message : String(err)}`);
+          }
         }
       }
     } else if (t.startsWith('commit:')) {

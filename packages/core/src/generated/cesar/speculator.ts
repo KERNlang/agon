@@ -6,6 +6,8 @@ import { runApiAgentLoop } from '../api/agent-loop.js';
 
 import type { ApiAgentOptions, ApiAgentResult } from '../api/agent-loop.js';
 
+import { recordApiLoopDispatch } from '../signals/delegate-ledger.js';
+
 import type { ApiConfig } from '../api/dispatch.js';
 
 import type { ContextThread } from './context-thread.js';
@@ -23,7 +25,7 @@ import { hostNowMs } from '../blocks/host-runtime.js';
 /**
  * One engine in a speculative parallel run.
  */
-// @kern-source: speculator:36
+// @kern-source: speculator:37
 export interface SpeculatorMemberConfig {
   engineId: string;
   api: ApiConfig;
@@ -33,7 +35,7 @@ export interface SpeculatorMemberConfig {
 /**
  * Options for a Speculator run.
  */
-// @kern-source: speculator:42
+// @kern-source: speculator:43
 export interface SpeculatorOptions {
   members: SpeculatorMemberConfig[];
   prompt: string;
@@ -52,7 +54,7 @@ export interface SpeculatorOptions {
 /**
  * Outcome of a speculative parallel run. candidates contains all members' EffectPackages (including failed/empty ones). winner is the highest-scoring candidate, or null if all failed.
  */
-// @kern-source: speculator:59
+// @kern-source: speculator:60
 export interface SpeculatorResult {
   candidates: EffectPackage[];
   scores: Record<string,number>;
@@ -65,7 +67,7 @@ export interface SpeculatorResult {
 /**
  * Runs N agents against N VirtualFS instances in parallel. Each agent sees the same base snapshot. The winner's overlay is applied to the real filesystem. This is the core of Phase E speculative execution — multi-engine consensus at fastest-engine latency.
  */
-// @kern-source: speculator:70
+// @kern-source: speculator:71
 export class Speculator {
   private runId: string;
   private snapshot: FileSnapshot|null;
@@ -178,6 +180,10 @@ export class Speculator {
         const cancelled = !!opts.signal?.aborted;
         result = { response: '', toolCalls: 0, steps: 0, failed: !cancelled, cancelled, errorReason: err?.message ?? String(err) };
       }
+
+      // Delegate tool ledger (2b): one api-loop record per speculator member
+      // run, carrying native per-call outcomes. Best-effort — never throws.
+      recordApiLoopDispatch(member.engineId, 'speculate', result.toolOutcomes ?? []);
 
       // Read/Edit/Write tool calls have mutated vfs.overlay; Bash changes
       // live in memberCwd when isolate=true and are picked up via git diff.
@@ -294,7 +300,7 @@ export class Speculator {
 /**
  * Create a fresh Speculator instance. One per agent invocation.
  */
-// @kern-source: speculator:300
+// @kern-source: speculator:305
 export function createSpeculator(): Speculator {
   return new Speculator();
 }

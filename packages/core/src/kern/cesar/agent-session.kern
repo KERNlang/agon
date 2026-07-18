@@ -15,6 +15,7 @@
 
 import from="../api/agent-loop.js" names="runApiAgentLoop"
 import from="../api/agent-loop.js" names="ApiAgentOptions,ApiAgentResult" types=true
+import from="../signals/delegate-ledger.js" names="recordApiLoopDispatch"
 import from="../api/dispatch.js" names="ApiConfig" types=true
 import from="../signals/token-tracker.js" names="estimateTokens,estimateCost"
 import from="../models/agent-event.js" names="AgentEvent" types=true
@@ -285,6 +286,10 @@ service name=AgentSession export=true
           error: err?.message ?? String(err),
         };
       }
+
+      // Delegate tool ledger (2b): record one api-loop record per completed
+      // inner loop with native per-call outcomes. Best-effort — never throws.
+      recordApiLoopDispatch(this.config.engineId, 'agent', result.toolOutcomes ?? []);
 
       // If abort fired mid-stream, runApiAgentLoop may have returned a partial
       // response without throwing. Detect that here.

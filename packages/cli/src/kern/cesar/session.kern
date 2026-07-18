@@ -8,6 +8,7 @@ import from="@kernlang/agon-core" names="PersistentSession,PersistentSessionConf
 import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,ensureAgonHome,getAgonHome,resolveWorkingDir,scanProjectContext,buildCodebaseMap,buildKernContextSpine,buildProjectMemoryBlock,createPersistentSession,ToolRegistry,getProjectFileStateCache,buildToolSystemPrompt,toolsToOpenAIFormat,executeToolCall,RUNS_DIR,tracker,discoverMcpServers,mcpDiscoveryFingerprint,mcpServersToWireFormat,listCesarPlans,saveConversation,formatChatContextForPrompt,isReadOnlyCommand,AGON_MODE_NAMES,parsePermissionRuleSet,parseToolHooks,PERMISSION_DENIED_MESSAGE,claudeBrainUsesPty"
 import from="@kernlang/agon-core" names="ToolContext,ToolCallResult" types=true
 import from="@kernlang/agon-core" names="resolveGuardMode,readGuardModesFromConfig"
+import from="@kernlang/agon-core" names="recordTextTransportDispatch,textTransportDigest"
 import from="@kernlang/agon-core" names="GuardMode" types=true
 import from="../../handlers/types.js" names="HandlerContext" types=true
 import from="./tools.js" names="createCesarToolRegistry"
@@ -719,8 +720,16 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
             signal: sharedToolCtx.abortSignal,
           });
 
+          // Delegate tool ledger (2b): the Delegate seam returns only adapter
+          // stdout (text), so Cesar has NO per-call tool visibility here — record
+          // it as a text transport with a single 'unknown', never a fabricated
+          // ok/error parsed from prose. Companion-backed engines are labeled as
+          // such; everything else is a CLI --print text transport. Best-effort.
+          const delegateBackend = (targetEngine as any)?.companion ? 'companion' : 'cli-print';
+          recordTextTransportDispatch(targetId, mode, delegateBackend);
+
           if (!result.stdout.trim()) {
-            return `[Delegate → ${targetId}] Engine returned empty response.`;
+            return `[Delegate → ${targetId}] Engine returned empty response.\n[tool ledger: ${textTransportDigest()}]`;
           }
 
           // Strip <think> blocks from response
@@ -733,10 +742,18 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
             tracker.record(targetId, { prompt: task, response: cleaned });
           }
 
-          return `[Delegate → ${targetId}]\n${cleaned}`;
+          return `[Delegate → ${targetId}]\n${cleaned}\n\n[tool ledger: ${textTransportDigest()}]`;
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
-          return `[Delegate → ${targetId}] Error: ${msg}`;
+          // A FAILED dispatch is exactly what the reliability ledger exists to
+          // expose — record it too (zai + kimi convergent review finding: the
+          // success-only recording made engine failures invisible). Same honest
+          // text-transport shape; the failure itself is the signal.
+          try {
+            const failedBackend = (targetEngine as any)?.companion ? 'companion' : 'cli-print';
+            recordTextTransportDispatch(targetId, mode, failedBackend, { dispatchFailed: true });
+          } catch { /* ledger append is best-effort — never mask the dispatch error */ }
+          return `[Delegate → ${targetId}] Error: ${msg}\n[tool ledger: dispatch failed — recorded]`;
         }
       }
 

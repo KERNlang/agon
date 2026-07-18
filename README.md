@@ -295,7 +295,7 @@ agon review branch:feat-x --base main        # feat-x's commits vs main, regardl
 agon review range:main...feat-x              # fully explicit two-ref scope
 ```
 
-Diff scope is deliberate, never implicit: `--base <ref>` pins the base for `uncommitted`/`branch:` targets, and `range:BASE...TARGET` names both ends. A failed reviewer seat (timeout / hard error) is auto-retried once at half the wall clock before it's reported — and every failure is named in the run summary, never silently folded into a smaller panel. The same retry + loud `panel degraded:` banner applies to brainstorm, tribunal, and council seats.
+Diff scope is deliberate, never implicit: `--base <ref>` pins the base for `uncommitted`/`branch:` targets, and `range:BASE...TARGET` names both ends. One convenience: reviewing the branch you are currently **on** (where "branch vs itself" would be an empty diff) auto-bases against the repository's default branch — labelled `(auto-base)` in the run header so the scope is never silent. A failed reviewer seat (timeout / hard error) is auto-retried once at half the wall clock before it's reported — and every failure is named in the run summary, never silently folded into a smaller panel. The same retry + loud `panel degraded:` banner applies to brainstorm, tribunal, and council seats.
 
 Standard Review deliberately uses the full active panel even when the legacy `reviewDefaultEngine` preference is configured. Narrowing requires `--engine` or `--engines`. Explicit subsets are strict: an unknown, unavailable, or removed engine aborts the request instead of silently changing the committee.
 
@@ -423,6 +423,14 @@ Permission prompts offer **Yes / Yes for this session / Always / No / Never**. *
 When Cesar finishes a turn that edited files, Agon doesn't take "done" on faith. If the permission posture already allows the project's verification gate (the `test`/`typecheck` script from `package.json`, or a `fitness:` line in your project brief), **the harness runs the gate itself**: a green run confirms the claim; a red run feeds the real exit code and output tail straight back to Cesar as a continuation so it fixes actual failures — up to `cesarGateAutoRunLimit` runs per turn (default 3), each re-run gated on fresh edits since the last one. A turn that still ends with a red gate is flagged loudly rather than presented as done.
 
 Note the posture semantics: a gate command classified read-only (like plain `npm test`) auto-runs in **every** mode, because the resolver lets read-only commands run freely — the same command Cesar could already execute unprompted. Mutating gate commands (compound `&&` gates, scripts the classifier can't clear) auto-run only in `auto` mode or under a covering allow rule; gates with output redirection are additionally refused outside `auto`. Everything else falls back to the previous behavior: a one-time nudge asking Cesar to verify. Tune with `cesarGateAutoRun` (on by default), `cesarGateAutoRunLimit`, `cesarGateTimeoutSec`, and `cesarGateOutputTailChars`.
+
+#### Cesar self-inspection tools
+
+Beyond the gate, Cesar has three built-in tools for verifying its *own* surface and dispatch reliability — so "does the UI actually render what I claimed?" and "which engine keeps failing me?" are answerable in-turn instead of taken on faith:
+
+- **RenderProbe** — renders a registered Ink component (`StatusBar`, `TodoList`, `ChromeBar`, …) off-screen at a given width/height and returns the final frame as text. Pure in-process render; no side effects.
+- **TuiProbe** — boots a real `agon` instance inside a pseudo-terminal (via `pyte` screen-state emulation, so the result is the **final composed grid**, not a stream of ANSI artifacts), optionally sends one safelisted input (`/help`, `/status`, `/todos`, `/plans`, `/checkpoints`), and returns the rendered screen. Fully isolated: throwaway `AGON_HOME`, temp cwd, single-line control-character-rejecting input filter. Requires `python3` with `pyte` installed.
+- **EngineReliability** — a per-engine reliability digest with two honestly separated sections: Cesar's **own-turn** tool outcomes, and the **delegated dispatch ledger** (`~/.agon/runs/delegate-tool-ledger.jsonl`), which records every delegate dispatch per engine × backend (`api-loop`, `cli-print`, `companion`) with native-vs-heuristic provenance — a dispatch that *failed* is recorded as `dispatchFailed`, never blurred into "unknown".
 
 **Example Session:**
 ```text

@@ -2,8 +2,10 @@
 // Renders the rolling todo list above the composer. Mirrors the idiom of
 // blocks/plan-view.kern (state icons + compact rows). Renders nothing when
 // the list is empty; otherwise shows a small "Todos N/M" header followed
-// by one row per item. Lives in the dynamic region (between ChromeBar and
-// BackgroundJobRail) — see surfaces/app.kern wiring.
+// by one row per item. Docked at the END of the dynamic region, directly
+// above BottomChromeSection (plan chip + composer) — see surfaces/app.kern
+// wiring — so it stays pinned to the bottom instead of floating above the
+// live stream.
 
 import from="react" default="React"
 import from="ink" names="Box,Text"

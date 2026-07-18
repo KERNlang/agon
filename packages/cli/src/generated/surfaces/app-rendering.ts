@@ -26,14 +26,12 @@ import { isToolCallLikeBlock, coalesceToolCallBlocks } from './app-blocks.js';
 
 import { isMutatingToolCall, parseToolCallPayload, toolPreviewWindow } from './app-tool-detail.js';
 
-import { formatCesarRecapToolSummary } from '../cesar/recap.js';
-
 // ── Module: AppRendering ──
 
 /**
  * Count visible tool activity, touched files, and queued messages for the live execution rail.
  */
-// @kern-source: app-rendering:18
+// @kern-source: app-rendering:17
 export function buildExecutionRailStats(blocks: OutputBlock[], files: any[], queueCount: number): any {
   let toolCount = 0;
   let failedToolCount = 0;
@@ -67,7 +65,7 @@ export function buildExecutionRailStats(blocks: OutputBlock[], files: any[], que
   };
 }
 
-// @kern-source: app-rendering:52
+// @kern-source: app-rendering:51
 export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: number, paddingLeft: number, borderColor: string): any[] {
   const rows: any[] = [];
   const cleaned = String(text ?? '').trim();
@@ -198,7 +196,7 @@ export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: nu
   return rows;
 }
 
-// @kern-source: app-rendering:183
+// @kern-source: app-rendering:182
 export function buildToolCallRows(baseKey: string, event: any, toolOutputExpanded: boolean): any[] {
   if (!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')) return [];
 
@@ -582,7 +580,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
   return rows;
 }
 
-// @kern-source: app-rendering:567
+// @kern-source: app-rendering:566
 export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any[] {
   if (!events || events.length === 0) return [];
 
@@ -677,13 +675,13 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
   return rows;
 }
 
-// @kern-source: app-rendering:668
+// @kern-source: app-rendering:667
 export const _mdRowCache = new Map<string, any[]>();
 
-// @kern-source: app-rendering:669
+// @kern-source: app-rendering:668
 export const _MD_ROW_CACHE_MAX: number = 1500;
 
-// @kern-source: app-rendering:670
+// @kern-source: app-rendering:669
 export function cachedMarkdownRows(baseKey: string, text: string, wrapWidth: number, paddingLeft: number, borderColor: string): any[] {
   // baseKey (block id) is globally unique (Date.now()+random, never reused
   // across /clear), but key on text identity too so the cache is provably
@@ -710,13 +708,13 @@ export function cachedMarkdownRows(baseKey: string, text: string, wrapWidth: num
   return rows;
 }
 
-// @kern-source: app-rendering:722
+// @kern-source: app-rendering:721
 export const _blockRowCache = new Map<string, any[]>();
 
-// @kern-source: app-rendering:723
+// @kern-source: app-rendering:722
 export const _BLOCK_ROW_CACHE_MAX: number = 1500;
 
-// @kern-source: app-rendering:725
+// @kern-source: app-rendering:724
 export function blockWantsLeadingGap(eventType: string): boolean {
   return eventType === 'user-message'
     || eventType === 'engine-block'
@@ -724,7 +722,7 @@ export function blockWantsLeadingGap(eventType: string): boolean {
     || eventType === 'debate-round';
 }
 
-// @kern-source: app-rendering:742
+// @kern-source: app-rendering:741
 export const _CACHEABLE_BLOCK_TYPES = new Set<string>([
     'text', 'user-message', 'engine-block', 'separator', 'header',
     'success', 'warning', 'info', 'error', 'permission-ask',
@@ -732,12 +730,12 @@ export const _CACHEABLE_BLOCK_TYPES = new Set<string>([
     'verdict',
   ]);
 
-// @kern-source: app-rendering:749
+// @kern-source: app-rendering:748
 export function isCacheableBlockType(eventType: string): boolean {
   return _CACHEABLE_BLOCK_TYPES.has(eventType);
 }
 
-// @kern-source: app-rendering:754
+// @kern-source: app-rendering:753
 export function blockRowFingerprint(event: any, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean, proseWidth: number, chatWidth: number, engineWidth: number): string {
   // Cheap content signature so an in-place mutation (status/output update on
   // a non-tool block, or any event field change) busts the cache. Widths
@@ -766,7 +764,7 @@ export function blockRowFingerprint(event: any, mode: string, toolOutputExpanded
   return `${type}|${engineId}|${tool}|${status}|${folded}|${extra}|${content.length}|${content.slice(0, 120)}|${content.slice(-40)}|${widths}|${flags}`;
 }
 
-// @kern-source: app-rendering:783
+// @kern-source: app-rendering:782
 export function cachedBlockOwnRows(block: OutputBlock, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean, proseWidth: number, chatWidth: number, engineWidth: number): any[] {
   const event = block.event as any;
   const type = String(event?.type ?? '');
@@ -804,7 +802,7 @@ export function cachedBlockOwnRows(block: OutputBlock, mode: string, toolOutputE
 /**
  * Drop every cached block row. Called from the clearBlocks reset funnel so a /clear (which can recycle block ids in replay paths) can never serve rows rendered for a previous transcript.
  */
-// @kern-source: app-rendering:818
+// @kern-source: app-rendering:817
 export function clearBlockRowCache(): void {
   _blockRowCache.clear();
 }
@@ -812,7 +810,7 @@ export function clearBlockRowCache(): void {
 /**
  * Render the intrinsic rows for ONE transcript block, independent of its neighbors and of its position in the transcript (no leading positional spacer — that is prepended by buildTranscriptRows). Tool-call grouping is NOT handled here.
  */
-// @kern-source: app-rendering:824
+// @kern-source: app-rendering:823
 export function renderBlockOwnRows(block: OutputBlock, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean, proseWidth: number, chatWidth: number, engineWidth: number): any[] {
   const rows: any[] = [];
   const event = block.event as any;
@@ -1102,14 +1100,20 @@ export function renderBlockOwnRows(block: OutputBlock, mode: string, toolOutputE
         return;
       }
       case 'cesar-recap': {
+        // ── Compact recap: ONE header line (what happened), red failure
+        // lines (why), ONE dim summary line (changes · checks · todos ·
+        // tools), changed files, undo hint. No per-tool breakdown, no
+        // read-file noise, no duplicated workspace/files lines.
         const files = Array.isArray((event as any).files) ? (event as any).files : [];
         const warnings = Array.isArray((event as any).warnings) ? (event as any).warnings : [];
-        const toolSummary = Array.isArray((event as any).toolSummary) ? (event as any).toolSummary : [];
         const checkpoints = Array.isArray((event as any).checkpoints) ? (event as any).checkpoints : [];
         const diffFiles = Array.isArray((event as any).diffPreview?.files) ? (event as any).diffPreview.files : [];
         const confidenceValue = (event as any).confidence;
         const confidence = typeof confidenceValue === 'number' && Number.isFinite(confidenceValue) ? `${Math.round(confidenceValue)}% confidence` : '';
-        const seconds = typeof (event as any).durationMs === 'number' ? `${(((event as any).durationMs) / 1000).toFixed(1)}s` : '';
+        const durationMs = (event as any).durationMs;
+        // A sub-100ms duration on a turn with real tool calls is a capture
+        // artifact (stale response-meta), not information — hide it.
+        const seconds = typeof durationMs === 'number' && durationMs >= 100 ? `${(durationMs / 1000).toFixed(1)}s` : '';
         const failed = (event as any).failed === true;
         const terminalState = String((event as any).terminalState ?? '');
         const failureLines = Array.isArray((event as any).failureLines) ? (event as any).failureLines : [];
@@ -1118,25 +1122,14 @@ export function renderBlockOwnRows(block: OutputBlock, mode: string, toolOutputE
         const interrupted = terminalState === 'cancelled' || terminalState === 'superseded';
         const statusIcon = failed ? icons().fail : partial || interrupted ? icons().warning : icons().success;
         const statusColor = failed ? '#ef4444' : partial ? '#fbbf24' : interrupted ? '#a8a8a8' : '#4ade80';
-        const toolCount = (event as any).toolCount ?? toolSummary.length;
-        const toolParts = [formatCesarRecapToolSummary(toolCount, toolSummary)];
-        const skippedTools = Number((event as any).skippedTools ?? 0);
-        const deniedTools = Number((event as any).deniedTools ?? 0);
-        const cancelledTools = Number((event as any).cancelledTools ?? 0);
-        const nonFatalCount = Number((event as any).nonFatalCount ?? 0);
-        if (skippedTools > 0) toolParts.push(`${skippedTools} skipped`);
-        if (deniedTools > 0) toolParts.push(`${deniedTools} denied`);
-        if (cancelledTools > 0) toolParts.push(`${cancelledTools} cancelled`);
-        if (nonFatalCount > 0) toolParts.push(`${nonFatalCount} non-fatal`);
-        const toolLine = toolParts.join(' · ');
-        const fileGlyph = (status: string) => status === 'edited' ? 'M' : status === 'created' ? '+' : 'r';
-        pushSegmentsRow(`${baseKey}-recap-head`, 1, [{ text: '◆ Cesar recap', color: '#f97316', bold: true }]);
-        pushSegmentsRow(`${baseKey}-recap-outcome`, 1, [
+        const fileGlyph = (status: string) => status === 'created' ? '+' : 'M';
+        pushSegmentsRow(`${baseKey}-recap-head`, 1, [
+          { text: '◆ Cesar recap', color: '#f97316', bold: true },
+          { text: ' · ', dimColor: true },
           { text: statusIcon, color: statusColor },
-          { text: ` ${(event as any).outcome ?? 'Completed'}` },
-          { text: ` · ${(event as any).mode ?? 'self'}`, dimColor: true },
-          confidence ? { text: ` · ${confidence}`, dimColor: true } : null,
+          { text: ` ${(event as any).outcome ?? 'Completed'}`, color: statusColor, bold: true },
           seconds ? { text: ` · ${seconds}`, dimColor: true } : null,
+          confidence ? { text: ` · ${confidence}`, dimColor: true } : null,
         ].filter(Boolean));
         failureLines.forEach((f: any, index: number) => {
           pushSegmentsRow(`${baseKey}-recap-fail-${index}`, 1, [
@@ -1150,65 +1143,78 @@ export function renderBlockOwnRows(block: OutputBlock, mode: string, toolOutputE
         if (failureOverflow > 0) {
           pushSegmentsRow(`${baseKey}-recap-fail-more`, 1, [{ text: `  +${failureOverflow} more failed`, color: '#ef4444' }]);
         }
+        // One combined summary line: changes · verification · todos · tools
         const change = (event as any).changeSummary ?? { created: 0, edited: 0, read: 0 };
         const createdCount = Number(change.created ?? 0);
         const editedCount = Number(change.edited ?? 0);
-        const readCount = Number(change.read ?? 0);
         const changedTotal = createdCount + editedCount;
         const changeParts: string[] = [];
         if (createdCount > 0) changeParts.push(`+${createdCount} created`);
         if (editedCount > 0) changeParts.push(`~${editedCount} edited`);
-        pushSegmentsRow(`${baseKey}-recap-changes`, 1, [
-          { text: '  workspace: ', dimColor: true },
-          { text: changedTotal > 0 ? changeParts.join(', ') : 'unchanged', color: changedTotal > 0 ? '#4ade80' : undefined },
-          readCount > 0 ? { text: ` · ${readCount} read`, dimColor: true } : null,
-        ].filter(Boolean));
         const verification = Array.isArray((event as any).verification) ? (event as any).verification : [];
         const passedVerification = verification.filter((v: any) => v.state === 'passed' || (v.state === undefined && v.ok === true));
         const failedVerification = verification.filter((v: any) => v.state === 'failed' || (v.state === undefined && v.ok === false));
         const notRunVerification = verification.filter((v: any) => v.state === 'not_run' || v.state === 'pending');
-        if (passedVerification.length > 0) {
-          const verifySegs: any[] = [{ text: '  verified: ', dimColor: true }];
-          passedVerification.forEach((v: any, vi: number) => {
-            verifySegs.push({ text: '✓', color: '#4ade80' });
-            verifySegs.push({ text: ` ${v.label}` });
-            if (vi < passedVerification.length - 1) verifySegs.push({ text: ' · ', dimColor: true });
-          });
-          pushSegmentsRow(`${baseKey}-recap-verified`, 1, verifySegs);
-        }
-        if (failedVerification.length > 0) {
-          pushSegmentsRow(`${baseKey}-recap-verification-failed`, 1, [{ text: `  verification failed · ${failedVerification.map((v: any) => v.label).join(', ')}`, color: '#ef4444' }]);
-        }
-        if (notRunVerification.length > 0) {
-          pushSegmentsRow(`${baseKey}-recap-not-run`, 1, [{ text: `  verification: not run · ${notRunVerification.map((v: any) => v.label).join(', ')}`, color: '#fbbf24' }]);
-        }
         const recapTodos = (event as any).todos;
+        const toolCount = Number((event as any).toolCount ?? 0);
+        const skippedTools = Number((event as any).skippedTools ?? 0);
+        const deniedTools = Number((event as any).deniedTools ?? 0);
+        const cancelledTools = Number((event as any).cancelledTools ?? 0);
+        const nonFatalCount = Number((event as any).nonFatalCount ?? 0);
+        const toolNotes: string[] = [];
+        if (skippedTools > 0) toolNotes.push(`${skippedTools} skipped`);
+        if (deniedTools > 0) toolNotes.push(`${deniedTools} denied`);
+        if (cancelledTools > 0) toolNotes.push(`${cancelledTools} cancelled`);
+        if (nonFatalCount > 0) toolNotes.push(`${nonFatalCount} non-fatal`);
+        const summarySegs: any[] = [{ text: '  ' }];
+        const pushSep = () => { if (summarySegs.length > 1) summarySegs.push({ text: ' · ', dimColor: true }); };
+        pushSep();
+        summarySegs.push(changedTotal > 0
+          ? { text: changeParts.join(', '), color: '#4ade80' }
+          : { text: 'no file changes', dimColor: true });
+        passedVerification.forEach((v: any) => {
+          pushSep();
+          summarySegs.push({ text: '✓ ', color: '#4ade80' }, { text: String(v.label) });
+        });
+        failedVerification.forEach((v: any) => {
+          pushSep();
+          summarySegs.push({ text: `✗ ${v.label}`, color: '#ef4444' });
+        });
+        if (notRunVerification.length > 0) {
+          pushSep();
+          summarySegs.push({ text: `not run: ${notRunVerification.map((v: any) => v.label).join(', ')}`, color: '#fbbf24' });
+        }
         if (recapTodos && Number(recapTodos.total ?? 0) > 0) {
           const tDone = Number(recapTodos.done ?? 0);
           const tTotal = Number(recapTodos.total ?? 0);
-          pushSegmentsRow(`${baseKey}-recap-todos`, 1, [
-            { text: '  todos: ', dimColor: true },
-            { text: `${tDone}/${tTotal} done`, color: tDone >= tTotal ? '#4ade80' : '#fbbf24' },
-          ]);
+          pushSep();
+          summarySegs.push({ text: `todos ${tDone}/${tTotal}`, color: tDone >= tTotal ? '#4ade80' : '#fbbf24' });
         }
+        if (toolCount > 0) {
+          pushSep();
+          summarySegs.push({ text: `${toolCount} tools${toolNotes.length > 0 ? ` (${toolNotes.join(', ')})` : ''}`, dimColor: true });
+        }
+        pushSegmentsRow(`${baseKey}-recap-summary`, 1, summarySegs);
         if ((event as any).remaining) {
           pushSegmentsRow(`${baseKey}-recap-remaining`, 1, [{ text: `  remaining: ${String((event as any).remaining)}`, color: '#fbbf24' }]);
         }
-        pushSegmentsRow(`${baseKey}-recap-tools`, 1, [{ text: `  ${toolLine}`, dimColor: true }]);
-        if ((event as any).confidenceReasoning) {
+        if (failed && (event as any).confidenceReasoning) {
           pushSegmentsRow(`${baseKey}-recap-why`, 1, [{ text: `  why: ${(event as any).confidenceReasoning}`, italic: true, color: '#a8a8a8' }]);
         }
-        if (files.length > 0) {
+        // Only files the turn actually created/edited — reads are noise here.
+        const changedFiles = files.filter((f: any) => String(f.status) === 'edited' || String(f.status) === 'created');
+        if (changedFiles.length > 0) {
           pushSegmentsRow(`${baseKey}-recap-files`, 1, [{
-            text: `  files: ${files.slice(0, 5).map((f: any) => `${fileGlyph(String(f.status))} ${f.relPath ?? f.path}`).join(', ')}${files.length > 5 ? `, +${files.length - 5} more` : ''}`,
+            text: `  ${changedFiles.slice(0, 4).map((f: any) => `${fileGlyph(String(f.status))} ${f.relPath ?? f.path}`).join(', ')}${changedFiles.length > 4 ? `, +${changedFiles.length - 4} more` : ''}`,
             dimColor: true,
           }]);
         }
         if (checkpoints.length > 0) {
-          pushSegmentsRow(`${baseKey}-recap-checkpoint`, 1, [{
-            text: `  checkpoint: ${checkpoints[0].id}${checkpoints.length > 1 ? ` (+${checkpoints.length - 1})` : ''} · /undo ${checkpoints[0].id} reverts checkpoint`,
-            color: '#22d3ee',
-          }]);
+          pushSegmentsRow(`${baseKey}-recap-checkpoint`, 1, [
+            { text: '  undo: ', dimColor: true },
+            { text: `/undo ${checkpoints[0].id}`, color: '#22d3ee' },
+            checkpoints.length > 1 ? { text: ` (+${checkpoints.length - 1} more)`, dimColor: true } : null,
+          ].filter(Boolean));
         }
         diffFiles.slice(0, 4).forEach((file: any, index: number) => {
           pushSegmentsRow(`${baseKey}-recap-diff-${index}`, 1, [
@@ -1360,7 +1366,7 @@ export function renderBlockOwnRows(block: OutputBlock, mode: string, toolOutputE
   return rows;
 }
 
-// @kern-source: app-rendering:1373
+// @kern-source: app-rendering:1380
 export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): any[] {
   const rows: any[] = [];
   const proseWidth = contentWidth(4);

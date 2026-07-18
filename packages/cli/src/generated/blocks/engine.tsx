@@ -28,8 +28,6 @@ import { PlanProposalView, PlanExecutionView } from './plan-view.js';
 
 import { parseToolInputPayload, extractPatchText, parsePatchPreview, extractSummary, formatDuration } from './engine-helpers.js';
 
-import { formatCesarRecapToolSummary } from '../cesar/recap.js';
-
 import { createRequire } from 'node:module';
 
 import { readFileSync, existsSync } from 'node:fs';
@@ -42,13 +40,13 @@ import { fileURLToPath } from 'node:url';
 
 export { parseToolInputPayload, extractPatchText, parsePatchPreview, extractSummary } from './engine-helpers.js';
 
-// @kern-source: engine:66
+// @kern-source: engine:65
 export interface OutputBlock {
   id: number;
   event: OutputEvent;
 }
 
-// @kern-source: engine:72
+// @kern-source: engine:71
 export function EngineProgressView({ engines, mode }: { engines:EngineProgress[]; mode?:string }) {
   // Use explicit mode if it's an arena mode, otherwise detect from status text
   const arenaModes = ['forge', 'brainstorm', 'campfire', 'tribunal'];
@@ -87,7 +85,7 @@ export function EngineProgressView({ engines, mode }: { engines:EngineProgress[]
   );
 }
 
-// @kern-source: engine:116
+// @kern-source: engine:115
 const EngineBlock = React.memo(function EngineBlock({ engineId, color, content, actingNote, foldedSteps }: { engineId:string; color:number; content:string; actingNote?:string; foldedSteps?:number }) {
   const wrapWidth = contentWidth(8);
   const cleaned = cleanEngineOutput(content);
@@ -119,7 +117,7 @@ const EngineBlock = React.memo(function EngineBlock({ engineId, color, content, 
 });
 export { EngineBlock };
 
-// @kern-source: engine:155
+// @kern-source: engine:154
 const ConversationalResponse = React.memo(function ConversationalResponse({ engineId, content, actingNote, foldedSteps }: { engineId:string; content:string; actingNote?:string; foldedSteps?:number }) {
   const wrapWidth = contentWidth(2);
   const cleaned = cleanEngineOutput(content);
@@ -139,16 +137,20 @@ const ConversationalResponse = React.memo(function ConversationalResponse({ engi
 });
 export { ConversationalResponse };
 
-// @kern-source: engine:181
+// @kern-source: engine:180
 const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:OutputEvent & { type: 'cesar-recap' } }) {
+  // Compact recap, mirroring the static-log renderer in app-rendering.kern:
+  // ONE header line, red failure lines, ONE dim summary line, changed
+  // files, undo hint. No per-tool breakdown, no read-file noise.
   const files = Array.isArray((event as any).files) ? (event as any).files : [];
   const warnings = Array.isArray((event as any).warnings) ? (event as any).warnings : [];
-  const toolSummary = Array.isArray((event as any).toolSummary) ? (event as any).toolSummary : [];
   const checkpoints = Array.isArray((event as any).checkpoints) ? (event as any).checkpoints : [];
   const diffFiles = Array.isArray((event as any).diffPreview?.files) ? (event as any).diffPreview.files : [];
   const confidenceValue = (event as any).confidence;
   const confidence = typeof confidenceValue === 'number' && Number.isFinite(confidenceValue) ? `${Math.round(confidenceValue)}% confidence` : '';
-  const seconds = typeof (event as any).durationMs === 'number' ? `${(((event as any).durationMs) / 1000).toFixed(1)}s` : '';
+  const durationMs = (event as any).durationMs;
+  // A sub-100ms duration on a real turn is a capture artifact - hide it.
+  const seconds = typeof durationMs === 'number' && durationMs >= 100 ? `${(durationMs / 1000).toFixed(1)}s` : '';
   const failed = (event as any).failed === true;
   const terminalState = String((event as any).terminalState ?? '');
   const failureLines = Array.isArray((event as any).failureLines) ? (event as any).failureLines : [];
@@ -160,7 +162,6 @@ const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:O
   const change = (event as any).changeSummary ?? { created: 0, edited: 0, read: 0 };
   const createdCount = Number(change.created ?? 0);
   const editedCount = Number(change.edited ?? 0);
-  const readCount = Number(change.read ?? 0);
   const changedTotal = createdCount + editedCount;
   const changeParts: string[] = [];
   if (createdCount > 0) changeParts.push(`+${createdCount} created`);
@@ -171,87 +172,76 @@ const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:O
   const passedVerification = verification.filter((v: any) => v.state === 'passed' || (v.state === undefined && v.ok === true));
   const failedVerification = verification.filter((v: any) => v.state === 'failed' || (v.state === undefined && v.ok === false));
   const notRunVerification = verification.filter((v: any) => v.state === 'not_run' || v.state === 'pending');
-  const changedFiles = files.filter((f: any) => String(f.status) !== 'read');
-  const toolCount = (event as any).toolCount ?? toolSummary.length;
-  const toolParts = [formatCesarRecapToolSummary(toolCount, toolSummary)];
+  const changedFiles = files.filter((f: any) => String(f.status) === 'edited' || String(f.status) === 'created');
+  const recapTodos = (event as any).todos;
+  const todoDone = Number(recapTodos?.done ?? 0);
+  const todoTotal = Number(recapTodos?.total ?? 0);
+  const toolCount = Number((event as any).toolCount ?? 0);
   const skippedTools = Number((event as any).skippedTools ?? 0);
   const deniedTools = Number((event as any).deniedTools ?? 0);
   const cancelledTools = Number((event as any).cancelledTools ?? 0);
   const nonFatalCount = Number((event as any).nonFatalCount ?? 0);
-  if (skippedTools > 0) toolParts.push(`${skippedTools} skipped`);
-  if (deniedTools > 0) toolParts.push(`${deniedTools} denied`);
-  if (cancelledTools > 0) toolParts.push(`${cancelledTools} cancelled`);
-  if (nonFatalCount > 0) toolParts.push(`${nonFatalCount} non-fatal`);
-  const toolLine = toolParts.join(' · ');
-  const fileGlyph = (status: string) => status === 'edited' ? 'M' : status === 'created' ? '+' : 'r';
+  const toolNotes: string[] = [];
+  if (skippedTools > 0) toolNotes.push(`${skippedTools} skipped`);
+  if (deniedTools > 0) toolNotes.push(`${deniedTools} denied`);
+  if (cancelledTools > 0) toolNotes.push(`${cancelledTools} cancelled`);
+  if (nonFatalCount > 0) toolNotes.push(`${nonFatalCount} non-fatal`);
+  const fileGlyph = (status: string) => status === 'created' ? '+' : 'M';
   return (
     <Box flexDirection="column" paddingLeft={1} marginTop={1}>
-      <Text color="#f97316" bold>{'\u25c6 Cesar recap'}</Text>
       <Text>
+        <Text color="#f97316" bold>{'◆ Cesar recap'}</Text>
+        <Text dimColor>{' · '}</Text>
         <Text color={statusColor}>{statusIcon}</Text>
-        <Text>{' '}{(event as any).outcome ?? 'Completed'}</Text>
-        <Text dimColor>{' \u00b7 '}{(event as any).mode ?? 'self'}</Text>
-        {confidence ? <Text dimColor>{' \u00b7 '}{confidence}</Text> : null}
-        {seconds ? <Text dimColor>{' \u00b7 '}{seconds}</Text> : null}
+        <Text color={statusColor} bold>{' '}{(event as any).outcome ?? 'Completed'}</Text>
+        {seconds ? <Text dimColor>{' · '}{seconds}</Text> : null}
+        {confidence ? <Text dimColor>{' · '}{confidence}</Text> : null}
       </Text>
       {failureLines.map((f: any, index: number) => (
         <Text key={`fail-${index}`}>
           <Text color="#ef4444">{'  '}{icons().fail}</Text>
           <Text color="#ef4444" bold>{' '}{f.action}{' failed'}</Text>
-          <Text dimColor>{' \u00b7 '}{f.command}</Text>
-          {f.reason ? <Text dimColor>{' \u2192 '}{f.reason}</Text> : null}
+          <Text dimColor>{' · '}{f.command}</Text>
+          {f.reason ? <Text dimColor>{' → '}{f.reason}</Text> : null}
         </Text>
       ))}
       {failureOverflow > 0 ? (
         <Text color="#ef4444">{'  +'}{failureOverflow}{' more failed'}</Text>
       ) : null}
-      {changedTotal > 0 ? (
-        <Text>
-          <Text dimColor>{'  workspace: '}</Text>
-          <Text color="#4ade80">{changeParts.join(', ')}</Text>
-          {readCount > 0 ? <Text dimColor>{' · '}{readCount}{' read'}</Text> : null}
-        </Text>
-      ) : (
-        <Text>
-          <Text dimColor>{'  workspace: '}</Text>
-          <Text>{'unchanged'}</Text>
-          {readCount > 0 ? <Text dimColor>{' · '}{readCount}{' read'}</Text> : null}
-        </Text>
-      )}
-      {passedVerification.length > 0 ? (
-        <Text>
-          <Text dimColor>{'  verified: '}</Text>
-          {passedVerification.map((v: any, i: number) => (
-            <Text key={`verify-${i}`}>
-              <Text color="#4ade80">{'✓'}</Text>
-              <Text>{' '}{v.label}</Text>
-              {i < passedVerification.length - 1 ? <Text dimColor>{' · '}</Text> : null}
-            </Text>
-          ))}
-        </Text>
-      ) : null}
-      {failedVerification.length > 0 ? (
-        <Text color="#ef4444">{'  verification failed'}{` · ${failedVerification.map((v: any) => v.label).join(', ')}`}</Text>
-      ) : null}
-      {notRunVerification.length > 0 ? (
-        <Text color="#fbbf24">{'  verification: not run'}{` · ${notRunVerification.map((v: any) => v.label).join(', ')}`}</Text>
-      ) : null}
-      {(event as any).todos && Number((event as any).todos.total ?? 0) > 0 ? (
-        <Text>
-          <Text dimColor>{'  todos: '}</Text>
-          <Text color={Number((event as any).todos.done ?? 0) >= Number((event as any).todos.total ?? 0) ? '#4ade80' : '#fbbf24'}>{Number((event as any).todos.done ?? 0)}{'/'}{Number((event as any).todos.total ?? 0)}{' done'}</Text>
-        </Text>
-      ) : null}
+      <Text>
+        <Text>{'  '}</Text>
+        {changedTotal > 0
+          ? <Text color="#4ade80">{changeParts.join(', ')}</Text>
+          : <Text dimColor>{'no file changes'}</Text>}
+        {passedVerification.map((v: any, i: number) => (
+          <Text key={`verify-${i}`}><Text dimColor>{' · '}</Text><Text color="#4ade80">{'✓ '}</Text><Text>{v.label}</Text></Text>
+        ))}
+        {failedVerification.map((v: any, i: number) => (
+          <Text key={`verify-fail-${i}`}><Text dimColor>{' · '}</Text><Text color="#ef4444">{'✗ '}{v.label}</Text></Text>
+        ))}
+        {notRunVerification.length > 0 ? (
+          <Text><Text dimColor>{' · '}</Text><Text color="#fbbf24">{'not run: '}{notRunVerification.map((v: any) => v.label).join(', ')}</Text></Text>
+        ) : null}
+        {todoTotal > 0 ? (
+          <Text><Text dimColor>{' · '}</Text><Text color={todoDone >= todoTotal ? '#4ade80' : '#fbbf24'}>{'todos '}{todoDone}{'/'}{todoTotal}</Text></Text>
+        ) : null}
+        {toolCount > 0 ? (
+          <Text><Text dimColor>{' · '}</Text><Text dimColor>{toolCount}{' tools'}{toolNotes.length > 0 ? ` (${toolNotes.join(', ')})` : ''}</Text></Text>
+        ) : null}
+      </Text>
       {(event as any).remaining ? <Text color="#fbbf24">{'  remaining: '}{String((event as any).remaining)}</Text> : null}
-      <Text dimColor>{'  '}{toolLine}</Text>
-      {(event as any).confidenceReasoning ? (
+      {failed && (event as any).confidenceReasoning ? (
         <Text italic color="#a8a8a8">{'  why: '}{(event as any).confidenceReasoning}</Text>
       ) : null}
       {changedFiles.length > 0 && (
-        <Text dimColor>{'  files: '}{changedFiles.slice(0, 5).map((f: any) => `${fileGlyph(String(f.status))} ${f.relPath ?? f.path}`).join(', ')}{changedFiles.length > 5 ? `, +${changedFiles.length - 5} more` : ''}</Text>
+        <Text dimColor>{'  '}{changedFiles.slice(0, 4).map((f: any) => `${fileGlyph(String(f.status))} ${f.relPath ?? f.path}`).join(', ')}{changedFiles.length > 4 ? `, +${changedFiles.length - 4} more` : ''}</Text>
       )}
       {checkpoints.length > 0 ? (
-        <Text color="#22d3ee">{'  checkpoint: '}{checkpoints[0].id}{checkpoints.length > 1 ? ` (+${checkpoints.length - 1})` : ''}<Text dimColor>{` · /undo ${checkpoints[0].id} reverts checkpoint`}</Text></Text>
+        <Text>
+          <Text dimColor>{'  undo: '}</Text>
+          <Text color="#22d3ee">{'/undo '}{checkpoints[0].id}</Text>
+          {checkpoints.length > 1 ? <Text dimColor>{' (+'}{checkpoints.length - 1}{' more)'}</Text> : null}
+        </Text>
       ) : null}
       {diffFiles.slice(0, 4).map((file: any, index: number) => (
         <Box key={`diff-${index}`} flexDirection="column">
@@ -275,7 +265,7 @@ const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:O
 });
 export { CesarRecapBlock };
 
-// @kern-source: engine:320
+// @kern-source: engine:311
 export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboard' } }) {
   return (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
@@ -346,7 +336,7 @@ export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboar
   );
 }
 
-// @kern-source: engine:395
+// @kern-source: engine:386
 function TableView({ headers, rows }: { headers:string[]; rows:string[][] }) {
   const widths = headers.map((h: string, i: number) =>
     Math.max(h.length, ...rows.map((r: string[]) => (r[i] ?? '').length)) + 2,
@@ -370,7 +360,7 @@ function TableView({ headers, rows }: { headers:string[]; rows:string[][] }) {
   );
 }
 
-// @kern-source: engine:424
+// @kern-source: engine:415
 const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpanded }: { event:OutputEvent; mode:string; toolOutputExpanded?:boolean; thinkingExpanded?:boolean }) {
   switch (event.type) {
     case 'text': {
@@ -1010,7 +1000,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
 });
 export { OutputBlockView };
 
-// @kern-source: engine:1070
+// @kern-source: engine:1061
 const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:OutputBlock[] }) {
   const labelForTool = (raw: unknown) => {
     const toolKey = String(raw ?? '').toLowerCase();
@@ -1170,7 +1160,7 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
 });
 export { ToolCallGroup };
 
-// @kern-source: engine:1236
+// @kern-source: engine:1227
 const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputBlock[] }) {
   const round = (blocks[0]?.event as any)?.round ?? '?';
   const w = contentWidth(6);
@@ -1196,7 +1186,7 @@ const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputB
 });
 export { DebateGroup };
 
-// @kern-source: engine:1265
+// @kern-source: engine:1256
 const BidGroup = React.memo(function BidGroup({ blocks }: { blocks:OutputBlock[] }) {
   const w = contentWidth(6);
   return (
@@ -1226,16 +1216,16 @@ const BidGroup = React.memo(function BidGroup({ blocks }: { blocks:OutputBlock[]
 });
 export { BidGroup };
 
-// @kern-source: engine:28
+// @kern-source: engine:27
 export const BRAND: readonly string[] = ['#fbbf24', '#f9a816', '#f97316', '#f45a2a', '#ef4444'] as const;
 
-// @kern-source: engine:30
+// @kern-source: engine:29
 export const LOGO_LINES: string[] = ['    █████╗  ██████╗  ██████╗ ███╗   ██╗', '   ██╔══██╗██╔════╝ ██╔═══██╗████╗  ██║', '   ███████║██║  ███╗██║   ██║██╔██╗ ██║', '   ██╔══██╗██║   ██╗██║   ██║██║╚██╗██║', '   ██║  ██║╚██████╔╝╚██████╔╝██║ ╚████║', '   ╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═══╝'];
 
 /**
  * Read a package's installed version from its package.json at runtime so the banner auto-reflects npm upgrades instead of a frozen literal. Walks up from a resolvable entry (or this module for the own package) to the nearest package.json whose name matches. Falls back to the literal if resolution fails — e.g. an exports-locked package.json that can't be required by path.
  */
-// @kern-source: engine:32
+// @kern-source: engine:31
 export function resolvePackageVersion(resolveSpecifier: string|null, wantName: string, fallback: string): string {
   try {
     const req = createRequire(import.meta.url);
@@ -1255,8 +1245,8 @@ export function resolvePackageVersion(resolveSpecifier: string|null, wantName: s
   return fallback;
 }
 
-// @kern-source: engine:59
+// @kern-source: engine:58
 export const VERSION: string = resolvePackageVersion(null, '@kernlang/agon', '0.2.4');
 
-// @kern-source: engine:61
+// @kern-source: engine:60
 export const KERN_VERSION: string = resolvePackageVersion('@kernlang/terminal/runtime', '@kernlang/terminal', '4.0.0');

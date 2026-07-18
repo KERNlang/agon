@@ -534,22 +534,15 @@ describe('Intent Detection — Natural Language', () => {
     if (ambiguous.type === 'auto') expect(ambiguous.taskClass).toBe('ambiguous');
   });
 
-  it('dispatches an explicit "review with <known engine>" from chat', () => {
-    const r = detectIntent('review with claude');
-    expect(r.type).toBe('review');
-
-    const branch = detectIntent('review branch:main with claude');
-    expect(branch.type).toBe('review');
-    if (branch.type === 'review') expect(branch.target).toBe('branch:main');
-  });
-
-  it('dispatches plain multi-engine "review with <engines>" from chat', () => {
-    const r = detectIntent('review with codex claude');
-    expect(r.type).toBe('review');
-    if (r.type === 'review') expect(r.engineIds).toEqual(['codex', 'claude']);
-
-    // unknown engine token ("gemini" is now "agy") → not a dispatch, stays auto
+  it('keeps chat review phrases as conversation for Cesar (slash-only dispatch)', () => {
+    expect(detectIntent('review with claude').type).toBe('auto');
+    expect(detectIntent('review branch:main with claude').type).toBe('auto');
+    expect(detectIntent('review with codex claude').type).toBe('auto');
     expect(detectIntent('review with gemini').type).toBe('auto');
+    expect(detectIntent('review it with codex').type).toBe('auto');
+    expect(detectIntent('review it with codex and claude').type).toBe('auto');
+    expect(detectIntent('ask codex and claude to review it').type).toBe('auto');
+    expect(detectIntent('can you review with claude and codex').type).toBe('auto');
   });
 
   it('does not short-circuit compound instructions starting with implementation verbs', () => {
@@ -567,21 +560,6 @@ describe('Intent Detection — Natural Language', () => {
 
     const canYouFix = detectIntent('can you fix auth then review with codex');
     expect(canYouFix.type).not.toBe('review');
-  });
-
-  it('dispatches explicit review delegation text from chat (with known engines)', () => {
-    const r = detectIntent('review it with codex');
-    expect(r.type).toBe('review');
-
-    const withAnd = detectIntent('review it with codex and claude');
-    expect(withAnd.type).toBe('review');
-    if (withAnd.type === 'review') expect(withAnd.engineIds).toEqual(['codex', 'claude']);
-
-    const ask = detectIntent('ask codex and claude to review it');
-    expect(ask.type).toBe('review');
-
-    const canYou = detectIntent('can you review with claude and codex');
-    expect(canYou.type).toBe('review');
   });
 
   it('keeps collaboration phrases as auto; slash commands are required for buddy flows', () => {
@@ -694,42 +672,30 @@ describe('Intent Detection — Edge Cases', () => {
   });
 });
 
-describe('Intent Detection — natural-language review dispatch (no slash)', () => {
-  it('dispatches "review with <engines>" deterministically, target defaults to uncommitted', () => {
-    const r = detectIntent('review with codex claude agy');
-    expect(r.type).toBe('review');
-    if (r.type === 'review') {
-      expect(r.engineIds).toEqual(['codex', 'claude', 'agy']);
-      expect(r.target).toBeUndefined(); // → uncommitted downstream
-    }
-  });
-
-  it('tolerates a politeness prefix and "and"-joined engines', () => {
-    const r = detectIntent('can you review with codex claude and agy');
-    expect(r.type).toBe('review');
-    if (r.type === 'review') {
-      expect(r.engineIds).toEqual(['codex', 'claude', 'agy']);
-    }
-  });
-
-  it('honours an explicit target in a chat request', () => {
-    const r = detectIntent('review branch:main with codex');
-    expect(r.type).toBe('review');
-    if (r.type === 'review') {
-      expect(r.engineIds).toEqual(['codex']);
-      expect(r.target).toBe('branch:main');
-    }
+describe('Intent Detection — chat review requests are conversation, never dispatch', () => {
+  it('routes "review with <engines>" chat text to Cesar (slash-only dispatch)', () => {
+    expect(detectIntent('review with codex claude agy').type).toBe('auto');
+    expect(detectIntent('can you review with codex claude and agy').type).toBe('auto');
+    expect(detectIntent('review branch:main with codex').type).toBe('auto');
+    expect(detectIntent('can you review with codex?').type).toBe('auto');
+    expect(detectIntent('2 and review first with codex and claude').type).toBe('auto');
+    expect(detectIntent('can you check it with codex').type).toBe('auto');
   });
 
   it('does NOT hijack prose that merely mentions review (→ Cesar)', () => {
     expect(detectIntent('review this code').type).not.toBe('review');
     expect(detectIntent('can you review whether this approach is correct').type).not.toBe('review');
-    // "with" but no known engine names → not a dispatch
     expect(detectIntent('review with me the options').type).not.toBe('review');
   });
 
   it('does NOT hijack compound "fix then review" (→ Cesar handles the sequence)', () => {
     expect(detectIntent('fix the bug then review with codex').type).not.toBe('review');
+  });
+
+  it('still dispatches the explicit /review slash command', () => {
+    const r = detectIntent('/review with codex claude');
+    expect(r.type).toBe('review');
+    if (r.type === 'review') expect(r.engineIds).toEqual(['codex', 'claude']);
   });
 });
 

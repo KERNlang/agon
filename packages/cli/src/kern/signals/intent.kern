@@ -1,4 +1,4 @@
-import from="../lib/kern-host.js" names="hostRegexExec,hostRegexMatch,hostRegexObjectTest,hostStringSet"
+import from="../lib/kern-host.js" names="hostRegexExec,hostRegexMatch,hostRegexObjectTest"
 
 module name=IntentParsing
   interface name=SlashCommand
@@ -81,7 +81,6 @@ module name=IntentParsing
 
   const name=AUTOCREDIT_ON_KEYWORDS type=RegExp value={{ /\b(?:schalt(?:e|)?\s+(?:das|es|autoCredit)\s+an|mach(?:e|)?\s+(?:das|es|autoCredit)\s+an|(?:autoCredit|co[\s-]?authored?|contributor)\s+an)\b/i }}
 
-  const name=KNOWN_COLLAB_ENGINE_IDS type="Set<string>" value={{ hostStringSet([ 'claude', 'codex', 'agy', 'antigravity', 'qwen', 'kimi', 'opencode', 'open-code', 'minimax', 'zai', 'aider', 'cursor', 'gpt', 'openai' ]) }}
 
   fn name=classifyTask params="input:string" returns="'code'|'question'|'ambiguous'"
     handler lang="kern"
@@ -113,73 +112,6 @@ module name=IntentParsing
       if cond="!task"
         return value="null"
       return value="{ type: 'agent', input: task } as Intent"
-
-  fn name=normalizeEngineToken params="part:string" returns="string|null" export=false
-    handler lang="kern"
-      let name=cleaned value="part .trim() .toLowerCase() .replace(/^@+/, '') .replace(/^[^\\w-]+|[^\\w-]+$/g, '')"
-      if cond="!cleaned"
-        return value="null"
-      comment raw="// 'antigravity' is an alias for the agy engine (binary: agy)."
-      if cond="cleaned === 'antigravity'"
-        return value="'agy'"
-      if cond="KNOWN_COLLAB_ENGINE_IDS.has(cleaned)"
-        return value="cleaned"
-      comment raw="// Let model IDs like kimi-for-coding-k2p6 or zai-coding-plan-glm-5.1"
-      comment raw="// through when they are explicitly introduced by \"with\"/\"ask\"."
-      if cond="/^(?:claude|codex|agy|antigravity|qwen|kimi|opencode|open-code|minimax|zai|aider|cursor|gpt|openai)[\\w.-]*$/i.test(cleaned)"
-        return value="cleaned"
-      return value="null"
-
-  fn name=parseExplicitEngineIds params="input:string" returns="string[]" export=false
-    handler <<<
-      const engineIds: string[] = [];
-      const add = (value: string | null) => {
-        if (value && !engineIds.includes(value)) engineIds.push(value);
-      };
-
-      const collect = (segment: string) => {
-        segment
-          .split(/(?:,|\s+and\s+|\s+or\s+|\s+plus\s+|\s+with\s+|\s+)/i)
-          .map((part) => normalizeEngineToken(part))
-          .forEach(add);
-      };
-
-      // Accept comma/and/or/plus separators AND plain spaces between engine
-      // names, so "with codex claude agy" captures all three (not just codex).
-      // Over-capturing trailing prose is harmless: normalizeEngineToken() drops
-      // any token that isn't a known engine id.
-      const withMatch = input.match(/\bwith\s+([a-z0-9@_.-]+(?:(?:\s*,\s*|\s+and\s+|\s+or\s+|\s+plus\s+|\s+)[a-z0-9@_.-]+)*)/i);
-      if (withMatch) collect(withMatch[1]);
-
-      const askMatch = input.match(/\b(?:ask|have|get)\s+([a-z0-9@_.-]+(?:\s*(?:,|and|or|plus)\s*[a-z0-9@_.-]+)*)\s+(?:to\s+)?(?:review|check|audit|look|inspect|compare|weigh|think|debate)\b/i);
-      if (askMatch) collect(askMatch[1]);
-
-      return engineIds;
-    >>>
-
-  fn name=parseSemanticReviewShortcut params="input:string" returns="Intent|null" export=false
-    handler lang="kern"
-      let name=lower value="input.toLowerCase()"
-      let name=reviewVerb value="/\\b(?:review|check|audit|inspect|look\\s+over)\\b/i.test(input)"
-      if cond="!reviewVerb"
-        return value="null"
-      let name=hasDelegationShape value="/\\bwith\\s+[a-z0-9@_.-]+/i.test(input) || /\\b(?:ask|have|get)\\s+[a-z0-9@_.-]+(?:\\s*(?:,|and|or|plus)\\s*[a-z0-9@_.-]+)*\\s+(?:to\\s+)?(?:review|check|audit|look|inspect)\\b/i.test(input)"
-      if cond="!hasDelegationShape"
-        return value="null"
-      comment raw="// Don't short-circuit compound instructions like \"fix x then review with codex\""
-      comment raw="// to direct review dispatch — let Cesar handle the full sequence."
-      if cond="/\\breview\\b[\\s\\S]*\\b(?:fix|address|resolve|apply|patch)\\b/i.test(input) || /\\b(?:fix|address|resolve|apply|patch)\\b[\\s\\S]*\\b(?:review|findings?|issues?)\\b/i.test(input)"
-        return value="null"
-      let name=IMPLEMENTATION_LEAD_RE value="/^(?:fix(?:e[sd]|ing)?|add(?:ed|ing|s)?|implement(?:ed|ing|s)?|build(?:ing|s)?|built|creat(?:e[sd]?|ing)|refactor(?:ed|ing|s)?|rewrit(?:e|es|ing|ten)|migrat(?:e[sd]?|ing)|wir(?:e[sd]?|ing)|chang(?:e[sd]?|ing)|updat(?:e[sd]?|ing)|optimi[sz](?:e[sd]?|ing)|remov(?:e[sd]?|ing)|delet(?:e[sd]?|ing)|patch(?:ed|ing|es)?)\\b/i"
-      let name=normalized value="input.trim().replace(/^(?:can\\s+you\\s+|could\\s+you\\s+|please\\s+)?/i, '')"
-      if cond="hostRegexObjectTest(IMPLEMENTATION_LEAD_RE, normalized)"
-        return value="null"
-      let name=engineIds value="parseExplicitEngineIds(input)"
-      if cond="engineIds.length === 0"
-        return value="null"
-      let name=targetMatch value="lower.match(/\\b(uncommitted|branch:[\\w./-]+|commit:[a-f0-9]{4,40})\\b/i)"
-      let name=target value="targetMatch ? targetMatch.groups[0] ?? undefined : undefined"
-      return value="{ type: 'review', engineId: engineIds[0], engineIds, target } as Intent"
 
   fn name=stripCollaborationLeadIn params="input:string" returns=string export=false
     handler lang="kern"
@@ -738,17 +670,10 @@ module name=IntentParsing
       let name=delegationShortcut value="parseSemanticDelegationShortcut(input)"
       if cond="delegationShortcut"
         return value="delegationShortcut"
-      comment raw="// Deterministic review dispatch for an UNAMBIGUOUS chat request:"
-      comment raw="// a review verb + \"with <known engine(s)>\" (politeness prefixes ok,"
-      comment raw="// compound \"fix then review\" excluded, engine tokens validated). This"
-      comment raw="// grounds \"review with codex claude agy\" / \"can you review with ...\" so it"
-      comment raw="// dispatches directly (target defaults to uncommitted) instead of relying"
-      comment raw="// on the Cesar model to call the Review tool — which a weak engine may fake"
-      comment raw="// or mis-target to the current branch. Plain mentions still reach Cesar:"
-      comment raw="// parseSemanticReviewShortcut returns null when no known engine is named."
-      let name=reviewShortcut value="parseSemanticReviewShortcut(input)"
-      if cond="reviewShortcut"
-        return value="reviewShortcut"
+      comment raw="// Review is slash-only from chat, like every other orchestration mode:"
+      comment raw="// \"can you review with codex\" is a CONVERSATION with Cesar, not a dispatch."
+      comment raw="// Cesar answers (and may call its Review tool itself); only /review"
+      comment raw="// triggers deterministic direct review dispatch."
       comment raw="// Natural-language toggle for autoCredit (German + English)"
       if cond="hostRegexObjectTest(AUTOCREDIT_OFF_KEYWORDS, input)"
         return value="{ type: 'toggleAutoCredit', autoCredit: false, input } as Intent"

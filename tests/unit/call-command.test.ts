@@ -322,6 +322,24 @@ describe('agon call command mapping', () => {
     ]);
   });
 
+  it('forwards --roles to review (role-lens bridge for external CLIs)', () => {
+    expect(buildCallCommands({
+      workflow: 'review',
+      input: 'uncommitted',
+      roles: 'auto',
+    }).commands).toEqual([
+      ['review', 'uncommitted', '--roles', 'auto'],
+    ]);
+    expect(buildCallCommands({
+      workflow: 'review',
+      input: 'branch:main',
+      roles: 'security,correctness',
+      engines: 'claude,codex',
+    }).commands).toEqual([
+      ['review', 'branch:main', '--roles', 'security,correctness', '--engines', 'claude,codex'],
+    ]);
+  });
+
   it('forwards --engine to review as an explicit single-reviewer request', () => {
     expect(buildCallCommands({
       workflow: 'review',

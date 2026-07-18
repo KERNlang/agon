@@ -9,6 +9,7 @@ import type { EngineDefinition, RunStatusEngine } from '@kernlang/agon-core';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
 import {
+  assignReviewRoles,
   remainingReviewRetrySeconds,
   resolveReviewTarget,
   reviewOutcome,
@@ -86,6 +87,10 @@ export const reviewCommand = defineCommand({
     'primary-engine': {
       type: 'string',
       description: 'Engine that implemented the diff. Automatic routing excludes its adapter identity from required independent review seats; omission widens to high risk.',
+    },
+    roles: {
+      type: 'string',
+      description: "Role-lens review (same panel, focused attention): 'auto' deals the fixed roster (security, correctness, dryness, performance, overall) onto the selected engines in order with an overall backstop for extras, or pass a comma-separated role list zipped engine-by-engine (unknown ids fall back to overall). Composes with automatic risk routing — roles change each reviewer's lens, never the panel or the machine contract.",
     },
     label: {
       type: 'string',
@@ -245,6 +250,18 @@ export const reviewCommand = defineCommand({
     if (args.quiet) process.env.AGON_QUIET = '1';
 
     const quiet = process.env.AGON_QUIET === '1';
+    // Role-lens assignment happens AFTER routing/explicit selection so roles map
+    // onto the final panel. 'auto' = deal the fixed roster in order (extras land
+    // on the overall backstop); an explicit list is zipped engine-by-engine.
+    const rawRoles = args.roles != null ? String(args.roles).trim() : '';
+    const roleByEngine = rawRoles
+      ? assignReviewRoles(
+          requested,
+          rawRoles.toLowerCase() === 'auto'
+            ? undefined
+            : rawRoles.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
+        )
+      : null;
     const concurrencyNote = requested.length > 1
       ? (maxParallel >= requested.length ? 'all in parallel' : `${maxParallel} at a time`)
       : 'single engine';
@@ -257,6 +274,9 @@ export const reviewCommand = defineCommand({
         info(`Routing manifest: ${routingManifestPath}`);
       }
       info(`Engines: ${requested.join(', ')} (${concurrencyNote})`);
+      if (roleByEngine) {
+        info(`Roles: ${requested.map((id) => `${id}=${roleByEngine.get(id)?.id ?? 'overall'}`).join(' · ')}`);
+      }
       info(`Per-engine timeout: ${timeoutSec}s (auto-cancel, others unaffected)`);
     }
 
@@ -282,7 +302,9 @@ export const reviewCommand = defineCommand({
         catch (writeErr) { if (!quiet) console.log(`\n⚠ ${engineId}: failed to write output file (${writeErr instanceof Error ? writeErr.message : String(writeErr)})`); }
       };
       // Flush a single labeled block so concurrent engines never interleave mid-line.
-      const flush = (body: string[]) => { if (!quiet && body.length) console.log(`\n▸ Reviewer: ${bold(engineId)}\n${body.join('\n')}`); };
+      const reviewRoleId = roleByEngine?.get(engineId)?.id;
+      const roleTag = reviewRoleId ? ` [${reviewRoleId}]` : '';
+      const flush = (body: string[]) => { if (!quiet && body.length) console.log(`\n▸ Reviewer: ${bold(engineId)}${roleTag}\n${body.join('\n')}`); };
       // One dispatch attempt under its own wall clock. Pin the engine dispatch to
       // the SAME cwd the diff came from (process.cwd()). This standalone `agon
       // review` command never calls setSessionRoot(), so runReviewCore's
@@ -299,7 +321,7 @@ export const reviewCommand = defineCommand({
         let timedOut = false;
         const timer = setTimeout(() => { timedOut = true; controller.abort(); }, attemptTimeoutSec * 1000);
         try {
-          const result = await runReviewCore(target.diff, target.label, engineId, ctx, controller.signal, undefined, cwd);
+          const result = await runReviewCore(target.diff, target.label, engineId, ctx, controller.signal, undefined, cwd, reviewRoleId);
           // Keep partial text on disk for forensics, but the outcome is a timeout
           // regardless of what runReviewCore returned on abort.
           if (timedOut) { writeOutput(result.response ?? ''); return { kind: 'timeout', afterSec: attemptTimeoutSec }; }

@@ -8,7 +8,7 @@ import type { Dispatch } from '../../../handlers/types.js';
 
 import { ENGINE_COLORS } from '../../blocks/output-format.js';
 
-import { handleForge, handleBrainstorm, handleCampfire, handleTribunal, handleThink, handleCouncil, handleSynthesis, handleNeroChallenge, handleResearch, handleChrome, handleConquer, handleBuild, handleReviewMany, runAgentMode, runAgentTeam } from '../../../handlers/index.js';
+import { handleForge, handleBrainstorm, handleCampfire, handleTribunal, handleThink, handleCouncil, handleSynthesis, handleNeroChallenge, handleResearch, handleChrome, handleConquer, handleBuild, handleReviewMany, handleReviewRoles, runAgentMode, runAgentTeam } from '../../../handlers/index.js';
 
 import { handleTeamTribunal } from '../../handlers/team-tribunal.js';
 

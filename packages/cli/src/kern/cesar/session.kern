@@ -16,7 +16,7 @@ import from="./routing.js" names="buildRoutingContext"
 import from="./brain-helpers.js" names="extractDelegation"
 import from="./self-turn-approval.js" names="applyCesarSelfTurnApproval,approvalArgsFromCommand"
 import from="./approval-diff.js" names="approvalToolIsFileMutating,buildApprovalDiffPreview"
-import from="./turn-runtime.js" names="isActiveCesarTurn,runTurnPermissionOnce,runTurnToolOnce,isReadOnlyToolCall"
+import from="./turn-runtime.js" names="isActiveCesarTurn,isActiveCesarResponse,runTurnPermissionOnce,runTurnToolOnce,isReadOnlyToolCall"
 import from="./task-execution-lease.js" names="approveTaskAction,claimTaskActionPrompt,isTaskFileMutationAction,taskActionApprovalMessage,isApprovedPermissionResponse"
 import from="./permission-resolver.js" names="resolvePermissionDecision,authorizeResolvedTaskAction"
 import from="./tool-observability.js" names="recordCesarApprovalDecision,recordCesarToolTimeline,recordCesarConfidence,buildToolErrorDiagnostic"
@@ -655,9 +655,16 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
       // (sibling calls in one response can transition the lease). Run them
       // against the session without a turn claim; mutation-class tools still
       // fence strictly below.
+      //
+      // Per-response lease binding: a MUTATION must belong to the turn's LATEST
+      // response (responseSeq), not merely the active turn. When the model has
+      // already produced a newer response, a mutation dispatched by a superseded
+      // response is rejected even though the turn is still active — closing the
+      // within-turn interleave where an authorized write lands after the plan it
+      // belonged to was replaced.
       const runtime = ctx.cesarRuntimeHost?.active;
       const _isReadOnlyTool = isReadOnlyToolCall(name, args, isReadOnlyCommand);
-      if (controlPlane && !_isReadOnlyTool && (!runtime || !isActiveCesarTurn(ctx.cesarRuntimeHost, controlPlane))) {
+      if (controlPlane && !_isReadOnlyTool && (!runtime || !isActiveCesarResponse(ctx.cesarRuntimeHost, controlPlane))) {
         return `Error: [STALE_TURN_REJECTED] ${name} was not executed because its Cesar turn lease expired.`;
       }
       // Plan mode: block execution tools and mutating shell commands before

@@ -1,4 +1,4 @@
-import from="../../../../core/src/generated/sessions/turn-protocol.js" names="isCurrentControlPlaneEnvelope,isTerminalTurnState,reduceTurnLifecycle"
+import from="../../../../core/src/generated/sessions/turn-protocol.js" names="isCurrentControlPlaneEnvelope,isCurrentCesarResponse,isTerminalTurnState,reduceTurnLifecycle"
 import from="../../../../core/src/generated/sessions/turn-protocol.js" names="ControlPlaneEnvelopeV1,TurnLifecycleState,TurnLifecycleTransition" types=true
 import from="../../../../core/src/generated/sessions/control-plane-ledger.js" names="appendControlPlaneEvent,recoverControlPlane"
 import from="../../handlers/types.js" names="CesarState" types=true
@@ -46,6 +46,7 @@ fn name=releaseCesarTurnHandles params="state:any" returns=void export=true
 interface name=CesarTurnRuntime export=true
   field name=envelope type=ControlPlaneEnvelopeV1
   field name=state type=TurnLifecycleState
+  field name=latestResponseSeq type=number
   field name=toolPromises type="Map<string,Promise<any>>"
   field name=permissionPromises type="Map<string,Promise<boolean|string>>"
   field name=toolClaims type="Map<string,{owner:TurnExecutionOwner,effectClass:TurnEffectClass}>"
@@ -144,6 +145,7 @@ fn name=beginCesarTurn params="host:CesarTurnRuntimeHost,turnId:string,producerI
     const runtime: CesarTurnRuntime = {
       envelope,
       state: 'running',
+      latestResponseSeq: 0,
       toolPromises: new Map(),
       permissionPromises: new Map(),
       toolClaims: new Map(),
@@ -166,6 +168,23 @@ module name=TurnQueries
       return !!active
         && !isTerminalTurnState(active.state)
         && isCurrentControlPlaneEnvelope(envelope, active.envelope);
+    >>>
+
+  fn name=nextCesarResponseSeq params="runtime:CesarTurnRuntime" returns=ControlPlaneEnvelopeV1 export=true
+    doc "Allocate the next per-response sequence for one turn and return a response-scoped envelope for one model round-trip (session.send). Each send claims a fresh seq so a mutation tool stamped by a superseded response can be fenced even while the turn itself is still active. The runtime's active envelope is advanced to the newest seq; latestResponseSeq tracks the most recently issued seq (starts at 1)."
+    handler <<<
+      runtime.latestResponseSeq = (Number.isSafeInteger(runtime.latestResponseSeq) ? runtime.latestResponseSeq : 0) + 1;
+      runtime.envelope = { ...runtime.envelope, responseSeq: runtime.latestResponseSeq };
+      return runtime.envelope;
+    >>>
+
+  fn name=isActiveCesarResponse params="host:CesarTurnRuntimeHost,envelope:ControlPlaneEnvelopeV1" returns=boolean export=true
+    doc "True only when the envelope belongs to the active turn AND carries that turn's latest responseSeq (or a legacy seq-less identity). This is the per-response lease binding: mutation tools from a superseded response are rejected while read-only tools bypass this check entirely."
+    handler <<<
+      const active = host.active;
+      if (!active || isTerminalTurnState(active.state)) return false;
+      if (!isCurrentControlPlaneEnvelope(envelope, active.envelope)) return false;
+      return isCurrentCesarResponse(envelope, active.envelope);
     >>>
 
 fn name=transitionCesarTurn params="host:CesarTurnRuntimeHost,envelope:ControlPlaneEnvelopeV1,next:TurnLifecycleState" returns=TurnLifecycleTransition export=true

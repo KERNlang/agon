@@ -11,30 +11,31 @@ export interface ControlPlaneEnvelopeV1 {
   leaseEpoch: number;
   attempt: number;
   producerId: string;
+  responseSeq?: number;
   stepId?: string;
   toolCallId?: string;
 }
 
-// @kern-source: turn-protocol:13
+// @kern-source: turn-protocol:14
 export interface ControlPlaneEnvelopeValidation {
   ok: boolean;
   value?: ControlPlaneEnvelopeV1;
   reason?: string;
 }
 
-// @kern-source: turn-protocol:18
+// @kern-source: turn-protocol:19
 export interface TurnLifecycleTransition {
   ok: boolean;
   state: TurnLifecycleState;
   reason?: 'invalid_transition'|'terminal_state';
 }
 
-// @kern-source: turn-protocol:23
+// @kern-source: turn-protocol:24
 function nonEmpty(value: unknown): boolean {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
-// @kern-source: turn-protocol:28
+// @kern-source: turn-protocol:29
 function positiveInteger(value: unknown): boolean {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
 }
@@ -42,7 +43,7 @@ function positiveInteger(value: unknown): boolean {
 /**
  * Validate the versioned identity carried through every session, turn, step, and tool boundary.
  */
-// @kern-source: turn-protocol:33
+// @kern-source: turn-protocol:34
 export function validateControlPlaneEnvelope(input: unknown): ControlPlaneEnvelopeValidation {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     return { ok: false, reason: 'envelope_not_object' };
@@ -54,6 +55,7 @@ export function validateControlPlaneEnvelope(input: unknown): ControlPlaneEnvelo
   if (!positiveInteger(candidate.leaseEpoch)) return { ok: false, reason: 'invalid_lease_epoch' };
   if (!positiveInteger(candidate.attempt)) return { ok: false, reason: 'invalid_attempt' };
   if (!nonEmpty(candidate.producerId)) return { ok: false, reason: 'invalid_producer_id' };
+  if (candidate.responseSeq !== undefined && !positiveInteger(candidate.responseSeq)) return { ok: false, reason: 'invalid_response_seq' };
   if (candidate.stepId !== undefined && !nonEmpty(candidate.stepId)) return { ok: false, reason: 'invalid_step_id' };
   if (candidate.toolCallId !== undefined && !nonEmpty(candidate.toolCallId)) return { ok: false, reason: 'invalid_tool_call_id' };
 
@@ -65,6 +67,7 @@ export function validateControlPlaneEnvelope(input: unknown): ControlPlaneEnvelo
     attempt: candidate.attempt as number,
     producerId: candidate.producerId as string,
   };
+  if (candidate.responseSeq !== undefined) value.responseSeq = candidate.responseSeq as number;
   if (candidate.stepId !== undefined) value.stepId = candidate.stepId as string;
   if (candidate.toolCallId !== undefined) value.toolCallId = candidate.toolCallId as string;
   return { ok: true, value };
@@ -73,7 +76,7 @@ export function validateControlPlaneEnvelope(input: unknown): ControlPlaneEnvelo
 /**
  * Stable idempotency key for one producer attempt; optional step and tool ids refine the identity.
  */
-// @kern-source: turn-protocol:62
+// @kern-source: turn-protocol:65
 export function controlPlaneIdentity(envelope: ControlPlaneEnvelopeV1): string {
   return [
     envelope.sessionId,
@@ -89,7 +92,7 @@ export function controlPlaneIdentity(envelope: ControlPlaneEnvelopeV1): string {
 /**
  * Fence output unless it belongs to the exact active producer attempt and lease epoch.
  */
-// @kern-source: turn-protocol:76
+// @kern-source: turn-protocol:79
 export function isCurrentControlPlaneEnvelope(candidate: ControlPlaneEnvelopeV1, current: ControlPlaneEnvelopeV1): boolean {
   return candidate.schemaVersion === current.schemaVersion
     && candidate.sessionId === current.sessionId
@@ -99,7 +102,17 @@ export function isCurrentControlPlaneEnvelope(candidate: ControlPlaneEnvelopeV1,
     && candidate.producerId === current.producerId;
 }
 
-// @kern-source: turn-protocol:87
+/**
+ * Per-response lease binding: a mutation tool must belong to the LATEST response of the active turn, not just the turn. Requires matching turn identity first; when either side omits responseSeq (legacy send sites) the response is treated as current so older producers are not hard-broken.
+ */
+// @kern-source: turn-protocol:90
+export function isCurrentCesarResponse(candidate: ControlPlaneEnvelopeV1, current: ControlPlaneEnvelopeV1): boolean {
+  if (!isCurrentControlPlaneEnvelope(candidate, current)) return false;
+  if (candidate.responseSeq === undefined || current.responseSeq === undefined) return true;
+  return candidate.responseSeq === current.responseSeq;
+}
+
+// @kern-source: turn-protocol:98
 export function isTerminalTurnState(state: TurnLifecycleState): boolean {
   return state === 'cancelled'
     || state === 'completed'
@@ -111,7 +124,7 @@ export function isTerminalTurnState(state: TurnLifecycleState): boolean {
 /**
  * Pure lifecycle reducer. Terminal states are immutable and skipped transitions fail closed.
  */
-// @kern-source: turn-protocol:96
+// @kern-source: turn-protocol:107
 export function reduceTurnLifecycle(current: TurnLifecycleState, next: TurnLifecycleState): TurnLifecycleTransition {
   if (isTerminalTurnState(current)) return { ok: false, state: current, reason: 'terminal_state' };
   const allowed = current === 'created'

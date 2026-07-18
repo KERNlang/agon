@@ -210,12 +210,25 @@ fn name=withFileLock params="lockPath:string, work:() => void, opts?:{ timeoutMs
         throw new Error(`file lock timeout after ${timeoutMs}ms: ${lockPath} (held by pid ${blocker?.pid ?? '?'} on ${blocker?.hostname ?? '?'})`);
       }
       if (tryAcquire()) {
+        // A clean fence scan alone is NOT proof of ownership: a reclaimer that
+        // fenced BEFORE our link may blind-rename our fresh lock (it judged the
+        // PREVIOUS stale holder) and drop its fence before our scan runs (codex
+        // review finding). So after a fence-free scan, re-read the lock and
+        // accept only if it still carries OUR uuid. Ordering makes this sound:
+        // any fence raised after that re-read must re-judge the slot under its
+        // fence, sees us live (fresh acquiredAt, live pid), and aborts.
         if (liveFences().length === 0) {
-          acquired = true;
-          break;
+          const own = readFileLockInfo(lockPath, staleMs);
+          if (own !== 'missing' && own !== 'pending' && own?.uuid === uuid) {
+            acquired = true;
+            break;
+          }
         }
-        // A live fence is up — its reclaimer may be about to blind-rename this
-        // slot. Owner-checked back-out, then re-contend.
+        // Either a live fence is up (its reclaimer may be about to blind-rename
+        // this slot) or the ownership re-read failed. Owner-checked back-out,
+        // then re-contend. If our own lock is momentarily unreadable ('pending'
+        // I/O error) the unlink is skipped and the TTL backstop eventually
+        // clears it — degraded but safe.
         try {
           const cur = readFileLockInfo(lockPath, staleMs);
           if (cur !== 'missing' && cur !== 'pending' && cur?.uuid === uuid) unlinkSync(lockPath);

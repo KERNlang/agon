@@ -127,6 +127,37 @@ describe('gatherReviewFileContext (repo grounding)', () => {
     expect(diff).toContain('return 43');
   });
 
+  it('reviewing the branch you are ON auto-bases against the default branch instead of erroring', () => {
+    const d = setup();
+    execFileSync('git', ['init'], { cwd: d, stdio: 'ignore' });
+    execFileSync('git', ['config', 'user.email', 'agon-test@example.test'], { cwd: d, stdio: 'ignore' });
+    execFileSync('git', ['config', 'user.name', 'Agon Test'], { cwd: d, stdio: 'ignore' });
+    execFileSync('git', ['add', 'src/foo.ts', 'src/generated/foo.ts'], { cwd: d, stdio: 'ignore' });
+    execFileSync('git', ['commit', '-m', 'base'], { cwd: d, stdio: 'ignore' });
+    execFileSync('git', ['branch', '-m', 'main'], { cwd: d, stdio: 'ignore' });
+    execFileSync('git', ['switch', '-c', 'feature'], { cwd: d, stdio: 'ignore' });
+    writeFileSync(join(d, 'src', 'foo.ts'), 'export function foo() { return 43; }\n');
+    execFileSync('git', ['add', 'src/foo.ts'], { cwd: d, stdio: 'ignore' });
+    execFileSync('git', ['commit', '-m', 'feature'], { cwd: d, stdio: 'ignore' });
+
+    // No --base, HEAD IS feature — the old behavior threw the self-diff error.
+    const { diff, label } = resolveReviewTarget('branch:feature', d, undefined);
+    expect(label).toBe('branch feature vs main (auto-base)');
+    expect(diff).toContain('return 43');
+  });
+
+  it('keeps the loud error when on the default branch with no other base to anchor on', () => {
+    const d = setup();
+    execFileSync('git', ['init'], { cwd: d, stdio: 'ignore' });
+    execFileSync('git', ['config', 'user.email', 'agon-test@example.test'], { cwd: d, stdio: 'ignore' });
+    execFileSync('git', ['config', 'user.name', 'Agon Test'], { cwd: d, stdio: 'ignore' });
+    execFileSync('git', ['add', 'src/foo.ts', 'src/generated/foo.ts'], { cwd: d, stdio: 'ignore' });
+    execFileSync('git', ['commit', '-m', 'base'], { cwd: d, stdio: 'ignore' });
+    execFileSync('git', ['branch', '-m', 'main'], { cwd: d, stdio: 'ignore' });
+
+    expect(() => resolveReviewTarget('branch:main', d, undefined)).toThrow(/no base branch could be auto-resolved/);
+  });
+
   it('enforces a HARD total cap (does not overshoot by a full block)', () => {
     const d = setup();
     const big = 'x'.repeat(19_000);

@@ -10,7 +10,7 @@
 // Hold it ONLY for fast local file ops (load → mutate → save), never across a
 // network/engine call.
 
-import from="node:fs" names="writeFileSync,readFileSync,unlinkSync,renameSync,mkdirSync"
+import from="node:fs" names="writeFileSync,readFileSync,unlinkSync,renameSync,mkdirSync,linkSync"
 import from="node:os" names="hostname"
 import from="node:crypto" names="randomUUID"
 import from="node:path" names="dirname"
@@ -54,13 +54,14 @@ fn name=fileLockPidAlive params="pid:number" returns=boolean export=false
     }
   >>>
 
-fn name=readFileLockInfo params="lockPath:string" returns="FileLockInfo | null" export=false
+fn name=readFileLockInfo params="lockPath:string" returns="FileLockInfo | 'missing' | null" export=false
+  doc "null = file exists but is corrupt/invalid (reclaimable); 'missing' = ENOENT — a FREED slot that must be re-contended via acquire, NEVER reclaimed. Conflating the two let a contender rename-steal a slot that a new live holder had just taken (reproduced: lost updates under load)."
   handler <<<
     try {
       const info = JSON.parse(readFileSync(lockPath, 'utf-8')) as FileLockInfo;
       return typeof info?.pid === 'number' && typeof info?.uuid === 'string' ? info : null;
-    } catch {
-      return null;
+    } catch (e) {
+      return (e as { code?: string }).code === 'ENOENT' ? 'missing' : null;
     }
   >>>
 
@@ -90,25 +91,50 @@ fn name=withFileLock params="lockPath:string, work:() => void, opts?:{ timeoutMs
     } satisfies FileLockInfo);
 
     mkdirSync(dirname(lockPath), { recursive: true });
+    // Atomic-CONTENT publish: stage the payload in a private temp file, then
+    // linkSync() it into place. link(2) is atomic and fails with EEXIST when
+    // the lock is held — same exclusivity as O_EXCL, but the lock file is born
+    // fully written. A bare O_EXCL writeFileSync has a window between open()
+    // and write() where contenders read an EMPTY file, judge it corrupt→stale,
+    // and reclaim a LIVE holder's lock (reproduced: lost updates under load).
+    const stagePath = `${lockPath}.stage.${uuid}`;
+    writeFileSync(stagePath, payload);
+    const tryAcquire = (): boolean => {
+      try {
+        linkSync(stagePath, lockPath);
+        return true;
+      } catch (e) {
+        const code = (e as { code?: string }).code;
+        if (code === 'EEXIST') return false;
+        // Filesystem without hard links (rare): fall back to O_EXCL create.
+        // Loses content-atomicity but keeps mutual exclusion.
+        try {
+          writeFileSync(lockPath, payload, { flag: 'wx' });
+          return true;
+        } catch (e2) {
+          if ((e2 as { code?: string }).code !== 'EEXIST') throw e2;
+          return false;
+        }
+      }
+    };
     const deadline = Date.now() + timeoutMs;
     let acquired = false;
+    try {
     while (!acquired) {
-      try {
-        // O_EXCL: create only if absent.
-        writeFileSync(lockPath, payload, { flag: 'wx' });
+      if (tryAcquire()) {
         acquired = true;
         break;
-      } catch (e) {
-        if ((e as { code?: string }).code !== 'EEXIST') throw e;
       }
       // Deadline FIRST, before any continue path — a stale-but-unreclaimable
       // lock (e.g. rename persistently failing) must time out, never spin
       // forever.
       if (Date.now() > deadline) {
-        const blocker = readFileLockInfo(lockPath);
+        const b = readFileLockInfo(lockPath);
+        const blocker = b === 'missing' ? null : b;
         throw new Error(`file lock timeout after ${timeoutMs}ms: ${lockPath} (held by pid ${blocker?.pid ?? '?'} on ${blocker?.hostname ?? '?'})`);
       }
       const holder = readFileLockInfo(lockPath);
+      if (holder === 'missing') continue; // freed slot — re-contend via acquire, never reclaim
       if (isFileLockStale(holder, staleMs)) {
         // Stale → CLAIM it by renaming the stale entry AWAY to a unique path.
         // renameSync of a now-missing source throws, so at most ONE concurrent
@@ -122,16 +148,27 @@ fn name=withFileLock params="lockPath:string, work:() => void, opts?:{ timeoutMs
         // Verify we claimed the SAME entry we judged stale. Between our read
         // and the rename, the slot may have been reclaimed AND re-acquired by
         // a LIVE holder — stealing that would break mutual exclusion. On
-        // mismatch, put it back (best effort) and re-contend.
+        // mismatch, put it back and re-contend. linkSync, NOT renameSync: a
+        // rename onto a slot a new holder just took would silently REPLACE
+        // that live lock (POSIX rename clobbers); link refuses with EEXIST,
+        // and the claim file stays as debris rather than double-locking.
         const claimed = readFileLockInfo(claim);
-        if (claimed && claimed.uuid !== holder?.uuid && !isFileLockStale(claimed, staleMs)) {
-          try { renameSync(claim, lockPath); } catch { /* slot re-taken; claim file remains as debris rather than silently double-locking */ }
+        if (claimed && claimed !== 'missing' && claimed.uuid !== holder?.uuid && !isFileLockStale(claimed, staleMs)) {
+          try {
+            linkSync(claim, lockPath);
+            unlinkSync(claim);
+          } catch { /* slot re-taken; claim file remains as debris rather than silently double-locking */ }
           continue;
         }
         try { unlinkSync(claim); } catch { /* claimed stale entry; best-effort */ }
         continue;
       }
       fileLockSleep(FILE_LOCK_SPIN_MS);
+    }
+    } finally {
+      // The staged payload is only a template; the lock file (if acquired) is a
+      // separate hard link to the same inode, so unlinking the stage is safe.
+      try { unlinkSync(stagePath); } catch { /* best-effort */ }
     }
 
     try {
@@ -140,7 +177,7 @@ fn name=withFileLock params="lockPath:string, work:() => void, opts?:{ timeoutMs
       // Owner-checked release: only unlink while the file still holds OUR uuid.
       try {
         const current = readFileLockInfo(lockPath);
-        if (current?.uuid === uuid) unlinkSync(lockPath);
+        if (current !== 'missing' && current?.uuid === uuid) unlinkSync(lockPath);
       } catch { /* already gone — fine */ }
     }
   >>>

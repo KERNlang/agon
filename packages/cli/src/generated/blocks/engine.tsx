@@ -1245,8 +1245,8 @@ export function resolvePackageVersion(resolveSpecifier: string|null, wantName: s
   return fallback;
 }
 
-// @kern-source: engine:58
-export const VERSION: string = resolvePackageVersion(null, '@kernlang/agon', '0.2.4');
+// @kern-source: engine:59
+export const VERSION: string = resolvePackageVersion(null, '@kernlang/agon', '0.2.5');
 
 // @kern-source: engine:60
 export const KERN_VERSION: string = resolvePackageVersion('@kernlang/terminal/runtime', '@kernlang/terminal', '4.0.0');

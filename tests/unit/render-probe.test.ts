@@ -31,6 +31,21 @@ describe('RenderProbe tool', () => {
     expect(result.content).toContain('Second todo item');
   });
 
+  it('clamps fractional dims up to 1 instead of flooring to 0 (agy review finding)', async () => {
+    const tool = createRenderProbeTool();
+    const result = await tool.execute(
+      {
+        surface: 'TodoList',
+        cols: 0.5,
+        rows: 0.5,
+        props: { todos: [{ id: '1', text: 'tiny', state: 'pending' }] },
+      },
+      ctx,
+    );
+    // A 1x1 render is degenerate but must not crash Ink with 0-dim state.
+    expect(result.ok).toBe(true);
+  });
+
   it('rejects an unknown surface id and lists the valid ids', async () => {
     const tool = createRenderProbeTool();
     const result = await tool.execute({ surface: 'bogus' }, ctx);

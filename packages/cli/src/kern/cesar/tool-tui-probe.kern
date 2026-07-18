@@ -78,8 +78,8 @@ fn name=createTuiProbeTool returns=ToolHandler export=true
         return { ok: false, content: '', error: 'TuiProbe: agon dist/index.js not found — build the package first (npm run build).' };
       }
       const scripted = typeof input.input === 'string' && input.input.trim() ? input.input.trim() : '/help';
-      const cols = typeof input.cols === 'number' && input.cols > 0 ? Math.min(Math.floor(input.cols), 400) : 120;
-      const rows = typeof input.rows === 'number' && input.rows > 0 ? Math.min(Math.floor(input.rows), 200) : 40;
+      const cols = typeof input.cols === 'number' && input.cols > 0 ? Math.min(Math.max(1, Math.floor(input.cols)), 400) : 120;
+      const rows = typeof input.rows === 'number' && input.rows > 0 ? Math.min(Math.max(1, Math.floor(input.rows)), 200) : 40;
       const timeoutSec = typeof input.timeoutSec === 'number' && input.timeoutSec > 0 ? Math.floor(input.timeoutSec) : 45;
       try {
         const result = await spawnWithTimeout({

@@ -120,8 +120,8 @@ export async function renderProbeExecute(input: Record<string,unknown>, _ctx: To
     return { ok: false, content: '', error: `Unknown surface '${surface}'. Valid surface ids: ${validIds.join(', ')}.` };
   }
   // Clamp dimensions: an in-process Ink render allocates per-cell state, so model-controlled unbounded cols/rows is a memory-exhaustion vector (agon-review finding). 400x200 covers any real terminal.
-  const cols = (typeof input.cols === 'number' && input.cols > 0) ? Math.min(Math.floor(input.cols), 400) : 100;
-  const rows = (typeof input.rows === 'number' && input.rows > 0) ? Math.min(Math.floor(input.rows), 200) : 30;
+  const cols = (typeof input.cols === 'number' && input.cols > 0) ? Math.min(Math.max(1, Math.floor(input.cols)), 400) : 100;
+  const rows = (typeof input.rows === 'number' && input.rows > 0) ? Math.min(Math.max(1, Math.floor(input.rows)), 200) : 30;
   const overrides = (input.props && typeof input.props === 'object' && !Array.isArray(input.props)) ? (input.props as Record<string, unknown>) : {};
   return renderProbeSurface(surface, fixture.component, fixture.defaults, overrides, cols, rows);
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, readFileSync, existsSync, appendFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -9,6 +9,7 @@ import {
   recordCesarConfidence,
   buildToolErrorDiagnostic,
   replayCesarHarnessLogs,
+  classifyCesarToolEffect,
 } from '../../packages/cli/src/generated/cesar/tool-observability.js';
 import { setupTestAgonHome, cleanupTestAgonHome, agonHomePath } from '../helpers/agon-home.js';
 
@@ -130,6 +131,90 @@ describe('Cesar tool observability', () => {
     expect(replay.rendered).toContain('Turn turn-replay-1');
     expect(replay.rendered).toContain('tools: Read');
     expect(replay.rendered).toContain('approval: Edit approved via cesar-self-turn');
+  });
+
+  describe('effect-class ledger split', () => {
+    it('classifies tool effects: write tools, bash read/write split, plain reads', () => {
+      expect(classifyCesarToolEffect('Edit', { file_path: 'a.ts' })).toBe('write');
+      expect(classifyCesarToolEffect('Write', { file_path: 'a.ts' })).toBe('write');
+      expect(classifyCesarToolEffect('AgonWrite', { file_path: 'a.ts' })).toBe('write');
+      expect(classifyCesarToolEffect('MultiEdit', { file_path: 'a.ts' })).toBe('write');
+      expect(classifyCesarToolEffect('Read', { file_path: 'a.ts' })).toBe('read');
+      expect(classifyCesarToolEffect('Grep', { pattern: 'x' })).toBe('read');
+      expect(classifyCesarToolEffect('Bash', { command: 'git status' })).toBe('bash-read');
+      expect(classifyCesarToolEffect('Bash', { command: 'npm test' })).toBe('bash-read');
+      expect(classifyCesarToolEffect('Bash', { command: 'npm install express' })).toBe('bash-write');
+      expect(classifyCesarToolEffect('Bash', { command: 'rm -rf build' })).toBe('bash-write');
+      expect(classifyCesarToolEffect('Bash', 'git diff --stat')).toBe('bash-read');
+      expect(classifyCesarToolEffect(undefined, undefined)).toBeUndefined();
+    });
+
+    it('stamps the effect class onto timeline records at write time', () => {
+      const runsDir = mkdtempSync(join(tmpdir(), 'agon-tool-effect-stamp-'));
+
+      recordCesarToolTimeline({
+        turnId: 'turn-effect',
+        event: 'tool_call',
+        tool: 'Edit',
+        input: { file_path: 'src.ts', old_string: 'a', new_string: 'b' },
+      }, runsDir);
+      recordCesarToolTimeline({
+        turnId: 'turn-effect',
+        event: 'tool_call',
+        tool: 'Bash',
+        input: { command: 'git status' },
+      }, runsDir);
+      recordCesarToolTimeline({
+        turnId: 'turn-effect',
+        event: 'tool_call',
+        tool: 'Read',
+        input: { file_path: 'src.ts' },
+      }, runsDir);
+
+      const lines = readFileSync(join(runsDir, 'cesar-tool-timeline.jsonl'), 'utf-8').trim().split('\n');
+      const effects = lines.map((l) => JSON.parse(l).effect);
+      expect(effects).toEqual(['write', 'bash-read', 'read']);
+    });
+
+    it('splits mutating vs read-only counts and lists writes in replay', () => {
+      const runsDir = mkdtempSync(join(tmpdir(), 'agon-tool-effect-replay-'));
+      const turnId = 'turn-effect-replay';
+
+      recordCesarToolTimeline({ turnId, event: 'turn_start', status: 'running' }, runsDir);
+      recordCesarToolTimeline({ turnId, event: 'tool_call', tool: 'Read', input: { file_path: 'a.ts' } }, runsDir);
+      recordCesarToolTimeline({ turnId, event: 'tool_call', tool: 'Grep', input: { pattern: 'x' } }, runsDir);
+      recordCesarToolTimeline({ turnId, event: 'tool_call', tool: 'Bash', input: { command: 'git status' } }, runsDir);
+      recordCesarToolTimeline({ turnId, event: 'tool_call', tool: 'Edit', input: { file_path: 'a.ts' } }, runsDir);
+      recordCesarToolTimeline({ turnId, event: 'tool_call', tool: 'Bash', input: { command: 'npm install express' } }, runsDir);
+
+      const replay = replayCesarHarnessLogs({ runsDir, turnId });
+      const turn = replay.turns[0] as any;
+
+      expect(turn.mutationCount).toBe(2); // Edit + bash-write install
+      expect(turn.readOnlyCount).toBe(3); // Read + Grep + bash-read git status
+      expect(turn.mutatingTools).toEqual(['Edit', 'Bash']);
+      expect(replay.rendered).toContain('effects: 2 mutating · 3 read-only');
+      expect(replay.rendered).toContain('writes: Edit, Bash');
+    });
+
+    it('treats legacy records without an effect stamp as neither mutating nor read-only', () => {
+      const runsDir = mkdtempSync(join(tmpdir(), 'agon-tool-effect-legacy-'));
+      const turnId = 'turn-legacy';
+
+      // Write a raw record with no effect field (simulates pre-split ledger entries).
+      writeFileSync(
+        join(runsDir, 'cesar-tool-timeline.jsonl'),
+        JSON.stringify({ ts: new Date().toISOString(), kind: 'tool_timeline', turnId, event: 'tool_call', tool: 'Edit' }) + '\n',
+      );
+
+      const replay = replayCesarHarnessLogs({ runsDir, turnId });
+      const turn = replay.turns[0] as any;
+
+      expect(turn.mutationCount).toBe(0);
+      expect(turn.readOnlyCount).toBe(0);
+      expect(turn.mutatingTools).toEqual([]);
+      expect(replay.rendered).not.toContain('writes:');
+    });
   });
 
   describe('buildToolErrorDiagnostic (#1 error surfacing)', () => {

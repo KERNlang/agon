@@ -6,8 +6,9 @@
 
 import from="node:fs" names="appendFileSync,mkdirSync,existsSync,readFileSync"
 import from="node:path" names="join"
-import from="@kernlang/agon-core" names="RUNS_DIR,agonPath"
+import from="@kernlang/agon-core" names="RUNS_DIR,agonPath,isReadOnlyCommand"
 import from="../lib/kern-host.js" names="hostDateMs,hostNowIso,hostNowMs"
+import from="./brain-helpers.js" names="isBashToolName,isWriteToolName"
 
 interface name=CesarApprovalLedgerRecord export=true
   field name=turnId type=string optional=true
@@ -33,6 +34,7 @@ interface name=CesarToolTimelineRecord export=true
   field name=input type="Record<string,unknown>|string" optional=true
   field name=output type=string optional=true
   field name=summary type="Record<string,unknown>" optional=true
+  field name=effect type="'read'|'write'|'bash-read'|'bash-write'" optional=true
 
 interface name=CesarHarnessReplayResult export=true
   field name=turnCount type=number
@@ -52,6 +54,21 @@ interface name=CesarConfidenceRecord export=true
 module name=CesarToolPayloadSummaries
   fn name=createCesarTurnId returns=string export=true expr={{ return `cesar-${hostNowMs().toString(36)}-${Math.random().toString(36).slice(2, 8)}`; }}
     doc "Create a short stable-enough id for joining per-turn tool timeline and approval ledger records."
+
+  fn name=classifyCesarToolEffect params="tool:string|undefined,input:Record<string,unknown>|string|undefined" returns="'read'|'write'|'bash-read'|'bash-write'|undefined" export=true
+    doc "Classify a timeline tool event by effect class so the ledger can split read-only exploration from mutations. Bash splits on isReadOnlyCommand (same predicate the permission system uses); write tools (Edit/Write/MultiEdit/NotebookEdit + Agon-prefixed aliases) are 'write'; any other named tool is 'read'. Returns undefined when no tool is attached (turn_start, interrupts) so non-tool events never pollute the split."
+    handler <<<
+      const name = String(tool ?? '');
+      if (!name) return undefined;
+      if (isWriteToolName(name)) return 'write';
+      if (isBashToolName(name)) {
+        const command = typeof input === 'string'
+          ? input
+          : String((input as any)?.command ?? '');
+        return command && isReadOnlyCommand(command) ? 'bash-read' : 'bash-write';
+      }
+      return 'read';
+    >>>
 
   fn name=looksSensitiveString params="value:string" returns=boolean export=false
     handler lang="kern"
@@ -159,7 +176,7 @@ module name=CesarToolPayloadSummaries
     >>>
 
   fn name=recordCesarToolTimeline params="record:CesarToolTimelineRecord,runsDir?:string" returns=void export=true
-    doc "Append one compact per-turn tool timeline event. Best-effort and payload-summarized."
+    doc "Append one compact per-turn tool timeline event. Best-effort and payload-summarized. Stamps the effect class (read/write/bash-read/bash-write) so replay can split exploration from mutation without re-deriving it."
     handler <<<
       try {
         appendCesarJsonl('cesar-tool-timeline.jsonl', {
@@ -177,6 +194,7 @@ module name=CesarToolPayloadSummaries
             ? { redacted: true, chars: record.output.length }
             : undefined,
           summary: record.summary,
+          effect: record.effect ?? classifyCesarToolEffect(record.tool, record.input),
         }, runsDir);
       } catch { /* observability must never block tools */ }
     >>>
@@ -273,6 +291,12 @@ module name=CesarToolPayloadSummaries
         const interruptCount = events.filter((e) => e.event === 'xml_interrupt').length;
         const approvalsForTurn = approvalByTurn.get(turnId) ?? [];
         const lastEvent = events[events.length - 1] ?? start;
+        // Effect-class split: mutation = write/bash-write events; exploration = read/bash-read.
+        // Old records without an effect stamp classify as 'unknown' so they never masquerade as reads.
+        const toolCallEvents = toolEvents.filter((e) => e.event === 'tool_call');
+        const effectOf = (e: Record<string, unknown>) => String(e.effect ?? 'unknown');
+        const mutationEvents = toolCallEvents.filter((e) => effectOf(e) === 'write' || effectOf(e) === 'bash-write');
+        const readOnlyEventCount = toolCallEvents.filter((e) => effectOf(e) === 'read' || effectOf(e) === 'bash-read').length;
         return {
           turnId,
           ts: start.ts ?? lastEvent.ts,
@@ -281,8 +305,11 @@ module name=CesarToolPayloadSummaries
           durationMs: summary?.durationMs,
           eventCount: events.length,
           toolEventCount: toolEvents.length,
-          toolCallCount: toolEvents.filter((e) => e.event === 'tool_call').length,
+          toolCallCount: toolCallEvents.length,
           toolResultCount: toolEvents.filter((e) => e.event === 'tool_result').length,
+          mutationCount: mutationEvents.length,
+          readOnlyCount: readOnlyEventCount,
+          mutatingTools: [...new Set(mutationEvents.map((e) => String(e.tool ?? '')).filter(Boolean))],
           approvalCount: approvalsForTurn.length,
           xmlInterrupts: interruptCount,
           tools: [...new Set(toolEvents.map((e) => String(e.tool ?? '')).filter(Boolean))],
@@ -311,7 +338,10 @@ module name=CesarToolPayloadSummaries
         lines.push('');
         lines.push(`Turn ${turn.turnId}`);
         lines.push(`  engine=${turn.engineId ?? 'unknown'} ${duration} events=${turn.eventCount} tools=${turn.toolEventCount} approvals=${turn.approvalCount} xmlInterrupts=${turn.xmlInterrupts}`);
+        lines.push(`  effects: ${turn.mutationCount ?? 0} mutating · ${turn.readOnlyCount ?? 0} read-only`);
         lines.push(`  tools: ${tools}`);
+        const mutating = Array.isArray(turn.mutatingTools) && turn.mutatingTools.length > 0 ? (turn.mutatingTools as string[]).join(', ') : '';
+        if (mutating) lines.push(`  writes: ${mutating}`);
         const turnApprovals = Array.isArray(turn.approvals) ? turn.approvals as Array<Record<string, unknown>> : [];
         for (const approval of turnApprovals.slice(0, 5)) {
           lines.push(`  approval: ${approval.tool ?? 'tool'} ${approval.decision ?? 'unknown'} via ${approval.source ?? 'unknown'}${approval.reason ? ` - ${approval.reason}` : ''}`);

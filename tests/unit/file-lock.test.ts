@@ -112,17 +112,17 @@ describe('withFileLock', () => {
     expect(ran).toBe(true);
   });
 
-  it('backs out of an acquisition made while a reclaim fence is up', () => {
-    // A live reclaim marker means a reclaimer may be about to blind-rename the
+  it('backs out of an acquisition made while a live reclaim fence is up', () => {
+    // A live reclaim fence means a reclaimer may be about to blind-rename the
     // slot: acquirers must not keep a lock taken inside that window.
-    const markerPath = `${lockPath}.reclaim`;
-    writeFileSync(markerPath, JSON.stringify({
+    const fencePath = `${lockPath}.reclaim.other-live-reclaimer`;
+    writeFileSync(fencePath, JSON.stringify({
       pid: process.pid, uuid: 'reclaimer', hostname: hostname(), acquiredAt: new Date().toISOString(),
     }));
     expect(() => withFileLock(lockPath, () => {}, { timeoutMs: 120 })).toThrow(/file lock timeout/);
     expect(existsSync(lockPath)).toBe(false); // backed out, no lock left behind
     // Fence dropped → same acquire succeeds.
-    rmSync(markerPath);
+    rmSync(fencePath);
     let ran = false;
     withFileLock(lockPath, () => { ran = true; }, { timeoutMs: 500 });
     expect(ran).toBe(true);
@@ -132,13 +132,35 @@ describe('withFileLock', () => {
     writeFileSync(lockPath, JSON.stringify({
       pid: 2 ** 30, uuid: 'dead-holder', hostname: hostname(), acquiredAt: new Date().toISOString(),
     }), { flag: 'wx' });
-    writeFileSync(`${lockPath}.reclaim`, JSON.stringify({
+    const deadFence = `${lockPath}.reclaim.dead-reclaimer`;
+    writeFileSync(deadFence, JSON.stringify({
       pid: 2 ** 30, uuid: 'dead-reclaimer', hostname: hostname(), acquiredAt: new Date().toISOString(),
     }));
     let ran = false;
     withFileLock(lockPath, () => { ran = true; }, { timeoutMs: 1000 });
     expect(ran).toBe(true);
-    expect(existsSync(`${lockPath}.reclaim`)).toBe(false);
+    expect(existsSync(deadFence)).toBe(false);
+  });
+
+  it('publishes a fresh acquiredAt after out-waiting a live holder longer than staleMs', () => {
+    // Stale-at-birth guard: a contender that spins longer than staleMs before
+    // winning must re-stamp its payload, or the lock it publishes is instantly
+    // reclaimable while live. withFileLock spins SYNCHRONOUSLY, so the release
+    // must come from a child process — an in-process setTimeout would never run.
+    const staleMs = 250;
+    writeFileSync(lockPath, JSON.stringify({
+      pid: process.pid, uuid: 'holder', hostname: hostname(), acquiredAt: new Date().toISOString(),
+    }), { flag: 'wx' });
+    execFile(process.execPath, ['-e', `setTimeout(() => require('node:fs').unlinkSync(${JSON.stringify(lockPath)}), 300)`]);
+    const started = Date.now();
+    let observedAcquiredAt = '';
+    withFileLock(lockPath, () => {
+      observedAcquiredAt = JSON.parse(readFileSync(lockPath, 'utf-8')).acquiredAt;
+    }, { timeoutMs: 5000, staleMs });
+    const waited = Date.now() - started;
+    const age = Date.now() - new Date(observedAcquiredAt).getTime();
+    expect(waited).toBeGreaterThan(staleMs); // out-waited the holder past the TTL
+    expect(age).toBeLessThan(staleMs); // pre-fix this was ≈waited: stale at birth
   });
 
   it('release is owner-checked: never unlinks a lock it no longer owns', () => {

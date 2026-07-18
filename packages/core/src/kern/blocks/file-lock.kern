@@ -10,10 +10,10 @@
 // Hold it ONLY for fast local file ops (load → mutate → save), never across a
 // network/engine call.
 
-import from="node:fs" names="writeFileSync,readFileSync,unlinkSync,renameSync,mkdirSync,linkSync,statSync,existsSync"
+import from="node:fs" names="writeFileSync,readFileSync,unlinkSync,renameSync,mkdirSync,linkSync,statSync,readdirSync"
 import from="node:os" names="hostname"
 import from="node:crypto" names="randomUUID"
-import from="node:path" names="dirname"
+import from="node:path" names="dirname,basename,join"
 
 const name=FILE_LOCK_TIMEOUT_MS type=number value=5000
   doc "Give up waiting for a contended lock after this long. Critical sections are sub-millisecond file ops, so 5s of contention means something is wrong."
@@ -96,7 +96,7 @@ fn name=withFileLock params="lockPath:string, work:() => void, opts?:{ timeoutMs
     const timeoutMs = opts?.timeoutMs ?? FILE_LOCK_TIMEOUT_MS;
     const staleMs = opts?.staleMs ?? FILE_LOCK_STALE_MS;
     const uuid = randomUUID();
-    const payload = JSON.stringify({
+    const buildPayload = () => JSON.stringify({
       pid: process.pid,
       uuid,
       hostname: hostname(),
@@ -110,9 +110,22 @@ fn name=withFileLock params="lockPath:string, work:() => void, opts?:{ timeoutMs
     // fully written. A bare O_EXCL writeFileSync has a window between open()
     // and write() where contenders read an EMPTY file, judge it corrupt→stale,
     // and reclaim a LIVE holder's lock (reproduced: lost updates under load).
+    //
+    // The staged payload is RE-STAMPED when it ages past staleMs/2: a contender
+    // that spins longer than staleMs before winning must not publish a lock
+    // whose acquiredAt is already TTL-expired — that lock would be stale at
+    // birth and instantly reclaimable while live (codex review finding).
     const stagePath = `${lockPath}.stage.${uuid}`;
-    writeFileSync(stagePath, payload);
+    let payloadStampedAt = Date.now();
+    writeFileSync(stagePath, buildPayload());
+    const freshenPayload = () => {
+      if (Date.now() - payloadStampedAt > staleMs / 2) {
+        payloadStampedAt = Date.now();
+        writeFileSync(stagePath, buildPayload());
+      }
+    };
     const tryAcquire = (): boolean => {
+      freshenPayload();
       try {
         linkSync(stagePath, lockPath);
         return true;
@@ -124,7 +137,7 @@ fn name=withFileLock params="lockPath:string, work:() => void, opts?:{ timeoutMs
         // readers classify a fresh EMPTY lock file as 'pending' (wait), never
         // corrupt→stale, so the open()–write() window can't be reclaimed.
         try {
-          writeFileSync(lockPath, payload, { flag: 'wx' });
+          writeFileSync(lockPath, readFileSync(stagePath, 'utf-8'), { flag: 'wx' });
           return true;
         } catch (e2) {
           if ((e2 as { code?: string }).code !== 'EEXIST') throw e2;
@@ -132,17 +145,57 @@ fn name=withFileLock params="lockPath:string, work:() => void, opts?:{ timeoutMs
         }
       }
     };
-    // Reclaim fence. Renaming a stale entry away is BLIND: between judging the
-    // holder stale and the rename, the slot can be freed AND re-acquired by a
-    // live holder, and any "put it back" recovery leaves a window where a third
-    // process acquires the emptied slot — two live holders (codex review
-    // finding). So reclaim is fenced: a reclaimer must exclusively hold the
-    // marker before touching the slot, re-judges the holder UNDER the fence,
-    // and acquirers back out of any lock they took while the fence was up.
-    // Post-fence, every entry at rename time is either the re-judged stale one
-    // or a transient acquirer that will back out — safe to remove either way,
-    // so the unsound restore path is gone entirely.
-    const markerPath = `${lockPath}.reclaim`;
+    // ── Reclaim fences ──
+    // Renaming a stale entry away is BLIND: between judging the holder stale
+    // and the rename, the slot can be freed AND re-acquired by a live holder,
+    // and any "put it back" recovery leaves a window where a third process
+    // acquires the emptied slot — two live holders (codex review finding). So
+    // reclaim is fenced: a reclaimer raises a fence before touching the slot,
+    // re-judges the holder UNDER the fence, and acquirers back out of any lock
+    // they took while a live fence was up. Post-fence, every entry at rename
+    // time is either the re-judged stale one or a transient acquirer that will
+    // back out — safe to remove either way; there is no restore path.
+    //
+    // Every fence has a UNIQUE name (lockPath.reclaim.<uuid>), never a shared
+    // one: with a shared path, clearing a stale fence or dropping your own in
+    // a finally is read-then-unlink TOCTOU that can delete a SUCCESSOR
+    // reclaimer's live fence and leave it operating unfenced (codex review
+    // finding). Unique names make every unlink owner-precise. Fence
+    // exclusivity is unnecessary — rename(lockPath→claim) is already
+    // single-winner, so concurrent fences are harmless — which also means
+    // plain writeFileSync works (no hard-link dependency: reclaim still
+    // functions on filesystems where tryAcquire uses the wx fallback; a
+    // half-written fence reads as 'pending' = live, which is safe).
+    const fencePrefix = `${basename(lockPath)}.reclaim.`;
+    const lockDir = dirname(lockPath);
+    const ownFencePath = `${lockPath}.reclaim.${uuid}`;
+    // Returns live fence paths after clearing provably-stale ones (dead pid /
+    // TTL — each unlink targets that dead owner's unique path, so it can never
+    // hit a live successor). 'pending' (unreadable/half-written) counts as
+    // LIVE: liveness unknowable means do not proceed past it. A readdir
+    // failure fails SAFE: report a phantom live fence rather than letting an
+    // acquirer treat "couldn't look" as "nothing there" (codex review finding).
+    const liveFences = (): string[] => {
+      let names: string[];
+      try {
+        names = readdirSync(lockDir);
+      } catch {
+        return [`${lockPath}.reclaim.unreadable`];
+      }
+      const live: string[] = [];
+      for (const name of names) {
+        if (!name.startsWith(fencePrefix)) continue;
+        const fencePath = join(lockDir, name);
+        const info = readFileLockInfo(fencePath, staleMs);
+        if (info === 'missing') continue;
+        if (info !== 'pending' && isFileLockStale(info, staleMs)) {
+          try { unlinkSync(fencePath); } catch { /* raced another cleaner */ }
+          continue;
+        }
+        live.push(fencePath);
+      }
+      return live;
+    };
     const deadline = Date.now() + timeoutMs;
     let acquired = false;
     try {
@@ -157,18 +210,12 @@ fn name=withFileLock params="lockPath:string, work:() => void, opts?:{ timeoutMs
         throw new Error(`file lock timeout after ${timeoutMs}ms: ${lockPath} (held by pid ${blocker?.pid ?? '?'} on ${blocker?.hostname ?? '?'})`);
       }
       if (tryAcquire()) {
-        if (!existsSync(markerPath)) {
+        if (liveFences().length === 0) {
           acquired = true;
           break;
         }
-        // Fence is up — a reclaimer may be about to blind-rename this slot.
-        // Owner-checked back-out, then re-contend. If the fence owner died
-        // mid-reclaim, clear it here too (the reclaim branch can't reach a
-        // wedged fence once the lock file itself is gone).
-        const fm = readFileLockInfo(markerPath, staleMs);
-        if (fm !== 'missing' && fm !== 'pending' && isFileLockStale(fm, staleMs)) {
-          try { unlinkSync(markerPath); } catch { /* raced another cleaner */ }
-        }
+        // A live fence is up — its reclaimer may be about to blind-rename this
+        // slot. Owner-checked back-out, then re-contend.
         try {
           const cur = readFileLockInfo(lockPath, staleMs);
           if (cur !== 'missing' && cur !== 'pending' && cur?.uuid === uuid) unlinkSync(lockPath);
@@ -184,17 +231,16 @@ fn name=withFileLock params="lockPath:string, work:() => void, opts?:{ timeoutMs
         continue;
       }
       if (isFileLockStale(holder, staleMs)) {
-        // Take the fence: link our staged payload (identifies THIS reclaimer)
-        // exclusively onto the marker; EEXIST = another reclaimer is active.
+        // Another live reclaimer is already fencing this slot — let it finish.
+        if (liveFences().length > 0) {
+          fileLockSleep(FILE_LOCK_SPIN_MS);
+          continue;
+        }
+        // Raise our own fence (unique path — cannot collide), freshly stamped
+        // so it is not stale at birth after a long contention wait.
         try {
-          linkSync(stagePath, markerPath);
+          writeFileSync(ownFencePath, buildPayload());
         } catch {
-          // Fence busy. If its owner died mid-reclaim, clear it so the lock
-          // can't wedge; otherwise let them finish.
-          const m = readFileLockInfo(markerPath, staleMs);
-          if (m !== 'missing' && m !== 'pending' && isFileLockStale(m, staleMs)) {
-            try { unlinkSync(markerPath); } catch { /* raced another cleaner */ }
-          }
           fileLockSleep(FILE_LOCK_SPIN_MS);
           continue;
         }
@@ -211,7 +257,8 @@ fn name=withFileLock params="lockPath:string, work:() => void, opts?:{ timeoutMs
             } catch { /* slot already freed by the holder's own release */ }
           }
         } finally {
-          try { unlinkSync(markerPath); } catch { /* best-effort */ }
+          // Unique path — this unlink can only ever remove OUR fence.
+          try { unlinkSync(ownFencePath); } catch { /* best-effort */ }
         }
         continue;
       }

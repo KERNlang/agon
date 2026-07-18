@@ -507,8 +507,69 @@ module name=ReviewEngineSelection
       return sections.length ? sections.join('\n\n') : '';
     >>>
 
-  fn name=runReviewCore params="diff:string, label:string, engineId:string, ctx:HandlerContext, signal?:AbortSignal, onProgress?:(chunk:string)=>void, cwdOverride?:string" returns="Promise<ReviewCoreResult>" async=true export=true
-    doc "Core review flow with no ctx side effects. Used by both handleReview (with streaming dispatch) and the plan executor's review step (silent). Does NOT touch ctx.setActiveAbort, ctx.lastReviewResult, ctx.chatSession, or tracker. signal is optional: callers that don't have an abort controller can pass undefined. cwdOverride pins the working directory the review engine runs in AND the repo file-context is gathered from — goal passes the per-task worktree so review engines never operate in (and write to) the parent repo; defaults to resolveWorkingDir() for the interactive/CLI review paths."
+  // ── Review roles — a focused lens per engine, over the same diff + machine
+  //    contract. A role only narrows the engine's ATTENTION (an extra ## ROLE
+  //    block + a role-scoped INSTRUCTIONS lead); the SECURITY NOTICE, grounding,
+  //    sentinel JSON machine block, and fail-closed parser stay byte-identical, so
+  //    consensus merging and the results pager work untouched. ────────────────────
+
+  interface name=ReviewRole export=true
+    field name=id type=string
+    field name=title type=string
+    field name=focus type=string
+
+  const name=REVIEW_ROLES type="readonly ReviewRole[]" value={{ [
+    { id: 'security', title: 'Security', focus: 'injection, authN/authZ, secret or credential exposure, unsafe deserialization, path traversal, SSRF, XSS, insecure crypto, data exfiltration, and trusting attacker-controlled input. Trace untrusted data from entry to sink.' },
+    { id: 'correctness', title: 'Correctness', focus: 'logic errors, broken conditionals, off-by-one and boundary mistakes, null/undefined handling, error and exception paths, async/race conditions, and edge cases the change does not cover. This is the deepest lens — verify each suspected bug against the real code before flagging.' },
+    { id: 'dryness', title: 'Dryness & Modularity', focus: 'duplication that should be shared, leaked abstractions, misplaced responsibilities, tight coupling between modules, and functions or files doing too much. Judge whether the change fits the surrounding architecture.' },
+    { id: 'performance', title: 'Performance', focus: 'unnecessary allocation, O(n²) or worse hot paths, repeated work in loops, blocking the event loop, unbounded growth (memory, listeners, caches), and N+1-style patterns. Only flag a cost you can justify from the code, not a theoretical one.' },
+    { id: 'overall', title: 'Overall (generalist backstop)', focus: 'the whole change with no narrowed lens — bugs, security, performance, quality, and missing edge cases. You are the safety net: catch whatever the focused roles miss.' },
+  ] as const }} export=true
+
+  const name=REVIEW_ROLE_OUTSIDE_TAIL type=string value="Even though that is your focus, if you notice a BLOCKING issue OUTSIDE your role, flag it too — never let a real blocker fall through the cracks." export=true
+
+  fn name=resolveReviewRole params="roleId:string|undefined" returns="ReviewRole|undefined" export=true
+    doc "Look up a role by id (case-insensitive). Returns undefined for none/unknown so callers can fall back to the generic prompt."
+    handler lang="kern"
+      if cond="!roleId"
+        return value="undefined"
+      let name=needle value="roleId.trim().toLowerCase()"
+      each name=r in="REVIEW_ROLES"
+        if cond="r.id === needle"
+          return value="r"
+      return value="undefined"
+
+  fn name=assignReviewRoles params="engineIds:string[], roleIds:string[]|undefined" returns="Map<string, ReviewRole>" export=true
+    doc "Map each engine to a role. With an explicit roleIds list, zip engine i → roleIds[i] (extra engines cycle from the start; unknown ids → overall). Without one, seat the 'overall' generalist backstop FIRST whenever there are 2+ engines (a small panel must never lose the catch-all), then deal the specialist lenses (security, correctness, dryness, performance) in order; any engine past the roster also lands on 'overall'. A single engine gets the deepest lens (security) — it IS the whole panel."
+    handler lang="kern"
+      let name=out type="Map<string, ReviewRole>" value="new Map()"
+      let name=fallback value="resolveReviewRole('overall') ?? REVIEW_ROLES[REVIEW_ROLES.length - 1]"
+      if cond="roleIds && roleIds.length > 0"
+        let name=idx type=number value="0" kind=let
+        each name=engineId in="engineIds"
+          let name=picked value="resolveReviewRole(roleIds[idx % roleIds.length]) ?? fallback"
+          do value="out.set(engineId, picked)"
+          assign target="idx" op="+=" value="1"
+        return value="out"
+      // Specialist lenses in deal order (overall is pulled out and seated first).
+      let name=specialists value="REVIEW_ROLES.filter((r) => r.id !== 'overall')"
+      let name=multi value="engineIds.length >= 2"
+      let name=i2 type=number value="0" kind=let
+      each name=engineId2 in="engineIds"
+        let name=isBackstopSeat value="multi && i2 === 0"
+        let name=specIdx value="multi ? i2 - 1 : i2"
+        let name=role value="isBackstopSeat ? fallback : (specIdx < specialists.length ? specialists[specIdx] : fallback)"
+        do value="out.set(engineId2, role)"
+        assign target="i2" op="+=" value="1"
+      return value="out"
+
+  fn name=buildRoleInstructions params="role:ReviewRole" returns=string export=true
+    doc "Role-scoped replacement for the INSTRUCTIONS lead. Keeps the same word/severity/confidence discipline and points at the SAME mandatory machine block the generic prompt uses (the caller appends the shared block verbatim after this)."
+    handler lang="kern"
+      return value="`You are the ${role.title} reviewer on a multi-role review panel. Focus your review on: ${role.focus}\n\n${REVIEW_ROLE_OUTSIDE_TAIL}\n\nReport every verified blocking finding, then at most the 8 highest-priority, best-verified non-blocking findings so the mandatory machine block cannot be crowded out. Keep the prose under 1200 words. For each issue give file, line range, severity (blocking|important|nit), a 0.00-1.00 confidence, and a suggested fix.\n\nVERIFY before you flag: confirm each issue against the CURRENT FILE CONTENTS above — is the error really unhandled, the symbol really unused, the import really missing? Only mark a finding 'blocking' if you confirmed it in the code. Set confidence honestly: 1.0 means you verified it in the code; lower it the more you are inferring or guessing. If you could not verify it from the provided context, lower the confidence and downgrade the severity rather than guessing — unverified high-confidence blocking findings are the #1 source of review noise.`"
+
+  fn name=runReviewCore params="diff:string, label:string, engineId:string, ctx:HandlerContext, signal?:AbortSignal, onProgress?:(chunk:string)=>void, cwdOverride?:string, roleId?:string" returns="Promise<ReviewCoreResult>" async=true export=true
+    doc "Core review flow with no ctx side effects. Used by both handleReview (with streaming dispatch) and the plan executor's review step (silent). Does NOT touch ctx.setActiveAbort, ctx.lastReviewResult, ctx.chatSession, or tracker. signal is optional: callers that don't have an abort controller can pass undefined. cwdOverride pins the working directory the review engine runs in AND the repo file-context is gathered from — goal passes the per-task worktree so review engines never operate in (and write to) the parent repo; defaults to resolveWorkingDir() for the interactive/CLI review paths. roleId is optional: when it resolves to a known role the engine reviews through that focused lens (a ## ROLE block + role-scoped INSTRUCTIONS lead) over the SAME diff, grounding, and machine-block contract; when undefined/unknown the generic prompt is used unchanged."
     handler lang="kern"
       let name=cwd value="cwdOverride ?? resolveWorkingDir()"
       let name=config value="ctx.config"
@@ -523,7 +584,10 @@ module name=ReviewEngineSelection
       if cond="fileContext"
         do value="parts.push(`## CURRENT FILE CONTENTS\\nFull current content of the changed source files, for grounding. Verify each finding against this real code — e.g. check whether an error is actually handled, a symbol actually unused, or an import actually missing — before flagging it. The DIFF below shows only what changed.\\n\\n${fileContext}`)"
       do value="parts.push(`## DIFF\\n\\`\\`\\`diff\\n${diff}\\n\\`\\`\\``)"
-      do value="parts.push(`## INSTRUCTIONS\\nProvide a thorough but concise code review: bugs and logic errors, security vulnerabilities, performance issues, code quality, and missing edge cases. Keep the prose under 1200 words. Report every verified blocking finding, then at most the 8 highest-priority, best-verified non-blocking findings so the mandatory machine block cannot be crowded out. Keep each problem and fix concise. For each issue give file, line range, severity (blocking|important|nit), a 0.00-1.00 confidence, and a suggested fix.\\n\\nVERIFY before you flag: confirm each issue against the CURRENT FILE CONTENTS above — is the error really unhandled, the symbol really unused, the import really missing? Only mark a finding 'blocking' if you confirmed it in the code. Set confidence honestly: 1.0 means you verified it in the code; lower it the more you are inferring or guessing. If you could not verify it from the provided context, lower the confidence and downgrade the severity rather than guessing — unverified high-confidence blocking findings are the #1 source of review noise.\\n\\n## REQUIRED MACHINE BLOCK\\nAfter your prose review you MUST append a machine-readable findings block. This is mandatory — a review without it is discarded. The block is the sentinel line, then a fenced JSON code block, as the very last thing in your response. Do NOT stop at the sentinel line: the JSON array after it is required.\\n\\n<!--AGON_REVIEW_FINDINGS_v1-->\\n\\`\\`\\`json\\n[{\"file\":\"src/auth.ts\",\"lines\":\"42\",\"severity\":\"important\",\"blocking\":false,\"confidence\":0.7,\"problem\":\"missing null check\",\"minimalFix\":\"guard before deref\"}]\\n\\`\\`\\`\\n\\nReplace the example with your real findings. If you found no issues, the array MUST be []. Emit the sentinel + JSON block exactly once, at the end.`)"
+      let name=role value="resolveReviewRole(roleId)"
+      if cond="role"
+        do value="parts.push(`## ROLE\\n${role.title}`)"
+      do value="parts.push(`## INSTRUCTIONS\\n${role ? buildRoleInstructions(role) : 'Provide a thorough but concise code review: bugs and logic errors, security vulnerabilities, performance issues, code quality, and missing edge cases. Keep the prose under 1200 words. Report every verified blocking finding, then at most the 8 highest-priority, best-verified non-blocking findings so the mandatory machine block cannot be crowded out. Keep each problem and fix concise. For each issue give file, line range, severity (blocking|important|nit), a 0.00-1.00 confidence, and a suggested fix.\\n\\nVERIFY before you flag: confirm each issue against the CURRENT FILE CONTENTS above — is the error really unhandled, the symbol really unused, the import really missing? Only mark a finding \\'blocking\\' if you confirmed it in the code. Set confidence honestly: 1.0 means you verified it in the code; lower it the more you are inferring or guessing. If you could not verify it from the provided context, lower the confidence and downgrade the severity rather than guessing — unverified high-confidence blocking findings are the #1 source of review noise.'}\\n\\n## REQUIRED MACHINE BLOCK\\nAfter your prose review you MUST append a machine-readable findings block. This is mandatory — a review without it is discarded. The block is the sentinel line, then a fenced JSON code block, as the very last thing in your response. Do NOT stop at the sentinel line: the JSON array after it is required.\\n\\n<!--AGON_REVIEW_FINDINGS_v1-->\\n\\`\\`\\`json\\n[{\"file\":\"src/auth.ts\",\"lines\":\"42\",\"severity\":\"important\",\"blocking\":false,\"confidence\":0.7,\"problem\":\"missing null check\",\"minimalFix\":\"guard before deref\"}]\\n\\`\\`\\`\\n\\nReplace the example with your real findings. If you found no issues, the array MUST be []. Emit the sentinel + JSON block exactly once, at the end.`)"
       let name=prompt value="parts.join('\\n\\n')"
       let name=engine value="ctx.registry.get(engineId)"
       let name=outputDir value="join(RUNS_DIR, `review-${hostNowMs()}`)"
@@ -939,3 +1003,138 @@ module name=ReviewEngineSelection
     cleanup <<<
       ctx.setActiveAbort(null);
     >>>
+
+  fn name=handleReviewRoles params="dispatch:Dispatch, ctx:HandlerContext, target?:string, requestedEngines?:string[], roleIds?:string[]" returns="Promise<void>" async=true export=true
+    doc "Run /review role — the same parallel multi-engine review as handleReviewMany, but each engine reviews through a focused ROLE lens (security / correctness / dryness / performance) plus an 'overall' generalist backstop, so coverage is never partitioned away. Roles come from assignReviewRoles: an explicit roleIds list zips engine i → roleIds[i]; otherwise the fixed roster is assigned in order and extra engines fall back to 'overall'. The diff, grounding, sentinel JSON machine block, consensus merge, and results pager are identical to a normal review — roles only narrow each engine's ATTENTION via an extra ## ROLE block + role-scoped INSTRUCTIONS lead."
+    signal name=abort
+    handler <<<
+      ensureAgonHome();
+      const cwd = resolveWorkingDir();
+      let engineIds: string[];
+      try {
+        engineIds = selectReviewEngines(requestedEngines, ctx);
+      } catch (err) {
+        dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) });
+        return;
+      }
+
+      // Resolve the diff once — every role reviews the same target.
+      let diff: string;
+      let label: string;
+      try {
+        ({ diff, label } = resolveReviewTarget(target, cwd, undefined));
+      } catch (err) {
+        dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) });
+        return;
+      }
+      announceReviewTarget(dispatch, cwd, label);
+      if (!diff.trim()) {
+        dispatch({ type: 'info', message: `No changes to review (${label}).` });
+        return;
+      }
+
+      const roleByEngine = assignReviewRoles(engineIds, roleIds);
+      dispatch({ type: 'info', message: `Roles: ${engineIds.map((id) => `${id}=${roleByEngine.get(id)?.id ?? 'overall'}`).join(' · ')}` });
+
+      const config = ctx.config as any;
+      const timeoutSec = config.reviewTimeout ?? config.agentTimeout ?? 420;
+      interface Collected { engineId: string; reviewOutput: string; unstructured: boolean; status: string; note?: string }
+      const controllers: AbortController[] = [];
+      const onMasterAbort = () => { for (const c of controllers) c.abort(); };
+      ctx.setActiveAbort(abort);
+      if (abort.signal.aborted) onMasterAbort();
+      else abort.signal.addEventListener('abort', onMasterAbort, { once: true });
+
+      const reviewOne = async (engineId: string): Promise<Collected> => {
+        const controller = new AbortController();
+        controllers.push(controller);
+        let timedOut = false;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const role = roleByEngine.get(engineId);
+        try {
+          const timeoutPromise = new Promise<null>((resolve) => {
+            timer = setTimeout(() => {
+              timedOut = true;
+              controller.abort();
+              resolve(null);
+            }, timeoutSec * 1000);
+          });
+          const corePromise = runReviewCore(diff, label, engineId, ctx, controller.signal, undefined, undefined, role?.id);
+          corePromise.catch(() => undefined);
+          const result = await Promise.race([corePromise, timeoutPromise]);
+          if (result === null || timedOut) {
+            dispatch({ type: 'warning', message: `${engineId}: timed out after ${timeoutSec}s — skipped.` });
+            return { engineId, reviewOutput: '', unstructured: false, status: 'timeout' };
+          }
+          const response = (result.response ?? '').trim();
+          if (!response) {
+            dispatch({ type: 'warning', message: `${engineId} returned no review output.` });
+            return { engineId, reviewOutput: '', unstructured: false, status: 'error', note: 'no output' };
+          }
+          const status = result.unstructured ? 'unstructured' : 'ok';
+          const roleTag = role ? ` [${role.id}]` : '';
+          dispatch({ type: 'info', message: result.unstructured
+            ? `${icons().success} ${engineId}${roleTag}: unstructured (no machine verdict)`
+            : `${icons().success} ${engineId}${roleTag}: ${formatReviewCounts(result.severityCounts)}` });
+          appendMessage(ctx.chatSession, { role: 'engine', engineId, content: response, timestamp: new Date().toISOString() });
+          tracker.record(engineId, { prompt: `[review${roleTag} ${label}]`, response });
+          return { engineId, reviewOutput: response, unstructured: result.unstructured, status };
+        } catch (err) {
+          if (timedOut) {
+            dispatch({ type: 'warning', message: `${engineId}: timed out after ${timeoutSec}s — skipped.` });
+            return { engineId, reviewOutput: '', unstructured: false, status: 'timeout' };
+          }
+          const msg = err instanceof Error ? err.message : String(err);
+          dispatch({ type: 'error', message: `${engineId}: ${msg}` });
+          return { engineId, reviewOutput: '', unstructured: false, status: 'error', note: msg };
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
+      };
+
+      appendMessage(ctx.chatSession, { role: 'user', content: `[review role ${label}]`, timestamp: new Date().toISOString() });
+      const all = await Promise.all(engineIds.map((id) => reviewOne(id)));
+      const collected = all.filter((c) => c.reviewOutput);
+
+      if (collected.length === 0) {
+        dispatch({ type: 'warning', message: `No review output returned from ${engineIds.join(', ')}.` });
+        ctx.setActiveAbort(null);
+        return;
+      }
+
+      const outcomes = all.map((c) => reviewOutcome(c.engineId, c.reviewOutput, c.status, c.note));
+      const consensus = buildConsensus(outcomes as any);
+      const consensusSummary = buildReviewConsensusLines(consensus).join('\n');
+      if (consensus.degraded) dispatch({ type: 'warning', message: consensus.degraded.warning });
+      dispatch({ type: consensus.autoBlock ? 'warning' : 'info', message: consensusSummary });
+
+      const anyUnstructured = collected.some((c) => c.unstructured);
+      ctx.lastReviewResult = {
+        engineId: collected.map((r) => r.engineId).join(', '),
+        target: target ?? 'uncommitted',
+        label: `${label} (role review)`,
+        diff,
+        reviewOutput: collected.map((r) => `## ${r.engineId} [${roleByEngine.get(r.engineId)?.id ?? 'overall'}]\n\n${r.reviewOutput}`).join('\n\n---\n\n'),
+        timestamp: Date.now(),
+      };
+
+      sessionResultStore.add({
+        type: 'review',
+        timestamp: new Date().toISOString(),
+        question: `${label} (role review)`,
+        engines: collected.map((r) => r.engineId),
+        winner: null,
+        data: {
+          label: `${label} (role review)`,
+          consensusSummary,
+          blocking: consensus.autoBlock,
+          reviews: collected.map((r) => ({ engineId: `${r.engineId} [${roleByEngine.get(r.engineId)?.id ?? 'overall'}]`, status: r.status, reviewOutput: stripMachineBlock(r.reviewOutput) })),
+        },
+      });
+
+      dispatch({ type: 'info', message: `Role review complete (${collected.map((r) => `${r.engineId}=${roleByEngine.get(r.engineId)?.id ?? 'overall'}`).join(', ')}).${anyUnstructured ? ' Some reviews were unstructured (no machine verdict) but valid.' : ''} Ctrl+R for the full reviews · say "fix it" or "fix it with <engine>" to address the findings.` });
+    >>>
+    cleanup <<<
+      ctx.setActiveAbort(null);
+    >>>
+

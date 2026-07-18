@@ -35,7 +35,7 @@ export { handleRun } from './run.js';
 export { handlePipeline } from './pipeline.js';
 export { handleFlowReport, handleFlowAnalysis, autoLogFlow } from './flow.js';
 export { handleCommit } from './commit.js';
-export { handleReview, handleReviewMany } from './review.js';
+export { handleReview, handleReviewMany, handleReviewRoles } from './review.js';
 export { runAgentMode, runAgentTeam } from '../generated/handlers/agent.js';
 export { handleThink } from '../generated/handlers/think.js';
 export { handleCouncil } from '../generated/handlers/council.js';

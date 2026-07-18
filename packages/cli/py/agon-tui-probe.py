@@ -328,8 +328,11 @@ def run_probe(
         _sanitize_child_env(agon_home)
         try:
             os.chdir(child_cwd)
-        except OSError:
-            pass
+        except OSError as e:
+            # The throwaway cwd is the isolation boundary — running agon in an
+            # inherited directory instead would silently break that contract.
+            sys.stderr.write(f"cannot enter isolated cwd {child_cwd}: {e}\n")
+            os._exit(126)
         try:
             os.execvp("node", ["node", cfg.agon_bin])
         except FileNotFoundError:
@@ -431,14 +434,14 @@ def run_probe(
         _terminate(pid, cfg.sigterm_grace_s)
         try:
             os.close(fd)
-        except OSError:
-            pass
+        except OSError as e:
+            _dbg(f"[cleanup] pty fd close failed (already closed?): {e}")
         # Best-effort cleanup of the throwaway dirs.
         for d in (agon_home, child_cwd):
             try:
                 shutil.rmtree(d, ignore_errors=True)
-            except Exception:
-                pass
+            except Exception as e:
+                _dbg(f"[cleanup] rmtree {d} failed: {e}")
 
 
 # ── CLI ─────────────────────────────────────────────────────────────────────

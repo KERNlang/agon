@@ -226,7 +226,7 @@ const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:O
           <Text><Text dimColor>{' · '}</Text><Text color={todoDone >= todoTotal ? '#4ade80' : '#fbbf24'}>{'todos '}{todoDone}{'/'}{todoTotal}</Text></Text>
         ) : null}
         {toolCount > 0 ? (
-          <Text><Text dimColor>{' · '}</Text><Text dimColor>{toolCount}{' tools'}{toolNotes.length > 0 ? ` (${toolNotes.join(', ')})` : ''}</Text></Text>
+          <Text><Text dimColor>{' · '}</Text><Text dimColor>{toolCount}{toolCount === 1 ? ' tool' : ' tools'}{toolNotes.length > 0 ? ` (${toolNotes.join(', ')})` : ''}</Text></Text>
         ) : null}
       </Text>
       {(event as any).remaining ? <Text color="#fbbf24">{'  remaining: '}{String((event as any).remaining)}</Text> : null}

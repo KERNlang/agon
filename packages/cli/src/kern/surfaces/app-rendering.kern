@@ -1203,7 +1203,7 @@ module name=AppRendering
             }
             if (toolCount > 0) {
               pushSep();
-              summarySegs.push({ text: `${toolCount} tools${toolNotes.length > 0 ? ` (${toolNotes.join(', ')})` : ''}`, dimColor: true });
+              summarySegs.push({ text: `${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}${toolNotes.length > 0 ? ` (${toolNotes.join(', ')})` : ''}`, dimColor: true });
             }
             pushSegmentsRow(`${baseKey}-recap-summary`, 1, summarySegs);
             if ((event as any).remaining) {

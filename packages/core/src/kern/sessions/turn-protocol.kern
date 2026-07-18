@@ -7,6 +7,7 @@ interface name=ControlPlaneEnvelopeV1 export=true
   field name=leaseEpoch type=number
   field name=attempt type=number
   field name=producerId type=string
+  field name=responseSeq type=number optional=true
   field name=stepId type=string optional=true
   field name=toolCallId type=string optional=true
 
@@ -43,6 +44,7 @@ fn name=validateControlPlaneEnvelope params="input:unknown" returns=ControlPlane
     if (!positiveInteger(candidate.leaseEpoch)) return { ok: false, reason: 'invalid_lease_epoch' };
     if (!positiveInteger(candidate.attempt)) return { ok: false, reason: 'invalid_attempt' };
     if (!nonEmpty(candidate.producerId)) return { ok: false, reason: 'invalid_producer_id' };
+    if (candidate.responseSeq !== undefined && !positiveInteger(candidate.responseSeq)) return { ok: false, reason: 'invalid_response_seq' };
     if (candidate.stepId !== undefined && !nonEmpty(candidate.stepId)) return { ok: false, reason: 'invalid_step_id' };
     if (candidate.toolCallId !== undefined && !nonEmpty(candidate.toolCallId)) return { ok: false, reason: 'invalid_tool_call_id' };
 
@@ -54,6 +56,7 @@ fn name=validateControlPlaneEnvelope params="input:unknown" returns=ControlPlane
       attempt: candidate.attempt as number,
       producerId: candidate.producerId as string,
     };
+    if (candidate.responseSeq !== undefined) value.responseSeq = candidate.responseSeq as number;
     if (candidate.stepId !== undefined) value.stepId = candidate.stepId as string;
     if (candidate.toolCallId !== undefined) value.toolCallId = candidate.toolCallId as string;
     return { ok: true, value };
@@ -82,6 +85,14 @@ fn name=isCurrentControlPlaneEnvelope params="candidate:ControlPlaneEnvelopeV1, 
       && candidate.leaseEpoch === current.leaseEpoch
       && candidate.attempt === current.attempt
       && candidate.producerId === current.producerId;
+  >>>
+
+fn name=isCurrentCesarResponse params="candidate:ControlPlaneEnvelopeV1, current:ControlPlaneEnvelopeV1" returns=boolean export=true
+  doc "Per-response lease binding: a mutation tool must belong to the LATEST response of the active turn, not just the turn. Requires matching turn identity first; when either side omits responseSeq (legacy send sites) the response is treated as current so older producers are not hard-broken."
+  handler <<<
+    if (!isCurrentControlPlaneEnvelope(candidate, current)) return false;
+    if (candidate.responseSeq === undefined || current.responseSeq === undefined) return true;
+    return candidate.responseSeq === current.responseSeq;
   >>>
 
 fn name=isTerminalTurnState params="state:TurnLifecycleState" returns=boolean export=true

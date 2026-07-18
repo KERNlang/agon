@@ -1245,7 +1245,7 @@ export function resolvePackageVersion(resolveSpecifier: string|null, wantName: s
   return fallback;
 }
 
-// @kern-source: engine:59
+// @kern-source: engine:58
 export const VERSION: string = resolvePackageVersion(null, '@kernlang/agon', '0.2.5');
 
 // @kern-source: engine:60

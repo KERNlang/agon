@@ -20,6 +20,7 @@
 
 import from="../api/agent-loop.js" names="runApiAgentLoop"
 import from="../api/agent-loop.js" names="ApiAgentResult" types=true
+import from="../signals/delegate-ledger.js" names="recordApiLoopDispatch"
 import from="../api/dispatch.js" names="ApiConfig" types=true
 import from="../blocks/git.js" names="worktreeChangedDiff"
 import from="../blocks/process.js" names="spawnWithTimeout"
@@ -296,6 +297,9 @@ fn name=runAgentTeamSynthesis async=true params="opts:AgentSynthesisOptions" ret
         onChunk: opts.onChunk,
         onToolCall: opts.onToolCall,
       });
+      // Delegate tool ledger (2b): one api-loop record for the synthesis run
+      // with native per-call outcomes. Best-effort — never throws.
+      recordApiLoopDispatch(opts.winnerEngineId, 'synthesis', result.toolOutcomes ?? []);
       // Post-call abort check — if the caller cancelled mid-loop, runApiAgentLoop
       // may have returned a partial result. Discard it unconditionally.
       if (opts.signal?.aborted) {
@@ -433,6 +437,9 @@ fn name=runAgentInvestigateSynthesis async=true params="opts:AgentInvestigateSyn
         heavyToolSemaphore: opts.heavyToolSemaphore,
         onChunk: opts.onChunk,
       });
+      // Delegate tool ledger (2b): one api-loop record for the reconciliation
+      // synthesis run with native per-call outcomes. Best-effort — never throws.
+      recordApiLoopDispatch(opts.winnerEngineId, 'synthesis', result.toolOutcomes ?? []);
       if (opts.signal?.aborted) {
         return {
           ok: false,

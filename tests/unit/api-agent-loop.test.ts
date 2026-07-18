@@ -134,6 +134,54 @@ describe('runApiAgentLoop', () => {
       expect(toolEntry).toBeTruthy();
       expect(String(toolEntry?.content)).toContain('Tool loop failed before producing a result');
       expect(secondStepHistory.some((entry: any) => entry.role === 'tool' && entry.tool_call_id === toolCallId)).toBe(true);
+
+      // INVARIANT (finding 3): a throw-before-execute (the onToolCall listener
+      // exploding) still counts one tool call — and it must carry EXACTLY one
+      // native outcome, not increment totalToolCalls with no ledger outcome.
+      expect(result.toolCalls).toBe(1);
+      const nativeOutcomes = (result.toolOutcomes ?? []).filter((o) => o.provenance === 'native');
+      expect(nativeOutcomes).toHaveLength(result.toolCalls);
+      expect(nativeOutcomes[0]).toMatchObject({ tool: 'Read', status: 'error' });
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('records exactly one native outcome for a semaphore-abort pre-execution failure (invariant)', async () => {
+    const cwd = join(tmpdir(), `agon-api-agent-loop-sem-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(cwd, { recursive: true });
+
+    // A heavy-tool semaphore whose waiter is rejected on abort BEFORE the tool
+    // runs — the exact seam where totalToolCalls++ used to happen with no outcome.
+    const abortingSemaphore = {
+      runWith: async () => {
+        const e: any = new Error('aborted while queued for heavy-tool slot');
+        e.name = 'AbortError';
+        throw e;
+      },
+    };
+
+    apiStreamDispatchWithHistoryMock
+      .mockImplementationOnce(() => streamChunks(['<tool name="Bash">{"command":"npm test"}</tool>']))
+      .mockImplementationOnce(() => streamChunks(['done after semaphore abort']));
+
+    try {
+      const result = await runApiAgentLoop({
+        api: { baseUrl: 'https://example.invalid/v1', apiKeyEnv: 'AGON_TEST_API_KEY', model: 'test-model' },
+        prompt: 'run a heavy tool',
+        cwd,
+        timeout: 120,
+        maxSteps: 3,
+        heavyToolSemaphore: abortingSemaphore as any,
+      });
+
+      expect(result.response).toBe('done after semaphore abort');
+      // The aborted heavy call is still counted as one tool call...
+      expect(result.toolCalls).toBe(1);
+      // ...and now carries EXACTLY one native error outcome (no silent gap).
+      const nativeOutcomes = (result.toolOutcomes ?? []).filter((o) => o.provenance === 'native');
+      expect(nativeOutcomes).toHaveLength(result.toolCalls);
+      expect(nativeOutcomes[0]).toMatchObject({ tool: 'Bash', status: 'error' });
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

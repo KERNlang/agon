@@ -23,6 +23,7 @@
 import from="node:crypto" names="randomUUID,randomBytes"
 import from="../api/agent-loop.js" names="runApiAgentLoop"
 import from="../api/agent-loop.js" names="ApiAgentOptions,ApiAgentResult" types=true
+import from="../signals/delegate-ledger.js" names="recordApiLoopDispatch"
 import from="../api/dispatch.js" names="ApiConfig" types=true
 import from="./context-thread.js" names="ContextThread" types=true
 import from="../forge/virtual-fs.js" names="VirtualFS,createFileSnapshot,scoreEffectPackage,applyEffectPackage,relocateEffectPackage,effectPackageDiff"
@@ -183,6 +184,10 @@ service name=Speculator export=true
           const cancelled = !!opts.signal?.aborted;
           result = { response: '', toolCalls: 0, steps: 0, failed: !cancelled, cancelled, errorReason: err?.message ?? String(err) };
         }
+
+        // Delegate tool ledger (2b): one api-loop record per speculator member
+        // run, carrying native per-call outcomes. Best-effort — never throws.
+        recordApiLoopDispatch(member.engineId, 'speculate', result.toolOutcomes ?? []);
 
         // Read/Edit/Write tool calls have mutated vfs.overlay; Bash changes
         // live in memberCwd when isolate=true and are picked up via git diff.

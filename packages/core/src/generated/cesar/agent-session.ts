@@ -4,6 +4,8 @@ import { runApiAgentLoop } from '../api/agent-loop.js';
 
 import type { ApiAgentOptions, ApiAgentResult } from '../api/agent-loop.js';
 
+import { recordApiLoopDispatch } from '../signals/delegate-ledger.js';
+
 import type { ApiConfig } from '../api/dispatch.js';
 
 import { estimateTokens, estimateCost } from '../signals/token-tracker.js';
@@ -18,14 +20,14 @@ import { hostNowMs } from '../blocks/host-runtime.js';
 
 import type { ContextThread } from './context-thread.js';
 
-// @kern-source: agent-session:28
+// @kern-source: agent-session:29
 export interface AgentBudget {
   maxTurns: number;
   maxTokens?: number;
   maxDurationMs: number;
 }
 
-// @kern-source: agent-session:35
+// @kern-source: agent-session:36
 export interface AgentStepResult {
   response: string;
   toolCalls: number;
@@ -37,7 +39,7 @@ export interface AgentStepResult {
   engineFault?: boolean;
 }
 
-// @kern-source: agent-session:47
+// @kern-source: agent-session:48
 export interface AgentSessionStats {
   turnsUsed: number;
   turnsRemaining: number;
@@ -50,7 +52,7 @@ export interface AgentSessionStats {
   state: 'idle'|'running'|'completed'|'cancelled'|'failed';
 }
 
-// @kern-source: agent-session:60
+// @kern-source: agent-session:61
 export interface AgentSessionConfig {
   engineId: string;
   api: ApiConfig;
@@ -72,7 +74,7 @@ export interface AgentSessionConfig {
 /**
  * Create a typed budget-exceeded error. Kind is attached to error.name for structural matching.
  */
-// @kern-source: agent-session:79
+// @kern-source: agent-session:80
 export function makeBudgetError(kind: 'turns'|'tokens'|'duration', detail: string): Error {
   const err = new Error(`Agent budget exceeded: ${kind} — ${detail}`);
   err.name = `AgentBudget${kind.charAt(0).toUpperCase() + kind.slice(1)}Exceeded`;
@@ -82,7 +84,7 @@ export function makeBudgetError(kind: 'turns'|'tokens'|'duration', detail: strin
 /**
  * Stateful agent invocation wrapper with budget enforcement and abort. Phase 1: API engines only.
  */
-// @kern-source: agent-session:88
+// @kern-source: agent-session:89
 export class AgentSession {
   private config: AgentSessionConfig;
   private turnsUsed: number = 0;
@@ -278,6 +280,10 @@ export class AgentSession {
         error: err?.message ?? String(err),
       };
     }
+
+    // Delegate tool ledger (2b): record one api-loop record per completed
+    // inner loop with native per-call outcomes. Best-effort — never throws.
+    recordApiLoopDispatch(this.config.engineId, 'agent', result.toolOutcomes ?? []);
 
     // If abort fired mid-stream, runApiAgentLoop may have returned a partial
     // response without throwing. Detect that here.

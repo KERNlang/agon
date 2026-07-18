@@ -142,6 +142,18 @@ export type {
 } from './context-parts.js';
 export { runApiAgentLoop } from './generated/api/agent-loop.js';
 export type { ApiAgentOptions, ApiAgentResult } from './generated/api/agent-loop.js';
+// ── Delegate tool ledger — per-dispatch per-backend tool-outcome ledger ──
+export {
+  recordDelegateDispatch, recordApiLoopDispatch, recordTextTransportDispatch,
+  readDelegateLedgerRecords, summarizeDelegateReliability, summarizeDelegateReliabilityByEngine,
+  deriveOutcomeCounts, delegateLedgerPath, buildApiLoopDigest, textTransportDigest,
+  formatDelegateReliability, formatAllDelegateReliability,
+} from './generated/signals/delegate-ledger.js';
+export type {
+  AgentToolOutcome, DelegateToolStatus, DelegateBackend, OutcomeProvenance,
+  DelegateOutcomeCounts, DelegateLedgerRecord, DelegateBackendSummary,
+  DelegateReliabilitySummary, TextTransportOpts,
+} from './generated/signals/delegate-ledger.js';
 export { safeAgentVisibleText } from './generated/api/agent-visible.js';
 // ── Engine dispatch isolation ──
 export { resolveIsolationMode, planEngineIsolation, isValidIsolationMode, ISOLATION_MODES } from './generated/signals/isolation.js';

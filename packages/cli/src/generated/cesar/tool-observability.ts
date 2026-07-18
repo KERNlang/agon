@@ -4,11 +4,13 @@ import { appendFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
 
 import { join } from 'node:path';
 
-import { RUNS_DIR, agonPath } from '@kernlang/agon-core';
+import { RUNS_DIR, agonPath, isReadOnlyCommand } from '@kernlang/agon-core';
 
 import { hostDateMs, hostNowIso, hostNowMs } from '../lib/kern-host.js';
 
-// @kern-source: tool-observability:12
+import { isBashToolName, isWriteToolName } from './brain-helpers.js';
+
+// @kern-source: tool-observability:13
 export interface CesarApprovalLedgerRecord {
   turnId?: string;
   engineId?: string;
@@ -22,7 +24,7 @@ export interface CesarApprovalLedgerRecord {
   args?: Record<string,unknown>|string;
 }
 
-// @kern-source: tool-observability:24
+// @kern-source: tool-observability:25
 export interface CesarToolTimelineRecord {
   turnId: string;
   event: 'turn_start'|'turn_summary'|'tool_call'|'tool_result'|'approval_decision'|'xml_interrupt'|'steering_injected';
@@ -35,9 +37,10 @@ export interface CesarToolTimelineRecord {
   input?: Record<string,unknown>|string;
   output?: string;
   summary?: Record<string,unknown>;
+  effect?: 'read'|'write'|'bash-read'|'bash-write';
 }
 
-// @kern-source: tool-observability:37
+// @kern-source: tool-observability:39
 export interface CesarHarnessReplayResult {
   turnCount: number;
   eventCount: number;
@@ -47,7 +50,7 @@ export interface CesarHarnessReplayResult {
   turns: Array<Record<string,unknown>>;
 }
 
-// @kern-source: tool-observability:45
+// @kern-source: tool-observability:47
 export interface CesarConfidenceRecord {
   sessionId: string;
   turnId?: string;
@@ -61,17 +64,47 @@ export interface CesarConfidenceRecord {
 /**
  * Create a short stable-enough id for joining per-turn tool timeline and approval ledger records.
  */
-// @kern-source: tool-observability:53
+// @kern-source: tool-observability:55
 export function createCesarTurnId(): string {
   return `cesar-${hostNowMs().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-// @kern-source: tool-observability:56
+// @kern-source: tool-observability:58
+export const READ_ONLY_TOOL_NAMES: Set<string> = new Set(['read', 'read_file', 'view_file', 'cat', 'grep', 'search', 'glob', 'find', 'ls', 'webfetch', 'websearch', 'retrieveresult', 'listplans', 'reportconfidence', 'todowrite']);
+
+/**
+ * Classify a timeline tool event by effect class so the ledger can split read-only exploration from mutations. Bash splits on isReadOnlyCommand (same predicate the permission system uses) after unwrapping JSON-encoded inputs — the native stream path supplies input as the raw JSON args string, which must never be fed to the predicate wholesale; a command-less or unparseable Bash input fails CLOSED to bash-write, never read. Write tools (Edit/Write/MultiEdit/NotebookEdit + Agon-prefixed aliases) are 'write'; only tools on the explicit read-only list are 'read'. Everything else (Agent, MCP tools, SaveMemory, …) and tool-less events (turn_start, interrupts) return undefined so an unknown-effect tool can NEVER masquerade as read-only — replay shows it as 'unknown'.
+ */
+// @kern-source: tool-observability:60
+export function classifyCesarToolEffect(tool: string|undefined, input: Record<string,unknown>|string|undefined): 'read'|'write'|'bash-read'|'bash-write'|undefined {
+  const name = String(tool ?? '');
+  if (!name) return undefined;
+  if (isWriteToolName(name)) return 'write';
+  if (isBashToolName(name)) {
+    let command = typeof input === 'string'
+      ? input
+      : String((input as any)?.command ?? '');
+    const trimmed = command.trim();
+    if (trimmed.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          command = String((parsed as any).command ?? (parsed as any).cmd ?? '');
+        }
+      } catch {}
+    }
+    return command && isReadOnlyCommand(command) ? 'bash-read' : 'bash-write';
+  }
+  const bare = name.toLowerCase().startsWith('agon') ? name.slice(4) : name;
+  return READ_ONLY_TOOL_NAMES.has(bare.toLowerCase()) ? 'read' : undefined;
+}
+
+// @kern-source: tool-observability:85
 function looksSensitiveString(value: string): boolean {
   return /(?:secret|token|password|credential|api[_-]?key|private[_-]?key)[ \t\n\r\f\v]*[:=]/i.test(value) || /-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(value) || /\b(?:sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9_]{16,}|AKIA[0-9A-Z]{16})\b/.test(value);
 }
 
-// @kern-source: tool-observability:60
+// @kern-source: tool-observability:89
 function summarizeCommandString(value: string): Record<string,unknown> {
   const raw = String(value ?? '').trim();
   const first = raw.split(/[ \t\n\r\f\v]+/)[0] ?? '';
@@ -80,7 +113,7 @@ function summarizeCommandString(value: string): Record<string,unknown> {
   return { commandBase: base, chars: raw.length, redactedPreview: true, sensitive: sensitive || undefined };
 }
 
-// @kern-source: tool-observability:68
+// @kern-source: tool-observability:97
 function summarizeValue(key: string, value: unknown): unknown {
   const lower = key.toLowerCase();
   if (/(secret|token|password|credential|api[_-]?key|private[_-]?key|content|old_string|new_string)/i.test(lower)) {
@@ -113,7 +146,7 @@ function summarizeValue(key: string, value: unknown): unknown {
 /**
  * Summarize tool input/output payloads for logs without storing full file contents or large blobs.
  */
-// @kern-source: tool-observability:89
+// @kern-source: tool-observability:118
 export function summarizeToolPayload(payload: Record<string,unknown>|string|undefined): Record<string,unknown>|undefined {
   if (payload === undefined) return undefined;
   if (typeof payload === 'string') {
@@ -139,7 +172,7 @@ export function summarizeToolPayload(payload: Record<string,unknown>|string|unde
 /**
  * Format a failed tool result into a Cesar-facing diagnostic: tool name + a redacted, length-capped input snippet + the error. Reuses summarizeToolPayload so secrets/large blobs never land in the snippet.
  */
-// @kern-source: tool-observability:113
+// @kern-source: tool-observability:142
 export function buildToolErrorDiagnostic(name: string, args: Record<string,unknown>|string|undefined, error: string|undefined): string {
   let inputSnippet: string;
   try {
@@ -159,7 +192,7 @@ export function buildToolErrorDiagnostic(name: string, args: Record<string,unkno
   return `Tool ${name} failed.\nInput (redacted): ${inputSnippet}\nError: ${errMsg}`;
 }
 
-// @kern-source: tool-observability:134
+// @kern-source: tool-observability:163
 function appendCesarJsonl(fileName: string, record: Record<string,unknown>, runsDir?: string): void {
   const dir = runsDir ?? RUNS_DIR;
   mkdirSync(dir, { recursive: true });
@@ -169,7 +202,7 @@ function appendCesarJsonl(fileName: string, record: Record<string,unknown>, runs
 /**
  * Append one permission decision to the persistent Cesar approval ledger. Best-effort: failures are swallowed by callers.
  */
-// @kern-source: tool-observability:140
+// @kern-source: tool-observability:169
 export function recordCesarApprovalDecision(record: CesarApprovalLedgerRecord, runsDir?: string): void {
   try {
     const argsSummary = summarizeToolPayload(record.args);
@@ -190,9 +223,9 @@ export function recordCesarApprovalDecision(record: CesarApprovalLedgerRecord, r
 }
 
 /**
- * Append one compact per-turn tool timeline event. Best-effort and payload-summarized.
+ * Append one compact per-turn tool timeline event. Best-effort and payload-summarized. Stamps the effect class (read/write/bash-read/bash-write) so replay can split exploration from mutation without re-deriving it.
  */
-// @kern-source: tool-observability:161
+// @kern-source: tool-observability:190
 export function recordCesarToolTimeline(record: CesarToolTimelineRecord, runsDir?: string): void {
   try {
     appendCesarJsonl('cesar-tool-timeline.jsonl', {
@@ -210,6 +243,7 @@ export function recordCesarToolTimeline(record: CesarToolTimelineRecord, runsDir
         ? { redacted: true, chars: record.output.length }
         : undefined,
       summary: record.summary,
+      effect: record.effect ?? classifyCesarToolEffect(record.tool, record.input),
     }, runsDir);
   } catch { /* observability must never block tools */ }
 }
@@ -217,7 +251,7 @@ export function recordCesarToolTimeline(record: CesarToolTimelineRecord, runsDir
 /**
  * Append one reported-confidence snapshot to ~/.agon/calibration/<sessionId>.jsonl (data-only — no scoring, no outcome judgment). Best-effort: failures are swallowed by callers.
  */
-// @kern-source: tool-observability:184
+// @kern-source: tool-observability:214
 export function recordCesarConfidence(record: CesarConfidenceRecord): void {
   try {
     // sessionId becomes a filename component — reject anything that could escape the
@@ -249,7 +283,7 @@ export function recordCesarConfidence(record: CesarConfidenceRecord): void {
   } catch { /* observability must never block tools */ }
 }
 
-// @kern-source: tool-observability:217
+// @kern-source: tool-observability:247
 function readJsonlRecords(filePath: string): Array<Record<string,unknown>> {
   if (!existsSync(filePath)) {
     return [];
@@ -273,7 +307,7 @@ function readJsonlRecords(filePath: string): Array<Record<string,unknown>> {
   return out;
 }
 
-// @kern-source: tool-observability:235
+// @kern-source: tool-observability:265
 function eventTimeMs(record: Record<string,unknown>): number {
   const ts = (typeof record.ts === 'string') ? hostDateMs(record.ts) : NaN;
   return Number.isFinite(ts) ? ts : 0;
@@ -282,7 +316,7 @@ function eventTimeMs(record: Record<string,unknown>): number {
 /**
  * Replay the compact Cesar approval ledger and tool timeline into a readable per-turn summary. This is the CLI/UI surface for post-mortem harness debugging.
  */
-// @kern-source: tool-observability:240
+// @kern-source: tool-observability:270
 export function replayCesarHarnessLogs(opts?: {runsDir?:string,turnId?:string,limit?:number}): CesarHarnessReplayResult {
   const dir = opts?.runsDir ?? RUNS_DIR;
   const limitRaw = Number(opts?.limit ?? 5);
@@ -317,6 +351,19 @@ export function replayCesarHarnessLogs(opts?: {runsDir?:string,turnId?:string,li
     const interruptCount = events.filter((e) => e.event === 'xml_interrupt').length;
     const approvalsForTurn = approvalByTurn.get(turnId) ?? [];
     const lastEvent = events[events.length - 1] ?? start;
+    // Effect-class split: mutation = write/bash-write events; exploration = read/bash-read.
+    // Old records without an effect stamp classify as 'unknown' so they never masquerade as reads.
+    // Counted over SUCCESSFUL tool_result (terminal) events only — tool_call rows are the
+    // 'running' state, so counting them would report attempts (including failed/denied
+    // writes and repeated running updates) as if they had changed the workspace.
+    const toolCallEvents = toolEvents.filter((e) => e.event === 'tool_call');
+    const toolResultEvents = toolEvents.filter((e) => e.event === 'tool_result');
+    const effectOf = (e: Record<string, unknown>) => String(e.effect ?? 'unknown');
+    const succeeded = (e: Record<string, unknown>) => /^(?:done|ok|completed|success|succeeded)$/i.test(String(e.status ?? ''));
+    const isMutating = (e: Record<string, unknown>) => effectOf(e) === 'write' || effectOf(e) === 'bash-write';
+    const mutationEvents = toolResultEvents.filter((e) => succeeded(e) && isMutating(e));
+    const failedMutationCount = toolResultEvents.filter((e) => !succeeded(e) && isMutating(e)).length;
+    const readOnlyEventCount = toolResultEvents.filter((e) => succeeded(e) && (effectOf(e) === 'read' || effectOf(e) === 'bash-read')).length;
     return {
       turnId,
       ts: start.ts ?? lastEvent.ts,
@@ -325,8 +372,12 @@ export function replayCesarHarnessLogs(opts?: {runsDir?:string,turnId?:string,li
       durationMs: summary?.durationMs,
       eventCount: events.length,
       toolEventCount: toolEvents.length,
-      toolCallCount: toolEvents.filter((e) => e.event === 'tool_call').length,
+      toolCallCount: toolCallEvents.length,
       toolResultCount: toolEvents.filter((e) => e.event === 'tool_result').length,
+      mutationCount: mutationEvents.length,
+      failedMutationCount,
+      readOnlyCount: readOnlyEventCount,
+      mutatingTools: [...new Set(mutationEvents.map((e) => String(e.tool ?? '')).filter(Boolean))],
       approvalCount: approvalsForTurn.length,
       xmlInterrupts: interruptCount,
       tools: [...new Set(toolEvents.map((e) => String(e.tool ?? '')).filter(Boolean))],
@@ -354,8 +405,15 @@ export function replayCesarHarnessLogs(opts?: {runsDir?:string,turnId?:string,li
     const tools = Array.isArray(turn.tools) && turn.tools.length > 0 ? (turn.tools as string[]).join(', ') : 'no tools';
     lines.push('');
     lines.push(`Turn ${turn.turnId}`);
-    lines.push(`  engine=${turn.engineId ?? 'unknown'} ${duration} events=${turn.eventCount} tools=${turn.toolEventCount} approvals=${turn.approvalCount} xmlInterrupts=${turn.xmlInterrupts}`);
+    // tools= counts distinct calls, not call+result rows: a turn with N calls
+    // that each logged running+done would otherwise read as tools=2N.
+    const distinctCalls = Math.max(Number(turn.toolCallCount ?? 0), Number(turn.toolResultCount ?? 0));
+    lines.push(`  engine=${turn.engineId ?? 'unknown'} ${duration} events=${turn.eventCount} tools=${distinctCalls} approvals=${turn.approvalCount} xmlInterrupts=${turn.xmlInterrupts}`);
+    const failedMutations = Number(turn.failedMutationCount ?? 0);
+    lines.push(`  effects: ${turn.mutationCount ?? 0} mutating · ${turn.readOnlyCount ?? 0} read-only${failedMutations > 0 ? ` · ${failedMutations} failed mutation attempt(s)` : ''}`);
     lines.push(`  tools: ${tools}`);
+    const mutating = Array.isArray(turn.mutatingTools) && turn.mutatingTools.length > 0 ? (turn.mutatingTools as string[]).join(', ') : '';
+    if (mutating) lines.push(`  writes: ${mutating}`);
     const turnApprovals = Array.isArray(turn.approvals) ? turn.approvals as Array<Record<string, unknown>> : [];
     for (const approval of turnApprovals.slice(0, 5)) {
       lines.push(`  approval: ${approval.tool ?? 'tool'} ${approval.decision ?? 'unknown'} via ${approval.source ?? 'unknown'}${approval.reason ? ` - ${approval.reason}` : ''}`);

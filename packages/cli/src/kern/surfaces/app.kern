@@ -906,7 +906,7 @@ screen name=App target=ink
 
   callback name=interruptActiveRun params="message:string, clearChat:boolean" deps="replState,dispatch,trackAbort,outputActions"
     handler lang="kern"
-      do value="runInterruptActiveRun({ activeAbortRef, activePlanRef, activeTurnRef, interruptedTurnRef, cesarRuntimeHost: cesarRuntimeHostRef.current, jobManager, setActiveAbort, setActivePlan, setJobList, setLiveSpinner, setLiveProgress, outputActions, setQuestionState, setQuestionAnswer, setPendingPlanProposal, setSlashPickerOpen, setEnginePickerOpen, setModelPickerOpen, setCesarPickerOpen, setReviewEvent, replState, dispatch, setReplState, pendingBellRef, bell, setWindowTitle }, message, clearChat)"
+      do value="runInterruptActiveRun({ activeAbortRef, activePlanRef, activeTurnRef, interruptedTurnRef, cesarRuntimeHost: cesarRuntimeHostRef.current, jobManager, setActiveAbort, setActivePlan, setJobList, setLiveSpinner, setLiveProgress, outputActions, setQuestionState, setQuestionAnswer, setPendingPlanProposal, setSlashPickerOpen, setEnginePickerOpen, setModelPickerOpen, setCesarPickerOpen, setReviewEvent, replState, dispatch, setReplState, pendingBellRef, bell, setWindowTitle, setInputQueue }, message, clearChat)"
 
   callback name=buildContext params="" deps="registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,extensionPromptFragments,sessionMcpServers,autoModeQueued,telemetryVitals,recentFallbacks,setActivePlanWrapped"
     handler <<<

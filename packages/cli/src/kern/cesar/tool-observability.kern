@@ -6,8 +6,9 @@
 
 import from="node:fs" names="appendFileSync,mkdirSync,existsSync,readFileSync"
 import from="node:path" names="join"
-import from="@kernlang/agon-core" names="RUNS_DIR,agonPath"
+import from="@kernlang/agon-core" names="RUNS_DIR,agonPath,isReadOnlyCommand"
 import from="../lib/kern-host.js" names="hostDateMs,hostNowIso,hostNowMs"
+import from="./brain-helpers.js" names="isBashToolName,isWriteToolName"
 
 interface name=CesarApprovalLedgerRecord export=true
   field name=turnId type=string optional=true
@@ -33,6 +34,7 @@ interface name=CesarToolTimelineRecord export=true
   field name=input type="Record<string,unknown>|string" optional=true
   field name=output type=string optional=true
   field name=summary type="Record<string,unknown>" optional=true
+  field name=effect type="'read'|'write'|'bash-read'|'bash-write'" optional=true
 
 interface name=CesarHarnessReplayResult export=true
   field name=turnCount type=number
@@ -52,6 +54,33 @@ interface name=CesarConfidenceRecord export=true
 module name=CesarToolPayloadSummaries
   fn name=createCesarTurnId returns=string export=true expr={{ return `cesar-${hostNowMs().toString(36)}-${Math.random().toString(36).slice(2, 8)}`; }}
     doc "Create a short stable-enough id for joining per-turn tool timeline and approval ledger records."
+
+  const name=READ_ONLY_TOOL_NAMES type="Set<string>" value={{ new Set(['read', 'read_file', 'view_file', 'cat', 'grep', 'search', 'glob', 'find', 'ls', 'webfetch', 'websearch', 'retrieveresult', 'listplans', 'reportconfidence', 'todowrite']) }}
+
+  fn name=classifyCesarToolEffect params="tool:string|undefined,input:Record<string,unknown>|string|undefined" returns="'read'|'write'|'bash-read'|'bash-write'|undefined" export=true
+    doc "Classify a timeline tool event by effect class so the ledger can split read-only exploration from mutations. Bash splits on isReadOnlyCommand (same predicate the permission system uses) after unwrapping JSON-encoded inputs — the native stream path supplies input as the raw JSON args string, which must never be fed to the predicate wholesale; a command-less or unparseable Bash input fails CLOSED to bash-write, never read. Write tools (Edit/Write/MultiEdit/NotebookEdit + Agon-prefixed aliases) are 'write'; only tools on the explicit read-only list are 'read'. Everything else (Agent, MCP tools, SaveMemory, …) and tool-less events (turn_start, interrupts) return undefined so an unknown-effect tool can NEVER masquerade as read-only — replay shows it as 'unknown'."
+    handler <<<
+      const name = String(tool ?? '');
+      if (!name) return undefined;
+      if (isWriteToolName(name)) return 'write';
+      if (isBashToolName(name)) {
+        let command = typeof input === 'string'
+          ? input
+          : String((input as any)?.command ?? '');
+        const trimmed = command.trim();
+        if (trimmed.startsWith('{')) {
+          try {
+            const parsed = JSON.parse(trimmed);
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+              command = String((parsed as any).command ?? (parsed as any).cmd ?? '');
+            }
+          } catch {}
+        }
+        return command && isReadOnlyCommand(command) ? 'bash-read' : 'bash-write';
+      }
+      const bare = name.toLowerCase().startsWith('agon') ? name.slice(4) : name;
+      return READ_ONLY_TOOL_NAMES.has(bare.toLowerCase()) ? 'read' : undefined;
+    >>>
 
   fn name=looksSensitiveString params="value:string" returns=boolean export=false
     handler lang="kern"
@@ -159,7 +188,7 @@ module name=CesarToolPayloadSummaries
     >>>
 
   fn name=recordCesarToolTimeline params="record:CesarToolTimelineRecord,runsDir?:string" returns=void export=true
-    doc "Append one compact per-turn tool timeline event. Best-effort and payload-summarized."
+    doc "Append one compact per-turn tool timeline event. Best-effort and payload-summarized. Stamps the effect class (read/write/bash-read/bash-write) so replay can split exploration from mutation without re-deriving it."
     handler <<<
       try {
         appendCesarJsonl('cesar-tool-timeline.jsonl', {
@@ -177,6 +206,7 @@ module name=CesarToolPayloadSummaries
             ? { redacted: true, chars: record.output.length }
             : undefined,
           summary: record.summary,
+          effect: record.effect ?? classifyCesarToolEffect(record.tool, record.input),
         }, runsDir);
       } catch { /* observability must never block tools */ }
     >>>
@@ -273,6 +303,19 @@ module name=CesarToolPayloadSummaries
         const interruptCount = events.filter((e) => e.event === 'xml_interrupt').length;
         const approvalsForTurn = approvalByTurn.get(turnId) ?? [];
         const lastEvent = events[events.length - 1] ?? start;
+        // Effect-class split: mutation = write/bash-write events; exploration = read/bash-read.
+        // Old records without an effect stamp classify as 'unknown' so they never masquerade as reads.
+        // Counted over SUCCESSFUL tool_result (terminal) events only — tool_call rows are the
+        // 'running' state, so counting them would report attempts (including failed/denied
+        // writes and repeated running updates) as if they had changed the workspace.
+        const toolCallEvents = toolEvents.filter((e) => e.event === 'tool_call');
+        const toolResultEvents = toolEvents.filter((e) => e.event === 'tool_result');
+        const effectOf = (e: Record<string, unknown>) => String(e.effect ?? 'unknown');
+        const succeeded = (e: Record<string, unknown>) => /^(?:done|ok|completed|success|succeeded)$/i.test(String(e.status ?? ''));
+        const isMutating = (e: Record<string, unknown>) => effectOf(e) === 'write' || effectOf(e) === 'bash-write';
+        const mutationEvents = toolResultEvents.filter((e) => succeeded(e) && isMutating(e));
+        const failedMutationCount = toolResultEvents.filter((e) => !succeeded(e) && isMutating(e)).length;
+        const readOnlyEventCount = toolResultEvents.filter((e) => succeeded(e) && (effectOf(e) === 'read' || effectOf(e) === 'bash-read')).length;
         return {
           turnId,
           ts: start.ts ?? lastEvent.ts,
@@ -281,8 +324,12 @@ module name=CesarToolPayloadSummaries
           durationMs: summary?.durationMs,
           eventCount: events.length,
           toolEventCount: toolEvents.length,
-          toolCallCount: toolEvents.filter((e) => e.event === 'tool_call').length,
+          toolCallCount: toolCallEvents.length,
           toolResultCount: toolEvents.filter((e) => e.event === 'tool_result').length,
+          mutationCount: mutationEvents.length,
+          failedMutationCount,
+          readOnlyCount: readOnlyEventCount,
+          mutatingTools: [...new Set(mutationEvents.map((e) => String(e.tool ?? '')).filter(Boolean))],
           approvalCount: approvalsForTurn.length,
           xmlInterrupts: interruptCount,
           tools: [...new Set(toolEvents.map((e) => String(e.tool ?? '')).filter(Boolean))],
@@ -310,8 +357,15 @@ module name=CesarToolPayloadSummaries
         const tools = Array.isArray(turn.tools) && turn.tools.length > 0 ? (turn.tools as string[]).join(', ') : 'no tools';
         lines.push('');
         lines.push(`Turn ${turn.turnId}`);
-        lines.push(`  engine=${turn.engineId ?? 'unknown'} ${duration} events=${turn.eventCount} tools=${turn.toolEventCount} approvals=${turn.approvalCount} xmlInterrupts=${turn.xmlInterrupts}`);
+        // tools= counts distinct calls, not call+result rows: a turn with N calls
+        // that each logged running+done would otherwise read as tools=2N.
+        const distinctCalls = Math.max(Number(turn.toolCallCount ?? 0), Number(turn.toolResultCount ?? 0));
+        lines.push(`  engine=${turn.engineId ?? 'unknown'} ${duration} events=${turn.eventCount} tools=${distinctCalls} approvals=${turn.approvalCount} xmlInterrupts=${turn.xmlInterrupts}`);
+        const failedMutations = Number(turn.failedMutationCount ?? 0);
+        lines.push(`  effects: ${turn.mutationCount ?? 0} mutating · ${turn.readOnlyCount ?? 0} read-only${failedMutations > 0 ? ` · ${failedMutations} failed mutation attempt(s)` : ''}`);
         lines.push(`  tools: ${tools}`);
+        const mutating = Array.isArray(turn.mutatingTools) && turn.mutatingTools.length > 0 ? (turn.mutatingTools as string[]).join(', ') : '';
+        if (mutating) lines.push(`  writes: ${mutating}`);
         const turnApprovals = Array.isArray(turn.approvals) ? turn.approvals as Array<Record<string, unknown>> : [];
         for (const approval of turnApprovals.slice(0, 5)) {
           lines.push(`  approval: ${approval.tool ?? 'tool'} ${approval.decision ?? 'unknown'} via ${approval.source ?? 'unknown'}${approval.reason ? ` - ${approval.reason}` : ''}`);

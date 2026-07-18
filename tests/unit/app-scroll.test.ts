@@ -254,14 +254,14 @@ describe('app scroll helpers', () => {
     expect(text).toContain('Cesar recap');
     expect(text).toContain('Done');
     expect(text).toContain('91% confidence');
-    // Clean turn: the per-command list is gone; the tool rollup line renders and
-    // there are no failure / non-fatal markers (every tool succeeded).
-    expect(text).toContain('3 tools: Confidence, Bash, Edit');
+    // Clean turn: one combined summary line (changes · checks · tool count);
+    // no per-tool breakdown and no failure / non-fatal markers.
+    expect(text).toContain('~1 edited · ✓ tests · 3 tools');
+    expect(text).not.toContain('3 tools:');
     expect(text).not.toContain('non-fatal');
-    expect(text).toContain('workspace: ~1 edited');
     expect(text).toContain('a.ts');
-    expect(text).toContain('checkpoint: abc12345');
-    expect(text).toContain('/undo abc12345');
+    expect(text).toContain('undo: /undo abc12345');
+    expect(text).not.toContain('reverts checkpoint');
     expect(text).toContain('+new');
   });
 
@@ -284,9 +284,9 @@ describe('app scroll helpers', () => {
     const text = transcriptRowsToPlainText(rows, 0, 0, rows.length - 1, 999);
 
     expect(text).toContain('Done');
-    expect(text).toContain('workspace: unchanged');
-    expect(text).toContain('verified: ✓ compile · ✓ build · ✓ typecheck');
-    expect(text).toContain('5 tools: Bash x5 · 2 skipped');
+    expect(text).toContain('no file changes');
+    expect(text).toContain('✓ compile · ✓ build · ✓ typecheck');
+    expect(text).toContain('5 tools (2 skipped)');
     expect(text).not.toContain('failed');
     expect(text).not.toContain('non-fatal');
     expect(text).not.toContain('explored only');
@@ -303,7 +303,7 @@ describe('app scroll helpers', () => {
     const text = transcriptRowsToPlainText(rows, 0, 0, rows.length - 1, 999);
 
     expect(text).toContain('Done');
-    expect(text).toContain('1 tools: Read · 1 non-fatal');
+    expect(text).toContain('1 tool (1 non-fatal)');
   });
 
   it('keeps failed verification visible in the Cesar recap', () => {
@@ -316,11 +316,10 @@ describe('app scroll helpers', () => {
     const rows = buildTranscriptRows([{ id: 1, event } as any], 'chat', false, true);
     const text = transcriptRowsToPlainText(rows, 0, 0, rows.length - 1, 999);
 
-    expect(text).toContain('verification failed');
-    expect(text).toContain('typecheck');
+    expect(text).toContain('✗ typecheck');
   });
 
-  it('caps the Cesar recap tool rollup at eight entries with an overflow marker', () => {
+  it('keeps the Cesar recap tool line to a bare count (no per-tool breakdown)', () => {
     const toolSummary = Array.from({ length: 10 }, (_, index) => `Tool${index + 1}`);
     const event = {
       type: 'cesar-recap', outcome: 'Done', mode: 'self', terminalState: 'completed',
@@ -330,9 +329,8 @@ describe('app scroll helpers', () => {
     const rows = buildTranscriptRows([{ id: 1, event } as any], 'chat', false, true);
     const text = transcriptRowsToPlainText(rows, 0, 0, rows.length - 1, 999);
 
-    expect(text).toContain('10 tools: Tool1, Tool2, Tool3, Tool4, Tool5, Tool6, Tool7, Tool8, ...');
-    expect(text).not.toContain('Tool9');
-    expect(text).not.toContain('Tool10');
+    expect(text).toContain('10 tools');
+    expect(text).not.toMatch(/Tool\d/);
   });
 
   it('replays terminal render snapshots across native and fullscreen sizes', () => {

@@ -31,7 +31,8 @@
 import from="@kernlang/agon-core" names="saveCesarPlan,cancelCesarPlan"
 import from="@kernlang/agon-core" names="PersistentSession" types=true
 import from="../cesar/pause-state.js" names="createPauseState,dismissPauseState"
-import from="../cesar/steering.js" names="clearSteering"
+import from="../cesar/steering.js" names="drainLeftoverSteering,clearSteering"
+import from="./app-submit.js" names="buildInterruptedTurnRedirect"
 import from="../cesar/turn-runtime.js" names="transitionCesarTurn"
 import from="../cesar/pause-state.js" names="PauseState" types=true
 import from="../signals/output.js" names="OutputActions,AgentProgressSnapshot" types=true
@@ -101,6 +102,8 @@ module name=AppInterrupt
     field name=pendingBellRef type="{current: boolean}"
     field name=bell type="() => void"
     field name=setWindowTitle type="(title:string) => void"
+    // ── Steering-harvest on Esc (Claude Code redirect parity) ──
+    field name=setInputQueue type="(updater:(prev:string[]) => string[]) => void"
 
   // Source: new — Esc must also reach delegated work after runAsJob returns the
   // foreground REPL to idle. Prefer the newest queued/running job, matching the
@@ -153,8 +156,22 @@ module name=AppInterrupt
       }
       runTrackAbort(null, opts.activeAbortRef, opts.setActiveAbort);
 
-      // Drop unconsumed mid-turn steering. The next user message is carried as
-      // an explicit redirect instead, so stale queued instructions cannot leak.
+      // Harvest any mid-turn steered messages BEFORE clearing — they carry the
+      // user's latest intent (typed while Cesar worked). Redirect-wrap them
+      // against the just-interrupted turn so the next turn sees them as an
+      // explicit redirect, then queue for the idle drain. Claude Code parity:
+      // Esc + queued text = instant redirect to the next turn, never silent
+      // deletion. When nothing was interrupted (pure idle Esc) the raw text is
+      // queued as-is.
+      const leftover = drainLeftoverSteering();
+      if (leftover.length > 0) {
+        const wrapped = leftover.map(msg =>
+          interruptedInput ? buildInterruptedTurnRedirect(interruptedInput, msg.input, interruptedSource) : msg.input);
+        opts.setInputQueue(prev => [...prev, ...wrapped]);
+      }
+      // Drop any remaining unconsumed steering state (count mirror zeroes → the
+      // "Queued (N)" hint clears). Drafts are untouched — a half-typed draft is
+      // the user's next message and survives the interrupt.
       clearSteering();
       opts.setLiveSpinner(null);
       opts.setLiveProgress(null);

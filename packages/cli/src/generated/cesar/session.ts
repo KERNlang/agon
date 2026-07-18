@@ -36,7 +36,7 @@ import { applyCesarSelfTurnApproval, approvalArgsFromCommand } from './self-turn
 
 import { approvalToolIsFileMutating, buildApprovalDiffPreview } from './approval-diff.js';
 
-import { isActiveCesarTurn, runTurnPermissionOnce, runTurnToolOnce } from './turn-runtime.js';
+import { isActiveCesarTurn, runTurnPermissionOnce, runTurnToolOnce, isReadOnlyToolCall } from './turn-runtime.js';
 
 import { approveTaskAction, claimTaskActionPrompt, isTaskFileMutationAction, taskActionApprovalMessage, isApprovedPermissionResponse } from './task-execution-lease.js';
 
@@ -713,8 +713,16 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
     // Fence correlated callbacks before ANY plan, delegation, confidence, or
     // approval state can mutate. Legacy uncorrelated adapters retain their
     // existing path; once an envelope is present it must own the active lease.
+    //
+    // Read-only tools mutate nothing, so a stale/superseded lease is NOT a
+    // reason to reject them — doing so hard-fails harmless Read/Grep/Glob
+    // whenever the turn advanced between the model's batch and execution
+    // (sibling calls in one response can transition the lease). Run them
+    // against the session without a turn claim; mutation-class tools still
+    // fence strictly below.
     const runtime = ctx.cesarRuntimeHost?.active;
-    if (controlPlane && (!runtime || !isActiveCesarTurn(ctx.cesarRuntimeHost, controlPlane))) {
+    const _isReadOnlyTool = isReadOnlyToolCall(name, args, isReadOnlyCommand);
+    if (controlPlane && !_isReadOnlyTool && (!runtime || !isActiveCesarTurn(ctx.cesarRuntimeHost, controlPlane))) {
       return `Error: [STALE_TURN_REJECTED] ${name} was not executed because its Cesar turn lease expired.`;
     }
     // Plan mode: block execution tools and mutating shell commands before
@@ -1063,7 +1071,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
 /**
  * Build the onApproval callback for engine tool approvals. Returns true to approve, false to deny silently, or a string to deny with a reason the engine can see.
  */
-// @kern-source: session:998
+// @kern-source: session:1006
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string, controlPlane?:any) => Promise<boolean|string> {
   const engine = ctx.registry.get(engineId);
   const evaluateApproval = async (tool: string, command: string): Promise<boolean | string> => {
@@ -1271,7 +1279,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:1207
+// @kern-source: session:1215
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -1305,7 +1313,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:1241
+// @kern-source: session:1249
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
 
@@ -1329,7 +1337,7 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:1265
+// @kern-source: session:1273
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) {
     return false;
@@ -1341,7 +1349,7 @@ export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
-// @kern-source: session:1272
+// @kern-source: session:1280
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -1361,7 +1369,7 @@ export function mcpConfigFingerprint(config: any): string {
 /**
  * Resolve the agon-orchestration MCP server entry. The CLI ships as a tsup BUNDLE that ALSO emits the MCP server to <cli-dist>/mcp/index.js (see tsup.config.ts), so the published install is self-contained — no @kernlang/agon-mcp npm dependency. Resolution order: (0) the bundled sibling <cli-dist>/mcp/index.js (the published, self-contained path), (1) node module resolution of @kernlang/agon-mcp (monorepo-via-symlink / legacy installs), (2) walk up to the repo root containing packages/mcp/dist/index.js (monorepo without a symlink), (3) the original relative guess as a last resort. `fromUrl` is for tests; defaults to this module's URL.
  */
-// @kern-source: session:1290
+// @kern-source: session:1298
 export function resolveAgonMcpServerPath(fromUrl?: string): string {
   const raw = fromUrl ?? import.meta.url;
   // Accept either a file: URL (normal) or a bare path (defensive): fileURLToPath
@@ -1395,7 +1403,7 @@ export function resolveAgonMcpServerPath(fromUrl?: string): string {
 /**
  * Single source of truth for which backend a Cesar engine will actually use. Honours config.cesarBackend preference ('auto' | 'cli' | 'api'). Pure — no side effects beyond registry lookups. Returns backend='none' when the engine has neither a usable binary nor an API key; callers decide how to handle that.
  */
-// @kern-source: session:1322
+// @kern-source: session:1330
 export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { backend: 'cli'|'api'|'none', binaryPath: string, hasBinary: boolean, hasApi: boolean, engine: any } {
   const config = ctx.config;
   const cesarEngineId = engineId ?? (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -1420,7 +1428,7 @@ export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { b
   return { backend: 'none', binaryPath: '', hasBinary, hasApi, engine };
 }
 
-// @kern-source: session:1348
+// @kern-source: session:1356
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

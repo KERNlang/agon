@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { mkdtempSync, existsSync, statSync, readFileSync } from 'node:fs';
+import { mkdtempSync, existsSync, statSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 // Point AGON_HOME at a throwaway home BEFORE anything resolves a path (the event
 // ledger + agonPath resolve at call time, so setting it pre-import is enough).
@@ -293,4 +295,41 @@ describe('agon serve — runtime wiring (integration)', () => {
       await new Promise<void>((r) => blocker.close(() => r()));
     }
   }, 15000);
+});
+
+describe('agon serve process lifecycle', () => {
+  it('exits zero after the first SIGINT', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'agon-serve-signal-'));
+    const cliEntry = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', 'packages', 'cli', 'dist', 'index.js');
+    const child = spawn(process.execPath, [cliEntry, 'serve', '--port', '0', '--emit-connection'], {
+      env: { ...process.env, AGON_HOME: home, AGON_NO_STACK_TRACE_MAPPER: '1' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout?.setEncoding('utf-8');
+    child.stderr?.setEncoding('utf-8');
+    child.stdout?.on('data', (chunk: string) => { stdout += chunk; });
+    child.stderr?.on('data', (chunk: string) => { stderr += chunk; });
+    try {
+      const ready = await new Promise<boolean>((resolve) => {
+        const deadline = setTimeout(() => resolve(false), 10_000);
+        const poll = setInterval(() => {
+          if (!stdout.includes('__AGON_CONNECTION__')) return;
+          clearTimeout(deadline); clearInterval(poll); resolve(true);
+        }, 25);
+      });
+      expect(ready, stderr).toBe(true);
+      child.kill('SIGINT');
+      const exitCode = await Promise.race([
+        new Promise<number | null>((resolve, reject) => { child.once('error', reject); child.once('close', resolve); }),
+        new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 5_000)),
+      ]);
+      expect(exitCode, stderr).toBe(0);
+      expect(stdout).toContain('agon serve stopped');
+    } finally {
+      if (child.exitCode === null) child.kill('SIGKILL');
+      rmSync(home, { recursive: true, force: true });
+    }
+  }, 20_000);
 });

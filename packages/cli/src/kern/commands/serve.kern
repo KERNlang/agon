@@ -271,7 +271,6 @@ fn name=runServe params="port:number, engine:string|undefined, allowedOrigins:st
 
     await new Promise<void>((resolve) => {
       let tornDown = false;
-      const wasPaused = process.stdin.isPaused();
       const teardown = (): void => {
         if (tornDown) return;
         tornDown = true;
@@ -288,7 +287,7 @@ fn name=runServe params="port:number, engine:string|undefined, allowedOrigins:st
           .finally(() => {
             try { eventLogFlush(runtime.sessionId); } catch { /* best-effort */ }
             removeServeConnectionFile(runtime.sessionId);
-            try { if (wasPaused) process.stdin.pause(); } catch { /* best-effort */ }
+            try { process.stdin.pause(); } catch { /* best-effort */ }
             success('agon serve stopped.');
             resolve();
           });

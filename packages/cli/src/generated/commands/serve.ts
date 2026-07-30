@@ -282,7 +282,6 @@ export async function runServe(port: number, engine: string|undefined, allowedOr
 
   await new Promise<void>((resolve) => {
     let tornDown = false;
-    const wasPaused = process.stdin.isPaused();
     const teardown = (): void => {
       if (tornDown) return;
       tornDown = true;
@@ -299,7 +298,7 @@ export async function runServe(port: number, engine: string|undefined, allowedOr
         .finally(() => {
           try { eventLogFlush(runtime.sessionId); } catch { /* best-effort */ }
           removeServeConnectionFile(runtime.sessionId);
-          try { if (wasPaused) process.stdin.pause(); } catch { /* best-effort */ }
+          try { process.stdin.pause(); } catch { /* best-effort */ }
           success('agon serve stopped.');
           resolve();
         });
@@ -312,7 +311,7 @@ export async function runServe(port: number, engine: string|undefined, allowedOr
   });
 }
 
-// @kern-source: serve:306
+// @kern-source: serve:305
 export const serveCommand: any = defineCommand({
   meta: {
     name: 'serve',

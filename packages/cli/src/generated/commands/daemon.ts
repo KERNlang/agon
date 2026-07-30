@@ -664,7 +664,7 @@ export async function stopDaemon(): Promise<void> {
   if (info) {
     for (let i = 0; i < 40; i += 1) {
       if (!isProcessAlive(info.pid)) break;
-      await new Promise<void>((r) => { const t = setTimeout(r, 50); if (typeof (t as any).unref === 'function') (t as any).unref(); });
+      await new Promise<void>((r) => { setTimeout(r, 50); });
     }
   }
 

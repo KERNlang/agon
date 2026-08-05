@@ -6,6 +6,10 @@ import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+const HERE = fileURLToPath(new URL('.', import.meta.url));
+const CLI_ENTRY = join(HERE, '..', '..', 'packages', 'cli', 'dist', 'index.js');
+const describeProcessMaybe = existsSync(CLI_ENTRY) ? describe : describe.skip;
+
 // Point AGON_HOME at a throwaway home BEFORE anything resolves a path (the event
 // ledger + agonPath resolve at call time, so setting it pre-import is enough).
 process.env.AGON_HOME = mkdtempSync(join(tmpdir(), 'agon-serve-cmd-test-'));
@@ -297,11 +301,10 @@ describe('agon serve — runtime wiring (integration)', () => {
   }, 15000);
 });
 
-describe('agon serve process lifecycle', () => {
+describeProcessMaybe('agon serve process lifecycle', () => {
   it('exits zero after the first SIGINT', async () => {
     const home = mkdtempSync(join(tmpdir(), 'agon-serve-signal-'));
-    const cliEntry = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', 'packages', 'cli', 'dist', 'index.js');
-    const child = spawn(process.execPath, [cliEntry, 'serve', '--port', '0', '--emit-connection'], {
+    const child = spawn(process.execPath, [CLI_ENTRY, 'serve', '--port', '0', '--emit-connection'], {
       env: { ...process.env, AGON_HOME: home, AGON_NO_STACK_TRACE_MAPPER: '1' },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -313,8 +316,12 @@ describe('agon serve process lifecycle', () => {
     child.stderr?.on('data', (chunk: string) => { stderr += chunk; });
     try {
       const ready = await new Promise<boolean>((resolve) => {
-        const deadline = setTimeout(() => resolve(false), 10_000);
-        const poll = setInterval(() => {
+        let poll: ReturnType<typeof setInterval>;
+        const deadline = setTimeout(() => {
+          clearInterval(poll);
+          resolve(false);
+        }, 10_000);
+        poll = setInterval(() => {
           if (!stdout.includes('__AGON_CONNECTION__')) return;
           clearTimeout(deadline); clearInterval(poll); resolve(true);
         }, 25);

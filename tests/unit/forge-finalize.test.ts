@@ -62,6 +62,110 @@ function makeRegistry(): EngineRegistry {
   return registry;
 }
 
+describe('forge validate dispatch routing', () => {
+  it('uses plain dispatch, not agent tools, for validate mode without required diff', async () => {
+    process.env.AGON_FINALIZE_TEST_KEY = 'test';
+    const repoDir = makeRepo();
+    const forgeDir = join(tmpdir(), `agon-forge-validate-route-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    tempDirs.push(forgeDir);
+    mkdirSync(forgeDir, { recursive: true });
+
+    const registry = new EngineRegistry();
+    registry.register({
+      id: 'api-agent',
+      displayName: 'api-agent',
+      api: { apiKeyEnv: 'AGON_FINALIZE_TEST_KEY' },
+      agent: { args: [] },
+      exec: { args: [] },
+      review: { args: [] },
+      timeout: 120,
+      tier: 'user',
+      schemaVersion: 3,
+      isLocal: false,
+    } as any);
+
+    const dispatch = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: 'VALIDATE_ROUTE_OK '.repeat(8),
+      stderr: '',
+      timedOut: false,
+    }));
+    const dispatchAgent = vi.fn(async () => {
+      throw new Error('dispatchAgent should not run for validate/no-diff');
+    });
+
+    const manifest = await runForge(
+      {
+        task: 'validate without editing',
+        fitnessCmd: 'true',
+        cwd: repoDir,
+        forgeDir,
+        engines: ['api-agent'],
+        mode: 'validate',
+        requireDiff: false,
+        acceptReviewOutput: true,
+        baselineMayPass: true,
+        healthCheckEnabled: false,
+      } as any,
+      registry,
+      { isAvailable: async () => true, getVersion: async () => 'test', dispatch, dispatchAgent } as any,
+    );
+
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(dispatchAgent).not.toHaveBeenCalled();
+    expect(manifest.results['api-agent']).toMatchObject({ pass: true, status: 'no_diff_but_report' });
+  });
+
+  it('still uses agent tools for validate mode when a diff is required', async () => {
+    process.env.AGON_FINALIZE_TEST_KEY = 'test';
+    const repoDir = makeRepo();
+    const forgeDir = join(tmpdir(), `agon-forge-validate-agent-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    tempDirs.push(forgeDir);
+    mkdirSync(forgeDir, { recursive: true });
+
+    const registry = new EngineRegistry();
+    registry.register({
+      id: 'api-agent',
+      displayName: 'api-agent',
+      api: { apiKeyEnv: 'AGON_FINALIZE_TEST_KEY' },
+      agent: { args: [] },
+      exec: { args: [] },
+      review: { args: [] },
+      timeout: 120,
+      tier: 'user',
+      schemaVersion: 3,
+      isLocal: false,
+    } as any);
+
+    const dispatch = vi.fn(async () => ({ exitCode: 0, stdout: 'plain', stderr: '', timedOut: false }));
+    const dispatchAgent = vi.fn(async ({ cwd }: any) => {
+      writeFileSync(join(cwd, 'agent-change.txt'), 'changed by agent\n');
+      return { exitCode: 0, stdout: 'agent changed files', stderr: '', timedOut: false };
+    });
+
+    const manifest = await runForge(
+      {
+        task: 'validate but require a diff',
+        fitnessCmd: 'test -f agent-change.txt',
+        cwd: repoDir,
+        forgeDir,
+        engines: ['api-agent'],
+        mode: 'validate',
+        requireDiff: true,
+        acceptReviewOutput: true,
+        baselineMayPass: true,
+        healthCheckEnabled: false,
+      } as any,
+      registry,
+      { isAvailable: async () => true, getVersion: async () => 'test', dispatch, dispatchAgent } as any,
+    );
+
+    expect(dispatchAgent).toHaveBeenCalledTimes(1);
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(manifest.results['api-agent']).toMatchObject({ pass: true });
+  });
+});
+
 describe('caller-driven forge finalize', () => {
   it('aborts in-flight stage2 engines when onResult requests finalize', async () => {
     process.env.AGON_FINALIZE_TEST_KEY = 'test';

@@ -144,7 +144,8 @@ fn name=runForgeEngineAttempt async=true params="opts:{engineId:string,prompt:st
     // Forge is a code-changing workflow. API-only engines must run through
     // the tool-using agent loop; plain API chat can only return text and will
     // never modify the worktree.
-    const useAgent = !!opts.adapter.dispatchAgent && (!!engine.agent || !!engine.api);
+    const shouldUseAgentLoop = forgeMode === 'implement' || forgeMode === 'improve' || requireDiff;
+    const useAgent = shouldUseAgentLoop && !!opts.adapter.dispatchAgent && (!!engine.agent || !!engine.api);
     const onSpawn = (pid: number) => emitForgeEvent(opts.onEvent, 'engine:pid', opts.engineId, { engineId: opts.engineId, pid, phase: opts.metricPhase });
     try {
       if (useAgent) {

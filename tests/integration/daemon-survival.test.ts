@@ -233,4 +233,28 @@ describeMaybe('agond survival — the daemon outlives its launcher', () => {
     const cleaned = await waitFor(() => !existsSync(sockPath) && !existsSync(pidPath), 4_000);
     expect(cleaned).toBe(true);
   }, 60_000);
+
+  it('daemon stop stays alive for its bounded poll and exits cleanly', async () => {
+    const env = { ...process.env, AGON_HOME: home, AGON_DAEMON_ECHO: '1', AGON_NO_STACK_TRACE_MAPPER: '1' };
+    const launcher = spawn(process.execPath, [CLI_ENTRY, 'daemon', 'start'], { env, stdio: 'ignore' });
+    expect(await waitFor(() => existsSync(pidPath) && existsSync(sockPath), 10_000)).toBe(true);
+    expect(await waitFor(() => launcher.exitCode !== null || launcher.killed, 10_000)).toBe(true);
+
+    const stopper = spawn(process.execPath, [CLI_ENTRY, 'daemon', 'stop'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    stopper.stdout?.setEncoding('utf-8');
+    stopper.stderr?.setEncoding('utf-8');
+    stopper.stdout?.on('data', (chunk: string) => { stdout += chunk; });
+    stopper.stderr?.on('data', (chunk: string) => { stderr += chunk; });
+    const exitCode = await new Promise<number | null>((resolve, reject) => {
+      stopper.once('error', reject);
+      stopper.once('close', resolve);
+    });
+
+    expect(exitCode, stderr).toBe(0);
+    expect(stdout).toContain('agond stopped');
+    expect(stderr).not.toContain('unsettled top-level await');
+    expect(await waitFor(() => !existsSync(sockPath) && !existsSync(pidPath), 4_000)).toBe(true);
+  }, 30_000);
 });

@@ -151,8 +151,8 @@ describe('withFileLock', () => {
     writeFileSync(lockPath, JSON.stringify({
       pid: process.pid, uuid: 'holder', hostname: hostname(), acquiredAt: new Date().toISOString(),
     }), { flag: 'wx' });
-    execFile(process.execPath, ['-e', `setTimeout(() => require('node:fs').unlinkSync(${JSON.stringify(lockPath)}), 300)`]);
     const started = Date.now();
+    execFile(process.execPath, ['-e', `setTimeout(() => require('node:fs').unlinkSync(${JSON.stringify(lockPath)}), 300)`]);
     let observedAcquiredAt = '';
     withFileLock(lockPath, () => {
       observedAcquiredAt = JSON.parse(readFileSync(lockPath, 'utf-8')).acquiredAt;

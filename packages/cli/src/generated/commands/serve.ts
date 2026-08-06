@@ -259,17 +259,15 @@ export async function runServe(port: number, engine: string|undefined, allowedOr
   // the already-opened brain (an engine subprocess) or leave a half-open bridge
   // with no valid handoff file. Tear down everything acquired so far and fail
   // CLOSED (exit 2), never an unhandled-rejection crash.
+  let started: Awaited<ReturnType<typeof runtime.serve.start>>;
+  let tokenPath: string;
   try {
-    const started = await runtime.serve.start(port);
-    const tokenPath = writeServeConnectionFile(runtime.sessionId, started.url, started.token, engineId, allowedOrigins);
+    started = await runtime.serve.start(port);
+    tokenPath = writeServeConnectionFile(runtime.sessionId, started.url, started.token, engineId, allowedOrigins);
     // Record the provenance frame BEFORE handing out the URL: a client that reads the
     // machine-readable line and immediately attaches must find the "which brain @ where"
     // frame already in the ledger (the documented verify-before-you-send invariant).
     recordServeReady(runtime.sessionId, engineId, started.url, allowedOrigins);
-    // Machine-readable handoff (the native host reads this line), then the human banner.
-    // Gated so a normal `agon serve` is unchanged.
-    if (emitConnection) emitServeConnectionLine(started.url, started.token, runtime.sessionId, engineId, allowedOrigins, tokenPath);
-    printServeBanner(started.url, started.token, tokenPath, runtime.sessionId, engineId, allowedOrigins);
   } catch (err) {
     warn(`failed to start: ${err instanceof Error ? err.message : String(err)}`);
     try { await runtime.serve.close(); } catch { /* may never have bound */ }
@@ -280,9 +278,8 @@ export async function runServe(port: number, engine: string|undefined, allowedOr
     return;
   }
 
-  await new Promise<void>((resolve) => {
+  const stopped = new Promise<void>((resolve) => {
     let tornDown = false;
-    const wasPaused = process.stdin.isPaused();
     const teardown = (): void => {
       if (tornDown) return;
       tornDown = true;
@@ -299,7 +296,7 @@ export async function runServe(port: number, engine: string|undefined, allowedOr
         .finally(() => {
           try { eventLogFlush(runtime.sessionId); } catch { /* best-effort */ }
           removeServeConnectionFile(runtime.sessionId);
-          try { if (wasPaused) process.stdin.pause(); } catch { /* best-effort */ }
+          try { process.stdin.pause(); } catch { /* best-effort */ }
           success('agon serve stopped.');
           resolve();
         });
@@ -310,9 +307,14 @@ export async function runServe(port: number, engine: string|undefined, allowedOr
     process.on('SIGINT', teardown);
     process.on('SIGTERM', teardown);
   });
+  // Install the stop handlers before the machine-readable readiness line.
+  // A controller can send SIGINT as soon as it reads this line.
+  if (emitConnection) emitServeConnectionLine(started.url, started.token, runtime.sessionId, engineId, allowedOrigins, tokenPath);
+  printServeBanner(started.url, started.token, tokenPath, runtime.sessionId, engineId, allowedOrigins);
+  await stopped;
 }
 
-// @kern-source: serve:306
+// @kern-source: serve:308
 export const serveCommand: any = defineCommand({
   meta: {
     name: 'serve',

@@ -5,7 +5,7 @@
 import from="node:child_process" names="spawn"
 import from="node:child_process" names="ChildProcessWithoutNullStreams" types=true
 import from="@kernlang/agon-core" names="BrainstormGroup,BrainstormDedupStatus" types=true
-import from="@kernlang/agon-core" names="resolveDedupSidecar"
+import from="@kernlang/agon-core" names="resolveDedupSidecar,resolveSidecarPython"
 
 fn name=dedupBrainstormDrafts async=true params="drafts:{engineId:string, text:string}[], opts?:{timeoutMs?:number, signal?:AbortSignal}" returns="Promise<{groups:BrainstormGroup[] | null, status:BrainstormDedupStatus}>"
   doc "Cluster paraphrased drafts via the optional Python embedding sidecar. Always returns an explicit status and bounds the sidecar wall clock; abort still rejects so user cancellation propagates."
@@ -26,7 +26,7 @@ fn name=dedupBrainstormDrafts async=true params="drafts:{engineId:string, text:s
       return { groups: null, status: { status: 'unavailable', detail: 'dedup sidecar not installed' } };
     }
 
-    const python = process.env.AGON_PYTHON || 'python3';
+    const python = resolveSidecarPython();
     const timeoutMs = Math.max(1, opts?.timeoutMs ?? 5_000);
 
     return await new Promise<{groups:BrainstormGroup[] | null, status:BrainstormDedupStatus}>((resolveOuter, rejectOuter) => {

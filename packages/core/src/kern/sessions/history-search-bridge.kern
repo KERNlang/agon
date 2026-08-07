@@ -3,7 +3,7 @@
 // degrade gracefully to chronological / substring fallback.
 
 import from="node:child_process" names="spawnSync"
-import from="../blocks/dedup-resolver.js" names="resolveDedupSidecar"
+import from="../blocks/dedup-resolver.js" names="resolveDedupSidecar,resolveSidecarPython"
 
 interface name=HistorySearchItem
   field name=id type=string
@@ -31,7 +31,7 @@ fn name=searchHistorySemantic params="query:string, items:HistorySearchItem[], t
     const sidecar = resolveDedupSidecar('history-search.py');
     if (!sidecar) return null;
 
-    const python = process.env.AGON_PYTHON || 'python3';
+    const python = resolveSidecarPython();
 
     let result;
     try {

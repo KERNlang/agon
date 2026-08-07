@@ -154,20 +154,27 @@ fn name=companionDispatch async=true params="opts:{config:CompanionConfig, binar
           const alwaysOpt = options.find((o: any) => o.kind === 'allow_always' || o.optionId?.includes('proceed_always'));
           const rejectOpt = options.find((o: any) => o.kind === 'reject_once') ?? options.find((o: any) => o.optionId?.includes('reject'));
 
-          if (opts.onApproval) {
+          const respondWithOption = (option: any) => {
+            if (option?.optionId) {
+              fireWriteStdin(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { optionId: option.optionId } }) + '\n');
+            } else {
+              fireWriteStdin(JSON.stringify({ jsonrpc: '2.0', id: msg.id, error: { code: -32001, message: 'Permission denied' } }) + '\n');
+            }
+          };
+
+          if (opts.mode !== 'agent') {
+            respondWithOption(rejectOpt);
+          } else if (opts.onApproval) {
             opts.onApproval(String(tName), String(tCmd), 'Agent tool approval requested').then((result: boolean | string) => {
               const approved = typeof result === 'string' ? false : result;
-              const optionId = approved
-                ? (allowOpt?.optionId ?? alwaysOpt?.optionId ?? 'proceed_once')
-                : (rejectOpt?.optionId ?? 'reject');
-              fireWriteStdin(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { optionId } }) + '\n');
+              const option = approved ? (allowOpt ?? alwaysOpt) : rejectOpt;
+              respondWithOption(option);
             }).catch(() => {
-              const optionId = rejectOpt?.optionId ?? 'reject';
-              fireWriteStdin(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { optionId } }) + '\n');
+              respondWithOption(rejectOpt);
             });
           } else {
-            const optionId = allowOpt?.optionId ?? alwaysOpt?.optionId ?? 'proceed_once';
-            fireWriteStdin(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { optionId } }) + '\n');
+            const option = opts.mode === 'agent' ? (allowOpt ?? alwaysOpt) : rejectOpt;
+            respondWithOption(option);
           }
           return;
         }
@@ -182,7 +189,9 @@ fn name=companionDispatch async=true params="opts:{config:CompanionConfig, binar
         const isV2 = m.startsWith('item/');
         const buildResult = (approved: boolean) => isV2 ? { decision: approved ? 'accept' : 'decline' } : { approved };
 
-        if (opts.onApproval) {
+        if (opts.mode !== 'agent') {
+          fireWriteStdin(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: buildResult(false) }) + '\n');
+        } else if (opts.onApproval) {
           opts.onApproval(String(toolName), String(toolCmd), 'Agent tool approval requested').then((result: boolean | string) => {
             if (typeof result === 'string') {
               fireWriteStdin(JSON.stringify({ jsonrpc: '2.0', id: msg.id, error: { code: -32001, message: result } }) + '\n');

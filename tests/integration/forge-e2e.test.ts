@@ -376,6 +376,9 @@ describe('Forge E2E', () => {
     const events: any[] = [];
     const adapter: EngineAdapter = {
       dispatch: async (options: DispatchOptions): Promise<DispatchResult> => {
+        if (options.prompt.includes('YOUR ROLE: ARCHITECT')) {
+          return { exitCode: 0, stdout: 'Plan: write team.ts', stderr: '', durationMs: 1, timedOut: false };
+        }
         if (options.mode === 'review') {
           return { exitCode: 0, stdout: 'No obvious issues.', stderr: '', durationMs: 1, timedOut: false };
         }
@@ -910,6 +913,9 @@ describe('Forge E2E', () => {
 
     const adapter: EngineAdapter = {
       dispatch: async (options: DispatchOptions): Promise<DispatchResult> => {
+        if (options.prompt.includes('YOUR ROLE: ARCHITECT')) {
+          return { exitCode: 0, stdout: 'Plan: write team.ts', stderr: '', durationMs: 1, timedOut: false };
+        }
         if (options.mode === 'review') {
           return { exitCode: 0, stdout: 'APPROVED', stderr: '', durationMs: 1, timedOut: false };
         }
@@ -966,8 +972,8 @@ describe('Forge E2E', () => {
     process.env.AGON_TEST_FORGE_API_KEY = 'test-key';
 
     const dispatch = vi.fn(async (options: DispatchOptions): Promise<DispatchResult> => {
-      if (options.mode !== 'review') {
-        throw new Error('plain dispatch must not implement API-only team forge work');
+      if (options.mode !== 'exec') {
+        throw new Error('team architect planning must use plain exec dispatch');
       }
       return { exitCode: 0, stdout: 'Plan: write team.ts', stderr: '', durationMs: 1, timedOut: false };
     });
@@ -1016,7 +1022,8 @@ describe('Forge E2E', () => {
       }, registry, adapter);
 
       expect(dispatch).toHaveBeenCalled();
-      expect(dispatch.mock.calls.every(([options]) => options.mode === 'review')).toBe(true);
+      expect(dispatch.mock.calls.every(([options]) => options.mode === 'exec')).toBe(true);
+      expect(dispatch.mock.calls.every(([options]) => options.cwd === forgeDir)).toBe(true);
       expect(dispatchAgent).toHaveBeenCalledTimes(2);
       expect(result.winnerTeamId).toBeTruthy();
       const winnerOutput = result.submissions[result.winnerTeamId!].finalOutput as any;

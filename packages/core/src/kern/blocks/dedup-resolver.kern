@@ -16,6 +16,17 @@ import from="node:module" names="createRequire"
 import from="node:path" names="dirname,resolve"
 import from="node:url" names="fileURLToPath"
 import from="node:fs" names="existsSync"
+import from="../signals/config.js" names="agonPath"
+
+fn name=resolveSidecarPython params="" returns=string export=true
+  doc "Resolve the Python interpreter for optional sidecars: explicit AGON_PYTHON, then Agon managed virtualenv, then python3."
+  handler <<<
+    if (process.env.AGON_PYTHON) return process.env.AGON_PYTHON;
+    const managed = process.platform === 'win32'
+      ? agonPath('python-sidecar', 'Scripts', 'python.exe')
+      : agonPath('python-sidecar', 'bin', 'python');
+    return existsSync(managed) ? managed : 'python3';
+  >>>
 
 fn name=resolveDedupSidecar params="filename:string" returns="string | null"
   doc "Return the absolute path of a Python sidecar shipped in @kernlang/agon-dedup, or null if not found. `filename` is the bare filename (e.g. 'history-search.py'), not a path."

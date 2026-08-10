@@ -83,4 +83,82 @@ describe('companionDispatch', () => {
     // into two '\n\n'-joined paragraphs.
     expect(result.stdout).toBe("I'll start by\n\n Done.");
   });
+
+  it.each([
+    { mode: 'exec', options: "[{ optionId: 'allow', kind: 'allow_once' }, { optionId: 'deny', kind: 'reject_once' }]", approve: false, expected: 'deny' },
+    { mode: 'review', options: "[{ optionId: 'allow', kind: 'allow_once' }, { optionId: 'deny', kind: 'reject_once' }]", approve: false, expected: 'deny' },
+    { mode: 'exec', options: "[{ optionId: 'allow', kind: 'allow_once' }]", approve: false, expected: 'error' },
+    { mode: 'exec', options: "[{ optionId: 'allow', kind: 'allow_once' }, { optionId: 'deny', kind: 'reject_once' }]", approve: true, expected: 'deny' },
+    { mode: 'agent', options: "[{ optionId: 'allow', kind: 'allow_once' }, { optionId: 'deny', kind: 'reject_once' }]", approve: true, expected: 'allow' },
+  ] as const)('enforces ACP write policy in $mode mode', async ({ mode, options, approve, expected }) => {
+    const script = [
+      "const rl = require('node:readline').createInterface({ input: process.stdin });",
+      "const w = (o) => process.stdout.write(JSON.stringify(o) + '\\n');",
+      'let promptId = 0;',
+      "rl.on('line', (line) => {",
+      '  const msg = JSON.parse(line);',
+      "  if (msg.method === 'initialize') w({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: 1 } });",
+      "  if (msg.method === 'session/new') w({ jsonrpc: '2.0', id: msg.id, result: { sessionId: 's1' } });",
+      "  if (msg.method === 'session/prompt') {",
+      '    promptId = msg.id;',
+      `    w({ jsonrpc: '2.0', id: 99, method: 'session/request_permission', params: { options: ${options}, toolCall: { name: 'write_file', args: { file_path: 'unsafe.txt' } } } });`,
+      '  }',
+      '  if (msg.id === 99 && !msg.method) {',
+      "    const text = msg.error ? 'error' : msg.result.optionId;",
+      "    w({ jsonrpc: '2.0', method: 'session/update', params: { update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } } } });",
+      "    w({ jsonrpc: '2.0', id: promptId, result: { stopReason: 'end_turn' } });",
+      '  }',
+      '});',
+    ].join('');
+
+    const result = await companionDispatch({
+      binaryPath: process.execPath,
+      config: {
+        protocol: 'acp',
+        serverCmd: ['-e', script],
+      },
+      prompt: 'do not write',
+      cwd: process.cwd(),
+      timeout: 5,
+      mode,
+      onApproval: approve ? async () => true : undefined,
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe(expected);
+  });
+
+  it('rejects non-agent approval callbacks for vendor approval requests', async () => {
+    const script = [
+      "const rl = require('node:readline').createInterface({ input: process.stdin });",
+      "const w = (o) => process.stdout.write(JSON.stringify(o) + '\\n');",
+      'let promptId = 0;',
+      "rl.on('line', (line) => {",
+      '  const msg = JSON.parse(line);',
+      "  if (msg.method === 'initialize') w({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: 1 } });",
+      "  if (msg.method === 'session/new') w({ jsonrpc: '2.0', id: msg.id, result: { sessionId: 's1' } });",
+      "  if (msg.method === 'session/prompt') {",
+      '    promptId = msg.id;',
+      "    w({ jsonrpc: '2.0', id: 99, method: 'item/fileChange/requestApproval', params: { path: 'unsafe.txt' } });",
+      '  }',
+      "  if (msg.id === 99 && !msg.method) {",
+      "    w({ jsonrpc: '2.0', method: 'session/update', params: { update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: msg.result.decision } } } });",
+      "    w({ jsonrpc: '2.0', id: promptId, result: { stopReason: 'end_turn' } });",
+      '  }',
+      '});',
+    ].join('');
+
+    const result = await companionDispatch({
+      binaryPath: process.execPath,
+      config: { protocol: 'acp', serverCmd: ['-e', script] },
+      prompt: 'do not write',
+      cwd: process.cwd(),
+      timeout: 5,
+      mode: 'review',
+      onApproval: async () => true,
+    });
+
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(result.stdout).toBe('decline');
+  });
 });

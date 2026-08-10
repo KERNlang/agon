@@ -6,7 +6,7 @@ import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 
 import type { BrainstormGroup, BrainstormDedupStatus } from '@kernlang/agon-core';
 
-import { resolveDedupSidecar } from '@kernlang/agon-core';
+import { resolveDedupSidecar, resolveSidecarPython } from '@kernlang/agon-core';
 
 /**
  * Cluster paraphrased drafts via the optional Python embedding sidecar. Always returns an explicit status and bounds the sidecar wall clock; abort still rejects so user cancellation propagates.
@@ -29,7 +29,7 @@ export async function dedupBrainstormDrafts(drafts: {engineId:string, text:strin
     return { groups: null, status: { status: 'unavailable', detail: 'dedup sidecar not installed' } };
   }
 
-  const python = process.env.AGON_PYTHON || 'python3';
+  const python = resolveSidecarPython();
   const timeoutMs = Math.max(1, opts?.timeoutMs ?? 5_000);
 
   return await new Promise<{groups:BrainstormGroup[] | null, status:BrainstormDedupStatus}>((resolveOuter, rejectOuter) => {

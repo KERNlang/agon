@@ -1,6 +1,6 @@
 import from="../models/types.js" names="TaskClass" types=true
 import from="node:child_process" names="spawnSync"
-import from="./dedup-resolver.js" names="resolveDedupSidecar"
+import from="./dedup-resolver.js" names="resolveDedupSidecar,resolveSidecarPython"
 
 // Regex fast-path classifier — instant, but falls through to 'other'
 // often. The semantic escalation below catches those cases via a Python
@@ -43,7 +43,7 @@ fn name=classifyTaskSemantic params="description:string" returns="TaskClass | nu
     const sidecar = resolveDedupSidecar('classifier.py');
     if (!sidecar) return null;
 
-    const python = process.env.AGON_PYTHON || 'python3';
+    const python = resolveSidecarPython();
 
     let result;
     try {

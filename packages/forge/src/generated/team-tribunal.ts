@@ -57,8 +57,9 @@ export async function runTeamCoopTribunal(team: TeamSpec, position: string, ques
     const stratResult = await adapter.dispatch({
       engine: registry.get(architect.engineId),
       prompt: strategyPrompt,
-      cwd: process.cwd(),
-      mode: 'review',
+      systemPrompt: 'Return text only. Do not use tools, read files, or modify the workspace.',
+      cwd: outputDir,
+      mode: 'exec',
       timeout,
       outputDir,
       signal,
@@ -79,8 +80,9 @@ export async function runTeamCoopTribunal(team: TeamSpec, position: string, ques
       const supportResult = await adapter.dispatch({
         engine: registry.get(impl.engineId),
         prompt: supportPrompt,
-        cwd: process.cwd(),
-        mode: 'review',
+        systemPrompt: 'Return text only. Do not use tools, read files, or modify the workspace.',
+        cwd: outputDir,
+        mode: 'exec',
         timeout,
         outputDir,
         signal,
@@ -104,8 +106,9 @@ export async function runTeamCoopTribunal(team: TeamSpec, position: string, ques
     const synthResult = await adapter.dispatch({
       engine: registry.get(synthesizer.engineId),
       prompt: synthPrompt,
-      cwd: process.cwd(),
-      mode: 'review',
+      systemPrompt: 'Return text only. Do not use tools, read files, or modify the workspace.',
+      cwd: outputDir,
+      mode: 'exec',
       timeout,
       outputDir,
       signal,
@@ -133,7 +136,7 @@ export async function runTeamCoopTribunal(team: TeamSpec, position: string, ques
   };
 }
 
-// @kern-source: team-tribunal:130
+// @kern-source: team-tribunal:133
 export async function runTeamTribunal(options: TeamTribunalOptions): Promise<TeamMatchResult> {
   const config = loadConfig(process.cwd());
   const matchId = randomUUID().slice(0, 8);
@@ -170,11 +173,9 @@ export async function runTeamTribunal(options: TeamTribunalOptions): Promise<Tea
   // Cesar is the impartial judge — exclude from competing pool
   const cesarId = config.cesarEngine;
   let competitors = available.filter((id: string) => id !== cesarId);
-  let cesarCompeting = false;
   if (competitors.length < 2) {
     // Not enough competitors without Cesar — add all back
     competitors = [...available];
-    cesarCompeting = true;
   }
 
   const [teamA, teamB] = composeTeams(
@@ -208,14 +209,11 @@ export async function runTeamTribunal(options: TeamTribunalOptions): Promise<Tea
 
   // --- Pick impartial judge — must not be on either team ---
   const teamMemberIds = new Set([...teamA.members.map((m: any) => m.engineId), ...teamB.members.map((m: any) => m.engineId)]);
-  let judgeId = cesarId;
-  if (cesarCompeting || teamMemberIds.has(cesarId)) {
-    const altJudge = available.find((id: string) => !teamMemberIds.has(id));
-    if (altJudge) {
-      judgeId = altJudge;
-    } else {
-      sidechain.log('team-tribunal:judge-conflict', cesarId, { warning: 'Cesar judging own debate — not enough engines for impartial judge' });
-    }
+  const impartialJudge = available.find((id: string) => id === cesarId && !teamMemberIds.has(id))
+    ?? available.find((id: string) => !teamMemberIds.has(id));
+  const judgeId = impartialJudge ?? (available.includes(cesarId) ? cesarId : available[0]);
+  if (!impartialJudge) {
+    sidechain.log('team-tribunal:judge-conflict', judgeId, { warning: 'Judge also competed — not enough engines for an impartial judge' });
   }
   const judgeEngine = options.registry.get(judgeId);
   const judgePrompt = `## TRIBUNAL JUDGE\nYou are an impartial judge. Two teams debated the following question. Evaluate their arguments and declare a winner.\n\nQuestion: ${options.question}\n\n## TEAM ALPHA (${posA}):\n${resultA.arguments[resultA.arguments.length - 1]}\n\n## TEAM BETA (${posB}):\n${resultB.arguments[resultB.arguments.length - 1]}\n\nAnalyze each team's argument strengths and weaknesses.\nYou MUST end your response with exactly these two lines:\nSCORE_ALPHA: <number 0-100>\nSCORE_BETA: <number 0-100>\nThen declare: WINNER: "ALPHA" or "BETA" or "DRAW"`;
@@ -223,8 +221,9 @@ export async function runTeamTribunal(options: TeamTribunalOptions): Promise<Tea
   const judgeResult = await options.adapter.dispatch({
     engine: judgeEngine,
     prompt: judgePrompt,
-    cwd: process.cwd(),
-    mode: 'review',
+    systemPrompt: 'Return text only. Do not use tools, read files, or modify the workspace.',
+    cwd: options.outputDir,
+    mode: 'exec',
     timeout: options.timeout,
     outputDir: options.outputDir,
     signal: options.signal,

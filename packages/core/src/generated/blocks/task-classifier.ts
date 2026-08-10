@@ -4,7 +4,7 @@ import type { TaskClass } from '../models/types.js';
 
 import { spawnSync } from 'node:child_process';
 
-import { resolveDedupSidecar } from './dedup-resolver.js';
+import { resolveDedupSidecar, resolveSidecarPython } from './dedup-resolver.js';
 
 // @kern-source: task-classifier:8
 export function classifyTaskRegex(description: string): TaskClass {
@@ -50,7 +50,7 @@ export function classifyTaskSemantic(description: string): TaskClass | null {
   const sidecar = resolveDedupSidecar('classifier.py');
   if (!sidecar) return null;
 
-  const python = process.env.AGON_PYTHON || 'python3';
+  const python = resolveSidecarPython();
 
   let result;
   try {

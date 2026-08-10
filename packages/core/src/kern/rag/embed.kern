@@ -4,7 +4,7 @@
 // L2-normalized, so cosine similarity is a plain dot product downstream.
 
 import from="node:child_process" names="spawnSync"
-import from="../blocks/dedup-resolver.js" names="resolveDedupSidecar"
+import from="../blocks/dedup-resolver.js" names="resolveDedupSidecar,resolveSidecarPython"
 
 const name=RAG_EMBED_TIMEOUT_MS type=number value={{ 180000 }}
   doc "Generous: the FIRST run downloads the ~30MB MiniLM model into ~/.agon/cache/fastembed. Warm runs take seconds. Override with AGON_RAG_EMBED_TIMEOUT_MS."
@@ -24,7 +24,7 @@ fn name=embedTexts params="texts:string[]" returns="RagEmbedResult | null" expor
     if (texts.length === 0) return null;
     const sidecar = resolveDedupSidecar('embedder.py');
     if (!sidecar) return null;
-    const python = process.env.AGON_PYTHON || 'python3';
+    const python = resolveSidecarPython();
     const timeout = Number(process.env.AGON_RAG_EMBED_TIMEOUT_MS) || RAG_EMBED_TIMEOUT_MS;
     const input = texts.map((text, i) => JSON.stringify({ id: String(i), text })).join('\n') + '\n';
     let result;

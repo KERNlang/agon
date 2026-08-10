@@ -5,6 +5,7 @@
   "type": "module",
   "files": [
     "*.py",
+    "install-python.mjs",
     "requirements.txt",
     "README.md",
     "LICENSE"
@@ -13,7 +14,7 @@
     "access": "public"
   },
   "scripts": {
-    "install:python": "python3 -m pip install --user -r requirements.txt",
+    "install:python": "node install-python.mjs",
     "test:sidecar": "node tests/smoke.mjs",
     "test:classifier": "node tests/classifier-smoke.mjs",
     "test:history-search": "node tests/history-search-smoke.mjs",

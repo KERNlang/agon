@@ -5,7 +5,7 @@
 
 import from="node:child_process" names="spawnSync"
 import from="node:path" names="extname"
-import from="./dedup-resolver.js" names="resolveDedupSidecar"
+import from="./dedup-resolver.js" names="resolveDedupSidecar,resolveSidecarPython"
 
 interface name=SyntaxValidatorInput
   field name=path type=string
@@ -51,7 +51,7 @@ fn name=validateSyntax params="files:SyntaxValidatorInput[]" returns="SyntaxVali
     const sidecar = resolveDedupSidecar('syntax-validator.py');
     if (!sidecar) return null;
 
-    const python = process.env.AGON_PYTHON || 'python3';
+    const python = resolveSidecarPython();
 
     let result;
     try {

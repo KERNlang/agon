@@ -12,7 +12,7 @@ import { join, dirname, basename } from 'node:path';
 
 import { fileURLToPath } from 'node:url';
 
-import { EngineRegistry, loadConfig, resolveWorkingDir, repoRoot, headSha, worktreeCreate, worktreeRemoveBestEffort, resolveDedupSidecar, agonPath } from '@kernlang/agon-core';
+import { EngineRegistry, loadConfig, resolveWorkingDir, repoRoot, headSha, worktreeCreate, worktreeRemoveBestEffort, resolveDedupSidecar, resolveSidecarPython, agonPath } from '@kernlang/agon-core';
 
 import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
@@ -192,26 +192,30 @@ export interface PythonDoctorResult {
  * Every Python file the bridges actually spawn. Doctor confirms ALL of them are reachable through resolveDedupSidecar — a bad package that ships only some is still a problem.
  */
 // @kern-source: doctor:161
-export const EXPECTED_SIDECARS: string[] = ['history-search.py','syntax-validator.py','classifier.py','sidecar.py'];
+export const EXPECTED_SIDECARS: string[] = ['history-search.py','syntax-validator.py','classifier.py','sidecar.py','embedder.py'];
+
+/**
+ * Return a shell-safe sidecar install command for any working directory, or an empty string when the installer is unavailable.
+ */
+// @kern-source: doctor:164
+export function formatPythonSidecarInstallCommand(installScript: string|null): string {
+  return installScript
+    ? `node ${shellQuoteForDoctor(installScript)}`
+    : '';
+}
 
 /**
  * Probe whether the Python interpreter exists, every expected sidecar file resolves, and the deps (fastembed, numpy, tree-sitter + grammars) are importable. Fail-soft: not having Python means semantic features fall back, not that agon is broken.
  */
-// @kern-source: doctor:164
+// @kern-source: doctor:172
 export function diagnoseDedupPython(): PythonDoctorResult {
-  const python = process.env.AGON_PYTHON || 'python3';
-  // Tiny probe — imports every dep used across the 4 sidecars in one shot.
+  const python = resolveSidecarPython();
+  // Tiny probe — imports every dependency used across the sidecars in one shot.
   // Exit 0 = all importable; non-zero stderr names the first missing module.
   const probe = 'import fastembed, numpy, tree_sitter, tree_sitter_python, tree_sitter_typescript, tree_sitter_javascript, tree_sitter_json';
 
-  // Pick a real path for the install command. requirements.txt ships in
-  // @kernlang/agon-dedup so we resolve it the same way as the .py files — works in
-  // both the monorepo and a published install. Falls back to the
-  // package-name form if resolution somehow fails.
-  const requirementsPath = resolveDedupSidecar('requirements.txt');
-  const pipInstall = requirementsPath
-    ? `python3 -m pip install --user -r ${requirementsPath}`
-    : 'python3 -m pip install --user fastembed numpy tree-sitter tree-sitter-python tree-sitter-typescript tree-sitter-javascript tree-sitter-json';
+  // Resolve the published installer so the command works from any cwd.
+  const pipInstall = formatPythonSidecarInstallCommand(resolveDedupSidecar('install-python.mjs'));
 
   let result;
   try {
@@ -223,7 +227,7 @@ export function diagnoseDedupPython(): PythonDoctorResult {
     return {
       status: 'fail',
       detail: `${python} probe threw: ${err instanceof Error ? err.message : String(err)}`,
-      installCommand: 'Install Python 3.10+ from https://python.org or your package manager, then run the pip install above.',
+      installCommand: pipInstall || 'Install Python 3.10+ from https://python.org or your package manager.',
     };
   }
   if (result.error || result.status === null) {
@@ -231,12 +235,12 @@ export function diagnoseDedupPython(): PythonDoctorResult {
     return {
       status: 'fail',
       detail: msg,
-      installCommand: 'Install Python 3.10+ (semantic history, syntax validator, task classifier, brainstorm dedup all degrade without it)',
+      installCommand: 'Install Python 3.10+ (semantic history, syntax validator, task classifier, brainstorm dedup, and RAG embeddings all degrade without it)',
     };
   }
   if (result.status === 0) {
     // Confirm EVERY expected sidecar resolves — a partial dedup package
-    // would otherwise pass the probe while still leaving 3 of 4 bridges
+    // would otherwise pass the probe while leaving one or more bridges
     // broken at runtime.
     const missing = EXPECTED_SIDECARS.filter((name: string) => !resolveDedupSidecar(name));
     if (missing.length === EXPECTED_SIDECARS.length) {
@@ -250,7 +254,7 @@ export function diagnoseDedupPython(): PythonDoctorResult {
       return {
         status: 'fail',
         detail: `@kernlang/agon-dedup is partial — missing sidecar(s): ${missing.join(', ')}`,
-        installCommand: 'reinstall @kernlang/agon-dedup — the published tarball should include all four .py files',
+        installCommand: 'reinstall @kernlang/agon-dedup — the published tarball should include all five .py files',
       };
     }
     const sample = resolveDedupSidecar('history-search.py');
@@ -264,11 +268,11 @@ export function diagnoseDedupPython(): PythonDoctorResult {
   return {
     status: 'warn',
     detail: `${python} OK, but ${missingModule} not installed`,
-    installCommand: pipInstall,
+    installCommand: pipInstall || undefined,
   };
 }
 
-// @kern-source: doctor:236
+// @kern-source: doctor:238
 export function checkDoctorWorktree(cwd: string): {ok:boolean; message:string; cleanupCommand:string} {
   let root = '';
   let tempDir = '';
@@ -305,7 +309,7 @@ export function checkDoctorWorktree(cwd: string): {ok:boolean; message:string; c
 /**
  * Diagnose the live Cesar harness: selected engine, backend capability, native/MCP session state, and observed tool reliability.
  */
-// @kern-source: doctor:270
+// @kern-source: doctor:272
 export function buildHarnessDoctorReport(registry: EngineRegistry, config: any, cesar?: any): HarnessDoctorReport {
   const rows: string[][] = [];
   const selected = String((config as any)?.cesarEngine ?? (config as any)?.forgeFixedStarter ?? 'claude');
@@ -396,14 +400,14 @@ export function buildHarnessDoctorReport(registry: EngineRegistry, config: any, 
   };
 }
 
-// @kern-source: doctor:362
+// @kern-source: doctor:364
 export interface ReviewDoctorReport {
   rows: string[][];
   ok: boolean;
   summary: string;
 }
 
-// @kern-source: doctor:367
+// @kern-source: doctor:369
 export const REVIEW_DOCTOR_DIFF: string = [
   'diff --git a/sample.ts b/sample.ts',
   'new file mode 100644',
@@ -419,7 +423,7 @@ export const REVIEW_DOCTOR_DIFF: string = [
 /**
  * Review-specific reliability smoke test (#8). For each engine, runs a real review of a tiny synthetic buggy diff through the full runReviewCore pipeline (prompt → dispatch → sentinel parse → repair) under a short hard timeout, then classifies whether the engine produced machine-parseable output. This catches engines that pass `doctor engines` (binary/key reachable) but hang or emit unparseable output in actual review use — the kimi/zai failure mode the user hit.
  */
-// @kern-source: doctor:379
+// @kern-source: doctor:381
 export async function runReviewDoctor(registry: EngineRegistry, config: any, adapter: any, engineIds: string[], timeoutSec: number): Promise<ReviewDoctorReport> {
   // Align the inner dispatch timeout with the orchestrator wall clock (+grace)
   // so a misbehaving dispatch path that defers abort still can't exceed the
@@ -475,7 +479,7 @@ export async function runReviewDoctor(registry: EngineRegistry, config: any, ada
   };
 }
 
-// @kern-source: doctor:436
+// @kern-source: doctor:438
 export const doctorCommand: any = defineCommand({
   meta: {
     name: 'doctor',

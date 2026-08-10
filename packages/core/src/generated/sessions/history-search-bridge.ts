@@ -2,7 +2,7 @@
 
 import { spawnSync } from 'node:child_process';
 
-import { resolveDedupSidecar } from '../blocks/dedup-resolver.js';
+import { resolveDedupSidecar, resolveSidecarPython } from '../blocks/dedup-resolver.js';
 
 // @kern-source: history-search-bridge:8
 export interface HistorySearchItem {
@@ -42,7 +42,7 @@ export function searchHistorySemantic(query: string, items: HistorySearchItem[],
   const sidecar = resolveDedupSidecar('history-search.py');
   if (!sidecar) return null;
 
-  const python = process.env.AGON_PYTHON || 'python3';
+  const python = resolveSidecarPython();
 
   let result;
   try {

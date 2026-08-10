@@ -12,7 +12,7 @@ export {
   validateSyntax, detectLanguageFromPath,
   SYNTAX_VALIDATOR_TIMEOUT_MS, SYNTAX_VALIDATOR_DISABLE_ENV,
 } from './syntax-validator.js';
-export { resolveDedupSidecar } from './generated/blocks/dedup-resolver.js';
+export { resolveDedupSidecar, resolveSidecarPython } from './generated/blocks/dedup-resolver.js';
 export {
   createRunDir, writeRunStatus, printRunSummary, findLatestRunDir,
   sanitizeRunLabel,

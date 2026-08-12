@@ -56,7 +56,9 @@ fn name=companionDispatch async=true params="opts:{config:CompanionConfig, binar
       : [...opts.config.serverCmd];
     // stream-json has no in-band system-prompt channel — without the flag the
     // caller's systemPrompt (seat stances, "do NOT use tools") is silently dropped.
-    if (opts.systemPrompt && opts.config.systemPromptFlag) {
+    // ACP/JSONRPC forward the systemPrompt in-band (session/new, thread/start),
+    // so the argv flag applies ONLY to stream-json — never double-apply.
+    if (opts.config.protocol === 'stream-json' && opts.systemPrompt && opts.config.systemPromptFlag) {
       serverArgs.push(opts.config.systemPromptFlag, opts.systemPrompt);
     }
     if (opts.textOnly && opts.config.textOnlyArgs?.length) {
@@ -428,12 +430,16 @@ fn name=companionDispatch async=true params="opts:{config:CompanionConfig, binar
 
       const text = agentMessages.join('\n\n');
 
-      // stream-json exec runs --max-turns 1: a tool call ends the ONLY turn, so
+      // stream-json runs --max-turns 1: a tool call ends the ONLY turn, so
       // whatever text preceded it is a preamble ("I'll quickly verify..."), not
       // the answer. Return empty stdout so the adapter's existing empty-output
-      // fall-through retries via the plain CLI spawn (--max-turns 10), which can
-      // finish the tool loop. The preamble rides in stderr for diagnosability.
-      if (isStreamJson && opts.mode === 'exec' && sawToolUse) {
+      // fall-through retries via the plain CLI spawn (exec: --max-turns 10,
+      // review: --max-turns 50), which can finish the tool loop. Applies to
+      // exec AND review — review turns inherently want tools, so via companion
+      // they hit this truncation on nearly every dispatch (review consensus:
+      // codex/zai/kimi/minimax). Agent mode never routes stream-json companions
+      // (shouldUseCompanionForAgent). Preamble rides in stderr for diagnosability.
+      if (isStreamJson && (opts.mode === 'exec' || opts.mode === 'review') && sawToolUse) {
         return {
           exitCode: 0,
           stdout: '',

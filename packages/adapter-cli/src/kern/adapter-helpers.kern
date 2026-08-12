@@ -312,9 +312,13 @@ fn name=stripStreamJson params="stdout:string" returns=string
             if (block.type === 'text' && block.text) assistantParts.push(block.text);
           }
         }
-        // result → the final answer (last one wins if several appear)
+        // result → the final answer (last one wins if several appear). Only a
+        // string result is authoritative; non-string payloads (objects) keep
+        // the old stringify-into-parts behavior instead of masking the
+        // assistant text with '{}'.
         else if (msg.type === 'result' && msg.result && !msg.is_error) {
-          resultText = typeof msg.result === 'string' ? msg.result : JSON.stringify(msg.result);
+          if (typeof msg.result === 'string') resultText = msg.result;
+          else assistantParts.push(JSON.stringify(msg.result));
         }
         // system, hook, etc. → skip
       } catch {

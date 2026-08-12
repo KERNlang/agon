@@ -241,6 +241,7 @@ export async function runNero(opts: NeroOptions): Promise<NeroResult> {
           engine,
           prompt,
           systemPrompt: sysPrompt,
+          textOnly: true,
           cwd: opts.cwd ?? resolveWorkingDir(),
           mode: 'exec' as any,
           timeout: opts.timeout,

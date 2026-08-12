@@ -111,6 +111,30 @@ describe('companionDispatch', () => {
     expect(result.stderr).toContain('quickly verify');
   });
 
+  it('applies the tool_use backstop to review mode too (review turns inherently want tools)', async () => {
+    const script = [
+      "process.stdout.write(JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'Let me examine the diff first.' }, { type: 'tool_use', name: 'Bash', input: {} }] } }) + '\\n');",
+      "process.stdout.write(JSON.stringify({ type: 'result', result: 'Let me examine the diff first.' }) + '\\n');",
+      'setInterval(() => {}, 1000);',
+    ].join('');
+
+    const result = await companionDispatch({
+      binaryPath: process.execPath,
+      config: {
+        protocol: 'stream-json',
+        serverCmd: ['-e', script],
+      },
+      prompt: 'review this',
+      cwd: process.cwd(),
+      timeout: 5,
+      mode: 'review',
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('tool_use');
+  });
+
   it('concatenates token-level ACP agent_message_chunk deltas instead of one word per paragraph', async () => {
     // Fake ACP server: answers initialize/session/new, then streams the agent
     // message as per-word chunks (kimi style) with a tool_call in the middle,

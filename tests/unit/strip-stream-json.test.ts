@@ -42,6 +42,15 @@ describe('stripStreamJson', () => {
     expect(out).toBe('truncated but valid text');
   });
 
+  it('never lets a non-string result payload mask the assistant text', () => {
+    const out = stripStreamJson(ndjson(
+      assistantText('the actual answer'),
+      { type: 'result', result: { some: 'object' }, is_error: false },
+    ));
+    expect(out).toContain('the actual answer');
+    expect(out).not.toBe('{"some":"object"}');
+  });
+
   it('keeps raw non-JSON lines as-is', () => {
     expect(stripStreamJson('plain engine output\nsecond line')).toBe('plain engine output\nsecond line');
   });

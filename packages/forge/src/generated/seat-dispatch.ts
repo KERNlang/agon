@@ -33,13 +33,14 @@ export function classifySeatFailure(result: DispatchResult): 'timeout' | 'empty'
  * Dispatch one panel seat; on a transient failure (timeout/empty/error) retry ONCE with ~half the timeout (never longer than the first attempt). Never retries a user abort. opts.extract lets a mode keep its own text-extraction (e.g. tribunal's <think> salvage) — an extract throw counts as an 'empty' failure. The outcome note feeds the panel-health banner; detail preserves the underlying stderr/message so diagnosability survives the categorization.
  */
 // @kern-source: seat-dispatch:31
-export async function dispatchSeatWithRetry(adapter: EngineAdapter, opts: {engineId:string, engine:any, prompt:string, systemPrompt?:string, cwd:string, mode:string, timeout:number, outputDir:string, signal?:AbortSignal, extract?:(result:DispatchResult)=>string}): Promise<SeatOutcome> {
+export async function dispatchSeatWithRetry(adapter: EngineAdapter, opts: {engineId:string, engine:any, prompt:string, systemPrompt?:string, textOnly?:boolean, cwd:string, mode:string, timeout:number, outputDir:string, signal?:AbortSignal, extract?:(result:DispatchResult)=>string}): Promise<SeatOutcome> {
   const attemptOnce = async (timeoutSec: number): Promise<{ failure: 'timeout' | 'empty' | 'error' | null; text: string; detail: string; auth: boolean }> => {
     try {
       const result = await adapter.dispatch({
         engine: opts.engine,
         prompt: opts.prompt,
         systemPrompt: opts.systemPrompt,
+        textOnly: opts.textOnly,
         cwd: opts.cwd,
         mode: opts.mode,
         timeout: timeoutSec,
@@ -101,7 +102,7 @@ export async function dispatchSeatWithRetry(adapter: EngineAdapter, opts: {engin
 /**
  * Fold seat outcomes into the structured panel-health record + the one-line banner every surface must print when degraded ('panel degraded: codex timeout → retried OK; zai empty → dropped (5/6 responded)').
  */
-// @kern-source: seat-dispatch:98
+// @kern-source: seat-dispatch:99
 export function buildPanelHealth(outcomes: SeatOutcome[]): { requested: number; responded: number; degraded: boolean; notes: string[]; banner: string | null } {
   const requested = outcomes.length;
   const responded = outcomes.filter((o) => o.ok).length;

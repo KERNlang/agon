@@ -20,10 +20,10 @@ const DRAFT_BLOCK = `draft {
 }`;
 
 function makeFakes() {
-  const calls: { engineId: string; prompt: string; systemPrompt?: string }[] = [];
+  const calls: { engineId: string; prompt: string; systemPrompt?: string; textOnly?: boolean }[] = [];
   const adapter = {
     dispatch: async (o: any) => {
-      calls.push({ engineId: o.engine?.id, prompt: o.prompt, systemPrompt: o.systemPrompt });
+      calls.push({ engineId: o.engine?.id, prompt: o.prompt, systemPrompt: o.systemPrompt, textOnly: o.textOnly });
       return { exitCode: 0, stdout: DRAFT_BLOCK, stderr: '', timedOut: false };
     },
   } as any;
@@ -129,6 +129,13 @@ describe('brainstorm divergent style', () => {
       expect(prompt).toContain('synthesize the best parts from each into one comprehensive answer');
       expect(prompt).toContain('Be specific and actionable. Include file paths where relevant.');
       expect(prompt).not.toContain('DISTINCT directions');
+    });
+
+    it('marks every seat and the synthesis dispatch textOnly so engines cannot burn the turn on tools', async () => {
+      const { calls, opts } = baseOpts();
+      await runBrainstorm(opts as any);
+      expect(calls.length).toBeGreaterThan(0);
+      for (const c of calls) expect(c.textOnly).toBe(true);
     });
   });
 });

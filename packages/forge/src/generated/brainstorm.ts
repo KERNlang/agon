@@ -128,6 +128,7 @@ export async function collectRankedDrafts(opts: {question:string, context?:strin
       engine,
       prompt: draftPrompt,
       systemPrompt,
+      textOnly: true,
       cwd: process.cwd(),
       mode: 'exec',
       timeout: opts.timeout,
@@ -152,7 +153,7 @@ export async function collectRankedDrafts(opts: {question:string, context?:strin
   return { ranked: rankDrafts(drafts, opts.style), outcomes: attempts.map((attempt) => attempt.seat) };
 }
 
-// @kern-source: brainstorm:137
+// @kern-source: brainstorm:138
 export function scoutScore(bid: ScoutBid): number {
   let score = 0;
   // Confidence: 40% weight (0-40 points)
@@ -166,12 +167,12 @@ export function scoutScore(bid: ScoutBid): number {
   return score;
 }
 
-// @kern-source: brainstorm:150
+// @kern-source: brainstorm:151
 function warnBrainstorm(message: string): void {
   console.warn(message);
 }
 
-// @kern-source: brainstorm:155
+// @kern-source: brainstorm:156
 export async function runScout(opts: {question:string, context?:string, engines:string[], scoutCount?:number, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal}): Promise<{rankedBids:ScoutBid[], leadEngine:string, topConfidence:number, disagreementSpread:number}> {
   const count = opts.scoutCount ?? 2;
   // Filter quarantined engines BEFORE slicing, else a dead engine in the first
@@ -190,7 +191,7 @@ export async function runScout(opts: {question:string, context?:string, engines:
   return { rankedBids: bids, leadEngine: (bids.length > 0) ? bids[0].engineId : scouts[0], topConfidence: topConfidence, disagreementSpread: disagreementSpread };
 }
 
-// @kern-source: brainstorm:173
+// @kern-source: brainstorm:174
 export function fallbackParse(output: string): KernDraft {
   const stripped = output.replace(/\x60\x60\x60(?:json)?\s*/gi, '').replace(/\x60\x60\x60/g, '');
   let depth = 0;
@@ -231,7 +232,7 @@ export function fallbackParse(output: string): KernDraft {
   };
 }
 
-// @kern-source: brainstorm:214
+// @kern-source: brainstorm:215
 export async function runBrainstorm(opts: {question:string, context?:string, engines:string[], style?:string, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal, onEvent?:(event:{type:string,data?:Record<string,unknown>})=>void}): Promise<BrainstormResult> {
   const brainstormId = randomUUID().slice(0, 8);
   // 'divergent' is the default: brainstorm exists to spread the panel out.
@@ -370,6 +371,7 @@ export async function runBrainstorm(opts: {question:string, context?:string, eng
       engine: winnerEngine,
       prompt: expandPrompt,
       systemPrompt: 'You are expanding on a winning brainstorm approach. Respond directly with your detailed analysis as plain text. Do NOT use tools, read files, or run commands.',
+      textOnly: true,
       cwd: process.cwd(),
       mode: 'exec',
       timeout: opts.timeout,

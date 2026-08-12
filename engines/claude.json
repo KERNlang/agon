@@ -53,6 +53,8 @@
   "companion": {
     "protocol": "stream-json",
     "serverCmd": ["--print", "--verbose", "--input-format", "stream-json", "--output-format", "stream-json", "--max-turns", "1"],
+    "systemPromptFlag": "--system-prompt",
+    "textOnlyArgs": ["--tools", ""],
     "features": {
       "threadResume": false,
       "nativeReview": false,

@@ -90,7 +90,7 @@ export class CliAdapter implements EngineAdapter {
     }
     // Try companion protocol (JSONRPC app-server) first — faster, more stable
     if (options.engine.companion) {
-      const companionResult = await companionDispatch({ config: options.engine.companion, binaryPath: binaryPath, prompt: options.prompt, cwd: options.cwd, timeout: options.timeout, mode: (options.mode === 'agent') ? 'agent' : ((options.mode === 'review') ? 'review' : 'exec'), model: resolveModel(options.engine, options.cwd) ?? undefined, signal: options.signal, systemPrompt: options.systemPrompt, env: iso.env });
+      const companionResult = await companionDispatch({ config: options.engine.companion, binaryPath: binaryPath, prompt: options.prompt, cwd: options.cwd, timeout: options.timeout, mode: (options.mode === 'agent') ? 'agent' : ((options.mode === 'review') ? 'review' : 'exec'), model: resolveModel(options.engine, options.cwd) ?? undefined, signal: options.signal, systemPrompt: options.systemPrompt, textOnly: options.textOnly, env: iso.env });
       // Exit code 2 = companion not available, fall through to CLI spawn
       // Also fall through if companion returned empty output (stream-json capture failure)
       if (companionResult.exitCode !== 2 && companionResult.stdout.trim()) {

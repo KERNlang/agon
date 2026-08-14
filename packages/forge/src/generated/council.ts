@@ -302,7 +302,7 @@ export async function runCouncil(opts: CouncilOptions): Promise<CouncilResult> {
     try {
       const engine = registry.get(engineId);
       const result: DispatchResult = await adapter.dispatch({
-        engine, prompt, systemPrompt: sys, cwd, mode: 'exec', timeout: timeoutSec, outputDir, signal,
+        engine, prompt, systemPrompt: sys, textOnly: true, cwd, mode: 'exec', timeout: timeoutSec, outputDir, signal,
       });
       const raw = String(result.stdout ?? '').trim();
       const cleaned = raw.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();

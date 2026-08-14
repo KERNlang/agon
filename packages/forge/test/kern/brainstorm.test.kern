@@ -1,0 +1,11 @@
+test name="Brainstorm divergence contracts" target="../../src/kern/brainstorm.kern"
+  it name="brainstorm source stays valid KERN"
+    expect no=schemaViolations
+    expect no=semanticViolations
+    expect no=codegenErrors
+
+  it name="grounded style rewards keyFiles"
+    expect fn=structuralScore args={{[{"approach": "use a message queue to decouple the pipeline", "reasoning": "reduces coupling", "tradeoffs": ["latency", "ops burden"], "confidence": 50, "keyFiles": ["src/a.ts", "src/b.ts"], "steps": ["one", "two", "three"]}, "grounded"]}} equals=76
+
+  it name="divergent style drops the keyFiles reward so reframing drafts are not buried"
+    expect fn=structuralScore args={{[{"approach": "use a message queue to decouple the pipeline", "reasoning": "reduces coupling", "tradeoffs": ["latency", "ops burden"], "confidence": 50, "keyFiles": ["src/a.ts", "src/b.ts"], "steps": ["one", "two", "three"]}, "divergent"]}} equals=70

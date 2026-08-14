@@ -234,6 +234,7 @@ fn name=runNero async=true params="opts:NeroOptions" returns="Promise<NeroResult
             engine,
             prompt,
             systemPrompt: sysPrompt,
+            textOnly: true,
             cwd: opts.cwd ?? resolveWorkingDir(),
             mode: 'exec' as any,
             timeout: opts.timeout,

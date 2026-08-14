@@ -45,6 +45,96 @@ describe('companionDispatch', () => {
     expect(Date.now() - startedAt).toBeLessThan(3000);
   });
 
+  it('forwards the system prompt via systemPromptFlag on the stream-json path', async () => {
+    // Fake server echoes its argv back as the result — proves the flag+prompt
+    // landed on the command line (stream-json has no in-band system-prompt channel).
+    // The '--' keeps node from eating the appended flags as node options; the
+    // interval keeps stdin writable until dispatch teardown kills the process.
+    const script = "process.stdout.write(JSON.stringify({ type: 'result', result: process.argv.slice(1).join(' ') }) + '\\n'); setInterval(() => {}, 1000);";
+    const result = await companionDispatch({
+      binaryPath: process.execPath,
+      config: {
+        protocol: 'stream-json',
+        serverCmd: ['-e', script, '--'],
+        systemPromptFlag: '--system-prompt',
+      },
+      prompt: 'hello',
+      cwd: process.cwd(),
+      timeout: 5,
+      mode: 'exec',
+      systemPrompt: 'SEAT_STANCE_MARKER do not use tools',
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain('--system-prompt');
+    expect(result.stdout).toContain('SEAT_STANCE_MARKER');
+  });
+
+  it('appends textOnlyArgs only when the dispatch sets textOnly', async () => {
+    const script = "process.stdout.write(JSON.stringify({ type: 'result', result: process.argv.slice(1).join(' ') }) + '\\n'); setInterval(() => {}, 1000);";
+    const config = {
+      protocol: 'stream-json' as const,
+      serverCmd: ['-e', script, '--'],
+      textOnlyArgs: ['--tools', ''],
+    };
+    const base = { binaryPath: process.execPath, config, prompt: 'hello', cwd: process.cwd(), timeout: 5, mode: 'exec' as const };
+
+    const withTextOnly = await companionDispatch({ ...base, textOnly: true });
+    expect(withTextOnly.stdout).toContain('--tools');
+
+    const withoutTextOnly = await companionDispatch({ ...base });
+    expect(withoutTextOnly.stdout).not.toContain('--tools');
+  });
+
+  it('returns empty stdout when a stream-json exec turn ends on tool_use, so the adapter falls through to CLI spawn', async () => {
+    const script = [
+      "process.stdout.write(JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'I will quickly verify the file paths.' }, { type: 'tool_use', name: 'Read', input: {} }] } }) + '\\n');",
+      "process.stdout.write(JSON.stringify({ type: 'result', result: 'I will quickly verify the file paths.' }) + '\\n');",
+      'setInterval(() => {}, 1000);',
+    ].join('');
+
+    const result = await companionDispatch({
+      binaryPath: process.execPath,
+      config: {
+        protocol: 'stream-json',
+        serverCmd: ['-e', script],
+      },
+      prompt: 'hello',
+      cwd: process.cwd(),
+      timeout: 5,
+      mode: 'exec',
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('tool_use');
+    expect(result.stderr).toContain('quickly verify');
+  });
+
+  it('applies the tool_use backstop to review mode too (review turns inherently want tools)', async () => {
+    const script = [
+      "process.stdout.write(JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'Let me examine the diff first.' }, { type: 'tool_use', name: 'Bash', input: {} }] } }) + '\\n');",
+      "process.stdout.write(JSON.stringify({ type: 'result', result: 'Let me examine the diff first.' }) + '\\n');",
+      'setInterval(() => {}, 1000);',
+    ].join('');
+
+    const result = await companionDispatch({
+      binaryPath: process.execPath,
+      config: {
+        protocol: 'stream-json',
+        serverCmd: ['-e', script],
+      },
+      prompt: 'review this',
+      cwd: process.cwd(),
+      timeout: 5,
+      mode: 'review',
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('tool_use');
+  });
+
   it('concatenates token-level ACP agent_message_chunk deltas instead of one word per paragraph', async () => {
     // Fake ACP server: answers initialize/session/new, then streams the agent
     // message as per-word chunks (kimi style) with a tool_call in the middle,

@@ -454,6 +454,7 @@ export async function runAdversarialCritique(opts: {problem:string, thoughts:Tho
       engine: critic,
       prompt,
       systemPrompt: 'You are an adversarial reviewer of a reasoning chain. Respond with terse, specific critique bullets only. Do NOT use tools, read files, or run commands.',
+      textOnly: true,
       cwd: opts.cwd ?? process.cwd(),
       mode: 'exec',
       timeout: opts.timeout,
@@ -471,7 +472,7 @@ export async function runAdversarialCritique(opts: {problem:string, thoughts:Tho
 /**
  * Run one sequential-thinking chain via a single structured dispatch, then ground, machine-validate, select the winning branch (tot only), and optionally run a second `critic` engine to adversarially attack the chain. Pure prompt-scaffold path so it works for engines with weak/absent adaptive thinking. cwd defaults to process.cwd() but callers (e.g. goal --cwd) should pass the target repo so dispatch + grounding resolve there. Returns a ThinkResult whose refinedSpec is the handoff to `agon goal`.
  */
-// @kern-source: thinking:439
+// @kern-source: thinking:440
 export async function runThinkChain(opts: {problem:string, strategy:string, engineId:string, registry:EngineRegistry, adapter:EngineAdapter, maxThoughts:number, branches?:number, critic?:string, timeout:number, outputDir:string, cwd?:string, ground:boolean, signal?:AbortSignal}): Promise<ThinkResult> {
   const strategy = isThinkStrategy(opts.strategy) ? opts.strategy : 'linear';
   const branches = Math.max(1, Math.min(opts.branches ?? 1, 8));
@@ -486,6 +487,7 @@ export async function runThinkChain(opts: {problem:string, strategy:string, engi
       engine,
       prompt,
       systemPrompt: 'You are a structured sequential reasoner. Output ONLY the JSON object requested. Do NOT use tools, read files, or run commands.',
+      textOnly: true,
       cwd,
       mode: 'exec',
       timeout: opts.timeout,

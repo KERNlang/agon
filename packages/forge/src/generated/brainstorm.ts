@@ -32,7 +32,7 @@ export function calibrateConfidence(engineId: string, rawBid: number): number {
 }
 
 // @kern-source: brainstorm:22
-export function qualityScore(engineId: string, draft: KernDraft): number {
+export function structuralScore(draft: KernDraft, style?: string): number {
   let score = 0;
   if (draft.approach.length > 10) {
     score += 20;
@@ -45,32 +45,80 @@ export function qualityScore(engineId: string, draft: KernDraft): number {
   }
   score += Math.min(draft.steps.length, 7) * 5;
   score += Math.min(draft.tradeoffs.length, 5) * 5;
-  score += Math.min(draft.keyFiles.length, 5) * 3;
+  // keyFiles reward only outside divergent style — reframing drafts rarely name
+  // files, so counting them systematically buries every non-anchor stance.
+  if (style !== 'divergent') {
+    score += Math.min(draft.keyFiles.length, 5) * 3;
+  }
+  return score;
+}
+
+// @kern-source: brainstorm:39
+export function qualityScore(engineId: string, draft: KernDraft, style?: string): number {
+  let score = structuralScore(draft, style);
   // Use calibrated confidence, not raw self-report
   score += calibrateConfidence(engineId, draft.confidence) * 0.05;
   return score;
 }
 
-// @kern-source: brainstorm:38
-export function rankDrafts(drafts: {engineId:string, draft:KernDraft, raw:string, seat:SeatOutcome}[]): {engineId:string, draft:KernDraft, raw:string, seat:SeatOutcome}[] {
+// @kern-source: brainstorm:46
+export function rankDrafts(drafts: {engineId:string, draft:KernDraft, raw:string, seat:SeatOutcome}[], style?: string): {engineId:string, draft:KernDraft, raw:string, seat:SeatOutcome}[] {
   return [...drafts].sort((a, b) => {
-    const scoreA = qualityScore(a.engineId, a.draft);
-    const scoreB = qualityScore(b.engineId, b.draft);
+    const scoreA = qualityScore(a.engineId, a.draft, style);
+    const scoreB = qualityScore(b.engineId, b.draft, style);
     return scoreB - scoreA;
   });
 }
 
-// @kern-source: brainstorm:47
-export async function collectRankedDrafts(opts: {question:string, context?:string, engines:string[], registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal, onEvent?:(event:{type:string,data?:Record<string,unknown>})=>void}): Promise<{ranked:{engineId:string, draft:KernDraft, raw:string, seat:SeatOutcome}[], outcomes:SeatOutcome[]}> {
+// @kern-source: brainstorm:55
+export function assignStances(engines: string[]): Map<string,string> {
+  const stances = [
+    'ANCHOR: give your single best, most direct answer to the question as asked.',
+    'CONTRARIAN: assume the approach the question implies (or the most obvious one) is wrong — argue for a fundamentally different one.',
+    'FIRST-PRINCIPLES: ignore the structure the question implies; restate the underlying problem in one line and re-derive a solution from scratch.',
+    'OUTSIDER: answer as a strong expert from a different domain would — import a pattern this field does not normally use here.',
+    'EXPANSIONIST: propose the most ambitious defensible version — what does this look like solved properly at 10x the scope?',
+    'WILDCARD: propose something deliberately unconventional that you can still defend technically.',
+  ];
+  // Shuffle per run: a fixed seat→stance mapping would hand the same engine
+  // the lowest-scoring stance every time and deflate its Glicko rating.
+  const pool = stances
+    .map((v) => ({ v, k: Math.random() }))
+    .sort((a, b) => a.k - b.k)
+    .map((x) => x.v);
+  const map = new Map<string, string>();
+  engines.forEach((id, i) => map.set(id, pool[i % pool.length]));
+  return map;
+}
+
+// @kern-source: brainstorm:76
+export async function collectRankedDrafts(opts: {question:string, context?:string, engines:string[], style?:string, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal, onEvent?:(event:{type:string,data?:Record<string,unknown>})=>void}): Promise<{ranked:{engineId:string, draft:KernDraft, raw:string, seat:SeatOutcome}[], outcomes:SeatOutcome[]}> {
   const draftPrompt = buildKernDraftPrompt({
     question: opts.question,
     context: opts.context,
     mode: 'brainstorm',
   });
 
+  // Divergent style: each seat gets a distinct stance so the panel actually
+  // spreads out instead of six engines converging on the stated framing.
+  // The stance rides in the system prompt — the protocol draft prompt stays
+  // byte-identical so the draft-block output contract is undisturbed.
+  const stances = opts.style === 'divergent' ? assignStances(opts.engines) : null;
+  const baseSystemPrompt = 'You are participating in a brainstorm. Respond directly with your analysis and approach. Do NOT use tools, do NOT read files, do NOT run commands. Just think and write your response as plain text.';
+
   const draftPromises = opts.engines.map(async (engineId: string) => {
     const engine = opts.registry.get(engineId);
     opts.onEvent?.({ type: 'brainstorm:seat-started', data: { engineId } });
+    const stance = stances?.get(engineId);
+    const systemPrompt = stance
+      ? [
+          baseSystemPrompt,
+          '',
+          `Your seat stance — ${stance}`,
+          'The question may be over-specified: treat its framing as one hypothesis about the underlying problem, not a hard constraint. If a better framing exists, say so in the reasoning field.',
+          'Express the stance entirely inside the draft block fields (approach/reasoning/tradeoffs/steps). Do not add any text outside the draft block.',
+        ].join('\n')
+      : baseSystemPrompt;
     // One auto-retry per seat (shorter timeout) — transient flake must not
     // silently shrink the promised panel. Whatever still fails gets reported
     // through the panel-health banner instead of vanishing into a 3/6 run.
@@ -78,7 +126,8 @@ export async function collectRankedDrafts(opts: {question:string, context?:strin
       engineId,
       engine,
       prompt: draftPrompt,
-      systemPrompt: 'You are participating in a brainstorm. Respond directly with your analysis and approach. Do NOT use tools, do NOT read files, do NOT run commands. Just think and write your response as plain text.',
+      systemPrompt,
+      textOnly: true,
       cwd: process.cwd(),
       mode: 'exec',
       timeout: opts.timeout,
@@ -100,10 +149,10 @@ export async function collectRankedDrafts(opts: {question:string, context?:strin
 
   const attempts = await Promise.all(draftPromises);
   const drafts = attempts.flatMap((attempt) => attempt.entry ? [attempt.entry] : []);
-  return { ranked: rankDrafts(drafts), outcomes: attempts.map((attempt) => attempt.seat) };
+  return { ranked: rankDrafts(drafts, opts.style), outcomes: attempts.map((attempt) => attempt.seat) };
 }
 
-// @kern-source: brainstorm:90
+// @kern-source: brainstorm:137
 export function scoutScore(bid: ScoutBid): number {
   let score = 0;
   // Confidence: 40% weight (0-40 points)
@@ -117,12 +166,12 @@ export function scoutScore(bid: ScoutBid): number {
   return score;
 }
 
-// @kern-source: brainstorm:103
+// @kern-source: brainstorm:150
 function warnBrainstorm(message: string): void {
   console.warn(message);
 }
 
-// @kern-source: brainstorm:108
+// @kern-source: brainstorm:155
 export async function runScout(opts: {question:string, context?:string, engines:string[], scoutCount?:number, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal}): Promise<{rankedBids:ScoutBid[], leadEngine:string, topConfidence:number, disagreementSpread:number}> {
   const count = opts.scoutCount ?? 2;
   // Filter quarantined engines BEFORE slicing, else a dead engine in the first
@@ -141,7 +190,7 @@ export async function runScout(opts: {question:string, context?:string, engines:
   return { rankedBids: bids, leadEngine: (bids.length > 0) ? bids[0].engineId : scouts[0], topConfidence: topConfidence, disagreementSpread: disagreementSpread };
 }
 
-// @kern-source: brainstorm:126
+// @kern-source: brainstorm:173
 export function fallbackParse(output: string): KernDraft {
   const stripped = output.replace(/\x60\x60\x60(?:json)?\s*/gi, '').replace(/\x60\x60\x60/g, '');
   let depth = 0;
@@ -182,9 +231,12 @@ export function fallbackParse(output: string): KernDraft {
   };
 }
 
-// @kern-source: brainstorm:167
-export async function runBrainstorm(opts: {question:string, context?:string, engines:string[], registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal, onEvent?:(event:{type:string,data?:Record<string,unknown>})=>void}): Promise<BrainstormResult> {
+// @kern-source: brainstorm:214
+export async function runBrainstorm(opts: {question:string, context?:string, engines:string[], style?:string, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal, onEvent?:(event:{type:string,data?:Record<string,unknown>})=>void}): Promise<BrainstormResult> {
   const brainstormId = randomUUID().slice(0, 8);
+  // 'divergent' is the default: brainstorm exists to spread the panel out.
+  // 'grounded' restores the pre-stance behavior (convergent, file-path-anchored).
+  const style = opts.style === 'grounded' ? 'grounded' : 'divergent';
   // Cold-start: seed newly-dropped model versions from their predecessor before
   // bidding, so a new engine competes at its family's strength, not 1500.
   seedNewEnginesFromRegistry(opts.registry);
@@ -201,7 +253,7 @@ export async function runBrainstorm(opts: {question:string, context?:string, eng
     sessionType: 'brainstorm',
     outputDir: opts.outputDir,
   });
-  sidechain.log('brainstorm:init', undefined, { question: opts.question, engines: __engines });
+  sidechain.log('brainstorm:init', undefined, { question: opts.question, engines: __engines, style });
 
   const skippedOutcomes: SeatOutcome[] = __hc.skipped.map((s) => ({
     engineId: s.engineId,
@@ -220,6 +272,7 @@ export async function runBrainstorm(opts: {question:string, context?:string, eng
     question: opts.question,
     context: opts.context,
     engines: __engines,
+    style,
     registry: opts.registry,
     adapter: opts.adapter,
     timeout: opts.timeout,
@@ -239,7 +292,7 @@ export async function runBrainstorm(opts: {question:string, context?:string, eng
   const bids: BrainstormBid[] = ranked.map((d, i) => {
     const reasoning = d.draft.approach + (d.draft.reasoning ? ` — ${d.draft.reasoning}` : '');
     const approach = d.draft.steps.map((s: string, j: number) => `${j + 1}. ${s}`).join('\n');
-    const score = qualityScore(d.engineId, d.draft);
+    const score = qualityScore(d.engineId, d.draft, style);
     return {
       engineId: d.engineId,
       confidence: calibrateConfidence(d.engineId, d.draft.confidence),
@@ -283,16 +336,31 @@ export async function runBrainstorm(opts: {question:string, context?:string, eng
     return `## ${d.engineId} (confidence: ${d.draft.confidence}%)\nApproach: ${d.draft.approach}${d.draft.reasoning ? `\nReasoning: ${d.draft.reasoning}` : ''}${d.draft.tradeoffs?.length ? `\nTradeoffs: ${d.draft.tradeoffs.join('; ')}` : ''}${steps ? `\nSteps:\n${steps}` : ''}`;
   }).join('\n\n');
 
-  const expandPrompt = [
-    opts.question,
-    '',
-    `Multiple AI engines analyzed this. Here are ALL their drafts — synthesize the best parts from each into one comprehensive answer:`,
-    '',
-    allDrafts,
-    '',
-    'Now write the best possible answer by combining the strongest ideas from ALL drafts above. Don\'t just pick one — take the best parts from each.',
-    'Be specific and actionable. Include file paths where relevant.',
-  ].join('\n');
+  // Divergent synthesis must keep the spread visible: collapsing every draft
+  // into one merged answer would undo the stances one dispatch later. It still
+  // ends with a single recommendation so downstream automation has one
+  // decidable answer to act on.
+  const expandPrompt = style === 'divergent'
+    ? [
+        opts.question,
+        '',
+        `Multiple AI engines analyzed this from deliberately different stances. Here are ALL their drafts:`,
+        '',
+        allDrafts,
+        '',
+        'Present the 2-3 strongest DISTINCT directions from the drafts above — including at least one that challenges the framing of the original question. For each direction: the core idea, why it could win, and its main risk.',
+        'Then close with a single clear recommendation: which direction to take first and why.',
+      ].join('\n')
+    : [
+        opts.question,
+        '',
+        `Multiple AI engines analyzed this. Here are ALL their drafts — synthesize the best parts from each into one comprehensive answer:`,
+        '',
+        allDrafts,
+        '',
+        'Now write the best possible answer by combining the strongest ideas from ALL drafts above. Don\'t just pick one — take the best parts from each.',
+        'Be specific and actionable. Include file paths where relevant.',
+      ].join('\n');
 
   let response: string;
   let synthesis: {status:'completed' | 'fallback', detail?:string};
@@ -302,6 +370,7 @@ export async function runBrainstorm(opts: {question:string, context?:string, eng
       engine: winnerEngine,
       prompt: expandPrompt,
       systemPrompt: 'You are expanding on a winning brainstorm approach. Respond directly with your detailed analysis as plain text. Do NOT use tools, read files, or run commands.',
+      textOnly: true,
       cwd: process.cwd(),
       mode: 'exec',
       timeout: opts.timeout,

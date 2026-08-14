@@ -28,7 +28,7 @@ fn name=classifySeatFailure params="result:DispatchResult" returns="'timeout' | 
     return null;
   >>>
 
-fn name=dispatchSeatWithRetry async=true params="adapter:EngineAdapter, opts:{engineId:string, engine:any, prompt:string, systemPrompt?:string, cwd:string, mode:string, timeout:number, outputDir:string, signal?:AbortSignal, extract?:(result:DispatchResult)=>string}" returns="Promise<SeatOutcome>" export=true
+fn name=dispatchSeatWithRetry async=true params="adapter:EngineAdapter, opts:{engineId:string, engine:any, prompt:string, systemPrompt?:string, textOnly?:boolean, cwd:string, mode:string, timeout:number, outputDir:string, signal?:AbortSignal, extract?:(result:DispatchResult)=>string}" returns="Promise<SeatOutcome>" export=true
   doc "Dispatch one panel seat; on a transient failure (timeout/empty/error) retry ONCE with ~half the timeout (never longer than the first attempt). Never retries a user abort. opts.extract lets a mode keep its own text-extraction (e.g. tribunal's <think> salvage) — an extract throw counts as an 'empty' failure. The outcome note feeds the panel-health banner; detail preserves the underlying stderr/message so diagnosability survives the categorization."
   handler <<<
     const attemptOnce = async (timeoutSec: number): Promise<{ failure: 'timeout' | 'empty' | 'error' | null; text: string; detail: string; auth: boolean }> => {
@@ -37,6 +37,7 @@ fn name=dispatchSeatWithRetry async=true params="adapter:EngineAdapter, opts:{en
           engine: opts.engine,
           prompt: opts.prompt,
           systemPrompt: opts.systemPrompt,
+          textOnly: opts.textOnly,
           cwd: opts.cwd,
           mode: opts.mode,
           timeout: timeoutSec,

@@ -67,6 +67,13 @@ export const CompanionConfigSchema = z.object({
   // worktree — required for servers that ignore the spawn cwd (otherwise their
   // writes leak into the launch repo).
   cwdArg: z.string().optional(),
+  // Flag for passing the caller's systemPrompt on the command line (claude
+  // `--system-prompt`). stream-json has no in-band system-prompt channel —
+  // without this the systemPrompt is silently dropped on that protocol.
+  systemPromptFlag: z.string().optional(),
+  // Args that disable the server's tools for a plain-text answer (claude
+  // `['--tools','']`). Appended only when the dispatch sets textOnly.
+  textOnlyArgs: z.array(z.string()).optional(),
   sandbox: z.enum(['read-only', 'workspace-write', 'danger-full-access']).optional(),
   features: z.object({
     threadResume: z.boolean().optional(),

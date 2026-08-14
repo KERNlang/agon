@@ -32,6 +32,11 @@ export const brainstormCommand = defineCommand({
       description: 'Timeout in seconds',
       default: '120',
     },
+    style: {
+      type: 'string',
+      description: "'divergent' (default: seats get distinct stances, synthesis keeps 2-3 directions) or 'grounded' (convergent, file-path-anchored single answer)",
+      default: 'divergent',
+    },
     label: {
       type: 'string',
       description: 'Human-readable suffix baked into the run dir name (orchestrators: distinguish parallel runs without grep).',
@@ -53,6 +58,10 @@ export const brainstormCommand = defineCommand({
       ? args.engines.split(',').map((s) => s.trim())
       : filterDefaultOrchestrationEngines(registry.activeIds(config));
 
+    if (args.style !== 'divergent' && args.style !== 'grounded') {
+      throw new Error(`Unknown --style "${args.style}" — use 'divergent' or 'grounded'.`);
+    }
+
     if (args.quiet) process.env.AGON_QUIET = '1';
     const startedAt = new Date().toISOString();
     const { path: outputDir } = createRunDir({
@@ -64,6 +73,7 @@ export const brainstormCommand = defineCommand({
     if (!quiet) {
       header(`Brainstorm: ${args.question}`);
       info(`Engines: ${available.join(', ')}`);
+      info(`Style: ${args.style}`);
     }
 
     const seatState = new Map<string, { ok: boolean; detail: string }>();
@@ -72,6 +82,7 @@ export const brainstormCommand = defineCommand({
       result = await runBrainstorm({
         question: args.question,
         engines: available,
+        style: args.style,
         registry,
         adapter,
         timeout: parseInt(args.timeout, 10),

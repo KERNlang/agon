@@ -31,6 +31,8 @@ interface name=CompanionConfig
   field name=serverCmd type="string[]"
   field name=sandbox type="'read-only'|'workspace-write'|'danger-full-access'" optional=true
   field name=cwdArg type=string optional=true doc="Flag the companion server uses to set its working directory (e.g. opencode's '--cwd'). When set, companionDispatch appends [cwdArg, opts.cwd] to serverCmd so the server is PINNED to the worktree. Required for servers (opencode) that ignore the spawn cwd / attach to a shared server in the launch repo — relying on the spawn cwd alone leaked writes into the parent repo."
+  field name=systemPromptFlag type=string optional=true doc="Flag the companion server accepts for a system prompt (e.g. claude's '--system-prompt'). When set, companionDispatch appends [systemPromptFlag, opts.systemPrompt] to serverCmd. Without it the stream-json protocol has no in-band system-prompt channel and the caller's systemPrompt is silently DROPPED — which is how brainstorm seat instructions never reached claude."
+  field name=textOnlyArgs type="string[]" optional=true doc="Args that disable the server's tools for a plain-text answer (e.g. claude's ['--tools','']). Appended to serverCmd only when the dispatch sets textOnly. Needed because stream-json companions run --max-turns 1: a tool call ends the only turn, so the caller gets the pre-tool preamble instead of an answer."
   field name=features type="{threadResume?:boolean, nativeReview?:boolean, structuredOutput?:boolean}" optional=true
 
 interface name=CliModelEntry
@@ -109,6 +111,8 @@ interface name=DispatchOptions
   field name=signal type=AbortSignal optional=true
   field name=images type="ImageAttachment[]" optional=true
   field name=systemPrompt type=string optional=true
+  field name=textOnly type=boolean optional=true
+    doc "The caller wants a plain-text answer and the engine must not use tools (brainstorm seats/synthesis, tribunal, council — dispatches whose system prompts already say 'do NOT use tools'). On the companion path this appends the engine's CompanionConfig.textOnlyArgs (e.g. claude --tools '') so a --max-turns 1 turn is always the complete answer instead of a tool-use preamble. Never set it for dispatches that may legitimately need tools (agon ask, room work)."
   field name=tools type="Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>" optional=true
     doc "Native function-calling tool specs (OpenAI-function shape). When present AND the dispatch resolves to the API path (binary-less engine + usable key), the adapter sends them to the model's native tool API and returns any structured call in DispatchResult.parts. IGNORED on the CLI/companion paths — those engines use the in-prompt text-marker protocol. Lets the browser brain's ReAct loop get reliable native tool calls from API-only coding-plan engines that otherwise forget to emit the text marker (narrate-and-stop)."
   field name=messages type="Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>" optional=true

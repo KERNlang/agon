@@ -75,7 +75,7 @@ service name=CliAdapter implements=EngineAdapter
           return value="ptyResult"
       comment raw="// Try companion protocol (JSONRPC app-server) first — faster, more stable"
       if cond="options.engine.companion"
-        let name=companionResult value="await companionDispatch({ config: options.engine.companion, binaryPath, prompt: options.prompt, cwd: options.cwd, timeout: options.timeout, mode: options.mode === 'agent' ? 'agent' : options.mode === 'review' ? 'review' : 'exec', model: resolveModel(options.engine, options.cwd) ?? undefined, signal: options.signal, systemPrompt: options.systemPrompt, env: iso.env, })"
+        let name=companionResult value="await companionDispatch({ config: options.engine.companion, binaryPath, prompt: options.prompt, cwd: options.cwd, timeout: options.timeout, mode: options.mode === 'agent' ? 'agent' : options.mode === 'review' ? 'review' : 'exec', model: resolveModel(options.engine, options.cwd) ?? undefined, signal: options.signal, systemPrompt: options.systemPrompt, textOnly: options.textOnly, env: iso.env, })"
         comment raw="// Exit code 2 = companion not available, fall through to CLI spawn"
         comment raw="// Also fall through if companion returned empty output (stream-json capture failure)"
         if cond="companionResult.exitCode !== 2 && companionResult.stdout.trim()"

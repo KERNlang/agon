@@ -295,10 +295,11 @@ fn name=resolveAgentArgs params="engine:EngineDefinition, permissionLevel:'full'
   >>>
 
 fn name=stripStreamJson params="stdout:string" returns=string
-  doc "Extract text content from Claude stream-json NDJSON output. Returns plain text with system/hook messages removed."
+  doc "Extract text content from Claude stream-json NDJSON output. The final result event is the authoritative answer when present — concatenating it with the assistant text blocks duplicates the answer, and in multi-turn tool runs the early assistant texts are tool preambles ('I'll quickly verify...'), not the answer. Assistant texts remain the fallback for streams the result never closed (timeout kill, max-tokens is_error)."
   handler <<<
     const lines = stdout.split('\n');
-    const textParts: string[] = [];
+    const assistantParts: string[] = [];
+    let resultText = '';
 
     for (const line of lines) {
       const trimmed = line.trim();
@@ -308,21 +309,25 @@ fn name=stripStreamJson params="stdout:string" returns=string
         // assistant message → extract text blocks
         if (msg.type === 'assistant' && msg.message?.content) {
           for (const block of msg.message.content) {
-            if (block.type === 'text' && block.text) textParts.push(block.text);
+            if (block.type === 'text' && block.text) assistantParts.push(block.text);
           }
         }
-        // result → extract result text
+        // result → the final answer (last one wins if several appear). Only a
+        // string result is authoritative; non-string payloads (objects) keep
+        // the old stringify-into-parts behavior instead of masking the
+        // assistant text with '{}'.
         else if (msg.type === 'result' && msg.result && !msg.is_error) {
-          textParts.push(typeof msg.result === 'string' ? msg.result : JSON.stringify(msg.result));
+          if (typeof msg.result === 'string') resultText = msg.result;
+          else assistantParts.push(JSON.stringify(msg.result));
         }
         // system, hook, etc. → skip
       } catch {
         // Not JSON — raw text from non-Claude engines, keep as-is
-        textParts.push(trimmed);
+        assistantParts.push(trimmed);
       }
     }
 
-    return textParts.join('\n');
+    return resultText.trim() ? resultText : assistantParts.join('\n');
   >>>
 
 fn name=usesStreamJson params="engine:EngineDefinition" returns=boolean

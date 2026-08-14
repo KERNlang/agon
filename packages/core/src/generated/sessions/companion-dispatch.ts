@@ -25,7 +25,7 @@ export interface CompanionResult {
 }
 
 // @kern-source: companion-dispatch:19
-export async function companionDispatch(opts: {config:CompanionConfig, binaryPath:string, prompt:string, cwd:string, timeout:number, mode:'exec'|'review'|'agent', model?:string, signal?:AbortSignal, systemPrompt?:string, env?:Record<string,string>, onApproval?:(tool:string, command:string, reason?:string)=>Promise<boolean|string>}): Promise<DispatchResult> {
+export async function companionDispatch(opts: {config:CompanionConfig, binaryPath:string, prompt:string, cwd:string, timeout:number, mode:'exec'|'review'|'agent', model?:string, signal?:AbortSignal, systemPrompt?:string, textOnly?:boolean, env?:Record<string,string>, onApproval?:(tool:string, command:string, reason?:string)=>Promise<boolean|string>}): Promise<DispatchResult> {
   if (opts.config.protocol !== 'jsonrpc' && opts.config.protocol !== 'acp' && opts.config.protocol !== 'stream-json') {
     return { exitCode: 2, stdout: '', stderr: `Protocol "${opts.config.protocol}" not supported for one-shot dispatch`, durationMs: 0, timedOut: false };
   }
@@ -61,7 +61,17 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
   // honor it (no cwdArg).
   const serverArgs = opts.config.cwdArg
     ? [...opts.config.serverCmd, opts.config.cwdArg, opts.cwd]
-    : opts.config.serverCmd;
+    : [...opts.config.serverCmd];
+  // stream-json has no in-band system-prompt channel — without the flag the
+  // caller's systemPrompt (seat stances, "do NOT use tools") is silently dropped.
+  // ACP/JSONRPC forward the systemPrompt in-band (session/new, thread/start),
+  // so the argv flag applies ONLY to stream-json — never double-apply.
+  if (opts.config.protocol === 'stream-json' && opts.systemPrompt && opts.config.systemPromptFlag) {
+    serverArgs.push(opts.config.systemPromptFlag, opts.systemPrompt);
+  }
+  if (opts.textOnly && opts.config.textOnlyArgs?.length) {
+    serverArgs.push(...opts.config.textOnlyArgs);
+  }
   const proc = spawn(opts.binaryPath, serverArgs, {
     stdio: ['pipe', 'pipe', 'pipe'],
     cwd: opts.cwd,
@@ -84,6 +94,7 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
   let lastAcpPushWasChunk = false;
   let turnCompleted: Record<string, unknown> | null = null;
   let turnError: Record<string, unknown> | null = null;
+  let sawToolUse = false;
   let threadId: string | null = null;
   let stdinError: Error | null = null;
 
@@ -234,6 +245,7 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
       if (raw.type === 'assistant' && raw.message?.content) {
         for (const block of raw.message.content) {
           if (block.type === 'text' && block.text) agentMessages.push(block.text);
+          if (block.type === 'tool_use') sawToolUse = true;
         }
         if (raw.message.stop_reason) { turnCompleted = raw; }
       }
@@ -425,6 +437,26 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
     }
 
     const text = agentMessages.join('\n\n');
+
+    // stream-json runs --max-turns 1: a tool call ends the ONLY turn, so
+    // whatever text preceded it is a preamble ("I'll quickly verify..."), not
+    // the answer. Return empty stdout so the adapter's existing empty-output
+    // fall-through retries via the plain CLI spawn (exec: --max-turns 10,
+    // review: --max-turns 50), which can finish the tool loop. Applies to
+    // exec AND review — review turns inherently want tools, so via companion
+    // they hit this truncation on nearly every dispatch (review consensus:
+    // codex/zai/kimi/minimax). Agent mode never routes stream-json companions
+    // (shouldUseCompanionForAgent). Preamble rides in stderr for diagnosability.
+    if (isStreamJson && (opts.mode === 'exec' || opts.mode === 'review') && sawToolUse) {
+      return {
+        exitCode: 0,
+        stdout: '',
+        stderr: `companion turn ended on tool_use (max-turns 1); falling back to CLI spawn. Preamble: ${text.slice(0, 300)}`,
+        durationMs: Date.now() - startTime,
+        timedOut: false,
+      };
+    }
+
     return {
       exitCode: 0,
       stdout: text,

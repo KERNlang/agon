@@ -40,6 +40,28 @@ const completeEngine = {
   },
 } as const;
 
+describe('CompanionConfigSchema dispatch fields', () => {
+  // Regression: Zod strips unknown keys on parse. When these fields were added
+  // to CompanionConfig without the schema, registry-loaded claude.json silently
+  // lost them and the system-prompt/tool-disable behavior was inactive at
+  // runtime (review blocker, codex).
+  it('preserves systemPromptFlag and textOnlyArgs through validation', () => {
+    const result = validateEngineConfig({
+      ...completeEngine,
+      companion: {
+        protocol: 'stream-json',
+        serverCmd: ['--print', '--max-turns', '1'],
+        systemPromptFlag: '--system-prompt',
+        textOnlyArgs: ['--tools', ''],
+      },
+    }, 'companion-engine.json');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.companion?.systemPromptFlag).toBe('--system-prompt');
+    expect(result.data.companion?.textOnlyArgs).toEqual(['--tools', '']);
+  });
+});
+
 describe('EngineDefinitionSchema execution metadata', () => {
   it('retains every supported engine and API execution field', () => {
     const result = validateEngineConfig(completeEngine, 'complete-engine.json');

@@ -64,11 +64,10 @@ fn name=assignStances params="engines:string[]" returns="Map<string,string>"
     ];
     // Shuffle per run: a fixed seat→stance mapping would hand the same engine
     // the lowest-scoring stance every time and deflate its Glicko rating.
-    const pool = [...stances];
-    for (let i = pool.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [pool[i], pool[j]] = [pool[j], pool[i]];
-    }
+    const pool = stances
+      .map((v) => ({ v, k: Math.random() }))
+      .sort((a, b) => a.k - b.k)
+      .map((x) => x.v);
     const map = new Map<string, string>();
     engines.forEach((id, i) => map.set(id, pool[i % pool.length]));
     return map;

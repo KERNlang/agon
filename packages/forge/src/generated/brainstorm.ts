@@ -82,17 +82,16 @@ export function assignStances(engines: string[]): Map<string,string> {
   ];
   // Shuffle per run: a fixed seat→stance mapping would hand the same engine
   // the lowest-scoring stance every time and deflate its Glicko rating.
-  const pool = [...stances];
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [pool[i], pool[j]] = [pool[j], pool[i]];
-  }
+  const pool = stances
+    .map((v) => ({ v, k: Math.random() }))
+    .sort((a, b) => a.k - b.k)
+    .map((x) => x.v);
   const map = new Map<string, string>();
   engines.forEach((id, i) => map.set(id, pool[i % pool.length]));
   return map;
 }
 
-// @kern-source: brainstorm:77
+// @kern-source: brainstorm:76
 export async function collectRankedDrafts(opts: {question:string, context?:string, engines:string[], style?:string, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal, onEvent?:(event:{type:string,data?:Record<string,unknown>})=>void}): Promise<{ranked:{engineId:string, draft:KernDraft, raw:string, seat:SeatOutcome}[], outcomes:SeatOutcome[]}> {
   const draftPrompt = buildKernDraftPrompt({
     question: opts.question,
@@ -153,7 +152,7 @@ export async function collectRankedDrafts(opts: {question:string, context?:strin
   return { ranked: rankDrafts(drafts, opts.style), outcomes: attempts.map((attempt) => attempt.seat) };
 }
 
-// @kern-source: brainstorm:138
+// @kern-source: brainstorm:137
 export function scoutScore(bid: ScoutBid): number {
   let score = 0;
   // Confidence: 40% weight (0-40 points)
@@ -167,12 +166,12 @@ export function scoutScore(bid: ScoutBid): number {
   return score;
 }
 
-// @kern-source: brainstorm:151
+// @kern-source: brainstorm:150
 function warnBrainstorm(message: string): void {
   console.warn(message);
 }
 
-// @kern-source: brainstorm:156
+// @kern-source: brainstorm:155
 export async function runScout(opts: {question:string, context?:string, engines:string[], scoutCount?:number, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal}): Promise<{rankedBids:ScoutBid[], leadEngine:string, topConfidence:number, disagreementSpread:number}> {
   const count = opts.scoutCount ?? 2;
   // Filter quarantined engines BEFORE slicing, else a dead engine in the first
@@ -191,7 +190,7 @@ export async function runScout(opts: {question:string, context?:string, engines:
   return { rankedBids: bids, leadEngine: (bids.length > 0) ? bids[0].engineId : scouts[0], topConfidence: topConfidence, disagreementSpread: disagreementSpread };
 }
 
-// @kern-source: brainstorm:174
+// @kern-source: brainstorm:173
 export function fallbackParse(output: string): KernDraft {
   const stripped = output.replace(/\x60\x60\x60(?:json)?\s*/gi, '').replace(/\x60\x60\x60/g, '');
   let depth = 0;
@@ -232,7 +231,7 @@ export function fallbackParse(output: string): KernDraft {
   };
 }
 
-// @kern-source: brainstorm:215
+// @kern-source: brainstorm:214
 export async function runBrainstorm(opts: {question:string, context?:string, engines:string[], style?:string, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal, onEvent?:(event:{type:string,data?:Record<string,unknown>})=>void}): Promise<BrainstormResult> {
   const brainstormId = randomUUID().slice(0, 8);
   // 'divergent' is the default: brainstorm exists to spread the panel out.

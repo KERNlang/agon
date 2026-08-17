@@ -1,6 +1,6 @@
 import { defineCommand, runMain } from 'citty';
 import { lazySubCommands } from './lazy-commands.js';
-import { loadConfig, loadAllAuthKeys, configSet, installKernStackTraceMapper } from '@kernlang/agon-core';
+import { loadConfig, loadAllAuthKeys, installKernStackTraceMapper } from '@kernlang/agon-core';
 
 // `repl.js` (the whole interactive Cesar/Ink surface, generated/surfaces/app.tsx
 // — ~2k lines pulling in React/Ink + the full tool/agent stack) and
@@ -59,25 +59,6 @@ function consumeIsolationFlags() {
     nextArgv.push(arg);
   }
   process.argv = nextArgv;
-}
-
-// One-time, interactive-only notice that the workspace-pure default changed
-// behavior (the council asked for a LOUD migration). Never blocks startup.
-function maybeNotifyIsolationMigration() {
-  try {
-    if (!process.stderr.isTTY) return;
-    const cfg = loadConfig() as { engineIsolation?: string; isolationMigrationNotified?: boolean };
-    const mode = process.env.AGON_ENGINE_ISOLATION || cfg.engineIsolation || 'workspace-pure';
-    if (mode === 'inherit' || cfg.isolationMigrationNotified) return;
-    process.stderr.write(
-      '\n\x1b[33m▸ agon now runs engines in workspace-pure mode by default.\x1b[0m\n' +
-      "  Dispatched engines no longer inherit your personal Claude Code plugins/hooks/global\n" +
-      "  CLAUDE.md or user MCP servers (the repo's own CLAUDE.md/.mcp.json ARE kept). This makes\n" +
-      '  results clean + fair across engines. Restore the old behavior with \x1b[36m--impure\x1b[0m or\n' +
-      '  \x1b[36magon config set engineIsolation inherit\x1b[0m.\n\n',
-    );
-    try { configSet('isolationMigrationNotified', true); } catch { /* best-effort */ }
-  } catch { /* never block startup on the notice */ }
 }
 
 function consumeTelemetryDebugFlags() {
@@ -170,7 +151,6 @@ consumeIsolationFlags();
 consumeGroundFlag();
 consumeContinueFlag();
 guardAgainstRecursiveDispatch();
-maybeNotifyIsolationMigration();
 
 const main = defineCommand({
   meta: {

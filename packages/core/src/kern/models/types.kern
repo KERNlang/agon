@@ -365,8 +365,6 @@ config name=AgonConfig
   field name=engineEfforts type="Record<string,string>" optional=true doc="Per-engine reasoning-effort override (engineId → level), set when the user explicitly picks an effort in agon. Absent = defer to the CLI's own config (no --effort / -c forced)."
   field name=engineIsolation type="'workspace-pure'|'inherit'" default="'workspace-pure'"
     doc "How much of the user's personal tooling a dispatched engine inherits. 'workspace-pure' (default) strips the personal/global layer (global CLAUDE.md, Claude Code plugins/hooks, user MCP servers) via a clean per-engine config dir (auth preserved), but KEEPS the repo's project CLAUDE.md/.mcp.json so engines still see task-relevant rules. 'inherit' is the legacy behavior — inherit everything (your full ~/.claude). A competitive arena should be clean of private user augmentation, not ignorant of the repo it operates on. Override per dispatch with --pure/--impure/--isolation or AGON_ENGINE_ISOLATION."
-  field name=isolationMigrationNotified type=boolean default=false
-    doc "Internal: set true once the one-time 'engines now run workspace-pure by default' migration notice has been shown, so it isn't repeated."
   field name=terminalMode type="'auto'|'native'|'fullscreen'" default=auto
     doc "Terminal scroll behavior. 'auto' (default) uses fullscreen on a capable interactive terminal while preserving native scrollback in Zellij, dumb/non-TTY terminals, CI, or when AGON_NO_ALT_SCREEN is set. Explicit 'native' and 'fullscreen' always win."
   field name=uiMotion type="'full'|'reduced'|'off'" default=reduced

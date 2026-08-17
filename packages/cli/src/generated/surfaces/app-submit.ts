@@ -512,7 +512,7 @@ export async function runHandleSubmit(opts: HandleSubmitDeps, value: string): Pr
       if (opts.pendingImages.length) opts.setPendingImages([]);
       const count = peekSteeringCount();
       opts.setSteeringCount(count);
-      opts.dispatch({ type: 'info', message: count > 1 ? `Steering queued (${count}) — injects at next step.` : 'Steering queued — injects at next step.' } as any);
+      opts.dispatch({ type: 'info', message: count > 1 ? `Steering queued (${count}) — delivers after the current tool call.` : 'Steering queued — delivers after the current tool call.' } as any);
       return;
     }
   }

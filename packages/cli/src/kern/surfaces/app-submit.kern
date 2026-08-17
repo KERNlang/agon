@@ -595,7 +595,7 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
           if (opts.pendingImages.length) opts.setPendingImages([]);
           const count = peekSteeringCount();
           opts.setSteeringCount(count);
-          opts.dispatch({ type: 'info', message: count > 1 ? `Steering queued (${count}) — injects at next step.` : 'Steering queued — injects at next step.' } as any);
+          opts.dispatch({ type: 'info', message: count > 1 ? `Steering queued (${count}) — delivers after the current tool call.` : 'Steering queued — delivers after the current tool call.' } as any);
           return;
         }
       }

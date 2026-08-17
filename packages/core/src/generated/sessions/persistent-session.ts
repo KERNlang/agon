@@ -37,9 +37,11 @@ export interface SessionSendOptions {
   toolLoopBaseBudget?: number;
   toolLoopMaxBudget?: number;
   controlPlane?: ControlPlaneEnvelopeV1;
+  gateMatchers?: string[];
+  shouldYield?: () => boolean;
 }
 
-// @kern-source: persistent-session:26
+// @kern-source: persistent-session:30
 export interface PersistentSessionConfig {
   engine: EngineDefinition;
   binaryPath: string;
@@ -58,7 +60,7 @@ export interface PersistentSessionConfig {
   diagnosticDeps?: DiagnosticDeps;
 }
 
-// @kern-source: persistent-session:44
+// @kern-source: persistent-session:48
 export interface PersistentSession {
   alive: boolean;
   sessionId: string|null;
@@ -77,7 +79,7 @@ export interface PersistentSession {
 /**
  * Decorate one persistent adapter in place so every streamed chunk carries the caller's immutable turn identity. Mutating only send preserves adapter-specific live getters such as pid, alive, and sessionId.
  */
-// @kern-source: persistent-session:62
+// @kern-source: persistent-session:66
 export function withControlPlaneEnvelope(session: PersistentSession): PersistentSession {
   const originalSend = session.send;
   session.send = async function* (opts: SessionSendOptions): AsyncGenerator<SessionChunk, void, void> {
@@ -101,7 +103,7 @@ export function withControlPlaneEnvelope(session: PersistentSession): Persistent
 /**
  * Factory: picks the right session implementation based on engine config.
  */
-// @kern-source: persistent-session:84
+// @kern-source: persistent-session:88
 export function createPersistentSession(config: PersistentSessionConfig): PersistentSession {
   const engine = config.engine;
   // API path: engine has API config and no binary path provided → use stateless resume session

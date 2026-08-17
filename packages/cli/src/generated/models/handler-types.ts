@@ -181,6 +181,11 @@ export interface CesarState {
   confidenceBlockCount?: number;
   searchToolCount?: number;
   searchNudged?: boolean;
+  readRepeatCount?: number;
+  effectfulStepCount?: number;
+  stepSignatures?: Set<string> | undefined;
+  readSpiralNoted?: boolean;
+  turnIntakeKind?: string | undefined;
   budgetWarned?: boolean;
   quickNeroRequested?: boolean;
   autoNero: boolean;
@@ -201,7 +206,7 @@ export interface CesarState {
   gateNudgedClaim?: string | undefined;
 }
 
-// @kern-source: handler-types:390
+// @kern-source: handler-types:395
 export interface HandlerContext {
   registry: EngineRegistry;
   adapter: EngineAdapter;

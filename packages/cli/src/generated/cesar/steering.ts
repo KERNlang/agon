@@ -66,7 +66,17 @@ export function drainSteering(turnId: string): Array<{ input: string; images?: I
   return mine;
 }
 
-// @kern-source: steering:149
+// @kern-source: steering:151
+export function formatSteeringIntoSend(carrier: string, blocks: string[]): string {
+  const texts = (blocks ?? []).map((block: string) => String(block ?? '').trim()).filter((block: string) => block.length > 0);
+  if (texts.length === 0) {
+    return carrier;
+  }
+  const steer = texts.map((block: string) => `[User steering — injected mid-turn]\n${block}`).join('\n\n');
+  return carrier ? `${carrier}\n\n${steer}` : steer;
+}
+
+// @kern-source: steering:165
 export function popSteering(): { input: string; images?: ImageAttachment[] } | null {
   const active = _activeTurnId.value;
   if (!active) return null;
@@ -79,7 +89,7 @@ export function popSteering(): { input: string; images?: ImageAttachment[] } | n
   return { input: entry.input, images: entry.images };
 }
 
-// @kern-source: steering:164
+// @kern-source: steering:180
 export function peekSteeringCount(): number {
   const active = _activeTurnId.value;
   if (!active) return 0;
@@ -88,7 +98,15 @@ export function peekSteeringCount(): number {
   return n;
 }
 
-// @kern-source: steering:178
+// @kern-source: steering:197
+export function hasPendingSteering(turnId: string): boolean {
+  if (!turnId || _activeTurnId.value !== turnId) {
+    return false;
+  }
+  return _queue.some((entry) => entry.turnId === turnId);
+}
+
+// @kern-source: steering:208
 export function releaseSteeringTurn(turnId: string): void {
   if (_activeTurnId.value === turnId) {
     _activeTurnId.value = null;
@@ -96,7 +114,7 @@ export function releaseSteeringTurn(turnId: string): void {
   }
 }
 
-// @kern-source: steering:189
+// @kern-source: steering:219
 export function drainLeftoverSteering(): Array<{ input: string; images?: ImageAttachment[] }> {
   const all = _queue.map((e) => ({ input: e.input, images: e.images }));
   _queue.length = 0;
@@ -104,7 +122,7 @@ export function drainLeftoverSteering(): Array<{ input: string; images?: ImageAt
   return all;
 }
 
-// @kern-source: steering:200
+// @kern-source: steering:230
 export function clearSteering(): void {
   _queue.length = 0;
   _activeTurnId.value = null;

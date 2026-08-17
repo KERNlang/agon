@@ -52,7 +52,9 @@ import { approvalToolIsFileMutating, buildApprovalDiffPreview } from './approval
 
 import { createCesarTurnId, recordCesarApprovalDecision, recordCesarToolTimeline, recordCesarConfidence } from './tool-observability.js';
 
-import { markSteeringTurn, drainSteering, releaseSteeringTurn } from './steering.js';
+import { markSteeringTurn, drainSteering, releaseSteeringTurn, hasPendingSteering, formatSteeringIntoSend } from './steering.js';
+
+import { refundContinuationForSteeringYield } from './step-guards.js';
 
 import { beginCesarTurn, createCesarTurnRuntimeHost, resetStaleCesarTurnState, transitionCesarTurn, resolveCesarAbortOutcome, classifyCesarStreamError, releaseCesarTurnHandles, fenceStaleCesarTurn, nextCesarResponseSeq } from './turn-runtime.js';
 
@@ -64,7 +66,9 @@ import { shouldAutoRunGate, gateAutoRunTriggered, gateAutoRunPermitted, gateAuto
 
 import { getSessionAllowList } from '../signals/output.js';
 
-import { resolveCesarHarnessProfile, evaluateAgenticTaskState, buildAgenticProgressSignature, buildAgenticAutoTurnDirective, resolveCesarToolReadOnlyMode, extractAgenticBashCommand, isAgenticMutationOutcome } from './task-controller.js';
+import { resolveCesarHarnessProfile, evaluateAgenticTaskState, buildAgenticProgressSignature, buildAgenticAutoTurnDirective, isSubstantiveAnswerText, resolveCesarToolReadOnlyMode, extractAgenticBashCommand, isAgenticMutationOutcome } from './task-controller.js';
+
+import { canonicalStepSignature, normalizeStepSignature } from '@kernlang/agon-core';
 
 import { yieldToInk, recordCesarTurn, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, createTodosDisplayStripper, createAskDisplayStripper, createPreambleStripper, findTrailingUserQuestion, detectAwaitingUserInput, detectNarratedToolStall, detectMutationIntentStall, detectFabricatedDelegation, shouldDeescalateGuard, withEagerToolCallId, claimEagerToolExecution, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation, isBashToolName, isWriteToolName, forwardContinuationStatus } from './brain-helpers.js';
 
@@ -74,7 +78,7 @@ import { consumeCesarPlanControlSignals } from './plan-control-signals.js';
 
 import { hostNowIso, hostWaitForInteractiveChoice } from '../lib/kern-host.js';
 
-// @kern-source: brain:39
+// @kern-source: brain:41
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>, turnAlreadyCommitted?: boolean): Promise<CesarTurnOutcome> {
   // streaming-end commits a real stream OR (when only a speculative preview
   // draft sits on the pane) drops the draft without committing — safe no-op when
@@ -107,7 +111,7 @@ export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input
   return { delegated: false, responded: true, decisionReason: 'delegation-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:66
+// @kern-source: brain:68
 export async function commitTurnAndSuggest(suggestion: {action:string, rest?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}, input: string, response: string, cesarEngineId: string, color: number, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   // streaming-end commits a real stream OR drops a lingering speculative preview
   // draft without committing — safe no-op when there's no entry at all.
@@ -138,7 +142,7 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
   return { delegated: false, responded: true, decisionReason: 'suggestion-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:91
+// @kern-source: brain:93
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<CesarTurnOutcome> {
   const abort = new AbortController();
       const _turnStart = Date.now();
@@ -187,6 +191,24 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         if (bashRanGate(cmd, _gate.matchers)) _ranGate = true;
       };
       let _toolEventCount = 0;
+      // Distinct step signatures this turn — the novelty half of the progress
+      // identity (see recordToolUse). A continuation round of pure re-reads adds
+      // zero, so its progress signature is unchanged and the strike lands.
+      let _novelStepCount = 0;
+      const _novelStepKeys = new Set<string>();
+      // Set when a send ended with the cooperative done reason 'steering-yield'
+      // (core session-resume yielded the cycle back at a completed tool pair
+      // because steering is queued). _steeringYieldPending drives delivery of the
+      // steering as a real user turn; _steeringYieldRound marks THIS continuation
+      // round so it neither strikes no-progress nor consumes a continuation.
+      let _steeringYieldPending = false;
+      let _steeringYieldRound = false;
+      // MONOTONIC substantive-answer latch (the last bit of the progress identity).
+      // A per-round "was this text long enough" flag would flip back and forth as
+      // narration length varied and read as progress every round, defeating the
+      // no-progress strike entirely — so the LATCH, not the round value, enters the
+      // signature: it flips once, on the first round that delivers a real answer.
+      let _substantiveAnswerSeen = false;
       let _readToolEventCount = 0;
       let _toolCallTurns = 0;
       let _nativeToolCalls = 0;
@@ -248,7 +270,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           }
         }
       };
-      const recordToolUse = (name: string, source: 'native'|'mcp'|'xml'|'eager'|'auto'|'signal', input?: string, status?: string) => {
+      const recordToolUse = (name: string, source: 'native'|'mcp'|'xml'|'eager'|'auto'|'signal', input?: string, status?: string, args?: Record<string, unknown>) => {
         const toolName = String(name || 'tool');
         noteToolOutcome(toolName, input, status);
         // Verify-before-done: flag when a Bash call loosely matches the discovered
@@ -258,6 +280,30 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         const normalizedSource = source === 'eager' ? 'xml' : source === 'auto' ? 'native' : source;
         const key = `${normalizedSource}:${toolName}:${String(input ?? '').slice(0, 500)}`;
         _toolEventCount++;
+        // ── Novel-step ledger (progress identity) ──
+        // _toolEventCount counts EVERY event, so any tool activity — including
+        // re-reading the same file forever — always read as progress and the
+        // no-progress checkpoint could never fire on a read spiral. Novelty is the
+        // honest signal: a step signature (tool + input, normalized) not seen yet
+        // this turn. Recorded HERE, the one central point every path funnels
+        // through (native, XML, MCP, eager, harness-auto), so the signature is
+        // path-agnostic. Set-based, so repeated running/terminal events for the
+        // same call count once.
+        //
+        // The key comes from the ARGS via canonicalStepSignature whenever the
+        // caller has them — the same function the core earned-budget ledger and the
+        // cli read-repeat ledger use. Hashing the pre-stringified `input` instead
+        // made the SAME Bash call hash as `bash:{"command":"cat a"}` here and
+        // `bash:cat a` there, so the two ledgers disagreed about what a repeat is
+        // (kimi/minimax review #8+9). Only paths that never see structured args
+        // (an already-stringified MCP completion payload) fall back to the string.
+        const _stepSignature = args
+          ? canonicalStepSignature(toolName, args)
+          : normalizeStepSignature(toolName, String(input ?? ''));
+        if (!_novelStepKeys.has(_stepSignature)) {
+          _novelStepKeys.add(_stepSignature);
+          _novelStepCount++;
+        }
         // Count read EVENTS (not unique reads) so the heavy-turn heads-up can spot
         // a turn that re-reads the same files in circles — the deduped _toolsUsed
         // would collapse those to one entry. Case-insensitive + common aliases.
@@ -515,6 +561,14 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       ctx.cesar!.confidenceBlockCount = 0;
       ctx.cesar!.searchToolCount = 0;
       ctx.cesar!.searchNudged = false;
+      // Per-turn effect ledger for the mid-turn guard channel (session.kern):
+      // read volume, read-repeats, effectful (mutate/verify) steps, the signature
+      // set that distinguishes them, and the one-shot read-spiral latch.
+      ctx.cesar!.readRepeatCount = 0;
+      ctx.cesar!.effectfulStepCount = 0;
+      ctx.cesar!.stepSignatures = new Set<string>();
+      ctx.cesar!.readSpiralNoted = false;
+      ctx.cesar!.turnIntakeKind = undefined;
       ctx.cesar!.turnId = _turnId;
       let _runtimeHost: any = null;
       let _turnRuntime: any = null;
@@ -564,12 +618,14 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         // `source` labels which boundary the steering was injected at, for telemetry:
         // 'xml' = the text/XML tool-loop + eager-continuation paths, 'exec' = the
         // mutation-unlock execution loop, 'auto' = the auto-continuation tool loop.
-        // Images drained alongside the last steering injection (so a direct
-        // session.send site can forward them). drainSteeringIntoSend returns only a
-        // string — the runToolLoop send contract is string-in/string-out and has no
-        // image channel — so image-bearing steering is delivered at the eager
-        // direct-send site; any images drained at a string-only site stay null here
-        // and ride the next-turn leftover path instead. (phase-A review finding 2.)
+        // Images drained alongside the last steering injection. drainSteeringIntoSend
+        // returns only a string — the runToolLoop send contract is string-in/
+        // string-out and has no image channel — so every DIRECT-send boundary that
+        // can carry attachments reads them from here and forwards them: the eager
+        // continuation and the steering-yield delivery. Correction (codex review #2):
+        // the drain has already CONSUMED the queue entry, so images left behind at a
+        // string-only boundary are LOST, not carried to the next turn — the only safe
+        // pattern is to forward them at every send site that can.
         let _lastDrainedSteerImages: string[] | null = null;
         const drainSteeringIntoSend = (carrier: string, source: 'xml' | 'exec' | 'auto'): string => {
           _lastDrainedSteerImages = null;
@@ -591,11 +647,10 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             recordTimeline({ event: 'steering_injected', engineId: cesarEngineId, cwd: _turnCwd, source, input: { text, images: drainedImages.length || undefined } });
           }
           if (drainedImages.length) _lastDrainedSteerImages = drainedImages;
-          if (blocks.length === 0) return carrier;
-          // Make it unmistakable to the engine that this is a fresh instruction
-          // layered on top of the tool result it is being handed.
-          const steer = blocks.map((b) => `[User steering — injected mid-turn]\n${b}`).join('\n\n');
-          return carrier ? `${carrier}\n\n${steer}` : steer;
+          // Framing lives in steering.kern (formatSteeringIntoSend) so the
+          // user-turn shape is one tested contract rather than an inline join:
+          // steering is USER content, never machine guard feedback.
+          return formatSteeringIntoSend(carrier, blocks);
         };
         recordTimeline({
           event: 'turn_start',
@@ -741,7 +796,45 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         // active. Wrap session.send once here so all ~20 send sites below stamp a
         // new seq uniformly instead of threading nextCesarResponseSeq by hand. The
         // wrapper forwards every option verbatim; only controlPlane is replaced.
-        const _cesarSend = (opts: any) => session.send({ ...opts, controlPlane: nextCesarResponseSeq(_turnRuntime) });
+        // gateMatchers: lets the core native loop classify a Bash step as `verify`
+        // (which EARNS budget growth) using this turn's discovered gate instead of
+        // guessing from the command. shouldYield: the cooperative early-exit hook
+        // — polled only at a completed tool-pair boundary, it hands the cycle back
+        // as soon as the user has steering queued for THIS turn, so the steering is
+        // delivered as a real user turn within one tool call instead of after the
+        // whole native batch. Read-only peek; drainSteeringIntoSend still owns
+        // consumption, so a yield can never swallow the message.
+        // Reads the stop REASON off a done chunk so a cooperative 'steering-yield'
+        // end is distinguishable from a real end_turn. Anything else is ignored.
+        const _noteDoneChunk = (chunk: any): void => {
+          if (String(chunk?.type) !== 'done') return;
+          if (String(chunk?.content ?? '') !== 'steering-yield') return;
+          _steeringYieldPending = true;
+          _steeringYieldRound = true;
+        };
+        // Every send funnels through here, so the done-reason bookkeeping lives
+        // HERE — inside the stream wrapper — instead of being hand-repeated at each
+        // of the ~15 `if (chunk.type === 'done') break;` sites, where one forgotten
+        // call would silently break the steering refund/delivery (kimi review #7).
+        // The wrapper is transparent: it yields every chunk through untouched, and
+        // a consumer that `break`s still closes the inner generator via the normal
+        // for-await return path. A source-level test asserts session.send is called
+        // in exactly one place so a new raw send site cannot bypass this.
+        const _cesarSend = (opts: any) => {
+          const _inner = session.send({
+            gateMatchers: _gate.matchers,
+            shouldYield: () => hasPendingSteering(_turnId),
+            ...opts,
+            controlPlane: nextCesarResponseSeq(_turnRuntime),
+          });
+          const _wrapped = async function* () {
+            for await (const chunk of _inner) {
+              _noteDoneChunk(chunk);
+              yield chunk;
+            }
+          };
+          return _wrapped();
+        };
 
         // Ensure tool registry is always available
         if (!ctx.cesar!.toolRegistry) {
@@ -857,6 +950,10 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           return visible;
         };
         let routingHints = deriveRoutingHints(input, ctx);
+        // Stamp the turn's intake kind so the mid-turn guard channel (session.kern
+        // buildOnToolCall) can scope the read-spiral note to edit vs investigate
+        // intent — an investigate turn must never be told to implement.
+        ctx.cesar!.turnIntakeKind = routingHints.intakeKind;
         const answerFastPath = routingHints.intakeKind === 'chat'
           && routingHints.recommendedFlow === 'answer'
           && input.trim().length < 300
@@ -1020,7 +1117,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 if (!done.timestamp || Date.now() - done.timestamp > 65000) continue;
                 const status = done.status === 'error' ? 'error' : 'done';
                 const toolInput = typeof done.args === 'string' ? done.args : JSON.stringify(done.args ?? {});
-                recordToolUse(String(done.tool ?? 'tool'), 'mcp', toolInput, status);
+                recordToolUse(String(done.tool ?? 'tool'), 'mcp', toolInput, status, done.args && typeof done.args === 'object' ? done.args as Record<string, unknown> : undefined);
                 dispatchToolCall({
                   type: 'tool-call',
                   engineId: cesarEngineId,
@@ -1237,7 +1334,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               const toolStatus = (meta.status as string) ?? 'running';
               const STREAM_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Council', 'Pipeline', 'Review', 'Agent', 'Goal', 'Conquer']);
               hadToolActivity = true;
-              recordToolUse(toolName, ctx.cesar!.hasNativeTools ? 'native' : 'eager', toolInput, toolStatus);
+              recordToolUse(toolName, ctx.cesar!.hasNativeTools ? 'native' : 'eager', toolInput, toolStatus, meta.input && typeof meta.input === 'object' ? meta.input as Record<string, unknown> : undefined);
               dispatch({ type: 'spinner-update', message: `Cesar: ${toolName}…` });
 
               const successfulOrchestrationSignal = toolStatus === 'running'
@@ -1604,7 +1701,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 const toolName = chunk.content || 'tool';
                 const toolInput = typeof meta.input === 'string' ? meta.input : meta.input ? JSON.stringify(meta.input) : '';
                 const toolStatus = (meta.status as string) ?? 'running';
-                recordToolUse(toolName, 'eager', toolInput, toolStatus === 'running' ? 'repair' : toolStatus);
+                recordToolUse(toolName, 'eager', toolInput, toolStatus === 'running' ? 'repair' : toolStatus, meta.input && typeof meta.input === 'object' ? meta.input as Record<string, unknown> : undefined);
                 if (shouldRunEagerRepairTool(toolName, meta, failedTools, repairUsed)) {
                   repairUsed.push(toolName);
                   dispatch({ type: 'spinner-update', message: `Cesar: retrying ${toolName} with corrected input…` });
@@ -1705,7 +1802,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               for (const signal of (Array.isArray(signals) ? signals : [signals])) {
                 if (!signal.timestamp || Date.now() - signal.timestamp >= 60000) continue;
                 if (signal.tool === 'ReportConfidence') {
-                  recordToolUse('ReportConfidence', 'mcp', JSON.stringify(signal.args ?? {}), 'done');
+                  recordToolUse('ReportConfidence', 'mcp', JSON.stringify(signal.args ?? {}), 'done', signal.args ?? {});
                   const value = typeof signal.args?.value === 'number' ? signal.args.value : null;
                   if (value !== null && value >= 0 && value <= 100) {
                     const reasoning = normalizeConfidenceReasoning(signal.args?.reasoning ?? signal.args?.reason ?? signal.args?.thought);
@@ -1726,11 +1823,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                     dispatchConfidenceReasoning(cesarEngineId, reasoning, '(via MCP)');
                   }
                 } else if (signal.tool === 'QuickNero') {
-                  recordToolUse('QuickNero', 'mcp', JSON.stringify(signal.args ?? {}), 'done');
+                  recordToolUse('QuickNero', 'mcp', JSON.stringify(signal.args ?? {}), 'done', signal.args ?? {});
                   // Non-breaking signal: companion-engine Cesar scheduled a self-check
                   ctx.cesar!.quickNeroRequested = true;
                 } else if (signal.tool === 'ProposePlan') {
-                  recordToolUse('ProposePlan', 'mcp', JSON.stringify(signal.args ?? {}), 'done');
+                  recordToolUse('ProposePlan', 'mcp', JSON.stringify(signal.args ?? {}), 'done', signal.args ?? {});
                   const activePlan = ctx.activePlan;
                   // awaiting_approval is a not-yet-accepted proposal — allow a
                   // fresh ProposePlan to supersede it. Only running/paused/planning
@@ -1760,7 +1857,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 } else if (signal.tool === 'ExitPlanMode') {
                   // Companion-engine Cesar (e.g. kimi via MCP) leaving plan mode.
                   // Must be handled here, not in the delegation fallback below.
-                  recordToolUse('ExitPlanMode', 'mcp', JSON.stringify(signal.args ?? {}), 'done');
+                  recordToolUse('ExitPlanMode', 'mcp', JSON.stringify(signal.args ?? {}), 'done', signal.args ?? {});
                   const { handleExitPlanMode } = await import('../handlers/plan-mode.js');
                   const planDispatch = ctx.cesar!.planDispatch ?? dispatch;
                   try {
@@ -1770,7 +1867,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                     console.warn(`[agon] ExitPlanMode via MCP signal failed: ${err instanceof Error ? err.message : String(err)}`);
                   }
                 } else {
-                  recordToolUse(signal.tool, 'mcp', JSON.stringify(signal.args ?? {}), 'done');
+                  recordToolUse(signal.tool, 'mcp', JSON.stringify(signal.args ?? {}), 'done', signal.args ?? {});
                   // First non-confidence, non-quicknero signal becomes the delegation
                   ctx.cesar!.pendingDelegation = extractDelegation(signal.tool, signal.args ?? {});
                   break; // Only one delegation per turn
@@ -1987,7 +2084,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               {
                 onToolCall: (name: string, inp: Record<string, unknown>) => {
                   _lastToolInputs[name] = JSON.stringify(inp);
-                  recordToolUse(name, 'xml', _lastToolInputs[name], 'running');
+                  recordToolUse(name, 'xml', _lastToolInputs[name], 'running', inp);
                   emitXmlToolEvent(name, inp, 'running');
                   // Intercept orchestration signal tools — set _pendingDelegation.
                   // 'Agent' is in the set so Cesar can spawn autonomous parallel agents
@@ -2247,7 +2344,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 execResponse.trim(), toolCtx, toolRegistry,
                 {
                   onToolCall: (name: string, inp: Record<string, unknown>) => {
-                    recordToolUse(name, 'xml', JSON.stringify(inp), 'running');
+                    recordToolUse(name, 'xml', JSON.stringify(inp), 'running', inp);
                     _lastToolInputs[name] = JSON.stringify(inp);
                     emitXmlToolEvent(name, inp, 'running');
                   },
@@ -2563,7 +2660,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         const _buildContToolLoopOpts = () => ({
           onToolCall: (name: string, inp: Record<string, unknown>) => {
             _lastToolInputs[name] = JSON.stringify(inp);
-            recordToolUse(name, 'xml', _lastToolInputs[name], 'running');
+            recordToolUse(name, 'xml', _lastToolInputs[name], 'running', inp);
             emitXmlToolEvent(name, inp, 'running');
             if (_AUTO_CONT_LOOP_ORCH.has(name)) {
               if (!ctx.cesar!.pendingDelegation) {
@@ -2618,13 +2715,15 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           // signal) from "wrote in the initial turn" (insufficient evidence).
           const _loopStartToolCount = _toolsUsed.length;
           let _prevToolCount = _toolsUsed.length;
+          if (isSubstantiveAnswerText(response)) _substantiveAnswerSeen = true;
           let _previousProgressSignature = buildAgenticProgressSignature({
-            toolEventCount: _toolEventCount,
+            novelStepCount: _novelStepCount,
             successfulMutations: _successfulMutationCount,
             failedTools: _failedToolCount,
             todoRevision: _todoRevision,
             verificationPassed: _verificationPassed,
             pendingDelegation: !!ctx.cesar!.pendingDelegation,
+            substantiveAnswerSeen: _substantiveAnswerSeen,
           });
           // Harness-side gate runs this turn (self-verifying turns). Counted
           // separately from _continuations: a green run costs no continuation;
@@ -2661,7 +2760,12 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           // loop, and appends the outcome to `response`. Returns false when the
           // engine errored — callers break the continuation loop, matching the
           // previously inlined nudge behavior.
-          const _injectSystemContinuation = async (message: string, spinnerMsg: string): Promise<boolean> => {
+          // `sendImages` is set ONLY by the steering-delivery caller: steering is a
+          // real user turn, so image attachments the user typed alongside it must
+          // ride the same send instead of being dropped (drainSteering already
+          // CONSUMED them, so "they'll come back next turn" is not true — codex
+          // review #2). Harness-authored nudges never pass it.
+          const _injectSystemContinuation = async (message: string, spinnerMsg: string, sendImages?: string[] | null): Promise<boolean> => {
             dispatch({ type: 'spinner-start', message: spinnerMsg, color });
             // Reset per send (mirrors the tool-loop inner senders): the flag must
             // reflect THIS round-trip, not a stale error from a prior continuation.
@@ -2674,6 +2778,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 signal: abort.signal,
                 toolLoopBaseBudget: cesarFastPath ? fastPathBaseBudget : undefined,
                 toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined,
+                ...(sendImages && sendImages.length ? { images: sendImages } : {}),
               });
               for await (const _c of _sysGen) {
                 if (abort.signal.aborted) break;
@@ -2725,12 +2830,62 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             _prevToolCount = _toolsUsed.length;
             return true;
           };
+          // ── End-of-round handling for a cooperative steering yield ──
+          // A round the harness ENDED ITSELF to hand the turn back for steering is
+          // not the model failing to progress, and the user's own message is about
+          // to change the work — so it neither strikes no-progress (the caller
+          // `continue`s past the signature comparison) nor consumes a continuation
+          // slot. Shared by BOTH exits of a continuation round: the normal
+          // end-of-round site and the empty-response early exit, which used to
+          // `break` straight out of the loop with the steering still queued AND the
+          // slot spent — the yielded steering then only arrived on a whole new turn
+          // via the app's idle leftover drain (codex review #1). Returns true when
+          // this WAS a steering-yield round; the caller then loops so the top of the
+          // loop delivers the steering as a real user turn.
+          const _consumeSteeringYieldRound = (): boolean => {
+            if (!_steeringYieldRound) return false;
+            _steeringYieldRound = false;
+            _continuations = refundContinuationForSteeringYield(_continuations);
+            _prevToolCount = _toolsUsed.length;
+            return true;
+          };
           while (
             _continuations < MAX_CONTINUATIONS
             && session.alive
             && !abort.signal.aborted
             && !ctx.cesar!.pendingDelegation
           ) {
+            // ── Steering delivery (the cooperative-yield payoff) ──
+            // The native cycle ended early because the user typed while Cesar was
+            // working. Deliver that text FIRST — before any state detection or
+            // harness nudge — as genuine user-role content through the existing
+            // drain (which renders + persists the user block), so Cesar answers
+            // the human instead of a machine nudge. Costs no continuation slot:
+            // steering is the user's turn, not a harness retry. If the queue was
+            // already drained at another boundary there is nothing to deliver and
+            // this falls through to the normal loop.
+            // Images the user attached to the steering line ride this send too —
+            // drainSteeringIntoSend consumed them, so dropping them here would lose
+            // them outright. `|| _steerImages` also covers the (currently
+            // unreachable, app-submit requires non-empty text) image-only case, so a
+            // future push path can never make the drain silently swallow an attach.
+            if (_steeringYieldPending) {
+              _steeringYieldPending = false;
+              _steeringYieldRound = false;
+              const _steerNow = drainSteeringIntoSend('', 'auto');
+              // Asserted: the only assignment TS can SEE in this scope is the
+              // `= null` initializer (drainSteeringIntoSend sets it from a closure),
+              // so an inferred read narrows to `null` and would never carry images.
+              const _steerImages: string[] = (_lastDrainedSteerImages as string[] | null) ?? [];
+              if (_steerNow.trim() || _steerImages.length > 0) {
+                if (!(await _injectSystemContinuation(
+                  _steerNow.trim() || '[User steering — injected mid-turn]\n(image attached)',
+                  `${cesarEngineId} on your steering…`,
+                  _steerImages,
+                ))) break;
+                continue;
+              }
+            }
             const state = _detectTurnState(response, _loopStartToolCount);
             if (state === 'asks-user') break;
             // ── Self-verifying turn: the harness runs the gate ITSELF ──
@@ -2754,7 +2909,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               // Route the result through recordToolUse so every existing verify
               // flag (_ranGate/_verificationPassed/_verificationFailed), the tool
               // timeline, and the counters flip exactly as if the engine ran it.
-              recordToolUse('Bash', 'auto', JSON.stringify({ command: _g.command }), _gateRun.ok ? 'done' : 'error');
+              recordToolUse('Bash', 'auto', JSON.stringify({ command: _g.command }), _gateRun.ok ? 'done' : 'error', { command: _g.command });
               if (_gateRun.ok) {
                 const _note = buildGateSuccessNote(_gateRun, _g.command);
                 dispatch({ type: 'success', message: _note });
@@ -2864,7 +3019,13 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               dispatch({ type: 'warning', message: `Cesar (${cesarEngineId}) stopped — engine did not respond: ${_reason.slice(0, 160)}. Try again, /compact, or switch engine with /engine.` });
               break;
             }
-            if (!cleanCont) break;
+            // No text at all. If the cycle ended on a cooperative steering yield the
+            // round still has an errand: refund the slot and loop so the steering is
+            // delivered (a native round can easily yield with zero narration).
+            if (!cleanCont) {
+              if (_consumeSteeringYieldRound()) continue;
+              break;
+            }
             // Handoff check — let delegation tool calls short-circuit out of the loop
             try {
               const parsedHandoff = parseToolCalls(cleanCont);
@@ -2934,13 +3095,17 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             // its prior text-length heuristic byte-for-byte.
             const newTools = _toolsUsed.length - _prevToolCount;
             const newSubstantive = cleanCont.length > 80;
+            if (_consumeSteeringYieldRound()) continue;
+            // Latch, never a per-round value: see _substantiveAnswerSeen.
+            if (isSubstantiveAnswerText(cleanCont)) _substantiveAnswerSeen = true;
             const progressSignature = buildAgenticProgressSignature({
-              toolEventCount: _toolEventCount,
+              novelStepCount: _novelStepCount,
               successfulMutations: _successfulMutationCount,
               failedTools: _failedToolCount,
               todoRevision: _todoRevision,
               verificationPassed: _verificationPassed,
               pendingDelegation: !!ctx.cesar!.pendingDelegation,
+              substantiveAnswerSeen: _substantiveAnswerSeen,
             });
             const noProgress = agenticAuto
               ? progressSignature === _previousProgressSignature

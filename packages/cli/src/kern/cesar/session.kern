@@ -22,6 +22,8 @@ import from="./task-execution-lease.js" names="approveTaskAction,claimTaskAction
 import from="./permission-resolver.js" names="resolvePermissionDecision,authorizeResolvedTaskAction"
 import from="./tool-observability.js" names="recordCesarApprovalDecision,recordCesarToolTimeline,recordCesarConfidence,buildToolErrorDiagnostic"
 import from="./task-controller.js" names="resolveCesarHarnessProfile,isAgenticAutoMode"
+import from="@kernlang/agon-core" names="canonicalStepSignature,classifyToolEffect,primaryStepInput"
+import from="./step-guards.js" names="cesarSearchNudgeThreshold,cesarReadSpiralThreshold,cesarReadRepeatThreshold,shouldNoteReadSpiral,readSpiralNote"
 
 const name=CESAR_SYSTEM_PROMPT type=string
   handler <<<
@@ -546,7 +548,11 @@ const name=CESAR_SNAPSHOT_MSG_CHAR_CAP type=number value=4000 doc="Max chars per
 
 const name=CONFIDENCE_BLOCK_LIMIT type=number value=2 doc="Breaker for the ReportConfidence gate. After this many blocked tool attempts in a turn without a ReportConfidence call, auto-pass and let the tool through. The gate is a nudge (writes still hit the permission UI), so a non-compliant model must never be trapped looping on the block."
 
-const name=SEARCH_NUDGE_THRESHOLD type=number value=40 doc="After this many successful Read/Grep/Glob calls in one turn, append a one-time advisory to the tool result pointing Cesar at the injected CODEBASE BRIEF instead of searching further. Steers behavior mid-turn; the existing >=100 heads-up is end-of-turn + user-facing. Counter resets each turn (brain.kern turn start)."
+// NOTE: the read-volume advisory threshold is now POLICY, read from config with
+// a compiled default (step-guards.kern cesarSearchNudgeThreshold, default 40).
+// The counted set is no longer "tools named Read/Grep/Glob" either: it is every
+// READ-class step per the shared effect classifier, so shell-mediated reading
+// (`cat`/`grep` through Bash) lands in the same ledger instead of bypassing it.
 
 fn name=capSnapshotMessageContent params="content:string" returns="string"
   doc "Bound one message's text to CESAR_SNAPSHOT_MSG_CHAR_CAP with a truncation marker. Applied on BOTH snapshot paths (direct session history AND the chat-transcript fallback) so oversized content never floods Cesar's continuity context regardless of which path produced it."
@@ -624,7 +630,6 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
     const toolResultCache = new Map<string, string>();
     const nativeToolErrorRetries = new Map<string, number>();
     const CACHEABLE_TOOLS = new Set(['Grep', 'Glob']);
-    const SEARCH_NUDGE_TOOLS = new Set(['Read', 'Grep', 'Glob']);
     const explorationMode = ctx.explorationMode ?? false;
     const sharedToolCtx: ToolContext = {
       cwd,
@@ -1011,16 +1016,65 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
         toolResultCache.clear();
         ctx.cesar!.blockedOnConfidence = null;
       }
-      // Search-volume nudge: once per turn, after many read/search calls, remind
-      // Cesar to lean on the injected CODEBASE BRIEF rather than grep in circles.
-      // Rides the tool result like the [BLOCKED]/[RETRYABLE] notes above —
-      // advisory only. Counts successful calls; resets each turn (brain.kern).
-      if (result.result.ok && SEARCH_NUDGE_TOOLS.has(name)) {
-        const searches = (ctx.cesar!.searchToolCount ?? 0) + 1;
-        ctx.cesar!.searchToolCount = searches;
-        if (searches >= SEARCH_NUDGE_THRESHOLD && !ctx.cesar!.searchNudged) {
-          ctx.cesar!.searchNudged = true;
-          output = `${output ?? ''}\n\n[NOTE] ${searches} read/search calls this turn. A CODEBASE BRIEF mapping where things live (files + top symbols per package) is in your system prompt — consult it to locate code instead of searching more. If something isn't listed, narrow the query rather than broadening it.`;
+      // ── Effect-classified step ledger + mid-turn guard channel ──
+      // Every SUCCESSFUL step is classified by EFFECT (core step-effect.kern):
+      // read / verify / mutate / other. Bash is classified by its argv, so
+      // shell-mediated reading (`cat foo`, `grep -rn x`) joins the SAME read
+      // ledger as Read/Grep/Glob — the hole that let a 31-call Bash mapping
+      // spiral run without tripping any guard. A read whose normalized step
+      // signature was already seen this turn is a read-REPEAT.
+      //
+      // Two one-shot advisories ride the tool result from here (the channel the
+      // model reads next step), exactly like the [BLOCKED]/[RETRYABLE] notes
+      // above — advisory only, never a block:
+      //   1. read VOLUME → consult the injected CODEBASE BRIEF.
+      //   2. read SPIRAL → summarize, then implement/ask (edit intent) or
+      //      summarize and answer (investigate intent).
+      // User steering NEVER travels in this channel; it is delivered as a real
+      // user turn (see the shouldYield/steering path in brain.kern).
+      //
+      // KNOWN BLIND SPOT (deliberate, conservative): a Read/Grep/Glob the core
+      // loop answers from its own dedupe/result cache never reaches this
+      // callback, so such a repeat is not counted here. That under-counts
+      // read-repeats (the guard fires later, never earlier) and costs nothing —
+      // a stubbed re-read burns no tool work. The EARNED-BUDGET side does see
+      // those calls: core classifies them in its own per-cycle ledger.
+      if (result.result.ok) {
+        const stepPrimary = primaryStepInput(name, args);
+        const stepEffect = classifyToolEffect(name, stepPrimary, ctx.cesar?.discoveredGate?.matchers ?? []);
+        const signatures = ctx.cesar!.stepSignatures instanceof Set ? ctx.cesar!.stepSignatures : new Set<string>();
+        ctx.cesar!.stepSignatures = signatures;
+        // canonicalStepSignature — the one shared step identity (core
+        // step-effect.kern). Deriving it from the ARGS, exactly as the core loop
+        // and the brain's novelty ledger do, is what keeps "same step" meaning
+        // the same thing in all three ledgers (kimi/minimax review #8+9).
+        const stepSignature = canonicalStepSignature(name, args);
+        const repeated = signatures.has(stepSignature);
+        signatures.add(stepSignature);
+        if (stepEffect === 'mutate' || stepEffect === 'verify') {
+          ctx.cesar!.effectfulStepCount = (ctx.cesar!.effectfulStepCount ?? 0) + 1;
+        }
+        if (stepEffect === 'read') {
+          const searches = (ctx.cesar!.searchToolCount ?? 0) + 1;
+          ctx.cesar!.searchToolCount = searches;
+          if (repeated) ctx.cesar!.readRepeatCount = (ctx.cesar!.readRepeatCount ?? 0) + 1;
+          if (searches >= cesarSearchNudgeThreshold(ctx.config) && !ctx.cesar!.searchNudged) {
+            ctx.cesar!.searchNudged = true;
+            output = `${output ?? ''}\n\n[NOTE] ${searches} read/search calls this turn. A CODEBASE BRIEF mapping where things live (files + top symbols per package) is in your system prompt — consult it to locate code instead of searching more. If something isn't listed, narrow the query rather than broadening it.`;
+          }
+          const spiralIntent = String(ctx.cesar!.turnIntakeKind ?? '');
+          if (shouldNoteReadSpiral({
+            intent: spiralIntent,
+            readSteps: ctx.cesar!.searchToolCount ?? 0,
+            readRepeats: ctx.cesar!.readRepeatCount ?? 0,
+            effectfulSteps: ctx.cesar!.effectfulStepCount ?? 0,
+            spiralThreshold: cesarReadSpiralThreshold(ctx.config),
+            repeatThreshold: cesarReadRepeatThreshold(ctx.config),
+            alreadyNoted: ctx.cesar!.readSpiralNoted === true,
+          })) {
+            ctx.cesar!.readSpiralNoted = true;
+            output = `${output ?? ''}\n\n${readSpiralNote(spiralIntent, ctx.cesar!.searchToolCount ?? 0, ctx.cesar!.readRepeatCount ?? 0)}`;
+          }
         }
       }
       return output;

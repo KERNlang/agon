@@ -140,6 +140,22 @@ module name=CesarSteering
       return mine;
     >>>
 
+  // ── formatSteeringIntoSend: frame drained steering as a USER turn ──
+  // The brain drains at a tool boundary and layers the text onto whatever it was
+  // about to send (a tool result, a harness continuation, or nothing at all when
+  // the native cycle yielded specifically to deliver steering). Framing is
+  // explicit so the engine cannot mistake the user's instruction for machine
+  // guard feedback: guard notes ride tool RESULTS, steering rides USER content.
+  // Blank/whitespace-only entries are dropped; with nothing left the carrier is
+  // returned unchanged, and an empty carrier yields the steering alone.
+  fn name=formatSteeringIntoSend params="carrier:string, blocks:string[]" returns=string export=true
+    handler lang="kern"
+      let name=texts value="(blocks ?? []).map((block: string) => String(block ?? '').trim()).filter((block: string) => block.length > 0)"
+      if cond="texts.length === 0"
+        return value="carrier"
+      let name=steer value="texts.map((block: string) => `[User steering — injected mid-turn]\\n${block}`).join('\\n\\n')"
+      return value="carrier ? `${carrier}\\n\\n${steer}` : steer"
+
   // ── popSteering: app pulls the NEWEST queued message back for editing ──
   // The remove/adjust affordance: ↑ in an empty composer pops the most recent
   // entry the ACTIVE turn owns OUT of the queue and back into the composer —
@@ -169,6 +185,20 @@ module name=CesarSteering
       for (const entry of _queue) if (entry.turnId === active) n++;
       return n;
     >>>
+
+  // ── hasPendingSteering: read-only peek scoped to ONE turn ──
+  // The cooperative-yield probe. The core native tool loop polls a caller-owned
+  // shouldYield() at each completed tool-pair boundary; the brain wires it to
+  // this. Read-only on purpose — it must NEVER consume an entry (drainSteering
+  // owns consumption, at the boundary where the text is injected as a real user
+  // turn). Turn-scoped so a stale push from a torn-down turn cannot end the
+  // current turn's cycle early. Unlike peekSteeringCount (which reads whatever
+  // turn is active, for the UI hint), this asks about a SPECIFIC turn id.
+  fn name=hasPendingSteering params="turnId:string" returns=boolean export=true
+    handler lang="kern"
+      if cond="!turnId || _activeTurnId.value !== turnId"
+        return value="false"
+      return value="_queue.some((entry) => entry.turnId === turnId)"
 
   // ── releaseSteeringTurn: brain releases the turn marker, keeps leftovers ──
   // Called on NORMAL turn end. Clears the active-turn marker (so no new pushes

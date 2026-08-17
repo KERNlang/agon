@@ -366,8 +366,13 @@ interface name=CesarState
   field name=confidenceSatisfied type=boolean
   field name=blockedOnConfidence type="{ name:string; args:Record<string,unknown> } | null"
   field name=confidenceBlockCount type=number optional=true
-  field name=searchToolCount type=number optional=true
+  field name=searchToolCount type=number optional=true doc="READ-class tool steps this turn (Read/Grep/Glob AND read-only Bash). Drives the one-shot CODEBASE-BRIEF advisory and the edit-intent read-spiral checkpoint. Reset at turn start."
   field name=searchNudged type=boolean optional=true
+  field name=readRepeatCount type=number optional=true doc="READ-class steps this turn whose normalized step signature (tool + primary arg) was already seen — the investigate-intent read-spiral signal. Reset at turn start."
+  field name=effectfulStepCount type=number optional=true doc="Mutate- or verify-class tool steps this turn. Zero of these alongside heavy reading is what makes an edit-intent turn a spiral. Reset at turn start."
+  field name=stepSignatures type="Set<string> | undefined" optional=true doc="Per-turn set of normalized step signatures seen in the native tool path, used to tell a novel read from a read-repeat. Reset at turn start."
+  field name=readSpiralNoted type=boolean optional=true doc="Latch: the read-spiral guard note already rode a tool result this turn (fires at most once). Reset at turn start."
+  field name=turnIntakeKind type="string | undefined" optional=true doc="The router's intake kind for the current turn (routing.kern CesarIntakeKind), stamped by the brain so the tool-result guard channel can scope its wording to edit vs investigate intent."
   field name=budgetWarned type=boolean optional=true
   field name=quickNeroRequested type=boolean optional=true
   field name=autoNero type=boolean

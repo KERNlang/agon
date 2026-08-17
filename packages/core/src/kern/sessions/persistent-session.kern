@@ -22,6 +22,10 @@ interface name=SessionSendOptions
   field name=toolLoopBaseBudget type=number optional=true
   field name=toolLoopMaxBudget type=number optional=true
   field name=controlPlane type=ControlPlaneEnvelopeV1 optional=true
+  field name=gateMatchers type="string[]" optional=true
+    doc "Loose matchers of the caller's DISCOVERED verification gate (DiscoveredGate.matchers). The native tool loop uses them to classify a Bash step as `verify` (earned budget growth) instead of guessing from the command alone. Absent = no gate known; a gate command then falls through to read/other, which is neutral."
+  field name=shouldYield type="() => boolean" optional=true
+    doc "Cooperative early-exit hook, polled ONLY at a completed tool-pair boundary in the native loop (never mid-call, never during a dispatch). When it returns true the cycle finishes the current step's result, then ends cleanly with done reason 'steering-yield' — nothing in flight is aborted. Core stays generic: it knows nothing about WHY the caller wants the cycle back. The cli wires it to the pending-steering peek so a mid-turn steering message is delivered as a real user turn within one tool call instead of after a 30-step batch."
 
 interface name=PersistentSessionConfig
   field name=engine type=EngineDefinition

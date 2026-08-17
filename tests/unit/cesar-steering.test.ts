@@ -12,6 +12,8 @@ import {
   clearSteering,
   onSteeringChange,
   popSteering,
+  hasPendingSteering,
+  formatSteeringIntoSend,
 } from '../../packages/cli/src/generated/cesar/steering.js';
 
 describe('Cesar steering buffer', () => {
@@ -49,6 +51,66 @@ describe('Cesar steering buffer', () => {
       pushSteering('for-t2');
       expect(drainSteering('t1')).toEqual([]);
       expect(drainSteering('t2')).toEqual([{ input: 'for-t2', images: undefined }]);
+    });
+  });
+
+  describe('hasPendingSteering (the cooperative-yield peek)', () => {
+    it('is false with no active turn and for a foreign turn id', () => {
+      expect(hasPendingSteering('t1')).toBe(false);
+      markSteeringTurn('t1');
+      pushSteering('steer me');
+      expect(hasPendingSteering('t2')).toBe(false);
+      expect(hasPendingSteering('')).toBe(false);
+    });
+
+    it('is true once this turn owns a queued message, and NEVER consumes it', () => {
+      markSteeringTurn('t1');
+      expect(hasPendingSteering('t1')).toBe(false);
+      pushSteering('stop reading, just patch it');
+      expect(hasPendingSteering('t1')).toBe(true);
+      // Repeated peeks are pure — the entry is still there for the real drain.
+      expect(hasPendingSteering('t1')).toBe(true);
+      expect(peekSteeringCount()).toBe(1);
+      expect(drainSteering('t1')).toEqual([{ input: 'stop reading, just patch it', images: undefined }]);
+      expect(hasPendingSteering('t1')).toBe(false);
+    });
+
+    it('goes false again after the turn is released or the queue cleared', () => {
+      markSteeringTurn('t1');
+      pushSteering('later');
+      releaseSteeringTurn('t1');
+      expect(hasPendingSteering('t1')).toBe(false);
+      markSteeringTurn('t2');
+      pushSteering('now');
+      clearSteering();
+      expect(hasPendingSteering('t2')).toBe(false);
+    });
+  });
+
+  describe('formatSteeringIntoSend (steering is USER content, not guard feedback)', () => {
+    it('frames every drained block as an explicit mid-turn user instruction', () => {
+      const out = formatSteeringIntoSend('TOOL RESULT: 42 matches', ['stop reading', 'just patch it']);
+      expect(out).toBe([
+        'TOOL RESULT: 42 matches',
+        '',
+        '[User steering — injected mid-turn]',
+        'stop reading',
+        '',
+        '[User steering — injected mid-turn]',
+        'just patch it',
+      ].join('\n'));
+    });
+
+    it('returns the steering alone when there is no carrier (the yield-to-deliver path)', () => {
+      expect(formatSteeringIntoSend('', ['use the cached brief'])).toBe(
+        '[User steering — injected mid-turn]\nuse the cached brief',
+      );
+    });
+
+    it('leaves the carrier untouched when nothing meaningful was drained', () => {
+      expect(formatSteeringIntoSend('carrier', [])).toBe('carrier');
+      expect(formatSteeringIntoSend('carrier', ['   ', ''])).toBe('carrier');
+      expect(formatSteeringIntoSend('carrier', undefined as unknown as string[])).toBe('carrier');
     });
   });
 

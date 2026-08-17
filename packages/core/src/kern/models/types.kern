@@ -341,6 +341,12 @@ config name=AgonConfig
     doc "Wall-clock budget in seconds for one harness-side gate execution. Capped at 3600."
   field name=cesarGateOutputTailChars type=number default=2000
     doc "How many trailing characters of gate output are fed back to the engine when a harness-side gate run fails. Clamped to [200,20000]."
+  field name=cesarSearchNudgeThreshold type=number optional=true
+    doc "After this many READ-class tool steps in one Cesar turn (Read/Grep/Glob AND read-only Bash), one advisory rides the next tool result pointing Cesar at the injected CODEBASE BRIEF instead of searching further. Unset = 40. Clamped to a minimum of 1; 0/negative/non-numeric values fall back to the default."
+  field name=cesarReadSpiralThreshold type=number optional=true
+    doc "Edit-intent read-spiral checkpoint: after this many READ-class steps with ZERO mutate/verify steps in one turn, one guard note asks Cesar to summarize and then implement or ask. Unset = 25. Fires at most once per turn."
+  field name=cesarReadRepeatThreshold type=number optional=true
+    doc "Investigate-intent read-spiral checkpoint: after this many READ-REPEAT steps (a read whose normalized signature was already seen this turn), one guard note asks Cesar to summarize and answer — never to implement. Unset = 12. Fires at most once per turn."
   field name=cesarStreamingXmlTools type=boolean default=true
     doc "When true, interrupt text streaming as soon as a complete XML tool call is parsed so XML fallback tools can execute live instead of waiting for the whole response."
   field name=campfireObserverStrategy type="'lead-first'|'all-respond'" default=lead-first

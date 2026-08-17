@@ -27,6 +27,8 @@ import from="../diagnostics/diagnostic-runner.js" names="DiagnosticRunner"
 import from="../models/context-parts.js" names="CompactionSummaryPart,ToolCacheEntry" types=true
 import from="./persistent-session.js" names="PersistentSessionConfig,PersistentSession,SessionChunk,SessionSendOptions" types=true
 import from="./tool-scheduler.js" names="scheduleToolBatch"
+import from="./step-effect.js" names="canonicalStepSignature,classifyToolEffect,primaryStepInput,stepEarnsBudgetGrowth"
+import from="./step-effect.js" names="ToolStepEffectEntry" types=true
 import from="./first-chunk-retry-policy.js" names="decideFirstChunkRetry"
 
 fn name=createResumeSession params="config:PersistentSessionConfig" returns="PersistentSession"
@@ -969,7 +971,57 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
           const MAX_CONSECUTIVE_ERRORS = 3;
           let budget = BASE_BUDGET;
           let step = 0;
+          // ── Earned budget + novelty ledger (effect classification) ──
+          // productiveSteps is the GROWTH counter: it now advances only on a
+          // step that did something effectful (mutate / verify / NOVEL read /
+          // unclassifiable other). A step made purely of read-REPEATS earns
+          // nothing, so a re-reading spiral stays at BASE_BUDGET instead of
+          // climbing to MAX_BUDGET on "the call didn't fail". Signatures are
+          // per-send (one cycle); a legitimate mapping pass keeps depositing
+          // novelty and keeps earning.
           let productiveSteps = 0;
+          const stepSignatures = new Set<string>();
+          const gateMatchers = Array.isArray(opts.gateMatchers) ? opts.gateMatchers : [];
+          const classifyStepEntries = (
+            calls: Array<{ name: string; args: Record<string, unknown> }>,
+          ): ToolStepEffectEntry[] => calls.map((call) => {
+            const primary = primaryStepInput(call.name, call.args ?? {});
+            // canonicalStepSignature (not a raw stringified input) is the ONE
+            // step identity shared with the cli ledgers, so "same step" means
+            // the same thing on every path.
+            const signature = canonicalStepSignature(call.name, call.args ?? {});
+            const novel = !stepSignatures.has(signature);
+            stepSignatures.add(signature);
+            return { effect: classifyToolEffect(call.name, primary, gateMatchers), novel };
+          });
+          // Set when opts.shouldYield asked for the cycle back at a completed
+          // tool-pair boundary — the post-loop `done` then carries the distinct
+          // 'steering-yield' reason so the caller can tell a cooperative early
+          // end apart from a real end_turn.
+          let yieldedForCaller = false;
+          // ── Cooperative-yield poll, shared by EVERY completed tool-pair boundary ──
+          // The main exec path is not the only place a step's tool results land in
+          // history and the loop dispatches again: the grounded-write block, the
+          // solo-coding gate and the narration auto-exec paths all `continue` from
+          // their own boundary. Polling in only one of them meant a caller that
+          // wanted the cycle back could wait many more calls depending on which
+          // guard happened to fire (codex review #3). One helper, called at all of
+          // them, keeps the promise uniform: at most ONE tool call of latency.
+          // Returns true when the caller asked to yield — the call site then yields
+          // its status chunk and breaks. Sets guardDoneNormally for the same reason
+          // the delegation break does: this is a deliberate, non-error end, so open
+          // guard fires resolve against what was observed instead of 'aborted'.
+          // A throwing hook means "keep going" — never break the turn on a bad peek.
+          const pollShouldYield = (): boolean => {
+            let requested = false;
+            try { requested = opts.shouldYield ? opts.shouldYield() === true : false; }
+            catch { requested = false; }
+            if (!requested) return false;
+            yieldedForCaller = true;
+            messageHistory.push({ role: 'assistant', content: '[Tool loop paused — handing the turn back for user steering]' });
+            guardDoneNormally = true;
+            return true;
+          };
           let consecutiveErrors = 0;
           let repeatedReadOnlyRetrySteps = 0;
           let readOnlyLoopRecoveryUsed = false;
@@ -1882,7 +1934,31 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                     }
                     messageHistory.push({ role: 'tool', content: histContent, tool_call_id: tc.id } as any);
                   }
-                  productiveSteps++;
+                  // Budget growth is EARNED here too. This branch used to credit
+                  // productiveSteps unconditionally, so a step whose only executed
+                  // siblings were re-reads still grew the budget — the exact hole
+                  // D2 closes on the main path (codex review #4). Only the
+                  // EXECUTED (non-blocked) successful calls are classified: a
+                  // BLOCKED write did nothing and must never count as a mutation.
+                  // gwResults is built in parsedCalls order, so the index is the
+                  // blockedIdx index. The +2 grant is applied on the same terms as
+                  // the main path so every earning site behaves identically —
+                  // "earned a step" and "granted growth" no longer depend on which
+                  // branch the step happened to end in.
+                  const gwEarnCalls = gwResults
+                    .filter((tc, gi) => !blockedIdx.has(gi)
+                      && !(tc.result.startsWith('Error:') || tc.result.startsWith('Unknown tool:')))
+                    .map((tc) => ({ name: tc.name, args: tc.args as Record<string, unknown> }));
+                  if (stepEarnsBudgetGrowth(classifyStepEntries(gwEarnCalls))) {
+                    productiveSteps++;
+                    if (productiveSteps % 3 === 0 && budget < MAX_BUDGET) budget = Math.min(budget + 2, MAX_BUDGET);
+                  }
+                  // Completed tool-pair boundary → same cooperative-yield promise
+                  // as the main path (codex review #3).
+                  if (pollShouldYield()) {
+                    yield { type: 'status' as const, content: 'pausing for your steering…' };
+                    break;
+                  }
                   continue; // Loop — model gets feedback and should read first.
                 }
                 // No blocked writes → fall through to normal parallel execution.
@@ -2001,7 +2077,23 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                   }
                   messageHistory.push({ role: 'tool', content: histContent, tool_call_id: tc.id } as any);
                 }
-                productiveSteps++;
+                // Earned growth, same as the grounded-write branch: writes in this
+                // gate path are BLOCKED (never executed), so only the successful
+                // non-write calls can earn — and a re-read among them earns nothing
+                // (codex review #4).
+                const gateEarnCalls = gateResults
+                  .filter((tc) => !WRITE_TOOLS.has(tc.name)
+                    && !(tc.result.startsWith('Error:') || tc.result.startsWith('Unknown tool:')))
+                  .map((tc) => ({ name: tc.name, args: tc.args as Record<string, unknown> }));
+                if (stepEarnsBudgetGrowth(classifyStepEntries(gateEarnCalls))) {
+                  productiveSteps++;
+                  if (productiveSteps % 3 === 0 && budget < MAX_BUDGET) budget = Math.min(budget + 2, MAX_BUDGET);
+                }
+                // Completed tool-pair boundary → uniform cooperative yield (#3).
+                if (pollShouldYield()) {
+                  yield { type: 'status' as const, content: 'pausing for your steering…' };
+                  break;
+                }
                 continue; // Loop — model gets feedback and should investigate
               }
 
@@ -2195,13 +2287,32 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                   break;
                 }
               } else {
-                // At least one tool succeeded — extend budget, reset errors
+                // At least one tool succeeded — reset errors, then decide
+                // whether this step EARNED budget growth. Effect classification
+                // (step-effect.kern): mutate / verify / novel read / other earn;
+                // a step of pure read-repeats does not.
                 consecutiveErrors = 0;
-                productiveSteps++;
-                // Every 3 productive steps, grant 2 more (up to MAX_BUDGET)
-                if (productiveSteps % 3 === 0 && budget < MAX_BUDGET) {
-                  budget = Math.min(budget + 2, MAX_BUDGET);
+                const okCalls = results
+                  .filter((tc) => !(tc.result.startsWith('Error:') || tc.result.startsWith('Unknown tool:')))
+                  .map((tc) => ({ name: tc.name, args: tc.args as Record<string, unknown> }));
+                if (stepEarnsBudgetGrowth(classifyStepEntries(okCalls))) {
+                  productiveSteps++;
+                  // Every 3 EARNING steps, grant 2 more (up to MAX_BUDGET)
+                  if (productiveSteps % 3 === 0 && budget < MAX_BUDGET) {
+                    budget = Math.min(budget + 2, MAX_BUDGET);
+                  }
                 }
+              }
+
+              // ── Cooperative yield at a completed tool-pair boundary ──
+              // The step's results are already in history and streamed to the
+              // caller, so ending here is a CLEAN cycle end: nothing in flight,
+              // no abort, no lost tool result. Used by the cli so user steering
+              // typed mid-batch is delivered as a real user turn within one tool
+              // call instead of waiting for the whole native batch.
+              if (pollShouldYield()) {
+                yield { type: 'status' as const, content: 'pausing for your steering…' };
+                break;
               }
 
               // Continue loop — call API again with tool results
@@ -2310,8 +2421,25 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                     autoResults.push(result);
                   }
 
-                  productiveSteps++;
-                  if (productiveSteps % 3 === 0 && budget < MAX_BUDGET) budget = Math.min(budget + 2, MAX_BUDGET);
+                  // Auto-executed narration intent earns growth on the same
+                  // terms as a real step: re-extracting a read of a file the
+                  // cycle already read is a repeat, not progress.
+                  const autoOkCalls = syntheticCalls
+                    .filter((sc, i) => {
+                      const r = autoResults[i] ?? '';
+                      return !(r.startsWith('Error:') || r.startsWith('Unknown tool:'));
+                    })
+                    .map((sc) => ({ name: sc.name, args: sc.args }));
+                  if (stepEarnsBudgetGrowth(classifyStepEntries(autoOkCalls))) {
+                    productiveSteps++;
+                    if (productiveSteps % 3 === 0 && budget < MAX_BUDGET) budget = Math.min(budget + 2, MAX_BUDGET);
+                  }
+                  // Completed tool-pair boundary (the harness executed the
+                  // narrated intent FOR the model) → uniform cooperative yield (#3).
+                  if (pollShouldYield()) {
+                    yield { type: 'status' as const, content: 'pausing for your steering…' };
+                    break;
+                  }
                   continue; // Loop — model gets tool results and can continue
                 }
               }
@@ -2474,7 +2602,11 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
           // delegation break) set guardDoneNormally=true before breaking; all the
           // other exits leave it false so finalize('aborted') keeps their open
           // fires unresolved instead of crediting them as completed-turn evidence.
-          yield { type: 'done' as const, content: 'end_turn' };
+          // Done REASON: 'steering-yield' marks the cooperative early end
+          // (opts.shouldYield); every other exit keeps the historical
+          // 'end_turn'. Consumers break on chunk.type === 'done' and treat the
+          // content as an opaque stop reason, so the extra value is additive.
+          yield { type: 'done' as const, content: yieldedForCaller ? 'steering-yield' : 'end_turn' };
           return;
           } finally {
             // ── Phase-0 telemetry flush — EXACTLY ONCE on every exit path ──

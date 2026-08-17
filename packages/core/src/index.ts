@@ -266,6 +266,11 @@ export {
 export type {
   PersistentSession, PersistentSessionConfig, SessionChunk, SessionSendOptions,
 } from './persistent-session.js';
+export {
+  classifyToolEffect, normalizeStepSignature, normalizeStepToolName, primaryStepInput,
+  canonicalStepSignature, isReadRepeat, stepEarnsBudgetGrowth,
+} from './generated/sessions/step-effect.js';
+export type { ToolStepEffect, ToolStepEffectEntry } from './generated/sessions/step-effect.js';
 export { claudeBrainUsesPty } from './generated/sessions/claude-backend.js';
 export { StreamBridge, createStreamBridge } from './generated/cesar/stream-bridge.js';
 export type { EngineSwitch } from './generated/cesar/stream-bridge.js';

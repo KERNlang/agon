@@ -23,6 +23,7 @@ import {
   normalizeTerminalMode,
   resolveTerminalMode,
   nextWheelAnimationStep,
+  PLAN_APPROVAL_PROMPT_ROWS,
   stringDisplayWidth,
   transcriptRowsToPlainText,
 } from '../../packages/cli/src/generated/surfaces/app.js';
@@ -686,6 +687,30 @@ describe('app scroll helpers', () => {
     expect(estimateBottomChromeExtraRows('chat', null, 100, 1, 1, true, true)).toBe(3);
     // Omitting the arg defaults to no chip — back-compat with pre-existing callers.
     expect(estimateBottomChromeExtraRows('chat', null, 100, 0, 0, false)).toBe(0);
+  });
+
+  it('reserves the pinned plan-approval prompt rows while a proposal awaits an answer', () => {
+    // The approval selector moved out of the plan block and into the bottom
+    // chrome (directly above the composer), so its exact height must be
+    // reserved or the transcript viewport over-allocates and clips the frame.
+    expect(estimateBottomChromeExtraRows('chat', null, 100, 0, 0, false, false, 0, false)).toBe(0);
+    expect(estimateBottomChromeExtraRows('chat', null, 100, 0, 0, false, false, 0, true)).toBe(
+      PLAN_APPROVAL_PROMPT_ROWS,
+    );
+    // Stacks with the plan chip (both show while a plan awaits approval).
+    expect(estimateBottomChromeExtraRows('chat', null, 100, 0, 0, false, true, 0, true)).toBe(
+      PLAN_APPROVAL_PROMPT_ROWS + 1,
+    );
+    // Omitting the arg defaults to no prompt — back-compat with older callers.
+    expect(estimateBottomChromeExtraRows('chat', null, 100, 0, 0, false, true, 0)).toBe(1);
+  });
+
+  it('shrinks the visible transcript budget by the approval prompt height', () => {
+    const opts = { terminalMode: 'native' as const, mode: 'chat', termWidth: 100, termHeight: 30, fileRailOpen: false };
+    const without = buildTerminalReplaySnapshot([], opts);
+    const withPrompt = buildTerminalReplaySnapshot([], { ...opts, hasPlanApproval: true });
+    expect(withPrompt.lowerChromeRows).toBe(without.lowerChromeRows + PLAN_APPROVAL_PROMPT_ROWS);
+    expect(withPrompt.visibleBudget).toBe(without.visibleBudget - PLAN_APPROVAL_PROMPT_ROWS);
   });
 
   it('shrinks the visible transcript budget by one row while the plan chip shows', () => {

@@ -111,10 +111,16 @@ export function estimateTodoListRows(todos: any[], planActive: boolean, termWidt
 }
 
 /**
- * Reserve extra rows above the base composer/status chrome for stacked prompt cards, queued-input badges, the one-line plan chip, and the pinned TodoList. todoReserveRows comes from estimateTodoListRows (already wrap-aware and post plan-chip filtering). Without this reserve the Ink live region overflows the terminal the moment a checklist pins, and the terminal clips the TOP of the frame — ChromeBar and the TodoList itself — which read as 'my todolist never shows'. The legacy spinner argument is retained for call compatibility, but spinner activity now renders only in CesarStatusStrip and consumes no duplicate row.
+ * Terminal rows the pinned PlanApprovalPrompt (blocks/plan-view.kern) occupies while a plan awaits approval: summary header + three choice rows + keybind hint. Every row is wrap="truncate-end", so this is an exact height, not an estimate.
  */
 // @kern-source: app-layout:103
-export function estimateBottomChromeExtraRows(_mode: string, questionState: any, termWidth: number, pendingImageCount: number, inputQueueCount: number, _hasLiveSpinner: boolean, hasPlanChip: boolean = false, todoReserveRows: number = 0): number {
+export const PLAN_APPROVAL_PROMPT_ROWS: number = 5;
+
+/**
+ * Reserve extra rows above the base composer/status chrome for stacked prompt cards, queued-input badges, the one-line plan chip, the pinned TodoList, and the pinned plan-approval prompt. todoReserveRows comes from estimateTodoListRows (already wrap-aware and post plan-chip filtering). Without this reserve the Ink live region overflows the terminal the moment a checklist pins, and the terminal clips the TOP of the frame — ChromeBar and the TodoList itself — which read as 'my todolist never shows'. The legacy spinner argument is retained for call compatibility, but spinner activity now renders only in CesarStatusStrip and consumes no duplicate row.
+ */
+// @kern-source: app-layout:106
+export function estimateBottomChromeExtraRows(_mode: string, questionState: any, termWidth: number, pendingImageCount: number, inputQueueCount: number, _hasLiveSpinner: boolean, hasPlanChip: boolean = false, todoReserveRows: number = 0, hasPlanApproval: boolean = false): number {
   let extraRows = 0;
   if (pendingImageCount > 0) {
     extraRows += 1;
@@ -128,11 +134,14 @@ export function estimateBottomChromeExtraRows(_mode: string, questionState: any,
   if (todoReserveRows > 0) {
     extraRows += todoReserveRows;
   }
+  if (hasPlanApproval) {
+    extraRows += PLAN_APPROVAL_PROMPT_ROWS;
+  }
   extraRows += estimateQuestionReservedRows(questionState, termWidth);
   return extraRows;
 }
 
-// @kern-source: app-layout:118
+// @kern-source: app-layout:123
 export function estimatePinnedLiveRows(mode: string, hasStream: boolean, hasProgress: boolean, agentCount: number, toolStreamCount?: number): number {
   const streamRows = hasStream ? ((mode === 'chat') ? 3 : 6) : 0;
   const progressRows = hasProgress ? ((mode === 'chat') ? 3 : 5) : 0;
@@ -144,7 +153,7 @@ export function estimatePinnedLiveRows(mode: string, hasStream: boolean, hasProg
   return streamRows + progressRows + agentRows + toolRows;
 }
 
-// @kern-source: app-layout:129
+// @kern-source: app-layout:134
 export function estimateWrappedRows(text: string, width: number): number {
   const safeWidth = Math.max(1, width);
   if (!text) return 0;
@@ -154,7 +163,7 @@ export function estimateWrappedRows(text: string, width: number): number {
   }, 0);
 }
 
-// @kern-source: app-layout:139
+// @kern-source: app-layout:144
 export function estimateToolCallRows(event: any, toolOutputExpanded: boolean, codeWidth: number): number {
   if (!event || event.type !== 'tool-call') {
     return 0;
@@ -246,7 +255,7 @@ export function estimateToolCallRows(event: any, toolOutputExpanded: boolean, co
   return rows;
 }
 
-// @kern-source: app-layout:211
+// @kern-source: app-layout:216
 export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   const proseWidth = contentWidth(4);
   const chatWidth = contentWidth(2);
@@ -358,7 +367,7 @@ export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOu
   }
 }
 
-// @kern-source: app-layout:323
+// @kern-source: app-layout:328
 export function estimateDisplayItemRows(item: OutputBlock, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   return estimateOutputEventRows(item.event, mode, toolOutputExpanded, thinkingExpanded);
 }

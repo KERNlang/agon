@@ -65,6 +65,6 @@ export { slashCommandForOrchestrationAction, announceCesarAutoOrchestration, wit
 
 export { isCesarPlanApprovalInput, isStrongCesarPlanApprovalInput, findPendingCesarPlan, findResumableCesarPlan, shouldApprovePendingCesarPlanInput, isCesarPlanResumeInput, isCesarPlanStatusInput, formatCesarPlanRuntimeStatus, buildResumePromptContext, skipCompletedSteps, askChoiceQuestion } from './dispatch/plan-queries.js';
 
-export { resumeCesarPlan, approvePendingCesarPlan, handleProposedCesarPlan, buildPlanCallbacks, failedPlanStepIsFallbackRetryable, preparePlanFallbackRetry, executeApprovedPlan, finalizePlanWithReviewGate } from './dispatch/plan-execution.js';
+export { resumeCesarPlan, approvePendingCesarPlan, cancelPendingCesarPlan, handleProposedCesarPlan, buildPlanCallbacks, failedPlanStepIsFallbackRetryable, preparePlanFallbackRetry, executeApprovedPlan, finalizePlanWithReviewGate } from './dispatch/plan-execution.js';
 
 export { clearPersistedSessionContext, formatCesarRecoveryStatus, normalizeCesarActingFallbackMode, countTrackedUserTurns } from './dispatch/utils.js';

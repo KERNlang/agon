@@ -105,11 +105,12 @@ export function buildTerminalReplaySnapshot(blocks: OutputBlock[], opts: any): {
   const inputQueueCount = Math.max(0, Math.floor((Number(opts?.inputQueueCount) || 0)));
   const hasLiveSpinner = !(!opts?.hasLiveSpinner);
   const hasPlanChip = !(!opts?.hasPlanChip);
+  const hasPlanApproval = !(!opts?.hasPlanApproval);
   const hasStream = !(!opts?.hasStream);
   const hasProgress = !(!opts?.hasProgress);
   const agentCount = Math.max(0, Math.floor((Number(opts?.agentCount) || 0)));
   const todoReserveRows = estimateTodoListRows(Array.isArray(opts?.todos) ? opts.todos : [], hasPlanChip, termWidth);
-  const bottomChromeExtraRows = estimateBottomChromeExtraRows(mode, questionState, termWidth, pendingImageCount, inputQueueCount, hasLiveSpinner, hasPlanChip, todoReserveRows);
+  const bottomChromeExtraRows = estimateBottomChromeExtraRows(mode, questionState, termWidth, pendingImageCount, inputQueueCount, hasLiveSpinner, hasPlanChip, todoReserveRows, hasPlanApproval);
   const pinnedLiveRows = estimatePinnedLiveRows(mode, hasStream, hasProgress, agentCount, Math.max(0, Math.floor((Number(opts?.toolStreamCount) || 0))));
   const visibleBudget = estimateVisibleBlockBudget(termHeight, mode, bottomChromeExtraRows + pinnedLiveRows);
   const transcriptBlocks = (terminalMode === 'native') ? nativeTranscriptBlocksForStatic(blocks) : historyBlocksForTranscript(blocks);

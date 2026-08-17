@@ -29,7 +29,7 @@ module name=AppHelpers
   export from="./app-selection.js" names="normalizeRowSelection,normalizeTextSelection,richLineToPlainText,transcriptRowToPlainText,transcriptRowTextStartColumn,resolveTranscriptColumnFromMouse,transcriptRowsToPlainText,resolveTranscriptRowFromMouse"
 
   // ── Re-exports: layout ──
-  export from="./app-layout.js" names="estimateVisibleBlockBudget,estimateWrappedRowCount,estimateQuestionReservedRows,estimateBottomChromeExtraRows,estimatePinnedLiveRows,estimateWrappedRows,estimateToolCallRows,estimateOutputEventRows,estimateDisplayItemRows"
+  export from="./app-layout.js" names="PLAN_APPROVAL_PROMPT_ROWS,estimateVisibleBlockBudget,estimateWrappedRowCount,estimateQuestionReservedRows,estimateBottomChromeExtraRows,estimatePinnedLiveRows,estimateWrappedRows,estimateToolCallRows,estimateOutputEventRows,estimateDisplayItemRows"
 
   // ── Re-exports: blocks ──
   export from="./app-blocks.js" names="buildDisplayItems,isToolCallLikeBlock,coalesceToolCallBlocks,effectiveNativeArchiveBlockCount,historyBlocksForTranscript,nativeTranscriptBlocksForStatic,nativeArchiveBlockCount,isDuplicateEngineBlock,appendTranscriptBlock,buildDashboardBlock,summarizeBtwTranscriptEvent"

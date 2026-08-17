@@ -6,7 +6,7 @@ import { writeFileSync } from 'node:fs';
 
 import { resolveWorkingDir, loadConfig, gitChangedFiles } from '@kernlang/agon-core';
 
-import { approveCesarPlan, saveCesarPlan, executePlan, formatCesarPlanMarkdown, planCostEstimator } from '@kernlang/agon-core';
+import { approveCesarPlan, cancelCesarPlan, saveCesarPlan, executePlan, formatCesarPlanMarkdown, planCostEstimator, appendMessage } from '@kernlang/agon-core';
 
 import type { CesarPlan, CesarPlanStep, CesarStepResult, StepExecutor } from '@kernlang/agon-core';
 
@@ -111,9 +111,56 @@ export async function approvePendingCesarPlan(cb: DispatchCallbacks): Promise<bo
 }
 
 /**
- * Activate a proposed Cesar plan. Auto-approved plans execute immediately; manual approval is intentionally non-blocking so the REPL returns to idle and accepts go, yes, or /approve through the normal composer.
+ * Reject the pending CesarPlan, if one exists. This is the Cesar half of /cancel, mirroring approvePendingCesarPlan for /approve: BOTH real reject routes land here — typing /cancel, and the pinned PlanApprovalPrompt's '3. Reject' row (app-keyboard.kern planControl submits '/cancel'). Without it, /cancel fell straight through to the legacy plan-runner handleCancel, which only knows ctx.currentPlan, so rejecting a Cesar proposal answered 'No active plan to cancel.' and left the approval prompt pinned forever. Returns false when there is no Cesar proposal so the caller still falls through to the legacy runner. Dispatches plan-cancelled (releases the pinned prompt), persists the cancelled record + markdown so the on-disk plan stops reading awaiting_approval, and appends a rejection note to the chat session so Cesar's next turn knows the plan was refused instead of silently re-proposing it.
  */
 // @kern-source: plan-execution:91
+export function cancelPendingCesarPlan(cb: DispatchCallbacks): boolean {
+  const pending = findPendingCesarPlan(cb.ctx) as CesarPlan | null;
+  if (!pending) return false;
+  if ((cb.ctx.cesar as any)?.proposedPlan?.id === pending.id) (cb.ctx.cesar as any).proposedPlan = undefined;
+
+  const cancelled = cancelCesarPlan(pending);
+  cb.setActivePlan(null);
+  try {
+    saveCesarPlan(cancelled);
+  } catch (err) {
+    hostConsoleWarn(`[plan] failed to persist cancelled Cesar plan: ${(err as Error).message ?? err}`);
+  }
+  if (cancelled.planFilePath) {
+    try {
+      writeFileSync(cancelled.planFilePath, formatCesarPlanMarkdown(cancelled));
+    } catch (err) {
+      hostConsoleWarn(`[plan] failed to write cancelled Cesar plan file: ${(err as Error).message ?? err}`);
+    }
+  }
+
+  // Releases the pinned PlanApprovalPrompt (signals/output.kern 'plan-cancelled').
+  cb.dispatch({ type: 'plan-cancelled', plan: cancelled } as any);
+  // The plan BODY block is already sealed in the transcript with its
+  // awaiting_approval snapshot and cannot be rewritten (Ink <Static> is
+  // append-only), so this line IS the transcript's outcome record.
+  cb.dispatch({ type: 'success', message: `Plan rejected — ${cancelled.intent} (${cancelled.id}) cancelled.` } as any);
+
+  // Tell Cesar. Without this the brain's next turn sees a vanished plan with no
+  // reason and happily re-proposes the same one.
+  try {
+    if (cb.ctx.chatSession) {
+      appendMessage(cb.ctx.chatSession, {
+        role: 'user',
+        content: `[plan rejected] I rejected the proposed plan "${cancelled.intent}" (${cancelled.id}). Do not re-propose that same plan — ask what should change, or act on my next instruction.`,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  } catch (err) {
+    hostConsoleWarn(`[plan] failed to record plan rejection in the chat session: ${(err as Error).message ?? err}`);
+  }
+  return true;
+}
+
+/**
+ * Activate a proposed Cesar plan. Auto-approved plans execute immediately; manual approval is intentionally non-blocking so the REPL returns to idle and accepts go, yes, or /approve through the normal composer.
+ */
+// @kern-source: plan-execution:136
 export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
 
@@ -162,7 +209,7 @@ export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchC
 /**
  * Build executor callbacks. Holds a closure on the latest plan reference (mutated via onPlanUpdate) so step lookups always see appended steps like the auto-review cycle (tribunal fix #10). FU-3: persistence is debounced 300ms to avoid the sync-write storm Doppelganger flagged — onPlanUpdate fires once per step in a hot loop, but the disk write happens at most ~3x/sec. Terminal states (done/paused/cancelled) flush immediately so the .md/.json on disk reflect the final state. Callers should invoke .flush() before exit to drain any pending write.
  */
-// @kern-source: plan-execution:143
+// @kern-source: plan-execution:188
 export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks): any {
   let currentPlan = initialPlan;
   let pendingWriteTimer: ReturnType<typeof setTimeout> | null = null;
@@ -300,7 +347,7 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
 /**
  * Return true when a failed plan step looks like it was interrupted by stall/fallback handling rather than a semantic task failure.
  */
-// @kern-source: plan-execution:279
+// @kern-source: plan-execution:324
 export function failedPlanStepIsFallbackRetryable(step: any): boolean {
   if (!step || step.state !== 'failed') {
     return false;
@@ -316,7 +363,7 @@ export function failedPlanStepIsFallbackRetryable(step: any): boolean {
 /**
  * Reset one retryable failed plan step and bind it to the fallback engine. The caller runs executePlan again with a fresh abort controller.
  */
-// @kern-source: plan-execution:290
+// @kern-source: plan-execution:335
 export function preparePlanFallbackRetry(plan: CesarPlan, fallbackEngine: string): CesarPlan|null {
   const engine = String(fallbackEngine ?? '').trim();
   if (!engine || !Array.isArray(plan.steps)) return null;
@@ -356,7 +403,7 @@ export function preparePlanFallbackRetry(plan: CesarPlan, fallbackEngine: string
 /**
  * FU-4: shared executor for the auto-approve, manual-approve, and plan-resume paths. Wires the abort controller, builds callbacks (with debounced persistence), runs executePlan, runs finalizePlanWithReviewGate, and dispatches the terminal status. Eliminates the ~60 lines of triplication that lived in dispatch.kern and forced future changes (e.g., new callback hooks, new finalize behavior) to be applied to all three sites.
  */
-// @kern-source: plan-execution:328
+// @kern-source: plan-execution:373
 export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   const executors = buildStepExecutors(cb.ctx, cb.dispatch);
   let abortController = new AbortController();
@@ -427,7 +474,7 @@ export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallb
 /**
  * Single source of truth for the post-execution self-review gate. Called from BOTH the plan-task and plan-resume terminal paths so resume cannot bypass the gate or the cycle cap (tribunal fix #4).
  */
-// @kern-source: plan-execution:397
+// @kern-source: plan-execution:442
 export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors: Record<string,StepExecutor>, abortSignal: AbortSignal, cb: DispatchCallbacks): Promise<CesarPlan> {
   const MUTATING = new Set(['forge', 'teamforge', 'pipeline', 'agent', 'team-agent', 'delegate', 'self']);
   const FORGE_LIKE = new Set(['forge', 'teamforge', 'pipeline']);

@@ -577,13 +577,21 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       return;
     }
     case 'plan-proposal': {
-      // Plan-proposals are an active approval surface, not completed
-      // transcript content. Keep them pinned in the live pane so the
-      // composer stays actionable; committing the whole markdown plan to
-      // Static makes the UI look stuck at the bottom of a giant document.
-      // Stash the event so a later 'plan-dismiss' can demote this exact
-      // proposal into scrollback once the user responds.
+      // Split the proposal across the two regions it actually belongs to:
+      //   1. the plan BODY goes straight into the scrollable transcript
+      //      (hideApproval so the body copy renders no controls), so a
+      //      multi-screen plan scrolls like every other transcript block
+      //      instead of inflating the fixed bottom region;
+      //   2. the interactive question stays pinned as PlanApprovalPrompt
+      //      (surfaces/app.kern) directly above the composer — 5 rows that
+      //      are always on screen and always AFTER the plan the user just
+      //      read. Previously the whole markdown plan was pinned, which put
+      //      the selector above a document the user had to scroll back up
+      //      through to answer.
+      // The scrollback copy is a snapshot of what Cesar wrote (status line
+      // included); live plan state lives in the pinned prompt + PlanChip.
       _pinnedPlan.event = event;
+      actions.addBlock({ ...(event as any), hideApproval: true } as OutputEvent);
       actions.setPendingPlanProposal(event);
       return;
     }
@@ -617,25 +625,30 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       return;
     }
     case 'plan-dismiss': {
-      // The user responded to a pinned plan (approval via chat route,
-      // or any next turn). Demote the proposal from the live pane into
-      // scrollback history (Claude-style) so the next turn's output is
-      // the bottom-most content instead of being buried under the plan.
-      // committed=true tells PlanProposalView to drop the approval prompt.
-      // The markdown status line is freshened from awaiting_approval to
-      // 'superseded' — the user moved on without approving, so the proposal
-      // was abandoned/replaced, NOT run-then-archived. 'archived' wrongly
-      // implied the plan had executed; 'superseded' keeps the record honest
-      // (we cannot assert approval here — a chat-route reply is not an
-      // approval, and a real /approve takes the plan-execution path instead).
+      // The user responded to a pinned plan (approval via chat route, or any
+      // next turn). The plan body is ALREADY in scrollback — it was committed
+      // when the proposal arrived — so there is nothing to demote: releasing
+      // the pinned prompt is the first half of the job. Re-adding the body
+      // would duplicate the plan in the transcript. No-op when nothing is
+      // pinned.
       const pinned = _pinnedPlan.event;
       if (pinned) {
-        const freshMarkdown = typeof pinned.markdown === 'string'
-          ? pinned.markdown.replace(/Status:\s*awaiting_approval/gi, 'Status: superseded')
-          : pinned.markdown;
-        actions.addBlock({ ...pinned, markdown: freshMarkdown, committed: true });
         _pinnedPlan.event = null;
         actions.setPendingPlanProposal(null);
+        // Second half: the committed body still says 'Status: awaiting_approval'
+        // and can never be corrected in place — Ink's <Static> is append-only and
+        // the sealed rows are already painted into the terminal's scrollback. So
+        // append a one-line outcome record instead of letting the transcript keep
+        // claiming the plan is still pending. 'approved' is silent because the
+        // plan-execution block that follows is the record.
+        const outcome = (event as any).outcome ?? 'superseded';
+        if (outcome !== 'approved') {
+          const planId = pinned.plan?.id ? ` ${pinned.plan.id}` : '';
+          actions.addBlock({
+            type: 'info',
+            message: `Plan${planId} superseded — you moved on without approving it; the plan record above is the awaiting_approval snapshot.`,
+          } as OutputEvent);
+        }
       }
       return;
     }

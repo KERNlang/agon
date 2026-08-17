@@ -200,9 +200,6 @@ def _write_throwaway_config(agon_home: str) -> None:
                                     not the roster. A fully empty detected roster
                                     would require stubbing PATH — out of scope
                                     for a layout probe.
-      - isolationMigrationNotified: true
-                                 → suppress the one-time workspace-purity banner
-                                    (non-blocking, just cleaner frames).
     """
     os.makedirs(agon_home, exist_ok=True)
     config = {
@@ -211,7 +208,6 @@ def _write_throwaway_config(agon_home: str) -> None:
         "cesarAutoMode": False,
         "engineActivationMode": "explicit",
         "forgeEnabledEngines": [],
-        "isolationMigrationNotified": True,
     }
     with open(os.path.join(agon_home, "config.json"), "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2)

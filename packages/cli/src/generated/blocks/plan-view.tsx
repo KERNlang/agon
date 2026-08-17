@@ -9,7 +9,7 @@ import { contentWidth, engineColor, RenderedSegments } from './rendering.js';
 import { parseMarkdownBlocks } from './markdown.js';
 
 // @kern-source: plan-view:24
-const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, costEstimate, committed, selectedIndex }: { plan:any; markdown?:string; costEstimate?:{ totalTokens: number; totalCostUsd: number; steps: { id: string; tokens: number; costUsd: number }[] } | null; committed?:boolean; selectedIndex?:number }) {
+const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, costEstimate, committed, selectedIndex, hideApproval }: { plan:any; markdown?:string; costEstimate?:{ totalTokens: number; totalCostUsd: number; steps: { id: string; tokens: number; costUsd: number }[] } | null; committed?:boolean; selectedIndex?:number; hideApproval?:boolean }) {
   const steps = plan.steps ?? [];
   const est = costEstimate;
   const totalTokens = est?.totalTokens ?? plan.totalEstimatedTokens ?? steps.reduce((sum: number, s: any) => sum + (s.estimatedTokens ?? 0), 0);
@@ -26,12 +26,17 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
     const stepEst = est?.steps?.find((e: any) => e.id === s.id);
     return stepEst?.tokens ?? s.estimatedTokens ?? 0;
   };
-  // Keep approval controls BEFORE the plan body. Long markdown/structured
-  // plans can exceed the terminal viewport; when the controls lived at the
-  // bottom, Ink clipped them and the user saw a plan with no apparent way
-  // to accept or reject it. The explicit slash commands also provide a
-  // keyboard fallback even when terminal navigation keys are intercepted.
-  const approvalControls = committed ? (
+  // This view is the plan BODY only. The interactive approval selector no
+  // longer lives inside it — it is pinned in the bottom chrome as
+  // PlanApprovalPrompt (see surfaces/app.kern), directly above the
+  // composer, so the reader's eye lands on the question AFTER the plan
+  // instead of scrolling back up past a multi-screen document. A 5-row
+  // pinned prompt also can never be clipped by a tall plan, which is what
+  // forced the controls to the top of the block in the first place.
+  // hideApproval=true is the live/scrollback copy of a proposal that still
+  // awaits an answer (the pinned prompt carries the controls);
+  // committed=true is the historical record after the user responded.
+  const approvalControls = hideApproval ? null : committed ? (
     <Text dimColor>{'Plan moved to history.'}</Text>
   ) : (
     <Box flexDirection="column" marginBottom={1}>
@@ -195,7 +200,28 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
 });
 export { PlanProposalView };
 
-// @kern-source: plan-view:218
+// @kern-source: plan-view:228
+const PlanApprovalPrompt = React.memo(function PlanApprovalPrompt({ plan, selectedIndex }: { plan?:any; selectedIndex?:number }) {
+  const steps = plan?.steps ?? [];
+  const totalTokens = plan?.totalEstimatedTokens ?? steps.reduce((sum: number, s: any) => sum + (s.estimatedTokens ?? 0), 0);
+  const totalCost = plan?.totalEstimatedCostUsd ?? steps.reduce((sum: number, s: any) => sum + (s.estimatedCostUsd ?? 0), 0);
+  const idx = selectedIndex ?? 0;
+  return (
+    <Box flexDirection="column">
+      <Text wrap="truncate-end">
+        <Text color="#fbbf24" bold>{'Awaiting approval'}</Text>
+        <Text dimColor>{' — plan above · '}{steps.length}{' steps · ~'}{Number(totalTokens).toLocaleString()}{' tokens · $'}{Number(totalCost).toFixed(2)}{' est'}</Text>
+      </Text>
+      <Text wrap="truncate-end" color={idx === 0 ? '#4ade80' : '#6b7280'} bold={idx === 0}>{idx === 0 ? '❯ ' : '  '}{'1. Approve & run'}</Text>
+      <Text wrap="truncate-end" color={idx === 1 ? '#60a5fa' : '#6b7280'} bold={idx === 1}>{idx === 1 ? '❯ ' : '  '}{'2. Other — revise the plan'}</Text>
+      <Text wrap="truncate-end" color={idx === 2 ? '#ef4444' : '#6b7280'} bold={idx === 2}>{idx === 2 ? '❯ ' : '  '}{'3. Reject'}</Text>
+      <Text wrap="truncate-end" dimColor>{'  ↑↓ move · Enter select · /approve run · /cancel reject'}</Text>
+    </Box>
+  );
+});
+export { PlanApprovalPrompt };
+
+// @kern-source: plan-view:253
 export function PlanExecutionView({ plan }: { plan:any }) {
   const steps: any[] = plan.steps ?? [];
   const doneSteps = steps.filter((s: any) => s.state === 'done');

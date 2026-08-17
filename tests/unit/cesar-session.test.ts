@@ -25,6 +25,28 @@ function makeTempDir(name: string): string {
   return dir;
 }
 
+// Minimal always-allowed tool stub for the onToolCall ledger tests.
+function makeTool(
+  name: string,
+  properties: Record<string, unknown>,
+  required: string,
+  content: string,
+): ToolHandler {
+  return {
+    definition: {
+      name,
+      description: `test ${name.toLowerCase()}`,
+      inputSchema: { type: 'object', properties, required: [required] },
+      maxResultSizeChars: 1000,
+      isReadOnly: name === 'Read',
+      isConcurrencySafe: name === 'Read',
+    },
+    validate: () => null,
+    checkPermission: () => ({ behavior: 'allow' }),
+    execute: async () => ({ ok: true, content }),
+  } as ToolHandler;
+}
+
 function makePromptContext(): any {
   return {
     config: {},
@@ -484,6 +506,188 @@ describe('cesar MCP session config', () => {
     }
     expect(cesar.searchToolCount).toBe(41);
     expect(cesar.searchNudged).toBe(true);
+  });
+
+  it('counts shell-mediated reads (Bash cat/grep) in the SAME read ledger as Read/Grep/Glob', async () => {
+    const registry = new ToolRegistry();
+    registry.register(makeTool('Bash', { command: { type: 'string' } }, 'command', 'shell output'));
+    registry.register(makeTool('Read', { file_path: { type: 'string' } }, 'file_path', 'file body'));
+
+    const cesar: any = { confidenceSatisfied: true };
+    const onToolCall = buildOnToolCall({ cesar, explorationMode: false, config: {} } as any, registry, {});
+
+    // 31 Bash reads — the shape that used to bypass the ledger entirely.
+    for (let i = 1; i <= 31; i++) {
+      const out = String(await onToolCall?.('Bash', { command: `cat pkg/file-${i}.ts` }, `b${i}`));
+      expect(out).not.toContain('CODEBASE BRIEF');
+    }
+    expect(cesar.searchToolCount).toBe(31);
+    expect(cesar.readRepeatCount ?? 0).toBe(0);
+
+    // Mixed with real Read calls, the advisory fires at step 40 of the ledger.
+    let last = '';
+    for (let i = 1; i <= 9; i++) last = String(await onToolCall?.('Read', { file_path: `f${i}.ts` }, `r${i}`));
+    expect(cesar.searchToolCount).toBe(40);
+    expect(last).toContain('CODEBASE BRIEF');
+    expect(last).toContain('40 read/search calls');
+  });
+
+  it('counts a repeated read as a read-REPEAT and leaves mutations/verification out of the read ledger', async () => {
+    const registry = new ToolRegistry();
+    registry.register(makeTool('Bash', { command: { type: 'string' } }, 'command', 'shell output'));
+    registry.register(makeTool('Write', { file_path: { type: 'string' } }, 'file_path', 'written'));
+
+    const cesar: any = { confidenceSatisfied: true, discoveredGate: { command: 'npm test', matchers: ['npm test'], source: 'package-scripts' } };
+    const onToolCall = buildOnToolCall({ cesar, explorationMode: false, config: {} } as any, registry, {});
+
+    await onToolCall?.('Bash', { command: 'cat a.ts' }, 'b1');
+    await onToolCall?.('Bash', { command: 'cat   a.ts' }, 'b2'); // same step, sloppier spacing
+    await onToolCall?.('Bash', { command: 'cat b.ts' }, 'b3');
+    expect(cesar.searchToolCount).toBe(3);
+    expect(cesar.readRepeatCount).toBe(1);
+
+    // A gate-matching Bash is verification, not reading; a Write is a mutation.
+    await onToolCall?.('Bash', { command: 'npm test' }, 'b4');
+    await onToolCall?.('Write', { file_path: 'a.ts', content: 'x' }, 'w1');
+    expect(cesar.searchToolCount).toBe(3);
+    expect(cesar.effectfulStepCount).toBe(2);
+  });
+
+  it('appends ONE intent-scoped read-spiral note: edit intent gets implement-or-ask', async () => {
+    const registry = new ToolRegistry();
+    registry.register(makeTool('Read', { file_path: { type: 'string' } }, 'file_path', 'file body'));
+
+    const cesar: any = { confidenceSatisfied: true, turnIntakeKind: 'feature' };
+    const config = { cesarReadSpiralThreshold: 4, cesarSearchNudgeThreshold: 999 };
+    const onToolCall = buildOnToolCall({ cesar, explorationMode: false, config } as any, registry, {});
+
+    const outputs: string[] = [];
+    for (let i = 1; i <= 6; i++) outputs.push(String(await onToolCall?.('Read', { file_path: `f${i}.ts` }, `r${i}`)));
+
+    expect(outputs.filter((o) => o.includes('Mapping looks complete'))).toHaveLength(1);
+    expect(outputs[3]).toContain('Mapping looks complete');
+    expect(outputs[3]).toContain('make the change or ask me ONE question');
+    expect(cesar.readSpiralNoted).toBe(true);
+  });
+
+  it('never tells an investigate turn to implement — and only fires on read REPEATS', async () => {
+    const registry = new ToolRegistry();
+    registry.register(makeTool('Read', { file_path: { type: 'string' } }, 'file_path', 'file body'));
+
+    const cesar: any = { confidenceSatisfied: true, turnIntakeKind: 'exploration' };
+    const config = { cesarReadSpiralThreshold: 4, cesarReadRepeatThreshold: 2, cesarSearchNudgeThreshold: 999 };
+    const onToolCall = buildOnToolCall({ cesar, explorationMode: false, config } as any, registry, {});
+
+    // 6 NOVEL reads on an investigate turn: volume alone is legitimate.
+    for (let i = 1; i <= 6; i++) {
+      expect(String(await onToolCall?.('Read', { file_path: `f${i}.ts` }, `r${i}`))).not.toContain('[NOTE]');
+    }
+    expect(cesar.readSpiralNoted).toBeFalsy();
+
+    // Two re-reads reach the repeat threshold → the summarize-and-answer variant.
+    await onToolCall?.('Read', { file_path: 'f1.ts' }, 'r7');
+    const note = String(await onToolCall?.('Read', { file_path: 'f2.ts' }, 'r8'));
+    expect(note).toContain('summarize what you found and answer');
+    expect(note.toLowerCase()).not.toContain('implement');
+    expect(cesar.readSpiralNoted).toBe(true);
+  });
+
+  it('honors an edit-intent turn that already mutated: no spiral note', async () => {
+    const registry = new ToolRegistry();
+    registry.register(makeTool('Read', { file_path: { type: 'string' } }, 'file_path', 'file body'));
+    registry.register(makeTool('Write', { file_path: { type: 'string' } }, 'file_path', 'written'));
+
+    const cesar: any = { confidenceSatisfied: true, turnIntakeKind: 'bug' };
+    const config = { cesarReadSpiralThreshold: 3, cesarSearchNudgeThreshold: 999 };
+    const onToolCall = buildOnToolCall({ cesar, explorationMode: false, config } as any, registry, {});
+
+    await onToolCall?.('Write', { file_path: 'a.ts', content: 'x' }, 'w1');
+    for (let i = 1; i <= 8; i++) {
+      expect(String(await onToolCall?.('Read', { file_path: `f${i}.ts` }, `r${i}`))).not.toContain('[NOTE]');
+    }
+    expect(cesar.readSpiralNoted).toBeFalsy();
+  });
+
+  // ── Shell work suppresses the "you haven't implemented" note (codex N3) ──
+  // `sed -i`, `git commit`, `mkdir`, a codegen script: Bash we cannot prove
+  // read-only and that does not match the gate → effect `other`, so neither the
+  // mutate nor the verify counter moves. The note used to fire anyway and told an
+  // engine that had just rewritten files "no edit or verification yet".
+  it('never tells an edit turn it has not implemented when it did the work through the shell', async () => {
+    const registry = new ToolRegistry();
+    registry.register(makeTool('Read', { file_path: { type: 'string' } }, 'file_path', 'file body'));
+    registry.register(makeTool('Bash', { command: { type: 'string' } }, 'command', 'shell output'));
+
+    const cesar: any = { confidenceSatisfied: true, turnIntakeKind: 'feature' };
+    const config = { cesarReadSpiralThreshold: 3, cesarSearchNudgeThreshold: 999 };
+    const onToolCall = buildOnToolCall({ cesar, explorationMode: false, config } as any, registry, {});
+
+    // Real work, via the shell — classified `other`, not mutate/verify.
+    await onToolCall?.('Bash', { command: "sed -i '' 's/a/b/' packages/core/src/x.ts" }, 'b1');
+    expect(cesar.shellWorkStepCount).toBe(1);
+    expect(cesar.effectfulStepCount ?? 0).toBe(0);
+
+    for (let i = 1; i <= 8; i++) {
+      expect(String(await onToolCall?.('Read', { file_path: `f${i}.ts` }, `r${i}`))).not.toContain('[NOTE]');
+    }
+    expect(cesar.readSpiralNoted).toBeFalsy();
+  });
+
+  it('still fires the spiral note on a turn whose only Bash calls were reads', async () => {
+    const registry = new ToolRegistry();
+    registry.register(makeTool('Read', { file_path: { type: 'string' } }, 'file_path', 'file body'));
+    registry.register(makeTool('Bash', { command: { type: 'string' } }, 'command', 'shell output'));
+
+    const cesar: any = { confidenceSatisfied: true, turnIntakeKind: 'feature' };
+    const config = { cesarReadSpiralThreshold: 4, cesarSearchNudgeThreshold: 999 };
+    const onToolCall = buildOnToolCall({ cesar, explorationMode: false, config } as any, registry, {});
+
+    await onToolCall?.('Bash', { command: 'cat packages/core/src/x.ts' }, 'b1');
+    const outputs: string[] = [];
+    for (let i = 1; i <= 6; i++) outputs.push(String(await onToolCall?.('Read', { file_path: `f${i}.ts` }, `r${i}`)));
+    expect(cesar.shellWorkStepCount ?? 0).toBe(0);
+    expect(outputs.filter((o) => o.includes('Mapping looks complete'))).toHaveLength(1);
+  });
+
+  // ── The discovered gate really reaches classifyToolEffect (agy N4) ──
+  // The claim was that ctx.cesar.discoveredGate is never assigned, so the gate
+  // matchers arrive empty and a gate run can never classify as `verify`. Drive it
+  // both ways: the SAME command is verify with the turn's matchers and read
+  // without them, which is only possible if the matchers reach the classifier.
+  it('classifies a gate run as verify only because the turn gate matchers arrive', async () => {
+    const registry = new ToolRegistry();
+    registry.register(makeTool('Bash', { command: { type: 'string' } }, 'command', 'shell output'));
+
+    const withGate: any = { confidenceSatisfied: true, discoveredGate: { command: 'npm run test', matchers: ['npm run test', 'vitest'], source: 'package-scripts' } };
+    const gated = buildOnToolCall({ cesar: withGate, explorationMode: false, config: {} } as any, registry, {});
+    await gated?.('Bash', { command: 'npm run test -- tests/unit/x.test.ts' }, 'g1');
+    expect(withGate.effectfulStepCount).toBe(1);
+    expect(withGate.searchToolCount ?? 0).toBe(0);
+
+    const noGate: any = { confidenceSatisfied: true };
+    const ungated = buildOnToolCall({ cesar: noGate, explorationMode: false, config: {} } as any, registry, {});
+    await ungated?.('Bash', { command: 'npm run test -- tests/unit/x.test.ts' }, 'u1');
+    expect(noGate.effectfulStepCount ?? 0).toBe(0);
+    expect(noGate.searchToolCount).toBe(1); // read-only, but unrecognizable as verification
+  });
+
+  // ── Paged reads of one big file are distinct steps (codex N1) ──
+  it('does not count a paged read of one file as a read-repeat', async () => {
+    const registry = new ToolRegistry();
+    registry.register(makeTool('Read', { file_path: { type: 'string' } }, 'file_path', 'file body'));
+
+    const cesar: any = { confidenceSatisfied: true };
+    const onToolCall = buildOnToolCall({ cesar, explorationMode: false, config: { cesarSearchNudgeThreshold: 999 } } as any, registry, {});
+
+    await onToolCall?.('Read', { file_path: 'big.ts', offset: 1, limit: 2000 }, 'p1');
+    await onToolCall?.('Read', { file_path: 'big.ts', offset: 2001, limit: 2000 }, 'p2');
+    await onToolCall?.('Read', { file_path: 'big.ts', offset: 4001, limit: 2000 }, 'p3');
+    expect(cesar.searchToolCount).toBe(3);
+    expect(cesar.readRepeatCount ?? 0).toBe(0);
+
+    // Re-reading the SAME window is still a repeat.
+    await onToolCall?.('Read', { file_path: 'big.ts', offset: 2001, limit: 2000 }, 'p4');
+    expect(cesar.readRepeatCount).toBe(1);
   });
 
   it('creates and displays ProposePlan calls when a plan dispatch is available', async () => {

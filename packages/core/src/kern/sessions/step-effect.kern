@@ -1,0 +1,118 @@
+// ── Native tool-loop step EFFECT classification ───────────────────────
+// The native (API function-calling) tool loop grew its dynamic budget from
+// "the call didn't fail", so a pure re-reading spiral — especially one mediated
+// through Bash (`cat`/`grep`), which the Read/Grep/Glob search ledger never saw
+// — grew the budget to its cap while producing nothing. This module is the
+// shared, pure vocabulary both sides use instead:
+//
+//   read    — inspection: Read/Grep/Glob, or a read-only Bash command.
+//   verify  — a Bash invocation that loosely matches the project's discovered
+//             verification gate (bashRanGate against DiscoveredGate.matchers).
+//   mutate  — file write-work (Edit/Write/MultiEdit/NotebookEdit, incl. the
+//             AgonEdit/AgonWrite MCP aliases).
+//   other   — everything else (orchestration, ReportConfidence, RetrieveResult,
+//             unclassifiable Bash wrappers like `python -c "…"`). Deliberately
+//             NEUTRAL: it keeps the historical budget behavior, so a wrapper we
+//             cannot classify is never punished — the novelty ledger and the
+//             read-spiral checkpoint catch the resulting stall one layer up.
+//
+// Classification order for Bash is GATE FIRST, then read-only. `npm test` /
+// `npx tsc` are members of READONLY_COMMANDS (they don't mutate the tree), but
+// running the project's gate is verification WORK, not inspection — so a
+// gate-matching command classifies as `verify` even when it is read-only.
+//
+// Novelty: a `read` step whose normalized signature (tool + primary arg) was
+// already seen in this cycle is a READ-REPEAT. Read-repeats never earn budget
+// growth; every other class does.
+
+import from="../tools/tool-permissions.js" names="isReadOnlyCommand"
+import from="../blocks/context-scanner.js" names="bashRanGate"
+
+type name=ToolStepEffect values="read|verify|mutate|other" export=true
+
+interface name=ToolStepEffectEntry export=true
+  field name=effect type=ToolStepEffect doc="Effect class of one executed tool call."
+  field name=novel type=boolean doc="False when this call's normalized signature was already seen in the cycle."
+
+const name=READ_STEP_TOOLS type="Set<string>" value={{ new Set(['read', 'grep', 'glob']) }}
+  doc "Tools whose only effect is inspecting the workspace. RetrieveResult is deliberately absent: it re-fetches a cached tool result rather than grounding a path, so it stays `other` (neutral)."
+
+const name=MUTATE_STEP_TOOLS type="Set<string>" value={{ new Set(['edit', 'write', 'multiedit', 'notebookedit']) }}
+  doc "Project write-work tools, matching the cli isWriteToolName set (SaveMemory excluded — it writes durable memory, not the project tree)."
+
+const name=STEP_SIGNATURE_ARG_CAP type=number value=500
+  doc "Max characters of the primary argument kept in a step signature. Bounds memory on a pathological argument while staying long enough to distinguish real calls."
+
+fn name=normalizeStepToolName params="name:string" returns=string export=true
+  doc "Lowercase a tool name and strip the 'Agon' MCP alias prefix so AgonBash/Bash, AgonEdit/Edit classify identically on every path (native, XML, MCP)."
+  handler lang="kern"
+    let name=raw value="String(name ?? '').trim().toLowerCase()"
+    return value="raw.startsWith('agon') ? raw.slice(4) : raw"
+
+fn name=primaryStepInput params="tool:string, args:Record<string,unknown>" returns=string export=true
+  doc "The identity-bearing argument of a tool call: the command for Bash, the file path PLUS the paged window (offset/limit) for Read, the pattern plus every scope argument (path/glob/type) for Grep/Glob, else the first present of command/file_path/path/pattern/id. Used for BOTH effect classification and the step signature so a repeat is recognized by what it touched, not by argument spelling. The Read window and the Grep scope args are part of the identity because they change WHAT the call returns: paging through a 4000-line file (offset 1 / 2001 / 4001) and grepping one pattern under two different globs are distinct steps, each of which brings new information — collapsing them onto one signature made every page after the first a read-REPEAT, so a legitimate paged read of a big file earned no budget and fed the read-spiral guard. The core loop's own seenReadKeys accumulator already keys on the full arg record for exactly this reason; this keeps the shared signature consistent with it. Flags that only reshape the SAME content (output_mode, -n, -A/-B/-C, head_limit) are deliberately excluded — re-running one query to reformat its output is a repeat."
+  handler lang="kern"
+    let name=name value="normalizeStepToolName(tool)"
+    let name=record value="args ?? {}"
+    if cond="name === 'bash'"
+      return value="String(record.command ?? '')"
+    if cond="name === 'grep' || name === 'glob'"
+      return value="[String(record.pattern ?? ''), String(record.path ?? ''), record.glob ? `glob=${String(record.glob)}` : '', record.type ? `type=${String(record.type)}` : ''].filter((part: string) => part.length > 0).join(' ')"
+    let name=path value="String(record.file_path ?? record.path ?? record.command ?? record.pattern ?? record.id ?? '')"
+    if cond="name !== 'read'"
+      return value="path"
+    let name=window value="[record.offset === undefined || record.offset === null ? '' : `offset=${String(record.offset)}`, record.limit === undefined || record.limit === null ? '' : `limit=${String(record.limit)}`].filter((part: string) => part.length > 0).join(' ')"
+    return value="window.length > 0 ? `${path} ${window}` : path"
+
+fn name=normalizeStepSignature params="tool:string, input:string" returns=string export=true
+  doc "Stable per-cycle identity of one tool call: normalized tool name + whitespace-collapsed primary argument, capped. Two calls with the same signature are the same step — the second is a repeat."
+  handler lang="kern"
+    let name=arg value="String(input ?? '').trim().replace(/\\s+/g, ' ').slice(0, STEP_SIGNATURE_ARG_CAP)"
+    return value="`${normalizeStepToolName(tool)}:${arg}`"
+
+// ── canonicalStepSignature: the ONE step identity every ledger shares ──
+// There are three per-turn step ledgers — the core loop's novelty set (earned
+// budget), the cli read-repeat ledger (guard notes), and the brain's novel-step
+// count (progress signature) — and they MUST agree on what "the same step" is.
+// Hashing a raw stringified input would not: the same Bash call arrives as
+// `{"command":"cat a.ts"}` on one path and `cat a.ts` on another, so one ledger
+// would see a repeat where another saw novelty. Every ledger therefore derives
+// its key from the ARGS through this one function.
+fn name=canonicalStepSignature params="tool:string, args:Record<string,unknown>" returns=string export=true
+  doc "Canonical per-cycle identity of one tool call, computed from its ARGS (never from a pre-stringified input) so every ledger — core earned-budget novelty, cli read-repeats, brain progress novelty — hashes the same shape. Uses the identity-bearing primary argument; when the tool has no recognized identity key (an orchestration/MCP tool with a free-form payload) it falls back to a sorted key=value rendering of the whole args record, so two genuinely different calls are never collapsed into one signature."
+  handler lang="kern"
+    let name=record value="args ?? {}"
+    let name=primary value="primaryStepInput(tool, record)"
+    if cond="primary.length > 0"
+      return value="normalizeStepSignature(tool, primary)"
+    let name=fallback value="Object.keys(record).sort().map((key: string) => `${key}=${String(record[key] ?? '')}`).join(' ')"
+    return value="normalizeStepSignature(tool, fallback)"
+
+fn name=classifyToolEffect params="tool:string, input:string, gateMatchers?:string[]" returns=ToolStepEffect export=true
+  doc "Classify one executed tool call by EFFECT. Read/Grep/Glob are read; the write-work set is mutate; Bash is decided by its command — gate-matching (bashRanGate) is verify, otherwise read-only is read and anything else is other. Every other tool is other (neutral). Pure; gateMatchers may be omitted (no discovered gate → a gate command cannot be recognized and falls through to read/other)."
+  handler lang="kern"
+    let name=name value="normalizeStepToolName(tool)"
+    if cond="MUTATE_STEP_TOOLS.has(name)"
+      return value="'mutate'"
+    if cond="READ_STEP_TOOLS.has(name)"
+      return value="'read'"
+    if cond="name !== 'bash'"
+      return value="'other'"
+    let name=command value="String(input ?? '').trim()"
+    if cond="!command"
+      return value="'other'"
+    if cond="bashRanGate(command, gateMatchers ?? [])"
+      return value="'verify'"
+    if cond="isReadOnlyCommand(command)"
+      return value="'read'"
+    return value="'other'"
+
+fn name=isReadRepeat params="effect:ToolStepEffect, novel:boolean" returns=boolean export=true
+  doc "True for the one class that earns nothing: a read whose signature was already seen this cycle."
+  handler lang="kern"
+    return value="effect === 'read' && !novel"
+
+fn name=stepEarnsBudgetGrowth params="entries:ToolStepEffectEntry[]" returns=boolean export=true
+  doc "Budget growth is EARNED, not granted for merely not failing. A step earns growth when at least one of its successful calls was a mutate, a verify, a NOVEL read, or an unclassifiable other. A step made only of read-repeats earns nothing, so a pure re-read spiral stays at the base budget instead of climbing to the cap. An empty step (no successful classified call) earns nothing."
+  handler lang="kern"
+    return value="(entries ?? []).some((entry: ToolStepEffectEntry) => !isReadRepeat(entry.effect, entry.novel))"

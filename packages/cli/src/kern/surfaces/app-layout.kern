@@ -100,8 +100,11 @@ module name=AppLayout
       return itemRows + 2;
     >>>
 
-  fn name=estimateBottomChromeExtraRows params="_mode:string, questionState:any, termWidth:number, pendingImageCount:number, inputQueueCount:number, _hasLiveSpinner:boolean, hasPlanChip:boolean=false, todoReserveRows:number=0" returns=number export=true
-    doc "Reserve extra rows above the base composer/status chrome for stacked prompt cards, queued-input badges, the one-line plan chip, and the pinned TodoList. todoReserveRows comes from estimateTodoListRows (already wrap-aware and post plan-chip filtering). Without this reserve the Ink live region overflows the terminal the moment a checklist pins, and the terminal clips the TOP of the frame — ChromeBar and the TodoList itself — which read as 'my todolist never shows'. The legacy spinner argument is retained for call compatibility, but spinner activity now renders only in CesarStatusStrip and consumes no duplicate row."
+  const name=PLAN_APPROVAL_PROMPT_ROWS type=number value={{ 5 }} export=true
+    doc "Terminal rows the pinned PlanApprovalPrompt (blocks/plan-view.kern) occupies while a plan awaits approval: summary header + three choice rows + keybind hint. Every row is wrap=\"truncate-end\", so this is an exact height, not an estimate."
+
+  fn name=estimateBottomChromeExtraRows params="_mode:string, questionState:any, termWidth:number, pendingImageCount:number, inputQueueCount:number, _hasLiveSpinner:boolean, hasPlanChip:boolean=false, todoReserveRows:number=0, hasPlanApproval:boolean=false" returns=number export=true
+    doc "Reserve extra rows above the base composer/status chrome for stacked prompt cards, queued-input badges, the one-line plan chip, the pinned TodoList, and the pinned plan-approval prompt. todoReserveRows comes from estimateTodoListRows (already wrap-aware and post plan-chip filtering). Without this reserve the Ink live region overflows the terminal the moment a checklist pins, and the terminal clips the TOP of the frame — ChromeBar and the TodoList itself — which read as 'my todolist never shows'. The legacy spinner argument is retained for call compatibility, but spinner activity now renders only in CesarStatusStrip and consumes no duplicate row."
     handler lang="kern"
       let name=extraRows kind=let value="0"
       if cond="pendingImageCount > 0"
@@ -112,6 +115,8 @@ module name=AppLayout
         assign target="extraRows" op="+=" value="1"
       if cond="todoReserveRows > 0"
         assign target="extraRows" op="+=" value="todoReserveRows"
+      if cond="hasPlanApproval"
+        assign target="extraRows" op="+=" value="PLAN_APPROVAL_PROMPT_ROWS"
       assign target="extraRows" op="+=" value="estimateQuestionReservedRows(questionState, termWidth)"
       return value="extraRows"
 

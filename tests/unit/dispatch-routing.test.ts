@@ -1,8 +1,8 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, expect, vi } from 'vitest';
-import { clearConversation, loadConversation, loadSessionState, saveConversation, saveSessionState } from '@kernlang/agon-core';
+import { clearConversation, createCesarPlan, loadCesarPlan, loadConversation, loadSessionState, saveCesarPlan, saveConversation, saveSessionState } from '@kernlang/agon-core';
 import { askChoiceQuestion, buildAgentAutoResumePrompt, buildBrainstormContinuationMessage, buildDelegatedContinuationPrompt, buildPlanCallbacks, buildReviewAbsorptionPrompt, clearPersistedSessionContext, collectRecentEngineContext, dispatchIntent, extractExecutionSpec, failedPlanStepIsFallbackRetryable, formatCesarPlanRuntimeStatus, formatCesarRecoveryStatus, handleProposedCesarPlan, isCesarPlanApprovalInput, isCesarPlanResumeInput, isCesarPlanStatusInput, isStrongCesarPlanApprovalInput, normalizeCesarActingFallbackMode, preparePlanFallbackRetry, runDelegatedJobThenContinue, shouldApprovePendingCesarPlanInput, shouldAutoContinueDelegatedResult, shouldAutoResumeAgentResult } from '../../packages/cli/src/generated/signals/dispatch.js';
 
 describe('Dispatch routing helpers', () => {
@@ -828,5 +828,98 @@ describe('Dispatch routing helpers', () => {
     await runDelegatedJobThenContinue(cb, async () => undefined, () => null, 999, 1);
 
     expect(events.some((e) => typeof e.message === 'string' && e.message.includes('Skipped Cesar follow-up'))).toBe(false);
+  });
+});
+
+// The pinned plan-approval prompt advertises "/cancel reject", and its "3. Reject"
+// row submits literally '/cancel' (app-keyboard.kern planControl). Both therefore
+// arrive here as intent {type:'cancel'} — the REAL runtime path, no injected
+// plan-cancelled event. Before cancelPendingCesarPlan existed, this route went
+// straight to the legacy plan-runner handleCancel (which only knows
+// ctx.currentPlan), so rejecting a Cesar proposal answered "No active plan to
+// cancel." and left the prompt pinned.
+describe('/cancel routes a pending Cesar proposal to rejection', () => {
+  const withAgonHome = async (fn: (agonHome: string) => Promise<void>) => {
+    const previousAgonHome = process.env.AGON_HOME;
+    const agonHome = mkdtempSync(join(tmpdir(), 'agon-plan-cancel-'));
+    mkdirSync(join(agonHome, 'chats'), { recursive: true });
+    process.env.AGON_HOME = agonHome;
+    try {
+      await fn(agonHome);
+    } finally {
+      if (previousAgonHome === undefined) delete process.env.AGON_HOME;
+      else process.env.AGON_HOME = previousAgonHome;
+      rmSync(agonHome, { recursive: true, force: true });
+    }
+  };
+
+  const makeCb = (events: any[], ctxOverrides: Record<string, any>, setActivePlan: any) => ({
+    dispatch: (event: any) => events.push(event),
+    ctx: {
+      chatSession: { id: 'chat-plan-cancel', startedAt: new Date().toISOString(), messages: [] as any[] },
+      config: { cesarEngine: 'claude' },
+      currentPlan: null,
+      cesarMemory: { clearSession: vi.fn() },
+      activeEngines: () => [],
+      registry: { availableIds: () => ['claude'] },
+      ...ctxOverrides,
+    },
+    setActivePlan,
+    commandRegistry: null,
+    eventBus: null,
+    runAsJob: vi.fn(),
+    setMode: vi.fn(),
+    setPendingImages: vi.fn(),
+    setChatSession: vi.fn(),
+    exit: vi.fn(),
+    allImages: [],
+    allSlashCommands: [],
+    dynamicSkills: [],
+    loadedExtensions: [],
+    mode: 'chat',
+  }) as any;
+
+  it('releases the pinned prompt, persists the cancellation, and tells Cesar', async () => {
+    await withAgonHome(async () => {
+      const proposed = {
+        ...createCesarPlan('rewrite the auth layer', [
+          { id: 's1', type: 'self', description: 'do the thing', estimatedTokens: 1000, estimatedCostUsd: 0.01 },
+        ]),
+        state: 'awaiting_approval' as const,
+      };
+      saveCesarPlan(proposed);
+
+      const events: any[] = [];
+      const setActivePlan = vi.fn();
+      const cb = makeCb(events, { activePlan: proposed, cesar: { proposedPlan: proposed } }, setActivePlan);
+
+      const result = await dispatchIntent({ type: 'cancel' }, '/cancel', cb);
+
+      expect(result).toEqual({ handled: true, ranAsJob: false });
+      // plan-cancelled is what clears the pinned PlanApprovalPrompt.
+      expect(events.some((e) => e.type === 'plan-cancelled')).toBe(true);
+      // …and it must NOT report the legacy runner's "no active plan".
+      expect(events.some((e) => e.type === 'warning' && String(e.message).includes('No active plan to cancel'))).toBe(false);
+      // The transcript gets an explicit outcome line (the committed plan body
+      // above still shows Status: awaiting_approval and cannot be rewritten).
+      expect(events.some((e) => e.type === 'success' && String(e.message).startsWith('Plan rejected —'))).toBe(true);
+      expect(setActivePlan).toHaveBeenCalledWith(null);
+      expect(cb.ctx.cesar.proposedPlan).toBeUndefined();
+      expect(loadCesarPlan(proposed.id)?.state).toBe('cancelled');
+      // Cesar is told, so its next turn doesn't re-propose the same plan.
+      expect(cb.ctx.chatSession.messages.some((m: any) => String(m.content).includes('[plan rejected]'))).toBe(true);
+    });
+  });
+
+  it('still falls through to the legacy plan runner when no Cesar proposal is pending', async () => {
+    await withAgonHome(async () => {
+      const events: any[] = [];
+      const cb = makeCb(events, { activePlan: null, cesar: undefined }, vi.fn());
+
+      await dispatchIntent({ type: 'cancel' }, '/cancel', cb);
+
+      expect(events.some((e) => e.type === 'plan-cancelled')).toBe(false);
+      expect(events.some((e) => e.type === 'warning' && String(e.message).includes('No active plan to cancel'))).toBe(true);
+    });
   });
 });

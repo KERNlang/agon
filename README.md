@@ -648,6 +648,12 @@ Cesar learns from its own history beyond ratings: when your prompt resembles pas
 
 Global configuration — engine selection, model preferences, and telemetry settings — is managed with `agon config` and stored in `~/.agon/config.json`. Project instructions live in your repository's standard `AGENTS.md` (with `CLAUDE.md` as a read-only fallback). Agon-specific extras — the `fitness:` gate line and saved project memory — go in `.agon/project.md`; when both files exist, both are injected.
 
+### Engine isolation
+
+Dispatched engines run **workspace-pure** by default. They still see the repository's own project context — `AGENTS.md` / `CLAUDE.md` and `.mcp.json` in the working directory — but not your *personal* layer: global `~/.claude/CLAUDE.md`, Claude Code plugins and hooks, and user-level MCP servers are stripped (each engine gets a clean config dir seeded with only its auth file, so dispatch stays logged in). That keeps a forge race or review panel fair — every engine competes on the same project context instead of one of them borrowing your private toolchain — and keeps your hooks from firing inside a worker.
+
+Opt out for a single run with `--impure` (or `--isolation inherit`); make it permanent with `agon config set engineIsolation inherit`. `--pure` forces isolation back on. If an engine's clean config dir isn't authenticated yet, agon falls back to `inherit` for that dispatch rather than breaking the run, and prints the one-time login hint.
+
 ### Commit attribution & PR text
 
 Every commit agon itself creates (`conquer --push`, each `goal` task commit, the REPL's `/commit`) ends with a Claude-Code-style attribution block:

@@ -128,18 +128,25 @@ export function evaluateAgenticTaskState(snapshot: AgenticTaskSnapshot): Agentic
 }
 
 /**
- * Progress identity deliberately excludes prose length: changing narration is not progress. Tool outcomes, mutations, TODO transitions, verification, and delegation are.
+ * Minimum characters of cleaned response text that can plausibly BE an answer rather than a status line ('Working on it…', 'Let me check that file.'). A length floor is a weak proxy and is honestly labelled as one — it exists only to gate the ONE-WAY latch below, never to compare rounds against each other. Kept at the value the legacy detector used so the non-agentic path keeps its byte-for-byte behavior.
  */
 // @kern-source: task-controller:107
-export function buildAgenticProgressSignature(parts: {toolEventCount:number,successfulMutations:number,failedTools:number,todoRevision:number,verificationPassed:boolean,pendingDelegation:boolean}): string {
-  return [
-    parts.toolEventCount,
-    parts.successfulMutations,
-    parts.failedTools,
-    parts.todoRevision,
-    parts.verificationPassed ? 1 : 0,
-    parts.pendingDelegation ? 1 : 0,
-  ].join(':');
+export const SUBSTANTIVE_ANSWER_MIN_CHARS: number = 80;
+
+/**
+ * Did this round deliver text that could be a real answer? A length floor (SUBSTANTIVE_ANSWER_MIN_CHARS) over the cleaned text. This value is deliberately NOT a signature input on its own — feeding a per-round prose measurement into the progress identity would let alternating narration lengths flip the bit every round and read as endless progress (codex/minimax review #5+6). The caller latches it instead: see substantiveAnswerSeen.
+ */
+// @kern-source: task-controller:110
+export function isSubstantiveAnswerText(text?: string): boolean {
+  return String(text ?? '').trim().length > SUBSTANTIVE_ANSWER_MIN_CHARS;
+}
+
+/**
+ * Progress identity deliberately excludes prose length: changing narration is not progress. What counts is NOVEL tool work (distinct step signatures — a round of pure re-reads adds none, so its signature is unchanged and the no-progress strike lands, while a mapping round touching new files still reads as progress), mutations, tool failures, TODO transitions, verification, delegation, and substantiveAnswerSeen — a MONOTONIC turn-scoped latch, not a per-round measurement: it flips 0→1 on the first round that delivers a real text answer (an investigate turn that finally answers IS progress, even with zero new tool work) and then never moves again, so re-answering the same thing forever cannot manufacture progress and alternating narration lengths cannot flip it back and forth.
+ */
+// @kern-source: task-controller:115
+export function buildAgenticProgressSignature(parts: {novelStepCount:number,successfulMutations:number,failedTools:number,todoRevision:number,verificationPassed:boolean,pendingDelegation:boolean,substantiveAnswerSeen?:boolean}): string {
+  return [parts.novelStepCount, parts.successfulMutations, parts.failedTools, parts.todoRevision, parts.verificationPassed ? 1 : 0, parts.pendingDelegation ? 1 : 0, parts.substantiveAnswerSeen ? 1 : 0].join(':');
 }
 
 /**

@@ -138,13 +138,19 @@ export function resetStaleCesarTurnState(state: CesarState): void {
   state.confidenceBlockCount = 0;
   state.searchToolCount = 0;
   state.searchNudged = false;
+  state.readRepeatCount = 0;
+  state.effectfulStepCount = 0;
+  state.shellWorkStepCount = 0;
+  state.stepSignatures = undefined;
+  state.readSpiralNoted = false;
+  state.turnIntakeKind = undefined;
   state.quickNeroRequested = false;
 }
 
 /**
  * Claim one monotonic lease for a user turn. An older running producer is fenced before the new lease becomes active.
  */
-// @kern-source: turn-runtime:116
+// @kern-source: turn-runtime:122
 export function beginCesarTurn(host: CesarTurnRuntimeHost, turnId: string, producerId: string, attempt?: number): CesarTurnRuntime {
   if (host.recoveryBlockedReason) {
     throw new Error(`cannot begin Cesar turn: ${host.recoveryBlockedReason}`);
@@ -193,7 +199,7 @@ export function beginCesarTurn(host: CesarTurnRuntimeHost, turnId: string, produ
 
 // ── Module: TurnQueries ──
 
-// @kern-source: turn-runtime:165
+// @kern-source: turn-runtime:171
 export function isActiveCesarTurn(host: CesarTurnRuntimeHost, envelope: ControlPlaneEnvelopeV1): boolean {
   const active = host.active;
   return !!active
@@ -204,7 +210,7 @@ export function isActiveCesarTurn(host: CesarTurnRuntimeHost, envelope: ControlP
 /**
  * Allocate the next per-response sequence for one turn and return a response-scoped envelope for one model round-trip (session.send). Each send claims a fresh seq so a mutation tool stamped by a superseded response can be fenced even while the turn itself is still active. The runtime's active envelope is advanced to the newest seq; latestResponseSeq tracks the most recently issued seq (starts at 1).
  */
-// @kern-source: turn-runtime:173
+// @kern-source: turn-runtime:179
 export function nextCesarResponseSeq(runtime: CesarTurnRuntime): ControlPlaneEnvelopeV1 {
   runtime.latestResponseSeq = (Number.isSafeInteger(runtime.latestResponseSeq) ? runtime.latestResponseSeq : 0) + 1;
   runtime.envelope = { ...runtime.envelope, responseSeq: runtime.latestResponseSeq };
@@ -214,7 +220,7 @@ export function nextCesarResponseSeq(runtime: CesarTurnRuntime): ControlPlaneEnv
 /**
  * True only when the envelope belongs to the active turn AND carries that turn's latest responseSeq (or a legacy seq-less identity). This is the per-response lease binding: mutation tools from a superseded response are rejected while read-only tools bypass this check entirely.
  */
-// @kern-source: turn-runtime:181
+// @kern-source: turn-runtime:187
 export function isActiveCesarResponse(host: CesarTurnRuntimeHost, envelope: ControlPlaneEnvelopeV1): boolean {
   const active = host.active;
   if (!active || isTerminalTurnState(active.state)) return false;
@@ -223,7 +229,7 @@ export function isActiveCesarResponse(host: CesarTurnRuntimeHost, envelope: Cont
 }
 
 
-// @kern-source: turn-runtime:190
+// @kern-source: turn-runtime:196
 export function transitionCesarTurn(host: CesarTurnRuntimeHost, envelope: ControlPlaneEnvelopeV1, next: TurnLifecycleState): TurnLifecycleTransition {
   const runtime = host.active && isCurrentControlPlaneEnvelope(envelope, host.active.envelope)
     ? host.active
@@ -251,7 +257,7 @@ export function transitionCesarTurn(host: CesarTurnRuntimeHost, envelope: Contro
 /**
  * Release a stale active slot exactly once. An already-terminal runtime is safe to detach; a live runtime must first accept a durable terminal transition.
  */
-// @kern-source: turn-runtime:215
+// @kern-source: turn-runtime:221
 export function fenceStaleCesarTurn(host: CesarTurnRuntimeHost): boolean {
   const active = host.active;
   if (!active) return true;
@@ -269,7 +275,7 @@ export function fenceStaleCesarTurn(host: CesarTurnRuntimeHost): boolean {
 /**
  * Return true only for the first live claim of one stable permission request id.
  */
-// @kern-source: turn-runtime:230
+// @kern-source: turn-runtime:236
 export function claimTurnPermission(runtime: CesarTurnRuntime, requestId: string): boolean {
   if (!requestId || isTerminalTurnState(runtime.state)) return false;
   if (runtime.permissionClaims.has(requestId)) return false;
@@ -281,7 +287,7 @@ export function claimTurnPermission(runtime: CesarTurnRuntime, requestId: string
 /**
  * Join duplicate adapter permission requests to one prompt and one durable decision.
  */
-// @kern-source: turn-runtime:239
+// @kern-source: turn-runtime:245
 export async function runTurnPermissionOnce(runtime: CesarTurnRuntime, requestId: string, ask: ()=>Promise<boolean|string>): Promise<boolean|string> {
   if (!requestId) throw new Error('requestId is required for turn-scoped permission');
   if (isTerminalTurnState(runtime.state)) throw new Error('turn is already terminal');
@@ -343,7 +349,7 @@ export async function runTurnPermissionOnce(runtime: CesarTurnRuntime, requestId
 /**
  * Normalize structured and legacy native-tool results without treating a non-throwing ok:false result as success.
  */
-// @kern-source: turn-runtime:299
+// @kern-source: turn-runtime:305
 export function inferToolTerminalReason(value: any): 'succeeded'|'failed'|'skipped_policy'|'denied'|'cancelled'|'unknown' {
   const explicit = value?.terminalReason ?? value?.result?.terminalReason;
   if (['succeeded', 'failed', 'skipped_policy', 'denied', 'cancelled', 'unknown'].includes(explicit)) return explicit;
@@ -359,7 +365,7 @@ export function inferToolTerminalReason(value: any): 'succeeded'|'failed'|'skipp
 /**
  * At-most-once local initiation: duplicate representations join the first promise by stable toolCallId.
  */
-// @kern-source: turn-runtime:313
+// @kern-source: turn-runtime:319
 export async function runTurnToolOnce(runtime: CesarTurnRuntime, toolCallId: string, owner: TurnExecutionOwner, effectClass: TurnEffectClass, execute: ()=>Promise<any>): Promise<any> {
   if (!toolCallId) throw new Error('toolCallId is required for turn-scoped execution');
   if (isTerminalTurnState(runtime.state)) throw new Error('turn is already terminal');

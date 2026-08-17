@@ -333,7 +333,7 @@ describe('permission queue', () => {
     });
   });
 
-  it('keeps plan proposals in the live approval panel instead of transcript blocks', () => {
+  it('pins the plan question live and commits the plan body to the transcript', () => {
     const actions = createMockActions();
     const event = {
       type: 'plan-proposal',
@@ -343,7 +343,15 @@ describe('permission queue', () => {
 
     handleOutputEvent(event, emptyState(), actions, 'chat', 0);
 
+    // The interactive question is pinned above the composer (PlanApprovalPrompt);
+    // the plan BODY is a scrollable transcript block with its controls
+    // suppressed, so a multi-screen plan can't bury the question.
     expect(actions.calls.setPendingPlanProposal).toEqual([[event]]);
-    expect(actions.calls.addBlock).toHaveLength(0);
+    expect(actions.calls.addBlock).toHaveLength(1);
+    expect(actions.calls.addBlock[0][0]).toMatchObject({
+      type: 'plan-proposal',
+      markdown: '# Plan\n\nApprove me',
+      hideApproval: true,
+    });
   });
 });

@@ -66,3 +66,75 @@ describe('handleOutputEvent — control-plane events never render', () => {
     expect(actions.calls.flushStream).toHaveLength(0);
   });
 });
+
+describe('handleOutputEvent — plan proposal splits body from the approval question', () => {
+  const proposal = {
+    type: 'plan-proposal',
+    plan: { id: 'plan-123', intent: 'Do the thing', steps: [{ id: 's1', type: 'self', description: 'step one' }] },
+    markdown: '# Plan\n\nStatus: awaiting_approval\n\n1. step one\n',
+  } as any;
+
+  it('commits the plan body to the transcript with the controls suppressed, and pins the proposal', () => {
+    const actions = createMockActions();
+    handleOutputEvent(proposal, emptyState(), actions, 'chat', 0);
+
+    // Body → scrollback (scrollable), so a multi-screen plan never buries the
+    // question that now lives in the bottom chrome.
+    expect(actions.calls.addBlock).toHaveLength(1);
+    const body = actions.calls.addBlock[0][0] as any;
+    expect(body.type).toBe('plan-proposal');
+    expect(body.markdown).toBe(proposal.markdown);
+    expect(body.hideApproval).toBe(true);
+    expect(body.committed).toBeUndefined();
+
+    // Question → pinned live slot (PlanApprovalPrompt above the composer).
+    expect(actions.setPendingPlanProposal).toHaveBeenCalledWith(proposal);
+  });
+
+  it('records the superseded outcome on dismiss without duplicating the plan body', () => {
+    const actions = createMockActions();
+    handleOutputEvent(proposal, emptyState(), actions, 'chat', 0);
+    handleOutputEvent({ type: 'plan-dismiss' } as any, emptyState(), actions, 'chat', 0);
+
+    // Two blocks: the body (once) plus a one-line outcome record. The body's
+    // 'Status: awaiting_approval' snapshot can never be rewritten in place —
+    // Ink's <Static> is append-only and the sealed rows are already painted —
+    // so the correction has to be appended or the transcript keeps claiming the
+    // plan is still pending.
+    expect(actions.calls.addBlock).toHaveLength(2);
+    expect(actions.calls.addBlock.filter(([b]: any[]) => b.type === 'plan-proposal')).toHaveLength(1);
+    const record = actions.calls.addBlock[1][0] as any;
+    expect(record.type).toBe('info');
+    expect(record.message).toContain('plan-123');
+    expect(record.message).toContain('superseded');
+    expect(actions.setPendingPlanProposal).toHaveBeenLastCalledWith(null);
+  });
+
+  it('stays silent on dismiss when this turn IS the approval (plan-execution is the record)', () => {
+    const actions = createMockActions();
+    handleOutputEvent(proposal, emptyState(), actions, 'chat', 0);
+    handleOutputEvent({ type: 'plan-dismiss', outcome: 'approved' } as any, emptyState(), actions, 'chat', 0);
+
+    expect(actions.calls.addBlock).toHaveLength(1);
+    expect(actions.setPendingPlanProposal).toHaveBeenLastCalledWith(null);
+  });
+
+  it('adds no outcome record when nothing is pinned', () => {
+    const actions = createMockActions();
+    // The pinned-proposal ref is a module singleton; plan-cancelled clears it
+    // unconditionally, so this makes the unpinned start state order-independent.
+    handleOutputEvent({ type: 'plan-cancelled', plan: null } as any, emptyState(), actions, 'chat', 0);
+    handleOutputEvent({ type: 'plan-dismiss' } as any, emptyState(), actions, 'chat', 0);
+
+    expect(actions.calls.addBlock).toHaveLength(0);
+  });
+
+  it('releases the pinned question on rejection without adding a second block', () => {
+    const actions = createMockActions();
+    handleOutputEvent(proposal, emptyState(), actions, 'chat', 0);
+    handleOutputEvent({ type: 'plan-cancelled', plan: proposal.plan } as any, emptyState(), actions, 'chat', 0);
+
+    expect(actions.calls.addBlock).toHaveLength(1);
+    expect(actions.setPendingPlanProposal).toHaveBeenLastCalledWith(null);
+  });
+});

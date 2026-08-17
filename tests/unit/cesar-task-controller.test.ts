@@ -6,6 +6,7 @@ import {
   evaluateAgenticTaskState,
   extractAgenticBashCommand,
   isAgenticMutationOutcome,
+  isSubstantiveAnswerText,
   resolveCesarHarnessProfile,
   resolveCesarToolReadOnlyMode,
 } from '../../packages/cli/src/generated/cesar/task-controller.js';
@@ -106,17 +107,81 @@ describe('agentic Cesar task controller', () => {
 
   it('tracks structural progress independently of narration', () => {
     const signature = buildAgenticProgressSignature({
-      toolEventCount: 3,
+      novelStepCount: 3,
       successfulMutations: 1,
       failedTools: 0,
       todoRevision: 2,
       verificationPassed: false,
       pendingDelegation: false,
     });
-    expect(signature).toBe('3:1:0:2:0:0');
+    expect(signature).toBe('3:1:0:2:0:0:0');
     const directive = buildAgenticAutoTurnDirective('fix the renderer');
     expect(directive).toContain('Latest objective:');
     expect(directive).toContain('fix the renderer');
+  });
+
+  it('counts NOVELTY, not raw tool events — a round of pure re-reads is not progress', () => {
+    const round = (novelStepCount: number, substantiveAnswerSeen = false) => buildAgenticProgressSignature({
+      novelStepCount,
+      successfulMutations: 0,
+      failedTools: 0,
+      todoRevision: 0,
+      verificationPassed: false,
+      pendingDelegation: false,
+      substantiveAnswerSeen,
+    });
+
+    // Two continuation rounds that only re-read files already seen: the novel
+    // step count is unchanged, so the signature repeats and a strike accrues.
+    expect(round(12)).toBe(round(12));
+    // One genuinely new file read → different signature → progress.
+    expect(round(13)).not.toBe(round(12));
+    // An investigate round that finally delivers a substantive answer counts as
+    // progress even with zero new tool work.
+    expect(round(12, true)).not.toBe(round(12, false));
+    expect(round(12, true)).toBe('12:0:0:0:0:0:1');
+  });
+
+  // ── The substantive-answer bit is a LATCH, not a per-round measurement ──
+  // A per-round "was this text long enough" flag flips back and forth as
+  // narration length varies, so alternating rounds would read as progress
+  // forever and the 3-strike checkpoint could never fire on a stalled turn
+  // (codex #5 / minimax #6). The caller latches it; these two tests pin both
+  // halves of that contract.
+  it('flips the substantive-answer bit at most ONCE per turn (monotonic latch)', () => {
+    const sig = (seen: boolean) => buildAgenticProgressSignature({
+      novelStepCount: 7,
+      successfulMutations: 0,
+      failedTools: 0,
+      todoRevision: 0,
+      verificationPassed: false,
+      pendingDelegation: false,
+      substantiveAnswerSeen: seen,
+    });
+
+    // Simulate the brain's latch over rounds of alternating narration lengths
+    // and zero new tool work — the shape that used to fake endless progress.
+    let seen = false;
+    const rounds = ['x'.repeat(200), 'short', 'y'.repeat(300), 'tiny'];
+    const signatures = rounds.map((text) => {
+      if (isSubstantiveAnswerText(text)) seen = true;
+      return sig(seen);
+    });
+    // First round flips it (a real answer was delivered → progress once); every
+    // later round is identical, so strikes accrue exactly as they should.
+    expect(signatures[0]).not.toBe(sig(false));
+    expect(new Set(signatures).size).toBe(1);
+  });
+
+  it('isSubstantiveAnswerText gates the latch on cleaned text length', () => {
+    expect(isSubstantiveAnswerText(undefined)).toBe(false);
+    expect(isSubstantiveAnswerText('')).toBe(false);
+    expect(isSubstantiveAnswerText('   ')).toBe(false);
+    expect(isSubstantiveAnswerText('Working on it…')).toBe(false);
+    expect(isSubstantiveAnswerText('a'.repeat(80))).toBe(false);
+    expect(isSubstantiveAnswerText('a'.repeat(81))).toBe(true);
+    // Whitespace padding cannot buy substance.
+    expect(isSubstantiveAnswerText(`${' '.repeat(200)}nope${' '.repeat(200)}`)).toBe(false);
   });
 
   it('counts typed file and shell mutations across tool transports', () => {

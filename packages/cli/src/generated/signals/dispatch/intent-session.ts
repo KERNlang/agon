@@ -32,7 +32,7 @@ import type { DispatchCallbacks, DispatchResult } from '../dispatch.js';
 
 import { findResumableCesarPlan } from './plan-queries.js';
 
-import { resumeCesarPlan, approvePendingCesarPlan, handleProposedCesarPlan } from './plan-execution.js';
+import { resumeCesarPlan, approvePendingCesarPlan, cancelPendingCesarPlan, handleProposedCesarPlan } from './plan-execution.js';
 
 import { routeWithCesar } from './cesar-router.js';
 
@@ -286,7 +286,14 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
       break;
     }
     case 'retry': await handleRetry(cb.dispatch, cb.ctx); break;
-    case 'cancel': handleCancel(cb.dispatch, cb.ctx); break;
+    case 'cancel': {
+      // Cesar proposals first, legacy plan runner second — the exact mirror of
+      // 'approve' above. Both reject routes (typing /cancel, and the pinned
+      // approval prompt's '3. Reject', which submits /cancel) come through here.
+      if (cancelPendingCesarPlan(cb)) break;
+      handleCancel(cb.dispatch, cb.ctx);
+      break;
+    }
     case 'apply': await handleApplyPatch(cb.dispatch, cb.ctx, intent.patchPath, intent.force); break;
     case 'cp': {
       if (intent.last) handleCpLast(cb.ctx.chatSession, cb.dispatch);

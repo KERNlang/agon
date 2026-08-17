@@ -2,7 +2,7 @@
 import from="node:path" names="join"
 import from="node:fs" names="writeFileSync"
 import from="@kernlang/agon-core" names="resolveWorkingDir,loadConfig,gitChangedFiles"
-import from="@kernlang/agon-core" names="approveCesarPlan,saveCesarPlan,executePlan,formatCesarPlanMarkdown,planCostEstimator"
+import from="@kernlang/agon-core" names="approveCesarPlan,cancelCesarPlan,saveCesarPlan,executePlan,formatCesarPlanMarkdown,planCostEstimator,appendMessage"
 import from="@kernlang/agon-core" names="CesarPlan,CesarPlanStep,CesarStepResult,StepExecutor" types=true
 import from="../../handlers/plan-mode.js" names="buildStepExecutors"
 import from="../../cesar/auto-approve-policy.js" names="applyAutoApprovePolicy,applyAgenticAutoApprovePolicy"
@@ -87,6 +87,51 @@ fn name=approvePendingCesarPlan async=true params="cb:DispatchCallbacks" returns
           do value="hostConsoleWarn(`[plan] failed to write approved Cesar plan file: ${(err as Error).message ?? err}`)"
     do value="await executeApprovedPlan(approved, cb)"
     return value="true"
+
+fn name=cancelPendingCesarPlan params="cb:DispatchCallbacks" returns=boolean export=true
+  doc "Reject the pending CesarPlan, if one exists. This is the Cesar half of /cancel, mirroring approvePendingCesarPlan for /approve: BOTH real reject routes land here — typing /cancel, and the pinned PlanApprovalPrompt's '3. Reject' row (app-keyboard.kern planControl submits '/cancel'). Without it, /cancel fell straight through to the legacy plan-runner handleCancel, which only knows ctx.currentPlan, so rejecting a Cesar proposal answered 'No active plan to cancel.' and left the approval prompt pinned forever. Returns false when there is no Cesar proposal so the caller still falls through to the legacy runner. Dispatches plan-cancelled (releases the pinned prompt), persists the cancelled record + markdown so the on-disk plan stops reading awaiting_approval, and appends a rejection note to the chat session so Cesar's next turn knows the plan was refused instead of silently re-proposing it."
+  handler <<<
+    const pending = findPendingCesarPlan(cb.ctx) as CesarPlan | null;
+    if (!pending) return false;
+    if ((cb.ctx.cesar as any)?.proposedPlan?.id === pending.id) (cb.ctx.cesar as any).proposedPlan = undefined;
+
+    const cancelled = cancelCesarPlan(pending);
+    cb.setActivePlan(null);
+    try {
+      saveCesarPlan(cancelled);
+    } catch (err) {
+      hostConsoleWarn(`[plan] failed to persist cancelled Cesar plan: ${(err as Error).message ?? err}`);
+    }
+    if (cancelled.planFilePath) {
+      try {
+        writeFileSync(cancelled.planFilePath, formatCesarPlanMarkdown(cancelled));
+      } catch (err) {
+        hostConsoleWarn(`[plan] failed to write cancelled Cesar plan file: ${(err as Error).message ?? err}`);
+      }
+    }
+
+    // Releases the pinned PlanApprovalPrompt (signals/output.kern 'plan-cancelled').
+    cb.dispatch({ type: 'plan-cancelled', plan: cancelled } as any);
+    // The plan BODY block is already sealed in the transcript with its
+    // awaiting_approval snapshot and cannot be rewritten (Ink <Static> is
+    // append-only), so this line IS the transcript's outcome record.
+    cb.dispatch({ type: 'success', message: `Plan rejected — ${cancelled.intent} (${cancelled.id}) cancelled.` } as any);
+
+    // Tell Cesar. Without this the brain's next turn sees a vanished plan with no
+    // reason and happily re-proposes the same one.
+    try {
+      if (cb.ctx.chatSession) {
+        appendMessage(cb.ctx.chatSession, {
+          role: 'user',
+          content: `[plan rejected] I rejected the proposed plan "${cancelled.intent}" (${cancelled.id}). Do not re-propose that same plan — ask what should change, or act on my next instruction.`,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    } catch (err) {
+      hostConsoleWarn(`[plan] failed to record plan rejection in the chat session: ${(err as Error).message ?? err}`);
+    }
+    return true;
+  >>>
 
 fn name=handleProposedCesarPlan async=true params="proposed:CesarPlan, cb:DispatchCallbacks" returns="Promise<void>" export=true
   doc "Activate a proposed Cesar plan. Auto-approved plans execute immediately; manual approval is intentionally non-blocking so the REPL returns to idle and accepts go, yes, or /approve through the normal composer."

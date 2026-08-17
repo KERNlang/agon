@@ -434,16 +434,23 @@ export async function runHandleSubmit(opts: HandleSubmitDeps, value: string): Pr
     input = '/approve';
   }
 
-  // When the user moves forward from a pinned plan proposal, demote it
-  // from the live pane into scrollback history (Claude-style) so this
-  // turn's output is the bottom-most content instead of being buried
-  // under the plan. The chat-route approval ("go sounds legit") never
+  // When the user moves forward from a pinned plan proposal, release the
+  // pinned approval prompt so this turn's output is the bottom-most content
+  // instead of sitting under a stale question (the plan body itself is
+  // already a normal scrollback block). The chat-route approval ("go sounds legit") never
   // emits plan-execution, so this turn boundary is the reliable hook.
   // Exclusions, so an input that is NOT a response to the plan can't
   // falsely retire it:
   //   - side-channel slash commands (/btw, /status, /clear, …) — and
-  //     /cancel, which keeps its own plan-cancelled path (no history block)
+  //     /cancel, which routes through cancelPendingCesarPlan and emits its own
+  //     plan-cancelled + 'Plan rejected' outcome line
   //   - status/progress queries are questions about the plan, not responses
+  // The outcome is carried on the event because only this call site can tell
+  // the two endings apart: by here a chat-route approval has already been
+  // rewritten to '/approve', so anything else is the user walking away from
+  // the proposal. plan-dismiss uses it to decide whether the transcript needs
+  // an appended 'superseded' correction (the committed body block still reads
+  // Status: awaiting_approval and cannot be edited in place).
   const dismissLower = input.trim().toLowerCase();
   const isSlashNonApprove = dismissLower.startsWith('/') && dismissLower !== '/approve';
   if (
@@ -451,7 +458,7 @@ export async function runHandleSubmit(opts: HandleSubmitDeps, value: string): Pr
     !isSlashNonApprove &&
     !isCesarPlanStatusInput(input)
   ) {
-    opts.dispatch({ type: 'plan-dismiss' } as any);
+    opts.dispatch({ type: 'plan-dismiss', outcome: dismissLower === '/approve' ? 'approved' : 'superseded' } as any);
   }
 
   // /btw <question> — side-channel question during active dispatch
@@ -512,7 +519,7 @@ export async function runHandleSubmit(opts: HandleSubmitDeps, value: string): Pr
       if (opts.pendingImages.length) opts.setPendingImages([]);
       const count = peekSteeringCount();
       opts.setSteeringCount(count);
-      opts.dispatch({ type: 'info', message: count > 1 ? `Steering queued (${count}) — injects at next step.` : 'Steering queued — injects at next step.' } as any);
+      opts.dispatch({ type: 'info', message: count > 1 ? `Steering queued (${count}) — delivers after the current tool call.` : 'Steering queued — delivers after the current tool call.' } as any);
       return;
     }
   }

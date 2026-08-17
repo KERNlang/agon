@@ -110,6 +110,12 @@ fn name=resetStaleCesarTurnState params="state:CesarState" returns=void export=t
     state.confidenceBlockCount = 0;
     state.searchToolCount = 0;
     state.searchNudged = false;
+    state.readRepeatCount = 0;
+    state.effectfulStepCount = 0;
+    state.shellWorkStepCount = 0;
+    state.stepSignatures = undefined;
+    state.readSpiralNoted = false;
+    state.turnIntakeKind = undefined;
     state.quickNeroRequested = false;
   >>>
 

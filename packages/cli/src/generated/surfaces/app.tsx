@@ -72,7 +72,7 @@ import { handleReviewAction } from '../blocks/review.js';
 
 import { DashboardView, OutputBlockView } from '../blocks/engine.js';
 
-import { PlanProposalView } from '../blocks/plan-view.js';
+import { PlanApprovalPrompt } from '../blocks/plan-view.js';
 
 import { TodoList } from '../blocks/todo-list.js';
 
@@ -160,7 +160,7 @@ import { runProcessInputQueue, runSendBtwMessage, runHandleSubmit } from './app-
 
 // ── Module: AppHelperExports ──
 
-export { COMPOSER_HISTORY_LIMIT, isMutatingToolCall, probeEngineVitals, parseToolCallPayload, toolPreviewWindow, toolCallSupportsDetailView, detailViewerSupportsEvent, toolDetailViewportRows, findLatestToolDetailEvent, findLatestToolEvent, buildExecutionRailStats, composerHistoryPath, loadComposerInputHistory, saveComposerInputHistory, findLatestFailedToolEvent, buildFailedToolRetryDraft, buildToolDetailView, createInitialRegistry, drainStdinBuffer, maxScrollOffsetForRowCount, nextWheelAnimationStep, clampNumber, charDisplayWidth, stringDisplayWidth, displayColumnToStringIndex, normalizeRowSelection, normalizeTextSelection, richLineToPlainText, transcriptRowToPlainText, transcriptRowTextStartColumn, resolveTranscriptColumnFromMouse, transcriptRowsToPlainText, resolveTranscriptRowFromMouse, estimateVisibleBlockBudget, estimateWrappedRowCount, estimateQuestionReservedRows, estimateBottomChromeExtraRows, summarizeBtwTranscriptEvent, buildDashboardBlock, estimatePinnedLiveRows, estimateWrappedRows, estimateToolCallRows, estimateOutputEventRows, buildDisplayItems, isToolCallLikeBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, estimateDisplayItemRows, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, isDuplicateEngineBlock, appendTranscriptBlock, normalizeTerminalMode, resolveTerminalMode, normalizeTerminalSize, fileRailWidthForTerminal, fileRailMaxRowsForTerminal, buildTerminalReplaySnapshot, parseMarkdownToRows, buildToolCallRows, buildCollapsedToolGroupRows, buildTranscriptRows } from './app-helpers.js';
+export { PLAN_APPROVAL_PROMPT_ROWS, COMPOSER_HISTORY_LIMIT, isMutatingToolCall, probeEngineVitals, parseToolCallPayload, toolPreviewWindow, toolCallSupportsDetailView, detailViewerSupportsEvent, toolDetailViewportRows, findLatestToolDetailEvent, findLatestToolEvent, buildExecutionRailStats, composerHistoryPath, loadComposerInputHistory, saveComposerInputHistory, findLatestFailedToolEvent, buildFailedToolRetryDraft, buildToolDetailView, createInitialRegistry, drainStdinBuffer, maxScrollOffsetForRowCount, nextWheelAnimationStep, clampNumber, charDisplayWidth, stringDisplayWidth, displayColumnToStringIndex, normalizeRowSelection, normalizeTextSelection, richLineToPlainText, transcriptRowToPlainText, transcriptRowTextStartColumn, resolveTranscriptColumnFromMouse, transcriptRowsToPlainText, resolveTranscriptRowFromMouse, estimateVisibleBlockBudget, estimateWrappedRowCount, estimateQuestionReservedRows, estimateBottomChromeExtraRows, summarizeBtwTranscriptEvent, buildDashboardBlock, estimatePinnedLiveRows, estimateWrappedRows, estimateToolCallRows, estimateOutputEventRows, buildDisplayItems, isToolCallLikeBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, estimateDisplayItemRows, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, isDuplicateEngineBlock, appendTranscriptBlock, normalizeTerminalMode, resolveTerminalMode, normalizeTerminalSize, fileRailWidthForTerminal, fileRailMaxRowsForTerminal, buildTerminalReplaySnapshot, parseMarkdownToRows, buildToolCallRows, buildCollapsedToolGroupRows, buildTranscriptRows } from './app-helpers.js';
 
 // @kern-source: app:100
 export function App() {
@@ -652,8 +652,8 @@ export function App() {
   }, [activePlan,planModeQueued,autoModeQueued]);
 
   const bottomChromeReservedRows = useMemo(() => {
-          return estimateBottomChromeExtraRows(mode, questionState, termWidth, pendingImages.length, inputQueue.length, !(!liveSpinner), planChipVisible, estimateTodoListRows(todos, planChipVisible, termWidth));
-  }, [mode,questionState,termWidth,pendingImages,inputQueue,liveSpinner,planChipVisible,todos]);
+          return estimateBottomChromeExtraRows(mode, questionState, termWidth, pendingImages.length, inputQueue.length, !(!liveSpinner), planChipVisible, estimateTodoListRows(todos, planChipVisible, termWidth), !(!pendingPlanProposal));
+  }, [mode,questionState,termWidth,pendingImages,inputQueue,liveSpinner,planChipVisible,todos,pendingPlanProposal]);
 
   const overlayActive = useMemo(() => {
           return enginePickerOpen || modelPickerOpen || cesarPickerOpen || !(!reviewEvent) || !(!toolDetailEvent);
@@ -1732,13 +1732,6 @@ export function App() {
     {livePaneVisible && !railTakeover && (
       <LiveStreamSection activeStream={activeStream} mode={mode} liveProgress={liveProgress} liveToolStreams={liveToolStreams} liveToolTailFrozen={liveToolTailFrozen} agentProgress={agentProgress} />
     )}
-    {pendingPlanProposal && (
-      <PlanProposalView
-        plan={(pendingPlanProposal as any).plan}
-        markdown={(pendingPlanProposal as any).markdown}
-        selectedIndex={planApprovalIndex}
-      />
-    )}
     {btwPanel && (
       <BtwSidePanel btwPanel={btwPanel} />
     )}
@@ -1956,6 +1949,17 @@ export function App() {
         so the two surfaces stay in lockstep across every plan state (incl.
         the post-done retain window). Live (non-plan) todos always render. */}
     <TodoList todos={todos} planActive={planChipVisible} />
+    {/* Pinned plan-approval question — the LAST thing above the bottom
+        chrome, so the user answers where their eye already is after
+        reading the plan. The plan BODY is a normal transcript block
+        (committed by the 'plan-proposal' dispatch in signals/output.kern),
+        so a multi-screen plan scrolls instead of burying this question.
+        Costs exactly PLAN_APPROVAL_PROMPT_ROWS rows, reserved in
+        bottomChromeReservedRows above so the transcript viewport shrinks
+        in lockstep and the top of the frame is never clipped. */}
+    {pendingPlanProposal && (
+      <PlanApprovalPrompt plan={(pendingPlanProposal as any).plan} selectedIndex={planApprovalIndex} />
+    )}
     {!enginePickerOpen && !modelPickerOpen && !cesarPickerOpen && !railTakeover && (
       <BottomChromeSection
         updateInfo={updateInfo}
@@ -2071,7 +2075,7 @@ export function App() {
 // @kern-source: app:98
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:1956
+// @kern-source: app:1960
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   // Session-scoped grounding ONLY — deliberately does NOT call

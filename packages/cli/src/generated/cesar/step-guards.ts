@@ -82,17 +82,17 @@ export function readSpiralIntentFor(intakeKind?: string): ReadSpiralIntent {
 }
 
 /**
- * One-shot read-spiral checkpoint predicate. Edit intent: at least spiralThreshold read-class steps AND zero effectful (mutate/verify) steps — a mapping pass that never turned into work. Investigate intent: read VOLUME is legitimate, so it fires only on at least repeatThreshold read-REPEATS. Never fires twice (alreadyNoted).
+ * One-shot read-spiral checkpoint predicate. Edit intent: at least spiralThreshold read-class steps AND zero effectful (mutate/verify) steps AND zero shell-work steps — a mapping pass that never turned into work. Investigate intent: read VOLUME is legitimate, so it fires only on at least repeatThreshold read-REPEATS. Never fires twice (alreadyNoted). shellWorkSteps is the honesty guard on the edit branch: a turn that did its work through the shell (`sed -i …`, `git commit`, `mkdir`, a build script) classifies as `other`, never mutate/verify, so on effectfulSteps alone the note would tell an engine that just edited files 'no edit or verification yet'. `other`-class Bash is precisely the shell we could NOT prove read-only, so it must count as work happening here — the classifier stays untouched (other remains budget-neutral) and only this note is suppressed. The cost is a false NEGATIVE on an unclassifiable read wrapper (`python -c "…read()"`) — the accepted-leak side of the spec, caught one layer up by the novelty-based no-progress checkpoint.
  */
 // @kern-source: step-guards:66
-export function shouldNoteReadSpiral(opts: {intent:string, readSteps:number, readRepeats:number, effectfulSteps:number, spiralThreshold:number, repeatThreshold:number, alreadyNoted:boolean}): boolean {
+export function shouldNoteReadSpiral(opts: {intent:string, readSteps:number, readRepeats:number, effectfulSteps:number, shellWorkSteps?:number, spiralThreshold:number, repeatThreshold:number, alreadyNoted:boolean}): boolean {
   if (opts.alreadyNoted) {
     return false;
   }
   if (readSpiralIntentFor(opts.intent) === 'investigate') {
     return Number(opts.readRepeats ?? 0) >= Number(opts.repeatThreshold ?? CESAR_READ_REPEAT_DEFAULT);
   }
-  if (Number(opts.effectfulSteps ?? 0) > 0) {
+  if (Number(opts.effectfulSteps ?? 0) > 0 || Number(opts.shellWorkSteps ?? 0) > 0) {
     return false;
   }
   return Number(opts.readSteps ?? 0) >= Number(opts.spiralThreshold ?? CESAR_READ_SPIRAL_DEFAULT);

@@ -55,6 +55,23 @@ describe('shouldNoteReadSpiral', () => {
     expect(spiral({ readSteps: 200, effectfulSteps: 3 })).toBe(false);
   });
 
+  // ── Shell work is work (codex review N3) ──
+  // `sed -i`, `git commit`, `mkdir -p`, a codegen script: all classify as `other`
+  // (Bash we could not prove read-only, not gate-matching), so effectfulSteps
+  // stays 0 and the edit-intent note used to tell an engine that had just
+  // rewritten files "no edit or verification yet".
+  it('never fires on an edit turn that did its work through the shell', () => {
+    expect(spiral({ readSteps: 40, effectfulSteps: 0, shellWorkSteps: 1 })).toBe(false);
+    expect(spiral({ readSteps: 200, effectfulSteps: 0, shellWorkSteps: 9 })).toBe(false);
+    // …and it still fires when the turn really did nothing but read.
+    expect(spiral({ readSteps: 40, effectfulSteps: 0, shellWorkSteps: 0 })).toBe(true);
+  });
+
+  it('leaves the investigate branch untouched by shell work (repeats still trip it)', () => {
+    expect(spiral({ intent: 'exploration', readSteps: 30, readRepeats: 12, shellWorkSteps: 5 })).toBe(true);
+    expect(spiral({ intent: 'exploration', readSteps: 300, shellWorkSteps: 0 })).toBe(false);
+  });
+
   it('never fires on an investigate turn from read VOLUME alone', () => {
     expect(spiral({ intent: 'exploration', readSteps: 25 })).toBe(false);
     expect(spiral({ intent: 'review', readSteps: 300 })).toBe(false);

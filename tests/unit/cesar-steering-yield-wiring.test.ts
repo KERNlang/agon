@@ -90,3 +90,94 @@ describe('steering delivery forwards the attachments the drain consumed (#2)', (
     expect(injector).toMatch(/sendImages && sendImages\.length \? \{ images: sendImages \}/);
   });
 });
+
+// ── The yield must REACH the delivery site (codex N2) ─────────────────────
+// A native cycle yields at a completed tool pair, which routinely means ZERO
+// narration text, and `agenticAuto` is true only on AUTO turns. So on an ordinary
+// chat turn the auto-continuation gate's `response.trim().length > 0` clause was
+// enough to skip the whole loop — the yielded steering then sat queued until the
+// app's idle leftover drain surfaced it on a LATER turn, which is precisely the
+// bug the cooperative yield exists to remove.
+describe('a pending steering yield always reaches the continuation loop (#N2)', () => {
+  it('enters the auto-continuation loop on a zero-text, non-agentic yield', () => {
+    const gate = CODE.slice(CODE.indexOf('const _shouldAutoContinue'), CODE.indexOf('const _shouldAutoContinue') + 500);
+    // Both gating clauses that a text-less yield would otherwise fail.
+    expect(gate).toMatch(/\(hadToolActivity \|\| ranToolLoop \|\| _steeringYieldPending\)/);
+    expect(gate).toMatch(/\(agenticAuto \|\| response\.trim\(\)\.length > 0 \|\| _steeringYieldPending\)/);
+    // The exclusions that must NOT be bypassed: plan mode, the chat fast-path, a
+    // pending delegation, a dead/aborted session and an errored engine.
+    expect(gate).toContain('!inPlanMode');
+    expect(gate).toContain('!answerFastPath');
+    expect(gate).toContain('!ctx.cesar!.pendingDelegation');
+    expect(gate).toContain('!abort.signal.aborted');
+    expect(gate).toContain('!_engineErrored');
+  });
+});
+
+// ── Tools a CONTINUATION runs are never invisible or off-ledger (codex B2) ──
+// Every continuation send (the [SYSTEM] gate/steering injection, the auto-continue
+// nudge, the closure line, the confirmation follow-up and its tool loop) used to
+// read only text/error/done off its stream. On a native engine the core loop
+// executes tools inside those sends, so their calls ran with NO recordToolUse:
+// no _toolsUsed entry, no mutation count, no gate/verification flip, no novelty
+// for the progress signature and no tool row on screen — a steering reply that
+// edited files could then claim done without the verify-before-done gate firing.
+describe('continuation streams forward native tool calls (#B2)', () => {
+  it('pairs every status forward with a tool-call forward, on the next line', () => {
+    const statusSites = CODE.match(/^\s*if \(forwardContinuationStatus\(([_A-Za-z]+), dispatch\)\) continue;\n\s*if \(_forwardContinuationToolCall\(\1\)\) continue;$/gm) ?? [];
+    const allStatus = CODE.match(/if \(forwardContinuationStatus\(/g) ?? [];
+    const allTools = CODE.match(/if \(_forwardContinuationToolCall\(/g) ?? [];
+    // If this fails, a continuation stream forwards status but drops tool calls
+    // (or a new send site was added without either) — its tools would execute
+    // off-ledger and off-screen. Forward both, on the same chunk variable.
+    expect(allStatus.length).toBeGreaterThanOrEqual(7);
+    expect(allTools).toHaveLength(allStatus.length);
+    expect(statusSites).toHaveLength(allStatus.length);
+  });
+
+  it('routes a continuation tool call through the SAME central record point', () => {
+    const helper = CODE.slice(CODE.indexOf('const _forwardContinuationToolCall'), CODE.indexOf('const _forwardContinuationToolCall') + 1800);
+    // recordToolUse is what flips _successfulMutationCount / _verificationPassed /
+    // _ranGate / the novelty ledger — the whole point of the forward.
+    expect(helper).toMatch(/recordToolUse\(toolName, 'native', toolInput, rawStatus,/);
+    // Structured args are passed so the step signature is the shared canonical one.
+    expect(helper).toContain('meta.input as Record<string, unknown>');
+    // The tool row reaches the transcript.
+    expect(helper).toMatch(/dispatchToolCall\(\{[\s\S]*type: 'tool-call'/);
+    // Native only: on an XML/eager engine the same chunks are already recorded by
+    // the initial stream + runToolLoop callbacks, so forwarding would double-count.
+    expect(helper).toContain("if (!ctx.cesar!.hasNativeTools) return false;");
+  });
+
+  it('delivers steering through the injector that now forwards tool calls', () => {
+    // The steering-delivery send IS _injectSystemContinuation, so the forward has
+    // to be inside it — this is the site where the model answers the user by
+    // editing files.
+    const injector = CODE.slice(CODE.indexOf('const _injectSystemContinuation'), CODE.indexOf('const _consumeSteeringYieldRound'));
+    expect(injector).toContain('_forwardContinuationToolCall(_c)');
+  });
+});
+
+// ── The drain loop's per-message scope (agy B1) ───────────────────────────
+// Reviewed as "`text` is block-scoped in the loop but read outside it → runtime
+// ReferenceError". It is not — the telemetry record sits INSIDE the per-message
+// loop (and `npm run typecheck` would reject an out-of-scope read outright). Pin
+// the invariant anyway: ONE record per drained message, built from that message's
+// own `text`, so a refactor that hoists it out of the loop fails here.
+describe('the steering drain records telemetry per message, inside the loop (#B1)', () => {
+  it('keeps the steering_injected record inside the per-message loop', () => {
+    const loopStart = CODE.indexOf('for (const msg of pending)');
+    expect(loopStart).toBeGreaterThan(0);
+    // The loop body ends where the post-loop images latch begins.
+    const loopEnd = CODE.indexOf('if (drainedImages.length)', loopStart);
+    expect(loopEnd).toBeGreaterThan(loopStart);
+    const body = CODE.slice(loopStart, loopEnd);
+    expect(body).toContain('const text = (msg.input ?? \'\').trim();');
+    expect(body).toContain("event: 'steering_injected'");
+    // Per message: the render, the history append and the telemetry all sit here.
+    expect(body).toContain("dispatch({ type: 'user-message', content: text }");
+    expect(body).toMatch(/appendMessage\(ctx\.chatSession, \{ role: 'user', content: text/);
+    // Exactly one telemetry site in the whole turn machine.
+    expect((CODE.match(/steering_injected/g) ?? [])).toHaveLength(1);
+  });
+});

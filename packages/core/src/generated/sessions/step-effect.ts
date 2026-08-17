@@ -41,7 +41,7 @@ export function normalizeStepToolName(name: string): string {
 }
 
 /**
- * The identity-bearing argument of a tool call: the command for Bash, the file path for Read/Edit/Write, the pattern (plus scope path) for Grep/Glob, else the first present of command/file_path/path/pattern/id. Used for BOTH effect classification and the step signature so a repeat is recognized by what it touched, not by argument spelling.
+ * The identity-bearing argument of a tool call: the command for Bash, the file path PLUS the paged window (offset/limit) for Read, the pattern plus every scope argument (path/glob/type) for Grep/Glob, else the first present of command/file_path/path/pattern/id. Used for BOTH effect classification and the step signature so a repeat is recognized by what it touched, not by argument spelling. The Read window and the Grep scope args are part of the identity because they change WHAT the call returns: paging through a 4000-line file (offset 1 / 2001 / 4001) and grepping one pattern under two different globs are distinct steps, each of which brings new information — collapsing them onto one signature made every page after the first a read-REPEAT, so a legitimate paged read of a big file earned no budget and fed the read-spiral guard. The core loop's own seenReadKeys accumulator already keys on the full arg record for exactly this reason; this keeps the shared signature consistent with it. Flags that only reshape the SAME content (output_mode, -n, -A/-B/-C, head_limit) are deliberately excluded — re-running one query to reformat its output is a repeat.
  */
 // @kern-source: step-effect:52
 export function primaryStepInput(tool: string, args: Record<string,unknown>): string {
@@ -51,15 +51,20 @@ export function primaryStepInput(tool: string, args: Record<string,unknown>): st
     return String(record.command ?? '');
   }
   if (name === 'grep' || name === 'glob') {
-    return `${String(record.pattern ?? '')} ${String(record.path ?? '')}`.trim();
+    return [String(record.pattern ?? ''), String(record.path ?? ''), record.glob ? `glob=${String(record.glob)}` : '', record.type ? `type=${String(record.type)}` : ''].filter((part: string) => part.length > 0).join(' ');
   }
-  return String(record.file_path ?? record.path ?? record.command ?? record.pattern ?? record.id ?? '');
+  const path = String(record.file_path ?? record.path ?? record.command ?? record.pattern ?? record.id ?? '');
+  if (name !== 'read') {
+    return path;
+  }
+  const window = [(record.offset === undefined || record.offset === null) ? '' : `offset=${String(record.offset)}`, (record.limit === undefined || record.limit === null) ? '' : `limit=${String(record.limit)}`].filter((part: string) => part.length > 0).join(' ');
+  return (window.length > 0) ? `${path} ${window}` : path;
 }
 
 /**
  * Stable per-cycle identity of one tool call: normalized tool name + whitespace-collapsed primary argument, capped. Two calls with the same signature are the same step — the second is a repeat.
  */
-// @kern-source: step-effect:63
+// @kern-source: step-effect:67
 export function normalizeStepSignature(tool: string, input: string): string {
   const arg = String(input ?? '').trim().replace(/[ \t\n\r\f\v]+/g, ' ').slice(0, STEP_SIGNATURE_ARG_CAP);
   return `${normalizeStepToolName(tool)}:${arg}`;
@@ -68,7 +73,7 @@ export function normalizeStepSignature(tool: string, input: string): string {
 /**
  * Canonical per-cycle identity of one tool call, computed from its ARGS (never from a pre-stringified input) so every ledger — core earned-budget novelty, cli read-repeats, brain progress novelty — hashes the same shape. Uses the identity-bearing primary argument; when the tool has no recognized identity key (an orchestration/MCP tool with a free-form payload) it falls back to a sorted key=value rendering of the whole args record, so two genuinely different calls are never collapsed into one signature.
  */
-// @kern-source: step-effect:77
+// @kern-source: step-effect:81
 export function canonicalStepSignature(tool: string, args: Record<string,unknown>): string {
   const record = args ?? {};
   const primary = primaryStepInput(tool, record);
@@ -82,7 +87,7 @@ export function canonicalStepSignature(tool: string, args: Record<string,unknown
 /**
  * Classify one executed tool call by EFFECT. Read/Grep/Glob are read; the write-work set is mutate; Bash is decided by its command — gate-matching (bashRanGate) is verify, otherwise read-only is read and anything else is other. Every other tool is other (neutral). Pure; gateMatchers may be omitted (no discovered gate → a gate command cannot be recognized and falls through to read/other).
  */
-// @kern-source: step-effect:87
+// @kern-source: step-effect:91
 export function classifyToolEffect(tool: string, input: string, gateMatchers?: string[]): ToolStepEffect {
   const name = normalizeStepToolName(tool);
   if (MUTATE_STEP_TOOLS.has(name)) {
@@ -110,7 +115,7 @@ export function classifyToolEffect(tool: string, input: string, gateMatchers?: s
 /**
  * True for the one class that earns nothing: a read whose signature was already seen this cycle.
  */
-// @kern-source: step-effect:106
+// @kern-source: step-effect:110
 export function isReadRepeat(effect: ToolStepEffect, novel: boolean): boolean {
   return effect === 'read' && !novel;
 }
@@ -118,7 +123,7 @@ export function isReadRepeat(effect: ToolStepEffect, novel: boolean): boolean {
 /**
  * Budget growth is EARNED, not granted for merely not failing. A step earns growth when at least one of its successful calls was a mutate, a verify, a NOVEL read, or an unclassifiable other. A step made only of read-repeats earns nothing, so a pure re-read spiral stays at the base budget instead of climbing to the cap. An empty step (no successful classified call) earns nothing.
  */
-// @kern-source: step-effect:111
+// @kern-source: step-effect:115
 export function stepEarnsBudgetGrowth(entries: ToolStepEffectEntry[]): boolean {
   return (entries ?? []).some((entry: ToolStepEffectEntry) => !isReadRepeat(entry.effect, entry.novel));
 }

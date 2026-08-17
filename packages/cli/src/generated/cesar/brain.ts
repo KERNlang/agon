@@ -566,6 +566,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       // set that distinguishes them, and the one-shot read-spiral latch.
       ctx.cesar!.readRepeatCount = 0;
       ctx.cesar!.effectfulStepCount = 0;
+      ctx.cesar!.shellWorkStepCount = 0;
       ctx.cesar!.stepSignatures = new Set<string>();
       ctx.cesar!.readSpiralNoted = false;
       ctx.cesar!.turnIntakeKind = undefined;
@@ -895,6 +896,54 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           return onText;
         };
         let hadToolActivity = false; // tracks if native tool calls were shown to user
+        // ── Native tool_call forwarding for CONTINUATION sends ──
+        // The main turn stream handles `tool_call` chunks (recordToolUse +
+        // dispatchToolCall); every CONTINUATION send — the [SYSTEM] gate/steering
+        // injection, the auto-continue nudge, the confirmation follow-up — used to
+        // read ONLY text/error/done off its stream. On a native (API function-calling)
+        // engine the core loop executes tools inside those sends too, so their calls
+        // ran INVISIBLY and updated nothing at the brain level: no _toolsUsed entry,
+        // no _successfulMutationCount, no _verificationPassed/_ranGate flip from a
+        // gate run, no novelty for the progress signature, and no tool row on screen.
+        // The concrete failure: the model answers steering (or a nudge) by EDITING
+        // files, then claims done — _shouldGateNudge sees no write tool in _toolsUsed
+        // and the verify-before-done gate never fires, so an unverified change ends
+        // the turn looking clean. One helper, called at every continuation send site,
+        // instead of a per-site variant.
+        // Native only (ctx.cesar.hasNativeTools): on an XML/eager engine the same
+        // chunks are the eager-execution signals owned by the initial stream and the
+        // runToolLoop callbacks, which already record them — forwarding here would
+        // double-count them.
+        const _forwardContinuationToolCall = (chunk: any): boolean => {
+          if (String(chunk?.type) !== 'tool_call') return false;
+          if (!ctx.cesar!.hasNativeTools) return false;
+          const meta = ((chunk as any).metadata ?? {}) as Record<string, unknown>;
+          const toolName = String((chunk as any).content || 'tool');
+          const toolInput = typeof meta.input === 'string' ? meta.input : meta.input ? JSON.stringify(meta.input) : '';
+          const rawStatus = String((meta.status as any) ?? 'running');
+          hadToolActivity = true;
+          // Same central record point the main stream uses, so the mutation /
+          // verification / novelty / gate ledgers see a continuation step exactly as
+          // they see an initial-stream step. Args are passed through so the step
+          // signature is the shared canonical one, not a stringified variant.
+          recordToolUse(toolName, 'native', toolInput, rawStatus, meta.input && typeof meta.input === 'object' ? meta.input as Record<string, unknown> : undefined);
+          dispatch({ type: 'spinner-update', message: `Cesar: ${toolName}…` });
+          const displayStatus = rawStatus === 'done' || rawStatus === 'ok' || rawStatus === 'completed'
+            ? 'done'
+            : rawStatus === 'error' || rawStatus === 'failed' || rawStatus === 'rejected'
+              ? 'error'
+              : 'running';
+          dispatchToolCall({
+            type: 'tool-call',
+            engineId: cesarEngineId,
+            tool: toolName,
+            input: toolInput,
+            status: displayStatus as any,
+            terminalReason: meta.terminalReason as any,
+            output: typeof meta.output === 'string' ? meta.output : undefined,
+          } as any, { toolCallId: meta.toolCallId as string | undefined });
+          return true;
+        };
         // Engine-failure tracking: when a send yields an `error` chunk or returns
         // empty (overflow, rate limit, content filter, dead session), capture the
         // REAL reason so the auto-continue loop surfaces it instead of swallowing
@@ -2696,14 +2745,27 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         // nudges, producing filler-question spam ("What do you want to dig into?").
         // simpleEditFastPath is intentionally NOT excluded — an edit is real work that
         // can legitimately need a nudge if the engine stopped mid-change.
-        const _shouldAutoContinue = (hadToolActivity || ranToolLoop)
+        // A pending steering YIELD is its own reason to enter the loop: the cycle
+        // ended early precisely so the loop's first action can deliver the user's
+        // message as a real user turn. It must not be gated on the engine having
+        // narrated anything — a native cycle can (and typically does) yield at a
+        // completed tool pair with ZERO text, and agenticAuto is only true on AUTO
+        // turns, so on an ordinary chat turn the `response.trim().length > 0` clause
+        // alone dropped the yield: the loop was skipped, the steering stayed queued,
+        // and it surfaced only on a whole later turn via the app's idle leftover
+        // drain — exactly the "steering sits undelivered" bug the yield exists to fix.
+        // The other clauses are deliberately NOT bypassed: plan mode, the chat
+        // fast-path, a pending delegation and an aborted/dead session must never be
+        // dragged into the nudge loop, and for those the leftover drain remains the
+        // (unchanged) backstop.
+        const _shouldAutoContinue = (hadToolActivity || ranToolLoop || _steeringYieldPending)
           && !inPlanMode
           && !answerFastPath
           && !ctx.cesar!.pendingDelegation
           && session.alive
           && !abort.signal.aborted
           && !_engineErrored
-          && (agenticAuto || response.trim().length > 0);
+          && (agenticAuto || response.trim().length > 0 || _steeringYieldPending);
         if (_shouldAutoContinue) {
           const configuredAgenticLimit = Number(config.cesarAgenticContinuationLimit ?? 12);
           const MAX_CONTINUATIONS = agenticAuto
@@ -2782,6 +2844,10 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               });
               for await (const _c of _sysGen) {
                 if (abort.signal.aborted) break;
+                // Live activity + full ledger bookkeeping for tools the engine runs
+                // inside this continuation (see _forwardContinuationToolCall).
+                if (forwardContinuationStatus(_c, dispatch)) continue;
+                if (_forwardContinuationToolCall(_c)) continue;
                 if (_c.type === 'text') _sysResp += _c.content;
                 if (_c.type === 'error' && !_sysResp.trim()) { _engineErrored = true; _engineErrorMsg = String(_c.content ?? '').slice(0, 300); }
                 if (_c.type === 'done' || _c.type === 'error') break;
@@ -2809,6 +2875,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                     let _nr = '';
                     const _g2 = _cesarSend({ message: nextMessage, signal: abort.signal, toolLoopBaseBudget: cesarFastPath ? fastPathBaseBudget : undefined, toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined });
                     for await (const _ch of _g2) {
+                      if (forwardContinuationStatus(_ch, dispatch)) continue;
+                      if (_forwardContinuationToolCall(_ch)) continue;
                       if (_ch.type === 'text') _nr += _ch.content;
                       if (_ch.type === 'error' && !_nr.trim()) { _engineErrored = true; _engineErrorMsg = String(_ch.content ?? '').slice(0, 300); }
                       if (_ch.type === 'done' || _ch.type === 'error') break;
@@ -2992,6 +3060,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 // Live activity during the continuation — tools/thinking/context
                 // gauge keep flowing to the strip instead of freezing 'continuing…'.
                 if (forwardContinuationStatus(chunk, dispatch)) continue;
+                if (_forwardContinuationToolCall(chunk)) continue;
                 if (chunk.type === 'text') contResponse += chunk.content;
                 if (chunk.type === 'error' && !contResponse.trim()) {
                   _engineErrored = true;
@@ -3058,6 +3127,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                         toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined,
                       });
                       for await (const chunk of gen) {
+                        if (forwardContinuationStatus(chunk, dispatch)) continue;
+                        if (_forwardContinuationToolCall(chunk)) continue;
                         if (chunk.type === 'text') nextResp += chunk.content;
                         if (chunk.type === 'error' && !nextResp.trim()) {
                           _engineErrored = true;
@@ -3161,6 +3232,10 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               });
               for await (const _chunk of _closureGen) {
                 if (abort.signal.aborted) break;
+                // The closure prompt says "do not call any tools", but a model that
+                // ignores it must still not run tools invisibly and off-ledger.
+                if (forwardContinuationStatus(_chunk, dispatch)) continue;
+                if (_forwardContinuationToolCall(_chunk)) continue;
                 if (_chunk.type === 'text') _closure += _chunk.content;
                 if (_chunk.type === 'error' && !_closure.trim()) {
                   _engineErrored = true;
@@ -3329,6 +3404,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   for await (const chunk of gen) {
                     if (abort.signal.aborted) break;
                     if (forwardContinuationStatus(chunk, dispatch)) continue;
+                    if (_forwardContinuationToolCall(chunk)) continue;
                     if (chunk.type === 'text') text += chunk.content;
                     if (chunk.type === 'error') streamError = String(chunk.content ?? 'Cesar follow-up stream failed.');
                     if (chunk.type === 'done' || chunk.type === 'error') break;
@@ -3349,6 +3425,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                       });
                       for await (const chunk of gen) {
                         if (forwardContinuationStatus(chunk, dispatch)) continue;
+                        if (_forwardContinuationToolCall(chunk)) continue;
                         const chunkType = String((chunk as any).type);
                         if (chunkType === 'text') next += chunk.content;
                         if (chunkType === 'error') {

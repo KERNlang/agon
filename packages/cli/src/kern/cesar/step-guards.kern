@@ -63,14 +63,14 @@ fn name=readSpiralIntentFor params="intakeKind?:string" returns=ReadSpiralIntent
   handler lang="kern"
     return value="EDIT_INTAKE_KINDS.has(String(intakeKind ?? '').trim().toLowerCase()) ? 'edit' : 'investigate'"
 
-fn name=shouldNoteReadSpiral params="opts:{intent:string, readSteps:number, readRepeats:number, effectfulSteps:number, spiralThreshold:number, repeatThreshold:number, alreadyNoted:boolean}" returns=boolean export=true
-  doc "One-shot read-spiral checkpoint predicate. Edit intent: at least spiralThreshold read-class steps AND zero effectful (mutate/verify) steps — a mapping pass that never turned into work. Investigate intent: read VOLUME is legitimate, so it fires only on at least repeatThreshold read-REPEATS. Never fires twice (alreadyNoted)."
+fn name=shouldNoteReadSpiral params="opts:{intent:string, readSteps:number, readRepeats:number, effectfulSteps:number, shellWorkSteps?:number, spiralThreshold:number, repeatThreshold:number, alreadyNoted:boolean}" returns=boolean export=true
+  doc "One-shot read-spiral checkpoint predicate. Edit intent: at least spiralThreshold read-class steps AND zero effectful (mutate/verify) steps AND zero shell-work steps — a mapping pass that never turned into work. Investigate intent: read VOLUME is legitimate, so it fires only on at least repeatThreshold read-REPEATS. Never fires twice (alreadyNoted). shellWorkSteps is the honesty guard on the edit branch: a turn that did its work through the shell (`sed -i …`, `git commit`, `mkdir`, a build script) classifies as `other`, never mutate/verify, so on effectfulSteps alone the note would tell an engine that just edited files 'no edit or verification yet'. `other`-class Bash is precisely the shell we could NOT prove read-only, so it must count as work happening here — the classifier stays untouched (other remains budget-neutral) and only this note is suppressed. The cost is a false NEGATIVE on an unclassifiable read wrapper (`python -c \"…read()\"`) — the accepted-leak side of the spec, caught one layer up by the novelty-based no-progress checkpoint."
   handler lang="kern"
     if cond="opts.alreadyNoted"
       return value="false"
     if cond="readSpiralIntentFor(opts.intent) === 'investigate'"
       return value="Number(opts.readRepeats ?? 0) >= Number(opts.repeatThreshold ?? CESAR_READ_REPEAT_DEFAULT)"
-    if cond="Number(opts.effectfulSteps ?? 0) > 0"
+    if cond="Number(opts.effectfulSteps ?? 0) > 0 || Number(opts.shellWorkSteps ?? 0) > 0"
       return value="false"
     return value="Number(opts.readSteps ?? 0) >= Number(opts.spiralThreshold ?? CESAR_READ_SPIRAL_DEFAULT)"
 

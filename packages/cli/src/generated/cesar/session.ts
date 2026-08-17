@@ -48,7 +48,7 @@ import { recordCesarApprovalDecision, recordCesarToolTimeline, recordCesarConfid
 
 import { resolveCesarHarnessProfile, isAgenticAutoMode } from './task-controller.js';
 
-import { canonicalStepSignature, classifyToolEffect, primaryStepInput } from '@kernlang/agon-core';
+import { canonicalStepSignature, classifyToolEffect, normalizeStepToolName, primaryStepInput } from '@kernlang/agon-core';
 
 import { cesarSearchNudgeThreshold, cesarReadSpiralThreshold, cesarReadRepeatThreshold, shouldNoteReadSpiral, readSpiralNote } from './step-guards.js';
 
@@ -1115,6 +1115,19 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
       if (stepEffect === 'mutate' || stepEffect === 'verify') {
         ctx.cesar!.effectfulStepCount = (ctx.cesar!.effectfulStepCount ?? 0) + 1;
       }
+      // ── Shell work ledger (honesty guard on the edit-intent note) ──
+      // A successful Bash step we could NOT prove read-only and that does not
+      // match the gate lands in `other`: `sed -i`, `git commit`, `mkdir -p`, a
+      // codegen/build script. That is real work, but it is NOT mutate/verify, so
+      // on effectfulStepCount alone an edit-intent turn doing its work through
+      // the shell still got told "no edit or verification yet". Counted
+      // separately — never folded into effectfulStepCount, which keeps its exact
+      // mutate/verify meaning for the gate/verification logic — and consulted
+      // ONLY by the read-spiral note predicate. Budget classification is
+      // untouched: `other` stays neutral there by design.
+      if (stepEffect === 'other' && normalizeStepToolName(name) === 'bash') {
+        ctx.cesar!.shellWorkStepCount = (ctx.cesar!.shellWorkStepCount ?? 0) + 1;
+      }
       if (stepEffect === 'read') {
         const searches = (ctx.cesar!.searchToolCount ?? 0) + 1;
         ctx.cesar!.searchToolCount = searches;
@@ -1129,6 +1142,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
           readSteps: ctx.cesar!.searchToolCount ?? 0,
           readRepeats: ctx.cesar!.readRepeatCount ?? 0,
           effectfulSteps: ctx.cesar!.effectfulStepCount ?? 0,
+          shellWorkSteps: ctx.cesar!.shellWorkStepCount ?? 0,
           spiralThreshold: cesarReadSpiralThreshold(ctx.config),
           repeatThreshold: cesarReadRepeatThreshold(ctx.config),
           alreadyNoted: ctx.cesar!.readSpiralNoted === true,
@@ -1145,7 +1159,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
 /**
  * Build the onApproval callback for engine tool approvals. Returns true to approve, false to deny silently, or a string to deny with a reason the engine can see.
  */
-// @kern-source: session:1084
+// @kern-source: session:1098
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string, controlPlane?:any) => Promise<boolean|string> {
   const engine = ctx.registry.get(engineId);
   const evaluateApproval = async (tool: string, command: string): Promise<boolean | string> => {
@@ -1353,7 +1367,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:1293
+// @kern-source: session:1307
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -1387,7 +1401,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:1327
+// @kern-source: session:1341
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
 
@@ -1411,7 +1425,7 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:1351
+// @kern-source: session:1365
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) {
     return false;
@@ -1423,7 +1437,7 @@ export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
-// @kern-source: session:1358
+// @kern-source: session:1372
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -1443,7 +1457,7 @@ export function mcpConfigFingerprint(config: any): string {
 /**
  * Resolve the agon-orchestration MCP server entry. The CLI ships as a tsup BUNDLE that ALSO emits the MCP server to <cli-dist>/mcp/index.js (see tsup.config.ts), so the published install is self-contained — no @kernlang/agon-mcp npm dependency. Resolution order: (0) the bundled sibling <cli-dist>/mcp/index.js (the published, self-contained path), (1) node module resolution of @kernlang/agon-mcp (monorepo-via-symlink / legacy installs), (2) walk up to the repo root containing packages/mcp/dist/index.js (monorepo without a symlink), (3) the original relative guess as a last resort. `fromUrl` is for tests; defaults to this module's URL.
  */
-// @kern-source: session:1376
+// @kern-source: session:1390
 export function resolveAgonMcpServerPath(fromUrl?: string): string {
   const raw = fromUrl ?? import.meta.url;
   // Accept either a file: URL (normal) or a bare path (defensive): fileURLToPath
@@ -1477,7 +1491,7 @@ export function resolveAgonMcpServerPath(fromUrl?: string): string {
 /**
  * Single source of truth for which backend a Cesar engine will actually use. Honours config.cesarBackend preference ('auto' | 'cli' | 'api'). Pure — no side effects beyond registry lookups. Returns backend='none' when the engine has neither a usable binary nor an API key; callers decide how to handle that.
  */
-// @kern-source: session:1408
+// @kern-source: session:1422
 export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { backend: 'cli'|'api'|'none', binaryPath: string, hasBinary: boolean, hasApi: boolean, engine: any } {
   const config = ctx.config;
   const cesarEngineId = engineId ?? (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -1502,7 +1516,7 @@ export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { b
   return { backend: 'none', binaryPath: '', hasBinary, hasApi, engine };
 }
 
-// @kern-source: session:1434
+// @kern-source: session:1448
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

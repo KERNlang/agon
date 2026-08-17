@@ -59,11 +59,42 @@ describe('classifyToolEffect', () => {
 describe('primaryStepInput / normalizeStepSignature', () => {
   it('takes the identity-bearing argument per tool', () => {
     expect(primaryStepInput('Bash', { command: 'cat foo.py' })).toBe('cat foo.py');
-    expect(primaryStepInput('Read', { file_path: 'a/b.ts', offset: 200 })).toBe('a/b.ts');
+    expect(primaryStepInput('Read', { file_path: 'a/b.ts' })).toBe('a/b.ts');
     expect(primaryStepInput('Grep', { pattern: 'foo', path: 'packages' })).toBe('foo packages');
     expect(primaryStepInput('Glob', { pattern: '**/*.kern' })).toBe('**/*.kern');
     expect(primaryStepInput('RetrieveResult', { id: 'call_9' })).toBe('call_9');
     expect(primaryStepInput('Weird', {})).toBe('');
+  });
+
+  // ── The paged-read hole (codex review N1) ──
+  // A file bigger than the Read limit can only be read in pages. Keying the step
+  // on file_path alone made page 2..n a read-REPEAT of page 1: the paging earned
+  // no budget and fed the read-spiral/read-repeat guards, punishing the only
+  // correct way to read a big file. offset/limit are identity, not decoration.
+  it('keeps distinct paged reads of one big file distinct', () => {
+    expect(primaryStepInput('Read', { file_path: 'a/b.ts', offset: 1, limit: 2000 })).toBe('a/b.ts offset=1 limit=2000');
+    expect(primaryStepInput('Read', { file_path: 'a/b.ts', offset: 2001, limit: 2000 })).toBe('a/b.ts offset=2001 limit=2000');
+    expect(canonicalStepSignature('Read', { file_path: 'a/b.ts', offset: 1 }))
+      .not.toBe(canonicalStepSignature('Read', { file_path: 'a/b.ts', offset: 2001 }));
+    // A re-read of the SAME window is still the same step.
+    expect(canonicalStepSignature('Read', { file_path: 'a/b.ts', offset: 2001, limit: 500 }))
+      .toBe(canonicalStepSignature('read', { file_path: 'a/b.ts', offset: 2001, limit: 500 }));
+    // A whole-file read carries no window, so it keeps its historical identity —
+    // it must never look like a different step from one turn to the next.
+    expect(canonicalStepSignature('Read', { file_path: 'a/b.ts' })).toBe('read:a/b.ts');
+    // offset 0 is a real value, not "unset" (a `?? ''` fallback would drop it).
+    expect(primaryStepInput('Read', { file_path: 'a/b.ts', offset: 0 })).toBe('a/b.ts offset=0');
+  });
+
+  it('treats a Grep scope narrowing as a distinct step, and output formatting as the same one', () => {
+    // glob/type narrow WHAT is searched, exactly like path — different results.
+    expect(canonicalStepSignature('Grep', { pattern: 'foo', glob: '*.kern' }))
+      .not.toBe(canonicalStepSignature('Grep', { pattern: 'foo', glob: '*.ts' }));
+    expect(canonicalStepSignature('Grep', { pattern: 'foo', path: 'packages', type: 'ts' }))
+      .not.toBe(canonicalStepSignature('Grep', { pattern: 'foo', path: 'packages' }));
+    // Output-shaping flags return the SAME content — still a repeat.
+    expect(canonicalStepSignature('Grep', { pattern: 'foo', path: 'packages', output_mode: 'count' }))
+      .toBe(canonicalStepSignature('Grep', { pattern: 'foo', path: 'packages', output_mode: 'content', '-n': true }));
   });
 
   it('makes two reads of the same file one signature regardless of spacing or alias', () => {
@@ -93,7 +124,8 @@ describe('canonicalStepSignature', () => {
   });
 
   it('matches the primary-argument identity for every tool shape', () => {
-    expect(canonicalStepSignature('Read', { file_path: 'a/b.ts', offset: 40 })).toBe('read:a/b.ts');
+    expect(canonicalStepSignature('Read', { file_path: 'a/b.ts' })).toBe('read:a/b.ts');
+    expect(canonicalStepSignature('Read', { file_path: 'a/b.ts', offset: 40 })).toBe('read:a/b.ts offset=40');
     expect(canonicalStepSignature('Grep', { pattern: 'foo', path: 'packages' })).toBe('grep:foo packages');
     expect(canonicalStepSignature('Edit', { file_path: 'a/b.ts', new_string: 'x' })).toBe('edit:a/b.ts');
     // Same file, different edit content → still the same STEP identity: novelty

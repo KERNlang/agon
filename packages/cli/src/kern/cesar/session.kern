@@ -22,7 +22,7 @@ import from="./task-execution-lease.js" names="approveTaskAction,claimTaskAction
 import from="./permission-resolver.js" names="resolvePermissionDecision,authorizeResolvedTaskAction"
 import from="./tool-observability.js" names="recordCesarApprovalDecision,recordCesarToolTimeline,recordCesarConfidence,buildToolErrorDiagnostic"
 import from="./task-controller.js" names="resolveCesarHarnessProfile,isAgenticAutoMode"
-import from="@kernlang/agon-core" names="canonicalStepSignature,classifyToolEffect,primaryStepInput"
+import from="@kernlang/agon-core" names="canonicalStepSignature,classifyToolEffect,normalizeStepToolName,primaryStepInput"
 import from="./step-guards.js" names="cesarSearchNudgeThreshold,cesarReadSpiralThreshold,cesarReadRepeatThreshold,shouldNoteReadSpiral,readSpiralNote"
 
 const name=CESAR_SYSTEM_PROMPT type=string
@@ -1054,6 +1054,19 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
         if (stepEffect === 'mutate' || stepEffect === 'verify') {
           ctx.cesar!.effectfulStepCount = (ctx.cesar!.effectfulStepCount ?? 0) + 1;
         }
+        // ── Shell work ledger (honesty guard on the edit-intent note) ──
+        // A successful Bash step we could NOT prove read-only and that does not
+        // match the gate lands in `other`: `sed -i`, `git commit`, `mkdir -p`, a
+        // codegen/build script. That is real work, but it is NOT mutate/verify, so
+        // on effectfulStepCount alone an edit-intent turn doing its work through
+        // the shell still got told "no edit or verification yet". Counted
+        // separately — never folded into effectfulStepCount, which keeps its exact
+        // mutate/verify meaning for the gate/verification logic — and consulted
+        // ONLY by the read-spiral note predicate. Budget classification is
+        // untouched: `other` stays neutral there by design.
+        if (stepEffect === 'other' && normalizeStepToolName(name) === 'bash') {
+          ctx.cesar!.shellWorkStepCount = (ctx.cesar!.shellWorkStepCount ?? 0) + 1;
+        }
         if (stepEffect === 'read') {
           const searches = (ctx.cesar!.searchToolCount ?? 0) + 1;
           ctx.cesar!.searchToolCount = searches;
@@ -1068,6 +1081,7 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
             readSteps: ctx.cesar!.searchToolCount ?? 0,
             readRepeats: ctx.cesar!.readRepeatCount ?? 0,
             effectfulSteps: ctx.cesar!.effectfulStepCount ?? 0,
+            shellWorkSteps: ctx.cesar!.shellWorkStepCount ?? 0,
             spiralThreshold: cesarReadSpiralThreshold(ctx.config),
             repeatThreshold: cesarReadRepeatThreshold(ctx.config),
             alreadyNoted: ctx.cesar!.readSpiralNoted === true,

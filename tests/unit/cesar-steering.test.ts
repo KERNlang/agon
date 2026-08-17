@@ -114,6 +114,94 @@ describe('Cesar steering buffer', () => {
     });
   });
 
+  // ── The drain path, end to end (agy B1) ──────────────────────────────────
+  // What brain.kern's drainSteeringIntoSend does with the queue, driven against
+  // the REAL steering singleton: pop this turn's entries, render + persist each
+  // one and record one telemetry event per message from that message's own text,
+  // collect the images, then frame the whole thing as user content. The review
+  // claimed the per-message `text` was read outside its loop (a runtime
+  // ReferenceError the moment steering drains); the structural counterpart of this
+  // test lives in cesar-steering-yield-wiring.test.ts, which asserts the shape in
+  // the generated brain itself. This one pins the observable contract: one render,
+  // one history append and one telemetry record per drained message — never a
+  // record built from a stale or missing text.
+  describe('drain → render → persist → frame (the brain\'s drainSteeringIntoSend contract)', () => {
+    function drainIntoSend(turnId: string, carrier: string) {
+      const rendered: string[] = [];
+      const persisted: string[] = [];
+      const telemetry: Array<{ text: string; images: number | undefined }> = [];
+      const pending = drainSteering(turnId);
+      if (pending.length === 0) return { message: carrier, rendered, persisted, telemetry, images: [] as string[] };
+      const blocks: string[] = [];
+      const drainedImages: string[] = [];
+      for (const msg of pending) {
+        const text = (msg.input ?? '').trim();
+        for (const img of (msg.images ?? [])) {
+          const p = (img as any)?.path;
+          if (typeof p === 'string' && p) drainedImages.push(p);
+        }
+        if (!text) continue;
+        rendered.push(text);
+        persisted.push(text);
+        blocks.push(text);
+        telemetry.push({ text, images: drainedImages.length || undefined });
+      }
+      return {
+        message: formatSteeringIntoSend(carrier, blocks),
+        rendered,
+        persisted,
+        telemetry,
+        images: drainedImages,
+      };
+    }
+
+    it('renders, persists and records EVERY drained message once, from its own text', () => {
+      markSteeringTurn('t1');
+      pushSteering('  stop reading  ');
+      pushSteering('just patch session.kern');
+      const out = drainIntoSend('t1', 'TOOL RESULT: 42 matches');
+
+      expect(out.rendered).toEqual(['stop reading', 'just patch session.kern']);
+      expect(out.persisted).toEqual(['stop reading', 'just patch session.kern']);
+      expect(out.telemetry).toEqual([
+        { text: 'stop reading', images: undefined },
+        { text: 'just patch session.kern', images: undefined },
+      ]);
+      expect(out.message).toContain('TOOL RESULT: 42 matches');
+      expect(out.message).toContain('[User steering — injected mid-turn]\nstop reading');
+      // Consumed: a second drain has nothing left (the queue entry is gone, which
+      // is why every send site must forward what it drained).
+      expect(drainSteering('t1')).toEqual([]);
+    });
+
+    it('carries images out of the drain and counts them in the record', () => {
+      markSteeringTurn('t2');
+      pushSteering('look at this', [{ path: '/tmp/a.png' }] as any);
+      const out = drainIntoSend('t2', '');
+      expect(out.images).toEqual(['/tmp/a.png']);
+      expect(out.telemetry).toEqual([{ text: 'look at this', images: 1 }]);
+      // No carrier: the steering IS the message (the yield-to-deliver path).
+      expect(out.message).toBe('[User steering — injected mid-turn]\nlook at this');
+    });
+
+    it('skips a whitespace-only message but still harvests its attachment', () => {
+      markSteeringTurn('t3');
+      pushSteering('   ', [{ path: '/tmp/b.png' }] as any);
+      const out = drainIntoSend('t3', 'carrier');
+      expect(out.rendered).toEqual([]);
+      expect(out.telemetry).toEqual([]);
+      expect(out.images).toEqual(['/tmp/b.png']);
+      expect(out.message).toBe('carrier');
+    });
+
+    it('leaves the carrier alone when the queue is empty', () => {
+      markSteeringTurn('t4');
+      const out = drainIntoSend('t4', 'carrier');
+      expect(out.message).toBe('carrier');
+      expect(out.telemetry).toEqual([]);
+    });
+  });
+
   describe('FIFO ordering', () => {
     it('drains multiple messages in submit order', () => {
       markSteeringTurn('t1');

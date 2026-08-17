@@ -6,7 +6,7 @@ import { mkdirSync, appendFileSync, existsSync, readFileSync, unlinkSync, readdi
 
 import type { ImageAttachment, PersistentSession, ForgeManifest, ForgeJudgment } from '@kernlang/agon-core';
 
-import { ensureAgonHome, RUNS_DIR, appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, tracker, resolveWorkingDir, ToolRegistry, getProjectFileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask, loadConfig, configSet, createStreamBridge, engineHealth, authLoginHint, hasProjectBrief, discoverGate, bashRanGate, isGateSkipSignal, parsePermissionRuleSet, parseToolHooks, evaluatePermissionRules, evaluateToolRules, isReadOnlyCommand } from '@kernlang/agon-core';
+import { ensureAgonHome, RUNS_DIR, appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, tracker, resolveWorkingDir, ToolRegistry, getProjectFileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask, loadConfig, configSet, createStreamBridge, engineHealth, authLoginHint, discoverGate, bashRanGate, isGateSkipSignal, parsePermissionRuleSet, parseToolHooks, evaluatePermissionRules, evaluateToolRules, isReadOnlyCommand } from '@kernlang/agon-core';
 
 import type { ToolContext, ToolCallResult } from '@kernlang/agon-core';
 
@@ -139,9 +139,6 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
 }
 
 // @kern-source: brain:91
-export const _noBriefNudged: WeakMap<object, boolean> = new WeakMap<object, boolean>();
-
-// @kern-source: brain:93
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<CesarTurnOutcome> {
   const abort = new AbortController();
       const _turnStart = Date.now();
@@ -149,21 +146,6 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       let _turnTerminalState: 'completed' | 'failed' | 'timed_out' = 'completed';
       let _timedOut = false;
       const _turnCwd = resolveWorkingDir();
-      // #6b: one-time-per-session nudge when the working dir has no usable project
-      // brief. Quiet warning event only — never injected into the prompt or history.
-      try {
-        const _session = ctx.chatSession as object | undefined;
-        if (_session && !_noBriefNudged.has(_session)) {
-          // Track on the session OBJECT (WeakMap), not a module-level Set keyed by
-          // id: the flag is per-session, can't collide across sessions, and is
-          // garbage-collected when the session ends — no unbounded process-lifetime
-          // growth (so no crude size-cap wipe needed). Mark first (race-safe).
-          _noBriefNudged.set(_session, true);
-          if (!hasProjectBrief(_turnCwd)) {
-            dispatch({ type: 'warning', message: 'No project brief found in this repo. Create AGENTS.md or .agon/project.md so Cesar has project context from turn 1.' });
-          }
-        }
-      } catch { /* nudge is best-effort — never block a turn */ }
       const _toolsUsed: string[] = [];
       const _toolUseKeys = new Set<string>();
       // ── Verify-before-done gate (Phase C) ──

@@ -17,6 +17,7 @@ interface name=TaskExecutionLease export=true
   field name=profile type=TaskHarnessProfile
   field name=importantPattern type=string
   field name=dangerousPattern type=string
+  field name=destructivePattern type=string
   field name=taskApproved type=boolean
   field name=approvedSignatures type="Set<string>"
   field name=promptedSignatures type="Set<string>"
@@ -28,16 +29,123 @@ interface name=TaskActionEvaluation export=true
   field name=reason type=string
 
 fn name=taskActionApprovalMessage params="evaluation:TaskActionEvaluation" returns=string export=true
-  doc "Describe the actual lease gate. AUTO-off routine writes are not dangerous and must not be labeled as dangerous boundaries."
+  doc "Describe the actual lease gate. AUTO-off routine writes are not dangerous and must not be labeled as dangerous boundaries. `ask_task_once` (the retired important-task prompt) is kept only so an old persisted evaluation still renders a sane label — evaluateTaskAction no longer produces it."
   handler lang="kern"
     if cond="evaluation.decision === 'ask_task_once'"
       return value="'Approve this important task once'"
     if cond="evaluation.reason === 'auto_off'"
       return value="'AUTO is off for this task — approve this action once'"
-    return value="'Approve this dangerous action boundary'"
+    if cond="evaluation.reason === 'workspace_escape'"
+      return value="'This action leaves the workspace — approve it once'"
+    if cond="evaluation.reason === 'sensitive_path'"
+      return value="'This file is sensitive (secrets, keys, or git hooks) — approve this edit once'"
+    return value="'Approve this destructive action boundary'"
 
 const name=DEFAULT_IMPORTANT_PATTERN type=string value={{ '\\b(auth|session|permission|migration|database|shared\\s+contract|public\\s+api|billing|security)\\b' }} export=true
 const name=DEFAULT_DANGEROUS_PATTERN type=string value={{ '\\b(git\\s+push|push|deploy|publish|release|production|prod|pull\\s+request|create\\s+(?:a\\s+)?pr|external\\s+queue|drop\\s+database|reset\\s+--hard|force[- ]push|rm\\s+-rf)\\b' }} export=true
+
+// ── Destructive-action seatbelt ──────────────────────────────────────
+// Permission mode `auto` is Claude-Code-parity bypassPermissions: plain
+// pushes, publishes, deploys and mutating curls run without a prompt. What
+// still prompts is this NARROW destructive class — operations that destroy
+// remote history, working-tree state, or data, where an undo does not exist.
+// The alternatives, in order (a KERN const value must stay on ONE line, so
+// the map lives here instead of as inline comments):
+//   1  force push / remote branch deletion / mirror push, incl. `+ref` and `:ref` refspecs
+//   2  git reset --hard  (discards the working tree)
+//   3  git clean -f…     (deletes untracked files, short OR --force)
+//   4  rm -rf / -fr      (recursive force delete, glued flags)
+//   5  rm -r … -f …      (the same with split flags, either order)
+//   6  rm --recursive --force  (long flags, either order)
+//   7  dropdb / drop database
+//   8  migrate|db|schema reset  (space- or colon-separated)
+//   9  --force on a db/migration CLI (destructive schema push, seed reset, …)
+// Spelling variants (`git -C dir push --force`, `git clean --force`,
+// `rm -r --force`) are NOT handled by growing this regex — the command is
+// normalized first (normalizeDestructiveCommand) and both the raw and the
+// normalized form are matched, so the pattern only has to know the canonical
+// spellings while every equivalent spelling still classifies.
+// It is a plain regex source so `cesarDestructiveActionPattern` can override
+// the whole policy from config (never hardcode changeable policy).
+const name=DEFAULT_DESTRUCTIVE_PATTERN type=string value={{ ['git\\s+push\\b[^\\n]*?(?:\\s(?:--force(?:-with-lease)?|--delete|--mirror)\\b|\\s-[a-z]{0,3}f[a-z]{0,3}\\b|\\s-[a-z]{0,3}d[a-z]{0,3}\\b|\\s\\+[^\\s]+|\\s:[^\\s]+)', 'git\\s+reset\\b[^\\n]*\\s--hard\\b', 'git\\s+clean\\b[^\\n]*\\s(?:--force\\b|-[a-z]*f[a-z]*\\b)', '\\brm\\s+(?:-[a-z-]+\\s+)*-[a-z]*(?:rf|fr)[a-z]*(?:\\s|$)', '\\brm\\s+(?:-[a-z-]+\\s+)*(?:-[a-z]*r[a-z]*\\s+-[a-z]*f|-[a-z]*f[a-z]*\\s+-[a-z]*r)[a-z]*\\b', '\\brm\\s+[^\\n]*--recursive\\b[^\\n]*--force\\b|\\brm\\s+[^\\n]*--force\\b[^\\n]*--recursive\\b', '\\bdropdb\\b', '\\bdrop\\s+database\\b', '\\b(?:migrate|migration|db|database|schema)[\\s:]+reset\\b', '\\b(?:prisma|drizzle-kit|sequelize(?:-cli)?|knex|typeorm|alembic|flyway|liquibase|dbmate|atlas|supabase|psql|mysql|mongosh|rails)\\b[^\\n]*\\s--force\\b'].join('|') }} export=true
+
+// git's GLOBAL options sit between the binary and the subcommand, so
+// `git -C /repo push --force` never matches a `git\s+push` rule. Strip them
+// (with their arguments) before subcommand detection. `-p` is git's
+// --paginate; it can only appear here, before the subcommand, so a later
+// `-p` operand is untouched.
+const name=GIT_GLOBAL_FLAG_PATTERN type=RegExp value={{ /\bgit(?:\s+(?:-C\s+\S+|-c\s+\S+|--git-dir(?:=\S*|\s+\S+)|--work-tree(?:=\S*|\s+\S+)|--namespace(?:=\S*|\s+\S+)|--config-env(?:=\S*|\s+\S+)|--attr-source(?:=\S*|\s+\S+)|--exec-path(?:=\S*)?|--no-pager|--paginate|--bare|--literal-pathspecs|--glob-pathspecs|--noglob-pathspecs|--icase-pathspecs|--no-optional-locks|--no-replace-objects|-p))+/gi }}
+
+// Long flags whose short spelling the destructive pattern reasons about. Only
+// these three matter (recursive/force/delete); anything else is kept verbatim.
+const name=LONG_FLAG_SHORT_ALIASES type="Record<string,string>" value={{ { recursive: 'r', force: 'f', delete: 'd' } }}
+
+fn name=normalizeCommandSegment params="segment:string" returns=string export=false
+  doc "Canonicalize ONE simple command: git global flags stripped so the subcommand leads, long flags kept verbatim but also folded into their short letter, and all short flags merged into one deduplicated, sorted cluster right after the head."
+  handler <<<
+    const trimmed = String(segment ?? '').trim();
+    if (!trimmed) return '';
+    const tokens = trimmed.replace(GIT_GLOBAL_FLAG_PATTERN, 'git ').split(/\s+/).filter(Boolean);
+    if (tokens.length === 0) return '';
+    const headBase = (tokens[0].split('/').pop() ?? '').toLowerCase();
+    const headLength = (headBase === 'git' && tokens.length > 1 && !tokens[1].startsWith('-')) ? 2 : 1;
+    let letters = '';
+    const longFlags: string[] = [];
+    const operands: string[] = [];
+    tokens.slice(headLength).forEach((token) => {
+      if (/^--[a-z][a-z0-9-]*(?:=[\s\S]*)?$/i.test(token)) {
+        letters += LONG_FLAG_SHORT_ALIASES[token.slice(2).split('=')[0].toLowerCase()] ?? '';
+        longFlags.push(token);
+      } else if (/^-[a-z]+$/i.test(token)) {
+        letters += token.slice(1).toLowerCase();
+      } else {
+        operands.push(token);
+      }
+    });
+    const parts = tokens.slice(0, headLength);
+    const cluster = Array.from(new Set(letters.split(''))).sort().join('');
+    if (cluster) parts.push('-' + cluster);
+    return parts.concat(longFlags, operands).join(' ');
+  >>>
+
+fn name=normalizeDestructiveCommand params="command:string" returns=string export=true
+  doc "Rewrite a shell command into the canonical spelling the destructive pattern is written against (per simple command: see normalizeCommandSegment), so `rm -r --force`, `rm --force -r` and `rm -rf` all reduce to `rm -fr` and `git -C dir push --force` reduces to `git push -f --force`. The result is a MATCHING PROBE, never something to execute — isDestructiveCommand tests the raw command too, so normalization can only ever add matches (fail-closed), never remove one. Single-dash long options of other tools (find -name) get folded into letters; harmless, because the raw pass is authoritative for them."
+  handler <<<
+    const raw = String(command ?? '');
+    if (!raw.trim()) return '';
+    return raw.split(/[\n;]+|&&|\|\||[|&]/).map(normalizeCommandSegment).filter(Boolean).join(' ; ');
+  >>>
+
+// Precompiled matchers: isDestructiveCommand runs on every authority-bearing
+// action, so neither the default policy nor a config override is recompiled
+// per call. A failed override compile is cached as null (fall back to default).
+const name=DEFAULT_DESTRUCTIVE_REGEX type=RegExp value={{ new RegExp(DEFAULT_DESTRUCTIVE_PATTERN, 'i') }}
+const name=_destructiveRegexCache type="Map<string,RegExp|null>" value={{ new Map<string, RegExp | null>() }}
+
+fn name=destructivePatternRegex params="pattern?:string" returns=RegExp export=false
+  handler <<<
+    const source = String(pattern ?? '').trim();
+    if (!source) return DEFAULT_DESTRUCTIVE_REGEX;
+    if (_destructiveRegexCache.has(source)) return _destructiveRegexCache.get(source) ?? DEFAULT_DESTRUCTIVE_REGEX;
+    let compiled: RegExp | null = null;
+    try { compiled = new RegExp(source, 'i'); }
+    catch { compiled = null; }
+    // Bounded so a pathological config-churn loop cannot grow it without end.
+    if (_destructiveRegexCache.size > 32) _destructiveRegexCache.clear();
+    _destructiveRegexCache.set(source, compiled);
+    return compiled ?? DEFAULT_DESTRUCTIVE_REGEX;
+  >>>
+
+fn name=isDestructiveCommand params="command:string,pattern?:string" returns=boolean export=true
+  doc "Pure matcher for the destructive class that still prompts in permission mode auto (force push, remote branch deletion, git reset --hard, git clean -f/--force, rm -rf in every flag spelling, dropdb/drop database, migrate reset, --force on a db CLI). The command is matched BOTH raw and normalized (normalizeDestructiveCommand), so equivalent spellings — `git -C dir push --force`, `git --git-dir=… push -d`, `rm --recursive --force` — cannot slip through as routine. `pattern` overrides the default policy (config: cesarDestructiveActionPattern) and is matched the same two ways; an unparsable override falls back to the default instead of prompting on everything."
+  handler <<<
+    const text = String(command ?? '').trim();
+    if (!text) return false;
+    const regex = destructivePatternRegex(pattern);
+    if (regex.test(text)) return true;
+    const normalized = normalizeDestructiveCommand(text);
+    return normalized !== text && regex.test(normalized);
+  >>>
 
 fn name=canonicalTaskActionSignature params="action:string,target:string" returns=string export=true
   handler <<<
@@ -47,10 +155,11 @@ fn name=canonicalTaskActionSignature params="action:string,target:string" return
     return `${normalizedAction}:${fileMutation ? normalizedTarget.replace(/\\/g, '/') : normalizedTarget}`;
   >>>
 
-fn name=createTaskExecutionLease params="input:string,autoMode:boolean,workspace:string,patterns?:{important?:string,dangerous?:string},profile?:TaskHarnessProfile" returns=TaskExecutionLease export=true
+fn name=createTaskExecutionLease params="input:string,autoMode:boolean,workspace:string,patterns?:{important?:string,dangerous?:string,destructive?:string},profile?:TaskHarnessProfile" returns=TaskExecutionLease export=true
   handler <<<
     const importantPattern = patterns?.important || DEFAULT_IMPORTANT_PATTERN;
     const dangerousPattern = patterns?.dangerous || DEFAULT_DANGEROUS_PATTERN;
+    const destructivePattern = patterns?.destructive || DEFAULT_DESTRUCTIVE_PATTERN;
     const text = String(input ?? '');
     let risk: TaskRisk = 'routine';
     try {
@@ -67,6 +176,7 @@ fn name=createTaskExecutionLease params="input:string,autoMode:boolean,workspace
       profile: profile ?? 'legacy',
       importantPattern,
       dangerousPattern,
+      destructivePattern,
       taskApproved: false,
       approvedSignatures: new Set(),
       promptedSignatures: new Set(),
@@ -99,9 +209,57 @@ fn name=buildAuthorizationTokenCounts params="clause:string,semanticPush:boolean
     return tokens;
   >>>
 
-fn name=taskExplicitlyAuthorizes params="lease:TaskExecutionLease,action:string,target:string" returns=boolean export=true
+// ── Pasted content is NOT an instruction ─────────────────────────────
+// The explicit-authorization scan reads the user's turn text as authority, so
+// anything the user merely PASTED (a fenced block, a diff, quoted file
+// content) must be removed first: a `git push --force` sitting inside a code
+// block is evidence, not consent, and must never pre-approve the boundary it
+// is describing.
+const name=CODE_FENCE_LINE type=RegExp value={{ /^\s*(?:`{3,}|~{3,})/ }}
+// Real diff headers only — a bare `---` markdown rule must not open a diff.
+const name=DIFF_HEADER_LINE type=RegExp value={{ /^(?:diff --git |index [0-9a-f]{6,}|(?:---|\+\+\+) (?:a\/|b\/|\/dev\/null|[\w.~][^\s]*)|@@[^@]*@@)/ }}
+const name=DIFF_BODY_LINE type=RegExp value={{ /^(?:[+\- ]|\\ No newline)/ }}
+const name=QUOTED_LINE type=RegExp value={{ /^\s*>/ }}
+// Headerless diff fragment: `+const x` / `-const x`. A markdown bullet
+// (`- run git push --force`) keeps its space and stays prose.
+const name=HEADERLESS_DIFF_LINE type=RegExp value={{ /^[+-](?![\s+*-])/ }}
+// Markdown indented code block / pasted file content. Fails closed: an
+// indented continuation of real prose only loses authority (one more prompt).
+const name=INDENTED_CODE_LINE type=RegExp value={{ /^(?:\t| {4,})\S/ }}
+const name=PASTE_MARKER_HINT type=RegExp value={{ /[\n`~>+\-\t]|^ {4,}\S/ }}
+
+fn name=userAuthorizationProse params="input:string" returns=string export=true
+  doc "Reduce a turn's text to the user's OWN prose before it can be read as an explicit authorization: fenced code blocks (``` / ~~~, an unterminated fence swallowing the rest), quote-prefixed lines (>), unified-diff regions (headers plus their bodies, or a bare +/- fragment line), and indented code / pasted file content are dropped. Inline code spans are deliberately KEPT — `run \\`git push --force\\`` is the user instructing, not pasting. Fails closed: dropped content can only remove authority, never add it."
   handler <<<
-    const input = lease.input.toLowerCase();
+    const text = String(input ?? '');
+    if (!text || !PASTE_MARKER_HINT.test(text)) return text;
+    // Stateful, order-dependent filter: fence/diff state carries across lines,
+    // which Array.filter preserves because it walks the array in order.
+    let fence: string | null = null;
+    let inDiff = false;
+    return text.split(/\r?\n/).filter((line) => {
+      const fenceMatch = CODE_FENCE_LINE.exec(line);
+      if (fenceMatch) {
+        const marker = fenceMatch[0].trim().charAt(0);
+        if (fence === null) fence = marker;
+        else if (fence === marker) fence = null;
+        return false;
+      }
+      if (fence !== null) return false;
+      if (QUOTED_LINE.test(line)) return false;
+      if (DIFF_HEADER_LINE.test(line)) { inDiff = true; return false; }
+      if (inDiff) {
+        if (!line.trim() || DIFF_BODY_LINE.test(line)) return false;
+        inDiff = false;
+      }
+      return !HEADERLESS_DIFF_LINE.test(line) && !INDENTED_CODE_LINE.test(line);
+    }).join('\n');
+  >>>
+
+fn name=taskExplicitlyAuthorizes params="lease:TaskExecutionLease,action:string,target:string" returns=boolean export=true
+  doc "Did the user's OWN prose authorize this exact action+target? Token matching is word-boundary by construction (the clause tokenizer splits on non-token characters, so `pushing`/`pushover`/`repush` never authorize a `push`), and the turn text is stripped of pasted content first (userAuthorizationProse) so a destructive command quoted inside a code block or diff cannot pre-approve itself."
+  handler <<<
+    const input = userAuthorizationProse(lease.input).toLowerCase();
     const normalizedAction = String(action ?? '').trim().toLowerCase();
     let actionToken = normalizedAction;
     let authorizationTarget = String(target ?? '').toLowerCase();
@@ -144,11 +302,11 @@ fn name=taskExplicitlyAuthorizes params="lease:TaskExecutionLease,action:string,
   >>>
 
 fn name=taskExplicitlyRequestsAction params="lease:TaskExecutionLease,action:string" returns=boolean export=true
-  doc "Goal and Conquer use this action-level check for their explicit-user-only boundary; side effects are evaluated separately against the full delegation target."
+  doc "Goal and Conquer use this action-level check for their explicit-user-only boundary; side effects are evaluated separately against the full delegation target. Reads the user's own prose only (pasted blocks/diffs stripped), so a `agon goal …` line inside a quoted README cannot request a run."
   handler <<<
     const token = String(action ?? '').trim().toLowerCase();
     if (!token) return false;
-    return buildAuthorizationTokenCounts(lease.input.toLowerCase(), false).has(token);
+    return buildAuthorizationTokenCounts(userAuthorizationProse(lease.input).toLowerCase(), false).has(token);
   >>>
 
 fn name=relativePathEscapesWorkspace params="rel:string,pathSeparator?:string" returns=boolean export=true
@@ -270,54 +428,70 @@ fn name=isExternalSideEffectCommand params="command:string" returns=boolean expo
       || /\bwget\b[^\n]*(?:--post-data|--post-file|--method\s*=\s*(?:POST|PUT|PATCH|DELETE))/i.test(cmd);
   >>>
 
-fn name=isDangerousTaskAction params="lease:TaskExecutionLease,action:string,target:string" returns=boolean export=false
+fn name=isDestructiveTaskAction params="lease:TaskExecutionLease,action:string,target:string" returns=boolean export=true
+  doc "Lease-level destructive classifier. File-mutation tools are exempt by construction (their target is a path, and containment is enforced separately by targetEscapesWorkspace) — the destructive class is Bash/external-side-effect-only, which is exactly what lets mode auto-edit approve contained edits without inheriting a boundary ask. The `push` pseudo-action is normalized back to `git push <target>` so a delegated `+ref`/`--delete` refspec is classified like the shell form."
   handler <<<
-    const normalizedAction = String(action ?? '').trim().replace(/^agon/i, '');
-    const authorityTargetBearing = /^(bash|shell|goal|conquer|forge|teamforge|agent|team-agent|delegate|pipeline)$/i.test(normalizedAction);
-    if (/^(bash|shell)$/i.test(normalizedAction)) {
-      if (shellMutationEscapesWorkspace(lease, target) || isExternalSideEffectCommand(target)) return true;
-    }
-    try {
-      const pattern = new RegExp(lease.dangerousPattern, 'i');
-      return pattern.test(normalizedAction)
-        || (authorityTargetBearing && pattern.test(String(target ?? '')));
-    }
-    catch { return true; }
+    if (isTaskFileMutationAction(action)) return false;
+    const normalizedAction = String(action ?? '').trim().toLowerCase().replace(/^agon/, '');
+    const rawTarget = String(target ?? '');
+    let probe = `${normalizedAction} ${rawTarget}`;
+    if (/^(?:bash|shell)$/.test(normalizedAction)) probe = rawTarget;
+    else if (normalizedAction === 'push') probe = `git push ${rawTarget}`;
+    return isDestructiveCommand(probe, lease.destructivePattern);
+  >>>
+
+fn name=isShellWorkspaceEscape params="lease:TaskExecutionLease,action:string,target:string" returns=boolean export=true
+  doc "Shell counterpart of targetEscapesWorkspace: a Bash command whose writes land outside the workspace. Still a boundary in mode auto (an escape is the one thing bypassPermissions cannot infer consent for), while ordinary in-workspace shell work runs free."
+  handler <<<
+    const normalizedAction = String(action ?? '').trim().toLowerCase().replace(/^agon/, '');
+    if (!/^(?:bash|shell)$/.test(normalizedAction)) return false;
+    return shellMutationEscapesWorkspace(lease, target);
   >>>
 
 module name=TaskAuthorization
-  fn name=evaluateTaskAction params="lease:TaskExecutionLease,action:string,target:string,options?:{hardDeny?:boolean,prohibited?:boolean}" returns=TaskActionEvaluation export=true
+  fn name=evaluateTaskAction params="lease:TaskExecutionLease,action:string,target:string,options?:{hardDeny?:boolean,prohibited?:boolean,escapesMayAsk?:boolean,mandatoryAsk?:boolean,mandatoryAskReason?:string}" returns=TaskActionEvaluation export=true
+    doc "Claude-Code-parity task boundary. With AUTO on (permission mode auto, or a one-shot /auto <task>) the lease no longer prompts merely because the user's prompt text mentioned auth/session/database (`important_task` is retired) or because the action is a plain push/publish/deploy (the old broad `dangerous_boundary` is retired). What remains interactive: the narrow destructive class (isDestructiveTaskAction) and workspace escapes (file target or shell write). With AUTO off every mutation still asks once (`auto_off`). `escapesMayAsk` (set by the resolver ONLY in permission mode auto) turns the out-of-workspace file-target deny into an ask so the user can consent instead of watching the turn dead-end; it also lets an already-approved escape signature through, which is why the deny is evaluated first when the flag is off. `mandatoryAsk` carries a decision the RESOLVER already made (e.g. a sensitive-path ask, which the lease knows nothing about): the lease may still deny or honor a recorded approval, but it can never re-derive that ask back down to an allow."
     handler <<<
       const signature = canonicalTaskActionSignature(action, target);
       if (options?.hardDeny || options?.prohibited) return { decision: 'deny', signature, reason: 'hard_deny' };
-      if (targetEscapesWorkspace(lease, action, target)) return { decision: 'deny', signature, reason: 'workspace_escape' };
+      const targetEscapes = targetEscapesWorkspace(lease, action, target);
+      if (targetEscapes && options?.escapesMayAsk !== true) return { decision: 'deny', signature, reason: 'workspace_escape' };
       if (lease.approvedSignatures.has(signature)) return { decision: 'allow', signature, reason: 'boundary_approved' };
-      const dangerous = isDangerousTaskAction(lease, action, target);
-      if (dangerous) {
-        if (!lease.autoMode) return { decision: 'ask_boundary_once', signature, reason: 'auto_off' };
-        if (taskExplicitlyAuthorizes(lease, action, target)) return { decision: 'allow', signature, reason: 'explicit_authority' };
-        return { decision: 'ask_boundary_once', signature, reason: 'dangerous_boundary' };
+      if (targetEscapes) return { decision: 'ask_boundary_once', signature, reason: 'workspace_escape' };
+      const destructive = isDestructiveTaskAction(lease, action, target);
+      const shellEscape = isShellWorkspaceEscape(lease, action, target);
+      if (destructive || shellEscape) {
+        if (lease.autoMode && taskExplicitlyAuthorizes(lease, action, target)) return { decision: 'allow', signature, reason: 'explicit_authority' };
+        // The reason is reported even with AUTO off (instead of the generic
+        // auto_off) so the resolver recognizes it as a real boundary and no
+        // blunt allow source — or the redirection-stripping read-only command
+        // classifier — can absorb a force push or an out-of-workspace write.
+        return { decision: 'ask_boundary_once', signature, reason: destructive ? 'destructive_boundary' : 'workspace_escape' };
+      }
+      // A resolver-stage ask outranks every remaining allow branch below. It is
+      // checked AFTER approvedSignatures (an approval must still stick) and
+      // after the destructive/escape class (the more specific reason wins).
+      if (options?.mandatoryAsk === true) {
+        return { decision: 'ask_boundary_once', signature, reason: options.mandatoryAskReason || 'resolver_ask' };
       }
       if (!lease.autoMode) return { decision: 'ask_boundary_once', signature, reason: 'auto_off' };
-      if (lease.profile === 'legacy' && lease.risk === 'important' && !lease.taskApproved) return { decision: 'ask_task_once', signature, reason: 'important_task' };
-      if (lease.risk === 'important' && lease.taskApproved) return { decision: 'allow', signature, reason: 'task_approved' };
       return { decision: 'allow', signature, reason: 'routine_auto' };
     >>>
 
-  fn name=authorizeTaskAction async=true params="lease:TaskExecutionLease|undefined,action:string,target:string,requestApproval:(evaluation:TaskActionEvaluation)=>Promise<boolean>" returns="Promise<TaskActionEvaluation>" export=true
-    doc "Resolve one task-lease decision before an authority-bearing tool can execute. This sits above tool-specific auto-allow rules so native, API, companion, and eager adapters cannot bypass the task boundary."
+  fn name=authorizeTaskAction async=true params="lease:TaskExecutionLease|undefined,action:string,target:string,requestApproval:(evaluation:TaskActionEvaluation)=>Promise<boolean>,options?:{escapesMayAsk?:boolean,mandatoryAsk?:boolean,mandatoryAskReason?:string}" returns="Promise<TaskActionEvaluation>" export=true
+    doc "Resolve one task-lease decision before an authority-bearing tool can execute. This sits above tool-specific auto-allow rules so native, API, companion, and eager adapters cannot bypass the task boundary. `options` is threaded to every evaluateTaskAction call so the mode-auto escape ask reaches the join/claim machinery instead of re-deriving a raw deny, and so a resolver-stage ask (`mandatoryAsk`) cannot be downgraded to an allow by the re-derivation."
     handler <<<
       if (!lease) {
         return { decision: 'allow', signature: canonicalTaskActionSignature(action, target), reason: 'no_task_lease' };
       }
-      const evaluation = evaluateTaskAction(lease, action, target);
+      const evaluation = evaluateTaskAction(lease, action, target, options);
       if (evaluation.decision === 'allow' || evaluation.decision === 'deny') return evaluation;
       const pendingApproval = lease.approvalPromises.get(evaluation.signature);
       if (pendingApproval) {
         const approved = await pendingApproval;
         if (!approved) return { ...evaluation, decision: 'deny', reason: 'user_denied' };
         approveTaskAction(lease, action, target);
-        return { ...evaluateTaskAction(lease, action, target), reason: 'joined_user_approval' };
+        return { ...evaluateTaskAction(lease, action, target, options), reason: 'joined_user_approval' };
       }
       if (!claimTaskActionPrompt(lease, evaluation.signature)) {
         return { ...evaluation, decision: 'deny', reason: 'duplicate_or_declined_boundary' };
@@ -329,7 +503,7 @@ module name=TaskAuthorization
       finally { lease.approvalPromises.delete(evaluation.signature); }
       if (!approved) return { ...evaluation, decision: 'deny', reason: 'user_denied' };
       approveTaskAction(lease, action, target);
-      return { ...evaluateTaskAction(lease, action, target), reason: 'user_approved' };
+      return { ...evaluateTaskAction(lease, action, target, options), reason: 'user_approved' };
     >>>
 
   fn name=claimTaskActionPrompt params="lease:TaskExecutionLease,signature:string" returns=boolean export=true
@@ -340,8 +514,9 @@ module name=TaskAuthorization
     >>>
 
   fn name=approveTaskAction params="lease:TaskExecutionLease,action:string,target:string" returns=void export=true
+    doc "Record one approved boundary. `taskApproved` no longer gates anything (the important-task prompt is retired) but is still tracked so an in-flight turn and the harness replay ledger can tell an approved task apart from an untouched one."
     handler <<<
       const signature = canonicalTaskActionSignature(action, target);
       lease.approvedSignatures.add(signature);
-      if (lease.risk === 'important' && !isDangerousTaskAction(lease, action, target)) lease.taskApproved = true;
+      if (lease.risk === 'important' && !isDestructiveTaskAction(lease, action, target)) lease.taskApproved = true;
     >>>

@@ -413,8 +413,8 @@ Agon uses a Claude-Code-style permission mode, cycled with **Shift+Tab** (or `/m
 | Mode | Behavior |
 |---|---|
 | `ask` | Prompts before file edits and mutating commands. Read-only tools and commands run freely. |
-| `auto-edit` | Workspace file edits are auto-approved; Bash mutations still prompt. (Default — migrated from the legacy `smart` mode.) |
-| `auto` (AUTO) | Workspace autonomy. Boundaries still prompt: pushes, publishing, deployments, workspace escapes, and deny rules always win. |
+| `auto-edit` | Workspace file edits are auto-approved; Bash mutations still prompt, and so do sensitive files (`.env*`, credentials, `.pem`/`.key`/`id_rsa`, `.git/hooks/`, `.husky/`) — one poisoned hook is arbitrary code execution on the next commit. (Default — migrated from the legacy `smart` mode.) |
+| `auto` (AUTO) | Full workspace autonomy, Claude Code `bypassPermissions` parity: plain `git push`, publishing, deployments and mutating `curl`s run without a prompt, and a prompt that merely *mentions* auth/session/database no longer triggers an approval. Two seatbelts remain: the **destructive class** (force push, remote branch deletion, `git reset --hard`, `git clean -f`, `rm -rf`, `dropdb` / `drop database`, `migrate reset`, `--force` on a db CLI — tune with `cesarDestructiveActionPattern`) and **workspace escapes** (writes outside the workspace ask instead of failing). Deny rules always win. |
 
 Permission prompts offer **Yes / Yes for this session / Always / No / Never**. *Always* persists a scoped rule such as `Bash(git push:*)` into `permissions.allow` (never a bare verb); *Never* persists a deny rule. Inspect and edit rules with `/permissions`, `/permissions add allow|deny <rule>`, and `/permissions remove <rule>`. Delegated engine runs (forge, tribunal, agent teams) execute at least at `auto-edit` so multi-engine dispatches don't queue dozens of file-edit prompts — their Bash mutations still prompt once per pattern.
 

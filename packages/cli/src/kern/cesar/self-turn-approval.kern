@@ -4,9 +4,10 @@
 // the workspace, with small diffs, and it never overrides explicit deny modes.
 
 import from="node:fs" names="existsSync,statSync,readFileSync"
-import from="node:path" names="resolve,relative,isAbsolute,basename"
+import from="node:path" names="resolve,relative,isAbsolute"
 import from="@kernlang/agon-core" names="ToolContext" types=true
 import from="../lib/kern-host.js" names="hostNowMs"
+import from="./permission-resolver.js" names="isSensitivePermissionPath"
 
 fn name=canonicalToolName params="tool:string" returns=string export=false
   handler lang="kern"
@@ -65,12 +66,6 @@ fn name=approvalArgsFromCommand params="tool:string,command:string" returns="Rec
     }
     return {};
   >>>
-
-fn name=isSensitivePath params="filePath:string" returns=boolean export=false
-  handler lang="kern"
-    let name=base value="basename(filePath).toLowerCase()"
-    let name=sensitive value="['.env', 'credentials', 'secrets', '.pem', '.key', 'id_rsa']"
-    return value="sensitive.some((pat: string) => base.includes(pat))"
 
 fn name=isInsideCwd params="filePath:string,cwd:string" returns=boolean export=false
   handler lang="kern"
@@ -188,7 +183,7 @@ fn name=applyCesarSelfTurnApproval params="tool:string,args:Record<string,unknow
     let name=filePath value="isAbsolute(rawPath) ? rawPath : resolve(toolCtx.cwd, rawPath)"
     if cond="!isInsideCwd(filePath, toolCtx.cwd)"
       return value="{ approve: false, reason: 'path outside cwd', tool: t, path: filePath }"
-    if cond="isSensitivePath(filePath)"
+    if cond="isSensitivePermissionPath(filePath, Array.isArray((config as any).cesarSensitivePathPatterns) ? (config as any).cesarSensitivePathPatterns : undefined, toolCtx.cwd)"
       return value="{ approve: false, reason: 'sensitive file', tool: t, path: filePath }"
     let name=cache value="toolCtx.readFileState"
     let name=cached value="cache.get(filePath)"

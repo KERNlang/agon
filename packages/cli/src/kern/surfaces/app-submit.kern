@@ -602,13 +602,32 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
           if (opts.pendingImages.length) opts.setPendingImages([]);
           const count = peekSteeringCount();
           opts.setSteeringCount(count);
-          opts.dispatch({ type: 'info', message: count > 1 ? `Steering queued (${count}) — delivers after the current tool call.` : 'Steering queued — delivers after the current tool call.' } as any);
+          // NO transcript notice. The live composer chip (app-views.kern
+          // BottomChromeSection, `replState !== 'idle' && steeringCount > 0`)
+          // already says "Queued (N) — delivers after the current tool call ·
+          // ↑ edit/remove · esc to interrupt", is rendered in every terminal
+          // mode, and DISAPPEARS when the brain drains the queue. A scrollback
+          // line said the same thing, could never un-say it, and then the
+          // drained text printed AGAIN as a user-message block (brain.kern) —
+          // one steer read as two messages. Chip while pending, user-message
+          // block on delivery: exactly one visible rendering, Claude-Code style.
           return;
         }
       }
+      // Busy repl → hold the line for the idle drain (runProcessInputQueue).
+      // This branch is ALSO the Esc-with-typed-text (`interruptSubmit`) route:
+      // the key handler interrupts and then calls handleSubmit synchronously, so
+      // replState is still non-idle — correctly so, the previous turn is mid
+      // teardown and its abort has not settled. Queuing is the right sequencing
+      // (it is what guarantees the replacement turn starts on a clean lease);
+      // only the noise was wrong. The `Queued: …` transcript line is gone — the
+      // composer chip ("N queued: <text>", app-views.kern BottomChromeSection)
+      // shows it live and clears itself on drain, where the text prints once as
+      // a real user-message block. interruptedTurnRef stays set (5-min
+      // freshness), so the drained resubmit still gets the engine-side redirect
+      // wrap below.
       if (opts.replState !== 'idle' && !opts.jobManager.running().length && !isPlanAwaitingControl) {
         opts.setInputQueue((prev: string[]) => [...prev, input]);
-        opts.dispatch({ type: 'info', message: `Queued: ${input.length > 50 ? input.slice(0, 50) + '…' : input}` } as any);
         return;
       }
       // A `! <cmd>` inline-bash line runs the shell directly even in plan mode
@@ -664,9 +683,15 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
       if (interruptedTurn && !interruptedTurnIsFresh) {
         opts.interruptedTurnRef.current = null;
       } else if (interruptedTurnIsFresh && opts.mode === 'chat' && !literalCommandLine) {
+        // Engine-facing wrap ONLY — `input` (the user-message block, the ↑
+        // history entry and the on-disk composer history) stays the raw text the
+        // user typed. This is the SINGLE wrap site: the interrupt path queues
+        // raw text precisely so a string can never be wrapped twice.
+        // No notice — Esc already printed its one line ('Interrupted —
+        // redirecting…'); a second "Redirecting interrupted work…" made one
+        // keystroke read as three separate events.
         dispatchInput = buildInterruptedTurnRedirect(interruptedTurn!.input, dispatchInput, interruptedTurn!.source);
         opts.interruptedTurnRef.current = null;
-        opts.dispatch({ type: 'info', message: 'Redirecting interrupted work with your new instruction…' });
       }
       const ctx = opts.buildContext();
       (ctx as any).autoModeQueued = autoModeForTurn;

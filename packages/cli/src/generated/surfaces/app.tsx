@@ -1682,9 +1682,9 @@ export function App() {
       setQuestionState, setQuestionAnswer, setPendingPlanProposal,
       setSlashPickerOpen, setEnginePickerOpen, setModelPickerOpen,
       setCesarPickerOpen, setReviewEvent, setToolDetailEvent,
-      setReplState,
+      setReplState, dispatch,
     });
-  }, [setActiveAbort,outputActions]);
+  }, [setActiveAbort,outputActions,dispatch]);
 
   useStableInput(handleKeyboardInput);
   const showExecutionRail = executionRailOpen;
@@ -2075,7 +2075,7 @@ export function App() {
 // @kern-source: app:98
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:1960
+// @kern-source: app:1963
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   // Session-scoped grounding ONLY — deliberately does NOT call

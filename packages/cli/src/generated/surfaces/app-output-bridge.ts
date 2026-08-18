@@ -58,10 +58,29 @@ export interface TranscriptCommitBatcher {
   pendingCount: () => number;
 }
 
+// @kern-source: app-output-bridge:74
+export const LIVE_TAIL_CHARS: number = 4000;
+
+/**
+ * Bound every live-preview entry to its last LIVE_TAIL_CHARS characters. The streaming REF keeps the full answer (flushStream / streaming-end commit from it); React state only drives the live pane, so rendering must grow O(tail), not O(total). Returns `next` untouched when nothing is oversized, so a short stream allocates nothing.
+ */
+// @kern-source: app-output-bridge:76
+export function boundStreamingTail(next: Record<string,StreamingEntry>): Record<string,StreamingEntry> {
+  const oversized = Object.keys(next).filter((eid) => !(!next[eid]) && typeof next[eid].content === 'string' && next[eid].content.length > LIVE_TAIL_CHARS);
+  if (oversized.length === 0) {
+    return next;
+  }
+  const bounded = Object.assign({}, next);
+  for (const eid of oversized) {
+    bounded[eid] = Object.assign({}, next[eid], { content: next[eid].content.slice(-LIVE_TAIL_CHARS) });
+  }
+  return bounded;
+}
+
 /**
  * Coalesce ordered transcript mutations into one React state commit per frame. Refs/live state remain immediate; flush() is used before prompts and stream boundaries so semantic ordering never waits on the frame timer.
  */
-// @kern-source: app-output-bridge:74
+// @kern-source: app-output-bridge:87
 export function createTranscriptCommitBatcher(commit: (updater:OutputBlock[] | ((prev:OutputBlock[]) => OutputBlock[])) => void, delayMs: number = 16): TranscriptCommitBatcher {
   type BlockUpdater = (prev: OutputBlock[]) => OutputBlock[];
   const pending: BlockUpdater[] = [];
@@ -88,8 +107,8 @@ export function createTranscriptCommitBatcher(commit: (updater:OutputBlock[] | (
   return { enqueue, flush, discard, pendingCount: () => pending.length };
 }
 
-// @kern-source: app-output-bridge:102
-export const createLatestUiCommitter: <T>(commit:(value:T) => void,delayMs:number) => {enqueue:(value:T) => void;discard:() => void;commitNow:(value:T) => void;hasPending:() => boolean} = <T>(commit: (value: T) => void, delayMs: number) => {
+// @kern-source: app-output-bridge:119
+export const createLatestUiCommitter: <T>(commit:(value:T) => void,delayMs:number,transform?:(value:T) => T) => {enqueue:(value:T) => void;discard:() => void;commitNow:(value:T) => void;hasPending:() => boolean} = <T>(commit: (value: T) => void, delayMs: number, transform?: (value: T) => T) => {
       const safeDelay = Math.max(0, Math.min(250, Math.floor(Number(delayMs) || 0)));
       let lastCommitAt = 0;
       let pending: T | undefined;
@@ -102,7 +121,7 @@ export const createLatestUiCommitter: <T>(commit:(value:T) => void,delayMs:numbe
           timer = null;
           pending = undefined;
           lastCommitAt = now;
-          commit(value);
+          commit(transform ? transform(value) : value);
           return;
         }
         pending = value;
@@ -112,7 +131,7 @@ export const createLatestUiCommitter: <T>(commit:(value:T) => void,delayMs:numbe
             lastCommitAt = Date.now();
             const next = pending;
             pending = undefined;
-            if (next !== undefined) commit(next);
+            if (next !== undefined) commit(transform ? transform(next) : next);
           }, safeDelay - elapsed);
         }
       };
@@ -124,12 +143,12 @@ export const createLatestUiCommitter: <T>(commit:(value:T) => void,delayMs:numbe
       const commitNow = (value: T) => {
         discard();
         lastCommitAt = Date.now();
-        commit(value);
+        commit(transform ? transform(value) : value);
       };
       return { enqueue, discard, commitNow, hasPending: () => timer !== null };
     };
 
-// @kern-source: app-output-bridge:147
+// @kern-source: app-output-bridge:164
 export function buildOutputActions(opts: OutputBridgeDeps): OutputActions {
   const {
     setLiveSpinner,
@@ -155,7 +174,19 @@ export function buildOutputActions(opts: OutputBridgeDeps): OutputActions {
     setTodos,
   } = opts;
   const transcriptBatcher = createTranscriptCommitBatcher(setOutputBlocks, 16);
-  const streamingUiCommitter = createLatestUiCommitter(setStreamingText, 66);
+  // The ref keeps the FULL content — flushStream and streaming-end commit the
+  // complete answer from it. React state only drives the live preview, so it
+  // gets a bounded tail: rendering grows O(tail), not O(total) (a long single
+  // answer was quadratic — concat + full re-render every frame).
+  // The bounding runs INSIDE the throttled commit, not on every enqueue: the
+  // committer drops ~all enqueues between frames, so slicing before it meant
+  // an O(total) memcpy per streamed chunk that was then thrown away. Now the
+  // copy happens at most once per throttle window.
+  const streamingUiCommitter = createLatestUiCommitter(
+    setStreamingText,
+    66,
+    boundStreamingTail,
+  );
   const toolStreamUiCommitter = createLatestUiCommitter(setLiveToolStreams, 75);
   return {
     setLiveSpinner,
@@ -163,23 +194,11 @@ export function buildOutputActions(opts: OutputBridgeDeps): OutputActions {
     setStreamingText: (updater: Record<string,StreamingEntry> | ((prev: Record<string,StreamingEntry>) => Record<string,StreamingEntry>)) => {
       const prev = streamingTextRef.current;
       const next = typeof updater === 'function' ? (updater as (p: Record<string,StreamingEntry>) => Record<string,StreamingEntry>)(prev) : updater;
-      // The ref keeps the FULL content — flushStream and streaming-end commit
-      // the complete answer from it. React state only drives the live preview,
-      // so push a bounded tail: rendering grows O(tail), not O(total) per
-      // throttled tick (a long single answer was quadratic — concat + full
-      // re-render every frame). Short streams reuse `next` (no extra alloc).
+      // Enqueue the FULL map; boundStreamingTail runs inside the throttled
+      // commit (see above) so the tail slice costs ≤ one copy per frame.
       streamingTextRef.current = next;
-      const LIVE_TAIL = 4000;
-      let bounded: Record<string,StreamingEntry> = next;
-      for (const eid of Object.keys(next)) {
-        const e = next[eid];
-        if (e && typeof e.content === 'string' && e.content.length > LIVE_TAIL) {
-          if (bounded === next) bounded = { ...next };
-          bounded[eid] = { ...e, content: e.content.slice(-LIVE_TAIL) };
-        }
-      }
-      if (Object.keys(next).length === 0) streamingUiCommitter.commitNow(bounded);
-      else streamingUiCommitter.enqueue(bounded);
+      if (Object.keys(next).length === 0) streamingUiCommitter.commitNow(next);
+      else streamingUiCommitter.enqueue(next);
     },
     setLiveToolStreams: (updater: Record<string,LiveToolStreamEntry> | ((prev: Record<string,LiveToolStreamEntry>) => Record<string,LiveToolStreamEntry>)) => {
       const prev = liveToolStreamsRef.current;

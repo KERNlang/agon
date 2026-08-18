@@ -33,7 +33,7 @@ import from="./gate-runner.js" names="shouldAutoRunGate,gateAutoRunTriggered,gat
 import from="../signals/output.js" names="getSessionAllowList"
 import from="./task-controller.js" names="resolveCesarHarnessProfile,evaluateAgenticTaskState,buildAgenticProgressSignature,buildAgenticAutoTurnDirective,isSubstantiveAnswerText,resolveCesarToolReadOnlyMode,extractAgenticBashCommand,isAgenticMutationOutcome"
 import from="@kernlang/agon-core" names="canonicalStepSignature,normalizeStepSignature"
-import from="./brain-helpers.js" names="yieldToInk,recordCesarTurn,splitBeforeToolMarkup,XML_TOOL_MARKUP_HOLD_CHARS,createTodosDisplayStripper,createAskDisplayStripper,createPreambleStripper,findTrailingUserQuestion,detectAwaitingUserInput,detectNarratedToolStall,detectMutationIntentStall,detectFabricatedDelegation,shouldDeescalateGuard,withEagerToolCallId,claimEagerToolExecution,eagerFailedToolNames,shouldRunEagerRepairTool,shouldStopAfterXmlToolCall,buildReviewFollowupPrompt,extractDelegation,isBashToolName,isWriteToolName,forwardContinuationStatus"
+import from="./brain-helpers.js" names="yieldToInk,recordCesarTurn,splitBeforeToolMarkup,XML_TOOL_MARKUP_HOLD_CHARS,chunkMayCompleteToolCall,textHasToolCalls,classifyPreambleHead,createTodosDisplayStripper,createAskDisplayStripper,createPreambleStripper,findTrailingUserQuestion,detectAwaitingUserInput,detectNarratedToolStall,detectMutationIntentStall,detectFabricatedDelegation,shouldDeescalateGuard,withEagerToolCallId,claimEagerToolExecution,eagerFailedToolNames,shouldRunEagerRepairTool,shouldStopAfterXmlToolCall,buildReviewFollowupPrompt,extractDelegation,isBashToolName,isWriteToolName,forwardContinuationStatus"
 import from="./confirmation-follow-up.js" names="runCesarConfirmationFollowUp"
 import from="./plan-control-signals.js" names="consumeCesarPlanControlSignals"
 import from="../lib/kern-host.js" names="hostNowIso,hostWaitForInteractiveChoice"
@@ -361,6 +361,36 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
         dispatch({ type: 'cesar-preamble', engineId: _actualCesarEngineId || undefined, intent: parsed.intent } as any);
       }
       return parsed.rest;
+    };
+    // Streaming-only preamble probe. emitPreamble(response) used to run on EVERY
+    // streamed chunk with the full accumulated answer: parsePreamble's anchored
+    // regex forces a cons-string flatten each time, i.e. O(n) per chunk. The
+    // marker is START-anchored, so the decision is settled by the head of the
+    // response and can never change afterwards — latch it. `_preambleHead` is a
+    // small mirror of that head (seeded from `response` at the streaming switch,
+    // because confidence parsing may have rewritten the buffer, then appended
+    // chunk-wise), so the emitted block is byte-identical to the old behaviour
+    // while the full response is never touched again once settled.
+    let _preambleSettled = false;
+    let _preambleHead = '';
+    const _probePreambleHead = (): void => {
+      // 'absent' = 8+ non-space chars already differ from "[INTENT]", and the
+      // head only grows at the END, so no later chunk can make it match.
+      const kind = classifyPreambleHead(_preambleHead);
+      if (kind === 'absent') { _preambleSettled = true; return; }
+      if (kind === 'maybe') return;
+      emitPreamble(_preambleHead);
+      if (_preambleEmitted || _preambleHead.length > 4096) _preambleSettled = true;
+    };
+    const notePreambleSeed = (seed: string): void => {
+      if (_preambleSettled) return;
+      _preambleHead = seed;
+      _probePreambleHead();
+    };
+    const notePreambleChunk = (chunkText: string): void => {
+      if (_preambleSettled) return;
+      _preambleHead += chunkText;
+      _probePreambleHead();
     };
     // ── Structured ask extraction (the [ASK] marker, RULE 7d) ──
     // Parse an [ASK]…[/ASK] block out of the brain's text (ask-marker.kern) and
@@ -910,8 +940,25 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
         if ((config as any).cesarStreamingXmlTools === false) return false;
         try { return parseToolCalls(response).hasToolCalls; } catch { return false; }
       };
-      const noteXmlToolDetected = (streamingNow: boolean) => {
-        if (sawStreamingXmlToolCall || !shouldInterruptForXmlTool()) return;
+      // Per-chunk cost guard: shouldInterruptForXmlTool re-parses the WHOLE
+      // accumulated response, which is O(n) per chunk (quadratic over a long
+      // answer — the streaming-lag hot spot). A tool call can only become
+      // COMPLETE when the text that just arrived carries the terminator of one
+      // of the known close markers: every XML form closes with '</…>', Mistral
+      // closes its [TOOL_CALLS] array with ']', Cohere closes its Action fence
+      // with a backtick. So when the new chunk (plus a small carry-over tail, so
+      // a marker split across chunks is still seen) holds none of those, no new
+      // tool call can have completed and the full scan is skipped. Callers that
+      // pass no chunk (the pre-streaming buffer phase) keep the full scan.
+      let _xmlChunkTail = '';
+      const noteXmlToolDetected = (streamingNow: boolean, chunkText?: string) => {
+        if (sawStreamingXmlToolCall) return;
+        if (chunkText !== undefined) {
+          const gate = chunkMayCompleteToolCall(_xmlChunkTail, chunkText);
+          _xmlChunkTail = gate.tail;
+          if (!gate.scan) return;
+        }
+        if (!shouldInterruptForXmlTool()) return;
         sawStreamingXmlToolCall = true;
         suppressXmlToolDisplay = true;
         xmlDisplayHold = '';
@@ -1518,7 +1565,7 @@ ${reviewFollowup.prompt}`;
               // moment the complete leading line is available, then strip it from
               // the streamed display so the marker never flashes. Runs on both the
               // native and XML paths since the marker is plain leading text.
-              emitPreamble(response);
+              notePreambleSeed(response);
               cleanFirst = stripPreambleForDisplay(cleanFirst);
               if (!ctx.cesar!.hasNativeTools) {
                 const split = splitBeforeToolMarkup(cleanFirst);
@@ -1530,11 +1577,11 @@ ${reviewFollowup.prompt}`;
               if (cleanFirst.trim()) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: cleanFirst });
             } else {
               response += chunk.content;
-              noteXmlToolDetected(true);
+              noteXmlToolDetected(true, chunk.content);
               let displayChunk = chunk.content;
               // Suppress the leading [INTENT] line from the streamed display and
               // dispatch its block early (idempotent) once the line completes.
-              emitPreamble(response);
+              notePreambleChunk(chunk.content);
               displayChunk = stripPreambleForDisplay(displayChunk);
               if (!displayChunk) continue;
               if (!ctx.cesar!.hasNativeTools) {
@@ -3161,7 +3208,12 @@ ${reviewFollowup.prompt}`;
         // BUT if the engine is erroring (overflow/rate-limit/dead session), the
         // closure send will also fail — don't paper over it with a fake "paused
         // mid-task" line; the in-loop error warning already named the real reason.
-        if (_engineErrored) {
+        // An INTENTIONAL interrupt (Esc) aborts the in-flight send, which surfaces
+        // as an error chunk and latches _engineErrored — but the user knows why it
+        // stopped. Printing "Engine X stopped responding" there is a false alarm,
+        // and appending it to `response` would poison the committed transcript AND
+        // the chat history with a fake engine failure. Stay silent on abort.
+        if (_engineErrored && !abort.signal.aborted) {
           const _errLine = `Engine ${cesarEngineId} stopped responding (${(_engineErrorMsg || 'no response').slice(0, 120)}). Nothing was lost — re-prompt, /compact to shrink context, or /engine to switch.`;
           dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: _errLine });
           response = response + '\n\n' + _errLine;
@@ -3335,13 +3387,105 @@ ${reviewFollowup.prompt}`;
         const isForkQuestion = !_isChatTurn && /\?\s*$/.test(lastLine) && _forkOptions.length >= 2 && _forkOptions.length <= 6;
         const asksConfirmation = !_isChatTurn && !ranToolLoop && /\?\s*$/.test(lastLine) && /\b(want|shall|should|ready|proceed|go ahead|dispatch|confirm|continue|implement)\b/i.test(lastLine);
         let interactivePlanControl: any = null;
-        const _runInteractiveChoice = async (answer: string, message?: string) => {
+        // A pick that produces no visible trace reads as "nothing happened": the
+        // overlay disappears, the follow-up runs tools silently for 30s and the
+        // user thinks Cesar stopped. Echo the chosen option into the transcript
+        // BEFORE the follow-up starts (same dim info idiom as "Steering queued").
+        const _echoChoice = (label: string) => {
+          const _l = String(label ?? '').trim();
+          if (_l) dispatch({ type: 'info', message: `→ ${_l.length > 120 ? _l.slice(0, 120) + '…' : _l}` });
+        };
+        // A real pick that cannot be continued (session died / turn interrupted)
+        // must never vanish silently — say so and keep the answer re-sendable.
+        const _noteChoiceNotContinued = (label: string) => {
+          const _l = String(label ?? '').trim() || 'your choice';
+          dispatch({ type: 'info', message: abort.signal.aborted
+            ? `Your pick "${_l}" was not sent — the turn was interrupted. Send it again when ready.`
+            : `Your pick "${_l}" was not sent — the Cesar session ended. Send it again when ready.` });
+        };
+        const _runInteractiveChoice = async (answer: string, message?: string, echoLabel?: string) => {
+          if (echoLabel) _echoChoice(echoLabel);
           dispatch({ type: 'spinner-start', message: `${cesarEngineId} continuing…`, color });
           // The follow-up is a fresh stream — it needs its own display strippers
           // so a [TODOS]/[ASK] block emitted mid-follow-up never leaks raw into
           // the transcript (the bug: a pretty-printed [ASK] JSON wall on screen).
           const stripFollowUpTodos = createTodosDisplayStripper();
           const stripFollowUpAsk = createAskDisplayStripper();
+          // ── Live follow-up streaming ──
+          // The follow-up used to render only after the whole send completed, so a
+          // long continuation looked frozen. Forward text chunks the way the main
+          // stream does (streaming-chunk → streaming-end commits the block), with
+          // the same XML-markup gate so a follow-up that answers with tool markup
+          // never leaks raw <tool …> into the pane. `_fuStreamedText` records what
+          // was streamed so the completion callback renders it exactly once.
+          let _fuSuppressXml = false;
+          let _fuHold = '';
+          let _fuStreaming = false;
+          let _fuStreamedText = '';
+          // Tool-markup detection runs on the follow-up stream REGARDLESS of
+          // ctx.cesar.hasNativeTools — deliberately unlike the main turn stream.
+          // runCesarConfirmationFollowUp exists precisely because "a Yes or option
+          // follow-up can return XML tool calls even when the original turn used
+          // native tools": it re-parses the follow-up text with parseToolCalls on
+          // every session and routes a hit into the tool loop. Gating the DISPLAY
+          // on hasNativeTools would therefore stream (and, via streaming-end,
+          // COMMIT) as prose exactly the text the executor is about to treat as a
+          // tool call. Same predicate on both sides, one rule.
+          let _fuToolTail = '';
+          let _fuScanPending = false;
+          let _fuRaw = '';
+          const _fuDisplayChunk = (chunkText: string, force = false): string => {
+            if (_fuSuppressXml) { _fuHold = ''; return ''; }
+            const combined = _fuHold + chunkText;
+            const split = splitBeforeToolMarkup(combined);
+            if (split.hasToolMarkup) { _fuSuppressXml = true; _fuHold = ''; return split.visible; }
+            // The marker split above covers the XML forms and [TOOL_CALLS], and it
+            // releases the prose that precedes them — so it must be consulted
+            // FIRST. What it does not cover (Gemini print(default_api…), Functionary
+            // >>>name, Cohere Action fences) is caught here by the executor's own
+            // predicate over the accumulated RAW text. A hit is unsplittable (the
+            // formats carry no leading open marker to slice on), so the held tail
+            // goes with it: at most XML_TOOL_MARKUP_HOLD_CHARS of prose is lost,
+            // against streaming and committing a whole tool call as an answer.
+            if (_fuScanPending) {
+              _fuScanPending = false;
+              if (textHasToolCalls(_fuRaw)) { _fuSuppressXml = true; _fuHold = ''; return ''; }
+            }
+            if (force) { _fuHold = ''; return combined; }
+            const hold = Math.min(XML_TOOL_MARKUP_HOLD_CHARS, combined.length);
+            const visible = combined.slice(0, combined.length - hold);
+            _fuHold = combined.slice(combined.length - hold);
+            return visible;
+          };
+          // Strip the block markers FIRST (they are chunk-stateful and hold back a
+          // partial marker), then apply the tool-markup gate to what is left — so
+          // a [TODOS]/[ASK] block never trips XML suppression and silences the
+          // prose around it, while real <tool …> markup still suppresses display.
+          const _fuEmit = (raw: string, force = false) => {
+            _fuRaw += raw;
+            // Cheap per-chunk gate before the full-buffer parse, exactly as the main
+            // stream does it (chunkMayCompleteToolCall): a tool call can only have
+            // COMPLETED when the arriving text carries a close-marker terminator, so
+            // a long follow-up never pays an O(n) scan per chunk. Latched here — not
+            // inside the display gate — so a chunk swallowed whole by the [TODOS]/[ASK]
+            // stripper still advances the carry-over tail and still arms the scan.
+            const toolGate = chunkMayCompleteToolCall(_fuToolTail, raw);
+            _fuToolTail = toolGate.tail;
+            if (toolGate.scan) _fuScanPending = true;
+            const stripped = stripFollowUpAsk(stripFollowUpTodos(raw, force), force);
+            if (!stripped) return;
+            const visible = _fuDisplayChunk(stripped, force);
+            if (!visible) return;
+            _fuStreaming = true;
+            dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: visible });
+          };
+          const _fuEndStream = () => {
+            _fuEmit('', true);
+            if (_fuStreaming) {
+              dispatch({ type: 'streaming-end', engineId: cesarEngineId });
+              _fuStreaming = false;
+            }
+          };
           try {
             const followUp = await runCesarConfirmationFollowUp({
               answer,
@@ -3354,10 +3498,16 @@ ${reviewFollowup.prompt}`;
                   if (abort.signal.aborted) break;
                   if (forwardContinuationStatus(chunk, dispatch)) continue;
                   if (_forwardContinuationToolCall(chunk)) continue;
-                  if (chunk.type === 'text') text += chunk.content;
+                  if (chunk.type === 'text') {
+                    text += chunk.content;
+                    // Render as it arrives instead of after the whole send.
+                    _fuEmit(chunk.content);
+                  }
                   if (chunk.type === 'error') streamError = String(chunk.content ?? 'Cesar follow-up stream failed.');
                   if (chunk.type === 'done' || chunk.type === 'error') break;
                 }
+                _fuEndStream();
+                _fuStreamedText = text;
                 return streamError ? { text, error: streamError } : text;
               },
               executeTools: toolRegistry ? async (toolResponse: string) => {
@@ -3396,7 +3546,12 @@ ${reviewFollowup.prompt}`;
               onText: (text: string) => {
                 // Interstitial follow-up text is not part of followUp.content —
                 // capture a mid-loop [ASK] here too or it is lost.
-                const visible = stripFollowUpAsk(stripFollowUpTodos(extractAsk(emitLiveTodos(text))));
+                // Capture ALWAYS (a marker must be extracted even when the text was
+                // already shown live), but render only what the live stream did not
+                // already render — otherwise the follow-up appears twice.
+                const captured = extractAsk(emitLiveTodos(text));
+                if (_fuStreamedText && String(text ?? '').trim() === _fuStreamedText.trim()) return;
+                const visible = stripFollowUpAsk(stripFollowUpTodos(captured));
                 if (visible) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: visible });
               },
               onExchange: (nextMessage: string, exchange: any) => {
@@ -3432,6 +3587,16 @@ ${reviewFollowup.prompt}`;
             }
             return followUp;
           } finally {
+            // End-of-stream is guaranteed on EVERY exit, not just the happy path:
+            // when _cesarSend rejects mid-iteration (adapter error, an AbortError
+            // instead of a clean generator end) the in-send _fuEndStream() is
+            // skipped and the live entry would stay open forever — streamed text
+            // never committed, spinner-less ghost block never cleared. This is the
+            // same "hoist cleanup into the exit path that always runs" shape the
+            // main stream uses (its catch/stream-cleanup block). Idempotent: after
+            // a normal end the strippers are flushed and _fuStreaming is false, so
+            // the second call dispatches nothing.
+            _fuEndStream();
             dispatch({ type: 'spinner-stop' });
           }
         };
@@ -3496,8 +3661,13 @@ ${reviewFollowup.prompt}`;
             const _dismissLines = _ask.options.map((o, i) => `  ${i + 1}. ${o.label}${o.description ? ` — ${o.description}` : ''}`);
             dispatch({ type: 'info', message: `Cesar asks: ${_ask.question}\n${_dismissLines.join('\n')}\n(answer in the composer when ready)` });
           }
+          if (chosen && (!session.alive || abort.signal.aborted)) {
+            // A REAL pick must never be swallowed: the overlay is gone, so say
+            // what was chosen and that it still needs to be sent.
+            _noteChoiceNotContinued(chosen.label);
+          }
           if (chosen && session.alive && !abort.signal.aborted) {
-            await _runInteractiveChoice(picked, `Answer to your question "${_ask.question}": ${chosen.label}${chosen.description ? ` (${chosen.description})` : ''}. Continue with this choice.`);
+            await _runInteractiveChoice(picked, `Answer to your question "${_ask.question}": ${chosen.label}${chosen.description ? ` (${chosen.description})` : ''}. Continue with this choice.`, chosen.label);
             if (interactivePlanControl?.error) console.warn(`[agon] Interactive plan control failed: ${interactivePlanControl.error}`);
             if (interactivePlanControl?.planProposed) {
               return { mode: 'self', delegated: false, responded: true, decisionReason: 'plan-proposed', ...buildToolTelemetry() };
@@ -3522,8 +3692,17 @@ ${reviewFollowup.prompt}`;
             dispatch({ type: 'question', prompt: `${cesarEngineId} — pick one (Esc to decide later):`, choices: _choices, resolve } as any);
           })).toLowerCase();
           const chosen = _forkOptions.find((o) => o.key === picked);
+          if (!chosen && !picked.startsWith('__other:') && !abort.signal.aborted) {
+            // Esc / decide-later: same never-lose fallback the [ASK] branch has —
+            // the options stay findable in the transcript instead of vanishing.
+            const _forkDismiss = _forkOptions.map((o) => `  ${o.key.toUpperCase()}) ${o.label}`);
+            dispatch({ type: 'info', message: `Cesar offered:\n${_forkDismiss.join('\n')}\n(pick one in the composer when ready)` });
+          }
+          if (chosen && (!session.alive || abort.signal.aborted)) {
+            _noteChoiceNotContinued(`${chosen.key.toUpperCase()}) ${chosen.label}`);
+          }
           if (chosen && session.alive && !abort.signal.aborted) {
-            await _runInteractiveChoice(picked, `Go with option ${chosen.key.toUpperCase()}: ${chosen.full}. Proceed and finish it.`);
+            await _runInteractiveChoice(picked, `Go with option ${chosen.key.toUpperCase()}: ${chosen.full}. Proceed and finish it.`, `${chosen.key.toUpperCase()}) ${chosen.label}`);
             if (interactivePlanControl?.error) console.warn(`[agon] Interactive plan control failed: ${interactivePlanControl.error}`);
             if (interactivePlanControl?.planProposed) {
               return { mode: 'self', delegated: false, responded: true, decisionReason: 'plan-proposed', ...buildToolTelemetry() };
@@ -3548,8 +3727,17 @@ ${reviewFollowup.prompt}`;
               { key: 'n', label: 'No', color: '#ef4444' },
             ], resolve } as any);
           });
+          const _confirmAnswer = String(answer ?? '');
+          if (_confirmAnswer !== 'y' && !_confirmAnswer.startsWith('__other:') && !abort.signal.aborted) {
+            // No / Esc: keep the question findable instead of dropping it — the
+            // same never-lose fallback the [ASK] branch has.
+            dispatch({ type: 'info', message: `Cesar asked: ${lastLine}\n(not continuing — answer in the composer when ready)` });
+          }
+          if (_confirmAnswer === 'y' && (!session.alive || abort.signal.aborted)) {
+            _noteChoiceNotContinued('Yes');
+          }
           if (answer === 'y' && session.alive && !abort.signal.aborted) {
-            await _runInteractiveChoice(answer);
+            await _runInteractiveChoice(answer, undefined, 'Yes');
             if (interactivePlanControl?.error) console.warn(`[agon] Interactive plan control failed: ${interactivePlanControl.error}`);
             if (interactivePlanControl?.planProposed) {
               return { mode: 'self', delegated: false, responded: true, decisionReason: 'plan-proposed', ...buildToolTelemetry() };

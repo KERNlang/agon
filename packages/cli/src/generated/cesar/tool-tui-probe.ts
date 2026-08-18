@@ -57,7 +57,7 @@ export function createTuiProbeTool(): ToolHandler {
     isReadOnly: true,
     isConcurrencySafe: false,
   };
-
+  
   const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null => {
     const scripted = typeof input.input === 'string' ? input.input.trim() : '/help';
     // Control characters (incl. \n/\r) are rejected outright: the PTY treats a
@@ -72,9 +72,9 @@ export function createTuiProbeTool(): ToolHandler {
     }
     return null;
   };
-
+  
   const checkPermission = (_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => ({ behavior: 'allow' });
-
+  
   const execute = async (input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
     const { script, agonBin } = resolveTuiProbePaths();
     if (!script) {
@@ -116,6 +116,6 @@ export function createTuiProbeTool(): ToolHandler {
       return { ok: false, content: '', error: `TuiProbe failed: ${err instanceof Error ? err.message : String(err)}` };
     }
   };
-
+  
   return { definition, validate, checkPermission, execute };
 }

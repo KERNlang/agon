@@ -140,7 +140,7 @@ function estimateChangedTokens(before: string, after: string): number {
   let prefix = 0;
   const minLen = Math.min(before.length, after.length);
   while (prefix < minLen && before.charCodeAt(prefix) === after.charCodeAt(prefix)) prefix++;
-
+  
   let beforeEnd = before.length - 1;
   let afterEnd = after.length - 1;
   while (
@@ -151,7 +151,7 @@ function estimateChangedTokens(before: string, after: string): number {
     beforeEnd--;
     afterEnd--;
   }
-
+  
   const removed = Math.max(0, beforeEnd - prefix + 1);
   const added = Math.max(0, afterEnd - prefix + 1);
   return Math.ceil((removed + added) / 4);

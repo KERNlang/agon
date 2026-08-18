@@ -40,7 +40,7 @@ export function parseLiveTodos(response: string): TodosMarkerResult {
     lastBody = m[1];
   }
   if (lastBody === null) return { todos: [], found, rest };
-
+  
   const allowed = new Set(['pending', 'running', 'done', 'failed', 'cancelled']);
   let parsed: unknown;
   try {
@@ -50,7 +50,7 @@ export function parseLiveTodos(response: string): TodosMarkerResult {
     return { todos: [], found, rest };
   }
   if (!Array.isArray(parsed)) return { todos: [], found, rest };
-
+  
   // Build, validating each item; skip anything without a usable id+text.
   // Dedupe by id (last occurrence wins) while preserving first-seen order.
   // Cap parsed items at 50: a live checklist never has hundreds of entries,

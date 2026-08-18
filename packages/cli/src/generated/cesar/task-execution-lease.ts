@@ -552,3 +552,4 @@ export function approveTaskAction(lease: TaskExecutionLease, action: string, tar
   lease.approvedSignatures.add(signature);
   if (lease.risk === 'important' && !isDestructiveTaskAction(lease, action, target)) lease.taskApproved = true;
 }
+

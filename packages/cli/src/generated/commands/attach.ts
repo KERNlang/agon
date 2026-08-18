@@ -141,7 +141,7 @@ async function attachToSession(sessionId: string): Promise<void> {
     if (typeof entry.seq === 'number' && entry.seq > lastSeq) lastSeq = entry.seq;
   }
   console.log(dim('─'.repeat(48) + ' following live (Ctrl+C to detach) '));
-
+  
   await new Promise<void>((resolve) => {
     const unsubscribe = host.subscribe(sessionId, lastSeq, (entry: LoggedEvent) => {
       const line = renderLoggedEvent(entry);

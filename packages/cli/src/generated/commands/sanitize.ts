@@ -8,18 +8,9 @@ import { scanText, cleanText, scanMetadata, stripMetadata } from '@kernlang/agon
 
 import { header, success, fail, info, table, bold, yellow } from '../blocks/output-format.js';
 
-// @kern-source: sanitize:6
-export async function readStdin(): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let data = '';
-    process.stdin.setEncoding('utf8');
-    process.stdin.on('data', (chunk) => { data += chunk; });
-    process.stdin.on('end', () => resolve(data));
-    process.stdin.on('error', reject);
-  });
-}
+import { readStdin } from '../blocks/stdin.js';
 
-// @kern-source: sanitize:17
+// @kern-source: sanitize:7
 export function renderFindingsTable(findings: {offset:number,codepoint:string,hex:string,channel:string,action:string,detail:string}[]): void {
   const rows = findings.slice(0, 50).map((f) => [
     String(f.offset),
@@ -32,7 +23,7 @@ export function renderFindingsTable(findings: {offset:number,codepoint:string,he
   if (findings.length > 50) info(`… and ${findings.length - 50} more findings`);
 }
 
-// @kern-source: sanitize:30
+// @kern-source: sanitize:20
 export const sanitizeCommand: any = defineCommand({
   meta: {
     name: 'sanitize',

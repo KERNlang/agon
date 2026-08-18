@@ -79,7 +79,7 @@ export function resolveReviewTarget(target: string|undefined, cwd: string, base:
   const baseRef = (base ?? '').trim();
   let diff = '';
   let label = '';
-
+  
   if (baseRef && (t.startsWith('commit:') || t.startsWith('range:'))) {
     throw new Error(`--base does not apply to "${t}" — it composes with "uncommitted" or "branch:NAME". For an explicit two-ref diff use "range:BASE...TARGET".`);
   }
@@ -87,7 +87,7 @@ export function resolveReviewTarget(target: string|undefined, cwd: string, base:
     try { execFileSync('git', ['rev-parse', '--verify', `${baseRef}^{commit}`], { cwd, encoding: 'utf-8' }); }
     catch { throw new Error(`--base "${baseRef}" does not resolve to a commit.`); }
   }
-
+  
   if (t === 'uncommitted') {
     // With --base, the diff spans base..working-tree (committed-since-base AND
     // uncommitted changes); without it, HEAD..working-tree as before.
@@ -96,7 +96,7 @@ export function resolveReviewTarget(target: string|undefined, cwd: string, base:
       // Use git diff HEAD to get a single consistent diff against HEAD
       // (covers both staged and unstaged changes against the same base)
       diff = execFileSync('git', ['diff', baseRef || 'HEAD'], { cwd, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }).trim();
-
+  
       // Also include untracked files so new files aren't silently omitted.
       // FU-6: read each untracked file directly and synthesize a git-style
       // diff in memory, instead of spawning a
@@ -241,16 +241,16 @@ export function resolveReviewTarget(target: string|undefined, cwd: string, base:
   } else {
     throw new Error(`Unknown review target: "${t}". Use "uncommitted", "branch:NAME", "commit:SHA", or "range:BASE...TARGET".`);
   }
-
+  
   // Engine CLIs receive the review prompt as an argv string; Node refuses
   // argv entries containing NUL, so never let binary diff content through.
   diff = diff.replace(/\u0000/g, '');
-
+  
   // Cap diff at 100K chars
   if (diff.length > 100_000) {
     diff = diff.slice(0, 100_000) + '\n... [truncated — diff exceeds 100K chars]';
   }
-
+  
   return { diff, label };
 }
 
@@ -259,13 +259,13 @@ export function resolveReviewTarget(target: string|undefined, cwd: string, base:
 // @kern-source: review:233
 export function selectReviewEngine(requestedEngine: string|undefined, ctx: HandlerContext): string {
   const allActive = ctx.activeEngines();
-
+  
   if (requestedEngine) {
     return selectReviewEngines([requestedEngine], ctx)[0];
   }
-
+  
   const active = filterDefaultOrchestrationEngines(allActive);
-
+  
   // Preference order: explicit review default > ranked review-capable engine.
   // Deliberately do not inherit forgeFixedStarter: starter choice is for
   // forge seeding, not code-review routing.
@@ -273,7 +273,7 @@ export function selectReviewEngine(requestedEngine: string|undefined, ctx: Handl
   const preferred = typeof config.reviewDefaultEngine === 'string'
     ? config.reviewDefaultEngine.trim()
     : '';
-
+  
   // Only use preferred if it's active AND supports review mode
   if (preferred && active.includes(preferred)) {
     try {
@@ -281,7 +281,7 @@ export function selectReviewEngine(requestedEngine: string|undefined, ctx: Handl
       if (prefEngine.review) return preferred;
     } catch { /* fall through to capability scan */ }
   }
-
+  
   const reviewCapable: string[] = [];
   for (const id of active) {
     try {
@@ -289,15 +289,15 @@ export function selectReviewEngine(requestedEngine: string|undefined, ctx: Handl
       if (engine.review) reviewCapable.push(id);
     } catch { /* skip unavailable */ }
   }
-
+  
   if (reviewCapable.length > 0) {
     const ranked = rankByTaskClass(reviewCapable, 'bugfix');
     return ranked[0]?.engineId ?? reviewCapable[0];
   }
-
+  
   // Last resort: first active engine
   if (active.length > 0) return active[0];
-
+  
   throw new Error('No engines available for review. Try /engines to check availability.');
 }
 
@@ -331,7 +331,7 @@ export function selectReviewEngines(requestedEngines: string[]|undefined, ctx: H
     }
     return explicit;
   }
-
+  
   if (allActive.length > 0) return allActive;
   throw new Error('No active engines available for Review. Run `agon doctor review` to diagnose availability or pass an explicit engine.');
 }
@@ -363,14 +363,14 @@ export interface ReviewSeverityCounts {
 // @kern-source: review:330
 export function extractReviewFindings(response: string): Array<{severity?:string, blocking?:boolean}> | null {
   if (!response || response.trim().length === 0) return null;
-
+  
   const sentinel = REVIEW_SENTINEL;
   const lastSentinelIdx = response.lastIndexOf(sentinel);
   if (lastSentinelIdx < 0) return null;
-
+  
   const tail = response.slice(lastSentinelIdx + sentinel.length).trim();
   if (!tail) return null;
-
+  
   // Engine-AGNOSTIC JSON tolerance. LLMs routinely emit *almost*-JSON: a
   // trailing comma before the closing bracket (e.g. kimi's `...}]`→`...},]`),
   // // or /* */ comments annotating findings, etc. Rather than special-casing
@@ -403,7 +403,7 @@ export function extractReviewFindings(response: string): Array<{severity?:string
     }
     return out;
   };
-
+  
   // Parse the first balanced [...] array found in `text`. String-aware so
   // brackets inside string values don't skew the depth count. Returns the
   // array or null (no array / unbalanced / invalid JSON / non-array).
@@ -438,14 +438,14 @@ export function extractReviewFindings(response: string): Array<{severity?:string
     if (!Array.isArray(parsed)) return null;
     return parsed as Array<{ severity?: string; blocking?: boolean }>;
   };
-
+  
   // Tolerant extraction (A): the first balanced [...] array anywhere in the
   // post-sentinel tail, ignoring surrounding scaffolding (a ```json fence or
   // trailing prose). Only text AFTER the LAST sentinel is considered, so
   // attacker brackets injected earlier in the diff are never seen.
   const primary = tryArrayFrom(tail);
   if (primary) return primary;
-
+  
   // Fallback (b): retry on the body of the LAST fenced code block in the tail
   // — engines that wrap machine output in ```json usually put the array there.
   const fences = [...tail.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)];
@@ -453,7 +453,7 @@ export function extractReviewFindings(response: string): Array<{severity?:string
     const fenced = tryArrayFrom(fences[i][1] ?? '');
     if (fenced) return fenced;
   }
-
+  
   return null;
 }
 
@@ -864,7 +864,7 @@ export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, targ
   try {
     ensureAgonHome();
     const cwd = resolveWorkingDir();
-
+    
     // 1. Resolve target diff
     let diff: string;
     let label: string;
@@ -874,7 +874,7 @@ export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, targ
       dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) });
       return;
     }
-
+    
     // Announce the real target (and warn on a cwd-vs-reviewed-repo mismatch)
     // before anything else, so an empty or wrong-repo review is never silent.
     announceReviewTarget(dispatch, cwd, label);
@@ -882,7 +882,7 @@ export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, targ
       dispatch({ type: 'info', message: `No changes to review (${label}).` });
       return;
     }
-
+    
     // 2. Select engine
     let engineId: string;
     try {
@@ -891,16 +891,16 @@ export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, targ
       dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) });
       return;
     }
-
+    
     const color = (ENGINE_COLORS as Record<string, number>)[engineId] ?? 124;
-
+    
     // 3. Run the core review via the shared helper (which also builds the prompt).
     ctx.setActiveAbort(abort);
     dispatch({ type: 'spinner-start', message: `${engineId} reviewing ${label}…`, color });
-
+    
     let response = '';
     let unstructured = false;
-
+    
     try {
       // No onProgress callback: we deliberately do NOT stream the prose to the
       // screen. The spinner stays up while the engine works; when it finishes we
@@ -914,18 +914,18 @@ export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, targ
       dispatch({ type: 'error', message: `${engineId}: ${err instanceof Error ? err.message : String(err)}` });
       return;
     }
-
+    
     dispatch({ type: 'spinner-stop' });
-
+    
     if (abort.signal.aborted) {
       return;
     }
-
+    
     if (!response) {
       dispatch({ type: 'warning', message: `${engineId} returned no review output.` });
       return;
     }
-
+    
     // Store in chat session + tracker, and keep the FULL response (machine block
     // included) in lastReviewResult so Cesar's "fix it" has the structured
     // file/line/minimalFix data.
@@ -940,7 +940,7 @@ export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, targ
       reviewOutput: response,
       timestamp: Date.now(),
     };
-
+    
     // Compact summary inline (the bug list) — never the full prose.
     const status = unstructured ? 'unstructured' : 'ok';
     let consensusSummary: string;
@@ -959,7 +959,7 @@ export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, targ
       consensusSummary = `${engineId}: unstructured review — no machine-parseable findings (the prose is valid).`;
       dispatch({ type: 'info', message: consensusSummary });
     }
-
+    
     // Full review (clean prose) → Ctrl+R results pager.
     sessionResultStore.add({
       type: 'review',
@@ -974,7 +974,7 @@ export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, targ
         reviews: [{ engineId, status, reviewOutput: stripMachineBlock(response) }],
       },
     });
-
+    
     dispatch({ type: 'info', message: unstructured
       ? `Review complete (unstructured — no machine verdict, but the review is valid). Ctrl+R for the full review · say "fix it" to address it.`
       : `Review complete. Ctrl+R for the full review · say "fix it" or "fix it with <engine>" to address the findings.` });
@@ -1023,7 +1023,7 @@ export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, 
       await handleReview(dispatch, ctx, target, engineIds[0]);
       return;
     }
-
+    
     // Resolve the diff once — all engines review the same target.
     let diff: string;
     let label: string;
@@ -1041,18 +1041,18 @@ export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, 
       dispatch({ type: 'info', message: `No changes to review (${label}).` });
       return;
     }
-
+    
     const config = ctx.config as any;
     const timeoutSec = config.reviewTimeout ?? config.agentTimeout ?? 420;
     dispatch({ type: 'info', message: `Reviewing with ${engineIds.join(', ')} in parallel (${timeoutSec}s timeout each)…` });
-
+    
     // The master abort (Esc / cleanup) fans out to every per-engine controller.
     const controllers: AbortController[] = [];
     const onMasterAbort = () => { for (const c of controllers) c.abort(); };
     ctx.setActiveAbort(abort);
     if (abort.signal.aborted) onMasterAbort();
     else abort.signal.addEventListener('abort', onMasterAbort, { once: true });
-
+    
     // Each engine's STATUS (ok / parse-failed / timeout / error) is captured
     // alongside its prose, so the consensus pass can route findings by
     // confidence and shunt failures into their own lane.
@@ -1107,16 +1107,16 @@ export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, 
         if (timer) clearTimeout(timer);
       }
     };
-
+    
     appendMessage(ctx.chatSession, { role: 'user', content: `[review ${label}]`, timestamp: new Date().toISOString() });
     const all = await Promise.all(engineIds.map((id) => reviewOne(id)));
     const collected = all.filter((c) => c.reviewOutput);
-
+    
     if (collected.length === 0) {
       dispatch({ type: 'warning', message: `No review output returned from ${engineIds.join(', ')}.` });
       return;
     }
-
+    
     // CONSENSUS — fold every engine's parsed findings into one tiered verdict.
     // ok engines contribute their structured findings; unstructured/timeout/
     // error engines land in the engineFailures lane (never a phantom blocker).
@@ -1127,7 +1127,7 @@ export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, 
     // the consensus lines so a 1/6 run isn't read as a real consensus. Not a block.
     if (consensus.degraded) dispatch({ type: 'warning', message: consensus.degraded.warning });
     dispatch({ type: consensus.autoBlock ? 'warning' : 'info', message: consensusSummary });
-
+    
     const anyUnstructured = collected.some((c) => c.unstructured);
     ctx.lastReviewResult = {
       engineId: collected.map((r) => r.engineId).join(', '),
@@ -1137,7 +1137,7 @@ export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, 
       reviewOutput: collected.map((r) => `## ${r.engineId}\n\n${r.reviewOutput}`).join('\n\n---\n\n'),
       timestamp: Date.now(),
     };
-
+    
     // Full per-engine reviews (clean prose) → Ctrl+R results pager.
     sessionResultStore.add({
       type: 'review',
@@ -1152,7 +1152,7 @@ export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, 
         reviews: collected.map((r) => ({ engineId: r.engineId, status: r.status, reviewOutput: stripMachineBlock(r.reviewOutput) })),
       },
     });
-
+    
     dispatch({ type: 'info', message: `Multi-review complete (${collected.map((r) => r.engineId).join(', ')}).${anyUnstructured ? ' Some reviews were unstructured (no machine verdict) but valid.' : ''} Ctrl+R for the full reviews · say "fix it" or "fix it with <engine>" to address the findings.` });
   } finally {
     ctx.setActiveAbort(null);
@@ -1175,7 +1175,7 @@ export async function handleReviewRoles(dispatch: Dispatch, ctx: HandlerContext,
       dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) });
       return;
     }
-
+    
     // Resolve the diff once — every role reviews the same target.
     let diff: string;
     let label: string;
@@ -1190,10 +1190,10 @@ export async function handleReviewRoles(dispatch: Dispatch, ctx: HandlerContext,
       dispatch({ type: 'info', message: `No changes to review (${label}).` });
       return;
     }
-
+    
     const roleByEngine = assignReviewRoles(engineIds, roleIds);
     dispatch({ type: 'info', message: `Roles: ${engineIds.map((id) => `${id}=${roleByEngine.get(id)?.id ?? 'overall'}`).join(' · ')}` });
-
+    
     const config = ctx.config as any;
     const timeoutSec = config.reviewTimeout ?? config.agentTimeout ?? 420;
     interface Collected { engineId: string; reviewOutput: string; unstructured: boolean; status: string; note?: string }
@@ -1202,7 +1202,7 @@ export async function handleReviewRoles(dispatch: Dispatch, ctx: HandlerContext,
     ctx.setActiveAbort(abort);
     if (abort.signal.aborted) onMasterAbort();
     else abort.signal.addEventListener('abort', onMasterAbort, { once: true });
-
+    
     const reviewOne = async (engineId: string): Promise<Collected> => {
       const controller = new AbortController();
       controllers.push(controller);
@@ -1249,23 +1249,23 @@ export async function handleReviewRoles(dispatch: Dispatch, ctx: HandlerContext,
         if (timer) clearTimeout(timer);
       }
     };
-
+    
     appendMessage(ctx.chatSession, { role: 'user', content: `[review role ${label}]`, timestamp: new Date().toISOString() });
     const all = await Promise.all(engineIds.map((id) => reviewOne(id)));
     const collected = all.filter((c) => c.reviewOutput);
-
+    
     if (collected.length === 0) {
       dispatch({ type: 'warning', message: `No review output returned from ${engineIds.join(', ')}.` });
       ctx.setActiveAbort(null);
       return;
     }
-
+    
     const outcomes = all.map((c) => reviewOutcome(c.engineId, c.reviewOutput, c.status, c.note));
     const consensus = buildConsensus(outcomes as any);
     const consensusSummary = buildReviewConsensusLines(consensus).join('\n');
     if (consensus.degraded) dispatch({ type: 'warning', message: consensus.degraded.warning });
     dispatch({ type: consensus.autoBlock ? 'warning' : 'info', message: consensusSummary });
-
+    
     const anyUnstructured = collected.some((c) => c.unstructured);
     ctx.lastReviewResult = {
       engineId: collected.map((r) => r.engineId).join(', '),
@@ -1275,7 +1275,7 @@ export async function handleReviewRoles(dispatch: Dispatch, ctx: HandlerContext,
       reviewOutput: collected.map((r) => `## ${r.engineId} [${roleByEngine.get(r.engineId)?.id ?? 'overall'}]\n\n${r.reviewOutput}`).join('\n\n---\n\n'),
       timestamp: Date.now(),
     };
-
+    
     sessionResultStore.add({
       type: 'review',
       timestamp: new Date().toISOString(),
@@ -1289,9 +1289,10 @@ export async function handleReviewRoles(dispatch: Dispatch, ctx: HandlerContext,
         reviews: collected.map((r) => ({ engineId: `${r.engineId} [${roleByEngine.get(r.engineId)?.id ?? 'overall'}]`, status: r.status, reviewOutput: stripMachineBlock(r.reviewOutput) })),
       },
     });
-
+    
     dispatch({ type: 'info', message: `Role review complete (${collected.map((r) => `${r.engineId}=${roleByEngine.get(r.engineId)?.id ?? 'overall'}`).join(', ')}).${anyUnstructured ? ' Some reviews were unstructured (no machine verdict) but valid.' : ''} Ctrl+R for the full reviews · say "fix it" or "fix it with <engine>" to address the findings.` });
   } finally {
     ctx.setActiveAbort(null);
   }
 }
+

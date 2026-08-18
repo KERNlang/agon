@@ -200,7 +200,7 @@ export function resolvePermissionDecision(request: PermissionResolutionRequest):
   const cwd = String(request.cwd ?? '');
   const cfg = request.config ?? {};
   const signature = canonicalTaskActionSignature(tool, target);
-
+  
   if (isPermissionHardDeny(cfg)) {
     return { decision: 'deny', reason: 'permissionMode=deny-all', stage: 'hard-deny', signature };
   }
@@ -208,18 +208,18 @@ export function resolvePermissionDecision(request: PermissionResolutionRequest):
   if (toolPermissions[tool] === 'deny') {
     return { decision: 'deny', reason: `${tool} denied in settings`, stage: 'tool-permissions', signature };
   }
-
+  
   const ruleSet = buildEffectivePermissionRuleSet(cfg);
   const ruleDecision = evaluateToolRules(tool, target, cwd || process.cwd(), ruleSet);
   if (ruleDecision === 'deny') {
     return { decision: 'deny', reason: `${tool} denied by permissions rule`, stage: 'deny-rule', signature };
   }
-
+  
   // The effective mode is resolved BEFORE the lease so mode auto can absorb
   // (or soften) lease outcomes — the whole point of the CC-parity contract.
   const baseMode = resolveAgonPermissionMode(cfg);
   const mode = request.source === 'delegated' ? clampDelegatedPermissionMode(baseMode) : baseMode;
-
+  
   let leaseEvaluation: TaskActionEvaluation | null = null;
   if (request.lease) {
     // Mode auto is bypassPermissions with a seatbelt: an out-of-workspace
@@ -230,14 +230,14 @@ export function resolvePermissionDecision(request: PermissionResolutionRequest):
       return { decision: 'deny', reason: leaseEvaluation.reason, stage: 'lease', signature };
     }
   }
-
+  
   // Scoped rules (user-authored via Always / .agon.json, incl. session
   // rules) are the ONE allow source deliberately strong enough to cover a
   // lease boundary — that is the whole point of persisting Bash(git push:*).
   if (ruleDecision === 'allow') {
     return { decision: 'allow', reason: `${tool} allowed by permissions rule`, stage: 'allow-rule', signature };
   }
-
+  
   // Sensitive-path carve-out for the file-edit modes: auto-edit (and ask)
   // must never silently rewrite .git/hooks, .husky, .env* or key material —
   // one hook edit is arbitrary code execution on the next commit. Sits above
@@ -248,11 +248,11 @@ export function resolvePermissionDecision(request: PermissionResolutionRequest):
     && isSensitivePermissionPath(target, Array.isArray(cfg.cesarSensitivePathPatterns) ? cfg.cesarSensitivePathPatterns : undefined, cwd)) {
     return { decision: 'ask', reason: 'sensitive_path', stage: 'mode', signature };
   }
-
+  
   if (leaseEvaluation && leaseEvaluation.decision === 'allow') {
     return { decision: 'allow', reason: leaseEvaluation.reason, stage: 'lease', signature };
   }
-
+  
   // Destructive/escape boundaries ask BEFORE the blunt allow sources:
   // a legacy bare base token ('git' in allowedCommands) or a tool-level
   // toolPermissions allow must never auto-approve a force push or an
@@ -264,7 +264,7 @@ export function resolvePermissionDecision(request: PermissionResolutionRequest):
   if (tool === 'Bash' && !request.lease && isLeaselessBashBoundary(target)) {
     return { decision: 'ask', reason: 'dangerous_boundary', stage: 'mode', signature };
   }
-
+  
   if (toolPermissions[tool] === 'allow') {
     return { decision: 'allow', reason: `${tool} allowed in settings`, stage: 'tool-permissions', signature };
   }
@@ -280,7 +280,7 @@ export function resolvePermissionDecision(request: PermissionResolutionRequest):
       return { decision: 'allow', reason: 'command matched session allowlist', stage: 'session-allowlist', signature };
     }
   }
-
+  
   const containedFileMutation = isTaskFileMutationAction(tool) && fileTargetInsideWorkspace(cwd, target);
   if (mode === 'auto') {
     // Without a lease the resolver owns workspace containment itself: a

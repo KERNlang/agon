@@ -160,7 +160,7 @@ export function summarizeToolPayload(payload: Record<string,unknown>|string|unde
     } catch { /* not JSON */ }
     return summarizeCommandString(raw);
   }
-
+  
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(payload)) {
     if (value === undefined) continue;
@@ -324,7 +324,7 @@ export function replayCesarHarnessLogs(opts?: {runsDir?:string,turnId?:string,li
   const timeline = readJsonlRecords(join(dir, 'cesar-tool-timeline.jsonl'));
   const approvals = readJsonlRecords(join(dir, 'cesar-approval-ledger.jsonl'));
   const errors = timeline.filter((r) => r.kind === 'parse_error').length + approvals.filter((r) => r.kind === 'parse_error').length;
-
+  
   const grouped = new Map<string, Array<Record<string, unknown>>>();
   for (const rec of timeline) {
     const turnId = typeof rec.turnId === 'string' ? rec.turnId : 'unknown';
@@ -333,7 +333,7 @@ export function replayCesarHarnessLogs(opts?: {runsDir?:string,turnId?:string,li
     arr.push(rec);
     grouped.set(turnId, arr);
   }
-
+  
   const approvalByTurn = new Map<string, Array<Record<string, unknown>>>();
   for (const rec of approvals) {
     const turnId = typeof rec.turnId === 'string' ? rec.turnId : 'unknown';
@@ -342,7 +342,7 @@ export function replayCesarHarnessLogs(opts?: {runsDir?:string,turnId?:string,li
     arr.push(rec);
     approvalByTurn.set(turnId, arr);
   }
-
+  
   const turnSummaries = [...grouped.entries()].map(([turnId, events]) => {
     events.sort((a, b) => eventTimeMs(a) - eventTimeMs(b));
     const start = events.find((e) => e.event === 'turn_start') ?? events[0] ?? {};
@@ -390,10 +390,10 @@ export function replayCesarHarnessLogs(opts?: {runsDir?:string,turnId?:string,li
       })),
     } as Record<string, unknown>;
   });
-
+  
   turnSummaries.sort((a, b) => eventTimeMs(b) - eventTimeMs(a));
   const selected = turnSummaries.slice(0, limit);
-
+  
   const lines: string[] = [];
   lines.push(`Cesar harness replay: ${selected.length}/${turnSummaries.length} turn(s), ${timeline.length} timeline event(s), ${approvals.length} approval decision(s)`);
   if (errors > 0) lines.push(`Parse errors: ${errors}`);
@@ -420,7 +420,7 @@ export function replayCesarHarnessLogs(opts?: {runsDir?:string,turnId?:string,li
     }
     if (turnApprovals.length > 5) lines.push(`  approval: ... ${turnApprovals.length - 5} more`);
   }
-
+  
   return {
     turnCount: selected.length,
     eventCount: timeline.length,
@@ -430,3 +430,4 @@ export function replayCesarHarnessLogs(opts?: {runsDir?:string,turnId?:string,li
     turns: selected,
   };
 }
+

@@ -28,7 +28,7 @@ export function handleReviewAction(action: ReviewAction, review: ReviewState, di
       const files = parsePatch(review.patchContent);
       const summary = patchSummary(files);
       dispatch({ type: 'info', message: summary });
-
+  
       const result = applyPatchWithUndo(resolveWorkingDir(), review.patchContent);
       if (result.ok) {
         dispatch({ type: 'success', message: `Patch applied from ${review.winnerId}` });

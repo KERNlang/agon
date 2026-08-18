@@ -23,19 +23,19 @@ export async function handleCouncil(question: string, dispatch: Dispatch, ctx: H
   const coAbort = new AbortController();
   try {
     ensureAgonHome();
-
+    
     if (!question || !question.trim()) {
       dispatch({ type: 'warning', message: 'No decision provided. Usage: /council <decision>' });
       return;
     }
-
+    
     const allEngines = ctx.activeEngines();
     const pool = filterDefaultOrchestrationEngines(allEngines);
     if (pool.length < 2) {
       dispatch({ type: 'error', message: `A council needs at least 2 engines (have ${pool.length}). Add engines with /engines.` });
       return;
     }
-
+    
     let chairman: string | undefined;
     if (opts?.chairman && opts.chairman.trim()) {
       const resolved = ctx.registry.resolveId(opts.chairman.trim());
@@ -45,22 +45,22 @@ export async function handleCouncil(question: string, dispatch: Dispatch, ctx: H
         dispatch({ type: 'info', message: `Chairman '${opts.chairman.trim()}' is not available — using rating-based selection.` });
       }
     }
-
+    
     dispatch({ type: 'header', title: `Council · ${pool.length} engines` });
     dispatch({ type: 'info', message: question.length > 120 ? question.slice(0, 120) + '…' : question });
-
+    
     const outputDir = join(RUNS_DIR, `council-${Date.now()}`);
     mkdirSync(outputDir, { recursive: true });
-
+    
     ctx.setActiveAbort(coAbort);
-
+    
     const startTime = Date.now();
     const progressInterval = setInterval(() => {
       const elapsed = Math.floor((Date.now() - startTime) / 1000);
       const progress: EngineProgress[] = pool.map((id: string) => ({ id, status: `deliberating… ${elapsed}s`, elapsed, done: false, failed: false }));
       dispatch({ type: 'progress-update', engines: progress });
     }, 250);
-
+    
     let progressCleared = false;
     function clearProgress(): void {
       if (progressCleared) return;
@@ -68,7 +68,7 @@ export async function handleCouncil(question: string, dispatch: Dispatch, ctx: H
       clearInterval(progressInterval);
       dispatch({ type: 'progress-clear' });
     }
-
+    
     let result: any;
     try {
       result = await runCouncil({
@@ -88,19 +88,19 @@ export async function handleCouncil(question: string, dispatch: Dispatch, ctx: H
       throw err;
     }
     clearProgress();
-
+    
     if (!result.ok) {
       dispatch({ type: 'error', message: 'Council produced no usable verdict.' });
       return;
     }
-
+    
     const seating = result.seats.map((s: any) => `${s.role}=${s.engineId}`).join(', ');
     dispatch({ type: 'info', message: `Chair: ${result.chairmanId}  ·  ${seating}` });
-
+    
     if (result.brief && result.brief !== question) {
       dispatch({ type: 'text', content: `Decision brief:\n${result.brief}` });
     }
-
+    
     for (const s of result.seats) {
       const content = s.critique
         ? `${s.response || '(no response)'}\n\n↳ ${s.role} critiquing ${s.critiquedRole}:\n${s.critique}`
@@ -109,16 +109,16 @@ export async function handleCouncil(question: string, dispatch: Dispatch, ctx: H
       appendMessage(ctx.chatSession, { role: 'engine', engineId: s.engineId, content: `[council:${s.role}] ${s.response || ''}`, timestamp: new Date().toISOString() });
       tracker.record(s.engineId, { prompt: question, response: s.response || '' });
     }
-
+    
     dispatch({ type: 'separator' });
     const verdictBy = result.actingChairmanId || result.chairmanId; // the engine that actually synthesized (failover-aware)
     dispatch({ type: 'engine-block', engineId: verdictBy, color: (ENGINE_COLORS as Record<string, number>)[verdictBy] ?? 124, content: `━━━ Chairman verdict ━━━\n${result.verdict}${result.confidence != null ? `\n\nConfidence: ${result.confidence}%` : ''}` });
     appendMessage(ctx.chatSession, { role: 'engine', engineId: verdictBy, content: `[council:verdict] ${result.verdict}`, timestamp: new Date().toISOString() });
-
+    
     if (result.warnings.length > 0) {
       for (const w of result.warnings) dispatch({ type: 'info', message: `⚠ ${w}` });
     }
-
+    
     sessionResultStore.add({
       type: 'council',
       timestamp: new Date().toISOString(),
@@ -132,7 +132,7 @@ export async function handleCouncil(question: string, dispatch: Dispatch, ctx: H
         seats: result.seats.map((s: any) => ({ role: s.role, engineId: s.engineId })),
       },
     });
-
+    
     const runRecord = recordRun({
       mode: 'council',
       intent: question,

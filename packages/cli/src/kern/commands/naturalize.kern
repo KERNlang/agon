@@ -15,17 +15,7 @@ import from="@kernlang/agon-adapter-cli" names="createCliAdapter"
 import from="@kernlang/agon-forge" names="runNaturalize"
 import from="../blocks/output-format.js" names="header,success,fail,info,bold,yellow,dim"
 import from="../handlers/engine-filter.js" names="filterDefaultOrchestrationEngines"
-
-fn name=readStdin returns="Promise<string>" async=true
-  handler <<<
-    return new Promise((resolve, reject) => {
-      let data = '';
-      process.stdin.setEncoding('utf8');
-      process.stdin.on('data', (chunk) => { data += chunk; });
-      process.stdin.on('end', () => resolve(data));
-      process.stdin.on('error', reject);
-    });
-  >>>
+import from="../blocks/stdin.js" names="readStdin"
 
 const name=naturalizeCommand type=any
   handler <<<

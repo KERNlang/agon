@@ -34,12 +34,12 @@ export async function handleSanitize(input: string, dispatch: Dispatch, ctx: Han
   if (/--in-place\b/.test(rest)) { inPlace = true; rest = rest.replace(/--in-place\b/, ' '); }
   const tail = rest.trim();
   if (tail) file = tail;
-
+  
   if (!file) {
     dispatch({ type: 'warning', message: 'Usage: /sanitize <file> [--detect] [--metadata] [--strip] [--out <file>] [--in-place] — stdin is not available in the TUI; pass a file path.' });
     return;
   }
-
+  
   if (metadata || strip) {
     let buf: Buffer;
     try {
@@ -83,7 +83,7 @@ export async function handleSanitize(input: string, dispatch: Dispatch, ctx: Han
     dispatch({ type: 'info', message: 'Honesty note: metadata removed — the C2PA signature is broken; absence of metadata is not proof of human origin.' });
     return;
   }
-
+  
   let inputText: string;
   try {
     inputText = readFileSync(file, 'utf8');
@@ -157,12 +157,12 @@ export async function handleNaturalize(input: string, dispatch: Dispatch, ctx: H
   if (maxM) { maxAttempts = Math.max(1, parseInt(maxM[1], 10) || 2); rest = rest.replace(maxM[0], ' '); }
   const tail = rest.trim();
   if (tail) file = tail;
-
+  
   if (!file) {
     dispatch({ type: 'warning', message: 'Usage: /naturalize <file> [--author X] [--engine Y] [--min-change N] [--max-attempts N] [--out <file>] — stdin is not available in the TUI; pass a file path.' });
     return;
   }
-
+  
   let inputText: string;
   try {
     inputText = readFileSync(file, 'utf8');
@@ -174,7 +174,7 @@ export async function handleNaturalize(input: string, dispatch: Dispatch, ctx: H
     dispatch({ type: 'error', message: 'No input text to naturalize.' });
     return;
   }
-
+  
   const config = loadConfig();
   const registry = new EngineRegistry();
   registry.load(resolveBuiltinEnginesDir());
@@ -189,10 +189,10 @@ export async function handleNaturalize(input: string, dispatch: Dispatch, ctx: H
       : 'No active engines. Run `agon engine list` or `agon engine add <id>`.' });
     return;
   }
-
+  
   dispatch({ type: 'header', title: `Naturalize: ${file} · rewriter ${engineId}${authorId ? ` (author: ${authorId})` : ''}${minChange !== undefined ? ` · min-change ${Math.round(minChange * 100)}%` : ''}` });
   dispatch({ type: 'spinner-start', message: `Naturalizing with ${engineId}…` });
-
+  
   const startedAt = new Date().toISOString();
   const { path: outputDir } = createRunDir({ mode: 'naturalize', label: undefined, announce: false });
   try {
@@ -209,7 +209,7 @@ export async function handleNaturalize(input: string, dispatch: Dispatch, ctx: H
       maxAttempts,
     });
     dispatch({ type: 'spinner-stop' });
-
+  
     const status: RunStatus = {
       mode: 'naturalize',
       label: undefined,
@@ -230,12 +230,12 @@ export async function handleNaturalize(input: string, dispatch: Dispatch, ctx: H
       timeoutSec: 120,
     };
     writeRunStatus(outputDir, status);
-
+  
     if (!result.ok) {
       dispatch({ type: 'error', message: result.error ?? 'Naturalize failed.' });
       return;
     }
-
+  
     dispatch({ type: 'success', message: `Re-scan clean — no character-level hidden channels in the rewrite${result.rewriteCleaned ? ' (engine re-introduced channels; deterministically cleaned again)' : ''}.` });
     dispatch({ type: 'info', message: `Diff: ${result.wordsBefore} → ${result.wordsAfter} words, ${result.changedWords} changed (${Math.round((1 - result.unchangedRatio) * 100)}% lexical change)${result.attempts > 1 ? ` over ${result.attempts} attempts` : ''}.` });
     if (result.minChangeMet === true) {

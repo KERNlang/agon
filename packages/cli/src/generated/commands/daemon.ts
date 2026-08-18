@@ -243,7 +243,7 @@ export async function probeDaemon(): Promise<DaemonLiveness> {
 export async function runHeadlessTurn(sessionId: string, text: string, registry: EngineRegistry, cwd: string): Promise<number> {
   // 1) Record the user's prompt as a ledger event (mirrors the REPL tee shape).
   eventLogAppend(sessionId, { type: 'user-message', content: text }, { kind: 'daemon' });
-
+  
   // TEST SEAM: AGON_DAEMON_ECHO=1 short-circuits the real engine dispatch.
   // The survival test sets this so it never depends on an installed engine —
   // the turn echoes the prompt into the ledger as an engine-block and acks.
@@ -256,7 +256,7 @@ export async function runHeadlessTurn(sessionId: string, text: string, registry:
     eventLogFlush(sessionId);
     return seq;
   }
-
+  
   // 2) Resolve the configured Cesar engine (the single engine that answers a
   //    headless turn). Fall back to forgeFixedStarter / 'claude' like the rest
   //    of the codebase. A missing/unknown engine becomes an error event, not a
@@ -312,7 +312,7 @@ export async function runDaemonServer(): Promise<void> {
   mkdirSync(daemonDir(), { recursive: true });
   try { chmodSync(daemonDir(), 0o700); }
   catch (err) { throw new Error(`Cannot secure daemon directory: ${err instanceof Error ? err.message : String(err)}`); }
-
+  
   const startedAtMs = Date.now();
   const sessionId = `daemon-${startedAtMs}`;
   const cwd = process.cwd();
@@ -323,17 +323,17 @@ export async function runDaemonServer(): Promise<void> {
     maxConcurrency: jobConfig.jobMaxConcurrency,
   });
   const jobResolver = { resolve: resolveDaemonWorkflowJob };
-
+  
   const registry = new EngineRegistry();
   registry.load(resolveBuiltinEnginesDir());
-
+  
   // Seed the session ledger with a meta + boot event so `agon attach --self`
   // sees a non-empty session immediately, and meta.kind === 'daemon'.
   eventLogAppend(sessionId, { type: 'info', message: `agond session started (pid ${process.pid})` }, { kind: 'daemon' });
   eventLogFlush(sessionId);
-
+  
   writePidFile({ pid: process.pid, sessionId, startedAt: new Date(startedAtMs).toISOString() });
-
+  
   // Heartbeat — touch the file's mtime every HEARTBEAT_MS. Create it first.
   try { writeFileSync(heartbeatPath(), ''); } catch { /* best-effort */ }
   const heartbeat = setInterval(() => {
@@ -341,18 +341,18 @@ export async function runDaemonServer(): Promise<void> {
     catch { try { writeFileSync(heartbeatPath(), ''); } catch { /* best-effort */ } }
   }, HEARTBEAT_MS);
   if (typeof (heartbeat as any).unref === 'function') (heartbeat as any).unref();
-
+  
   // One turn at a time — a prompt arriving mid-turn gets {busy}. The check +
   // set both run in handleRequest's SYNCHRONOUS prologue (before the first
   // await), so even two prompt frames in one data chunk are mutually exclusive:
   // the second sees busy === true. (No await sits between the check and the set.)
   const turnState = { busy: false };
-
+  
   // Track accepted client sockets so cleanup() can destroy them — an open
   // connection would otherwise keep the event loop alive after server.close(),
   // leaving an orphaned daemon (review: sockets-keep-process-alive).
   const openSockets = new Set<Socket>();
-
+  
   return await new Promise<void>((resolve, reject) => {
     let shuttingDown = false;
     let cleanupPromise: Promise<void> | null = null;
@@ -376,11 +376,11 @@ export async function runDaemonServer(): Promise<void> {
       })();
       return cleanupPromise;
     };
-
+  
     const reply = (sock: Socket, msg: DaemonResponse): void => {
       try { sock.write(encodeDaemonResponse(msg)); } catch { /* peer gone */ }
     };
-
+  
     const handleRequest = async (sock: Socket, req: DaemonRequest): Promise<void> => {
       if (isDaemonJobRequest(req)) {
         try {
@@ -420,10 +420,10 @@ export async function runDaemonServer(): Promise<void> {
           reply(sock, { type: 'error', message: 'unhandled request' });
       }
     };
-
+  
     // A client must never grow the daemon's memory unbounded by streaming
     // bytes with no newline. The configured frame bound drops the connection.
-
+  
     const server: Server = createServer((sock: Socket) => {
       sock.setEncoding('utf-8');
       openSockets.add(sock);
@@ -450,7 +450,7 @@ export async function runDaemonServer(): Promise<void> {
       sock.on('error', () => { /* a client hangup is not the daemon's problem */ });
       sock.on('close', () => { openSockets.delete(sock); });
     });
-
+  
     server.on('error', (err: NodeJS.ErrnoException) => {
       // EADDRINUSE: the socket path exists. The caller (start) already
       // stale-probed; if we still hit it the file is racing — log and exit so
@@ -458,13 +458,13 @@ export async function runDaemonServer(): Promise<void> {
       console.warn(`[agond] socket server error: ${err.message}`);
       void cleanup(err);
     });
-
+  
     // Clean shutdown on the usual signals so a `kill` (stop's SIGTERM fallback)
     // still removes the socket + pidfile.
     const onSignal = (): void => { void cleanup(); };
     process.on('SIGTERM', onSignal);
     process.on('SIGINT', onSignal);
-
+  
     try {
       server.listen(socketPath(), () => {
         // Jobs can mutate a workspace, so a socket permission failure is fatal.
@@ -488,13 +488,13 @@ export async function runDaemonServer(): Promise<void> {
 export async function startDaemon(foreground: boolean): Promise<void> {
   ensureAgonHome();
   mkdirSync(daemonDir(), { recursive: true });
-
+  
   if (foreground) {
     // We ARE the daemon. Run the server loop until shutdown.
     await runDaemonServer();
     return;
   }
-
+  
   // Stale-takeover gate: refuse over a live OR hung daemon, clean a dead one.
   const probe = await probeDaemon();
   if (probe.live) {
@@ -515,7 +515,7 @@ export async function startDaemon(foreground: boolean): Promise<void> {
   if (probe.staleCleaned) {
     info(dim('Cleaned up a stale daemon (pidfile/socket) before starting.'));
   }
-
+  
   // Re-spawn THIS binary as the detached daemon. process.argv[1] is the CLI
   // entry (dist/index.js); execPath is the node binary. detached + stdio
   // 'ignore' + unref() = the child has its own session leader and is not tied
@@ -535,7 +535,7 @@ export async function startDaemon(foreground: boolean): Promise<void> {
   const spawnErr: { msg: string | null } = { msg: null };
   child.on('error', (err: Error) => { spawnErr.msg = err.message; });
   child.unref();
-
+  
   // Wait briefly for the daemon to write its pidfile so we can print the real
   // session id. Poll a few times rather than a fixed sleep so a fast daemon
   // prints instantly and a slow one still resolves.
@@ -547,7 +547,7 @@ export async function startDaemon(foreground: boolean): Promise<void> {
     if (info0 && isProcessAlive(info0.pid)) break;
   await new Promise<void>((r) => { setTimeout(r, 50); });
   }
-
+  
   if (spawnErr.msg) {
     // The child process couldn't be spawned at all (e.g. bad entry path).
     console.error(red(`Failed to start daemon: ${spawnErr.msg}`));
@@ -587,20 +587,20 @@ export async function daemonStatus(): Promise<void> {
     info0(dim('  Start it with `agon daemon start`.'));
     return;
   }
-
+  
   const alive = isProcessAlive(info.pid);
   const hbAge = heartbeatAgeMs();
   const hbFresh = hbAge < HEARTBEAT_STALE_MS;
   const pong = await sendDaemonRequest({ type: 'ping' });
   const answering = !!(pong && pong.type === 'pong');
-
+  
   const line = (label: string, ok: boolean, detail: string): void => {
     info0(`  ${ok ? green('●') : red('○')} ${bold(label.padEnd(10))} ${ok ? green(detail) : yellow(detail)}`);
   };
   line('process', alive, alive ? `pid ${info.pid} alive` : `pid ${info.pid} dead`);
   line('heartbeat', hbFresh, hbFresh ? `${Math.round(hbAge)}ms ago` : (Number.isFinite(hbAge) ? `stale (${Math.round(hbAge)}ms)` : 'absent'));
   line('socket', answering, answering ? 'answering' : 'no reply');
-
+  
   if (alive && answering) {
     const sid = (pong && pong.type === 'pong' && pong.sessionId) ? pong.sessionId : info.sessionId;
     const up = (pong && pong.type === 'pong') ? formatUptime(pong.uptime) : '?';
@@ -646,19 +646,19 @@ export async function stopDaemon(): Promise<void> {
     info0(dim('No daemon running.'));
     return;
   }
-
+  
   // 1) Graceful shutdown over the socket.
   let acked = false;
   if (sockExists) {
     const bye = await sendDaemonRequest({ type: 'shutdown' });
     acked = !!(bye && bye.type === 'bye');
   }
-
+  
   // 2) Fallback SIGTERM if the socket didn't ack but a pid is alive.
   if (!acked && info && isProcessAlive(info.pid)) {
     try { process.kill(info.pid, 'SIGTERM'); } catch { /* already gone */ }
   }
-
+  
   // 3) Wait for the pid to actually exit (bounded), so cleanup doesn't race a
   //    daemon mid-teardown.
   if (info) {
@@ -667,13 +667,13 @@ export async function stopDaemon(): Promise<void> {
       await new Promise<void>((r) => { setTimeout(r, 50); });
     }
   }
-
+  
   // 4) Sweep leftover files (the daemon self-cleans on a graceful exit, but a
   //    SIGKILL'd or crashed one won't — make `stop` idempotent + leave a clean
   //    slate for the next start).
   try { if (existsSync(socketPath())) rmSync(socketPath(), { force: true }); } catch { /* best-effort */ }
   try { if (existsSync(pidFilePath())) rmSync(pidFilePath(), { force: true }); } catch { /* best-effort */ }
-
+  
   success(acked ? 'agond stopped (graceful shutdown).' : 'agond stopped (signaled / swept).');
 }
 

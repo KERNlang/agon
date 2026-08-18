@@ -97,7 +97,7 @@ export function withThreadOutcome(cwd: string, jobType: string, label: string, f
       if ((ctx?.config as any)?.sessionContinuity === true) {
         try {
           const thread = loadOrCreateActiveThread(cwd);
-
+  
           // ── Capture engine responses added DURING this job ───────────
           // ID-based filter is robust to concurrent job interleaving. Messages
           // without an id (legacy) fall back to the index-based tail so we
@@ -111,7 +111,7 @@ export function withThreadOutcome(cwd: string, jobType: string, label: string, f
             .filter((m: any) => m.role === 'engine' && m.content)
             .map((m: any) => `[${m.engineId ?? 'engine'}]:\n${m.content as string}`)
             .join('\n\n---\n\n');
-
+  
           // ── Capture return value if handler returned something useful ─
           // handleBrainstorm returns { winner, bids, response } — capture fully
           let returnSummary = '';
@@ -125,11 +125,11 @@ export function withThreadOutcome(cwd: string, jobType: string, label: string, f
               returnSummary = `Winner: ${String((returnValue as any).winner ?? 'none')}\nPatch: ${String((returnValue as any).patchPath ?? 'none')}\nManifest: ${String((returnValue as any).manifestPath ?? 'none')}`;
             }
           }
-
+  
           const parts: string[] = [`[${jobType}] "${label.slice(0, 120)}" — ${status}`];
           if (returnSummary) parts.push(returnSummary);
           if (engineOutputs) parts.push(`\nEngine outputs (full):\n${engineOutputs}`);
-
+  
           thread.append({
             role: 'assistant',
             content: parts.join('\n'),

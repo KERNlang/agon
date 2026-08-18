@@ -47,7 +47,7 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
       <Text dimColor>{'  ↑↓ move · Enter select · /approve run · /cancel reject'}</Text>
     </Box>
   );
-
+  
   // Claude-Code-style markdown rendering for the plan body. The
   // structured step boxes below are kept as a fallback when no
   // markdown was provided — otherwise the markdown is the source
@@ -79,7 +79,7 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
       </Box>
     );
   }
-
+  
   return (
     <Box flexDirection="column" paddingLeft={2} marginY={1}>
       {/* ── Header ── */}
@@ -99,7 +99,7 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
       )}
       <Text dimColor>{thinBar}</Text>
       {approvalControls}
-
+  
       {/* ── Steps ── */}
       {steps.map((s: any, i: number) => {
         const cfg = (STEP_TYPE_CONFIG as any)[s.type] ?? { icon: '?', color: '#888', label: s.type };
@@ -110,7 +110,7 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
         const isParallel = s.parallel;
         const cost = stepCost(s);
         const tokens = stepTokens(s);
-
+  
         return (
           <Box key={s.id} flexDirection="column">
             {/* Step number + type icon + description */}
@@ -121,7 +121,7 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
               <Text color={cfg.color} bold>{cfg.icon}{' '}</Text>
               <Text>{s.description}</Text>
             </Box>
-
+  
             {/* Metadata line: type · engines · cost · flags */}
             <Box>
               <Text dimColor>{'  '}</Text>
@@ -145,7 +145,7 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
               )}
               {isParallel && <Text color="#34d399">{' \u00b7 parallel'}</Text>}
             </Box>
-
+  
             {/* Fitness command if present */}
             {hasFitness && (
               <Box>
@@ -153,7 +153,7 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
                 <Text>{s.fitnessCmd}</Text>
               </Box>
             )}
-
+  
             {/* Dependencies */}
             {hasDepends && (
               <Box>
@@ -161,7 +161,7 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
                 <Text dimColor>{s.dependsOn.join(', ')}</Text>
               </Box>
             )}
-
+  
             {/* Tribunal mode */}
             {s.tribunalMode && (
               <Box>
@@ -169,7 +169,7 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
                 <Text dimColor>{s.tribunalMode}</Text>
               </Box>
             )}
-
+  
             {/* Rationale — why this engine/approach was chosen */}
             {s.rationale && (
               <Box>
@@ -177,7 +177,7 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
                 <Text dimColor>{s.rationale}</Text>
               </Box>
             )}
-
+  
             {/* Verify command */}
             {s.verifyCmd && (
               <Box>
@@ -185,7 +185,7 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
                 <Text>{s.verifyCmd}</Text>
               </Box>
             )}
-
+  
             {/* Separator between steps */}
             {i < steps.length - 1 && (
               <Text dimColor>{' '}</Text>
@@ -193,7 +193,7 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
           </Box>
         );
       })}
-
+  
       <Text dimColor>{thinBar}</Text>
     </Box>
   );
@@ -232,7 +232,7 @@ export function PlanExecutionView({ plan }: { plan:any }) {
   const barWidth = 20;
   const filled = Math.round((doneSteps.length / Math.max(steps.length, 1)) * barWidth);
   const progressBar = '\u2588'.repeat(filled) + '\u2591'.repeat(barWidth - filled);
-
+  
   return (
     <Box flexDirection="column" paddingLeft={2}>
       <Box>

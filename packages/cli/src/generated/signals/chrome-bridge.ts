@@ -23,10 +23,10 @@ export function resolveChromeOrigins(cwd: string): string[] {
   // bridge and read its bearer token). The config value gets the same check.
   const isExtensionOrigin = (o: unknown): o is string =>
     typeof o === 'string' && /^(chrome|moz)-extension:\/\/[a-z0-9]+\/?$/i.test(o.trim());
-
+  
   const config = loadConfig(cwd) as { chromeExtensionOrigin?: string };
   if (isExtensionOrigin(config.chromeExtensionOrigin)) return [config.chromeExtensionOrigin.trim()];
-
+  
   const dir = agonPath('serve');
   if (existsSync(dir)) {
     try {
@@ -94,17 +94,17 @@ export async function ensureChromeBridge(cwd: string): Promise<ChromeBridge> {
   // Re-entrancy: two concurrent /chrome turns must await the SAME embed, never start a second
   // loopback server. The check + assign below has no await between them, so it's atomic.
   if (_chromeHolder.starting) return _chromeHolder.starting;
-
+  
   const startP = (async (): Promise<ChromeBridge> => {
     const origins = resolveChromeOrigins(cwd);
     const engineId = resolveServeEngine(undefined, cwd);
     const runtime = await buildServeRuntime({ engineId, cwd, allowedOrigins: origins });
     const started = await runtime.serve.start(0);
     writeServeConnectionFile(runtime.sessionId, started.url, started.token, engineId, origins);
-
+  
     const bridge: ChromeBridge = { url: started.url.replace(/\/+$/, ''), token: started.token, sessionId: runtime.sessionId, embedded: true, origins };
     _chromeHolder.current = { runtime, bridge };
-
+  
     if (!_exitHooked.done) {
       _exitHooked.done = true;
       // SYNCHRONOUS best-effort cleanup only — drop the 0600 connection file so a dead token

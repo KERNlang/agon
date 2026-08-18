@@ -47,7 +47,7 @@ export function formatChatTranscript(session: ChatSession): string {
   if (session.messages.length === 0) {
     return `${DIM}No chat messages in this session yet.${RESET}\n`;
   }
-
+  
   const lines: string[] = [];
   lines.push(`${BOLD}Chat Transcript${RESET}`);
   if (session.cwd || session.branch) {
@@ -55,7 +55,7 @@ export function formatChatTranscript(session: ChatSession): string {
     if (meta) lines.push(`${DIM}${meta}${RESET}`);
   }
   lines.push('');
-
+  
   for (const msg of session.messages) {
     const speaker = msg.role === 'user' ? 'USER' : (msg.engineId ?? 'ENGINE').toUpperCase();
     const color = msg.role === 'user' ? YELLOW : CYAN;
@@ -66,7 +66,7 @@ export function formatChatTranscript(session: ChatSession): string {
     lines.push(msg.content);
     lines.push('');
   }
-
+  
   return lines.join('\n');
 }
 
@@ -316,10 +316,10 @@ export function formatSessionResults(results: SessionResult[]): string {
   if (results.length === 0) {
     return `${DIM}No results in this session yet. Run /brainstorm, /campfire, /tribunal, /forge, /think, /council, /synthesis, /nero, /research, /chrome, or /review first.${RESET}\n`;
   }
-
+  
   const sections: string[] = [];
   sections.push(`${BOLD}Session Results (${results.length})${RESET}\n`);
-
+  
   for (let i = 0; i < results.length; i++) {
     const r = results[i];
     const idx = i + 1;
@@ -337,6 +337,7 @@ export function formatSessionResults(results: SessionResult[]): string {
       case 'review': sections.push(formatReview(r, idx)); break;
     }
   }
-
+  
   return sections.join('\n');
 }
+

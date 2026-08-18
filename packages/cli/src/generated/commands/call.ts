@@ -125,7 +125,7 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
   }
   const tribunalProtocol = textFlag('--protocol', protocolValue);
   const commands: string[][] = [];
-
+  
   if (workflow === 'tribunal' || workflow === 'team-tribunal') {
     const question = requireInput(workflow, opts.input);
     const team = opts.team || workflow === 'team-tribunal';
@@ -341,7 +341,7 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
   } else {
     throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, chrome, pipeline, review, goal, sanitize, naturalize, doctor, or a team-* workflow.`);
   }
-
+  
   return { cwd, commands };
 }
 
@@ -357,7 +357,7 @@ export async function runCommand(command: string, args: string[], cwd: string, j
     if (jsonl) {
       writeJsonl({ type: 'agon.call.command.start', command: [command, ...args], cwd, workflow: workflowMeta });
     }
-
+  
     const child = spawn(command, args, {
       cwd,
       env: {
@@ -367,18 +367,18 @@ export async function runCommand(command: string, args: string[], cwd: string, j
       },
       stdio: jsonl ? ['ignore', 'pipe', 'pipe'] : 'inherit',
     });
-
+  
     if (jsonl) {
       child.stdout?.on('data', (chunk) => writeJsonl({ type: 'agon.call.stdout', data: String(chunk) }));
       child.stderr?.on('data', (chunk) => writeJsonl({ type: 'agon.call.stderr', data: String(chunk) }));
     }
-
+  
     child.on('error', (err) => {
       if (jsonl) writeJsonl({ type: 'agon.call.command.error', error: err.message });
       else fail(err.message);
       resolve(1);
     });
-
+  
     child.on('close', (code, signal) => {
       const exitCode = typeof code === 'number' ? code : 1;
       if (jsonl) {

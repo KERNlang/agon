@@ -18,18 +18,9 @@ import { header, success, fail, info, bold, yellow, dim } from '../blocks/output
 
 import { filterDefaultOrchestrationEngines } from '../handlers/engine-filter.js';
 
-// @kern-source: naturalize:19
-export async function readStdin(): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let data = '';
-    process.stdin.setEncoding('utf8');
-    process.stdin.on('data', (chunk) => { data += chunk; });
-    process.stdin.on('end', () => resolve(data));
-    process.stdin.on('error', reject);
-  });
-}
+import { readStdin } from '../blocks/stdin.js';
 
-// @kern-source: naturalize:30
+// @kern-source: naturalize:20
 export const naturalizeCommand: any = defineCommand({
   meta: {
     name: 'naturalize',

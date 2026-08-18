@@ -24,7 +24,7 @@ export function clearPersistedSessionContext(ctx: HandlerContext, opts?: { clear
     const id = typeof value === 'string' ? value.trim() : '';
     if (id) engineIds.add(id);
   };
-
+  
   add((ctx.config as any)?.cesarEngine);
   add((ctx.config as any)?.forgeFixedStarter);
   add((ctx.cesarSession as any)?.engineId);
@@ -40,7 +40,7 @@ export function clearPersistedSessionContext(ctx: HandlerContext, opts?: { clear
     const ids = ctx.registry?.availableIds?.() ?? [];
     if (Array.isArray(ids)) for (const id of ids) add(id);
   } catch { /* registry unavailable */ }
-
+  
   if (opts?.clearConversation !== false) clearConversation();
   for (const engineId of engineIds) {
     try { clearSessionState(engineId); } catch { /* best-effort */ }

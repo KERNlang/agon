@@ -32,11 +32,11 @@ import { getLastFoldedRaw, getFoldedRaw, getFoldedRawCount } from '../blocks/nar
 export function handleLeaderboard(dispatch: Dispatch): void {
   const ratings = getRatings();
   dispatch({ type: 'header', title: 'Global Leaderboard' });
-
+  
   const sorted = Object.entries(ratings.global)
     .map(([id, r]) => ({ id, r, floor: Math.round(r.mu - 2 * r.phi), matches: r.wins + r.losses }))
     .sort((a, b) => b.floor - a.floor);
-
+  
   const rows = sorted.map((e, i) => [
     `${i + 1}.`,
     e.id + (e.matches < 30 ? ' *' : ''),
@@ -46,13 +46,13 @@ export function handleLeaderboard(dispatch: Dispatch): void {
     String(e.r.losses),
     `${e.matches > 0 ? Math.round((e.r.wins / e.matches) * 100) : 0}%`,
   ]);
-
+  
   if (rows.length === 0) {
     dispatch({ type: 'info', message: 'No matches recorded. Run a forge to start competing!' });
     return;
   }
   dispatch({ type: 'table', headers: ['#', 'Engine', 'Rating', '+/-', 'W', 'L', 'Win%'], rows });
-
+  
   const modes = ['forge', 'brainstorm', 'tribunal', 'critique'] as const;
   const modeInfo = modes
     .filter(m => Object.keys(ratings.byMode[m]).length > 0)
@@ -67,15 +67,15 @@ export function handleCesarReport(dispatch: Dispatch): void {
   // The report renders only the latest 200 decisions. Bound both JSONL
   // tails so a long-lived installation never reparses its entire history.
   const records = readCesarDecisionRecords(500);
-
+  
   if (records.length === 0) {
     dispatch({ type: 'info', message: 'No Cesar decision log yet. Use Cesar for a few turns, then run /cesar-report.' });
     return;
   }
-
+  
   const recent = records.slice(-200);
   dispatch({ type: 'header', title: `Cesar Report — last ${recent.length} decisions` });
-
+  
   const delegatedCount = recent.filter((r: any) => r.delegated).length;
   const localCount = recent.length - delegatedCount;
   const matchedEsc = recent.filter((r: any) => r.matchedEscalationHint === true).length;
@@ -88,7 +88,7 @@ export function handleCesarReport(dispatch: Dispatch): void {
   if (latency.count > 0) {
     dispatch({ type: 'info', message: `Turn latency (${latency.count} measured): p50 ${latency.p50Ms}ms | mean ${latency.meanMs}ms | max ${latency.maxMs}ms` });
   }
-
+  
   const modeCounts: Record<string, number> = {};
   for (const r of recent) {
     const key = r.mode ?? 'unknown';
@@ -98,7 +98,7 @@ export function handleCesarReport(dispatch: Dispatch): void {
     .sort((a, b) => b[1] - a[1])
     .map(([mode, count]) => [mode, String(count), `${Math.round((count / recent.length) * 100)}%`]);
   dispatch({ type: 'table', headers: ['Mode', 'Count', 'Share'], rows: modeRows });
-
+  
   const toolMap: Record<string, { turns: number; toolTurns: number; toolCount: number; eventCount: number; native: number; mcp: number; xml: number; stalls: number; auto: number; confidence: number; tools: Record<string, number> }> = {};
   for (const r of recent) {
     const engine = String(r.engineId ?? r.cesarEngineId ?? 'unknown');
@@ -154,7 +154,7 @@ export function handleCesarReport(dispatch: Dispatch): void {
     });
   dispatch({ type: 'separator' });
   dispatch({ type: 'table', headers: ['Cesar Engine / Backend', 'Reliability', 'Turns', 'Tool Turns', 'Avg Tools', 'Native/MCP/XML', 'Confidence Tool', 'Stalls', 'Auto', 'Top Tools'], rows: toolRows });
-
+  
   const familyMap: Record<string, { count: number; matched: number; modes: Record<string, number> }> = {};
   for (const r of recent) {
     const family = r.uncertaintyFamily ?? 'unknown';
@@ -172,7 +172,7 @@ export function handleCesarReport(dispatch: Dispatch): void {
     });
   dispatch({ type: 'separator' });
   dispatch({ type: 'table', headers: ['Uncertainty', 'Count', 'Hint Match', 'Top Actual Mode'], rows: familyRows });
-
+  
   const intakeMap: Record<string, { count: number; flows: Record<string, number>; modes: Record<string, number> }> = {};
   for (const r of recent) {
     const intake = r.intakeKind ?? 'unknown';
@@ -192,7 +192,7 @@ export function handleCesarReport(dispatch: Dispatch): void {
     });
   dispatch({ type: 'separator' });
   dispatch({ type: 'table', headers: ['Intake', 'Count', 'Top Flow Hint', 'Top Actual Mode'], rows: intakeRows });
-
+  
   const miscalibrationRows: string[][] = [];
   const nonSelfSelfCount = recent.filter((r: any) => r.escalationHint && r.escalationHint !== 'self' && r.mode === 'self').length;
   if (nonSelfSelfCount > 0) {
@@ -210,12 +210,12 @@ export function handleCesarReport(dispatch: Dispatch): void {
   if (selfNeroHintSelfActual > 0) {
     miscalibrationRows.push(['Quick-Nero candidates stayed plain self', String(selfNeroHintSelfActual)]);
   }
-
+  
   if (miscalibrationRows.length > 0) {
     dispatch({ type: 'separator' });
     dispatch({ type: 'table', headers: ['Calibration Signal', 'Count'], rows: miscalibrationRows });
   }
-
+  
   const recentTail = recent.slice(-5).map((r: any) => [
     String(r.mode ?? 'unknown'),
     String(r.intakeKind ?? '-'),
@@ -263,11 +263,11 @@ function showRunDetail(dispatch: Dispatch, id: string): void {
     dispatch({ type: 'info', message: `Run "${id}" not found` });
     return;
   }
-
+  
   const manifest = JSON.parse(readFileSync(join(RUNS_DIR, files[0]), 'utf-8')) as ForgeManifest;
   dispatch({ type: 'header', title: `Forge Run: ${manifest.forgeId.slice(0, 8)}` });
   dispatch({ type: 'text', content: `Task: ${manifest.task}\nFitness: ${manifest.fitnessCmd}\nDate: ${new Date(manifest.timestamp).toLocaleString()}\nWinner: ${manifest.winner ?? 'none'}` });
-
+  
   if (Object.keys(manifest.results).length > 0) {
     dispatch({ type: 'header', title: 'Scores' });
     const rows = Object.entries(manifest.results).map(([eid, r]) => [
@@ -285,12 +285,12 @@ function showRunDetail(dispatch: Dispatch, id: string): void {
 // @kern-source: info:268
 export function handleHistory(dispatch: Dispatch, id?: string): void {
   ensureAgonHome();
-
+  
   if (id) {
     showRunDetail(dispatch, id);
     return;
   }
-
+  
   let files: string[];
   try {
     files = readdirSync(RUNS_DIR).filter((f: string) => f.endsWith('.json')).sort().reverse();
@@ -299,15 +299,15 @@ export function handleHistory(dispatch: Dispatch, id?: string): void {
     dispatch({ type: 'info', message: 'No forge runs yet.' });
     return;
   }
-
+  
   if (files.length === 0) {
     dispatch({ type: 'info', message: 'No forge runs yet.' });
     return;
   }
-
+  
   const recent = files.slice(0, 10);
   dispatch({ type: 'header', title: `Recent Runs (${Math.min(10, files.length)} of ${files.length})` });
-
+  
   const rows: string[][] = [];
   for (const file of recent) {
     try {
@@ -337,11 +337,11 @@ export async function handleEngines(dispatch: Dispatch, ctx: HandlerContext, int
       dispatch({ type: 'error', message: 'Usage: /engines hide <id> (soft — drops from auto rosters, explicit -e still works) | /engines remove <id> (hard — blocks everywhere incl. -e and external `agon call`) | /engines restore <id>' });
       return;
     }
-
+  
     const hidden = new Set<string>((ctx.config as any).hiddenEngines ?? []);
     const removed = new Set<string>((ctx.config as any).removedEngines ?? []);
     const enabled = new Set<string>((ctx.config as any).forgeEnabledEngines ?? []);
-
+  
     if (action === 'hide') {
       hidden.add(id);
       removed.delete(id);
@@ -362,7 +362,7 @@ export async function handleEngines(dispatch: Dispatch, ctx: HandlerContext, int
       }
       return;
     }
-
+  
     if (action === 'remove' || action === 'delete') {
       removed.add(id);
       hidden.delete(id);
@@ -376,7 +376,7 @@ export async function handleEngines(dispatch: Dispatch, ctx: HandlerContext, int
       (ctx.config as any).removedEngines = removedList;
       (ctx.config as any).hiddenEngines = hiddenList;
       (ctx.config as any).forgeEnabledEngines = enabledList;
-
+  
       let removedUserConfig = false;
       const userConfigPath = join(getAgonHome(), 'engines', `${id}.json`);
       if (existsSync(userConfigPath)) {
@@ -385,7 +385,7 @@ export async function handleEngines(dispatch: Dispatch, ctx: HandlerContext, int
         removedUserConfig = true;
       }
       try { (ctx.registry as any).clearBinaryCache?.(id); } catch { /* older registry */ }
-
+  
       dispatch({ type: 'success', message: `${id} removed — hard-blocked from every agon session, including explicit \`-e\` and external \`agon call\`${removedUserConfig ? ', and the user engine config was deleted' : ''}. Restore with /models add ${id} or /engines restore ${id}.` });
       if (((ctx.config as any).cesarEngine ?? '') === id) {
         // Cesar dispatch reads config.cesarEngine directly (not an auto roster),
@@ -400,7 +400,7 @@ export async function handleEngines(dispatch: Dispatch, ctx: HandlerContext, int
       }
       return;
     }
-
+  
     if (['unhide', 'restore', 'show'].includes(action)) {
       hidden.delete(id);
       removed.delete(id);
@@ -414,18 +414,18 @@ export async function handleEngines(dispatch: Dispatch, ctx: HandlerContext, int
       dispatch({ type: 'success', message: `${id} restored. Run /engines scan to refresh availability.` });
       return;
     }
-
+  
     dispatch({ type: 'error', message: `Unknown /engines action: ${action}` });
     return;
   }
-
+  
   dispatch({ type: 'header', title: 'Engines' });
   dispatch({ type: 'spinner-start', message: 'Scanning...' });
-
+  
   const config = ctx.config;
   const cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
   const cesarBackend = (config as any).cesarBackend ?? 'auto';
-
+  
   try {
     const engines = ctx.registry.list();
     const results = await Promise.all(
@@ -437,9 +437,9 @@ export async function handleEngines(dispatch: Dispatch, ctx: HandlerContext, int
         return { engine, avail, version, hasBinary, hasApi };
       }),
     );
-
+  
     dispatch({ type: 'spinner-stop' });
-
+  
     const hidden = new Set((config as any).hiddenEngines ?? []);
     const removed = new Set((config as any).removedEngines ?? []);
     const rows = results.map(({ engine, avail, version, hasBinary, hasApi }: any) => {
@@ -477,15 +477,15 @@ export async function handleEngines(dispatch: Dispatch, ctx: HandlerContext, int
 export async function handleDiscover(dispatch: Dispatch, ctx: HandlerContext): Promise<void> {
   dispatch({ type: 'header', title: 'Engine Discovery' });
   dispatch({ type: 'spinner-start', message: 'Scanning installed engines...' });
-
+  
   try {
     try { (ctx.registry as any).clearBinaryCache?.(); } catch { /* older registry */ }
     const results = await discoverEngines(ctx.registry, ctx.adapter);
     dispatch({ type: 'spinner-stop', message: `${results.length} engines checked` });
-
+  
     const found = results.filter((r: any) => r.found);
     const missing = results.filter((r: any) => !r.found);
-
+  
     if (found.length > 0) {
       const rows = found.map((r: any) => [
         r.id, r.displayName, r.version ?? 'unknown',
@@ -506,7 +506,7 @@ export async function handleDiscover(dispatch: Dispatch, ctx: HandlerContext): P
 export function handleConfig(intent: Intent&{type:'config'}, dispatch: Dispatch, ctx?: HandlerContext): void {
   ensureAgonHome();
   const action = (intent as any).action ?? 'list';
-
+  
   switch (action) {
     case 'list': {
       dispatch({ type: 'header', title: 'Configuration' });
@@ -606,10 +606,10 @@ export function handlePermissions(dispatch: Dispatch, intent?: any): void {
     { label: 'project', path: projectPath, raw: readJsonSafe(projectPath) },
     { label: 'local', path: localPath, raw: readJsonSafe(localPath) },
   ];
-
+  
   dispatch({ type: 'header', title: 'Permission Rules' });
   dispatch({ type: 'text', content: 'Claude-Code-style allow/deny rules in .agon.json. deny ALWAYS wins over allow; an allow rule auto-approves, a deny rule refuses without prompting, everything else falls through to the normal ask flow.' });
-
+  
   const rows: string[][] = [];
   for (const scope of scopes) {
     const p = scope.raw?.permissions;
@@ -622,7 +622,7 @@ export function handlePermissions(dispatch: Dispatch, intent?: any): void {
     rows.push([scope.label, scope.path, deny.length ? deny.join(', ') : '—', allow.length ? allow.join(', ') : '—']);
   }
   dispatch({ type: 'table', headers: ['Scope', 'File', 'Deny (wins)', 'Allow'], rows });
-
+  
   // Effective merged set (what the gate actually consults).
   const cfg = loadConfig(cwd);
   const eff = (cfg as any).permissions ?? { allow: [], deny: [] };
@@ -690,7 +690,7 @@ export function handleCesar(engineId: string, dispatch: Dispatch, ctx: HandlerCo
   // unknown names unchanged, so the backend-only switch below still works).
   const id = ctx.registry.resolveId(parts[0] ?? '');
   const backendArg = parts[1]?.toLowerCase();
-
+  
   if (!id) {
     // Show current Cesar brain + backend
     const config = ctx.config;
@@ -700,7 +700,7 @@ export function handleCesar(engineId: string, dispatch: Dispatch, ctx: HandlerCo
     dispatch({ type: 'info', message: 'Usage: /cesar <engine> [cli|api|auto]' });
     return;
   }
-
+  
   // Backend-only switch: "/cesar cli" or "/cesar api" or "/cesar auto"
   if (['cli', 'api', 'auto'].includes(id)) {
     configSet('cesarBackend', id);
@@ -712,19 +712,19 @@ export function handleCesar(engineId: string, dispatch: Dispatch, ctx: HandlerCo
     dispatch({ type: 'success', message: `Cesar backend set to: ${id}` });
     return;
   }
-
+  
   const available = ctx.registry.availableIds();
   if (!available.includes(id)) {
     dispatch({ type: 'error', message: `Engine "${id}" not available. Available: ${available.join(', ')}` });
     return;
   }
-
+  
   // Validate backend if specified
   if (backendArg && !['cli', 'api', 'auto'].includes(backendArg)) {
     dispatch({ type: 'error', message: `Invalid backend "${backendArg}". Use: cli, api, or auto` });
     return;
   }
-
+  
   if (backendArg === 'api') {
     const engine = ctx.registry.get(id);
     if (!engine.api || !process.env[engine.api.apiKeyEnv]) {
@@ -739,17 +739,17 @@ export function handleCesar(engineId: string, dispatch: Dispatch, ctx: HandlerCo
       return;
     }
   }
-
+  
   // Only change Cesar brain — do NOT touch sessionEngines, forgeEnabledEngines, or forgeFixedStarter
   configSet('cesarEngine', id);
   if (backendArg) configSet('cesarBackend', backendArg);
-
+  
   // Kill old persistent session so next message boots fresh with new engine
   if (ctx.cesarSession) {
     ctx.cesarSession.close();
     ctx.setCesarSession(null);
   }
-
+  
   const backend = backendArg ?? (ctx.config as any).cesarBackend ?? 'auto';
   dispatch({ type: 'success', message: `Cesar brain set to: ${id} (backend: ${backend})` });
   dispatch({ type: 'info', message: 'Conversation context + memory preserved. Forge/tribunal engines unchanged — use /use to change those.' });
@@ -779,12 +779,12 @@ export function handleRaw(dispatch: Dispatch, index?: number): void {
 export function handleTokens(dispatch: Dispatch): void {
   const stats = tracker.getStats();
   dispatch({ type: 'header', title: 'Token Usage — This Session' });
-
+  
   if (stats.dispatches === 0) {
     dispatch({ type: 'info', message: 'No engine dispatches yet.' });
     return;
   }
-
+  
   // Determine dominant source per engine
   const allUsages = tracker.recent(10000);
   const engineSources: Record<string, Set<string>> = {};
@@ -792,7 +792,7 @@ export function handleTokens(dispatch: Dispatch): void {
     if (!engineSources[u.engineId]) engineSources[u.engineId] = new Set();
     engineSources[u.engineId].add(u.source);
   }
-
+  
   const sourceLabel = (id: string): string => {
     const sources = engineSources[id];
     if (!sources || sources.size === 0) return 'est';
@@ -802,7 +802,7 @@ export function handleTokens(dispatch: Dispatch): void {
     }
     return 'mixed';
   };
-
+  
   const costLabel = (costUsd: number, id: string): string => {
     if (isFlatRateEngine(id)) return 'included in plan';
     if (costUsd <= 0) return 'free';
@@ -813,7 +813,7 @@ export function handleTokens(dispatch: Dispatch): void {
     // don't dress a chars/4 × flat-rate guess up as a dollar figure.
     return 'not countable';
   };
-
+  
   const rows = Object.entries(stats.byEngine).map(([id, e]: [string, any]) => [
     id,
     String(e.dispatches),
@@ -824,7 +824,7 @@ export function handleTokens(dispatch: Dispatch): void {
     sourceLabel(id),
   ]);
   dispatch({ type: 'table', headers: ['Engine', 'Calls', 'Prompt', 'Response', 'Total', 'Cost', 'Source'], rows });
-
+  
   // Cost honesty: separate flat-rate plan APIs (real token counts, cost
   // included in the plan) from CLI engines (per-turn cost not countable).
   const metered = (stats as any).meteredCostUsd ?? 0;
@@ -920,7 +920,7 @@ export function handleChats(dispatch: Dispatch, sessionId?: string): void {
     }
     return;
   }
-
+  
   const sessions = listChatSessions(20);
   if (sessions.length === 0) {
     dispatch({ type: 'info', message: 'No chat sessions yet.' });
@@ -952,3 +952,4 @@ export function handleModels(dispatch: Dispatch, ctx: HandlerContext): void {
   dispatch({ type: 'info', message: 'Reset to auto:   /use all' });
   dispatch({ type: 'info', message: 'Set chat default: /config set forgeFixedStarter claude' });
 }
+

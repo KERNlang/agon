@@ -406,7 +406,7 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
         }, cb.ctx));
       }
       return { handled: true, ranAsJob: true };
-
+  
     case 'goal': {
       const _gInput = (intent.input ?? '').trim();
       if (!_gInput) {
@@ -427,7 +427,7 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
       }, cb.ctx));
       return { handled: true, ranAsJob: true };
     }
-
+  
     // ── Inline commands ──
     default: return null;
   }

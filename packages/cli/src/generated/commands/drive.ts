@@ -196,13 +196,13 @@ export async function runDrive(opts: { prompt: string; sessionArg?: string; url?
       info(dim(`  (${conns.length} serve sessions running — drove the newest; pass --session <id> to pick another)`));
     }
   }
-
+  
   const base = conn.url.replace(/\/+$/, '');
   const token = conn.token;
   const jsonHeaders = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
   const authHeaders = { 'Authorization': `Bearer ${token}` };
   const clientId = randomUUID();
-
+  
   // 2. /attach — confirm the token + learn the cursor (SSE tails only NEW events) + the
   //    real session id (so the --url/--token path shows it instead of '(remote)').
   let fromSeq = 0;
@@ -220,11 +220,11 @@ export async function runDrive(opts: { prompt: string; sessionArg?: string; url?
     warn(`cannot reach the bridge at ${base} — is \`agon serve\` running? (${err instanceof Error ? err.message : String(err)})`);
     process.exitCode = 2; return;
   }
-
+  
   header(`agon drive → ${bold(sessionLabel)} ${dim(`@ ${base}`)}`);
   info(dim('  driving your browser via the open side panel — keep it attached to this serve session.'));
   console.log(`${bold(green('› you'))} ${opts.prompt}`);
-
+  
   // 3. Two concurrent connections. Set up the approval prompt + SSE reader first.
   const ctrl = new AbortController();
   let sawBrowserActivity = false;
@@ -234,7 +234,7 @@ export async function runDrive(opts: { prompt: string; sessionArg?: string; url?
   // run from resuming stdin (so the process exits cleanly).
   const interactive = Boolean(process.stdin.isTTY);
   const rl = (interactive && !opts.autoApprove) ? createInterface({ input: process.stdin, output: process.stdout }) : null;
-
+  
   const askApproval = async (tool: string, command: string, reason: string): Promise<'approve'|'approve-session'|'deny'|'abort'> => {
     if (opts.autoApprove) { console.log(dim(`  ✓ auto-approved: ${command}`)); return 'approve'; }
     console.log(yellow(`  ⚠ the agent wants to ${bold(tool)}${command ? `: ${command}` : ''}`));
@@ -252,7 +252,7 @@ export async function runDrive(opts: { prompt: string; sessionArg?: string; url?
     if (ans === 's' || ans === 'stop' || ans === 'abort') return 'abort';
     return 'deny';
   };
-
+  
   const handleFrame = async (frame: unknown): Promise<void> => {
     const f = frame as { seq?: number; event?: Record<string, unknown> };
     // The SSE replays from `fromSeq`; skip anything at or before it (pre-turn history)
@@ -291,7 +291,7 @@ export async function runDrive(opts: { prompt: string; sessionArg?: string; url?
     const line = renderDriveEvent(event);
     if (line !== null) console.log(line);
   };
-
+  
   const sseLoop = (async () => {
     try {
       const res = await fetch(`${base}/events?from=${fromSeq}`, { headers: authHeaders, signal: ctrl.signal });
@@ -313,7 +313,7 @@ export async function runDrive(opts: { prompt: string; sessionArg?: string; url?
       if (!ctrl.signal.aborted) streamFailed = true;
     }
   })();
-
+  
   // 4. Drive the turn. /send blocks until the brain finishes; live events came on SSE.
   let result: { reason?: string } | undefined;
   let failed = false;
@@ -340,7 +340,7 @@ export async function runDrive(opts: { prompt: string; sessionArg?: string; url?
     rl?.close();
     await sseLoop;
   }
-
+  
   console.log('');
   if (result?.reason) warn(`ended: ${result.reason}`);
   else if (!failed) success('done.');

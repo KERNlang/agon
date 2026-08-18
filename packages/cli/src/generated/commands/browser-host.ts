@@ -316,14 +316,14 @@ export async function runBrowserHostLauncher(): Promise<void> {
   }
   const installedOrigins = resolved.origins;
   const deps = buildPairDeps(cliEntry, installedOrigins, state?.cwd ?? '', state?.path ?? '');
-
+  
   const writeFrame = (obj: unknown): void => { try { process.stdout.write(encodeFrame(obj)); } catch { /* channel gone */ } };
   const shutdown = (): void => { process.exit(0); };
-
+  
   let inbuf: Buffer = Buffer.alloc(0);
   let chain: Promise<void> = Promise.resolve();
   let closing = false;
-
+  
   process.stdin.on('data', (chunk: Buffer) => {
     if (closing) return;
     inbuf = Buffer.concat([inbuf, chunk]);
@@ -353,12 +353,12 @@ export async function runBrowserHostLauncher(): Promise<void> {
       shutdown();
     }
   });
-
+  
   process.stdin.on('end', shutdown);
   process.stdin.on('close', shutdown);
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
-
+  
   // Live until stdin closes; shutdown() exits the process.
   await new Promise<void>(() => { /* never resolves */ });
 }
@@ -394,7 +394,7 @@ export function runBrowserHostInstall(origin: string|undefined, browser: string|
     return;
   }
   try { chmodSync(launcherPath, 0o755); } catch { /* best-effort — Chrome needs the exec bit */ }
-
+  
   // The manifest must NOT point at the launcher directly: Chrome execs the host with
   // launchd's stripped PATH, where `#!/usr/bin/env node` finds no node (nvm layouts).
   // Point it at a wrapper that execs THIS node by absolute path. Hard failure if it
@@ -409,7 +409,7 @@ export function runBrowserHostInstall(origin: string|undefined, browser: string|
     process.exitCode = 2;
     return;
   }
-
+  
   const manifest = buildHostManifest(wrapperPath, origins);
   const home = homedir();
   const browsers = resolveInstallBrowsers(browser);
@@ -432,13 +432,13 @@ export function runBrowserHostInstall(origin: string|undefined, browser: string|
       warn(`could not write manifest for ${b}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
-
+  
   if (written.length === 0) {
     warn('no native-messaging manifests were written.');
     process.exitCode = 2;
     return;
   }
-
+  
   // The launcher reads this state at pair time for the installed origin (and the
   // project cwd to spawn serve in). If it can't be written the manifest is inert —
   // Chrome would exec a host that rejects every pair — so this is a HARD failure,
@@ -452,7 +452,7 @@ export function runBrowserHostInstall(origin: string|undefined, browser: string|
     process.exitCode = 2;
     return;
   }
-
+  
   header('agon browser-host — installed');
   info(`  ${bold('origin')}    ${cyan(origins.join(', '))}`);
   info(`  ${bold('launcher')}  ${dim(launcherPath)}`);
@@ -478,7 +478,7 @@ export function runBrowserHostUninstall(): void {
   }
   try { rmSync(browserHostStatePath(), { force: true }); } catch { /* best-effort */ }
   try { rmSync(hostWrapperPath(), { force: true }); } catch { /* best-effort */ }
-
+  
   header('agon browser-host — uninstalled');
   if (removed.length === 0) { info(dim('  no manifest found — nothing to remove.')); }
   for (const p of removed) info(`  ${bold('removed')}  ${dim(p)}`);
@@ -507,7 +507,7 @@ export function runBrowserHostStatus(): void {
   try { if ((statSync(wp).mode & 0o111) !== 0) wrapperState = green('(present)'); else wrapperState = yellow('(not executable — re-run install)'); } catch { /* missing */ }
   info(`  ${bold('wrapper')}   ${dim(wp)} ${wrapperState}`);
   for (const p of state.manifests) info(`  ${bold('manifest')}  ${dim(p)} ${existsSync(p) ? green('(present)') : yellow('(missing)')}`);
-
+  
   const records = listServeRecords();
   let live: ServeConnRecord | null = null;
   for (const o of state.origins) { live = findReusableServe(records, o, isPidAlive); if (live) break; }
@@ -581,3 +581,4 @@ export const browserHostCommand: any = defineCommand({
     stop: browserHostStopCommand,
   },
 });
+

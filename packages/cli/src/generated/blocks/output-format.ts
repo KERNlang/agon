@@ -238,3 +238,4 @@ export function formatConfidenceToolLabel(parsed: any, rawInput: string): string
   }
   return 'confidence';
 }
+

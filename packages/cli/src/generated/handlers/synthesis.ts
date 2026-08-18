@@ -23,36 +23,36 @@ export async function handleSynthesis(prompt: string, dispatch: Dispatch, ctx: H
   const syAbort = new AbortController();
   try {
     ensureAgonHome();
-
+    
     if (!prompt || !prompt.trim()) {
       dispatch({ type: 'warning', message: 'No prompt provided. Usage: /synthesis <task> [--swaps 2]' });
       return;
     }
-
+    
     const allEngines = ctx.activeEngines();
     const engines = filterDefaultOrchestrationEngines(allEngines);
     if (engines.length < 2) {
       dispatch({ type: 'error', message: `Synthesis needs at least 2 engines to cross-pollinate (have ${engines.length}). Add engines with /engines.` });
       return;
     }
-
+    
     const swaps = Math.max(0, opts?.swaps ?? 1);
-
+    
     dispatch({ type: 'header', title: `Synthesis · ${engines.length} engines · ${swaps} swap(s)` });
     dispatch({ type: 'info', message: prompt.length > 120 ? prompt.slice(0, 120) + '…' : prompt });
-
+    
     const outputDir = join(RUNS_DIR, `synthesis-${Date.now()}`);
     mkdirSync(outputDir, { recursive: true });
-
+    
     ctx.setActiveAbort(syAbort);
-
+    
     const startTime = Date.now();
     const progressInterval = setInterval(() => {
       const elapsed = Math.floor((Date.now() - startTime) / 1000);
       const progress: EngineProgress[] = engines.map((id: string) => ({ id, status: `synthesizing… ${elapsed}s`, elapsed, done: false, failed: false }));
       dispatch({ type: 'progress-update', engines: progress });
     }, 250);
-
+    
     let progressCleared = false;
     function clearProgress(): void {
       if (progressCleared) return;
@@ -60,7 +60,7 @@ export async function handleSynthesis(prompt: string, dispatch: Dispatch, ctx: H
       clearInterval(progressInterval);
       dispatch({ type: 'progress-clear' });
     }
-
+    
     let result: any;
     try {
       result = await runSynthesisModus({
@@ -79,7 +79,7 @@ export async function handleSynthesis(prompt: string, dispatch: Dispatch, ctx: H
       throw err;
     }
     clearProgress();
-
+    
     const drafts = result.drafts ?? [];
     const scores = result.scores ?? [];
     dispatch({ type: 'separator' });
@@ -89,7 +89,7 @@ export async function handleSynthesis(prompt: string, dispatch: Dispatch, ctx: H
       const tag = `${isWinner ? '★ winner' : 'draft'}${score ? ` · score ${score.score}` : ''}`;
       dispatch({ type: 'kern-draft', engineId: draft.engineId, content: draft.content, critique: tag });
     }
-
+    
     dispatch({ type: 'separator' });
     if (result.winner) {
       const winnerDraft = drafts.find((d: any) => d.engineId === result.winner);
@@ -100,7 +100,7 @@ export async function handleSynthesis(prompt: string, dispatch: Dispatch, ctx: H
       dispatch({ type: 'warning', message: 'Synthesis produced no winner.' });
     }
     for (const draft of drafts) tracker.record(draft.engineId, { prompt, response: draft.content });
-
+    
     sessionResultStore.add({
       type: 'synthesis',
       timestamp: new Date().toISOString(),
@@ -113,7 +113,7 @@ export async function handleSynthesis(prompt: string, dispatch: Dispatch, ctx: H
         swaps,
       },
     });
-
+    
     const runRecord = recordRun({
       mode: 'synthesis',
       intent: prompt,

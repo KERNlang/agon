@@ -587,7 +587,7 @@ export class AgenticTurnBrainClient implements BrainClient {
           const att = buildImageAttachment(raw, this.cwd); if (att) nextImages.push(att);
         }
       }
-
+    
       // A deny-session decision makes that registration unavailable to this submitting client.
       // Do not keep advertising it through native tools/the prompt or make evidence depend on it
       // during later turns. The capability remains registered for other clients and registrations.
@@ -677,7 +677,7 @@ export class AgenticTurnBrainClient implements BrainClient {
       let selectionRegrounded = false; // one-shot guard: after a click/type/selectOption couldn't find its target we re-ground ONCE (read the page, hand the engine the real `sel=` selectors); reset on any successful action so each fresh miss earns one re-ground
       let selectionPixelGrounded = false; // second selector miss escalates once to a real screenshot attached to vision; reset after a successful action
       const lastReadOutputs = new Map<string, string>(); // last text output per read-only tool CALL (keyed by name+input) — an identical repeat means the agent is re-viewing the SAME screen (the screenshot↔readPage flail the consecutive-repeat check misses)
-
+    
       for (let step = 0; step < MAX_AGENT_STEPS; step++) {
         if (ctrl.signal.aborted) break;
         const thinking: BrainEvent = { kind: 'notice', level: 'info', message: `${turnEngineId} thinking… (step ${step + 1}/${MAX_AGENT_STEPS})` };
@@ -715,7 +715,7 @@ export class AgenticTurnBrainClient implements BrainClient {
           yield note;
           return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
         }
-
+    
         if (!call) {
           const isDeferral = looksLikeDeferral(stdout);
           if (shoppingVerificationRequired) {
@@ -824,7 +824,7 @@ export class AgenticTurnBrainClient implements BrainClient {
           yield ans;
           return { turnId: req.turnId, delegated: false, responded: true, engineId: turnEngineId };
         }
-
+    
         if (
           shoppingVerificationRequired && !shoppingVerificationObserved
           && this.caps.get(call.name)?.spec.isReadOnly === false
@@ -839,7 +839,7 @@ export class AgenticTurnBrainClient implements BrainClient {
           steps.push({ name: 'reminder', input: {}, output: `Basket verification is pending from the previous add action. Call readPage now and confirm the basket/cart state changed from the pre-action baseline before another page-changing action. ${actInstruction}` });
           continue;
         }
-
+    
         if (
           shoppingMutationVerificationEnabled && (call.name === 'click' || call.name === 'clickAt' || isShoppingAddAction(call.name, call.input))
           && !lastShoppingObservation
@@ -854,7 +854,7 @@ export class AgenticTurnBrainClient implements BrainClient {
           steps.push({ name: 'reminder', input: {}, output: `Before changing the basket, call readPage once to capture its current visible count/control state. Then perform the click and call readPage again to prove the state changed. ${actInstruction}` });
           continue;
         }
-
+    
         // Reject malformed args before approval; valid calls get a stable digest/key for loop detection.
         const inputDigest = tryCanonicalCapabilityInputDigest(call.input);
         if (!inputDigest) {
@@ -886,7 +886,7 @@ export class AgenticTurnBrainClient implements BrainClient {
         }
         // Reset noProgress only after execution proves it, so alternating unchanged reads cannot evade the stuck budget.
         lastCallKey = callKey;
-
+    
         const cap = this.caps.get(call.name);
         if (!cap) {
           const avail = [...this.caps.keys()].join(', ') || '(none)';
@@ -903,10 +903,10 @@ export class AgenticTurnBrainClient implements BrainClient {
           }
           continue;
         }
-
+    
         const running: BrainEvent = { kind: 'tool', engineId: turnEngineId, tool: call.name, status: 'running', input: describeAgentAction(call.name, call.input) };
         yield running;
-
+    
         const reqId = randomUUID(); // Mint before authorization: every destructive lease is single-request-bound.
         // Fail-safe gate: anything not explicitly read-only asks. Session state is
         // registration scoped and retains its original approval provenance.
@@ -978,7 +978,7 @@ export class AgenticTurnBrainClient implements BrainClient {
             continue;
           }
         } else if (!cap.spec.isReadOnly && priorSessionApproval) authorization = buildCapabilityAuthorizationLease(req.turnId, reqId, priorSessionApproval.approvalRequestId, req.clientId, cap.clientId, call.name, inputDigest, 'session', priorSessionApproval.automated);
-
+    
         // Execute: pull the capability from the owning client.
         const capReq: BrainEvent = { kind: 'capability-request', requestId: reqId, turnId: req.turnId, capability: call.name, input: call.input, targetClientId: cap.clientId, ...(authorization ? { authorization } : {}) };
         yield capReq;
@@ -993,7 +993,7 @@ export class AgenticTurnBrainClient implements BrainClient {
           yield note;
           return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
         }
-
+    
         const rawOut = capRes.ok ? (capRes.output ?? '(no output)') : `ERROR: ${capRes.error ?? 'the tool failed'}`;
         const confirmedShoppingState = capRes.ok && call.name === 'readPage' && shoppingVerificationRequired
           && confirmsShoppingMutationObservation(shoppingBaselineObservation, rawOut);
@@ -1178,7 +1178,7 @@ export class AgenticTurnBrainClient implements BrainClient {
           return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
         }
       }
-
+    
       if (ctrl.signal.aborted) {
         const reason = 'cancelled by client';
         const cancelled: BrainEvent = { kind: 'notice', level: 'warning', message: reason };

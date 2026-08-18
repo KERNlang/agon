@@ -85,7 +85,7 @@ export function parseEagerToolInput(toolName: string, input: unknown): {ok:boole
       try { return JSON.stringify(input) ?? String(input); }
       catch { return String(input); }
     })();
-
+  
   if (input === undefined) {
     return { ok: true, input: {}, raw };
   }
@@ -99,12 +99,12 @@ export function parseEagerToolInput(toolName: string, input: unknown): {ok:boole
       error: `Malformed ${toolName} tool input: expected a JSON object, got ${input === null ? 'null' : Array.isArray(input) ? 'array' : typeof input}. Re-emit the ${toolName} tool call with a complete JSON object matching its schema.`,
     };
   }
-
+  
   const trimmed = input.trim();
   if (!trimmed) {
     return { ok: true, input: {}, raw };
   }
-
+  
   try {
     const parsed = JSON.parse(trimmed);
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
@@ -170,10 +170,10 @@ export async function executeEagerTool(toolName: string, meta: Record<string,unk
       ? true
       : `Task execution lease denied ${tool} (${authorization.reason}).`;
   };
-
+  
   const streamId = `eager-stream-${callId}`;
   let streamStarted = false;
-
+  
   const streamingCtx: ToolContext = {
     ...toolCtx,
     authorizeToolCall: authorizeEagerTaskAction,
@@ -185,7 +185,7 @@ export async function executeEagerTool(toolName: string, meta: Record<string,unk
       dispatch({ type: 'tool-stream-chunk', streamId, chunk } as any);
     },
   };
-
+  
   const result = await executeToolCall(
     { id: callId, name: toolName, input: parsedInput },
     streamingCtx,
@@ -202,7 +202,7 @@ export async function executeEagerTool(toolName: string, meta: Record<string,unk
       return requestTaskApproval(tool, message);
     },
   );
-
+  
   const out = result.result.ok ? result.result.content : result.result.error;
   const status = result.result.ok ? 'done' : 'error';
   // executeToolCall measures its own wall-clock elapsed (result.durationMs) — the

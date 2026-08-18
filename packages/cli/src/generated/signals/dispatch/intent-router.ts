@@ -31,7 +31,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
   if (cb.eventBus) {
     await cb.eventBus.emit('pre:dispatch', { input, intentType: intent.type, cwd: resolveWorkingDir() });
   }
-
+  
   if (shouldApprovePendingCesarPlanInput(input, cb.ctx)) {
     if (await approvePendingCesarPlan(cb)) {
       emitPostDispatch(intent, input, cb);
@@ -49,7 +49,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
     emitPostDispatch(intent, input, cb);
     return { handled: true, ranAsJob: false };
   }
-
+  
   // ── Registry-first dispatch — extensions and real handlers get priority ──
   if (cb.commandRegistry) {
     const cmdName = intent.type === 'extension-command' ? intent.commandName : intent.type;
@@ -66,14 +66,14 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       if (result.handled) return result;
     }
   }
-
+  
   const _r = (await dispatchOrchestrationIntent(intent, input, cb))
     ?? (await dispatchSessionInfoIntent(intent, input, cb))
     ?? (await dispatchMetaIntent(intent, input, cb))
     ?? (await dispatchInitIntent(intent, input, cb))
     ?? (await dispatchSkillsUiIntent(intent, input, cb));
   if (_r) return _r;   // sub-dispatcher already fired emitPostDispatch on its break-path
-
+  
   cb.dispatch({ type: 'warning', message: `Unknown command: ${intent.type}` });
   emitPostDispatch(intent, input, cb);
   return { handled: true, ranAsJob: false };

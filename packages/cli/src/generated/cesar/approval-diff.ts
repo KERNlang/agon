@@ -65,15 +65,15 @@ export function buildApprovalDiffPreview(tool: string, args: Record<string,unkno
   const key = String(tool ?? '').toLowerCase();
   const filePath = typeof (args as any)?.file_path === 'string' ? String((args as any).file_path) : '';
   if (!filePath) return null;
-
+  
   const cwd = process.cwd();
   const relPath = filePath.startsWith(cwd) ? filePath.slice(cwd.length).replace(/^[/\\]/, '') : filePath;
-
+  
   // Resolve old (on-disk) and new (proposed) content per tool kind.
   let oldContent = '';
   let newContent = '';
   let status: 'created' | 'edited' = 'edited';
-
+  
   if (key === 'write' || key === 'agonwrite') {
     // Finding 4: a degraded command-string args path can yield { file_path }
     // only (content absent). Previewing that as a full-file deletion is wrong
@@ -192,7 +192,7 @@ export function buildApprovalDiffPreview(tool: string, args: Record<string,unkno
   } else {
     return null;
   }
-
+  
   if (isProbablyBinary(oldContent) || isProbablyBinary(newContent)) {
     return { fallback: 'binary file — diff hidden' };
   }
@@ -200,7 +200,7 @@ export function buildApprovalDiffPreview(tool: string, args: Record<string,unkno
     // No-op edit/write — nothing meaningful to show; let the caller fall back.
     return null;
   }
-
+  
   const file = computeFileDiffPreview(
     filePath,
     relPath,
@@ -221,7 +221,7 @@ export function buildApprovalDiffPreview(tool: string, args: Record<string,unkno
 export function computeFileDiffPreview(path: string, relPath: string, status: string, oldContent: string, newContent: string, maxLines: number, maxTotal: number): any {
   const oldAll = oldContent.length === 0 ? [] : oldContent.replace(/\n$/, '').split('\n');
   const newAll = newContent.length === 0 ? [] : newContent.replace(/\n$/, '').split('\n');
-
+  
   // Finding 3 — bound the LCS cost. The 256KB byte cap still permits tens of
   // thousands of lines; a full (n+1)*(m+1) table over that would freeze/OOM at
   // approval time. First strip the shared prefix/suffix (cheap, O(min) — most
@@ -229,7 +229,7 @@ export function computeFileDiffPreview(path: string, relPath: string, status: st
   // still too large bail to a count-only fallback note instead of building the
   // table.
   const APPROVAL_DIFF_MAX_LCS_LINES = 1200;
-
+  
   let pre = 0;
   const oldLenAll = oldAll.length;
   const newLenAll = newAll.length;
@@ -240,13 +240,13 @@ export function computeFileDiffPreview(path: string, relPath: string, status: st
     suf < (newLenAll - pre) &&
     oldAll[oldLenAll - 1 - suf] === newAll[newLenAll - 1 - suf]
   ) suf++;
-
+  
   const oldLines = oldAll.slice(pre, oldLenAll - suf);
   const newLines = newAll.slice(pre, newLenAll - suf);
-
+  
   const n = oldLines.length;
   const m = newLines.length;
-
+  
   if (n + m > APPROVAL_DIFF_MAX_LCS_LINES) {
     // Too large to diff inline after trimming common context — report
     // line counts only (the trimmed region is entirely changed in the
@@ -263,7 +263,7 @@ export function computeFileDiffPreview(path: string, relPath: string, status: st
       omitted: addCount + delCount,
     };
   }
-
+  
   // Standard LCS table over the trimmed line ranges.
   const lcs: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
   for (let i = n - 1; i >= 0; i--) {
@@ -273,7 +273,7 @@ export function computeFileDiffPreview(path: string, relPath: string, status: st
         : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
     }
   }
-
+  
   // Walk the table to emit a flat sequence of diff ops.
   const ops: Array<{ kind: '-' | '+' | ' '; text: string }> = [];
   let i = 0;
@@ -292,7 +292,7 @@ export function computeFileDiffPreview(path: string, relPath: string, status: st
   }
   while (i < n) { ops.push({ kind: '-', text: oldLines[i] }); i++; }
   while (j < m) { ops.push({ kind: '+', text: newLines[j] }); j++; }
-
+  
   let additions = 0;
   let deletions = 0;
   for (const op of ops) {
@@ -300,7 +300,7 @@ export function computeFileDiffPreview(path: string, relPath: string, status: st
     else if (op.kind === '-') deletions++;
   }
   if (additions === 0 && deletions === 0) return null;
-
+  
   // Render only the changed lines (drop context) so the bounded preview shows
   // the substance of the edit, matching the recap's interesting-lines filter.
   const perFileCap = Math.max(1, Math.min(maxLines, maxTotal));

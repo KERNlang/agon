@@ -39,7 +39,7 @@ export async function dispatchMetaIntent(intent: any, input: string, cb: Dispatc
       }
       break;
     }
-
+  
     case 'undo': {
       const cwd = resolveWorkingDir();
       const snapshotId = String((intent as any).snapshotId ?? '').trim();
@@ -84,7 +84,7 @@ export async function dispatchMetaIntent(intent: any, input: string, cb: Dispatc
       }
       break;
     }
-
+  
     case 'checkpoints': {
       const cwd = resolveWorkingDir();
       const snapshots = listSnapshots().filter((entry: any) => String(entry?.cwd ?? '') === cwd).slice(0, 10);
@@ -105,7 +105,7 @@ export async function dispatchMetaIntent(intent: any, input: string, cb: Dispatc
       }
       break;
     }
-
+  
     case 'chats-resume': {
       const sid = intent.sessionId;
       if (!sid) { cb.dispatch({ type: 'error', message: 'Usage: /chats resume <session-id>' }); break; }
@@ -123,7 +123,7 @@ export async function dispatchMetaIntent(intent: any, input: string, cb: Dispatc
       }
       break;
     }
-
+  
     // ── Job commands ──
     case 'jobs': {
       const jobsIntent = intent as any;
@@ -163,7 +163,7 @@ export async function dispatchMetaIntent(intent: any, input: string, cb: Dispatc
       if (job.error && job.state === 'failed') cb.dispatch({ type: 'error', message: job.error });
       break;
     }
-
+  
     // ── Suggest commands (conversational escalation) ──
     case 'suggest-brainstorm': {
       const si = intent as any;
@@ -206,7 +206,7 @@ export async function dispatchMetaIntent(intent: any, input: string, cb: Dispatc
       await handleChat(si.input, cb.dispatch, cb.ctx, cb.allImages);
       break;
     }
-
+  
     // ── Exploration mode toggle ──
     case 'explore': {
       const newMode = !cb.explorationMode;
@@ -224,7 +224,7 @@ export async function dispatchMetaIntent(intent: any, input: string, cb: Dispatc
       }
       break;
     }
-
+  
     // ── Verify-before-done gate nudge toggle ──
     case 'nogate': {
       if (!cb.ctx.cesar) {
@@ -240,7 +240,7 @@ export async function dispatchMetaIntent(intent: any, input: string, cb: Dispatc
       }
       break;
     }
-
+  
     // ── Nero mode toggle ──
     case 'nero': {
       const newNero = !cb.neroMode;
@@ -259,7 +259,7 @@ export async function dispatchMetaIntent(intent: any, input: string, cb: Dispatc
       }
       break;
     }
-
+  
     // ── AGENTS.md init wizard ──
     default: return null;
   }

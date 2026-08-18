@@ -158,7 +158,7 @@ export async function buildServeRuntime(opts: ServeOptions): Promise<ServeRuntim
   const registry = new EngineRegistry();
   registry.load(resolveBuiltinEnginesDir());
   validateServeEngine(registry, opts.engineId);
-
+  
   const sessionId = newServeSessionId(Date.now());
   // The agentic brain runs a tool-loop over capabilities the browser extension lends
   // it (readPage/click/type/navigate/…): it reads and ACTS on the page autonomously,
@@ -172,9 +172,9 @@ export async function buildServeRuntime(opts: ServeOptions): Promise<ServeRuntim
     'Keep answers concise and suited to a narrow browser side panel.',
   ].join('\n');
   await brain.open({ sessionId, engineId: opts.engineId, cwd: opts.cwd, systemPrompt });
-
+  
   seedServeSession(sessionId, opts.engineId);
-
+  
   // Hand the bridge ONLY the engines that can actually answer — registry.activeIds(config):
   // available (an API key env var is set OR the engine's CLI binary is on PATH) AND not in the
   // user's hiddenEngines/removedEngines, honoring engineActivationMode. NOT every definition on
@@ -244,7 +244,7 @@ export async function runServe(port: number, engine: string|undefined, allowedOr
   ensureAgonHome();
   const cwd = process.cwd();
   const engineId = resolveServeEngine(engine, cwd);
-
+  
   let runtime: { serve: AgonServe; brain: BrainClient; sessionId: string; engineId: string };
   try {
     runtime = await buildServeRuntime({ engineId, cwd, allowedOrigins });
@@ -253,7 +253,7 @@ export async function runServe(port: number, engine: string|undefined, allowedOr
     process.exitCode = 2;
     return;
   }
-
+  
   // Bind + post-bind setup, guarded: a listen failure (EADDRINUSE on a pinned
   // --port — AgonServe.start rejects) or a post-bind write failure must NOT leak
   // the already-opened brain (an engine subprocess) or leave a half-open bridge
@@ -277,7 +277,7 @@ export async function runServe(port: number, engine: string|undefined, allowedOr
     process.exitCode = 2;
     return;
   }
-
+  
   const stopped = new Promise<void>((resolve) => {
     let tornDown = false;
     const teardown = (): void => {

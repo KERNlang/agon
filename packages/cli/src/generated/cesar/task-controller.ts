@@ -105,7 +105,7 @@ export function evaluateAgenticTaskState(snapshot: AgenticTaskSnapshot): Agentic
   if (snapshot.contextExhausted) return { state: 'context_exhausted', continueWork: false, terminal: true, reason: 'context_checkpoint' };
   if (snapshot.budgetExhausted) return { state: 'budget_exhausted', continueWork: false, terminal: true, reason: 'budget_checkpoint' };
   if (snapshot.awaitingUser) return { state: 'blocked', continueWork: false, terminal: true, reason: 'awaiting_user' };
-
+  
   if (snapshot.successfulMutations > 0) {
     if (snapshot.continuationIntent) return { state: 'running', continueWork: true, terminal: false, reason: 'model_reports_more_work' };
     if (snapshot.todosRemaining) return { state: 'running', continueWork: true, terminal: false, reason: 'todos_remaining' };
@@ -114,7 +114,7 @@ export function evaluateAgenticTaskState(snapshot: AgenticTaskSnapshot): Agentic
     if (snapshot.verificationRequired && !snapshot.verificationPassed) return { state: 'verifying', continueWork: true, terminal: false, reason: 'verification_required' };
     return { state: 'verified', continueWork: false, terminal: true, reason: snapshot.verificationRequired ? 'mutation_verified' : 'mutation_completed_no_gate' };
   }
-
+  
   if (snapshot.answerDelivered && !snapshot.toolActivity && (snapshot.noProgressCycles ?? 0) >= 1) {
     return { state: 'verified', continueWork: false, terminal: true, reason: 'answer_delivered_without_tools' };
   }

@@ -26,14 +26,14 @@ export async function handleChrome(task: string, dispatch: Dispatch, ctx: Handle
     ensureAgonHome();
     const cwd = resolveWorkingDir();
     ctx.setActiveAbort(chrAbort);
-
+    
     // One controller for ALL bridge I/O: a parent (Ctrl-C) abort cancels every in-flight fetch
     // AND any pending approval prompt; the finally aborts it on normal completion.
     const ctrl = new AbortController();
     const onParentAbort = (): void => { ctrl.abort(); };
     chrAbort.signal.addEventListener('abort', onParentAbort);
     const detach = (): void => { try { chrAbort.signal.removeEventListener('abort', onParentAbort); } catch { /* */ } };
-
+    
     const bridge = await ensureChromeBridge(cwd);
     dispatch({ type: 'header', title: 'Chrome — driving your browser' });
     if (bridge.embedded && bridge.origins.length === 0) {
@@ -42,13 +42,13 @@ export async function handleChrome(task: string, dispatch: Dispatch, ctx: Handle
       dispatch({ type: 'info', message: 'Embedded a bridge for this session — open the Agon side panel; it auto-connects.' });
     }
     dispatch({ type: 'info', message: `task: ${task}` });
-
+    
     const base = bridge.url.replace(/\/+$/, '');
     const jsonHeaders = { 'Authorization': `Bearer ${bridge.token}`, 'Content-Type': 'application/json' };
     const authHeaders = { 'Authorization': `Bearer ${bridge.token}` };
     const clientId = randomUUID();
     const startTime = Date.now();
-
+    
     // /attach — confirm the bridge + learn the cursor so the SSE tails only THIS turn.
     let fromSeq = 0;
     try {
@@ -61,19 +61,19 @@ export async function handleChrome(task: string, dispatch: Dispatch, ctx: Handle
       detach();
       return false;
     }
-
+    
     let answer = '';
     let answerEngine = '';
     let sawBrowserActivity = false;
     let gotAnswer = false;
     let streamFailed = false;
-
+    
     const handleFrame = async (frame: unknown): Promise<void> => {
       const f = frame as { seq?: number; event?: Record<string, unknown> };
       if (typeof f.seq === 'number' && f.seq <= fromSeq) return; // pre-turn history
       const event = f.event;
       if (!event || typeof event !== 'object') return;
-
+    
       // Approval addressed to us → ask through the REPL UI, then POST the decision. The prompt
       // is RACED against abort so a Ctrl-C / timeout never leaves the SSE reader (hence the
       // finally's `await sseLoop`) hung on an answer that will never come.
@@ -96,7 +96,7 @@ export async function handleChrome(task: string, dispatch: Dispatch, ctx: Handle
         } catch { if (!ctrl.signal.aborted) dispatch({ type: 'warning', message: 'couldn’t send the approval — the turn may stall.' }); }
         return;
       }
-
+    
       const kind = typeof event.kind === 'string' ? event.kind : '';
       const str = (v: unknown): string => (typeof v === 'string' ? v : v == null ? '' : String(v));
       const oneLine = (v: unknown): string => str(v).replace(/\s+/g, ' ').trim();
@@ -134,7 +134,7 @@ export async function handleChrome(task: string, dispatch: Dispatch, ctx: Handle
         }
       }
     };
-
+    
     const sseLoop = (async () => {
       try {
         const res = await fetch(`${base}/events?from=${fromSeq}`, { headers: authHeaders, signal: ctrl.signal });
@@ -152,7 +152,7 @@ export async function handleChrome(task: string, dispatch: Dispatch, ctx: Handle
         }
       } catch { if (!ctrl.signal.aborted) streamFailed = true; }
     })();
-
+    
     let endedReason = '';
     let failed = false;
     try {
@@ -171,13 +171,13 @@ export async function handleChrome(task: string, dispatch: Dispatch, ctx: Handle
       detach();
       await sseLoop;
     }
-
+    
     if (endedReason) dispatch({ type: 'warning', message: `ended: ${endedReason}` });
     if (streamFailed) dispatch({ type: 'warning', message: 'lost the bridge event stream — the browser turn may have run without its output showing here.' });
     if (!streamFailed && !sawBrowserActivity && !bridge.embedded) {
       dispatch({ type: 'info', message: '(no page tools ran — open + attach the Agon side panel to this session to let it act on the page.)' });
     }
-
+    
     // Feed Cesar only this turn's OUTCOME: append the answer when there is one (the dispatch
     // layer gates continueCesarAfterResult on the boolean we return, so a no-answer turn never
     // makes Cesar summarize stale older engine messages).

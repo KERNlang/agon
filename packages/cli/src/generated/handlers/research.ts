@@ -21,18 +21,18 @@ export async function handleResearch(question: string, dispatch: Dispatch, ctx: 
   const rsAbort = new AbortController();
   try {
     ensureAgonHome();
-
+    
     if (!question || !question.trim()) {
       dispatch({ type: 'warning', message: 'No question provided. Usage: /research <question>' });
       return;
     }
-
+    
     let pool = filterDefaultOrchestrationEngines(ctx.activeEngines());
     if (pool.length === 0) {
       dispatch({ type: 'error', message: 'No engines available.' });
       return;
     }
-
+    
     let forced: string | undefined;
     if (opts?.engine && opts.engine.trim()) {
       const resolved = ctx.registry.resolveId(opts.engine.trim());
@@ -43,22 +43,22 @@ export async function handleResearch(question: string, dispatch: Dispatch, ctx: 
         dispatch({ type: 'info', message: `Engine '${opts.engine.trim()}' is not available — using rating-based selection.` });
       }
     }
-
+    
     dispatch({ type: 'header', title: 'Research · keyless web-grounded' });
     dispatch({ type: 'info', message: question.length > 120 ? question.slice(0, 120) + '…' : question });
-
+    
     const outputDir = join(RUNS_DIR, `research-${Date.now()}`);
     mkdirSync(outputDir, { recursive: true });
-
+    
     ctx.setActiveAbort(rsAbort);
-
+    
     const startTime = Date.now();
     const progressInterval = setInterval(() => {
       const elapsed = Math.floor((Date.now() - startTime) / 1000);
       const progress: EngineProgress[] = [{ id: forced ?? 'research', status: `researching… ${elapsed}s`, elapsed, done: false, failed: false }];
       dispatch({ type: 'progress-update', engines: progress });
     }, 250);
-
+    
     let progressCleared = false;
     function clearProgress(): void {
       if (progressCleared) return;
@@ -66,7 +66,7 @@ export async function handleResearch(question: string, dispatch: Dispatch, ctx: 
       clearInterval(progressInterval);
       dispatch({ type: 'progress-clear' });
     }
-
+    
     let result: any;
     try {
       result = await runResearch({
@@ -88,7 +88,7 @@ export async function handleResearch(question: string, dispatch: Dispatch, ctx: 
       throw err;
     }
     clearProgress();
-
+    
     if (!result.ok) {
       dispatch({ type: 'error', message: `No grounded answer${result.note ? `: ${result.note}` : '.'}` });
       // Append a fresh note so Cesar's recent-engine-context reflects THIS run
@@ -98,14 +98,14 @@ export async function handleResearch(question: string, dispatch: Dispatch, ctx: 
       appendMessage(ctx.chatSession, { role: 'engine', engineId: result.engineId || 'research', content: `Research found no grounded answer.${result.note ? ` (${result.note})` : ''}`, timestamp: new Date().toISOString() });
       return;
     }
-
+    
     dispatch({ type: 'info', message: `${result.engineId} · ${result.intent} · ${result.citations.verified}/${result.citations.total} citations verified` });
     dispatch({ type: 'engine-block', engineId: result.engineId, color: 39, content: formatResearchResult(result) });
-
+    
     appendMessage(ctx.chatSession, { role: 'user', content: `[research] ${question}`, timestamp: new Date().toISOString() });
     appendMessage(ctx.chatSession, { role: 'engine', engineId: result.engineId, content: result.answer, timestamp: new Date().toISOString() });
     tracker.record(result.engineId, { prompt: question, response: result.answer });
-
+    
     sessionResultStore.add({
       type: 'research',
       timestamp: new Date().toISOString(),
@@ -121,7 +121,7 @@ export async function handleResearch(question: string, dispatch: Dispatch, ctx: 
         citationsTotal: result.citations.total,
       },
     });
-
+    
     const runRecord = recordRun({
       mode: 'research',
       intent: question,

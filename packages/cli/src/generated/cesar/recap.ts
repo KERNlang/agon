@@ -466,7 +466,7 @@ export function buildCesarTurnRecapEvent(capture: any, result: any, beforeFiles:
       return { label, ok, state: ok ? 'passed' : 'failed' };
     })
     .filter(Boolean);
-
+  
   const finalVerificationFailed = new Set(
     verification.filter((v: any) => v.state === 'failed').map((v: any) => String(v.label)),
   );
@@ -645,3 +645,4 @@ export function shouldEmitCesarRecap(event: any): boolean {
   }
   return true;
 }
+

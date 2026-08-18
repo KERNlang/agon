@@ -62,7 +62,7 @@ export function foldNarration(text: string, policy?: string): NarrationFoldResul
   const noFold: NarrationFoldResult = { raw, visible: raw, foldedSteps: 0, didFold: false };
   if (mode === 'off') return noFold;
   if (!raw.trim()) return noFold;
-
+  
   // 1) Protect fenced code blocks. Use an @@FENCE@@ sentinel (non-
   //    whitespace) so the sentence trimming/segmentation below can't
   //    strip the guard and leak the token into visible text.
@@ -71,7 +71,7 @@ export function foldNarration(text: string, policy?: string): NarrationFoldResul
     fences.push(m);
     return `@@FENCE${fences.length - 1}@@`;
   });
-
+  
   // 2) Segment into sentences. Black-box agents glue narration when tool
   //    markup is stripped ("...in the REPL.In Agon AI, open files..."), so
   //    split (a) on newlines, (b) after sentence punctuation before a
@@ -82,10 +82,10 @@ export function foldNarration(text: string, policy?: string): NarrationFoldResul
     .replace(/([.!?])(?=[A-Z][a-z])/g, '$1\n')
     .replace(new RegExp(`([\\s.;:!?)\\]])(?=(?:${_NARR_STARTERS})\\b)`, 'g'), '$1\n');
   const sentences = seg.split('\n').map((s) => s.trim()).filter((s) => s.length > 0);
-
+  
   // 3) Classify.
   const flags = sentences.map((s) => _isNarrationSegment(s));
-
+  
   // 4) Answer tail: the trailing run of NON-narration sentences. Always
   //    shown, and required -- a pure-narration turn (no answer) is never
   //    folded to nothing.
@@ -95,7 +95,7 @@ export function foldNarration(text: string, policy?: string): NarrationFoldResul
     tailStart = i;
   }
   if (tailStart >= sentences.length) return noFold;
-
+  
   // 5) Fold contiguous narration runs (>= min length) before the tail.
   const FOLD_MIN_RUN = mode === 'aggressive' ? 1 : 2;
   const out: string[] = [];
@@ -118,9 +118,9 @@ export function foldNarration(text: string, policy?: string): NarrationFoldResul
     }
   }
   for (let k = tailStart; k < sentences.length; k++) out.push(sentences[k]);
-
+  
   if (folded === 0) return noFold;
-
+  
   // 6) Restore fences (sentinel matches regardless of surrounding space),
   //    tidy blank runs.
   const visible = out
@@ -128,7 +128,7 @@ export function foldNarration(text: string, policy?: string): NarrationFoldResul
     .replace(/@@FENCE(\d+)@@/g, (_m, n) => fences[Number(n)] ?? '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
-
+  
   return { raw, visible, foldedSteps: folded, didFold: true };
 }
 

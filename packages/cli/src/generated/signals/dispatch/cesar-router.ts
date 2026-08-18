@@ -301,7 +301,7 @@ export async function handleDelegatedAction(result: any, input: string, cb: Disp
             cb.dispatch({ type: 'warning', message: `Skipped repeated ${routeAction} during delegated-result synthesis. Cesar should summarize or choose a focused execution step instead.` });
             return false;
           }
-
+  
           // Plan mode: block execution delegations, allow thinking delegations.
           // Codex review P1: 'agent' and 'team-agent' must also be downgraded
           // — without this, an Agent(...) delegation slips past the approval
@@ -312,7 +312,7 @@ export async function handleDelegatedAction(result: any, input: string, cb: Disp
             cb.dispatch({ type: 'info', message: `Plan mode: converting ${routeAction} → brainstorm (no execution until plan approved)` });
             routeAction = _planSafeAction;
           }
-
+  
           const executionSpec = extractExecutionSpec(input);
           const delegatedSpec = extractExecutionSpec((result.task ?? '').trim());
           const userContext = result.reasoning && result.reasoning.includes('User context:')
@@ -334,18 +334,18 @@ export async function handleDelegatedAction(result: any, input: string, cb: Disp
           const isForgeSlice = routeAction === 'forge' && result.scope === 'slice';
           if (isForgeSlice) {
             taskInput = `Scoped forge only. Solve only the hard subpart below. Do not rewrite the whole task. Cesar will integrate wiring, cleanup, and final verification locally.
-
+  
   ## Hard Slice
   ${taskInput}
-
+  
   ## Full User Task
   ${input}`;
           }
-
+  
           // Cesar now owns live-vs-plan selection. The runtime no longer intercepts
           // forge/build/pipeline with a heuristic "plan first?" prompt. If planning
           // is worth it, Cesar should switch intentionally by proposing a plan.
-
+  
           // Enrich delegation context — Cesar's investigation should flow to brainstorm/tribunal/campfire
           const THINKING_ACTIONS = ['brainstorm', 'tribunal', 'campfire', 'council', 'team-brainstorm', 'team-tribunal'];
           if (THINKING_ACTIONS.includes(routeAction) && cb.ctx.chatSession?.messages?.length > 0) {
@@ -358,7 +358,7 @@ export async function handleDelegatedAction(result: any, input: string, cb: Disp
               taskInput = `${taskInput}\n\n## Cesar's Investigation Context\nCesar analyzed this before escalating:\n\n${cesarContext}`;
             }
           }
-
+  
           switch (routeAction) {
             case 'build':
               cb.dispatch({ type: 'info', message: `Cesar → build${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
@@ -385,20 +385,20 @@ export async function handleDelegatedAction(result: any, input: string, cb: Disp
                   }
                   cb.dispatch({ type: 'info', message: 'Cesar integrating forge slice…' });
                   await routeWithCesar(`[forge-slice integration]
-
+  
   A scoped forge run completed for one hard slice.
-
+  
   ## Full User Task
   ${input}
-
+  
   ## Scoped Slice That Was Forged
   ${taskInput}
-
+  
   ## Forge Result
   Winner: ${forgeResult.winner ?? 'none'}
   Patch: ${forgeResult.patchPath ?? 'none'}
   Manifest: ${forgeResult.manifestPath}
-
+  
   You still own the overall task. Integrate the forged slice with the rest of the work, keep the scope tight, and use your local tools directly if more edits or verification are needed. Avoid sending the same slice to forge again unless integration reveals a genuinely new hard subproblem.`, [], cb);
                 } else {
                   // Regular (non-slice) forge always continues Cesar — even on an
@@ -800,7 +800,7 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
       console.warn(`[agon] dispatch: Cesar session rebuild failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
-
+  
   // Cesar truly didn't respond — last fallback is plain one-shot dispatch.
   // Skip this for API backends: brain.kern's fallback path already ran the
   // same history-primed adapter.dispatch against the same engine, and
@@ -828,7 +828,7 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
       const freshText = freshResult.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
       appendMessage(cb.ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
       appendMessage(cb.ctx.chatSession, { role: 'engine', engineId: cesarId, content: freshText, timestamp: new Date().toISOString() });
-
+  
       // Parse fallback response for delegation — same logic as handleCesarBrain
       const fallbackSuggestion = parseSuggestion(freshText);
       if (fallbackSuggestion.action) {
@@ -926,7 +926,7 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
         }
         return false;
       }
-
+  
       // No delegation — show as plain response
       cb.dispatch({ type: 'engine-block', engineId: cesarId, color: 81, content: freshText });
       return false;
@@ -945,7 +945,7 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
     // turn persistent and fall through to acting-Cesar.
     appendUserTurnIfAbsent(cb.ctx.chatSession, input);
   } catch (e) { console.warn(`[agon] dispatch: Cesar fallback failed: ${e instanceof Error ? e.message : String(e)}`); }
-
+  
   // Cesar completely unavailable — only switch to an acting Cesar when
   // policy allows it. Default is ask: silently swapping Kimi→Claude after
   // an empty turn feels like the CLI lost the user's chosen lead engine.
@@ -955,14 +955,14 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
     cb.dispatch({ type: 'error', message: formatCesarRecoveryStatus('failed', `${cesarId} returned no response`, 'no alternate engine available') });
     return false;
   }
-
+  
   const fallbackMode = normalizeCesarActingFallbackMode((cesarConfig as any).cesarActingFallback);
   if (fallbackMode === 'off') {
     cb.dispatch({ type: 'warning', message: `${cesarId} returned no response. Cross-engine acting-Cesar fallback is off; staying on ${cesarId}.` });
     cb.dispatch({ type: 'info', message: 'Enable fallback with /config set cesarActingFallback auto.' });
     return false;
   }
-
+  
   if (fallbackMode === 'ask') {
     const choice = await askChoiceQuestion(cb, `${cesarId} returned no response. Use ${actingCesar} as acting Cesar?`, [
       { key: '1', label: `No - keep ${cesarId}` },
@@ -978,9 +978,9 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
       return false;
     }
   }
-
+  
   if (!_silentMode) cb.dispatch({ type: 'warning', message: formatCesarRecoveryStatus('acting', actingCesar, `${cesarId} unavailable`) });
-
+  
   // Build context so acting Cesar can lead
   const historyContext = formatChatContextForPrompt(cb.ctx.chatSession, {
     maxMessages: 10,
@@ -989,7 +989,7 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
     maxSummaryChars: 4_000,
   });
   const actingPrompt = `You are stepping in as acting Cesar (lead AI) for Agon AI because ${cesarId} is temporarily unavailable. You have full authority to answer, delegate, and lead.\n\n${historyContext ? `## RECENT CONVERSATION\n${historyContext}\n\n` : ''}## USER MESSAGE\n${input}`;
-
+  
   try {
     const { resolveWorkingDir, RUNS_DIR, appendMessage } = await import('@kernlang/agon-core');
     const { join } = await import('node:path');
@@ -1036,7 +1036,7 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
       return false;
     }
   } catch (e) { console.warn(`[agon] dispatch: acting Cesar failed: ${e instanceof Error ? e.message : String(e)}`); }
-
+  
   cb.dispatch({ type: 'error', message: formatCesarRecoveryStatus('failed', 'all engines unavailable', 'run agon doctor engines') });
   return false;
 }
@@ -1149,10 +1149,10 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
     }
     if (result.responded) return false;
   } catch (e) { console.warn(`[agon] dispatch: Cesar brain threw: ${e instanceof Error ? e.message : String(e)}`); }
-
+  
   // If brain handler queued the message (responded=true), don't fall back
   // The queue auto-drains when the current turn finishes
-
+  
   // Check if a delegation was pending from the crashed session (with 60s TTL)
   const crashDel = cb.ctx.cesar?.pendingDelegation;
   if (crashDel) {

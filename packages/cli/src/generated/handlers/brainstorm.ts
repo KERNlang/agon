@@ -29,12 +29,12 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
   const bsAbort = new AbortController();
   try {
     ensureAgonHome();
-
+    
     if (!question) {
       dispatch({ type: 'warning', message: 'No question provided. Usage: "best approach for caching?" or /brainstorm <question>' });
       return null;
     }
-
+    
     const allEngines = ctx.activeEngines();
     const engines = filterDefaultOrchestrationEngines(allEngines);
     const excluded = allEngines.filter((id: string) => !engines.includes(id));
@@ -43,25 +43,25 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
       dispatch({ type: 'error', message: 'No engines available.' });
       return null;
     }
-
+    
     const outputDir = join(RUNS_DIR, `brainstorm-${Date.now()}`);
     mkdirSync(outputDir, { recursive: true });
-
+    
     const config = ctx.config;
     const bsCwd = resolveWorkingDir();
     const projectCtx = scanProjectContext(bsCwd, config.projectContext || undefined, config.contextFormat);
-
+    
     dispatch({ type: 'header', title: `Brainstorm: ${question}` });
     dispatch({ type: 'info', message: `Engines: ${engines.join(', ')}` });
     if (projectCtx) dispatch({ type: 'info', message: `Context: ${bsCwd}` });
-
+    
     ctx.setActiveAbort(bsAbort);
-
+    
     const runId = `brainstorm-${Date.now()}`;
     const scoreboard = createScoreboard(runId, 'brainstorm', engines);
     const preCp = buildCheckpoint(runId, 'pre-dispatch', 'brainstorm', engines, { question });
     recordCheckpoint(preCp);
-
+    
     const startTime = Date.now();
     const liveState = new Map<string, { state: 'waiting' | 'running' | 'done' | 'failed'; detail?: string }>(
       engines.map((id: string) => [id, { state: 'waiting' as const }]),
@@ -99,7 +99,7 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
         dispatch({ type: 'progress-update', engines: progress });
       }
     }, 250);
-
+    
     let result: any;
     try {
       result = await runBrainstorm({
@@ -151,10 +151,10 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
       // here, but do not emit a second identical error block.
       throw err;
     }
-
+    
     clearInterval(progressInterval);
     dispatch({ type: 'progress-clear' });
-
+    
     // Finalize scoreboard + checkpoint
     for (const bid of result.bids) {
       scoreboardFinishEngine(scoreboard, bid.engineId, { score: bid.score, result: 'bid submitted' });
@@ -167,7 +167,7 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
     dispatch({ type: 'info', message: renderScoreboard(scoreboard) });
     const postCp = buildCheckpoint(runId, 'post-dispatch', 'brainstorm', engines, { winner: result.winner, question });
     recordCheckpoint(postCp);
-
+    
     const finalProgress: EngineProgress[] = engines.map((id: string) => {
       const bid = result.bids.find((b: any) => b.engineId === id);
       const isWinner = bid?.engineId === result.winner;
@@ -180,7 +180,7 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
       };
     });
     dispatch({ type: 'progress-update', engines: finalProgress });
-
+    
     dispatch({ type: 'separator' });
     for (let i = 0; i < result.bids.length; i++) {
       const bid = result.bids[i];
@@ -193,7 +193,7 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
         critique: isWinner ? `${icons().winner} best draft${scoreLabel}` : `${icons().success} done${scoreLabel}`,
       });
     }
-
+    
     dispatch({ type: 'separator' });
     // Panel health is non-negotiable output: a retried or dropped seat must be
     // visible in the REPL render, not just in background warn noise.
@@ -205,16 +205,16 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
       dispatch({ type: 'warning', message: `Synthesis fallback: ${result.synthesis.detail ?? 'winner expansion failed'}` });
     }
     dispatch({ type: 'engine-block', engineId: result.winner, color: ENGINE_COLORS[result.winner] ?? 124, content: result.response });
-
+    
     // Save to chat history so follow-up messages have context
     appendMessage(ctx.chatSession, { role: 'user', content: `[brainstorm] ${question}`, timestamp: new Date().toISOString() });
     appendMessage(ctx.chatSession, { role: 'engine', engineId: result.winner, content: result.response, timestamp: new Date().toISOString() });
-
+    
     for (const bid of result.bids) {
       tracker.record(bid.engineId, { prompt: question, response: bid.reasoning });
     }
     tracker.record(result.winner, { prompt: question, response: result.response });
-
+    
     sessionResultStore.add({
       type: 'brainstorm',
       timestamp: new Date().toISOString(),
@@ -228,7 +228,7 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
         synthesis: result.synthesis,
       },
     });
-
+    
     const runRecord = recordRun({
       mode: 'brainstorm',
       intent: question,
@@ -243,10 +243,10 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
     if (!process.env.AGON_NO_SUMMARY) {
       dispatch({ type: 'info', message: formatRunSummary(runRecord) });
     }
-
+    
     dispatch({ type: 'info', message: `Winner: ${result.winner} — returning result to Cesar` });
     dispatch({ type: 'progress-clear' });
-
+    
     return {
       winner: result.winner,
       bids: result.bids.map((b: any) => ({ engineId: b.engineId, reasoning: b.reasoning, approach: b.approach, score: b.score })),

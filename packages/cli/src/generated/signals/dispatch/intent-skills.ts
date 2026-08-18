@@ -28,13 +28,13 @@ export async function dispatchSkillsUiIntent(intent: any, input: string, cb: Dis
       const trigger = `/${slug}`;
       const skillDir = join(resolveWorkingDir(), '.agon', 'skills');
       const skillPath = join(skillDir, `${slug}.md`);
-
+  
       const { mkdirSync, existsSync, writeFileSync } = await import('node:fs');
       if (existsSync(skillPath)) {
         cb.dispatch({ type: 'warning', message: `Skill already exists: ${skillPath}` });
         break;
       }
-
+  
       mkdirSync(skillDir, { recursive: true });
       const template = [
         '---',
@@ -62,13 +62,13 @@ export async function dispatchSkillsUiIntent(intent: any, input: string, cb: Dis
         '- Suggested fix: ...',
         '',
       ].join('\n');
-
+  
       writeFileSync(skillPath, template);
       cb.dispatch({ type: 'success', message: `Created skill: ${skillPath}` });
       cb.dispatch({ type: 'info', message: `Edit the file, then use ${trigger} <args> to invoke it.` });
       break;
     }
-
+  
     // ── MCP management ──
     case 'mcp': {
       if (!cb.ctx.cesar) {
@@ -82,7 +82,7 @@ export async function dispatchSkillsUiIntent(intent: any, input: string, cb: Dis
       }
       const mcpIntent = intent as any;
       const sessionServers: Array<Record<string,unknown>> = cb.ctx.sessionMcpServers ?? [];
-
+  
       if (mcpIntent.action === 'list') {
         if (sessionServers.length === 0) {
           cb.dispatch({ type: 'info', message: 'No MCP servers connected. Use /mcp connect <name|url>' });
@@ -92,14 +92,14 @@ export async function dispatchSkillsUiIntent(intent: any, input: string, cb: Dis
         }
         break;
       }
-
+  
       if (mcpIntent.action === 'connect') {
         const serverInput = (mcpIntent.server ?? '').trim();
         if (!serverInput) {
           cb.dispatch({ type: 'warning', message: 'Usage: /mcp connect <name|url>' });
           break;
         }
-
+  
         // Resolve: URL or name lookup from .mcp.json
         let serverEntry: {name:string, type?:string, url?:string, command?:string, args?:string[]};
         if (serverInput.startsWith('http://') || serverInput.startsWith('https://')) {
@@ -124,16 +124,16 @@ export async function dispatchSkillsUiIntent(intent: any, input: string, cb: Dis
           }
           serverEntry = found;
         }
-
+  
         // Check if already connected
         if (sessionServers.some((s: any) => s.name === serverEntry.name)) {
           cb.dispatch({ type: 'info', message: `MCP server "${serverEntry.name}" already connected.` });
           break;
         }
-
+  
         sessionServers.push(serverEntry);
         if (cb.ctx.setSessionMcpServers) cb.ctx.setSessionMcpServers([...sessionServers]);
-
+  
         // Restart Cesar session to pick up new MCP server
         if (cb.ctx.cesarSession) {
           cb.ctx.cesarSession.close();
@@ -142,7 +142,7 @@ export async function dispatchSkillsUiIntent(intent: any, input: string, cb: Dis
         cb.dispatch({ type: 'success', message: `MCP connected: ${serverEntry.name}${serverEntry.url ? ` (${serverEntry.url})` : ''}. Cesar session restarting…` });
         break;
       }
-
+  
       if (mcpIntent.action === 'disconnect') {
         const serverName = (mcpIntent.server ?? '').trim();
         if (!serverName) {
@@ -156,7 +156,7 @@ export async function dispatchSkillsUiIntent(intent: any, input: string, cb: Dis
         }
         sessionServers.splice(idx, 1);
         if (cb.ctx.setSessionMcpServers) cb.ctx.setSessionMcpServers([...sessionServers]);
-
+  
         if (cb.ctx.cesarSession) {
           cb.ctx.cesarSession.close();
           cb.ctx.setCesarSession(null);
@@ -166,7 +166,7 @@ export async function dispatchSkillsUiIntent(intent: any, input: string, cb: Dis
       }
       break;
     }
-
+  
     // ── UI commands ──
     case 'extensions': {
       const exts = cb.loadedExtensions ?? [];
@@ -291,7 +291,7 @@ export async function dispatchSkillsUiIntent(intent: any, input: string, cb: Dis
     case 'clear': {
       // Option 3: Save context before clearing, kill brain, reset everything
       const oldChatId = cb.ctx.chatSession?.id ?? null;
-
+  
       // 1. Kill Cesar's brain subprocess
       const cesarSession = cb.ctx.cesarSession;
       if (cesarSession) {
@@ -306,19 +306,19 @@ export async function dispatchSkillsUiIntent(intent: any, input: string, cb: Dis
       try {
         cb.ctx.cesarMemory?.clearSession?.();
       } catch { /* best-effort */ }
-
+  
       // 2. Clear visual output (blocks, streaming, clipboard)
       cb.dispatch({ type: 'clear' });
-
+  
       // 3. Start fresh chat session (old one is already persisted to ~/.agon/chats/)
       const clearCwd = resolveWorkingDir();
       let clearBranch = 'unknown';
       try { clearBranch = currentBranch(clearCwd); } catch { /* git not available */ }
       cb.setChatSession(startChatSession({ cwd: clearCwd, branch: clearBranch }));
-
+  
       // 4. Reset mode back to chat
       cb.setMode('chat');
-
+  
       // 5. Confirm with saved session reference
       const clearMsg = oldChatId
         ? `Session cleared. Previous chat saved as ${oldChatId} — use /chats resume ${oldChatId} to recover.`
@@ -331,7 +331,7 @@ export async function dispatchSkillsUiIntent(intent: any, input: string, cb: Dis
     }
     case 'help': cb.dispatch({ type: 'text', content: cb.allSlashCommands.map((c: any) => `${c.cmd.padEnd(16)} ${c.desc}`).join('\n') }); break;
     case 'exit': cb.exit(); return { handled: true, ranAsJob: true };
-
+  
     // ── Cesar-routed intents ──
     case 'auto':
     case 'unknown': {

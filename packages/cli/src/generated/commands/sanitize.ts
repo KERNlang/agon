@@ -4,7 +4,7 @@ import { defineCommand } from 'citty';
 
 import { readFileSync, writeFileSync } from 'node:fs';
 
-import { scanText, cleanText } from '@kernlang/agon-core';
+import { scanText, cleanText, scanMetadata, stripMetadata } from '@kernlang/agon-core';
 
 import { header, success, fail, info, table, bold, yellow } from '../blocks/output-format.js';
 
@@ -59,8 +59,95 @@ export const sanitizeCommand: any = defineCommand({
       description: 'Emit the report as machine-readable JSONL',
       default: false,
     },
+    metadata: {
+      type: 'boolean',
+      description: 'Metadata mode: scan a PNG/JPEG/SVG file for signed provenance metadata (C2PA/JUMBF, XMP, Exif). Requires a file argument. Honest framing: pixel-level watermarks are not assessable.',
+      default: false,
+    },
+    stripMetadata: {
+      type: 'boolean',
+      description: 'With --metadata: strip the provenance metadata (breaks the C2PA signature — result is honestly "metadata removed"). Writes to --out or overwrites nothing (refuses without --out unless --in-place).',
+      default: false,
+    },
+    inPlace: {
+      type: 'boolean',
+      description: 'With --metadata --strip-metadata: rewrite the input file in place after stripping',
+      default: false,
+    },
   },
   async run({ args }) {
+    // citty keeps kebab-case flags as literal keys — normalize up front.
+    const stripRequested = Boolean(args.stripMetadata || args['strip-metadata']);
+    const inPlaceRequested = Boolean(args.inPlace || args['in-place']);
+    // ── Metadata mode (Phase 3a): binary provenance scan/strip ─────────
+    if (args.metadata || stripRequested) {
+      if (!args.file) {
+        fail('Metadata mode requires a file argument (PNG/JPEG/SVG).');
+        process.exit(1);
+      }
+      let buf: Buffer;
+      try {
+        buf = readFileSync(args.file);
+      } catch (err) {
+        fail(`Cannot read ${args.file}: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+      const report = scanMetadata(buf);
+      if (args.jsonl) {
+        process.stdout.write(`${JSON.stringify({ type: 'sanitize.metadata-report', source: args.file, strip: stripRequested, ...report, timestamp: new Date().toISOString() })}\n`);
+      } else {
+        header(`Sanitize (metadata): ${args.file} [${report.format}]`);
+        if (report.format === 'unknown') {
+          info('Unrecognized file format — no metadata scan performed.');
+        } else if (report.findings.length === 0) {
+          success('No provenance metadata found (no C2PA manifest, XMP packet, or Exif block).');
+        } else {
+          table(
+            ['Channel', 'Count'],
+            Object.entries(report.byChannel).map(([channel, count]) => [channel, String(count)]),
+          );
+          console.log('');
+          table(
+            ['Offset', 'Channel', 'Bytes', 'Detail'],
+            report.findings.slice(0, 50).map((f) => [String(f.offset), f.channel, String(f.length), f.detail.slice(0, 60)]),
+          );
+        }
+        console.log('');
+        info(`${yellow('Not assessable:')} ${report.notAssessable.join('; ')}`);
+      }
+
+      if (!stripRequested) {
+        // distinct exit 2 for unknown formats: nothing was examined, so a
+        // CI gate must not read it as "provably no provenance metadata".
+        if (report.format === 'unknown') process.exit(2);
+        process.exit(report.clean ? 0 : 1);
+      }
+      if (report.format === 'unknown' || report.findings.length === 0) {
+        if (!args.jsonl) info('Nothing to strip.');
+        process.exit(report.format === 'unknown' ? 2 : 0);
+      }
+      if (!args.out && !inPlaceRequested) {
+        fail('Refusing to strip without a destination: pass --out <file> or --in-place. (Stripping provenance is destructive and breaks the C2PA signature.)');
+        process.exit(1);
+      }
+      const stripped = stripMetadata(buf);
+      const verify = scanMetadata(stripped.output);
+      if (!verify.clean) {
+        fail('Internal error: stripped output still has provenance findings — refusing to emit.');
+        process.exit(1);
+      }
+      const dest = inPlaceRequested ? args.file : args.out;
+      writeFileSync(dest, stripped.output);
+      if (args.jsonl) {
+        process.stdout.write(`${JSON.stringify({ type: 'sanitize.metadata-stripped', source: args.file, dest, removedFindings: report.findings.length, verifiedClean: true, note: 'provenance metadata removed — C2PA signature broken; absence is not proof of human origin', timestamp: new Date().toISOString() })}\n`);
+      } else {
+        success(`Stripped ${report.findings.length} provenance block(s) → ${bold(dest)} (verified by re-scan).`);
+        info(yellow('Honesty note: metadata removed — the C2PA signature is broken; absence of metadata is not proof of human origin.'));
+      }
+      return;
+    }
+
+    // ── Text mode (Phase 1): invisible-channel forensics ───────────────
     let input: string;
     try {
       input = args.file ? readFileSync(args.file, 'utf8') : await readStdin();

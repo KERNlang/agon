@@ -14,9 +14,11 @@ export interface NaturalizeOptions {
   timeout: number;
   outputDir: string;
   cwd: string;
+  minChange: number|undefined;
+  maxAttempts: number|undefined;
 }
 
-// @kern-source: naturalize:34
+// @kern-source: naturalize:36
 export interface NaturalizeResult {
   ok: boolean;
   engineId: string;
@@ -29,13 +31,15 @@ export interface NaturalizeResult {
   changedWords: number;
   unchangedRatio: number;
   residualNotAssessable: string[];
+  attempts: number;
+  minChangeMet: boolean|undefined;
   error: string|undefined;
 }
 
 /**
  * Lowercase word tokens for the diff summary. Punctuation is stripped, so this measures lexical change, not formatting.
  */
-// @kern-source: naturalize:48
+// @kern-source: naturalize:52
 export function tokenizeWords(text: string): string[] {
   return text.toLowerCase().split(/[^a-z0-9']+/i).filter((w) => w.length > 0);
 }
@@ -43,7 +47,7 @@ export function tokenizeWords(text: string): string[] {
 /**
  * Word-level diff: multiset subtraction (not positional), so reordering reads as unchanged and genuine rewrites surface. unchangedRatio = shared words / max(before, after) — 1.0 means no lexical change.
  */
-// @kern-source: naturalize:54
+// @kern-source: naturalize:58
 export function wordDiffStats(before: string, after: string): {wordsBefore:number,wordsAfter:number,changedWords:number,unchangedRatio:number} {
   const a = tokenizeWords(before);
   const b = tokenizeWords(after);
@@ -64,11 +68,11 @@ export function wordDiffStats(before: string, after: string): {wordsBefore:numbe
 }
 
 /**
- * The rewrite brief: naturalize tone and rhythm, preserve meaning and facts, output ONLY the rewritten text (no commentary, no code fences unless the input is code).
+ * The rewrite brief: naturalize tone and rhythm, preserve meaning and facts, output ONLY the rewritten text (no commentary, no code fences unless the input is code). stronger=true adds an explicit instruction to depart further from the original phrasing (used on min-change retries).
  */
-// @kern-source: naturalize:75
-export function buildNaturalizePrompt(text: string): string {
-  return [
+// @kern-source: naturalize:79
+export function buildNaturalizePrompt(text: string, stronger?: boolean): string {
+  const base = [
     'Rewrite the text below so it reads as natural, human-written prose while preserving every fact, claim, name, number, and the overall structure (headings, lists, paragraph breaks).',
     '',
     'Goals:',
@@ -76,19 +80,25 @@ export function buildNaturalizePrompt(text: string): string {
     '- Replace formulaic AI phrasing ("delve", "furthermore", "moreover", "in conclusion", "it is important to note") with direct, specific language.',
     '- Keep the same voice and register; do not add opinions, facts, or examples that are not in the original.',
     '- Do not summarize, shorten drastically, or expand — stay within roughly ±20% of the original length.',
+  ];
+  if (stronger) {
+    base.push('- IMPORTANT: your previous rewrite kept too much of the original wording. Re-lexicalize aggressively — use different words and different sentence structures for every sentence while keeping identical meaning. Synonym-swap every non-trivial word where a natural alternative exists.');
+  }
+  base.push(
     '',
     'Output ONLY the rewritten text. No preamble, no commentary, no markdown fences (unless the input itself is fenced code).',
     '',
     '---',
     text,
     '---',
-  ].join('\n');
+  );
+  return base.join('\n');
 }
 
 /**
  * Remove common dispatch wrappers (a single surrounding code fence, leading 'Here is...' preamble lines) so a chatty engine cannot smuggle commentary into the output.
  */
-// @kern-source: naturalize:95
+// @kern-source: naturalize:105
 export function stripDispatchWrapper(raw: string): string {
   let text = raw.trim();
   const fence = text.match(/^```[a-zA-Z]*\n([\s\S]*?)\n?```\s*$/);
@@ -97,13 +107,14 @@ export function stripDispatchWrapper(raw: string): string {
 }
 
 /**
- * Full pipeline: deterministic clean → single-engine rewrite (engine must differ from opts.author when given) → re-scan → optional fallback clean → word-diff stats. Never throws for engine failure — returns ok:false with error.
+ * Full pipeline: deterministic clean → single-engine rewrite (engine must differ from opts.author when given) → re-scan → optional fallback clean → word-diff stats. When opts.minChange (0..1 fraction of words that must change) is set, retries up to opts.maxAttempts (default 2) with a stronger brief and REFUSES to emit output that stays too close to the original — the honest proxy for 'a keyed statistical watermark is very unlikely to survive'. Never throws for engine failure — returns ok:false with error.
  */
-// @kern-source: naturalize:104
+// @kern-source: naturalize:114
 export async function runNaturalize(opts: NaturalizeOptions): Promise<NaturalizeResult> {
   const first = cleanText(opts.input);
   const initialFindings = first.report.findings.length;
-  const stats = { wordsBefore: 0, wordsAfter: 0, changedWords: 0, unchangedRatio: 1 };
+  const minChange = typeof opts.minChange === 'number' && opts.minChange > 0 ? Math.min(opts.minChange, 1) : undefined;
+  const maxAttempts = Math.max(1, minChange === undefined ? 1 : (opts.maxAttempts ?? 2));
   const base: NaturalizeResult = {
     ok: false,
     engineId: opts.engineId,
@@ -111,8 +122,13 @@ export async function runNaturalize(opts: NaturalizeOptions): Promise<Naturalize
     initialFindings,
     rewriteCleaned: false,
     finalClean: false,
-    ...stats,
+    wordsBefore: 0,
+    wordsAfter: 0,
+    changedWords: 0,
+    unchangedRatio: 1,
     residualNotAssessable: first.report.notAssessable,
+    attempts: 0,
+    minChangeMet: minChange === undefined ? undefined : false,
     error: undefined,
   };
 
@@ -127,51 +143,83 @@ export async function runNaturalize(opts: NaturalizeOptions): Promise<Naturalize
     return { ...base, error: err instanceof Error ? err.message : String(err) };
   }
 
-  let rewritten = '';
-  try {
-    const result = await opts.adapter.dispatch({
-      engine,
-      prompt: buildNaturalizePrompt(first.output),
-      systemPrompt: 'You are a text naturalizer. Rewrite the provided text into natural human prose while preserving meaning, facts, and structure. Output ONLY the rewritten text — no commentary, no tools, no file reads, no commands.',
-      textOnly: true,
-      cwd: opts.cwd,
-      mode: 'exec',
-      timeout: opts.timeout,
-      outputDir: opts.outputDir,
-    });
-    if (result.exitCode !== 0 || result.timedOut) {
-      const detail = result.timedOut ? 'timed out' : (result.stderr?.trim()?.slice(0, 200) || `exit ${result.exitCode}`);
-      return { ...base, error: `rewrite dispatch failed: ${detail}` };
+  let best: { output: string; diff: { wordsBefore: number; wordsAfter: number; changedWords: number; unchangedRatio: number }; rewriteCleaned: boolean } | undefined;
+  let lastError = '';
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    let rewritten = '';
+    try {
+      const result = await opts.adapter.dispatch({
+        engine,
+        prompt: buildNaturalizePrompt(first.output, attempt > 1),
+        systemPrompt: 'You are a text naturalizer. Rewrite the provided text into natural human prose while preserving meaning, facts, and structure. Output ONLY the rewritten text — no commentary, no tools, no file reads, no commands.',
+        textOnly: true,
+        cwd: opts.cwd,
+        mode: 'exec',
+        timeout: opts.timeout,
+        outputDir: opts.outputDir,
+      });
+      if (result.exitCode !== 0 || result.timedOut) {
+        const detail = result.timedOut ? 'timed out' : (result.stderr?.trim()?.slice(0, 200) || `exit ${result.exitCode}`);
+        lastError = `rewrite dispatch failed: ${detail}`;
+        continue;
+      }
+      rewritten = stripDispatchWrapper(String(result.stdout ?? ''));
+    } catch (err) {
+      lastError = `rewrite dispatch threw: ${err instanceof Error ? err.message : String(err)}`;
+      continue;
     }
-    rewritten = stripDispatchWrapper(String(result.stdout ?? ''));
-  } catch (err) {
-    return { ...base, error: `rewrite dispatch threw: ${err instanceof Error ? err.message : String(err)}` };
+
+    if (!rewritten) {
+      lastError = 'rewrite engine returned empty output';
+      continue;
+    }
+
+    const rescan = scanText(rewritten);
+    let output = rewritten;
+    let rewriteCleaned = false;
+    if (!rescan.clean) {
+      output = cleanText(rewritten).output;
+      rewriteCleaned = true;
+    }
+    const verify = scanText(output);
+    if (!verify.clean) {
+      lastError = 'internal error: final output still has actionable findings — refusing to emit';
+      continue;
+    }
+
+    const diff = wordDiffStats(first.output, output);
+    const changeRatio = 1 - diff.unchangedRatio;
+    const candidate = { output, diff, rewriteCleaned };
+    if (!best || diff.unchangedRatio < best.diff.unchangedRatio) best = candidate;
+
+    if (minChange === undefined || changeRatio >= minChange) {
+      return {
+        ...base,
+        ok: true,
+        output,
+        rewriteCleaned,
+        finalClean: true,
+        ...diff,
+        attempts: attempt,
+        minChangeMet: minChange === undefined ? undefined : true,
+        residualNotAssessable: verify.notAssessable,
+      };
+    }
+    lastError = `lexical change ${Math.round(changeRatio * 100)}% below --min-change ${Math.round(minChange * 100)}% threshold`;
   }
 
-  if (!rewritten) {
-    return { ...base, error: 'rewrite engine returned empty output' };
+  if (best) {
+    const changeRatio = 1 - best.diff.unchangedRatio;
+    return {
+      ...base,
+      ...best.diff,
+      output: '',
+      rewriteCleaned: best.rewriteCleaned,
+      attempts: maxAttempts,
+      minChangeMet: false,
+      error: `refusing to emit: best rewrite changed only ${Math.round(changeRatio * 100)}% of words after ${maxAttempts} attempt(s) (threshold ${Math.round((minChange ?? 0) * 100)}%). Too much original phrasing survives — a keyed statistical watermark could persist. Re-run with a stronger rewriter, a lower --min-change, or more --max-attempts.`,
+    };
   }
-
-  const rescan = scanText(rewritten);
-  let output = rewritten;
-  let rewriteCleaned = false;
-  if (!rescan.clean) {
-    output = cleanText(rewritten).output;
-    rewriteCleaned = true;
-  }
-  const verify = scanText(output);
-  if (!verify.clean) {
-    return { ...base, rewriteCleaned, error: 'internal error: final output still has actionable findings — refusing to emit' };
-  }
-
-  const diff = wordDiffStats(first.output, output);
-  return {
-    ...base,
-    ok: true,
-    output,
-    rewriteCleaned,
-    finalClean: true,
-    ...diff,
-    residualNotAssessable: verify.notAssessable,
-  };
+  return { ...base, attempts: maxAttempts, error: lastError || 'rewrite failed' };
 }

@@ -59,6 +59,15 @@ export const naturalizeCommand: any = defineCommand({
       description: 'Rewrite dispatch timeout in seconds',
       default: '120',
     },
+    minChange: {
+      type: 'string',
+      description: 'Minimum lexical change required (percent 0-100). Retries with a stronger brief, then REFUSES to emit if the rewrite stays too close to the original — the honest proxy for statistical-watermark destruction.',
+    },
+    maxAttempts: {
+      type: 'string',
+      description: 'Max rewrite attempts when --min-change is set',
+      default: '2',
+    },
     jsonl: {
       type: 'boolean',
       description: 'Emit the report as machine-readable JSONL',
@@ -96,12 +105,25 @@ export const naturalizeCommand: any = defineCommand({
     }
 
     const timeoutSec = parseInt(String(args.timeout ?? '120'), 10) || 120;
+    // citty keeps kebab-case flags as literal keys — normalize up front.
+    const minChangeArg = args.minChange ?? args['min-change'];
+    const maxAttemptsArg = args.maxAttempts ?? args['max-attempts'];
+    let minChange: number | undefined;
+    if (minChangeArg !== undefined && String(minChangeArg).trim() !== '') {
+      const pct = Number(String(minChangeArg).trim());
+      if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+        fail(`Invalid --min-change '${minChangeArg}' — expected a number 0-100 (0 disables the threshold). Refusing to run without the guaranteed gate.`);
+        process.exit(1);
+      }
+      minChange = pct > 0 ? pct / 100 : undefined; // explicit 0 = threshold off
+    }
+    const maxAttempts = Math.max(1, parseInt(String(maxAttemptsArg ?? '2'), 10) || 2);
     const startedAt = new Date().toISOString();
     const { path: outputDir } = createRunDir({ mode: 'naturalize', label: undefined, announce: false });
     const source = (args.file as string | undefined) ?? 'stdin';
 
     if (!args.jsonl) {
-      header(`Naturalize: ${source} · rewriter ${bold(engineId)}${author ? ` (author: ${author})` : ''}`);
+      header(`Naturalize: ${source} · rewriter ${bold(engineId)}${author ? ` (author: ${author})` : ''}${minChange !== undefined ? ` · min-change ${Math.round(minChange * 100)}%` : ''}`);
     }
 
     const result = await runNaturalize({
@@ -113,6 +135,8 @@ export const naturalizeCommand: any = defineCommand({
       timeout: timeoutSec,
       outputDir,
       cwd: process.cwd(),
+      minChange,
+      maxAttempts,
     });
 
     const status: RunStatus = {
@@ -158,13 +182,17 @@ export const naturalizeCommand: any = defineCommand({
         wordsAfter: result.wordsAfter,
         changedWords: result.changedWords,
         unchangedRatio: result.unchangedRatio,
+        attempts: result.attempts,
+        minChange: minChange ?? null,
+        minChangeMet: result.minChangeMet ?? null,
         residualNotAssessable: result.residualNotAssessable,
         output: result.output,
         timestamp: new Date().toISOString(),
       })}\n`);
     } else {
       success(`Re-scan clean — no character-level hidden channels in the rewrite${result.rewriteCleaned ? ' (engine re-introduced channels; deterministically cleaned again)' : ''}.`);
-      info(`Diff: ${result.wordsBefore} → ${result.wordsAfter} words, ${result.changedWords} changed (${Math.round((1 - result.unchangedRatio) * 100)}% lexical change).`);
+      info(`Diff: ${result.wordsBefore} → ${result.wordsAfter} words, ${result.changedWords} changed (${Math.round((1 - result.unchangedRatio) * 100)}% lexical change)${result.attempts > 1 ? ` over ${result.attempts} attempts` : ''}.`);
+      if (result.minChangeMet === true) success(`Lexical-change threshold met (≥ ${Math.round((minChange ?? 0) * 100)}%) — original token stream destroyed; a keyed statistical watermark is very unlikely to survive.`);
       info(`${yellow('Residual / not assessable:')} ${result.residualNotAssessable.join('; ')}`);
       info(dim(`Saved: ${outputDir}`));
     }
@@ -172,7 +200,7 @@ export const naturalizeCommand: any = defineCommand({
     if (args.out) {
       writeFileSync(args.out as string, result.output, 'utf8');
       if (!args.jsonl) success(`Naturalized output written to ${bold(args.out as string)}.`);
-    } else {
+    } else if (!args.jsonl) {
       process.stdout.write(result.output.endsWith('\n') ? result.output : `${result.output}\n`);
     }
   },

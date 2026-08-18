@@ -195,3 +195,100 @@ describe('naturalize — runNaturalize happy path', () => {
     expect(result.residualNotAssessable.length).toBeGreaterThan(0);
   });
 });
+
+describe('naturalize — min-change threshold', () => {
+  it('accepts immediately when the rewrite meets the threshold', async () => {
+    const result = await runNaturalize(makeOpts({ minChange: 0.3 }));
+    expect(result.ok).toBe(true);
+    expect(result.minChangeMet).toBe(true);
+    expect(result.attempts).toBe(1);
+    expect(result.output.length).toBeGreaterThan(0);
+  });
+
+  it('refuses to emit when the rewrite stays too close to the original', async () => {
+    const opts = makeOpts({
+      input: 'alpha beta gamma delta epsilon zeta eta theta',
+      minChange: 0.9,
+      maxAttempts: 2,
+    });
+    let calls = 0;
+    opts.adapter = {
+      dispatch: async () => {
+        calls += 1;
+        // near-identical "rewrite" — 12.5% change, always below 90%
+        return { exitCode: 0, timedOut: false, stdout: 'alpha beta gamma delta epsilon zeta eta OMEGA', stderr: '' };
+      },
+    } as unknown as NaturalizeOptions['adapter'];
+    const result = await runNaturalize(opts);
+    expect(calls).toBe(2);
+    expect(result.ok).toBe(false);
+    expect(result.minChangeMet).toBe(false);
+    expect(result.output).toBe('');
+    expect(result.error).toContain('refusing to emit');
+    expect(result.error).toContain('statistical watermark could persist');
+  });
+
+  it('retries with a stronger brief after a weak first attempt, then succeeds', async () => {
+    const opts = makeOpts({
+      input: 'alpha beta gamma delta',
+      minChange: 0.5,
+      maxAttempts: 2,
+    });
+    const prompts: string[] = [];
+    opts.adapter = {
+      dispatch: async (req: { prompt: string }) => {
+        prompts.push(req.prompt);
+        const weak = prompts.length === 1;
+        return {
+          exitCode: 0,
+          timedOut: false,
+          stdout: weak ? 'alpha beta gamma CHANGED' : 'completely different words entirely',
+          stderr: '',
+        };
+      },
+    } as unknown as NaturalizeOptions['adapter'];
+    const result = await runNaturalize(opts);
+    expect(result.ok).toBe(true);
+    expect(result.attempts).toBe(2);
+    expect(result.minChangeMet).toBe(true);
+    // the retry brief carries the stronger re-lexicalization instruction
+    expect(prompts[1]).toContain('kept too much of the original wording');
+    expect(prompts[0]).not.toContain('kept too much of the original wording');
+  });
+
+  it('minChangeMet is undefined when no threshold is set', async () => {
+    const result = await runNaturalize(makeOpts());
+    expect(result.minChangeMet).toBeUndefined();
+    expect(result.attempts).toBe(1);
+  });
+
+  it('dispatch failure without min-change does NOT silently retry (attempts=1, single spend)', async () => {
+    const opts = makeOpts(); // no minChange
+    let calls = 0;
+    opts.adapter = {
+      dispatch: async () => {
+        calls += 1;
+        return { exitCode: 1, timedOut: false, stdout: '', stderr: 'engine down' };
+      },
+    } as unknown as NaturalizeOptions['adapter'];
+    const result = await runNaturalize(opts);
+    expect(calls).toBe(1);
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('engine down');
+  });
+
+  it('engine failures across all attempts surface the last error', async () => {
+    const opts = makeOpts({ minChange: 0.5, maxAttempts: 3 });
+    let calls = 0;
+    opts.adapter = {
+      dispatch: async () => {
+        calls += 1;
+        return { exitCode: 1, timedOut: false, stdout: '', stderr: 'engine down' };
+      },
+    } as unknown as NaturalizeOptions['adapter'];
+    const result = await runNaturalize(opts);
+    expect(calls).toBe(3);
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('engine down');
+  });
+});

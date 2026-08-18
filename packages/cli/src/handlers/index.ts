@@ -44,3 +44,4 @@ export { handleSynthesis } from '../generated/handlers/synthesis.js';
 export { handleNeroChallenge } from '../generated/handlers/nero-challenge.js';
 export { handleResearch } from '../generated/handlers/research.js';
 export { handleChrome } from '../generated/handlers/chrome.js';
+export { handleSanitize, handleNaturalize } from '../generated/handlers/naturalize.js';

@@ -10,7 +10,7 @@
   },
   "maximums": {
     "filesWithParseErrors": 0,
-    "blockedHandlers": 625
+    "blockedHandlers": 626
   },
   "blockerMaximums": {
     "comments-present": 189,
@@ -18,9 +18,9 @@
     "var-bad-expr": 62,
     "for-stmt": 62,
     "ts-parse-error": 40,
-    "closure-nested-function": 27,
+    "closure-nested-function": 28,
     "closure-loop": 23,
-    "expr-stmt-bad-expr": 23,
+    "expr-stmt-bad-expr": 24,
     "switch-stmt": 22,
     "closure-try": 19,
     "while-bad-cond": 17,

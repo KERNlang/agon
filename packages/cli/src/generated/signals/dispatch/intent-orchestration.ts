@@ -8,7 +8,7 @@ import type { Dispatch } from '../../../handlers/types.js';
 
 import { ENGINE_COLORS } from '../../blocks/output-format.js';
 
-import { handleForge, handleBrainstorm, handleCampfire, handleTribunal, handleThink, handleCouncil, handleSynthesis, handleNeroChallenge, handleResearch, handleChrome, handleConquer, handleBuild, handleReviewMany, handleReviewRoles, runAgentMode, runAgentTeam } from '../../../handlers/index.js';
+import { handleForge, handleBrainstorm, handleCampfire, handleTribunal, handleThink, handleCouncil, handleSynthesis, handleNeroChallenge, handleResearch, handleChrome, handleConquer, handleBuild, handleReviewMany, handleReviewRoles, handleSanitize, handleNaturalize, runAgentMode, runAgentTeam } from '../../../handlers/index.js';
 
 import { handleTeamTribunal } from '../../handlers/team-tribunal.js';
 
@@ -221,6 +221,18 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
     case 'build':
       cb.runAsJob('build', intent.input?.slice(0, 40) ?? 'build', () => handleBuild(intent.input, cb.dispatch, cb.ctx));
       return { handled: true, ranAsJob: true };
+    case 'sanitize': {
+      // Deterministic forensics — no engine dispatch, fast. Runs inline (not
+      // as a job) like the info commands; output is a couple of tables.
+      await handleSanitize(intent.input ?? '', cb.dispatch, cb.ctx);
+      return { handled: true, ranAsJob: false };
+    }
+    case 'naturalize': {
+      if (!intent.input?.trim()) { cb.dispatch({ type: 'warning', message: 'Usage: /naturalize <file> [--author X] [--engine Y] [--min-change N] [--max-attempts N] [--out <file>]' }); return { handled: true, ranAsJob: false }; }
+      const _naLabel = intent.input.slice(0, 40);
+      cb.runAsJob('naturalize', _naLabel, () => handleNaturalize(intent.input ?? '', cb.dispatch, cb.ctx));
+      return { handled: true, ranAsJob: true };
+    }
     case 'agent': {
       // Phase B/C — Cesar-routed /agent with engine-switch attribution.
       // Zero-LLM-cost regex classification decides solo vs team; emits

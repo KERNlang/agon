@@ -20,7 +20,7 @@ async function routeViaCesar(input: string, dispatch: Dispatch, ctx: HandlerCont
   const config = ctx.config;
   const engines = ctx.activeEngines();
   const agentIds = ctx.registry.agentCapableIds(config as any);
-
+  
   // ── Fast-path: single engine → skip scouts entirely ──
   if (engines.length <= 1) {
     const lead = engines[0] ?? 'claude';
@@ -38,7 +38,7 @@ async function routeViaCesar(input: string, dispatch: Dispatch, ctx: HandlerCont
       bids: [],
     } as RoutingDecision;
   }
-
+  
   // ── Fast-path: simple questions/chat → skip scouts, go direct to Cesar brain ──
   // Short inputs or obvious questions don't need 2 engines to scout
   const trimmed = input.trim();
@@ -52,7 +52,7 @@ async function routeViaCesar(input: string, dispatch: Dispatch, ctx: HandlerCont
   const isSmallEditIntent = /\b(?:fix|change|update|rename|edit|tweak|adjust|add|remove|wire)\b/i.test(trimmed);
   const isTinyCodeTask = isCodeTask && trimmed.length <= codeFastPathChars && (hasSingleFileHint || isSmallEditIntent);
   const needsScout = !isSlashLike && !isGreeting && !(isShort && isQuestion);
-
+  
   if (!needsScout || isTinyCodeTask) {
     const preferredLead = (config as any).cesarEngine ?? config.forgeFixedStarter;
     const lead = preferredLead && engines.includes(preferredLead) ? preferredLead : engines[0] ?? 'none';
@@ -72,16 +72,16 @@ async function routeViaCesar(input: string, dispatch: Dispatch, ctx: HandlerCont
       bids: [],
     } as RoutingDecision;
   }
-
+  
   const scoutCount = config.cesarScoutCount ?? 2;
   const scoutTimeout = (config as any).cesarScoutTimeout ?? 18;
   dispatch({ type: 'spinner-start', message: 'Cesar routing…' });
-
+  
   let rankedBids: ScoutBid[];
   let leadEngine: string;
   let topConfidence: number;
   let disagreementSpread: number;
-
+  
   try {
     const result = await runScout({
       question: input,
@@ -108,9 +108,9 @@ async function routeViaCesar(input: string, dispatch: Dispatch, ctx: HandlerCont
       bids: [],
     } as RoutingDecision;
   }
-
+  
   dispatch({ type: 'spinner-stop' });
-
+  
   const threshold = config.cesarDirectThreshold ?? 85;
   const spreadThreshold = config.cesarDisagreementSpread ?? 20;
   const leadHasAgent = !!(ctx.registry.get(leadEngine) as any).agent;
@@ -119,10 +119,10 @@ async function routeViaCesar(input: string, dispatch: Dispatch, ctx: HandlerCont
   const seedPlan = rankedBids[0]?.approach ?? undefined;
   const autoPipeline = (config as any).cesarAutoPipeline === true;
   const pipelineThreshold = (config as any).cesarPipelineThreshold ?? 93;
-
+  
   let action: RoutingDecision['action'];
   let reasoning: string;
-
+  
   // Check if the lead engine is an API engine (supports the new Cesar-driven
   // agent path with ContextThread, StreamBridge, shadow workers). If so, we
   // prefer routing complex multi-step tasks to 'agent' or 'team-agent' rather
@@ -137,7 +137,7 @@ async function routeViaCesar(input: string, dispatch: Dispatch, ctx: HandlerCont
     scopeDirSpread = dirs.size;
   } catch { /* best-effort fanout hint */ }
   const isFanout = AGENT_FANOUT_RE.test(input) || scopeDirSpread > 2;
-
+  
   if (needsCompetition) {
     action = 'forge';
     reasoning = `Bids suggest competitive testing needed`;
@@ -183,12 +183,12 @@ async function routeViaCesar(input: string, dispatch: Dispatch, ctx: HandlerCont
     action = 'campfire';
     reasoning = `Ambiguous task (${topConfidence}%) — campfire to explore the problem space`;
   }
-
+  
   const label = (action === 'campfire' || action === 'tribunal' || action === 'brainstorm')
     ? `Cesar → ${action} (${reasoning})`
     : `Cesar → ${action} (${leadEngine}, ${topConfidence}%)`;
   dispatch({ type: 'info', message: label });
-
+  
   return {
     action,
     leadEngine,

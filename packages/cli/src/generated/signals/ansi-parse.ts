@@ -21,14 +21,14 @@ export function parseAnsiText(text: string): AnsiSegment[] {
   const segments: AnsiSegment[] = [];
   // Match ANSI escape sequences: ESC[ ... m
   const ansiRe = /\x1b\[([0-9;]*)m/g;
-
+  
   let lastIndex = 0;
   let currentColor: string | undefined;
   let currentBg: string | undefined;
   let bold = false;
   let dim = false;
   let italic = false;
-
+  
   let match: RegExpExecArray | null;
   while ((match = ansiRe.exec(text)) !== null) {
     // Push text before this escape sequence
@@ -39,7 +39,7 @@ export function parseAnsiText(text: string): AnsiSegment[] {
       }
     }
     lastIndex = match.index + match[0].length;
-
+  
     // Parse the codes
     const codes = match[1].split(';').map(Number);
     for (let i = 0; i < codes.length; i++) {
@@ -90,7 +90,7 @@ export function parseAnsiText(text: string): AnsiSegment[] {
       }
     }
   }
-
+  
   // Remaining text after last escape
   if (lastIndex < text.length) {
     const chunk = text.slice(lastIndex);
@@ -98,12 +98,12 @@ export function parseAnsiText(text: string): AnsiSegment[] {
       segments.push({ text: chunk, color: currentColor, bgColor: currentBg, bold: bold || undefined, dim: dim || undefined, italic: italic || undefined });
     }
   }
-
+  
   // If no ANSI codes found, return the original text as a single segment
   if (segments.length === 0 && text) {
     segments.push({ text });
   }
-
+  
   return segments;
 }
 

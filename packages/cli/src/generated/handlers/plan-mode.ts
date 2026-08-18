@@ -36,7 +36,7 @@ export async function handleProposePlan(args: Record<string,unknown>, dispatch: 
   if (dropped > 0 && dispatch) {
     dispatch({ type: 'info', message: `Dropped ${dropped} malformed plan step${dropped === 1 ? '' : 's'} from the proposal.` } as any);
   }
-
+  
   let plan = createCesarPlan(typeof args.intent === 'string' ? args.intent : '', steps);
   plan = {
     ...plan,
@@ -46,14 +46,14 @@ export async function handleProposePlan(args: Record<string,unknown>, dispatch: 
     autoApprove: isAgenticAutoMode(ctx) || args.autoApprove === true ? true : undefined,
     selfReview: typeof args.selfReview === 'boolean' ? args.selfReview : undefined,
   };
-
+  
   const filePath = cesarPlanMarkdownPath(plan.id);
   plan = { ...plan, planFilePath: filePath };
   const markdown = formatCesarPlanMarkdown(plan);
   mkdirSync(dirname(filePath), { recursive: true });
   writeFileSync(filePath, markdown);
   saveCesarPlan(plan);
-
+  
   // Supersede AFTER the replacement is safely built + persisted, so a
   // malformed/failed proposal above can never destroy the user's existing
   // approvable plan (codex review). Retire any prior pending proposal on
@@ -70,7 +70,7 @@ export async function handleProposePlan(args: Record<string,unknown>, dispatch: 
   if (ctx.cesar?.proposedPlan && (ctx.cesar.proposedPlan as CesarPlan).state === 'awaiting_approval' && (ctx.cesar.proposedPlan as CesarPlan).id !== plan.id) {
     ctx.cesar.proposedPlan = undefined;
   }
-
+  
   dispatch({ type: 'plan-proposal' as any, plan, markdown, planFilePath: filePath });
   return plan;
 }
@@ -110,9 +110,9 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
   const runsRoot = process.env.AGON_HOME?.trim() ? join(process.env.AGON_HOME.trim(), 'runs') : RUNS_DIR;
   const outputDir = join(runsRoot, `plan-exec-${Date.now()}`);
   mkdirSync(outputDir, { recursive: true });
-
+  
   const wrap = (fn: (step: CesarPlanStep, context: Record<string,string|undefined>, signal?: AbortSignal) => Promise<{result: CesarStepResult, contextExport?: string}>): StepExecutor => ({ execute: fn });
-
+  
   // Helper: extract token/cost from tracker delta.
   // meteredCostUsd, NOT totalCostUsd: only real per-token billing counts as a
   // step's "actual" spend. The ballpark total priced flat-rate engines at a
@@ -122,12 +122,12 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
     const s = tracker.getStats();
     return { tokens: s.totalTokens, cost: s.meteredCostUsd };
   };
-
+  
   const buildContext = (step: CesarPlanStep, context: Record<string, string | undefined>) => {
     const contextStr = (step.imports ?? []).map((k: string) => context[k] ? `## ${k}\n${context[k]}` : '').filter(Boolean).join('\n\n');
     return contextStr ? `${step.description}\n\n${contextStr}` : step.description;
   };
-
+  
   const resolveStepEngines = (step: CesarPlanStep): string[] | undefined => {
     const explicit = (step.engines ?? []).filter((id: any) => typeof id === 'string' && id.trim().length > 0);
     if (explicit.length > 0) return explicit;
@@ -140,9 +140,9 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
     }
     return undefined;
   };
-
+  
   const getPlanDispatch = (): Dispatch | undefined => liveDispatch ?? ctx.cesar?.planDispatch ?? ctx.cesar?.lastDispatch ?? undefined;
-
+  
   const emitPlanForgeProgress = (dispatch: Dispatch | undefined, engines: string[] | undefined, engineStatus: Record<string,string>, startTime: number) => {
     if (!dispatch || !engines || engines.length === 0) return;
     const elapsed = Math.floor((Date.now() - startTime) / 1000);
@@ -159,7 +159,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
     });
     dispatch({ type: 'progress-update', engines: progress } as any);
   };
-
+  
   const notePlanForgeEvent = (event: any, dispatch: Dispatch | undefined, engines: string[] | undefined, engineStatus: Record<string,string>, startTime: number) => {
     const id = String(event?.engineId ?? event?.data?.engineId ?? '');
     switch (event?.type) {
@@ -214,14 +214,14 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
     }
     emitPlanForgeProgress(dispatch, engines, engineStatus, startTime);
   };
-
+  
   const startPlanForgeProgress = (dispatch: Dispatch | undefined, engines: string[] | undefined, engineStatus: Record<string,string>, startTime: number): any => {
     if (!dispatch || !engines || engines.length === 0) return null;
     dispatch({ type: 'info', message: `Forge engines: ${engines.join(', ')}` } as any);
     emitPlanForgeProgress(dispatch, engines, engineStatus, startTime);
     return setInterval(() => emitPlanForgeProgress(dispatch, engines, engineStatus, startTime), 500);
   };
-
+  
   // FU-9: applyForgeWinnerToCwd — shared helper that reads the winning
   // patch from the manifest and applies it to cwd via git apply. This
   // closes the tribunal fix #2 loop: before, runForge produced a winner
@@ -242,7 +242,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
     }
     return applyPatchToTree(cwd, patch.content);
   };
-
+  
   const isAlreadySatisfiedNoopForge = (manifest: any): boolean => {
     // Forge layer now sets manifest.alreadySatisfied for both the
     // early-baseline-passes case and the all-no-op-after-stage2 case.
@@ -260,7 +260,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       return r.pass === false && hasFitnessLog && noPatch && zeroScore && notDispatchCrash;
     });
   };
-
+  
   return {
     self: wrap(async (step, context, signal) => {
       const startTime = Date.now();
@@ -363,7 +363,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
         return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: '', error: err instanceof Error ? err.message : String(err) } };
       }
     }),
-
+  
     forge: wrap(async (step, context, signal) => {
       const startTime = Date.now();
       const before = snapshotTokens();
@@ -383,7 +383,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
           dispatch && engines ? (event: any) => notePlanForgeEvent(event, dispatch, engines, engineStatus, startTime) : undefined,
         );
         const after = snapshotTokens();
-
+  
         if (!manifest.winner) {
           const engineSummaries = Object.entries(manifest.results ?? {}).map(([id, r]: [string, any]) => {
             return `  ${id}: ${r.pass ? 'PASS' : 'FAIL'} (score: ${r.score ?? 'N/A'}, ${r.diffLines ?? 0} lines)`;
@@ -409,7 +409,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
             result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output, error: errorReason },
           };
         }
-
+  
         // FU-9: apply the winning patch to cwd so downstream review/
         // verify steps see real changes. Failure to apply = step failure.
         const applied = applyForgeWinnerToCwd(manifest);
@@ -418,7 +418,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
             result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: `Winner ${manifest.winner} but patch apply failed: ${applied.error}`, error: `patch apply failed: ${applied.error}` },
           };
         }
-
+  
         return {
           result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: `Winner: ${manifest.winner} (patch applied to cwd)` },
           contextExport: `Forge winner: ${manifest.winner}`,
@@ -431,7 +431,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
         dispatch?.({ type: 'progress-clear' } as any);
       }
     }),
-
+  
     teamforge: wrap(async (step, context, signal) => {
       const startTime = Date.now();
       const before = snapshotTokens();
@@ -481,7 +481,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
         dispatch?.({ type: 'progress-clear' } as any);
       }
     }),
-
+  
     brainstorm: wrap(async (step, context, signal) => {
       const startTime = Date.now();
       const before = snapshotTokens();
@@ -498,7 +498,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
         return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: '', error: err instanceof Error ? err.message : String(err) } };
       }
     }),
-
+  
     tribunal: wrap(async (step, context, signal) => {
       const startTime = Date.now();
       const before = snapshotTokens();
@@ -517,7 +517,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
         return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: '', error: err instanceof Error ? err.message : String(err) } };
       }
     }),
-
+  
     campfire: wrap(async (step, context, signal) => {
       const startTime = Date.now();
       const before = snapshotTokens();
@@ -535,7 +535,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
         return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: '', error: err instanceof Error ? err.message : String(err) } };
       }
     }),
-
+  
     delegate: wrap(async (step, context, signal) => {
       const startTime = Date.now();
       const before = snapshotTokens();
@@ -552,7 +552,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
         return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: '', error: err instanceof Error ? err.message : String(err) } };
       }
     }),
-
+  
     pipeline: wrap(async (step, context, signal) => {
       // Pipeline = brainstorm → forge → tribunal chain
       // Resolve, compile, and verify the certified workflow spec before executing.
@@ -562,7 +562,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       const pipelineFlowIssues: WorkflowConformanceIssue[] = verifyWorkflowExecutionPlanFlow(pipelinePlan);
       if (pipelineFlowIssues.length > 0) throwWorkflowConformance(pipelineFlowIssues, 'agon.brainstorm-forge-tribunal@v1 flow verification failed');
       const pipelineRunId = `plan-pipeline-${step.id}-${Date.now()}`;
-
+  
       const startTime = Date.now();
       const before = snapshotTokens();
       const task = buildContext(step, context);
@@ -617,7 +617,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
         if (!emitPipelinePhase('brainstorm', 'completed')) return pipelineTrackingFailureResult();
         currentWorkflowPhase = '';
         pipelineContext = bsResult.response;
-
+  
         // 2. Forge — compete on implementation
         currentWorkflowPhase = 'forge';
         if (!emitPipelinePhase('forge', 'started')) return pipelineTrackingFailureResult();
@@ -642,7 +642,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
         }
         if (!emitPipelinePhase('forge', 'completed')) return pipelineTrackingFailureResult();
         currentWorkflowPhase = '';
-
+  
         // 3. Tribunal — review the forge winner
         currentWorkflowPhase = 'tribunal';
         if (!emitPipelinePhase('tribunal', 'started')) return pipelineTrackingFailureResult();
@@ -651,7 +651,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
         if (!emitPipelinePhase('tribunal', 'completed')) return pipelineTrackingFailureResult();
         currentWorkflowPhase = '';
         closePipelineRun('completed');
-
+  
         const after = snapshotTokens();
         return {
           result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: `[workflow:${pipelineSpec.id}] Pipeline: brainstorm → forge (${manifest.winner}) → tribunal\n${tResult.summary}` },
@@ -670,7 +670,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
         dispatch?.({ type: 'progress-clear' } as any);
       }
     }),
-
+  
     // Tribunal fix #3: review step calls runReviewCore directly so it
     // does NOT touch ctx.setActiveAbort (which would nuke the plan
     // executor's own abort controller and silently break Ctrl-C for
@@ -744,7 +744,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
         };
       }
     }),
-
+  
     agent: wrap(async (step, context, signal) => {
       const startTime = Date.now();
       const before = snapshotTokens();
@@ -793,7 +793,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
         };
       }
     }),
-
+  
     // Codex P2: wire team-agent to the in-tree runAgentTeam. Same
     // capture-dispatch + parentSignal pattern as the agent executor.
     'team-agent': wrap(async (step, context, signal) => {

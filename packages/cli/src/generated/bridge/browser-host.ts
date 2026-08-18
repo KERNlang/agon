@@ -237,7 +237,7 @@ export async function runPair(msg: unknown, deps: PairDeps): Promise<PairRespons
   const v = validatePair(msg, deps.installedOrigins);
   if (!v.ok || !v.origin) return { ok: false, error: v.error ?? 'invalid request', protocol: PROTOCOL };
   const origin = v.origin;
-
+  
   const release = deps.acquireLock();
   if (!release) return { ok: false, error: 'another pairing is in progress', protocol: PROTOCOL };
   try {
@@ -245,7 +245,7 @@ export async function runPair(msg: unknown, deps: PairDeps): Promise<PairRespons
     // already written its connection file, so we reuse it instead of double-spawning.
     const reuse = findReusableServe(deps.listServeRecords(), origin, deps.isAlive);
     if (reuse) return { ok: true, url: reuse.url, token: reuse.token, started: false, protocol: PROTOCOL };
-
+  
     const pid = deps.spawnServe(origin);
     // Fast-fail a failed spawn instead of polling the full waitForServe timeout
     // for a pid that will never appear.

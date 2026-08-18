@@ -58,12 +58,12 @@ export function EngineProgressView({ engines, mode }: { engines:EngineProgress[]
     if (s.startsWith('R') || s.startsWith('waiting')) return 'tribunal';
     return 'default';
   })();
-
+  
   if (detected === 'forge') return <ForgeArena engines={engines} />;
   if (detected === 'brainstorm') return <BrainstormStorm engines={engines} />;
   if (detected === 'campfire') return <CampfireFire engines={engines} />;
   if (detected === 'tribunal') return <TribunalCourt engines={engines} />;
-
+  
   // Default: plain list (fallback for unknown modes)
   return (
     <Box flexDirection="column">
@@ -90,7 +90,7 @@ const EngineBlock = React.memo(function EngineBlock({ engineId, color, content, 
   const wrapWidth = contentWidth(8);
   const cleaned = cleanEngineOutput(content);
   const hexColor = color256toHex(color);
-
+  
   if (!cleaned.trim()) {
     return (
       <Box flexDirection="column" marginY={0} paddingLeft={2}>
@@ -100,9 +100,9 @@ const EngineBlock = React.memo(function EngineBlock({ engineId, color, content, 
       </Box>
     );
   }
-
+  
   const segments = parseMarkdownBlocks(cleaned);
-
+  
   return (
     <Box flexDirection="column" marginY={1} paddingLeft={2}>
       <Text color={hexColor}>{'\u250c\u2500\u2500 '}<Text bold color={hexColor}>{engineId}</Text>{actingNote ? <Text dimColor>{' ('}{actingNote}{')'}</Text> : null}</Text>
@@ -279,7 +279,7 @@ export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboar
         <Text dimColor>{'     workspace: '}{event.workspace.path}</Text>
       )}
       <Text> </Text>
-
+  
       <Box>
         <Text color="#f97316">{'  Engines: '}</Text>
         {event.enabled.map((id: string, i: number) => (
@@ -297,7 +297,7 @@ export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboar
           </>
         )}
       </Box>
-
+  
       <Text> </Text>
       <Box flexDirection="column">
         <Box>
@@ -593,13 +593,13 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
     case 'tool-call': {
       // Suppress empty internal tool calls (e.g. Codex Delegate with no input)
       if (!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')) return null;
-
+  
       const toolColor = event.status === 'error' ? '#ef4444' : event.status === 'done' ? '#4ade80' : '#fbbf24';
       const icon = event.status === 'error' ? icons().fail : event.status === 'done' ? icons().success : '\u27f3';
       const eColor = engineColor(event.engineId);
       const codeWidth = contentWidth(10);
       const nest = <Text color={eColor}>{' \u23bf '}</Text>;
-
+  
       // Parse structured input (JSON from handler, or raw string from other engines)
       let parsed: Record<string, unknown> = {};
       const rawInput = event.input || '';
@@ -628,7 +628,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
       const durSuffix = durTextRaw
         ? <Text dimColor>{' · '}{durTextRaw}</Text>
         : null;
-
+  
       if (toolKey === 'reportconfidence') {
         return (
           <Box paddingLeft={2}>
@@ -636,7 +636,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
           </Box>
         );
       }
-
+  
       // ── Bash / Run ──
       if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') {
         const cmd = (parsed.command as string) || rawInput || '';
@@ -707,7 +707,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
           </Box>
         );
       }
-
+  
       // ── Edit ──
       if (toolKey === 'edit' || toolKey === 'update' || toolKey === 'agonedit') {
         const filePath = (parsed.file_path as string) || (parsed.filePath as string) || '';
@@ -759,7 +759,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
           </Box>
         );
       }
-
+  
       // ── Write ──
       if (toolKey === 'write' || toolKey === 'agonwrite') {
         const filePath = (parsed.file_path as string) || (parsed.filePath as string) || '';
@@ -802,7 +802,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
           </Box>
         );
       }
-
+  
       // ── Apply Patch ──
       if (toolKey === 'applypatch' || toolKey === 'apply_patch') {
         const patch = parsePatchPreview(rawInput, parsed);
@@ -826,7 +826,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
           </Box>
         );
       }
-
+  
       // ── Read ──
       if (toolKey === 'read') {
         const filePath = (parsed.file_path as string) || (parsed.filePath as string) || '';
@@ -854,7 +854,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
           </Box>
         );
       }
-
+  
       // ── Grep / Search ──
       if (toolKey === 'grep' || toolKey === 'search') {
         const pattern = (parsed.pattern as string) || rawInput || '';
@@ -883,7 +883,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
           </Box>
         );
       }
-
+  
       // ── Glob / Find ──
       if (toolKey === 'glob' || toolKey === 'find') {
         const pattern = (parsed.pattern as string) || rawInput || '';
@@ -910,7 +910,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
           </Box>
         );
       }
-
+  
       // ── Fallback: generic tool ──
       const ic = icons();
       const toolLabels: Record<string, string> = {
@@ -1139,7 +1139,7 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
     elapsedLabel,
     totalOutputBytes > 0 ? `${Math.ceil(totalOutputBytes / 1024)}kb` : '',
   ].filter(Boolean);
-
+  
   return (
     <Box paddingLeft={2} flexDirection="column">
       <Text dimColor>{'  \u23f5 '}{metaParts.join(' \u00b7 ')}</Text>

@@ -9,8 +9,8 @@ import { modelsCommand } from './commands/models.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// The exact 42 keys `packages/cli/src/index.ts` registered before the lazy
-// refactor (40 unique commands; worktree/wt and update/upgrade are aliases
+// The exact 43 keys `packages/cli/src/index.ts` registered before the lazy
+// refactor (41 unique commands; worktree/wt and update/upgrade are aliases
 // of the same command). If a command is ever added/removed/renamed, this
 // snapshot must be updated deliberately — it exists so a lazy-loading bug
 // can never silently drop a command from `agon --help`.
@@ -35,6 +35,8 @@ const EXPECTED_COMMAND_NAMES = [
   'config',
   'review',
   'call',
+  'sanitize',
+  'naturalize',
   'job',
   'agent-guide',
   'install-agent-prompts',
@@ -159,6 +161,8 @@ describe('lazySubCommands — full parity with the real command modules', () => 
     config: [() => import('./commands/config.js'), 'configCommand'],
     review: [() => import('./commands/review.js'), 'reviewCommand'],
     call: [() => import('./commands/call.js'), 'callCommand'],
+    sanitize: [() => import('./commands/sanitize.js'), 'sanitizeCommand'],
+    naturalize: [() => import('./commands/naturalize.js'), 'naturalizeCommand'],
     job: [() => import('./commands/job.js'), 'jobCommand'],
     'agent-guide': [() => import('./commands/agent-guide.js'), 'agentGuideCommand'],
     'install-agent-prompts': [() => import('./commands/install-agent-prompts.js'), 'installAgentPromptsCommand'],

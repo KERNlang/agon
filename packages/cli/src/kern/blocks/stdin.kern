@@ -1,0 +1,14 @@
+// Shared stdin reader for CLI commands (sanitize, naturalize, …).
+// Single source of truth — previously duplicated per-command, flagged by
+// kern-guard as kern-duplicate-symbol.
+
+fn name=readStdin returns="Promise<string>" async=true
+  handler <<<
+    return new Promise((resolve, reject) => {
+      let data = '';
+      process.stdin.setEncoding('utf8');
+      process.stdin.on('data', (chunk) => { data += chunk; });
+      process.stdin.on('end', () => resolve(data));
+      process.stdin.on('error', reject);
+    });
+  >>>

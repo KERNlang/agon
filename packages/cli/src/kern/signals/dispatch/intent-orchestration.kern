@@ -3,7 +3,7 @@ import from="node:path" names="join"
 import from="@kernlang/agon-core" names="resolveWorkingDir,spawnWithTimeout"
 import from="../../../handlers/types.js" names="Dispatch" types=true
 import from="../../blocks/output-format.js" names="ENGINE_COLORS"
-import from="../../../handlers/index.js" names="handleForge,handleBrainstorm,handleCampfire,handleTribunal,handleThink,handleCouncil,handleSynthesis,handleNeroChallenge,handleResearch,handleChrome,handleConquer,handleBuild,handleReviewMany,handleReviewRoles,runAgentMode,runAgentTeam"
+import from="../../../handlers/index.js" names="handleForge,handleBrainstorm,handleCampfire,handleTribunal,handleThink,handleCouncil,handleSynthesis,handleNeroChallenge,handleResearch,handleChrome,handleConquer,handleBuild,handleReviewMany,handleReviewRoles,handleSanitize,handleNaturalize,runAgentMode,runAgentTeam"
 import from="../../handlers/team-tribunal.js" names="handleTeamTribunal"
 import from="../../handlers/team-forge.js" names="handleTeamForge"
 import from="../../handlers/team-brainstorm.js" names="handleTeamBrainstorm"
@@ -204,6 +204,18 @@ fn name=dispatchOrchestrationIntent async=true params="intent:any, input:string,
       case 'build':
         cb.runAsJob('build', intent.input?.slice(0, 40) ?? 'build', () => handleBuild(intent.input, cb.dispatch, cb.ctx));
         return { handled: true, ranAsJob: true };
+      case 'sanitize': {
+        // Deterministic forensics — no engine dispatch, fast. Runs inline (not
+        // as a job) like the info commands; output is a couple of tables.
+        await handleSanitize(intent.input ?? '', cb.dispatch, cb.ctx);
+        return { handled: true, ranAsJob: false };
+      }
+      case 'naturalize': {
+        if (!intent.input?.trim()) { cb.dispatch({ type: 'warning', message: 'Usage: /naturalize <file> [--author X] [--engine Y] [--min-change N] [--max-attempts N] [--out <file>]' }); return { handled: true, ranAsJob: false }; }
+        const _naLabel = intent.input.slice(0, 40);
+        cb.runAsJob('naturalize', _naLabel, () => handleNaturalize(intent.input ?? '', cb.dispatch, cb.ctx));
+        return { handled: true, ranAsJob: true };
+      }
       case 'agent': {
         // Phase B/C — Cesar-routed /agent with engine-switch attribution.
         // Zero-LLM-cost regex classification decides solo vs team; emits

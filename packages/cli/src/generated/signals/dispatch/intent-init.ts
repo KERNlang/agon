@@ -19,7 +19,7 @@ export async function dispatchInitIntent(intent: any, input: string, cb: Dispatc
       const { homedir } = await import('node:os');
       const home = homedir();
       const scopeArg = (intent as any).scope as string | undefined;
-
+  
       // Determine target path
       let targets: { label: string; path: string }[] = [];
       if (scopeArg === 'global' || scopeArg === 'agon') {
@@ -36,7 +36,7 @@ export async function dispatchInitIntent(intent: any, input: string, cb: Dispatc
           { label: 'Project (./AGENTS.md)', path: join(resolveWorkingDir(), 'AGENTS.md') },
         ];
       }
-
+  
       if (targets.length > 1) {
         cb.dispatch({ type: 'header', title: 'AGENTS.md Setup' });
         cb.dispatch({ type: 'info', message: 'Choose where to create your AGENTS.md:' });
@@ -45,10 +45,10 @@ export async function dispatchInitIntent(intent: any, input: string, cb: Dispatc
         cb.dispatch({ type: 'info', message: 'Usage: /init global | /init user | /init project' });
         break;
       }
-
+  
       const target = targets[0];
       const targetPath = target.path;
-
+  
       // Check if file already exists
       const { existsSync, mkdirSync, writeFileSync } = await import('node:fs');
       if (existsSync(targetPath)) {
@@ -56,11 +56,11 @@ export async function dispatchInitIntent(intent: any, input: string, cb: Dispatc
         cb.dispatch({ type: 'info', message: 'Edit it directly or delete it first to regenerate.' });
         break;
       }
-
+  
       // Ensure parent directory exists
       const { dirname } = await import('node:path');
       mkdirSync(dirname(targetPath), { recursive: true });
-
+  
       // Detect context for smart defaults
       const cwd = resolveWorkingDir();
       const shellVar = process.env.SHELL ?? '/bin/zsh';
@@ -68,12 +68,12 @@ export async function dispatchInitIntent(intent: any, input: string, cb: Dispatc
       const gitConfigName = await import('node:child_process').then(cp => {
         try { return cp.execSync('git config user.name', { encoding: 'utf-8' }).trim(); } catch { return 'YourName'; }
       });
-
+  
       // Build AGENTS.md content based on scope
       let content = '';
       const isGlobal = targetPath.includes('.agon');
       const isUserHome = targetPath === join(home, 'AGENTS.md');
-
+  
       if (isGlobal) {
         content = [
           '# AGENTS.md — Personal (global)',
@@ -147,7 +147,7 @@ export async function dispatchInitIntent(intent: any, input: string, cb: Dispatc
       } else {
         // ── Auto-detect project context ──
         const { readFileSync: readSync, existsSync: existsSync2, readdirSync } = await import('node:fs');
-
+  
         // Detect project name + description from package.json
         let projectName = basename(cwd);
         let projectDesc = '';
@@ -156,7 +156,7 @@ export async function dispatchInitIntent(intent: any, input: string, cb: Dispatc
           if (pkg.name) projectName = pkg.name;
           if (pkg.description) projectDesc = pkg.description;
         } catch {}
-
+  
         // Detect workspaces / key directories
         const topDirs = readdirSync(cwd, { withFileTypes: true })
           .filter((d: any) => d.isDirectory() && !d.name.startsWith('.') && d.name !== 'node_modules')
@@ -164,7 +164,7 @@ export async function dispatchInitIntent(intent: any, input: string, cb: Dispatc
         const hasPackages = topDirs.includes('packages');
         const hasEngines = topDirs.includes('engines');
         const testsDir = topDirs.includes('tests') ? 'tests' : topDirs.includes('test') ? 'test' : '';
-
+  
         // Detect language / framework signals. `src/kern` at cwd covers
         // package-level dirs (e.g. /init run from packages/core); the
         // topDirs probe below covers repo roots with workspace layout.
@@ -176,7 +176,7 @@ export async function dispatchInitIntent(intent: any, input: string, cb: Dispatc
         });
         const hasTs = existsSync2(join(cwd, 'tsconfig.json'));
         const hasVitest = existsSync2(join(cwd, 'vitest.config.ts')) || existsSync2(join(cwd, 'vitest.config.mts'));
-
+  
         // Detect Python signals
         const hasPyproject = existsSync2(join(cwd, 'pyproject.toml'));
         const hasSetupPy = existsSync2(join(cwd, 'setup.py'));
@@ -193,7 +193,7 @@ export async function dispatchInitIntent(intent: any, input: string, cb: Dispatc
         }
         if (!pythonMgr && hasSetupPy) pythonMgr = 'pip';
         const hasPytest = existsSync2(join(cwd, 'pytest.ini')) || existsSync2(join(cwd, 'conftest.py')) || (hasPyproject && (() => { try { return /pytest/.test(readSync(join(cwd, 'pyproject.toml'), 'utf-8')); } catch { return false; } })());
-
+  
         // Detect Rust signals
         const hasCargo = existsSync2(join(cwd, 'Cargo.toml'));
         let cargoBin = '';
@@ -204,7 +204,7 @@ export async function dispatchInitIntent(intent: any, input: string, cb: Dispatc
           } catch {}
         }
         const hasRustTests = hasCargo; // cargo test is always available
-
+  
         // Detect Go signals
         const hasGoMod = existsSync2(join(cwd, 'go.mod'));
         let goModule = '';
@@ -215,7 +215,7 @@ export async function dispatchInitIntent(intent: any, input: string, cb: Dispatc
             if (m) goModule = m[1];
           } catch {}
         }
-
+  
         // Detect test and typecheck scripts independently so we don't
         // emit `npm run test` for packages that only define typecheck —
         // that command would fail and send every future session down a
@@ -227,7 +227,7 @@ export async function dispatchInitIntent(intent: any, input: string, cb: Dispatc
           if (pkg.scripts?.test) testCmd = pkg.scripts.test;
           if (pkg.scripts?.typecheck) hasTypecheckScript = true;
         } catch {}
-
+  
         // Build architecture section
         const archLines: string[] = [];
         if (hasPackages) {
@@ -257,7 +257,7 @@ export async function dispatchInitIntent(intent: any, input: string, cb: Dispatc
         if (hasPython && topDirs.some((d: string) => ['src', 'lib', 'app'].includes(d))) {
           archLines.push(`  Python project (${pythonMgr || 'pip'})`);
         }
-
+  
         // Build lines
         const lines: string[] = [
           `# AGENTS.md -- ${projectName}`,
@@ -265,7 +265,7 @@ export async function dispatchInitIntent(intent: any, input: string, cb: Dispatc
         ];
         if (projectDesc) lines.push(projectDesc, '');
         lines.push(`Engine/model settings: \`agon config\` (~/.agon/config.json)`, '');
-
+  
         // KERN section (if detected)
         if (hasKern) {
           lines.push(
@@ -280,12 +280,12 @@ export async function dispatchInitIntent(intent: any, input: string, cb: Dispatc
             '',
           );
         }
-
+  
         // Architecture section
         if (archLines.length > 0) {
           lines.push('## Architecture', '', ...archLines, '');
         }
-
+  
         // Build & Test section — only emit commands that actually exist
         // in the package's scripts. Emitting a non-existent command here
         // sends every future session down a wrong path.
@@ -322,7 +322,7 @@ export async function dispatchInitIntent(intent: any, input: string, cb: Dispatc
           lines.push('go vet ./...            # Lint');
         }
         lines.push('');
-
+  
         // Conventions
         lines.push('## Conventions', '');
         // Node / TypeScript
@@ -353,17 +353,17 @@ export async function dispatchInitIntent(intent: any, input: string, cb: Dispatc
         // General
         if (testsDir) lines.push(`- Tests: ${testsDir}/`);
         lines.push('');
-
+  
         content = lines.join('\n');
       }
-
+  
       writeFileSync(targetPath, content, 'utf-8');
       cb.dispatch({ type: 'success', message: `Created ${target.label}` });
       cb.dispatch({ type: 'info', message: targetPath });
       cb.dispatch({ type: 'info', message: 'Edit it to customize — Agon reads it on every session start.' });
       break;
     }
-
+  
     // ── Skill scaffolding ──
     default: return null;
   }

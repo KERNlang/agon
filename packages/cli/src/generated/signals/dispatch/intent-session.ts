@@ -62,7 +62,7 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
       }
       break;
     }
-
+  
     // ── Info commands ──
     case 'leaderboard': handleLeaderboard(cb.dispatch); break;
     case 'cesar-report': handleCesarReport(cb.dispatch); break;
@@ -223,7 +223,7 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
     case 'flow': await handleFlowReport(cb.dispatch, cb.ctx, cb.mode, cb.sessionStartTime); break;
     case 'flows': handleFlowAnalysis(cb.dispatch); break;
     case 'chats': handleChats(cb.dispatch, intent.sessionId); break;
-
+  
     // ── Plan commands ──
     case 'plan': await handlePlanShow(cb.dispatch, cb.ctx, intent.planId); break;
     case 'plan-task': {
@@ -243,7 +243,7 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
       cb.ctx.cesar.planDispatch = cb.dispatch;
       const cesarInput = `[PLAN MODE] ${intent.task}`;
       const wasJob = await routeWithCesar(cesarInput, [], cb);
-
+  
       // After routeWithCesar, check if Cesar proposed a plan
       const proposed: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
       if (proposed && proposed.state === 'awaiting_approval') {
@@ -301,7 +301,7 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
       break;
     }
     case 'commit': await handleCommit(intent.input, cb.dispatch, cb.ctx); break;
-
+  
     default: return null;
   }
   // break-path cases land here — mirrors the original switch's shared _emitPost() tail

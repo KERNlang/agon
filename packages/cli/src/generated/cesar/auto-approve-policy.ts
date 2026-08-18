@@ -81,7 +81,7 @@ export function applyAgenticAutoApprovePolicy(plan: CesarPlan, config: AgonConfi
   if (config.cesarAutoApproveMode === 'off') return applyAutoApprovePolicy(plan, config);
   if (!lease) return { approve: false, reason: 'agentic task lease unavailable', adjustedCostUsd: plan.totalEstimatedCostUsd };
   if (plan.autoApprove !== true) return { approve: false, reason: 'plan did not request autoApprove', adjustedCostUsd: plan.totalEstimatedCostUsd };
-
+  
   for (const step of plan.steps) {
     const boundaryText = [step.description, step.fitnessCmd, step.verifyCmd].filter((value): value is string => typeof value === 'string' && value.trim().length > 0).join('\n');
     const actionDecision = evaluateTaskAction(lease, step.type, boundaryText);
@@ -96,7 +96,7 @@ export function applyAgenticAutoApprovePolicy(plan: CesarPlan, config: AgonConfi
       }
     }
   }
-
+  
   const agenticConfig: AgonConfig = { ...config, cesarAutoApproveMode: 'always' };
   return applyAutoApprovePolicy(plan, agenticConfig);
 }

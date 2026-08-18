@@ -122,6 +122,8 @@ Pick by the **shape** of the problem, not the topic:
 | The **first** passing solution, fast | **speculate** | N engines race; the first to pass the test wins and is applied immediately. |
 | A routine build with one engine | **pipeline** | Single-engine build → review → fix loop; no competition overhead. |
 | A whole open-ended thing built unattended | **conquer** | Cesar drives a builder CLI (codex/claude/agy) through the build, convening nero/tribunal/council on forks, and stops at a human merge gate. The open-ended sibling to **goal**. |
+| Hidden AI-watermark channels found / stripped | **sanitize** | Deterministic forensics — zero-width chars, bidi controls, tag stego, homoglyphs, whitespace payloads, and PNG/JPEG/SVG provenance metadata. No AI, fully verifiable. |
+| AI-written text rewritten to read human | **naturalize** | Deterministic sanitize → a **non-author** engine rewrites (writer ≠ rewriter) → mandatory re-scan → word-diff report, with a `--min-change` honesty threshold. |
 | Existing code checked for bugs | **review** | Multi-engine review folded into one confidence-tiered consensus. |
 | A task done end-to-end autonomously | **agent** | One engine (Cesar-routed) runs a multi-turn tool loop to do the work. |
 | A whole queue driven to "done" unattended | **goal** | Per task: build → witness → gate → review + judge → commit, for hours. |
@@ -399,6 +401,31 @@ agon conquer "..." --push                           # on success, commit + push 
 - **Stops at a human merge gate.** conquer never auto-merges to main. By default it leaves the isolated branch and worktree for you to review; `--push` commits + pushes that branch, then prints an **engine-written PR title/body** (from the real branch diff) and a **prefilled GitHub PR link** (`…/compare/…?quick_pull=1&title=…&body=…`) — click it, the form is already filled, review + merge. No `gh` CLI or token needed. `--push` additionally **refuses protected branches** (`main`/`master` by default; override with `protectedPushBranches` in config) — if the worktree HEAD somehow resolves to one, the work stays committed locally for a human push. The done-oracle is irreducible for open-ended work, so the human merge gate is load-bearing — it holds the original product intent no automated layer can reconstruct.
 
 Also available as interactive `/conquer` in the REPL (with full CLI flag parity: `--max-turns`, `--gate-timeout`, `--max-hours`, `--timeout`) and `agon call conquer` for external CLIs.
+
+### Sanitize & Naturalize (watermark removal)
+
+Deterministic AI-watermark forensics plus an engine-backed "make it natural" rewrite — with an honesty contract: Agon removes what it can *prove* is gone and reports the rest, never claims "undetectable".
+
+```bash
+# Phase 1 — deterministic scan/clean, no AI involved
+agon sanitize draft.md --detect          # report-only forensic scan, exits 1 on findings
+agon sanitize draft.md -o clean.md       # strip zero-width chars, bidi controls, tag stego, homoglyphs, whitespace payloads
+agon sanitize image.png --metadata       # scan PNG/JPEG/SVG for signed provenance (C2PA/JUMBF, XMP, Exif)
+agon sanitize image.png --metadata --strip-metadata --in-place
+
+# Phase 2 — full naturalization pipeline
+agon naturalize draft.md --author claude -o natural.md
+agon naturalize draft.md --engine minimax --min-change 30
+```
+
+**How naturalize works:** deterministic sanitize → ONE engine rewrites the text into natural human prose → mandatory re-scan → word-diff report.
+
+- **Writer ≠ rewriter, enforced.** With `--author claude` the rewriter is forced to be a different engine (a watermark keyed to one model's style is best broken by another). Without it, the first active engine is used.
+- **Proof, not promises.** The re-scan demonstrates character-level channels are gone. Keyed *statistical* watermarks (word-choice distributions, Anthropic-style lexical marks) are always honestly reported as **not assessable** — never claimed removed.
+- **`--min-change N`** requires at least N% lexical change vs. the original; naturalize retries with a stronger brief, then **refuses to emit** a rewrite that stayed too close — the honest proxy for statistical-mark destruction.
+
+Also available as interactive `/sanitize` and `/naturalize` in the REPL.
+
 
 ## Interactive REPL
 

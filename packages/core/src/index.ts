@@ -13,6 +13,10 @@ export {
   SYNTAX_VALIDATOR_TIMEOUT_MS, SYNTAX_VALIDATOR_DISABLE_ENV,
 } from './syntax-validator.js';
 export { resolveDedupSidecar, resolveSidecarPython } from './generated/blocks/dedup-resolver.js';
+export { scanText, cleanText, countsByChannel } from './generated/text/forensics.js';
+export type { TextFinding, ScanReport, CleanResult } from './generated/text/forensics.js';
+export { scanMetadata, stripMetadata, countsByChannelMetadata } from './generated/text/metadata-forensics.js';
+export type { MetadataFinding, MetadataScanReport, MetadataStripResult } from './generated/text/metadata-forensics.js';
 export {
   createRunDir, writeRunStatus, printRunSummary, findLatestRunDir,
   sanitizeRunLabel,

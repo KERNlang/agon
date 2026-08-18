@@ -84,7 +84,7 @@ export async function ensureJobDaemon(timing: JobClientTiming, quiet?: boolean):
   if (initial !== null) {
     return { ok: false, message: `Daemon capability probe failed: ${initial.type === 'error' ? initial.message : initial.type}` };
   }
-
+  
   if (quiet) {
     const originalLog = console.log;
     try { console.log = () => {}; await startDaemon(false); }

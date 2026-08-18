@@ -11,7 +11,7 @@ import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 // @kern-source: plan:6
 export async function handlePlanShow(dispatch: Dispatch, ctx: HandlerContext, planId?: string): Promise<void> {
   let plan: Plan | null = null;
-
+  
   if (planId) {
     plan = loadPlan(planId);
     if (!plan) {
@@ -29,9 +29,9 @@ export async function handlePlanShow(dispatch: Dispatch, ctx: HandlerContext, pl
       return;
     }
   }
-
+  
   dispatch({ type: 'plan', plan });
-
+  
   // If draft, prompt for approval inline
   if (plan.state === 'draft') {
     const answer = await ctx.askQuestion('Approve plan? [Y/n]');
@@ -45,7 +45,7 @@ export async function handlePlanShow(dispatch: Dispatch, ctx: HandlerContext, pl
       ctx.setCurrentPlan(approved);
       savePlan(approved);
       dispatch({ type: 'success', message: 'Plan approved.' });
-
+  
       if (approved.action.type === 'forge') {
         const { handleForge } = await import('../handlers/forge.js');
         await handleForge(approved.action.task, approved.action.fitnessCmd ?? null, dispatch, ctx, approved, approved.action.hardened);
@@ -72,12 +72,12 @@ export async function handleApprove(dispatch: Dispatch, ctx: HandlerContext): Pr
     dispatch({ type: 'warning', message: `Plan is ${ctx.currentPlan.state}, not draft.` });
     return;
   }
-
+  
   let plan = approvePlan(ctx.currentPlan);
   ctx.setCurrentPlan(plan);
   savePlan(plan);
   dispatch({ type: 'success', message: 'Plan approved.' });
-
+  
   if (plan.action.type === 'forge') {
     const { handleForge } = await import('../handlers/forge.js');
     await handleForge(plan.action.task, plan.action.fitnessCmd ?? null, dispatch, ctx, plan, plan.action.hardened);
@@ -96,18 +96,18 @@ export async function handleRetry(dispatch: Dispatch, ctx: HandlerContext): Prom
     dispatch({ type: 'warning', message: `Plan is ${ctx.currentPlan.state} — only paused/failed plans can be retried.` });
     return;
   }
-
+  
   const failedStep = ctx.currentPlan.steps.find((s: any) => s.result.state === 'failed');
   if (!failedStep) {
     dispatch({ type: 'info', message: 'No failed step found. Re-run the command to restart.' });
     return;
   }
-
+  
   dispatch({ type: 'info', message: `Retrying from: ${failedStep.label}` });
   let plan = resetStepForRetry(ctx.currentPlan, failedStep.id);
   ctx.setCurrentPlan(plan);
   savePlan(plan);
-
+  
   if (plan.action.type === 'forge') {
     plan = startPlan(plan);
     ctx.setCurrentPlan(plan);

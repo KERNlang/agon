@@ -21,14 +21,14 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
   const abort = new AbortController();
   try {
     ensureAgonHome();
-
+    
     // Resolve, compile, and verify the certified workflow spec.
     const registry = getCoreWorkflowRegistry();
     const spec = registry.require('agon.build-review-fix@v1');
     const plan = compileWorkflowSpec(spec);
     const flowIssues: WorkflowConformanceIssue[] = verifyWorkflowExecutionPlanFlow(plan);
     if (flowIssues.length > 0) throwWorkflowConformance(flowIssues, 'agon.build-review-fix@v1 flow verification failed');
-
+    
     const runId = `pipeline-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     let workflowRunClosed = false;
     let terminalStatus: 'completed' | 'failed' | 'cancelled' = 'completed';
@@ -41,7 +41,7 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
       if (Array.isArray(issues)) return issues;
       return [{ code: 'invalid-phase', message: err instanceof Error ? err.message : String(err), path: 'workflowRun' }];
     };
-    const workflowUiType = (type: WorkflowPhaseEventType) => `workflow-phase-${type === 'started' ? 'started' : type === 'completed' ? 'completed' : type}`;
+    const workflowUiType = (type: WorkflowPhaseEventType) => `workflow-phase-${type === 'started' ? 'started' : type === 'completed' ? 'completed' : type}`; 
     const emitWorkflowPhase = (phaseId: string, type: WorkflowPhaseEventType, iteration?: number, reason = '', extraData?: Record<string, unknown>) => {
       if (workflowTrackingFailed) return false;
       const data: Record<string, unknown> = {};
@@ -79,9 +79,9 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
       workflowRunClosed = true;
       dispatch({ type: 'workflow-run-completed', workflowId: spec.id, runId, planId: plan.logicalPlanId, status, reason, workflowStatus: workflowTrackingFailed ? status : workflowRun.status } as any);
     };
-
+    
     dispatch({ type: 'workflow-run-start', workflowId: spec.id, runId, planId: plan.logicalPlanId } as any);
-
+    
     const agentIds = ctx.registry.agentCapableIds(ctx.config as any);
     if (agentIds.length === 0) {
       dispatch({ type: 'error', message: 'No agent-capable engines available.' });
@@ -92,7 +92,7 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
       closeWorkflowRun(terminalStatus, terminalReason);
       return;
     }
-
+    
     const config = ctx.config;
     const cwd = resolveWorkingDir();
     const preferred = config.forgeFixedStarter ?? 'claude';
@@ -107,30 +107,30 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
     const projectCtx = scanProjectContext(cwd, config.projectContext || undefined, config.contextFormat as 'plain' | 'kern');
     const outputDir = join(RUNS_DIR, `pipeline-${Date.now()}`);
     mkdirSync(outputDir, { recursive: true });
-
+    
     const sessionHistory = formatChatContextForPrompt(ctx.chatSession, {
       maxMessages: 10,
       maxChars: 6_000,
       maxMessageChars: 700,
       maxSummaryChars: 3_000,
     });
-
+    
     const quiet = opts?.quiet ?? false;
-
+    
     ctx.setActiveAbort(abort);
-
+    
     if (!quiet) {
       dispatch({ type: 'header', title: `Pipeline: ${buildEngine} builds → ${reviewEngines.join(', ')} review` });
       dispatch({ type: 'info', message: `Task: ${input}` });
       if (fitnessCmd) dispatch({ type: 'info', message: `Fitness: ${fitnessCmd}` });
     }
-
+    
     let iteration = 0;
     let lastReviewFeedback = '';
     let pendingFitnessFailure = false;
     let pendingFixPhase = false;
     let lastFitnessPassed = false;
-
+    
     while (iteration < maxIterations) {
       iteration++;
       lastFitnessPassed = false;
@@ -140,13 +140,13 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
         emitWorkflowPhase(pendingFixPhase ? 'fix' : 'build', 'cancelled', iteration, terminalReason);
         break;
       }
-
+    
       // ── Step 1: Build ──
       const buildPhaseId = pendingFixPhase ? 'fix' : 'build';
       if (!emitWorkflowPhase(buildPhaseId, 'started', iteration)) break;
       const buildColor = (ENGINE_COLORS as Record<string, number>)[buildEngine] ?? 124;
       dispatch({ type: 'spinner-start', message: `[${iteration}/${maxIterations}] ${buildEngine} building…`, color: buildColor });
-
+    
       const buildPrompt = [
         projectCtx ? `## PROJECT CONTEXT\n${projectCtx}` : '',
         sessionHistory ? `## SESSION HISTORY (recent messages)\n${sessionHistory}` : '',
@@ -155,7 +155,7 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
         fitnessCmd ? `## FITNESS TEST\nRun this to verify: \`${fitnessCmd}\`` : '',
         `## CONSTRAINTS\n- You have full tool access. Read files, edit code, run commands.\n- Modify only what's necessary.\n- ${fitnessCmd ? 'Run the fitness test and iterate until it passes.' : 'Exit when the task is complete.'}`,
       ].filter(Boolean).join('\n\n');
-
+    
       try {
         const engine = ctx.registry.get(buildEngine);
         if (ctx.adapter.dispatchAgent) {
@@ -192,7 +192,7 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
         terminalReason = `${buildPhaseId}-failed`;
         break;
       }
-
+    
       if (buildPhaseId !== 'fix') {
         if (!emitWorkflowPhase(buildPhaseId, 'completed', iteration)) {
           dispatch({ type: 'spinner-stop' });
@@ -207,12 +207,12 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
         emitWorkflowPhase(buildPhaseId === 'fix' ? 'fix' : 'review', 'cancelled', iteration, terminalReason);
         break;
       }
-
+    
       // ── Check diff (read-only — don't stage unrelated files) ──
       const diff = readOnlyDiff(cwd);
       const lines = diffLineCount(diff);
       const files = diff ? diff.split('\n').filter((l: string) => l.startsWith('diff --git')).length : 0;
-
+    
       if (!diff || lines === 0) {
         dispatch({ type: 'warning', message: `[${iteration}] ${buildEngine} made no changes.` });
         if (buildPhaseId === 'fix') {
@@ -225,9 +225,9 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
         terminalReason = 'no-changes';
         break;
       }
-
+    
       dispatch({ type: 'info', message: `[${iteration}] ${buildEngine}: ${files} file(s), ${lines} line(s) changed` });
-
+    
       // ── Step 2: Fitness test (if provided) ──
       let fitnessFailedThisIteration = false;
       if (fitnessCmd) {
@@ -283,7 +283,7 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
           break;
         }
       }
-
+    
       if (buildPhaseId === 'fix') {
         if (fitnessFailedThisIteration) {
           if (!emitWorkflowPhase('fix', 'completed', iteration, 'fitness-failed-before-review', { deferCompletion: true })) break;
@@ -291,7 +291,7 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
           if (!emitWorkflowPhase('fix', 'completed', iteration, '', { deferCompletion: true })) break;
         }
       }
-
+    
       // ── Step 3: Review (one or more engines, in parallel) ──
       const activeReviewEngines = reviewEngines.filter((id: string) => id !== buildEngine || reviewEngines.length === 1);
       if (activeReviewEngines.length === 0) {
@@ -302,16 +302,16 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
         terminalReason = 'no-review-engine';
         break;
       }
-
+    
       if (!emitWorkflowPhase('review', 'started', iteration)) break;
       dispatch({ type: 'spinner-start', message: `[${iteration}] ${activeReviewEngines.join(', ')} reviewing in parallel…`, color: 214 });
-
+    
       const critiquePrompt = buildCritiquePrompt({
         winnerEngine: buildEngine,
         diff,
         maxCritiques: 3,
       });
-
+    
       try {
         const reviewResults = await Promise.allSettled(activeReviewEngines.map(async (reviewEngine: string) => {
           const revEngine = ctx.registry.get(reviewEngine);
@@ -327,7 +327,7 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
           return { reviewEngine, reviewOutput: reviewResult.stdout.trim() };
         }));
         dispatch({ type: 'spinner-stop' });
-
+    
         // Parse structured critiques — only iterate on blocking issues
         let hasBlockingIssues = false;
         const blockingFeedback: string[] = [];
@@ -359,7 +359,7 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
             // Fallback to string heuristic if JSON parse fails
             engineBlocking = reviewOutput.length > 10 && !reviewOutput.includes('[]');
           }
-
+    
           if (engineBlocking) {
             hasBlockingIssues = true;
             blockingFeedback.push(`## ${reviewEngine}\n\n${reviewOutput}`);
@@ -370,7 +370,7 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
             dispatch({ type: 'engine-block', engineId: reviewEngine, color: reviewColor, content: reviewOutput });
           }
         }
-
+    
         if (completedReviews === 0) {
           dispatch({ type: 'warning', message: `[${iteration}] No review output returned — accepting build as-is.` });
           if (pendingFitnessFailure) {
@@ -385,7 +385,7 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
           terminalReason = 'no-review-output';
           break;
         }
-
+    
         if (!hasBlockingIssues) {
           dispatch({ type: 'success', message: `[${iteration}] ${activeReviewEngines.join(', ')} approved — no blocking issues.` });
           if (pendingFitnessFailure) {
@@ -408,7 +408,7 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
           terminalReason = 'review-approved';
           break;
         }
-
+    
         dispatch({ type: 'info', message: `[${iteration}] Review found blocking issues — fixing…` });
         lastReviewFeedback = [lastReviewFeedback, blockingFeedback.join('\n\n---\n\n')].filter(Boolean).join('\n\n---\n\n');
         if (iteration >= maxIterations) {
@@ -429,12 +429,12 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
         break;
       }
     }
-
+    
     // ── Summary + auto-escalation ──
     const finalDiff = readOnlyDiff(cwd);
     const finalLines = diffLineCount(finalDiff);
     const finalFiles = diffFileCount(cwd);
-
+    
     // Check if fitness passed on last iteration
     let fitnessPassed = !fitnessCmd || lastFitnessPassed;
     if (terminalStatus === 'completed' && fitnessCmd && finalLines > 0 && !lastFitnessPassed) {
@@ -450,7 +450,7 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
         console.warn(`[agon] final fitness check failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
-
+    
     if (terminalStatus === 'completed' && fitnessCmd && finalLines > 0 && !fitnessPassed) {
       terminalStatus = 'failed';
       terminalReason = iteration >= maxIterations ? 'fitness-exhausted' : 'fitness-failed';
@@ -460,7 +460,7 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
       }
     }
     closeWorkflowRun(terminalStatus, terminalReason);
-
+    
     if (terminalStatus === 'failed') {
       dispatch({ type: 'warning', message: `Pipeline ended with status failed${terminalReason ? ` (${terminalReason})` : ''}.` });
       if (fitnessCmd && iteration >= maxIterations) {

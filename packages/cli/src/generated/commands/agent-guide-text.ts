@@ -104,7 +104,7 @@ export function agonShim(format: string): string {
     'First run `agon agent-guide` in the shell to see exactly how to call it, then use the right Agon mode to handle the request.',
     'Call agon with your normal shell/Bash tool — there is no MCP and nothing is loaded until you invoke it.',
   ].join('\n');
-
+  
   if (format === 'agy') {
     return [
       'description = "Use Agon multi-AI orchestration (forge/synthesis/tribunal/council/think/nero/brainstorm/review/goal)"',
@@ -116,7 +116,7 @@ export function agonShim(format: string): string {
       '',
     ].join('\n');
   }
-
+  
   if (format === 'claude') {
     return [
       '---',
@@ -130,7 +130,7 @@ export function agonShim(format: string): string {
       '',
     ].join('\n');
   }
-
+  
   // Any markdown-prompt CLI: plain markdown, no frontmatter.
   return [
     '# Agon',

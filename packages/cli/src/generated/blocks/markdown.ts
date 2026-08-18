@@ -73,7 +73,7 @@ function parseTableCells(line: string): string[] {
 function emitProseWithTables(proseLines: string[], segments: ContentSegment[]): void {
   let i = 0;
   let buffered: string[] = [];
-
+  
   function flushProse(): void {
     const text = buffered.join('\n');
     if (text.trim()) {
@@ -81,7 +81,7 @@ function emitProseWithTables(proseLines: string[], segments: ContentSegment[]): 
     }
     buffered = [];
   }
-
+  
   while (i < proseLines.length) {
     // Check for table: current line is a table row AND next line is a separator
     if (isTableRow(proseLines[i]) && i + 1 < proseLines.length && isTableSeparator(proseLines[i + 1])) {
@@ -97,7 +97,7 @@ function emitProseWithTables(proseLines: string[], segments: ContentSegment[]): 
       segments.push({ type: 'table', text: undefined, language: undefined, code: undefined, index: undefined, headers, rows, alignments });
       continue;
     }
-
+  
     buffered.push(proseLines[i]);
     i++;
   }
@@ -126,19 +126,19 @@ export function parseMarkdownBlocks(text: string): ContentSegment[] {
   }
   const cached = _mdCache.get(key);
   if (cached) return cached;
-
+  
   const lines = text.split('\n');
   const segments: ContentSegment[] = [];
-
+  
   let inCode = false;
   let codeLang = '';
   let codeLines: string[] = [];
   let proseLines: string[] = [];
   let codeIndex = 0;
-
+  
   for (const line of lines) {
     const trimmed = line.trimStart();
-
+  
     if (!inCode) {
       const openMatch = trimmed.match(FENCE_OPEN);
       if (openMatch) {
@@ -164,21 +164,21 @@ export function parseMarkdownBlocks(text: string): ContentSegment[] {
       codeLines.push(line);
     }
   }
-
+  
   if (inCode && codeLines.length > 0) {
     codeIndex++;
     segments.push({ type: 'code', language: codeLang, code: codeLines.join('\n'), text: undefined, index: codeIndex, headers: undefined, rows: undefined, alignments: undefined });
   } else if (proseLines.length > 0) {
     emitProseWithTables(proseLines, segments);
   }
-
+  
   // Store in cache, evict oldest if full
   if (_mdCache.size >= _MD_CACHE_MAX) {
     const firstKey = _mdCache.keys().next().value;
     if (firstKey !== undefined) _mdCache.delete(firstKey);
   }
   _mdCache.set(key, segments);
-
+  
   return segments;
 }
 
@@ -211,7 +211,7 @@ function parseStreamJsonLine(trimmed: string): {action:'use'|'skip'|'keep', cont
   try {
     const parsed = JSON.parse(trimmed);
     if (!parsed.type) return { action: 'keep' };
-
+  
     // Extract actual text content from streaming events
     if (parsed.type === 'assistant' && parsed.message?.content) {
       const content = typeof parsed.message.content === 'string'
@@ -221,19 +221,19 @@ function parseStreamJsonLine(trimmed: string): {action:'use'|'skip'|'keep', cont
           : '';
       return content ? { action: 'use', content } : { action: 'skip' };
     }
-
+  
     // OpenCode: text events with actual content in part.text
     if (parsed.type === 'text' && parsed.part?.text) {
       return { action: 'use', content: parsed.part.text };
     }
-
+  
     // Result events — extract content if present, skip error metadata
     if (parsed.type === 'result') {
       if (parsed.subtype === 'error_max_turns' || parsed.is_error) return { action: 'skip' };
       if (parsed.result && typeof parsed.result === 'string') return { action: 'use', content: parsed.result };
       return { action: 'skip' };
     }
-
+  
     // Skip ALL known streaming metadata types (Claude, OpenCode, Codex, Gemini)
     const skipTypes = [
       'system', 'hook_started', 'hook_response', 'tool_use', 'tool_result',
@@ -246,10 +246,10 @@ function parseStreamJsonLine(trimmed: string): {action:'use'|'skip'|'keep', cont
     if (parsed.type?.startsWith('hook_')) return { action: 'skip' };
     if (parsed.type?.startsWith('step_')) return { action: 'skip' };
     if (parsed.subtype === 'system') return { action: 'skip' };
-
+  
     // Any JSON with sessionID, session_id, or uuid is streaming metadata — skip
     if (parsed.sessionID || parsed.session_id || parsed.uuid) return { action: 'skip' };
-
+  
   } catch {
     // Not valid JSON — keep as text
   }
@@ -309,11 +309,11 @@ function deduplicateParagraphs(text: string): string {
 function stripBuddyThinkingNoise(text: string): string {
   const lines = text.split('\n');
   const result: string[] = [];
-
+  
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const trimmed = line.trim();
-
+  
     // Skip raw command output metadata from Codex
     if (trimmed.startsWith('Command:') && trimmed.includes('/bin/')) continue;
     if (trimmed.startsWith('Chunk ID:')) continue;
@@ -321,16 +321,16 @@ function stripBuddyThinkingNoise(text: string): string {
     if (trimmed.startsWith('Process exited with code')) continue;
     if (trimmed.startsWith('Original token count:')) continue;
     if (trimmed === 'Output:') continue;
-
+  
     // Skip lines that are exact substrings of the next line (progressive thinking)
     if (i + 1 < lines.length) {
       const next = lines[i + 1].trim();
       if (trimmed.length > 20 && next.startsWith(trimmed)) continue;
     }
-
+  
     result.push(line);
   }
-
+  
   return result.join('\n');
 }
 
@@ -346,27 +346,27 @@ function shortenFilePaths(text: string): string {
   function insideFence(pos: number): boolean {
     return fences.some(f => pos >= f.start && pos < f.end);
   }
-
+  
   const cwd = process.cwd();
   const home = process.env.HOME ?? '';
-
+  
   const exts = 'tsx|jsx|ts|js|json|kern|md|py|rs|go|yaml|yml|toml|sh|css|html|svelte|vue|rb|java|cpp|c|h';
   const pathRe = new RegExp('(?<!`)(?:~/|/)[A-Za-z0-9._\\-/]+\\.(?:' + exts + ')(?::[0-9]+(?::[0-9]+)?|#L[0-9]+)?(?!`)', 'g');
-
+  
   return text.replace(pathRe, (match, offset: number) => {
     // Never rewrite paths inside fenced code blocks
     if (insideFence(offset)) return match;
     // Skip if too short or doesn't look like a real path
     if (match.length < 10) return match;
     if (!match.includes('/')) return match;
-
+  
     let shortened = match;
-
+  
     // Expand ~/ to home
     if (shortened.startsWith('~/') && home) {
       shortened = home + shortened.slice(1);
     }
-
+  
     // Strip cwd prefix → relative path
     if (shortened.startsWith(cwd + '/')) {
       shortened = shortened.slice(cwd.length + 1);
@@ -375,14 +375,14 @@ function shortenFilePaths(text: string): string {
     else if (home && shortened.startsWith(home + '/')) {
       shortened = '~/' + shortened.slice(home.length + 1);
     }
-
+  
     // Collapse to just filename:line for inline references
     // packages/cli/src/generated/handlers-cesar-brain.ts:91 → handlers-cesar-brain.ts:91
     const parts = shortened.split('/');
     if (parts.length > 2) {
       shortened = parts[parts.length - 1];
     }
-
+  
     // Wrap in backticks for inline-code (purple) styling
     return '`' + shortened + '`';
   });
@@ -395,7 +395,7 @@ function shortenFilePaths(text: string): string {
 function addParagraphBreaks(text: string): string {
   const paragraphs = text.split(/\n{2,}/);
   const result: string[] = [];
-
+  
   for (const para of paragraphs) {
     const lines = para.split('\n');
     // Skip if already has markdown structure (headers, real lists) or is short
@@ -405,7 +405,7 @@ function addParagraphBreaks(text: string): string {
       result.push(para);
       continue;
     }
-
+  
     // Split dense blocks at sentence boundaries
     const joined = lines.join(' ');
     const sentences = joined.split(/(?<=\.\s)(?=[A-Z])/);
@@ -413,7 +413,7 @@ function addParagraphBreaks(text: string): string {
       result.push(para);
       continue;
     }
-
+  
     // Group into chunks of 3 sentences
     const chunks: string[] = [];
     let current = '';
@@ -430,7 +430,7 @@ function addParagraphBreaks(text: string): string {
     if (current.trim()) chunks.push(current.trim());
     result.push(chunks.join('\n\n'));
   }
-
+  
   return result.join('\n\n');
 }
 
@@ -495,3 +495,4 @@ export function cleanEngineOutput(raw: string): string {
   _cleanCache.set(raw, result);
   return result;
 }
+

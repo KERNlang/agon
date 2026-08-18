@@ -305,6 +305,79 @@ describe('agon call command mapping', () => {
     })).toThrow('agon call synthesis requires a prompt/task argument');
   });
 
+  it('routes sanitize with a file input', () => {
+    expect(buildCallCommands({
+      workflow: 'sanitize',
+      input: 'draft.md',
+    }).commands).toEqual([
+      ['sanitize', 'draft.md'],
+    ]);
+  });
+
+  it('routes sanitize with --detect and --out', () => {
+    expect(buildCallCommands({
+      workflow: 'sanitize',
+      input: 'draft.md',
+      detect: true,
+      out: 'clean.md',
+    }).commands).toEqual([
+      ['sanitize', 'draft.md', '--detect', '--out', 'clean.md'],
+    ]);
+  });
+
+  it('routes sanitize without input (stdin mode)', () => {
+    expect(buildCallCommands({ workflow: 'sanitize' }).commands).toEqual([
+      ['sanitize', ''],
+    ]);
+  });
+
+  it('routes sanitize with a file input', () => {
+    expect(buildCallCommands({
+      workflow: 'sanitize',
+      input: 'draft.md',
+    }).commands).toEqual([
+      ['sanitize', 'draft.md'],
+    ]);
+  });
+
+  it('routes sanitize with --detect and --out', () => {
+    expect(buildCallCommands({
+      workflow: 'sanitize',
+      input: 'draft.md',
+      detect: true,
+      out: 'clean.md',
+    }).commands).toEqual([
+      ['sanitize', 'draft.md', '--detect', '--out', 'clean.md'],
+    ]);
+  });
+
+  it('routes sanitize without input (stdin mode)', () => {
+    expect(buildCallCommands({ workflow: 'sanitize' }).commands).toEqual([
+      ['sanitize', ''],
+    ]);
+  });
+
+  it('routes naturalize with file input and author/engine flags', () => {
+    expect(buildCallCommands({
+      workflow: 'naturalize',
+      input: 'draft.md',
+      author: 'claude',
+      engine: 'minimax',
+      engineTimeout: '90',
+    }).commands).toEqual([
+      ['naturalize', 'draft.md', '--engine', 'minimax', '--author', 'claude', '--timeout', '90'],
+    ]);
+  });
+
+  it('routes naturalize with --out and no engine (stdin mode)', () => {
+    expect(buildCallCommands({
+      workflow: 'naturalize',
+      out: 'natural.md',
+    }).commands).toEqual([
+      ['naturalize', '', '--out', 'natural.md'],
+    ]);
+  });
+
   it('defaults review target to uncommitted', () => {
     expect(buildCallCommands({ workflow: 'review' }).commands).toEqual([
       ['review', 'uncommitted'],

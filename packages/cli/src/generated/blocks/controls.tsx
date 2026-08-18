@@ -58,7 +58,7 @@ export function SlashPicker({ commands, onSelect, onCancel }: { commands:typeof 
 
   const filtered = useMemo(() => getSlashMatches(filter, commands), [filter, commands]);
   const currentIndex = filtered.length === 0 ? 0 : Math.min(selectedIndex, filtered.length - 1);
-
+  
   useInput((input: string, key: any) => {
     const isForwardDelete = input === '\x1b[3~';
     const isBackspace = !isForwardDelete && (key.backspace || key.delete || input === '\x7f' || input === '\b' || input === '\x08');
@@ -87,7 +87,7 @@ export function SlashPicker({ commands, onSelect, onCancel }: { commands:typeof 
       setSelectedIndex(0);
     }
   });
-
+  
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1}>
       <Box>
@@ -135,7 +135,7 @@ export function AtFilePicker({ files, prefix, initialQuery, onSelect, onCancel }
 
   const filtered = useMemo(() => rankFileMatches(filter, files, 50), [filter, files]);
   const currentIndex = filtered.length === 0 ? 0 : Math.min(selectedIndex, filtered.length - 1);
-
+  
   useInput((input: string, key: any) => {
     const isForwardDelete = input === '\x1b[3~';
     const isBackspace = !isForwardDelete && (key.backspace || key.delete || input === '\x7f' || input === '\b' || input === '\x08');
@@ -171,7 +171,7 @@ export function AtFilePicker({ files, prefix, initialQuery, onSelect, onCancel }
       setSelectedIndex(0);
     }
   });
-
+  
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="#22d3ee" paddingX={1}>
       <Box>
@@ -234,7 +234,7 @@ export function EnginePicker({ available, initialSelected, userEngines, modelOve
   const visible = useMemo(() => available.filter((id: string) =>
     selected.has(id) || userEngines.has(id) || !hidden.has(id)
   ), [available, selected, userEngines, hidden]);
-
+  
   useInput((input: string, key: any) => {
     const isForwardDelete = input === '\x1b[3~';
     const isBackspace = !isForwardDelete && (key.backspace || key.delete || input === '\x7f' || input === '\b' || input === '\x08');
@@ -254,7 +254,7 @@ export function EnginePicker({ available, initialSelected, userEngines, modelOve
       }
       return;
     }
-
+  
     if (key.escape) { onCancel(); return; }
     if (key.return) {
       const result = visible.filter((id: string) => selected.has(id));
@@ -308,7 +308,7 @@ export function EnginePicker({ available, initialSelected, userEngines, modelOve
       setPhase('type-model');
     }
   });
-
+  
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1} marginY={1}>
       <Box justifyContent="space-between">
@@ -386,15 +386,15 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
     { label: 'Default (use CLI config)', value: null },
     ...effortLevels.map((l: string) => ({ label: l, value: l })),
   ];
-
+  
   useEffect(() => {
     setFilter(initialFilter ?? '');
     setCursor(0);
   }, [initialFilter]);
-
+  
   // Tab switch resets cursor + filter
   useEffect(() => { setCursor(0); setFilter(''); }, [activeTab]);
-
+  
   // ── CLI tab: scanned CLI engines. Only installed engines are shown;
   // missing CLIs belong in doctor/discover output, not the add/remove picker.
   const cliFlat = useMemo(() => {
@@ -407,7 +407,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
     }
     return items;
   }, [groups]);
-
+  
   const cliFiltered = useMemo(() => {
     if (!filter.trim()) return cliFlat;
     const q = filter.toLowerCase();
@@ -415,7 +415,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
       `${group.providerName} ${model.name} ${model.id}`.toLowerCase().includes(q)
     );
   }, [cliFlat, filter]);
-
+  
   const filtered = useMemo(() => {
     if (!filter.trim()) return entries.slice(0, 50);
     const terms = filter.toLowerCase().trim().split(/\s+/).filter(Boolean);
@@ -451,23 +451,23 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
       if (hasExplicitProviderFilter) return true;
       return !providerAliasByTerm[t];
     });
-
+  
     return entries.filter((e: ModelPickerEntry) => {
       if (providerTerms.length > 0) {
         const providerHay = `${e.providerName} ${e.providerId}`.toLowerCase();
         if (!providerTerms.every((t: string) => providerHay.includes(t))) return false;
       }
-
+  
       if (genericTerms.length === 0) return true;
       const hay = `${e.providerName} ${e.modelName} ${e.modelId}`.toLowerCase();
       return genericTerms.every((t: string) => hay.includes(t));
     }).slice(0, 50);
   }, [entries, filter]);
-
+  
   useInput((input: string, key: any) => {
     const isForwardDelete = input === '\x1b[3~';
     const isBackspace = !isForwardDelete && (key.backspace || key.delete || input === '\x7f' || input === '\b' || input === '\x08');
-
+  
     // ── Effort sub-picker (entered from CLI tab when an engine has effort levels) ──
     if (phase === 'effort') {
       if (key.escape) { setPhase('search'); setActiveTab('cli'); setPendingCli(null); setEffortCursor(0); return; }
@@ -492,7 +492,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
       }
       return;
     }
-
+  
     // Tab switching (any phase)
     if (key.leftArrow) {
       setActiveTab('api');
@@ -502,7 +502,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
       setActiveTab('cli');
       return;
     }
-
+  
     if (phase === 'apikey') {
       if (key.escape) { setPhase('search'); setSelectedEntry(null); setApiKeyInput(''); return; }
       if (key.return && apiKeyInput.trim()) {
@@ -522,7 +522,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
       }
       return;
     }
-
+  
     // ── CLI tab input ──
     if (activeTab === 'cli') {
       if (key.escape || (key.ctrl && input === 'c')) { onCancel(); return; }
@@ -568,7 +568,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
       }
       return;
     }
-
+  
     // ── API tab input (original) ──
     if (key.escape || (key.ctrl && input === 'c')) { onCancel(); return; }
     if (key.return) {
@@ -596,7 +596,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
       setCursor(0);
     }
   });
-
+  
   // Only the API tab waits on the models.dev fetch. The CLI tab's groups are
   // available immediately (buildCliGroupsImmediate) with per-engine probe
   // spinners, so let it render through the global loading state \u2014 otherwise
@@ -614,7 +614,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
       </Box>
     );
   }
-
+  
   if (phase === 'apikey' && selectedEntry) {
     return (
       <Box flexDirection="column" borderStyle="round" borderColor="magenta" paddingX={1}>
@@ -632,7 +632,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
       </Box>
     );
   }
-
+  
   if (phase === 'effort' && pendingCli) {
     const eng = pendingCli.group;
     const cur = efforts[eng.engineId] ?? null;
@@ -657,13 +657,13 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
       </Box>
     );
   }
-
+  
   // Search phase — grouped model list
   const maxVisible = 16;
   const start = Math.max(0, Math.min(cursor - Math.floor(maxVisible / 2), filtered.length - maxVisible));
   const visible = filtered.slice(start, start + maxVisible);
   let lastProvider = '';
-
+  
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="magenta" paddingX={1}>
       <Box justifyContent="space-between">
@@ -778,7 +778,7 @@ export function ReviewBlock({ event, onAction }: { event:ReviewEvent; onAction:(
   const codeWidth = contentWidth(10);
   const lines = event.patchContent.split('\n').slice(0, 30);
   const overflow = event.patchContent.split('\n').length - 30;
-
+  
   useInput((input: string) => {
     const k = input.toLowerCase();
     if (k === 'a') onAction('apply');
@@ -786,7 +786,7 @@ export function ReviewBlock({ event, onAction }: { event:ReviewEvent; onAction:(
     else if (k === 'r') onAction('reject');
     else if (k === 'c') onAction('copy');
   });
-
+  
   return (
     <Box flexDirection="column" paddingLeft={2} marginY={1}>
       <Text color={eColor}>{'\u250c\u2500\u2500 Winner: '}<Text bold>{event.winnerId}</Text></Text>
@@ -828,7 +828,7 @@ export function CesarPicker({ engines, currentCesar, onSelect, onCancel }: { eng
     const q = filter.toLowerCase();
     return engines.filter((id: string) => id.toLowerCase().includes(q));
   }, [engines, filter]);
-
+  
   useInput((input: string, key: any) => {
     const isForwardDelete = input === '\x1b[3~';
     const isBackspace = !isForwardDelete && (key.backspace || key.delete || input === '\x7f' || input === '\b' || input === '\x08');
@@ -849,7 +849,7 @@ export function CesarPicker({ engines, currentCesar, onSelect, onCancel }: { eng
       setCursor(0);
     }
   });
-
+  
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="#a78bfa" paddingX={1}>
       <Box justifyContent="space-between">

@@ -40,7 +40,7 @@ export function parsePatchPreview(rawInput: string, parsed: any): { files:string
     const clean = filePath.trim().replace(/^["']|["']$/g, '');
     if (clean && !files.includes(clean)) files.push(clean);
   };
-
+  
   for (const line of patchText.split('\n')) {
     const customFile = line.match(/^\*\*\* (?:Update|Add|Delete) File: (.+)$/);
     if (customFile) {
@@ -74,7 +74,7 @@ export function parsePatchPreview(rawInput: string, parsed: any): { files:string
       lines.push(line);
     }
   }
-
+  
   return { files, lines, additions, deletions };
 }
 

@@ -197,14 +197,14 @@ export class AgonServe {
       this.sendJson(res, 200, { jobs: this.jobs.list() }, origin);
       return;
     }
-
+    
     const segments = path.split('/').filter(Boolean);
     const id = segments[2] ?? '';
     const action = segments[3] ?? '';
     if (!id || segments.length > 4) { this.sendJson(res, 404, { error: 'not found' }, origin); return; }
     const job = this.jobs.get(id);
     if (!job) { this.sendJson(res, 404, { error: 'job not found', jobId: id }, origin); return; }
-
+    
     if (method === 'GET' && !action) { this.sendJson(res, 200, { job }, origin); return; }
     if (method === 'GET' && action === 'events') {
       const afterRaw = url.searchParams.get('afterSeq');

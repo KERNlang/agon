@@ -43,19 +43,19 @@ export async function resumeCesarPlan(plan: CesarPlan, cb: DispatchCallbacks): P
     lines.push(`Estimated cost to finish: ~${ctx.remainingTokens.toLocaleString()} tokens · ${ctx.remainingCostUsd.toFixed(2)}`);
   }
   cb.dispatch({ type: 'info', message: lines.join('\n') });
-
+  
   const answer = await askChoiceQuestion(cb, 'Resume this plan?', [
     { key: '1', label: 'Resume — continue from where it stopped', color: '#4ade80' },
     { key: '2', label: 'Restart — rerun all steps from the beginning', color: '#fbbf24' },
     { key: '3', label: 'Cancel — keep the plan paused', color: '#ef4444' },
   ], '1');
   const trimmed = answer.trim().toLowerCase();
-
+  
   if (trimmed === '3' || trimmed === 'c' || trimmed === 'cancel') {
     cb.dispatch({ type: 'info', message: 'Plan resume cancelled.' });
     return;
   }
-
+  
   const restart = trimmed === '2' || trimmed === 'r' || trimmed === 'restart';
   let runningPlan: CesarPlan;
   if (restart) {
@@ -70,7 +70,7 @@ export async function resumeCesarPlan(plan: CesarPlan, cb: DispatchCallbacks): P
     runningPlan = { ...skipCompletedSteps(plan), state: 'running' as any };
     cb.dispatch({ type: 'info', message: `Resuming plan: ${plan.intent} (${plan.id})` });
   }
-
+  
   cb.setActivePlan(runningPlan);
   saveCesarPlan(runningPlan);
   if (runningPlan.planFilePath) {
@@ -118,7 +118,7 @@ export function cancelPendingCesarPlan(cb: DispatchCallbacks): boolean {
   const pending = findPendingCesarPlan(cb.ctx) as CesarPlan | null;
   if (!pending) return false;
   if ((cb.ctx.cesar as any)?.proposedPlan?.id === pending.id) (cb.ctx.cesar as any).proposedPlan = undefined;
-
+  
   const cancelled = cancelCesarPlan(pending);
   cb.setActivePlan(null);
   try {
@@ -133,14 +133,14 @@ export function cancelPendingCesarPlan(cb: DispatchCallbacks): boolean {
       hostConsoleWarn(`[plan] failed to write cancelled Cesar plan file: ${(err as Error).message ?? err}`);
     }
   }
-
+  
   // Releases the pinned PlanApprovalPrompt (signals/output.kern 'plan-cancelled').
   cb.dispatch({ type: 'plan-cancelled', plan: cancelled } as any);
   // The plan BODY block is already sealed in the transcript with its
   // awaiting_approval snapshot and cannot be rewritten (Ink <Static> is
   // append-only), so this line IS the transcript's outcome record.
   cb.dispatch({ type: 'success', message: `Plan rejected — ${cancelled.intent} (${cancelled.id}) cancelled.` } as any);
-
+  
   // Tell Cesar. Without this the brain's next turn sees a vanished plan with no
   // reason and happily re-proposes the same one.
   try {
@@ -163,11 +163,11 @@ export function cancelPendingCesarPlan(cb: DispatchCallbacks): boolean {
 // @kern-source: plan-execution:136
 export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
-
+  
   if (proposed.planFilePath) {
     cb.dispatch({ type: 'info', message: `Plan saved: ${proposed.planFilePath}` });
   }
-
+  
   const policy = isAgenticAutoMode(cb.ctx)
     ? applyAgenticAutoApprovePolicy(proposed, cb.ctx.config, cb.ctx.cesar?.taskExecutionLease)
     : applyAutoApprovePolicy(proposed, cb.ctx.config);
@@ -180,7 +180,7 @@ export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchC
       console.warn('[plan] failed to write plan file:', (err as Error).message ?? err);
     }
   };
-
+  
   if (policy.approve) {
     cb.dispatch({ type: 'info', message: `Plan auto-approved (${policy.reason})` });
     for (const s of proposed.steps) {
@@ -188,7 +188,7 @@ export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchC
         cb.dispatch({ type: 'warning', message: `fitnessCmd: ${s.fitnessCmd}` });
       }
     }
-
+  
     const approved = approveCesarPlan(proposed);
     cb.setActivePlan(approved);
     cb.dispatch({ type: 'success', message: 'Plan auto-approved — executing...' });
@@ -199,7 +199,7 @@ export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchC
   } else if (proposed.autoApprove === true) {
     cb.dispatch({ type: 'info', message: `Plan requested autoApprove but policy rejected: ${policy.reason}` });
   }
-
+  
   if (!decided) {
     cb.setActivePlan(proposed);
     cb.dispatch({ type: 'info', message: 'Plan awaiting approval. Press Y to approve, N to reject — or type /approve / /cancel.' });
@@ -228,7 +228,7 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
     agent: '\u2699 Agent',
     'team-agent': '\u2699\u2699 Team Agent',
   };
-
+  
   const markStepRunning = (plan: CesarPlan, stepId: string): CesarPlan => ({
     ...plan,
     steps: plan.steps.map((s: any) => s.id === stepId ? { ...s, state: 'running' as any, startedAt: s.startedAt ?? new Date().toISOString() } : s),
@@ -236,7 +236,7 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
     activeStepId: stepId,
     currentStepId: stepId,
   } as CesarPlan);
-
+  
   const buildPlanStepToolInput = (stepId: string) => {
     const step = currentPlan.steps.find((s: any) => s.id === stepId);
     const idx = step ? currentPlan.steps.indexOf(step) + 1 : 0;
@@ -252,9 +252,9 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
       state: step?.state ?? 'pending',
     };
   };
-
+  
   const planStepEngineId = (step: any) => step?.engine ?? step?.engines?.[0] ?? 'cesar';
-
+  
   const flushPersist = () => {
     if (pendingWriteTimer) {
       clearTimeout(pendingWriteTimer);
@@ -267,9 +267,9 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
       } catch (err) { console.warn('[plan] failed to write plan file:', (err as Error).message ?? err); }
     }
   };
-
+  
   cb.dispatch({ type: 'todos-set', todos: todosFromPlanSteps(initialPlan.steps) } as any);
-
+  
   return {
     onStepStart: (stepId: string) => {
       currentPlan = markStepRunning(currentPlan, stepId);
@@ -373,11 +373,11 @@ export function preparePlanFallbackRetry(plan: CesarPlan, fallbackEngine: string
   const retriesUsed = (plan as any).fallbackRetriesUsed ?? {};
   const used = Number(retriesUsed[failedStep.id] ?? 0);
   if (used >= 1) return null;
-
+  
   const currentEngines = [failedStep.engine, ...(Array.isArray(failedStep.engines) ? failedStep.engines : [])]
     .filter((id: any) => typeof id === 'string' && id.trim().length > 0);
   if (currentEngines.length === 1 && currentEngines[0] === engine) return null;
-
+  
   const retryStep = {
     ...failedStep,
     state: 'pending' as any,
@@ -387,7 +387,7 @@ export function preparePlanFallbackRetry(plan: CesarPlan, fallbackEngine: string
       ? [engine]
       : failedStep.engines,
   };
-
+  
   return {
     ...plan,
     state: 'running' as any,
@@ -409,7 +409,7 @@ export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallb
   let abortController = new AbortController();
   cb.ctx.setActiveAbort?.(abortController);
   let callbacks = buildPlanCallbacks(approved, cb);
-
+  
   try {
     let finalPlan = await executePlan(approved, executors, callbacks, abortController.signal);
     cb.setActivePlan(finalPlan);
@@ -480,12 +480,12 @@ export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors
   const FORGE_LIKE = new Set(['forge', 'teamforge', 'pipeline']);
   const planTouchedMutation = finalPlan.steps.some((s: any) => MUTATING.has(s.type) && (s.state === 'done' || s.state === 'failed'));
   const planRanForgeStep = finalPlan.steps.some((s: any) => FORGE_LIKE.has(s.type) && (s.state === 'done' || s.state === 'failed'));
-
+  
   // Tribunal fix #2 + #8: source of truth is the actual cwd, not step state.
   const cwd = resolveWorkingDir();
   const changedFiles = gitChangedFiles(cwd);
   const hasUncommittedChanges = changedFiles.length > 0;
-
+  
   // Only forge/teamforge/pipeline produce un-applied "winner" patches —
   // self/agent/delegate live-edit (or don't edit at all). A self-only plan
   // that left cwd clean is a no-op success, not a stuck forge.
@@ -496,16 +496,16 @@ export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors
     cb.setActivePlan(paused);
     return paused;
   }
-
+  
   const cyclesUsed = finalPlan.reviewCyclesUsed ?? 0;
   const wantsReview = (finalPlan.selfReview ?? true)
     && planTouchedMutation
     && hasUncommittedChanges
     && cyclesUsed < 2
     && finalPlan.state === 'done';
-
+  
   if (!wantsReview) return finalPlan;
-
+  
   const reviewEst = planCostEstimator.estimate('review', []);
   const reviewStep: CesarPlanStep = {
     id: `review-${Date.now().toString(36)}`,
@@ -515,7 +515,7 @@ export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors
     estimatedCostUsd: reviewEst.costUsd,
     state: 'pending' as any,
   };
-
+  
   const replanned: CesarPlan = {
     ...finalPlan,
     state: 'running' as any,
@@ -526,17 +526,17 @@ export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors
     stepContext: { ...finalPlan.stepContext, __plan_intent: finalPlan.intent },
     reviewCyclesUsed: cyclesUsed + 1,
   };
-
+  
   const cycleNum = replanned.reviewCyclesUsed ?? 1;
   cb.dispatch({ type: 'info', message: `Self-review gate: appending review step (cycle ${cycleNum}/2)` });
-
+  
   // Tribunal fix #10: build fresh callbacks against the replanned plan so
   // onStepStart/onStepDone find the new review step.
   const callbacks = buildPlanCallbacks(replanned, cb);
-
+  
   saveCesarPlan(replanned);
   cb.setActivePlan(replanned);
-
+  
   // OpenCode add#1: wrap the gate's own executePlan in try/catch so
   // a thrown error inside the review cycle doesn't escape the gate
   // with corrupted plan state. On throw, mark the plan paused with
@@ -552,7 +552,7 @@ export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors
     saveCesarPlan(reviewedPlan);
     return reviewedPlan;
   }
-
+  
   cb.setActivePlan(reviewedPlan);
   saveCesarPlan(reviewedPlan);
   if (reviewedPlan.planFilePath) {
@@ -560,10 +560,10 @@ export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors
       writeFileSync(reviewedPlan.planFilePath, formatCesarPlanMarkdown(reviewedPlan));
     } catch (err) { console.warn('[plan] failed to write plan file:', (err as Error).message ?? err); }
   }
-
+  
   if (reviewedPlan.state === 'paused' && (reviewedPlan.reviewCyclesUsed ?? 0) >= 2) {
     cb.dispatch({ type: 'error', message: 'Self-review cycle 2/2 still found blocking issues. Auto-review exhausted. Inspect the plan and decide manually.' });
   }
-
+  
   return reviewedPlan;
 }

@@ -154,13 +154,13 @@ export function clusterKey(f: RawFinding): string {
 export function buildConsensus(outcomes: EngineOutcome[], minVerified?: number, minPair?: number): ConsensusReport {
   const mv = typeof minVerified === 'number' && Number.isFinite(minVerified) ? minVerified : VERIFIED_THRESHOLD;
   const mp = typeof minPair === 'number' && Number.isFinite(minPair) ? minPair : PAIR_THRESHOLD;
-
+  
   const list = Array.isArray(outcomes) ? outcomes : [];
   const panelSize = list.length;
   const ok = list.filter((o) => o && o.status === 'ok');
   const engineFailures = list.filter((o) => o && o.status !== 'ok');
   const okCount = ok.length;
-
+  
   // Working cluster carries internal accumulators we strip before returning.
   type Work = {
     key: string;
@@ -182,7 +182,7 @@ export function buildConsensus(outcomes: EngineOutcome[], minVerified?: number, 
   };
   const sevRank = (s: string): number => (s === 'blocking' ? 2 : s === 'important' ? 1 : 0);
   const clusters = new Map<string, Work>();
-
+  
   for (const o of ok) {
     for (const f of (o.findings || [])) {
       const key = clusterKey(f);
@@ -226,7 +226,7 @@ export function buildConsensus(outcomes: EngineOutcome[], minVerified?: number, 
       if (!c.lines && f.lines) c.lines = f.lines;
     }
   }
-
+  
   const findings: ConsensusFinding[] = [];
   for (const c of clusters.values()) {
     const pairVotes = Array.from(c.sigConf.values()).filter((v) => v >= mp).length;
@@ -251,7 +251,7 @@ export function buildConsensus(outcomes: EngineOutcome[], minVerified?: number, 
     else if (c.maxConfidence >= MEDIUM_THRESHOLD) tier = 'needs-check';
     else if (engines.length >= 2) tier = 'needs-check'; // independent agreement beats a lone sub-0.60 hunch
     else tier = 'speculative';
-
+  
     // Per-engine reconciliation (in first-seen engine order). The cluster's
     // reconciledSeverity is the MAX of every engine's stance (identical to the
     // existing `severity`, surfaced under the contract name). A cluster is
@@ -275,7 +275,7 @@ export function buildConsensus(outcomes: EngineOutcome[], minVerified?: number, 
         conflictDetails = perEngineSeverity.map((s) => ({ engine: s.engine, stance: s.stance, detail: s.detail }));
       }
     }
-
+  
     findings.push({
       key: c.key,
       engines,
@@ -294,33 +294,33 @@ export function buildConsensus(outcomes: EngineOutcome[], minVerified?: number, 
       lines: c.lines,
     });
   }
-
+  
   findings.sort((a, b) => (a.blocks === b.blocks ? b.maxConfidence - a.maxConfidence : a.blocks ? -1 : 1));
-
+  
   const verified = findings.filter((f) => f.tier === 'verified');
   const needsCheck = findings.filter((f) => f.tier === 'needs-check');
   const speculative = findings.filter((f) => f.tier === 'speculative');
   const nits = findings.filter((f) => f.tier === 'nit');
   const blockers = findings.filter((f) => f.blocks);
-
+  
   const noVerdict = panelSize > 0 && okCount === 0;
   const autoBlock = blockers.length > 0 || noVerdict;
   const needsJudge = !autoBlock && needsCheck.length > 0;
-
+  
   const failNote = engineFailures.length
     ? `, ${engineFailures.length} failed (${engineFailures.map((f) => `${f.engine}:${f.status}`).join(', ')})`
     : '';
   const summary = noVerdict
     ? `no engine produced a verdict (${panelSize} on panel${failNote}) — fail-closed block`
     : `${okCount}/${panelSize} engines reviewed${failNote} · ${verified.length} verified, ${needsCheck.length} needs-check, ${speculative.length} speculative, ${nits.length} nit`;
-
+  
   // Degraded-run honesty: SOME but FEWER-THAN-QUORUM engines reviewed. Not a
   // block — just a banner so a 1/6 run isn't read as a real consensus.
   const quorum = Math.ceil(panelSize / 2);
   const degraded = (okCount > 0 && okCount < quorum)
     ? { belowQuorum: true, warning: `⚠ degraded consensus — only ${okCount}/${panelSize} engines reviewed; treat findings as a single-engine opinion, not a consensus` }
     : undefined;
-
+  
   return {
     findings,
     verified,

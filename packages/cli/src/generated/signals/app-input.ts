@@ -31,14 +31,14 @@ export function findInputChange(previous: string, next: string): {start:number, 
   while (start < previous.length && start < next.length && previous[start] === next[start]) {
     start++;
   }
-
+  
   let previousEnd = previous.length;
   let nextEnd = next.length;
   while (previousEnd > start && nextEnd > start && previous[previousEnd - 1] === next[nextEnd - 1]) {
     previousEnd--;
     nextEnd--;
   }
-
+  
   return {
     start,
     removed: previous.slice(start, previousEnd),

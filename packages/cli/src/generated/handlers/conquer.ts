@@ -24,7 +24,7 @@ export async function handleConquer(task: string, dispatch: Dispatch, ctx: Handl
     if (!task || !task.trim()) { dispatch({ type: 'warning', message: 'Usage: /conquer <task> --gate "<test cmd>"' }); return; }
     const gate = opts?.gate?.trim();
     if (!gate) { dispatch({ type: 'error', message: '/conquer needs a --gate command (the done-oracle). e.g. /conquer build X --gate "npm test"' }); return; }
-
+    
     const cwd = resolveWorkingDir();
     const activeIds = ctx.activeEngines();
     const active = filterDefaultOrchestrationEngines(activeIds);
@@ -33,7 +33,7 @@ export async function handleConquer(task: string, dispatch: Dispatch, ctx: Handl
       dispatch({ type: 'error', message: `Builder engine '${opts?.builder ?? builder ?? '(none)'}' is not available. Run /engines.` });
       return;
     }
-
+    
     let advisors = active.filter((e) => e !== builder);
     if (opts?.engineIds && opts.engineIds.length > 0) {
       const resolved = opts.engineIds.map((s) => ctx.registry.resolveId(s));
@@ -41,7 +41,7 @@ export async function handleConquer(task: string, dispatch: Dispatch, ctx: Handl
       if (bad.length > 0) { dispatch({ type: 'error', message: `Advisor engine${bad.length > 1 ? 's' : ''} not available: ${bad.join(', ')}.` }); return; }
       advisors = resolved.filter((id) => id !== builder);
     }
-
+    
     // CLI parity: `agon conquer` rejects --max-turns < 1 instead of silently
     // running 40 turns the user tried to cap at 0.
     if (opts?.maxTurns !== undefined && (!Number.isFinite(opts.maxTurns) || opts.maxTurns < 1)) {
@@ -64,7 +64,7 @@ export async function handleConquer(task: string, dispatch: Dispatch, ctx: Handl
       return;
     }
     const { branch, path: worktreeCwd } = isolation;
-
+    
     dispatch({ type: 'header', title: `Conquer · builder=${builder} · advisors=${advisors.join(',') || '(none)'}` });
     dispatch({ type: 'info', message: task.length > 120 ? task.slice(0, 120) + '…' : task });
     dispatch({ type: 'info', message: `gate: ${gate}` });
@@ -76,10 +76,10 @@ export async function handleConquer(task: string, dispatch: Dispatch, ctx: Handl
         dispatch({ type: 'warning', message: 'The source checkout has uncommitted work. It remains untouched and is not included in this HEAD-based Conquer branch.' });
       }
     } catch { /* advisory only */ }
-
+    
     ctx.setActiveAbort(cqAbort);
     const startTime = Date.now();
-
+    
     const evaluateDone = async (_claim: string) => {
       try {
         const diffRes = await spawnWithTimeout({ command: 'git', args: ['diff'], cwd: worktreeCwd, timeout: 30_000 });
@@ -90,7 +90,7 @@ export async function handleConquer(task: string, dispatch: Dispatch, ctx: Handl
         return { diff: '', gateOk: false, oracleTampered: false };
       }
     };
-
+    
     let result: any;
     try {
       result = await runConquer({
@@ -113,7 +113,7 @@ export async function handleConquer(task: string, dispatch: Dispatch, ctx: Handl
       if (!process.env.AGON_NO_SUMMARY) dispatch({ type: 'info', message: formatRunSummary(failedRun) });
       return;
     }
-
+    
     dispatch({ type: 'info', message: `Stopped: ${result.stopReason} · turns ${result.turnsUsed} · consults ${result.consultsRun}` });
     // Surface the falsifier's findings to the human merge gate (whether or not it blocked).
     if (result.counterexample) {
@@ -132,7 +132,7 @@ export async function handleConquer(task: string, dispatch: Dispatch, ctx: Handl
       dispatch({ type: 'info', message: `Work preserved on ${branch} at ${worktreeCwd}.` });
       appendMessage(ctx.chatSession, { role: 'engine', engineId: builder, content: `[conquer:stopped] ${result.stopReason}${result.doneReason ? ` — ${result.doneReason}` : ''}`, timestamp: new Date().toISOString() });
     }
-
+    
     const runRecord = recordRun({
       mode: 'conquer', intent: task, winner: builder, success: result.done,
       durationMs: Date.now() - startTime, engineIds: [builder, ...advisors],

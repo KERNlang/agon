@@ -146,11 +146,11 @@ export function runExtInstall(id: string|undefined, browser: string|undefined): 
     warn(`ignoring malformed extension id/origin "${bad}" (AGON_EXTENSION_IDS / config browserExtensionIds).`);
   }
   const extIds = resolvedOrigins.origins.map((o) => o.replace(/^chrome-extension:\/\//, ''));
-
+  
   const node = process.execPath;
   let cliEntry = process.argv[1] || '';
   try { cliEntry = realpathSync(cliEntry); } catch { /* keep argv[1] if it is not a real path */ }
-
+  
   // 1) Wrapper script (absolute, executable) — what Chrome's manifest points at.
   const wrapperDir = agonPath('native-host');
   mkdirSync(wrapperDir, { recursive: true });
@@ -158,7 +158,7 @@ export function runExtInstall(id: string|undefined, browser: string|undefined): 
   const wrapper = hostWrapperScript(node, cliEntry, extIds);
   writeFileSync(wrapperPath, wrapper, { mode: 0o755 });
   try { chmodSync(wrapperPath, 0o755); } catch { /* best-effort */ }
-
+  
   // 2) Native-messaging manifest, allowed_origins covering every configured extension id.
   const manifest = {
     name: AGON_NATIVE_HOST_NAME,
@@ -167,7 +167,7 @@ export function runExtInstall(id: string|undefined, browser: string|undefined): 
     type: 'stdio',
     allowed_origins: extIds.map((eid) => `chrome-extension://${eid}/`),
   };
-
+  
   const home = homedir();
   const browsers = resolveInstallBrowsers(browser);
   const written: string[] = [];
@@ -183,13 +183,13 @@ export function runExtInstall(id: string|undefined, browser: string|undefined): 
       warn(`could not write manifest for ${b}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
-
+  
   if (written.length === 0) {
     warn('no native-messaging manifests were written.');
     process.exitCode = 2;
     return;
   }
-
+  
   header('agon ext — native host installed');
   info(`  ${bold('extension')}  ${cyan(extIds.map((eid) => `chrome-extension://${eid}`).join(', '))}`);
   info(`  ${bold('wrapper')}    ${dim(wrapperPath)}`);
@@ -212,7 +212,7 @@ export async function runExtNativeHost(): Promise<void> {
   const cliEntry = process.argv[1] || '';
   let serveChild: ChildProcess | null = null;
   let connectSeq = 0; // generation token — a newer connect invalidates an older child's frames
-
+  
   const writeFrame = (obj: unknown): void => {
     const json = Buffer.from(JSON.stringify(obj), 'utf8');
     const len = Buffer.allocUnsafe(4);
@@ -220,13 +220,13 @@ export async function runExtNativeHost(): Promise<void> {
     process.stdout.write(len);
     process.stdout.write(json);
   };
-
+  
   const killServe = (): void => {
     const c = serveChild;
     serveChild = null;
     if (c && c.exitCode === null) { try { c.kill('SIGTERM'); } catch { /* best-effort */ } }
   };
-
+  
   const handleConnect = (): void => {
     const myGen = ++connectSeq; // a later connect supersedes this child + its reply
     killServe(); // Phase 1: one fresh bridge per connect
@@ -268,9 +268,9 @@ export async function runExtNativeHost(): Promise<void> {
       if (serveChild === child) serveChild = null;
     });
   };
-
+  
   const shutdown = (): void => { killServe(); process.exit(0); };
-
+  
   let inbuf: Buffer = Buffer.alloc(0); // widen so parseNativeFrames' rest (Buffer<ArrayBufferLike>) assigns back
   process.stdin.on('data', (chunk: Buffer) => {
     inbuf = Buffer.concat([inbuf, chunk]);
@@ -291,13 +291,13 @@ export async function runExtNativeHost(): Promise<void> {
       shutdown();
     }
   });
-
+  
   process.stdin.on('end', shutdown);
   process.stdin.on('close', shutdown);
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
   process.on('exit', () => { killServe(); });
-
+  
   // Live until stdin closes (Chrome disconnects the port when the panel closes).
   await new Promise<void>(() => { /* never resolves; shutdown() exits the process */ });
 }

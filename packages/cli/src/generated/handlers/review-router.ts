@@ -101,11 +101,11 @@ export function reviewDiffPaths(diff: string): string[] {
 export function inferReviewRisk(diff: string, requested: ReviewRiskRequest): ReviewRiskDecision {
   const paths = reviewDiffPaths(diff);
   const triggers: string[] = [];
-
+  
   const addTrigger = (value: string) => {
     if (!triggers.includes(value)) triggers.push(value);
   };
-
+  
   const reviewOnlyPath = (path: string) =>
     /(^|\/)(docs?|tests?|__tests__)(\/|$)/i.test(path)
     || /(^|\/)(README|CHANGELOG|CONTRIBUTING|SECURITY)(?:\.[^/]*)?$/i.test(path)
@@ -114,7 +114,7 @@ export function inferReviewRisk(diff: string, requested: ReviewRiskRequest): Rev
   const sharedSurface = /(^|\/)(package\.json|exports?\.(?:ts|js|json)|openapi[^/]*|.*\.proto|.*\.sql|.*\.graphql)$/i;
   const packageEntrySurface = /(^|\/)(?:src|lib)\/index\.(?:ts|js)$/i;
   const destructiveContent = /\b(DROP\s+(?:TABLE|DATABASE)\b|TRUNCATE\s+(?:TABLE\s+)?["`\[]?[A-Za-z_]|rm\s+-rf\s+(?:\/|~\/|\.{1,2}\/)|reset\s+--hard\b)/i;
-
+  
   for (const path of paths) {
     if (sensitivePath.test(path)) addTrigger(`sensitive-path:${path}`);
     if (sharedSurface.test(path) || packageEntrySurface.test(path)) addTrigger(`shared-surface:${path}`);
@@ -131,12 +131,12 @@ export function inferReviewRisk(diff: string, requested: ReviewRiskRequest): Rev
     }
   }
   if (paths.length === 0) addTrigger('missing-changed-path-evidence');
-
+  
   const onlyDocsOrTests = paths.length > 0 && paths.every(reviewOnlyPath);
-
+  
   let inferred: ReviewRiskLevel = onlyDocsOrTests ? 'low' : 'medium';
   if (triggers.length > 0) inferred = 'high';
-
+  
   const declared: ReviewRiskLevel = requested === 'auto' ? inferred : requested;
   const final = maxReviewRisk(declared, inferred);
   return { requested, inferred, final, triggers: triggers.sort((a, b) => a.localeCompare(b)) };
@@ -148,14 +148,14 @@ export function reviewAdapterIdentity(engine: EngineDefinition, backend: ReviewE
     const binary = String(engine.binary ?? '').trim().toLowerCase();
     if (binary) return { key: `cli:${binary}`, source: 'cli-binary', confidence: 'high' };
   }
-
+  
   if (backend === 'api' && engine.api?.baseUrl) {
     try {
       const origin = new URL(engine.api.baseUrl).origin.toLowerCase();
       if (origin) return { key: `api:${origin}`, source: 'api-origin', confidence: 'high' };
     } catch { /* fall through to the unverified identity */ }
   }
-
+  
   return {
     key: `engine:${String(engine.id ?? '').trim().toLowerCase()}`,
     source: 'engine-id-fallback',
@@ -171,7 +171,7 @@ export function routeReviewers(diff: string, requestedRisk: ReviewRiskRequest, p
   const primaryIdentity = primaryInput ? reviewAdapterIdentity(primaryInput.engine, primaryInput.backend) : undefined;
   const primaryVerified = primaryIdentity?.confidence === 'high';
   const seenIds = new Set<string>();
-
+  
   const candidates: ReviewRoutingCandidate[] = [];
   for (const input of inputs) {
     const engine = input.engine;
@@ -192,14 +192,14 @@ export function routeReviewers(diff: string, requestedRisk: ReviewRiskRequest, p
     });
   }
   candidates.sort((a, b) => a.selectionKey.localeCompare(b.selectionKey) || a.engineId.localeCompare(b.engineId));
-
+  
   if (!primaryVerified) {
     if (risk.final !== 'high') risk.final = 'high';
     const trigger = primaryEngine ? 'primary-implementer-identity-unverified' : 'primary-implementer-unknown';
     if (!risk.triggers.includes(trigger)) risk.triggers.push(trigger);
     risk.triggers.sort((a, b) => a.localeCompare(b));
   }
-
+  
   const excluded: ReviewRoutingExclusion[] = [];
   let selected: ReviewRoutingCandidate[];
   let shortfall: ReviewRoutingShortfall | null = null;
@@ -247,7 +247,7 @@ export function routeReviewers(diff: string, requestedRisk: ReviewRiskRequest, p
       }
     }
   }
-
+  
   excluded.sort((a, b) => a.engineId.localeCompare(b.engineId) || a.reason.localeCompare(b.reason));
   return {
     routerVersion: REVIEW_ROUTER_VERSION,

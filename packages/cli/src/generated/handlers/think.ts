@@ -31,12 +31,12 @@ export async function handleThink(problem: string, dispatch: Dispatch, ctx: Hand
   const thAbort = new AbortController();
   try {
     ensureAgonHome();
-
+    
     if (!problem || !problem.trim()) {
       dispatch({ type: 'warning', message: 'No problem provided. Usage: /think <problem> [--strategy reflexion] [--steps 8]' });
       return;
     }
-
+    
     const allEngines = ctx.activeEngines();
     const engines = filterDefaultOrchestrationEngines(allEngines);
     if (engines.length === 0) {
@@ -44,13 +44,13 @@ export async function handleThink(problem: string, dispatch: Dispatch, ctx: Hand
       return;
     }
     const engineId = engines[0];
-
+    
     const strategy = opts?.strategy && isThinkStrategy(opts.strategy) ? opts.strategy : 'linear';
     if (opts?.strategy && !isThinkStrategy(opts.strategy)) {
       dispatch({ type: 'info', message: `Unknown strategy '${opts.strategy}' — using linear (valid: linear|reflexion|tot|graph|hypothesis).` });
     }
     const steps = Math.max(1, Math.min(opts?.steps ?? 6, 20));
-
+    
     // An optional second engine that adversarially attacks the chain.
     let critic: string | undefined;
     if (opts?.critic && opts.critic.trim()) {
@@ -61,22 +61,22 @@ export async function handleThink(problem: string, dispatch: Dispatch, ctx: Hand
         dispatch({ type: 'info', message: `--critic '${opts.critic.trim()}' is not an active engine — skipping the adversarial critique.` });
       }
     }
-
+    
     dispatch({ type: 'header', title: `Think · ${strategy} · ${engineId}` });
     dispatch({ type: 'info', message: problem.length > 120 ? problem.slice(0, 120) + '…' : problem });
-
+    
     const outputDir = join(RUNS_DIR, `think-${Date.now()}`);
     mkdirSync(outputDir, { recursive: true });
-
+    
     ctx.setActiveAbort(thAbort);
-
+    
     const startTime = Date.now();
     const progressInterval = setInterval(() => {
       const elapsed = Math.floor((Date.now() - startTime) / 1000);
       const progress: EngineProgress[] = [{ id: engineId, status: `thinking… ${elapsed}s`, elapsed, done: false, failed: false }];
       dispatch({ type: 'progress-update', engines: progress });
     }, 250);
-
+    
     let progressCleared = false;
     function clearProgress(): void {
       if (progressCleared) return;
@@ -84,7 +84,7 @@ export async function handleThink(problem: string, dispatch: Dispatch, ctx: Hand
       clearInterval(progressInterval);
       dispatch({ type: 'progress-clear' });
     }
-
+    
     let result: any;
     try {
       result = await runThinkChain({
@@ -107,12 +107,12 @@ export async function handleThink(problem: string, dispatch: Dispatch, ctx: Hand
       throw err;
     }
     clearProgress();
-
+    
     if (!result.ok) {
       dispatch({ type: 'error', message: `${engineId} produced no usable thinking chain.` });
       return;
     }
-
+    
     const chainLines: string[] = [];
     for (const t of result.thoughts) {
       const flag = t.grounded === false ? '  ⚠ ungrounded' : '';
@@ -120,27 +120,27 @@ export async function handleThink(problem: string, dispatch: Dispatch, ctx: Hand
       chainLines.push(`${thoughtGlyph(t.kind)} ${t.thoughtNumber}/${t.totalThoughts} [${t.kind}] ${t.thought}${flag}${prunedTag}`);
     }
     dispatch({ type: 'text', content: chainLines.join('\n') });
-
+    
     if (result.chosenBranch) dispatch({ type: 'info', message: `Chosen branch: ${result.chosenBranch}` });
-
+    
     if (result.summary) {
       dispatch({ type: 'engine-block', engineId, color: (ENGINE_COLORS as Record<string, number>)[engineId] ?? 124, content: result.summary });
     }
-
+    
     if (result.openQuestions && result.openQuestions.length > 0) {
       dispatch({ type: 'text', content: ['Open questions:', ...result.openQuestions.map((q: string) => `  ❓ ${q}`)].join('\n') });
     }
-
+    
     if (result.adversarialCritique) {
       dispatch({ type: 'engine-block', engineId: result.criticEngineId ?? 'critic', color: 196, content: result.adversarialCritique });
     }
-
+    
     // Persist the refined thinking so Cesar can continue from it.
     const persisted = result.summary || chainLines.join('\n');
     appendMessage(ctx.chatSession, { role: 'user', content: `[think] ${problem}`, timestamp: new Date().toISOString() });
     appendMessage(ctx.chatSession, { role: 'engine', engineId, content: persisted, timestamp: new Date().toISOString() });
     tracker.record(engineId, { prompt: problem, response: persisted });
-
+    
     sessionResultStore.add({
       type: 'think',
       timestamp: new Date().toISOString(),
@@ -154,7 +154,7 @@ export async function handleThink(problem: string, dispatch: Dispatch, ctx: Hand
         openQuestions: result.openQuestions ?? [],
       },
     });
-
+    
     const runRecord = recordRun({
       mode: 'think',
       intent: problem,

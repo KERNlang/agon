@@ -107,7 +107,7 @@ export async function enforceContextBudget(ctx: HandlerContext, session: Persist
   const check = checkSessionBudget(estimated, budget);
   const pct = budgetRatioPct(check.ratio);
   const autoMode = ctx.autoModeQueued === true || ctx.cesar?.autoModeQueued === true;
-
+  
   // Compaction primitive (reuses the /compact path): fold older turns into the
   // bounded summary, then close+null the session so ensureCesarSession rebuilds
   // fresh, dropping the engine-side accumulated history. Returns whether a fold
@@ -122,7 +122,7 @@ export async function enforceContextBudget(ctx: HandlerContext, session: Persist
     // ensureCesarSession resets budgetWarned when it boots the fresh session.
     return folded;
   };
-
+  
   // ── API session with in-place compact(): real-usage, RAW-window policy ──
   // Claude Code parity: compact deeply and rarely — ONE LLM summarization at
   // ~85% of the raw window that keeps the recent tail and CONTINUES the same
@@ -147,7 +147,7 @@ export async function enforceContextBudget(ctx: HandlerContext, session: Persist
       : 0;
     const projected = Number(live.tokens) + pendingTokens;
     const pctOf = (n: number) => Math.max(0, Math.round((n / limit) * 100));
-
+  
     if (projected < warnLimit) return { proceed: true, compacted: false };
     if (projected < softLimit) {
       if (!autoMode && ctx.cesar && !ctx.cesar.budgetWarned) {
@@ -156,7 +156,7 @@ export async function enforceContextBudget(ctx: HandlerContext, session: Persist
       }
       return { proceed: true, compacted: false };
     }
-
+  
     // At/over the soft limit: compact IN PLACE — summarize older turns, keep
     // the recent tail verbatim, continue the same session. No reboot.
     let res: { ok: boolean; method: string; beforeTokens: number; afterTokens: number; limit: number } | null = null;
@@ -170,7 +170,7 @@ export async function enforceContextBudget(ctx: HandlerContext, session: Persist
         return { proceed: true, compacted: true };
       }
     }
-
+  
     // In-place compaction failed, was deferred, or freed too little →
     // legacy compact-and-reboot fallback, then re-check before blocking.
     const foldedIp = doCompactReboot();
@@ -186,12 +186,12 @@ export async function enforceContextBudget(ctx: HandlerContext, session: Persist
     dispatch({ type: 'error', message: `Cesar context is still at ${budgetRatioPct(postCheckIp.ratio)}% of ${engineId}'s window after compaction — too full to safely send this turn. Trim the message, or run /clear to reset the session, then resend.` });
     return { proceed: false, compacted: true };
   }
-
+  
   // ── ok ──
   if (check.level === 'ok') {
     return { proceed: true, compacted: false };
   }
-
+  
   // ── warn ── (interactive only — once per session). In auto mode we skip the
   // nudge entirely; the compact level below handles it without a human prompt.
   if (check.level === 'warn') {
@@ -201,14 +201,14 @@ export async function enforceContextBudget(ctx: HandlerContext, session: Persist
     }
     return { proceed: true, compacted: false };
   }
-
+  
   // ── compact ── auto-fold + reboot the brain session (PTY/CLI brains).
   if (check.level === 'compact') {
     const folded = doCompactReboot();
     dispatch({ type: 'info', message: `Context reached ${pct}% — auto-compacted Cesar context${folded ? ' (folded older turns into a summary)' : ''} and rebooted the brain with fresh context. The transcript is preserved.` });
     return { proceed: true, compacted: true };
   }
-
+  
   // ── hard-stop ── try the SAME compact-and-restart recovery FIRST; a fresh
   // session that replays only the compacted transcript may drop back under the
   // limit (codex review). Re-estimate against the now-null session (PTY path /

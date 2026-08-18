@@ -79,7 +79,7 @@ const FileRail = React.memo(function FileRail({ files, maxRows, width, focused, 
   const listBudget = Math.max(3, maxRows - detailRows - 3);
   const start = Math.max(0, Math.min(files.length - listBudget, sel - Math.floor(listBudget / 2)));
   const visible = files.slice(start, start + listBudget);
-
+  
   return (
     <Box flexDirection="column" flexShrink={0} width={w} height={h} paddingLeft={1} borderStyle="single" borderColor={borderColor} overflow="hidden">
       {files.length === 0 ? <FileRailEmpty /> : null}

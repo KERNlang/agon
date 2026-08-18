@@ -73,25 +73,25 @@ export function classifyLine(line: string): {kind:RichLine['kind'], content:stri
 // @kern-source: rich-text:55
 export function parseInlineSpans(text: string): InlineSpan[] {
   if (!text) return [{ text: '', style: DEFAULT_STYLE }];
-
+  
   const spans: InlineSpan[] = [];
   // Regex matches: bold(**), italic(*), bold+italic(***), inline code(`), links([text](url))
   const TOKEN = /(\*\*\*|__\_|\*\*|__|\*|_|`|\[([^\]]*)\]\(([^)]*)\))/g;
-
+  
   let pos = 0;
   let bold = false;
   let italic = false;
-
+  
   function pushText(t: string): void {
     if (!t) return;
     spans.push({ text: t, style: { bold, italic, code: false, dimColor: false, linkUrl: undefined } });
   }
-
+  
   let match: RegExpExecArray | null;
   while ((match = TOKEN.exec(text)) !== null) {
     const before = text.slice(pos, match.index);
     const token = match[0];
-
+  
     // Link: [text](url)
     if (match[2] !== undefined) {
       pushText(before);
@@ -102,7 +102,7 @@ export function parseInlineSpans(text: string): InlineSpan[] {
       pos = match.index + token.length;
       continue;
     }
-
+  
     // Inline code
     if (token === '`') {
       const closeIdx = text.indexOf('`', match.index + 1);
@@ -122,7 +122,7 @@ export function parseInlineSpans(text: string): InlineSpan[] {
       TOKEN.lastIndex = pos;
       continue;
     }
-
+  
     // Bold+italic: *** or ___
     if (token === '***' || token === '___') {
       pushText(before);
@@ -131,7 +131,7 @@ export function parseInlineSpans(text: string): InlineSpan[] {
       pos = match.index + token.length;
       continue;
     }
-
+  
     // Bold: ** or __
     if (token === '**' || token === '__') {
       pushText(before);
@@ -139,7 +139,7 @@ export function parseInlineSpans(text: string): InlineSpan[] {
       pos = match.index + token.length;
       continue;
     }
-
+  
     // Italic: * or _
     if (token === '*' || token === '_') {
       // Avoid matching underscores inside words (e.g., snake_case)
@@ -157,15 +157,15 @@ export function parseInlineSpans(text: string): InlineSpan[] {
       pos = match.index + token.length;
       continue;
     }
-
+  
     pushText(before + token);
     pos = match.index + token.length;
   }
-
+  
   // Remaining text
   const tail = text.slice(pos);
   if (tail) pushText(tail);
-
+  
   // Merge adjacent spans with same style
   const merged: InlineSpan[] = [];
   for (const span of spans) {
@@ -178,7 +178,7 @@ export function parseInlineSpans(text: string): InlineSpan[] {
       merged.push({ ...span, style: { ...span.style } });
     }
   }
-
+  
   return merged.length > 0 ? merged : [{ text, style: DEFAULT_STYLE }];
 }
 
@@ -190,14 +190,14 @@ function spansVisibleLength(spans: InlineSpan[]): number {
 // @kern-source: rich-text:169
 export function richWrap(spans: InlineSpan[], width: number): InlineSpan[][] {
   if (width <= 0) return [spans];
-
+  
   // Fast path: fits on one line
   if (spansVisibleLength(spans) <= width) return [spans];
-
+  
   // Flatten to plain text, word-wrap it, then map spans back
   const fullText = spans.map(s => s.text).join('');
   if (!fullText) return [spans];
-
+  
   // Step 1: Word-wrap the plain text into line ranges [start, end)
   const lineRanges: [number, number][] = [];
   let lineStart = 0;
@@ -212,7 +212,7 @@ export function richWrap(spans: InlineSpan[], width: number): InlineSpan[][] {
     lineStart = breakAt;
     while (lineStart < fullText.length && fullText[lineStart] === ' ') lineStart++;
   }
-
+  
   // Step 2: Build a flat char-to-span index
   const spanRanges: { start: number; end: number; style: InlineStyle }[] = [];
   let offset = 0;
@@ -220,7 +220,7 @@ export function richWrap(spans: InlineSpan[], width: number): InlineSpan[][] {
     spanRanges.push({ start: offset, end: offset + span.text.length, style: span.style });
     offset += span.text.length;
   }
-
+  
   // Step 3: For each wrapped line, slice the relevant spans
   const lines: InlineSpan[][] = [];
   for (const [rangeStart, rangeEnd] of lineRanges) {
@@ -244,46 +244,46 @@ export function richWrap(spans: InlineSpan[], width: number): InlineSpan[][] {
     }
     if (lineSpans.length > 0) lines.push(lineSpans);
   }
-
+  
   return lines.length > 0 ? lines : [spans];
 }
 
 // @kern-source: rich-text:230
 export function parseProseToRichLines(text: string, width: number): RichLine[] {
   if (!text.trim()) return [];
-
+  
   const inputLines = text.split('\n');
   const result: RichLine[] = [];
-
+  
   for (const rawLine of inputLines) {
     const classified = classifyLine(rawLine);
-
+  
     if (classified.kind === 'blank') {
       result.push({ kind: 'blank', spans: [], indent: 0, marker: undefined });
       continue;
     }
-
+  
     if (classified.kind === 'hr') {
       result.push({ kind: 'hr', spans: [{ text: '─'.repeat(Math.max(width - 2, 10)), style: { ...DEFAULT_STYLE, dimColor: true } }], indent: 0, marker: undefined });
       continue;
     }
-
+  
     const spans = parseInlineSpans(classified.content);
-
+  
     // Apply blockquote dimming
     if (classified.kind === 'blockquote') {
       for (const span of spans) {
         if (!span.style.code) span.style.dimColor = true;
       }
     }
-
+  
     // Calculate available width after indent + marker
     const indentWidth = classified.indent * 2;
     const markerWidth = classified.marker ? classified.marker.length : 0;
     const contentWidth = Math.max(width - indentWidth - markerWidth, 20);
-
+  
     const wrappedLines = richWrap(spans, contentWidth);
-
+  
     for (let i = 0; i < wrappedLines.length; i++) {
       result.push({
         kind: i === 0 ? classified.kind : 'plain',
@@ -294,6 +294,6 @@ export function parseProseToRichLines(text: string, width: number): RichLine[] {
       });
     }
   }
-
+  
   return result;
 }

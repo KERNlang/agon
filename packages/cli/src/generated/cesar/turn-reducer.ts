@@ -31,12 +31,12 @@ export function attemptTurnStep(step: (s: TurnSnapshot) => TurnSnapshot, s: Turn
 // @kern-source: turn-reducer:30
 export function reduceTurn(snapshot: TurnSnapshot, event: TurnEvent): { next: TurnSnapshot, effects: TurnEffect[] } {
   const noop = { next: snapshot, effects: [] as TurnEffect[] };
-
+  
   const terminal = snapshot.state === 'done' || snapshot.state === 'failed' || snapshot.state === 'interrupted';
   // Terminal absorption: late chunks from an abandoned generator must not
   // resurrect a finished turn (the wedged-compaction bug class).
   if (terminal) return noop;
-
+  
   if (event.type === 'ask-captured') {
     // THE load-bearing guard: an ask always parks the turn. Already asking
     // (duplicate/refined ask) or committing (late capture): update the

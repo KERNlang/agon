@@ -29,19 +29,19 @@ export async function handleNeroChallenge(decision: string, dispatch: Dispatch, 
   const neAbort = new AbortController();
   try {
     ensureAgonHome();
-
+    
     if (!decision || !decision.trim()) {
       dispatch({ type: 'warning', message: 'No decision provided. Usage: /nero <decision to challenge>' });
       return;
     }
-
+    
     const allEngines = ctx.activeEngines();
     let pool = filterDefaultOrchestrationEngines(allEngines);
     if (pool.length === 0) {
       dispatch({ type: 'error', message: 'No engines available.' });
       return;
     }
-
+    
     let forced: string | undefined;
     if (opts?.engine && opts.engine.trim()) {
       const resolved = ctx.registry.resolveId(opts.engine.trim());
@@ -52,22 +52,22 @@ export async function handleNeroChallenge(decision: string, dispatch: Dispatch, 
         dispatch({ type: 'info', message: `Engine '${opts.engine.trim()}' is not available — using rating-based selection.` });
       }
     }
-
+    
     dispatch({ type: 'header', title: 'Nero · adversarial challenge' });
     dispatch({ type: 'info', message: decision.length > 120 ? decision.slice(0, 120) + '…' : decision });
-
+    
     const outputDir = join(RUNS_DIR, `nero-${Date.now()}`);
     mkdirSync(outputDir, { recursive: true });
-
+    
     ctx.setActiveAbort(neAbort);
-
+    
     const startTime = Date.now();
     const progressInterval = setInterval(() => {
       const elapsed = Math.floor((Date.now() - startTime) / 1000);
       const progress: EngineProgress[] = [{ id: forced ?? 'critic', status: `challenging… ${elapsed}s`, elapsed, done: false, failed: false }];
       dispatch({ type: 'progress-update', engines: progress });
     }, 250);
-
+    
     let progressCleared = false;
     function clearProgress(): void {
       if (progressCleared) return;
@@ -75,7 +75,7 @@ export async function handleNeroChallenge(decision: string, dispatch: Dispatch, 
       clearInterval(progressInterval);
       dispatch({ type: 'progress-clear' });
     }
-
+    
     let result: any;
     try {
       result = await runNero({
@@ -99,12 +99,12 @@ export async function handleNeroChallenge(decision: string, dispatch: Dispatch, 
       throw err;
     }
     clearProgress();
-
+    
     if (!result.ok) {
       dispatch({ type: 'error', message: `Nero produced no usable challenge${result.challengeText ? `: ${result.challengeText}` : '.'}` });
       return;
     }
-
+    
     const pick = result.reason === 'forced'
       ? 'forced'
       : result.reason === 'random'
@@ -113,15 +113,15 @@ export async function handleNeroChallenge(decision: string, dispatch: Dispatch, 
           ? `exploration (ε) via ${result.scope}`
           : `top-rated via ${result.scope}`;
     dispatch({ type: 'info', message: `Critic: ${result.engineId} (${pick})` });
-
+    
     dispatch({ type: 'engine-block', engineId: result.engineId, color: 196, content: result.challengeText });
     const verdictLine = `${verdictGlyph(result.verdict)} VERDICT: ${result.verdict.toUpperCase()}${result.challengeConfidence != null ? `  ·  Nero is ${result.challengeConfidence}% sure the original is correct` : ''}`;
     dispatch({ type: 'text', content: verdictLine });
-
+    
     appendMessage(ctx.chatSession, { role: 'user', content: `[nero] ${decision}`, timestamp: new Date().toISOString() });
     appendMessage(ctx.chatSession, { role: 'engine', engineId: result.engineId, content: `${result.challengeText}\n\n${verdictLine}`, timestamp: new Date().toISOString() });
     tracker.record(result.engineId, { prompt: decision, response: result.challengeText });
-
+    
     sessionResultStore.add({
       type: 'nero',
       timestamp: new Date().toISOString(),
@@ -135,7 +135,7 @@ export async function handleNeroChallenge(decision: string, dispatch: Dispatch, 
         challengeText: result.challengeText ?? '',
       },
     });
-
+    
     const runRecord = recordRun({
       mode: 'nero',
       intent: decision,

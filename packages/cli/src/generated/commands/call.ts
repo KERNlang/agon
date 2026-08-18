@@ -43,29 +43,32 @@ export interface CallCommandOptions {
   count?: string;
   engine?: string;
   autoApprove?: boolean;
+  detect?: boolean;
+  out?: string;
+  author?: string;
 }
 
-// @kern-source: call:39
+// @kern-source: call:42
 export interface WorkflowCallMeta {
   workflowId: string;
   version: string;
   planId: string;
 }
 
-// @kern-source: call:44
+// @kern-source: call:47
 export interface BuiltCallCommands {
   cwd: string;
   commands: string[][];
   workflowMeta?: WorkflowCallMeta;
 }
 
-// @kern-source: call:49
+// @kern-source: call:52
 export function textFlag(flag: string, value: string|undefined): string[] {
   const text = value?.trim();
   return text ? [flag, text] : [];
 }
 
-// @kern-source: call:55
+// @kern-source: call:58
 export function requireInput(workflow: string, input: string|undefined): string {
   const text = input?.trim();
   if (!text) {
@@ -74,7 +77,7 @@ export function requireInput(workflow: string, input: string|undefined): string 
   return text;
 }
 
-// @kern-source: call:64
+// @kern-source: call:67
 export function exitWithFailure(message: string): never {
   fail(message);
   process.exit(1);
@@ -84,7 +87,7 @@ export function exitWithFailure(message: string): never {
 /**
  * Enforce the HARD removedEngines denylist at the external-CLI boundary, BEFORE any --engines list is forwarded to a subcommand. Without this, an external CLI (Codex/Antigravity) that passes --engines a,b,<removed> would resurrect a hard-removed engine, since explicit -e lists bypass the registry's auto roster. Fails loudly (pre-run error) rather than silently dropping — silent roster rewrite is the trust hazard (Council batch-2 verdict).
  */
-// @kern-source: call:71
+// @kern-source: call:74
 export function validateCallEngineRoster(enginesCsv: string|undefined, cwd?: string): void {
   const text = enginesCsv?.trim();
   if (!text) return;
@@ -104,12 +107,12 @@ export function validateCallEngineRoster(enginesCsv: string|undefined, cwd?: str
   }
 }
 
-// @kern-source: call:92
+// @kern-source: call:95
 export function normalizeCallWorkflow(workflow: string): string {
   return workflow.trim().toLowerCase().replace(/_/g, '-');
 }
 
-// @kern-source: call:97
+// @kern-source: call:100
 export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
   const workflow = normalizeCallWorkflow(opts.workflow);
   const cwd = opts.cwd?.trim() || process.cwd();
@@ -122,7 +125,7 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
   }
   const tribunalProtocol = textFlag('--protocol', protocolValue);
   const commands: string[][] = [];
-
+  
   if (workflow === 'tribunal' || workflow === 'team-tribunal') {
     const question = requireInput(workflow, opts.input);
     const team = opts.team || workflow === 'team-tribunal';
@@ -293,6 +296,28 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
       ...timeout,
       ...engines,
     ]);
+  } else if (workflow === 'sanitize') {
+    // Deterministic invisible-watermark forensics (no AI). Input is the file
+    // path; omit it to scan stdin. --detect is report-only with exit 1 on
+    // actionable findings; --out writes cleaned text to a file.
+    commands.push([
+      'sanitize',
+      opts.input?.trim() || '',
+      ...(opts.detect ? ['--detect'] : []),
+      ...textFlag('--out', opts.out),
+    ]);
+  } else if (workflow === 'naturalize') {
+    // Phase 2: sanitize → non-author engine rewrite → re-scan → word-diff.
+    // --engine picks the rewriter; --author names the writing engine so the
+    // rewriter is forced to differ (writer ≠ rewriter).
+    commands.push([
+      'naturalize',
+      opts.input?.trim() || '',
+      ...textFlag('--engine', opts.engine),
+      ...textFlag('--author', opts.author),
+      ...textFlag('--out', opts.out),
+      ...timeout,
+    ]);
   } else if (workflow === 'doctor') {
     // Passthrough so external CLIs that standardize on `agon call <workflow>`
     // can reach the top-level doctor. `agon call doctor` -> `agon doctor`,
@@ -314,25 +339,25 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
     commands.push(['tribunal', `Review the pipeline result for: ${task}`, '--rounds', opts.rounds?.trim() || '1', ...tribunalMode, ...tribunalProtocol, ...timeout, ...engines]);
     return { cwd, commands, workflowMeta: { workflowId: spec.id, version: spec.version, planId: plan.logicalPlanId } };
   } else {
-    throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, chrome, pipeline, review, goal, doctor, or a team-* workflow.`);
+    throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, chrome, pipeline, review, goal, sanitize, naturalize, doctor, or a team-* workflow.`);
   }
-
+  
   return { cwd, commands };
 }
 
-// @kern-source: call:308
+// @kern-source: call:333
 export function writeJsonl(event: Record<string,unknown>): void {
   process.stdout.write(`${JSON.stringify({ ...event, timestamp: new Date().toISOString() })}\n`);
 }
 
-// @kern-source: call:313
+// @kern-source: call:338
 export async function runCommand(command: string, args: string[], cwd: string, jsonl: boolean, workflowMeta?: WorkflowCallMeta): Promise<number> {
   return new Promise((resolve) => {
     const startedAt = Date.now();
     if (jsonl) {
       writeJsonl({ type: 'agon.call.command.start', command: [command, ...args], cwd, workflow: workflowMeta });
     }
-
+  
     const child = spawn(command, args, {
       cwd,
       env: {
@@ -342,18 +367,18 @@ export async function runCommand(command: string, args: string[], cwd: string, j
       },
       stdio: jsonl ? ['ignore', 'pipe', 'pipe'] : 'inherit',
     });
-
+  
     if (jsonl) {
       child.stdout?.on('data', (chunk) => writeJsonl({ type: 'agon.call.stdout', data: String(chunk) }));
       child.stderr?.on('data', (chunk) => writeJsonl({ type: 'agon.call.stderr', data: String(chunk) }));
     }
-
+  
     child.on('error', (err) => {
       if (jsonl) writeJsonl({ type: 'agon.call.command.error', error: err.message });
       else fail(err.message);
       resolve(1);
     });
-
+  
     child.on('close', (code, signal) => {
       const exitCode = typeof code === 'number' ? code : 1;
       if (jsonl) {
@@ -369,7 +394,7 @@ export async function runCommand(command: string, args: string[], cwd: string, j
   });
 }
 
-// @kern-source: call:357
+// @kern-source: call:382
 export const callCommand: any = defineCommand({
   meta: {
     name: 'call',
@@ -378,7 +403,7 @@ export const callCommand: any = defineCommand({
   args: {
     workflow: {
       type: 'positional',
-      description: 'Workflow: forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, chrome, pipeline, review, goal, doctor, or team-*',
+      description: 'Workflow: forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, chrome, pipeline, review, goal, sanitize, naturalize, doctor, or team-*',
       required: true,
     },
     input: {
@@ -506,6 +531,19 @@ export const callCommand: any = defineCommand({
       description: 'For chrome: auto-approve page-changing actions (click/type) unattended — required for a non-interactive caller to act on the page (read-only tools never prompt)',
       default: false,
     },
+    detect: {
+      type: 'boolean',
+      description: 'For sanitize: report-only forensic scan; exits 1 when actionable hidden channels are found',
+      default: false,
+    },
+    out: {
+      type: 'string',
+      description: 'For sanitize/naturalize: write cleaned/naturalized output to this file instead of stdout',
+    },
+    author: {
+      type: 'string',
+      description: 'For naturalize: engine that wrote the text — the rewriter is forced to differ (writer ≠ rewriter)',
+    },
   },
   async run({ args }) {
     let built: BuiltCallCommands;
@@ -542,6 +580,9 @@ export const callCommand: any = defineCommand({
         count: args.count,
         engine: args.engine,
         autoApprove: args['auto-approve'],
+        detect: args.detect,
+        out: args.out,
+        author: args.author,
       });
     } catch (err) {
       exitWithFailure(err instanceof Error ? err.message : String(err));

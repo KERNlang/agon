@@ -155,3 +155,4 @@ export function hostAggregateError(errors: unknown[], message: string): Error {
   const AggregateErrorCtor = globalThis.AggregateError;
   return new AggregateErrorCtor(errors, message);
 }
+

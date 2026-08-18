@@ -91,10 +91,10 @@ export function announcePhase(phase: string, detail: string): void {
 export async function runUpdate(latestVersion: string|undefined): Promise<number> {
   const version = (typeof latestVersion === 'string' && latestVersion.trim()) ? latestVersion.trim() : 'latest';
   const packageSpec = version === 'latest' ? DEFAULT_PACKAGE : `${DEFAULT_PACKAGE}@${version}`;
-
+  
   header(`Updating ${bold(DEFAULT_PACKAGE)} → ${bold(version)}`);
   announcePhase('●', `running: npm ${buildNpmArgs(packageSpec).join(' ')}`);
-
+  
   const { code, stderr } = await runNpmInstall(packageSpec, DEFAULT_TIMEOUT_MS);
   if (code === 0) {
     success(`Updated to ${bold(version)}. Restart Agon to use the new version.`);

@@ -2,13 +2,15 @@
 
 import { existsSync, statSync, readFileSync } from 'node:fs';
 
-import { resolve, relative, isAbsolute, basename } from 'node:path';
+import { resolve, relative, isAbsolute } from 'node:path';
 
 import type { ToolContext } from '@kernlang/agon-core';
 
 import { hostNowMs } from '../lib/kern-host.js';
 
-// @kern-source: self-turn-approval:11
+import { isSensitivePermissionPath } from './permission-resolver.js';
+
+// @kern-source: self-turn-approval:12
 function canonicalToolName(tool: string): string {
   const lower = String(tool ?? '').toLowerCase();
   if (lower === 'agonedit' || lower === 'edit' || lower === 'fileedit' || lower === 'filechange') {
@@ -29,7 +31,7 @@ function canonicalToolName(tool: string): string {
 /**
  * Fold a MultiEdit batch over the cached file content to estimate the resulting diff for self-turn approval. Mirrors the tool's sequential semantics: each edit applies to the prior result; a match must exist and be unique unless replace_all. `tokens` SUMS the per-edit changed-token estimate (like the single-Edit branch) rather than diffing the whole file — so scattered small edits don't inflate the estimate and trip the cap.
  */
-// @kern-source: self-turn-approval:24
+// @kern-source: self-turn-approval:25
 function estimateMultiEditApproval(cachedContent: string, edits: any): { ok: boolean, reason: string, nextContent: string, tokens: number } {
   if (!Array.isArray(edits) || edits.length === 0) {
     return { ok: false, reason: 'missing edits array', nextContent: '', tokens: 0 };
@@ -60,7 +62,7 @@ function estimateMultiEditApproval(cachedContent: string, edits: any): { ok: boo
 /**
  * Best-effort adapter for native approval protocols that only expose a command/description string.
  */
-// @kern-source: self-turn-approval:53
+// @kern-source: self-turn-approval:54
 export function approvalArgsFromCommand(tool: string, command: string): Record<string,unknown> {
   const raw = String(command ?? '').trim();
   if (!raw) return {};
@@ -75,21 +77,14 @@ export function approvalArgsFromCommand(tool: string, command: string): Record<s
   return {};
 }
 
-// @kern-source: self-turn-approval:69
-function isSensitivePath(filePath: string): boolean {
-  const base = basename(filePath).toLowerCase();
-  const sensitive = ['.env', 'credentials', 'secrets', '.pem', '.key', 'id_rsa'];
-  return sensitive.some((pat: string) => base.includes(pat));
-}
-
-// @kern-source: self-turn-approval:75
+// @kern-source: self-turn-approval:70
 function isInsideCwd(filePath: string, cwd: string): boolean {
   const resolved = isAbsolute(filePath) ? filePath : resolve(cwd, filePath);
   const rel = relative(cwd, resolved);
   return !rel.startsWith('..') && resolve(cwd, rel) === resolved;
 }
 
-// @kern-source: self-turn-approval:81
+// @kern-source: self-turn-approval:76
 function countOccurrences(haystack: string, needle: string): number {
   if (!needle) return 0;
   let count = 0;
@@ -103,7 +98,7 @@ function countOccurrences(haystack: string, needle: string): number {
   return count;
 }
 
-// @kern-source: self-turn-approval:95
+// @kern-source: self-turn-approval:90
 function normalizeApprovalArgs(args: Record<string,unknown>): Record<string,unknown> {
   const raw = (args ?? {}) as Record<string, unknown>;
   const nested: Record<string, unknown>[] = [raw];
@@ -139,7 +134,7 @@ function normalizeApprovalArgs(args: Record<string,unknown>): Record<string,unkn
   return out;
 }
 
-// @kern-source: self-turn-approval:121
+// @kern-source: self-turn-approval:116
 function estimateChangedTokens(before: string, after: string): number {
   if (before === after) return 0;
   let prefix = 0;
@@ -165,7 +160,7 @@ function estimateChangedTokens(before: string, after: string): number {
 /**
  * Return true when a cached read is unsafe. Cesar-owned cache entries are verified against disk content so a previous self-approved edit does not force a redundant prompt.
  */
-// @kern-source: self-turn-approval:144
+// @kern-source: self-turn-approval:139
 function isStaleCachedRead(filePath: string, cached: any): boolean {
   let mtime = 0;
   try {
@@ -191,7 +186,7 @@ function isStaleCachedRead(filePath: string, cached: any): boolean {
 /**
  * Optimistically refresh the read cache after approving a Cesar-owned edit/write. The next approval verifies the expected content against disk.
  */
-// @kern-source: self-turn-approval:163
+// @kern-source: self-turn-approval:158
 function markCesarTouchedCache(cache: any, filePath: string, cached: any, nextContent: string): void {
   const now = hostNowMs();
   cache.set(filePath, { ...cached, content: nextContent, timestamp: Math.max(Number(cached?.timestamp ?? 0), now), offset: undefined, limit: undefined, isPartialView: false, lastTouchedBy: 'cesar', lastTouchedAt: now });
@@ -200,7 +195,7 @@ function markCesarTouchedCache(cache: any, filePath: string, cached: any, nextCo
 /**
  * Approve small Cesar-owned Edit/Write operations on already-read files without interrupting the user. Explicit deny modes, exploration/read-only mode, outside-cwd paths, sensitive files, stale reads, unknown files, and large diffs all fall through to the normal approval prompt.
  */
-// @kern-source: self-turn-approval:169
+// @kern-source: self-turn-approval:164
 export function applyCesarSelfTurnApproval(tool: string, args: Record<string,unknown>, toolCtx: ToolContext, config: any): {approve:boolean,reason:string,tool?:string,path?:string,diffTokens?:number} {
   if ((config as any).cesarSelfTurnAutoApprove === false) {
     return { approve: false, reason: 'cesarSelfTurnAutoApprove disabled' };
@@ -228,7 +223,7 @@ export function applyCesarSelfTurnApproval(tool: string, args: Record<string,unk
   if (!isInsideCwd(filePath, toolCtx.cwd)) {
     return { approve: false, reason: 'path outside cwd', tool: t, path: filePath };
   }
-  if (isSensitivePath(filePath)) {
+  if (isSensitivePermissionPath(filePath, Array.isArray((config as any).cesarSensitivePathPatterns) ? (config as any).cesarSensitivePathPatterns : undefined, toolCtx.cwd)) {
     return { approve: false, reason: 'sensitive file', tool: t, path: filePath };
   }
   const cache = toolCtx.readFileState;

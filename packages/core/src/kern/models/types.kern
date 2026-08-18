@@ -306,7 +306,11 @@ config name=AgonConfig
   field name=cesarImportantTaskPattern type=string optional=true
     doc "Optional task-risk regex override used by the legacy AUTO approval profile. Agentic AUTO does not prompt merely because a task is important."
   field name=cesarDangerousTaskPattern type=string optional=true
-    doc "Optional dangerous-boundary regex override shared by both AUTO harness profiles."
+    doc "Optional dangerous-boundary regex override used for task risk classification and the leaseless-Bash backstop. With AUTO on it no longer forces a prompt on its own — see cesarDestructiveActionPattern."
+  field name=cesarDestructiveActionPattern type=string optional=true
+    doc "Optional regex override for the DESTRUCTIVE class — the narrow seatbelt that still prompts in permission mode auto: force push, remote branch deletion, git reset --hard, git clean -f, rm -rf, dropdb / drop database, migrate reset, and --force on a db/migration CLI. Unset = DEFAULT_DESTRUCTIVE_PATTERN. An unparsable override falls back to the default rather than prompting on everything."
+  field name=cesarSensitivePathPatterns type="string[]" optional=true
+    doc "Extra basename substrings treated as sensitive files by the shared sensitive-path matcher (added to the built-in .env / credentials / secrets / .pem / .key / id_rsa list; .git/hooks/ and .husky/ always match as directories). Sensitive file mutations prompt in every mode except auto."
   field name=cesarAutoModePrompted type=boolean default=false
     doc "Tracks whether the CLI has asked the first-run question for enabling default Cesar autonomous mode."
   field name=resumePausedPlanOnStartup type=boolean default=false
@@ -358,7 +362,7 @@ config name=AgonConfig
   // DEFAULT_CONFIG, which is not assignable to the union type. Typed as plain
   // string; resolveAgonPermissionMode validates and clamps every read.
   field name=agonPermissionMode type=string optional=true
-    doc "Claude-Code-style permission mode ('ask'|'auto-edit'|'auto') cycled with Shift+Tab in the REPL. ask = prompt before file edits and mutating commands; auto-edit = workspace file edits auto-approved, Bash mutations still prompt; auto = workspace autonomy with lease boundaries (push/publish/escape) still interactive. Deny rules win in every mode. Unset/invalid values migrate from the legacy permissionMode (auto→auto, smart→auto-edit, ask/deny-all→ask)."
+    doc "Claude-Code-style permission mode ('ask'|'auto-edit'|'auto') cycled with Shift+Tab in the REPL. ask = prompt before file edits and mutating commands; auto-edit = workspace file edits auto-approved (sensitive paths — .env, keys, .git/hooks, .husky — still prompt), Bash mutations still prompt; auto = CC bypassPermissions parity — plain pushes/publishes/deploys run free, only the destructive class (cesarDestructiveActionPattern) and workspace escapes still prompt. Deny rules win in every mode. Unset/invalid values migrate from the legacy permissionMode (auto→auto, smart→auto-edit, ask/deny-all→ask)."
   field name=allowedCommands type="string[]" optional=true
   field name=toolPermissions type="Record<string,'allow'|'ask'|'deny'>" optional=true
   field name=permissions type="{allow?:string[],deny?:string[]}" optional=true

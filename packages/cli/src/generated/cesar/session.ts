@@ -227,7 +227,7 @@ export const CESAR_AGENTIC_SYSTEM_PROMPT: string = [
     '', 'TOOLS AND SAFETY',
     '- Use Read/Grep/Glob for workspace discovery, Edit/Write for files, and Bash for commands. Do not narrate calls you can make.',
     '- Routine in-workspace edits, tests, builds, formatting, and local inspection are expected in AUTO and require no request for confirmation.',
-    '- Runtime policy is authoritative: explicit deny rules, workspace escapes, destructive commands, pushes, publishing, deployments, credential changes, and external side effects remain fenced. Never bypass or disguise a denied boundary.',
+    '- Runtime policy is authoritative and mode-dependent: explicit deny rules, workspace escapes, and destructive commands (force push, remote branch deletion, git reset --hard, rm -rf, dropdb / drop database) stay fenced in every mode. Sensitive files (secrets, keys, git hooks) are fenced in ask and auto-edit; in AUTO they are not, so treat them with extra care instead of assuming a prompt will stop you. Never bypass or disguise a denied boundary.',
     '- ReportConfidence is optional telemetry. Use it only for genuine uncertainty or risk; it is never completion and never a prerequisite.',
     '- Keep a short [TODOS] checklist for work with more than two steps and update it when state changes.',
     '- When a decision genuinely needs the user to pick between concrete alternatives, end the turn with ONE [ASK] block — {"question":"…","options":[{"label":"…","description":"…"}]} between [ASK] and [/ASK] — instead of an open prose question. The runtime renders it as a selectable menu; never also ask the same question in prose.',
@@ -1327,9 +1327,12 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
       logApproval('denied', 'task-lease', 'duplicate or previously declined approval boundary');
       return false;
     }
-    const boundaryReasons = ['auto_off', 'dangerous_boundary', 'important_task'];
+    // Boundary reasons the lease/resolver can emit as an ask: AUTO off, the
+    // narrow destructive class, a workspace escape, a sensitive path, and the
+    // leaseless-Bash backstop (still labeled dangerous_boundary).
+    const boundaryReasons = ['auto_off', 'dangerous_boundary', 'destructive_boundary', 'workspace_escape', 'sensitive_path'];
     const promptReason = boundaryReasons.includes(resolution.reason)
-      ? taskActionApprovalMessage({ decision: resolution.reason === 'important_task' ? 'ask_task_once' : 'ask_boundary_once', signature: resolution.signature, reason: resolution.reason })
+      ? taskActionApprovalMessage({ decision: 'ask_boundary_once', signature: resolution.signature, reason: resolution.reason })
       : `Cesar (${engineId}) wants to execute (${resolution.reason})`;
     return new Promise<boolean>((resolve) => {
       const dispatch = ctx.cesar!.lastDispatch;
@@ -1367,7 +1370,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:1307
+// @kern-source: session:1310
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -1401,7 +1404,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:1341
+// @kern-source: session:1344
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
 
@@ -1425,7 +1428,7 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:1365
+// @kern-source: session:1368
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) {
     return false;
@@ -1437,7 +1440,7 @@ export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
-// @kern-source: session:1372
+// @kern-source: session:1375
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -1457,7 +1460,7 @@ export function mcpConfigFingerprint(config: any): string {
 /**
  * Resolve the agon-orchestration MCP server entry. The CLI ships as a tsup BUNDLE that ALSO emits the MCP server to <cli-dist>/mcp/index.js (see tsup.config.ts), so the published install is self-contained — no @kernlang/agon-mcp npm dependency. Resolution order: (0) the bundled sibling <cli-dist>/mcp/index.js (the published, self-contained path), (1) node module resolution of @kernlang/agon-mcp (monorepo-via-symlink / legacy installs), (2) walk up to the repo root containing packages/mcp/dist/index.js (monorepo without a symlink), (3) the original relative guess as a last resort. `fromUrl` is for tests; defaults to this module's URL.
  */
-// @kern-source: session:1390
+// @kern-source: session:1393
 export function resolveAgonMcpServerPath(fromUrl?: string): string {
   const raw = fromUrl ?? import.meta.url;
   // Accept either a file: URL (normal) or a bare path (defensive): fileURLToPath
@@ -1491,7 +1494,7 @@ export function resolveAgonMcpServerPath(fromUrl?: string): string {
 /**
  * Single source of truth for which backend a Cesar engine will actually use. Honours config.cesarBackend preference ('auto' | 'cli' | 'api'). Pure — no side effects beyond registry lookups. Returns backend='none' when the engine has neither a usable binary nor an API key; callers decide how to handle that.
  */
-// @kern-source: session:1422
+// @kern-source: session:1425
 export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { backend: 'cli'|'api'|'none', binaryPath: string, hasBinary: boolean, hasApi: boolean, engine: any } {
   const config = ctx.config;
   const cesarEngineId = engineId ?? (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -1516,7 +1519,7 @@ export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { b
   return { backend: 'none', binaryPath: '', hasBinary, hasApi, engine };
 }
 
-// @kern-source: session:1448
+// @kern-source: session:1451
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

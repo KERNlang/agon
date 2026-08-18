@@ -237,12 +237,19 @@ describe('applyAutoApprovePolicy', () => {
       expect(decision.approve).toBe(true);
     });
 
-    it('stops at an external side-effect boundary', () => {
-      const plan = makePlan([
+    it('stops at a destructive command boundary', () => {
+      // A plain `git push` verifyCmd no longer blocks plan auto-approval —
+      // permission mode auto is CC bypassPermissions parity. The narrow
+      // destructive class still does.
+      const plainPush = makePlan([
         makeStep('publish', 'self', { description: 'Push the finished branch', verifyCmd: 'git push origin main' }),
       ], { autoApprove: true });
       const lease = createTaskExecutionLease('finish the local implementation', true, '/repo', undefined, 'agentic');
+      expect(applyAgenticAutoApprovePolicy(plainPush, cfg(), lease).approve).toBe(true);
 
+      const plan = makePlan([
+        makeStep('publish', 'self', { description: 'Rewrite the branch', verifyCmd: 'git push --force origin main' }),
+      ], { autoApprove: true });
       const decision = applyAgenticAutoApprovePolicy(plan, cfg(), lease);
       expect(decision.approve).toBe(false);
       expect(decision.reason).toContain('boundary');
@@ -271,11 +278,18 @@ describe('applyAutoApprovePolicy', () => {
       expect(applyAgenticAutoApprovePolicy(plan, cfg(), lease).approve).toBe(false);
     });
 
-    it('gates dangerous delegation payloads even as prose', () => {
-      const plan = makePlan([
+    it('gates destructive delegation payloads even as prose', () => {
+      const lease = createTaskExecutionLease('refresh the docs', true, '/repo', undefined, 'agentic');
+      // Plain deploy/production prose auto-approves now (retired broad
+      // dangerous-text boundary)…
+      const deployPlan = makePlan([
         makeStep('ship', 'delegate', { description: 'Deploy the docs site to production' }),
       ], { autoApprove: true });
-      const lease = createTaskExecutionLease('refresh the docs', true, '/repo', undefined, 'agentic');
+      expect(applyAgenticAutoApprovePolicy(deployPlan, cfg(), lease).approve).toBe(true);
+      // …while a destructive payload still blocks it.
+      const plan = makePlan([
+        makeStep('ship', 'delegate', { description: 'Drop database docs_prod and reseed it' }),
+      ], { autoApprove: true });
       expect(applyAgenticAutoApprovePolicy(plan, cfg(), lease).approve).toBe(false);
     });
 

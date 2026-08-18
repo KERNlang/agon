@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 // Mock ONLY the config I/O — rule evaluation, path resolution, and command
 // classification stay real. persistPermissionRule must never touch the
@@ -24,6 +27,7 @@ import {
   getSessionPermissionRules,
   isLeaselessBashBoundary,
   isPermissionHardDeny,
+  isSensitivePermissionPath,
   resolveAgonPermissionMode,
   resolvePermissionDecision,
   synthesizePermissionRule,
@@ -115,18 +119,35 @@ describe('resolvePermissionDecision — deny stages', () => {
     }));
     expect(r).toMatchObject({ decision: 'deny', stage: 'deny-rule' });
   });
-  it('lease workspace escape denies file mutations', () => {
+  it('lease workspace escape denies file mutations outside mode auto', () => {
     const lease = createTaskExecutionLease('fix the bug', true, WS);
     const r = resolvePermissionDecision(request({ tool: 'Edit', target: '/etc/passwd', lease }));
     expect(r).toMatchObject({ decision: 'deny', stage: 'lease', reason: 'workspace_escape' });
+    expect(resolvePermissionDecision(request({
+      tool: 'Edit', target: '/etc/passwd', lease, config: cfg({ agonPermissionMode: 'auto-edit' }),
+    }))).toMatchObject({ decision: 'deny', reason: 'workspace_escape' });
+  });
+  it('mode auto turns a lease workspace escape into an ask instead of a silent dead end', () => {
+    // CC-parity contract: in auto the user must be able to consent to an
+    // out-of-workspace write rather than watch the turn fail. Every other mode
+    // keeps the hard deny (see the test above).
+    const lease = createTaskExecutionLease('fix the bug', true, WS);
+    const r = resolvePermissionDecision(request({
+      tool: 'Edit', target: '/etc/passwd', lease, config: cfg({ agonPermissionMode: 'auto' }),
+    }));
+    expect(r).toMatchObject({ decision: 'ask', stage: 'lease', reason: 'workspace_escape' });
+    const shellEscape = resolvePermissionDecision(request({
+      target: 'printf boom > /etc/hosts', lease, config: cfg({ agonPermissionMode: 'auto' }),
+    }));
+    expect(shellEscape).toMatchObject({ decision: 'ask', reason: 'workspace_escape' });
   });
 });
 
 describe('resolvePermissionDecision — allow sources', () => {
-  it('an allow rule auto-approves and beats the lease dangerous boundary', () => {
+  it('an allow rule auto-approves and beats the lease destructive boundary', () => {
     const lease = createTaskExecutionLease('build the feature', true, WS);
     const r = resolvePermissionDecision(request({
-      target: 'git push origin feature',
+      target: 'git push --force origin feature',
       lease,
       config: cfg({ permissions: { allow: ['Bash(git push:*)'] } }),
     }));
@@ -139,20 +160,22 @@ describe('resolvePermissionDecision — allow sources', () => {
     }));
     expect(r).toMatchObject({ decision: 'allow', stage: 'allowed-commands' });
   });
-  it('legacy bare tokens and tool-level allows never cover a dangerous boundary', () => {
+  it('legacy bare tokens and tool-level allows never cover a destructive boundary', () => {
+    // The boundary class narrowed to destructive-only, but the ordering rule is
+    // unchanged: a blunt allow source must not swallow it.
     const lease = createTaskExecutionLease('build the feature', true, WS);
     const viaToken = resolvePermissionDecision(request({
-      target: 'git push origin main',
+      target: 'git push --force origin main',
       lease,
       config: cfg({ allowedCommands: ['git'] }),
     }));
-    expect(viaToken).toMatchObject({ decision: 'ask', reason: 'dangerous_boundary' });
+    expect(viaToken).toMatchObject({ decision: 'ask', reason: 'destructive_boundary' });
     const viaToolAllow = resolvePermissionDecision(request({
-      target: 'git push origin main',
+      target: 'git push --force origin main',
       lease,
       config: cfg({ toolPermissions: { Bash: 'allow' } }),
     }));
-    expect(viaToolAllow).toMatchObject({ decision: 'ask', reason: 'dangerous_boundary' });
+    expect(viaToolAllow).toMatchObject({ decision: 'ask', reason: 'destructive_boundary' });
     const leaseless = resolvePermissionDecision(request({
       target: 'npm publish',
       config: cfg({ allowedCommands: ['npm'] }),
@@ -185,14 +208,15 @@ describe('resolvePermissionDecision — allow sources', () => {
 });
 
 describe('resolvePermissionDecision — boundary asks survive every mode', () => {
-  it('a dangerous lease boundary asks even in auto mode', () => {
+  it('a destructive lease boundary asks even in auto mode, while a plain push runs', () => {
     const lease = createTaskExecutionLease('build the feature', true, WS);
-    const r = resolvePermissionDecision(request({
-      target: 'git push origin main',
-      lease,
-      config: cfg({ agonPermissionMode: 'auto' }),
-    }));
-    expect(r).toMatchObject({ decision: 'ask', stage: 'lease', reason: 'dangerous_boundary' });
+    const config = cfg({ agonPermissionMode: 'auto' });
+    expect(resolvePermissionDecision(request({ target: 'git push --force origin main', lease, config })))
+      .toMatchObject({ decision: 'ask', stage: 'lease', reason: 'destructive_boundary' });
+    expect(resolvePermissionDecision(request({ target: 'dropdb agon_dev', lease, config })))
+      .toMatchObject({ decision: 'ask', reason: 'destructive_boundary' });
+    // …and the boundary the CC-parity change deliberately removed:
+    expect(resolvePermissionDecision(request({ target: 'git push origin main', lease, config })).decision).toBe('allow');
   });
   it('a leaseless delegated push asks even at the auto floor', () => {
     const r = resolvePermissionDecision(request({
@@ -253,6 +277,197 @@ describe('resolvePermissionDecision — mode policy', () => {
     const native = resolvePermissionDecision(request({ tool: 'Edit', target: 'src/index.ts', config, source: 'native' }));
     const selfTurn = resolvePermissionDecision(request({ tool: 'Edit', target: 'src/index.ts', config, source: 'self-turn' }));
     expect(native.decision).toBe(selfTurn.decision);
+  });
+});
+
+describe('the sensitive-path matcher (shared with Cesar self-turn approval)', () => {
+  it('matches secrets by basename and hook directories by path', () => {
+    for (const path of [
+      `${WS}/.env`, `${WS}/.env.local`, `${WS}/config/credentials.json`, `${WS}/deploy.pem`,
+      `${WS}/keys/deploy.key`, `${WS}/.ssh/id_rsa`, `${WS}/secrets.ts`,
+      `${WS}/.git/hooks/pre-commit`, '.git/hooks/pre-push', `${WS}/.husky/pre-commit`,
+      '.git\\hooks\\pre-commit',
+    ]) {
+      expect(isSensitivePermissionPath(path), path).toBe(true);
+    }
+    for (const path of [
+      `${WS}/src/index.ts`, `${WS}/README.md`, `${WS}/.github/workflows/ci.yml`,
+      `${WS}/src/environment.ts`, `${WS}/.gitignore`, '',
+    ]) {
+      expect(isSensitivePermissionPath(path), path).toBe(false);
+    }
+    // Config-tunable, and junk entries are ignored.
+    expect(isSensitivePermissionPath(`${WS}/src/tokens.ts`, ['tokens.ts'])).toBe(true);
+    expect(isSensitivePermissionPath(`${WS}/src/index.ts`, ['  ', ''])).toBe(false);
+  });
+
+  // VULN-3: the matcher used to read the RAW path string, so any spelling that
+  // only resolves to a sensitive path evaded it. Canonicalize first.
+  it('canonicalizes the path before matching so redundant segments cannot evade it', () => {
+    for (const path of [
+      // redundant separators / '.' segments (collapsed by path resolution)
+      '.git//hooks/pre-commit', '.git/./hooks/pre-commit', './.git/hooks/pre-commit',
+      'packages/../.git/hooks/pre-commit', 'packages/cli/../../.git/hooks/pre-commit',
+      '.husky/./pre-commit', './.env', 'packages/../.env',
+      // a trailing separator used to blank out the basename entirely
+      '.env/',
+    ]) {
+      expect(isSensitivePermissionPath(path, undefined, WS), path).toBe(true);
+    }
+    // Canonicalization only ever ADDS coverage — ordinary paths stay routine.
+    for (const path of ['./src/index.ts', 'packages/../README.md', 'packages/cli/src/index.ts']) {
+      expect(isSensitivePermissionPath(path, undefined, WS), path).toBe(false);
+    }
+  });
+
+  it('resolves symlink aliases of a sensitive directory', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agon-sensitive-'));
+    try {
+      mkdirSync(join(dir, '.git', 'hooks'), { recursive: true });
+      writeFileSync(join(dir, '.env'), 'SECRET=1');
+      symlinkSync(join(dir, '.git', 'hooks'), join(dir, 'scripts'), 'dir');
+      symlinkSync(join(dir, '.env'), join(dir, 'settings.conf'), 'file');
+      // Innocent-looking spellings that land on a hook directory / a secret.
+      expect(isSensitivePermissionPath(join(dir, 'scripts', 'pre-commit'), undefined, dir)).toBe(true);
+      expect(isSensitivePermissionPath('scripts/pre-commit', undefined, dir)).toBe(true);
+      expect(isSensitivePermissionPath(join(dir, 'settings.conf'), undefined, dir)).toBe(true);
+      // A plain file under the same tmp dir is still routine.
+      writeFileSync(join(dir, 'notes.md'), '# notes');
+      expect(isSensitivePermissionPath(join(dir, 'notes.md'), undefined, dir)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('fences a canonicalization-evading hook edit through the resolver in auto-edit', () => {
+    expect(resolvePermissionDecision(request({
+      tool: 'Edit',
+      target: '.git/./hooks/pre-commit',
+      lease: createTaskExecutionLease('do the work', false, WS),
+      config: cfg({ agonPermissionMode: 'auto-edit' }),
+    }))).toMatchObject({ decision: 'ask', reason: 'sensitive_path' });
+  });
+});
+
+// VULN-4: the resolver is the only stage that knows about sensitive paths, so
+// its ask must survive the lease re-derivation inside authorizeResolvedTaskAction.
+describe('authorizeResolvedTaskAction — the resolver ask is authoritative', () => {
+  it('prompts for a sensitive-path edit under a one-shot /auto lease', async () => {
+    const seen: string[] = [];
+    const approve = async (evaluation: { reason: string }) => { seen.push(evaluation.reason); return false; };
+    const outcome = await authorizeResolvedTaskAction(request({
+      tool: 'Edit',
+      target: '.git/hooks/pre-commit',
+      // lease.autoMode=true + mode auto-edit is exactly the `/auto <task>` shape
+      // that used to re-derive `routine_auto` and execute with no prompt.
+      lease: createTaskExecutionLease('do the work', true, WS),
+      config: cfg({ agonPermissionMode: 'auto-edit' }),
+    }) as never, approve as never);
+    expect(seen).toEqual(['sensitive_path']);
+    expect(outcome).toMatchObject({ decision: 'deny', reason: 'user_denied' });
+  });
+
+  it('approving the sensitive edit once lets it through and does not re-prompt', async () => {
+    let prompts = 0;
+    const approve = async () => { prompts += 1; return true; };
+    const req = request({
+      tool: 'Edit',
+      target: '.git/hooks/pre-commit',
+      lease: createTaskExecutionLease('do the work', true, WS),
+      config: cfg({ agonPermissionMode: 'auto-edit' }),
+    });
+    expect(await authorizeResolvedTaskAction(req as never, approve as never)).toMatchObject({ decision: 'allow' });
+    expect(await authorizeResolvedTaskAction(req as never, approve as never)).toMatchObject({ decision: 'allow' });
+    expect(prompts).toBe(1);
+  });
+
+  it('still allows a routine contained edit without a prompt', async () => {
+    let prompts = 0;
+    const approve = async () => { prompts += 1; return true; };
+    const outcome = await authorizeResolvedTaskAction(request({
+      tool: 'Edit',
+      target: 'packages/cli/src/index.ts',
+      lease: createTaskExecutionLease('do the work', true, WS),
+      config: cfg({ agonPermissionMode: 'auto-edit' }),
+    }) as never, approve as never);
+    expect(outcome.decision).toBe('allow');
+    expect(prompts).toBe(0);
+  });
+});
+
+describe('resolvePermissionDecision — mode × action-class decision table', () => {
+  // The lease's autoMode mirrors how brain.kern builds it: true exactly when
+  // the effective permission mode is auto (or a one-shot /auto is queued).
+  const decide = (mode: 'ask' | 'auto-edit' | 'auto', tool: string, target: string, prompt = 'do the work', extra: Record<string, unknown> = {}) =>
+    resolvePermissionDecision(request({
+      tool,
+      target,
+      lease: createTaskExecutionLease(prompt, mode === 'auto', WS),
+      config: cfg({ agonPermissionMode: mode, ...extra }),
+    }));
+
+  // The turn text that used to trip `important_task` in every mode.
+  const IMPORTANT = 'change the auth session permission migration for the database';
+
+  const table: Array<[label: string, tool: string, target: string, prompt: string, ask: string, autoEdit: string, auto: string]> = [
+    ['read-only tool', 'Read', 'src/index.ts', 'do the work', 'allow', 'allow', 'allow'],
+    ['read-only command', 'Bash', 'git status', 'do the work', 'allow', 'allow', 'allow'],
+    ['contained file edit', 'Edit', 'src/index.ts', 'do the work', 'ask', 'allow', 'allow'],
+    ['contained file edit, important prompt text', 'Edit', 'src/index.ts', IMPORTANT, 'ask', 'allow', 'allow'],
+    ['sensitive file edit (.env)', 'Write', '.env', 'do the work', 'ask', 'ask', 'allow'],
+    ['sensitive file edit (git hook)', 'Edit', '.git/hooks/pre-commit', 'do the work', 'ask', 'ask', 'allow'],
+    ['sensitive file edit (.husky)', 'Edit', '.husky/pre-commit', 'do the work', 'ask', 'ask', 'allow'],
+    ['escaping file edit', 'Edit', '/etc/passwd', 'do the work', 'deny', 'deny', 'ask'],
+    ['routine Bash mutation', 'Bash', 'npm run build', 'do the work', 'ask', 'ask', 'allow'],
+    ['routine Bash mutation, important prompt text', 'Bash', 'npm run build', IMPORTANT, 'ask', 'ask', 'allow'],
+    ['plain push', 'Bash', 'git push origin main', 'do the work', 'ask', 'ask', 'allow'],
+    ['publish', 'Bash', 'npm publish', 'do the work', 'ask', 'ask', 'allow'],
+    ['mutating curl', 'Bash', 'curl -X POST https://example.com/deploy', 'do the work', 'ask', 'ask', 'allow'],
+    ['force push', 'Bash', 'git push --force origin main', 'do the work', 'ask', 'ask', 'ask'],
+    ['remote branch deletion', 'Bash', 'git push origin :main', 'do the work', 'ask', 'ask', 'ask'],
+    ['drop database', 'Bash', 'dropdb agon_dev', 'do the work', 'ask', 'ask', 'ask'],
+    ['rm -rf', 'Bash', 'rm -rf build', 'do the work', 'ask', 'ask', 'ask'],
+    ['shell write outside the workspace', 'Bash', 'printf boom > /etc/hosts', 'do the work', 'ask', 'ask', 'ask'],
+  ];
+
+  for (const [label, tool, target, prompt, ask, autoEdit, auto] of table) {
+    it(`${label}: ask=${ask} auto-edit=${autoEdit} auto=${auto}`, () => {
+      expect(decide('ask', tool, target, prompt).decision).toBe(ask);
+      expect(decide('auto-edit', tool, target, prompt).decision).toBe(autoEdit);
+      expect(decide('auto', tool, target, prompt).decision).toBe(auto);
+    });
+  }
+
+  it('labels the carve-outs with their own reasons', () => {
+    expect(decide('auto-edit', 'Edit', '.git/hooks/pre-commit')).toMatchObject({ decision: 'ask', reason: 'sensitive_path' });
+    expect(decide('auto', 'Bash', 'git push --force origin main')).toMatchObject({ decision: 'ask', reason: 'destructive_boundary' });
+    expect(decide('auto', 'Edit', '/etc/passwd')).toMatchObject({ decision: 'ask', reason: 'workspace_escape' });
+    expect(decide('auto', 'Bash', 'git push origin main')).toMatchObject({ decision: 'allow', reason: 'routine_auto' });
+  });
+
+  it('a deny rule still wins in auto mode', () => {
+    expect(decide('auto', 'Bash', 'rm -rf build', 'do the work', { permissions: { deny: ['Bash(rm:*)'] } }))
+      .toMatchObject({ decision: 'deny', stage: 'deny-rule' });
+    expect(decide('auto', 'Edit', 'src/index.ts', 'do the work', { permissions: { deny: ['Edit'] } }))
+      .toMatchObject({ decision: 'deny', stage: 'deny-rule' });
+    expect(decide('auto', 'Bash', 'npm run build', 'do the work', { permissionMode: 'deny-all' }))
+      .toMatchObject({ decision: 'deny', stage: 'hard-deny' });
+  });
+
+  it('a sensitive-path ask is overridable by an explicit user rule', () => {
+    expect(decide('auto-edit', 'Write', '.env', 'do the work', { permissions: { allow: [`Write(${WS}/.env)`] } }))
+      .toMatchObject({ decision: 'allow', stage: 'allow-rule' });
+  });
+
+  it('the one-shot /auto lease override does not unlock sensitive files in auto-edit', () => {
+    // lease.autoMode=true with mode auto-edit is exactly the `/auto <task>` shape.
+    const oneShot = resolvePermissionDecision(request({
+      tool: 'Edit',
+      target: '.git/hooks/pre-commit',
+      lease: createTaskExecutionLease('do the work', true, WS),
+      config: cfg({ agonPermissionMode: 'auto-edit' }),
+    }));
+    expect(oneShot).toMatchObject({ decision: 'ask', reason: 'sensitive_path' });
   });
 });
 
@@ -347,13 +562,13 @@ describe('authorizeResolvedTaskAction', () => {
     const lease = createTaskExecutionLease('build it', true, WS);
     const prompt = vi.fn(async () => true);
     const first = await authorizeResolvedTaskAction(
-      request({ target: 'git push origin feature', lease }) as never,
+      request({ target: 'git push --force origin feature', lease }) as never,
       prompt as never,
     );
     expect(first.decision).toBe('allow');
     expect(prompt).toHaveBeenCalledTimes(1);
     const second = await authorizeResolvedTaskAction(
-      request({ target: 'git push origin feature', lease }) as never,
+      request({ target: 'git push --force origin feature', lease }) as never,
       prompt as never,
     );
     expect(second.decision).toBe('allow');

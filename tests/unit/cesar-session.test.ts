@@ -311,6 +311,8 @@ describe('cesar MCP session config', () => {
     } as ToolHandler);
     const events: any[] = [];
     const onToolCall = buildOnToolCall({
+      // ctx.config is what the lease preflight resolves the mode from.
+      config: { agonPermissionMode: 'auto' },
       cesar: {
         confidenceSatisfied: true,
         taskExecutionLease: createTaskExecutionLease('change the auth session contract', true, process.cwd()),
@@ -319,9 +321,12 @@ describe('cesar MCP session config', () => {
       explorationMode: false,
     } as any, registry, { permissionMode: 'auto' });
 
+    // The boundary used here is a workspace escape: in mode auto a contained
+    // edit is approved outright (CC acceptEdits/bypassPermissions parity), so
+    // the escape is what proves the lease still runs before execute.
     const pending = onToolCall?.('Edit', {
-      file_path: 'auth.ts', old_string: 'before', new_string: 'after',
-    }, 'edit-important');
+      file_path: '/etc/agon-escape.ts', old_string: 'before', new_string: 'after',
+    }, 'edit-escape');
 
     expect(events).toHaveLength(1);
     expect(events[0]).toEqual(expect.objectContaining({ type: 'permission-ask', tool: 'Edit' }));
@@ -331,8 +336,10 @@ describe('cesar MCP session config', () => {
     expect(edits).toBe(0);
   });
 
-  it('asks once for an important task, then covers subsequent task actions', async () => {
+  it('asks once per destructive boundary and never for important-sounding routine work', async () => {
     const events: any[] = [];
+    // A one-shot /auto lease (autoMode on) over an "important" turn text: the
+    // retired important_task prompt must not fire for routine commands.
     const lease = createTaskExecutionLease('change the auth session contract', true, process.cwd());
     const onApproval = buildOnApproval({
       config: { permissionMode: 'ask' },
@@ -345,13 +352,18 @@ describe('cesar MCP session config', () => {
       registry: { get: () => ({}) },
     } as any, 'claude');
 
-    const first = onApproval('Bash', 'npm test');
+    await expect(onApproval('Bash', 'npm test')).resolves.toBe(true);
+    await expect(onApproval('Bash', 'npm run build')).resolves.toBe(true);
+    expect(events).toEqual([]);
+
+    const first = onApproval('Bash', 'git push --force origin main');
     expect(events).toHaveLength(1);
     expect(events[0].type).toBe('permission-ask');
     events[0].resolve(true);
     await expect(first).resolves.toBe(true);
 
-    await expect(onApproval('Bash', 'npm run build')).resolves.toBe(true);
+    // The approved signature covers the repeat without a second prompt.
+    await expect(onApproval('Bash', 'git push --force origin main')).resolves.toBe(true);
     expect(events).toHaveLength(1);
   });
 

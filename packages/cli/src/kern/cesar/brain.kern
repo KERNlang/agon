@@ -543,6 +543,7 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
         {
           important: config.cesarImportantTaskPattern,
           dangerous: config.cesarDangerousTaskPattern,
+          destructive: config.cesarDestructiveActionPattern,
         },
         harnessProfile,
       );

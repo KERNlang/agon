@@ -595,6 +595,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           {
             important: config.cesarImportantTaskPattern,
             dangerous: config.cesarDangerousTaskPattern,
+            destructive: config.cesarDestructiveActionPattern,
           },
           harnessProfile,
         );

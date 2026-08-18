@@ -178,6 +178,14 @@ const call = lazyCommand(() => import('./commands/call.js'), 'callCommand', {
   name: 'call',
   description: 'Live bridge for external CLIs to run Agon modes',
 });
+const sanitize = lazyCommand(() => import('./commands/sanitize.js'), 'sanitizeCommand', {
+  name: 'sanitize',
+  description: 'Deterministic invisible-watermark forensics — detect and strip zero-width chars, bidi controls, tag stego, homoglyphs, whitespace payloads. No AI, fully verifiable. Keyed statistical watermarks are honestly reported as not assessable.',
+});
+const naturalize = lazyCommand(() => import('./commands/naturalize.js'), 'naturalizeCommand', {
+  name: 'naturalize',
+  description: 'Naturalize AI-written text: deterministic sanitize → non-author engine rewrite (writer ≠ rewriter) → re-scan → word-diff report. Honest about limits: keyed statistical watermarks are always reported as not assessable.',
+});
 const job = lazyCommand(() => import('./commands/job.js'), 'jobCommand', {
   name: 'job',
   description: 'Submit, observe, and cancel daemon-owned autonomous jobs',
@@ -292,6 +300,8 @@ export const lazySubCommands: SubCommandsDef = {
   config,
   review,
   call,
+  sanitize,
+  naturalize,
   job,
   'agent-guide': agentGuide,
   'install-agent-prompts': installAgentPrompts,

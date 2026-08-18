@@ -39,6 +39,9 @@ export type { CampfireResult } from './generated/campfire.js';
 // ── Sequential thinking ──
 export { runThinkChain, buildThinkPrompt, parseThoughts, groundThoughts, validateChain, isThinkStrategy, joinProblemInput, selectBranch, runAdversarialCritique } from './generated/thinking.js';
 export type { ThoughtNode, ThinkResult } from './generated/thinking.js';
+// ── Naturalize (Phase 2: sanitize → non-author rewrite → re-scan) ──
+export { runNaturalize, buildNaturalizePrompt, wordDiffStats } from './generated/naturalize.js';
+export type { NaturalizeOptions, NaturalizeResult } from './generated/naturalize.js';
 // ── Delegate ──
 export { runDelegate } from './generated/delegate.js';
 export type { DelegateResult } from './generated/delegate.js';

@@ -1,0 +1,207 @@
+// ── Text Forensics: invisible-channel scan + deterministic clean ───────────
+// Pure, dependency-free detector/cleaner for hidden channels in text:
+// zero-width characters, bidi controls, variation-selector steganography,
+// tag-block steganography, homoglyph confusables, and whitespace payloads.
+// This is the deterministic spine of the `sanitize` workflow — no AI calls,
+// every claim mechanically verifiable (clean() is idempotent and byte-lossless
+// on clean input; scan(clean(x)) is always finding-free for stripped classes).
+//
+// Honesty contract: this module reports what is PROVABLY present or absent at
+// the character level. Keyed statistical watermarks (green-list token biases)
+// are NOT detectable here and must be reported as "not assessable" by callers.
+
+interface name=TextFinding export=true
+  field name=offset type=number
+  field name=codepoint type=string
+  field name=hex type=string
+  field name=channel type=string
+  field name=action type=string
+  field name=detail type=string
+
+interface name=ScanReport export=true
+  field name=findings type="TextFinding[]"
+  field name=byChannel type="Record<string,number>"
+  field name=clean type=boolean
+  field name=notAssessable type="string[]"
+
+interface name=CleanResult export=true
+  field name=output type=string
+  field name=report type=ScanReport
+
+fn name=hexOf params="code:number" returns="string"
+  handler <<<
+    return `U+${code.toString(16).toUpperCase().padStart(4, '0')}`;
+  >>>
+
+fn name=classifyInvisible params="code:number" returns="string"
+  doc "Map a codepoint to its hidden-channel class; empty string = not a known invisible/stego codepoint."
+  handler <<<
+    if (code === 0x200d || code === 0xfe0e || code === 0xfe0f) return '';
+    if (code === 0x200b || code === 0x200c || code === 0x2060 || code === 0xfeff) return 'zero-width';
+    if (code === 0x200b || code === 0x200c || code === 0x2060 || code === 0xfeff) return 'zero-width';
+    if (code === 0x00ad || code === 0x180e || code === 0x2000 || code === 0x2001 || code === 0x2002 ||
+        code === 0x2003 || code === 0x2004 || code === 0x2005 || code === 0x2006 || code === 0x2007 ||
+        code === 0x2008 || code === 0x2009 || code === 0x200a || code === 0x205f || code === 0x3000 ||
+        code === 0x1680) return 'zero-width';
+    if (code === 0x061c) return 'bidi-control';
+    if (code >= 0x202a && code <= 0x202e) return 'bidi-control';
+    if (code >= 0x2066 && code <= 0x2069) return 'bidi-control';
+    if (code >= 0xe0020 && code <= 0xe007f) return 'tag-stego';
+    if (code >= 0xfe00 && code <= 0xfe0f) return 'variation-selector';
+    if (code >= 0xe0100 && code <= 0xe01ef) return 'variation-selector';
+    return '';
+  >>>
+
+fn name=actionFor params="channel:string" returns="string"
+  doc "Variation selectors are reported but preserved (they are legitimate on emoji/CJK); every other hidden channel is stripped by clean()."
+  handler <<<
+    return channel === 'variation-selector' ? 'reported' : 'stripped';
+  >>>
+
+fn name=homoglyphFold params="code:number" returns="number"
+  doc "Fold a fullwidth ASCII codepoint to its ASCII twin; -1 when not fullwidth ASCII."
+  handler <<<
+    if (code >= 0xff01 && code <= 0xff5e) return code - 0xfee0;
+    return -1;
+  >>>
+
+fn name=findHomoglyphWords params="text:string" returns="TextFinding[]"
+  doc "Detect words mixing Latin letters with Cyrillic/Greek lookalikes — the classic invisible homoglyph substitution watermark. One finding per suspicious word; folded to a pure-ASCII preview for the report."
+  handler <<<
+    const findings: TextFinding[] = [];
+    const asciiRe = /^[A-Za-z]$/;
+    const foldRe = /[̀-ͯΑ-Ωα-ωЀ-ӿ]/;
+    const matches = text.match(/[A-Za-z̀-ͯΑ-Ωα-ωЀ-ӿ]+/g) ?? [];
+    let searchFrom = 0;
+    for (const word of matches) {
+      const at = text.indexOf(word, searchFrom);
+      searchFrom = at + word.length;
+      let hasAscii = false;
+      let hasFold = false;
+      let folded = '';
+      for (const ch of word) {
+        const code = ch.codePointAt(0) ?? 0;
+        if (asciiRe.test(ch)) {
+          hasAscii = true;
+          folded += ch;
+        } else if (foldRe.test(ch)) {
+          hasFold = true;
+          folded += ch.normalize('NFKC');
+        } else {
+          folded += ch;
+        }
+      }
+      if (hasAscii && hasFold) {
+        findings.push({
+          offset: at,
+          codepoint: `word "${word}"`,
+          hex: '',
+          channel: 'homoglyph',
+          action: 'reported',
+          detail: `mixed-script word; NFKC fold → "${folded}"`,
+        });
+      }
+    }
+    return findings;
+  >>>
+
+fn name=findWhitespaceRuns params="text:string" returns="TextFinding[]"
+  doc "Flag runs of 2+ consecutive spaces or a space immediately before a newline — the payload region of whitespace steganography (space/tab bit encoding)."
+  handler <<<
+    const findings: TextFinding[] = [];
+    const matches = text.match(/ {2,}|[^\S\n]+\n/g) ?? [];
+    let searchFrom = 0;
+    for (const run of matches) {
+      const at = text.indexOf(run, searchFrom);
+      searchFrom = at + run.length;
+      findings.push({
+        offset: at,
+        codepoint: JSON.stringify(run),
+        hex: '',
+        channel: 'whitespace-pattern',
+        action: 'normalized',
+        detail: `${run.length}-char whitespace run (possible whitespace-stego payload)`,
+      });
+    }
+    return findings;
+  >>>
+
+fn name=summarizeFindings params="findings:TextFinding[], notAssessable:string[]" returns="ScanReport"
+  handler <<<
+    const byChannel: Record<string, number> = {};
+    for (const f of findings) {
+      byChannel[f.channel] = (byChannel[f.channel] ?? 0) + 1;
+    }
+    return { findings, byChannel, clean: findings.length === 0, notAssessable };
+  >>>
+
+fn name=scanText params="text:string" returns="ScanReport" export=true
+  doc "Deterministic hidden-channel scan. Returns structured findings (offset, codepoint, hex, channel, planned action). Variation selectors and homoglyphs are reported but never stripped; every other channel is removed by cleanText(). Report-clean means provable clean: rescan of cleanText output only ever retains reported-only channels."
+  handler <<<
+    const findings: TextFinding[] = [];
+    let offset = 0;
+    for (const ch of text) {
+      const code = ch.codePointAt(0) ?? 0;
+      const channel = classifyInvisible(code);
+      if (channel) {
+        findings.push({
+          offset,
+          codepoint: channel === 'zero-width' ? 'invisible' : ch,
+          hex: hexOf(code),
+          channel,
+          action: actionFor(channel),
+          detail: '',
+        });
+      } else {
+        const ascii = homoglyphFold(code);
+        if (ascii > 0) {
+          findings.push({
+            offset,
+            codepoint: ch,
+            hex: hexOf(code),
+            channel: 'homoglyph',
+            action: 'normalized',
+            detail: `fullwidth form of "${String.fromCodePoint(ascii)}"`,
+          });
+        }
+      }
+      offset += ch.length;
+    }
+    findings.push(...findHomoglyphWords(text));
+    findings.push(...findWhitespaceRuns(text));
+    findings.sort((a, b) => a.offset - b.offset);
+    const actionable = findings.filter((f) => f.action !== 'reported');
+    const report = summarizeFindings(actionable, []);
+    report.findings = findings;
+    for (const f of findings) {
+      if (f.action === 'reported') {
+        report.byChannel[f.channel] = (report.byChannel[f.channel] ?? 0) + 1;
+      }
+    }
+    report.clean = actionable.length === 0;
+    report.notAssessable = ['keyed statistical watermarks (green-list token bias) — undetectable without the generator key'];
+    return report;
+  >>>
+
+fn name=cleanText params="text:string" returns="CleanResult" export=true
+  doc "Deterministic clean: strip zero-width chars, bidi controls, and tag-stego codepoints; normalize fullwidth ASCII, NFC-compose, and collapse whitespace payloads. Idempotent; byte-lossless on input that has no findings. Re-scan of the output is always free of stripped channels."
+  handler <<<
+    const report = scanText(text);
+    let out = '';
+    for (const ch of text) {
+      const code = ch.codePointAt(0) ?? 0;
+      const channel = classifyInvisible(code);
+      if (channel && channel !== 'variation-selector') continue;
+      const ascii = homoglyphFold(code);
+      out += ascii > 0 ? String.fromCodePoint(ascii) : ch;
+    }
+    out = out.normalize('NFC');
+    out = out.replace(/[^\S\n]+/g, ' ');
+    out = out.replace(/ +\n/g, '\n');
+    return { output: out, report };
+  >>>
+
+fn name=countsByChannel params="report:ScanReport" returns="Record<string,number>" export=true
+  handler <<<
+    return report.byChannel;
+  >>>

@@ -35,6 +35,9 @@ interface name=CallCommandOptions export=true
   field name=count type=string optional=true
   field name=engine type=string optional=true
   field name=autoApprove type=boolean optional=true
+  field name=detect type=boolean optional=true
+  field name=out type=string optional=true
+  field name=author type=string optional=true
 
 interface name=WorkflowCallMeta export=true
   field name=workflowId type=string
@@ -278,6 +281,28 @@ fn name=buildCallCommands params="opts:CallCommandOptions" returns="BuiltCallCom
         ...timeout,
         ...engines,
       ]);
+    } else if (workflow === 'sanitize') {
+      // Deterministic invisible-watermark forensics (no AI). Input is the file
+      // path; omit it to scan stdin. --detect is report-only with exit 1 on
+      // actionable findings; --out writes cleaned text to a file.
+      commands.push([
+        'sanitize',
+        opts.input?.trim() || '',
+        ...(opts.detect ? ['--detect'] : []),
+        ...textFlag('--out', opts.out),
+      ]);
+    } else if (workflow === 'naturalize') {
+      // Phase 2: sanitize → non-author engine rewrite → re-scan → word-diff.
+      // --engine picks the rewriter; --author names the writing engine so the
+      // rewriter is forced to differ (writer ≠ rewriter).
+      commands.push([
+        'naturalize',
+        opts.input?.trim() || '',
+        ...textFlag('--engine', opts.engine),
+        ...textFlag('--author', opts.author),
+        ...textFlag('--out', opts.out),
+        ...timeout,
+      ]);
     } else if (workflow === 'doctor') {
       // Passthrough so external CLIs that standardize on `agon call <workflow>`
       // can reach the top-level doctor. `agon call doctor` -> `agon doctor`,
@@ -299,7 +324,7 @@ fn name=buildCallCommands params="opts:CallCommandOptions" returns="BuiltCallCom
       commands.push(['tribunal', `Review the pipeline result for: ${task}`, '--rounds', opts.rounds?.trim() || '1', ...tribunalMode, ...tribunalProtocol, ...timeout, ...engines]);
       return { cwd, commands, workflowMeta: { workflowId: spec.id, version: spec.version, planId: plan.logicalPlanId } };
     } else {
-      throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, chrome, pipeline, review, goal, doctor, or a team-* workflow.`);
+      throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, chrome, pipeline, review, goal, sanitize, naturalize, doctor, or a team-* workflow.`);
     }
 
     return { cwd, commands };
@@ -364,7 +389,7 @@ const name=callCommand type="any"
       args: {
         workflow: {
           type: 'positional',
-          description: 'Workflow: forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, chrome, pipeline, review, goal, doctor, or team-*',
+          description: 'Workflow: forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, chrome, pipeline, review, goal, sanitize, naturalize, doctor, or team-*',
           required: true,
         },
         input: {
@@ -492,6 +517,19 @@ const name=callCommand type="any"
           description: 'For chrome: auto-approve page-changing actions (click/type) unattended — required for a non-interactive caller to act on the page (read-only tools never prompt)',
           default: false,
         },
+        detect: {
+          type: 'boolean',
+          description: 'For sanitize: report-only forensic scan; exits 1 when actionable hidden channels are found',
+          default: false,
+        },
+        out: {
+          type: 'string',
+          description: 'For sanitize/naturalize: write cleaned/naturalized output to this file instead of stdout',
+        },
+        author: {
+          type: 'string',
+          description: 'For naturalize: engine that wrote the text — the rewriter is forced to differ (writer ≠ rewriter)',
+        },
       },
       async run({ args }) {
         let built: BuiltCallCommands;
@@ -528,6 +566,9 @@ const name=callCommand type="any"
             count: args.count,
             engine: args.engine,
             autoApprove: args['auto-approve'],
+            detect: args.detect,
+            out: args.out,
+            author: args.author,
           });
         } catch (err) {
           exitWithFailure(err instanceof Error ? err.message : String(err));

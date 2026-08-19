@@ -397,7 +397,7 @@ agon goal "Close all KERN gaps" \
 | `--engines` | Implementer roster; **authoritative** when set (no routing/narrowing) | all active |
 | `--review-engines` / `--judge` | The review panel and the adjudicator | all / config→Cesar→first |
 | `--require-tests` | Reject a source change with no test | on |
-| `--oracle-gate` | Pre-flight oracle red-team (`off`\|`warn`\|`strict`): the panel tries to GAME each task's `verify`; `strict` refuses to launch if any is gameable | `off` |
+| `--oracle-gate` | Oracle red-team (`off`\|`warn`\|`strict`): just before each task is forged, the panel tries to GAME that task's `verify`; `strict` refuses to launch if any is gameable | `warn` |
 | `--max-attempts` | Attempts per task before park | `3` |
 | `--max-hours` / `--budget` | Wall-clock and/or USD ceiling — either, both, or neither | off (`0`) |
 | `--push` / `--pr` | Push the goal branch per task / open a PR via `gh` at the end (never `main`). With `--push`, the run ends with an engine-written PR title/body and a **prefilled GitHub PR link** — click it and the form is already filled (no `gh`/token needed) | off |
@@ -407,7 +407,7 @@ Read a run's digest from any session with `agon goal --status --id close-all-ker
 
 **Designing the gate — it _is_ the spec.** The forge only optimizes to make your `--gate` (and each task's `verify`) pass, so that command is the actual specification. Make it **discriminating**: it must FAIL a plausibly-wrong implementation, not merely pass the intended one (use distinct/edge inputs — `atan2(3,4)`, not `atan2(0,1)`). Before a long run, red-team your own oracle with `agon nero "<the gate I wrote>" --reasoning "is this gameable?"` — if a wrong impl can slip through, add a killer case first. A non-discriminating gate lets buggy-but-passing code land green and dead-loops the run.
 
-Or **automate the red-team**: `--oracle-gate=warn` (or `strict`) runs a pre-flight where the review panel tries to make each task's `verify` pass with a *cheating* impl (hardcode, ignore inputs). If any engine succeeds, the verify is gameable — `warn` reports it and continues, `strict` refuses to launch so you strengthen it first. It's the discriminating-oracle discipline built into the tool, so it no longer depends on remembering to dogfood it.
+Or **automate the red-team** — this is **on by default** (`--oracle-gate=warn`; `off` opts out, `strict` refuses to launch). Just before a task is forged, the review panel tries to make *that* task's `verify` pass with a *cheating* impl (hardcode, ignore inputs). If any engine succeeds, the verify is gameable — `warn` reports it and continues, `strict` stops so you strengthen it first. The probe runs **once per task per launch** and is deliberately never cached across launches: the panel is stochastic, so a single clean pass must not disable the gate forever, and a `verify` whose dependencies only unblock mid-run is probed the moment its task becomes runnable. It's the discriminating-oracle discipline built into the tool, so it no longer depends on remembering to dogfood it.
 
 ### Conquer
 

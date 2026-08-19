@@ -12,7 +12,7 @@
 // probe/implement/review callbacks are injected), because the bug lived in WHEN
 // the probe is called, not in the pure warn/strict decision (covered by
 // oracle-redteam.test.ts).
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -171,6 +171,115 @@ describe('goal controller — JIT per-task oracle red-team', () => {
     expect(state.tasks.every((t) => t.status === 'queued')).toBe(true);   // nothing was forged
     expect(state.events.some((e) => e.kind === 'stop' && e.detail === 'oracle-gameable')).toBe(true);
     expect(state.events.some((e) => e.kind === 'oracle-gameable' && e.taskId === 't1')).toBe(true);
+  }, 120_000);
+
+  // The gate must be ON for a caller that never mentions it. The CLI defaulted
+  // to 'warn' while the controller defaulted to 'off', so the supervisor, tests
+  // and any embedder ran un-gated while every doc promised otherwise.
+  it('probes by DEFAULT when oracleGate is omitted entirely', async () => {
+    const probes: string[] = [];
+    await run({ oracleGate: undefined, oracleRedTeam: recordingRedTeam(probes) });
+    expect(probes).toEqual(['t1', 't2']);
+  }, 120_000);
+
+  it('never probes when the gate is explicitly off', async () => {
+    const probes: string[] = [];
+    const state = await run({ oracleGate: 'off', oracleRedTeam: recordingRedTeam(probes) }) as JournalState;
+    expect(probes).toEqual([]);
+    expect(state.events.some((e) => e.kind.startsWith('oracle-gate'))).toBe(false);
+    expect(state.tasks.map((t) => t.status)).toEqual(['done', 'done']);
+  }, 120_000);
+
+  // warn = report and CONTINUE. The strict path was covered; this one was not.
+  it('warn + a gameable verify reports the hole and still forges the task', async () => {
+    const gamingRedTeam = async (a: { tasks: Array<{ id: string }> }) => ({
+      holes: a.tasks.map((t) => ({ taskId: t.id, engine: 'codex', evidence: 'a cheating implementation made the verify pass' })),
+      costUsd: 0,
+    });
+    const state = await run({ oracleGate: 'warn', oracleRedTeam: gamingRedTeam }) as JournalState;
+    expect(state.tasks.map((t) => t.status)).toEqual(['done', 'done']);
+    expect(state.events.filter((e) => e.kind === 'oracle-gameable').map((e) => e.taskId)).toEqual(['t1', 't2']);
+    expect(state.events.some((e) => e.kind === 'stop')).toBe(false);
+  }, 120_000);
+
+  // The production callback catches its own forge failures, so a broken probe
+  // arrives as `holes: []` — byte-identical to "nobody could cheat this verify".
+  // Believing it journaled `oracle-gate-ok` and marked the task checked, i.e. it
+  // certified an oracle it had never actually measured.
+  it('an INCONCLUSIVE probe (errored:true with no holes) is never a clean pass', async () => {
+    const seen: string[] = [];
+    let inconclusive = true;
+    const brokenRedTeam = async (a: { tasks: Array<{ id: string }> }) => {
+      seen.push(a.tasks[0]!.id);
+      if (inconclusive) {
+        inconclusive = false;
+        return { holes: [], costUsd: 0, errored: true, errorDetail: 'all 5 red-team seat(s) failed to complete' };
+      }
+      return { holes: [], costUsd: 0 };
+    };
+    // t1's first implement fails so the task is picked a second time — which is
+    // the only way to observe whether the failed probe was cached as "checked".
+    let firstAttempt = true;
+    const flakyImplement = async (a: { task: { id: string }; worktree: string }) => {
+      if (a.task.id === 't1' && firstAttempt) { firstAttempt = false; return { ok: false, costUsd: 0, error: 'engine blew up' }; }
+      return goodImplement(a);
+    };
+    const state = await run({ oracleRedTeam: brokenRedTeam, implement: flakyImplement }) as JournalState;
+
+    // It was NOT certified on the failed attempt — t1 is probed again.
+    expect(seen).toEqual(['t1', 't1', 't2']);
+    // And the failure is DURABLE, not emit-only: the artifact must be able to
+    // show "the gate ran and learned nothing", or it is indistinguishable from
+    // --oracle-gate=off.
+    const errs = state.events.filter((e) => e.kind === 'oracle-gate-error');
+    expect(errs).toHaveLength(1);
+    expect(errs[0]!.taskId).toBe('t1');
+    expect(errs[0]!.detail).toContain('failed to complete');
+    // The clean pass is only recorded for the attempts that really measured.
+    expect(state.events.filter((e) => e.kind === 'oracle-gate-ok').map((e) => e.taskId)).toEqual(['t1', 't2']);
+  }, 120_000);
+
+  // The retry is intentional (a transient failure must not permanently un-gate a
+  // task) but it cannot be unbounded, or a persistently broken panel spends the
+  // whole budget looping on the safety check instead of doing the work.
+  it('caps probe attempts per task per launch at 2, then forges UNPROBED and says so', async () => {
+    const seen: string[] = [];
+    const alwaysBroken = async (a: { tasks: Array<{ id: string }> }) => {
+      seen.push(a.tasks[0]!.id);
+      throw new Error('panel unreachable');
+    };
+    // t1's first two implements fail, so it is picked three times: probe, probe,
+    // then the cap. maxAttempts is raised so the retries are not what parks it.
+    let t1Fails = 2;
+    const flakyImplement = async (a: { task: { id: string }; worktree: string }) => {
+      if (a.task.id === 't1' && t1Fails > 0) { t1Fails -= 1; return { ok: false, costUsd: 0, error: 'engine blew up' }; }
+      return goodImplement(a);
+    };
+    const state = await run({
+      spec: { ...spec(), maxAttempts: 6 },
+      oracleRedTeam: alwaysBroken,
+      implement: flakyImplement,
+    }) as JournalState;
+
+    // Exactly two probe attempts for t1 — never a third.
+    expect(seen.filter((p) => p === 't1')).toHaveLength(2);
+    expect(state.tasks.map((t) => t.status)).toEqual(['done', 'done']);
+    const gaveUp = state.events.filter((e) => e.kind === 'oracle-gate-error' && (e.detail ?? '').includes('gave up'));
+    expect(gaveUp.map((e) => e.taskId)).toEqual(['t1']);
+    expect(gaveUp[0]!.detail).toContain('UNPROBED');
+  }, 120_000);
+
+  // The probe spends real money and real wall-clock before the implement leg.
+  it('stops on budget when the PROBE exhausted it, instead of forging anyway', async () => {
+    const implement = vi.fn(goodImplement);
+    const expensiveRedTeam = async () => ({ holes: [], costUsd: 1000 });
+    const state = await run({ oracleRedTeam: expensiveRedTeam, implement }) as JournalState;
+
+    expect(state.spentUsd).toBeGreaterThanOrEqual(100);
+    expect(state.events.some((e) => e.kind === 'stop' && e.detail === 'budget')).toBe(true);
+    // The whole point: no forge was dispatched after the budget was blown.
+    expect(implement).not.toHaveBeenCalled();
+    expect(state.tasks.every((t) => t.status === 'queued')).toBe(true);
   }, 120_000);
 
   it('a probe ERROR never aborts the run and leaves the task unmarked, so the next pick retries it', async () => {

@@ -12,7 +12,7 @@ import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 
-import { runForge, runDelegate, runPrText, runGoalController, runSupervisor, loadJournal, summarizeGoal, goalDir, isTestFile, parseChangedLines, pickImplementWinner, chooseImplementRoster, runThinkChain, buildOracleCheatPrompt } from '@kernlang/agon-forge';
+import { runForge, runDelegate, runPrText, runGoalController, runSupervisor, loadJournal, summarizeGoal, goalDir, isTestFile, parseChangedLines, pickImplementWinner, chooseImplementRoster, runThinkChain, buildOracleCheatPrompt, oracleProbeConclusive, DEFAULT_ORACLE_GATE } from '@kernlang/agon-forge';
 
 import { deriveRoutingHints } from '../cesar/routing.js';
 
@@ -170,7 +170,7 @@ return defineCommand({
     // non-discriminating verify, it never aborts in warn mode, and an off-by-
     // default safety check is one nobody remembers to switch on. Opt out with
     // --oracle-gate=off.
-    const oracleGateMode = String(args.oracleGate ?? 'warn').trim().toLowerCase();
+    const oracleGateMode = String(args.oracleGate ?? DEFAULT_ORACLE_GATE).trim().toLowerCase();
     if (!['off', 'warn', 'strict'].includes(oracleGateMode)) {
       fail(`--oracle-gate must be off, warn, or strict (got "${args.oracleGate}").`);
       process.exit(1);
@@ -644,6 +644,13 @@ return defineCommand({
       ? async (a: { tasks: Array<{ id: string; source: string; verify?: string }>; baseWorktree: string; repoRoot: string; signal?: AbortSignal }) => {
           const holes: Array<{ taskId: string; engine: string; evidence: string }> = [];
           let costUsd = 0;
+          // A probe that could not MEASURE anything must never come back as
+          // `holes: []` — that is byte-identical to "nobody could cheat this
+          // verify" and would mark the task checked on the strength of a
+          // failure. `errored` makes the difference visible to the probe,
+          // which journals it and leaves the task unmarked for a retry.
+          let errored = false;
+          const errorNotes: string[] = [];
           for (const t of a.tasks) {
             if (a.signal?.aborted || !t.verify) continue;
             const { path: rtDir } = createRunDir({ mode: 'forge', label: `oracle-redteam-${t.id}` });
@@ -670,12 +677,25 @@ return defineCommand({
               // told them to CHEAT, a winner proves the verify is non-discriminating.
               if (manifest.winner) {
                 holes.push({ taskId: t.id, engine: String(manifest.winner), evidence: 'a cheating implementation made the verify pass — the oracle is non-discriminating' });
+              } else {
+                // winner === null means EITHER "the oracle held" OR "the forge
+                // learned nothing". oracleProbeConclusive (forge, unit-tested)
+                // is the one place that tells them apart.
+                const verdict = oracleProbeConclusive(manifest as any);
+                if (!verdict.conclusive) {
+                  errored = true;
+                  errorNotes.push(`[${t.id}] ${verdict.reason}`);
+                  warn(`oracle red-team [${t.id}] was INCONCLUSIVE: ${verdict.reason} — not counting it as a clean pass`);
+                }
               }
             } catch (e) {
-              warn(`oracle red-team [${t.id}] could not run: ${e instanceof Error ? e.message : String(e)} (continuing)`);
+              errored = true;
+              const why = e instanceof Error ? e.message : String(e);
+              errorNotes.push(`[${t.id}] ${why}`);
+              warn(`oracle red-team [${t.id}] could not run: ${why} (continuing)`);
             }
           }
-          return { holes, costUsd };
+          return { holes, costUsd, errored, errorDetail: errorNotes.join('; ') || undefined };
         }
       : undefined;
 

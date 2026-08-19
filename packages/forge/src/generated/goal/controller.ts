@@ -6,13 +6,15 @@ import { join } from 'node:path';
 
 import { ensureAgonHome, spawnWithTimeout, worktreeCreate, worktreeRemoveBestEffort, worktreeChangedDiff, loadConfig, appendAttribution } from '@kernlang/agon-core';
 
-import { assertSafeGoalId, resolveWithin } from './paths.js';
+import { assertSafeGoalId, resolveWithin, safePathSegment } from './paths.js';
 
 import { createJournal, loadJournal, saveJournal, addTasks, requeueInflightTasks, nextTask, markStatus, recordAttempt, remainingCount, isDone, logEvent, goalDir } from './journal.js';
 
 import { snapshotOracle, witnessTest, witnessVerifyCommand } from './oracle.js';
 
 import { probeTaskOracle } from './oracle-probe.js';
+
+import { DEFAULT_ORACLE_GATE } from './oracle-redteam.js';
 
 import { generateMutants, mutationSurvivors } from './mutation.js';
 
@@ -27,7 +29,7 @@ import type { JournalState, GoalSpec, GoalTask } from './types.js';
 /**
  * Persist the EXACT gate stdout/stderr to <goalDir>/<taskId>-gate.log so a parked task's failure is inspectable without re-running the gate by hand. Returns the path, or '' if it couldn't be written.
  */
-// @kern-source: controller:26
+// @kern-source: controller:27
 export function persistGateLog(goalId: string, taskId: string, gateCmd: string, res: {stdout?:string, stderr?:string, exitCode?:number, timedOut?:boolean}): string {
   try {
     const body = `$ ${gateCmd}\n[exit ${res.exitCode ?? '?'}${res.timedOut ? ' (timed out)' : ''}]\n\n--- stdout ---\n${res.stdout ?? ''}\n\n--- stderr ---\n${res.stderr ?? ''}\n`;
@@ -42,7 +44,7 @@ export function persistGateLog(goalId: string, taskId: string, gateCmd: string, 
 /**
  * Compact human digest of a finished (or stopped) run — gaps closed/parked/failed, commits, spend, wall-clock. The detached-delegation callback ships this, never a transcript dump.
  */
-// @kern-source: controller:39
+// @kern-source: controller:40
 export function summarizeGoal(state: JournalState): string {
   const by = (s: string) => state.tasks.filter((t) => t.status === s);
   const done = by('done'), parked = by('parked'), failed = by('failed');
@@ -81,7 +83,7 @@ export function summarizeGoal(state: JournalState): string {
 /**
  * Persist the durable terminal artifacts (result.json + summary.md) any session can read via `agon goal status <id>` — the source of truth when the originating CLI is long dead.
  */
-// @kern-source: controller:76
+// @kern-source: controller:77
 export function writeGoalArtifacts(state: JournalState): {resultPath:string, summaryPath:string} {
   assertSafeGoalId(state.spec.goalId);
   ensureAgonHome();
@@ -109,8 +111,8 @@ export function writeGoalArtifacts(state: JournalState): {resultPath:string, sum
 /**
  * Run the goal to a terminal state (done / budget / time / breaker / abort). Resumable: re-invoking with resume=true picks up the journal. Returns the final JournalState; durable artifacts are written before return.
  */
-// @kern-source: controller:102
-export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string, tasks: Array<{id:string,source:string,dependsOn?:string[],verify?:string}>, oracleFiles?: string[], resume?: boolean, push?: boolean, remote?: string, requireTests?: boolean, gateTimeoutSec?: number, witnessCmd?: string, witnessTimeoutSec?: number, maxParkStreak?: number, maxNoProgress?: number, breakerWindow?: number, breakerMinSuccessRate?: number, mutationHighSignalMax?: number, mutationSurvivorRatio?: number, mutationFloor?: number, oracleGate?: 'off'|'warn'|'strict', oracleRedTeam?: (a:{tasks:Array<{id:string,source:string,verify?:string}>, baseWorktree:string, repoRoot:string, signal?:AbortSignal})=>Promise<{holes:Array<{taskId:string,engine:string,evidence:string}>, costUsd:number}>, signal?: AbortSignal, onEvent?: (e:{kind:string,taskId?:string,detail?:string})=>void, implement: (a:{task:GoalTask, worktree:string, baseSha:string, repoRoot:string, fixContext?:string, signal?:AbortSignal})=>Promise<{ok:boolean, costUsd:number, error?:string}>, review: (a:{worktree:string, baseSha:string, diff:string, label:string, mutationEvidence?:string, signal?:AbortSignal})=>Promise<{blocking:boolean, summary:string, costUsd?:number}> }): Promise<JournalState> {
+// @kern-source: controller:103
+export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string, tasks: Array<{id:string,source:string,dependsOn?:string[],verify?:string}>, oracleFiles?: string[], resume?: boolean, push?: boolean, remote?: string, requireTests?: boolean, gateTimeoutSec?: number, witnessCmd?: string, witnessTimeoutSec?: number, maxParkStreak?: number, maxNoProgress?: number, breakerWindow?: number, breakerMinSuccessRate?: number, mutationHighSignalMax?: number, mutationSurvivorRatio?: number, mutationFloor?: number, oracleGate?: 'off'|'warn'|'strict', oracleRedTeam?: (a:{tasks:Array<{id:string,source:string,verify?:string}>, baseWorktree:string, repoRoot:string, signal?:AbortSignal})=>Promise<{holes:Array<{taskId:string,engine:string,evidence:string}>, costUsd:number, errored?:boolean, errorDetail?:string}>, signal?: AbortSignal, onEvent?: (e:{kind:string,taskId?:string,detail?:string})=>void, implement: (a:{task:GoalTask, worktree:string, baseSha:string, repoRoot:string, fixContext?:string, signal?:AbortSignal})=>Promise<{ok:boolean, costUsd:number, error?:string}>, review: (a:{worktree:string, baseSha:string, diff:string, label:string, mutationEvidence?:string, signal?:AbortSignal})=>Promise<{blocking:boolean, summary:string, costUsd?:number}> }): Promise<JournalState> {
   const { spec, repoRoot } = opts;
   assertSafeGoalId(spec.goalId);
   ensureAgonHome();
@@ -148,8 +150,20 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
   // probed at all). A resume/restart therefore re-probes by design — that is the
   // fix, not a regression. Key = task.id (the probe attacks task.verify, which is
   // frozen for the task), so a same-launch RETRY of the same task is not re-probed.
-  const oracleGate = opts.oracleGate ?? 'off';
+  // ONE default for the gate (oracle-redteam.kern). This used to be 'off' here
+  // while the CLI flag defaulted to 'warn' — so every caller that reached the
+  // controller directly (supervisor, tests, embedders) ran with the gate
+  // silently disabled while the docs promised it was on.
+  const oracleGate = opts.oracleGate ?? DEFAULT_ORACLE_GATE;
   const oracleChecked = new Set<string>();
+  // A probe that ERRORS leaves the task unmarked so the next pick retries it —
+  // deliberate (a transient forge failure must not permanently un-gate a task),
+  // but unbounded it turns a persistently broken panel into an infinite
+  // probe→error→retry loop that spends the whole budget on the safety check.
+  // Two attempts per task per launch: one retry, then the task is forged
+  // un-probed with a loud, journaled note.
+  const MAX_ORACLE_PROBE_ATTEMPTS = 2;
+  const oracleProbeAttempts = new Map<string, number>();
   const emit = (kind: string, taskId?: string, detail?: string) => {
     try { opts.onEvent?.({ kind, taskId, detail }); } catch { /* listener must never break the loop */ }
   };
@@ -265,11 +279,27 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
     //     (the probe is per task, so a strict stop can land mid-run, not only at launch).
     //     A red-team ERROR never aborts: it's a safety check, not the work, so a
     //     flaky probe must not stop a run with a fine oracle (and the task stays
-    //     unmarked, so the next pick retries the probe).
+    //     unmarked, so the next pick RE-PROBES it — intentional, because the
+    //     alternative is a transient forge failure permanently un-gating the
+    //     task). That retry is capped at MAX_ORACLE_PROBE_ATTEMPTS per task per
+    //     launch so a persistently broken panel can't spend the whole budget
+    //     looping on the safety check; past the cap the task is forged unprobed
+    //     with a journaled `oracle-gate-error`.
     //     nextTask only yields tasks whose dependsOn are all done, so a verify that
     //     unblocks mid-run is probed the moment it becomes runnable — the batch
     //     pre-flight this replaced could never see those tasks.
     if (oracleGate !== 'off' && opts.oracleRedTeam && (task.verify ?? '').trim() && !oracleChecked.has(task.id)) {
+      const attempts = oracleProbeAttempts.get(task.id) ?? 0;
+      if (attempts >= MAX_ORACLE_PROBE_ATTEMPTS) {
+        // Cap reached: stop burning budget on a probe that cannot complete.
+        // The task is forged UNPROBED — journaled, never silent.
+        const capped = `oracle red-team gave up after ${attempts} failed probe attempt(s) this launch — forging ${task.id} with an UNPROBED verify`;
+        state = logEvent(state, 'oracle-gate-error', task.id, capped);
+        emit('oracle-gate-error', task.id, capped);
+        oracleChecked.add(task.id);
+        saveJournal(state);
+      } else {
+      oracleProbeAttempts.set(task.id, attempts + 1);
       const rtBaseSha = (await git(['rev-parse', spec.branch])).stdout.trim();
       const probe = await probeTaskOracle({
         state,
@@ -298,6 +328,13 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
       }
       saveJournal(state);
       if (opts.signal?.aborted) { state = logEvent(state, 'aborted'); emit('aborted'); break; }
+      }
+      // The probe spends real engine money and real wall-clock (one adversarial
+      // forge). Re-check the run limits BEFORE committing to the implement leg:
+      // otherwise a probe that exhausts the budget is immediately followed by a
+      // full forge+gate+review cycle the run was no longer allowed to pay for.
+      if (budgetExceeded(state)) { state = logEvent(state, 'stop', undefined, 'budget'); emit('stop', undefined, 'budget'); break; }
+      if (timeExceeded(state, Date.now())) { state = logEvent(state, 'stop', undefined, 'time'); emit('stop', undefined, 'time'); break; }
     }
 
     const before = remainingCount(state);
@@ -307,7 +344,8 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
 
     const baseShaRes = await git(['rev-parse', spec.branch]);
     const baseSha = baseShaRes.stdout.trim();
-    const wt = join(goalDir(spec.goalId), 'wt', `${task.id}-${Date.now()}`);
+    // Queue-authored ids never author a path segment (this worktree is rmSync'd).
+    const wt = join(goalDir(spec.goalId), 'wt', `${safePathSegment(task.id, 'task')}-${Date.now()}`);
 
     // Each step throws a tagged failure; the catch maps it to an outcome and
     // decides park-vs-retry. The finally always discards the worktree.

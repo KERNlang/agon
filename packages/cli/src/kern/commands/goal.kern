@@ -14,7 +14,7 @@ import from="node:path" names="resolve"
 import from="@kernlang/agon-core" names="EngineRegistry,ensureAgonHome,loadConfig,createRunDir,applyPatch,spawnWithTimeout,estimateCost,worktreePruneOrphaned,appendPrAttribution,githubRepoUrl,defaultBaseBranch,prefilledPrUrl"
 import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
 import from="@kernlang/agon-adapter-cli" names="createCliAdapter"
-import from="@kernlang/agon-forge" names="runForge,runDelegate,runPrText,runGoalController,runSupervisor,loadJournal,summarizeGoal,goalDir,isTestFile,parseChangedLines,pickImplementWinner,chooseImplementRoster,runThinkChain,buildOracleCheatPrompt"
+import from="@kernlang/agon-forge" names="runForge,runDelegate,runPrText,runGoalController,runSupervisor,loadJournal,summarizeGoal,goalDir,isTestFile,parseChangedLines,pickImplementWinner,chooseImplementRoster,runThinkChain,buildOracleCheatPrompt,oracleProbeConclusive,DEFAULT_ORACLE_GATE"
 import from="../cesar/routing.js" names="deriveRoutingHints"
 import from="../handlers/review.js" names="runReviewCore,extractReviewFindings"
 import from="../blocks/consensus.js" names="buildConsensus"
@@ -169,7 +169,7 @@ const name=goalCommand type=any
         // non-discriminating verify, it never aborts in warn mode, and an off-by-
         // default safety check is one nobody remembers to switch on. Opt out with
         // --oracle-gate=off.
-        const oracleGateMode = String(args.oracleGate ?? 'warn').trim().toLowerCase();
+        const oracleGateMode = String(args.oracleGate ?? DEFAULT_ORACLE_GATE).trim().toLowerCase();
         if (!['off', 'warn', 'strict'].includes(oracleGateMode)) {
           fail(`--oracle-gate must be off, warn, or strict (got "${args.oracleGate}").`);
           process.exit(1);
@@ -643,6 +643,13 @@ const name=goalCommand type=any
           ? async (a: { tasks: Array<{ id: string; source: string; verify?: string }>; baseWorktree: string; repoRoot: string; signal?: AbortSignal }) => {
               const holes: Array<{ taskId: string; engine: string; evidence: string }> = [];
               let costUsd = 0;
+              // A probe that could not MEASURE anything must never come back as
+              // `holes: []` — that is byte-identical to "nobody could cheat this
+              // verify" and would mark the task checked on the strength of a
+              // failure. `errored` makes the difference visible to the probe,
+              // which journals it and leaves the task unmarked for a retry.
+              let errored = false;
+              const errorNotes: string[] = [];
               for (const t of a.tasks) {
                 if (a.signal?.aborted || !t.verify) continue;
                 const { path: rtDir } = createRunDir({ mode: 'forge', label: `oracle-redteam-${t.id}` });
@@ -669,12 +676,25 @@ const name=goalCommand type=any
                   // told them to CHEAT, a winner proves the verify is non-discriminating.
                   if (manifest.winner) {
                     holes.push({ taskId: t.id, engine: String(manifest.winner), evidence: 'a cheating implementation made the verify pass — the oracle is non-discriminating' });
+                  } else {
+                    // winner === null means EITHER "the oracle held" OR "the forge
+                    // learned nothing". oracleProbeConclusive (forge, unit-tested)
+                    // is the one place that tells them apart.
+                    const verdict = oracleProbeConclusive(manifest as any);
+                    if (!verdict.conclusive) {
+                      errored = true;
+                      errorNotes.push(`[${t.id}] ${verdict.reason}`);
+                      warn(`oracle red-team [${t.id}] was INCONCLUSIVE: ${verdict.reason} — not counting it as a clean pass`);
+                    }
                   }
                 } catch (e) {
-                  warn(`oracle red-team [${t.id}] could not run: ${e instanceof Error ? e.message : String(e)} (continuing)`);
+                  errored = true;
+                  const why = e instanceof Error ? e.message : String(e);
+                  errorNotes.push(`[${t.id}] ${why}`);
+                  warn(`oracle red-team [${t.id}] could not run: ${why} (continuing)`);
                 }
               }
-              return { holes, costUsd };
+              return { holes, costUsd, errored, errorDetail: errorNotes.join('; ') || undefined };
             }
           : undefined;
 

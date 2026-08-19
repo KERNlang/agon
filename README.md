@@ -324,17 +324,31 @@ Mutation testing as a **test-strength oracle**. Review asks *"is this code wrong
 agon mutate                                        # changed lines vs the auto-resolved base — mechanical, zero engine spend
 agon mutate src/pricing.ts --test "npm test"       # one file, explicit suite
 agon mutate src/pricing.ts --semantic              # opt in to the AI panel (real engine spend)
+agon mutate src/auth.ts --lens security            # steer that panel at one bug family (--lens implies --semantic)
 agon mutate --diff branch:main --max-mutants 20    # a branch's changes, capped
 agon mutate --json src/add.ts                      # machine surface: the MutationReport, nothing else
 agon review --mutate uncommitted                   # advisory mutation section appended to a normal review
 agon review --mutate --mutate-test "npx vitest run" --mutate-build "npm run build"   # point the advisory pass at the right suite
+agon review --mutate --mutate-lens security        # the advisory pass, focused (implies --mutate-semantic)
 ```
 
 **Two kinds of mutant, one pool.** *Mechanical* mutants are the calibrated operator set Agon's `goal` controller already uses (arithmetic, equality, logic, boolean, relational swaps) — **this is the default, and it costs nothing: no engine is dispatched and no source leaves your machine.** *Semantic* mutants are the agon-differentiated layer: every roster engine reads your target lines and proposes a **realistic bug it thinks your tests would miss**, with a one-line rationale. **`--semantic` opts into that panel**, because it sends your changed source to every engine on it and spends 1–2 dispatches each (a seat that times out, errors or returns nothing is retried once). The run header says the cost out loud before it is spent (`semantic panel: 3 engine(s), 1-2 dispatches each`) and the actual dispatch count after (`semantic panel spend: 4 engine call(s)`). `--mechanical-only` is the explicit spelling of the default.
 
+**`--lens` — point the panel at the bugs you actually fear.** A free-text focus that IMPLIES `--semantic` (a lens can only steer engine-proposed bugs; mechanical operators cannot be focused, so `--lens` with `--mechanical-only` is refused rather than silently ignored). Anything that is not a preset is used verbatim — `--lens "off-by-one in the paginator"` is a valid lens. The five documented presets:
+
+| Preset | Asks the panel to propose first |
+| --- | --- |
+| `security` | auth bypass, missing permission or ownership checks, token/session misuse, removed input validation |
+| `privacy` | returning or logging more user data than needed, PII leaks, missing redaction |
+| `perf` | N+1 queries, missing cache or index use, unbounded loops, missing pagination or limits |
+| `ratelimit` | skipped or loosened throttles, missing quota checks, retry storms |
+| `concurrency` | lost locks, races, non-atomic read-modify-write |
+
+The lens steers, it never fences: an engine that sees a stronger bug outside the focus is still asked for it. The run header prints the expansion (`lens: security — auth bypass, …`), and every survivor the panel proposed under it is labelled `semantic/<engine> lens:<focus>` so the report says what it was pointed at.
+
 - **Survivors are the output.** Each one prints as `before → after` with its file, line, class and origin. A survivor is not a bug report — it is an *assertion* you are missing.
 - **Advisory, never a gate.** The exit code reflects whether the RUN worked, never how weak the suite is. Mutation score is noisy by design (relational swaps are deliberately equivalence-prone), so Agon never blocks on it.
-- **Honest accounting.** A mutant that hangs counts as *killed* (a hang is a detection). A mutant that does not typecheck is *invalid* and excluded from the score. Mutants dropped for budget are reported as **not run**, never quietly as kills.
+- **Honest accounting.** A mutant that hangs counts as *killed* (a hang is a detection). A mutant that does not typecheck is *invalid* and excluded from the score. Mutants dropped for budget are reported as **not run**, never quietly as kills. Comment-only lines earn no mutants at all — a swap inside a doc comment is equivalent by construction and could only ever survive as noise.
 - **The sandbox is checked first.** The unmutated suite must pass in the worktree before a single mutant runs — otherwise "100% killed" would just mean the sandbox was broken.
 - **Prebuilt `dist`? Pass `--build`.** If your tests run against compiled output rather than the mutated source, every mutant survives. `--build "<cmd>"` rebuilds before the baseline and each mutant; Agon also warns loudly when a run shows that exact signature.
 - **Your tree is never touched.** All mutation happens in a temporary worktree hydrated from `HEAD` + your uncommitted diff + your untracked files, removed when the run ends. Every mutant path is checked against the real (symlink-resolved) worktree before a byte is written; a mutant that would escape, or whose source line has drifted, is graded *invalid* rather than applied.
@@ -352,9 +366,11 @@ agon mutate packages/pricing/src/rules.ts \
 
 Without `--build` the run does not lie: the sandbox baseline fails and the error names the cleared output and tells you to pass a build command. Tests that import the package by relative *source* path need no `--build` at all.
 
-**Inside `agon review`.** `--mutate` appends the same pass as an advisory section — mechanical-only by default, exactly like the standalone command; `--mutate-semantic` opts into the panel. Its artifacts land in `<run-dir>/mutation/`, never beside the review's own per-engine files. `--mutate-test "<cmd>"` and `--mutate-build "<cmd>"` are the same overrides as the standalone command — reach for them when the discovered gate is not the suite that covers the diff, or when the suite runs against a prebuilt `dist`.
+**Inside `agon review`.** `--mutate` appends the same pass as an advisory section — mechanical-only by default, exactly like the standalone command; `--mutate-semantic` opts into the panel. Its artifacts land in `<run-dir>/mutation/`, never beside the review's own per-engine files. `--mutate-lens <focus>` is the same lens (and implies `--mutate-semantic`); `--mutate-test "<cmd>"` and `--mutate-build "<cmd>"` are the same overrides as the standalone command — reach for them when the discovered gate is not the suite that covers the diff, or when the suite runs against a prebuilt `dist`.
 
-Also available as interactive `/mutate` in the REPL (same flags, same defaults), and as `agon call mutate <path> --test "<cmd>" --build "<cmd>"` for external CLIs (`--semantic` opts into the panel there too).
+Also available as interactive `/mutate` in the REPL (same flags, same defaults, including `--lens`), and as `agon call mutate <path> --test "<cmd>" --build "<cmd>" [--lens security]` for external CLIs (`--semantic` opts into the panel there too).
+
+Cesar will also *offer* it: a turn that reports the tests pass — or a question like "are these tests real?" — earns one dim in-flow line suggesting `/mutate`, or `/mutate --semantic --lens security|privacy|ratelimit` when the files that turn wrote look like auth/session/token, quota or user-data work. It is a suggestion, never a run: you type the command. Turn it off with `agon config set cesarMutateReflex false`.
 
 ### Agent
 An autonomous agent loop that can operate solo or in shadow mode, automatically routed to the best engine by Cesar based on task requirements.

@@ -16,6 +16,7 @@ import from="./utils.js" names="countTrackedUserTurns"
 import from="./delegation.js" names="withThreadOutcome,buildBrainstormContinuationMessage,collectRecentEngineContext"
 import from="./cesar-router.js" names="absorbReviewResultIntoCesar,continueCesarAfterResult,runAgentJobWithAutoResume"
 import from="./utils.js" names="emitPostDispatch"
+import from="../../blocks/mutate-render.js" names="mutateCesarPrompt"
 
 fn name=dispatchOrchestrationIntent async=true params="intent:any, input:string, cb:DispatchCallbacks" returns="Promise<DispatchResult | null>"
   handler <<<
@@ -225,9 +226,24 @@ fn name=dispatchOrchestrationIntent async=true params="intent:any, input:string,
         const continuationEpoch = cb.ctx.inputEpoch ?? 0;
         const continuationUserTurns = countTrackedUserTurns(cb.ctx);
         cb.runAsJob('mutate', _mtLabel, withThreadOutcome(_mtCwd, 'mutate', _mtLabel, async () => {
-          await handleMutate(intent.input ?? '', cb.dispatch, cb.ctx);
+          const produced = await handleMutate(intent.input ?? '', cb.dispatch, cb.ctx);
+          // Only continue when a report actually exists. A bad flag, an
+          // unresolvable diff, a missing gate or a crashed run all return early
+          // WITHOUT appending anything — and collectRecentEngineContext would
+          // then hand Cesar some PRIOR turn's engine output under a "mutation
+          // testing finished" headline, i.e. invite it to invent survivors for a
+          // run that never happened. Same guard the chrome case uses.
+          if (!produced) return;
           const chatContext = collectRecentEngineContext(cb.ctx, 6, 2000);
-          if (chatContext) await continueCesarAfterResult(`Mutation testing finished on: "${(intent.input ?? '').slice(0, 200)}"\n\n${chatContext}\n\nEvery SURVIVOR is wrong code the tests called green. Say which assertions should have caught them, then take the next concrete step.`, cb, continuationEpoch, continuationUserTurns);
+          if (!chatContext) return;
+          // FENCED: the mutation body is repository source plus engine-authored
+          // rationales, and this continuation turn can call tools. It goes in as
+          // data, control-stripped and capped — never as free prose in Cesar's
+          // own instructions.
+          await continueCesarAfterResult(
+            mutateCesarPrompt({ label: intent.input ?? '', body: chatContext }),
+            cb, continuationEpoch, continuationUserTurns,
+          );
         }, cb.ctx));
         return { handled: true, ranAsJob: true };
       }

@@ -261,7 +261,8 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
     //     `verify` is DISCRIMINATING: the panel tries to make it PASS with a CHEAT
     //     (hardcode/ignore inputs) instead of a real impl. If any engine can, the
     //     verify would let buggy-but-passing code land green and dead-loop the run
-    //     (the atan2 lesson) — warn (continue) or, in strict mode, abort the launch.
+    //     (the atan2 lesson) — warn (continue) or, in strict mode, STOP the run here
+    //     (the probe is per task, so a strict stop can land mid-run, not only at launch).
     //     A red-team ERROR never aborts: it's a safety check, not the work, so a
     //     flaky probe must not stop a run with a fine oracle (and the task stays
     //     unmarked, so the next pick retries the probe).

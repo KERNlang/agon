@@ -32,7 +32,7 @@ describe('oracleGateDecision', () => {
     expect(d.summary).toMatch(/gameable/i);
   });
 
-  it('strict + holes -> abort the launch', () => {
+  it('strict + holes -> stop the run', () => {
     const d = oracleGateDecision([hole('t1'), hole('t2')], 'strict');
     expect(d.abort).toBe(true);
     expect(d.summary).toContain('t1');

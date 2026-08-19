@@ -308,3 +308,68 @@ describe('runMutants — baseline', () => {
     expect(report.outcomes).toHaveLength(0);
   });
 });
+
+describe('runMutants — per-mutant command ORDER', () => {
+  // Build must run BEFORE typecheck, the same order the baseline ran in. With
+  // the order inverted, a compiled target is typechecked against the artifacts
+  // the PREVIOUS mutant's build left behind.
+  it('runs build → typecheck → test for every mutant, matching the baseline order', async () => {
+    const dir = sandbox();
+    const mutants = addMutants(dir).slice(0, 2);
+
+    const report = await runMutants({
+      ...base,
+      worktree: dir,
+      mutants,
+      buildCmd: "printf 'build\\n' >> order.log",
+      typecheckCmd: "printf 'typecheck\\n' >> order.log",
+      testCmd: "printf 'test\\n' >> order.log && node check-real.mjs",
+    });
+
+    expect(report.baselineOk).toBe(true);
+    expect(report.outcomes).toHaveLength(mutants.length);
+
+    const seq = readFileSync(join(dir, 'order.log'), 'utf-8').trim().split('\n');
+    // One build→typecheck→test triple for the baseline, then one per mutant.
+    expect(seq).toHaveLength(3 * (mutants.length + 1));
+    for (let i = 0; i <= mutants.length; i += 1) {
+      expect(seq.slice(i * 3, i * 3 + 3)).toEqual(['build', 'typecheck', 'test']);
+    }
+  }, 60_000);
+
+  // The recording fake: `build` publishes an ARTIFACT from the mutated source
+  // and `typecheck` reads only that artifact. Build-first means the artifact is
+  // this mutant's; typecheck-first means it is the previous mutant's (or the
+  // baseline's) — which is exactly how a build-breaking mutant used to slip
+  // through the typecheck gate and get a fabricated survived/killed verdict.
+  it('typechecks THIS mutant\'s build artifact, never the previous mutant\'s', async () => {
+    const dir = sandbox();
+    const mutants = addMutants(dir).filter((m) => m.line === 2);
+    expect(mutants.length).toBeGreaterThanOrEqual(2);
+
+    const report = await runMutants({
+      ...base,
+      worktree: dir,
+      mutants,
+      buildCmd: 'cp src/add.ts built.snapshot',
+      // Rejects any artifact whose add() no longer computes a sum.
+      typecheckCmd: "node -e \"process.exit(require('node:fs').readFileSync('built.snapshot','utf-8').includes('a + b') ? 0 : 1)\"",
+      testCmd: 'node check-real.mjs',
+    });
+
+    expect(report.baselineOk).toBe(true);
+    expect(report.outcomes).toHaveLength(mutants.length);
+    // Every line-2 mutant rewrites `a + b`, so every one of them must be
+    // rejected by the typecheck of its OWN artifact.
+    for (const outcome of report.outcomes) {
+      expect(outcome.status, outcome.mutant.operator).toBe('invalid');
+      expect(outcome.reason, outcome.mutant.operator).toContain('does not typecheck');
+    }
+    expect(report.killed).toBe(0);
+    expect(report.survived).toBe(0);
+    expect(report.invalid).toBe(mutants.length);
+    // And the artifact is restored to the baseline content by the final build
+    // of nothing — the source itself is always restored.
+    expect(readFileSync(join(dir, 'src/add.ts'), 'utf-8')).toContain('a + b');
+  }, 60_000);
+});

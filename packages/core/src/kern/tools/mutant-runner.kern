@@ -80,8 +80,8 @@ interface name=RunMutantsOptions export=true
   field name=testCmd type=string doc="Run through /bin/sh -c. This string, buildCmd and typecheckCmd are the USER's commands (CLI flags / a discovered gate) and must NEVER be composed from engine output — they are executed with the caller's full privileges."
   field name=perMutantTimeoutSec type=number
   field name=totalBudgetSec type=number
-  field name=typecheckCmd type=string optional=true doc="Run on the unmutated baseline first (a pre-existing failure is a baseline error, not 'every mutant invalid'), then before each mutant's test."
-  field name=buildCmd type=string optional=true doc="Run before the baseline AND before each mutant's test. Defends against stale-artifact false survivors (tests run against a prebuilt dist that the mutation never reached)."
+  field name=typecheckCmd type=string optional=true doc="Run on the unmutated baseline first (a pre-existing failure is a baseline error, not 'every mutant invalid'), then AFTER buildCmd for each mutant — a compiled target must be typechecked against its OWN build, never the previous mutant's artifacts."
+  field name=buildCmd type=string optional=true doc="Run before the baseline AND FIRST for each mutant (before typecheckCmd, before the test). Defends against stale-artifact false survivors (tests run against a prebuilt dist that the mutation never reached)."
   field name=signal type=AbortSignal optional=true
   field name=onProgress type="(p:MutantProgress)=>void" optional=true
 
@@ -277,16 +277,22 @@ fn name=runMutants async=true params="opts:RunMutantsOptions" returns="Promise<M
         writeFileSync(abs, applyMutantToSource(original, mutant));
         try {
           let decided = false;
-          if (opts.typecheckCmd) {
-            const tc = await sh(opts.typecheckCmd, typecheckTimeoutMs);
-            if (!tc.res || tc.budgetCut) cutByBudget = true;
-            else if (tc.res.exitCode !== 0 || tc.res.timedOut) { status = 'invalid'; exitCode = tc.res.exitCode; reason = 'the mutated source does not typecheck'; decided = true; }
-          }
-          if (!cutByBudget && !decided && opts.buildCmd) {
+          // ORDER: build → typecheck → test, the SAME order the baseline ran in.
+          // Typechecking first was a real contamination bug: for a compiled
+          // target the typecheck reads the artifacts the PREVIOUS mutant's build
+          // left behind, so this mutant can be graded against its predecessor's
+          // output (and a mutant that only breaks at build time slips past the
+          // "does not typecheck" gate into a fabricated survived/killed verdict).
+          if (opts.buildCmd) {
             const b = await sh(opts.buildCmd, buildTimeoutMs);
             // A mutant that breaks the build proves nothing about the tests.
             if (!b.res || b.budgetCut) cutByBudget = true;
             else if (b.res.exitCode !== 0 || b.res.timedOut) { status = 'invalid'; exitCode = b.res.exitCode; reason = 'the mutated source does not build'; decided = true; }
+          }
+          if (!cutByBudget && !decided && opts.typecheckCmd) {
+            const tc = await sh(opts.typecheckCmd, typecheckTimeoutMs);
+            if (!tc.res || tc.budgetCut) cutByBudget = true;
+            else if (tc.res.exitCode !== 0 || tc.res.timedOut) { status = 'invalid'; exitCode = tc.res.exitCode; reason = 'the mutated source does not typecheck'; decided = true; }
           }
           if (!cutByBudget && !decided) {
             const res = await sh(testCmd, effTimeoutMs);

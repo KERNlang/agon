@@ -263,16 +263,22 @@ export async function runMutants(opts: RunMutantsOptions): Promise<MutationRepor
       writeFileSync(abs, applyMutantToSource(original, mutant));
       try {
         let decided = false;
-        if (opts.typecheckCmd) {
-          const tc = await sh(opts.typecheckCmd, typecheckTimeoutMs);
-          if (!tc.res || tc.budgetCut) cutByBudget = true;
-          else if (tc.res.exitCode !== 0 || tc.res.timedOut) { status = 'invalid'; exitCode = tc.res.exitCode; reason = 'the mutated source does not typecheck'; decided = true; }
-        }
-        if (!cutByBudget && !decided && opts.buildCmd) {
+        // ORDER: build → typecheck → test, the SAME order the baseline ran in.
+        // Typechecking first was a real contamination bug: for a compiled
+        // target the typecheck reads the artifacts the PREVIOUS mutant's build
+        // left behind, so this mutant can be graded against its predecessor's
+        // output (and a mutant that only breaks at build time slips past the
+        // "does not typecheck" gate into a fabricated survived/killed verdict).
+        if (opts.buildCmd) {
           const b = await sh(opts.buildCmd, buildTimeoutMs);
           // A mutant that breaks the build proves nothing about the tests.
           if (!b.res || b.budgetCut) cutByBudget = true;
           else if (b.res.exitCode !== 0 || b.res.timedOut) { status = 'invalid'; exitCode = b.res.exitCode; reason = 'the mutated source does not build'; decided = true; }
+        }
+        if (!cutByBudget && !decided && opts.typecheckCmd) {
+          const tc = await sh(opts.typecheckCmd, typecheckTimeoutMs);
+          if (!tc.res || tc.budgetCut) cutByBudget = true;
+          else if (tc.res.exitCode !== 0 || tc.res.timedOut) { status = 'invalid'; exitCode = tc.res.exitCode; reason = 'the mutated source does not typecheck'; decided = true; }
         }
         if (!cutByBudget && !decided) {
           const res = await sh(testCmd, effTimeoutMs);

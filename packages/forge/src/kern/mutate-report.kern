@@ -12,7 +12,9 @@
 //     a measurement, it is the signature of a suite that never loaded the
 //     mutated source.
 //   • A run where killed + survived === 0 NEVER reads as success. "No survivors"
-//     on an empty run would be the most dishonest line this mode could print.
+//     on an empty run would be the most dishonest line this mode could print,
+//     and a PARTIAL run (invalid or not-run mutants) never claims a clean sweep
+//     either — it says how many actually reached a verdict.
 //
 // Pure: no IO, no colour, no process state.
 
@@ -61,8 +63,11 @@ fn name=formatMutationReportLines params="report:MutationReport, survivors:Mutan
       out.push(`  ${report.notRun} mutants not run (${why})`);
     }
     if (survivors.length === 0) {
-      if (ran > 0) out.push('  ✓ no survivors — the tests kill every mutant on the mutated lines');
-      else out.push(`  ⚠ ${noMutantsRanLine(report)}`);
+      // Same honesty rule as mutateVerdictLine: "kills every mutant" is a claim
+      // about the whole pool, so it needs the whole pool to have run.
+      if (ran === 0) out.push(`  ⚠ ${noMutantsRanLine(report)}`);
+      else if (report.invalid === 0 && report.notRun === 0) out.push('  ✓ no survivors — the tests kill every mutant on the mutated lines');
+      else out.push(`  ⚠ no survivors among the ${ran} mutant(s) that ran — ${report.invalid} invalid, ${report.notRun} not run, so this is not a clean sweep`);
       return out;
     }
     // A semantic survivor names the lens it was proposed under: "the security
@@ -112,7 +117,7 @@ fn name=mutateLensSuffix params="survivors:Mutant[]" returns=string export=true
   >>>
 
 fn name=mutateVerdictLine params="report:MutationReport, survivors:Mutant[]" returns="{level:'success'|'warning', text:string}" export=true
-  doc "The single headline every surface prints after the findings — the CLI's `Verdict:` line, the REPL's dispatch and `agon call mutate`. All-survived outranks the survivor count (a 0% score is a broken RUN before it is a weak suite), and a run where nothing executed can never claim success. Pure."
+  doc "The single headline every surface prints after the findings — the CLI's `Verdict:` line, the REPL's dispatch and `agon call mutate`. All-survived outranks the survivor count (a 0% score is a broken RUN before it is a weak suite), a run where nothing executed can never claim success, and a CLEAN SWEEP (`your tests kill every mutant`) is only claimed when every generated mutant reached a verdict — invalid or not-run mutants downgrade it to `no survivors among the N that ran`. Pure."
   handler <<<
     if (allMutantsSurvived(report)) {
       return { level: 'warning', text: `${MUTATE_ALL_SURVIVED_WARNING} (${survivors.length} survivor(s) listed above)` };
@@ -122,7 +127,22 @@ fn name=mutateVerdictLine params="report:MutationReport, survivors:Mutant[]" ret
       return { level: 'warning', text: `${noMutantsRanLine(report)}.` };
     }
     if (survivors.length === 0) {
-      return { level: 'success', text: 'no survivors — your tests kill every mutant on the mutated lines.' };
+      // "your tests kill every mutant" is a claim about the WHOLE pool, so it
+      // may only be made when the whole pool actually reached a verdict. With
+      // invalid or not-run mutants the honest headline names what was measured
+      // and what was not — otherwise a run that graded 1 of 40 mutants (39
+      // invalid, or cancelled) prints a clean sweep.
+      const ranCount = report.killed + report.survived;
+      if (report.invalid === 0 && report.notRun === 0) {
+        return { level: 'success', text: 'no survivors — your tests kill every mutant on the mutated lines.' };
+      }
+      const gaps: string[] = [];
+      if (report.invalid > 0) gaps.push(`${report.invalid} invalid`);
+      if (report.notRun > 0) gaps.push(`${report.notRun} not run`);
+      return {
+        level: 'warning',
+        text: `no survivors among the ${ranCount} mutant(s) that ran (${gaps.join(', ')}) — the rest reached no verdict, so this is not a clean sweep.`,
+      };
     }
     return { level: 'warning', text: `${survivors.length} survivor(s)${mutateLensSuffix(survivors)} — wrong code your tests called green. Advisory only: strengthen the assertions that should have failed.` };
   >>>

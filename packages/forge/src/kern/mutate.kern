@@ -20,7 +20,7 @@
 //
 // Mutation score is ADVISORY. runMutate never throws for a weak suite; it only
 // reports ok:false for OPERATIONAL failure (no test command, no target, no
-// mutants, hydration failure, red baseline).
+// mutants, hydration failure, red baseline, or an ABORT mid-run).
 
 import from="node:fs" names="readFileSync,writeFileSync,existsSync,statSync,lstatSync,readdirSync,mkdirSync,cpSync"
 import from="node:path" names="join,dirname,resolve,relative,extname"
@@ -58,7 +58,7 @@ interface name=MutateOptions export=true
   field name=onEvent type="(e:{type:string,data?:Record<string,unknown>})=>void" optional=true
 
 interface name=MutateResult export=true
-  field name=ok type=boolean
+  field name=ok type=boolean doc="OPERATIONAL success. False for a red baseline AND for an ABORTED run — a cancelled run is not a completed one, so the CLI exits non-zero and the REPL says so instead of rendering a partial score as a result."
   field name=report type=MutationReport
   field name=survivors type="Mutant[]"
   field name=byFile type="Record<string, Mutant[]>"
@@ -70,7 +70,7 @@ interface name=MutateResult export=true
   field name=outputDir type=string
   field name=panelHealth type="{ requested:number; responded:number; degraded:boolean; notes:string[]; banner:string|null }" optional=true
   field name=reportPath type=string optional=true
-  field name=error type=string optional=true
+  field name=error type=string optional=true doc="Why the run was not operationally successful: the baseline error, or the abort notice when the caller cancelled mid-run."
 
 const name=MUTABLE_EXTENSIONS type="string[]" value={{ ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts'] }}
 
@@ -423,8 +423,16 @@ fn name=runMutate async=true params="opts:MutateOptions" returns="Promise<Mutate
     }
     const verdict = formatMutateVerdict(report, survivors);
     opts.onEvent?.({ type: 'mutate:done', data: { score: report.score, survivors: survivors.length } });
+    // A CANCELLED run is not a completed one. `ok` used to come from baselineOk
+    // alone, so Ctrl-C after a green baseline returned ok:true with no error —
+    // the CLI exited 0 and the REPL rendered the partial score as a result. An
+    // abort is an OPERATIONAL outcome: ok:false, and the error says so.
+    const ok = report.baselineOk && !report.aborted;
+    let error: string | undefined;
+    if (!report.baselineOk) error = report.baselineError;
+    else if (report.aborted) error = `aborted — the run was cancelled after ${report.killed + report.survived} of ${report.generated} mutants had a verdict; the partial score is not evidence about your tests`;
     return {
-      ok: report.baselineOk,
+      ok,
       report,
       survivors,
       byFile,
@@ -436,6 +444,6 @@ fn name=runMutate async=true params="opts:MutateOptions" returns="Promise<Mutate
       outputDir: opts.outputDir,
       panelHealth,
       reportPath,
-      error: report.baselineOk ? undefined : report.baselineError,
+      error,
     };
   >>>

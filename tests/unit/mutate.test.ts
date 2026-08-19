@@ -382,6 +382,55 @@ describe('runMutate — hydrated sandbox', () => {
     expect(res.report.outcomes).toHaveLength(0);
   });
 
+  // A CANCELLED run is not a completed one: `ok` used to come from baselineOk
+  // alone, so Ctrl-C after a green baseline exited 0 with no error.
+  it('an abort AFTER the baseline is ok:false with an explicit error, never a silent success', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'agon-mutate-abort-'));
+    const outDir = mkdtempSync(join(tmpdir(), 'agon-mutate-abort-out-'));
+    cpSync(FIXTURE, repo, { recursive: true });
+    const git = (args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf-8' });
+    git(['init', '-q']);
+    git(['config', 'user.email', 'fixture@agon.test']);
+    git(['config', 'user.name', 'fixture']);
+    git(['add', '-A']);
+    git(['commit', '-q', '-m', 'init']);
+
+    // Deterministic: abort the moment the sandbox reports a GREEN baseline, so
+    // the run is definitively interrupted in the mutant loop and not in setup.
+    const controller = new AbortController();
+
+    const res = await runMutate({
+      repoRoot: repo,
+      testCmd: 'node check-real.mjs',
+      engines: [],
+      registry: {} as never,
+      adapter: {} as never,
+      semantic: false,
+      maxMutants: 20,
+      perMutantTimeoutSec: 20,
+      totalBudgetSec: 120,
+      outputDir: outDir,
+      files: ['src/add.ts'],
+      signal: controller.signal,
+      onEvent: (e) => {
+        const data = e.data as { phase?: string; status?: string } | undefined;
+        if (e.type === 'mutate:progress' && data?.phase === 'baseline' && data?.status === 'ok') controller.abort();
+      },
+    });
+
+    // The baseline PASSED — the only reason this run is not a success is the abort.
+    expect(res.report.baselineOk).toBe(true);
+    expect(res.report.aborted).toBe(true);
+    expect(res.ok).toBe(false);
+    expect(res.error).toBeDefined();
+    expect(res.error).toContain('aborted');
+    // And the verdict never celebrates a partial run.
+    expect(res.verdict).not.toContain('✓ no survivors —');
+
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(outDir, { recursive: true, force: true });
+  }, 60_000);
+
   it('refuses a positional target that is a test file', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'agon-mutate-target-'));
     writeFileSync(join(repo, 'thing.test.ts'), 'export const a = 1;\n');
@@ -481,6 +530,41 @@ describe('mutate — an empty run never reads as success', () => {
   it('a red baseline never reports success either', () => {
     const verdict = mutateVerdictLine(report({ baselineOk: false, baselineError: 'exit 1', notRun: 9 }), []);
     expect(verdict.level).toBe('warning');
+  });
+
+  // "your tests kill every mutant" is a claim about the WHOLE pool. A run with
+  // invalid or not-run mutants graded only part of it, so it is not a sweep.
+  it('a PARTIAL run with no survivors is not a clean sweep', () => {
+    const partial = report({ generated: 40, killed: 1, survived: 0, invalid: 30, notRun: 9, score: 1 });
+    const verdict = mutateVerdictLine(partial, []);
+    expect(verdict.level).toBe('warning');
+    expect(verdict.text).toContain('no survivors among the 1 mutant(s) that ran');
+    expect(verdict.text).toContain('30 invalid');
+    expect(verdict.text).toContain('9 not run');
+    expect(verdict.text).not.toContain('kill every mutant');
+
+    const text = formatMutateVerdict(partial, []);
+    expect(text).not.toContain('✓ no survivors —');
+    expect(text).toContain('no survivors among the 1 mutant(s) that ran');
+  });
+
+  it('invalid alone is enough to withhold the sweep, and so is notRun alone', () => {
+    const invalidOnly = mutateVerdictLine(report({ generated: 5, killed: 4, survived: 0, invalid: 1, score: 1 }), []);
+    expect(invalidOnly.level).toBe('warning');
+    expect(invalidOnly.text).toContain('1 invalid');
+    expect(invalidOnly.text).not.toContain('not run');
+
+    const notRunOnly = mutateVerdictLine(report({ generated: 5, killed: 4, survived: 0, notRun: 1, score: 1 }), []);
+    expect(notRunOnly.level).toBe('warning');
+    expect(notRunOnly.text).toContain('1 not run');
+    expect(notRunOnly.text).not.toContain('invalid');
+  });
+
+  it('a COMPLETE run with no survivors still celebrates', () => {
+    const clean = mutateVerdictLine(report({ generated: 9, killed: 9, survived: 0, invalid: 0, notRun: 0, score: 1 }), []);
+    expect(clean.level).toBe('success');
+    expect(clean.text).toContain('your tests kill every mutant');
+    expect(formatMutateVerdict(report({ generated: 9, killed: 9, survived: 0, score: 1 }), [])).toContain('✓ no survivors');
   });
 });
 

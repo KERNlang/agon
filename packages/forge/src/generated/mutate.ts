@@ -438,8 +438,16 @@ export async function runMutate(opts: MutateOptions): Promise<MutateResult> {
   }
   const verdict = formatMutateVerdict(report, survivors);
   opts.onEvent?.({ type: 'mutate:done', data: { score: report.score, survivors: survivors.length } });
+  // A CANCELLED run is not a completed one. `ok` used to come from baselineOk
+  // alone, so Ctrl-C after a green baseline returned ok:true with no error —
+  // the CLI exited 0 and the REPL rendered the partial score as a result. An
+  // abort is an OPERATIONAL outcome: ok:false, and the error says so.
+  const ok = report.baselineOk && !report.aborted;
+  let error: string | undefined;
+  if (!report.baselineOk) error = report.baselineError;
+  else if (report.aborted) error = `aborted — the run was cancelled after ${report.killed + report.survived} of ${report.generated} mutants had a verdict; the partial score is not evidence about your tests`;
   return {
-    ok: report.baselineOk,
+    ok,
     report,
     survivors,
     byFile,
@@ -451,6 +459,6 @@ export async function runMutate(opts: MutateOptions): Promise<MutateResult> {
     outputDir: opts.outputDir,
     panelHealth,
     reportPath,
-    error: report.baselineOk ? undefined : report.baselineError,
+    error,
   };
 }

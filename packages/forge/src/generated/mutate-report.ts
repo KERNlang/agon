@@ -5,13 +5,13 @@ import type { Mutant, MutationReport } from '@kernlang/agon-core';
 /**
  * The one verdict every surface must print instead of a score when NOTHING was killed. A 0% score reads as 'weak tests'; the real cause is almost always that the suite never loaded the mutated file at all.
  */
-// @kern-source: mutate-report:21
+// @kern-source: mutate-report:23
 export const MUTATE_ALL_SURVIVED_WARNING: string = 'every mutant survived — your tests may not be exercising the mutated source (prebuilt dist? workspace package imported from node_modules? wrong --test?) — try `--build "<your build cmd>"`';
 
 /**
  * Spec Addendum A #4: the run produced a statistically meaningful pool (>= 5 mutants ran) and EVERY one survived. Not a weak-suite verdict — a run-validity verdict. Pure.
  */
-// @kern-source: mutate-report:24
+// @kern-source: mutate-report:26
 export function allMutantsSurvived(report: MutationReport): boolean {
   if (!report.baselineOk) return false;
   const ran = report.killed + report.survived;
@@ -21,7 +21,7 @@ export function allMutantsSurvived(report: MutationReport): boolean {
 /**
  * The line that replaces every success wording when killed + survived === 0. A run where nothing executed measured NOTHING about the tests; calling that 'no survivors' is the single most dishonest thing this mode could print. Pure.
  */
-// @kern-source: mutate-report:32
+// @kern-source: mutate-report:34
 export function noMutantsRanLine(report: MutationReport): string {
   return `no mutants were run (${report.invalid} invalid / ${report.notRun} not run) — this run measured nothing about your tests`;
 }
@@ -29,7 +29,7 @@ export function noMutantsRanLine(report: MutationReport): string {
 /**
  * THE mutation-report renderer — one implementation for every surface (`agon mutate`, the REPL, and `agon review --mutate`, which used to keep a second copy that drifted). Emits the all-survived warning FIRST (a 0% score is not a measurement), then the score, the honesty notes, and the survivors. `grouped: true` selects the review layout (indented heading, survivors grouped by file); the default is the flat mutate layout. Pure.
  */
-// @kern-source: mutate-report:38
+// @kern-source: mutate-report:40
 export function formatMutationReportLines(report: MutationReport, survivors: Mutant[], opts?: {grouped?:boolean}): string[] {
   const grouped = opts?.grouped === true;
   const out: string[] = [];
@@ -54,8 +54,11 @@ export function formatMutationReportLines(report: MutationReport, survivors: Mut
     out.push(`  ${report.notRun} mutants not run (${why})`);
   }
   if (survivors.length === 0) {
-    if (ran > 0) out.push('  ✓ no survivors — the tests kill every mutant on the mutated lines');
-    else out.push(`  ⚠ ${noMutantsRanLine(report)}`);
+    // Same honesty rule as mutateVerdictLine: "kills every mutant" is a claim
+    // about the whole pool, so it needs the whole pool to have run.
+    if (ran === 0) out.push(`  ⚠ ${noMutantsRanLine(report)}`);
+    else if (report.invalid === 0 && report.notRun === 0) out.push('  ✓ no survivors — the tests kill every mutant on the mutated lines');
+    else out.push(`  ⚠ no survivors among the ${ran} mutant(s) that ran — ${report.invalid} invalid, ${report.notRun} not run, so this is not a clean sweep`);
     return out;
   }
   // A semantic survivor names the lens it was proposed under: "the security
@@ -96,7 +99,7 @@ export function formatMutationReportLines(report: MutationReport, survivors: Mut
 /**
  * The ` (lens: x)` fragment the verdict carries when the semantic panel was steered. Empty when no survivor was proposed under a lens — a mechanical run must never claim a focus it did not have. Pure.
  */
-// @kern-source: mutate-report:103
+// @kern-source: mutate-report:108
 export function mutateLensSuffix(survivors: Mutant[]): string {
   const lenses: string[] = [];
   for (const m of survivors) {
@@ -107,9 +110,9 @@ export function mutateLensSuffix(survivors: Mutant[]): string {
 }
 
 /**
- * The single headline every surface prints after the findings — the CLI's `Verdict:` line, the REPL's dispatch and `agon call mutate`. All-survived outranks the survivor count (a 0% score is a broken RUN before it is a weak suite), and a run where nothing executed can never claim success. Pure.
+ * The single headline every surface prints after the findings — the CLI's `Verdict:` line, the REPL's dispatch and `agon call mutate`. All-survived outranks the survivor count (a 0% score is a broken RUN before it is a weak suite), a run where nothing executed can never claim success, and a CLEAN SWEEP (`your tests kill every mutant`) is only claimed when every generated mutant reached a verdict — invalid or not-run mutants downgrade it to `no survivors among the N that ran`. Pure.
  */
-// @kern-source: mutate-report:114
+// @kern-source: mutate-report:119
 export function mutateVerdictLine(report: MutationReport, survivors: Mutant[]): {level:'success'|'warning', text:string} {
   if (allMutantsSurvived(report)) {
     return { level: 'warning', text: `${MUTATE_ALL_SURVIVED_WARNING} (${survivors.length} survivor(s) listed above)` };
@@ -119,7 +122,22 @@ export function mutateVerdictLine(report: MutationReport, survivors: Mutant[]): 
     return { level: 'warning', text: `${noMutantsRanLine(report)}.` };
   }
   if (survivors.length === 0) {
-    return { level: 'success', text: 'no survivors — your tests kill every mutant on the mutated lines.' };
+    // "your tests kill every mutant" is a claim about the WHOLE pool, so it
+    // may only be made when the whole pool actually reached a verdict. With
+    // invalid or not-run mutants the honest headline names what was measured
+    // and what was not — otherwise a run that graded 1 of 40 mutants (39
+    // invalid, or cancelled) prints a clean sweep.
+    const ranCount = report.killed + report.survived;
+    if (report.invalid === 0 && report.notRun === 0) {
+      return { level: 'success', text: 'no survivors — your tests kill every mutant on the mutated lines.' };
+    }
+    const gaps: string[] = [];
+    if (report.invalid > 0) gaps.push(`${report.invalid} invalid`);
+    if (report.notRun > 0) gaps.push(`${report.notRun} not run`);
+    return {
+      level: 'warning',
+      text: `no survivors among the ${ranCount} mutant(s) that ran (${gaps.join(', ')}) — the rest reached no verdict, so this is not a clean sweep.`,
+    };
   }
   return { level: 'warning', text: `${survivors.length} survivor(s)${mutateLensSuffix(survivors)} — wrong code your tests called green. Advisory only: strengthen the assertions that should have failed.` };
 }
@@ -127,7 +145,7 @@ export function mutateVerdictLine(report: MutationReport, survivors: Mutant[]): 
 /**
  * The advisory verdict block for `agon mutate`: score, timeout/invalid/not-run accounting, the all-survived warning, and one line per survivor. A thin join over formatMutationReportLines — the renderer lives in ONE place. Pure.
  */
-// @kern-source: mutate-report:130
+// @kern-source: mutate-report:150
 export function formatMutateVerdict(report: MutationReport, survivors: Mutant[]): string {
   return formatMutationReportLines(report, survivors).join('\n');
 }
@@ -135,7 +153,7 @@ export function formatMutateVerdict(report: MutationReport, survivors: Mutant[])
 /**
  * The line appended to a red baseline when mutate itself removed the sandbox's prebuilt output. Without it the user reads 'test command fails in the sandbox' and blames their deps. Pure.
  */
-// @kern-source: mutate-report:136
+// @kern-source: mutate-report:156
 export function staleDistHint(cleared: string[]): string {
   return `the sandbox has no prebuilt ${cleared.join(', ')} — mutate cleared it because you are mutating that package's SOURCE, and a prebuilt bundle would make every mutant "survive". Pass \`--build "<build cmd>"\` so each mutant is compiled before the tests run.`;
 }

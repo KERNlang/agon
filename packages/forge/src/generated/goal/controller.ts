@@ -12,7 +12,7 @@ import { createJournal, loadJournal, saveJournal, addTasks, requeueInflightTasks
 
 import { snapshotOracle, witnessTest, witnessVerifyCommand } from './oracle.js';
 
-import { oracleGateDecision } from './oracle-redteam.js';
+import { probeTaskOracle } from './oracle-probe.js';
 
 import { generateMutants, mutationSurvivors } from './mutation.js';
 
@@ -141,6 +141,15 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
   // Bounded ring of recent terminal outcomes; >= the window so it can fill,
   // and capped so the journal can't grow without bound over a 24h run.
   const outcomeRingCap = Math.max(50, breakerWindow * 2);
+  // ORACLE RED-TEAM scope. The probe is per TASK and per LAUNCH: this Set lives
+  // exactly as long as this call and is NEVER persisted. The old design cached a
+  // single goal-global "checked" boolean in the journal, so one stochastic clean
+  // pass disabled the gate forever (and dependency-blocked verifies were never
+  // probed at all). A resume/restart therefore re-probes by design — that is the
+  // fix, not a regression. Key = task.id (the probe attacks task.verify, which is
+  // frozen for the task), so a same-launch RETRY of the same task is not re-probed.
+  const oracleGate = opts.oracleGate ?? 'off';
+  const oracleChecked = new Set<string>();
   const emit = (kind: string, taskId?: string, detail?: string) => {
     try { opts.onEvent?.({ kind, taskId, detail }); } catch { /* listener must never break the loop */ }
   };
@@ -234,73 +243,6 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
       return state;
     }
     emit('preflight-ok', undefined, 'gate green at base');
-
-    // 3.6 PRE-FLIGHT — oracle red-team (opt-in, --oracle-gate). Prove each task's
-    //     `verify` is DISCRIMINATING before forging: the panel tries to make the
-    //     verify PASS with a CHEAT (hardcode/ignore inputs) instead of a real impl.
-    //     If any engine can, the verify would let buggy-but-passing code land green
-    //     and dead-loop the run (the atan2 lesson) — warn (continue) or, in strict
-    //     mode, abort the launch. A red-team ERROR never aborts: it's a safety check,
-    //     not the work, so a flaky probe must not stop a run with a fine oracle.
-    //     Runs ONCE per goal (state.oracleGateChecked is persisted), so a
-    //     --resume / supervised restart never repeats the costly panel red-team.
-    const oracleGate = opts.oracleGate ?? 'off';
-    if (oracleGate !== 'off' && opts.oracleRedTeam && !state.oracleGateChecked
-        && !opts.signal?.aborted && !budgetExceeded(state) && !timeExceeded(state, Date.now())) {
-      // Only red-team tasks whose dependencies are already satisfied: a task that
-      // depends on un-built work would have its verify fail to even run at base
-      // (a false signal), so skip it here (per-task JIT red-team is a follow-up).
-      const doneIds = new Set(state.tasks.filter((t) => t.status === 'done').map((t) => t.id));
-      const verifyTasks = state.tasks
-        .filter((t) => t.status === 'queued' && typeof t.verify === 'string' && (t.verify as string).trim()
-          && (!t.dependsOn || t.dependsOn.every((d) => doneIds.has(d))))
-        .map((t) => ({ id: t.id, source: t.source, verify: t.verify as string }));
-      if (verifyTasks.length > 0) {
-        emit('oracle-gate-start', undefined, `${verifyTasks.length} task(s) with a verify · mode=${oracleGate}`);
-        const rtBaseSha = (await git(['rev-parse', spec.branch])).stdout.trim();
-        const rtWt = join(goalDir(spec.goalId), 'oracle-redteam', String(Date.now()));
-        let holes: Array<{ taskId: string; engine: string; evidence: string }> = [];
-        let rtErrored = false;
-        try {
-          worktreeCreate(repoRoot, rtWt, rtBaseSha);
-          const rt = await opts.oracleRedTeam({ tasks: verifyTasks, baseWorktree: rtWt, repoRoot, signal: opts.signal });
-          holes = rt.holes ?? [];
-          if ((rt.costUsd ?? 0) > 0) state = { ...state, spentUsd: state.spentUsd + rt.costUsd };
-        } catch (e: unknown) {
-          rtErrored = true;
-          emit('oracle-gate-error', undefined, e instanceof Error ? e.message : String(e));
-        } finally {
-          worktreeRemoveBestEffort(repoRoot, rtWt);
-        }
-        // Single source of truth for the warn/strict outcome (unit-tested).
-        const decision = oracleGateDecision(holes, oracleGate);
-        if (holes.length > 0) {
-          for (const h of holes) {
-            state = logEvent(state, 'oracle-gameable', h.taskId, `${h.engine}: ${h.evidence}`);
-            // emit too — logEvent only writes the journal; the CLI surfaces holes via onEvent.
-            emit('oracle-gameable', h.taskId, `${h.engine}: ${h.evidence}`);
-          }
-          emit('oracle-gate-holes', undefined, holes.map((h) => `${h.taskId} gamed by ${h.engine}`).join('; '));
-          if (decision.abort) {
-            // CAVEAT: a "hole" means an engine made the verify PASS under a cheat
-            // prompt — it can't PROVE the engine cheated (one that ignores the
-            // instruction and implements the gap correctly also wins), so strict
-            // can occasionally false-positive. warn is the safer default.
-            state = logEvent(state, 'stop', undefined, 'oracle-gameable');
-            saveJournal(state); try { writeGoalArtifacts(state); } catch { /* best-effort */ }
-            emit('stop', undefined, decision.summary);
-            return state;
-          }
-        } else if (!rtErrored) {
-          emit('oracle-gate-ok', undefined, decision.summary);
-        }
-        // Mark checked ONLY on a clean run (no transient error) — a strict abort
-        // returned above without setting it, so fixing the oracle re-checks, and
-        // a transient red-team error is retried on the next run.
-        if (!rtErrored) state = { ...state, oracleGateChecked: true };
-        saveJournal(state);
-      }
-    }
   }
 
   // 4. Main loop — one task per iteration, each transactional.
@@ -313,6 +255,49 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
 
     const task = nextTask(state);
     if (!task) { emit('done'); break; }
+
+    // 4a. ORACLE RED-TEAM (opt-in, --oracle-gate) — JUST IN TIME, for THIS task,
+    //     before a single engine-dollar is spent forging it. Prove the task's
+    //     `verify` is DISCRIMINATING: the panel tries to make it PASS with a CHEAT
+    //     (hardcode/ignore inputs) instead of a real impl. If any engine can, the
+    //     verify would let buggy-but-passing code land green and dead-loop the run
+    //     (the atan2 lesson) — warn (continue) or, in strict mode, abort the launch.
+    //     A red-team ERROR never aborts: it's a safety check, not the work, so a
+    //     flaky probe must not stop a run with a fine oracle (and the task stays
+    //     unmarked, so the next pick retries the probe).
+    //     nextTask only yields tasks whose dependsOn are all done, so a verify that
+    //     unblocks mid-run is probed the moment it becomes runnable — the batch
+    //     pre-flight this replaced could never see those tasks.
+    if (oracleGate !== 'off' && opts.oracleRedTeam && (task.verify ?? '').trim() && !oracleChecked.has(task.id)) {
+      const rtBaseSha = (await git(['rev-parse', spec.branch])).stdout.trim();
+      const probe = await probeTaskOracle({
+        state,
+        task: { id: task.id, source: task.source, verify: task.verify },
+        mode: oracleGate,
+        repoRoot,
+        goalId: spec.goalId,
+        baseSha: rtBaseSha,
+        redTeam: opts.oracleRedTeam,
+        emit,
+        signal: opts.signal,
+      });
+      state = probe.state;
+      // Mark ONLY on a clean run (no transient error) — an errored probe is
+      // retried, and a strict abort returns below without marking anything.
+      if (!probe.errored) oracleChecked.add(task.id);
+      if (probe.abort) {
+        // CAVEAT: a "hole" means an engine made the verify PASS under a cheat
+        // prompt — it can't PROVE the engine cheated (one that ignores the
+        // instruction and implements the gap correctly also wins), so strict
+        // can occasionally false-positive. warn is the safer default.
+        state = logEvent(state, 'stop', undefined, 'oracle-gameable');
+        saveJournal(state); try { writeGoalArtifacts(state); } catch { /* best-effort */ }
+        emit('stop', undefined, probe.summary);
+        return state;
+      }
+      saveJournal(state);
+      if (opts.signal?.aborted) { state = logEvent(state, 'aborted'); emit('aborted'); break; }
+    }
 
     const before = remainingCount(state);
     state = markStatus(state, task.id, 'inflight');

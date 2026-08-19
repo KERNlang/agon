@@ -23,6 +23,7 @@ export function agentGuideMarkdown(): string {
     '- `agon research "<question>" [--count N] [--engine <id>]` — keyless, web-grounded, CITED research. Agon (not the model) discovers sources via first-party endpoints that need NO API key — npm registry, GitHub repo search, MDN, IETF/RFC datatracker, Stack Overflow, Wikipedia — WebFetches them, an engine drafts an answer grounded ONLY in that content with inline [n] citations, and Agon then re-fetches and VERIFIES every citation (rejecting dead/redirected/mismatched URLs). Use it to look up a library/repo/spec/Q&A/encyclopedic fact and get an answer with sources you can trust. A truly-general web query (no keyless lane) reports that rather than guessing.',
     '- `agon chrome "<task>"` (machine: `agon call chrome "<task>" [--auto-approve] [--engine <id>]`) — drive the USER\'s own browser to research or check a page design (navigate / read / screenshot / click / type). Reuses a running agon (serve/REPL) the side panel is attached to, else embeds a transient bridge just for the run. Read-only page tools need no approval; add `--auto-approve` so a non-interactive caller can perform page-changing actions (without it they\'re denied). Requires the Agon browser extension with its side panel open + attached; with no panel attached the brain answers in text only.',
     '- `agon review <uncommitted|branch:NAME|commit:SHA|range:BASE...TARGET> --primary-engine <id> [--risk auto|low|medium|high]` — non-interactive code review with automatic, deterministic breadth: low selects one independent adapter, medium two distinct independent adapters, and high the complete live usable panel. Sensitive diff evidence can only raise risk; an omitted primary widens to high. `--engine`/`--engines` remain strict manual overrides.',
+    '- `agon mutate [<path>] [--diff <base>] [--test "<cmd>"] [--mechanical-only] [--json]` — mutation testing as a TEST-STRENGTH oracle: it answers *"which of my tests are fake?"*. Agon mutates the target lines (your changed lines by default) inside a disposable git worktree, re-runs the suite once per mutant, and reports every **survivor** — wrong code your tests still called green. Two mutant sources: the calibrated mechanical operator set, and AI-semantic mutants where each roster engine proposes a realistic bug it thinks your tests would miss (`--mechanical-only` skips the panel and all engine spend). A hang counts as a kill; mutants that do not typecheck are excluded. Advisory only — the exit code reflects whether the RUN worked, never how weak the suite is. Also available as `agon review --mutate`.',
     '- `agon goal "<intent>" --queue <dir|.jsonl> --gate "<test cmd>"` — autonomous controller: drives a task queue to completion unattended, looping build -> witness -> gate -> review (panel + judge) -> fix -> commit per task on a goal/ branch. Bound it with `--max-hours`/`--budget`; `--push` pushes each task. Long-running (designed for 8-24h).',
     '- `agon conquer "<task>" --gate "<test cmd>"` — supervised-autonomous BUILD of an OPEN-ENDED task. Cesar drives a pluggable builder CLI (codex/claude/agy) in agent mode turn by turn; when the builder hits a fork it asks and Cesar convenes the cheapest sufficient consult (nero/tribunal/brainstorm/council) and feeds back a compact verdict; when it claims done, a layered done-oracle runs (the `--gate` command + diff acceptance-drift + a nero falsification round) and it STOPS at a HUMAN merge gate — it never auto-merges to main. Every run gets a persistent isolated `conquer/*` branch/worktree from `HEAD`, so source-checkout WIP is not touched or included. The open-ended sibling to `goal`: use `conquer` when you CANNOT write a clean discriminating oracle up front (build a whole tool), `goal` when you can. Bound it with `--max-turns`/`--max-hours`.',
     '',
@@ -82,7 +83,7 @@ export function agentGuideMarkdown(): string {
 /**
  * docs/modes.md content — the agent guide re-emitted as a docs-corpus page so RAG ('agon rag query', the ProjectContext MCP tool, --ground) answers mode questions like 'tribunal vs council' with citations. The guide stays the single source of truth; regenerate with npm run docs:modes.
  */
-// @kern-source: agent-guide-text:84
+// @kern-source: agent-guide-text:85
 export function modeDocsMarkdown(): string {
   return [
     '<!-- GENERATED — do not edit. Source: packages/cli/src/kern/commands/agent-guide-text.kern (agentGuideMarkdown). Regenerate: npm run docs:modes -->',
@@ -97,14 +98,14 @@ export function modeDocsMarkdown(): string {
 /**
  * Per-CLI /agon slash-command shim. format is one of agy | claude | markdown.
  */
-// @kern-source: agent-guide-text:97
+// @kern-source: agent-guide-text:98
 export function agonShim(format: string): string {
   const body = [
-    'You have access to Agon, a multi-AI orchestration CLI (forge, synthesis, brainstorm, tribunal, council, campfire, think, nero, research, chrome, review, goal, conquer).',
+    'You have access to Agon, a multi-AI orchestration CLI (forge, synthesis, brainstorm, tribunal, council, campfire, think, nero, research, chrome, review, mutate, goal, conquer).',
     'First run `agon agent-guide` in the shell to see exactly how to call it, then use the right Agon mode to handle the request.',
     'Call agon with your normal shell/Bash tool — there is no MCP and nothing is loaded until you invoke it.',
   ].join('\n');
-  
+
   if (format === 'agy') {
     return [
       'description = "Use Agon multi-AI orchestration (forge/synthesis/tribunal/council/think/nero/brainstorm/review/goal)"',
@@ -116,7 +117,7 @@ export function agonShim(format: string): string {
       '',
     ].join('\n');
   }
-  
+
   if (format === 'claude') {
     return [
       '---',
@@ -130,7 +131,7 @@ export function agonShim(format: string): string {
       '',
     ].join('\n');
   }
-  
+
   // Any markdown-prompt CLI: plain markdown, no frontmatter.
   return [
     '# Agon',
@@ -145,12 +146,12 @@ export function agonShim(format: string): string {
 /**
  * Native Codex skill that exposes Agon as $agon.
  */
-// @kern-source: agent-guide-text:143
+// @kern-source: agent-guide-text:144
 export function codexSkillMarkdown(): string {
   return [
     '---',
     'name: agon',
-    'description: "Use when the user explicitly asks for Agon, $agon, /agon, or wants Agon multi-AI orchestration modes such as forge, synthesis, brainstorm, tribunal, council, campfire, think, nero, research, review, or goal."',
+    'description: "Use when the user explicitly asks for Agon, $agon, /agon, or wants Agon multi-AI orchestration modes such as forge, synthesis, brainstorm, tribunal, council, campfire, think, nero, research, review, mutate, or goal."',
     '---',
     '',
     '# Agon',
@@ -176,6 +177,7 @@ export function codexSkillMarkdown(): string {
     '- `nero`: adversarial self-challenge — the top-rated critic attacks a decision and returns a verdict (FLAWED / PROCEED WITH CAUTION / SOUND).',
     '- `chrome`: drive the user\'s own browser (navigate/read/screenshot/click) for research or checking a page design; needs the Agon browser extension. Machine form: `agon call chrome "<task>" [--auto-approve]`.',
     '- `review`: non-interactive AI review of a diff target.',
+    '- `mutate`: mutation testing — mutate the changed lines and re-run the suite per mutant; every survivor is a test that would not notice the bug. Advisory.',
     '- `goal`: autonomous task-queue execution with stronger gates.',
     '',
   ].join('\n');
@@ -184,7 +186,7 @@ export function codexSkillMarkdown(): string {
 /**
  * Codex UI metadata for the Agon skill.
  */
-// @kern-source: agent-guide-text:180
+// @kern-source: agent-guide-text:182
 export function codexSkillOpenAiYaml(): string {
   return [
     'interface:',

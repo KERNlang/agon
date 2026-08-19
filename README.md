@@ -125,6 +125,7 @@ Pick by the **shape** of the problem, not the topic:
 | Hidden AI-watermark channels found / stripped | **sanitize** | Deterministic forensics — zero-width chars, bidi controls, tag stego, homoglyphs, whitespace payloads, and PNG/JPEG/SVG provenance metadata. No AI, fully verifiable. |
 | AI-written text rewritten to read human | **naturalize** | Deterministic sanitize → a **non-author** engine rewrites (writer ≠ rewriter) → mandatory re-scan → word-diff report, with a `--min-change` honesty threshold. |
 | Existing code checked for bugs | **review** | Multi-engine review folded into one confidence-tiered consensus. |
+| To know whether your **tests** would catch a bug | **mutate** | Mutation testing — Agon breaks the code on purpose and re-runs your suite; every mutant that SURVIVES is a test that would not have noticed. Advisory, never a gate. |
 | A task done end-to-end autonomously | **agent** | One engine (Cesar-routed) runs a multi-turn tool loop to do the work. |
 | A whole queue driven to "done" unattended | **goal** | Per task: build → witness → gate → review + judge → commit, for hours. |
 | A big, multi-layered task | **team-\*** | 2v2 / 3v3 variants of forge / tribunal / brainstorm — engines collaborate per side. |
@@ -135,6 +136,7 @@ Pick by the **shape** of the problem, not the topic:
 - Need a decision debate → `tribunal`
 - Need one refined output (plan, spec, PR description, architecture note, acceptance criteria, migration plan) → `synthesis`
 - Need code checked → `review`
+- Need to know whether your tests are real → `mutate`
 - Need code built competitively → `forge`
 - Need the first green solution fast → `speculate`
 - Need a task queue executed → `goal`
@@ -315,6 +317,29 @@ agon call review uncommitted --roles auto       # external-CLI bridge (Claude Co
 
 With `--roles auto` the fixed roster is dealt onto the selected panel in order and every extra engine lands on `overall`; an explicit comma list is zipped engine-by-engine (unknown role ids fall back to `overall`). Roles compose with `--risk`/`--primary-engine` routing — they change what each seat looks *at*, never how many seats there are.
 
+### Mutate
+Mutation testing as a **test-strength oracle**. Review asks *"is this code wrong?"* — `mutate` asks the question a review panel cannot: *"would my tests **notice** if it were?"* Agon copies your work into a disposable git worktree, breaks the target lines one mutant at a time, and re-runs your suite for each. Every mutant that **survives** is wrong code your tests called green.
+
+```bash
+agon mutate                                        # changed lines vs the auto-resolved base
+agon mutate src/pricing.ts --test "npm test"       # one file, explicit suite
+agon mutate src/ --mechanical-only                 # a whole directory, zero engine spend
+agon mutate --diff branch:main --max-mutants 20    # a branch's changes, capped
+agon mutate --mechanical-only --json src/add.ts    # machine surface: the MutationReport, nothing else
+agon review --mutate uncommitted                   # advisory mutation section appended to a normal review
+```
+
+**Two kinds of mutant, one pool.** *Mechanical* mutants are the calibrated operator set Agon's `goal` controller already uses (arithmetic, equality, logic, boolean, relational swaps). *Semantic* mutants are the agon-differentiated layer: every roster engine reads your target lines and proposes a **realistic bug it thinks your tests would miss**, with a one-line rationale. Semantic is on by default whenever a roster is available; `--mechanical-only` skips the panel entirely (and all engine spend).
+
+- **Survivors are the output.** Each one prints as `before → after` with its file, line, class and origin. A survivor is not a bug report — it is an *assertion* you are missing.
+- **Advisory, never a gate.** The exit code reflects whether the RUN worked, never how weak the suite is. Mutation score is noisy by design (relational swaps are deliberately equivalence-prone), so Agon never blocks on it.
+- **Honest accounting.** A mutant that hangs counts as *killed* (a hang is a detection). A mutant that does not typecheck is *invalid* and excluded from the score. Mutants dropped for budget are reported as **not run**, never quietly as kills.
+- **The sandbox is checked first.** The unmutated suite must pass in the worktree before a single mutant runs — otherwise "100% killed" would just mean the sandbox was broken.
+- **Prebuilt `dist`? Pass `--build`.** If your tests run against compiled output rather than the mutated source, every mutant survives. `--build "<cmd>"` rebuilds before the baseline and each mutant; Agon also warns loudly when a run shows that exact signature.
+- **Your tree is never touched.** All mutation happens in a temporary worktree hydrated from `HEAD` + your uncommitted diff, removed when the run ends.
+
+Also available as interactive `/mutate` in the REPL, and as `agon call mutate <path> --test "<cmd>" --mechanical-only` for external CLIs.
+
 ### Agent
 An autonomous agent loop that can operate solo or in shadow mode, automatically routed to the best engine by Cesar based on task requirements.
 
@@ -431,7 +456,7 @@ Also available as interactive `/sanitize` and `/naturalize` in the REPL.
 
 Launching `agon` starts a powerful terminal REPL equipped with native scrollback, command history, and a file rail. 
 
-Available commands include: `/forge`, `/synthesis`, `/brainstorm`, `/tribunal`, `/campfire`, `/pipeline`, `/review`, `/agent`, `/speculate`, `/team-forge`, `/status`, `/leaderboard`, `/history`, `/config`, `/plan`, `/mode`, `/permissions`, `/models`, `/engines`, `/doctor`, `/help`, and `/exit`.
+Available commands include: `/forge`, `/synthesis`, `/brainstorm`, `/tribunal`, `/campfire`, `/pipeline`, `/review`, `/mutate`, `/agent`, `/speculate`, `/team-forge`, `/status`, `/leaderboard`, `/history`, `/config`, `/plan`, `/mode`, `/permissions`, `/models`, `/engines`, `/doctor`, `/help`, and `/exit`.
 
 ### Permission modes
 

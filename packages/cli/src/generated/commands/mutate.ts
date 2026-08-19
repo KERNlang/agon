@@ -14,17 +14,15 @@ import { runMutate, mutateVerdictLine } from '@kernlang/agon-forge';
 
 import { header, success, fail, info, warn, bold, dim } from '../blocks/output-format.js';
 
-import { formatMutationFindings } from '../blocks/review-mutate.js';
+import { renderMutationLines, formatMutateProgressLine, mutateSpendLine, mutateActualSpendLine, mutationScorePct } from '../blocks/mutate-render.js';
 
-import { filterDefaultOrchestrationEngines } from '../handlers/engine-filter.js';
+import { resolveMutateDiff, parsePositiveInt, validateMutateFlags, resolveMutatePanel } from '../handlers/mutate.js';
 
-import { resolveMutateDiff, formatMutateProgressLine, parsePositiveInt, validateMutateFlags, mutateSpendLine } from '../handlers/mutate.js';
-
-// @kern-source: mutate:24
+// @kern-source: mutate:26
 export const mutateCommand: any = defineCommand({
   meta: {
     name: 'mutate',
-    description: 'Mutation testing as a test-strength oracle: mutate your changed lines in a disposable worktree, re-run the suite per mutant, and report every SURVIVOR — wrong code your tests called green. Mechanical operators + AI-semantic mutants. Advisory, never a gate.',
+    description: 'Mutation testing as a test-strength oracle: mutate your changed lines in a disposable worktree, re-run the suite per mutant, and report every SURVIVOR — wrong code your tests called green. Mechanical operators by default (zero engine spend); --semantic adds AI-proposed realistic bugs from the roster. Advisory, never a gate.',
   },
   args: {
     path: {
@@ -54,18 +52,18 @@ export const mutateCommand: any = defineCommand({
     },
     semantic: {
       type: 'boolean',
-      description: 'Force the AI-semantic panel on. Default: semantic is ON when engines are available — it spends one engine call per panel member; `--mechanical-only` = zero engine spend.',
+      description: 'Add the AI-semantic panel: every engine on the roster proposes a realistic bug it thinks your tests would miss. OFF by default — it sends your changed source to every panel engine and spends 1-2 dispatches each. The default run is mechanical-only and costs nothing.',
       default: false,
     },
     'mechanical-only': {
       type: 'boolean',
-      description: 'Skip the AI-semantic panel entirely — mechanical operators only, zero engine spend (the default is semantic ON when engines are available).',
+      description: 'Mechanical operators only, zero engine spend. This is the DEFAULT — the flag exists to say so explicitly (and to make `--semantic --mechanical-only` fail as the contradiction it is).',
       default: false,
     },
     engines: {
       type: 'string',
       alias: 'e',
-      description: 'Restrict the semantic panel (comma-separated). Default: all active orchestration engines.',
+      description: 'Restrict the semantic panel (comma-separated). Only meaningful with --semantic; the default mechanical run dispatches no engine at all.',
     },
     'max-mutants': {
       type: 'string',
@@ -108,6 +106,14 @@ export const mutateCommand: any = defineCommand({
     const config = loadConfig(cwd);
     const json = args.json === true;
     const quiet = args.quiet === true || json;
+    // `--json` promises ONLY the report on stdout. `fail()` writes to stdout,
+    // so every error path under --json must go to stderr instead or the
+    // machine consumer gets a human sentence where JSON was contracted.
+    const die = (message: string): never => {
+      if (json) process.stderr.write(`${message}\n`);
+      else fail(message);
+      process.exit(1);
+    };
     // citty keeps kebab-case flags as literal keys — read both spellings.
     const mechanicalOnly = (args['mechanical-only'] ?? (args as any).mechanicalOnly) === true;
     const maxMutants = parsePositiveInt(args['max-mutants'] ?? (args as any).maxMutants, 40);
@@ -123,73 +129,75 @@ export const mutateCommand: any = defineCommand({
     // and BEFORE any pool handling, so `--semantic --mechanical-only` no longer
     // reports the misleading "--semantic needs at least one active engine".
     const flagError = validateMutateFlags({ path, diff: diffArg, base: baseArg, semantic: args.semantic === true, mechanicalOnly });
-    if (flagError) {
-      fail(flagError);
-      process.exit(1);
-    }
+    if (flagError) die(flagError);
 
     // AC9: no discoverable gate => loud failure, BEFORE any worktree exists.
-    const testCmd = (typeof args.test === 'string' && args.test.trim())
-      ? args.test.trim()
-      : discoverGate(cwd).command.trim();
+    // discoverGate reads package.json / the brief and can throw; a raw stack
+    // trace is not the "pass --test" sentence this path promises.
+    let testCmd = typeof args.test === 'string' ? args.test.trim() : '';
     if (!testCmd) {
-      fail('No test command discovered — pass `--test "<cmd>"`. Mutation testing needs a real suite to run per mutant; agon never guesses one.');
-      process.exit(1);
+      try { testCmd = discoverGate(cwd).command.trim(); } catch { testCmd = ''; }
+    }
+    if (!testCmd) {
+      die('No test command discovered — pass `--test "<cmd>"`. Mutation testing needs a real suite to run per mutant; agon never guesses one.');
     }
 
     let diff = '';
     let label = path || 'target';
     if (!path) {
       try {
-        const resolved = resolveMutateDiff(diffArg || undefined, baseArg || undefined, cwd);
+        const resolved = await resolveMutateDiff(diffArg || undefined, baseArg || undefined, cwd);
         diff = resolved.diff;
         label = resolved.label;
       } catch (err) {
-        fail(err instanceof Error ? err.message : String(err));
-        process.exit(1);
+        die(err instanceof Error ? err.message : String(err));
       }
       if (!diff.trim()) {
-        fail(`No changed lines to mutate for ${label}. Pass a path to mutate whole files, or --diff <base>.`);
-        process.exit(1);
+        die(`No changed lines to mutate for ${label}. Pass a path to mutate whole files, or --diff <base>.`);
       }
     }
 
     const registry = new EngineRegistry();
     registry.load(resolveBuiltinEnginesDir());
     const adapter = createCliAdapter(registry);
-    const known = new Set(registry.listIds());
-    let pool = filterDefaultOrchestrationEngines(registry.activeIds(config as any));
-    if (typeof args.engines === 'string' && args.engines.trim()) {
-      const requested = args.engines.split(',').map((s) => s.trim()).filter(Boolean);
-      const unknown = requested.filter((s) => !known.has(registry.resolveId(s)));
-      if (unknown.length > 0) {
-        fail(`Unknown engine${unknown.length > 1 ? 's' : ''}: ${unknown.join(', ')}. Run \`agon engine list\` to see available engines.`);
-        process.exit(1);
-      }
-      pool = requested.map((s) => registry.resolveId(s));
-    }
-    // Semantic is ON by default whenever a roster exists; --semantic forces
-    // the intent explicitly, --mechanical-only opts out (and empties the pool).
-    const semantic = !mechanicalOnly && (args.semantic === true || pool.length > 0);
-    if (mechanicalOnly) pool = [];
-    if (args.semantic === true && pool.length === 0) {
-      fail('--semantic needs at least one active engine. Run `agon engine list`, or use --mechanical-only.');
-      process.exit(1);
-    }
+    // ONE panel resolution shared with the REPL (handlers/mutate.kern) — the
+    // two surfaces used to keep separate copies, and `--semantic` with an
+    // empty roster failed loudly here while silently degrading there.
+    const panel = resolveMutatePanel({
+      requested: typeof args.engines === 'string' && args.engines.trim()
+        ? args.engines.split(',').map((s) => s.trim()).filter(Boolean)
+        : undefined,
+      active: registry.activeIds(config as any),
+      known: registry.listIds(),
+      resolveId: (id: string) => registry.resolveId(id),
+      semantic: args.semantic === true,
+      mechanicalOnly,
+      listHint: 'Run `agon engine list` to see available engines.',
+    });
+    if (panel.error) die(panel.error);
+    if (panel.warning && !quiet) warn(panel.warning);
+    const semantic = panel.semantic;
+    const pool = panel.engines;
 
     const startedAt = new Date().toISOString();
     const { path: outputDir } = createRunDir({ mode: 'mutate', label: args.label as string | undefined, announce: false });
 
     if (!quiet && !json) {
       header(`Mutate: ${label} · ${semantic ? `semantic panel (${pool.length})` : 'mechanical only'}`);
-      // Make the default engine spend explicit: semantic is on whenever a
-      // roster exists, and every panel member costs a real dispatch.
+      // Say what --semantic will cost before it costs it.
       const spendLine = mutateSpendLine(semantic, pool.length);
       if (spendLine) info(spendLine);
       info(`test: ${testCmd}`);
     }
 
-    const result = await runMutate({
+    // runMutate owns worktree creation, git plumbing and the sandbox; any of
+    // them can throw. Without this the CLI dies on an unhandled rejection —
+    // no run-status written, no `Saved:` pointer to the partial artifacts,
+    // no exit code anyone can read. The REPL and the review hook both
+    // contain their failures; this surface must too.
+    let result: Awaited<ReturnType<typeof runMutate>>;
+    try {
+      result = await runMutate({
       repoRoot: cwd,
       cwd,
       diff: path ? undefined : diff,
@@ -210,7 +218,24 @@ export const mutateCommand: any = defineCommand({
         const line = formatMutateProgressLine(e);
         if (line) info(line);
       },
-    });
+      });
+    } catch (err) {
+      const why = err instanceof Error ? err.message : String(err);
+      writeRunStatus(outputDir, {
+        mode: 'mutate',
+        label: (args.label as string | undefined) ?? label,
+        startedAt,
+        endedAt: new Date().toISOString(),
+        engines: [],
+        summary: `mutate crashed: ${why}`,
+        ok: false,
+        requested: pool,
+        timeoutSec: perMutantTimeoutSec,
+      } as RunStatus);
+      if (json) process.stderr.write(`mutate failed: ${why}\nSaved: ${outputDir}\n`);
+      else { fail(`Mutate failed: ${why}`); info(dim(`Saved: ${outputDir}`)); }
+      process.exit(1);
+    }
 
     const status: RunStatus = {
       mode: 'mutate',
@@ -219,7 +244,7 @@ export const mutateCommand: any = defineCommand({
       endedAt: new Date().toISOString(),
       engines: pool.map((id): RunStatusEngine => ({ id, status: result.ok ? 'ok' : 'error', detail: semantic ? 'semantic mutants' : 'not used' })),
       summary: result.ok
-        ? `mutation score ${result.report.score === null ? 'n/a' : `${Math.round(result.report.score * 100)}%`} — ${result.survivors.length} survivor(s) of ${result.report.killed + result.report.survived} mutant(s)`
+        ? `mutation score ${mutationScorePct(result.report)} — ${result.survivors.length} survivor(s) of ${result.report.killed + result.report.survived} mutant(s)`
         : (result.error ?? 'mutate failed'),
       ok: result.ok,
       requested: pool,
@@ -228,8 +253,14 @@ export const mutateCommand: any = defineCommand({
     writeRunStatus(outputDir, status);
 
     if (json) {
+      // NEVER process.exit() straight after a large stdout write: node does
+      // not flush a pending pipe write on exit, so `agon mutate --json | jq`
+      // intermittently receives truncated JSON. Set the code and let the
+      // event loop drain.
+      process.exitCode = result.ok ? 0 : 1;
+      if (!result.ok) process.stderr.write(`${result.error ?? 'mutate failed'}\n`);
       process.stdout.write(`${JSON.stringify(result.report, null, 2)}\n`);
-      process.exit(result.ok ? 0 : 1);
+      return;
     }
 
     if (!result.ok) {
@@ -238,11 +269,13 @@ export const mutateCommand: any = defineCommand({
       process.exit(1);
     }
 
-    for (const line of formatMutationFindings(result.report, result.survivors)) console.log(line);
+    for (const line of renderMutationLines(result.report, result.survivors)) console.log(line);
+    const actualSpend = mutateActualSpendLine(semantic, result.engineCalls);
+    if (actualSpend && !quiet) info(actualSpend);
     const verdict = mutateVerdictLine(result.report, result.survivors);
     if (verdict.level === 'success') success(`Verdict: ${verdict.text}`);
     else warn(`Verdict: ${verdict.text}`);
     info(dim(`Saved: ${bold(outputDir)}`));
-    process.exit(0);
+    process.exitCode = 0;
   },
 });

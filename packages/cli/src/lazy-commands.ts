@@ -188,7 +188,7 @@ const naturalize = lazyCommand(() => import('./commands/naturalize.js'), 'natura
 });
 const mutate = lazyCommand(() => import('./commands/mutate.js'), 'mutateCommand', {
   name: 'mutate',
-  description: 'Mutation testing as a test-strength oracle: mutate your changed lines in a disposable worktree, re-run the suite per mutant, and report every SURVIVOR — wrong code your tests called green. Mechanical operators + AI-semantic mutants. Advisory, never a gate.',
+  description: 'Mutation testing as a test-strength oracle: mutate your changed lines in a disposable worktree, re-run the suite per mutant, and report every SURVIVOR — wrong code your tests called green. Mechanical operators by default (zero engine spend); --semantic adds AI-proposed realistic bugs from the roster. Advisory, never a gate.',
 });
 const job = lazyCommand(() => import('./commands/job.js'), 'jobCommand', {
   name: 'job',

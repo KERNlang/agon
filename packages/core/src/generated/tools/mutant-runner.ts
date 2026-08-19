@@ -91,6 +91,8 @@ export async function runMutants(opts: RunMutantsOptions): Promise<MutationRepor
   let baselineMs = 0;
   let baselineOk = false;
   let baselineError: string | undefined;
+  // Set when a subprocess could not be SPAWNED at all (never a test verdict).
+  let spawnFailure: string | undefined;
 
   // Every subprocess is capped at what is LEFT of the total budget, so the
   // wall clock the caller asked for is a real bound instead of a poll between
@@ -100,14 +102,30 @@ export async function runMutants(opts: RunMutantsOptions): Promise<MutationRepor
     const left = deadline - Date.now();
     if (left <= 0) return { res: null, budgetCut: true };
     const capped = Math.max(1, Math.min(timeoutMs, left));
-    const res = await spawnWithTimeout({
-      command: '/bin/sh',
-      args: ['-c', cmd],
-      cwd: worktree,
-      timeout: capped,
-      signal: opts.signal,
-    });
-    return { res, budgetCut: res.timedOut === true && capped < timeoutMs };
+    let res: { exitCode: number; stdout: string; stderr: string; timedOut: boolean };
+    try {
+      res = await spawnWithTimeout({
+        command: '/bin/sh',
+        args: ['-c', cmd],
+        cwd: worktree,
+        timeout: capped,
+        signal: opts.signal,
+      });
+    } catch (err) {
+      // spawnWithTimeout is expected to RESOLVE, but a spawn-level failure
+      // (EMFILE, no /bin/sh, a signal error) must never throw out of
+      // runMutants and discard every outcome already earned — this function
+      // promises it never throws. No verdict is still no verdict.
+      spawnFailure = err instanceof Error ? err.message : String(err);
+      return { res: null, budgetCut: true };
+    }
+    // The BUDGET cut this command when the cap it was given was the time left
+    // rather than the timeout asked for — including the exact-tie case, where
+    // the deadline has been reached by the time the process is killed. A tie
+    // scored as a mutant `timeout` would be counted as a KILL: a number that
+    // was never a measurement, the one thing this runner must not produce.
+    const budgetCut = res.timedOut === true && (capped < timeoutMs || Date.now() >= deadline);
+    return { res, budgetCut };
   };
   const tail = (text: string): string => String(text ?? '').trim().split('\n').slice(-6).join('\n').slice(-600);
 
@@ -132,7 +150,9 @@ export async function runMutants(opts: RunMutantsOptions): Promise<MutationRepor
       allSurvived: survived > 0 && killed === 0,
       baselineMs,
       baselineOk,
-      baselineError,
+      baselineError: baselineError ?? (spawnFailure
+        ? `a sandbox command could not be spawned (${spawnFailure}) — the mutants after it reached no verdict`
+        : undefined),
     };
   };
   const budgetStop = (phase: string): MutationReport => {
@@ -147,6 +167,17 @@ export async function runMutants(opts: RunMutantsOptions): Promise<MutationRepor
     baselineError = `aborted during the sandbox ${phase}, before any mutant ran`;
     return build();
   };
+
+  // A NaN/Infinity budget or timeout silently produces NaN caps
+  // (Math.min(NaN, left) is NaN) that reach spawnWithTimeout with undefined
+  // behaviour. Reject the OPTIONS honestly instead — as an operational
+  // failure, which keeps the never-throws contract.
+  if (!Number.isFinite(opts.perMutantTimeoutSec) || opts.perMutantTimeoutSec <= 0
+    || !Number.isFinite(opts.totalBudgetSec) || opts.totalBudgetSec <= 0) {
+    notRun = mutants.length;
+    baselineError = `perMutantTimeoutSec and totalBudgetSec must be finite positive numbers (got ${opts.perMutantTimeoutSec} / ${opts.totalBudgetSec})`;
+    return build();
+  }
 
   try {
     // ── Optional build + typecheck, then the MANDATORY unmutated baseline ──

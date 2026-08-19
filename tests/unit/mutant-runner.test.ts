@@ -246,7 +246,10 @@ describe('runMutants — budget', () => {
     const mutants = addMutants(dir);
 
     const report = await runMutants({
-      worktree: dir, mutants, testCmd: 'node check-real.mjs', buildCmd: 'sleep 1.2',
+      // The baseline test is `true`, not a node script: with a node baseline the
+      // ~1.2s build plus node's startup can eat the budget on a loaded runner
+      // and the BASELINE becomes what the budget cuts, not the mutant.
+      worktree: dir, mutants, testCmd: 'true', buildCmd: 'sleep 1.2',
       perMutantTimeoutSec: 20, totalBudgetSec: 2,
     });
 
@@ -372,4 +375,24 @@ describe('runMutants — per-mutant command ORDER', () => {
     // of nothing — the source itself is always restored.
     expect(readFileSync(join(dir, 'src/add.ts'), 'utf-8')).toContain('a + b');
   }, 60_000);
+});
+
+describe('runMutants — invalid options are an operational failure, never NaN caps', () => {
+  it('rejects a non-finite budget or timeout instead of passing NaN to the subprocess', async () => {
+    const dir = sandbox();
+    const mutants = addMutants(dir);
+
+    for (const bad of [
+      { perMutantTimeoutSec: Number.NaN, totalBudgetSec: 60 },
+      { perMutantTimeoutSec: 20, totalBudgetSec: Number.POSITIVE_INFINITY },
+      { perMutantTimeoutSec: 0, totalBudgetSec: 60 },
+      { perMutantTimeoutSec: 20, totalBudgetSec: -1 },
+    ]) {
+      const report = await runMutants({ ...bad, worktree: dir, mutants, testCmd: 'node check-real.mjs' });
+      expect(report.baselineOk).toBe(false);
+      expect(report.baselineError).toContain('finite positive numbers');
+      expect(report.outcomes).toHaveLength(0);
+      expect(report.notRun).toBe(mutants.length);
+    }
+  });
 });

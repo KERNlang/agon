@@ -24,6 +24,7 @@ import {
   type ReviewRoutingEngine,
   type ReviewRoutingManifest,
 } from '../generated/handlers/review-router.js';
+import { runReviewMutation } from '../generated/blocks/review-mutate.js';
 import { buildConsensus, formatConsensusRow } from '../generated/blocks/consensus.js';
 import { fail, header, info, warn, bold } from '../output.js';
 
@@ -108,6 +109,14 @@ export const reviewCommand = defineCommand({
       type: 'string',
       alias: 'p',
       description: 'Max engines to review concurrently. Default: all at once. Lower it (e.g. 2) if parallel API engines hit rate limits or first-chunk stalls.',
+    },
+    mutate: {
+      type: 'boolean',
+      description: 'ADVISORY mutation pass after the consensus: mutate the reviewed diff in a disposable worktree, re-run the discovered test command per mutant, and list every SURVIVOR (wrong code the tests called green). Mechanical-only by default; never changes the review verdict or exit code.',
+    },
+    'mutate-semantic': {
+      type: 'boolean',
+      description: 'With --mutate: also let the roster propose AI-semantic mutants (real engine spend). Off by default.',
     },
     verbose: {
       type: 'boolean',
@@ -472,6 +481,11 @@ export const reviewCommand = defineCommand({
     if (consensus.speculative.length) lines.push(`  SPECULATIVE: ${consensus.speculative.length} low-confidence finding(s) — likely noise.`);
     if (consensus.nits.length) lines.push(`  NITS: ${consensus.nits.length}.`);
     console.log(lines.join('\n'));
+
+    if (args.mutate) {
+      const mutationLines = await runReviewMutation({ repoRoot: cwd, diff: target.diff, outputDir, registry, adapter, engines: registry.activeIds(config), semantic: (args as any)['mutate-semantic'] === true });
+      if (mutationLines.length) console.log(mutationLines.join('\n'));
+    }
 
     if (!quiet) info(`Full per-engine reviews: ${outputDir}`);
 

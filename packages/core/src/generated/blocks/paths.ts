@@ -37,13 +37,22 @@ export function isInsideRealpath(root: string, candidate: string): boolean {
 }
 
 /**
- * Resolve candidate against root and THROW if it escapes: lexically (absolute paths, ../), through a symlinked final component, or through a symlinked parent whose real target is outside the root. Returns the resolved (non-canonical) path so callers keep the path the user sees.
+ * Resolve candidate against root and THROW if it escapes: lexically (absolute paths, ../), through a symlinked final component, or through a symlinked parent whose real target is outside the root. Containment is ALWAYS decided on canonical paths — the lexical form is only a fast accept. Returns the resolved (non-canonical) path so callers keep the path the user sees.
  */
 // @kern-source: paths:47
 export function resolveWithinRoot(root: string, candidate: string): string {
   const base = resolve(root);
   const abs = resolve(base, candidate);
-  if (abs !== base && !abs.startsWith(base + sep)) {
+  // The lexical comparison is a FAST ACCEPT, never the verdict. The two sides
+  // can be spelled through different links and still be the same place: on
+  // macOS a caller that realpath'd its root holds `/private/tmp/x` while an
+  // ABSOLUTE candidate the user (or mkdtemp) produced reads `/tmp/x/f.ts`.
+  // That is the same directory, and rejecting it here made every absolute
+  // target under /tmp "escape" its own root. So a lexical miss falls through
+  // to the canonical arbiter (which resolves BOTH sides) instead of throwing.
+  // Real escapes — `../outside`, a genuinely unrelated absolute path — fail
+  // the canonical check too, so nothing is let through that was blocked before.
+  if (abs !== base && !abs.startsWith(base + sep) && !isInsideRealpath(base, abs)) {
     throw new Error(`Path ${JSON.stringify(candidate)} escapes ${base}`);
   }
   let isLink = false;

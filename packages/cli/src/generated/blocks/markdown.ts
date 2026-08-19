@@ -488,9 +488,16 @@ export function cleanEngineOutput(raw: string): string {
   result = addParagraphBreaks(result);
   // Shorten absolute file paths → relative, backtick-wrapped for purple styling
   result = shortenFilePaths(result);
-  // Cache and evict old entries
-  if (_cleanCache.size > 200) {
-    _cleanCache.clear();
+  // Cache with LRU-ish eviction: drop the OLDEST entry (Map preserves
+  // insertion order) instead of clearing all 200. A full clear meant every
+  // visible block re-ran the whole clean pipeline right after the cap was
+  // hit — a periodic render stall during long streams.
+  while (_cleanCache.size >= 200) {
+    const oldestKey = _cleanCache.keys().next().value;
+    if (oldestKey === undefined) {
+      break;
+    }
+    _cleanCache.delete(oldestKey);
   }
   _cleanCache.set(raw, result);
   return result;

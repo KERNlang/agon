@@ -32,7 +32,6 @@ import from="@kernlang/agon-core" names="saveCesarPlan,cancelCesarPlan"
 import from="@kernlang/agon-core" names="PersistentSession" types=true
 import from="../cesar/pause-state.js" names="createPauseState,dismissPauseState"
 import from="../cesar/steering.js" names="drainLeftoverSteering,clearSteering"
-import from="./app-submit.js" names="buildInterruptedTurnRedirect"
 import from="../cesar/turn-runtime.js" names="transitionCesarTurn"
 import from="../cesar/pause-state.js" names="PauseState" types=true
 import from="../signals/output.js" names="OutputActions,AgentProgressSnapshot" types=true
@@ -157,17 +156,27 @@ module name=AppInterrupt
       runTrackAbort(null, opts.activeAbortRef, opts.setActiveAbort);
 
       // Harvest any mid-turn steered messages BEFORE clearing — they carry the
-      // user's latest intent (typed while Cesar worked). Redirect-wrap them
-      // against the just-interrupted turn so the next turn sees them as an
-      // explicit redirect, then queue for the idle drain. Claude Code parity:
+      // user's latest intent (typed while Cesar worked). Claude Code parity:
       // Esc + queued text = instant redirect to the next turn, never silent
-      // deletion. When nothing was interrupted (pure idle Esc) the raw text is
-      // queued as-is.
+      // deletion.
+      //
+      // Queue the RAW text ONLY. The `[INTERRUPTED TURN REDIRECT]` wrapper is
+      // ENGINE-facing prose and must never become the user's visible message:
+      // the queued string is what the composer chip shows, what the idle drain
+      // re-submits as a `user-message` block, and what lands in ↑ history + the
+      // on-disk composer history. Wrapping here made a ~10-line machine preamble
+      // read as something the user typed — and then handleSubmit wrapped it a
+      // SECOND time off interruptedTurnRef. Exactly one wrap now happens, in
+      // runHandleSubmit, and only on the engine-bound `dispatchInput` (the same
+      // shape the plain Esc-then-type path already used correctly).
+      // interruptedTurnRef (set just above) is what carries the interrupted-turn
+      // context across to that single wrap.
       const leftover = drainLeftoverSteering();
       if (leftover.length > 0) {
-        const wrapped = leftover.map(msg =>
-          interruptedInput ? buildInterruptedTurnRedirect(interruptedInput, msg.input, interruptedSource) : msg.input);
-        opts.setInputQueue(prev => [...prev, ...wrapped]);
+        const raw = leftover
+          .map((msg) => String(msg.input ?? ''))
+          .filter((text) => !!text.trim());
+        if (raw.length > 0) opts.setInputQueue((prev: string[]) => [...prev, ...raw]);
       }
       // Drop any remaining unconsumed steering state (count mirror zeroes → the
       // "Queued (N)" hint clears). Drafts are untouched — a half-typed draft is
@@ -247,8 +256,9 @@ module name=AppInterrupt
     field name=setCesarPickerOpen type="(val:boolean) => void"
     field name=setReviewEvent type="(val:any) => void"
     field name=setToolDetailEvent type="(val:any) => void"
-    // ── Repl reset (FINISH, not cancel) ──
+    // ── Repl reset (FINISH, not cancel) ── + the one-line cancel notice ──
     field name=setReplState type="(updater:(prev:any) => any) => void"
+    field name=dispatch type="(event:any) => void"
 
   // ── buildCancelCallback: build the out-of-React hard-cancel fn ──
   // Source: app.kern effect deps="setActiveAbort,outputActions" (the
@@ -292,6 +302,11 @@ module name=AppInterrupt
           opts.activePlanRef.current = null;
           opts.setActivePlan(null);
         }
+        // One short line, exactly like Esc's 'Interrupted.' — a hard cancel that
+        // silently wipes the spinner, streams and modals leaves the user unsure
+        // whether anything happened. Dispatched AFTER flushStream so it lands
+        // below the committed partial output, not interleaved with it.
+        opts.dispatch({ type: 'warning', message: 'Cancelled.' });
         opts.setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
       };
     >>>

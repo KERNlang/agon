@@ -4,6 +4,7 @@
 
 import from="@kernlang/agon-core" names="ToolCallResult" types=true
 import from="@kernlang/agon-core" names="tracker"
+import from="@kernlang/agon-core" names="parseToolCalls"
 import from="../../handlers/types.js" names="HandlerContext,PendingDelegation" types=true
 import from="../lib/kern-host.js" names="hostNowMs,hostRegexObjectTest,hostStringSet"
 
@@ -42,6 +43,41 @@ const name=splitBeforeToolMarkup type="(text:string) => { visible:string, hasToo
   >>>
 
 const name=XML_TOOL_MARKUP_HOLD_CHARS type=number value=24 export=true
+
+// ── Streaming cost guards (per-chunk gates for the brain's stream loop) ──
+// Both helpers exist so the hot loop stops doing FULL-BUFFER work on every
+// chunk. `response` grows by concatenation, so any regex/scan over the whole
+// accumulated answer is O(n) per chunk = quadratic over a long answer — the
+// streaming-lag hot spot. Each gate is a pure decision over a tiny window.
+
+interface name=ToolCloseGate export=true
+  field name=scan type=boolean
+  doc "True when the arriving text could have COMPLETED a tool call, so the full-buffer parse is worth running."
+  field name=tail type=string
+  doc "The carry-over tail to pass as prevTail on the next chunk (so a marker split across chunks is still seen)."
+
+fn name=chunkMayCompleteToolCall params="prevTail:string, chunkText:string" returns=ToolCloseGate export=true
+  doc "Cheap gate before a full parseToolCalls scan. A tool call can only become COMPLETE when the newly arrived text carries the FINAL character of a known close marker: every XML form ends its close tag with '>', Mistral closes its [TOOL_CALLS] array with ']', Cohere closes its Action fence with a backtick. Chunk size is therefore irrelevant for the XML forms (the completing '>' is always in the arriving chunk); the 24-char carry-over tail covers Mistral's optional trailing newline and keeps the gate stable across tiny chunks."
+  handler lang="kern"
+    let name=window value="String(prevTail ?? '') + String(chunkText ?? '')"
+    let name=nextTail value="window.length > 24 ? window.slice(-24) : window"
+    return value="{ scan: /[>\\]\\u0060]/.test(window), tail: nextTail }"
+
+fn name=textHasToolCalls params="text:string" returns=boolean export=true
+  doc "Does this text CONTAIN a complete textual tool call, in ANY format parseToolCalls understands (XML <tool>/<invoke>, Gemini, Mistral [TOOL_CALLS], Functionary, Cohere Action fences)? The single predicate every display gate shares with the executors, so 'is this text a tool call?' is answered the same way everywhere instead of being re-guessed from a marker list. Never throws — a parser failure means 'no tool call' so display is never blanked by a parse bug."
+  handler lang="kern"
+    try
+      return value="parseToolCalls(String(text ?? '')).hasToolCalls"
+      catch name=parseErr
+        return value="false"
+
+fn name=classifyPreambleHead params="head:string" returns="'match'|'absent'|'maybe'" export=true
+  doc "Decide, from the HEAD of a streaming response, whether a start-anchored [INTENT] preamble is present ('match'), impossible ('absent' — 8+ non-space chars already differ from the marker, and the head only ever grows at the end), or still undecidable ('maybe' — keep accumulating). Lets the brain latch the decision once instead of re-parsing the whole response on every chunk."
+  handler lang="kern"
+    let name=lead value="String(head ?? '').trimStart()"
+    if cond="/^\\[intent\\]/i.test(lead.slice(0, 8))"
+      return value="'match'"
+    return value="lead.length >= 8 ? 'absent' : 'maybe'"
 
 // ── Block-marker incremental display stripper (generic factory) ────────
 // Strips [TAG]…[/TAG] blocks from a NATIVE-tool streaming chunk so a block

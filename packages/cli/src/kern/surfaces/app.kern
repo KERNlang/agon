@@ -1527,7 +1527,10 @@ screen name=App target=ink
     >>>
 
   // ── Register cancel callback for SIGINT ──
-  effect deps="setActiveAbort,outputActions"
+  // `dispatch` is in the deps because the callback now prints a one-line
+  // 'Cancelled.' notice — without it the holder would keep a dispatch bound to a
+  // stale mode/chatSession for the rest of the session.
+  effect deps="setActiveAbort,outputActions,dispatch"
     handler <<<
       _cancelCallback.fn = buildCancelCallback({
         activeAbortRef, activePlanRef, cesarRuntimeHost: cesarRuntimeHostRef.current, setActiveAbort, setActivePlan,
@@ -1536,7 +1539,7 @@ screen name=App target=ink
         setQuestionState, setQuestionAnswer, setPendingPlanProposal,
         setSlashPickerOpen, setEnginePickerOpen, setModelPickerOpen,
         setCesarPickerOpen, setReviewEvent, setToolDetailEvent,
-        setReplState,
+        setReplState, dispatch,
       });
     >>>
 

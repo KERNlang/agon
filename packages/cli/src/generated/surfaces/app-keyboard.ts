@@ -508,9 +508,17 @@ export function runHandleKeyboardInput(opts: KeyboardInputDeps, input: string, k
     case 'interruptSubmit': {
       // Esc with typed text during a run: stop the current work AND hand the
       // text straight in. handleSubmit lands while the brain is still winding
-      // down, so it rides the existing interrupt-queue ('your message is up
-      // next…') path in runCesarChat — the redirect is one keystroke.
-      opts.interruptActiveRun('Interrupted — sending your new message…', false);
+      // down, so it rides the busy-queue branch in runHandleSubmit and is
+      // re-submitted by the idle drain once the aborted turn has torn down
+      // (runProcessInputQueue) — the redirect is one keystroke.
+      //
+      // ONE line for one keystroke. This notice is the ONLY thing printed for
+      // the interrupt: the queue branch no longer prints 'Queued: …' and the
+      // drain-time wrap no longer prints 'Redirecting interrupted work…', so
+      // the sequence is this line, then the user's message block. The wording
+      // announces the redirect up front because the actual redirect happens
+      // silently a beat later.
+      opts.interruptActiveRun('Interrupted — redirecting…', false);
       opts.setInputValue('');
       opts.setHistoryIndex(-1);
       opts.handleSubmit(action.value);

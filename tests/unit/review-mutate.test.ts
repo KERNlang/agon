@@ -9,7 +9,8 @@ import type { Mutant, MutationReport } from '@kernlang/agon-core';
 import { runReviewMutation } from '../../packages/cli/src/generated/blocks/review-mutate.js';
 
 import { formatMutationFindings } from '../../packages/cli/src/generated/blocks/review-mutate.js';
-import { parseMutateArgs, formatMutateProgressLine, parsePositiveInt } from '../../packages/cli/src/generated/handlers/mutate.js';
+import { parseMutateArgs, formatMutateProgressLine, parsePositiveInt, validateMutateFlags, mutateSpendLine } from '../../packages/cli/src/generated/handlers/mutate.js';
+import { reviewMutateOverrides } from '../../packages/cli/src/generated/blocks/review-mutate.js';
 
 function mutant(over: Partial<Mutant> = {}): Mutant {
   return {
@@ -135,6 +136,72 @@ describe('parseMutateArgs — the /mutate argument string', () => {
     expect(args.engines).toEqual(['codex', 'claude']);
     expect(args.path).toBeUndefined();
   });
+
+  // A boolean flag written as --flag=value used to leave `=value` behind, which
+  // collapsed into the positional path and failed as a missing file.
+  it('rejects an =-form boolean flag instead of leaking =value into the path', () => {
+    const args = parseMutateArgs('--mechanical-only=true src/add.ts');
+    expect(args.path).toBe('src/add.ts');
+    expect(args.mechanicalOnly).toBe(true);
+    expect(args.error).toContain('--mechanical-only is a boolean flag');
+  });
+
+  it('rejects --semantic=x the same way and never treats it as the path', () => {
+    const args = parseMutateArgs('--semantic=x');
+    expect(args.path).toBeUndefined();
+    expect(args.error).toContain('--semantic is a boolean flag');
+  });
+
+  it('leaves --semantic-per-engine alone when consuming the --semantic boolean', () => {
+    const args = parseMutateArgs('--semantic-per-engine 3 src/a.ts');
+    expect(args).toMatchObject({ semanticPerEngine: 3, semantic: false, path: 'src/a.ts' });
+    expect(args.error).toBeUndefined();
+  });
+});
+
+describe('validateMutateFlags — contradictory flags, one message for both surfaces', () => {
+  it('accepts every coherent combination', () => {
+    expect(validateMutateFlags({ path: 'src/a.ts' })).toBeNull();
+    expect(validateMutateFlags({ diff: 'origin/main', base: 'HEAD~1' })).toBeNull();
+    expect(validateMutateFlags({ mechanicalOnly: true })).toBeNull();
+    expect(validateMutateFlags({ semantic: true })).toBeNull();
+  });
+
+  it('rejects --semantic together with --mechanical-only', () => {
+    expect(validateMutateFlags({ semantic: true, mechanicalOnly: true }))
+      .toContain('--semantic OR --mechanical-only, not both');
+  });
+
+  it('rejects a positional path combined with --diff', () => {
+    expect(validateMutateFlags({ path: 'src/a.ts', diff: 'origin/main' })).toContain('path OR --diff');
+  });
+
+  it('rejects a positional path combined with --base instead of silently ignoring it', () => {
+    expect(validateMutateFlags({ path: 'src/a.ts', base: 'origin/main' })).toContain('path OR --base');
+  });
+});
+
+describe('mutateSpendLine — the default engine spend is explicit', () => {
+  it('names the panel size and the zero-spend escape hatch when semantic is on', () => {
+    expect(mutateSpendLine(true, 3)).toBe('semantic panel: 3 engine(s) (--mechanical-only for zero spend)');
+  });
+
+  it('stays quiet on a mechanical-only run — the header already says so', () => {
+    expect(mutateSpendLine(false, 0)).toBeNull();
+  });
+});
+
+describe('reviewMutateOverrides — agon review --mutate-test/--mutate-build passthrough', () => {
+  it('reads both the kebab-case and camelCase citty spellings', () => {
+    expect(reviewMutateOverrides({ 'mutate-test': ' npx vitest run ', 'mutate-build': 'npm run build' }))
+      .toEqual({ testCmd: 'npx vitest run', buildCmd: 'npm run build' });
+    expect(reviewMutateOverrides({ mutateTest: 'npm test' }).testCmd).toBe('npm test');
+  });
+
+  it('is undefined (not an empty command) when the flags are absent or blank', () => {
+    expect(reviewMutateOverrides({})).toEqual({ testCmd: undefined, buildCmd: undefined });
+    expect(reviewMutateOverrides({ 'mutate-test': '   ' }).testCmd).toBeUndefined();
+  });
 });
 
 describe('formatMutateProgressLine', () => {
@@ -205,6 +272,8 @@ describe('runReviewMutation — advisory review hook', () => {
     expect(lines[0]).toContain('MUTATION (advisory)');
     expect(text).toContain('test command: node check-tautology.mjs');
     expect(text).toContain('SURVIVORS');
+    // The reader must always be able to find the machine artifact.
+    expect(text).toContain('Report: ');
     expect(existsSync(join(outputDir, 'mutation-report.json'))).toBe(true);
     expect(JSON.parse(readFileSync(join(outputDir, 'mutation-report.json'), 'utf-8')).baselineOk).toBe(true);
   }, 60_000);

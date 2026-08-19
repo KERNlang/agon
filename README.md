@@ -327,9 +327,10 @@ agon mutate src/ --mechanical-only                 # a whole directory, zero eng
 agon mutate --diff branch:main --max-mutants 20    # a branch's changes, capped
 agon mutate --mechanical-only --json src/add.ts    # machine surface: the MutationReport, nothing else
 agon review --mutate uncommitted                   # advisory mutation section appended to a normal review
+agon review --mutate --mutate-test "npx vitest run" --mutate-build "npm run build"   # point the advisory pass at the right suite
 ```
 
-**Two kinds of mutant, one pool.** *Mechanical* mutants are the calibrated operator set Agon's `goal` controller already uses (arithmetic, equality, logic, boolean, relational swaps). *Semantic* mutants are the agon-differentiated layer: every roster engine reads your target lines and proposes a **realistic bug it thinks your tests would miss**, with a one-line rationale. Semantic is on by default whenever a roster is available; `--mechanical-only` skips the panel entirely (and all engine spend).
+**Two kinds of mutant, one pool.** *Mechanical* mutants are the calibrated operator set Agon's `goal` controller already uses (arithmetic, equality, logic, boolean, relational swaps). *Semantic* mutants are the agon-differentiated layer: every roster engine reads your target lines and proposes a **realistic bug it thinks your tests would miss**, with a one-line rationale. **Semantic is ON by default whenever engines are available — it spends one engine call per panel member.** The run header says so out loud (`semantic panel: 3 engine(s) (--mechanical-only for zero spend)`); `--mechanical-only` skips the panel entirely for zero engine spend.
 
 - **Survivors are the output.** Each one prints as `before → after` with its file, line, class and origin. A survivor is not a bug report — it is an *assertion* you are missing.
 - **Advisory, never a gate.** The exit code reflects whether the RUN worked, never how weak the suite is. Mutation score is noisy by design (relational swaps are deliberately equivalence-prone), so Agon never blocks on it.
@@ -347,6 +348,8 @@ agon mutate packages/pricing/src/rules.ts \
 ```
 
 Without `--build` the run does not lie: the sandbox baseline fails and the error names the cleared output and tells you to pass a build command. Tests that import the package by relative *source* path need no `--build` at all.
+
+**Inside `agon review`.** `--mutate` appends the same pass as an advisory section (mechanical-only by default; `--mutate-semantic` opts into the panel). `--mutate-test "<cmd>"` and `--mutate-build "<cmd>"` are the same overrides as the standalone command — reach for them when the discovered gate is not the suite that covers the diff, or when the suite runs against a prebuilt `dist`.
 
 Also available as interactive `/mutate` in the REPL, and as `agon call mutate <path> --test "<cmd>" --mechanical-only` for external CLIs.
 
@@ -407,7 +410,7 @@ agon goal "Close all KERN gaps" \
 | `--engines` | Implementer roster; **authoritative** when set (no routing/narrowing) | all active |
 | `--review-engines` / `--judge` | The review panel and the adjudicator | all / config→Cesar→first |
 | `--require-tests` | Reject a source change with no test | on |
-| `--oracle-gate` | Oracle red-team (`off`\|`warn`\|`strict`): just before each task is forged, the panel tries to GAME that task's `verify`; `strict` refuses to launch if any is gameable | `warn` |
+| `--oracle-gate` | Oracle red-team (`off`\|`warn`\|`strict`): just before each task is forged, the panel tries to GAME that task's `verify`; `strict` stops the run when a gameable verify is found (probed per task, per launch) | `warn` |
 | `--max-attempts` | Attempts per task before park | `3` |
 | `--max-hours` / `--budget` | Wall-clock and/or USD ceiling — either, both, or neither | off (`0`) |
 | `--push` / `--pr` | Push the goal branch per task / open a PR via `gh` at the end (never `main`). With `--push`, the run ends with an engine-written PR title/body and a **prefilled GitHub PR link** — click it and the form is already filled (no `gh`/token needed) | off |
@@ -417,7 +420,7 @@ Read a run's digest from any session with `agon goal --status --id close-all-ker
 
 **Designing the gate — it _is_ the spec.** The forge only optimizes to make your `--gate` (and each task's `verify`) pass, so that command is the actual specification. Make it **discriminating**: it must FAIL a plausibly-wrong implementation, not merely pass the intended one (use distinct/edge inputs — `atan2(3,4)`, not `atan2(0,1)`). Before a long run, red-team your own oracle with `agon nero "<the gate I wrote>" --reasoning "is this gameable?"` — if a wrong impl can slip through, add a killer case first. A non-discriminating gate lets buggy-but-passing code land green and dead-loops the run.
 
-Or **automate the red-team** — this is **on by default** (`--oracle-gate=warn`; `off` opts out, `strict` refuses to launch). Just before a task is forged, the review panel tries to make *that* task's `verify` pass with a *cheating* impl (hardcode, ignore inputs). If any engine succeeds, the verify is gameable — `warn` reports it and continues, `strict` stops so you strengthen it first. The probe runs **once per task per launch** and is deliberately never cached across launches: the panel is stochastic, so a single clean pass must not disable the gate forever, and a `verify` whose dependencies only unblock mid-run is probed the moment its task becomes runnable. It's the discriminating-oracle discipline built into the tool, so it no longer depends on remembering to dogfood it.
+Or **automate the red-team** — this is **on by default** (`--oracle-gate=warn`; `off` opts out, `strict` stops the run when a gameable verify is found — probed per task, per launch, so a strict stop can land mid-run). Just before a task is forged, the review panel tries to make *that* task's `verify` pass with a *cheating* impl (hardcode, ignore inputs). If any engine succeeds, the verify is gameable — `warn` reports it and continues, `strict` stops so you strengthen it first. The probe runs **once per task per launch** and is deliberately never cached across launches: the panel is stochastic, so a single clean pass must not disable the gate forever, and a `verify` whose dependencies only unblock mid-run is probed the moment its task becomes runnable. It's the discriminating-oracle discipline built into the tool, so it no longer depends on remembering to dogfood it.
 
 ### Conquer
 

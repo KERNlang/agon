@@ -15,7 +15,7 @@ import from="@kernlang/agon-core" names="EngineRegistry,ensureAgonHome,loadConfi
 import from="@kernlang/agon-core" names="RunStatus,RunStatusEngine" types=true
 import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
 import from="@kernlang/agon-adapter-cli" names="createCliAdapter"
-import from="@kernlang/agon-forge" names="runMutate"
+import from="@kernlang/agon-forge" names="runMutate,mutateVerdictLine"
 import from="../blocks/output-format.js" names="header,success,fail,info,warn,bold,dim"
 import from="../blocks/review-mutate.js" names="formatMutationFindings"
 import from="../handlers/engine-filter.js" names="filterDefaultOrchestrationEngines"
@@ -231,11 +231,9 @@ const name=mutateCommand type=any
         }
 
         for (const line of formatMutationFindings(result.report, result.survivors)) console.log(line);
-        if (result.survivors.length === 0) {
-          success('Verdict: no survivors — your tests kill every mutant on the mutated lines.');
-        } else {
-          warn(`Verdict: ${result.survivors.length} survivor(s) — wrong code your tests called green. Advisory only: strengthen the assertions that should have failed.`);
-        }
+        const verdict = mutateVerdictLine(result.report, result.survivors);
+        if (verdict.level === 'success') success(`Verdict: ${verdict.text}`);
+        else warn(`Verdict: ${verdict.text}`);
         info(dim(`Saved: ${bold(outputDir)}`));
         process.exit(0);
       },

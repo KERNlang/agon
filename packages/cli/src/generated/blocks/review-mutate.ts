@@ -4,7 +4,7 @@ import { discoverGate } from '@kernlang/agon-core';
 
 import type { Mutant, MutationReport, EngineRegistry, EngineAdapter } from '@kernlang/agon-core';
 
-import { runMutate } from '@kernlang/agon-forge';
+import { runMutate, allMutantsSurvived, MUTATE_ALL_SURVIVED_WARNING } from '@kernlang/agon-forge';
 
 import { filterDefaultOrchestrationEngines } from '../handlers/engine-filter.js';
 
@@ -42,9 +42,7 @@ export function formatMutationFindings(report: MutationReport, survivors: Mutant
   if (report.killedByTimeout > 0) out.push(`  ${report.killedByTimeout} killed by timeout (the mutated code hung — a hang counts as detected)`);
   if (report.invalid > 0) out.push(`  ${report.invalid} invalid (did not typecheck/build) — excluded from the score`);
   if (report.notRun > 0) out.push(`  ${report.notRun} mutants not run (${report.budgetExhausted ? 'budget' : 'aborted'})`);
-  if (report.allSurvived) {
-    out.push('  ⚠ every mutant survived — tests may not exercise the mutated source (prebuilt dist? wrong test cmd?) — try --build "<build cmd>"');
-  }
+  if (allMutantsSurvived(report)) out.push(`  ⚠ ${MUTATE_ALL_SURVIVED_WARNING}`);
   if (survivors.length === 0) {
     if (ran > 0) out.push('  ✓ no survivors — the tests kill every mutant on the mutated lines');
     return out;
@@ -73,7 +71,7 @@ export function formatMutationFindings(report: MutationReport, survivors: Mutant
 /**
  * Run the advisory mutation pass over an already-resolved review diff and return the lines to print (heading included). NEVER throws and NEVER signals failure to the caller — a missing test command, an empty diff or a runtime error all come back as one explanatory line, so the review's exit code and consensus stay untouched.
  */
-// @kern-source: review-mutate:78
+// @kern-source: review-mutate:76
 export async function runReviewMutation(opts: ReviewMutationOptions): Promise<string[]> {
   const heading = '\n▸ MUTATION (advisory)';
   try {

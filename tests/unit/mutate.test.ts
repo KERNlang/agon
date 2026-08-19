@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   runMutate, dedupeMutants, selectMutants, formatMutateVerdict, mutationTargetsFromDiff, isMutableFile,
+  allMutantsSurvived, mutateVerdictLine, staleDistHint, MUTATE_ALL_SURVIVED_WARNING,
 } from '../../packages/forge/src/generated/mutate.js';
 import {
   extractJsonArray, validateSemanticMutants, buildSemanticMutantPrompt,
@@ -167,11 +168,15 @@ describe('mutate — verdict', () => {
     expect(text).toContain('3 mutants not run (aborted)');
   });
 
-  it('warns loudly when every mutant survived', () => {
+  it('warns loudly when every mutant survived, BEFORE the meaningless 0% score', () => {
     const survivors = [mutant({ line: 1 }), mutant({ line: 2 }), mutant({ line: 3 }), mutant({ line: 4 }), mutant({ line: 5 })];
     const text = formatMutateVerdict(report({ killed: 0, survived: 5, score: 0, allSurvived: true }), survivors);
-    expect(text).toContain('⚠ every mutant survived');
+    expect(text.split('\n')[0]).toBe(`⚠ ${MUTATE_ALL_SURVIVED_WARNING}`);
+    expect(text).toContain('every mutant survived');
     expect(text).toContain('--build');
+    // The survivors are still listed — the warning replaces nothing.
+    expect(text).toContain('mutation score 0%');
+    expect(text).toContain('▸ src/a.ts:1');
   });
 
   it('surfaces the baseline failure instead of a score when the sandbox was red', () => {
@@ -376,5 +381,45 @@ describe('runMutate — hydrated sandbox', () => {
     expect(res.ok).toBe(false);
     expect(res.error).toContain('is a test file');
     rmSync(repo, { recursive: true, force: true });
+  });
+});
+
+describe('mutate — all-survived is a RUN verdict, not a score', () => {
+  const five = [mutant({ line: 1 }), mutant({ line: 2 }), mutant({ line: 3 }), mutant({ line: 4 }), mutant({ line: 5 })];
+
+  it('needs a meaningful pool: fewer than 5 mutants is not the stale-artifact signature', () => {
+    expect(allMutantsSurvived(report({ killed: 0, survived: 4, score: 0, allSurvived: true }))).toBe(false);
+    expect(allMutantsSurvived(report({ killed: 0, survived: 5, score: 0, allSurvived: true }))).toBe(true);
+  });
+
+  it('is false whenever anything was killed, and false on a red baseline', () => {
+    expect(allMutantsSurvived(report({ killed: 1, survived: 9, score: 0.1, allSurvived: false }))).toBe(false);
+    expect(allMutantsSurvived(report({ baselineOk: false, killed: 0, survived: 0, score: null }))).toBe(false);
+  });
+
+  it('outranks the survivor count in the headline every surface prints', () => {
+    const verdict = mutateVerdictLine(report({ killed: 0, survived: 5, score: 0, allSurvived: true }), five);
+    expect(verdict.level).toBe('warning');
+    expect(verdict.text).toContain('every mutant survived');
+    expect(verdict.text).toContain('--build');
+    // Not the generic "N survivor(s) — wrong code your tests called green" line.
+    expect(verdict.text).not.toContain('wrong code your tests called green');
+    expect(verdict.text).toContain('5 survivor(s) listed above');
+  });
+
+  it('still reports an ordinary weak-suite result as survivors, and a clean sweep as success', () => {
+    const weak = mutateVerdictLine(report({ killed: 7, survived: 1, score: 7 / 8 }), [mutant({})]);
+    expect(weak.level).toBe('warning');
+    expect(weak.text).toContain('1 survivor(s) — wrong code your tests called green');
+    const clean = mutateVerdictLine(report({ killed: 9, survived: 0, score: 1 }), []);
+    expect(clean.level).toBe('success');
+    expect(clean.text).toContain('no survivors');
+  });
+
+  it('names the cleared prebuilt output when the baseline goes red without --build', () => {
+    const hint = staleDistHint(['packages/forge/dist']);
+    expect(hint).toContain('packages/forge/dist');
+    expect(hint).toContain('--build');
+    expect(hint).toContain('SOURCE');
   });
 });

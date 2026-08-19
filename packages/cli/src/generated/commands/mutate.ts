@@ -10,7 +10,7 @@ import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 
-import { runMutate } from '@kernlang/agon-forge';
+import { runMutate, mutateVerdictLine } from '@kernlang/agon-forge';
 
 import { header, success, fail, info, warn, bold, dim } from '../blocks/output-format.js';
 
@@ -229,11 +229,9 @@ export const mutateCommand: any = defineCommand({
     }
 
     for (const line of formatMutationFindings(result.report, result.survivors)) console.log(line);
-    if (result.survivors.length === 0) {
-      success('Verdict: no survivors — your tests kill every mutant on the mutated lines.');
-    } else {
-      warn(`Verdict: ${result.survivors.length} survivor(s) — wrong code your tests called green. Advisory only: strengthen the assertions that should have failed.`);
-    }
+    const verdict = mutateVerdictLine(result.report, result.survivors);
+    if (verdict.level === 'success') success(`Verdict: ${verdict.text}`);
+    else warn(`Verdict: ${verdict.text}`);
     info(dim(`Saved: ${bold(outputDir)}`));
     process.exit(0);
   },

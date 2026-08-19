@@ -14,7 +14,7 @@
 
 import from="@kernlang/agon-core" names="discoverGate"
 import from="@kernlang/agon-core" names="Mutant,MutationReport,EngineRegistry,EngineAdapter" types=true
-import from="@kernlang/agon-forge" names="runMutate"
+import from="@kernlang/agon-forge" names="runMutate,allMutantsSurvived,MUTATE_ALL_SURVIVED_WARNING"
 import from="../handlers/engine-filter.js" names="filterDefaultOrchestrationEngines"
 
 interface name=ReviewMutationOptions export=true
@@ -47,9 +47,7 @@ fn name=formatMutationFindings params="report:MutationReport, survivors:Mutant[]
     if (report.killedByTimeout > 0) out.push(`  ${report.killedByTimeout} killed by timeout (the mutated code hung — a hang counts as detected)`);
     if (report.invalid > 0) out.push(`  ${report.invalid} invalid (did not typecheck/build) — excluded from the score`);
     if (report.notRun > 0) out.push(`  ${report.notRun} mutants not run (${report.budgetExhausted ? 'budget' : 'aborted'})`);
-    if (report.allSurvived) {
-      out.push('  ⚠ every mutant survived — tests may not exercise the mutated source (prebuilt dist? wrong test cmd?) — try --build "<build cmd>"');
-    }
+    if (allMutantsSurvived(report)) out.push(`  ⚠ ${MUTATE_ALL_SURVIVED_WARNING}`);
     if (survivors.length === 0) {
       if (ran > 0) out.push('  ✓ no survivors — the tests kill every mutant on the mutated lines');
       return out;

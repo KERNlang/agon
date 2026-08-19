@@ -100,11 +100,11 @@ const name=goalCommand type=any
         mutationFloor: { type: 'string', description: 'Mutation gate fallback: minimum surviving-mutant count before the --mutation-survivor-ratio check applies (default 3) — tiny mutant counts always land.' },
         cwd: { type: 'string', description: 'Repo working directory', default: process.cwd() },
         requireTests: { type: 'boolean', description: 'Reject a task whose diff changes source but adds no test (the witness has nothing to witness). Default true; --no-require-tests to allow test-free changes.', default: true },
-        oracleGate: { type: 'string', description: 'Oracle red-team pre-flight (off|warn|strict, default off): before forging, the review panel tries to make each task\'s --queue "verify" PASS with a CHEATING impl (hardcode/ignore inputs). off = skip; warn = run + report any gameable verify but continue; strict = ABORT the launch if any verify is gameable. Catches a non-discriminating oracle before it lets buggy code land green and wastes the run. Note: a "gameable" verdict only proves a panel engine made the verify pass — it can\'t prove the engine cheated vs. implemented it correctly, so strict can rarely false-positive; prefer warn for human review.' },
-        // NOTE: deliberately NO `default: 'off'` here — citty fails to map a kebab
+        oracleGate: { type: 'string', description: 'Oracle red-team (off|warn|strict, DEFAULT warn): just before each task with a --queue "verify" is forged, the review panel tries to make that verify PASS with a CHEATING impl (hardcode/ignore inputs). off = skip; warn = run + report any gameable verify but continue; strict = ABORT the launch if any verify is gameable. Catches a non-discriminating oracle before it lets buggy code land green and wastes the run. The probe runs once per task per launch (never cached across launches — the panel is stochastic), so the cost is one adversarial forge per verify-carrying task. Note: a "gameable" verdict only proves a panel engine made the verify pass — it can\'t prove the engine cheated vs. implemented it correctly, so strict can rarely false-positive; that is why warn (report, never abort) is the default.' },
+        // NOTE: deliberately NO citty `default` here — citty fails to map a kebab
         // flag (--oracle-gate) onto a camelCase key that carries a citty default, so
         // a default would silently swallow `--oracle-gate=strict`. The code below
-        // applies the 'off' default via `?? 'off'` instead.
+        // applies the 'warn' default via `?? 'warn'` instead.
         push: { type: 'boolean', description: 'Push the goal branch to origin after EACH task commits (build→review→fix→commit→push per task). Only the goal/* branch, never main.', default: false },
         pr: { type: 'boolean', description: 'With --push, open a PR for the goal branch when the run finishes (needs gh).', default: false },
         remote: { type: 'string', description: 'Git remote to push to (default origin).', default: 'origin' },
@@ -165,7 +165,11 @@ const name=goalCommand type=any
         // Validate --oracle-gate EARLY (before the run plan prints) so a typo fails
         // fast instead of silently disabling the gate. The flag carries no citty
         // `default` (see its definition) so the kebab form maps correctly here.
-        const oracleGateMode = String(args.oracleGate ?? 'off').trim().toLowerCase();
+        // Default WARN, not off: the red-team is the cheapest defense against a
+        // non-discriminating verify, it never aborts in warn mode, and an off-by-
+        // default safety check is one nobody remembers to switch on. Opt out with
+        // --oracle-gate=off.
+        const oracleGateMode = String(args.oracleGate ?? 'warn').trim().toLowerCase();
         if (!['off', 'warn', 'strict'].includes(oracleGateMode)) {
           fail(`--oracle-gate must be off, warn, or strict (got "${args.oracleGate}").`);
           process.exit(1);
@@ -706,11 +710,11 @@ const name=goalCommand type=any
             switch (e.kind) {
               case 'preflight-start': info('Pre-flight: verifying the gate is green at base (runs your gate once)…'); break;
               case 'preflight-ok': success('✓ gate is green at base'); break;
-              case 'oracle-gate-start': info(`Oracle red-team: ${e.detail ?? ''} — the panel tries to game each verify before forging…`); break;
-              case 'oracle-gate-ok': success('✓ oracle red-team: no gameable verify (oracles look discriminating)'); break;
-              case 'oracle-gate-holes': warn(`⚠ oracle red-team found gameable verify(s): ${e.detail ?? ''} — strengthen them`); break;
+              case 'oracle-gate-start': info(`Oracle red-team${id}: ${e.detail ?? ''} — the panel tries to game this verify before forging…`); break;
+              case 'oracle-gate-ok': success(`✓ oracle red-team${id}: no gameable verify (this oracle looks discriminating)`); break;
+              case 'oracle-gate-holes': warn(`⚠ oracle red-team${id} found a gameable verify: ${e.detail ?? ''} — strengthen it`); break;
               case 'oracle-gameable': warn(`  ⚠ gameable${id}: ${e.detail ?? ''}`); break;
-              case 'oracle-gate-error': warn(`oracle red-team error: ${e.detail ?? ''} (continuing — safety check, not the work)`); break;
+              case 'oracle-gate-error': warn(`oracle red-team error${id}: ${e.detail ?? ''} (continuing — safety check, not the work)`); break;
               case 'resume-requeue': info(`↺ resume: ${e.detail ?? ''}`); break;
               case 'task-start': info(`▶ implementing${id}: ${e.detail ?? ''}`); break;
               case 'verify-ok': success(`✓ behavioral verify witnessed${id} (fail-on-base, pass-on-head)`); break;

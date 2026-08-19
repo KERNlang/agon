@@ -7,6 +7,9 @@ import from="@kernlang/agon-core" names="EngineDefinition" types=true
 
 const name=REVIEW_ROUTER_VERSION type=string value="review-router-v1" export=true
 
+const name=REVIEW_SENSITIVE_PATH_RE type=RegExp export=true value={{ /(^|\/)(auth|authentication|sessions?|tokens?|oauth|oidc|passwords?|passkeys?|permissions?|rbac|acl|migrations?|schemas?|database|db|prisma|drizzle|protocols?|contracts?|deploy|deployment|releases?|publishing)(\/|[._-]|$)/i }}
+  doc "The one high-risk path family agon recognises: auth/session/token, permissions, persistence/migrations, shared protocol/contract surfaces, and release/deploy plumbing. Owned here because review's risk router is where it earns its keep; exported so Cesar's mutate reflex steers its `--lens` off the SAME evidence instead of growing a second, drifting list."
+
 type name=ReviewRiskLevel values="low|medium|high" export=true
 type name=ReviewRiskRequest values="auto|low|medium|high" export=true
 type name=ReviewExecutionBackend values="cli|api" export=true
@@ -88,7 +91,7 @@ fn name=inferReviewRisk params="diff:string,requested:ReviewRiskRequest" returns
       /(^|\/)(docs?|tests?|__tests__)(\/|$)/i.test(path)
       || /(^|\/)(README|CHANGELOG|CONTRIBUTING|SECURITY)(?:\.[^/]*)?$/i.test(path)
       || /\.(?:md|mdx|txt|test\.[^.]+|spec\.[^.]+)$/i.test(path);
-    const sensitivePath = /(^|\/)(auth|authentication|sessions?|tokens?|oauth|oidc|passwords?|passkeys?|permissions?|rbac|acl|migrations?|schemas?|database|db|prisma|drizzle|protocols?|contracts?|deploy|deployment|releases?|publishing)(\/|[._-]|$)/i;
+    const sensitivePath = REVIEW_SENSITIVE_PATH_RE;
     const sharedSurface = /(^|\/)(package\.json|exports?\.(?:ts|js|json)|openapi[^/]*|.*\.proto|.*\.sql|.*\.graphql)$/i;
     const packageEntrySurface = /(^|\/)(?:src|lib)\/index\.(?:ts|js)$/i;
     const destructiveContent = /\b(DROP\s+(?:TABLE|DATABASE)\b|TRUNCATE\s+(?:TABLE\s+)?["`\[]?[A-Za-z_]|rm\s+-rf\s+(?:\/|~\/|\.{1,2}\/)|reset\s+--hard\b)/i;

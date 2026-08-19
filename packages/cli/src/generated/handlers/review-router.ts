@@ -7,29 +7,35 @@ import type { EngineDefinition } from '@kernlang/agon-core';
 // @kern-source: review-router:8
 export const REVIEW_ROUTER_VERSION: string = "review-router-v1";
 
+/**
+ * The one high-risk path family agon recognises: auth/session/token, permissions, persistence/migrations, shared protocol/contract surfaces, and release/deploy plumbing. Owned here because review's risk router is where it earns its keep; exported so Cesar's mutate reflex steers its `--lens` off the SAME evidence instead of growing a second, drifting list.
+ */
 // @kern-source: review-router:10
+export const REVIEW_SENSITIVE_PATH_RE: RegExp = /(^|\/)(auth|authentication|sessions?|tokens?|oauth|oidc|passwords?|passkeys?|permissions?|rbac|acl|migrations?|schemas?|database|db|prisma|drizzle|protocols?|contracts?|deploy|deployment|releases?|publishing)(\/|[._-]|$)/i;
+
+// @kern-source: review-router:13
 export type ReviewRiskLevel = 'low' | 'medium' | 'high';
 
-// @kern-source: review-router:11
+// @kern-source: review-router:14
 export type ReviewRiskRequest = 'auto' | 'low' | 'medium' | 'high';
 
-// @kern-source: review-router:12
+// @kern-source: review-router:15
 export type ReviewExecutionBackend = 'cli' | 'api';
 
-// @kern-source: review-router:14
+// @kern-source: review-router:17
 export interface ReviewRoutingEngine {
   engine: EngineDefinition;
   backend: ReviewExecutionBackend;
 }
 
-// @kern-source: review-router:18
+// @kern-source: review-router:21
 export interface ReviewAdapterIdentity {
   key: string;
   source: 'api-origin'|'cli-binary'|'engine-id-fallback';
   confidence: 'high'|'low';
 }
 
-// @kern-source: review-router:23
+// @kern-source: review-router:26
 export interface ReviewRoutingCandidate {
   engineId: string;
   identityKey: string;
@@ -40,7 +46,7 @@ export interface ReviewRoutingCandidate {
   capabilities: string[];
 }
 
-// @kern-source: review-router:32
+// @kern-source: review-router:35
 export interface ReviewRiskDecision {
   requested: ReviewRiskRequest;
   inferred: ReviewRiskLevel;
@@ -48,20 +54,20 @@ export interface ReviewRiskDecision {
   triggers: string[];
 }
 
-// @kern-source: review-router:38
+// @kern-source: review-router:41
 export interface ReviewRoutingExclusion {
   engineId: string;
   reason: string;
 }
 
-// @kern-source: review-router:42
+// @kern-source: review-router:45
 export interface ReviewRoutingShortfall {
   required: number;
   available: number;
   reason: string;
 }
 
-// @kern-source: review-router:47
+// @kern-source: review-router:50
 export interface ReviewRoutingManifest {
   routerVersion: string;
   mode: 'automatic';
@@ -74,19 +80,19 @@ export interface ReviewRoutingManifest {
   shortfall: ReviewRoutingShortfall | null;
 }
 
-// @kern-source: review-router:58
+// @kern-source: review-router:61
 function reviewRiskRank(risk: ReviewRiskLevel): number {
   if (risk === 'high') return 3;
   if (risk === 'medium') return 2;
   return 1;
 }
 
-// @kern-source: review-router:65
+// @kern-source: review-router:68
 function maxReviewRisk(left: ReviewRiskLevel, right: ReviewRiskLevel): ReviewRiskLevel {
   return reviewRiskRank(left) >= reviewRiskRank(right) ? left : right;
 }
 
-// @kern-source: review-router:67
+// @kern-source: review-router:70
 export function reviewDiffPaths(diff: string): string[] {
   const paths: string[] = [];
   const pattern = /^diff --git a\/(.+?) b\/(.+)$/gm;
@@ -97,24 +103,24 @@ export function reviewDiffPaths(diff: string): string[] {
   return paths.sort((a, b) => a.localeCompare(b));
 }
 
-// @kern-source: review-router:78
+// @kern-source: review-router:81
 export function inferReviewRisk(diff: string, requested: ReviewRiskRequest): ReviewRiskDecision {
   const paths = reviewDiffPaths(diff);
   const triggers: string[] = [];
-  
+
   const addTrigger = (value: string) => {
     if (!triggers.includes(value)) triggers.push(value);
   };
-  
+
   const reviewOnlyPath = (path: string) =>
     /(^|\/)(docs?|tests?|__tests__)(\/|$)/i.test(path)
     || /(^|\/)(README|CHANGELOG|CONTRIBUTING|SECURITY)(?:\.[^/]*)?$/i.test(path)
     || /\.(?:md|mdx|txt|test\.[^.]+|spec\.[^.]+)$/i.test(path);
-  const sensitivePath = /(^|\/)(auth|authentication|sessions?|tokens?|oauth|oidc|passwords?|passkeys?|permissions?|rbac|acl|migrations?|schemas?|database|db|prisma|drizzle|protocols?|contracts?|deploy|deployment|releases?|publishing)(\/|[._-]|$)/i;
+  const sensitivePath = REVIEW_SENSITIVE_PATH_RE;
   const sharedSurface = /(^|\/)(package\.json|exports?\.(?:ts|js|json)|openapi[^/]*|.*\.proto|.*\.sql|.*\.graphql)$/i;
   const packageEntrySurface = /(^|\/)(?:src|lib)\/index\.(?:ts|js)$/i;
   const destructiveContent = /\b(DROP\s+(?:TABLE|DATABASE)\b|TRUNCATE\s+(?:TABLE\s+)?["`\[]?[A-Za-z_]|rm\s+-rf\s+(?:\/|~\/|\.{1,2}\/)|reset\s+--hard\b)/i;
-  
+
   for (const path of paths) {
     if (sensitivePath.test(path)) addTrigger(`sensitive-path:${path}`);
     if (sharedSurface.test(path) || packageEntrySurface.test(path)) addTrigger(`shared-surface:${path}`);
@@ -131,31 +137,31 @@ export function inferReviewRisk(diff: string, requested: ReviewRiskRequest): Rev
     }
   }
   if (paths.length === 0) addTrigger('missing-changed-path-evidence');
-  
+
   const onlyDocsOrTests = paths.length > 0 && paths.every(reviewOnlyPath);
-  
+
   let inferred: ReviewRiskLevel = onlyDocsOrTests ? 'low' : 'medium';
   if (triggers.length > 0) inferred = 'high';
-  
+
   const declared: ReviewRiskLevel = requested === 'auto' ? inferred : requested;
   const final = maxReviewRisk(declared, inferred);
   return { requested, inferred, final, triggers: triggers.sort((a, b) => a.localeCompare(b)) };
 }
 
-// @kern-source: review-router:123
+// @kern-source: review-router:126
 export function reviewAdapterIdentity(engine: EngineDefinition, backend: ReviewExecutionBackend): ReviewAdapterIdentity {
   if (backend === 'cli') {
     const binary = String(engine.binary ?? '').trim().toLowerCase();
     if (binary) return { key: `cli:${binary}`, source: 'cli-binary', confidence: 'high' };
   }
-  
+
   if (backend === 'api' && engine.api?.baseUrl) {
     try {
       const origin = new URL(engine.api.baseUrl).origin.toLowerCase();
       if (origin) return { key: `api:${origin}`, source: 'api-origin', confidence: 'high' };
     } catch { /* fall through to the unverified identity */ }
   }
-  
+
   return {
     key: `engine:${String(engine.id ?? '').trim().toLowerCase()}`,
     source: 'engine-id-fallback',
@@ -163,7 +169,7 @@ export function reviewAdapterIdentity(engine: EngineDefinition, backend: ReviewE
   };
 }
 
-// @kern-source: review-router:144
+// @kern-source: review-router:147
 export function routeReviewers(diff: string, requestedRisk: ReviewRiskRequest, primaryInput: ReviewRoutingEngine|undefined, inputs: ReviewRoutingEngine[]): ReviewRoutingManifest {
   const diffHash = createHash('sha256').update(diff).digest('hex');
   const risk = inferReviewRisk(diff, requestedRisk);
@@ -171,7 +177,7 @@ export function routeReviewers(diff: string, requestedRisk: ReviewRiskRequest, p
   const primaryIdentity = primaryInput ? reviewAdapterIdentity(primaryInput.engine, primaryInput.backend) : undefined;
   const primaryVerified = primaryIdentity?.confidence === 'high';
   const seenIds = new Set<string>();
-  
+
   const candidates: ReviewRoutingCandidate[] = [];
   for (const input of inputs) {
     const engine = input.engine;
@@ -192,14 +198,14 @@ export function routeReviewers(diff: string, requestedRisk: ReviewRiskRequest, p
     });
   }
   candidates.sort((a, b) => a.selectionKey.localeCompare(b.selectionKey) || a.engineId.localeCompare(b.engineId));
-  
+
   if (!primaryVerified) {
     if (risk.final !== 'high') risk.final = 'high';
     const trigger = primaryEngine ? 'primary-implementer-identity-unverified' : 'primary-implementer-unknown';
     if (!risk.triggers.includes(trigger)) risk.triggers.push(trigger);
     risk.triggers.sort((a, b) => a.localeCompare(b));
   }
-  
+
   const excluded: ReviewRoutingExclusion[] = [];
   let selected: ReviewRoutingCandidate[];
   let shortfall: ReviewRoutingShortfall | null = null;
@@ -247,7 +253,7 @@ export function routeReviewers(diff: string, requestedRisk: ReviewRiskRequest, p
       }
     }
   }
-  
+
   excluded.sort((a, b) => a.engineId.localeCompare(b.engineId) || a.reason.localeCompare(b.reason));
   return {
     routerVersion: REVIEW_ROUTER_VERSION,
@@ -264,7 +270,7 @@ export function routeReviewers(diff: string, requestedRisk: ReviewRiskRequest, p
   };
 }
 
-// @kern-source: review-router:245
+// @kern-source: review-router:248
 export function serializeReviewRoutingManifest(manifest: ReviewRoutingManifest): string {
   return JSON.stringify(manifest, null, 2) + '\n';
 }

@@ -105,6 +105,7 @@ interface name=MutateArgs export=true
   field name=semanticPerEngine type=number
   field name=timeout type=number
   field name=budget type=number
+  field name=error type=string optional=true doc="Set when the raw argument string is malformed (e.g. a boolean flag given as --flag=value). The handler dispatches it and stops."
 
 fn name=parseMutateArgs params="input:string" returns=MutateArgs export=true
   doc "Parse the REPL argument string for /mutate. Flags mirror the CLI one-for-one; whatever is left after the flags is the positional path. Pure."
@@ -126,16 +127,49 @@ fn name=parseMutateArgs params="input:string" returns=MutateArgs export=true
     const semanticPerEngine = parsePositiveInt(take(/--semantic-per-engine\s+(\S+)/), 8);
     const timeout = parsePositiveInt(take(/--timeout\s+(\S+)/), 120);
     const budget = parsePositiveInt(take(/--budget\s+(\S+)/), 900);
-    let mechanicalOnly = false;
-    if (/--mechanical-only\b/.test(rest)) { mechanicalOnly = true; rest = rest.replace(/--mechanical-only\b/, ' '); }
-    let semantic = false;
-    if (/--semantic\b/.test(rest)) { semantic = true; rest = rest.replace(/--semantic\b/, ' '); }
+    // Boolean flags: consume an optional `=value` suffix too, so
+    // `--mechanical-only=true` can never leak `=true` into the positional path
+    // (it used to become `files: ['=true']` and fail as a missing file). An
+    // `=`-form is a user error, not a value to interpret — reject it loudly.
+    let error: string | undefined;
+    const takeBool = (flag: string): boolean => {
+      const m = rest.match(new RegExp(`--${flag}(=\\S*)?(?=\\s)`));
+      if (!m) return false;
+      rest = rest.replace(m[0], ' ');
+      if (m[1] !== undefined && !error) {
+        error = `--${flag} is a boolean flag — pass it bare (\`--${flag}\`), not \`--${flag}${m[1]}\`.`;
+      }
+      return true;
+    };
+    const mechanicalOnly = takeBool('mechanical-only');
+    const semantic = takeBool('semantic');
     const path = rest.replace(/\s+/g, ' ').trim() || undefined;
     return {
       path, diff, base, test, typecheck, build,
       engines: enginesRaw ? enginesRaw.split(',').map((s) => s.trim()).filter(Boolean) : undefined,
-      semantic, mechanicalOnly, maxMutants, semanticPerEngine, timeout, budget,
+      semantic, mechanicalOnly, maxMutants, semanticPerEngine, timeout, budget, error,
     };
+  >>>
+
+fn name=validateMutateFlags params="a:{path?:string, diff?:string, base?:string, semantic?:boolean, mechanicalOnly?:boolean}" returns="string|null" export=true
+  doc "Reject contradictory `mutate` flag combinations with ONE message shared by the CLI and the REPL, or null when the combination is coherent. Pure. A positional path mutates whole files, so BOTH --diff and --base (which only resolve changed lines) are meaningless with it; --semantic and --mechanical-only are opposite intents, so passing both is always a mistake rather than a precedence puzzle."
+  handler <<<
+    const path = (a.path ?? '').trim();
+    const diff = (a.diff ?? '').trim();
+    const base = (a.base ?? '').trim();
+    if (a.semantic === true && a.mechanicalOnly === true) {
+      return 'Pass --semantic OR --mechanical-only, not both — --semantic forces the AI-semantic panel on, --mechanical-only turns it off.';
+    }
+    if (path && diff) return 'Pass a path OR --diff, not both — a path mutates whole files, --diff mutates changed lines.';
+    if (path && base) return 'Pass a path OR --base, not both — a path mutates whole files, --base only resolves which changed lines to mutate.';
+    return null;
+  >>>
+
+fn name=mutateSpendLine params="semantic:boolean, engineCount:number" returns="string|null" export=true
+  doc "The one header line that makes the DEFAULT engine spend explicit: the semantic panel is on whenever a roster exists, and each engine on it costs a real dispatch. Null when the run is mechanical-only (the header already says so). Pure — the CLI and the REPL print the same sentence."
+  handler <<<
+    if (!semantic) return null;
+    return `semantic panel: ${engineCount} engine(s) (--mechanical-only for zero spend)`;
   >>>
 
 fn name=handleMutate params="input:string, dispatch:Dispatch, ctx:HandlerContext" returns="Promise<void>" async=true export=true
@@ -146,8 +180,13 @@ fn name=handleMutate params="input:string, dispatch:Dispatch, ctx:HandlerContext
     const cwd = resolveWorkingDir();
     const args = parseMutateArgs(input);
 
-    if (args.path && args.diff) {
-      dispatch({ type: 'warning', message: 'Pass a path OR --diff, not both — a path mutates whole files, --diff mutates changed lines.' });
+    if (args.error) {
+      dispatch({ type: 'error', message: args.error });
+      return;
+    }
+    const flagError = validateMutateFlags(args);
+    if (flagError) {
+      dispatch({ type: 'warning', message: flagError });
       return;
     }
 
@@ -179,12 +218,22 @@ fn name=handleMutate params="input:string, dispatch:Dispatch, ctx:HandlerContext
 
     let pool = filterDefaultOrchestrationEngines(ctx.activeEngines());
     if (args.engines && args.engines.length > 0) {
+      // Same strictness as the CLI: a typo'd engine must fail loudly, never
+      // silently shrink the semantic panel.
+      const known = new Set(ctx.registry.listIds());
+      const unknown = args.engines.filter((id) => !known.has(ctx.registry.resolveId(id)));
+      if (unknown.length > 0) {
+        dispatch({ type: 'error', message: `Unknown engine${unknown.length > 1 ? 's' : ''}: ${unknown.join(', ')}. Run /engines to see available engines.` });
+        return;
+      }
       pool = args.engines.map((id) => ctx.registry.resolveId(id));
     }
     const semantic = !args.mechanicalOnly && (args.semantic || pool.length > 0);
     if (args.mechanicalOnly) pool = [];
 
     dispatch({ type: 'header', title: `Mutate: ${label} · ${semantic ? `semantic panel (${pool.length})` : 'mechanical only'}` });
+    const spendLine = mutateSpendLine(semantic, pool.length);
+    if (spendLine) dispatch({ type: 'info', message: spendLine });
     dispatch({ type: 'info', message: `test: ${testCmd}` });
     ctx.setActiveAbort(mtAbort);
 
@@ -254,4 +303,7 @@ fn name=handleMutate params="input:string, dispatch:Dispatch, ctx:HandlerContext
     } catch (err) {
       dispatch({ type: 'error', message: `Mutate failed: ${err instanceof Error ? err.message : String(err)}` });
     }
+  >>>
+  cleanup <<<
+    ctx.setActiveAbort(null);
   >>>

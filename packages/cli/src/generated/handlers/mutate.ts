@@ -112,12 +112,13 @@ export interface MutateArgs {
   semanticPerEngine: number;
   timeout: number;
   budget: number;
+  error?: string;
 }
 
 /**
  * Parse the REPL argument string for /mutate. Flags mirror the CLI one-for-one; whatever is left after the flags is the positional path. Pure.
  */
-// @kern-source: mutate:109
+// @kern-source: mutate:110
 export function parseMutateArgs(input: string): MutateArgs {
   let rest = ` ${input.trim()} `;
   const take = (re: RegExp): string | undefined => {
@@ -136,134 +137,190 @@ export function parseMutateArgs(input: string): MutateArgs {
   const semanticPerEngine = parsePositiveInt(take(/--semantic-per-engine\s+(\S+)/), 8);
   const timeout = parsePositiveInt(take(/--timeout\s+(\S+)/), 120);
   const budget = parsePositiveInt(take(/--budget\s+(\S+)/), 900);
-  let mechanicalOnly = false;
-  if (/--mechanical-only\b/.test(rest)) { mechanicalOnly = true; rest = rest.replace(/--mechanical-only\b/, ' '); }
-  let semantic = false;
-  if (/--semantic\b/.test(rest)) { semantic = true; rest = rest.replace(/--semantic\b/, ' '); }
+  // Boolean flags: consume an optional `=value` suffix too, so
+  // `--mechanical-only=true` can never leak `=true` into the positional path
+  // (it used to become `files: ['=true']` and fail as a missing file). An
+  // `=`-form is a user error, not a value to interpret — reject it loudly.
+  let error: string | undefined;
+  const takeBool = (flag: string): boolean => {
+    const m = rest.match(new RegExp(`--${flag}(=\\S*)?(?=\\s)`));
+    if (!m) return false;
+    rest = rest.replace(m[0], ' ');
+    if (m[1] !== undefined && !error) {
+      error = `--${flag} is a boolean flag — pass it bare (\`--${flag}\`), not \`--${flag}${m[1]}\`.`;
+    }
+    return true;
+  };
+  const mechanicalOnly = takeBool('mechanical-only');
+  const semantic = takeBool('semantic');
   const path = rest.replace(/\s+/g, ' ').trim() || undefined;
   return {
     path, diff, base, test, typecheck, build,
     engines: enginesRaw ? enginesRaw.split(',').map((s) => s.trim()).filter(Boolean) : undefined,
-    semantic, mechanicalOnly, maxMutants, semanticPerEngine, timeout, budget,
+    semantic, mechanicalOnly, maxMutants, semanticPerEngine, timeout, budget, error,
   };
+}
+
+/**
+ * Reject contradictory `mutate` flag combinations with ONE message shared by the CLI and the REPL, or null when the combination is coherent. Pure. A positional path mutates whole files, so BOTH --diff and --base (which only resolve changed lines) are meaningless with it; --semantic and --mechanical-only are opposite intents, so passing both is always a mistake rather than a precedence puzzle.
+ */
+// @kern-source: mutate:154
+export function validateMutateFlags(a: {path?:string, diff?:string, base?:string, semantic?:boolean, mechanicalOnly?:boolean}): string|null {
+  const path = (a.path ?? '').trim();
+  const diff = (a.diff ?? '').trim();
+  const base = (a.base ?? '').trim();
+  if (a.semantic === true && a.mechanicalOnly === true) {
+    return 'Pass --semantic OR --mechanical-only, not both — --semantic forces the AI-semantic panel on, --mechanical-only turns it off.';
+  }
+  if (path && diff) return 'Pass a path OR --diff, not both — a path mutates whole files, --diff mutates changed lines.';
+  if (path && base) return 'Pass a path OR --base, not both — a path mutates whole files, --base only resolves which changed lines to mutate.';
+  return null;
+}
+
+/**
+ * The one header line that makes the DEFAULT engine spend explicit: the semantic panel is on whenever a roster exists, and each engine on it costs a real dispatch. Null when the run is mechanical-only (the header already says so). Pure — the CLI and the REPL print the same sentence.
+ */
+// @kern-source: mutate:168
+export function mutateSpendLine(semantic: boolean, engineCount: number): string|null {
+  if (!semantic) return null;
+  return `semantic panel: ${engineCount} engine(s) (--mechanical-only for zero spend)`;
 }
 
 /**
  * REPL /mutate: resolve targets, run the budgeted mutant pipeline in a disposable worktree, render survivors, and append the verdict to the chat session for Cesar.
  */
-// @kern-source: mutate:141
+// @kern-source: mutate:175
 export async function handleMutate(input: string, dispatch: Dispatch, ctx: HandlerContext): Promise<void> {
   const mtAbort = new AbortController();
-  ensureAgonHome();
-  const cwd = resolveWorkingDir();
-  const args = parseMutateArgs(input);
-
-  if (args.path && args.diff) {
-    dispatch({ type: 'warning', message: 'Pass a path OR --diff, not both — a path mutates whole files, --diff mutates changed lines.' });
-    return;
-  }
-
-  let testCmd = (args.test ?? '').trim();
-  if (!testCmd) {
-    try { testCmd = discoverGate(cwd).command.trim(); } catch { testCmd = ''; }
-  }
-  if (!testCmd) {
-    dispatch({ type: 'error', message: 'No test command discovered — pass `--test "<cmd>"`. Mutation testing needs a real suite to run per mutant; agon never guesses one.' });
-    return;
-  }
-
-  let diff = '';
-  let label = args.path ?? 'target';
-  if (!args.path) {
-    try {
-      const resolved = resolveMutateDiff(args.diff, args.base, cwd);
-      diff = resolved.diff;
-      label = resolved.label;
-    } catch (err) {
-      dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) });
-      return;
-    }
-    if (!diff.trim()) {
-      dispatch({ type: 'warning', message: `No changed lines to mutate for ${label}. Pass a path to mutate whole files, or --diff <base>.` });
-      return;
-    }
-  }
-
-  let pool = filterDefaultOrchestrationEngines(ctx.activeEngines());
-  if (args.engines && args.engines.length > 0) {
-    pool = args.engines.map((id) => ctx.registry.resolveId(id));
-  }
-  const semantic = !args.mechanicalOnly && (args.semantic || pool.length > 0);
-  if (args.mechanicalOnly) pool = [];
-
-  dispatch({ type: 'header', title: `Mutate: ${label} · ${semantic ? `semantic panel (${pool.length})` : 'mechanical only'}` });
-  dispatch({ type: 'info', message: `test: ${testCmd}` });
-  ctx.setActiveAbort(mtAbort);
-
-  const startedAt = new Date().toISOString();
-  const { path: outputDir } = createRunDir({ mode: 'mutate', label: undefined, announce: false });
-
   try {
-    const result = await runMutate({
-      repoRoot: cwd,
-      cwd,
-      diff: args.path ? undefined : diff,
-      files: args.path ? [args.path] : undefined,
-      testCmd,
-      typecheckCmd: args.typecheck,
-      buildCmd: args.build,
-      semantic,
-      engines: pool,
-      registry: ctx.registry,
-      adapter: ctx.adapter,
-      maxMutants: args.maxMutants,
-      semanticPerEngine: args.semanticPerEngine,
-      perMutantTimeoutSec: args.timeout,
-      totalBudgetSec: args.budget,
-      outputDir,
-      signal: mtAbort.signal,
-      onEvent: (e) => {
-        const line = formatMutateProgressLine(e);
-        if (line) dispatch({ type: 'info', message: line });
-      },
-    });
+    ensureAgonHome();
+    const cwd = resolveWorkingDir();
+    const args = parseMutateArgs(input);
 
-    const scoreText = result.report.score === null ? 'n/a' : `${Math.round(result.report.score * 100)}%`;
-    const status: RunStatus = {
-      mode: 'mutate',
-      label,
-      startedAt,
-      endedAt: new Date().toISOString(),
-      engines: pool.map((id): RunStatusEngine => ({ id, status: result.ok ? 'ok' : 'error', detail: semantic ? 'semantic mutants' : 'not used' })),
-      summary: result.ok
-        ? `mutation score ${scoreText} — ${result.survivors.length} survivor(s) of ${result.report.killed + result.report.survived} mutant(s)`
-        : (result.error ?? 'mutate failed'),
-      ok: result.ok,
-      requested: pool,
-      timeoutSec: args.timeout,
-    };
-    writeRunStatus(outputDir, status);
-
-    if (!result.ok) {
-      dispatch({ type: 'error', message: result.error ?? 'Mutation run failed.' });
+    if (args.error) {
+      dispatch({ type: 'error', message: args.error });
+      return;
+    }
+    const flagError = validateMutateFlags(args);
+    if (flagError) {
+      dispatch({ type: 'warning', message: flagError });
       return;
     }
 
-    const findings = formatMutationFindings(result.report, result.survivors);
-    for (const line of findings) dispatch({ type: 'info', message: line });
-    const verdict = mutateVerdictLine(result.report, result.survivors);
-    if (verdict.level === 'success') dispatch({ type: 'success', message: `Verdict: ${verdict.text}` });
-    else dispatch({ type: 'warning', message: `Verdict: ${verdict.text}` });
-    dispatch({ type: 'info', message: `Saved: ${outputDir}` });
+    let testCmd = (args.test ?? '').trim();
+    if (!testCmd) {
+      try { testCmd = discoverGate(cwd).command.trim(); } catch { testCmd = ''; }
+    }
+    if (!testCmd) {
+      dispatch({ type: 'error', message: 'No test command discovered — pass `--test "<cmd>"`. Mutation testing needs a real suite to run per mutant; agon never guesses one.' });
+      return;
+    }
 
-    appendMessage(ctx.chatSession, { role: 'user', content: `[mutate] ${label}`, timestamp: new Date().toISOString() });
-    appendMessage(ctx.chatSession, {
-      role: 'engine',
-      engineId: 'mutate',
-      content: `Mutation score ${scoreText} on ${label} (test: ${testCmd}).\n${findings.join('\n')}`,
-      timestamp: new Date().toISOString(),
-    });
-  } catch (err) {
-    dispatch({ type: 'error', message: `Mutate failed: ${err instanceof Error ? err.message : String(err)}` });
+    let diff = '';
+    let label = args.path ?? 'target';
+    if (!args.path) {
+      try {
+        const resolved = resolveMutateDiff(args.diff, args.base, cwd);
+        diff = resolved.diff;
+        label = resolved.label;
+      } catch (err) {
+        dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) });
+        return;
+      }
+      if (!diff.trim()) {
+        dispatch({ type: 'warning', message: `No changed lines to mutate for ${label}. Pass a path to mutate whole files, or --diff <base>.` });
+        return;
+      }
+    }
+
+    let pool = filterDefaultOrchestrationEngines(ctx.activeEngines());
+    if (args.engines && args.engines.length > 0) {
+      // Same strictness as the CLI: a typo'd engine must fail loudly, never
+      // silently shrink the semantic panel.
+      const known = new Set(ctx.registry.listIds());
+      const unknown = args.engines.filter((id) => !known.has(ctx.registry.resolveId(id)));
+      if (unknown.length > 0) {
+        dispatch({ type: 'error', message: `Unknown engine${unknown.length > 1 ? 's' : ''}: ${unknown.join(', ')}. Run /engines to see available engines.` });
+        return;
+      }
+      pool = args.engines.map((id) => ctx.registry.resolveId(id));
+    }
+    const semantic = !args.mechanicalOnly && (args.semantic || pool.length > 0);
+    if (args.mechanicalOnly) pool = [];
+
+    dispatch({ type: 'header', title: `Mutate: ${label} · ${semantic ? `semantic panel (${pool.length})` : 'mechanical only'}` });
+    const spendLine = mutateSpendLine(semantic, pool.length);
+    if (spendLine) dispatch({ type: 'info', message: spendLine });
+    dispatch({ type: 'info', message: `test: ${testCmd}` });
+    ctx.setActiveAbort(mtAbort);
+
+    const startedAt = new Date().toISOString();
+    const { path: outputDir } = createRunDir({ mode: 'mutate', label: undefined, announce: false });
+
+    try {
+      const result = await runMutate({
+        repoRoot: cwd,
+        cwd,
+        diff: args.path ? undefined : diff,
+        files: args.path ? [args.path] : undefined,
+        testCmd,
+        typecheckCmd: args.typecheck,
+        buildCmd: args.build,
+        semantic,
+        engines: pool,
+        registry: ctx.registry,
+        adapter: ctx.adapter,
+        maxMutants: args.maxMutants,
+        semanticPerEngine: args.semanticPerEngine,
+        perMutantTimeoutSec: args.timeout,
+        totalBudgetSec: args.budget,
+        outputDir,
+        signal: mtAbort.signal,
+        onEvent: (e) => {
+          const line = formatMutateProgressLine(e);
+          if (line) dispatch({ type: 'info', message: line });
+        },
+      });
+
+      const scoreText = result.report.score === null ? 'n/a' : `${Math.round(result.report.score * 100)}%`;
+      const status: RunStatus = {
+        mode: 'mutate',
+        label,
+        startedAt,
+        endedAt: new Date().toISOString(),
+        engines: pool.map((id): RunStatusEngine => ({ id, status: result.ok ? 'ok' : 'error', detail: semantic ? 'semantic mutants' : 'not used' })),
+        summary: result.ok
+          ? `mutation score ${scoreText} — ${result.survivors.length} survivor(s) of ${result.report.killed + result.report.survived} mutant(s)`
+          : (result.error ?? 'mutate failed'),
+        ok: result.ok,
+        requested: pool,
+        timeoutSec: args.timeout,
+      };
+      writeRunStatus(outputDir, status);
+
+      if (!result.ok) {
+        dispatch({ type: 'error', message: result.error ?? 'Mutation run failed.' });
+        return;
+      }
+
+      const findings = formatMutationFindings(result.report, result.survivors);
+      for (const line of findings) dispatch({ type: 'info', message: line });
+      const verdict = mutateVerdictLine(result.report, result.survivors);
+      if (verdict.level === 'success') dispatch({ type: 'success', message: `Verdict: ${verdict.text}` });
+      else dispatch({ type: 'warning', message: `Verdict: ${verdict.text}` });
+      dispatch({ type: 'info', message: `Saved: ${outputDir}` });
+
+      appendMessage(ctx.chatSession, { role: 'user', content: `[mutate] ${label}`, timestamp: new Date().toISOString() });
+      appendMessage(ctx.chatSession, {
+        role: 'engine',
+        engineId: 'mutate',
+        content: `Mutation score ${scoreText} on ${label} (test: ${testCmd}).\n${findings.join('\n')}`,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      dispatch({ type: 'error', message: `Mutate failed: ${err instanceof Error ? err.message : String(err)}` });
+    }
+  } finally {
+    ctx.setActiveAbort(null);
   }
 }

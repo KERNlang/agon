@@ -44,3 +44,29 @@ export function oracleGateDecision(holes: OracleHole[], mode: string): { abort: 
     : 'Continuing (--oracle-gate=warn) — strengthen the verify(s) before trusting the run.';
   return { abort: mode === 'strict', summary: [head, ...lines, tail].join('\n') };
 }
+
+/**
+ * THE default for --oracle-gate, in one place. The CLI flag parser and runGoalController used to each carry their own literal ('warn' at the CLI, 'off' in the controller), so any caller that reached the controller directly — the supervisor, a test, an embedder — silently ran with the gate DISABLED while the docs promised it was on. A safety default that depends on which door you came through is not a default.
+ */
+// @kern-source: oracle-redteam:50
+export const DEFAULT_ORACLE_GATE: 'off'|'warn'|'strict' = 'warn';
+
+/**
+ * Did the red-team probe actually MEASURE the oracle? A forge that threw, dispatched nobody, or whose every seat failed produces `winner: null` — byte-identical to the honest 'nobody could cheat this verify' result. Reading that as a clean pass is the worst failure mode this gate has: it reports the oracle as sound precisely when it learned nothing. A winner is always conclusive (a hole was found); otherwise at least one seat must have completed. Pure — exported for testing.
+ */
+// @kern-source: oracle-redteam:53
+export function oracleProbeConclusive(m: { winner?: string|null; error?: string; enginesDispatched?: number; results?: Record<string, { engineCompleted?: boolean; status?: string }> }): { conclusive: boolean; reason: string } {
+  if (m.winner) return { conclusive: true, reason: 'a cheating implementation won' };
+  const err = (m.error ?? '').trim();
+  if (err) return { conclusive: false, reason: `the red-team forge reported an error (${err}) — no engine result to judge` };
+  const results = m.results ?? {};
+  const seats = Object.keys(results);
+  if (seats.length === 0 || (m.enginesDispatched ?? 0) === 0) {
+    return { conclusive: false, reason: 'the red-team forge dispatched no engine — nothing attacked this verify' };
+  }
+  const completed = seats.filter((id) => results[id]?.engineCompleted === true);
+  if (completed.length === 0) {
+    return { conclusive: false, reason: `all ${seats.length} red-team seat(s) failed to complete — the verify was never actually attacked` };
+  }
+  return { conclusive: true, reason: `${completed.length}/${seats.length} seat(s) attacked the verify and none could game it` };
+}

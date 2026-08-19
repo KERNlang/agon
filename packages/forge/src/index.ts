@@ -79,7 +79,7 @@ export {
   goalDir, journalPath, createJournal, saveJournal, loadJournal,
   addTasks, nextTask, markStatus, recordAttempt, remainingCount, isDone, logEvent, boundEvents,
 } from './generated/goal/journal.js';
-export { assertSafeGoalId, resolveWithin } from './generated/goal/paths.js';
+export { assertSafeGoalId, resolveWithin, safePathSegment } from './generated/goal/paths.js';
 export type { Mutant } from './generated/goal/mutation.js';
 export { generateMutants, applyMutantToSource, mutationSurvivors } from './generated/goal/mutation.js';
 export type { FrozenOracle, WitnessResult } from './generated/goal/oracle.js';
@@ -91,7 +91,7 @@ export type { SynthCandidate, SynthPlanOpts, SynthPlan } from './generated/synth
 export { summarizeGoal, writeGoalArtifacts, runGoalController } from './generated/goal/controller.js';
 export { supervisorDecision, computeBackoffMs, isDeterministicExit, runSupervisor } from './generated/goal/supervisor.js';
 export type { SupervisorDecision } from './generated/goal/supervisor.js';
-export { buildOracleCheatPrompt, oracleGateDecision } from './generated/goal/oracle-redteam.js';
+export { buildOracleCheatPrompt, oracleGateDecision, oracleProbeConclusive, DEFAULT_ORACLE_GATE } from './generated/goal/oracle-redteam.js';
 export type { OracleHole } from './generated/goal/oracle-redteam.js';
 // ── Conquer (supervised-autonomous build) ──
 export {

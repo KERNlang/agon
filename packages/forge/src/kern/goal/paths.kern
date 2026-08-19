@@ -19,3 +19,10 @@ fn name=resolveWithin params="root:string, candidate:string" returns=string expo
   handler <<<
     return resolveWithinRoot(root, candidate);
   >>>
+
+fn name=safePathSegment params="raw:string, fallback:string" returns=string export=true
+  doc "Reduce an arbitrary (queue-authored, therefore untrusted-by-contract) identifier to ONE filesystem path segment: only [A-Za-z0-9_-], never a dot, never a separator, so `../..` and `a/b` can never author a directory outside the goal dir. runGoalController is an exported entry point — the CLI slugs task ids on the way in, but a library caller (supervisor, tests, an embedder) does not, and the goal loop rmSync's the worktrees it builds from these ids. Falls back when the segment reduces to nothing. Pure."
+  handler <<<
+    const seg = String(raw ?? '').replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64);
+    return seg.length > 0 ? seg : fallback;
+  >>>

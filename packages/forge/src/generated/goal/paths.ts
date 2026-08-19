@@ -20,3 +20,12 @@ export function assertSafeGoalId(goalId: string): string {
 export function resolveWithin(root: string, candidate: string): string {
   return resolveWithinRoot(root, candidate);
 }
+
+/**
+ * Reduce an arbitrary (queue-authored, therefore untrusted-by-contract) identifier to ONE filesystem path segment: only [A-Za-z0-9_-], never a dot, never a separator, so `../..` and `a/b` can never author a directory outside the goal dir. runGoalController is an exported entry point — the CLI slugs task ids on the way in, but a library caller (supervisor, tests, an embedder) does not, and the goal loop rmSync's the worktrees it builds from these ids. Falls back when the segment reduces to nothing. Pure.
+ */
+// @kern-source: paths:23
+export function safePathSegment(raw: string, fallback: string): string {
+  const seg = String(raw ?? '').replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64);
+  return seg.length > 0 ? seg : fallback;
+}

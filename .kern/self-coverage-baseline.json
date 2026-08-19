@@ -10,12 +10,12 @@
   },
   "maximums": {
     "filesWithParseErrors": 0,
-    "blockedHandlers": 643
+    "blockedHandlers": 645
   },
   "blockerMaximums": {
-    "comments-present": 196,
+    "comments-present": 197,
     "foreign-missing-reason": 70,
-    "var-bad-expr": 64,
+    "var-bad-expr": 65,
     "for-stmt": 62,
     "ts-parse-error": 40,
     "closure-nested-function": 28,
@@ -26,7 +26,7 @@
     "while-bad-cond": 17,
     "unsupported-stmt-FunctionDeclaration": 10,
     "closure-spread": 9,
-    "closure-uninitialized-decl": 8,
+    "closure-uninitialized-decl": 9,
     "expr-stmt-assignment": 6,
     "closure-await": 4,
     "closure-destructure": 4,

@@ -13,7 +13,7 @@
 // the probe is called, not in the pure warn/strict decision (covered by
 // oracle-redteam.test.ts).
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -280,6 +280,63 @@ describe('goal controller — JIT per-task oracle red-team', () => {
     // The whole point: no forge was dispatched after the budget was blown.
     expect(implement).not.toHaveBeenCalled();
     expect(state.tasks.every((t) => t.status === 'queued')).toBe(true);
+  }, 120_000);
+
+  // DEFAULT_ORACLE_GATE turns the gate on for every caller, but the PROBE needs
+  // a red-team callback the CLI supplies and a direct library caller may not.
+  // Silently skipping it made the default a promise the controller did not keep.
+  it('journals oracle-gate-skipped ONCE when the gate is on but no red-team callback was supplied', async () => {
+    const state = await run({ oracleRedTeam: undefined }) as JournalState;
+
+    const skipped = state.events.filter((e) => e.kind === 'oracle-gate-skipped');
+    expect(skipped).toHaveLength(1);                       // one note per launch, not one per task
+    expect(skipped[0]!.detail).toContain('no red-team callback');
+    expect(skipped[0]!.detail).toContain('INACTIVE');
+    expect(skipped[0]!.detail).toContain('warn');
+    // The work still runs — an unavailable safety check is reported, not fatal.
+    expect(state.tasks.map((t) => t.status)).toEqual(['done', 'done']);
+    // …and it is DURABLE, not emit-only.
+    const onDisk = JSON.parse(readFileSync(journalPath(GOAL_ID), 'utf-8')) as JournalState;
+    expect(onDisk.events.filter((e) => e.kind === 'oracle-gate-skipped')).toHaveLength(1);
+  }, 120_000);
+
+  it('says nothing when the gate is off and no callback was supplied', async () => {
+    const state = await run({ oracleGate: 'off', oracleRedTeam: undefined }) as JournalState;
+    expect(state.events.some((e) => e.kind === 'oracle-gate-skipped')).toBe(false);
+    expect(state.tasks.map((t) => t.status)).toEqual(['done', 'done']);
+  }, 120_000);
+
+  // persistGateLog builds a filename from the QUEUE-authored task id, and
+  // runGoalController is an exported entry point — a library caller does not
+  // slug ids. `../../..` must never author a writeFileSync path.
+  it('a traversal task id can never write a gate log outside the goal dir', async () => {
+    const evil = '../../../../../../tmp/agon-goal-pwn';
+    const state = await runGoalController({
+      // Green at base (no one.txt yet), RED in the task worktree once the
+      // implement leg writes it — so the gate log is written for the TASK.
+      spec: { ...spec(), gate: 'test ! -f one.txt', maxAttempts: 1 },
+      repoRoot: repo,
+      tasks: [{ id: evil, source: 'do a thing' }],
+      requireTests: false,
+      gateTimeoutSec: 60,
+      witnessTimeoutSec: 60,
+      oracleGate: 'off',
+      implement: async (a: { worktree: string }) => {
+        writeFileSync(join(a.worktree, 'one.txt'), 'ok\n');
+        return { ok: true, costUsd: 0 };
+      },
+      review: passingReview,
+    } as Parameters<typeof runGoalController>[0]) as JournalState;
+
+    const goalHome = join(home, 'goals', GOAL_ID);
+    // The log landed INSIDE the goal dir under the sanitized segment…
+    const written = readdirSync(goalHome).filter((f) => f.endsWith('-gate.log'));
+    expect(written).toEqual(['tmp-agon-goal-pwn-gate.log']);
+    expect(readFileSync(join(goalHome, written[0]!), 'utf-8')).toContain('test ! -f one.txt');
+    // …and nothing was written where the traversal pointed.
+    expect(existsSync(join(tmpdir(), 'agon-goal-pwn-gate.log'))).toBe(false);
+    // The failure is still reported against the task.
+    expect(state.tasks[0]!.status).not.toBe('done');
   }, 120_000);
 
   it('a probe ERROR never aborts the run and leaves the task unmarked, so the next pick retries it', async () => {

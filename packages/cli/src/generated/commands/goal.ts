@@ -652,7 +652,16 @@ return defineCommand({
           let errored = false;
           const errorNotes: string[] = [];
           for (const t of a.tasks) {
-            if (a.signal?.aborted || !t.verify) continue;
+            // An ABORT measured nothing either. Without this the loop
+            // `continue`s over every task and returns holes:[] errored:false,
+            // and probeTaskOracle durably journals `oracle-gate-ok` for a
+            // probe that never ran a single seat.
+            if (a.signal?.aborted) {
+              errored = true;
+              errorNotes.push(`[${t.id}] aborted before the probe could run`);
+              continue;
+            }
+            if (!t.verify) continue;
             const { path: rtDir } = createRunDir({ mode: 'forge', label: `oracle-redteam-${t.id}` });
             try {
               const manifest = await runForge(

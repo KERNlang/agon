@@ -25,11 +25,11 @@ import from="./policy.js" names="gateFailureSignature,taskParkDecision,globalBre
 import from="./types.js" names="JournalState,GoalSpec,GoalTask" types=true
 
 fn name=persistGateLog params="goalId:string, taskId:string, gateCmd:string, res:{stdout?:string, stderr?:string, exitCode?:number, timedOut?:boolean}" returns=string
-  doc "Persist the EXACT gate stdout/stderr to <goalDir>/<taskId>-gate.log so a parked task's failure is inspectable without re-running the gate by hand. Returns the path, or '' if it couldn't be written."
+  doc "Persist the EXACT gate stdout/stderr to <goalDir>/<taskId>-gate.log so a parked task's failure is inspectable without re-running the gate by hand. The taskId goes through the SAME safePathSegment the worktree paths use: runGoalController is an exported entry point, so a queue-authored id like `../../../../tmp/pwn` would otherwise author a writeFileSync path outside the goal dir. Returns the path, or '' if it couldn't be written."
   handler <<<
     try {
       const body = `$ ${gateCmd}\n[exit ${res.exitCode ?? '?'}${res.timedOut ? ' (timed out)' : ''}]\n\n--- stdout ---\n${res.stdout ?? ''}\n\n--- stderr ---\n${res.stderr ?? ''}\n`;
-      const path = join(goalDir(goalId), `${taskId}-gate.log`);
+      const path = join(goalDir(goalId), `${safePathSegment(taskId, 'task')}-gate.log`);
       writeFileSync(path, body);
       return path;
     } catch {
@@ -154,6 +154,8 @@ fn name=runGoalController async=true params="opts:{ spec: GoalSpec, repoRoot: st
     // un-probed with a loud, journaled note.
     const MAX_ORACLE_PROBE_ATTEMPTS = 2;
     const oracleProbeAttempts = new Map<string, number>();
+    // One-shot latch for the "gate enabled, no red-team callback" journal note.
+    let oracleGateSkipNoted = false;
     const emit = (kind: string, taskId?: string, detail?: string) => {
       try { opts.onEvent?.({ kind, taskId, detail }); } catch { /* listener must never break the loop */ }
     };
@@ -278,6 +280,18 @@ fn name=runGoalController async=true params="opts:{ spec: GoalSpec, repoRoot: st
       //     nextTask only yields tasks whose dependsOn are all done, so a verify that
       //     unblocks mid-run is probed the moment it becomes runnable — the batch
       //     pre-flight this replaced could never see those tasks.
+      // The gate is ON by default, but the probe needs a red-team callback the
+      // CLI supplies and a direct library caller (supervisor, tests, embedder)
+      // may not. Silently skipping it made DEFAULT_ORACLE_GATE a promise the
+      // controller did not keep. Journal it ONCE per launch so the shortfall is
+      // durably visible instead of invisible.
+      if (oracleGate !== 'off' && !opts.oracleRedTeam && !oracleGateSkipNoted) {
+        oracleGateSkipNoted = true;
+        const skipped = `oracle gate '${oracleGate}' is enabled but no red-team callback was supplied — the gate is INACTIVE for this launch and every verify is forged unprobed`;
+        state = logEvent(state, 'oracle-gate-skipped', undefined, skipped);
+        emit('oracle-gate-skipped', undefined, skipped);
+        saveJournal(state);
+      }
       if (oracleGate !== 'off' && opts.oracleRedTeam && (task.verify ?? '').trim() && !oracleChecked.has(task.id)) {
         const attempts = oracleProbeAttempts.get(task.id) ?? 0;
         if (attempts >= MAX_ORACLE_PROBE_ATTEMPTS) {
@@ -289,38 +303,39 @@ fn name=runGoalController async=true params="opts:{ spec: GoalSpec, repoRoot: st
           oracleChecked.add(task.id);
           saveJournal(state);
         } else {
-        oracleProbeAttempts.set(task.id, attempts + 1);
-        const rtBaseSha = (await git(['rev-parse', spec.branch])).stdout.trim();
-        const probe = await probeTaskOracle({
-          state,
-          task: { id: task.id, source: task.source, verify: task.verify },
-          mode: oracleGate,
-          repoRoot,
-          goalId: spec.goalId,
-          baseSha: rtBaseSha,
-          redTeam: opts.oracleRedTeam,
-          emit,
-          signal: opts.signal,
-        });
-        state = probe.state;
-        // Mark ONLY on a clean run (no transient error) — an errored probe is
-        // retried, and a strict abort returns below without marking anything.
-        if (!probe.errored) oracleChecked.add(task.id);
-        if (probe.abort) {
-          // CAVEAT: a "hole" means an engine made the verify PASS under a cheat
-          // prompt — it can't PROVE the engine cheated (one that ignores the
-          // instruction and implements the gap correctly also wins), so strict
-          // can occasionally false-positive. warn is the safer default.
-          state = logEvent(state, 'stop', undefined, 'oracle-gameable');
-          saveJournal(state); try { writeGoalArtifacts(state); } catch { /* best-effort */ }
-          emit('stop', undefined, probe.summary);
-          return state;
+          oracleProbeAttempts.set(task.id, attempts + 1);
+          const rtBaseSha = (await git(['rev-parse', spec.branch])).stdout.trim();
+          const probe = await probeTaskOracle({
+            state,
+            task: { id: task.id, source: task.source, verify: task.verify },
+            mode: oracleGate,
+            repoRoot,
+            goalId: spec.goalId,
+            baseSha: rtBaseSha,
+            redTeam: opts.oracleRedTeam,
+            emit,
+            signal: opts.signal,
+          });
+          state = probe.state;
+          // Mark ONLY on a clean run (no transient error) — an errored probe is
+          // retried, and a strict abort returns below without marking anything.
+          if (!probe.errored) oracleChecked.add(task.id);
+          if (probe.abort) {
+            // CAVEAT: a "hole" means an engine made the verify PASS under a cheat
+            // prompt — it can't PROVE the engine cheated (one that ignores the
+            // instruction and implements the gap correctly also wins), so strict
+            // can occasionally false-positive. warn is the safer default.
+            state = logEvent(state, 'stop', undefined, 'oracle-gameable');
+            saveJournal(state); try { writeGoalArtifacts(state); } catch { /* best-effort */ }
+            emit('stop', undefined, probe.summary);
+            return state;
+          }
+          saveJournal(state);
+          if (opts.signal?.aborted) { state = logEvent(state, 'aborted'); emit('aborted'); break; }
         }
-        saveJournal(state);
-        if (opts.signal?.aborted) { state = logEvent(state, 'aborted'); emit('aborted'); break; }
-        }
-        // The probe spends real engine money and real wall-clock (one adversarial
-        // forge). Re-check the run limits BEFORE committing to the implement leg:
+        // Runs in BOTH branches (probed and cap-reached): the probe spends real
+        // engine money and real wall-clock (one adversarial forge), so re-check
+        // the run limits BEFORE committing to the implement leg:
         // otherwise a probe that exhausts the budget is immediately followed by a
         // full forge+gate+review cycle the run was no longer allowed to pay for.
         if (budgetExceeded(state)) { state = logEvent(state, 'stop', undefined, 'budget'); emit('stop', undefined, 'budget'); break; }

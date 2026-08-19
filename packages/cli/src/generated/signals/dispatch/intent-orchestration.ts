@@ -8,7 +8,7 @@ import type { Dispatch } from '../../../handlers/types.js';
 
 import { ENGINE_COLORS } from '../../blocks/output-format.js';
 
-import { handleForge, handleBrainstorm, handleCampfire, handleTribunal, handleThink, handleCouncil, handleSynthesis, handleNeroChallenge, handleResearch, handleChrome, handleConquer, handleBuild, handleReviewMany, handleReviewRoles, handleSanitize, handleNaturalize, runAgentMode, runAgentTeam } from '../../../handlers/index.js';
+import { handleForge, handleBrainstorm, handleCampfire, handleTribunal, handleThink, handleCouncil, handleSynthesis, handleNeroChallenge, handleResearch, handleChrome, handleConquer, handleBuild, handleReviewMany, handleReviewRoles, handleSanitize, handleNaturalize, handleMutate, runAgentMode, runAgentTeam } from '../../../handlers/index.js';
 
 import { handleTeamTribunal } from '../../handlers/team-tribunal.js';
 
@@ -233,6 +233,21 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
       cb.runAsJob('naturalize', _naLabel, () => handleNaturalize(intent.input ?? '', cb.dispatch, cb.ctx));
       return { handled: true, ranAsJob: true };
     }
+    case 'mutate': {
+      // Mutation runs are long (one full suite per mutant) — always a job.
+      // Advisory by design: the survivor list is fed back to Cesar so the
+      // next turn can strengthen the assertions that failed to notice.
+      const _mtCwd = resolveWorkingDir();
+      const _mtLabel = intent.input?.trim().slice(0, 40) || 'mutate';
+      const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+      const continuationUserTurns = countTrackedUserTurns(cb.ctx);
+      cb.runAsJob('mutate', _mtLabel, withThreadOutcome(_mtCwd, 'mutate', _mtLabel, async () => {
+        await handleMutate(intent.input ?? '', cb.dispatch, cb.ctx);
+        const chatContext = collectRecentEngineContext(cb.ctx, 6, 2000);
+        if (chatContext) await continueCesarAfterResult(`Mutation testing finished on: "${(intent.input ?? '').slice(0, 200)}"\n\n${chatContext}\n\nEvery SURVIVOR is wrong code the tests called green. Say which assertions should have caught them, then take the next concrete step.`, cb, continuationEpoch, continuationUserTurns);
+      }, cb.ctx));
+      return { handled: true, ranAsJob: true };
+    }
     case 'agent': {
       // Phase B/C — Cesar-routed /agent with engine-switch attribution.
       // Zero-LLM-cost regex classification decides solo vs team; emits
@@ -406,7 +421,7 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
         }, cb.ctx));
       }
       return { handled: true, ranAsJob: true };
-  
+
     case 'goal': {
       const _gInput = (intent.input ?? '').trim();
       if (!_gInput) {
@@ -427,7 +442,7 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
       }, cb.ctx));
       return { handled: true, ranAsJob: true };
     }
-  
+
     // ── Inline commands ──
     default: return null;
   }

@@ -3,7 +3,7 @@ import from="node:path" names="join"
 import from="@kernlang/agon-core" names="resolveWorkingDir,spawnWithTimeout"
 import from="../../../handlers/types.js" names="Dispatch" types=true
 import from="../../blocks/output-format.js" names="ENGINE_COLORS"
-import from="../../../handlers/index.js" names="handleForge,handleBrainstorm,handleCampfire,handleTribunal,handleThink,handleCouncil,handleSynthesis,handleNeroChallenge,handleResearch,handleChrome,handleConquer,handleBuild,handleReviewMany,handleReviewRoles,handleSanitize,handleNaturalize,runAgentMode,runAgentTeam"
+import from="../../../handlers/index.js" names="handleForge,handleBrainstorm,handleCampfire,handleTribunal,handleThink,handleCouncil,handleSynthesis,handleNeroChallenge,handleResearch,handleChrome,handleConquer,handleBuild,handleReviewMany,handleReviewRoles,handleSanitize,handleNaturalize,handleMutate,runAgentMode,runAgentTeam"
 import from="../../handlers/team-tribunal.js" names="handleTeamTribunal"
 import from="../../handlers/team-forge.js" names="handleTeamForge"
 import from="../../handlers/team-brainstorm.js" names="handleTeamBrainstorm"
@@ -214,6 +214,21 @@ fn name=dispatchOrchestrationIntent async=true params="intent:any, input:string,
         if (!intent.input?.trim()) { cb.dispatch({ type: 'warning', message: 'Usage: /naturalize <file> [--author X] [--engine Y] [--min-change N] [--max-attempts N] [--out <file>]' }); return { handled: true, ranAsJob: false }; }
         const _naLabel = intent.input.slice(0, 40);
         cb.runAsJob('naturalize', _naLabel, () => handleNaturalize(intent.input ?? '', cb.dispatch, cb.ctx));
+        return { handled: true, ranAsJob: true };
+      }
+      case 'mutate': {
+        // Mutation runs are long (one full suite per mutant) — always a job.
+        // Advisory by design: the survivor list is fed back to Cesar so the
+        // next turn can strengthen the assertions that failed to notice.
+        const _mtCwd = resolveWorkingDir();
+        const _mtLabel = intent.input?.trim().slice(0, 40) || 'mutate';
+        const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+        const continuationUserTurns = countTrackedUserTurns(cb.ctx);
+        cb.runAsJob('mutate', _mtLabel, withThreadOutcome(_mtCwd, 'mutate', _mtLabel, async () => {
+          await handleMutate(intent.input ?? '', cb.dispatch, cb.ctx);
+          const chatContext = collectRecentEngineContext(cb.ctx, 6, 2000);
+          if (chatContext) await continueCesarAfterResult(`Mutation testing finished on: "${(intent.input ?? '').slice(0, 200)}"\n\n${chatContext}\n\nEvery SURVIVOR is wrong code the tests called green. Say which assertions should have caught them, then take the next concrete step.`, cb, continuationEpoch, continuationUserTurns);
+        }, cb.ctx));
         return { handled: true, ranAsJob: true };
       }
       case 'agent': {

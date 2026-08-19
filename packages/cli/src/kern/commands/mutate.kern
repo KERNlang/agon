@@ -1,0 +1,243 @@
+// ── `agon mutate` — mutation testing as a test-strength oracle ──────────
+//
+// "Which of my tests are fake?" Agon mutates the target lines in a disposable
+// worktree, re-runs your suite per mutant, and reports every mutant that
+// SURVIVED — wrong code the tests still called green.
+//
+// Two mutant sources feed one pool: the calibrated MECHANICAL operator set
+// shared with `agon goal`, and (default when a roster is available) SEMANTIC
+// mutants — every engine proposes a realistic bug it thinks your tests would
+// miss. Mutation score is ADVISORY: the exit code reflects whether the RUN
+// worked, never how weak the suite is.
+
+import from="citty" names="defineCommand"
+import from="@kernlang/agon-core" names="EngineRegistry,ensureAgonHome,loadConfig,createRunDir,writeRunStatus,discoverGate"
+import from="@kernlang/agon-core" names="RunStatus,RunStatusEngine" types=true
+import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
+import from="@kernlang/agon-adapter-cli" names="createCliAdapter"
+import from="@kernlang/agon-forge" names="runMutate"
+import from="../blocks/output-format.js" names="header,success,fail,info,warn,bold,dim"
+import from="../blocks/review-mutate.js" names="formatMutationFindings"
+import from="../handlers/engine-filter.js" names="filterDefaultOrchestrationEngines"
+import from="../handlers/mutate.js" names="resolveMutateDiff,formatMutateProgressLine,parsePositiveInt"
+
+const name=mutateCommand type=any
+  handler <<<
+    defineCommand({
+      meta: {
+        name: 'mutate',
+        description: 'Mutation testing as a test-strength oracle: mutate your changed lines in a disposable worktree, re-run the suite per mutant, and report every SURVIVOR — wrong code your tests called green. Mechanical operators + AI-semantic mutants. Advisory, never a gate.',
+      },
+      args: {
+        path: {
+          type: 'positional',
+          description: 'File or directory to mutate (mutually exclusive with --diff). Omit to mutate the changed lines of the current work.',
+          required: false,
+        },
+        diff: {
+          type: 'string',
+          description: 'Mutate changed lines only: a base ref (origin/main), or a review target — uncommitted, branch:NAME, commit:SHA, range:BASE...TARGET.',
+        },
+        base: {
+          type: 'string',
+          description: 'Explicit diff base ref, composed with --diff uncommitted / --diff branch:NAME (same grammar as `agon review --base`).',
+        },
+        test: {
+          type: 'string',
+          description: 'Test command to run per mutant. Required when no test script can be discovered — mutate never guesses a gate.',
+        },
+        typecheck: {
+          type: 'string',
+          description: 'Typecheck/compile command; a mutant that fails it is classified invalid and excluded from the score.',
+        },
+        build: {
+          type: 'string',
+          description: 'Build command run before the baseline AND before each mutant — needed when the suite runs against a prebuilt dist rather than the mutated source.',
+        },
+        semantic: {
+          type: 'boolean',
+          description: 'Force the AI-semantic panel on (default: on whenever a roster is available).',
+          default: false,
+        },
+        'mechanical-only': {
+          type: 'boolean',
+          description: 'Skip the AI-semantic panel entirely — mechanical operators only, zero engine spend.',
+          default: false,
+        },
+        engines: {
+          type: 'string',
+          alias: 'e',
+          description: 'Restrict the semantic panel (comma-separated). Default: all active orchestration engines.',
+        },
+        'max-mutants': {
+          type: 'string',
+          description: 'Cap the mutant pool (high-signal first, round-robin across files).',
+          default: '40',
+        },
+        'semantic-per-engine': {
+          type: 'string',
+          description: 'Max semantic mutants accepted per engine.',
+          default: '8',
+        },
+        timeout: {
+          type: 'string',
+          description: 'Per-mutant test timeout in seconds (raised to 3x the measured baseline when that is longer).',
+          default: '120',
+        },
+        budget: {
+          type: 'string',
+          description: 'Total wall-clock budget in seconds; unrun mutants are reported as not-run, never as killed.',
+          default: '900',
+        },
+        json: {
+          type: 'boolean',
+          description: 'Emit ONLY the MutationReport as JSON on stdout.',
+          default: false,
+        },
+        label: {
+          type: 'string',
+          description: 'Human-readable suffix baked into the run dir name.',
+        },
+        quiet: {
+          type: 'boolean',
+          description: 'Suppress per-mutant progress; print only the final report.',
+          default: false,
+        },
+      },
+      async run({ args }) {
+        ensureAgonHome();
+        const cwd = process.cwd();
+        const config = loadConfig(cwd);
+        const json = args.json === true;
+        const quiet = args.quiet === true || json;
+        // citty keeps kebab-case flags as literal keys — read both spellings.
+        const mechanicalOnly = (args['mechanical-only'] ?? (args as any).mechanicalOnly) === true;
+        const maxMutants = parsePositiveInt(args['max-mutants'] ?? (args as any).maxMutants, 40);
+        const semanticPerEngine = parsePositiveInt(args['semantic-per-engine'] ?? (args as any).semanticPerEngine, 8);
+        const perMutantTimeoutSec = parsePositiveInt(args.timeout, 120);
+        const totalBudgetSec = parsePositiveInt(args.budget, 900);
+
+        const path = typeof args.path === 'string' ? args.path.trim() : '';
+        const diffArg = typeof args.diff === 'string' ? args.diff.trim() : '';
+        if (path && diffArg) {
+          fail('Pass a path OR --diff, not both — a path mutates whole files, --diff mutates changed lines.');
+          process.exit(1);
+        }
+
+        // AC9: no discoverable gate => loud failure, BEFORE any worktree exists.
+        const testCmd = (typeof args.test === 'string' && args.test.trim())
+          ? args.test.trim()
+          : discoverGate(cwd).command.trim();
+        if (!testCmd) {
+          fail('No test command discovered — pass `--test "<cmd>"`. Mutation testing needs a real suite to run per mutant; agon never guesses one.');
+          process.exit(1);
+        }
+
+        let diff = '';
+        let label = path || 'target';
+        if (!path) {
+          try {
+            const resolved = resolveMutateDiff(diffArg || undefined, typeof args.base === 'string' ? args.base : undefined, cwd);
+            diff = resolved.diff;
+            label = resolved.label;
+          } catch (err) {
+            fail(err instanceof Error ? err.message : String(err));
+            process.exit(1);
+          }
+          if (!diff.trim()) {
+            fail(`No changed lines to mutate for ${label}. Pass a path to mutate whole files, or --diff <base>.`);
+            process.exit(1);
+          }
+        }
+
+        const registry = new EngineRegistry();
+        registry.load(resolveBuiltinEnginesDir());
+        const adapter = createCliAdapter(registry);
+        const known = new Set(registry.listIds());
+        let pool = filterDefaultOrchestrationEngines(registry.activeIds(config as any));
+        if (typeof args.engines === 'string' && args.engines.trim()) {
+          const requested = args.engines.split(',').map((s) => s.trim()).filter(Boolean);
+          const unknown = requested.filter((s) => !known.has(registry.resolveId(s)));
+          if (unknown.length > 0) {
+            fail(`Unknown engine${unknown.length > 1 ? 's' : ''}: ${unknown.join(', ')}. Run \`agon engine list\` to see available engines.`);
+            process.exit(1);
+          }
+          pool = requested.map((s) => registry.resolveId(s));
+        }
+        // Semantic is ON by default whenever a roster exists; --semantic forces
+        // the intent explicitly, --mechanical-only opts out (and empties the pool).
+        const semantic = !mechanicalOnly && (args.semantic === true || pool.length > 0);
+        if (mechanicalOnly) pool = [];
+        if (args.semantic === true && pool.length === 0) {
+          fail('--semantic needs at least one active engine. Run `agon engine list`, or use --mechanical-only.');
+          process.exit(1);
+        }
+
+        const startedAt = new Date().toISOString();
+        const { path: outputDir } = createRunDir({ mode: 'mutate', label: args.label as string | undefined, announce: false });
+
+        if (!json) {
+          header(`Mutate: ${label} · ${semantic ? `semantic panel (${pool.length})` : 'mechanical only'}`);
+          info(`test: ${testCmd}`);
+        }
+
+        const result = await runMutate({
+          repoRoot: cwd,
+          cwd,
+          diff: path ? undefined : diff,
+          files: path ? [path] : undefined,
+          testCmd,
+          typecheckCmd: typeof args.typecheck === 'string' && args.typecheck.trim() ? args.typecheck.trim() : undefined,
+          buildCmd: typeof args.build === 'string' && args.build.trim() ? args.build.trim() : undefined,
+          semantic,
+          engines: pool,
+          registry,
+          adapter,
+          maxMutants,
+          semanticPerEngine,
+          perMutantTimeoutSec,
+          totalBudgetSec,
+          outputDir,
+          onEvent: quiet ? undefined : (e) => {
+            const line = formatMutateProgressLine(e);
+            if (line) info(line);
+          },
+        });
+
+        const status: RunStatus = {
+          mode: 'mutate',
+          label: (args.label as string | undefined) ?? label,
+          startedAt,
+          endedAt: new Date().toISOString(),
+          engines: pool.map((id): RunStatusEngine => ({ id, status: result.ok ? 'ok' : 'error', detail: semantic ? 'semantic mutants' : 'not used' })),
+          summary: result.ok
+            ? `mutation score ${result.report.score === null ? 'n/a' : `${Math.round(result.report.score * 100)}%`} — ${result.survivors.length} survivor(s) of ${result.report.killed + result.report.survived} mutant(s)`
+            : (result.error ?? 'mutate failed'),
+          ok: result.ok,
+          requested: pool,
+          timeoutSec: perMutantTimeoutSec,
+        };
+        writeRunStatus(outputDir, status);
+
+        if (json) {
+          process.stdout.write(`${JSON.stringify(result.report, null, 2)}\n`);
+          process.exit(result.ok ? 0 : 1);
+        }
+
+        if (!result.ok) {
+          fail(result.error ?? 'Mutation run failed.');
+          info(dim(`Saved: ${outputDir}`));
+          process.exit(1);
+        }
+
+        for (const line of formatMutationFindings(result.report, result.survivors)) console.log(line);
+        if (result.survivors.length === 0) {
+          success('Verdict: no survivors — your tests kill every mutant on the mutated lines.');
+        } else {
+          warn(`Verdict: ${result.survivors.length} survivor(s) — wrong code your tests called green. Advisory only: strengthen the assertions that should have failed.`);
+        }
+        info(dim(`Saved: ${bold(outputDir)}`));
+        process.exit(0);
+      },
+    })
+  >>>

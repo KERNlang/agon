@@ -1,0 +1,112 @@
+// ── `agon review --mutate` — advisory mutation findings ─────────────────
+//
+// A normal review asks "is this code wrong?". Mutation asks the complementary
+// question the panel cannot: "would your tests NOTICE if it were?". This block
+// is the ADVISORY bolt-on: it runs the same budgeted mutant pipeline as
+// `agon mutate` over the diff the review already resolved, writes
+// mutation-report.json into the review's run dir, and returns lines to print
+// under a `▸ MUTATION (advisory)` heading.
+//
+// HARD CONTRACT: it never influences the review. No exception escapes, no
+// consensus is touched, no exit code or run-status.ok is changed — a mutation
+// failure degrades to a single explanatory line. Mutation score is noisy
+// (equiv-prone operators); making it a gate was rejected in the spec.
+
+import from="@kernlang/agon-core" names="discoverGate"
+import from="@kernlang/agon-core" names="Mutant,MutationReport,EngineRegistry,EngineAdapter" types=true
+import from="@kernlang/agon-forge" names="runMutate"
+import from="../handlers/engine-filter.js" names="filterDefaultOrchestrationEngines"
+
+interface name=ReviewMutationOptions export=true
+  field name=repoRoot type=string
+  field name=diff type=string
+  field name=outputDir type=string
+  field name=registry type=EngineRegistry
+  field name=adapter type=EngineAdapter
+  field name=engines type="string[]" doc="Raw active roster; narrowed with filterDefaultOrchestrationEngines here so the caller stays a one-liner."
+  field name=semantic type=boolean doc="Mechanical-only is the default inside review (cheap, no engine spend). --mutate-semantic opts into the panel."
+  field name=testCmd type=string optional=true
+  field name=buildCmd type=string optional=true
+  field name=typecheckCmd type=string optional=true
+  field name=maxMutants type=number optional=true
+  field name=perMutantTimeoutSec type=number optional=true
+  field name=totalBudgetSec type=number optional=true
+  field name=signal type=AbortSignal optional=true
+
+fn name=formatMutationFindings params="report:MutationReport, survivors:Mutant[]" returns="string[]" export=true
+  doc "Render a mutation report as printable lines: the score line, the honesty notes (timeouts / invalid / not-run / all-survived), then every SURVIVOR grouped by file with its before → after, class and origin. Pure — no IO, no color. A survivor is wrong code your tests called green."
+  handler <<<
+    const out: string[] = [];
+    if (!report.baselineOk) {
+      out.push(`  skipped — ${report.baselineError ?? 'the sandbox baseline did not pass'}`);
+      return out;
+    }
+    const ran = report.killed + report.survived;
+    const pct = report.score === null ? 'n/a' : `${Math.round(report.score * 100)}%`;
+    out.push(`  Mutation score ${pct} — ${report.killed}/${ran} mutants killed, ${report.survived} survived`);
+    if (report.killedByTimeout > 0) out.push(`  ${report.killedByTimeout} killed by timeout (the mutated code hung — a hang counts as detected)`);
+    if (report.invalid > 0) out.push(`  ${report.invalid} invalid (did not typecheck/build) — excluded from the score`);
+    if (report.notRun > 0) out.push(`  ${report.notRun} mutants not run (${report.budgetExhausted ? 'budget' : 'aborted'})`);
+    if (report.allSurvived) {
+      out.push('  ⚠ every mutant survived — tests may not exercise the mutated source (prebuilt dist? wrong test cmd?) — try --build "<build cmd>"');
+    }
+    if (survivors.length === 0) {
+      if (ran > 0) out.push('  ✓ no survivors — the tests kill every mutant on the mutated lines');
+      return out;
+    }
+    const byFile = new Map<string, Mutant[]>();
+    for (const m of survivors) {
+      const key = m.file ?? '(unknown file)';
+      const bucket = byFile.get(key);
+      if (bucket) bucket.push(m);
+      else byFile.set(key, [m]);
+    }
+    out.push(`  SURVIVORS (${survivors.length}) — wrong code your tests called green:`);
+    for (const [file, mutants] of byFile) {
+      out.push(`    ${file}`);
+      for (const m of mutants) {
+        const origin = m.origin === 'semantic' ? `semantic/${m.engine ?? '?'}` : m.operator;
+        out.push(`      L${m.line}  ${origin}  [${m.class}]`);
+        out.push(`        - ${m.before.trim()}`);
+        out.push(`        + ${m.after.trim()}`);
+        if (m.rationale) out.push(`        why: ${m.rationale}`);
+      }
+    }
+    return out;
+  >>>
+
+fn name=runReviewMutation async=true params="opts:ReviewMutationOptions" returns="Promise<string[]>" export=true
+  doc "Run the advisory mutation pass over an already-resolved review diff and return the lines to print (heading included). NEVER throws and NEVER signals failure to the caller — a missing test command, an empty diff or a runtime error all come back as one explanatory line, so the review's exit code and consensus stay untouched."
+  handler <<<
+    const heading = '\n▸ MUTATION (advisory)';
+    try {
+      if (!opts.diff.trim()) return [heading, '  skipped — no diff to mutate'];
+      const testCmd = (opts.testCmd ?? '').trim() || discoverGate(opts.repoRoot).command.trim();
+      if (!testCmd) {
+        return [heading, '  skipped — no test command discovered (add a package.json test script or a `fitness:` brief line, or run `agon mutate --test "<cmd>"`)'];
+      }
+      const result = await runMutate({
+        repoRoot: opts.repoRoot,
+        diff: opts.diff,
+        testCmd,
+        buildCmd: opts.buildCmd,
+        typecheckCmd: opts.typecheckCmd,
+        engines: opts.semantic ? filterDefaultOrchestrationEngines(opts.engines) : [],
+        registry: opts.registry,
+        adapter: opts.adapter,
+        semantic: opts.semantic,
+        maxMutants: opts.maxMutants ?? 25,
+        perMutantTimeoutSec: opts.perMutantTimeoutSec ?? 120,
+        totalBudgetSec: opts.totalBudgetSec ?? 600,
+        outputDir: opts.outputDir,
+        signal: opts.signal,
+      });
+      const lines = [heading, `  test command: ${testCmd}`, ...formatMutationFindings(result.report, result.survivors)];
+      if (!result.ok && result.error) lines.push(`  (advisory only — the review verdict above is unaffected)`);
+      if (result.reportPath) lines.push(`  Report: ${result.reportPath}`);
+      return lines;
+    } catch (err) {
+      // Advisory means advisory: swallow everything.
+      return [heading, `  skipped — mutation pass failed: ${err instanceof Error ? err.message : String(err)}`];
+    }
+  >>>

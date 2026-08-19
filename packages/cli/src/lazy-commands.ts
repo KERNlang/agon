@@ -186,6 +186,10 @@ const naturalize = lazyCommand(() => import('./commands/naturalize.js'), 'natura
   name: 'naturalize',
   description: 'Naturalize AI-written text: deterministic sanitize → non-author engine rewrite (writer ≠ rewriter) → re-scan → word-diff report. Honest about limits: keyed statistical watermarks are always reported as not assessable.',
 });
+const mutate = lazyCommand(() => import('./commands/mutate.js'), 'mutateCommand', {
+  name: 'mutate',
+  description: 'Mutation testing as a test-strength oracle: mutate your changed lines in a disposable worktree, re-run the suite per mutant, and report every SURVIVOR — wrong code your tests called green. Mechanical operators + AI-semantic mutants. Advisory, never a gate.',
+});
 const job = lazyCommand(() => import('./commands/job.js'), 'jobCommand', {
   name: 'job',
   description: 'Submit, observe, and cancel daemon-owned autonomous jobs',
@@ -302,6 +306,7 @@ export const lazySubCommands: SubCommandsDef = {
   call,
   sanitize,
   naturalize,
+  mutate,
   job,
   'agent-guide': agentGuide,
   'install-agent-prompts': installAgentPrompts,

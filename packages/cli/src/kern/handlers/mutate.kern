@@ -1,0 +1,251 @@
+// ── /mutate — mutation testing in the REPL ─────────────────────────────
+//
+// Same core as `agon mutate` (runMutate from agon-forge), rendered through the
+// TUI dispatch instead of stdout: progress lines land as transcript info blocks,
+// survivors as a table, and the verdict is appended to the chat session so
+// Cesar can act on "these tests are fake" in the next turn.
+//
+// This file also owns the shared, PURE surface the CLI command re-uses
+// (target-grammar resolution, flag parsing, progress narration) so both
+// surfaces behave identically — the same split as handlers/review.kern
+// vs commands/review.ts.
+
+import from="node:child_process" names="execFileSync"
+import from="@kernlang/agon-core" names="ensureAgonHome,createRunDir,writeRunStatus,appendMessage,resolveWorkingDir,discoverGate"
+import from="@kernlang/agon-core" names="RunStatus,RunStatusEngine" types=true
+import from="@kernlang/agon-forge" names="runMutate"
+import from="./engine-filter.js" names="filterDefaultOrchestrationEngines"
+import from="./review.js" names="resolveReviewTarget,resolveAutoReviewBase"
+import from="../blocks/review-mutate.js" names="formatMutationFindings"
+import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
+
+const name=MUTATE_TARGET_GRAMMAR type=RegExp value={{ /^(uncommitted$|branch:|commit:|range:)/ }}
+
+fn name=parsePositiveInt params="raw:unknown, fallback:number" returns=number export=true
+  doc "Parse a numeric flag, falling back when empty/NaN/non-positive. Pure."
+  handler <<<
+    const text = String(raw ?? '').trim();
+    if (!text) return fallback;
+    const n = Number(text);
+    if (!Number.isFinite(n) || n <= 0) return fallback;
+    return Math.floor(n);
+  >>>
+
+fn name=currentBranchName params="cwd:string" returns=string export=true
+  doc "The checked-out branch name, or '' when git cannot say."
+  handler <<<
+    try {
+      return execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd, encoding: 'utf-8' }).trim();
+    } catch {
+      return '';
+    }
+  >>>
+
+fn name=resolveMutateDiff params="diffArg:string|undefined, baseArg:string|undefined, cwd:string" returns="{diff:string, label:string}" export=true
+  doc "Resolve the diff to mutate using the EXACT review target grammar (uncommitted | branch:NAME | commit:SHA | range:BASE...TARGET, composed with --base). A --diff value that is not one of those is treated as a BASE REF (`--diff origin/main` = changed lines vs origin/main). With neither flag the base is auto-resolved from origin/HEAD, falling back to origin/main."
+  handler <<<
+    const raw = (diffArg ?? '').trim();
+    const base = (baseArg ?? '').trim();
+    if (raw) {
+      if (MUTATE_TARGET_GRAMMAR.test(raw)) return resolveReviewTarget(raw, cwd, base || undefined);
+      if (base) throw new Error(`--base does not compose with --diff ${raw} (which is already a base ref). Pass one of them.`);
+      return resolveReviewTarget('uncommitted', cwd, raw);
+    }
+    if (base) return resolveReviewTarget('uncommitted', cwd, base);
+    const auto = resolveAutoReviewBase(cwd, currentBranchName(cwd)) ?? 'origin/main';
+    return resolveReviewTarget('uncommitted', cwd, auto);
+  >>>
+
+fn name=formatMutateProgressLine params="event:{type:string,data?:Record<string,unknown>}" returns="string|null" export=true
+  doc "One human progress line per mutate:* event, or null for events with nothing worth printing. Pure — the CLI and the REPL narrate identically."
+  handler <<<
+    const d = (event.data ?? {}) as Record<string, any>;
+    switch (event.type) {
+      case 'mutate:targets':
+        return `targets: ${d.files} file(s), ${d.lines} line(s)`;
+      case 'mutate:semantic-dispatch':
+        return `semantic: asking ${d.engineId} for realistic bugs…`;
+      case 'mutate:semantic-parsed':
+        return `semantic: ${d.engineId} → ${d.accepted} accepted, ${d.dropped} dropped`;
+      case 'mutate:semantic':
+        return `semantic: ${d.accepted} mutant(s) accepted`;
+      case 'mutate:pool':
+        return `pool: ${d.total} mutant(s) (${d.semantic} semantic, ${d.mechanical} mechanical)`;
+      case 'mutate:sandbox':
+        return `sandbox: ${d.worktree}`;
+      case 'mutate:progress': {
+        if (d.phase === 'build') return 'sandbox: building…';
+        if (d.phase === 'baseline') return `baseline: unmutated suite ${d.status === 'ok' ? 'passed' : 'FAILED'} in ${d.durationMs}ms`;
+        return `[${d.index}/${d.total}] ${d.status}${d.mutantId ? ` · ${d.mutantId}` : ''} (${d.durationMs}ms)`;
+      }
+      default:
+        return null;
+    }
+  >>>
+
+interface name=MutateArgs export=true
+  field name=path type=string optional=true
+  field name=diff type=string optional=true
+  field name=base type=string optional=true
+  field name=test type=string optional=true
+  field name=typecheck type=string optional=true
+  field name=build type=string optional=true
+  field name=engines type="string[]" optional=true
+  field name=semantic type=boolean
+  field name=mechanicalOnly type=boolean
+  field name=maxMutants type=number
+  field name=semanticPerEngine type=number
+  field name=timeout type=number
+  field name=budget type=number
+
+fn name=parseMutateArgs params="input:string" returns=MutateArgs export=true
+  doc "Parse the REPL argument string for /mutate. Flags mirror the CLI one-for-one; whatever is left after the flags is the positional path. Pure."
+  handler <<<
+    let rest = ` ${input.trim()} `;
+    const take = (re: RegExp): string | undefined => {
+      const m = rest.match(re);
+      if (!m) return undefined;
+      rest = rest.replace(m[0], ' ');
+      return (m[1] ?? '').replace(/^["']|["']$/g, '').trim() || undefined;
+    };
+    const test = take(/--test\s+("[^"]*"|'[^']*'|\S+)/);
+    const typecheck = take(/--typecheck\s+("[^"]*"|'[^']*'|\S+)/);
+    const build = take(/--build\s+("[^"]*"|'[^']*'|\S+)/);
+    const diff = take(/--diff\s+(\S+)/);
+    const base = take(/--base\s+(\S+)/);
+    const enginesRaw = take(/(?:--engines|-e)\s+(\S+)/);
+    const maxMutants = parsePositiveInt(take(/--max-mutants\s+(\S+)/), 40);
+    const semanticPerEngine = parsePositiveInt(take(/--semantic-per-engine\s+(\S+)/), 8);
+    const timeout = parsePositiveInt(take(/--timeout\s+(\S+)/), 120);
+    const budget = parsePositiveInt(take(/--budget\s+(\S+)/), 900);
+    let mechanicalOnly = false;
+    if (/--mechanical-only\b/.test(rest)) { mechanicalOnly = true; rest = rest.replace(/--mechanical-only\b/, ' '); }
+    let semantic = false;
+    if (/--semantic\b/.test(rest)) { semantic = true; rest = rest.replace(/--semantic\b/, ' '); }
+    const path = rest.replace(/\s+/g, ' ').trim() || undefined;
+    return {
+      path, diff, base, test, typecheck, build,
+      engines: enginesRaw ? enginesRaw.split(',').map((s) => s.trim()).filter(Boolean) : undefined,
+      semantic, mechanicalOnly, maxMutants, semanticPerEngine, timeout, budget,
+    };
+  >>>
+
+fn name=handleMutate params="input:string, dispatch:Dispatch, ctx:HandlerContext" returns="Promise<void>" async=true export=true
+  signal name=mtAbort
+  doc "REPL /mutate: resolve targets, run the budgeted mutant pipeline in a disposable worktree, render survivors, and append the verdict to the chat session for Cesar."
+  handler <<<
+    ensureAgonHome();
+    const cwd = resolveWorkingDir();
+    const args = parseMutateArgs(input);
+
+    if (args.path && args.diff) {
+      dispatch({ type: 'warning', message: 'Pass a path OR --diff, not both — a path mutates whole files, --diff mutates changed lines.' });
+      return;
+    }
+
+    let testCmd = (args.test ?? '').trim();
+    if (!testCmd) {
+      try { testCmd = discoverGate(cwd).command.trim(); } catch { testCmd = ''; }
+    }
+    if (!testCmd) {
+      dispatch({ type: 'error', message: 'No test command discovered — pass `--test "<cmd>"`. Mutation testing needs a real suite to run per mutant; agon never guesses one.' });
+      return;
+    }
+
+    let diff = '';
+    let label = args.path ?? 'target';
+    if (!args.path) {
+      try {
+        const resolved = resolveMutateDiff(args.diff, args.base, cwd);
+        diff = resolved.diff;
+        label = resolved.label;
+      } catch (err) {
+        dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) });
+        return;
+      }
+      if (!diff.trim()) {
+        dispatch({ type: 'warning', message: `No changed lines to mutate for ${label}. Pass a path to mutate whole files, or --diff <base>.` });
+        return;
+      }
+    }
+
+    let pool = filterDefaultOrchestrationEngines(ctx.activeEngines());
+    if (args.engines && args.engines.length > 0) {
+      pool = args.engines.map((id) => ctx.registry.resolveId(id));
+    }
+    const semantic = !args.mechanicalOnly && (args.semantic || pool.length > 0);
+    if (args.mechanicalOnly) pool = [];
+
+    dispatch({ type: 'header', title: `Mutate: ${label} · ${semantic ? `semantic panel (${pool.length})` : 'mechanical only'}` });
+    dispatch({ type: 'info', message: `test: ${testCmd}` });
+    ctx.setActiveAbort(mtAbort);
+
+    const startedAt = new Date().toISOString();
+    const { path: outputDir } = createRunDir({ mode: 'mutate', label: undefined, announce: false });
+
+    try {
+      const result = await runMutate({
+        repoRoot: cwd,
+        cwd,
+        diff: args.path ? undefined : diff,
+        files: args.path ? [args.path] : undefined,
+        testCmd,
+        typecheckCmd: args.typecheck,
+        buildCmd: args.build,
+        semantic,
+        engines: pool,
+        registry: ctx.registry,
+        adapter: ctx.adapter,
+        maxMutants: args.maxMutants,
+        semanticPerEngine: args.semanticPerEngine,
+        perMutantTimeoutSec: args.timeout,
+        totalBudgetSec: args.budget,
+        outputDir,
+        signal: mtAbort.signal,
+        onEvent: (e) => {
+          const line = formatMutateProgressLine(e);
+          if (line) dispatch({ type: 'info', message: line });
+        },
+      });
+
+      const scoreText = result.report.score === null ? 'n/a' : `${Math.round(result.report.score * 100)}%`;
+      const status: RunStatus = {
+        mode: 'mutate',
+        label,
+        startedAt,
+        endedAt: new Date().toISOString(),
+        engines: pool.map((id): RunStatusEngine => ({ id, status: result.ok ? 'ok' : 'error', detail: semantic ? 'semantic mutants' : 'not used' })),
+        summary: result.ok
+          ? `mutation score ${scoreText} — ${result.survivors.length} survivor(s) of ${result.report.killed + result.report.survived} mutant(s)`
+          : (result.error ?? 'mutate failed'),
+        ok: result.ok,
+        requested: pool,
+        timeoutSec: args.timeout,
+      };
+      writeRunStatus(outputDir, status);
+
+      if (!result.ok) {
+        dispatch({ type: 'error', message: result.error ?? 'Mutation run failed.' });
+        return;
+      }
+
+      const findings = formatMutationFindings(result.report, result.survivors);
+      for (const line of findings) dispatch({ type: 'info', message: line });
+      if (result.survivors.length === 0) {
+        dispatch({ type: 'success', message: 'Verdict: no survivors — your tests kill every mutant on the mutated lines.' });
+      } else {
+        dispatch({ type: 'warning', message: `Verdict: ${result.survivors.length} survivor(s) — wrong code your tests called green. Advisory only: strengthen the assertions that should have failed.` });
+      }
+      dispatch({ type: 'info', message: `Saved: ${outputDir}` });
+
+      appendMessage(ctx.chatSession, { role: 'user', content: `[mutate] ${label}`, timestamp: new Date().toISOString() });
+      appendMessage(ctx.chatSession, {
+        role: 'engine',
+        engineId: 'mutate',
+        content: `Mutation score ${scoreText} on ${label} (test: ${testCmd}).\n${findings.join('\n')}`,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      dispatch({ type: 'error', message: `Mutate failed: ${err instanceof Error ? err.message : String(err)}` });
+    }
+  >>>

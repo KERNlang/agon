@@ -18,7 +18,7 @@ import { formatMutationFindings } from '../blocks/review-mutate.js';
 
 import { filterDefaultOrchestrationEngines } from '../handlers/engine-filter.js';
 
-import { resolveMutateDiff, formatMutateProgressLine, parsePositiveInt } from '../handlers/mutate.js';
+import { resolveMutateDiff, formatMutateProgressLine, parsePositiveInt, validateMutateFlags, mutateSpendLine } from '../handlers/mutate.js';
 
 // @kern-source: mutate:24
 export const mutateCommand: any = defineCommand({
@@ -54,12 +54,12 @@ export const mutateCommand: any = defineCommand({
     },
     semantic: {
       type: 'boolean',
-      description: 'Force the AI-semantic panel on (default: on whenever a roster is available).',
+      description: 'Force the AI-semantic panel on. Default: semantic is ON when engines are available — it spends one engine call per panel member; `--mechanical-only` = zero engine spend.',
       default: false,
     },
     'mechanical-only': {
       type: 'boolean',
-      description: 'Skip the AI-semantic panel entirely — mechanical operators only, zero engine spend.',
+      description: 'Skip the AI-semantic panel entirely — mechanical operators only, zero engine spend (the default is semantic ON when engines are available).',
       default: false,
     },
     engines: {
@@ -117,8 +117,14 @@ export const mutateCommand: any = defineCommand({
 
     const path = typeof args.path === 'string' ? args.path.trim() : '';
     const diffArg = typeof args.diff === 'string' ? args.diff.trim() : '';
-    if (path && diffArg) {
-      fail('Pass a path OR --diff, not both — a path mutates whole files, --diff mutates changed lines.');
+    const baseArg = typeof args.base === 'string' ? args.base.trim() : '';
+    // Contradictory-flag rejection is shared with /mutate (handlers/mutate.kern)
+    // so both surfaces refuse the same combinations with the same sentence —
+    // and BEFORE any pool handling, so `--semantic --mechanical-only` no longer
+    // reports the misleading "--semantic needs at least one active engine".
+    const flagError = validateMutateFlags({ path, diff: diffArg, base: baseArg, semantic: args.semantic === true, mechanicalOnly });
+    if (flagError) {
+      fail(flagError);
       process.exit(1);
     }
 
@@ -135,7 +141,7 @@ export const mutateCommand: any = defineCommand({
     let label = path || 'target';
     if (!path) {
       try {
-        const resolved = resolveMutateDiff(diffArg || undefined, typeof args.base === 'string' ? args.base : undefined, cwd);
+        const resolved = resolveMutateDiff(diffArg || undefined, baseArg || undefined, cwd);
         diff = resolved.diff;
         label = resolved.label;
       } catch (err) {
@@ -174,8 +180,12 @@ export const mutateCommand: any = defineCommand({
     const startedAt = new Date().toISOString();
     const { path: outputDir } = createRunDir({ mode: 'mutate', label: args.label as string | undefined, announce: false });
 
-    if (!json) {
+    if (!quiet && !json) {
       header(`Mutate: ${label} · ${semantic ? `semantic panel (${pool.length})` : 'mechanical only'}`);
+      // Make the default engine spend explicit: semantic is on whenever a
+      // roster exists, and every panel member costs a real dispatch.
+      const spendLine = mutateSpendLine(semantic, pool.length);
+      if (spendLine) info(spendLine);
       info(`test: ${testCmd}`);
     }
 

@@ -1,0 +1,237 @@
+// ── AI-semantic mutants — the agon-differentiated layer of `agon mutate` ──
+//
+// Mechanical operators (core/tools/mutant-generator) flip syntax: + → -, && → ||.
+// They are cheap and calibrated, but they cannot propose the bug a HUMAN would
+// actually ship — an off-by-one on the wrong variable, a forgotten null guard, a
+// unit confusion. So every roster engine is dispatched ONCE with the target
+// lines and asked for realistic, plausible bugs as a JSON array. Each accepted
+// entry becomes a Mutant{origin:'semantic', class:'high-signal'} — high-signal by
+// construction, because it is a proposed REAL bug, not a blind operator swap.
+//
+// The engine is untrusted input. Every entry is validated against the file on
+// disk before it can touch a sandbox (nero finding #3 — a semantic mutant aimed
+// at a TEST file would "kill" mutants by breaking the tests themselves):
+//   1. shape: file/line/before/after present and well-typed
+//   2. file is in the target set
+//   3. file is NOT a test file (isTestFile)
+//   4. line is in range and `before` matches the real line (trim-insensitive)
+//   5. `after` is a single line and differs from `before`
+// Everything else is DROPPED with a logged reason. Mutants that don't compile
+// are not the prompt's problem — runMutants' typecheck pass marks them invalid.
+
+import from="@kernlang/agon-core" names="EngineAdapter,EngineRegistry,Mutant" types=true
+import from="./health-check.js" names="preflightHealthFilter"
+import from="./seat-dispatch.js" names="dispatchSeatWithRetry,buildPanelHealth"
+import from="./goal/diff.js" names="isTestFile"
+
+interface name=SemanticTargetLine export=true
+  field name=line type=number
+  field name=text type=string
+
+interface name=SemanticTarget export=true
+  field name=file type=string
+  field name=lines type="SemanticTargetLine[]"
+
+interface name=DroppedSemanticEntry export=true
+  field name=engine type=string
+  field name=entry type=string
+  field name=reason type=string
+
+interface name=SemanticMutantsResult export=true
+  field name=mutants type="Mutant[]"
+  field name=dropped type="DroppedSemanticEntry[]"
+  field name=panelHealth type="{ requested:number; responded:number; degraded:boolean; notes:string[]; banner:string|null }"
+
+const name=SEMANTIC_MAX_FILES type=number value=12
+  doc "Hard cap on files shown to the panel — a 200-file prompt is neither cheap nor useful."
+
+const name=SEMANTIC_MAX_LINES_PER_FILE type=number value=120
+
+fn name=buildSemanticMutantPrompt params="targets:SemanticTarget[], perEngine:number" returns=string export=true
+  doc "The semantic-mutant brief: numbered target lines per file, and a hard instruction to answer with a JSON array ONLY. Pure — exported for testing."
+  handler <<<
+    const shown = targets.slice(0, SEMANTIC_MAX_FILES);
+    const lines: string[] = [];
+    lines.push('You are a mutation-testing adversary. Your job is to propose REALISTIC BUGS that a competent developer could plausibly have written, and that the current test suite would probably NOT catch.');
+    lines.push('');
+    lines.push('Rules:');
+    lines.push('- Each bug is a SINGLE-LINE change to one of the numbered lines below. No multi-line edits, no new lines, no cross-file changes.');
+    lines.push('- Prefer semantic mistakes (wrong variable, off-by-one, inverted guard, missing null/empty check, wrong unit or default) over blind operator swaps.');
+    lines.push('- The mutated line must still be plausible, compiling code.');
+    lines.push(`- Propose AT MOST ${Math.max(1, perEngine)} bugs. Fewer, better ones beat many weak ones.`);
+    lines.push('- `before` must be the EXACT current text of that line, copied verbatim.');
+    lines.push('');
+    lines.push('Answer with a JSON array ONLY — no prose, no markdown, no explanation outside the JSON:');
+    lines.push('[{ "file": "<path>", "line": <number>, "before": "<exact current line>", "after": "<the same line, minimally mutated>", "why": "one line: why the current tests would not catch this" }]');
+    lines.push('');
+    for (const t of shown) {
+      lines.push(`FILE: ${t.file}`);
+      for (const l of t.lines.slice(0, SEMANTIC_MAX_LINES_PER_FILE)) {
+        lines.push(`${l.line}\t${l.text}`);
+      }
+      lines.push('');
+    }
+    return lines.join('\n');
+  >>>
+
+fn name=extractJsonArray params="raw:string" returns="unknown[]" export=true
+  doc "Pull the first JSON array out of an engine response — fenced (```json … ```) or bare, tolerating preamble/postamble prose. Returns [] when nothing parses. Pure."
+  handler <<<
+    const text = String(raw ?? '');
+    const candidates: string[] = [];
+    const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (fence && fence[1]) candidates.push(fence[1].trim());
+    // Bracket-balanced scan for the first top-level array (a bare answer, or one
+    // wrapped in prose). String-aware so a ']' inside a quoted line can't end it.
+    let depth = 0;
+    let start = -1;
+    let inString = false;
+    let escaped = false;
+    for (let i = 0; i < text.length; i += 1) {
+      const ch = text[i];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (ch === '\\') escaped = true;
+        else if (ch === '"') inString = false;
+        continue;
+      }
+      if (ch === '"') { inString = true; continue; }
+      if (ch === '[') {
+        if (depth === 0) start = i;
+        depth += 1;
+      } else if (ch === ']') {
+        depth -= 1;
+        if (depth === 0 && start !== -1) {
+          candidates.push(text.slice(start, i + 1));
+          start = -1;
+        }
+        if (depth < 0) depth = 0;
+      }
+    }
+    for (const c of candidates) {
+      try {
+        const parsed = JSON.parse(c);
+        if (Array.isArray(parsed)) return parsed as unknown[];
+      } catch { /* try the next candidate */ }
+    }
+    return [];
+  >>>
+
+fn name=validateSemanticMutants params="entries:unknown[], ctx:{sources:Record<string,string[]>, engine:string, perEngine:number}" returns="{mutants:Mutant[], dropped:DroppedSemanticEntry[]}" export=true
+  doc "Validate untrusted engine-proposed mutants against the real file contents. Accepts at most ctx.perEngine entries; every rejection is reported with a reason. `before` is taken from the FILE (never the engine) and the source line's indentation is preserved when the engine trimmed it. Pure."
+  handler <<<
+    const mutants: Mutant[] = [];
+    const dropped: DroppedSemanticEntry[] = [];
+    const limit = Math.max(1, ctx.perEngine);
+    const drop = (entry: unknown, reason: string): void => {
+      dropped.push({ engine: ctx.engine, entry: JSON.stringify(entry ?? null).slice(0, 200), reason });
+    };
+    for (const raw of entries) {
+      if (mutants.length >= limit) { drop(raw, `over the per-engine cap of ${limit}`); continue; }
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) { drop(raw, 'not a JSON object'); continue; }
+      const e = raw as Record<string, unknown>;
+      const file = typeof e.file === 'string' ? e.file.trim() : '';
+      const line = typeof e.line === 'number' ? Math.trunc(e.line) : Number.NaN;
+      const before = typeof e.before === 'string' ? e.before : '';
+      const after = typeof e.after === 'string' ? e.after : '';
+      const why = typeof e.why === 'string' ? e.why.trim() : '';
+      if (!file || !Number.isFinite(line) || !before || !after) { drop(raw, 'missing or mistyped file/line/before/after'); continue; }
+      if (isTestFile(file)) { drop(raw, `${file} is a test file — mutating tests would break the oracle, not measure it`); continue; }
+      const source = ctx.sources[file];
+      if (!source) { drop(raw, `${file} is not in the target set`); continue; }
+      if (line < 1 || line > source.length) { drop(raw, `line ${line} is out of range for ${file} (1..${source.length})`); continue; }
+      if (/[\r\n]/.test(after)) { drop(raw, 'after spans more than one line'); continue; }
+      const actual = source[line - 1];
+      if (actual.trim() !== before.trim()) { drop(raw, `before does not match ${file}:${line} — engine said ${JSON.stringify(before.trim().slice(0, 80))}, file has ${JSON.stringify(actual.trim().slice(0, 80))}`); continue; }
+      if (after.trim() === actual.trim()) { drop(raw, 'after is identical to the current line'); continue; }
+      // Preserve the file's indentation when the engine echoed a trimmed line.
+      const indentMatch = actual.match(/^\s*/);
+      const indent = indentMatch ? indentMatch[0] : '';
+      let mutatedLine = after;
+      if (indent && !after.startsWith(indent)) mutatedLine = indent + after.trim();
+      mutants.push({
+        id: `semantic:${ctx.engine}@${file}:L${line}`,
+        operator: `semantic:${ctx.engine}`,
+        line,
+        before: actual,
+        after: mutatedLine,
+        class: 'high-signal',
+        file,
+        origin: 'semantic',
+        engine: ctx.engine,
+        rationale: why || 'engine gave no rationale',
+      });
+    }
+    return { mutants, dropped };
+  >>>
+
+fn name=collectSemanticMutants async=true params="opts:{targets:SemanticTarget[], sources:Record<string,string[]>, engines:string[], registry:EngineRegistry, adapter:EngineAdapter, perEngine:number, timeout:number, outputDir:string, cwd:string, signal?:AbortSignal, onEvent?:(e:{type:string,data?:Record<string,unknown>})=>void}" returns="Promise<SemanticMutantsResult>" export=true
+  doc "Fan the semantic-mutant brief out to the panel — the SAME chain brainstorm uses (preflightHealthFilter -> dispatchSeatWithRetry -> buildPanelHealth), one dispatch per engine. Never throws: an engine that fails, times out or answers garbage contributes zero mutants and a panel-health note. Test files are excluded from the prompt entirely."
+  handler <<<
+    const targets = opts.targets.filter((t) => !isTestFile(t.file) && t.lines.length > 0);
+    const empty: SemanticMutantsResult = {
+      mutants: [],
+      dropped: [],
+      panelHealth: { requested: 0, responded: 0, degraded: false, notes: [], banner: null },
+    };
+    if (targets.length === 0 || opts.engines.length === 0) return empty;
+
+    const hc = await preflightHealthFilter({ engineIds: opts.engines, registry: opts.registry, adapter: opts.adapter, signal: opts.signal });
+    for (const s of hc.skipped) console.warn(`[agon] mutate: skipping ${s.engineId} — ${s.status} (${s.reason})`);
+    if (hc.healthy.length === 0) return empty;
+
+    const prompt = buildSemanticMutantPrompt(targets, opts.perEngine);
+    const systemPrompt = 'You are a mutation-testing adversary. Propose realistic single-line bugs as a JSON array ONLY. Do not use tools, read files, or run commands.';
+
+    const outcomes = await Promise.all(hc.healthy.map(async (engineId) => {
+      let engine: unknown;
+      try {
+        engine = opts.registry.get(engineId);
+      } catch (err) {
+        return { engineId, ok: false, text: '', attempts: 0, failure: 'error' as const, note: `${engineId} unavailable`, detail: err instanceof Error ? err.message : String(err) };
+      }
+      opts.onEvent?.({ type: 'mutate:semantic-dispatch', data: { engineId } });
+      return dispatchSeatWithRetry(opts.adapter, {
+        engineId,
+        engine,
+        prompt,
+        systemPrompt,
+        textOnly: true,
+        cwd: opts.cwd,
+        mode: 'exec',
+        timeout: opts.timeout,
+        outputDir: opts.outputDir,
+        signal: opts.signal,
+      });
+    }));
+
+    const skippedOutcomes = hc.skipped.map((s) => ({
+      engineId: s.engineId,
+      ok: false,
+      text: '',
+      attempts: 0,
+      failure: 'error' as const,
+      note: `${s.engineId} skipped — ${s.status} (${s.reason})`,
+      detail: s.reason,
+    }));
+    const panelHealth = buildPanelHealth([...skippedOutcomes, ...outcomes]);
+    if (panelHealth.banner) console.warn(`[agon] mutate ${panelHealth.banner}`);
+
+    const mutants: Mutant[] = [];
+    const dropped: DroppedSemanticEntry[] = [];
+    for (const seat of outcomes) {
+      if (!seat.ok || !seat.text.trim()) continue;
+      const entries = extractJsonArray(seat.text);
+      if (entries.length === 0) {
+        dropped.push({ engine: seat.engineId, entry: seat.text.slice(0, 200), reason: 'no JSON array found in the response' });
+        continue;
+      }
+      const validated = validateSemanticMutants(entries, { sources: opts.sources, engine: seat.engineId, perEngine: opts.perEngine });
+      mutants.push(...validated.mutants);
+      dropped.push(...validated.dropped);
+      opts.onEvent?.({ type: 'mutate:semantic-parsed', data: { engineId: seat.engineId, accepted: validated.mutants.length, dropped: validated.dropped.length } });
+    }
+    for (const d of dropped) console.warn(`[agon] mutate: dropped semantic mutant from ${d.engine} — ${d.reason}`);
+
+    return { mutants, dropped, panelHealth };
+  >>>

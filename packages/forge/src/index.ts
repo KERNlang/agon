@@ -42,6 +42,18 @@ export type { ThoughtNode, ThinkResult } from './generated/thinking.js';
 // ── Naturalize (Phase 2: sanitize → non-author rewrite → re-scan) ──
 export { runNaturalize, buildNaturalizePrompt, wordDiffStats } from './generated/naturalize.js';
 export type { NaturalizeOptions, NaturalizeResult } from './generated/naturalize.js';
+// ── Mutate (mutation testing as a test-strength oracle) ──
+export {
+  runMutate, formatMutateVerdict, dedupeMutants, selectMutants,
+  mutationTargetsFromDiff, isMutableFile,
+} from './generated/mutate.js';
+export type { MutateOptions, MutateResult } from './generated/mutate.js';
+export {
+  buildSemanticMutantPrompt, extractJsonArray, validateSemanticMutants, collectSemanticMutants,
+} from './generated/mutate-semantic.js';
+export type {
+  SemanticTarget, SemanticTargetLine, SemanticMutantsResult, DroppedSemanticEntry,
+} from './generated/mutate-semantic.js';
 // ── Delegate ──
 export { runDelegate } from './generated/delegate.js';
 export type { DelegateResult } from './generated/delegate.js';

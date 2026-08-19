@@ -26,9 +26,55 @@ interface name=Mutant export=true
   field name=origin type="'mechanical'|'semantic'" optional=true doc="'mechanical' = canonical operator swap; 'semantic' = an engine-proposed realistic bug."
   field name=engine type=string optional=true doc="Engine id that proposed a semantic mutant."
   field name=rationale type=string optional=true doc="Why the current tests would not catch this (semantic mutants only)."
+  field name=lens type=string optional=true doc="The `--lens` focus the semantic panel was steered with when this mutant was proposed (a preset key like 'security', or the user's free text). Semantic mutants only — a mechanical operator swap has no lens."
+
+fn name=commentOnlyLines params="source:string" returns="boolean[]" export=true
+  doc "One flag per line: TRUE when the line carries no executable code — a line comment, a line inside a block comment, or a block-comment continuation. A cheap single-pass state machine that is string-aware (a comment opener inside a quoted literal does not open a comment) so it cannot mistake data for a comment. Lines with code AND a trailing comment are FALSE — they still hold mutable code. Pure; exported for testing."
+  handler <<<
+    const lines = String(source ?? '').split('\n');
+    const flags: boolean[] = [];
+    let inBlock = false;
+    for (const line of lines) {
+      const trimmed = line.trim();
+      // The verdict is taken at the START of the line: a line that opens a
+      // block comment after real code is code, and the block only swallows the
+      // lines that FOLLOW it.
+      const startedInBlock = inBlock;
+      let sawCode = false;
+      let quote = '';
+      let i = 0;
+      while (i < line.length) {
+        const ch = line[i];
+        const next = i + 1 < line.length ? line[i + 1] : '';
+        if (inBlock) {
+          if (ch === '*' && next === '/') { inBlock = false; i += 2; continue; }
+          i += 1;
+          continue;
+        }
+        if (quote) {
+          if (ch === '\\') { i += 2; continue; }
+          if (ch === quote) quote = '';
+          i += 1;
+          continue;
+        }
+        if (ch === '"' || ch === "'" || ch === '`') { quote = ch; sawCode = true; i += 1; continue; }
+        if (ch === '/' && next === '/') break; // rest of the line is a comment
+        if (ch === '/' && next === '*') { inBlock = true; i += 2; continue; }
+        if (!/\s/.test(ch)) sawCode = true;
+        i += 1;
+      }
+      // A block comment never spans a line break inside a string literal for
+      // our purposes: an unterminated quote is a syntax error, not a state.
+      const commentOnly = startedInBlock
+        ? !sawCode
+        : (trimmed.length === 0 ? false : (trimmed.startsWith('//') || trimmed.startsWith('*') || (trimmed.startsWith('/*') && !sawCode)));
+      flags.push(commentOnly);
+    }
+    return flags;
+  >>>
 
 fn name=generateMutants params="source:string, changedLines:number[], file?:string" returns="Mutant[]" export=true
-  doc "Canonical mutants on the changed lines only (one per applicable operator/line). When `file` is given each mutant carries it (and the id is namespaced by it) so mutants from several files can be pooled; without it the output is byte-identical to the goal-era behavior."
+  doc "Canonical mutants on the changed lines only (one per applicable operator/line). COMMENT-ONLY lines are skipped: an operator swap inside a comment is an equivalent mutant BY CONSTRUCTION (nothing executes it), so it can only ever survive and depress the score with noise no assertion could kill. Lines that mix code with a trailing comment are still mutated as a whole line. The operator set and its class labels are UNCHANGED — this only removes lines that were never mutable. When `file` is given each mutant carries it (and the id is namespaced by it) so mutants from several files can be pooled."
   handler <<<
     const ops: Array<{ name: string; class: 'high-signal' | 'equiv-prone'; apply: (s: string) => string | null }> = [
       { name: 'arith:+→-', class: 'high-signal', apply: (s) => { const m = s.replace(/(?<!\+)\+(?![+=])/, '-'); return m !== s ? m : null; } },
@@ -53,12 +99,16 @@ fn name=generateMutants params="source:string, changedLines:number[], file?:stri
       { name: 'arr:[]→[0]', class: 'equiv-prone', apply: (s) => { const m = s.replace(/(?<![\w\]])\[\](?!\])/, '[0]'); return m !== s ? m : null; } },
     ];
     const lines = source.split('\n');
+    const commentOnly = commentOnlyLines(source);
     const mutants: Mutant[] = [];
     // Overlapping diff hunks can hand the same line in twice; without this the
     // pool carries duplicate mutants sharing one id.
     for (const ln of [...new Set(changedLines)]) {
       const idx = ln - 1;
       if (idx < 0 || idx >= lines.length) continue;
+      // A comment line has no executable form: every operator swap on it is an
+      // equivalent mutant, guaranteed to survive and guaranteed to be noise.
+      if (commentOnly[idx]) continue;
       const original = lines[idx];
       for (const op of ops) {
         const mutated = op.apply(original);

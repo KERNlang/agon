@@ -38,6 +38,9 @@ interface name=CallCommandOptions export=true
   field name=detect type=boolean optional=true
   field name=out type=string optional=true
   field name=author type=string optional=true
+  field name=diff type=string optional=true
+  field name=mechanicalOnly type=boolean optional=true
+  field name=maxMutants type=string optional=true
 
 interface name=WorkflowCallMeta export=true
   field name=workflowId type=string
@@ -303,6 +306,21 @@ fn name=buildCallCommands params="opts:CallCommandOptions" returns="BuiltCallCom
         ...textFlag('--out', opts.out),
         ...timeout,
       ]);
+    } else if (workflow === 'mutate') {
+      // Mutation testing as a test-strength oracle. The positional is a file or
+      // directory; with none, mutate targets the changed lines of the current
+      // work. --test is REQUIRED unless the repo has a discoverable gate, and
+      // --mechanical-only keeps the run free of engine spend.
+      commands.push([
+        'mutate',
+        ...(opts.input?.trim() ? [opts.input.trim()] : []),
+        ...textFlag('--diff', opts.diff),
+        ...textFlag('--test', opts.fitnessCmd),
+        ...textFlag('--max-mutants', opts.maxMutants),
+        ...(opts.mechanicalOnly ? ['--mechanical-only'] : []),
+        ...timeout,
+        ...engines,
+      ]);
     } else if (workflow === 'doctor') {
       // Passthrough so external CLIs that standardize on `agon call <workflow>`
       // can reach the top-level doctor. `agon call doctor` -> `agon doctor`,
@@ -324,7 +342,7 @@ fn name=buildCallCommands params="opts:CallCommandOptions" returns="BuiltCallCom
       commands.push(['tribunal', `Review the pipeline result for: ${task}`, '--rounds', opts.rounds?.trim() || '1', ...tribunalMode, ...tribunalProtocol, ...timeout, ...engines]);
       return { cwd, commands, workflowMeta: { workflowId: spec.id, version: spec.version, planId: plan.logicalPlanId } };
     } else {
-      throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, chrome, pipeline, review, goal, sanitize, naturalize, doctor, or a team-* workflow.`);
+      throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, chrome, pipeline, review, goal, sanitize, naturalize, mutate, doctor, or a team-* workflow.`);
     }
 
     return { cwd, commands };
@@ -389,7 +407,7 @@ const name=callCommand type="any"
       args: {
         workflow: {
           type: 'positional',
-          description: 'Workflow: forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, chrome, pipeline, review, goal, sanitize, naturalize, doctor, or team-*',
+          description: 'Workflow: forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, chrome, pipeline, review, goal, sanitize, naturalize, mutate, doctor, or team-*',
           required: true,
         },
         input: {
@@ -530,6 +548,19 @@ const name=callCommand type="any"
           type: 'string',
           description: 'For naturalize: engine that wrote the text — the rewriter is forced to differ (writer ≠ rewriter)',
         },
+        diff: {
+          type: 'string',
+          description: 'For mutate: mutate changed lines only — a base ref, or uncommitted | branch:NAME | commit:SHA | range:BASE...TARGET',
+        },
+        'mechanical-only': {
+          type: 'boolean',
+          description: 'For mutate: skip the AI-semantic panel — mechanical operators only, zero engine spend',
+          default: false,
+        },
+        'max-mutants': {
+          type: 'string',
+          description: 'For mutate: cap the mutant pool (default 40)',
+        },
       },
       async run({ args }) {
         let built: BuiltCallCommands;
@@ -569,6 +600,9 @@ const name=callCommand type="any"
             detect: args.detect,
             out: args.out,
             author: args.author,
+            diff: args.diff,
+            mechanicalOnly: args['mechanical-only'],
+            maxMutants: args['max-mutants'],
           });
         } catch (err) {
           exitWithFailure(err instanceof Error ? err.message : String(err));

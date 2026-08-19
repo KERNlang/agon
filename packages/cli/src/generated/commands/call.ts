@@ -46,29 +46,32 @@ export interface CallCommandOptions {
   detect?: boolean;
   out?: string;
   author?: string;
+  diff?: string;
+  mechanicalOnly?: boolean;
+  maxMutants?: string;
 }
 
-// @kern-source: call:42
+// @kern-source: call:45
 export interface WorkflowCallMeta {
   workflowId: string;
   version: string;
   planId: string;
 }
 
-// @kern-source: call:47
+// @kern-source: call:50
 export interface BuiltCallCommands {
   cwd: string;
   commands: string[][];
   workflowMeta?: WorkflowCallMeta;
 }
 
-// @kern-source: call:52
+// @kern-source: call:55
 export function textFlag(flag: string, value: string|undefined): string[] {
   const text = value?.trim();
   return text ? [flag, text] : [];
 }
 
-// @kern-source: call:58
+// @kern-source: call:61
 export function requireInput(workflow: string, input: string|undefined): string {
   const text = input?.trim();
   if (!text) {
@@ -77,7 +80,7 @@ export function requireInput(workflow: string, input: string|undefined): string 
   return text;
 }
 
-// @kern-source: call:67
+// @kern-source: call:70
 export function exitWithFailure(message: string): never {
   fail(message);
   process.exit(1);
@@ -87,7 +90,7 @@ export function exitWithFailure(message: string): never {
 /**
  * Enforce the HARD removedEngines denylist at the external-CLI boundary, BEFORE any --engines list is forwarded to a subcommand. Without this, an external CLI (Codex/Antigravity) that passes --engines a,b,<removed> would resurrect a hard-removed engine, since explicit -e lists bypass the registry's auto roster. Fails loudly (pre-run error) rather than silently dropping — silent roster rewrite is the trust hazard (Council batch-2 verdict).
  */
-// @kern-source: call:74
+// @kern-source: call:77
 export function validateCallEngineRoster(enginesCsv: string|undefined, cwd?: string): void {
   const text = enginesCsv?.trim();
   if (!text) return;
@@ -107,12 +110,12 @@ export function validateCallEngineRoster(enginesCsv: string|undefined, cwd?: str
   }
 }
 
-// @kern-source: call:95
+// @kern-source: call:98
 export function normalizeCallWorkflow(workflow: string): string {
   return workflow.trim().toLowerCase().replace(/_/g, '-');
 }
 
-// @kern-source: call:100
+// @kern-source: call:103
 export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
   const workflow = normalizeCallWorkflow(opts.workflow);
   const cwd = opts.cwd?.trim() || process.cwd();
@@ -125,7 +128,7 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
   }
   const tribunalProtocol = textFlag('--protocol', protocolValue);
   const commands: string[][] = [];
-  
+
   if (workflow === 'tribunal' || workflow === 'team-tribunal') {
     const question = requireInput(workflow, opts.input);
     const team = opts.team || workflow === 'team-tribunal';
@@ -318,6 +321,21 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
       ...textFlag('--out', opts.out),
       ...timeout,
     ]);
+  } else if (workflow === 'mutate') {
+    // Mutation testing as a test-strength oracle. The positional is a file or
+    // directory; with none, mutate targets the changed lines of the current
+    // work. --test is REQUIRED unless the repo has a discoverable gate, and
+    // --mechanical-only keeps the run free of engine spend.
+    commands.push([
+      'mutate',
+      ...(opts.input?.trim() ? [opts.input.trim()] : []),
+      ...textFlag('--diff', opts.diff),
+      ...textFlag('--test', opts.fitnessCmd),
+      ...textFlag('--max-mutants', opts.maxMutants),
+      ...(opts.mechanicalOnly ? ['--mechanical-only'] : []),
+      ...timeout,
+      ...engines,
+    ]);
   } else if (workflow === 'doctor') {
     // Passthrough so external CLIs that standardize on `agon call <workflow>`
     // can reach the top-level doctor. `agon call doctor` -> `agon doctor`,
@@ -339,25 +357,25 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
     commands.push(['tribunal', `Review the pipeline result for: ${task}`, '--rounds', opts.rounds?.trim() || '1', ...tribunalMode, ...tribunalProtocol, ...timeout, ...engines]);
     return { cwd, commands, workflowMeta: { workflowId: spec.id, version: spec.version, planId: plan.logicalPlanId } };
   } else {
-    throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, chrome, pipeline, review, goal, sanitize, naturalize, doctor, or a team-* workflow.`);
+    throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, chrome, pipeline, review, goal, sanitize, naturalize, mutate, doctor, or a team-* workflow.`);
   }
-  
+
   return { cwd, commands };
 }
 
-// @kern-source: call:333
+// @kern-source: call:351
 export function writeJsonl(event: Record<string,unknown>): void {
   process.stdout.write(`${JSON.stringify({ ...event, timestamp: new Date().toISOString() })}\n`);
 }
 
-// @kern-source: call:338
+// @kern-source: call:356
 export async function runCommand(command: string, args: string[], cwd: string, jsonl: boolean, workflowMeta?: WorkflowCallMeta): Promise<number> {
   return new Promise((resolve) => {
     const startedAt = Date.now();
     if (jsonl) {
       writeJsonl({ type: 'agon.call.command.start', command: [command, ...args], cwd, workflow: workflowMeta });
     }
-  
+
     const child = spawn(command, args, {
       cwd,
       env: {
@@ -367,18 +385,18 @@ export async function runCommand(command: string, args: string[], cwd: string, j
       },
       stdio: jsonl ? ['ignore', 'pipe', 'pipe'] : 'inherit',
     });
-  
+
     if (jsonl) {
       child.stdout?.on('data', (chunk) => writeJsonl({ type: 'agon.call.stdout', data: String(chunk) }));
       child.stderr?.on('data', (chunk) => writeJsonl({ type: 'agon.call.stderr', data: String(chunk) }));
     }
-  
+
     child.on('error', (err) => {
       if (jsonl) writeJsonl({ type: 'agon.call.command.error', error: err.message });
       else fail(err.message);
       resolve(1);
     });
-  
+
     child.on('close', (code, signal) => {
       const exitCode = typeof code === 'number' ? code : 1;
       if (jsonl) {
@@ -394,7 +412,7 @@ export async function runCommand(command: string, args: string[], cwd: string, j
   });
 }
 
-// @kern-source: call:382
+// @kern-source: call:400
 export const callCommand: any = defineCommand({
   meta: {
     name: 'call',
@@ -403,7 +421,7 @@ export const callCommand: any = defineCommand({
   args: {
     workflow: {
       type: 'positional',
-      description: 'Workflow: forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, chrome, pipeline, review, goal, sanitize, naturalize, doctor, or team-*',
+      description: 'Workflow: forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, chrome, pipeline, review, goal, sanitize, naturalize, mutate, doctor, or team-*',
       required: true,
     },
     input: {
@@ -544,6 +562,19 @@ export const callCommand: any = defineCommand({
       type: 'string',
       description: 'For naturalize: engine that wrote the text — the rewriter is forced to differ (writer ≠ rewriter)',
     },
+    diff: {
+      type: 'string',
+      description: 'For mutate: mutate changed lines only — a base ref, or uncommitted | branch:NAME | commit:SHA | range:BASE...TARGET',
+    },
+    'mechanical-only': {
+      type: 'boolean',
+      description: 'For mutate: skip the AI-semantic panel — mechanical operators only, zero engine spend',
+      default: false,
+    },
+    'max-mutants': {
+      type: 'string',
+      description: 'For mutate: cap the mutant pool (default 40)',
+    },
   },
   async run({ args }) {
     let built: BuiltCallCommands;
@@ -583,6 +614,9 @@ export const callCommand: any = defineCommand({
         detect: args.detect,
         out: args.out,
         author: args.author,
+        diff: args.diff,
+        mechanicalOnly: args['mechanical-only'],
+        maxMutants: args['max-mutants'],
       });
     } catch (err) {
       exitWithFailure(err instanceof Error ? err.message : String(err));

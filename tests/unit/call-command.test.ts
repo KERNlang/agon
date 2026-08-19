@@ -378,6 +378,29 @@ describe('agon call command mapping', () => {
     ]);
   });
 
+  it('routes mutate with a path, test command and mechanical-only (AC6)', () => {
+    expect(buildCallCommands({
+      workflow: 'mutate',
+      input: 'src/foo.ts',
+      fitnessCmd: 'npm test',
+      mechanicalOnly: true,
+    }).commands).toEqual([
+      ['mutate', 'src/foo.ts', '--test', 'npm test', '--mechanical-only'],
+    ]);
+  });
+
+  it('routes mutate in diff mode with no positional, forwarding engines and timeout', () => {
+    expect(buildCallCommands({
+      workflow: 'mutate',
+      diff: 'origin/main',
+      maxMutants: '12',
+      engines: 'codex,claude',
+      engineTimeout: '60',
+    }).commands).toEqual([
+      ['mutate', '--diff', 'origin/main', '--max-mutants', '12', '--timeout', '60', '--engines', 'codex,claude'],
+    ]);
+  });
+
   it('defaults review target to uncommitted', () => {
     expect(buildCallCommands({ workflow: 'review' }).commands).toEqual([
       ['review', 'uncommitted'],

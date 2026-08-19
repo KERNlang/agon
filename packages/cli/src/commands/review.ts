@@ -24,7 +24,7 @@ import {
   type ReviewRoutingEngine,
   type ReviewRoutingManifest,
 } from '../generated/handlers/review-router.js';
-import { runReviewMutation } from '../generated/blocks/review-mutate.js';
+import { runReviewMutation, reviewMutateOverrides } from '../generated/blocks/review-mutate.js';
 import { buildConsensus, formatConsensusRow } from '../generated/blocks/consensus.js';
 import { fail, header, info, warn, bold } from '../output.js';
 
@@ -117,6 +117,14 @@ export const reviewCommand = defineCommand({
     'mutate-semantic': {
       type: 'boolean',
       description: 'With --mutate: also let the roster propose AI-semantic mutants (real engine spend). Off by default.',
+    },
+    'mutate-test': {
+      type: 'string',
+      description: 'With --mutate: the test command to run per mutant, instead of the discovered gate. Use it when the discovered script is not the suite that covers the diff.',
+    },
+    'mutate-build': {
+      type: 'string',
+      description: 'With --mutate: build command run before the baseline AND each mutant — required when the suite runs against a prebuilt dist rather than the mutated source (otherwise every mutant survives).',
     },
     verbose: {
       type: 'boolean',
@@ -483,7 +491,12 @@ export const reviewCommand = defineCommand({
     console.log(lines.join('\n'));
 
     if (args.mutate) {
-      const mutationLines = await runReviewMutation({ repoRoot: cwd, diff: target.diff, outputDir, registry, adapter, engines: registry.activeIds(config), semantic: (args as any)['mutate-semantic'] === true });
+      const mutationLines = await runReviewMutation({
+        repoRoot: cwd, diff: target.diff, outputDir, registry, adapter,
+        engines: registry.activeIds(config),
+        semantic: (args as any)['mutate-semantic'] === true,
+        ...reviewMutateOverrides(args as Record<string, unknown>),
+      });
       if (mutationLines.length) console.log(mutationLines.join('\n'));
     }
 

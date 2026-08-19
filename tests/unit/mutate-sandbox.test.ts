@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   prepareSandboxNodeModules, clearShadowingDist, workspacePackageDirs, packageEntryDirs, isInside,
+  isSafePackageName, pnpmWorkspaceGlobs, repointWorkspaceLinks, gitIgnoredPaths,
 } from '../../packages/forge/src/generated/mutate-sandbox.js';
 
 const write = (path: string, content: string): void => {
@@ -135,6 +136,96 @@ describe('mutate sandbox — node_modules mirroring', () => {
   });
 });
 
+// The blocking finding: a workspace package NAME comes from repo content and is
+// joined into a node_modules path that gets rmSync(recursive, force)-ed. A name
+// of "../.." resolved that delete to $TMPDIR itself.
+describe('mutate sandbox — a workspace name can never become a path traversal', () => {
+  it('accepts ordinary names and rejects every traversal shape', () => {
+    expect(isSafePackageName('leftpad')).toBe(true);
+    expect(isSafePackageName('@scope/pkg')).toBe(true);
+    expect(isSafePackageName('../..')).toBe(false);
+    expect(isSafePackageName('..')).toBe(false);
+    expect(isSafePackageName('a/b/c')).toBe(false);
+    expect(isSafePackageName('scope/pkg')).toBe(false);
+    expect(isSafePackageName('/etc/passwd')).toBe(false);
+    expect(isSafePackageName('')).toBe(false);
+  });
+
+  it('drops an unsafe workspace name from the map instead of mapping it', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agon-mutate-evil-'));
+    write(join(dir, 'package.json'), JSON.stringify({ workspaces: ['packages/*'] }));
+    write(join(dir, 'packages/evil/package.json'), JSON.stringify({ name: '../..' }));
+    write(join(dir, 'packages/good/package.json'), JSON.stringify({ name: '@t/good' }));
+    expect(workspacePackageDirs(dir)).toEqual({ '@t/good': 'packages/good' });
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('repointWorkspaceLinks never removes a path outside the sandbox node_modules', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agon-mutate-rm-'));
+    const sandbox = join(root, 'sandbox');
+    const bystander = join(root, 'bystander');
+    mkdirSync(join(sandbox, 'node_modules'), { recursive: true });
+    mkdirSync(join(sandbox, 'packages/foo'), { recursive: true });
+    mkdirSync(bystander, { recursive: true });
+
+    // Even if an unsafe name reaches the repair pass directly, nothing outside
+    // <worktree>/node_modules may be touched.
+    expect(repointWorkspaceLinks(sandbox, { '../../bystander': 'packages/foo' })).toBe(0);
+    expect(existsSync(bystander)).toBe(true);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('repairs a DANGLING workspace link instead of leaving it to redden the baseline', () => {
+    const { repo, sandbox } = makeRepo();
+    mkdirSync(join(sandbox, 'node_modules/@t'), { recursive: true });
+    symlinkSync(join(repo, 'does-not-exist'), join(sandbox, 'node_modules/@t/foo'), 'dir');
+    symlinkSync(join(repo, 'node_modules/leftpad'), join(sandbox, 'node_modules/leftpad'), 'dir');
+
+    const result = prepareSandboxNodeModules(repo, sandbox);
+    expect(result.mode).toBe('repaired');
+    expect(realpathSync(join(sandbox, 'node_modules/@t/foo')))
+      .toBe(realpathSync(join(sandbox, 'packages/foo')));
+    rmSync(join(repo, '..'), { recursive: true, force: true });
+  });
+
+  it('reports how many entries could NOT be linked', () => {
+    const { repo, sandbox } = makeRepo();
+    const result = prepareSandboxNodeModules(repo, sandbox);
+    expect(result.failed).toBe(0);
+    expect(result.note).toBeUndefined();
+    rmSync(join(repo, '..'), { recursive: true, force: true });
+  });
+});
+
+// A pnpm repo declares its workspaces ONLY in pnpm-workspace.yaml; without
+// reading it the map is empty and every workspace package resolves back into
+// the user's checkout — the exact escape this module exists to close.
+describe('mutate sandbox — pnpm workspaces', () => {
+  it('reads the block-sequence and inline-flow `packages:` forms', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agon-mutate-pnpm-'));
+    write(join(dir, 'pnpm-workspace.yaml'), "packages:\n  - 'packages/*'\n  - \"apps/web\"\n");
+    expect(pnpmWorkspaceGlobs(dir)).toEqual(['packages/*', 'apps/web']);
+    write(join(dir, 'pnpm-workspace.yaml'), "packages: ['packages/*']\nother: 1\n");
+    expect(pnpmWorkspaceGlobs(dir)).toEqual(['packages/*']);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('maps a pnpm-only workspace repo that has no `workspaces` field at all', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agon-mutate-pnpm2-'));
+    write(join(dir, 'package.json'), JSON.stringify({ name: 'root', private: true }));
+    write(join(dir, 'pnpm-workspace.yaml'), "packages:\n  - packages/*\n");
+    write(join(dir, 'packages/foo/package.json'), JSON.stringify({ name: '@t/foo' }));
+    expect(workspacePackageDirs(dir)).toEqual({ '@t/foo': 'packages/foo' });
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('returns [] when there is no pnpm-workspace.yaml', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agon-mutate-pnpm3-'));
+    expect(pnpmWorkspaceGlobs(dir)).toEqual([]);
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
 describe('mutate sandbox — prebuilt output', () => {
   it('collects the build directories a package publishes its entry points from', () => {
     const dir = mkdtempSync(join(tmpdir(), 'agon-mutate-entry-'));
@@ -191,6 +282,23 @@ describe('mutate sandbox — prebuilt output', () => {
     expect(clearShadowingDist(repo, sandbox, ['packages/foo/src/index.ts'])).toEqual(['packages/foo/dist']);
     expect(existsSync(join(sandbox, 'packages/bar/dist'))).toBe(true);
     rmSync(join(repo, '..'), { recursive: true, force: true });
+  });
+
+  it('survives a package.json that parses to null instead of throwing', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agon-mutate-null-'));
+    write(join(dir, 'package.json'), 'null');
+    expect(packageEntryDirs(join(dir, 'package.json'))).toEqual([]);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('classifies every candidate in ONE git check-ignore call', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agon-mutate-ignore-'));
+    write(join(dir, '.gitignore'), 'dist\n');
+    execFileSync('git', ['init', '-q'], { cwd: dir });
+    expect(gitIgnoredPaths(dir, ['a/dist', 'a/src'])).toEqual(['a/dist']);
+    expect(gitIgnoredPaths(dir, ['a/src'])).toEqual([]);
+    expect(gitIgnoredPaths(dir, [])).toEqual([]);
+    rmSync(dir, { recursive: true, force: true });
   });
 
   it('is a no-op in a repo with no workspaces', () => {

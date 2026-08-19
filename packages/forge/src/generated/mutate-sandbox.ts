@@ -2,37 +2,96 @@
 
 import { existsSync, lstatSync, readdirSync, readFileSync, mkdirSync, symlinkSync, rmSync, realpathSync, statSync } from 'node:fs';
 
-import { join, relative, resolve, sep, isAbsolute } from 'node:path';
+import { join, relative, resolve, sep, isAbsolute, dirname } from 'node:path';
 
 import { execFileSync } from 'node:child_process';
 
 /**
  * What prepareSandboxNodeModules did. `mode` is the one-word story for the mutate:sandbox event.
  */
-// @kern-source: mutate-sandbox:31
+// @kern-source: mutate-sandbox:38
 export interface SandboxNodeModules {
   mode: 'skipped'|'mirrored'|'repaired'|'kept';
   links: number;
   workspaceLinks: number;
+  failed: number;
   note?: string;
 }
 
 /**
  * Install bookkeeping that must NOT be mirrored: a stale .package-lock.json makes npm think the sandbox tree is already correct, and .vite/.cache are transform caches keyed to the repo's paths.
  */
-// @kern-source: mutate-sandbox:38
+// @kern-source: mutate-sandbox:46
 export const SKIP_NODE_MODULES_ENTRIES: string[] = ['.package-lock.json', '.vite', '.cache', '.DS_Store'];
 
 /**
  * First-segment directory names that a package entry point may live in. Only these are ever considered for clearing, and only when git ignores them.
  */
-// @kern-source: mutate-sandbox:41
+// @kern-source: mutate-sandbox:49
 export const BUILD_OUTPUT_CANDIDATES: string[] = ['dist', 'build', 'lib', 'out', 'es', 'esm', 'cjs'];
 
 /**
- * Map every workspace package NAME to its repo-relative directory, resolved from the root package.json `workspaces` field (array or {packages:[]}). Supports literal paths and a single trailing `*`/`**` segment — the shapes npm itself supports. Returns {} for a non-workspace repo. Never throws.
+ * True for a package name that is safe to join into a node_modules path: at most one `/` (and only after an `@scope`), no empty/`.`/`..` segment, no backslash, no absolute form, nothing outside the npm character set. The gate between repo CONTENT and an rmSync. Pure.
  */
-// @kern-source: mutate-sandbox:44
+// @kern-source: mutate-sandbox:52
+export function isSafePackageName(name: string): boolean {
+  const value = String(name ?? '');
+  if (!value || value.length > 214) return false;
+  if (value.includes('\\') || isAbsolute(value)) return false;
+  const parts = value.split('/');
+  if (parts.length > 2) return false;
+  if (parts.length === 2 && !parts[0].startsWith('@')) return false;
+  for (const part of parts) {
+    if (!part || part === '.' || part === '..') return false;
+    if (!/^@?[A-Za-z0-9._~-]+$/.test(part)) return false;
+  }
+  return true;
+}
+
+/**
+ * The `packages:` globs from pnpm-workspace.yaml, read with a deliberately tiny parser (a YAML dependency for one list would be absurd): the block-sequence form (`packages:` then `- 'a/*'` lines) and the inline-flow form (`packages: ['a/*']`). Returns [] when the file is absent or shaped differently. Never throws.
+ */
+// @kern-source: mutate-sandbox:68
+export function pnpmWorkspaceGlobs(repoRoot: string): string[] {
+  let text = '';
+  try { text = readFileSync(join(repoRoot, 'pnpm-workspace.yaml'), 'utf-8'); } catch { return []; }
+  const globs: string[] = [];
+  const unquote = (raw: string): string => raw.trim().replace(/^['"]/, '').replace(/['"]$/, '').trim();
+  const lines = text.split('\n');
+  let inList = false;
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/\r$/, '');
+    const head = line.match(/^packages\s*:\s*(.*)$/);
+    if (head) {
+      const inline = head[1].trim();
+      if (inline.startsWith('[')) {
+        for (const item of inline.replace(/^\[/, '').replace(/\].*$/, '').split(',')) {
+          const value = unquote(item);
+          if (value) globs.push(value);
+        }
+        inList = false;
+      } else {
+        inList = true;
+      }
+      continue;
+    }
+    if (!inList) continue;
+    const item = line.match(/^\s+-\s*(.+)$/);
+    if (item) {
+      const value = unquote(item[1].replace(/\s+#.*$/, ''));
+      if (value) globs.push(value);
+      continue;
+    }
+    if (line.trim() === '' || line.trim().startsWith('#')) continue;
+    inList = false;
+  }
+  return globs;
+}
+
+/**
+ * Map every workspace package NAME to its repo-relative directory, from the root package.json `workspaces` field (array or {packages:[]}) AND pnpm-workspace.yaml — a pnpm repo declares them only in the latter, and missing it re-opens the very escape this module exists to close. Supports literal paths and a single trailing `*`/`**` segment (the shapes npm itself supports). Names that are not safe to join into a path are dropped. Returns {} for a non-workspace repo. Never throws.
+ */
+// @kern-source: mutate-sandbox:106
 export function workspacePackageDirs(repoRoot: string): Record<string, string> {
   const out: Record<string, string> = {};
   let globs: string[] = [];
@@ -43,7 +102,9 @@ export function workspacePackageDirs(repoRoot: string): Record<string, string> {
     const ws = raw.workspaces;
     if (Array.isArray(ws)) globs = ws;
     else if (ws && Array.isArray(ws.packages)) globs = ws.packages;
-  } catch { return out; }
+  } catch { /* no root package.json — pnpm-workspace.yaml may still declare them */ }
+  globs = [...globs, ...pnpmWorkspaceGlobs(repoRoot)];
+  if (globs.length === 0) return out;
 
   const dirs: string[] = [];
   for (const glob of globs) {
@@ -63,8 +124,17 @@ export function workspacePackageDirs(repoRoot: string): Record<string, string> {
 
   for (const dir of dirs) {
     try {
-      const pkg = JSON.parse(readFileSync(join(repoRoot, dir, 'package.json'), 'utf-8')) as { name?: string };
-      if (typeof pkg.name === 'string' && pkg.name.trim()) out[pkg.name.trim()] = dir;
+      const pkg = JSON.parse(readFileSync(join(repoRoot, dir, 'package.json'), 'utf-8')) as { name?: string } | null;
+      if (!pkg || typeof pkg !== 'object') continue;
+      const name = typeof pkg.name === 'string' ? pkg.name.trim() : '';
+      if (!name) continue;
+      // A workspace NAME becomes a node_modules path that gets symlinked over
+      // and rmSync'd. Repo content never gets to author that path shape.
+      if (!isSafePackageName(name)) {
+        console.warn(`[agon] mutate: ignoring workspace package name ${JSON.stringify(name)} in ${dir} — unsafe as a node_modules path`);
+        continue;
+      }
+      if (!out[name]) out[name] = dir;
     } catch { /* not a package — npm skips it too */ }
   }
   return out;
@@ -73,7 +143,7 @@ export function workspacePackageDirs(repoRoot: string): Record<string, string> {
 /**
  * True when `candidate` is the same path as, or nested under, `parent`. Both are resolved first; symlink canonicalisation is the caller's job. Pure.
  */
-// @kern-source: mutate-sandbox:83
+// @kern-source: mutate-sandbox:156
 export function isInside(parent: string, candidate: string): boolean {
   const base = resolve(parent);
   const abs = resolve(candidate);
@@ -83,11 +153,11 @@ export function isInside(parent: string, candidate: string): boolean {
 }
 
 /**
- * Symlink one node_modules entry, choosing the right link type for the platform. No-op when the target already exists.
+ * Symlink one node_modules entry, choosing the right link type for the platform. No-op when the target already exists — including a DANGLING symlink, which existsSync reports as absent and symlinkSync then rejects with EEXIST.
  */
-// @kern-source: mutate-sandbox:93
+// @kern-source: mutate-sandbox:166
 function linkSandboxEntry(sourcePath: string, targetPath: string): void {
-  if (existsSync(targetPath)) return;
+  try { lstatSync(targetPath); return; } catch { /* nothing there — create it */ }
   let isDir = false;
   try { isDir = statSync(sourcePath).isDirectory(); } catch { isDir = false; }
   const kind = isDir ? (process.platform === 'win32' ? 'junction' : 'dir') : 'file';
@@ -95,23 +165,38 @@ function linkSandboxEntry(sourcePath: string, targetPath: string): void {
 }
 
 /**
- * Re-point every workspace package link in an EXISTING sandbox node_modules that still resolves outside the sandbox. Returns how many were repaired. Best-effort: a failure on one entry never stops the rest.
+ * Re-point every workspace package link in an EXISTING sandbox node_modules that is missing, dangling, or still resolves outside the sandbox. Returns how many were repaired. Best-effort: a failure on one entry never stops the rest, and no path outside <worktree>/node_modules is ever removed.
  */
-// @kern-source: mutate-sandbox:103
+// @kern-source: mutate-sandbox:176
 export function repointWorkspaceLinks(worktree: string, workspaces: Record<string, string>): number {
   let repaired = 0;
+  const nodeModules = join(worktree, 'node_modules');
+  let realWorktree = resolve(worktree);
+  try { realWorktree = realpathSync(worktree); } catch { /* keep the resolved form */ }
   for (const [name, dir] of Object.entries(workspaces)) {
-    const linkPath = join(worktree, 'node_modules', name);
+    if (!isSafePackageName(name)) continue;
+    const linkPath = join(nodeModules, name);
     const sandboxPkg = join(worktree, dir);
+    // Belt and braces over the name gate: nothing outside the sandbox's own
+    // node_modules is ever created or deleted here.
+    if (!isInside(nodeModules, linkPath)) continue;
     if (!existsSync(sandboxPkg)) continue;
     try {
-      if (!existsSync(linkPath)) {
-        mkdirSync(join(worktree, 'node_modules', name.split('/').slice(0, -1).join('/')), { recursive: true });
+      let present = true;
+      try { lstatSync(linkPath); } catch { present = false; }
+      if (!present) {
+        const parent = dirname(linkPath);
+        if (!isInside(nodeModules, parent)) continue;
+        mkdirSync(parent, { recursive: true });
         linkSandboxEntry(sandboxPkg, linkPath);
         repaired += 1;
         continue;
       }
-      if (isInside(realpathSync(worktree), realpathSync(linkPath))) continue;
+      // realpathSync throws on a DANGLING link — that is a repair case, not a
+      // skip, or the broken link survives to redden the baseline.
+      let realLink = '';
+      try { realLink = realpathSync(linkPath); } catch { realLink = ''; }
+      if (realLink && isInside(realWorktree, realLink)) continue;
       rmSync(linkPath, { recursive: true, force: true });
       linkSandboxEntry(sandboxPkg, linkPath);
       repaired += 1;
@@ -121,21 +206,21 @@ export function repointWorkspaceLinks(worktree: string, workspaces: Record<strin
 }
 
 /**
- * Give the sandbox a node_modules where WORKSPACE packages resolve to the sandbox's own sources and everything else resolves to the repo's install. A pre-existing real overlay is kept and only repaired; a wholesale symlink is replaced, because its relative workspace links escape back into the repo. Never throws.
+ * Give the sandbox a node_modules where WORKSPACE packages resolve to the sandbox's own sources and everything else resolves to the repo's install. A pre-existing real overlay is kept and only repaired; a wholesale symlink is replaced, because its relative workspace links escape back into the repo. Per-entry failures are COUNTED and reported (a silently half-empty overlay reads as an unexplained red baseline). Pass `workspaces` to reuse an already-computed map. Never throws.
  */
-// @kern-source: mutate-sandbox:127
-export function prepareSandboxNodeModules(repoRoot: string, worktree: string): SandboxNodeModules {
+// @kern-source: mutate-sandbox:215
+export function prepareSandboxNodeModules(repoRoot: string, worktree: string, workspaces?: Record<string, string>): SandboxNodeModules {
   const src = join(repoRoot, 'node_modules');
   const dst = join(worktree, 'node_modules');
-  const workspaces = workspacePackageDirs(repoRoot);
-  if (!existsSync(src)) return { mode: 'skipped', links: 0, workspaceLinks: 0, note: 'the repo has no node_modules' };
+  const map = workspaces ?? workspacePackageDirs(repoRoot);
+  if (!existsSync(src)) return { mode: 'skipped', links: 0, workspaceLinks: 0, failed: 0, note: 'the repo has no node_modules' };
 
   if (existsSync(dst)) {
     let isLink = false;
     try { isLink = lstatSync(dst).isSymbolicLink(); } catch { isLink = false; }
     if (!isLink) {
-      const repaired = repointWorkspaceLinks(worktree, workspaces);
-      return { mode: repaired > 0 ? 'repaired' : 'kept', links: 0, workspaceLinks: repaired };
+      const repaired = repointWorkspaceLinks(worktree, map);
+      return { mode: repaired > 0 ? 'repaired' : 'kept', links: 0, workspaceLinks: repaired, failed: 0 };
     }
     // A single symlink to the repo's install: every workspace link inside it
     // is relative and lands in the REPO's packages. Replace it.
@@ -143,10 +228,11 @@ export function prepareSandboxNodeModules(repoRoot: string, worktree: string): S
   }
 
   const byName = new Map<string, string>();
-  for (const [name, dir] of Object.entries(workspaces)) byName.set(name, dir);
+  for (const [name, dir] of Object.entries(map)) byName.set(name, dir);
 
   let links = 0;
   let workspaceLinks = 0;
+  let failed = 0;
   const linkOne = (sourceDir: string, targetDir: string, entryName: string, packageName: string): void => {
     const sourcePath = join(sourceDir, entryName);
     const targetPath = join(targetDir, entryName);
@@ -175,26 +261,32 @@ export function prepareSandboxNodeModules(repoRoot: string, worktree: string): S
           mkdirSync(scopeDst, { recursive: true });
           for (const scoped of readdirSync(scopeSrc, { withFileTypes: true })) {
             if (SKIP_NODE_MODULES_ENTRIES.includes(scoped.name)) continue;
-            try { linkOne(scopeSrc, scopeDst, scoped.name, `${entry.name}/${scoped.name}`); } catch { /* per-entry best effort */ }
+            try { linkOne(scopeSrc, scopeDst, scoped.name, `${entry.name}/${scoped.name}`); } catch { failed += 1; }
           }
           continue;
         }
         linkOne(src, dst, entry.name, entry.name);
-      } catch { /* per-entry best effort */ }
+      } catch { failed += 1; }
     }
   } catch (err) {
-    return { mode: 'skipped', links, workspaceLinks, note: err instanceof Error ? err.message : String(err) };
+    return { mode: 'skipped', links, workspaceLinks, failed, note: err instanceof Error ? err.message : String(err) };
   }
-  return { mode: 'mirrored', links, workspaceLinks };
+  const note = failed > 0
+    ? `${failed} entr${failed === 1 ? 'y' : 'ies'} could not be linked (no symlink privilege or a locked path) — an incomplete node_modules usually shows up as a red baseline`
+    : undefined;
+  if (failed > 0) console.warn(`[agon] mutate: ${note}`);
+  return { mode: 'mirrored', links, workspaceLinks, failed, note };
 }
 
 /**
  * The first-segment output directories a package publishes its entry points from (`main`, `module`, `types`, every string in `exports`), filtered to plausible BUILD output names. Pure-ish: reads one package.json, never throws.
  */
-// @kern-source: mutate-sandbox:193
+// @kern-source: mutate-sandbox:286
 export function packageEntryDirs(packageJsonPath: string): string[] {
-  let pkg: Record<string, unknown>;
-  try { pkg = JSON.parse(readFileSync(packageJsonPath, 'utf-8')) as Record<string, unknown>; } catch { return []; }
+  let pkg: Record<string, unknown> | null = null;
+  try { pkg = JSON.parse(readFileSync(packageJsonPath, 'utf-8')) as Record<string, unknown> | null; } catch { return []; }
+  // `JSON.parse('null')` succeeds and would make every pkg.<field> read throw.
+  if (!pkg || typeof pkg !== 'object' || Array.isArray(pkg)) return [];
   const found = new Set<string>();
   const consider = (value: string): void => {
     const clean = value.trim().replace(/^\.\//, '');
@@ -218,35 +310,55 @@ export function packageEntryDirs(packageJsonPath: string): string[] {
 }
 
 /**
- * Delete the hydrated build output of every workspace package whose SOURCE is being mutated, so a test that imports the package by name cannot load a prebuilt bundle the mutation never reached. Only git-IGNORED output directories are touched (a committed dist belongs to HEAD), and never one that contains a target file. Returns the repo-relative directories cleared. Never throws.
+ * Which of the given repo-relative paths git ignores — ONE `git check-ignore --stdin` call instead of one blocking subprocess per candidate. Exit 1 means 'none of them', which execFileSync reports as a throw, so the ignored set is read off the error's stdout too. Returns [] when git is unavailable. Never throws.
  */
-// @kern-source: mutate-sandbox:220
-export function clearShadowingDist(repoRoot: string, worktree: string, targetFiles: string[]): string[] {
-  const workspaces = workspacePackageDirs(repoRoot);
-  if (Object.keys(workspaces).length === 0) return [];
+// @kern-source: mutate-sandbox:315
+export function gitIgnoredPaths(repoRoot: string, candidates: string[]): string[] {
+  if (candidates.length === 0) return [];
+  const input = `${candidates.join('\n')}\n`;
+  let stdout = '';
+  try {
+    stdout = execFileSync('git', ['check-ignore', '--stdin'], { cwd: repoRoot, input, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] });
+  } catch (err) {
+    // exit 1 = nothing matched (not an error); exit 128 = not a git repo.
+    const status = (err as { status?: number }).status;
+    if (status !== 1) return [];
+    stdout = String((err as { stdout?: string }).stdout ?? '');
+  }
+  const ignored = new Set(stdout.split('\n').map((l) => l.trim()).filter((l) => l.length > 0));
+  return candidates.filter((c) => ignored.has(c));
+}
+
+/**
+ * Delete the hydrated build output of every workspace package whose SOURCE is being mutated, so a test that imports the package by name cannot load a prebuilt bundle the mutation never reached. Only git-IGNORED output directories are touched (a committed dist belongs to HEAD), and never one that contains a target file. Pass `workspaces` to reuse an already-computed map. Returns the repo-relative directories cleared. Never throws.
+ */
+// @kern-source: mutate-sandbox:333
+export function clearShadowingDist(repoRoot: string, worktree: string, targetFiles: string[], workspaces?: Record<string, string>): string[] {
+  const map = workspaces ?? workspacePackageDirs(repoRoot);
+  if (Object.keys(map).length === 0) return [];
   const normalized = targetFiles.map((f) => f.split(sep).join('/'));
 
   const owning = new Set<string>();
-  for (const dir of Object.values(workspaces)) {
+  for (const dir of Object.values(map)) {
     const prefix = `${dir}/`;
     if (normalized.some((f) => f.startsWith(prefix))) owning.add(dir);
   }
 
-  const cleared: string[] = [];
+  const candidates: string[] = [];
   for (const dir of [...owning].sort()) {
     for (const outDir of packageEntryDirs(join(worktree, dir, 'package.json'))) {
       const rel = `${dir}/${outDir}`;
-      const abs = join(worktree, dir, outDir);
-      if (!existsSync(abs)) continue;
+      if (!existsSync(join(worktree, dir, outDir))) continue;
       if (normalized.some((f) => f === rel || f.startsWith(`${rel}/`))) continue; // mutating the build output itself
-      let ignored = false;
-      try {
-        execFileSync('git', ['check-ignore', '-q', '--', rel], { cwd: repoRoot, stdio: 'ignore' });
-        ignored = true;
-      } catch { ignored = false; }
-      if (!ignored) continue;
-      try { rmSync(abs, { recursive: true, force: true }); cleared.push(rel); } catch { /* best effort */ }
+      candidates.push(rel);
     }
+  }
+
+  const cleared: string[] = [];
+  for (const rel of gitIgnoredPaths(repoRoot, candidates)) {
+    const abs = join(worktree, rel);
+    if (!isInside(worktree, abs)) continue;
+    try { rmSync(abs, { recursive: true, force: true }); cleared.push(rel); } catch { /* best effort */ }
   }
   return cleared;
 }

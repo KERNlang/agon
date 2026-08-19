@@ -6,7 +6,7 @@
 // checks are `.mjs` scripts on purpose so the repo's own vitest run never
 // collects them.
 import { describe, it, expect, afterEach } from 'vitest';
-import { cpSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -87,12 +87,16 @@ describe('runMutants — kill / survive', () => {
 });
 
 describe('runMutants — invalid mutants', () => {
+  // The typecheck command must be GREEN on the unmutated tree and red on every
+  // mutant — `exit 3` would now (correctly) be a baseline failure instead.
   it('marks a mutant invalid when the typecheck command rejects it, and excludes it from the score', async () => {
     const dir = sandbox();
     const mutants = addMutants(dir);
+    cpSync(join(dir, 'src/add.ts'), join(dir, 'src/add.pristine'));
 
     const report = await runMutants({
-      ...base, worktree: dir, mutants, testCmd: 'node check-real.mjs', typecheckCmd: 'exit 3',
+      ...base, worktree: dir, mutants, testCmd: 'node check-real.mjs',
+      typecheckCmd: 'cmp -s src/add.ts src/add.pristine',
     });
 
     expect(report.baselineOk).toBe(true);
@@ -100,7 +104,95 @@ describe('runMutants — invalid mutants', () => {
     expect(report.killed).toBe(0);
     expect(report.survived).toBe(0);
     expect(report.score).toBeNull();
-    expect(report.outcomes.every((o) => o.status === 'invalid' && o.exitCode === 3)).toBe(true);
+    expect(report.outcomes.every((o) => o.status === 'invalid')).toBe(true);
+    expect(report.outcomes[0].reason).toContain('does not typecheck');
+  });
+
+  // A pre-existing type error used to mark EVERY mutant invalid while the run
+  // still reported baselineOk — a clean-looking report that measured nothing.
+  it('treats a typecheck command that is already red as a BASELINE failure, not as N invalid mutants', async () => {
+    const dir = sandbox();
+    const mutants = addMutants(dir);
+
+    const report = await runMutants({
+      ...base, worktree: dir, mutants, testCmd: 'node check-real.mjs', typecheckCmd: 'exit 3',
+    });
+
+    expect(report.baselineOk).toBe(false);
+    expect(report.baselineError).toContain('typecheck command fails before any mutation');
+    expect(report.outcomes).toHaveLength(0);
+    expect(report.invalid).toBe(0);
+    expect(report.notRun).toBe(mutants.length);
+  });
+});
+
+describe('runMutants — a mutant that cannot be placed is invalid, never a throw', () => {
+  it('grades a file-less mutant invalid and still runs the rest', async () => {
+    const dir = sandbox();
+    const fileless: Mutant = { id: 'nofile', operator: 'x', line: 1, before: 'a', after: 'b', class: 'high-signal' };
+    const mutants = [fileless, ...addMutants(dir)];
+
+    const report = await runMutants({ ...base, worktree: dir, mutants, testCmd: 'node check-real.mjs' });
+
+    expect(report.baselineOk).toBe(true);
+    expect(report.outcomes).toHaveLength(mutants.length);
+    expect(report.outcomes[0].status).toBe('invalid');
+    expect(report.outcomes[0].reason).toContain("no 'file'");
+    expect(report.killed).toBe(mutants.length - 1);
+  });
+
+  it('grades a mutant whose file escapes the sandbox invalid, and never writes outside', async () => {
+    const dir = sandbox();
+    const escaping: Mutant = {
+      id: 'evil', operator: 'x', line: 1, before: 'a', after: 'b',
+      class: 'high-signal', file: '../escape.ts', origin: 'mechanical',
+    };
+
+    const report = await runMutants({ ...base, worktree: dir, mutants: [escaping], testCmd: 'node check-real.mjs' });
+
+    expect(report.invalid).toBe(1);
+    expect(report.outcomes[0].status).toBe('invalid');
+    expect(report.outcomes[0].reason).toContain('escapes');
+  });
+
+  // The blocking finding: containment used to be LEXICAL, but writeFileSync
+  // follows symlinks — an in-sandbox link could rewrite the user's own tree.
+  it('refuses to write through a symlink that leaves the sandbox', async () => {
+    const dir = sandbox();
+    const outside = mkdtempSync(join(tmpdir(), 'agon-mutant-outside-'));
+    sandboxes.push(outside);
+    const victim = join(outside, 'victim.ts');
+    writeFileSync(victim, 'export const untouched = true;\n');
+    mkdirSync(join(dir, 'src/link'), { recursive: true });
+    symlinkSync(victim, join(dir, 'src/link/victim.ts'), 'file');
+
+    const escaping: Mutant = {
+      id: 'link', operator: 'x', line: 1, before: 'export const untouched = true;',
+      after: 'export const untouched = false;', class: 'high-signal',
+      file: 'src/link/victim.ts', origin: 'mechanical',
+    };
+    const report = await runMutants({ ...base, worktree: dir, mutants: [escaping], testCmd: 'node check-real.mjs' });
+
+    expect(report.invalid).toBe(1);
+    expect(report.outcomes[0].reason).toContain('symlink');
+    expect(readFileSync(victim, 'utf-8')).toBe('export const untouched = true;\n');
+  });
+
+  // A mutant applied to a line that no longer matches `before` is a NO-OP write:
+  // the green baseline passes and the mutant is scored as a SURVIVOR — a
+  // fabricated weak-test signal.
+  it('grades a drifted mutant invalid instead of reporting a fake survivor', async () => {
+    const dir = sandbox();
+    const drifted: Mutant = {
+      id: 'drift', operator: 'arith:+→-', line: 2, before: 'return a * b;', after: 'return a / b;',
+      class: 'high-signal', file: 'src/add.ts', origin: 'mechanical',
+    };
+
+    const report = await runMutants({ ...base, worktree: dir, mutants: [drifted], testCmd: 'node check-real.mjs' });
+
+    expect(report.survived).toBe(0);
+    expect(report.invalid).toBe(1);
+    expect(report.outcomes[0].reason).toContain('source drifted');
   });
 });
 
@@ -127,7 +219,10 @@ describe('runMutants — a hang is a kill', () => {
 });
 
 describe('runMutants — budget', () => {
-  it('omits unrun mutants from outcomes, counts them in notRun and flags budgetExhausted', async () => {
+  // The budget is a REAL wall clock now: it also bounds setup, so a budget too
+  // small for the baseline stops the run before any mutant instead of silently
+  // running for minutes.
+  it('stops before the baseline when the budget cannot even cover setup', async () => {
     const dir = sandbox();
     const mutants = addMutants(dir);
 
@@ -136,14 +231,51 @@ describe('runMutants — budget', () => {
       perMutantTimeoutSec: 20, totalBudgetSec: 0.001,
     });
 
+    expect(report.baselineOk).toBe(false);
+    expect(report.baselineError).toContain('total budget');
+    expect(report.outcomes).toHaveLength(0);
+    expect(report.notRun).toBe(mutants.length);
+    expect(report.budgetExhausted).toBe(true);
+    expect(report.score).toBeNull();
+  });
+
+  // A command the BUDGET cut short is not evidence: it must be notRun, never a
+  // timeout (which counts as a kill) or invalid.
+  it('counts a mutant whose subprocess the budget cut as notRun, not as killed', async () => {
+    const dir = sandbox();
+    const mutants = addMutants(dir);
+
+    const report = await runMutants({
+      worktree: dir, mutants, testCmd: 'node check-real.mjs', buildCmd: 'sleep 1.2',
+      perMutantTimeoutSec: 20, totalBudgetSec: 2,
+    });
+
     expect(report.baselineOk).toBe(true);
     expect(report.outcomes).toHaveLength(0);
     expect(report.notRun).toBe(mutants.length);
     expect(report.budgetExhausted).toBe(true);
     expect(report.killed).toBe(0);
-    expect(report.survived).toBe(0);
-    expect(report.score).toBeNull();
-  });
+    expect(report.timeouts).toBe(0);
+    expect(report.invalid).toBe(0);
+  }, 30_000);
+});
+
+describe('runMutants — abort', () => {
+  it('reports an abort as notRun + aborted, never as evidence about the tests', async () => {
+    const dir = sandbox();
+    const mutants = addMutants(dir);
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 60);
+
+    const report = await runMutants({
+      ...base, worktree: dir, mutants, testCmd: 'node check-real.mjs', signal: controller.signal,
+    });
+
+    expect(report.aborted).toBe(true);
+    expect(report.budgetExhausted).toBe(false);
+    expect(report.notRun).toBeGreaterThan(0);
+    expect(report.killed + report.survived + report.invalid).toBe(report.outcomes.length);
+  }, 30_000);
 });
 
 describe('runMutants — baseline', () => {
@@ -174,26 +306,5 @@ describe('runMutants — baseline', () => {
     expect(report.baselineError).toContain('build command fails before any mutation');
     expect(report.baselineMs).toBe(0);
     expect(report.outcomes).toHaveLength(0);
-  });
-});
-
-describe('runMutants — containment', () => {
-  it('rejects a mutant whose file escapes the sandbox root', async () => {
-    const dir = sandbox();
-    const escaping: Mutant = {
-      id: 'evil', operator: 'x', line: 1, before: 'a', after: 'b',
-      class: 'high-signal', file: '../escape.ts', origin: 'mechanical',
-    };
-
-    await expect(runMutants({ ...base, worktree: dir, mutants: [escaping], testCmd: 'node check-real.mjs' }))
-      .rejects.toThrow(/escapes/);
-  });
-
-  it('rejects a mutant with no file at all', async () => {
-    const dir = sandbox();
-    const fileless: Mutant = { id: 'nofile', operator: 'x', line: 1, before: 'a', after: 'b', class: 'high-signal' };
-
-    await expect(runMutants({ ...base, worktree: dir, mutants: [fileless], testCmd: 'node check-real.mjs' }))
-      .rejects.toThrow(/no 'file'/);
   });
 });

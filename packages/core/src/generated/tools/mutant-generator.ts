@@ -46,7 +46,9 @@ export function generateMutants(source: string, changedLines: number[], file?: s
   ];
   const lines = source.split('\n');
   const mutants: Mutant[] = [];
-  for (const ln of changedLines) {
+  // Overlapping diff hunks can hand the same line in twice; without this the
+  // pool carries duplicate mutants sharing one id.
+  for (const ln of [...new Set(changedLines)]) {
     const idx = ln - 1;
     if (idx < 0 || idx >= lines.length) continue;
     const original = lines[idx];
@@ -63,7 +65,7 @@ export function generateMutants(source: string, changedLines: number[], file?: s
 /**
  * Return source with the mutant's single line swapped in.
  */
-// @kern-source: mutant-generator:71
+// @kern-source: mutant-generator:73
 export function applyMutantToSource(source: string, mutant: Mutant): string {
   const lines = source.split('\n');
   const idx = mutant.line - 1;

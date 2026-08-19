@@ -2,7 +2,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 
-import { resolve, sep } from 'node:path';
+import { resolveWithinRoot } from '../blocks/paths.js';
 
 import { spawnWithTimeout } from '../blocks/process.js';
 
@@ -11,20 +11,21 @@ import { applyMutantToSource } from './mutant-generator.js';
 import type { Mutant } from './mutant-generator.js';
 
 /**
- * One mutant's fate. 'survived' = the tests PASSED on wrong code (a weak test). 'killed' = tests failed. 'timeout' = the mutated code hung — counted as a kill. 'invalid' = the mutant does not typecheck/build, so it proves nothing about the tests.
+ * One mutant's fate. 'survived' = the tests PASSED on wrong code (a weak test). 'killed' = tests failed. 'timeout' = the mutated code hung — counted as a kill. 'invalid' = the mutant does not typecheck/build, or could not be placed at all, so it proves nothing about the tests.
  */
-// @kern-source: mutant-runner:35
+// @kern-source: mutant-runner:41
 export interface MutantOutcome {
   mutant: Mutant;
   status: 'killed'|'survived'|'invalid'|'timeout';
   durationMs: number;
   exitCode?: number;
+  reason?: string;
 }
 
 /**
  * The machine surface of a mutation run. `killed` INCLUDES timeouts; `killedByTimeout` (== `timeouts`) breaks them out. `score` = killed / (killed + survived), null when nothing ran; invalid mutants are excluded from the denominator. When baselineOk is false nothing was mutated and outcomes is empty.
  */
-// @kern-source: mutant-runner:42
+// @kern-source: mutant-runner:49
 export interface MutationReport {
   testCmd: string;
   worktree: string;
@@ -38,15 +39,16 @@ export interface MutationReport {
   score: number|null;
   outcomes: MutantOutcome[];
   budgetExhausted: boolean;
+  aborted: boolean;
   allSurvived: boolean;
   baselineMs: number;
   baselineOk: boolean;
   baselineError?: string;
 }
 
-// @kern-source: mutant-runner:61
+// @kern-source: mutant-runner:69
 export interface MutantProgress {
-  phase: 'build'|'baseline'|'mutant';
+  phase: 'build'|'typecheck'|'baseline'|'mutant';
   index: number;
   total: number;
   durationMs: number;
@@ -54,7 +56,7 @@ export interface MutantProgress {
   status?: string;
 }
 
-// @kern-source: mutant-runner:69
+// @kern-source: mutant-runner:77
 export interface RunMutantsOptions {
   worktree: string;
   mutants: Mutant[];
@@ -68,27 +70,15 @@ export interface RunMutantsOptions {
 }
 
 /**
- * Resolve candidate against root and throw if it escapes (rejects absolute escapes and ../). Private mirror of goal/paths.kern resolveWithin — core must not import forge.
+ * Run every mutant in an already-isolated sandbox under a total wall-clock budget that is actually enforced (every subprocess is capped by the time left). Never throws: a red baseline returns baselineOk:false + baselineError with zero outcomes, and an unplaceable mutant is graded 'invalid'. Restores every touched file in finally.
  */
-// @kern-source: mutant-runner:80
-function resolveWithinRoot(root: string, candidate: string): string {
-  const base = resolve(root);
-  const abs = resolve(base, candidate);
-  if (abs !== base && !abs.startsWith(base + sep)) {
-    throw new Error(`Path ${JSON.stringify(candidate)} escapes ${base}`);
-  }
-  return abs;
-}
-
-/**
- * Run every mutant in an already-isolated sandbox under a total wall-clock budget. Never throws for a failing test command: a red baseline returns baselineOk:false + baselineError with zero outcomes. Restores every touched file in finally.
- */
-// @kern-source: mutant-runner:91
+// @kern-source: mutant-runner:88
 export async function runMutants(opts: RunMutantsOptions): Promise<MutationReport> {
   const { worktree, mutants, testCmd } = opts;
   const perMutantMs = Math.max(1, Math.round(opts.perMutantTimeoutSec * 1000));
   const budgetMs = Math.max(1, Math.round(opts.totalBudgetSec * 1000));
   const startedAt = Date.now();
+  const deadline = startedAt + budgetMs;
   const originals = new Map<string, string>();
   const outcomes: MutantOutcome[] = [];
   let killed = 0;
@@ -97,17 +87,28 @@ export async function runMutants(opts: RunMutantsOptions): Promise<MutationRepor
   let timeouts = 0;
   let notRun = 0;
   let budgetExhausted = false;
+  let aborted = false;
   let baselineMs = 0;
   let baselineOk = false;
   let baselineError: string | undefined;
 
-  const sh = (cmd: string, timeoutMs: number) => spawnWithTimeout({
-    command: '/bin/sh',
-    args: ['-c', cmd],
-    cwd: worktree,
-    timeout: Math.max(1, timeoutMs),
-    signal: opts.signal,
-  });
+  // Every subprocess is capped at what is LEFT of the total budget, so the
+  // wall clock the caller asked for is a real bound instead of a poll between
+  // mutants. `budgetCut` says the BUDGET stopped this command (=> notRun),
+  // not that the mutated code hung (=> timeout, which is a kill).
+  const sh = async (cmd: string, timeoutMs: number): Promise<{ res: { exitCode: number; stdout: string; stderr: string; timedOut: boolean } | null; budgetCut: boolean }> => {
+    const left = deadline - Date.now();
+    if (left <= 0) return { res: null, budgetCut: true };
+    const capped = Math.max(1, Math.min(timeoutMs, left));
+    const res = await spawnWithTimeout({
+      command: '/bin/sh',
+      args: ['-c', cmd],
+      cwd: worktree,
+      timeout: capped,
+      signal: opts.signal,
+    });
+    return { res, budgetCut: res.timedOut === true && capped < timeoutMs };
+  };
   const tail = (text: string): string => String(text ?? '').trim().split('\n').slice(-6).join('\n').slice(-600);
 
   const build = (): MutationReport => {
@@ -127,31 +128,71 @@ export async function runMutants(opts: RunMutantsOptions): Promise<MutationRepor
       score,
       outcomes,
       budgetExhausted,
-      allSurvived: ran >= 5 && survived === ran,
+      aborted,
+      allSurvived: survived > 0 && killed === 0,
       baselineMs,
       baselineOk,
       baselineError,
     };
   };
+  const budgetStop = (phase: string): MutationReport => {
+    budgetExhausted = true;
+    notRun = mutants.length;
+    baselineError = `the total budget (${opts.totalBudgetSec}s) ran out during the sandbox ${phase}, before any mutant could run — raise the budget or narrow the target`;
+    return build();
+  };
+  const abortStop = (phase: string): MutationReport => {
+    aborted = true;
+    notRun = mutants.length;
+    baselineError = `aborted during the sandbox ${phase}, before any mutant ran`;
+    return build();
+  };
 
   try {
-    // ── Optional build, then the MANDATORY unmutated baseline ──
+    // ── Optional build + typecheck, then the MANDATORY unmutated baseline ──
+    // Each setup command is timed on its OWN clock: a 45s build and a 2s test
+    // suite must not share one budget-shaped timeout, or every per-mutant
+    // build times out and the whole run reports "invalid" at a clean-looking
+    // 100%. Setup always gets at least 60s regardless of perMutantTimeoutSec:
+    // a cold cache makes the first run of anything the slowest one.
     const setupTimeoutMs = Math.max(perMutantMs, 60_000);
+    let baselineBuildMs = 0;
+    let baselineTypecheckMs = 0;
     if (opts.buildCmd) {
       const t0 = Date.now();
-      const res = await sh(opts.buildCmd, setupTimeoutMs);
-      opts.onProgress?.({ phase: 'build', index: 0, total: mutants.length, durationMs: Date.now() - t0 });
-      if (res.exitCode !== 0 || res.timedOut) {
-        const why = res.timedOut ? 'timed out' : `exit ${res.exitCode}`;
-        baselineError = `build command fails before any mutation in the sandbox (${why}) — check deps/build; stderr tail:\n${tail(res.stderr)}`;
+      const r = await sh(opts.buildCmd, setupTimeoutMs);
+      baselineBuildMs = Date.now() - t0;
+      opts.onProgress?.({ phase: 'build', index: 0, total: mutants.length, durationMs: baselineBuildMs });
+      if (!r.res || r.budgetCut) return budgetStop('build');
+      if (opts.signal?.aborted) return abortStop('build');
+      if (r.res.exitCode !== 0 || r.res.timedOut) {
+        const why = r.res.timedOut ? 'timed out' : `exit ${r.res.exitCode}`;
+        baselineError = `build command fails before any mutation in the sandbox (${why}) — check deps/build; stderr tail:\n${tail(r.res.stderr || r.res.stdout)}`;
+        notRun = mutants.length;
+        return build();
+      }
+    }
+    if (opts.typecheckCmd) {
+      const t0 = Date.now();
+      const r = await sh(opts.typecheckCmd, setupTimeoutMs);
+      baselineTypecheckMs = Date.now() - t0;
+      opts.onProgress?.({ phase: 'typecheck', index: 0, total: mutants.length, durationMs: baselineTypecheckMs });
+      if (!r.res || r.budgetCut) return budgetStop('typecheck');
+      if (opts.signal?.aborted) return abortStop('typecheck');
+      if (r.res.exitCode !== 0 || r.res.timedOut) {
+        const why = r.res.timedOut ? 'timed out' : `exit ${r.res.exitCode}`;
+        baselineError = `typecheck command fails before any mutation in the sandbox (${why}) — a pre-existing type error would mark EVERY mutant invalid and report a run that measured nothing; stderr tail:\n${tail(r.res.stderr || r.res.stdout)}`;
         notRun = mutants.length;
         return build();
       }
     }
 
     const tBase = Date.now();
-    const baseRes = await sh(testCmd, setupTimeoutMs);
+    const baseRun = await sh(testCmd, setupTimeoutMs);
     baselineMs = Date.now() - tBase;
+    if (!baseRun.res || baseRun.budgetCut) return budgetStop('baseline test run');
+    if (opts.signal?.aborted) return abortStop('baseline test run');
+    const baseRes = baseRun.res;
     opts.onProgress?.({ phase: 'baseline', index: 0, total: mutants.length, durationMs: baselineMs, status: baseRes.exitCode === 0 ? 'ok' : 'failed' });
     if (baseRes.timedOut || baseRes.exitCode !== 0) {
       const why = baseRes.timedOut ? 'timed out' : `exit ${baseRes.exitCode}`;
@@ -163,50 +204,98 @@ export async function runMutants(opts: RunMutantsOptions): Promise<MutationRepor
 
     // A suite that takes 40s unmutated needs more than a 120s cap when the
     // mutation makes it slower; a suite that takes 20ms should not wait 120s
-    // for a hang either — but the user's floor always wins.
+    // for a hang either — but the user's floor always wins. Build and
+    // typecheck get the SAME rule against their OWN measured baselines.
     const effTimeoutMs = Math.max(perMutantMs, 3 * baselineMs);
+    const buildTimeoutMs = Math.max(perMutantMs, 3 * baselineBuildMs);
+    const typecheckTimeoutMs = Math.max(perMutantMs, 3 * baselineTypecheckMs);
 
     // ── Mutants ──
     for (let i = 0; i < mutants.length; i += 1) {
-      if (opts.signal?.aborted) { notRun = mutants.length - i; break; }
-      if (Date.now() - startedAt >= budgetMs) { notRun = mutants.length - i; budgetExhausted = true; break; }
+      if (opts.signal?.aborted) { aborted = true; notRun = mutants.length - i; break; }
+      if (Date.now() >= deadline) { notRun = mutants.length - i; budgetExhausted = true; break; }
 
       const mutant = mutants[i];
-      const rel = mutant.file;
-      if (!rel) throw new Error(`runMutants: mutant ${mutant.id} has no 'file' — every mutant in a multi-file run must carry its repo-relative path`);
-      const abs = resolveWithinRoot(worktree, rel);
-      if (!originals.has(abs)) originals.set(abs, readFileSync(abs, 'utf-8'));
-      const original = originals.get(abs) as string;
-
       const t0 = Date.now();
+
+      // ── Placement: never a throw, always a grade ──
+      const rel = mutant.file;
+      let abs = '';
+      let original = '';
+      let unplaceable = '';
+      if (!rel) {
+        unplaceable = "no 'file' — every mutant in a multi-file run must carry its repo-relative path";
+      } else {
+        try {
+          abs = resolveWithinRoot(worktree, rel);
+          if (!originals.has(abs)) originals.set(abs, readFileSync(abs, 'utf-8'));
+          original = originals.get(abs) as string;
+        } catch (err) {
+          abs = '';
+          unplaceable = err instanceof Error ? err.message : String(err);
+        }
+      }
+      if (!unplaceable) {
+        // A no-op write is worse than no write: the (green) baseline command
+        // would pass and the mutant would be counted as a SURVIVOR — a
+        // fabricated weak-test signal. Verify the line still says what the
+        // mutant was generated against.
+        const currentLines = original.split('\n');
+        const idx = mutant.line - 1;
+        if (idx < 0 || idx >= currentLines.length) {
+          unplaceable = `line ${mutant.line} is out of range for ${rel} (1..${currentLines.length}) — the source drifted since the mutant was generated`;
+        } else if (currentLines[idx].trim() !== String(mutant.before ?? '').trim()) {
+          unplaceable = `source drifted at ${rel}:${mutant.line} — the mutant expected ${JSON.stringify(String(mutant.before ?? '').trim().slice(0, 80))}, the file has ${JSON.stringify(currentLines[idx].trim().slice(0, 80))}`;
+        }
+      }
+      if (unplaceable) {
+        invalid += 1;
+        const durationMs = Date.now() - t0;
+        outcomes.push({ mutant, status: 'invalid', durationMs, reason: unplaceable });
+        opts.onProgress?.({ phase: 'mutant', index: i + 1, total: mutants.length, durationMs, mutantId: mutant.id, status: 'invalid' });
+        continue;
+      }
+
       let status: 'killed' | 'survived' | 'invalid' | 'timeout' = 'killed';
       let exitCode: number | undefined;
+      let reason: string | undefined;
+      let cutByBudget = false;
       writeFileSync(abs, applyMutantToSource(original, mutant));
       try {
         let decided = false;
         if (opts.typecheckCmd) {
-          const tc = await sh(opts.typecheckCmd, effTimeoutMs);
-          if (tc.exitCode !== 0 || tc.timedOut) { status = 'invalid'; exitCode = tc.exitCode; decided = true; }
+          const tc = await sh(opts.typecheckCmd, typecheckTimeoutMs);
+          if (!tc.res || tc.budgetCut) cutByBudget = true;
+          else if (tc.res.exitCode !== 0 || tc.res.timedOut) { status = 'invalid'; exitCode = tc.res.exitCode; reason = 'the mutated source does not typecheck'; decided = true; }
         }
-        if (!decided && opts.buildCmd) {
-          const b = await sh(opts.buildCmd, effTimeoutMs);
+        if (!cutByBudget && !decided && opts.buildCmd) {
+          const b = await sh(opts.buildCmd, buildTimeoutMs);
           // A mutant that breaks the build proves nothing about the tests.
-          if (b.exitCode !== 0 || b.timedOut) { status = 'invalid'; exitCode = b.exitCode; decided = true; }
+          if (!b.res || b.budgetCut) cutByBudget = true;
+          else if (b.res.exitCode !== 0 || b.res.timedOut) { status = 'invalid'; exitCode = b.res.exitCode; reason = 'the mutated source does not build'; decided = true; }
         }
-        if (!decided) {
+        if (!cutByBudget && !decided) {
           const res = await sh(testCmd, effTimeoutMs);
-          exitCode = res.exitCode;
-          if (res.timedOut) status = 'timeout';
-          else if (res.exitCode === 0) status = 'survived';
-          else status = 'killed';
+          if (!res.res || res.budgetCut) cutByBudget = true;
+          else {
+            exitCode = res.res.exitCode;
+            if (res.res.timedOut) status = 'timeout';
+            else if (res.res.exitCode === 0) status = 'survived';
+            else status = 'killed';
+          }
         }
       } finally {
         // Restore immediately so mutants in different files never stack.
         writeFileSync(abs, original);
       }
 
+      // Neither an abort nor a budget cut is evidence about the tests: this
+      // mutant reached no verdict, so it and every mutant after it are notRun.
+      if (opts.signal?.aborted) { aborted = true; notRun = mutants.length - i; break; }
+      if (cutByBudget) { budgetExhausted = true; notRun = mutants.length - i; break; }
+
       const durationMs = Date.now() - t0;
-      outcomes.push({ mutant, status, durationMs, exitCode });
+      outcomes.push({ mutant, status, durationMs, exitCode, reason });
       if (status === 'survived') survived += 1;
       else if (status === 'invalid') invalid += 1;
       else if (status === 'timeout') { timeouts += 1; killed += 1; }
@@ -216,8 +305,8 @@ export async function runMutants(opts: RunMutantsOptions): Promise<MutationRepor
 
     return build();
   } finally {
-    for (const [abs, content] of originals) {
-      try { writeFileSync(abs, content); } catch { /* best effort — the sandbox is disposable */ }
+    for (const [absPath, content] of originals) {
+      try { writeFileSync(absPath, content); } catch { /* best effort — the sandbox is disposable */ }
     }
   }
 }

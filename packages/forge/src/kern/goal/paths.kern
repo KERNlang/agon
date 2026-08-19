@@ -3,7 +3,7 @@
 // then writes under ~/.agon/goals/<id> and mutates worktree files. Without
 // containment these are traversal vectors (review: codex blocking #1–#3).
 
-import from="node:path" names="resolve,sep"
+import from="@kernlang/agon-core" names="resolveWithinRoot"
 
 fn name=assertSafeGoalId params="goalId:string" returns=string export=true
   doc "Reject goalIds that could traverse the filesystem; allow only a strict slug (no separators, no dots)."
@@ -15,12 +15,7 @@ fn name=assertSafeGoalId params="goalId:string" returns=string export=true
   >>>
 
 fn name=resolveWithin params="root:string, candidate:string" returns=string export=true
-  doc "Resolve candidate against root and throw if it escapes root (rejects absolute escapes and ../)."
+  doc "Resolve candidate against root and throw if it escapes root (absolute escapes, ../, and symlinks that leave the root). Delegates to core's resolveWithinRoot — this used to be a byte-identical copy of it, and a duplicated security boundary is the one kind of duplication that must never be allowed to drift."
   handler <<<
-    const base = resolve(root);
-    const abs = resolve(base, candidate);
-    if (abs !== base && !abs.startsWith(base + sep)) {
-      throw new Error(`Path ${JSON.stringify(candidate)} escapes ${base}`);
-    }
-    return abs;
+    return resolveWithinRoot(root, candidate);
   >>>

@@ -1,7 +1,7 @@
 // ── Mechanical mutant generation (shared primitive) ────────────────────
 // Moved VERBATIM from packages/forge/src/kern/goal/mutation.kern:18-75 so the
 // goal loop's mutation-witness and the user-facing `agon mutate` mode share ONE
-// calibrated operator set. Only additions: three OPTIONAL Mutant fields (file /
+// calibrated operator set. Only additions: four OPTIONAL Mutant fields (file /
 // origin / engine / rationale) so a multi-file, AI-augmented caller can carry
 // provenance while goal's single-file shape stays assignable, and an optional
 // `file` argument on generateMutants.
@@ -54,7 +54,9 @@ fn name=generateMutants params="source:string, changedLines:number[], file?:stri
     ];
     const lines = source.split('\n');
     const mutants: Mutant[] = [];
-    for (const ln of changedLines) {
+    // Overlapping diff hunks can hand the same line in twice; without this the
+    // pool carries duplicate mutants sharing one id.
+    for (const ln of [...new Set(changedLines)]) {
       const idx = ln - 1;
       if (idx < 0 || idx >= lines.length) continue;
       const original = lines[idx];

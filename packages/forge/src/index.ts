@@ -57,9 +57,9 @@ export {
 export {
   prepareSandboxNodeModules, clearShadowingDist, workspacePackageDirs,
   packageEntryDirs, repointWorkspaceLinks, isInside, isSafePackageName,
-  pnpmWorkspaceGlobs, gitIgnoredPaths,
+  pnpmWorkspaceGlobs, gitIgnoredPaths, expandWorkspaceGlob, workspaceGlobToRegExp,
 } from './generated/mutate-sandbox.js';
-export type { SandboxNodeModules } from './generated/mutate-sandbox.js';
+export type { SandboxNodeModules, SandboxLinkRepair } from './generated/mutate-sandbox.js';
 export {
   buildSemanticMutantPrompt, extractJsonArray, validateSemanticMutants, collectSemanticMutants,
   seatGrantsWriteAccess, stripControlChars, normalizeLens, MUTATE_LENS_PRESETS,

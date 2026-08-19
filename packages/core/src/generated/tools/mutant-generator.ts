@@ -32,7 +32,7 @@ export function commentOnlyLines(source: string): boolean[] {
   // never closed — every executable line after it was flagged comment-only
   // and silently dropped from the mutant pool. Only the backtick survives a
   // line break: an unterminated ' or " is a syntax error, not a state.
-  let inTemplate = false;
+  let inTemplate: boolean = false;
   for (const line of lines) {
     const trimmed = line.trim();
     // The verdict is taken at the START of the line: a line that opens a
@@ -41,7 +41,7 @@ export function commentOnlyLines(source: string): boolean[] {
     const startedInBlock = inBlock;
     const startedInTemplate = inTemplate;
     let sawCode = false;
-    let quote = inTemplate ? '`' : '';
+    let quote: string = inTemplate ? '`' : '';
     let i = 0;
     while (i < line.length) {
       const ch = line[i];

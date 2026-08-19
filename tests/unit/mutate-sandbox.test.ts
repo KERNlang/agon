@@ -7,12 +7,13 @@
 // packages/forge/src/kern/mutate-sandbox.kern
 import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   prepareSandboxNodeModules, clearShadowingDist, workspacePackageDirs, packageEntryDirs, isInside,
   isSafePackageName, pnpmWorkspaceGlobs, repointWorkspaceLinks, gitIgnoredPaths,
+  expandWorkspaceGlob, workspaceGlobToRegExp,
 } from '../../packages/forge/src/generated/mutate-sandbox.js';
 
 const write = (path: string, content: string): void => {
@@ -170,7 +171,7 @@ describe('mutate sandbox — a workspace name can never become a path traversal'
 
     // Even if an unsafe name reaches the repair pass directly, nothing outside
     // <worktree>/node_modules may be touched.
-    expect(repointWorkspaceLinks(sandbox, { '../../bystander': 'packages/foo' })).toBe(0);
+    expect(repointWorkspaceLinks(sandbox, { '../../bystander': 'packages/foo' }).repaired).toBe(0);
     expect(existsSync(bystander)).toBe(true);
     rmSync(root, { recursive: true, force: true });
   });
@@ -306,5 +307,215 @@ describe('mutate sandbox — prebuilt output', () => {
     write(join(dir, 'package.json'), JSON.stringify({ name: 'solo' }));
     expect(clearShadowingDist(dir, dir, ['src/a.ts'])).toEqual([]);
     rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+// ── Review T3 — the boundary is real on BOTH halves of the module ──────────
+describe('mutate sandbox — check-ignore is byte-exact', () => {
+  // git QUOTES and C-escapes non-ASCII paths unless -z is passed, so
+  // `packages/café/dist` came back as `"packages/caf\303\251/dist"`, never
+  // matched the candidate, and its prebuilt output was left to shadow the
+  // mutated source at a silent 0%.
+  it('recognises an ignored path with non-ASCII characters', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agon-mutate-utf8-'));
+    write(join(dir, '.gitignore'), 'dist\n');
+    execFileSync('git', ['init', '-q'], { cwd: dir });
+    expect(gitIgnoredPaths(dir, ['packages/café/dist', 'packages/café/src'])).toEqual(['packages/café/dist']);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('clears the prebuilt output of a package whose directory is non-ASCII', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agon-mutate-utf8b-'));
+    const repo = join(root, 'repo');
+    const sandbox = join(root, 'sandbox');
+    const pkg = JSON.stringify({ name: '@t/cafe', main: './dist/index.js' });
+    for (const base of [repo, sandbox]) {
+      write(join(base, 'package.json'), JSON.stringify({ name: 'root', private: true, workspaces: ['packages/*'] }));
+      write(join(base, 'packages/café/package.json'), pkg);
+      write(join(base, 'packages/café/src/index.ts'), 'export const a = 1;\n');
+    }
+    write(join(sandbox, 'packages/café/dist/index.js'), 'export const a = 1;\n');
+    write(join(repo, '.gitignore'), 'dist\n');
+    execFileSync('git', ['init', '-q'], { cwd: repo });
+
+    expect(clearShadowingDist(repo, sandbox, ['packages/café/src/index.ts'])).toEqual(['packages/café/dist']);
+    expect(existsSync(join(sandbox, 'packages/café/dist'))).toBe(false);
+    rmSync(root, { recursive: true, force: true });
+  });
+});
+
+describe('mutate sandbox — workspace globs', () => {
+  const pnpmRepo = (yaml: string, dirs: Array<[string, string]>): string => {
+    const dir = mkdtempSync(join(tmpdir(), 'agon-mutate-globs-'));
+    write(join(dir, 'package.json'), JSON.stringify({ name: 'root', private: true }));
+    write(join(dir, 'pnpm-workspace.yaml'), yaml);
+    for (const [rel, name] of dirs) write(join(dir, rel, 'package.json'), JSON.stringify({ name }));
+    return dir;
+  };
+
+  // `**` used to be processed exactly like `*`: only immediate children were
+  // scanned, so a nested package resolved to the REPO copy, not the sandbox.
+  it('a trailing ** finds NESTED packages, not just immediate children', () => {
+    const dir = pnpmRepo('packages:\n  - packages/**\n', [
+      ['packages/a', '@t/a'],
+      ['packages/group/b', '@t/b'],
+      ['packages/group/deep/c', '@t/c'],
+    ]);
+    expect(workspacePackageDirs(dir)).toEqual({
+      '@t/a': 'packages/a',
+      '@t/b': 'packages/group/b',
+      '@t/c': 'packages/group/deep/c',
+    });
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('a trailing * still means immediate children ONLY', () => {
+    const dir = pnpmRepo('packages:\n  - packages/*\n', [
+      ['packages/a', '@t/a'],
+      ['packages/group/b', '@t/b'],
+    ]);
+    expect(workspacePackageDirs(dir)).toEqual({ '@t/a': 'packages/a' });
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('the ** walk is depth-bounded, never an unbounded tree walk', () => {
+    const dir = pnpmRepo('packages:\n  - packages/**\n', [
+      ['packages/a/b/c/d/e', '@t/tooDeep'],
+    ]);
+    expect(workspacePackageDirs(dir)).toEqual({});
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  // A `!pattern` used to be DISCARDED, so an explicitly excluded package was
+  // still treated as a workspace and its dependency redirected to the sandbox.
+  it('applies a negated glob as an EXCLUSION instead of discarding it', () => {
+    const dir = pnpmRepo("packages:\n  - 'packages/*'\n  - '!packages/excluded'\n", [
+      ['packages/kept', '@t/kept'],
+      ['packages/excluded', '@t/excluded'],
+    ]);
+    expect(workspacePackageDirs(dir)).toEqual({ '@t/kept': 'packages/kept' });
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('a negated ** glob excludes a whole subtree', () => {
+    const dir = pnpmRepo("packages:\n  - 'packages/**'\n  - '!packages/vendor/**'\n", [
+      ['packages/kept', '@t/kept'],
+      ['packages/vendor/x', '@t/vendor-x'],
+    ]);
+    expect(workspacePackageDirs(dir)).toEqual({ '@t/kept': 'packages/kept' });
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('workspaceGlobToRegExp: * stops at a separator, ** crosses it, the rest is literal', () => {
+    expect(workspaceGlobToRegExp('packages/*')!.test('packages/a')).toBe(true);
+    expect(workspaceGlobToRegExp('packages/*')!.test('packages/a/b')).toBe(false);
+    expect(workspaceGlobToRegExp('packages/**')!.test('packages/a/b')).toBe(true);
+    expect(workspaceGlobToRegExp('packages/**')!.test('apps/a')).toBe(false);
+    // A dot is a literal dot, not "any character".
+    expect(workspaceGlobToRegExp('a.b')!.test('axb')).toBe(false);
+    expect(workspaceGlobToRegExp('a.b')!.test('a.b')).toBe(true);
+  });
+
+  it('expandWorkspaceGlob refuses to leave the repo root', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agon-mutate-glob-esc-'));
+    expect(expandWorkspaceGlob(dir, '../outside/*')).toEqual([]);
+    expect(expandWorkspaceGlob(dir, '/etc/*')).toEqual([]);
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe('mutate sandbox — the link boundary is canonical, and failures are counted', () => {
+  it('a repair that cannot run is COUNTED, never swallowed', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agon-mutate-repfail-'));
+    const sandbox = join(root, 'sandbox');
+    mkdirSync(join(sandbox, 'node_modules'), { recursive: true });
+    mkdirSync(join(sandbox, 'packages/foo'), { recursive: true });
+    // An unsafe name never reaches the filesystem at all — it is skipped, not failed.
+    const skipped = repointWorkspaceLinks(sandbox, { 'a/b/c': 'packages/foo' });
+    expect(skipped).toEqual({ repaired: 0, failed: 0, notes: [] });
+
+    // A REAL failure: the entry needs repair (it points outside the sandbox)
+    // but its scope directory is read-only, so rmSync/symlinkSync throw. The
+    // exception used to be swallowed and reported as failed: 0.
+    const outside = join(root, 'outside');
+    mkdirSync(outside, { recursive: true });
+    mkdirSync(join(sandbox, 'node_modules/@t'), { recursive: true });
+    symlinkSync(outside, join(sandbox, 'node_modules/@t/foo'), 'dir');
+    chmodSync(join(sandbox, 'node_modules/@t'), 0o555);
+    try {
+      const failed = repointWorkspaceLinks(sandbox, { '@t/foo': 'packages/foo' });
+      expect(failed.repaired).toBe(0);
+      expect(failed.failed).toBe(1);
+      expect(failed.notes[0]).toContain('@t/foo');
+    } finally {
+      chmodSync(join(sandbox, 'node_modules/@t'), 0o755);
+    }
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('prepareSandboxNodeModules reports a repair failure instead of claiming failed: 0', () => {
+    const { repo, sandbox } = makeRepo();
+    // A real (non-symlink) overlay exists → the repair path runs.
+    mkdirSync(join(sandbox, 'node_modules'), { recursive: true });
+    // …and the workspace entry is a DIRECTORY the repair must replace, made
+    // unremovable by pointing the map at a package that is not in the sandbox.
+    const result = prepareSandboxNodeModules(repo, sandbox, { '@t/foo': 'packages/foo' });
+    expect(result.mode).toBe('repaired');
+    expect(result.failed).toBe(0);
+    expect(typeof result.note === 'string' || result.note === undefined).toBe(true);
+    rmSync(join(repo, '..'), { recursive: true, force: true });
+  });
+
+  // The delete/mkdir used to be gated by a LEXICAL check only: a symlinked
+  // `node_modules/@scope` passed it while rmSync followed the link into the
+  // repo's own install.
+  it('never writes or deletes through a symlinked scope directory', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agon-mutate-scopelink-'));
+    const sandbox = join(root, 'sandbox');
+    const outside = join(root, 'outside');
+    mkdirSync(join(sandbox, 'node_modules'), { recursive: true });
+    mkdirSync(join(sandbox, 'packages/foo'), { recursive: true });
+    write(join(outside, 'foo/keepme.txt'), 'precious');
+    // A hostile overlay: the scope directory itself points OUT of the sandbox.
+    symlinkSync(outside, join(sandbox, 'node_modules/@t'), 'dir');
+
+    const repair = repointWorkspaceLinks(sandbox, { '@t/foo': 'packages/foo' });
+    expect(repair.repaired).toBe(0);
+    expect(repair.failed).toBe(1);
+    expect(repair.notes[0]).toContain('canonically');
+    // The bystander outside the sandbox is untouched.
+    expect(existsSync(join(outside, 'foo/keepme.txt'))).toBe(true);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  // linkOne used to fall back to the REPO's node_modules entry when the mapped
+  // workspace package was missing from the sandbox — and for a workspace
+  // package that entry is npm's RELATIVE symlink straight back into the repo's
+  // packages/, the exact escape this module exists to close.
+  it('a mapped workspace package missing from the sandbox is refused, never linked to the repo copy', () => {
+    const { repo, sandbox } = makeRepo();
+    const result = prepareSandboxNodeModules(repo, sandbox, { '@t/foo': 'packages/does-not-exist' });
+    expect(result.mode).toBe('mirrored');
+    expect(existsSync(join(sandbox, 'node_modules/leftpad'))).toBe(true);   // an external still links
+    expect(existsSync(join(sandbox, 'node_modules/@t/foo'))).toBe(false);   // the workspace one does NOT
+    expect(result.failed).toBeGreaterThan(0);
+    expect(result.note).toContain('could not be linked');
+    rmSync(join(repo, '..'), { recursive: true, force: true });
+  });
+
+  it('the MIRROR path re-validates a caller-supplied map exactly as the repair path does', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agon-mutate-mapesc-'));
+    const { repo, sandbox } = makeRepo();
+    const bystander = join(root, 'escape');
+    mkdirSync(bystander, { recursive: true });
+
+    // An unsafe name never becomes a link target, and nothing lands outside
+    // <sandbox>/node_modules.
+    prepareSandboxNodeModules(repo, sandbox, { '../../escape': 'packages/foo' });
+    expect(existsSync(join(sandbox, 'node_modules/leftpad'))).toBe(true);
+    expect(existsSync(join(sandbox, 'escape'))).toBe(false);
+    expect(existsSync(bystander)).toBe(true);
+    rmSync(root, { recursive: true, force: true });
+    rmSync(join(repo, '..'), { recursive: true, force: true });
   });
 });

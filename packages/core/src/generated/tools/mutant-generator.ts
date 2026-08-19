@@ -19,21 +19,29 @@ export interface Mutant {
 }
 
 /**
- * One flag per line: TRUE when the line carries no executable code — a line comment, a line inside a block comment, or a block-comment continuation. A cheap single-pass state machine that is string-aware (a comment opener inside a quoted literal does not open a comment) so it cannot mistake data for a comment. Lines with code AND a trailing comment are FALSE — they still hold mutable code. Pure; exported for testing.
+ * One flag per line: TRUE when the line carries no executable code — a line comment, a line inside a block comment, or a block-comment continuation. A cheap single-pass state machine that is string-aware (a comment opener inside a quoted literal does not open a comment) so it cannot mistake data for a comment. BOTH multi-line states persist across lines: the block comment AND the backtick template literal — a `/*` inside a multi-line template used to leak block-comment state and silently drop every executable line after it from the mutant pool. Lines with code AND a trailing comment are FALSE — they still hold mutable code. Pure; exported for testing.
  */
 // @kern-source: mutant-generator:31
 export function commentOnlyLines(source: string): boolean[] {
   const lines = String(source ?? '').split('\n');
   const flags: boolean[] = [];
   let inBlock = false;
+  // A TEMPLATE LITERAL legally spans lines, so its quote state must persist
+  // across them exactly as `inBlock` does. It used to reset every line, which
+  // meant a backtick string containing `/*` opened a block comment that was
+  // never closed — every executable line after it was flagged comment-only
+  // and silently dropped from the mutant pool. Only the backtick survives a
+  // line break: an unterminated ' or " is a syntax error, not a state.
+  let inTemplate = false;
   for (const line of lines) {
     const trimmed = line.trim();
     // The verdict is taken at the START of the line: a line that opens a
     // block comment after real code is code, and the block only swallows the
     // lines that FOLLOW it.
     const startedInBlock = inBlock;
+    const startedInTemplate = inTemplate;
     let sawCode = false;
-    let quote = '';
+    let quote = inTemplate ? '`' : '';
     let i = 0;
     while (i < line.length) {
       const ch = line[i];
@@ -55,11 +63,17 @@ export function commentOnlyLines(source: string): boolean[] {
       if (!/\s/.test(ch)) sawCode = true;
       i += 1;
     }
-    // A block comment never spans a line break inside a string literal for
-    // our purposes: an unterminated quote is a syntax error, not a state.
-    const commentOnly = startedInBlock
-      ? !sawCode
-      : (trimmed.length === 0 ? false : (trimmed.startsWith('//') || trimmed.startsWith('*') || (trimmed.startsWith('/*') && !sawCode)));
+    // Carry the TEMPLATE state into the next line (and only that one: an
+    // unterminated ' or " is a syntax error, not a state).
+    inTemplate = quote === '`';
+    // A line that CONTINUES a template literal is data inside a code
+    // statement, never a comment — its content may legitimately start with
+    // `//`, `*` or `/*` without any of that meaning anything.
+    const commentOnly = startedInTemplate
+      ? false
+      : (startedInBlock
+        ? !sawCode
+        : (trimmed.length === 0 ? false : (trimmed.startsWith('//') || trimmed.startsWith('*') || (trimmed.startsWith('/*') && !sawCode))));
     flags.push(commentOnly);
   }
   return flags;
@@ -68,7 +82,7 @@ export function commentOnlyLines(source: string): boolean[] {
 /**
  * Canonical mutants on the changed lines only (one per applicable operator/line). COMMENT-ONLY lines are skipped: an operator swap inside a comment is an equivalent mutant BY CONSTRUCTION (nothing executes it), so it can only ever survive and depress the score with noise no assertion could kill. Lines that mix code with a trailing comment are still mutated as a whole line. The operator set and its class labels are UNCHANGED — this only removes lines that were never mutable. When `file` is given each mutant carries it (and the id is namespaced by it) so mutants from several files can be pooled.
  */
-// @kern-source: mutant-generator:76
+// @kern-source: mutant-generator:90
 export function generateMutants(source: string, changedLines: number[], file?: string): Mutant[] {
   const ops: Array<{ name: string; class: 'high-signal' | 'equiv-prone'; apply: (s: string) => string | null }> = [
     { name: 'arith:+→-', class: 'high-signal', apply: (s) => { const m = s.replace(/(?<!\+)\+(?![+=])/, '-'); return m !== s ? m : null; } },
@@ -117,7 +131,7 @@ export function generateMutants(source: string, changedLines: number[], file?: s
 /**
  * Return source with the mutant's single line swapped in.
  */
-// @kern-source: mutant-generator:123
+// @kern-source: mutant-generator:137
 export function applyMutantToSource(source: string, mutant: Mutant): string {
   const lines = source.split('\n');
   const idx = mutant.line - 1;

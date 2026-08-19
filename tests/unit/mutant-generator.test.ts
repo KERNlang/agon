@@ -70,3 +70,49 @@ describe('generateMutants — comment-only lines produce no mutants', () => {
     expect(byOp.get('arr:[]→[0]')).toBe('equiv-prone');
   });
 });
+
+describe('commentOnlyLines — a multi-line template literal is not a comment', () => {
+  // The block-comment state persisted across lines but the string state did
+  // not, so a `/*` inside a backtick literal opened a block that never closed
+  // and every executable line after it was silently dropped from the pool.
+  it('does not leak block-comment state out of a template literal containing /*', () => {
+    const src = [
+      'const s = `',        // 1 — opens the template
+      '/* not a comment',   // 2 — INSIDE the template
+      '`;',                 // 3 — closes it
+      'const y = a + b;',   // 4 — real, mutable code
+      'const z = c && d;',  // 5 — real, mutable code
+    ].join('\n');
+
+    expect(commentOnlyLines(src)).toEqual([false, false, false, false, false]);
+
+    const ops = generateMutants(src, allLines(src), 'src/a.ts').map((m) => m.operator);
+    expect(ops).toContain('arith:+→-');
+    expect(ops).toContain('logic:&&→||');
+  });
+
+  it('a template line that merely LOOKS like a comment is still template data', () => {
+    const src = [
+      'const s = `',      // 1
+      '// still a string', // 2
+      ' * still a string', // 3
+      '`;',                // 4
+      'const y = a + b;',  // 5
+    ].join('\n');
+    expect(commentOnlyLines(src)).toEqual([false, false, false, false, false]);
+    expect(generateMutants(src, [5], 'src/a.ts').map((m) => m.operator)).toContain('arith:+→-');
+  });
+
+  it('a real block comment after a closed template still swallows its own lines', () => {
+    const src = [
+      'const s = `/* inside */`;', // 1 — template, self-contained
+      '/*',                        // 2 — a REAL block comment opens
+      ' a + b',                    // 3 — inside it
+      '*/',                        // 4 — closes
+      'const y = a + b;',          // 5 — code again
+    ].join('\n');
+    expect(commentOnlyLines(src)).toEqual([false, true, true, true, false]);
+    expect(generateMutants(src, [3], 'src/a.ts')).toEqual([]);
+    expect(generateMutants(src, [5], 'src/a.ts').map((m) => m.operator)).toContain('arith:+→-');
+  });
+});

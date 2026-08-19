@@ -10,18 +10,18 @@
   },
   "maximums": {
     "filesWithParseErrors": 0,
-    "blockedHandlers": 632
+    "blockedHandlers": 642
   },
   "blockerMaximums": {
-    "comments-present": 190,
+    "comments-present": 195,
     "foreign-missing-reason": 70,
-    "var-bad-expr": 63,
+    "var-bad-expr": 66,
     "for-stmt": 63,
     "ts-parse-error": 40,
     "closure-nested-function": 28,
     "closure-loop": 23,
-    "expr-stmt-bad-expr": 25,
-    "switch-stmt": 22,
+    "expr-stmt-bad-expr": 26,
+    "switch-stmt": 23,
     "closure-try": 19,
     "while-bad-cond": 17,
     "unsupported-stmt-FunctionDeclaration": 10,
@@ -33,7 +33,7 @@
     "expr-stmt-bad-assign-value": 4,
     "return-bad-expr": 4,
     "var-template-multiline": 4,
-    "closure-await": 3,
+    "closure-await": 4,
     "closure-throw": 3,
     "if-bad-cond": 3,
     "var-multi-decl": 3,

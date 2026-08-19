@@ -588,7 +588,21 @@ describe('authorizeResolvedTaskAction', () => {
 // ── Dogfood: gaps a live `agon mutate` run found in THIS suite ──────────────
 // Every case below kills a mutant that survived the mutation run on
 // packages/cli/src/generated/cesar/permission-resolver.ts — wrong code these
-// tests used to call green.
+// tests used to call green. The run went 67% → 93%.
+//
+// The three mutants that still survive are EQUIVALENT BY CONSTRUCTION — no
+// assertion can kill them, and adding one would only pretend otherwise:
+//   • `if (!candidate) return false` in sensitivePathCandidateMatches: the
+//     function is module-private and both of its call sites already guard the
+//     argument non-empty, so the branch is unreachable.
+//   • `!canonical || canonical === raw` → `&&`: both changed paths fall through
+//     to sensitivePathCandidateMatches(canonical), which for canonical === raw
+//     re-runs a pure function that just returned false, and for canonical === ''
+//     hits the (unreachable-in-practice) empty guard above. Same answer either
+//     way — the two mutants are only observable TOGETHER.
+//   • `catch { return true }` in isLeaselessBashBoundary: the catch fires only
+//     if DEFAULT_DANGEROUS_PATTERN stops being a valid regex, which no input
+//     can cause.
 
 describe('addSessionPermissionRule — the rule is VALIDATED before it is stored', () => {
   it('refuses a malformed rule, returns false, and stores nothing', () => {
@@ -714,5 +728,36 @@ describe('the sensitive-path matcher — how the basename is actually extracted'
     expect(isSensitivePermissionPath('.env/', undefined, dir)).toBe(true);
 
     rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe('the sensitive-path matcher — canonicalization with no cwd argument', () => {
+  // The default cwd must be reachable: with `cwd` omitted the matcher falls
+  // back to process.cwd(), and the RAW spelling below matches nothing — only
+  // the canonical form does.
+  it('canonicalizes against process.cwd() when no cwd is passed', () => {
+    // Raw: `.git/x/../hooks` — the hook-directory pattern needs `.git/hooks`
+    // adjacent, so the raw spelling evades it. Canonically it IS a git hook.
+    expect(isSensitivePermissionPath('.git/x/../hooks/pre-commit')).toBe(true);
+    expect(isSensitivePermissionPath('src/index.ts')).toBe(false);
+  });
+});
+
+describe('resolvePermissionDecision — a malformed config never crashes the gate', () => {
+  it('treats a non-object toolPermissions as {} instead of throwing', () => {
+    for (const toolPermissions of [null, 'nope', 42, true, undefined]) {
+      const call = () => resolvePermissionDecision(request({ config: cfg({ toolPermissions }) }));
+      expect(call, JSON.stringify(toolPermissions ?? null)).not.toThrow();
+      // …and the decision still comes from the mode, not from a phantom entry.
+      expect(call().stage, JSON.stringify(toolPermissions ?? null)).toBe('mode');
+    }
+  });
+
+  it('a malformed config still honours the deny stages that come before it', () => {
+    const denied = resolvePermissionDecision(request({
+      config: cfg({ toolPermissions: null, permissionMode: 'deny-all' }),
+    }));
+    expect(denied.decision).toBe('deny');
+    expect(denied.stage).toBe('hard-deny');
   });
 });

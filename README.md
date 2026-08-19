@@ -338,6 +338,16 @@ agon review --mutate uncommitted                   # advisory mutation section a
 - **Prebuilt `dist`? Pass `--build`.** If your tests run against compiled output rather than the mutated source, every mutant survives. `--build "<cmd>"` rebuilds before the baseline and each mutant; Agon also warns loudly when a run shows that exact signature.
 - **Your tree is never touched.** All mutation happens in a temporary worktree hydrated from `HEAD` + your uncommitted diff, removed when the run ends.
 
+**Monorepos / prebuilt packages.** A test that imports your package *by name* (`import { x } from '@you/pkg'`) does not load your source — it loads whatever `package.json` `exports`/`main` points at, i.e. `dist`. Mutating `src` then changes nothing the suite ever executes, and you get a mutation score of **0% with every mutant surviving**. That signature is almost always this, not a weak suite. Agon defends on both sides: the sandbox's `node_modules` links workspace packages to the *sandbox's own* sources (never back to your checkout), and the mutated package's git-ignored build output is cleared so a stale bundle cannot answer for the mutation. So pass the build:
+
+```bash
+agon mutate packages/pricing/src/rules.ts \
+  --test  "npx vitest run tests/unit/rules.test.ts" \
+  --build "npm run build -w packages/pricing"
+```
+
+Without `--build` the run does not lie: the sandbox baseline fails and the error names the cleared output and tells you to pass a build command. Tests that import the package by relative *source* path need no `--build` at all.
+
 Also available as interactive `/mutate` in the REPL, and as `agon call mutate <path> --test "<cmd>" --mechanical-only` for external CLIs.
 
 ### Agent

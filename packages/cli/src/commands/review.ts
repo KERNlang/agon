@@ -24,6 +24,7 @@ import {
   type ReviewRoutingEngine,
   type ReviewRoutingManifest,
 } from '../generated/handlers/review-router.js';
+import { runReviewMutation, reviewMutateOverrides } from '../generated/blocks/review-mutate.js';
 import { buildConsensus, formatConsensusRow } from '../generated/blocks/consensus.js';
 import { fail, header, info, warn, bold } from '../output.js';
 
@@ -108,6 +109,26 @@ export const reviewCommand = defineCommand({
       type: 'string',
       alias: 'p',
       description: 'Max engines to review concurrently. Default: all at once. Lower it (e.g. 2) if parallel API engines hit rate limits or first-chunk stalls.',
+    },
+    mutate: {
+      type: 'boolean',
+      description: 'ADVISORY mutation pass after the consensus: mutate the reviewed diff in a disposable worktree, re-run the discovered test command per mutant, and list every SURVIVOR (wrong code the tests called green). Mechanical-only (zero engine spend) unless --mutate-semantic; artifacts land in <run-dir>/mutation/; never changes the review verdict or exit code.',
+    },
+    'mutate-semantic': {
+      type: 'boolean',
+      description: 'With --mutate: also let the reviewing engines propose AI-semantic mutants — real engine spend, and your changed source is sent to each of them. Off by default, exactly like `agon mutate`.',
+    },
+    'mutate-test': {
+      type: 'string',
+      description: 'With --mutate: the test command to run per mutant, instead of the discovered gate. Use it when the discovered script is not the suite that covers the diff.',
+    },
+    'mutate-build': {
+      type: 'string',
+      description: 'With --mutate: build command run before the baseline AND each mutant — required when the suite runs against a prebuilt dist rather than the mutated source (otherwise every mutant survives).',
+    },
+    'mutate-lens': {
+      type: 'string',
+      description: 'With --mutate: steer the AI-semantic panel toward one bug family — IMPLIES --mutate-semantic. Presets: security | privacy | perf | ratelimit | concurrency; anything else is used verbatim as free text.',
     },
     verbose: {
       type: 'boolean',
@@ -472,6 +493,36 @@ export const reviewCommand = defineCommand({
     if (consensus.speculative.length) lines.push(`  SPECULATIVE: ${consensus.speculative.length} low-confidence finding(s) — likely noise.`);
     if (consensus.nits.length) lines.push(`  NITS: ${consensus.nits.length}.`);
     console.log(lines.join('\n'));
+
+    if (args.mutate) {
+      // runReviewMutation is contractually total (it catches everything and
+      // returns lines). The try/catch is the belt for that braces: the ADVISORY
+      // pass may never be the reason `agon review` exits non-zero.
+      try {
+        const mutationLines = await runReviewMutation({
+          repoRoot: cwd, diff: target.diff, outputDir, registry, adapter,
+          // The engines the review actually used — a user who narrowed the panel
+          // with --engine/--engines/--risk narrowed their spend, and the mutation
+          // panel must not widen it back to the whole active roster.
+          engines: requested,
+          semantic: args['mutate-semantic'] === true,
+          ...reviewMutateOverrides(args as Record<string, unknown>),
+        });
+        if (mutationLines.length && !quiet) console.log(mutationLines.join('\n'));
+      } catch (err) {
+        if (!quiet) info(`Mutation pass skipped — ${err instanceof Error ? err.message : String(err)} (advisory only; the review verdict above is unaffected)`);
+      }
+    } else if (
+      args['mutate-semantic'] === true
+      || typeof args['mutate-test'] === 'string'
+      || typeof args['mutate-build'] === 'string'
+      || typeof args['mutate-lens'] === 'string'
+    ) {
+      // These only do anything inside the --mutate branch. Accepting them
+      // silently made a user believe an override took effect when no mutation
+      // pass ran at all.
+      warn('--mutate-semantic/--mutate-test/--mutate-build/--mutate-lens have no effect without --mutate — no mutation pass ran.');
+    }
 
     if (!quiet) info(`Full per-engine reviews: ${outputDir}`);
 

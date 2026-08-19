@@ -34,7 +34,7 @@ fn name=buildOracleCheatPrompt params="task:{ source:string; verify:string }" re
   >>>
 
 fn name=oracleGateDecision params="holes:OracleHole[], mode:string" returns="{ abort: boolean; summary: string }" export=true
-  doc "Decide the outcome of the oracle red-team pre-flight. Pure — exported for testing. No holes -> proceed clean. `strict` + holes -> abort the launch (the oracle would let buggy code land green). `warn` (or any non-strict) + holes -> proceed with a loud summary so the human can strengthen the verify."
+  doc "Decide the outcome of the oracle red-team pre-flight. Pure — exported for testing. No holes -> proceed clean. `strict` + holes -> stop the run (the oracle would let buggy code land green). The probe is per task, just before that task is forged, so a strict stop can land mid-run, not only at launch. `warn` (or any non-strict) + holes -> proceed with a loud summary so the human can strengthen the verify."
   handler <<<
     if (holes.length === 0) {
       return { abort: false, summary: 'oracle red-team: no gameable verify found — the oracles look discriminating.' };
@@ -42,7 +42,28 @@ fn name=oracleGateDecision params="holes:OracleHole[], mode:string" returns="{ a
     const lines = holes.map((h) => `  • ${h.taskId}: gamed by ${h.engine} — ${h.evidence}`);
     const head = `oracle red-team: ${holes.length} gameable verify(s) — a cheating impl passed the test, so it would let buggy-but-passing code land green:`;
     const tail = mode === 'strict'
-      ? 'Refusing to launch (--oracle-gate=strict). Strengthen the verify(s) with discriminating cases and retry.'
+      ? 'Stopping the run (--oracle-gate=strict). Strengthen the verify(s) with discriminating cases and retry.'
       : 'Continuing (--oracle-gate=warn) — strengthen the verify(s) before trusting the run.';
     return { abort: mode === 'strict', summary: [head, ...lines, tail].join('\n') };
+  >>>
+
+const name=DEFAULT_ORACLE_GATE type="'off'|'warn'|'strict'" export=true value={{ 'warn' }}
+  doc "THE default for --oracle-gate, in one place. The CLI flag parser and runGoalController used to each carry their own literal ('warn' at the CLI, 'off' in the controller), so any caller that reached the controller directly — the supervisor, a test, an embedder — silently ran with the gate DISABLED while the docs promised it was on. A safety default that depends on which door you came through is not a default."
+
+fn name=oracleProbeConclusive params="m:{ winner?: string|null; error?: string; enginesDispatched?: number; results?: Record<string, { engineCompleted?: boolean; status?: string }> }" returns="{ conclusive: boolean; reason: string }" export=true
+  doc "Did the red-team probe actually MEASURE the oracle? A forge that threw, dispatched nobody, or whose every seat failed produces `winner: null` — byte-identical to the honest 'nobody could cheat this verify' result. Reading that as a clean pass is the worst failure mode this gate has: it reports the oracle as sound precisely when it learned nothing. A winner is always conclusive (a hole was found); otherwise at least one seat must have completed. Pure — exported for testing."
+  handler <<<
+    if (m.winner) return { conclusive: true, reason: 'a cheating implementation won' };
+    const err = (m.error ?? '').trim();
+    if (err) return { conclusive: false, reason: `the red-team forge reported an error (${err}) — no engine result to judge` };
+    const results = m.results ?? {};
+    const seats = Object.keys(results);
+    if (seats.length === 0 || (m.enginesDispatched ?? 0) === 0) {
+      return { conclusive: false, reason: 'the red-team forge dispatched no engine — nothing attacked this verify' };
+    }
+    const completed = seats.filter((id) => results[id]?.engineCompleted === true);
+    if (completed.length === 0) {
+      return { conclusive: false, reason: `all ${seats.length} red-team seat(s) failed to complete — the verify was never actually attacked` };
+    }
+    return { conclusive: true, reason: `${completed.length}/${seats.length} seat(s) attacked the verify and none could game it` };
   >>>

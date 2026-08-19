@@ -125,6 +125,7 @@ Pick by the **shape** of the problem, not the topic:
 | Hidden AI-watermark channels found / stripped | **sanitize** | Deterministic forensics — zero-width chars, bidi controls, tag stego, homoglyphs, whitespace payloads, and PNG/JPEG/SVG provenance metadata. No AI, fully verifiable. |
 | AI-written text rewritten to read human | **naturalize** | Deterministic sanitize → a **non-author** engine rewrites (writer ≠ rewriter) → mandatory re-scan → word-diff report, with a `--min-change` honesty threshold. |
 | Existing code checked for bugs | **review** | Multi-engine review folded into one confidence-tiered consensus. |
+| To know whether your **tests** would catch a bug | **mutate** | Mutation testing — Agon breaks the code on purpose and re-runs your suite; every mutant that SURVIVES is a test that would not have noticed. Advisory, never a gate. |
 | A task done end-to-end autonomously | **agent** | One engine (Cesar-routed) runs a multi-turn tool loop to do the work. |
 | A whole queue driven to "done" unattended | **goal** | Per task: build → witness → gate → review + judge → commit, for hours. |
 | A big, multi-layered task | **team-\*** | 2v2 / 3v3 variants of forge / tribunal / brainstorm — engines collaborate per side. |
@@ -135,6 +136,7 @@ Pick by the **shape** of the problem, not the topic:
 - Need a decision debate → `tribunal`
 - Need one refined output (plan, spec, PR description, architecture note, acceptance criteria, migration plan) → `synthesis`
 - Need code checked → `review`
+- Need to know whether your tests are real → `mutate`
 - Need code built competitively → `forge`
 - Need the first green solution fast → `speculate`
 - Need a task queue executed → `goal`
@@ -315,6 +317,61 @@ agon call review uncommitted --roles auto       # external-CLI bridge (Claude Co
 
 With `--roles auto` the fixed roster is dealt onto the selected panel in order and every extra engine lands on `overall`; an explicit comma list is zipped engine-by-engine (unknown role ids fall back to `overall`). Roles compose with `--risk`/`--primary-engine` routing — they change what each seat looks *at*, never how many seats there are.
 
+### Mutate
+Mutation testing as a **test-strength oracle**. Review asks *"is this code wrong?"* — `mutate` asks the question a review panel cannot: *"would my tests **notice** if it were?"* Agon copies your work into a disposable git worktree, breaks the target lines one mutant at a time, and re-runs your suite for each. Every mutant that **survives** is wrong code your tests called green.
+
+```bash
+agon mutate                                        # changed lines vs the auto-resolved base — mechanical, zero engine spend
+agon mutate src/pricing.ts --test "npm test"       # one file, explicit suite
+agon mutate src/pricing.ts --semantic              # opt in to the AI panel (real engine spend)
+agon mutate src/auth.ts --lens security            # steer that panel at one bug family (--lens implies --semantic)
+agon mutate --diff branch:main --max-mutants 20    # a branch's changes, capped
+agon mutate --json src/add.ts                      # machine surface: the MutationReport, nothing else
+agon review --mutate uncommitted                   # advisory mutation section appended to a normal review
+agon review --mutate --mutate-test "npx vitest run" --mutate-build "npm run build"   # point the advisory pass at the right suite
+agon review --mutate --mutate-lens security        # the advisory pass, focused (implies --mutate-semantic)
+```
+
+**Two kinds of mutant, one pool.** *Mechanical* mutants are the calibrated operator set Agon's `goal` controller already uses (arithmetic, equality, logic, boolean, relational swaps) — **this is the default, and it costs nothing: no engine is dispatched and no source leaves your machine.** *Semantic* mutants are the agon-differentiated layer: every roster engine reads your target lines and proposes a **realistic bug it thinks your tests would miss**, with a one-line rationale. **`--semantic` opts into that panel**, because it sends your changed source to every engine on it and spends 1–2 dispatches each (a seat that times out, errors or returns nothing is retried once). The run header says the cost out loud before it is spent (`semantic panel: 3 engine(s), 1-2 dispatches each`) and the actual dispatch count after (`semantic panel spend: 4 engine call(s)`). `--mechanical-only` is the explicit spelling of the default.
+
+**`--lens` — point the panel at the bugs you actually fear.** A free-text focus that IMPLIES `--semantic` (a lens can only steer engine-proposed bugs; mechanical operators cannot be focused, so `--lens` with `--mechanical-only` is refused rather than silently ignored). Anything that is not a preset is used verbatim — `--lens "off-by-one in the paginator"` is a valid lens. The five documented presets:
+
+| Preset | Asks the panel to propose first |
+| --- | --- |
+| `security` | auth bypass, missing permission or ownership checks, token/session misuse, removed input validation |
+| `privacy` | returning or logging more user data than needed, PII leaks, missing redaction |
+| `perf` | N+1 queries, missing cache or index use, unbounded loops, missing pagination or limits |
+| `ratelimit` | skipped or loosened throttles, missing quota checks, retry storms |
+| `concurrency` | lost locks, races, non-atomic read-modify-write |
+
+The lens steers, it never fences: an engine that sees a stronger bug outside the focus is still asked for it. The run header prints the expansion (`lens: security — auth bypass, …`), and every survivor the panel proposed under it is labelled `semantic/<engine> lens:<focus>` so the report says what it was pointed at.
+
+- **Survivors are the output.** Each one prints as `before → after` with its file, line, class and origin. A survivor is not a bug report — it is an *assertion* you are missing.
+- **Advisory, never a gate.** The exit code reflects whether the RUN worked, never how weak the suite is. Mutation score is noisy by design (relational swaps are deliberately equivalence-prone), so Agon never blocks on it.
+- **Honest accounting.** A mutant that hangs counts as *killed* (a hang is a detection). A mutant that does not typecheck is *invalid* and excluded from the score. Mutants dropped for budget are reported as **not run**, never quietly as kills. Comment-only lines earn no mutants at all — a swap inside a doc comment is equivalent by construction and could only ever survive as noise.
+- **The sandbox is checked first.** The unmutated suite must pass in the worktree before a single mutant runs — otherwise "100% killed" would just mean the sandbox was broken.
+- **Prebuilt `dist`? Pass `--build`.** If your tests run against compiled output rather than the mutated source, every mutant survives. `--build "<cmd>"` rebuilds before the baseline and each mutant; Agon also warns loudly when a run shows that exact signature.
+- **Your tree is never touched.** All mutation happens in a temporary worktree hydrated from `HEAD` + your uncommitted diff + your untracked files, removed when the run ends. Every mutant path is checked against the real (symlink-resolved) worktree before a byte is written; a mutant that would escape, or whose source line has drifted, is graded *invalid* rather than applied.
+- **`--semantic` executes engine-written code.** A semantic mutant is a single line an engine wrote, applied inside the sandbox and then run by *your* test command — the worktree is filesystem isolation, not a security boundary. The default mechanical pool keeps every mutant inside the calibrated operator set.
+- **`--test`, `--build`, `--typecheck` (and `--mutate-test`/`--mutate-build`) run through your shell.** They carry exactly the trust you already give an npm script: whatever you pass is executed verbatim in the sandbox, so pass commands you would run yourself.
+- **The semantic panel is read-only, and runs from the sandbox.** Engines are dispatched with tools disabled, with the disposable worktree as their working directory — never your checkout — and the prompt fences your source as *data, not instructions*. An engine whose definition hands its CLI a blanket write/auto-approve flag (`--dangerously-skip-permissions`, `--yes`, …) is skipped for this panel with a note, because that seat cannot be forced read-only.
+
+**Monorepos / prebuilt packages.** A test that imports your package *by name* (`import { x } from '@you/pkg'`) does not load your source — it loads whatever `package.json` `exports`/`main` points at, i.e. `dist`. Mutating `src` then changes nothing the suite ever executes, and you get a mutation score of **0% with every mutant surviving**. That signature is almost always this, not a weak suite. Agon defends on both sides: the sandbox's `node_modules` links workspace packages to the *sandbox's own* sources (never back to your checkout), and the mutated package's git-ignored build output is cleared so a stale bundle cannot answer for the mutation. So pass the build:
+
+```bash
+agon mutate packages/pricing/src/rules.ts \
+  --test  "npx vitest run tests/unit/rules.test.ts" \
+  --build "npm run build -w packages/pricing"
+```
+
+Without `--build` the run does not lie: the sandbox baseline fails and the error names the cleared output and tells you to pass a build command. Tests that import the package by relative *source* path need no `--build` at all.
+
+**Inside `agon review`.** `--mutate` appends the same pass as an advisory section — mechanical-only by default, exactly like the standalone command; `--mutate-semantic` opts into the panel. Its artifacts land in `<run-dir>/mutation/`, never beside the review's own per-engine files. `--mutate-lens <focus>` is the same lens (and implies `--mutate-semantic`); `--mutate-test "<cmd>"` and `--mutate-build "<cmd>"` are the same overrides as the standalone command — reach for them when the discovered gate is not the suite that covers the diff, or when the suite runs against a prebuilt `dist`.
+
+Also available as interactive `/mutate` in the REPL (same flags, same defaults, including `--lens`), and as `agon call mutate <path> --test "<cmd>" --build "<cmd>" [--lens security]` for external CLIs (`--semantic` opts into the panel there too).
+
+Cesar will also *offer* it: a turn that reports the tests pass — or a question like "are these tests real?" — earns one dim in-flow line suggesting `/mutate`, or `/mutate --semantic --lens security|privacy|ratelimit` when the files that turn wrote look like auth/session/token, quota or user-data work. It is a suggestion, never a run: you type the command. Turn it off with `agon config set cesarMutateReflex false`.
+
 ### Agent
 An autonomous agent loop that can operate solo or in shadow mode, automatically routed to the best engine by Cesar based on task requirements.
 
@@ -372,7 +429,7 @@ agon goal "Close all KERN gaps" \
 | `--engines` | Implementer roster; **authoritative** when set (no routing/narrowing) | all active |
 | `--review-engines` / `--judge` | The review panel and the adjudicator | all / config→Cesar→first |
 | `--require-tests` | Reject a source change with no test | on |
-| `--oracle-gate` | Pre-flight oracle red-team (`off`\|`warn`\|`strict`): the panel tries to GAME each task's `verify`; `strict` refuses to launch if any is gameable | `off` |
+| `--oracle-gate` | Oracle red-team (`off`\|`warn`\|`strict`): just before each task is forged, the panel tries to GAME that task's `verify`; `strict` stops the run at the offending task when a gameable verify is found — never only at launch (probed per task, per launch) | `warn` |
 | `--max-attempts` | Attempts per task before park | `3` |
 | `--max-hours` / `--budget` | Wall-clock and/or USD ceiling — either, both, or neither | off (`0`) |
 | `--push` / `--pr` | Push the goal branch per task / open a PR via `gh` at the end (never `main`). With `--push`, the run ends with an engine-written PR title/body and a **prefilled GitHub PR link** — click it and the form is already filled (no `gh`/token needed) | off |
@@ -382,7 +439,7 @@ Read a run's digest from any session with `agon goal --status --id close-all-ker
 
 **Designing the gate — it _is_ the spec.** The forge only optimizes to make your `--gate` (and each task's `verify`) pass, so that command is the actual specification. Make it **discriminating**: it must FAIL a plausibly-wrong implementation, not merely pass the intended one (use distinct/edge inputs — `atan2(3,4)`, not `atan2(0,1)`). Before a long run, red-team your own oracle with `agon nero "<the gate I wrote>" --reasoning "is this gameable?"` — if a wrong impl can slip through, add a killer case first. A non-discriminating gate lets buggy-but-passing code land green and dead-loops the run.
 
-Or **automate the red-team**: `--oracle-gate=warn` (or `strict`) runs a pre-flight where the review panel tries to make each task's `verify` pass with a *cheating* impl (hardcode, ignore inputs). If any engine succeeds, the verify is gameable — `warn` reports it and continues, `strict` refuses to launch so you strengthen it first. It's the discriminating-oracle discipline built into the tool, so it no longer depends on remembering to dogfood it.
+Or **automate the red-team** — this is **on by default** (`--oracle-gate=warn`; `off` opts out, `strict` stops the run when a gameable verify is found — probed per task, per launch, so a strict stop can land mid-run). Just before a task is forged, the review panel tries to make *that* task's `verify` pass with a *cheating* impl (hardcode, ignore inputs). If any engine succeeds, the verify is gameable — `warn` reports it and continues, `strict` stops so you strengthen it first. A probe that *errors* is not a pass: it is journaled as `oracle-gate-error`, the task stays unprobed and the next pick retries it (capped at two attempts per task per launch, after which the task is forged unprobed and loudly said so). The probe runs **once per task per launch** and is deliberately never cached across launches: the panel is stochastic, so a single clean pass must not disable the gate forever, and a `verify` whose dependencies only unblock mid-run is probed the moment its task becomes runnable. It's the discriminating-oracle discipline built into the tool, so it no longer depends on remembering to dogfood it.
 
 ### Conquer
 
@@ -431,7 +488,7 @@ Also available as interactive `/sanitize` and `/naturalize` in the REPL.
 
 Launching `agon` starts a powerful terminal REPL equipped with native scrollback, command history, and a file rail. 
 
-Available commands include: `/forge`, `/synthesis`, `/brainstorm`, `/tribunal`, `/campfire`, `/pipeline`, `/review`, `/agent`, `/speculate`, `/team-forge`, `/status`, `/leaderboard`, `/history`, `/config`, `/plan`, `/mode`, `/permissions`, `/models`, `/engines`, `/doctor`, `/help`, and `/exit`.
+Available commands include: `/forge`, `/synthesis`, `/brainstorm`, `/tribunal`, `/campfire`, `/pipeline`, `/review`, `/mutate`, `/agent`, `/speculate`, `/team-forge`, `/status`, `/leaderboard`, `/history`, `/config`, `/plan`, `/mode`, `/permissions`, `/models`, `/engines`, `/doctor`, `/help`, and `/exit`.
 
 ### Permission modes
 

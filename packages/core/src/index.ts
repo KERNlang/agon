@@ -177,6 +177,12 @@ export { parseToolCalls, toolCallsToApiFormat, formatToolResults, formatToolResu
 export type { ParsedToolCall, ParseResult } from './generated/tools/tool-parser.js';
 export { discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat } from './generated/tools/mcp-discovery.js';
 export type { McpServerConfig } from './generated/tools/mcp-discovery.js';
+// ── Mutation testing (shared by `agon goal`'s mutation-witness and `agon mutate`) ──
+export { canonicalPath, isInsideRealpath, resolveWithinRoot } from './generated/blocks/paths.js';
+export { generateMutants, applyMutantToSource } from './generated/tools/mutant-generator.js';
+export type { Mutant } from './generated/tools/mutant-generator.js';
+export { runMutants } from './generated/tools/mutant-runner.js';
+export type { MutantOutcome, MutationReport, MutantProgress, RunMutantsOptions } from './generated/tools/mutant-runner.js';
 export { buildToolSystemPrompt, processToolResponse, runToolLoop } from './generated/tools/tool-loop.js';
 export type { ToolLoopCallbacks, ToolLoopResult } from './generated/tools/tool-loop.js';
 export { startChatSession, appendMessage, appendUserTurnIfAbsent, updateChatSummary, formatChatHistoryForPrompt, formatChatContextForPrompt, buildHistoryPrimedPrompt, seedChatSessionFromThread, loadChatSession, resumeChatSession, listChatSessions, latestChatSession } from './chat-store.js';

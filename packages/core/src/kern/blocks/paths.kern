@@ -1,0 +1,73 @@
+// ── Path containment (shared primitive) ────────────────────────────────
+// ONE implementation of "this path must stay inside that root", used by every
+// surface that writes a file whose path came from somewhere untrusted: the
+// mutant runner (engine-proposed `Mutant.file`), `agon mutate`'s target
+// resolution, and `agon goal`'s worktree writes (forge/goal/paths.kern
+// delegates here — the copy that used to live there was byte-identical).
+//
+// Why lexical containment is NOT enough (review R1/R2 blocking, codex 0.99):
+// `path.resolve` does not resolve symlinks but `readFileSync`/`writeFileSync`
+// DO follow them. A repo-relative path that passes `startsWith(root + sep)` can
+// still be a symlink whose real target is /etc or the user's own checkout — so
+// a "sandboxed" mutation writes outside the sandbox. Containment is therefore
+// checked on CANONICAL paths, and a target whose final component is itself a
+// symlink is rejected outright rather than followed.
+
+import from="node:fs" names="lstatSync,realpathSync"
+import from="node:path" names="resolve,sep,dirname,basename,join"
+
+fn name=canonicalPath params="target:string" returns=string export=true
+  doc "The canonical (symlink-resolved) form of `target`. A path that does not exist yet is canonicalized through its deepest EXISTING ancestor, with the missing segments appended — so a not-yet-created file still gets a truthful containment answer. Never throws."
+  handler <<<
+    const abs = resolve(target);
+    let head = abs;
+    const rest: string[] = [];
+    for (let depth = 0; depth < 4096; depth += 1) {
+      try {
+        const real = realpathSync(head);
+        return rest.length === 0 ? real : join(real, ...rest);
+      } catch { /* head does not exist yet — step up and retry */ }
+      const parent = dirname(head);
+      if (parent === head) return abs;
+      rest.unshift(basename(head));
+      head = parent;
+    }
+    return abs;
+  >>>
+
+fn name=isInsideRealpath params="root:string, candidate:string" returns=boolean export=true
+  doc "True when `candidate` canonically IS `root` or lives under it. Both sides are symlink-resolved first, so a link pointing out of the root answers false even though its lexical form looks contained. Pure-ish (stats the filesystem), never throws."
+  handler <<<
+    const base = canonicalPath(root);
+    const abs = canonicalPath(candidate);
+    if (abs === base) return true;
+    return abs.startsWith(base + sep);
+  >>>
+
+fn name=resolveWithinRoot params="root:string, candidate:string" returns=string export=true
+  doc "Resolve candidate against root and THROW if it escapes: lexically (absolute paths, ../), through a symlinked final component, or through a symlinked parent whose real target is outside the root. Containment is ALWAYS decided on canonical paths — the lexical form is only a fast accept. Returns the resolved (non-canonical) path so callers keep the path the user sees."
+  handler <<<
+    const base = resolve(root);
+    const abs = resolve(base, candidate);
+    // The lexical comparison is a FAST ACCEPT, never the verdict. The two sides
+    // can be spelled through different links and still be the same place: on
+    // macOS a caller that realpath'd its root holds `/private/tmp/x` while an
+    // ABSOLUTE candidate the user (or mkdtemp) produced reads `/tmp/x/f.ts`.
+    // That is the same directory, and rejecting it here made every absolute
+    // target under /tmp "escape" its own root. So a lexical miss falls through
+    // to the canonical arbiter (which resolves BOTH sides) instead of throwing.
+    // Real escapes — `../outside`, a genuinely unrelated absolute path — fail
+    // the canonical check too, so nothing is let through that was blocked before.
+    if (abs !== base && !abs.startsWith(base + sep) && !isInsideRealpath(base, abs)) {
+      throw new Error(`Path ${JSON.stringify(candidate)} escapes ${base}`);
+    }
+    let isLink = false;
+    try { isLink = lstatSync(abs).isSymbolicLink(); } catch { isLink = false; }
+    if (isLink) {
+      throw new Error(`Path ${JSON.stringify(candidate)} is a symlink — refusing to write through it out of ${base}`);
+    }
+    if (!isInsideRealpath(base, abs)) {
+      throw new Error(`Path ${JSON.stringify(candidate)} escapes ${base} through a symlinked parent directory`);
+    }
+    return abs;
+  >>>

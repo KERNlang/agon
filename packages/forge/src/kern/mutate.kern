@@ -1,0 +1,449 @@
+// ── `agon mutate` — mutation testing as a test-strength oracle ─────────
+//
+// "Which of my tests are fake?" Agon mutates the target lines, re-runs the
+// suite, and reports every mutant that SURVIVED — wrong code the tests still
+// call green. Two mutant sources feed one pool:
+//   • MECHANICAL — the calibrated operator set shared with `agon goal`
+//     (@kernlang/agon-core tools/mutant-generator).
+//   • SEMANTIC — every roster engine proposes realistic bugs (mutate-semantic).
+//
+// Everything runs in a DISPOSABLE git worktree checked out at HEAD and hydrated
+// with the user's uncommitted work (`git apply --binary` of `git diff HEAD` plus
+// every untracked, non-ignored file). The user's own tree is never written to,
+// and the worktree is removed in `finally`.
+//
+// ORDER MATTERS: the sandbox is built BEFORE the semantic panel is dispatched,
+// and the panel runs with the sandbox as its cwd. Pointing an engine at the
+// user's real checkout to ask it about untrusted source was a review blocker —
+// the prompt carries repository content, and not every CLI engine can be forced
+// read-only.
+//
+// Mutation score is ADVISORY. runMutate never throws for a weak suite; it only
+// reports ok:false for OPERATIONAL failure (no test command, no target, no
+// mutants, hydration failure, red baseline, or an ABORT mid-run).
+
+import from="node:fs" names="readFileSync,writeFileSync,existsSync,statSync,lstatSync,readdirSync,mkdirSync,cpSync"
+import from="node:path" names="join,dirname,resolve,relative,extname"
+import from="node:os" names="tmpdir"
+import from="node:crypto" names="randomUUID"
+import from="node:child_process" names="execFileSync"
+import from="@kernlang/agon-core" names="EngineAdapter,EngineRegistry,Mutant,MutationReport" types=true
+import from="@kernlang/agon-core" names="generateMutants,runMutants,worktreeCreate,worktreeRemoveBestEffort,headSha,resolveWithinRoot"
+import from="./goal/diff.js" names="parseChangedLines,isTestFile"
+import from="./mutate-semantic.js" names="collectSemanticMutants,normalizeLens"
+import from="./mutate-semantic.js" names="SemanticTarget" types=true
+import from="./mutate-sandbox.js" names="prepareSandboxNodeModules,clearShadowingDist,workspacePackageDirs"
+import from="./mutate-report.js" names="formatMutateVerdict,staleDistHint"
+
+interface name=MutateOptions export=true
+  field name=repoRoot type=string
+  field name=testCmd type=string doc="Required. The CLI resolves it (--test wins, else discoverGate) and fails loudly when there is none — runMutate never guesses."
+  field name=engines type="string[]"
+  field name=registry type=EngineRegistry
+  field name=adapter type=EngineAdapter
+  field name=semantic type=boolean
+  field name=maxMutants type=number
+  field name=perMutantTimeoutSec type=number
+  field name=totalBudgetSec type=number
+  field name=outputDir type=string
+  field name=diff type=string optional=true doc="A unified diff; its added lines become the targets. Mutually exclusive with `files`."
+  field name=files type="string[]" optional=true doc="Explicit files/directories (repo-relative or absolute; `.` and the repo root are accepted). Every line of every non-test source file becomes a target."
+  field name=typecheckCmd type=string optional=true
+  field name=buildCmd type=string optional=true
+  field name=semanticPerEngine type=number optional=true
+  field name=lens type=string optional=true doc="Free text or a MUTATE_LENS_PRESETS key steering the SEMANTIC panel toward one bug family. Meaningless without `semantic` — the CLI/REPL surfaces imply --semantic when a lens is given, and runMutate simply ignores it on a mechanical run."
+  field name=timeout type=number optional=true doc="Per-engine dispatch timeout (seconds) for the semantic panel."
+  field name=cwd type=string optional=true doc="Kept for callers that pass it; IGNORED for the semantic panel, which is always dispatched from the disposable sandbox worktree."
+  field name=signal type=AbortSignal optional=true
+  field name=onEvent type="(e:{type:string,data?:Record<string,unknown>})=>void" optional=true
+
+interface name=MutateResult export=true
+  field name=ok type=boolean doc="OPERATIONAL success. False for a red baseline AND for an ABORTED run — a cancelled run is not a completed one, so the CLI exits non-zero and the REPL says so instead of rendering a partial score as a result."
+  field name=report type=MutationReport
+  field name=survivors type="Mutant[]"
+  field name=byFile type="Record<string, Mutant[]>"
+  field name=verdict type=string
+  field name=costUsd type=number doc="Always 0 today — panel seats report no per-dispatch cost. Kept on the contract so the CLI/REPL surface does not change when they do."
+  field name=engineCalls type=number doc="Dispatches actually spent on the semantic panel. One per engine normally, TWO for a seat that needed the transient-failure retry — the honest number for a spend line."
+  field name=lens type=string optional=true doc="The normalized lens the semantic panel was steered with, echoed back so a surface can name it without re-normalizing the raw flag. Absent on a mechanical run."
+  field name=label type=string
+  field name=outputDir type=string
+  field name=panelHealth type="{ requested:number; responded:number; degraded:boolean; notes:string[]; banner:string|null }" optional=true
+  field name=reportPath type=string optional=true
+  field name=error type=string optional=true doc="Why the run was not operationally successful: the baseline error, or the abort notice when the caller cancelled mid-run."
+
+const name=MUTABLE_EXTENSIONS type="string[]" value={{ ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts'] }}
+
+const name=SKIP_DIRS type="string[]" value={{ ['node_modules', 'dist', 'build', 'out', 'coverage', 'vendor', '.git'] }}
+
+const name=MAX_UNTRACKED_FILE_BYTES type=number value=5242880
+  doc "Per-file ceiling on the untracked work copied into the sandbox (5 MiB). A stray recording or database dump must not turn hydration into a minutes-long copy; the skip is logged so the cause of a red baseline is never a mystery."
+
+const name=MAX_UNTRACKED_FILES type=number value=2000
+  doc "Ceiling on how many untracked files are copied. Beyond this the working tree is not 'uncommitted work' any more, and hydration would dominate the run."
+
+fn name=isMutableFile params="rel:string" returns=boolean export=true
+  doc "A path worth mutating: a JS/TS source file that is not a test."
+  handler <<<
+    if (isTestFile(rel)) return false;
+    return MUTABLE_EXTENSIONS.includes(extname(rel));
+  >>>
+
+fn name=collectMutableFiles params="repoRoot:string, absDir:string" returns="string[]" export=false
+  doc "Recursively list repo-relative mutable source files under absDir, skipping dependency/build/hidden directories and never following a symlinked entry."
+  handler <<<
+    const found: string[] = [];
+    const walk = (dir: string): void => {
+      let entries: ReturnType<typeof readdirSync>;
+      try { entries = readdirSync(dir, { withFileTypes: true }) as never; } catch { return; }
+      for (const entry of entries as unknown as Array<{ name: string; isDirectory: () => boolean; isFile: () => boolean }>) {
+        if (entry.name.startsWith('.')) continue;
+        const abs = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (SKIP_DIRS.includes(entry.name)) continue;
+          walk(abs);
+        } else if (entry.isFile()) {
+          const rel = relative(repoRoot, abs);
+          if (isMutableFile(rel)) found.push(rel);
+        }
+      }
+    };
+    walk(absDir);
+    return found.sort();
+  >>>
+
+fn name=mutationTargetsFromDiff params="diff:string" returns="Record<string, number[]>" export=true
+  doc "Changed-line targets from a unified diff: parseChangedLines minus test files and non-source extensions. Pure — containment against the repo root is the caller's job (runMutate does it), because a hand-authored diff can carry any path."
+  handler <<<
+    const parsed = parseChangedLines(diff);
+    const targets: Record<string, number[]> = {};
+    for (const [file, lines] of Object.entries(parsed)) {
+      if (!isMutableFile(file) || lines.length === 0) continue;
+      targets[file] = lines;
+    }
+    return targets;
+  >>>
+
+fn name=dedupeMutants params="mutants:Mutant[]" returns="Mutant[]" export=true
+  doc "Collapse mutants that produce the SAME mutated line in the same place — (file, line, after). First wins, so a semantic mutant placed ahead of the mechanical pool keeps its rationale. Pure."
+  handler <<<
+    const seen = new Set<string>();
+    const out: Mutant[] = [];
+    for (const m of mutants) {
+      const key = `${m.file ?? ''}|${m.line}|${m.after}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(m);
+    }
+    return out;
+  >>>
+
+fn name=selectMutants params="mutants:Mutant[], max:number" returns="Mutant[]" export=true
+  doc "Cap the pool at `max`: high-signal mutants first, then equiv-prone, then anything else, and inside each class ROUND-ROBIN across files so one hot file cannot eat the whole budget. Order within a file is preserved. Pure."
+  handler <<<
+    if (max <= 0) return [];
+    if (mutants.length <= max) return mutants;
+    const picked: Mutant[] = [];
+    const known: string[] = ['high-signal', 'equiv-prone'];
+    // The trailing bucket catches any class the Mutant type gains later: a new
+    // value must never be silently excluded from every capped pool.
+    const classes: string[] = [...known, ''];
+    for (const cls of classes) {
+      const byFile = new Map<string, Mutant[]>();
+      for (const m of mutants) {
+        const matches = cls === '' ? !known.includes(m.class) : m.class === cls;
+        if (!matches) continue;
+        const key = m.file ?? '';
+        const queue = byFile.get(key);
+        if (queue) queue.push(m);
+        else byFile.set(key, [m]);
+      }
+      const queues = [...byFile.values()];
+      let progressed = true;
+      while (picked.length < max && progressed) {
+        progressed = false;
+        for (const queue of queues) {
+          if (queue.length === 0) continue;
+          const next = queue.shift();
+          if (next) picked.push(next);
+          progressed = true;
+          if (picked.length >= max) break;
+        }
+      }
+      if (picked.length >= max) break;
+    }
+    return picked;
+  >>>
+
+fn name=hydrateWorktree params="repoRoot:string, worktree:string" returns=number export=false
+  doc "Make the HEAD sandbox match the user's working tree: apply `git diff --binary HEAD`, then copy EVERY untracked non-ignored regular file (not just the target sources — an untracked test, fixture, config or helper the suite needs would otherwise be missing and the baseline would fail for an invisible reason). Returns how many untracked files were copied. Throws the user-facing message when the patch will not apply (binary targets, submodules, partially-staged hunks are the known unsupported paths)."
+  handler <<<
+    let patch = '';
+    try {
+      patch = execFileSync('git', ['diff', '--binary', 'HEAD'], { cwd: repoRoot, encoding: 'utf-8', maxBuffer: 64 * 1024 * 1024 });
+    } catch (err) {
+      throw new Error(`could not read uncommitted changes (git diff HEAD failed): ${err instanceof Error ? err.message : String(err)}`);
+    }
+    if (patch.trim()) {
+      try {
+        execFileSync('git', ['apply', '--binary', '--whitespace=nowarn', '-'], { cwd: worktree, input: patch, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+      } catch (err) {
+        const detail = (err as { stderr?: string }).stderr?.trim() ?? (err instanceof Error ? err.message : String(err));
+        throw new Error(`uncommitted changes could not be applied to the sandbox — commit/stash or pass \`--diff <base>\` (git apply: ${detail.slice(0, 300)})`);
+      }
+    }
+    let untracked: string[] = [];
+    try {
+      untracked = execFileSync('git', ['ls-files', '--others', '--exclude-standard'], { cwd: repoRoot, encoding: 'utf-8' })
+        .split('\n').map((s) => s.trim()).filter((s) => s.length > 0);
+    } catch { /* nothing untracked we can see — the patch already covered tracked work */ }
+    let copied = 0;
+    let skipped = 0;
+    for (const rel of untracked) {
+      if (copied >= MAX_UNTRACKED_FILES) { skipped += 1; continue; }
+      const src = join(repoRoot, rel);
+      let dst = '';
+      try { dst = resolveWithinRoot(worktree, rel); } catch { skipped += 1; continue; }
+      let size = 0;
+      try {
+        const st = lstatSync(src);
+        if (!st.isFile()) continue; // directories are implied, symlinks are not followed
+        size = st.size;
+      } catch { continue; }
+      if (size > MAX_UNTRACKED_FILE_BYTES) { skipped += 1; continue; }
+      try {
+        mkdirSync(dirname(dst), { recursive: true });
+        cpSync(src, dst);
+        copied += 1;
+      } catch { skipped += 1; }
+    }
+    if (skipped > 0) console.warn(`[agon] mutate: ${skipped} untracked file(s) were NOT copied into the sandbox (too large, too many, or unreadable)`);
+    return copied;
+  >>>
+
+fn name=runMutate async=true params="opts:MutateOptions" returns="Promise<MutateResult>" export=true
+  doc "Resolve targets -> mechanical mutants -> hydrated HEAD sandbox -> optional semantic panel (dispatched FROM that sandbox) -> dedupe -> cap -> run -> verdict + mutation-report.json. Never throws: operational failures come back as ok:false with `error` and a verdict line the caller can print."
+  handler <<<
+    const repoRoot = resolve(opts.repoRoot);
+    const testCmd = String(opts.testCmd ?? '').trim();
+    const emptyReport = (): MutationReport => ({
+      testCmd, worktree: '', generated: 0, killed: 0, survived: 0, invalid: 0,
+      timeouts: 0, killedByTimeout: 0, notRun: 0, score: null, outcomes: [],
+      budgetExhausted: false, aborted: false, allSurvived: false, baselineMs: 0, baselineOk: false,
+      baselineError: undefined,
+    });
+    let label = 'mutate';
+    let engineCalls = 0;
+    // Normalized ONCE: the prompt, the events and every surface must name the
+    // same lens, and the raw flag is user text that has not been capped yet.
+    const lensKey = opts.semantic ? (normalizeLens(opts.lens)?.key ?? '') : '';
+    const fail = (error: string): MutateResult => ({
+      ok: false, report: emptyReport(), survivors: [], byFile: {},
+      verdict: `mutate failed: ${error}`, costUsd: 0, engineCalls, label, outputDir: opts.outputDir, error,
+      lens: lensKey || undefined,
+    });
+
+    if (!testCmd) return fail('no test command discovered — pass `--test <cmd>`');
+
+    // ── 1. Targets ──
+    let targets: Record<string, number[]> = {};
+    if (opts.diff && opts.diff.trim()) {
+      const fromDiff = mutationTargetsFromDiff(opts.diff);
+      // A diff is text: its paths get the SAME containment as a positional
+      // target, or `+++ b/../../outside.ts` reads (and, with --semantic, ships)
+      // a file from outside the repository.
+      for (const [file, lines] of Object.entries(fromDiff)) {
+        try {
+          resolveWithinRoot(repoRoot, file);
+          targets[file] = lines;
+        } catch (err) {
+          console.warn(`[agon] mutate: ignoring diff target ${file} — ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    } else if (opts.files && opts.files.length > 0) {
+      for (const p of opts.files) {
+        let abs = '';
+        try {
+          abs = resolveWithinRoot(repoRoot, p);
+        } catch (err) {
+          return fail(`target ${p} is outside the repository root (${err instanceof Error ? err.message : String(err)})`);
+        }
+        if (!existsSync(abs)) return fail(`target not found: ${p}`);
+        // `.` and the repo root itself resolve to an EMPTY relative path — that
+        // is the root, not an escape.
+        const rel0 = relative(repoRoot, abs);
+        const isDir = statSync(abs).isDirectory();
+        if (!isDir && isTestFile(rel0)) {
+          return fail(`${rel0} is a test file — mutate measures the SOURCE your tests cover; point it at the implementation instead`);
+        }
+        const rels = isDir ? collectMutableFiles(repoRoot, abs) : [rel0];
+        for (const rel of rels) {
+          if (!isMutableFile(rel)) continue;
+          const count = readFileSync(join(repoRoot, rel), 'utf-8').split('\n').length;
+          targets[rel] = Array.from({ length: count }, (_, i) => i + 1);
+        }
+      }
+    } else {
+      return fail('no target — pass a path or a diff');
+    }
+
+    const sources: Record<string, string> = {};
+    const sourceLines: Record<string, string[]> = {};
+    for (const file of Object.keys(targets)) {
+      const abs = join(repoRoot, file);
+      if (!existsSync(abs)) { delete targets[file]; continue; }
+      const text = readFileSync(abs, 'utf-8');
+      sources[file] = text;
+      sourceLines[file] = text.split('\n');
+    }
+    const targetFiles = Object.keys(targets);
+    if (targetFiles.length === 0) return fail('no mutable (non-test) source files in the target');
+    label = `mutate-${targetFiles.length}-file${targetFiles.length === 1 ? '' : 's'}`;
+    opts.onEvent?.({ type: 'mutate:targets', data: { files: targetFiles.length, lines: Object.values(targets).reduce((n, l) => n + l.length, 0) } });
+
+    // ── 2. Mechanical mutants ──
+    const mechanical: Mutant[] = [];
+    for (const file of targetFiles) mechanical.push(...generateMutants(sources[file], targets[file], file));
+
+    // ── 3. Isolated, hydrated sandbox — built BEFORE any engine sees the code ──
+    const worktree = join(tmpdir(), `agon-mutate-${randomUUID().slice(0, 8)}`);
+    let report: MutationReport;
+    let clearedDist: string[] = [];
+    let untrackedCopied = 0;
+    let panelHealth: MutateResult['panelHealth'];
+    try {
+      worktreeCreate(repoRoot, worktree, headSha(repoRoot));
+    } catch (err) {
+      return fail(`worktree creation failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    try {
+      untrackedCopied = hydrateWorktree(repoRoot, worktree);
+      // Workspace packages must resolve to the SANDBOX's sources, and no
+      // prebuilt bundle of a mutated package may shadow them. Both defects
+      // report as "every mutant survived" at score 0% rather than as an error.
+      const workspaces = workspacePackageDirs(repoRoot);
+      const nodeModules = prepareSandboxNodeModules(repoRoot, worktree, workspaces);
+      clearedDist = clearShadowingDist(repoRoot, worktree, targetFiles, workspaces);
+      const nodeModulesNote = nodeModules.failed > 0 ? `, ${nodeModules.failed} failed` : '';
+      opts.onEvent?.({
+        type: 'mutate:sandbox',
+        data: {
+          worktree,
+          mutants: mechanical.length,
+          nodeModules: `${nodeModules.mode} (${nodeModules.links} links, ${nodeModules.workspaceLinks} workspace links${nodeModulesNote})`,
+          nodeModulesFailed: nodeModules.failed,
+          untrackedCopied,
+          distCleared: clearedDist,
+          needsBuild: clearedDist.length > 0 && !opts.buildCmd,
+        },
+      });
+
+      // ── 4. Semantic mutants (panel fan-out FROM the sandbox, read-only) ──
+      let semantic: Mutant[] = [];
+      if (opts.semantic && opts.engines.length > 0) {
+        const semTargets: SemanticTarget[] = targetFiles.map((file) => ({
+          file,
+          lines: targets[file]
+            .map((line) => ({ line, text: sourceLines[file][line - 1] ?? '' }))
+            .filter((l) => l.text.trim().length > 0),
+        }));
+        try {
+          const sem = await collectSemanticMutants({
+            targets: semTargets,
+            sources: sourceLines,
+            engines: opts.engines,
+            registry: opts.registry,
+            adapter: opts.adapter,
+            perEngine: Math.max(1, opts.semanticPerEngine ?? 8),
+            timeout: opts.timeout ?? 180,
+            outputDir: opts.outputDir,
+            cwd: worktree,
+            lens: opts.lens,
+            signal: opts.signal,
+            onEvent: opts.onEvent,
+          });
+          semantic = sem.mutants;
+          panelHealth = sem.panelHealth;
+          engineCalls = sem.calls;
+        } catch (err) {
+          console.warn(`[agon] mutate: semantic panel failed, continuing with mechanical mutants only: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        opts.onEvent?.({ type: 'mutate:semantic', data: { accepted: semantic.length, calls: engineCalls, lens: lensKey } });
+      }
+
+      // ── 5. Dedupe + cap (semantic first so its rationale survives the dedupe) ──
+      const pool = selectMutants(dedupeMutants([...semantic, ...mechanical]), Math.max(1, opts.maxMutants));
+      if (pool.length === 0) return fail('no mutants generated for the target lines');
+      opts.onEvent?.({ type: 'mutate:pool', data: { total: pool.length, semantic: semantic.length, mechanical: mechanical.length } });
+
+      report = await runMutants({
+        worktree,
+        mutants: pool,
+        testCmd,
+        perMutantTimeoutSec: opts.perMutantTimeoutSec,
+        totalBudgetSec: opts.totalBudgetSec,
+        typecheckCmd: opts.typecheckCmd,
+        buildCmd: opts.buildCmd,
+        signal: opts.signal,
+        onProgress: (p) => opts.onEvent?.({ type: 'mutate:progress', data: { ...p } }),
+      });
+    } catch (err) {
+      return fail(err instanceof Error ? err.message : String(err));
+    } finally {
+      worktreeRemoveBestEffort(repoRoot, worktree);
+    }
+
+    // ── 6. Verdict + artifact ──
+    // A red baseline right after we cleared the package's prebuilt output is
+    // almost certainly OUR doing — say so instead of letting the user hunt deps,
+    // and name what the sandbox was actually given.
+    if (!report.baselineOk) {
+      const extra: string[] = [];
+      if (clearedDist.length > 0 && !opts.buildCmd) extra.push(staleDistHint(clearedDist));
+      extra.push(`the sandbox was hydrated from your working tree (untracked files were copied: ${untrackedCopied})`);
+      const base = report.baselineError ?? 'the sandbox baseline did not pass';
+      report = { ...report, baselineError: `${base}${extra.map((e) => `\n  → ${e}`).join('')}` };
+    }
+    const survivors = report.outcomes.filter((o) => o.status === 'survived').map((o) => o.mutant);
+    const byFile: Record<string, Mutant[]> = {};
+    for (const m of survivors) {
+      const key = m.file ?? '';
+      const bucket = byFile[key];
+      if (bucket) bucket.push(m);
+      else byFile[key] = [m];
+    }
+    let reportPath: string | undefined;
+    try {
+      mkdirSync(opts.outputDir, { recursive: true });
+      reportPath = join(opts.outputDir, 'mutation-report.json');
+      writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+    } catch (err) {
+      reportPath = undefined;
+      console.warn(`[agon] mutate: could not write mutation-report.json: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    const verdict = formatMutateVerdict(report, survivors);
+    opts.onEvent?.({ type: 'mutate:done', data: { score: report.score, survivors: survivors.length } });
+    // A CANCELLED run is not a completed one. `ok` used to come from baselineOk
+    // alone, so Ctrl-C after a green baseline returned ok:true with no error —
+    // the CLI exited 0 and the REPL rendered the partial score as a result. An
+    // abort is an OPERATIONAL outcome: ok:false, and the error says so.
+    const ok = report.baselineOk && !report.aborted;
+    let error: string | undefined;
+    if (!report.baselineOk) error = report.baselineError;
+    else if (report.aborted) error = `aborted — the run was cancelled after ${report.killed + report.survived} of ${report.generated} mutants had a verdict; the partial score is not evidence about your tests`;
+    return {
+      ok,
+      report,
+      survivors,
+      byFile,
+      verdict,
+      costUsd: 0,
+      engineCalls,
+      lens: lensKey || undefined,
+      label,
+      outputDir: opts.outputDir,
+      panelHealth,
+      reportPath,
+      error,
+    };
+  >>>

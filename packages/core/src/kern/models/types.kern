@@ -337,6 +337,8 @@ config name=AgonConfig
     doc "How many recent run records the precedent retrieval scans. Default 200. Non-positive = unset."
   field name=cesarDelegationReflex type=boolean default=true
     doc "When true, list-shaped prompts with no sequential/shared-state markers get an in-prompt structural advisory telling Cesar the task may decompose — Cesar may then offer [SUGGEST:agent-team]; the user always confirms before anything spawns. Advisory-only; nothing auto-spawns."
+  field name=cesarMutateReflex type=boolean default=true
+    doc "When true, a Cesar turn that CLAIMS the tests pass (or a user turn that questions whether the tests are real) earns one dim in-flow line suggesting `/mutate` — the test-strength oracle. Advisory-only: nothing runs, the user types the command. High-risk changed paths (auth/session/token, persistence, rate limits, user data) get the `--semantic --lens <x>` form instead."
   field name=cesarGateAutoRun type=boolean default=true
     doc "When true, the harness executes the discovered verification gate itself at a done-claim whenever the permission posture already allows the command (mode auto, or an allow rule covering it), instead of only nudging the engine to run it."
   field name=cesarGateAutoRunLimit type=number default=3

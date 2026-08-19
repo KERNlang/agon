@@ -725,3 +725,27 @@ describe('/permissions rule editing', () => {
     expect((detectIntent('/permissions add Bash(git push:*)') as any).action).toBeUndefined();
   });
 });
+
+// ── /mutate (AC5) ───────────────────────────────────────────────────
+
+describe('Intent Detection — /mutate', () => {
+  it('parses /mutate with a path and flags into its OWN intent (never aliased)', () => {
+    const r = detectIntent('/mutate src/foo.ts --semantic');
+    expect(r).toMatchObject({ type: 'mutate', input: 'src/foo.ts --semantic' });
+  });
+
+  it('parses bare /mutate with an empty input', () => {
+    const r = detectIntent('/mutate');
+    expect(r.type).toBe('mutate');
+    expect((r as any).input ?? '').toBe('');
+  });
+
+  it('keeps quoted --test commands verbatim in the raw arg string', () => {
+    const r = detectIntent('/mutate --diff origin/main --test "npm test"');
+    expect(r).toMatchObject({ type: 'mutate', input: '--diff origin/main --test "npm test"' });
+  });
+
+  it('is listed in SLASH_COMMANDS', () => {
+    expect(SLASH_COMMANDS.some((c) => c.cmd === '/mutate')).toBe(true);
+  });
+});

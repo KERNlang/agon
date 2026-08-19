@@ -378,6 +378,68 @@ describe('agon call command mapping', () => {
     ]);
   });
 
+  it('routes mutate with a path, test command and mechanical-only (AC6)', () => {
+    expect(buildCallCommands({
+      workflow: 'mutate',
+      input: 'src/foo.ts',
+      fitnessCmd: 'npm test',
+      mechanicalOnly: true,
+    }).commands).toEqual([
+      ['mutate', 'src/foo.ts', '--test', 'npm test', '--mechanical-only'],
+    ]);
+  });
+
+  it('routes mutate in diff mode with no positional, forwarding engines and timeout', () => {
+    expect(buildCallCommands({
+      workflow: 'mutate',
+      diff: 'origin/main',
+      maxMutants: '12',
+      engines: 'codex,claude',
+      engineTimeout: '60',
+    }).commands).toEqual([
+      ['mutate', '--diff', 'origin/main', '--max-mutants', '12', '--timeout', '60', '--engines', 'codex,claude'],
+    ]);
+  });
+
+  // --build is the documented remedy for a monorepo whose suite runs against a
+  // prebuilt dist. Without it on the bridge, an external CLI is steered into a
+  // guaranteed 0%-kill run and told its tests are worthless.
+  it('forwards --build and --test so the bridge can express the prebuilt-dist fix', () => {
+    expect(buildCallCommands({
+      workflow: 'mutate',
+      input: 'src/add.ts',
+      build: 'cd packages/forge && npx tsup',
+      test: 'npx vitest run',
+    }).commands).toEqual([
+      ['mutate', 'src/add.ts', '--test', 'npx vitest run', '--build', 'cd packages/forge && npx tsup'],
+    ]);
+  });
+
+  it('prefers an explicit --test over the generic --fitness-cmd', () => {
+    expect(buildCallCommands({
+      workflow: 'mutate', input: 'src/add.ts', fitnessCmd: 'npm run gate', test: 'npx vitest run',
+    }).commands).toEqual([['mutate', 'src/add.ts', '--test', 'npx vitest run']]);
+  });
+
+  // Mutation is mechanical by DEFAULT; the AI panel is opt-in on every surface.
+  it('forwards --semantic only when explicitly asked for', () => {
+    expect(buildCallCommands({ workflow: 'mutate', input: 'src/a.ts' }).commands)
+      .toEqual([['mutate', 'src/a.ts']]);
+    expect(buildCallCommands({ workflow: 'mutate', input: 'src/a.ts', semantic: true }).commands)
+      .toEqual([['mutate', 'src/a.ts', '--semantic']]);
+  });
+
+  // The bridge forwards --lens verbatim: `agon mutate` owns the "a lens implies
+  // --semantic" decision, and duplicating it here is how the two surfaces drift.
+  it('forwards --lens verbatim without inventing --semantic alongside it', () => {
+    expect(buildCallCommands({ workflow: 'mutate', input: 'src/auth.ts', lens: 'security' }).commands)
+      .toEqual([['mutate', 'src/auth.ts', '--lens', 'security']]);
+    expect(buildCallCommands({ workflow: 'mutate', input: 'src/auth.ts', lens: 'missing ownership checks', semantic: true }).commands)
+      .toEqual([['mutate', 'src/auth.ts', '--lens', 'missing ownership checks', '--semantic']]);
+    expect(buildCallCommands({ workflow: 'mutate', input: 'src/a.ts' }).commands)
+      .toEqual([['mutate', 'src/a.ts']]);
+  });
+
   it('defaults review target to uncommitted', () => {
     expect(buildCallCommands({ workflow: 'review' }).commands).toEqual([
       ['review', 'uncommitted'],

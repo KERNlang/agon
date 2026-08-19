@@ -42,6 +42,31 @@ export type { ThoughtNode, ThinkResult } from './generated/thinking.js';
 // ── Naturalize (Phase 2: sanitize → non-author rewrite → re-scan) ──
 export { runNaturalize, buildNaturalizePrompt, wordDiffStats } from './generated/naturalize.js';
 export type { NaturalizeOptions, NaturalizeResult } from './generated/naturalize.js';
+// ── Mutate (mutation testing as a test-strength oracle) ──
+export {
+  runMutate, dedupeMutants, selectMutants,
+  mutationTargetsFromDiff, isMutableFile,
+} from './generated/mutate.js';
+export type { MutateOptions, MutateResult } from './generated/mutate.js';
+// The ONE mutation-report renderer — every surface (mutate, /mutate, review
+// --mutate) must render through formatMutationReportLines, never its own copy.
+export {
+  formatMutationReportLines, formatMutateVerdict, mutateVerdictLine,
+  allMutantsSurvived, noMutantsRanLine, staleDistHint, mutateLensSuffix, MUTATE_ALL_SURVIVED_WARNING,
+} from './generated/mutate-report.js';
+export {
+  prepareSandboxNodeModules, clearShadowingDist, workspacePackageDirs,
+  packageEntryDirs, repointWorkspaceLinks, isInside, isSafePackageName,
+  pnpmWorkspaceGlobs, gitIgnoredPaths, expandWorkspaceGlob, workspaceGlobToRegExp,
+} from './generated/mutate-sandbox.js';
+export type { SandboxNodeModules, SandboxLinkRepair } from './generated/mutate-sandbox.js';
+export {
+  buildSemanticMutantPrompt, extractJsonArray, validateSemanticMutants, collectSemanticMutants,
+  seatGrantsWriteAccess, stripControlChars, normalizeLens, MUTATE_LENS_PRESETS,
+} from './generated/mutate-semantic.js';
+export type {
+  SemanticTarget, SemanticTargetLine, SemanticMutantsResult, DroppedSemanticEntry,
+} from './generated/mutate-semantic.js';
 // ── Delegate ──
 export { runDelegate } from './generated/delegate.js';
 export type { DelegateResult } from './generated/delegate.js';
@@ -54,7 +79,7 @@ export {
   goalDir, journalPath, createJournal, saveJournal, loadJournal,
   addTasks, nextTask, markStatus, recordAttempt, remainingCount, isDone, logEvent, boundEvents,
 } from './generated/goal/journal.js';
-export { assertSafeGoalId, resolveWithin } from './generated/goal/paths.js';
+export { assertSafeGoalId, resolveWithin, safePathSegment } from './generated/goal/paths.js';
 export type { Mutant } from './generated/goal/mutation.js';
 export { generateMutants, applyMutantToSource, mutationSurvivors } from './generated/goal/mutation.js';
 export type { FrozenOracle, WitnessResult } from './generated/goal/oracle.js';
@@ -66,7 +91,7 @@ export type { SynthCandidate, SynthPlanOpts, SynthPlan } from './generated/synth
 export { summarizeGoal, writeGoalArtifacts, runGoalController } from './generated/goal/controller.js';
 export { supervisorDecision, computeBackoffMs, isDeterministicExit, runSupervisor } from './generated/goal/supervisor.js';
 export type { SupervisorDecision } from './generated/goal/supervisor.js';
-export { buildOracleCheatPrompt, oracleGateDecision } from './generated/goal/oracle-redteam.js';
+export { buildOracleCheatPrompt, oracleGateDecision, oracleProbeConclusive, DEFAULT_ORACLE_GATE } from './generated/goal/oracle-redteam.js';
 export type { OracleHole } from './generated/goal/oracle-redteam.js';
 // ── Conquer (supervised-autonomous build) ──
 export {

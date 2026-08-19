@@ -19,6 +19,7 @@ import from="./routing.js" names="buildRoutingContext,deriveRoutingHints,shouldS
 import from="./grounding.js" names="shouldGroundInput,buildGroundingBlock"
 import from="./experience.js" names="episodesFromRunRecords,retrieveExperience,buildExperienceBlock,experienceRetrievalOptions"
 import from="./delegation-reflex.js" names="assessDelegationShape,buildDelegationAdvisory"
+import from="./mutate-reflex.js" names="assessMutateReflex,buildMutateSuggestionLine,mutatedPathFromToolArgs"
 import from="../../telemetry/index.js" names="recentRunRecords,currentProjectKey"
 import from="./reliability.js" names="readCesarToolReliability,formatCesarReliabilityLine,shouldDowngradeCesarToolWork,buildWhatHappenedSummary"
 import from="./self-turn-approval.js" names="applyCesarSelfTurnApproval"
@@ -175,6 +176,10 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
     let _agenticTaskState = 'running';
     let _agenticTerminalReason = 'work_incomplete';
     const _toolOutcomeKeys = new Set<string>();
+    // Which files this turn WROTE. Only the paths — never the contents — and
+    // only from write tools, so the mutate reflex can tell an auth/session diff
+    // from a README edit without a second pass over the repo.
+    const _turnWritePaths = new Set<string>();
     // Streaming adapters can emit the same correlated running chunk more than
     // once while arguments are assembled. Keep the claim for the whole turn so
     // fallback/retry streams cannot execute the same eager call again.
@@ -221,6 +226,10 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
     const recordToolUse = (name: string, source: 'native'|'mcp'|'xml'|'eager'|'auto'|'signal', input?: string, status?: string, args?: Record<string, unknown>) => {
       const toolName = String(name || 'tool');
       noteToolOutcome(toolName, input, status);
+      if (isWriteToolName(toolName)) {
+        const _writtenPath = mutatedPathFromToolArgs(toolName, args);
+        if (_writtenPath) _turnWritePaths.add(_writtenPath);
+      }
       // Verify-before-done: flag when a Bash call loosely matches the discovered
       // gate. Done from the central record point so EVERY tool path (native/mcp/
       // xml/eager + both tool loops + continuations) counts uniformly.
@@ -933,6 +942,8 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
     let usedQuickNero = false;
     // C4: once-per-turn guard for the soft in-flow escalation-suggestion line.
     let _escalationSuggested = false;
+    // Same guard for the mutate reflex: at most one test-strength nudge a turn.
+    let _mutateSuggested = false;
       const eagerPromises: Promise<ToolCallResult>[] = [];
       let eagerToolCtx: ToolContext | null = null;
       const shouldInterruptForXmlTool = () => {
@@ -2310,6 +2321,27 @@ ${reviewFollowup.prompt}`;
           _escalationSuggested = true;
           dispatch({ type: 'info', message: buildEscalationSuggestionLine(_strictConf) });
         }
+      }
+
+      // ── Mutate reflex: a green suite is not a strong suite ──
+      // Same surfacing contract as the line above — ONE dim in-flow suggestion,
+      // never a modal, never an auto-run, never a spend. It fires when this turn
+      // CLAIMED the tests pass (or the user questioned whether the tests are
+      // real), and it names `--semantic --lens <family>` instead of a bare run
+      // when the files the turn actually wrote are high-risk by review's own
+      // sensitive-path standard. Fail toward silence: any error suggests nothing.
+      if (!_mutateSuggested && !cesarFastPath && !abort.signal.aborted && (config as any).cesarMutateReflex !== false) {
+        try {
+          const _mutLine = buildMutateSuggestionLine(assessMutateReflex({
+            input,
+            response,
+            paths: [..._turnWritePaths],
+          }));
+          if (_mutLine) {
+            _mutateSuggested = true;
+            dispatch({ type: 'info', message: _mutLine });
+          }
+        } catch { /* the reflex is advisory — never let it break a turn */ }
       }
 
       // ── No forced escalation — Cesar decides via tool calls ──

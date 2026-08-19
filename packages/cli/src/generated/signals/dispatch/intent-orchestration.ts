@@ -8,7 +8,7 @@ import type { Dispatch } from '../../../handlers/types.js';
 
 import { ENGINE_COLORS } from '../../blocks/output-format.js';
 
-import { handleForge, handleBrainstorm, handleCampfire, handleTribunal, handleThink, handleCouncil, handleSynthesis, handleNeroChallenge, handleResearch, handleChrome, handleConquer, handleBuild, handleReviewMany, handleReviewRoles, handleSanitize, handleNaturalize, runAgentMode, runAgentTeam } from '../../../handlers/index.js';
+import { handleForge, handleBrainstorm, handleCampfire, handleTribunal, handleThink, handleCouncil, handleSynthesis, handleNeroChallenge, handleResearch, handleChrome, handleConquer, handleBuild, handleReviewMany, handleReviewRoles, handleSanitize, handleNaturalize, handleMutate, runAgentMode, runAgentTeam } from '../../../handlers/index.js';
 
 import { handleTeamTribunal } from '../../handlers/team-tribunal.js';
 
@@ -34,7 +34,9 @@ import { absorbReviewResultIntoCesar, continueCesarAfterResult, runAgentJobWithA
 
 import { emitPostDispatch } from './utils.js';
 
-// @kern-source: intent-orchestration:20
+import { mutateCesarPrompt } from '../../blocks/mutate-render.js';
+
+// @kern-source: intent-orchestration:21
 export async function dispatchOrchestrationIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult | null> {
   switch (intent.type) {
     case 'forge': {
@@ -233,6 +235,36 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
       cb.runAsJob('naturalize', _naLabel, () => handleNaturalize(intent.input ?? '', cb.dispatch, cb.ctx));
       return { handled: true, ranAsJob: true };
     }
+    case 'mutate': {
+      // Mutation runs are long (one full suite per mutant) — always a job.
+      // Advisory by design: the survivor list is fed back to Cesar so the
+      // next turn can strengthen the assertions that failed to notice.
+      const _mtCwd = resolveWorkingDir();
+      const _mtLabel = intent.input?.trim().slice(0, 40) || 'mutate';
+      const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+      const continuationUserTurns = countTrackedUserTurns(cb.ctx);
+      cb.runAsJob('mutate', _mtLabel, withThreadOutcome(_mtCwd, 'mutate', _mtLabel, async () => {
+        const produced = await handleMutate(intent.input ?? '', cb.dispatch, cb.ctx);
+        // Only continue when a report actually exists. A bad flag, an
+        // unresolvable diff, a missing gate or a crashed run all return early
+        // WITHOUT appending anything — and collectRecentEngineContext would
+        // then hand Cesar some PRIOR turn's engine output under a "mutation
+        // testing finished" headline, i.e. invite it to invent survivors for a
+        // run that never happened. Same guard the chrome case uses.
+        if (!produced) return;
+        const chatContext = collectRecentEngineContext(cb.ctx, 6, 2000);
+        if (!chatContext) return;
+        // FENCED: the mutation body is repository source plus engine-authored
+        // rationales, and this continuation turn can call tools. It goes in as
+        // data, control-stripped and capped — never as free prose in Cesar's
+        // own instructions.
+        await continueCesarAfterResult(
+          mutateCesarPrompt({ label: intent.input ?? '', body: chatContext }),
+          cb, continuationEpoch, continuationUserTurns,
+        );
+      }, cb.ctx));
+      return { handled: true, ranAsJob: true };
+    }
     case 'agent': {
       // Phase B/C — Cesar-routed /agent with engine-switch attribution.
       // Zero-LLM-cost regex classification decides solo vs team; emits
@@ -406,7 +438,7 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
         }, cb.ctx));
       }
       return { handled: true, ranAsJob: true };
-  
+
     case 'goal': {
       const _gInput = (intent.input ?? '').trim();
       if (!_gInput) {
@@ -427,7 +459,7 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
       }, cb.ctx));
       return { handled: true, ranAsJob: true };
     }
-  
+
     // ── Inline commands ──
     default: return null;
   }

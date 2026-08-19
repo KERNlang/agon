@@ -584,3 +584,180 @@ describe('authorizeResolvedTaskAction', () => {
     expect(prompt).toHaveBeenCalledTimes(1);
   });
 });
+
+// ── Dogfood: gaps a live `agon mutate` run found in THIS suite ──────────────
+// Every case below kills a mutant that survived the mutation run on
+// packages/cli/src/generated/cesar/permission-resolver.ts — wrong code these
+// tests used to call green. The run went 67% → 93%.
+//
+// The three mutants that still survive are EQUIVALENT BY CONSTRUCTION — no
+// assertion can kill them, and adding one would only pretend otherwise:
+//   • `if (!candidate) return false` in sensitivePathCandidateMatches: the
+//     function is module-private and both of its call sites already guard the
+//     argument non-empty, so the branch is unreachable.
+//   • `!canonical || canonical === raw` → `&&`: both changed paths fall through
+//     to sensitivePathCandidateMatches(canonical), which for canonical === raw
+//     re-runs a pure function that just returned false, and for canonical === ''
+//     hits the (unreachable-in-practice) empty guard above. Same answer either
+//     way — the two mutants are only observable TOGETHER.
+//   • `catch { return true }` in isLeaselessBashBoundary: the catch fires only
+//     if DEFAULT_DANGEROUS_PATTERN stops being a valid regex, which no input
+//     can cause.
+
+describe('addSessionPermissionRule — the rule is VALIDATED before it is stored', () => {
+  it('refuses a malformed rule, returns false, and stores nothing', () => {
+    for (const bad of ['not a rule at all!!', '???', 'Bash(', 'a b c', '!!!']) {
+      expect(addSessionPermissionRule(bad), bad).toBe(false);
+    }
+    expect(getSessionPermissionRules()).toEqual([]);
+  });
+
+  it('refuses empty, whitespace-only and non-string input', () => {
+    expect(addSessionPermissionRule('')).toBe(false);
+    expect(addSessionPermissionRule('   ')).toBe(false);
+    expect(addSessionPermissionRule(undefined as never)).toBe(false);
+    expect(addSessionPermissionRule(null as never)).toBe(false);
+    expect(getSessionPermissionRules()).toEqual([]);
+  });
+
+  it('accepts a well-formed rule, returns true, and stores it exactly once', () => {
+    expect(addSessionPermissionRule('Bash(cargo fmt:*)')).toBe(true);
+    expect(addSessionPermissionRule('  Bash(cargo fmt:*)  ')).toBe(true);   // trimmed → the same rule
+    expect(getSessionPermissionRules()).toEqual(['Bash(cargo fmt:*)']);
+  });
+
+  it('a refused rule never reaches the effective rule set', () => {
+    addSessionPermissionRule('rm -rf /');
+    expect(buildEffectivePermissionRuleSet(cfg()).allow).toEqual([]);
+  });
+
+  // The session store is a module-level array: handing out the live reference
+  // would let any caller widen the session by pushing to it.
+  it('getSessionPermissionRules returns a COPY, not the live store', () => {
+    addSessionPermissionRule('Bash(cargo fmt:*)');
+    const rules = getSessionPermissionRules();
+    rules.push('Bash(rm:*)');
+    rules[0] = 'tampered';
+    expect(getSessionPermissionRules()).toEqual(['Bash(cargo fmt:*)']);
+  });
+});
+
+describe('describeAgonPermissionMode — each mode gets its OWN label and hint', () => {
+  it('names every mode exactly', () => {
+    expect(describeAgonPermissionMode('auto').label).toBe('AUTO');
+    expect(describeAgonPermissionMode('auto-edit').label).toBe('auto-edit');
+    expect(describeAgonPermissionMode('ask').label).toBe('ask');
+  });
+
+  it('each hint names what that mode actually still prompts for', () => {
+    // The AUTO hint is the one place the destructive carve-out is spelled out;
+    // it is a contract with the user, not decoration.
+    const auto = describeAgonPermissionMode('auto').hint;
+    expect(auto).toContain('force push');
+    expect(auto).toContain('rm -rf');
+    expect(auto).toContain('drop database');
+
+    const autoEdit = describeAgonPermissionMode('auto-edit').hint;
+    expect(autoEdit).toContain('.env');
+    expect(autoEdit).toContain('git hooks');
+
+    expect(describeAgonPermissionMode('ask').hint).toContain('prompts before file edits');
+    // No two modes describe themselves the same way.
+    const hints = (['ask', 'auto-edit', 'auto'] as const).map((m) => describeAgonPermissionMode(m).hint);
+    expect(new Set(hints).size).toBe(3);
+  });
+});
+
+describe('buildEffectivePermissionRuleSet — a non-object `permissions` is {}', () => {
+  it('never throws and never invents rules for a malformed persisted value', () => {
+    for (const permissions of [null, 'nope', 42, true, ['Edit'], undefined]) {
+      const build = () => buildEffectivePermissionRuleSet(cfg({ permissions }));
+      expect(build, JSON.stringify(permissions ?? null)).not.toThrow();
+      const rules = build();
+      expect(rules.allow, JSON.stringify(permissions ?? null)).toEqual([]);
+      expect(rules.deny, JSON.stringify(permissions ?? null)).toEqual([]);
+    }
+  });
+
+  it('a malformed persisted value still lets a session rule through', () => {
+    addSessionPermissionRule('Bash(cargo fmt:*)');
+    const rules = buildEffectivePermissionRuleSet(cfg({ permissions: null }));
+    expect(rules.allow).toHaveLength(1);
+    expect(rules.deny).toEqual([]);
+  });
+});
+
+describe('the sensitive-path matcher — how the basename is actually extracted', () => {
+  it('an empty or all-separator path is never sensitive', () => {
+    expect(isSensitivePermissionPath('')).toBe(false);
+    expect(isSensitivePermissionPath('   ')).toBe(false);
+    // No basename at all — the answer must be "not sensitive", never "sensitive".
+    expect(isSensitivePermissionPath('/')).toBe(false);
+    expect(isSensitivePermissionPath('//')).toBe(false);
+  });
+
+  it('matches on the BASENAME, not on any segment of the path', () => {
+    expect(isSensitivePermissionPath(`${WS}/a/b/.env`)).toBe(true);
+    expect(isSensitivePermissionPath(`${WS}/a/b/.env.local`)).toBe(true);
+    // `env` is not `.env`, and a directory named .env does not make its
+    // children sensitive.
+    expect(isSensitivePermissionPath(`${WS}/a/b/env`)).toBe(false);
+    expect(isSensitivePermissionPath(`${WS}/a/.env/notes.md`)).toBe(false);
+    // …but an executable-on-checkout DIRECTORY is matched as a directory.
+    expect(isSensitivePermissionPath(`${WS}/.git/hooks/pre-commit`)).toBe(true);
+    expect(isSensitivePermissionPath(`${WS}/x/.husky/pre-push`)).toBe(true);
+  });
+
+  // The RAW spelling is matched on its own so canonicalization can only ADD
+  // coverage. These paths canonicalize to something innocuous, so ONLY the raw
+  // basename extraction can catch them — including its trailing-separator
+  // normalization, which a `.env/` spelling depends on entirely.
+  it('catches a sensitive RAW name whose canonical form is innocuous — with and without a trailing separator', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agon-perm-basename-'));
+    writeFileSync(join(dir, 'plain.txt'), 'x');
+    symlinkSync(join(dir, 'plain.txt'), join(dir, '.env'));
+
+    // Sanity: canonically this really is plain.txt, nothing sensitive.
+    expect(isSensitivePermissionPath(join(dir, 'plain.txt'))).toBe(false);
+
+    expect(isSensitivePermissionPath(join(dir, '.env'))).toBe(true);
+    expect(isSensitivePermissionPath(`${join(dir, '.env')}/`)).toBe(true);
+    expect(isSensitivePermissionPath(`${join(dir, '.env')}///`)).toBe(true);
+    // Relative, with the workspace as cwd — no separator in the raw spelling.
+    expect(isSensitivePermissionPath('.env', undefined, dir)).toBe(true);
+    expect(isSensitivePermissionPath('.env/', undefined, dir)).toBe(true);
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe('the sensitive-path matcher — canonicalization with no cwd argument', () => {
+  // The default cwd must be reachable: with `cwd` omitted the matcher falls
+  // back to process.cwd(), and the RAW spelling below matches nothing — only
+  // the canonical form does.
+  it('canonicalizes against process.cwd() when no cwd is passed', () => {
+    // Raw: `.git/x/../hooks` — the hook-directory pattern needs `.git/hooks`
+    // adjacent, so the raw spelling evades it. Canonically it IS a git hook.
+    expect(isSensitivePermissionPath('.git/x/../hooks/pre-commit')).toBe(true);
+    expect(isSensitivePermissionPath('src/index.ts')).toBe(false);
+  });
+});
+
+describe('resolvePermissionDecision — a malformed config never crashes the gate', () => {
+  it('treats a non-object toolPermissions as {} instead of throwing', () => {
+    for (const toolPermissions of [null, 'nope', 42, true, undefined]) {
+      const call = () => resolvePermissionDecision(request({ config: cfg({ toolPermissions }) }));
+      expect(call, JSON.stringify(toolPermissions ?? null)).not.toThrow();
+      // …and the decision still comes from the mode, not from a phantom entry.
+      expect(call().stage, JSON.stringify(toolPermissions ?? null)).toBe('mode');
+    }
+  });
+
+  it('a malformed config still honours the deny stages that come before it', () => {
+    const denied = resolvePermissionDecision(request({
+      config: cfg({ toolPermissions: null, permissionMode: 'deny-all' }),
+    }));
+    expect(denied.decision).toBe('deny');
+    expect(denied.stage).toBe('hard-deny');
+  });
+});

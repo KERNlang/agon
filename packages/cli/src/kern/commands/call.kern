@@ -38,6 +38,13 @@ interface name=CallCommandOptions export=true
   field name=detect type=boolean optional=true
   field name=out type=string optional=true
   field name=author type=string optional=true
+  field name=diff type=string optional=true
+  field name=mechanicalOnly type=boolean optional=true
+  field name=maxMutants type=string optional=true
+  field name=semantic type=boolean optional=true
+  field name=lens type=string optional=true
+  field name=build type=string optional=true
+  field name=test type=string optional=true
 
 interface name=WorkflowCallMeta export=true
   field name=workflowId type=string
@@ -303,6 +310,30 @@ fn name=buildCallCommands params="opts:CallCommandOptions" returns="BuiltCallCom
         ...textFlag('--out', opts.out),
         ...timeout,
       ]);
+    } else if (workflow === 'mutate') {
+      // Mutation testing as a test-strength oracle. The positional is a file or
+      // directory; with none, mutate targets the changed lines of the current
+      // work. --test is REQUIRED unless the repo has a discoverable gate, and
+      // --mechanical-only keeps the run free of engine spend.
+      // --build is not optional polish: in a monorepo whose suite runs against a
+      // prebuilt dist, a run without it reports a fake 0% and the agent reads
+      // "your tests are worthless". The bridge must be able to say it.
+      // --test wins over the generic --fitness-cmd when both are given, and
+      // --lens forwards verbatim: `agon mutate` owns the "a lens implies
+      // --semantic" decision, so the bridge must not second-guess it here.
+      commands.push([
+        'mutate',
+        ...(opts.input?.trim() ? [opts.input.trim()] : []),
+        ...textFlag('--diff', opts.diff),
+        ...textFlag('--test', opts.test?.trim() ? opts.test : opts.fitnessCmd),
+        ...textFlag('--build', opts.build),
+        ...textFlag('--max-mutants', opts.maxMutants),
+        ...textFlag('--lens', opts.lens),
+        ...(opts.semantic ? ['--semantic'] : []),
+        ...(opts.mechanicalOnly ? ['--mechanical-only'] : []),
+        ...timeout,
+        ...engines,
+      ]);
     } else if (workflow === 'doctor') {
       // Passthrough so external CLIs that standardize on `agon call <workflow>`
       // can reach the top-level doctor. `agon call doctor` -> `agon doctor`,
@@ -324,7 +355,7 @@ fn name=buildCallCommands params="opts:CallCommandOptions" returns="BuiltCallCom
       commands.push(['tribunal', `Review the pipeline result for: ${task}`, '--rounds', opts.rounds?.trim() || '1', ...tribunalMode, ...tribunalProtocol, ...timeout, ...engines]);
       return { cwd, commands, workflowMeta: { workflowId: spec.id, version: spec.version, planId: plan.logicalPlanId } };
     } else {
-      throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, chrome, pipeline, review, goal, sanitize, naturalize, doctor, or a team-* workflow.`);
+      throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, chrome, pipeline, review, goal, sanitize, naturalize, mutate, doctor, or a team-* workflow.`);
     }
 
     return { cwd, commands };
@@ -389,7 +420,7 @@ const name=callCommand type="any"
       args: {
         workflow: {
           type: 'positional',
-          description: 'Workflow: forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, chrome, pipeline, review, goal, sanitize, naturalize, doctor, or team-*',
+          description: 'Workflow: forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, chrome, pipeline, review, goal, sanitize, naturalize, mutate, doctor, or team-*',
           required: true,
         },
         input: {
@@ -410,7 +441,7 @@ const name=callCommand type="any"
         test: {
           type: 'string',
           alias: 't',
-          description: 'Fitness test command for forge/pipeline',
+          description: 'Fitness/test command: the fitness gate for forge/pipeline/conquer, and the per-mutant test command for mutate',
         },
         rounds: {
           type: 'string',
@@ -530,6 +561,32 @@ const name=callCommand type="any"
           type: 'string',
           description: 'For naturalize: engine that wrote the text — the rewriter is forced to differ (writer ≠ rewriter)',
         },
+        diff: {
+          type: 'string',
+          description: 'For mutate: mutate changed lines only — a base ref, or uncommitted | branch:NAME | commit:SHA | range:BASE...TARGET',
+        },
+        'mechanical-only': {
+          type: 'boolean',
+          description: 'For mutate: mechanical operators only, zero engine spend — this is already the default; the flag says so explicitly',
+          default: false,
+        },
+        semantic: {
+          type: 'boolean',
+          description: 'For mutate: add the AI-semantic panel (real engine spend — your changed source is sent to each panel engine). Off by default',
+          default: false,
+        },
+        lens: {
+          type: 'string',
+          description: 'For mutate: steer the AI-semantic panel toward one bug family — IMPLIES --semantic. Presets: security | privacy | perf | ratelimit | concurrency; anything else is free text',
+        },
+        'max-mutants': {
+          type: 'string',
+          description: 'For mutate: cap the mutant pool (default 40)',
+        },
+        build: {
+          type: 'string',
+          description: 'For mutate: build command run before the baseline AND each mutant — REQUIRED when the suite runs against a prebuilt dist, otherwise every mutant survives and the run reports a fake 0%',
+        },
       },
       async run({ args }) {
         let built: BuiltCallCommands;
@@ -569,6 +626,13 @@ const name=callCommand type="any"
             detect: args.detect,
             out: args.out,
             author: args.author,
+            diff: args.diff,
+            mechanicalOnly: args['mechanical-only'],
+            maxMutants: args['max-mutants'],
+            semantic: args.semantic,
+            lens: args.lens,
+            build: args.build,
+            test: args.test,
           });
         } catch (err) {
           exitWithFailure(err instanceof Error ? err.message : String(err));

@@ -401,6 +401,34 @@ describe('agon call command mapping', () => {
     ]);
   });
 
+  // --build is the documented remedy for a monorepo whose suite runs against a
+  // prebuilt dist. Without it on the bridge, an external CLI is steered into a
+  // guaranteed 0%-kill run and told its tests are worthless.
+  it('forwards --build and --test so the bridge can express the prebuilt-dist fix', () => {
+    expect(buildCallCommands({
+      workflow: 'mutate',
+      input: 'src/add.ts',
+      build: 'cd packages/forge && npx tsup',
+      test: 'npx vitest run',
+    }).commands).toEqual([
+      ['mutate', 'src/add.ts', '--test', 'npx vitest run', '--build', 'cd packages/forge && npx tsup'],
+    ]);
+  });
+
+  it('prefers an explicit --test over the generic --fitness-cmd', () => {
+    expect(buildCallCommands({
+      workflow: 'mutate', input: 'src/add.ts', fitnessCmd: 'npm run gate', test: 'npx vitest run',
+    }).commands).toEqual([['mutate', 'src/add.ts', '--test', 'npx vitest run']]);
+  });
+
+  // Mutation is mechanical by DEFAULT; the AI panel is opt-in on every surface.
+  it('forwards --semantic only when explicitly asked for', () => {
+    expect(buildCallCommands({ workflow: 'mutate', input: 'src/a.ts' }).commands)
+      .toEqual([['mutate', 'src/a.ts']]);
+    expect(buildCallCommands({ workflow: 'mutate', input: 'src/a.ts', semantic: true }).commands)
+      .toEqual([['mutate', 'src/a.ts', '--semantic']]);
+  });
+
   it('defaults review target to uncommitted', () => {
     expect(buildCallCommands({ workflow: 'review' }).commands).toEqual([
       ['review', 'uncommitted'],

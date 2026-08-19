@@ -41,6 +41,9 @@ interface name=CallCommandOptions export=true
   field name=diff type=string optional=true
   field name=mechanicalOnly type=boolean optional=true
   field name=maxMutants type=string optional=true
+  field name=semantic type=boolean optional=true
+  field name=build type=string optional=true
+  field name=test type=string optional=true
 
 interface name=WorkflowCallMeta export=true
   field name=workflowId type=string
@@ -311,12 +314,18 @@ fn name=buildCallCommands params="opts:CallCommandOptions" returns="BuiltCallCom
       // directory; with none, mutate targets the changed lines of the current
       // work. --test is REQUIRED unless the repo has a discoverable gate, and
       // --mechanical-only keeps the run free of engine spend.
+      // --build is not optional polish: in a monorepo whose suite runs against a
+      // prebuilt dist, a run without it reports a fake 0% and the agent reads
+      // "your tests are worthless". The bridge must be able to say it.
+      // --test wins over the generic --fitness-cmd when both are given.
       commands.push([
         'mutate',
         ...(opts.input?.trim() ? [opts.input.trim()] : []),
         ...textFlag('--diff', opts.diff),
-        ...textFlag('--test', opts.fitnessCmd),
+        ...textFlag('--test', opts.test?.trim() ? opts.test : opts.fitnessCmd),
+        ...textFlag('--build', opts.build),
         ...textFlag('--max-mutants', opts.maxMutants),
+        ...(opts.semantic ? ['--semantic'] : []),
         ...(opts.mechanicalOnly ? ['--mechanical-only'] : []),
         ...timeout,
         ...engines,
@@ -428,7 +437,7 @@ const name=callCommand type="any"
         test: {
           type: 'string',
           alias: 't',
-          description: 'Fitness test command for forge/pipeline',
+          description: 'Fitness/test command: the fitness gate for forge/pipeline/conquer, and the per-mutant test command for mutate',
         },
         rounds: {
           type: 'string',
@@ -554,12 +563,21 @@ const name=callCommand type="any"
         },
         'mechanical-only': {
           type: 'boolean',
-          description: 'For mutate: skip the AI-semantic panel — mechanical operators only, zero engine spend',
+          description: 'For mutate: mechanical operators only, zero engine spend — this is already the default; the flag says so explicitly',
+          default: false,
+        },
+        semantic: {
+          type: 'boolean',
+          description: 'For mutate: add the AI-semantic panel (real engine spend — your changed source is sent to each panel engine). Off by default',
           default: false,
         },
         'max-mutants': {
           type: 'string',
           description: 'For mutate: cap the mutant pool (default 40)',
+        },
+        build: {
+          type: 'string',
+          description: 'For mutate: build command run before the baseline AND each mutant — REQUIRED when the suite runs against a prebuilt dist, otherwise every mutant survives and the run reports a fake 0%',
         },
       },
       async run({ args }) {
@@ -603,6 +621,9 @@ const name=callCommand type="any"
             diff: args.diff,
             mechanicalOnly: args['mechanical-only'],
             maxMutants: args['max-mutants'],
+            semantic: args.semantic,
+            build: args.build,
+            test: args.test,
           });
         } catch (err) {
           exitWithFailure(err instanceof Error ? err.message : String(err));

@@ -112,11 +112,11 @@ export const reviewCommand = defineCommand({
     },
     mutate: {
       type: 'boolean',
-      description: 'ADVISORY mutation pass after the consensus: mutate the reviewed diff in a disposable worktree, re-run the discovered test command per mutant, and list every SURVIVOR (wrong code the tests called green). Mechanical-only by default; never changes the review verdict or exit code.',
+      description: 'ADVISORY mutation pass after the consensus: mutate the reviewed diff in a disposable worktree, re-run the discovered test command per mutant, and list every SURVIVOR (wrong code the tests called green). Mechanical-only (zero engine spend) unless --mutate-semantic; artifacts land in <run-dir>/mutation/; never changes the review verdict or exit code.',
     },
     'mutate-semantic': {
       type: 'boolean',
-      description: 'With --mutate: also let the roster propose AI-semantic mutants (real engine spend). Off by default.',
+      description: 'With --mutate: also let the reviewing engines propose AI-semantic mutants — real engine spend, and your changed source is sent to each of them. Off by default, exactly like `agon mutate`.',
     },
     'mutate-test': {
       type: 'string',
@@ -491,13 +491,32 @@ export const reviewCommand = defineCommand({
     console.log(lines.join('\n'));
 
     if (args.mutate) {
-      const mutationLines = await runReviewMutation({
-        repoRoot: cwd, diff: target.diff, outputDir, registry, adapter,
-        engines: registry.activeIds(config),
-        semantic: (args as any)['mutate-semantic'] === true,
-        ...reviewMutateOverrides(args as Record<string, unknown>),
-      });
-      if (mutationLines.length) console.log(mutationLines.join('\n'));
+      // runReviewMutation is contractually total (it catches everything and
+      // returns lines). The try/catch is the belt for that braces: the ADVISORY
+      // pass may never be the reason `agon review` exits non-zero.
+      try {
+        const mutationLines = await runReviewMutation({
+          repoRoot: cwd, diff: target.diff, outputDir, registry, adapter,
+          // The engines the review actually used — a user who narrowed the panel
+          // with --engine/--engines/--risk narrowed their spend, and the mutation
+          // panel must not widen it back to the whole active roster.
+          engines: requested,
+          semantic: args['mutate-semantic'] === true,
+          ...reviewMutateOverrides(args as Record<string, unknown>),
+        });
+        if (mutationLines.length && !quiet) console.log(mutationLines.join('\n'));
+      } catch (err) {
+        if (!quiet) info(`Mutation pass skipped — ${err instanceof Error ? err.message : String(err)} (advisory only; the review verdict above is unaffected)`);
+      }
+    } else if (
+      args['mutate-semantic'] === true
+      || typeof args['mutate-test'] === 'string'
+      || typeof args['mutate-build'] === 'string'
+    ) {
+      // These only do anything inside the --mutate branch. Accepting them
+      // silently made a user believe an override took effect when no mutation
+      // pass ran at all.
+      warn('--mutate-semantic/--mutate-test/--mutate-build have no effect without --mutate — no mutation pass ran.');
     }
 
     if (!quiet) info(`Full per-engine reviews: ${outputDir}`);

@@ -1,0 +1,250 @@
+// ── mutate sandbox preparation — make the mutated SOURCE the code under test ──
+//
+// `agon mutate` mutates source files inside a disposable git worktree. Two
+// things silently defeat that in a workspace monorepo, and both produce the
+// same lie: "every mutant survived" at score 0%.
+//
+//   1. node_modules. An external worktree cannot walk up to the repo install,
+//      so a node_modules overlay is needed. A WHOLESALE symlink
+//      (worktree/node_modules -> repo/node_modules) is fatal: npm's workspace
+//      links inside it are RELATIVE (node_modules/@scope/pkg -> ../../packages/pkg)
+//      and therefore resolve back into the REPO's packages — the sandbox's
+//      mutated source is never loaded. prepareSandboxNodeModules mirrors the
+//      install entry by entry instead: externals link to the repo's copy,
+//      workspace packages link to the SANDBOX's own packages/<x>.
+//
+//   2. Prebuilt dist. Workspace package.json "exports"/"main" point at dist/,
+//      and the worktree helper hydrates dist from the repo so a candidate is
+//      immediately runnable. For mutation that is poison: a test that imports
+//      the package BY NAME loads the prebuilt bundle, and mutating src changes
+//      nothing. clearShadowingDist removes the hydrated (git-ignored) build
+//      output of every package whose SOURCE is being mutated, so the run either
+//      rebuilds it (`--build`) or fails the baseline loudly. Never a silent 0%.
+//
+// Everything here is best-effort and pure-ish IO: it never throws, and the
+// caller reports what happened through the `mutate:sandbox` event.
+
+import from="node:fs" names="existsSync,lstatSync,readdirSync,readFileSync,mkdirSync,symlinkSync,rmSync,realpathSync,statSync"
+import from="node:path" names="join,relative,resolve,sep,isAbsolute"
+import from="node:child_process" names="execFileSync"
+
+interface name=SandboxNodeModules export=true
+  doc "What prepareSandboxNodeModules did. `mode` is the one-word story for the mutate:sandbox event."
+  field name=mode type="'skipped'|'mirrored'|'repaired'|'kept'"
+  field name=links type=number
+  field name=workspaceLinks type=number
+  field name=note type=string optional=true
+
+const name=SKIP_NODE_MODULES_ENTRIES type="string[]" value={{ ['.package-lock.json', '.vite', '.cache', '.DS_Store'] }}
+  doc "Install bookkeeping that must NOT be mirrored: a stale .package-lock.json makes npm think the sandbox tree is already correct, and .vite/.cache are transform caches keyed to the repo's paths."
+
+const name=BUILD_OUTPUT_CANDIDATES type="string[]" value={{ ['dist', 'build', 'lib', 'out', 'es', 'esm', 'cjs'] }}
+  doc "First-segment directory names that a package entry point may live in. Only these are ever considered for clearing, and only when git ignores them."
+
+fn name=workspacePackageDirs params="repoRoot:string" returns="Record<string, string>" export=true
+  doc "Map every workspace package NAME to its repo-relative directory, resolved from the root package.json `workspaces` field (array or {packages:[]}). Supports literal paths and a single trailing `*`/`**` segment — the shapes npm itself supports. Returns {} for a non-workspace repo. Never throws."
+  handler <<<
+    const out: Record<string, string> = {};
+    let globs: string[] = [];
+    try {
+      const raw = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf-8')) as {
+        workspaces?: string[] | { packages?: string[] };
+      };
+      const ws = raw.workspaces;
+      if (Array.isArray(ws)) globs = ws;
+      else if (ws && Array.isArray(ws.packages)) globs = ws.packages;
+    } catch { return out; }
+
+    const dirs: string[] = [];
+    for (const glob of globs) {
+      const clean = String(glob ?? '').trim().replace(/^\.\//, '').replace(/\/+$/, '');
+      if (!clean || clean.startsWith('!') || isAbsolute(clean) || clean.split('/').includes('..')) continue;
+      const star = clean.indexOf('*');
+      if (star < 0) { dirs.push(clean); continue; }
+      const parent = clean.slice(0, star).replace(/\/+$/, '');
+      if (clean.slice(star).replace(/\*/g, '').replace(/\//g, '') !== '') continue; // only `dir/*` or `dir/**`
+      let entries: Array<{ name: string; isDirectory: () => boolean }> = [];
+      try { entries = readdirSync(join(repoRoot, parent), { withFileTypes: true }) as never; } catch { continue; }
+      for (const entry of entries) {
+        if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+        dirs.push(parent ? `${parent}/${entry.name}` : entry.name);
+      }
+    }
+
+    for (const dir of dirs) {
+      try {
+        const pkg = JSON.parse(readFileSync(join(repoRoot, dir, 'package.json'), 'utf-8')) as { name?: string };
+        if (typeof pkg.name === 'string' && pkg.name.trim()) out[pkg.name.trim()] = dir;
+      } catch { /* not a package — npm skips it too */ }
+    }
+    return out;
+  >>>
+
+fn name=isInside params="parent:string, candidate:string" returns=boolean export=true
+  doc "True when `candidate` is the same path as, or nested under, `parent`. Both are resolved first; symlink canonicalisation is the caller's job. Pure."
+  handler <<<
+    const base = resolve(parent);
+    const abs = resolve(candidate);
+    if (abs === base) return true;
+    const rel = relative(base, abs);
+    return rel !== '' && !rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel);
+  >>>
+
+fn name=linkSandboxEntry params="sourcePath:string, targetPath:string" returns=void export=false
+  doc "Symlink one node_modules entry, choosing the right link type for the platform. No-op when the target already exists."
+  handler <<<
+    if (existsSync(targetPath)) return;
+    let isDir = false;
+    try { isDir = statSync(sourcePath).isDirectory(); } catch { isDir = false; }
+    const kind = isDir ? (process.platform === 'win32' ? 'junction' : 'dir') : 'file';
+    symlinkSync(sourcePath, targetPath, kind);
+  >>>
+
+fn name=repointWorkspaceLinks params="worktree:string, workspaces:Record<string, string>" returns=number export=true
+  doc "Re-point every workspace package link in an EXISTING sandbox node_modules that still resolves outside the sandbox. Returns how many were repaired. Best-effort: a failure on one entry never stops the rest."
+  handler <<<
+    let repaired = 0;
+    for (const [name, dir] of Object.entries(workspaces)) {
+      const linkPath = join(worktree, 'node_modules', name);
+      const sandboxPkg = join(worktree, dir);
+      if (!existsSync(sandboxPkg)) continue;
+      try {
+        if (!existsSync(linkPath)) {
+          mkdirSync(join(worktree, 'node_modules', name.split('/').slice(0, -1).join('/')), { recursive: true });
+          linkSandboxEntry(sandboxPkg, linkPath);
+          repaired += 1;
+          continue;
+        }
+        if (isInside(realpathSync(worktree), realpathSync(linkPath))) continue;
+        rmSync(linkPath, { recursive: true, force: true });
+        linkSandboxEntry(sandboxPkg, linkPath);
+        repaired += 1;
+      } catch { /* best effort — a broken link shows up as a red baseline, never as a fake kill */ }
+    }
+    return repaired;
+  >>>
+
+fn name=prepareSandboxNodeModules params="repoRoot:string, worktree:string" returns=SandboxNodeModules export=true
+  doc "Give the sandbox a node_modules where WORKSPACE packages resolve to the sandbox's own sources and everything else resolves to the repo's install. A pre-existing real overlay is kept and only repaired; a wholesale symlink is replaced, because its relative workspace links escape back into the repo. Never throws."
+  handler <<<
+    const src = join(repoRoot, 'node_modules');
+    const dst = join(worktree, 'node_modules');
+    const workspaces = workspacePackageDirs(repoRoot);
+    if (!existsSync(src)) return { mode: 'skipped', links: 0, workspaceLinks: 0, note: 'the repo has no node_modules' };
+
+    if (existsSync(dst)) {
+      let isLink = false;
+      try { isLink = lstatSync(dst).isSymbolicLink(); } catch { isLink = false; }
+      if (!isLink) {
+        const repaired = repointWorkspaceLinks(worktree, workspaces);
+        return { mode: repaired > 0 ? 'repaired' : 'kept', links: 0, workspaceLinks: repaired };
+      }
+      // A single symlink to the repo's install: every workspace link inside it
+      // is relative and lands in the REPO's packages. Replace it.
+      try { rmSync(dst, { force: true }); } catch { /* fall through — the mirror below will no-op */ }
+    }
+
+    const byName = new Map<string, string>();
+    for (const [name, dir] of Object.entries(workspaces)) byName.set(name, dir);
+
+    let links = 0;
+    let workspaceLinks = 0;
+    const linkOne = (sourceDir: string, targetDir: string, entryName: string, packageName: string): void => {
+      const sourcePath = join(sourceDir, entryName);
+      const targetPath = join(targetDir, entryName);
+      const workspaceDir = byName.get(packageName);
+      if (workspaceDir) {
+        const sandboxPkg = join(worktree, workspaceDir);
+        if (existsSync(sandboxPkg)) {
+          linkSandboxEntry(sandboxPkg, targetPath);
+          workspaceLinks += 1;
+          return;
+        }
+      }
+      linkSandboxEntry(sourcePath, targetPath);
+      links += 1;
+    };
+
+    try {
+      mkdirSync(dst, { recursive: true });
+      const entries = readdirSync(src, { withFileTypes: true });
+      for (const entry of entries) {
+        if (SKIP_NODE_MODULES_ENTRIES.includes(entry.name)) continue;
+        try {
+          if (entry.name.startsWith('@') && entry.isDirectory()) {
+            const scopeSrc = join(src, entry.name);
+            const scopeDst = join(dst, entry.name);
+            mkdirSync(scopeDst, { recursive: true });
+            for (const scoped of readdirSync(scopeSrc, { withFileTypes: true })) {
+              if (SKIP_NODE_MODULES_ENTRIES.includes(scoped.name)) continue;
+              try { linkOne(scopeSrc, scopeDst, scoped.name, `${entry.name}/${scoped.name}`); } catch { /* per-entry best effort */ }
+            }
+            continue;
+          }
+          linkOne(src, dst, entry.name, entry.name);
+        } catch { /* per-entry best effort */ }
+      }
+    } catch (err) {
+      return { mode: 'skipped', links, workspaceLinks, note: err instanceof Error ? err.message : String(err) };
+    }
+    return { mode: 'mirrored', links, workspaceLinks };
+  >>>
+
+fn name=packageEntryDirs params="packageJsonPath:string" returns="string[]" export=true
+  doc "The first-segment output directories a package publishes its entry points from (`main`, `module`, `types`, every string in `exports`), filtered to plausible BUILD output names. Pure-ish: reads one package.json, never throws."
+  handler <<<
+    let pkg: Record<string, unknown>;
+    try { pkg = JSON.parse(readFileSync(packageJsonPath, 'utf-8')) as Record<string, unknown>; } catch { return []; }
+    const found = new Set<string>();
+    const consider = (value: string): void => {
+      const clean = value.trim().replace(/^\.\//, '');
+      if (!clean || clean.startsWith('/') || clean.startsWith('..')) return;
+      const first = clean.split('/')[0];
+      if (BUILD_OUTPUT_CANDIDATES.includes(first)) found.add(first);
+    };
+    const walk = (node: unknown, depth: number): void => {
+      if (depth > 6 || node === null || node === undefined) return;
+      if (typeof node === 'string') { consider(node); return; }
+      if (Array.isArray(node)) { for (const item of node) walk(item, depth + 1); return; }
+      if (typeof node === 'object') { for (const item of Object.values(node as Record<string, unknown>)) walk(item, depth + 1); }
+    };
+    walk(pkg.main, 0);
+    walk(pkg.module, 0);
+    walk(pkg.types, 0);
+    walk(pkg.typings, 0);
+    walk(pkg.bin, 0);
+    walk(pkg.exports, 0);
+    return [...found].sort();
+  >>>
+
+fn name=clearShadowingDist params="repoRoot:string, worktree:string, targetFiles:string[]" returns="string[]" export=true
+  doc "Delete the hydrated build output of every workspace package whose SOURCE is being mutated, so a test that imports the package by name cannot load a prebuilt bundle the mutation never reached. Only git-IGNORED output directories are touched (a committed dist belongs to HEAD), and never one that contains a target file. Returns the repo-relative directories cleared. Never throws."
+  handler <<<
+    const workspaces = workspacePackageDirs(repoRoot);
+    if (Object.keys(workspaces).length === 0) return [];
+    const normalized = targetFiles.map((f) => f.split(sep).join('/'));
+
+    const owning = new Set<string>();
+    for (const dir of Object.values(workspaces)) {
+      const prefix = `${dir}/`;
+      if (normalized.some((f) => f.startsWith(prefix))) owning.add(dir);
+    }
+
+    const cleared: string[] = [];
+    for (const dir of [...owning].sort()) {
+      for (const outDir of packageEntryDirs(join(worktree, dir, 'package.json'))) {
+        const rel = `${dir}/${outDir}`;
+        const abs = join(worktree, dir, outDir);
+        if (!existsSync(abs)) continue;
+        if (normalized.some((f) => f === rel || f.startsWith(`${rel}/`))) continue; // mutating the build output itself
+        let ignored = false;
+        try {
+          execFileSync('git', ['check-ignore', '-q', '--', rel], { cwd: repoRoot, stdio: 'ignore' });
+          ignored = true;
+        } catch { ignored = false; }
+        if (!ignored) continue;
+        try { rmSync(abs, { recursive: true, force: true }); cleared.push(rel); } catch { /* best effort */ }
+      }
+    }
+    return cleared;
+  >>>

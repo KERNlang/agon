@@ -6,7 +6,7 @@ import { ensureAgonHome, createRunDir, writeRunStatus, appendMessage, resolveWor
 
 import type { RunStatus, RunStatusEngine } from '@kernlang/agon-core';
 
-import { runMutate } from '@kernlang/agon-forge';
+import { runMutate, mutateVerdictLine } from '@kernlang/agon-forge';
 
 import { filterDefaultOrchestrationEngines } from './engine-filter.js';
 
@@ -77,8 +77,16 @@ export function formatMutateProgressLine(event: {type:string,data?:Record<string
       return `semantic: ${d.accepted} mutant(s) accepted`;
     case 'mutate:pool':
       return `pool: ${d.total} mutant(s) (${d.semantic} semantic, ${d.mechanical} mechanical)`;
-    case 'mutate:sandbox':
-      return `sandbox: ${d.worktree}`;
+    case 'mutate:sandbox': {
+      const parts = [`sandbox: ${d.worktree}`];
+      if (d.nodeModules) parts.push(`node_modules: ${d.nodeModules}`);
+      const cleared = Array.isArray(d.distCleared) ? (d.distCleared as string[]) : [];
+      if (cleared.length > 0) {
+        parts.push(`cleared prebuilt ${cleared.join(', ')} (the mutated package must be rebuilt, not loaded from a stale bundle)`);
+        if (d.needsBuild) parts.push('no --build given — the baseline will fail rather than report a fake 0%');
+      }
+      return parts.join('\n  ');
+    }
     case 'mutate:progress': {
       if (d.phase === 'build') return 'sandbox: building…';
       if (d.phase === 'baseline') return `baseline: unmutated suite ${d.status === 'ok' ? 'passed' : 'FAILED'} in ${d.durationMs}ms`;
@@ -89,7 +97,7 @@ export function formatMutateProgressLine(event: {type:string,data?:Record<string
   }
 }
 
-// @kern-source: mutate:86
+// @kern-source: mutate:94
 export interface MutateArgs {
   path?: string;
   diff?: string;
@@ -109,7 +117,7 @@ export interface MutateArgs {
 /**
  * Parse the REPL argument string for /mutate. Flags mirror the CLI one-for-one; whatever is left after the flags is the positional path. Pure.
  */
-// @kern-source: mutate:101
+// @kern-source: mutate:109
 export function parseMutateArgs(input: string): MutateArgs {
   let rest = ` ${input.trim()} `;
   const take = (re: RegExp): string | undefined => {
@@ -143,7 +151,7 @@ export function parseMutateArgs(input: string): MutateArgs {
 /**
  * REPL /mutate: resolve targets, run the budgeted mutant pipeline in a disposable worktree, render survivors, and append the verdict to the chat session for Cesar.
  */
-// @kern-source: mutate:133
+// @kern-source: mutate:141
 export async function handleMutate(input: string, dispatch: Dispatch, ctx: HandlerContext): Promise<void> {
   const mtAbort = new AbortController();
   ensureAgonHome();
@@ -243,11 +251,9 @@ export async function handleMutate(input: string, dispatch: Dispatch, ctx: Handl
 
     const findings = formatMutationFindings(result.report, result.survivors);
     for (const line of findings) dispatch({ type: 'info', message: line });
-    if (result.survivors.length === 0) {
-      dispatch({ type: 'success', message: 'Verdict: no survivors — your tests kill every mutant on the mutated lines.' });
-    } else {
-      dispatch({ type: 'warning', message: `Verdict: ${result.survivors.length} survivor(s) — wrong code your tests called green. Advisory only: strengthen the assertions that should have failed.` });
-    }
+    const verdict = mutateVerdictLine(result.report, result.survivors);
+    if (verdict.level === 'success') dispatch({ type: 'success', message: `Verdict: ${verdict.text}` });
+    else dispatch({ type: 'warning', message: `Verdict: ${verdict.text}` });
     dispatch({ type: 'info', message: `Saved: ${outputDir}` });
 
     appendMessage(ctx.chatSession, { role: 'user', content: `[mutate] ${label}`, timestamp: new Date().toISOString() });

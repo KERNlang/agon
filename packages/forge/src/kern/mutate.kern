@@ -16,7 +16,7 @@
 // reports ok:false for OPERATIONAL failure (no test command, no target, no
 // mutants, hydration failure, red baseline).
 
-import from="node:fs" names="readFileSync,writeFileSync,existsSync,statSync,readdirSync,mkdirSync,symlinkSync,cpSync"
+import from="node:fs" names="readFileSync,writeFileSync,existsSync,statSync,readdirSync,mkdirSync,cpSync"
 import from="node:path" names="join,dirname,resolve,relative,isAbsolute,extname"
 import from="node:os" names="tmpdir"
 import from="node:crypto" names="randomUUID"
@@ -26,6 +26,7 @@ import from="@kernlang/agon-core" names="generateMutants,runMutants,worktreeCrea
 import from="./goal/diff.js" names="parseChangedLines,isTestFile"
 import from="./mutate-semantic.js" names="collectSemanticMutants"
 import from="./mutate-semantic.js" names="SemanticTarget" types=true
+import from="./mutate-sandbox.js" names="prepareSandboxNodeModules,clearShadowingDist"
 
 interface name=MutateOptions export=true
   field name=repoRoot type=string
@@ -154,6 +155,29 @@ fn name=selectMutants params="mutants:Mutant[], max:number" returns="Mutant[]" e
     return picked;
   >>>
 
+const name=MUTATE_ALL_SURVIVED_WARNING type=string export=true value={{ 'every mutant survived — your tests may not be exercising the mutated source (prebuilt dist? workspace package imported from node_modules? wrong --test?) — try `--build "<your build cmd>"`' }}
+  doc "The one verdict every surface must print instead of a score when NOTHING was killed. A 0% score reads as 'weak tests'; the real cause is almost always that the suite never loaded the mutated file at all."
+
+fn name=allMutantsSurvived params="report:MutationReport" returns=boolean export=true
+  doc "Spec Addendum A #4: the run produced a statistically meaningful pool (>= 5 mutants ran) and EVERY one survived. Not a weak-suite verdict — a run-validity verdict. Pure."
+  handler <<<
+    if (!report.baselineOk) return false;
+    const ran = report.killed + report.survived;
+    return ran >= 5 && report.allSurvived === true && report.survived === ran;
+  >>>
+
+fn name=mutateVerdictLine params="report:MutationReport, survivors:Mutant[]" returns="{level:'success'|'warning', text:string}" export=true
+  doc "The single headline every surface prints after the findings — the CLI's `Verdict:` line, the REPL's dispatch and `agon call mutate`. All-survived outranks the survivor count, because a 0% score is a broken RUN before it is a weak suite. Pure."
+  handler <<<
+    if (allMutantsSurvived(report)) {
+      return { level: 'warning', text: `${MUTATE_ALL_SURVIVED_WARNING} (${survivors.length} survivor(s) listed above)` };
+    }
+    if (survivors.length === 0) {
+      return { level: 'success', text: 'no survivors — your tests kill every mutant on the mutated lines.' };
+    }
+    return { level: 'warning', text: `${survivors.length} survivor(s) — wrong code your tests called green. Advisory only: strengthen the assertions that should have failed.` };
+  >>>
+
 fn name=formatMutateVerdict params="report:MutationReport, survivors:Mutant[]" returns=string export=true
   doc "The advisory verdict block: score, timeout/invalid/not-run accounting, the all-survived warning, and one line per survivor. Pure."
   handler <<<
@@ -162,6 +186,8 @@ fn name=formatMutateVerdict params="report:MutationReport, survivors:Mutant[]" r
     }
     const ran = report.killed + report.survived;
     const lines: string[] = [];
+    // The warning LEADS: when nothing was killed the score is not a measurement.
+    if (allMutantsSurvived(report)) lines.push(`⚠ ${MUTATE_ALL_SURVIVED_WARNING}`);
     let pct = 'n/a';
     if (report.score !== null) pct = `${Math.round(report.score * 100)}%`;
     lines.push(`mutation score ${pct} — ${report.killed}/${ran} mutants killed, ${report.survived} survived`);
@@ -170,9 +196,6 @@ fn name=formatMutateVerdict params="report:MutationReport, survivors:Mutant[]" r
     if (report.notRun > 0) {
       const why = report.budgetExhausted ? 'budget' : 'aborted';
       lines.push(`  ${report.notRun} mutants not run (${why})`);
-    }
-    if (report.allSurvived) {
-      lines.push('  ⚠ every mutant survived — tests may not exercise the mutated source (prebuilt dist? wrong --test?) — try --build "<build cmd>"');
     }
     if (survivors.length === 0 && ran > 0) {
       lines.push('  ✓ no survivors — the tests kill every mutant on the mutated lines');
@@ -221,17 +244,10 @@ fn name=hydrateWorktree params="repoRoot:string, worktree:string, targetFiles:st
     }
   >>>
 
-fn name=linkSandboxNodeModules params="repoRoot:string, worktree:string" returns=void export=false
-  doc "Best-effort node_modules symlink so the sandbox can actually run the test command. worktreeCreate already overlays a workspace-aware node_modules for monorepos; this is the plain-repo fallback and a no-op when the overlay exists."
+fn name=staleDistHint params="cleared:string[]" returns=string export=true
+  doc "The line appended to a red baseline when mutate itself removed the sandbox's prebuilt output. Without it the user reads 'test command fails in the sandbox' and blames their deps. Pure."
   handler <<<
-    const src = join(repoRoot, 'node_modules');
-    const dst = join(worktree, 'node_modules');
-    if (!existsSync(src) || existsSync(dst)) return;
-    try {
-      symlinkSync(src, dst, 'dir');
-    } catch (err) {
-      console.warn(`[agon] mutate: could not link node_modules into the sandbox: ${err instanceof Error ? err.message : String(err)}`);
-    }
+    return `the sandbox has no prebuilt ${cleared.join(', ')} — mutate cleared it because you are mutating that package's SOURCE, and a prebuilt bundle would make every mutant "survive". Pass \`--build "<build cmd>"\` so each mutant is compiled before the tests run.`;
   >>>
 
 fn name=runMutate async=true params="opts:MutateOptions" returns="Promise<MutateResult>" export=true
@@ -337,6 +353,7 @@ fn name=runMutate async=true params="opts:MutateOptions" returns="Promise<Mutate
     // ── 5. Isolated, hydrated sandbox ──
     const worktree = join(tmpdir(), `agon-mutate-${randomUUID().slice(0, 8)}`);
     let report: MutationReport;
+    let clearedDist: string[] = [];
     try {
       worktreeCreate(repoRoot, worktree, headSha(repoRoot));
     } catch (err) {
@@ -344,8 +361,21 @@ fn name=runMutate async=true params="opts:MutateOptions" returns="Promise<Mutate
     }
     try {
       hydrateWorktree(repoRoot, worktree, targetFiles);
-      linkSandboxNodeModules(repoRoot, worktree);
-      opts.onEvent?.({ type: 'mutate:sandbox', data: { worktree, mutants: pool.length } });
+      // Workspace packages must resolve to the SANDBOX's sources, and no
+      // prebuilt bundle of a mutated package may shadow them. Both defects
+      // report as "every mutant survived" at score 0% rather than as an error.
+      const nodeModules = prepareSandboxNodeModules(repoRoot, worktree);
+      clearedDist = clearShadowingDist(repoRoot, worktree, targetFiles);
+      opts.onEvent?.({
+        type: 'mutate:sandbox',
+        data: {
+          worktree,
+          mutants: pool.length,
+          nodeModules: `${nodeModules.mode} (${nodeModules.links} links, ${nodeModules.workspaceLinks} workspace links)`,
+          distCleared: clearedDist,
+          needsBuild: clearedDist.length > 0 && !opts.buildCmd,
+        },
+      });
       report = await runMutants({
         worktree,
         mutants: pool,
@@ -364,6 +394,12 @@ fn name=runMutate async=true params="opts:MutateOptions" returns="Promise<Mutate
     }
 
     // ── 6. Verdict + artifact ──
+    // A red baseline right after we cleared the package's prebuilt output is
+    // almost certainly OUR doing — say so instead of letting the user hunt deps.
+    if (!report.baselineOk && clearedDist.length > 0 && !opts.buildCmd) {
+      const base = report.baselineError ?? 'the sandbox baseline did not pass';
+      report = { ...report, baselineError: `${base}\n  → ${staleDistHint(clearedDist)}` };
+    }
     const survivors = report.outcomes.filter((o) => o.status === 'survived').map((o) => o.mutant);
     const byFile: Record<string, Mutant[]> = {};
     for (const m of survivors) {

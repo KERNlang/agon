@@ -13,7 +13,7 @@
 import from="node:child_process" names="execFileSync"
 import from="@kernlang/agon-core" names="ensureAgonHome,createRunDir,writeRunStatus,appendMessage,resolveWorkingDir,discoverGate"
 import from="@kernlang/agon-core" names="RunStatus,RunStatusEngine" types=true
-import from="@kernlang/agon-forge" names="runMutate"
+import from="@kernlang/agon-forge" names="runMutate,mutateVerdictLine"
 import from="./engine-filter.js" names="filterDefaultOrchestrationEngines"
 import from="./review.js" names="resolveReviewTarget,resolveAutoReviewBase"
 import from="../blocks/review-mutate.js" names="formatMutationFindings"
@@ -71,8 +71,16 @@ fn name=formatMutateProgressLine params="event:{type:string,data?:Record<string,
         return `semantic: ${d.accepted} mutant(s) accepted`;
       case 'mutate:pool':
         return `pool: ${d.total} mutant(s) (${d.semantic} semantic, ${d.mechanical} mechanical)`;
-      case 'mutate:sandbox':
-        return `sandbox: ${d.worktree}`;
+      case 'mutate:sandbox': {
+        const parts = [`sandbox: ${d.worktree}`];
+        if (d.nodeModules) parts.push(`node_modules: ${d.nodeModules}`);
+        const cleared = Array.isArray(d.distCleared) ? (d.distCleared as string[]) : [];
+        if (cleared.length > 0) {
+          parts.push(`cleared prebuilt ${cleared.join(', ')} (the mutated package must be rebuilt, not loaded from a stale bundle)`);
+          if (d.needsBuild) parts.push('no --build given — the baseline will fail rather than report a fake 0%');
+        }
+        return parts.join('\n  ');
+      }
       case 'mutate:progress': {
         if (d.phase === 'build') return 'sandbox: building…';
         if (d.phase === 'baseline') return `baseline: unmutated suite ${d.status === 'ok' ? 'passed' : 'FAILED'} in ${d.durationMs}ms`;
@@ -231,11 +239,9 @@ fn name=handleMutate params="input:string, dispatch:Dispatch, ctx:HandlerContext
 
       const findings = formatMutationFindings(result.report, result.survivors);
       for (const line of findings) dispatch({ type: 'info', message: line });
-      if (result.survivors.length === 0) {
-        dispatch({ type: 'success', message: 'Verdict: no survivors — your tests kill every mutant on the mutated lines.' });
-      } else {
-        dispatch({ type: 'warning', message: `Verdict: ${result.survivors.length} survivor(s) — wrong code your tests called green. Advisory only: strengthen the assertions that should have failed.` });
-      }
+      const verdict = mutateVerdictLine(result.report, result.survivors);
+      if (verdict.level === 'success') dispatch({ type: 'success', message: `Verdict: ${verdict.text}` });
+      else dispatch({ type: 'warning', message: `Verdict: ${verdict.text}` });
       dispatch({ type: 'info', message: `Saved: ${outputDir}` });
 
       appendMessage(ctx.chatSession, { role: 'user', content: `[mutate] ${label}`, timestamp: new Date().toISOString() });

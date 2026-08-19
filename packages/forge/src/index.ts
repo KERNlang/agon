@@ -46,8 +46,14 @@ export type { NaturalizeOptions, NaturalizeResult } from './generated/naturalize
 export {
   runMutate, formatMutateVerdict, dedupeMutants, selectMutants,
   mutationTargetsFromDiff, isMutableFile,
+  allMutantsSurvived, mutateVerdictLine, staleDistHint, MUTATE_ALL_SURVIVED_WARNING,
 } from './generated/mutate.js';
 export type { MutateOptions, MutateResult } from './generated/mutate.js';
+export {
+  prepareSandboxNodeModules, clearShadowingDist, workspacePackageDirs,
+  packageEntryDirs, repointWorkspaceLinks, isInside,
+} from './generated/mutate-sandbox.js';
+export type { SandboxNodeModules } from './generated/mutate-sandbox.js';
 export {
   buildSemanticMutantPrompt, extractJsonArray, validateSemanticMutants, collectSemanticMutants,
 } from './generated/mutate-semantic.js';

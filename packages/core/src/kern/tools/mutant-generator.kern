@@ -1,0 +1,79 @@
+// ── Mechanical mutant generation (shared primitive) ────────────────────
+// Moved VERBATIM from packages/forge/src/kern/goal/mutation.kern:18-75 so the
+// goal loop's mutation-witness and the user-facing `agon mutate` mode share ONE
+// calibrated operator set. Only additions: three OPTIONAL Mutant fields (file /
+// origin / engine / rationale) so a multi-file, AI-augmented caller can carry
+// provenance while goal's single-file shape stays assignable, and an optional
+// `file` argument on generateMutants.
+//
+// The keystone idea (tribunal red-team R1/R2/R7): a "witnessed" test only proves
+// diff-sensitivity, not spec-correctness. Mutate the changed lines with canonical
+// operators and re-run the tests. A surviving mutant (tests still pass on wrong
+// code) signals a weak test. Each mutant is tagged HIGH-SIGNAL (value/logic
+// semantics — the "answer encoded in the test" signatures) or EQUIV-PRONE
+// (boundary/structural swaps that often survive even strong tests) so callers can
+// GRADE survivors rather than treat every survivor as a failure.
+
+interface name=Mutant export=true
+  doc "A single canonical mutation applied to one line. id/operator/line/before/after/class are the goal-era shape; file/origin/engine/rationale are OPTIONAL additions used by `agon mutate` (multi-file + AI-semantic mutants) and left undefined by the goal loop."
+  field name=id type=string
+  field name=operator type=string
+  field name=line type=number
+  field name=before type=string
+  field name=after type=string
+  field name=class type="'high-signal'|'equiv-prone'"
+  field name=file type=string optional=true doc="Repo-relative path of the mutated file. Required by runMutants; omitted by goal's single-file mutationSurvivors, which already knows the path."
+  field name=origin type="'mechanical'|'semantic'" optional=true doc="'mechanical' = canonical operator swap; 'semantic' = an engine-proposed realistic bug."
+  field name=engine type=string optional=true doc="Engine id that proposed a semantic mutant."
+  field name=rationale type=string optional=true doc="Why the current tests would not catch this (semantic mutants only)."
+
+fn name=generateMutants params="source:string, changedLines:number[], file?:string" returns="Mutant[]" export=true
+  doc "Canonical mutants on the changed lines only (one per applicable operator/line). When `file` is given each mutant carries it (and the id is namespaced by it) so mutants from several files can be pooled; without it the output is byte-identical to the goal-era behavior."
+  handler <<<
+    const ops: Array<{ name: string; class: 'high-signal' | 'equiv-prone'; apply: (s: string) => string | null }> = [
+      { name: 'arith:+→-', class: 'high-signal', apply: (s) => { const m = s.replace(/(?<!\+)\+(?![+=])/, '-'); return m !== s ? m : null; } },
+      { name: 'arith:-→+', class: 'high-signal', apply: (s) => { const m = s.replace(/(?<![-\w])-(?![-=>])/, '+'); return m !== s ? m : null; } },
+      { name: 'eq:===→!==', class: 'high-signal', apply: (s) => { const m = s.replace('===', '!=='); return m !== s ? m : null; } },
+      { name: 'eq:!==→===', class: 'high-signal', apply: (s) => { const m = s.replace('!==', '==='); return m !== s ? m : null; } },
+      { name: 'logic:&&→||', class: 'high-signal', apply: (s) => { const m = s.replace('&&', '||'); return m !== s ? m : null; } },
+      { name: 'logic:||→&&', class: 'high-signal', apply: (s) => { const m = s.replace('||', '&&'); return m !== s ? m : null; } },
+      // Relational swaps are EQUIV-PRONE, not high-signal: although < → >= is a
+      // logical negation (killable in principle), in practice these survive on
+      // CORRECT code far more than value/logic mutations — guards on a never-hit
+      // boundary, comparisons on a value the test doesn't drive across the edge.
+      // The dogfood that motivated this gate had 40 surviving boundary flips on a
+      // verifiably-correct contract; treating them as high-signal would re-park
+      // exactly the work this calibration exists to land. (Promoting rel:* to
+      // high-signal becomes safe once survivors are coverage-gated — phase 2.)
+      { name: 'rel:<→>=', class: 'equiv-prone', apply: (s) => { const m = s.replace(/(?<![<>=])<(?![<=])/, '>='); return m !== s ? m : null; } },
+      { name: 'rel:>→<=', class: 'equiv-prone', apply: (s) => { const m = s.replace(/(?<![<>=-])>(?![>=])/, '<='); return m !== s ? m : null; } },
+      { name: 'bool:true→false', class: 'high-signal', apply: (s) => { const m = s.replace(/\btrue\b/, 'false'); return m !== s ? m : null; } },
+      { name: 'bool:false→true', class: 'high-signal', apply: (s) => { const m = s.replace(/\bfalse\b/, 'true'); return m !== s ? m : null; } },
+      { name: 'ret:→undefined', class: 'equiv-prone', apply: (s) => { const m = s.replace(/\breturn\s+[^;]+;/, 'return undefined;'); return m !== s ? m : null; } },
+      { name: 'arr:[]→[0]', class: 'equiv-prone', apply: (s) => { const m = s.replace(/(?<![\w\]])\[\](?!\])/, '[0]'); return m !== s ? m : null; } },
+    ];
+    const lines = source.split('\n');
+    const mutants: Mutant[] = [];
+    for (const ln of changedLines) {
+      const idx = ln - 1;
+      if (idx < 0 || idx >= lines.length) continue;
+      const original = lines[idx];
+      for (const op of ops) {
+        const mutated = op.apply(original);
+        if (mutated == null || mutated === original) continue;
+        const base: Mutant = { id: `${op.name}@L${ln}`, operator: op.name, line: ln, before: original, after: mutated, class: op.class };
+        mutants.push(file ? { ...base, id: `${file}:${op.name}@L${ln}`, file, origin: 'mechanical' } : base);
+      }
+    }
+    return mutants;
+  >>>
+
+fn name=applyMutantToSource params="source:string, mutant:Mutant" returns=string export=true
+  doc "Return source with the mutant's single line swapped in."
+  handler <<<
+    const lines = source.split('\n');
+    const idx = mutant.line - 1;
+    if (idx < 0 || idx >= lines.length) return source;
+    lines[idx] = mutant.after;
+    return lines.join('\n');
+  >>>

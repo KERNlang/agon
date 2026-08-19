@@ -1,0 +1,229 @@
+// ── Budgeted mutant runner (shared primitive) ──────────────────────────
+// Takes a pool of mutants (mechanical or AI-semantic), applies them ONE AT A
+// TIME inside an already-isolated sandbox directory, runs the test command and
+// classifies the result. This is the piece goal's private mutationSurvivors
+// never had: a baseline, a budget, a typecheck filter and an honest timeout
+// taxonomy.
+//
+// Semantics (binary, testable — nero-hardened):
+//   • BASELINE FIRST. The unmutated test command MUST pass in the sandbox before
+//     a single mutant runs. Without it a worktree missing node_modules/dist
+//     reports "100% of mutants killed" while nothing was ever tested (phantom
+//     kills). A red baseline is an OPERATIONAL failure, not a result: the report
+//     comes back baselineOk:false + baselineError and ZERO outcomes, and the
+//     caller is expected to surface it and exit non-zero.
+//   • TIMEOUT = KILLED. Standard mutation semantics: a mutant that hangs the
+//     suite has been detected. `status:'timeout'` is preserved for diagnosis and
+//     also counted in `killed` / `killedByTimeout`.
+//   • BUDGET EXHAUSTION ≠ TIMEOUT. Mutants that never ran are OMITTED from
+//     `outcomes`, counted in `notRun`, and flagged with budgetExhausted — never
+//     silently folded into `killed`.
+//   • Every touched file is restored from its cached original in `finally`,
+//     unconditionally, and also immediately after each mutant so two mutants in
+//     different files never stack.
+//
+// Path containment mirrors goal/paths.kern:17 `resolveWithin`, re-implemented
+// privately here because the dependency direction is forge → core: core must
+// never import forge.
+
+import from="node:fs" names="readFileSync,writeFileSync"
+import from="node:path" names="resolve,sep"
+import from="../blocks/process.js" names="spawnWithTimeout"
+import from="./mutant-generator.js" names="applyMutantToSource"
+import from="./mutant-generator.js" names="Mutant" types=true
+
+interface name=MutantOutcome export=true
+  doc "One mutant's fate. 'survived' = the tests PASSED on wrong code (a weak test). 'killed' = tests failed. 'timeout' = the mutated code hung — counted as a kill. 'invalid' = the mutant does not typecheck/build, so it proves nothing about the tests."
+  field name=mutant type=Mutant
+  field name=status type="'killed'|'survived'|'invalid'|'timeout'"
+  field name=durationMs type=number
+  field name=exitCode type=number optional=true
+
+interface name=MutationReport export=true
+  doc "The machine surface of a mutation run. `killed` INCLUDES timeouts; `killedByTimeout` (== `timeouts`) breaks them out. `score` = killed / (killed + survived), null when nothing ran; invalid mutants are excluded from the denominator. When baselineOk is false nothing was mutated and outcomes is empty."
+  field name=testCmd type=string
+  field name=worktree type=string
+  field name=generated type=number
+  field name=killed type=number
+  field name=survived type=number
+  field name=invalid type=number
+  field name=timeouts type=number
+  field name=killedByTimeout type=number
+  field name=notRun type=number
+  field name=score type="number|null"
+  field name=outcomes type="MutantOutcome[]"
+  field name=budgetExhausted type=boolean
+  field name=allSurvived type=boolean doc="True when at least 5 mutants ran and EVERY one survived — the signature of a test command that never exercises the mutated source (prebuilt dist, wrong --test)."
+  field name=baselineMs type=number
+  field name=baselineOk type=boolean
+  field name=baselineError type=string optional=true
+
+interface name=MutantProgress export=true
+  field name=phase type="'build'|'baseline'|'mutant'"
+  field name=index type=number
+  field name=total type=number
+  field name=durationMs type=number
+  field name=mutantId type=string optional=true
+  field name=status type=string optional=true
+
+interface name=RunMutantsOptions export=true
+  field name=worktree type=string
+  field name=mutants type="Mutant[]"
+  field name=testCmd type=string
+  field name=perMutantTimeoutSec type=number
+  field name=totalBudgetSec type=number
+  field name=typecheckCmd type=string optional=true
+  field name=buildCmd type=string optional=true doc="Run before the baseline AND before each mutant's test. Defends against stale-artifact false survivors (tests run against a prebuilt dist that the mutation never reached)."
+  field name=signal type=AbortSignal optional=true
+  field name=onProgress type="(p:MutantProgress)=>void" optional=true
+
+fn name=resolveWithinRoot params="root:string, candidate:string" returns=string export=false
+  doc "Resolve candidate against root and throw if it escapes (rejects absolute escapes and ../). Private mirror of goal/paths.kern resolveWithin — core must not import forge."
+  handler <<<
+    const base = resolve(root);
+    const abs = resolve(base, candidate);
+    if (abs !== base && !abs.startsWith(base + sep)) {
+      throw new Error(`Path ${JSON.stringify(candidate)} escapes ${base}`);
+    }
+    return abs;
+  >>>
+
+fn name=runMutants async=true params="opts:RunMutantsOptions" returns="Promise<MutationReport>" export=true
+  doc "Run every mutant in an already-isolated sandbox under a total wall-clock budget. Never throws for a failing test command: a red baseline returns baselineOk:false + baselineError with zero outcomes. Restores every touched file in finally."
+  handler <<<
+    const { worktree, mutants, testCmd } = opts;
+    const perMutantMs = Math.max(1, Math.round(opts.perMutantTimeoutSec * 1000));
+    const budgetMs = Math.max(1, Math.round(opts.totalBudgetSec * 1000));
+    const startedAt = Date.now();
+    const originals = new Map<string, string>();
+    const outcomes: MutantOutcome[] = [];
+    let killed = 0;
+    let survived = 0;
+    let invalid = 0;
+    let timeouts = 0;
+    let notRun = 0;
+    let budgetExhausted = false;
+    let baselineMs = 0;
+    let baselineOk = false;
+    let baselineError: string | undefined;
+
+    const sh = (cmd: string, timeoutMs: number) => spawnWithTimeout({
+      command: '/bin/sh',
+      args: ['-c', cmd],
+      cwd: worktree,
+      timeout: Math.max(1, timeoutMs),
+      signal: opts.signal,
+    });
+    const tail = (text: string): string => String(text ?? '').trim().split('\n').slice(-6).join('\n').slice(-600);
+
+    const build = (): MutationReport => {
+      const ran = killed + survived;
+      let score: number | null = null;
+      if (ran > 0) score = killed / ran;
+      return {
+        testCmd,
+        worktree,
+        generated: mutants.length,
+        killed,
+        survived,
+        invalid,
+        timeouts,
+        killedByTimeout: timeouts,
+        notRun,
+        score,
+        outcomes,
+        budgetExhausted,
+        allSurvived: ran >= 5 && survived === ran,
+        baselineMs,
+        baselineOk,
+        baselineError,
+      };
+    };
+
+    try {
+      // ── Optional build, then the MANDATORY unmutated baseline ──
+      const setupTimeoutMs = Math.max(perMutantMs, 60_000);
+      if (opts.buildCmd) {
+        const t0 = Date.now();
+        const res = await sh(opts.buildCmd, setupTimeoutMs);
+        opts.onProgress?.({ phase: 'build', index: 0, total: mutants.length, durationMs: Date.now() - t0 });
+        if (res.exitCode !== 0 || res.timedOut) {
+          const why = res.timedOut ? 'timed out' : `exit ${res.exitCode}`;
+          baselineError = `build command fails before any mutation in the sandbox (${why}) — check deps/build; stderr tail:\n${tail(res.stderr)}`;
+          notRun = mutants.length;
+          return build();
+        }
+      }
+
+      const tBase = Date.now();
+      const baseRes = await sh(testCmd, setupTimeoutMs);
+      baselineMs = Date.now() - tBase;
+      opts.onProgress?.({ phase: 'baseline', index: 0, total: mutants.length, durationMs: baselineMs, status: baseRes.exitCode === 0 ? 'ok' : 'failed' });
+      if (baseRes.timedOut || baseRes.exitCode !== 0) {
+        const why = baseRes.timedOut ? 'timed out' : `exit ${baseRes.exitCode}`;
+        baselineError = `test command fails before any mutation in the sandbox (${why}) — check deps/build; stderr tail:\n${tail(baseRes.stderr || baseRes.stdout)}`;
+        notRun = mutants.length;
+        return build();
+      }
+      baselineOk = true;
+
+      // A suite that takes 40s unmutated needs more than a 120s cap when the
+      // mutation makes it slower; a suite that takes 20ms should not wait 120s
+      // for a hang either — but the user's floor always wins.
+      const effTimeoutMs = Math.max(perMutantMs, 3 * baselineMs);
+
+      // ── Mutants ──
+      for (let i = 0; i < mutants.length; i += 1) {
+        if (opts.signal?.aborted) { notRun = mutants.length - i; break; }
+        if (Date.now() - startedAt >= budgetMs) { notRun = mutants.length - i; budgetExhausted = true; break; }
+
+        const mutant = mutants[i];
+        const rel = mutant.file;
+        if (!rel) throw new Error(`runMutants: mutant ${mutant.id} has no 'file' — every mutant in a multi-file run must carry its repo-relative path`);
+        const abs = resolveWithinRoot(worktree, rel);
+        if (!originals.has(abs)) originals.set(abs, readFileSync(abs, 'utf-8'));
+        const original = originals.get(abs) as string;
+
+        const t0 = Date.now();
+        let status: 'killed' | 'survived' | 'invalid' | 'timeout' = 'killed';
+        let exitCode: number | undefined;
+        writeFileSync(abs, applyMutantToSource(original, mutant));
+        try {
+          let decided = false;
+          if (opts.typecheckCmd) {
+            const tc = await sh(opts.typecheckCmd, effTimeoutMs);
+            if (tc.exitCode !== 0 || tc.timedOut) { status = 'invalid'; exitCode = tc.exitCode; decided = true; }
+          }
+          if (!decided && opts.buildCmd) {
+            const b = await sh(opts.buildCmd, effTimeoutMs);
+            // A mutant that breaks the build proves nothing about the tests.
+            if (b.exitCode !== 0 || b.timedOut) { status = 'invalid'; exitCode = b.exitCode; decided = true; }
+          }
+          if (!decided) {
+            const res = await sh(testCmd, effTimeoutMs);
+            exitCode = res.exitCode;
+            if (res.timedOut) status = 'timeout';
+            else if (res.exitCode === 0) status = 'survived';
+            else status = 'killed';
+          }
+        } finally {
+          // Restore immediately so mutants in different files never stack.
+          writeFileSync(abs, original);
+        }
+
+        const durationMs = Date.now() - t0;
+        outcomes.push({ mutant, status, durationMs, exitCode });
+        if (status === 'survived') survived += 1;
+        else if (status === 'invalid') invalid += 1;
+        else if (status === 'timeout') { timeouts += 1; killed += 1; }
+        else killed += 1;
+        opts.onProgress?.({ phase: 'mutant', index: i + 1, total: mutants.length, durationMs, mutantId: mutant.id, status });
+      }
+
+      return build();
+    } finally {
+      for (const [abs, content] of originals) {
+        try { writeFileSync(abs, content); } catch { /* best effort — the sandbox is disposable */ }
+      }
+    }
+  >>>

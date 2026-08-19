@@ -44,18 +44,25 @@ export { runNaturalize, buildNaturalizePrompt, wordDiffStats } from './generated
 export type { NaturalizeOptions, NaturalizeResult } from './generated/naturalize.js';
 // ── Mutate (mutation testing as a test-strength oracle) ──
 export {
-  runMutate, formatMutateVerdict, dedupeMutants, selectMutants,
+  runMutate, dedupeMutants, selectMutants,
   mutationTargetsFromDiff, isMutableFile,
-  allMutantsSurvived, mutateVerdictLine, staleDistHint, MUTATE_ALL_SURVIVED_WARNING,
 } from './generated/mutate.js';
 export type { MutateOptions, MutateResult } from './generated/mutate.js';
+// The ONE mutation-report renderer — every surface (mutate, /mutate, review
+// --mutate) must render through formatMutationReportLines, never its own copy.
+export {
+  formatMutationReportLines, formatMutateVerdict, mutateVerdictLine,
+  allMutantsSurvived, noMutantsRanLine, staleDistHint, MUTATE_ALL_SURVIVED_WARNING,
+} from './generated/mutate-report.js';
 export {
   prepareSandboxNodeModules, clearShadowingDist, workspacePackageDirs,
-  packageEntryDirs, repointWorkspaceLinks, isInside,
+  packageEntryDirs, repointWorkspaceLinks, isInside, isSafePackageName,
+  pnpmWorkspaceGlobs, gitIgnoredPaths,
 } from './generated/mutate-sandbox.js';
 export type { SandboxNodeModules } from './generated/mutate-sandbox.js';
 export {
   buildSemanticMutantPrompt, extractJsonArray, validateSemanticMutants, collectSemanticMutants,
+  seatGrantsWriteAccess, stripControlChars,
 } from './generated/mutate-semantic.js';
 export type {
   SemanticTarget, SemanticTargetLine, SemanticMutantsResult, DroppedSemanticEntry,

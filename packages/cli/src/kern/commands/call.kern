@@ -42,6 +42,7 @@ interface name=CallCommandOptions export=true
   field name=mechanicalOnly type=boolean optional=true
   field name=maxMutants type=string optional=true
   field name=semantic type=boolean optional=true
+  field name=lens type=string optional=true
   field name=build type=string optional=true
   field name=test type=string optional=true
 
@@ -317,7 +318,9 @@ fn name=buildCallCommands params="opts:CallCommandOptions" returns="BuiltCallCom
       // --build is not optional polish: in a monorepo whose suite runs against a
       // prebuilt dist, a run without it reports a fake 0% and the agent reads
       // "your tests are worthless". The bridge must be able to say it.
-      // --test wins over the generic --fitness-cmd when both are given.
+      // --test wins over the generic --fitness-cmd when both are given, and
+      // --lens forwards verbatim: `agon mutate` owns the "a lens implies
+      // --semantic" decision, so the bridge must not second-guess it here.
       commands.push([
         'mutate',
         ...(opts.input?.trim() ? [opts.input.trim()] : []),
@@ -325,6 +328,7 @@ fn name=buildCallCommands params="opts:CallCommandOptions" returns="BuiltCallCom
         ...textFlag('--test', opts.test?.trim() ? opts.test : opts.fitnessCmd),
         ...textFlag('--build', opts.build),
         ...textFlag('--max-mutants', opts.maxMutants),
+        ...textFlag('--lens', opts.lens),
         ...(opts.semantic ? ['--semantic'] : []),
         ...(opts.mechanicalOnly ? ['--mechanical-only'] : []),
         ...timeout,
@@ -571,6 +575,10 @@ const name=callCommand type="any"
           description: 'For mutate: add the AI-semantic panel (real engine spend — your changed source is sent to each panel engine). Off by default',
           default: false,
         },
+        lens: {
+          type: 'string',
+          description: 'For mutate: steer the AI-semantic panel toward one bug family — IMPLIES --semantic. Presets: security | privacy | perf | ratelimit | concurrency; anything else is free text',
+        },
         'max-mutants': {
           type: 'string',
           description: 'For mutate: cap the mutant pool (default 40)',
@@ -622,6 +630,7 @@ const name=callCommand type="any"
             mechanicalOnly: args['mechanical-only'],
             maxMutants: args['max-mutants'],
             semantic: args.semantic,
+            lens: args.lens,
             build: args.build,
             test: args.test,
           });

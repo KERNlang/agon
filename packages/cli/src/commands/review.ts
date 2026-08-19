@@ -126,6 +126,10 @@ export const reviewCommand = defineCommand({
       type: 'string',
       description: 'With --mutate: build command run before the baseline AND each mutant — required when the suite runs against a prebuilt dist rather than the mutated source (otherwise every mutant survives).',
     },
+    'mutate-lens': {
+      type: 'string',
+      description: 'With --mutate: steer the AI-semantic panel toward one bug family — IMPLIES --mutate-semantic. Presets: security | privacy | perf | ratelimit | concurrency; anything else is used verbatim as free text.',
+    },
     verbose: {
       type: 'boolean',
       alias: 'v',
@@ -512,11 +516,12 @@ export const reviewCommand = defineCommand({
       args['mutate-semantic'] === true
       || typeof args['mutate-test'] === 'string'
       || typeof args['mutate-build'] === 'string'
+      || typeof args['mutate-lens'] === 'string'
     ) {
       // These only do anything inside the --mutate branch. Accepting them
       // silently made a user believe an override took effect when no mutation
       // pass ran at all.
-      warn('--mutate-semantic/--mutate-test/--mutate-build have no effect without --mutate — no mutation pass ran.');
+      warn('--mutate-semantic/--mutate-test/--mutate-build/--mutate-lens have no effect without --mutate — no mutation pass ran.');
     }
 
     if (!quiet) info(`Full per-engine reviews: ${outputDir}`);

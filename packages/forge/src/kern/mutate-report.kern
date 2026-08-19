@@ -65,7 +65,12 @@ fn name=formatMutationReportLines params="report:MutationReport, survivors:Mutan
       else out.push(`  ⚠ ${noMutantsRanLine(report)}`);
       return out;
     }
-    const label = (m: Mutant): string => (m.origin === 'semantic' ? `semantic/${m.engine ?? '?'}` : m.operator);
+    // A semantic survivor names the lens it was proposed under: "the security
+    // lens found a hole your tests ignore" is a different finding from "an
+    // engine free-associated a bug", and the report must not blur the two.
+    const label = (m: Mutant): string => (m.origin === 'semantic'
+      ? `semantic/${m.engine ?? '?'}${m.lens ? ` lens:${m.lens}` : ''}`
+      : m.operator);
     if (grouped) {
       const byFile = new Map<string, Mutant[]>();
       for (const m of survivors) {
@@ -95,6 +100,17 @@ fn name=formatMutationReportLines params="report:MutationReport, survivors:Mutan
     return out;
   >>>
 
+fn name=mutateLensSuffix params="survivors:Mutant[]" returns=string export=true
+  doc "The ` (lens: x)` fragment the verdict carries when the semantic panel was steered. Empty when no survivor was proposed under a lens — a mechanical run must never claim a focus it did not have. Pure."
+  handler <<<
+    const lenses: string[] = [];
+    for (const m of survivors) {
+      const lens = (m.lens ?? '').trim();
+      if (lens && !lenses.includes(lens)) lenses.push(lens);
+    }
+    return lenses.length > 0 ? ` (lens: ${lenses.join(', ')})` : '';
+  >>>
+
 fn name=mutateVerdictLine params="report:MutationReport, survivors:Mutant[]" returns="{level:'success'|'warning', text:string}" export=true
   doc "The single headline every surface prints after the findings — the CLI's `Verdict:` line, the REPL's dispatch and `agon call mutate`. All-survived outranks the survivor count (a 0% score is a broken RUN before it is a weak suite), and a run where nothing executed can never claim success. Pure."
   handler <<<
@@ -108,7 +124,7 @@ fn name=mutateVerdictLine params="report:MutationReport, survivors:Mutant[]" ret
     if (survivors.length === 0) {
       return { level: 'success', text: 'no survivors — your tests kill every mutant on the mutated lines.' };
     }
-    return { level: 'warning', text: `${survivors.length} survivor(s) — wrong code your tests called green. Advisory only: strengthen the assertions that should have failed.` };
+    return { level: 'warning', text: `${survivors.length} survivor(s)${mutateLensSuffix(survivors)} — wrong code your tests called green. Advisory only: strengthen the assertions that should have failed.` };
   >>>
 
 fn name=formatMutateVerdict params="report:MutationReport, survivors:Mutant[]" returns=string export=true

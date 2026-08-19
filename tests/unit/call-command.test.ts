@@ -429,6 +429,17 @@ describe('agon call command mapping', () => {
       .toEqual([['mutate', 'src/a.ts', '--semantic']]);
   });
 
+  // The bridge forwards --lens verbatim: `agon mutate` owns the "a lens implies
+  // --semantic" decision, and duplicating it here is how the two surfaces drift.
+  it('forwards --lens verbatim without inventing --semantic alongside it', () => {
+    expect(buildCallCommands({ workflow: 'mutate', input: 'src/auth.ts', lens: 'security' }).commands)
+      .toEqual([['mutate', 'src/auth.ts', '--lens', 'security']]);
+    expect(buildCallCommands({ workflow: 'mutate', input: 'src/auth.ts', lens: 'missing ownership checks', semantic: true }).commands)
+      .toEqual([['mutate', 'src/auth.ts', '--lens', 'missing ownership checks', '--semantic']]);
+    expect(buildCallCommands({ workflow: 'mutate', input: 'src/a.ts' }).commands)
+      .toEqual([['mutate', 'src/a.ts']]);
+  });
+
   it('defaults review target to uncommitted', () => {
     expect(buildCallCommands({ workflow: 'review' }).commands).toEqual([
       ['review', 'uncommitted'],

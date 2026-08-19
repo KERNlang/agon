@@ -52,7 +52,7 @@ export type { MutateOptions, MutateResult } from './generated/mutate.js';
 // --mutate) must render through formatMutationReportLines, never its own copy.
 export {
   formatMutationReportLines, formatMutateVerdict, mutateVerdictLine,
-  allMutantsSurvived, noMutantsRanLine, staleDistHint, MUTATE_ALL_SURVIVED_WARNING,
+  allMutantsSurvived, noMutantsRanLine, staleDistHint, mutateLensSuffix, MUTATE_ALL_SURVIVED_WARNING,
 } from './generated/mutate-report.js';
 export {
   prepareSandboxNodeModules, clearShadowingDist, workspacePackageDirs,
@@ -62,7 +62,7 @@ export {
 export type { SandboxNodeModules } from './generated/mutate-sandbox.js';
 export {
   buildSemanticMutantPrompt, extractJsonArray, validateSemanticMutants, collectSemanticMutants,
-  seatGrantsWriteAccess, stripControlChars,
+  seatGrantsWriteAccess, stripControlChars, normalizeLens, MUTATE_LENS_PRESETS,
 } from './generated/mutate-semantic.js';
 export type {
   SemanticTarget, SemanticTargetLine, SemanticMutantsResult, DroppedSemanticEntry,

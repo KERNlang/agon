@@ -50,31 +50,32 @@ export interface CallCommandOptions {
   mechanicalOnly?: boolean;
   maxMutants?: string;
   semantic?: boolean;
+  lens?: string;
   build?: string;
   test?: string;
 }
 
-// @kern-source: call:48
+// @kern-source: call:49
 export interface WorkflowCallMeta {
   workflowId: string;
   version: string;
   planId: string;
 }
 
-// @kern-source: call:53
+// @kern-source: call:54
 export interface BuiltCallCommands {
   cwd: string;
   commands: string[][];
   workflowMeta?: WorkflowCallMeta;
 }
 
-// @kern-source: call:58
+// @kern-source: call:59
 export function textFlag(flag: string, value: string|undefined): string[] {
   const text = value?.trim();
   return text ? [flag, text] : [];
 }
 
-// @kern-source: call:64
+// @kern-source: call:65
 export function requireInput(workflow: string, input: string|undefined): string {
   const text = input?.trim();
   if (!text) {
@@ -83,7 +84,7 @@ export function requireInput(workflow: string, input: string|undefined): string 
   return text;
 }
 
-// @kern-source: call:73
+// @kern-source: call:74
 export function exitWithFailure(message: string): never {
   fail(message);
   process.exit(1);
@@ -93,7 +94,7 @@ export function exitWithFailure(message: string): never {
 /**
  * Enforce the HARD removedEngines denylist at the external-CLI boundary, BEFORE any --engines list is forwarded to a subcommand. Without this, an external CLI (Codex/Antigravity) that passes --engines a,b,<removed> would resurrect a hard-removed engine, since explicit -e lists bypass the registry's auto roster. Fails loudly (pre-run error) rather than silently dropping — silent roster rewrite is the trust hazard (Council batch-2 verdict).
  */
-// @kern-source: call:80
+// @kern-source: call:81
 export function validateCallEngineRoster(enginesCsv: string|undefined, cwd?: string): void {
   const text = enginesCsv?.trim();
   if (!text) return;
@@ -113,12 +114,12 @@ export function validateCallEngineRoster(enginesCsv: string|undefined, cwd?: str
   }
 }
 
-// @kern-source: call:101
+// @kern-source: call:102
 export function normalizeCallWorkflow(workflow: string): string {
   return workflow.trim().toLowerCase().replace(/_/g, '-');
 }
 
-// @kern-source: call:106
+// @kern-source: call:107
 export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
   const workflow = normalizeCallWorkflow(opts.workflow);
   const cwd = opts.cwd?.trim() || process.cwd();
@@ -332,7 +333,9 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
     // --build is not optional polish: in a monorepo whose suite runs against a
     // prebuilt dist, a run without it reports a fake 0% and the agent reads
     // "your tests are worthless". The bridge must be able to say it.
-    // --test wins over the generic --fitness-cmd when both are given.
+    // --test wins over the generic --fitness-cmd when both are given, and
+    // --lens forwards verbatim: `agon mutate` owns the "a lens implies
+    // --semantic" decision, so the bridge must not second-guess it here.
     commands.push([
       'mutate',
       ...(opts.input?.trim() ? [opts.input.trim()] : []),
@@ -340,6 +343,7 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
       ...textFlag('--test', opts.test?.trim() ? opts.test : opts.fitnessCmd),
       ...textFlag('--build', opts.build),
       ...textFlag('--max-mutants', opts.maxMutants),
+      ...textFlag('--lens', opts.lens),
       ...(opts.semantic ? ['--semantic'] : []),
       ...(opts.mechanicalOnly ? ['--mechanical-only'] : []),
       ...timeout,
@@ -372,12 +376,12 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
   return { cwd, commands };
 }
 
-// @kern-source: call:360
+// @kern-source: call:364
 export function writeJsonl(event: Record<string,unknown>): void {
   process.stdout.write(`${JSON.stringify({ ...event, timestamp: new Date().toISOString() })}\n`);
 }
 
-// @kern-source: call:365
+// @kern-source: call:369
 export async function runCommand(command: string, args: string[], cwd: string, jsonl: boolean, workflowMeta?: WorkflowCallMeta): Promise<number> {
   return new Promise((resolve) => {
     const startedAt = Date.now();
@@ -421,7 +425,7 @@ export async function runCommand(command: string, args: string[], cwd: string, j
   });
 }
 
-// @kern-source: call:409
+// @kern-source: call:413
 export const callCommand: any = defineCommand({
   meta: {
     name: 'call',
@@ -585,6 +589,10 @@ export const callCommand: any = defineCommand({
       description: 'For mutate: add the AI-semantic panel (real engine spend — your changed source is sent to each panel engine). Off by default',
       default: false,
     },
+    lens: {
+      type: 'string',
+      description: 'For mutate: steer the AI-semantic panel toward one bug family — IMPLIES --semantic. Presets: security | privacy | perf | ratelimit | concurrency; anything else is free text',
+    },
     'max-mutants': {
       type: 'string',
       description: 'For mutate: cap the mutant pool (default 40)',
@@ -636,6 +644,7 @@ export const callCommand: any = defineCommand({
         mechanicalOnly: args['mechanical-only'],
         maxMutants: args['max-mutants'],
         semantic: args.semantic,
+        lens: args.lens,
         build: args.build,
         test: args.test,
       });

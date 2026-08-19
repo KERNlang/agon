@@ -30,7 +30,7 @@ import from="node:child_process" names="execFileSync"
 import from="@kernlang/agon-core" names="EngineAdapter,EngineRegistry,Mutant,MutationReport" types=true
 import from="@kernlang/agon-core" names="generateMutants,runMutants,worktreeCreate,worktreeRemoveBestEffort,headSha,resolveWithinRoot"
 import from="./goal/diff.js" names="parseChangedLines,isTestFile"
-import from="./mutate-semantic.js" names="collectSemanticMutants"
+import from="./mutate-semantic.js" names="collectSemanticMutants,normalizeLens"
 import from="./mutate-semantic.js" names="SemanticTarget" types=true
 import from="./mutate-sandbox.js" names="prepareSandboxNodeModules,clearShadowingDist,workspacePackageDirs"
 import from="./mutate-report.js" names="formatMutateVerdict,staleDistHint"
@@ -51,6 +51,7 @@ interface name=MutateOptions export=true
   field name=typecheckCmd type=string optional=true
   field name=buildCmd type=string optional=true
   field name=semanticPerEngine type=number optional=true
+  field name=lens type=string optional=true doc="Free text or a MUTATE_LENS_PRESETS key steering the SEMANTIC panel toward one bug family. Meaningless without `semantic` — the CLI/REPL surfaces imply --semantic when a lens is given, and runMutate simply ignores it on a mechanical run."
   field name=timeout type=number optional=true doc="Per-engine dispatch timeout (seconds) for the semantic panel."
   field name=cwd type=string optional=true doc="Kept for callers that pass it; IGNORED for the semantic panel, which is always dispatched from the disposable sandbox worktree."
   field name=signal type=AbortSignal optional=true
@@ -64,6 +65,7 @@ interface name=MutateResult export=true
   field name=verdict type=string
   field name=costUsd type=number doc="Always 0 today — panel seats report no per-dispatch cost. Kept on the contract so the CLI/REPL surface does not change when they do."
   field name=engineCalls type=number doc="Dispatches actually spent on the semantic panel. One per engine normally, TWO for a seat that needed the transient-failure retry — the honest number for a spend line."
+  field name=lens type=string optional=true doc="The normalized lens the semantic panel was steered with, echoed back so a surface can name it without re-normalizing the raw flag. Absent on a mechanical run."
   field name=label type=string
   field name=outputDir type=string
   field name=panelHealth type="{ requested:number; responded:number; degraded:boolean; notes:string[]; banner:string|null }" optional=true
@@ -232,9 +234,13 @@ fn name=runMutate async=true params="opts:MutateOptions" returns="Promise<Mutate
     });
     let label = 'mutate';
     let engineCalls = 0;
+    // Normalized ONCE: the prompt, the events and every surface must name the
+    // same lens, and the raw flag is user text that has not been capped yet.
+    const lensKey = opts.semantic ? (normalizeLens(opts.lens)?.key ?? '') : '';
     const fail = (error: string): MutateResult => ({
       ok: false, report: emptyReport(), survivors: [], byFile: {},
       verdict: `mutate failed: ${error}`, costUsd: 0, engineCalls, label, outputDir: opts.outputDir, error,
+      lens: lensKey || undefined,
     });
 
     if (!testCmd) return fail('no test command discovered — pass `--test <cmd>`');
@@ -352,6 +358,7 @@ fn name=runMutate async=true params="opts:MutateOptions" returns="Promise<Mutate
             timeout: opts.timeout ?? 180,
             outputDir: opts.outputDir,
             cwd: worktree,
+            lens: opts.lens,
             signal: opts.signal,
             onEvent: opts.onEvent,
           });
@@ -361,7 +368,7 @@ fn name=runMutate async=true params="opts:MutateOptions" returns="Promise<Mutate
         } catch (err) {
           console.warn(`[agon] mutate: semantic panel failed, continuing with mechanical mutants only: ${err instanceof Error ? err.message : String(err)}`);
         }
-        opts.onEvent?.({ type: 'mutate:semantic', data: { accepted: semantic.length, calls: engineCalls } });
+        opts.onEvent?.({ type: 'mutate:semantic', data: { accepted: semantic.length, calls: engineCalls, lens: lensKey } });
       }
 
       // ── 5. Dedupe + cap (semantic first so its rationale survives the dedupe) ──
@@ -424,6 +431,7 @@ fn name=runMutate async=true params="opts:MutateOptions" returns="Promise<Mutate
       verdict,
       costUsd: 0,
       engineCalls,
+      lens: lensKey || undefined,
       label,
       outputDir: opts.outputDir,
       panelHealth,

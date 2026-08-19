@@ -10,7 +10,7 @@ import { filterDefaultOrchestrationEngines } from './engine-filter.js';
 
 import { resolveReviewTarget, resolveAutoReviewBase } from './review.js';
 
-import { renderMutationLines, formatMutateProgressLine, mutateSpendLine, mutateActualSpendLine, mutateChatSummary, mutationScorePct } from '../blocks/mutate-render.js';
+import { renderMutationLines, formatMutateProgressLine, mutateSpendLine, mutateActualSpendLine, mutateChatSummary, mutationScorePct, mutateLensLine, mutateLensImpliesSemanticLine } from '../blocks/mutate-render.js';
 
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
@@ -69,6 +69,7 @@ export interface MutateArgs {
   typecheck?: string;
   build?: string;
   engines?: string[];
+  lens?: string;
   semantic: boolean;
   mechanicalOnly: boolean;
   maxMutants: number;
@@ -81,7 +82,7 @@ export interface MutateArgs {
 /**
  * Parse the REPL argument string for /mutate. Flags mirror the CLI one-for-one; whatever is left after the flags is the positional path. Both `--flag value` and `--flag=value` are accepted for value flags, quoted values may contain spaces (`--engines "codex, kimi"`), and a boolean flag given a value is rejected rather than reinterpreted. Pure.
  */
-// @kern-source: mutate:77
+// @kern-source: mutate:78
 export function parseMutateArgs(input: string): MutateArgs {
   // INVARIANT: `rest` stays space-padded at both ends for the whole function.
   // Every flag pattern below anchors on a preceding space via lookbehind and
@@ -108,6 +109,7 @@ export function parseMutateArgs(input: string): MutateArgs {
   const diff = take('--diff');
   const base = take('--base');
   const enginesRaw = take('(?:--engines|-e)');
+  const lens = take('--lens');
   const maxMutants = parsePositiveInt(take('--max-mutants'), 40);
   const semanticPerEngine = parsePositiveInt(take('--semantic-per-engine'), 8);
   const timeout = parsePositiveInt(take('--timeout'), 120);
@@ -135,7 +137,7 @@ export function parseMutateArgs(input: string): MutateArgs {
   const semantic = takeBool('semantic');
   const path = rest.replace(/\s+/g, ' ').trim() || undefined;
   return {
-    path, diff, base, test, typecheck, build,
+    path, diff, base, test, typecheck, build, lens,
     engines: enginesRaw ? enginesRaw.split(',').map((s) => s.trim()).filter(Boolean) : undefined,
     semantic, mechanicalOnly, maxMutants, semanticPerEngine, timeout, budget,
     error: errors.length > 0 ? errors.join(' ') : undefined,
@@ -143,15 +145,18 @@ export function parseMutateArgs(input: string): MutateArgs {
 }
 
 /**
- * Reject contradictory `mutate` flag combinations with ONE message shared by the CLI and the REPL, or null when the combination is coherent. Pure. A positional path mutates whole files, so BOTH --diff and --base (which only resolve changed lines) are meaningless with it; --semantic and --mechanical-only are opposite intents, so passing both is always a mistake rather than a precedence puzzle.
+ * Reject contradictory `mutate` flag combinations with ONE message shared by the CLI and the REPL, or null when the combination is coherent. Pure. A positional path mutates whole files, so BOTH --diff and --base (which only resolve changed lines) are meaningless with it; --semantic and --mechanical-only are opposite intents, so passing both is always a mistake rather than a precedence puzzle; --lens implies --semantic, so it collides with --mechanical-only the same way.
  */
-// @kern-source: mutate:139
-export function validateMutateFlags(a: {path?:string, diff?:string, base?:string, semantic?:boolean, mechanicalOnly?:boolean}): string|null {
+// @kern-source: mutate:141
+export function validateMutateFlags(a: {path?:string, diff?:string, base?:string, lens?:string, semantic?:boolean, mechanicalOnly?:boolean}): string|null {
   const path = (a.path ?? '').trim();
   const diff = (a.diff ?? '').trim();
   const base = (a.base ?? '').trim();
   if (a.semantic === true && a.mechanicalOnly === true) {
     return 'Pass --semantic OR --mechanical-only, not both — --semantic forces the AI-semantic panel on, --mechanical-only is the (default) mechanical run.';
+  }
+  if ((a.lens ?? '').trim() && a.mechanicalOnly === true) {
+    return 'Pass --lens OR --mechanical-only, not both — a lens steers the AI-semantic panel (so it implies --semantic), and --mechanical-only turns that panel off.';
   }
   if (path && diff) return 'Pass a path OR --diff, not both — a path mutates whole files, --diff mutates changed lines.';
   if (path && base) return 'Pass a path OR --base, not both — a path mutates whole files, --base only resolves which changed lines to mutate.';
@@ -161,19 +166,21 @@ export function validateMutateFlags(a: {path?:string, diff?:string, base?:string
 /**
  * The resolved semantic panel for one mutate run — the SAME decision on both surfaces.
  */
-// @kern-source: mutate:153
+// @kern-source: mutate:158
 export interface MutatePanel {
   semantic: boolean;
   engines: string[];
+  lens?: string;
+  impliedSemantic?: boolean;
   error?: string;
   warning?: string;
 }
 
 /**
- * Resolve the AI-semantic panel for a mutate run — the ONE implementation the CLI command and the REPL handler both call, so `--semantic` with an empty roster cannot fail loudly on one surface and silently degrade to mechanical on the other (it did). Mutation is MECHANICAL by default: the semantic panel sends changed repository source to every selected external provider, so it is opt-in via --semantic rather than something a roster silently switches on. --mechanical-only is the explicit spelling of the default. Pure — the caller supplies the roster and the id resolver, and `listHint` names the surface's own engine-listing command.
+ * Resolve the AI-semantic panel for a mutate run — the ONE implementation the CLI command and the REPL handler both call, so `--semantic` with an empty roster cannot fail loudly on one surface and silently degrade to mechanical on the other (it did). Mutation is MECHANICAL by default: the semantic panel sends changed repository source to every selected external provider, so it is opt-in via --semantic rather than something a roster silently switches on. --mechanical-only is the explicit spelling of the default. A `--lens` IMPLIES `--semantic`: a lens can only steer engine-proposed bugs, so accepting it on a mechanical run would make the flag silently inert — the panel is turned on and `impliedSemantic` tells the caller to say so. Pure — the caller supplies the roster and the id resolver, and `listHint` names the surface's own engine-listing command.
  */
-// @kern-source: mutate:160
-export function resolveMutatePanel(a: { requested?: string[], active: string[], known: string[], resolveId: (id:string)=>string, semantic: boolean, mechanicalOnly: boolean, listHint: string }): MutatePanel {
+// @kern-source: mutate:167
+export function resolveMutatePanel(a: { requested?: string[], active: string[], known: string[], resolveId: (id:string)=>string, semantic: boolean, mechanicalOnly: boolean, lens?: string, listHint: string }): MutatePanel {
   const requested = (a.requested ?? []).filter((s) => (s ?? '').trim().length > 0);
   const known = new Set(a.known);
   let pool: string[] = [];
@@ -186,9 +193,12 @@ export function resolveMutatePanel(a: { requested?: string[], active: string[], 
   } else {
     pool = filterDefaultOrchestrationEngines(a.active);
   }
-  const semantic = a.semantic === true && a.mechanicalOnly !== true;
+  const lens = (a.lens ?? '').trim();
+  const impliedSemantic = a.semantic !== true && lens.length > 0;
+  const semantic = (a.semantic === true || lens.length > 0) && a.mechanicalOnly !== true;
   if (semantic && pool.length === 0) {
-    return { semantic: false, engines: [], error: `--semantic needs at least one active engine. ${a.listHint}` };
+    const asked = impliedSemantic ? '--lens (which implies --semantic)' : '--semantic';
+    return { semantic: false, engines: [], error: `${asked} needs at least one active engine. ${a.listHint}` };
   }
   if (!semantic) {
     const warning = requested.length > 0
@@ -196,13 +206,13 @@ export function resolveMutatePanel(a: { requested?: string[], active: string[], 
       : undefined;
     return { semantic: false, engines: [], warning };
   }
-  return { semantic: true, engines: pool };
+  return { semantic: true, engines: pool, lens: lens || undefined, impliedSemantic };
 }
 
 /**
  * REPL /mutate: resolve targets, run the budgeted mutant pipeline in a disposable worktree, render survivors, and append a CAPPED verdict summary to the chat session for Cesar. Returns TRUE only when a mutation report was actually produced — the caller must not feed Cesar a 'mutation testing finished' turn for a run that never started.
  */
-// @kern-source: mutate:188
+// @kern-source: mutate:198
 export async function handleMutate(input: string, dispatch: Dispatch, ctx: HandlerContext): Promise<boolean> {
   const mtAbort = new AbortController();
   try {
@@ -256,6 +266,7 @@ export async function handleMutate(input: string, dispatch: Dispatch, ctx: Handl
       resolveId: (id: string) => ctx.registry.resolveId(id),
       semantic: args.semantic,
       mechanicalOnly: args.mechanicalOnly,
+      lens: args.lens,
       listHint: 'Run /engines to see available engines.',
     });
     if (panel.error) {
@@ -267,6 +278,14 @@ export async function handleMutate(input: string, dispatch: Dispatch, ctx: Handl
     const pool = panel.engines;
 
     dispatch({ type: 'header', title: `Mutate: ${label} · ${semantic ? `semantic panel (${pool.length})` : 'mechanical only'}` });
+    // A lens the user passed without --semantic just turned the panel (and its
+    // spend) on — say so BEFORE the spend line, not after the bill.
+    if (panel.impliedSemantic) {
+      const impliedLine = mutateLensImpliesSemanticLine(panel.lens);
+      if (impliedLine) dispatch({ type: 'info', message: impliedLine });
+    }
+    const lensLine = mutateLensLine(semantic, panel.lens);
+    if (lensLine) dispatch({ type: 'info', message: lensLine });
     const spendLine = mutateSpendLine(semantic, pool.length);
     if (spendLine) dispatch({ type: 'info', message: spendLine });
     dispatch({ type: 'info', message: `test: ${testCmd}` });
@@ -285,6 +304,7 @@ export async function handleMutate(input: string, dispatch: Dispatch, ctx: Handl
         typecheckCmd: args.typecheck,
         buildCmd: args.build,
         semantic,
+        lens: panel.lens,
         engines: pool,
         registry: ctx.registry,
         adapter: ctx.adapter,
@@ -336,7 +356,7 @@ export async function handleMutate(input: string, dispatch: Dispatch, ctx: Handl
         engineId: 'mutate',
         // CAPPED: the full table went to the transcript and the run dir. The
         // session is replayed into every later Cesar turn.
-        content: mutateChatSummary({ label, testCmd, report: result.report, survivors: result.survivors, reportPath: result.reportPath ?? outputDir }),
+        content: mutateChatSummary({ label, testCmd, report: result.report, survivors: result.survivors, reportPath: result.reportPath ?? outputDir, lens: result.lens }),
         timestamp: new Date().toISOString(),
       });
       return true;

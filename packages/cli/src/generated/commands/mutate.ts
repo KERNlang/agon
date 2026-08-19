@@ -14,7 +14,7 @@ import { runMutate, mutateVerdictLine } from '@kernlang/agon-forge';
 
 import { header, success, fail, info, warn, bold, dim } from '../blocks/output-format.js';
 
-import { renderMutationLines, formatMutateProgressLine, mutateSpendLine, mutateActualSpendLine, mutationScorePct } from '../blocks/mutate-render.js';
+import { renderMutationLines, formatMutateProgressLine, mutateSpendLine, mutateActualSpendLine, mutationScorePct, mutateLensLine, mutateLensImpliesSemanticLine } from '../blocks/mutate-render.js';
 
 import { resolveMutateDiff, parsePositiveInt, validateMutateFlags, resolveMutatePanel } from '../handlers/mutate.js';
 
@@ -64,6 +64,10 @@ export const mutateCommand: any = defineCommand({
       type: 'string',
       alias: 'e',
       description: 'Restrict the semantic panel (comma-separated). Only meaningful with --semantic; the default mechanical run dispatches no engine at all.',
+    },
+    lens: {
+      type: 'string',
+      description: 'Steer the AI-semantic panel toward one bug family — IMPLIES --semantic (a lens cannot focus mechanical operators). Presets: security (auth bypass, missing permission/ownership checks, token/session misuse, removed input validation) · privacy (returning/logging more user data than needed, PII leaks, missing redaction) · perf (N+1, missing cache/index, unbounded loops, missing pagination/limits) · ratelimit (skipped/loosened throttles, quota checks, retry storms) · concurrency (lost locks, races, non-atomic read-modify-write). Anything else is used verbatim as free text.',
     },
     'max-mutants': {
       type: 'string',
@@ -128,7 +132,8 @@ export const mutateCommand: any = defineCommand({
     // so both surfaces refuse the same combinations with the same sentence —
     // and BEFORE any pool handling, so `--semantic --mechanical-only` no longer
     // reports the misleading "--semantic needs at least one active engine".
-    const flagError = validateMutateFlags({ path, diff: diffArg, base: baseArg, semantic: args.semantic === true, mechanicalOnly });
+    const lensArg = typeof args.lens === 'string' ? args.lens.trim() : '';
+    const flagError = validateMutateFlags({ path, diff: diffArg, base: baseArg, lens: lensArg, semantic: args.semantic === true, mechanicalOnly });
     if (flagError) die(flagError);
 
     // AC9: no discoverable gate => loud failure, BEFORE any worktree exists.
@@ -172,6 +177,7 @@ export const mutateCommand: any = defineCommand({
       resolveId: (id: string) => registry.resolveId(id),
       semantic: args.semantic === true,
       mechanicalOnly,
+      lens: lensArg,
       listHint: 'Run `agon engine list` to see available engines.',
     });
     if (panel.error) die(panel.error);
@@ -184,6 +190,14 @@ export const mutateCommand: any = defineCommand({
 
     if (!quiet && !json) {
       header(`Mutate: ${label} · ${semantic ? `semantic panel (${pool.length})` : 'mechanical only'}`);
+      // A lens given without --semantic just turned the panel on. Say that
+      // BEFORE the spend line — the user asked for a focus, not for spend.
+      if (panel.impliedSemantic) {
+        const impliedLine = mutateLensImpliesSemanticLine(panel.lens);
+        if (impliedLine) info(impliedLine);
+      }
+      const lensLine = mutateLensLine(semantic, panel.lens);
+      if (lensLine) info(lensLine);
       // Say what --semantic will cost before it costs it.
       const spendLine = mutateSpendLine(semantic, pool.length);
       if (spendLine) info(spendLine);
@@ -206,6 +220,7 @@ export const mutateCommand: any = defineCommand({
       typecheckCmd: typeof args.typecheck === 'string' && args.typecheck.trim() ? args.typecheck.trim() : undefined,
       buildCmd: typeof args.build === 'string' && args.build.trim() ? args.build.trim() : undefined,
       semantic,
+      lens: panel.lens,
       engines: pool,
       registry,
       adapter,
@@ -242,9 +257,9 @@ export const mutateCommand: any = defineCommand({
       label: (args.label as string | undefined) ?? label,
       startedAt,
       endedAt: new Date().toISOString(),
-      engines: pool.map((id): RunStatusEngine => ({ id, status: result.ok ? 'ok' : 'error', detail: semantic ? 'semantic mutants' : 'not used' })),
+      engines: pool.map((id): RunStatusEngine => ({ id, status: result.ok ? 'ok' : 'error', detail: semantic ? (result.lens ? `semantic mutants (lens: ${result.lens})` : 'semantic mutants') : 'not used' })),
       summary: result.ok
-        ? `mutation score ${mutationScorePct(result.report)} — ${result.survivors.length} survivor(s) of ${result.report.killed + result.report.survived} mutant(s)`
+        ? `mutation score ${mutationScorePct(result.report)}${result.lens ? ` (lens: ${result.lens})` : ''} — ${result.survivors.length} survivor(s) of ${result.report.killed + result.report.survived} mutant(s)`
         : (result.error ?? 'mutate failed'),
       ok: result.ok,
       requested: pool,

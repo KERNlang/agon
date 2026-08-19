@@ -16,7 +16,7 @@ import { generateMutants, runMutants, worktreeCreate, worktreeRemoveBestEffort, 
 
 import { parseChangedLines, isTestFile } from './goal/diff.js';
 
-import { collectSemanticMutants } from './mutate-semantic.js';
+import { collectSemanticMutants, normalizeLens } from './mutate-semantic.js';
 
 import type { SemanticTarget } from './mutate-semantic.js';
 
@@ -41,13 +41,14 @@ export interface MutateOptions {
   typecheckCmd?: string;
   buildCmd?: string;
   semanticPerEngine?: number;
+  lens?: string;
   timeout?: number;
   cwd?: string;
   signal?: AbortSignal;
   onEvent?: (e:{type:string,data?:Record<string,unknown>})=>void;
 }
 
-// @kern-source: mutate:59
+// @kern-source: mutate:60
 export interface MutateResult {
   ok: boolean;
   report: MutationReport;
@@ -56,6 +57,7 @@ export interface MutateResult {
   verdict: string;
   costUsd: number;
   engineCalls: number;
+  lens?: string;
   label: string;
   outputDir: string;
   panelHealth?: { requested:number; responded:number; degraded:boolean; notes:string[]; banner:string|null };
@@ -63,28 +65,28 @@ export interface MutateResult {
   error?: string;
 }
 
-// @kern-source: mutate:73
+// @kern-source: mutate:75
 export const MUTABLE_EXTENSIONS: string[] = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts'];
 
-// @kern-source: mutate:75
+// @kern-source: mutate:77
 export const SKIP_DIRS: string[] = ['node_modules', 'dist', 'build', 'out', 'coverage', 'vendor', '.git'];
 
 /**
  * Per-file ceiling on the untracked work copied into the sandbox (5 MiB). A stray recording or database dump must not turn hydration into a minutes-long copy; the skip is logged so the cause of a red baseline is never a mystery.
  */
-// @kern-source: mutate:77
+// @kern-source: mutate:79
 export const MAX_UNTRACKED_FILE_BYTES: number = 5242880;
 
 /**
  * Ceiling on how many untracked files are copied. Beyond this the working tree is not 'uncommitted work' any more, and hydration would dominate the run.
  */
-// @kern-source: mutate:80
+// @kern-source: mutate:82
 export const MAX_UNTRACKED_FILES: number = 2000;
 
 /**
  * A path worth mutating: a JS/TS source file that is not a test.
  */
-// @kern-source: mutate:83
+// @kern-source: mutate:85
 export function isMutableFile(rel: string): boolean {
   if (isTestFile(rel)) return false;
   return MUTABLE_EXTENSIONS.includes(extname(rel));
@@ -93,7 +95,7 @@ export function isMutableFile(rel: string): boolean {
 /**
  * Recursively list repo-relative mutable source files under absDir, skipping dependency/build/hidden directories and never following a symlinked entry.
  */
-// @kern-source: mutate:90
+// @kern-source: mutate:92
 function collectMutableFiles(repoRoot: string, absDir: string): string[] {
   const found: string[] = [];
   const walk = (dir: string): void => {
@@ -118,7 +120,7 @@ function collectMutableFiles(repoRoot: string, absDir: string): string[] {
 /**
  * Changed-line targets from a unified diff: parseChangedLines minus test files and non-source extensions. Pure — containment against the repo root is the caller's job (runMutate does it), because a hand-authored diff can carry any path.
  */
-// @kern-source: mutate:113
+// @kern-source: mutate:115
 export function mutationTargetsFromDiff(diff: string): Record<string, number[]> {
   const parsed = parseChangedLines(diff);
   const targets: Record<string, number[]> = {};
@@ -132,7 +134,7 @@ export function mutationTargetsFromDiff(diff: string): Record<string, number[]> 
 /**
  * Collapse mutants that produce the SAME mutated line in the same place — (file, line, after). First wins, so a semantic mutant placed ahead of the mechanical pool keeps its rationale. Pure.
  */
-// @kern-source: mutate:125
+// @kern-source: mutate:127
 export function dedupeMutants(mutants: Mutant[]): Mutant[] {
   const seen = new Set<string>();
   const out: Mutant[] = [];
@@ -148,7 +150,7 @@ export function dedupeMutants(mutants: Mutant[]): Mutant[] {
 /**
  * Cap the pool at `max`: high-signal mutants first, then equiv-prone, then anything else, and inside each class ROUND-ROBIN across files so one hot file cannot eat the whole budget. Order within a file is preserved. Pure.
  */
-// @kern-source: mutate:139
+// @kern-source: mutate:141
 export function selectMutants(mutants: Mutant[], max: number): Mutant[] {
   if (max <= 0) return [];
   if (mutants.length <= max) return mutants;
@@ -187,7 +189,7 @@ export function selectMutants(mutants: Mutant[], max: number): Mutant[] {
 /**
  * Make the HEAD sandbox match the user's working tree: apply `git diff --binary HEAD`, then copy EVERY untracked non-ignored regular file (not just the target sources — an untracked test, fixture, config or helper the suite needs would otherwise be missing and the baseline would fail for an invisible reason). Returns how many untracked files were copied. Throws the user-facing message when the patch will not apply (binary targets, submodules, partially-staged hunks are the known unsupported paths).
  */
-// @kern-source: mutate:176
+// @kern-source: mutate:178
 function hydrateWorktree(repoRoot: string, worktree: string): number {
   let patch = '';
   try {
@@ -235,7 +237,7 @@ function hydrateWorktree(repoRoot: string, worktree: string): number {
 /**
  * Resolve targets -> mechanical mutants -> hydrated HEAD sandbox -> optional semantic panel (dispatched FROM that sandbox) -> dedupe -> cap -> run -> verdict + mutation-report.json. Never throws: operational failures come back as ok:false with `error` and a verdict line the caller can print.
  */
-// @kern-source: mutate:222
+// @kern-source: mutate:224
 export async function runMutate(opts: MutateOptions): Promise<MutateResult> {
   const repoRoot = resolve(opts.repoRoot);
   const testCmd = String(opts.testCmd ?? '').trim();
@@ -247,9 +249,13 @@ export async function runMutate(opts: MutateOptions): Promise<MutateResult> {
   });
   let label = 'mutate';
   let engineCalls = 0;
+  // Normalized ONCE: the prompt, the events and every surface must name the
+  // same lens, and the raw flag is user text that has not been capped yet.
+  const lensKey = opts.semantic ? (normalizeLens(opts.lens)?.key ?? '') : '';
   const fail = (error: string): MutateResult => ({
     ok: false, report: emptyReport(), survivors: [], byFile: {},
     verdict: `mutate failed: ${error}`, costUsd: 0, engineCalls, label, outputDir: opts.outputDir, error,
+    lens: lensKey || undefined,
   });
 
   if (!testCmd) return fail('no test command discovered — pass `--test <cmd>`');
@@ -367,6 +373,7 @@ export async function runMutate(opts: MutateOptions): Promise<MutateResult> {
           timeout: opts.timeout ?? 180,
           outputDir: opts.outputDir,
           cwd: worktree,
+          lens: opts.lens,
           signal: opts.signal,
           onEvent: opts.onEvent,
         });
@@ -376,7 +383,7 @@ export async function runMutate(opts: MutateOptions): Promise<MutateResult> {
       } catch (err) {
         console.warn(`[agon] mutate: semantic panel failed, continuing with mechanical mutants only: ${err instanceof Error ? err.message : String(err)}`);
       }
-      opts.onEvent?.({ type: 'mutate:semantic', data: { accepted: semantic.length, calls: engineCalls } });
+      opts.onEvent?.({ type: 'mutate:semantic', data: { accepted: semantic.length, calls: engineCalls, lens: lensKey } });
     }
 
     // ── 5. Dedupe + cap (semantic first so its rationale survives the dedupe) ──
@@ -439,6 +446,7 @@ export async function runMutate(opts: MutateOptions): Promise<MutateResult> {
     verdict,
     costUsd: 0,
     engineCalls,
+    lens: lensKey || undefined,
     label,
     outputDir: opts.outputDir,
     panelHealth,

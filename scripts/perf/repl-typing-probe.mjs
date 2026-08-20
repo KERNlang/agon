@@ -21,8 +21,11 @@
  *   renders/keystroke : App 1.00 · ComposerView 1.00 · PromptTextInput 2.00
  *   latency ms        : p50 6.46/6.54/6.59 · p95 7.84/8.74/9.99 · max 11.9
  *
- * ── AFTER input-leaf extraction (same box/settings) ──────────────────────
- *   see the report in the branch's final commit; re-run to reproduce.
+ * ── AFTER input-leaf extraction (same box/settings, 3 runs) ──────────────
+ *   renders/keystroke : App 0.00 · ComposerView 1.00 · PromptTextInput 2.00
+ *   latency ms        : p50 3.66/3.69/3.78 · p95 4.73/7.50/4.61
+ *
+ *   App no longer commits per keystroke; only the composer leaf does.
  */
 import { spawn } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';

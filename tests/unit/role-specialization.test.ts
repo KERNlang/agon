@@ -49,6 +49,10 @@ describe('RoleSpecialization', () => {
 
     it('prefers the well-measured engine over the high-but-uncertain one', () => {
       home = setupTestAgonHome('role-spec-ratings');
+      // loadRatings() JSON.parses the store on every call (or returns a fresh
+      // literal when the file is absent), so `record` is this test's own
+      // object — there is no module-level ratings singleton to mutate. The
+      // store itself is per-test via setupTestAgonHome/AGON_HOME.
       const record = loadRatings();
       const now = new Date().toISOString();
       record.byTaskClass.bugfix = {

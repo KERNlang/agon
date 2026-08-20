@@ -44,6 +44,41 @@ describe('pricing', () => {
     expect(getEnginePricing({ id: 'e1' } as unknown as EngineDefinition)).toBe(DEFAULT_PRICING);
   });
 
+  // ── Non-finite rates: documented current behaviour, NOT a live bug ──
+  // The type guard is `typeof === 'number'`, which NaN and Infinity both
+  // satisfy. That is deliberate to leave here rather than tighten, because
+  // `api.pricing` has exactly one supply path — engine definition JSON
+  // (built-in engines/*.json and user ~/.agon/engines/*.json) — and JSON
+  // cannot express either value directly: `JSON.parse('{"a":NaN}')` and
+  // `…Infinity}` are both SyntaxErrors, and nothing in the codebase builds an
+  // api.pricing object programmatically (verified: no `pricing:` assignment
+  // outside this module). The one reachable non-finite is an overflowing
+  // literal (1e999 → Infinity), whose effect is fail-SAFE: every budget
+  // comparison trips immediately and the run stops early, which is the
+  // direction DEFAULT_PRICING is already tuned for.
+  //
+  // These cases pin that behaviour so the sharp edge is visible if pricing
+  // ever becomes programmatic — at which point the guard should become
+  // Number.isFinite.
+  it('accepts a NaN rate (typeof NaN === "number") — unreachable from JSON', () => {
+    expect(getEnginePricing(engineWith({ input: NaN, output: 0.002 }))).toEqual({
+      inputPer1k: NaN,
+      outputPer1k: 0.002,
+    });
+    expect(tokensToCost(engineWith({ input: NaN, output: 0.002 }), 1000, 1000)).toBeNaN();
+  });
+
+  it('accepts an overflowing literal rate (1e999 → Infinity) and fails safe (cost → Infinity)', () => {
+    const parsed = JSON.parse('{"input": 1e999, "output": 0.002}');
+    expect(parsed.input).toBe(Infinity);
+    expect(getEnginePricing(engineWith(parsed)).inputPer1k).toBe(Infinity);
+    expect(tokensToCost(engineWith(parsed), 1000, 1000)).toBe(Infinity);
+  });
+
+  it('rejects the string forms JSON CAN express', () => {
+    expect(getEnginePricing(engineWith(JSON.parse('{"input": "NaN", "output": 0.002}')))).toBe(DEFAULT_PRICING);
+  });
+
   it('tokensToCost uses the engine rates, not the default', () => {
     const engine = engineWith({ input: 0.001, output: 0.01 });
     // 2000 input @ 0.001/1k + 1000 output @ 0.01/1k = 0.002 + 0.01

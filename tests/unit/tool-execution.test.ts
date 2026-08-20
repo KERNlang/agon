@@ -74,12 +74,15 @@ describe('tool-execution', () => {
     });
 
     it('a raw-map READ promotes that entry to most-recently-used', () => {
-      // The exposed Map is what tool code holds (ToolContext.readFileState),
-      // so its get() has to maintain the same LRU order the cache uses to
-      // choose an eviction victim. Wiping the order on read makes eviction
-      // drop the hottest entry instead of the coldest.
+      // `cache.cache` and `cache.accessOrder` are PUBLIC fields, not a
+      // private reach-in: the Map is exactly the object production hands to
+      // tools as ToolContext.readFileState (see makeCtx above and
+      // createEagerToolContext), so its get() is a real API surface and has
+      // to maintain the same LRU order the cache uses to pick an eviction
+      // victim. Wiping the order on read makes eviction drop the hottest
+      // entry instead of the coldest.
       const cache = new FileStateCache();
-      const exposed = (cache as any).cache as Map<string, any>;
+      const exposed = cache.cache;
       const state = (content: string) => ({ content, timestamp: Date.now(), offset: undefined, limit: undefined });
 
       exposed.set('/a.ts', state('a'));
@@ -97,7 +100,7 @@ describe('tool-execution', () => {
 
     it('evicts the LEAST-recently-read entry, not the most-recently-read one', () => {
       const cache = new FileStateCache();
-      const exposed = (cache as any).cache as Map<string, any>;
+      const exposed = cache.cache;
       const state = (content: string) => ({ content, timestamp: Date.now(), offset: undefined, limit: undefined });
 
       for (let i = 0; i < 100; i++) exposed.set(`/lru${i}.ts`, state(`content${i}`));

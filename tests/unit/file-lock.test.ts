@@ -72,10 +72,13 @@ describe('withFileLock', () => {
       expect(() => withFileLock(lockPath, () => {}, { timeoutMs: 150, staleMs: 60_000 })).toThrow(/file lock timeout/);
       const elapsed = Date.now() - startedAt;
 
-      // It waited the full contention window …
+      // Both bounds are one-sided and slack in the direction load pushes
+      // them. The loop can only exit AFTER the deadline, so elapsed is >=
+      // timeoutMs however busy the box is (measured: 157-159ms against a 120
+      // floor). And a slower machine makes each iteration LONGER, so the
+      // attempt count only ever falls (measured: 13 against a 60 ceiling).
+      // A broken deadline turns those 13 into thousands.
       expect(elapsed).toBeGreaterThanOrEqual(120);
-      // … while attempting only a handful of times (150ms / 12ms slice ≈ 12).
-      // A broken deadline turns this into thousands of iterations.
       expect(waitSpy.mock.calls.length).toBeGreaterThan(0);
       expect(waitSpy.mock.calls.length).toBeLessThan(60);
     } finally {

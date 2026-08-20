@@ -255,19 +255,21 @@ const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:O
 export { CesarRecapBlock };
 
 /**
- * Launch-banner examples: a plain prompt and the mode Cesar routes it to. The
- * arrow column is computed from the prompt length — the four hand-counted
- * spacers this replaced had drifted, leaving the first arrow one column short
- * of the other three.
+ * Launch-banner examples: a plain prompt and the mode Cesar routes it to.
+ * Shared by both banner renderers (DashboardView's JSX and app-rendering's row
+ * builder) so they cannot drift apart. The prompts start at BANNER_INDENT like
+ * every other banner line; the arrow column is computed from the prompt length,
+ * relative to that shared left edge — the four hand-counted spacers this
+ * replaced had drifted, leaving the first arrow one column short of the others.
  */
-const DASHBOARD_EXAMPLES: { prompt: string; target: string; color: string }[] = [
+export const DASHBOARD_EXAMPLES: { prompt: string; target: string; color: string }[] = [
   { prompt: '"explain the auth flow"', target: 'chat', color: '#fbbf24' },
   { prompt: '"codex how would you do this?"', target: 'codex', color: '#22d3ee' },
   { prompt: '"fix login bug, test with npm test"', target: 'forge', color: '#f97316' },
   { prompt: '"should we use REST or GraphQL?"', target: 'tribunal', color: '#a78bfa' },
 ];
 
-const EXAMPLE_ARROW_COLUMN: number = 46;
+export const EXAMPLE_ARROW_COLUMN: number = 46;
 
 export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboard' } }) {
   return (
@@ -276,15 +278,15 @@ export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboar
         <GradientLine key={i} text={line} colors={BRAND} />
       ))}
       <Text> </Text>
-      <Text italic color="#d4a041">{' '.repeat(TAGLINE_PAD)}{DASHBOARD_TAGLINE}</Text>
-      <Text dimColor>{'     v'}{VERSION}{'  ·  Powered by '}<Text bold color="#fbbf24">{'KERNlang.dev'}</Text></Text>
+      <Text italic color="#d4a041">{BANNER_INDENT}{DASHBOARD_TAGLINE}</Text>
+      <Text dimColor>{BANNER_INDENT}{'v'}{VERSION}{'  ·  Powered by '}<Text bold color="#fbbf24">{'KERNlang.dev'}</Text></Text>
       {event.workspace && (
-        <Text dimColor>{'     workspace: '}{event.workspace.path}</Text>
+        <Text dimColor>{BANNER_INDENT}{'workspace: '}{event.workspace.path}</Text>
       )}
       <Text> </Text>
   
       <Box>
-        <Text color="#f97316">{'  Engines: '}</Text>
+        <Text color="#f97316">{BANNER_INDENT}{'Engines: '}</Text>
         {event.enabled.map((id: string, i: number) => (
           <Text key={id}>
             <Text color={engineColor(id)} bold>{id}</Text>
@@ -305,7 +307,7 @@ export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboar
       <Box flexDirection="column">
         {DASHBOARD_EXAMPLES.map((example: { prompt: string; target: string; color: string }) => (
           <Box key={example.target}>
-            <Text dimColor>{'  '}</Text>
+            <Text dimColor>{BANNER_INDENT}</Text>
             <Text italic dimColor>{example.prompt}</Text>
             <Text dimColor>{' '.repeat(Math.max(1, EXAMPLE_ARROW_COLUMN - example.prompt.length))}</Text>
             <Text color={example.color}>{'\u2192 '}{example.target}</Text>
@@ -314,7 +316,7 @@ export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboar
       </Box>
       <Text> </Text>
       <Text dimColor>
-        {'  Just talk, type '}<Text color="#f97316">{'/'}</Text>{' for commands, '}
+        {BANNER_INDENT}{'Just talk, type '}<Text color="#f97316">{'/'}</Text>{' for commands, '}
         <Text color="#f97316">{'Tab'}</Text>{' plan, '}
         <Text color="#f97316">{'Ctrl+A'}</Text>{' auto.'}
       </Text>
@@ -1205,26 +1207,28 @@ export const LOGO_LINES: string[] = ['    █████╗  ██████
 export const DASHBOARD_TAGLINE: string = 'Any AI can join. They compete. You ship.';
 
 /**
- * Left pad, in columns relative to the LOGO_LINES strings' own origin (column 0
- * of each figlet row), that centers `text` under the AGON figlet's ink block.
- *
- * Derived, never hand-counted — the four hand-counted banner spacers this file
- * already replaced had all drifted. The figlet rows are 39 chars wide but the
- * ink only spans columns 3..38 (36 columns, centre 20.5); the tagline is 40
- * chars, so it is wider than the logo and the balanced start column is
- * 3 + (36 - 40) / 2 = 1 (two columns of overhang on each side).
+ * Columns of blank space in front of the AGON figlet's leftmost ink, measured
+ * from LOGO_LINES itself — never hand-counted. Every hand-counted banner spacer
+ * this file has carried drifted eventually, and centering the text under the
+ * logo (the previous attempt) read as three different left edges on screen.
  */
-export function centerPadUnderLogo(text: string): number {
+export function logoInkStartPad(): number {
   const inked = LOGO_LINES.filter((line: string) => line.trim().length > 0);
   if (inked.length === 0) return 0;
-  const start = Math.min(...inked.map((line: string) => line.length - line.trimStart().length));
-  const end = Math.max(...inked.map((line: string) => line.trimEnd().length - 1));
-  const width = end - start + 1;
-  return Math.max(0, start + Math.round((width - text.length) / 2));
+  return Math.min(...inked.map((line: string) => line.length - line.trimStart().length));
 }
 
-/** Columns of indent that centre DASHBOARD_TAGLINE under the logo. Currently 1. */
-export const TAGLINE_PAD: number = centerPadUnderLogo(DASHBOARD_TAGLINE);
+/**
+ * The one left edge the whole launch banner shares: tagline, version,
+ * workspace, engines, examples and the help line all start exactly under the
+ * logo's leftmost block. Relative to the banner's own left padding (paddingX=1
+ * in DashboardView, paddingLeft=1 on every row in app-rendering's row builder),
+ * so both renderers land on the same absolute column. Currently 3.
+ */
+export const BANNER_PAD: number = logoInkStartPad();
+
+/** BANNER_PAD as a ready-to-concatenate string of spaces. */
+export const BANNER_INDENT: string = ' '.repeat(BANNER_PAD);
 
 /**
  * Read this package's installed version from its package.json at runtime so the banner auto-reflects npm upgrades instead of a frozen literal. Walks up from this module to the nearest package.json whose name matches. Falls back to the literal if resolution fails — e.g. an exports-locked package.json that can't be read by path.

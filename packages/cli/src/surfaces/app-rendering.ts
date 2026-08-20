@@ -8,7 +8,7 @@ import { parsePatchPreview } from '../blocks/engine-helpers.js';
 
 import { contentWidth, color256toHex, engineColor, CODE_RAIL, CODE_RAIL_COLOR, MAX_CODE_LINES } from '../blocks/rendering.js';
 
-import { LOGO_LINES, VERSION, BRAND, DASHBOARD_TAGLINE, TAGLINE_PAD } from '../blocks/engine.js';
+import { LOGO_LINES, VERSION, BRAND, DASHBOARD_TAGLINE, BANNER_INDENT, DASHBOARD_EXAMPLES, EXAMPLE_ARROW_COLUMN } from '../blocks/engine.js';
 
 import type { OutputBlock } from '../blocks/engine.js';
 
@@ -1240,48 +1240,44 @@ export function renderBlockOwnRows(block: OutputBlock, mode: string, toolOutputE
           });
         });
         pushSpacer(`${baseKey}-dash-gap-1`);
-        // Same paddingLeft as the logo rows above, so TAGLINE_PAD (derived from
-        // the figlet's ink extent in blocks/engine.tsx) centres the tagline under
-        // the AGON block here exactly as it does in DashboardView.
-        pushSegmentsRow(`${baseKey}-dash-tag`, 1, [{ text: `${' '.repeat(TAGLINE_PAD)}${DASHBOARD_TAGLINE}`, color: '#d4a041', italic: true }]);
-        pushSegmentsRow(`${baseKey}-dash-version`, 0, [
-          { text: `     v${VERSION}  ·  Powered by `, dimColor: true },
+        // Every banner line below shares the logo rows' paddingLeft of 1 plus
+        // BANNER_INDENT (derived from the figlet's ink start in blocks/engine.tsx),
+        // so the whole block has ONE flush left edge, aligned with the logo's
+        // leftmost block, in this renderer exactly as in DashboardView.
+        pushSegmentsRow(`${baseKey}-dash-tag`, 1, [{ text: `${BANNER_INDENT}${DASHBOARD_TAGLINE}`, color: '#d4a041', italic: true }]);
+        pushSegmentsRow(`${baseKey}-dash-version`, 1, [
+          { text: `${BANNER_INDENT}v${VERSION}  ·  Powered by `, dimColor: true },
           { text: 'KERNlang.dev', color: '#fbbf24', bold: true },
         ]);
         if (event.workspace) {
-          pushSegmentsRow(`${baseKey}-dash-workspace`, 0, [
-            { text: `     workspace: ${event.workspace.path}`, dimColor: true },
+          pushSegmentsRow(`${baseKey}-dash-workspace`, 1, [
+            { text: `${BANNER_INDENT}workspace: ${event.workspace.path}`, dimColor: true },
           ]);
         }
-        pushSegmentsRow(`${baseKey}-dash-engines`, 0, [
-          { text: '  Engines: ', color: '#f97316' },
+        pushSegmentsRow(`${baseKey}-dash-engines`, 1, [
+          { text: `${BANNER_INDENT}Engines: `, color: '#f97316' },
           ...((event.enabled ?? []) as string[]).flatMap((engineId: string, index: number, list: string[]) => ([
             { text: engineId, color: engineColor(engineId), bold: true },
             index < list.length - 1 ? { text: ' ', dimColor: true } : null,
           ].filter(Boolean))),
         ].filter(Boolean));
         if (event.eloTop) {
-          pushSegmentsRow(`${baseKey}-dash-elo`, 0, [
-            { text: '  ' },
+          pushSegmentsRow(`${baseKey}-dash-elo`, 1, [
+            { text: BANNER_INDENT },
             { text: '♛ ', color: '#fbbf24' },
             { text: event.eloTop.id, color: engineColor(event.eloTop.id), bold: true },
             { text: ` ${event.eloTop.rating} Glicko`, dimColor: true },
           ]);
         }
-        [
-          { prompt: '"explain the auth flow"', target: 'chat', color: '#fbbf24' },
-          { prompt: '"codex how would you do this?"', target: 'codex', color: '#60a5fa' },
-          { prompt: '"fix login bug, test with npm test"', target: 'forge', color: '#f97316' },
-          { prompt: '"should we use REST or GraphQL?"', target: 'tribunal', color: '#a78bfa' },
-        ].forEach((example: any, index: number) => pushSegmentsRow(`${baseKey}-dash-example-${index}`, 0, [
-          { text: '  ', dimColor: true },
+        DASHBOARD_EXAMPLES.forEach((example: { prompt: string; target: string; color: string }, index: number) => pushSegmentsRow(`${baseKey}-dash-example-${index}`, 1, [
+          { text: BANNER_INDENT, dimColor: true },
           { text: example.prompt, dimColor: true, italic: true },
-          { text: '  →  ', dimColor: true },
-          { text: example.target, color: example.color },
+          { text: ' '.repeat(Math.max(1, EXAMPLE_ARROW_COLUMN - example.prompt.length)), dimColor: true },
+          { text: `→ ${example.target}`, color: example.color },
         ]));
         pushSpacer(`${baseKey}-dash-gap-4`);
-        pushSegmentsRow(`${baseKey}-dash-help`, 0, [
-          { text: '  Just talk, or type ', dimColor: true },
+        pushSegmentsRow(`${baseKey}-dash-help`, 1, [
+          { text: `${BANNER_INDENT}Just talk, or type `, dimColor: true },
           { text: '/', color: '#f97316' },
           { text: ' for commands. ', dimColor: true },
           { text: 'Tab', color: '#f97316' },

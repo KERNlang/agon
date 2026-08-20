@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Lockstep release versioning. Stamp ONE version (from a git tag) into the WHOLE
 // @kernlang/agon-* family at once — every workspace package's version AND its
-// internal dependency ranges — plus the two hand-maintained version literals
+// internal dependency ranges — plus the two version literals
 // (the citty meta in index.ts that drives `agon --version`, and the VERSION
 // fallback in engine.tsx that drives the banner). One tag => the whole product
 // moves together, so a release NEVER needs a manual per-package bump.

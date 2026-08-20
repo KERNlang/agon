@@ -1,5 +1,6 @@
-// ── KERN stdlib (auto-emitted) ──────────────────────────────────────
-function __kern_loose_eq(a: unknown, b: unknown): boolean {
+// Loose equality: null and undefined compare equal to each other; everything
+// else compares strictly.
+function looseEq(a: unknown, b: unknown): boolean {
   if ((a === null || a === undefined) && (b === null || b === undefined)) return true;
   return a === b;
 }
@@ -59,7 +60,7 @@ export function applyAutoApprovePolicy(plan: CesarPlan, config: AgonConfig): Aut
     adjustedCostUsd += 2 * reviewEstimate.costUsd;
   }
   const costCeilingUsd = maxCostUsd ?? adjustedCostUsd;
-  if ((mode === 'cost-bounded' || mode === 'always') && !__kern_loose_eq(maxCostUsd, null)) {
+  if ((mode === 'cost-bounded' || mode === 'always') && !looseEq(maxCostUsd, null)) {
     if (adjustedCostUsd > costCeilingUsd) {
       return { approve: false, reason: `estimated cost $${adjustedCostUsd.toFixed(2)} exceeds ceiling $${costCeilingUsd.toFixed(2)}`, adjustedCostUsd: adjustedCostUsd };
     }

@@ -7,9 +7,7 @@ Agon's orchestration modes.
 ## Status: Phase 0
 
 - Single `GET /health` endpoint
-- Hand-maintained Python (FastAPI + uvicorn) in `src/` — the directory
-  name is legacy (this output was originally transpiled from `.kern`); it is now
-  edited directly and nothing regenerates it
+- Python (FastAPI + uvicorn) in `src/`, edited directly
 - No orchestration endpoints, no Job queue, no persistence
 
 ## Run

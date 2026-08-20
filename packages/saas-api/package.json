@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "check:gaps": "node --experimental-strip-types -e \"import('./scripts/check-fastapi-gaps.ts').then((m) => process.exitCode = m.checkFastApiSourceCli('src'))\"",
-    "build": "echo 'saas-api ships hand-maintained Python in src/; nothing to build'",
-    "typecheck": "echo 'saas-api emits Python; no TS typecheck'"
+    "build": "echo 'saas-api ships Python in src/; nothing to build'",
+    "typecheck": "echo 'saas-api is Python; no TS to typecheck'"
   }
 }

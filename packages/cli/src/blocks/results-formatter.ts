@@ -1,5 +1,6 @@
-// ── KERN stdlib (auto-emitted) ──────────────────────────────────────
-function __kern_loose_eq(a: unknown, b: unknown): boolean {
+// Loose equality: null and undefined compare equal to each other; everything
+// else compares strictly.
+function looseEq(a: unknown, b: unknown): boolean {
   if ((a === null || a === undefined) && (b === null || b === undefined)) return true;
   return a === b;
 }
@@ -68,7 +69,7 @@ export function formatBrainstorm(r: SessionResult, idx: number): string {
   for (const bid of data.bids) {
     const isWinner = bid.engineId === r.winner;
     const marker = isWinner ? `${GREEN} (winner)${RESET}` : '';
-    const scoreTag = (!__kern_loose_eq(bid.score, null)) ? `${DIM} [score: ${bid.score}]${RESET}` : '';
+    const scoreTag = (!looseEq(bid.score, null)) ? `${DIM} [score: ${bid.score}]${RESET}` : '';
     lines.push(`${BOLD}── ${bid.engineId}${marker}${scoreTag} ──${RESET}`);
     lines.push(bid.reasoning);
     if (bid.approach) {
@@ -179,7 +180,7 @@ export function formatCouncil(r: SessionResult, idx: number): string {
   const lines: string[] = [];
   lines.push(`${BOLD}${CYAN}${RULE}${RESET}`);
   lines.push(`${BOLD} COUNCIL #${idx} ${DIM}· ${formatTime(r.timestamp)} · ${RESET}${BOLD}"${r.question}"${RESET}`);
-  lines.push(`${DIM} Chair: ${data.chairmanId}${(!__kern_loose_eq(data.confidence, null)) ? ` · ${data.confidence}% confidence` : ''}${RESET}`);
+  lines.push(`${DIM} Chair: ${data.chairmanId}${(!looseEq(data.confidence, null)) ? ` · ${data.confidence}% confidence` : ''}${RESET}`);
   const seatLabels: string[] = [];
   for (const seat of data.seats) {
     seatLabels.push(`${seat.role}=${seat.engineId}`);
@@ -216,7 +217,7 @@ export function formatNero(r: SessionResult, idx: number): string {
   const lines: string[] = [];
   lines.push(`${BOLD}${RED}${RULE}${RESET}`);
   lines.push(`${BOLD} NERO #${idx} ${DIM}· ${formatTime(r.timestamp)} · ${RESET}${BOLD}"${r.question}"${RESET}`);
-  lines.push(`${DIM} Critic: ${data.criticId} · ${data.verdict.toUpperCase()}${(!__kern_loose_eq(data.challengeConfidence, null)) ? ` · Nero ${data.challengeConfidence}% sure original is correct` : ''}${RESET}`);
+  lines.push(`${DIM} Critic: ${data.criticId} · ${data.verdict.toUpperCase()}${(!looseEq(data.challengeConfidence, null)) ? ` · Nero ${data.challengeConfidence}% sure original is correct` : ''}${RESET}`);
   lines.push(`${BOLD}${RED}${RULE}${RESET}`);
   lines.push('');
   if (data.challengeText) {

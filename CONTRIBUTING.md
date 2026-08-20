@@ -19,14 +19,13 @@ coherent.
 
 ### Where the source lives
 
-Agon was originally authored in KERN and compiled into a mirror tree. That
-authoring layer has been removed and so has the mirror: **the TypeScript under
-`packages/*/src/` is the hand-maintained source and you edit it directly.**
-There is no compile step and no codegen. A few modules keep a small public
-surface beside them — a barrel (`packages/core/src/tools.ts` fronts
-`packages/core/src/tools/`) or a facade adding one type or default — so add new
-exports where the implementation lives and, if it sits behind one of those,
-expose it there too.
+**The source is the TypeScript under `packages/*/src/` — edit it directly.**
+
+Some directories are fronted by a small public surface: a barrel
+(`packages/core/src/tools.ts` fronts `packages/core/src/tools/`) or a thin
+facade that adds a type or a default (`packages/forge/src/types.ts` over
+`types-impl.ts`). Add new exports where the implementation lives, and re-export
+them through the barrel or facade when the directory has one.
 
 ```bash
 git clone --recurse-submodules https://github.com/KERNlang/agon.git

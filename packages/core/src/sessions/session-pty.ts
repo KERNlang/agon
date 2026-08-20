@@ -1,5 +1,6 @@
-// ── KERN stdlib (auto-emitted) ──────────────────────────────────────
-function __kern_loose_eq(a: unknown, b: unknown): boolean {
+// Loose equality: null and undefined compare equal to each other; everything
+// else compares strictly.
+function looseEq(a: unknown, b: unknown): boolean {
   if ((a === null || a === undefined) && (b === null || b === undefined)) return true;
   return a === b;
 }
@@ -52,7 +53,7 @@ export const PREVIEW_CHROME_RE: RegExp = /[⏺·…•│┌─└█░▒▓�
  * Pure, testable gate for a single SPECULATIVE preview frame. Returns the sanitized frame text to emit, or null to suppress. Suppresses when: empty/missing; fewer than PREVIEW_MIN_CHARS visible chars after trim; the frame looks like TUI chrome (PREVIEW_CHROME_RE); or it did NOT grow past the previously-emitted preview (growth-gated — `prev` is the last emitted preview text, so a redraw of the same content is dropped). No side effects, no I/O. The preview is best-effort and must NEVER contaminate the authoritative answer, so every ambiguous case suppresses.
  */
 export function sanitizePreviewFrame(text: string|null|undefined, prev: string): string|null {
-  if (__kern_loose_eq(text, null)) {
+  if (looseEq(text, null)) {
     return null;
   }
   const trimmed = String(text).trim();
@@ -75,7 +76,7 @@ export function sanitizePreviewFrame(text: string|null|undefined, prev: string):
  * Pure, testable heuristic: is a scraped TUI extract a real answer (true) vs empty / chrome-like noise (false)? Conservative — requires SUBSTANTIVE_SCRAPE_MIN_CHARS visible chars after trim. No side effects.
  */
 export function isSubstantiveScrape(text: string|null|undefined): boolean {
-  if (__kern_loose_eq(text, null)) {
+  if (looseEq(text, null)) {
     return false;
   }
   const trimmed = String(text).trim();

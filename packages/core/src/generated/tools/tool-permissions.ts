@@ -7,18 +7,11 @@ import { execSync } from 'node:child_process';
 import type { ParsedPermissionRule, PermissionRuleSet } from '../models/tool-types.js';
 
 
-export interface PermissionRule {
-  tool: string;
-  behavior: 'allow'|'ask'|'deny';
-  pattern?: string;
-  reason?: string;
-}
 
 export const DANGEROUS_COMMANDS: string[] = ['rm -rf /', 'rm -rf ~', 'rm -rf *', 'dd if' + String.fromCharCode(61), 'mkfs.', '> /dev/sd', '> /dev/nv', 'chmod 777 /', ':(){:|:&}\\x3b:'];
 
 export const DANGEROUS_PREFIXES: string[] = ['sudo ', 'su ', 'doas '];
 
-export const SAFE_SHELL_WRAPPERS: string[] = ['timeout', 'time', 'nice', 'nohup', 'env', 'command'];
 
 export const READONLY_COMMANDS: Set<string> = new Set(['ls', 'cat', 'head', 'tail', 'less', 'more', 'wc', 'file', 'stat', 'pwd', 'echo', 'printf', 'date', 'which', 'whereis', 'type', 'find', 'grep', 'rg', 'ag', 'fd', 'fzf', 'git status', 'git log', 'git diff', 'git branch', 'git show', 'git blame', 'npm test', 'npm run test', 'npx vitest', 'npx tsc', 'node --version', 'npm --version', 'python --version', 'agon --help', 'agon config --help', 'agon config list', 'agon config get', 'tree', 'du', 'df']);
 
@@ -93,15 +86,7 @@ export function getGitDirtyFiles(cwd: string): Set<string> {
   return _gitDirtyCache.files;
 }
 
-export function invalidateGitDirtyCache() {
-  _gitDirtyCache.files = null;
-  _gitDirtyCache.cwd = null;
-  _gitDirtyCache.expiry = 0;
-}
 
-export function isGitDirtyFile(filePath: string, cwd: string): boolean {
-  return ((dirty, fileName) => [...dirty].some((dirtyPath: string) => filePath.endsWith(dirtyPath) || dirtyPath.endsWith(fileName)))(getGitDirtyFiles(cwd), filePath.split('/').pop() ?? filePath);
-}
 
 
 // ── Module: PermissionChecks ──

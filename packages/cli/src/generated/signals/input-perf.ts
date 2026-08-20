@@ -8,9 +8,6 @@ export const PERF_ENABLED: boolean = process.env.AGON_PERF === '1';
 
 export const PERF_PATH: string = join(AGON_HOME, 'perf', 'input-latency.ndjson');
 
-export function perfEnabled(): boolean {
-  return PERF_ENABLED;
-}
 
 export function perfNow(): number {
   return PERF_ENABLED ? performance.now() : 0;

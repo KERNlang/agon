@@ -30,12 +30,6 @@ export function determineWinner(results: Map<string,EngineResult>, spread: numbe
   return { winner: passing[0][0], closeCall, bestScore, secondScore };
 }
 
-/**
- * Discriminator for how to score an AgentTeam result. 'edit' uses fitness gate + diff metrics. 'investigate' uses text-output metrics.
- */
-export interface AgentTaskKind {
-  kind: 'edit'|'investigate';
-}
 
 /**
  * Convert an AgentTeamResult into a Map<engineId,EngineResult> suitable for determineWinner. For taskKind='edit', fitnessPassed must be provided (pre-computed by runAgentTeam from typecheck-or-fail gate). For 'investigate', no fitness check; scoring uses message length + tool-call density.

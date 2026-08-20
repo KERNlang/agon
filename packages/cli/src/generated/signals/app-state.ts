@@ -19,45 +19,10 @@ export function startCommandReplState<T extends { state: ReplStateState }>(entit
   return { ...entity, state: 'busy' as ReplStateState };
 }
 
-/** busy → streaming */
-export function startStreamReplState<T extends { state: ReplStateState }>(entity: T): T {
-  if (entity.state !== 'busy') {
-    throw new ReplStateStateError('busy', entity.state);
-  }
-  return { ...entity, state: 'streaming' as ReplStateState };
-}
 
-/** busy → questioning */
-export function askQuestionReplState<T extends { state: ReplStateState }>(entity: T): T {
-  if (entity.state !== 'busy') {
-    throw new ReplStateStateError('busy', entity.state);
-  }
-  return { ...entity, state: 'questioning' as ReplStateState };
-}
 
-/** questioning → busy */
-export function answerQuestionReplState<T extends { state: ReplStateState }>(entity: T): T {
-  if (entity.state !== 'questioning') {
-    throw new ReplStateStateError('questioning', entity.state);
-  }
-  return { ...entity, state: 'busy' as ReplStateState };
-}
 
-/** idle → reviewing */
-export function startReviewReplState<T extends { state: ReplStateState }>(entity: T): T {
-  if (entity.state !== 'idle') {
-    throw new ReplStateStateError('idle', entity.state);
-  }
-  return { ...entity, state: 'reviewing' as ReplStateState };
-}
 
-/** reviewing → idle */
-export function finishReviewReplState<T extends { state: ReplStateState }>(entity: T): T {
-  if (entity.state !== 'reviewing') {
-    throw new ReplStateStateError('reviewing', entity.state);
-  }
-  return { ...entity, state: 'idle' as ReplStateState };
-}
 
 /** busy|streaming|questioning → idle */
 export function finishReplState<T extends { state: ReplStateState }>(entity: T): T {

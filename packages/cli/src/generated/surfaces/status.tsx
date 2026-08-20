@@ -35,21 +35,6 @@ export function SpinnerBlock({ message, color }: { message:string; color?:number
   );
 }
 
-export function TokenGauge({ tokens, maxTokens }: { tokens:number; maxTokens:number }) {
-  const pct = Math.min(100, Math.round((tokens / maxTokens) * 100));
-  const barWidth = 12;
-  const filled = Math.round((pct / 100) * barWidth);
-  const empty = barWidth - filled;
-  const bar = '\u2588'.repeat(filled) + '\u2591'.repeat(empty);
-  const barColor = pct > 80 ? '#ef4444' : pct > 60 ? '#fbbf24' : '#4ade80';
-
-  return (
-    <Text>
-      <Text color={barColor}>{bar}</Text>
-      <Text dimColor>{` ${pct}%`}</Text>
-    </Text>
-  );
-}
 
 const StatusBar = React.memo(function StatusBar({ chatMessageCount, totalTokens, totalCostUsd, cwd, branch, explorationMode, autoModeQueued, permissionMode, isActive, telemetryVitals, context, meteredCostUsd, hasPlanApiUsage, hasCliUsage, termWidth }: { cesarId:string; chatMessageCount:number; totalTokens:number; totalCostUsd:number; cwd:string; branch?:string; explorationMode?:boolean; toolOutputExpanded?:boolean; autoModeQueued?:boolean; permissionMode?:string; isActive?:boolean; fullscreenEnabled?:boolean; telemetryVitals?:Map<string, any>; context?:{pct:number,used:number,limit:number,compacted:number,cached:number,source?:string}|null; meteredCostUsd?:number; hasPlanApiUsage?:boolean; hasCliUsage?:boolean; termWidth?:number }) {
   // Cost honesty: only REAL API token usage is billable per token. A

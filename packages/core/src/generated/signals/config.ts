@@ -31,7 +31,6 @@ export const AGON_HOME: string = getAgonHome();
 
 export const GLOBAL_CONFIG_PATH: string = join(AGON_HOME, 'config.json');
 
-export const ELO_PATH: string = join(AGON_HOME, 'elo.json');
 
 export const RUNS_DIR: string = join(AGON_HOME, 'runs');
 

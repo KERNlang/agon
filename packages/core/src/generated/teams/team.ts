@@ -77,19 +77,7 @@ export interface TeamEvent {
   data?: Record<string, unknown>;
 }
 
-export interface TeamEventMap {
-  'team:compose': { teams: [TeamSpec, TeamSpec] };
-  'team:round-start': { teamId: string, round: number };
-  'team:member-dispatch': { teamId: string, engineId: string, role: string };
-  'team:member-done': { teamId: string, engineId: string };
-  'team:round-done': { teamId: string, round: number };
-  'team:submit': { teamId: string };
-  'team:score': { teamId: string, score: number };
-  'team:winner': { winnerTeamId: string|null };
-  'team:match-done': Record<string, unknown>;
-}
 
-export type TeamEventCallback = (event: TeamEvent) => void;
 
 export function lineupKey(engineIds: string[]): string {
   return [...engineIds].sort().join('+');

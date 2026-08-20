@@ -1094,47 +1094,6 @@ export interface SummarizeOptions {
   label?: string;
 }
 
-/**
- * Summarize the oldest N messages in the thread using a single cheap LLM call. Records the result as a ThreadCheckpoint. Non-destructive — original messages are preserved. Returns the checkpoint on success, null on API failure.
- */
-export async function summarizeOlderMessages(opts: SummarizeOptions): Promise<ThreadCheckpoint|null> {
-  const messages = opts.thread.getAllMessages().filter((m: any) => m.role !== 'system');
-  const n = Math.min(opts.messagesToSummarize ?? 30, messages.length - KEEP_LAST_K);
-  if (n <= 0) return null;
-
-  const toSummarize = messages.slice(0, n);
-  const lastId = toSummarize[toSummarize.length - 1]?.id;
-  if (!lastId) return null;
-
-  // Build a compact representation of the messages to summarize.
-  const body = toSummarize.map((m: any) => {
-    const who = m.engineId ?? m.role;
-    const snippet = (m.content ?? '').slice(0, 400);
-    return `[${who}/${m.role}]: ${snippet}`;
-  }).join('\n---\n');
-
-  const prompt = `Summarize the following conversation turns concisely (max 300 words). Focus on: what was asked, what files were read/edited, what decisions were made, what the final outcome was. Do NOT reproduce code. Write in past tense.\n\n${body}`;
-
-  try {
-    // Reuse apiStreamDispatchWithHistory for a single-turn summary call.
-    // We use the caller-supplied api config (should be a fast/cheap model).
-    const { apiStreamDispatch } = await import('../api/dispatch.js');
-    let summary = '';
-    const gen = apiStreamDispatch(opts.api, prompt, 30, undefined);
-    for await (const chunk of gen) {
-      if (typeof chunk === 'string') summary += chunk;
-    }
-    summary = summary.trim();
-    if (!summary) return null;
-
-    const cp = opts.thread.checkpoint(summary, opts.label ?? `llm-summary-${n}-msgs`, lastId);
-    await opts.thread.save();
-    return cp;
-  } catch (err) {
-    console.warn(`[agon] context-thread: LLM summarization failed: ${err instanceof Error ? err.message : String(err)}`);
-    return null;
-  }
-}
 
 /**
  * Delete a thread file from disk. Idempotent — returns false if the file didn't exist. Does NOT update active.json; caller must fork a new thread if deleting the currently active one.

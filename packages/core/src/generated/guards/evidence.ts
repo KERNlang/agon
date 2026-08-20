@@ -51,10 +51,6 @@ export function hasUnresolvedFailure(text: string): boolean {
  */
 export const EVIDENCE_TOOLS: Set<string> = new Set(['Edit', 'Write', 'MultiEdit', 'Bash', 'Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Delegate', 'ProposePlan']);
 
-/**
- * Explicitly non-evidence tools: read-class (Read/Grep/Glob/RetrieveResult) + the self-report ReportConfidence. A successful call to any of these must NOT set successfulNonReadTool. Documented as the inverse of EVIDENCE_TOOLS so the exclusion is auditable at a glance.
- */
-export const EVIDENCE_EXCLUDED_TOOLS: Set<string> = new Set(['Read', 'Grep', 'Glob', 'RetrieveResult', 'ReportConfidence']);
 
 /**
  * True iff a SUCCESSFUL result from this tool counts as evidence for a completion claim (FIX 2). Allowlist-based: only Edit/Write/MultiEdit/Bash and the orchestration dispatch tools qualify. ReportConfidence, RetrieveResult, and any read-class tool (Read/Grep/Glob) return false — they advance no state. The session loop calls this when setting pipelineEvidence.successfulNonReadTool so a turn whose only successful tool was a self-report/retrieve still trips the evidence nudge.

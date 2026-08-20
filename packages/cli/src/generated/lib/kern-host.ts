@@ -79,9 +79,6 @@ export function hostResolvedVoid(): Promise<void> {
   return Promise.resolve();
 }
 
-export async function hostPromiseAll(values: Promise<any>[]): Promise<any[]> {
-  return Promise.all(values);
-}
 
 export async function hostPromiseAllValues(values: any[]): Promise<any[]> {
   return Promise.all(values.map((value) => Promise.resolve(value)));

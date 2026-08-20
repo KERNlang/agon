@@ -1,8 +1,6 @@
-import { join } from 'node:path';
 
-import { mkdirSync } from 'node:fs';
 
-import { RUNS_DIR, resolveWorkingDir, tracker, appendMessage, classifyTask, rankByTaskClass, getRatings, pickTopRatedEngine } from '@kernlang/agon-core';
+import { classifyTask, rankByTaskClass } from '@kernlang/agon-core';
 
 import { ENGINE_COLORS } from '../blocks/output-format.js';
 
@@ -10,9 +8,7 @@ import { icons } from '../signals/icons.js';
 
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
-import { recordCesarTurn } from './brain-helpers.js';
-
-import { CONFIDENCE_TIERS, parseConfidence } from './confidence.js';
+import { parseConfidence } from './confidence.js';
 
 import { approveTaskAction, buildTaskActionTarget, claimTaskActionPrompt, evaluateTaskAction, taskExplicitlyRequestsAction } from './task-execution-lease.js';
 
@@ -52,44 +48,6 @@ export function pickBestAdvisor(input: string, ctx: HandlerContext): {engineId:s
   return { engineId: advisorId, color: ENGINE_COLORS[advisorId] ?? 124 };
 }
 
-/**
- * At <70% confidence, dispatch the best-ranked engine as advisor with a focused advisory prompt.
- */
-export async function fireAdvisor(input: string, cesarResponse: string, parsedConfidence: number|null, ctx: HandlerContext, abort: AbortController): Promise<{stdout:string, engineId:string, color:number}|null> {
-  const advisor = pickBestAdvisor(input, ctx);
-      if (!advisor) return null;
-  
-      const advisorEngine = ctx.registry.get(advisor.engineId);
-      const outDir = join(RUNS_DIR, `advisor-${Date.now()}`);
-      mkdirSync(outDir, { recursive: true });
-  
-      const advisorPrompt = `Cesar (the orchestrator) is stuck on this task at ${parsedConfidence ?? '?'}% confidence.
-  
-  TASK: ${input}
-  
-  CESAR'S TAKE: ${cesarResponse.slice(0, 500)}
-  
-  You are the advisor. Be direct:
-  1. What's the right approach? (2-3 sentences)
-  2. What's Cesar missing? (1-2 key insights)
-  3. Should this be: forge (engines compete on code), tribunal (debate the approach), brainstorm (gather ideas), or campfire (explore)?
-  4. Solo or team? Why?`;
-  
-      try {
-        const result = await ctx.adapter.dispatch({
-          engine: advisorEngine,
-          prompt: advisorPrompt,
-          cwd: resolveWorkingDir(),
-          mode: 'exec' as any,
-          timeout: ctx.config.timeout ?? 120,
-          outputDir: outDir,
-          signal: abort.signal,
-        });
-        return { stdout: result.stdout, engineId: advisor.engineId, color: advisor.color };
-      } catch {
-        return null;
-      }
-}
 
 /**
  * Same-session self-challenge: inject a challenge message into the existing Cesar session. Fast — no engine spawn.
@@ -134,151 +92,8 @@ export async function fireQuickNero(session: any, response: string, input: strin
       }
 }
 
-/**
- * Same-turn adversarial subagent: spawn a second Cesar instance with a contrarian prompt to attack the original response.
- */
-export async function fireNero(input: string, response: string, confidence: number, ctx: HandlerContext, abort: AbortController): Promise<{ challengeText: string; challengeConfidence: number|null } | null> {
-  // Nero is the TOP-RATED adversarial engine (critique -> tribunal -> global
-      // Glicko cascade — best builder != best critic), NOT the Cesar engine. The
-      // Cesar author is excluded so Nero never grades its own homework.
-      const cesarEngineId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude';
-      const activeIds = (ctx.activeEngines?.() ?? []).filter(Boolean);
-      const neroPool = activeIds.length > 0 ? activeIds : [cesarEngineId];
-      const picked = pickTopRatedEngine(neroPool, getRatings(), { modes: ['critique', 'tribunal'], exclude: [cesarEngineId] });
-      // Skip rather than self-grade: pickTopRatedEngine restores the excluded author
-      // when it's the ONLY candidate, so a same-engine pick means no genuinely
-      // different critic is available — and self-challenge is exactly the /evil-twin
-      // mirroring we retired. Fire Nero only with a different engine.
-      const neroEngineId = picked.engineId;
-      if (!neroEngineId || neroEngineId === cesarEngineId) return null;
-      const outDir = join(RUNS_DIR, `nero-${Date.now()}`);
-      mkdirSync(outDir, { recursive: true });
-  
-      const neroPrompt = `You are Nero, the adversarial challenger. Your job is to attack the original response and find flaws.
-  
-  TASK: ${input.slice(0, 500)}
-  
-  CESAR'S RESPONSE (${confidence}%): ${response.slice(0, 1500)}
-  
-  Be specific and direct:
-  1. What's wrong with this response? (flaws, incorrect assumptions, missing edge cases)
-  2. What would you do differently?
-  3. Start with ~X% for how confident YOU are that the original is correct.`;
-  
-      try {
-        // registry.get THROWS on an unknown id — keep it inside the try so a stale
-        // cesarEngineId fallback degrades to null (skip Nero) instead of crashing.
-        const neroEngine = ctx.registry.get(neroEngineId);
-        const result = await ctx.adapter.dispatch({
-          engine: neroEngine,
-          prompt: neroPrompt,
-          cwd: resolveWorkingDir(),
-          mode: 'exec' as any,
-          timeout: ctx.config.timeout ?? 120,
-          outputDir: outDir,
-          signal: abort.signal,
-        });
-        if (!result.stdout.trim()) return null;
-        const cleaned = result.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
-        const conf = parseConfidence(cleaned);
-        return { challengeText: conf.rest || cleaned, challengeConfidence: conf.value };
-      } catch {
-        return null;
-      }
-}
 
-/**
- * Display advisor opinion and present escalation menu. At <70%, advisor replaces STOP.
- */
-export async function handleSecondOpinion(secondResult: {stdout:string, engineId:string, color:number}|null, input: string, response: string, parsedConfidence: number|null, cesarEngineId: string, dispatch: Dispatch, ctx: HandlerContext, _abortSignal?: AbortSignal): Promise<{delegated:boolean, responded:boolean, action?:string, task?:string, reasoning?:string}|null> {
-  if (!secondResult || !secondResult.stdout.trim()) return null;
-  
-  // Strip <think> blocks from advisor response
-  const advisorResponse = secondResult.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
-  dispatch({ type: 'engine-block', engineId: secondResult.engineId, color: secondResult.color, content: advisorResponse });
-  appendMessage(ctx.chatSession, { role: 'engine', engineId: secondResult.engineId, content: advisorResponse, timestamp: new Date().toISOString() });
-  tracker.record(secondResult.engineId, { prompt: input, response: advisorResponse });
-  
-  // Save Cesar's response
-  appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
-  appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-  recordCesarTurn(ctx, cesarEngineId, input, response);
-  
-  // Yield so Ink paints the advisor response before showing the menu
-  await new Promise<void>(resolve => setImmediate(resolve));
-  
-  // Parse advisor's recommended action from their response
-  const advisorLower = advisorResponse.toLowerCase();
-  const actionKeywords: Record<string, string> = {
-    tribunal: 'tribunal', brainstorm: 'brainstorm', campfire: 'campfire',
-    forge: 'forge', pipeline: 'pipeline',
-  };
-  let advisorRecommendation: string | null = null;
-  // Check for explicit "Mode Recommendation: X" or "should be: X" patterns
-  const modeMatch = advisorLower.match(/(?:mode[:\s]*recommendation|recommend(?:ation)?|should be|suggest)[:\s]*(\w+)/i);
-  if (modeMatch && actionKeywords[modeMatch[1].toLowerCase()]) {
-    advisorRecommendation = actionKeywords[modeMatch[1].toLowerCase()];
-  }
-  // Fallback: check numbered recommendations (e.g. "3. Mode: Tribunal")
-  if (!advisorRecommendation) {
-    for (const [keyword, action] of Object.entries(actionKeywords)) {
-      const pattern = new RegExp(`(?:mode|should|recommend).*?${keyword}`, 'i');
-      if (pattern.test(advisorResponse)) {
-        advisorRecommendation = action;
-        break;
-      }
-    }
-  }
-  
-  // If advisor has a clear recommendation, show simple confirm
-  if (advisorRecommendation) {
-    const modeColors: Record<string, string> = {
-      forge: '#a78bfa', brainstorm: '#60a5fa', tribunal: '#f59e0b',
-      campfire: '#facc15', pipeline: '#f472b6',
-    };
-    const escAnswer = await new Promise<string>((resolve) => {
-      dispatch({ type: 'question', prompt: `${secondResult.engineId} recommends ${advisorRecommendation} — go?`, choices: [
-        { key: 'y', label: `Yes, ${advisorRecommendation}`, color: modeColors[advisorRecommendation!] ?? '#4ade80' },
-        { key: 'n', label: 'No', color: '#ef4444' },
-      ], resolve } as any);
-    });
-  
-    if (escAnswer === 'y') return { delegated: true, responded: true, action: advisorRecommendation, task: input, reasoning: response };
-    return null;
-  }
-  
-  // Full menu — either no advisor recommendation or user chose 'Other mode'
-  const escAnswer = await new Promise<string>((resolve) => {
-    dispatch({ type: 'question', prompt: `Cesar ${parsedConfidence ?? '?'}% — what next?`, choices: [
-      { key: 'a', label: 'Accept Cesar', color: '#4ade80' },
-      { key: 'c', label: 'Campfire', color: '#facc15' },
-      { key: 'b', label: 'Brainstorm', color: '#60a5fa' },
-      { key: 't', label: 'Tribunal', color: '#f59e0b' },
-      { key: 'f', label: 'Forge', color: '#a78bfa' },
-    ], resolve } as any);
-  });
-  
-  if (escAnswer === 'c') return { delegated: true, responded: true, action: 'campfire', task: input, reasoning: response };
-  if (escAnswer === 'b') return { delegated: true, responded: true, action: 'brainstorm', task: input, reasoning: response };
-  if (escAnswer === 't') return { delegated: true, responded: true, action: 'tribunal', task: input, reasoning: response };
-  if (escAnswer === 'f') return { delegated: true, responded: true, action: 'forge', task: input, reasoning: response };
-  return { delegated: false, responded: true };
-}
 
-/**
- * Auto-activate Nero mode — kill session so next turn reboots with Nero system prompt.
- */
-export function activateNero(ctx: HandlerContext, dispatch: Dispatch): void {
-  if (!ctx.neroMode && ctx.setNeroMode) {
-    ctx.setNeroMode(true);
-    ctx.neroMode = true;
-    ctx.cesar!.autoNero = true;
-    // No longer kill session — same-turn escalation handles challenges.
-    // Session stays alive for manual /nero toggle (system prompt injection).
-    dispatch({ type: 'info', message: `${icons().nero} Nero mode active` });
-    ctx.eventBus?.emit('cesar:nero', { active: true }).catch(() => { });
-  }
-}
 
 /**
  * Auto-deactivate Nero when confidence recovers.
@@ -328,41 +143,3 @@ export async function promptDelegation(action: string, dispatch: Dispatch, harde
   return { approved: answer === 'y', action, hardened, tribunalMode, team };
 }
 
-/**
- * Last-resort fallback: if Cesar had routing context but still didn't delegate at low confidence, offer brainstorm. Cesar should have decided — this is a safety net.
- */
-export async function promptProtocolEnforcement(input: string, parsedConfidence: number|null, ctx: HandlerContext, dispatch: Dispatch): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, team?:boolean, tribunalMode?:string}|null> {
-  if (parsedConfidence === null
-      || parsedConfidence >= CONFIDENCE_TIERS.nero
-      || ctx.activeEngines().length <= 1) {
-    return null;
-  }
-  
-  // Cesar had full routing context but didn't delegate.
-  // Scale the prompt by severity — lower confidence = stronger nudge.
-  const isLow = parsedConfidence < CONFIDENCE_TIERS.advisor; // below 72%
-  const prompt = isLow
-    ? `${parsedConfidence}% — low confidence, no delegation. Tribunal recommended.`
-    : `${parsedConfidence}% — Cesar didn't delegate. Brainstorm?`;
-  const defaultAction = isLow ? 'tribunal' : 'brainstorm';
-  const defaultMode = isLow ? 'red-team' : undefined;
-  
-  const answer = await new Promise<string>((resolve) => {
-    dispatch({ type: 'question',
-      prompt,
-      choices: [
-        { key: 'y', label: isLow ? 'Tribunal (red-team)' : 'Brainstorm', color: '#4ade80' },
-        { key: 'b', label: 'Brainstorm', color: '#22d3ee' },
-        { key: 'n', label: 'Skip', color: '#ef4444' },
-      ],
-      resolve,
-    } as any);
-  });
-  if (answer === 'y') {
-    return { delegated: true, responded: true, action: defaultAction, tribunalMode: defaultMode };
-  }
-  if (answer === 'b') {
-    return { delegated: true, responded: true, action: 'brainstorm' };
-  }
-  return null;
-}

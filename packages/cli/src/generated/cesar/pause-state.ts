@@ -36,16 +36,3 @@ export function selectPauseAction(state: PauseState): {state:PauseState,action:P
   return { state: state, action: action };
 }
 
-export function renderPauseMenu(state: PauseState): string {
-  if (!state.active) return '';
-  const lines: string[] = [];
-  lines.push('');
-  lines.push(`⏸  Paused${state.mode ? ` — ${state.mode}` : ''}`);
-  for (let i = 0; i < PAUSE_MENU_ITEMS.length; i++) {
-    const item = PAUSE_MENU_ITEMS[i];
-    const prefix = i === state.menuIndex ? '> ' : '  ';
-    lines.push(`${prefix}${item.label}`);
-  }
-  lines.push('');
-  return lines.join('\n');
-}

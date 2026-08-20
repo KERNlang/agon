@@ -19,10 +19,6 @@ export const SESSION_MAX_MESSAGES: number = 80;
  */
 export const SESSION_TTL_MS: number = 3600000;
 
-/**
- * 10 MB max total disk cache per session
- */
-export const TOOL_CACHE_MAX_BYTES: number = 10485760;
 
 export interface SessionStateV2 {
   schemaVersion: number;

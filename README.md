@@ -41,7 +41,7 @@ npm install -g @kernlang/agon
 ## What is Agon?
 
 <p align="center">
-  <img src="assets/agon-splash.svg" alt="The Agon REPL on launch — engine roster and example prompts mapped to modes." width="860">
+  <img src="assets/agon-splash.png" alt="The Agon REPL on launch — AGON banner, version, engine roster, and example prompts mapped to modes." width="820">
 </p>
 <p align="center"><sub>The <code>agon</code> REPL on launch — your roster, and plain prompts routed to the right mode.</sub></p>
 

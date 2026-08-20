@@ -37,7 +37,7 @@
   <text x="400" y="118" text-anchor="middle" font-family="'Inter', 'Segoe UI', system-ui, sans-serif" font-size="20" font-weight="400" fill="#656d76">Any AI can join. They compete. You ship.</text>
 
   <!-- Subtitle -->
-  <text x="400" y="148" text-anchor="middle" font-family="'Inter', 'Segoe UI', system-ui, sans-serif" font-size="13" font-weight="400" fill="#8b949e">Competitive AI orchestration — first product 100% written in KERN</text>
+  <text x="400" y="148" text-anchor="middle" font-family="'Inter', 'Segoe UI', system-ui, sans-serif" font-size="13" font-weight="400" fill="#8b949e">Competitive AI orchestration for the terminal — TypeScript, ESM, worktree-isolated</text>
 
   <!-- Stats pills -->
   <g transform="translate(400, 190)" text-anchor="middle">
@@ -46,8 +46,8 @@
     <text x="-42" y="5" font-family="'Inter', sans-serif" font-size="11" fill="#656d76">rated</text>
 
     <rect x="10" y="-14" width="120" height="28" rx="14" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1"/>
-    <text x="70" y="5" font-family="'SF Mono', monospace" font-size="12" font-weight="600" fill="#d97706">100%</text>
-    <text x="97" y="5" font-family="'Inter', sans-serif" font-size="11" fill="#656d76">KERN</text>
+    <text x="63" y="5" font-family="'SF Mono', monospace" font-size="12" font-weight="600" fill="#d97706">Worktree</text>
+    <text x="106" y="5" font-family="'Inter', sans-serif" font-size="11" fill="#656d76">isolated</text>
   </g>
 
   <!-- Bottom accent -->

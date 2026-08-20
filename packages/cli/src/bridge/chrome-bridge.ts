@@ -4,11 +4,11 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 
 import { join } from 'node:path';
 
-import { buildServeRuntime, resolveServeEngine, writeServeConnectionFile, removeServeConnectionFile } from '../commands/serve.js';
+import { buildServeRuntime, resolveServeEngine, writeServeConnectionFile, removeServeConnectionFile } from './serve-runtime.js';
 
-import { listServeConnections } from '../commands/drive.js';
+import { listServeConnections } from './serve-protocol.js';
 
-import type { ServeRuntime } from '../commands/serve.js';
+import type { ServeRuntime } from './serve-runtime.js';
 
 /**
  * Resolve the browser Origin(s) the embedded bridge must allow so the panel (which sends a chrome-extension:// Origin) isn't refused. Order: (1) config.chromeExtensionOrigin, (2) the allowedOrigins of any existing serve connection file (the user already configured this when they set up `agon serve`), (3) empty — the caller then warns that the panel can't attach until an origin is set. Pure-ish (reads config + the serve dir); exported for the unit test.

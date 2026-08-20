@@ -2,7 +2,7 @@ import { defineCommand } from 'citty';
 
 import { ensureAgonHome, resolveWorkingDir } from '@kernlang/agon-core';
 
-import { ensureChromeBridge, closeChromeBridge } from '../signals/chrome-bridge.js';
+import { ensureChromeBridge, closeChromeBridge } from '../bridge/chrome-bridge.js';
 
 import { runDrive } from './drive.js';
 

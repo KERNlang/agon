@@ -8,7 +8,7 @@ import { createCouncilTool } from './council-tool.js';
 
 import { createEngineReliabilityTool } from './tool-engine-reliability.js';
 
-import { createRenderProbeTool } from './tool-render-probe.js';
+import { createRenderProbeTool } from '../surfaces/tool-render-probe.js';
 
 import { createTuiProbeTool } from './tool-tui-probe.js';
 

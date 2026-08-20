@@ -14,6 +14,7 @@ const describeProcessMaybe = existsSync(CLI_ENTRY) ? describe : describe.skip;
 // ledger + agonPath resolve at call time, so setting it pre-import is enough).
 process.env.AGON_HOME = mkdtempSync(join(tmpdir(), 'agon-serve-cmd-test-'));
 
+import { runServe } from '../../packages/cli/src/commands/serve.js';
 import {
   parseOrigins,
   newServeSessionId,
@@ -26,8 +27,7 @@ import {
   removeServeConnectionFile,
   emitServeConnectionLine,
   buildServeRuntime,
-  runServe,
-} from '../../packages/cli/src/commands/serve.js';
+} from '../../packages/cli/src/bridge/serve-runtime.js';
 import { resolveBuiltinEnginesDir } from '../../packages/cli/src/lib/engines-dir.js';
 import { createAgonServe } from '../../packages/cli/src/bridge/agon-serve.js';
 import { EngineRegistry, getSessionHost } from '@kernlang/agon-core';

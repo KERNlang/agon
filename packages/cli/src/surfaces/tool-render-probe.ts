@@ -2,11 +2,11 @@ import type { ToolDefinition, ToolHandler, ToolContext, ToolResult, PermissionDe
 
 import { captureSurfaceFrame } from '../blocks/frame-capture.js';
 
-import { StatusBar } from '../surfaces/status.js';
+import { StatusBar } from './status.js';
 
 import { TodoList } from '../blocks/todo-list.js';
 
-import { ChromeBar } from '../surfaces/app-views.js';
+import { ChromeBar } from './app-views.js';
 
 export interface RenderFixture {
   component: any;

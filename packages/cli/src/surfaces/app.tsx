@@ -50,9 +50,11 @@ import { resetEventLogState } from '@kernlang/agon-core';
 
 import { cleanInputValue, findInputChange, parseActiveAtMention, safeCollectSourceFiles } from '../signals/app-input.js';
 
-import { makeBlockArchivePath } from '../signals/block-archive.js';
+import { makeBlockArchivePath, transcriptDroppedTotal } from '../signals/block-archive.js';
 
-import { perfNow, recordKeystrokeLatency } from '../signals/input-perf.js';
+import { createComposerInputStore, useComposerInputEmpty } from '../signals/composer-input-store.js';
+
+import { perfNow, recordKeystrokeLatency, countRender } from '../signals/input-perf.js';
 
 import { handleReviewAction } from '../blocks/review.js';
 
@@ -118,7 +120,7 @@ import { estimateVisibleBlockBudget, estimateBottomChromeExtraRows, estimatePinn
 
 import { normalizeUiMotion } from './status-helpers.js';
 
-import { buildDashboardBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount } from './app-blocks.js';
+import { buildDashboardBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, seedPerfTranscriptBlocks, absoluteSealedCount, sealedBoundaryFromAbsolute, padStaticFeed } from './app-blocks.js';
 
 import { buildExecutionRailStats, buildTranscriptRows } from './app-rendering.js';
 
@@ -139,6 +141,7 @@ import { runProcessInputQueue, runSendBtwMessage, runHandleSubmit } from './app-
 export { PLAN_APPROVAL_PROMPT_ROWS, COMPOSER_HISTORY_LIMIT, isMutatingToolCall, probeEngineVitals, parseToolCallPayload, toolPreviewWindow, toolCallSupportsDetailView, detailViewerSupportsEvent, toolDetailViewportRows, findLatestToolDetailEvent, findLatestToolEvent, buildExecutionRailStats, composerHistoryPath, loadComposerInputHistory, saveComposerInputHistory, findLatestFailedToolEvent, buildFailedToolRetryDraft, buildToolDetailView, createInitialRegistry, drainStdinBuffer, maxScrollOffsetForRowCount, nextWheelAnimationStep, clampNumber, charDisplayWidth, stringDisplayWidth, displayColumnToStringIndex, normalizeRowSelection, normalizeTextSelection, richLineToPlainText, transcriptRowToPlainText, transcriptRowTextStartColumn, resolveTranscriptColumnFromMouse, transcriptRowsToPlainText, resolveTranscriptRowFromMouse, estimateVisibleBlockBudget, estimateWrappedRowCount, estimateQuestionReservedRows, estimateBottomChromeExtraRows, summarizeBtwTranscriptEvent, buildDashboardBlock, estimatePinnedLiveRows, estimateWrappedRows, estimateToolCallRows, estimateOutputEventRows, buildDisplayItems, isToolCallLikeBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, estimateDisplayItemRows, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, isDuplicateEngineBlock, appendTranscriptBlock, normalizeTerminalMode, resolveTerminalMode, normalizeTerminalSize, fileRailWidthForTerminal, fileRailMaxRowsForTerminal, buildTerminalReplaySnapshot, parseMarkdownToRows, buildToolCallRows, buildCollapsedToolGroupRows, buildTranscriptRows } from './app-helpers.js';
 
 export function App() {
+  countRender('App');
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
     return (value) => setTimeout(() => setter(value), 0);
@@ -146,9 +149,17 @@ export function App() {
 
   const [replState, _setReplStateRaw] = useState<ReplStateState>('idle');
   const setReplState = useMemo(() => __inkSafe(_setReplStateRaw), [_setReplStateRaw]);
-  const [outputBlocks, _setOutputBlocksRaw] = useState<OutputBlock[]>(() => { const cfg = loadConfig(); const saved = cfg.engineActivationMode === 'explicit' ? cfg.forgeEnabledEngines : null; return [buildDashboardBlock(saved)]; });
+  const [outputBlocks, _setOutputBlocksRaw] = useState<OutputBlock[]>(() => { const cfg = loadConfig(); const saved = cfg.engineActivationMode === 'explicit' ? cfg.forgeEnabledEngines : null; return [buildDashboardBlock(saved), ...seedPerfTranscriptBlocks()]; });
   const setOutputBlocks = useMemo(() => __inkSafe(_setOutputBlocksRaw), [_setOutputBlocksRaw]);
-  const [inputValue, setInputValue] = useState<string>('');
+  // Composer text lives OUTSIDE App state. App is the whole surface, so a
+  // useState here re-rendered the entire tree on every keystroke (measured:
+  // 1.00 App commit/keystroke, p50 ~6.5ms — scripts/perf/repl-typing-probe.mjs).
+  // Only the composer leaf subscribes to the value; App subscribes to the far
+  // rarer emptiness flip that the side rails need.
+  const composerInput = useMemo(() => createComposerInputStore(), []);
+  const setInputValue = composerInput.set;
+  const inputValueRef = composerInput.ref;
+  const inputIsEmpty = useComposerInputEmpty(composerInput);
   const [uiInteractionActive, setUiInteractionActive] = useState<boolean>(false);
   const [inputHistory, _setInputHistoryRaw] = useState<string[]>(loadComposerInputHistory());
   const setInputHistory = useMemo(() => __inkSafe(_setInputHistoryRaw), [_setInputHistoryRaw]);
@@ -412,8 +423,12 @@ export function App() {
   }, []);
   const [clearEpoch, _setClearEpochRaw] = useState<number>(0);
   const setClearEpoch = useMemo(() => __inkSafe(_setClearEpochRaw), [_setClearEpochRaw]);
-  const [nativeArchiveCount, _setNativeArchiveCountRaw] = useState<number>(0);
-  const setNativeArchiveCount = useMemo(() => __inkSafe(_setNativeArchiveCountRaw), [_setNativeArchiveCountRaw]);
+  // Sealed/live boundary in ABSOLUTE transcript coordinates (see
+  // absoluteSealedCount): blocks the cap dropped off the front are counted in,
+  // so a cap-spill never invalidates this number and the render can derive the
+  // live-array boundary from it without any effect-committed bookkeeping.
+  const [sealedAbsoluteCount, _setSealedAbsoluteCountRaw] = useState<number>(0);
+  const setSealedAbsoluteCount = useMemo(() => __inkSafe(_setSealedAbsoluteCountRaw), [_setSealedAbsoluteCountRaw]);
   const [fileRailOpen, _setFileRailOpenRaw] = useState<boolean>(false);
   const setFileRailOpen = useMemo(() => __inkSafe(_setFileRailOpenRaw), [_setFileRailOpenRaw]);
   const [executionRailOpen, _setExecutionRailOpenRaw] = useState<boolean>(false);
@@ -448,10 +463,10 @@ export function App() {
   const lastReviewResultRef = useRef<{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | null>(null);
   const modeRef = useRef<'chat'|'campfire'|'brainstorm'|'tribunal'>('chat');
   const inputEpochRef = useRef<number>(0);
-  const inputValueRef = useRef<string>('');
   const uiInteractionTimerRef = useRef<ReturnType<typeof setTimeout>|null>(null);
   const atPickerPrefixRef = useRef<string>('');
   const keyT0Ref = useRef<number>(0);
+  const perfCountsRef = useRef<{blocks:number,archive:number,live:number}>({ blocks: 0, archive: 0, live: 0 });
   const ctrlKeyHandledRef = useRef<boolean>(false);
   const pendingPasteTransformRef = useRef<boolean>(false);
   const pasteHashesRef = useRef<Map<string,string>>(new Map());
@@ -659,14 +674,27 @@ export function App() {
           return nativeArchiveBlockCount(nativeTranscriptBlocks, mode, currentVisibleRowBudget, toolOutputExpanded, thinkingExpanded);
   }, [nativeTranscriptBlocks,mode,currentVisibleRowBudget,toolOutputExpanded,thinkingExpanded]);
 
-  const effectiveNativeArchiveCount = useMemo(() => {
-          const baseArchiveCount = (nativeTranscriptBlocks.length < nativeTranscriptBlockCountRef.current) ? 0 : nativeArchiveCount;
-          return effectiveNativeArchiveBlockCount(nativeTranscriptBlocks, baseArchiveCount, nativeArchiveTarget, toolOutputExpanded);
-  }, [nativeArchiveCount,nativeArchiveTarget,nativeTranscriptBlocks,toolOutputExpanded]);
+  // Blocks the transcript cap has dropped off the FRONT of the live array — the
+  // running total, since Ink's <Static> print cursor is a position and every
+  // dropped block must keep its slot. Read during render on purpose: the sealed
+  // boundary is stored ABSOLUTELY (sealedAbsoluteCount) and projected onto the
+  // live array right here, so the split is a pure function of this frame's
+  // (count, drop total). No effect-committed ref feeds it — a ref lands
+  // synchronously while every setState is deferred a macrotask by __inkSafe, so
+  // a repaint in that window used to seal blocks that were still live.
+  const staticDroppedPrefixCount = transcriptDroppedTotal();
 
-  const nativeArchiveBlocks = useMemo(() => {
-          return coalesceToolCallBlocks(nativeTranscriptBlocks.slice(0, effectiveNativeArchiveCount));
-  }, [nativeTranscriptBlocks,effectiveNativeArchiveCount]);
+  const effectiveNativeArchiveCount = useMemo(() => {
+          const baseArchiveCount = sealedBoundaryFromAbsolute(sealedAbsoluteCount, staticDroppedPrefixCount);
+          return effectiveNativeArchiveBlockCount(nativeTranscriptBlocks, baseArchiveCount, nativeArchiveTarget, toolOutputExpanded);
+  }, [sealedAbsoluteCount,nativeArchiveTarget,nativeTranscriptBlocks,toolOutputExpanded,staticDroppedPrefixCount]);
+
+  // Padded feed handed to <Static>: a null is a cap-dropped placeholder holding
+  // an index slot, never a block. Kept local to the <Static> element so the
+  // nullable slot type cannot leak into block-shaped consumers.
+  const staticFeedSlots: (OutputBlock | null)[] = useMemo(() => {
+          return padStaticFeed(coalesceToolCallBlocks(nativeTranscriptBlocks.slice(0, effectiveNativeArchiveCount)), staticDroppedPrefixCount);
+  }, [nativeTranscriptBlocks,effectiveNativeArchiveCount,staticDroppedPrefixCount]);
 
   const nativeLiveBlocks = useMemo(() => {
           return nativeTranscriptBlocks.slice(effectiveNativeArchiveCount);
@@ -705,7 +733,7 @@ export function App() {
             setOutputBlocks,
             blockArchivePathRef,
             setClearEpoch,
-            setNativeArchiveCount,
+            setSealedAbsoluteCount,
             setPendingPlanProposal,
             setReviewEvent,
             setQuestionState,
@@ -898,6 +926,15 @@ export function App() {
     const replacement = (result.type === 'stored') ? result.placeholder : result.content;
     pendingPasteTransformRef.current = replacement.length > 0;
     return replacement;
+  }, []);
+
+  // Called by the composer leaf after IT commits the new text — App is no
+  // longer in the keystroke render path, so the latency sample cannot be taken
+  // from an App effect any more. Stable identity: never breaks the leaf memo.
+  const handleInputCommitted = useCallback((length:number) => {
+    const counts = perfCountsRef.current;
+    recordKeystrokeLatency(keyT0Ref.current, counts.blocks, counts.archive, counts.live, length);
+    keyT0Ref.current = 0;
   }, []);
 
   const handleInputChange = useCallback((value:string) => {
@@ -1277,11 +1314,11 @@ export function App() {
 
   const handleCancelOrExit = useCallback(() => {
     runHandleCancelOrExit({
-      questionState, replState, inputValue, activeAbortRef,
+      questionState, replState, inputValue: inputValueRef.current, activeAbortRef,
       setQuestionState, setQuestionAnswer, setSelectedChoiceIndex, setQuestionOtherActive,
       interruptActiveRun, setInputValue, dispatch,
     });
-  }, [questionState,replState,inputValue,dispatch]);
+  }, [questionState,replState,dispatch]);
 
   const handleComposerCtrlShortcut = useCallback((shortcut:string) => {
     runHandleComposerCtrlShortcut({
@@ -1296,7 +1333,7 @@ export function App() {
       modelPickerOpen, cesarPickerOpen, slashPickerOpen, atPickerOpen, enginePickerOpen,
       reviewEvent, toolDetailEvent, btwPanel, statusDashboardOpen,
       questionState, selectedChoiceIndex, questionOtherActive,
-      replState, jobManager, inputValue, inputHistory, historyIndex,
+      replState, jobManager, inputValue: inputValueRef.current, inputHistory, historyIndex,
       steeringCount, setPendingImages,
       planModeQueued, autoModeQueued, permissionMode, applyPermissionMode, planApprovalIndex,
       outputBlocks, allSlashCommands, availableEngines, updateInfo, terminalMode,
@@ -1314,7 +1351,7 @@ export function App() {
       openLatestToolDetail, openResultsPager, draftLatestFailedToolRetry,
       triggerUpdatePrompt, dismissUpdateBanner, dispatch,
     }, input, key);
-  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,atPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,btwPanel,questionState,replState,inputValue,inputHistory,historyIndex,steeringCount,planModeQueued,autoModeQueued,permissionMode,applyPermissionMode,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen,updateInfo,triggerUpdatePrompt,dismissUpdateBanner,selectedChoiceIndex,questionOtherActive,newestLiveToolStreamId]);
+  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,atPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,btwPanel,questionState,replState,inputHistory,historyIndex,steeringCount,planModeQueued,autoModeQueued,permissionMode,applyPermissionMode,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen,updateInfo,triggerUpdatePrompt,dismissUpdateBanner,selectedChoiceIndex,questionOtherActive,newestLiveToolStreamId]);
 
   useEffect(() => {
     const activeIds = new Set(Object.keys(liveToolStreams ?? {}));
@@ -1382,26 +1419,21 @@ export function App() {
   }, [activePlan,setActivePlanWrapped]);
 
   useEffect(() => {
-    const nextCount = nativeTranscriptBlocks.length;
-    if (terminalMode !== 'native') {
-      nativeTranscriptBlockCountRef.current = nextCount;
-      return;
-    }
-    const previousCount = nativeTranscriptBlockCountRef.current;
-    if (nextCount < previousCount) {
-      setNativeArchiveCount(0);
-    }
-    nativeTranscriptBlockCountRef.current = nextCount;
-  }, [terminalMode,nativeTranscriptBlocks]);
+    nativeTranscriptBlockCountRef.current = nativeTranscriptBlocks.length;
+  }, [nativeTranscriptBlocks]);
 
   useEffect(() => {
     if (terminalMode !== 'native') {
       return;
     }
-    if (effectiveNativeArchiveCount !== nativeArchiveCount) {
-      setNativeArchiveCount(effectiveNativeArchiveCount);
+    // Store what THIS frame sealed, converted to absolute coordinates with the
+    // same drop total the boundary was derived from. A later cap-spill then
+    // slides the boundary purely by arithmetic on read — nothing to catch up.
+    const nextAbsolute = absoluteSealedCount(effectiveNativeArchiveCount, staticDroppedPrefixCount);
+    if (nextAbsolute !== sealedAbsoluteCount) {
+      setSealedAbsoluteCount(nextAbsolute);
     }
-  }, [terminalMode,effectiveNativeArchiveCount,nativeArchiveCount]);
+  }, [terminalMode,effectiveNativeArchiveCount,staticDroppedPrefixCount,sealedAbsoluteCount]);
 
   useEffect(() => {
     lastReviewResultRef.current = lastReviewResult;
@@ -1596,10 +1628,6 @@ export function App() {
   }, [replState,inputQueue]);
 
   useEffect(() => {
-    inputValueRef.current = inputValue;
-  }, [inputValue]);
-
-  useEffect(() => {
     return () => {
       if (uiInteractionTimerRef.current) clearTimeout(uiInteractionTimerRef.current);
       uiInteractionTimerRef.current = null;
@@ -1607,9 +1635,8 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    recordKeystrokeLatency(keyT0Ref.current, outputBlocks.length, effectiveNativeArchiveCount, nativeLiveBlocks.length, inputValue.length);
-    keyT0Ref.current = 0;
-  }, [inputValue]);
+    perfCountsRef.current = { blocks: outputBlocks.length, archive: effectiveNativeArchiveCount, live: nativeLiveBlocks.length };
+  }, [outputBlocks,effectiveNativeArchiveCount,nativeLiveBlocks]);
 
   useEffect(() => {
     if (questionState && Array.isArray(questionState.choices) && questionState.choices.length > 0) {
@@ -1939,7 +1966,8 @@ export function App() {
         atPickerQuery={atPickerQuery}
         onAtSelect={handleAtSelect}
         onAtCancel={handleAtCancel}
-        inputValue={inputValue}
+        composerInput={composerInput}
+        onValueCommitted={handleInputCommitted}
         handleInputChange={handleInputChange}
         handlePasteInput={handlePasteInput}
         handleSubmit={handleSubmit}
@@ -1975,9 +2003,12 @@ export function App() {
 
   if (terminalMode === 'native') return (
   <>
-    <Static key={`native-static-${clearEpoch}`} items={nativeArchiveBlocks}>
+    <Static key={`native-static-${clearEpoch}`} items={staticFeedSlots}>
       {(block: any) => (
-        <OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} />
+        // null = a cap-dropped placeholder holding an index slot (padStaticFeed).
+        block ? (
+          <OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} />
+        ) : null
       )}
     </Static>
     <Box flexDirection="column" width={termWidth}>
@@ -1997,7 +2028,7 @@ export function App() {
   {lowerPanel}
   </Box>
   {showFileRail && (
-    <FileRail files={fileRailFiles} maxRows={sideRailMaxRows} width={sideRailWidth} focused={fileRailOpen && inputValue.trim().length === 0} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} autoExpandSelected={fileRailOpen && inputValue.trim().length === 0} />
+    <FileRail files={fileRailFiles} maxRows={sideRailMaxRows} width={sideRailWidth} focused={fileRailOpen && inputIsEmpty} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} autoExpandSelected={fileRailOpen && inputIsEmpty} />
   )}
   {showExecutionRail && (
     <ExecutionRailPanel
@@ -2013,7 +2044,7 @@ export function App() {
       isActive={replState !== 'idle' || runningJobs.length > 0}
       width={sideRailWidth}
       maxRows={sideRailMaxRows}
-      focused={executionRailOpen && inputValue.trim().length === 0}
+      focused={executionRailOpen && inputIsEmpty}
     />
   )}
   </Box>

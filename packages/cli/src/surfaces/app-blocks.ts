@@ -175,6 +175,62 @@ export function effectiveNativeArchiveBlockCount(blocks: OutputBlock[], baseArch
   return count;
 }
 
+/**
+ * Archive count after the transcript dropped a prefix.
+ *
+ * appendBlockWithCap archives+drops the oldest blocks once the live transcript
+ * passes MAX_LIVE_BLOCKS. The sealed/live split must slide down by exactly the
+ * number of dropped blocks — resetting it to 0 (the old behavior) re-points the
+ * boundary at different blocks and makes the <Static> feed non-monotonic.
+ */
+export function archiveCountAfterPrefixDrop(previousArchiveCount: number, droppedPrefixCount: number): number {
+  if (droppedPrefixCount <= 0) return Math.max(0, previousArchiveCount);
+  return Math.max(0, previousArchiveCount - droppedPrefixCount);
+}
+
+/**
+ * The sealed/live boundary in ABSOLUTE transcript coordinates: how many blocks,
+ * counting every one the cap has already dropped off the front, are sealed.
+ *
+ * Live-array indices shift under a cap-spill; absolute ones never do. Storing
+ * the boundary absolutely is what makes it derivable from a single render-time
+ * read of transcriptDroppedTotal(), with no "how much of the drop has my
+ * committed state already seen?" bookkeeping — the bookkeeping was the bug: App
+ * defers every setState by a macrotask (__inkSafe) while a ref assigned in the
+ * same effect lands synchronously, so a repaint in between saw a ref that had
+ * already advanced and a count that had not, and sealed still-live blocks.
+ */
+export function absoluteSealedCount(boundaryIndex: number, droppedPrefixCount: number): number {
+  return Math.max(0, boundaryIndex) + Math.max(0, droppedPrefixCount);
+}
+
+/**
+ * Project an absolute sealed count back onto today's live array. Pure function
+ * of (stored count, current drop total) — same inputs, same boundary, on every
+ * render of a given frame.
+ */
+export function sealedBoundaryFromAbsolute(sealedAbsoluteCount: number, droppedPrefixCount: number): number {
+  return archiveCountAfterPrefixDrop(sealedAbsoluteCount, droppedPrefixCount);
+}
+
+/**
+ * Keep the <Static> feed index-stable across a transcript cap-spill.
+ *
+ * Ink's <Static> tracks "how many items have already been printed" as a plain
+ * index into the items array (it renders items.slice(index)). A front-drop
+ * shortens that array, so the stale index silently re-points at different
+ * blocks: the next seal boundary swallows a completed row, and once the array
+ * grows back past the stale index, blocks that are already in terminal
+ * scrollback get printed a second time. Padding the front with placeholders
+ * keeps every archived block at the same index for the whole session, so each
+ * completed row is handed to <Static> exactly once. The placeholders always sit
+ * below the index and are therefore never rendered.
+ */
+export function padStaticFeed(archived: OutputBlock[], droppedPrefixCount: number): (OutputBlock | null)[] {
+  if (droppedPrefixCount <= 0) return archived;
+  return [...new Array<OutputBlock | null>(droppedPrefixCount).fill(null), ...archived];
+}
+
 export function historyBlocksForTranscript(blocks: OutputBlock[]): OutputBlock[] {
   if (blocks.length === 1 && blocks[0]?.event?.type === 'dashboard') {
     return [];
@@ -260,4 +316,26 @@ export function appendTranscriptBlock(blocks: OutputBlock[], event: any, archive
     return blocks;
   }
   return appendBlockWithCap(blocks, { id: hostNowMs() + hostRandom(), event: event }, archivePath);
+}
+
+/**
+ * Synthetic transcript blocks for the scripted typing probe (scripts/perf/repl-typing-probe.mjs).
+ * Returns [] unless AGON_PERF_SEED_BLOCKS is a positive integer, so a normal REPL never pays for it.
+ * The probe needs a LONG transcript to reproduce keystroke lag; a freshly booted REPL has one
+ * dashboard block and is trivially fast, which would make any before/after comparison meaningless.
+ */
+export function seedPerfTranscriptBlocks(): OutputBlock[] {
+  const requested = Number.parseInt(String(process.env.AGON_PERF_SEED_BLOCKS ?? ''), 10);
+  if (!Number.isFinite(requested) || requested <= 0) return [];
+  const count = Math.min(2000, requested);
+  const blocks: OutputBlock[] = [];
+  for (let index = 0; index < count; index += 1) {
+    if (index % 2 === 0) {
+      blocks.push({ id: 1_000_000 + index, event: { type: 'user-message', content: `probe message ${index}` } as any });
+    } else {
+      const body = Array.from({ length: 6 }, (_, line) => `probe line ${index}.${line} ${'lorem ipsum dolor sit amet '.repeat(2)}`).join('\n');
+      blocks.push({ id: 1_000_000 + index, event: { type: 'engine-block', engineId: 'probe', content: body } as any });
+    }
+  }
+  return blocks;
 }

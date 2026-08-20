@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Box, Text } from 'ink';
 
 // ── Core ───────────────────────────────────────────────
@@ -12,7 +12,18 @@ import { getGhostCompletion } from '../signals/ghost-text.js';
 
 import { truncateCodeLine } from './markdown.js';
 
-const ComposerView = React.memo(function ComposerView({ mode, replState, planModeQueued, autoModeQueued, activePlanState, slashPickerOpen, atPickerOpen, atPickerFiles, atPickerPrefix, atPickerQuery, onAtSelect, onAtCancel, inputValue, handleInputChange, handlePasteInput, handleSubmit, allSlashCommands, availableEngines, onSlashSelect, onSlashCancel, questionState, questionAnswer, selectedChoiceIndex, questionOtherActive, onQuestionAnswerChange, onQuestionAnswerSubmit, onCtrlShortcut, updateBannerActive, termWidth, termHeight }: { mode:'chat'|'campfire'|'brainstorm'|'tribunal'; replState:string; planModeQueued:boolean; autoModeQueued:boolean; activePlanState:string|null; slashPickerOpen:boolean; atPickerOpen:boolean; atPickerFiles:string[]; atPickerPrefix:string; atPickerQuery:string; onAtSelect:(path:string) => void; onAtCancel:(typed:string) => void; inputValue:string; handleInputChange:(value:string) => void; handlePasteInput:(raw:string) => string; handleSubmit:(value:string) => void; allSlashCommands:any[]; availableEngines:string[]; onSlashSelect:(cmd:string) => void; onSlashCancel:() => void; questionState:any; questionAnswer:string; selectedChoiceIndex:number; questionOtherActive:boolean; onQuestionAnswerChange:(value:string) => void; onQuestionAnswerSubmit:(value:string) => void; onCtrlShortcut:(shortcut:string) => void; updateBannerActive:boolean; termWidth:number; termHeight:number }) {
+import { countRender } from '../signals/input-perf.js';
+
+import { useComposerInputValue } from '../signals/composer-input-store.js';
+
+import type { ComposerInputStore } from '../signals/composer-input-store.js';
+
+const ComposerView = React.memo(function ComposerView({ mode, replState, planModeQueued, autoModeQueued, activePlanState, slashPickerOpen, atPickerOpen, atPickerFiles, atPickerPrefix, atPickerQuery, onAtSelect, onAtCancel, composerInput, onValueCommitted, handleInputChange, handlePasteInput, handleSubmit, allSlashCommands, availableEngines, onSlashSelect, onSlashCancel, questionState, questionAnswer, selectedChoiceIndex, questionOtherActive, onQuestionAnswerChange, onQuestionAnswerSubmit, onCtrlShortcut, updateBannerActive, termWidth, termHeight }: { mode:'chat'|'campfire'|'brainstorm'|'tribunal'; replState:string; planModeQueued:boolean; autoModeQueued:boolean; activePlanState:string|null; slashPickerOpen:boolean; atPickerOpen:boolean; atPickerFiles:string[]; atPickerPrefix:string; atPickerQuery:string; onAtSelect:(path:string) => void; onAtCancel:(typed:string) => void; composerInput:ComposerInputStore; onValueCommitted?:(length:number) => void; handleInputChange:(value:string) => void; handlePasteInput:(raw:string) => string; handleSubmit:(value:string) => void; allSlashCommands:any[]; availableEngines:string[]; onSlashSelect:(cmd:string) => void; onSlashCancel:() => void; questionState:any; questionAnswer:string; selectedChoiceIndex:number; questionOtherActive:boolean; onQuestionAnswerChange:(value:string) => void; onQuestionAnswerSubmit:(value:string) => void; onCtrlShortcut:(shortcut:string) => void; updateBannerActive:boolean; termWidth:number; termHeight:number }) {
+  countRender('ComposerView');
+  // THE point of the extraction: the composer text is read here, in the leaf,
+  // so a keystroke commits this subtree instead of the whole App.
+  const inputValue = useComposerInputValue(composerInput);
+  useEffect(() => { onValueCommitted?.(inputValue.length); }, [inputValue, onValueCommitted]);
   const placeholder = replState === 'idle'
     ? (mode === 'chat'
         ? ''

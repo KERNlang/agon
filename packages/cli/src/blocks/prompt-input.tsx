@@ -10,6 +10,8 @@ import { applyInlineInputEdits, classifyDeleteInput, deleteWordBackward, findLin
 
 import { useStableInput } from '../stable-input.js';
 
+import { countRender } from '../signals/input-perf.js';
+
 export interface PromptToken {
   dimmed: boolean|undefined;
   highlighted: boolean;
@@ -31,6 +33,7 @@ export interface PromptViewport {
 }
 
 const PromptTextInput = React.memo(function PromptTextInput({ value, placeholder, focus, showCursor, highlightPastedText, ghostText, width, maxVisibleLines, onChange, onSubmit, onCtrlShortcut, onPaste, reservedPlainKeys }: { value:string; placeholder:string|undefined; focus:boolean|undefined; showCursor:boolean|undefined; highlightPastedText:boolean|undefined; ghostText:string|undefined; width:number; maxVisibleLines:number|undefined; onChange:(value:string) => void; onSubmit:((value:string) => void)|undefined; onCtrlShortcut:((shortcut:string) => void)|undefined; onPaste:((raw:string) => string)|undefined; reservedPlainKeys:string[]|undefined }) {
+  countRender('PromptTextInput');
   const originalValue = value;
   const resolvedPlaceholder = placeholder ?? '';
   const resolvedFocus = focus ?? true;

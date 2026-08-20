@@ -68,7 +68,7 @@ export function scoreExperienceSimilarity(a: string, b: string): number {
 }
 
 /**
- * Resolve the retrieval gates from config with safe defaults in ONE place: cesarExperienceMinSimilarity (default 0.2), cesarExperienceMinEpisodes (default 3 — the brainstorm's min-N gate), cesarExperienceTopK (default 3), cesarExperienceWindow (default 200 recent runs). Non-positive / non-finite values mean 'unset' (KERN codegen emits optional number fields as 0 into DEFAULT_AGON_CONFIG).
+ * Resolve the retrieval gates from config with safe defaults in ONE place: cesarExperienceMinSimilarity (default 0.2), cesarExperienceMinEpisodes (default 3 — the brainstorm's min-N gate), cesarExperienceTopK (default 3), cesarExperienceWindow (default 200 recent runs). Non-positive / non-finite values mean 'unset' — DEFAULT_AGON_CONFIG carries 0 for an unset optional number, and loadConfig merges those defaults in.
  */
 export function experienceRetrievalOptions(config: any): ExperienceRetrievalOptions {
   const rawSim = Number(config?.cesarExperienceMinSimilarity);

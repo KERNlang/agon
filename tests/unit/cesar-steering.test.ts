@@ -120,7 +120,7 @@ describe('Cesar steering buffer', () => {
   // claimed the per-message `text` was read outside its loop (a runtime
   // ReferenceError the moment steering drains); the structural counterpart of this
   // test lives in cesar-steering-yield-wiring.test.ts, which asserts the shape in
-  // the generated brain itself. This one pins the observable contract: one render,
+  // the brain module itself. This one pins the observable contract: one render,
   // one history append and one telemetry record per drained message — never a
   // record built from a stale or missing text.
   describe('drain → render → persist → frame (the brain\'s drainSteeringIntoSend contract)', () => {

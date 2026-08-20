@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-// Generated sources, not the package dist — the dist lags until `npm run build`,
+// Source modules, not the package dist — the dist lags until `npm run build`,
 // so package imports here would test STALE code (bit us 2026-07-17).
 import { isPathUnderCwd, parsePermissionRuleSet } from '../../packages/core/src/tools/tool-permissions.js';
 import { createReadTool } from '../../packages/core/src/tools/tool-read.js';

@@ -1,4 +1,5 @@
-// Facade over ./generated/sessions/persistent-session.js — edit the source there.
+// Barrel for the persistent-session modules in ./sessions/ (the session
+// itself plus its companion / ACP / stream-json / resume transports).
 // Source: kern/persistent-session.kern → generated/persistent-session.ts
 export { createPersistentSession } from './sessions/persistent-session.js';
 export {

@@ -1,4 +1,5 @@
-// Facade over ./generated/types.js — edit the source there.
+// Public forge type surface over ./types-impl.ts, adding the one function
+// type (ForgeEventCallback) the shape declarations cannot express.
 export * from './types-impl.js';
 
 // ForgeEventCallback — KERN's type node can't express function types

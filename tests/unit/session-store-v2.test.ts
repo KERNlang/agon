@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 
 // We need to test the actual functions, but they use AGON_HOME which reads from config.
-// Import the generated code directly to test the logic.
+// Import the implementation module directly to test the logic.
 import {
   saveToolResultToDisk,
   loadToolResultFromDisk,

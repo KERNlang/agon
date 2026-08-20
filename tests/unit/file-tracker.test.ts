@@ -64,7 +64,7 @@ describe('file tracker diff previews', () => {
       new_string: 'new',
     }), 'done');
     recordToolCall('AgonWrite', JSON.stringify({
-      file_path: 'tests/unit/generated-visible.test.ts',
+      file_path: 'tests/unit/newly-visible.test.ts',
       content: 'test',
     }), 'done');
 
@@ -72,6 +72,6 @@ describe('file tracker diff previews', () => {
     const byPath = new Map(files.map((file) => [file.relPath, file.status]));
 
     expect(byPath.get('packages/cli/src/kern/cesar/session.kern')).toBe('edited');
-    expect(byPath.get('tests/unit/generated-visible.test.ts')).toBe('created');
+    expect(byPath.get('tests/unit/newly-visible.test.ts')).toBe('created');
   });
 });

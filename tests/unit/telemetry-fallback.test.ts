@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { EngineRegistry } from '../../packages/core/src/signals/engine-registry.js';
 import { EventBus } from '../../packages/core/src/signals/event-bus.js';
 import { runForge } from '../../packages/forge/src/index.js';
-import { MockStallEngine } from '../fixtures/generated/mock-stall-engine.js';
+import { MockStallEngine } from '../fixtures/mock-stall-engine.js';
 import { createTelemetryService } from '../../packages/cli/src/signals/telemetry-service.js';
 import { createScoreboard, scoreboardStartEngine, scoreboardFailEngine } from '../../packages/cli/src/cesar/scoreboard.js';
 

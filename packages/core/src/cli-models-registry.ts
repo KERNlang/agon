@@ -1,6 +1,5 @@
-// Facade over ./generated/signals/cli-models-registry.js — edit the source there.
+// Public CLI-model registry surface over ./signals/cli-models-registry.ts.
 
-// Re-export types and functions from generated file
 export type { CliModelEntry, CliProviderGroup, ProbedModel } from './signals/cli-models-registry.js';
 export { buildCliModelGroups, buildCliModelGroupsAsync, buildCliGroupsImmediate, refreshCliGroup, refreshCliGroupVersion, getBinaryVersionAsync, findBinary, getBinaryVersion, readProbedCliModels, refreshProbedCliModels } from './signals/cli-models-registry.js';
 

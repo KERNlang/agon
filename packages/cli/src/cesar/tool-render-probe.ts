@@ -14,7 +14,7 @@ export interface RenderFixture {
 }
 
 /**
- * Fixture registry mapping RenderProbe surface ids to their generated component and default props.
+ * Fixture registry mapping RenderProbe surface ids to their component and default props.
  */
 export function renderProbeFixtures(): Record<string,RenderFixture> {
   return {

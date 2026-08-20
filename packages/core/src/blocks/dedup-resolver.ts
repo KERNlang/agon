@@ -35,13 +35,12 @@ export function resolveDedupSidecar(filename: string): string | null {
     // ate the require). Try dev-mode fallback below.
   }
   // Mode 2 — dev fallback. This file compiles to
-  //   packages/core/dist/generated/blocks/dedup-resolver.js
-  // and the sidecar lives at packages/dedup/<filename>. Five ups
-  // because dist + generated + blocks adds an extra level vs. the
-  // old src/kern/blocks 4-up math.
+  //   packages/core/dist/blocks/dedup-resolver.js
+  // and the sidecar lives at packages/dedup/<filename>: three ups
+  // (blocks → dist → core) lands on packages/.
   try {
     const here = dirname(fileURLToPath(import.meta.url));
-    const fallback = resolve(here, '..', '..', '..', '..', 'dedup', filename);
+    const fallback = resolve(here, '..', '..', '..', 'dedup', filename);
     if (existsSync(fallback)) return fallback;
   } catch {
     // ignored — both paths failed

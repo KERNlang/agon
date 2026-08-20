@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-// Import engineHealth from the SAME specifier the generated forge code uses
+// Import engineHealth from the SAME specifier the forge code uses
 // (@kernlang/agon-core) so the singleton instance is shared — importing the core
 // source facade directly would yield a second instance and mark() would not propagate.
 import { engineHealth } from '@kernlang/agon-core';

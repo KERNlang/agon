@@ -310,8 +310,8 @@ describe('MENTION_TRAILING_PUNCT cleanliness (NIT)', () => {
   });
 });
 
-// ── F1 & F5: generated-output guards against compiler quirks recurring ─
-describe('generated controls.tsx guards', () => {
+// ── F1 & F5: source-level guards against two fixed rendering bugs ──────
+describe('controls.tsx guards', () => {
   const gen = readFileSync(
     join(REPO_ROOT, 'packages/cli/src/blocks/controls.tsx'),
     'utf-8',

@@ -114,8 +114,8 @@ describe('lazySubCommands', () => {
   });
 
   it('ext/browser-host lazy metas carry the TOP-LEVEL parent command name, not their install subcommand\'s', async () => {
-    // Regression (external review, fix 1): the generated ext.ts /
-    // browser-host.ts define several defineCommand blocks — the nested
+    // Regression (external review, fix 1): ext.ts and
+    // browser-host.ts each define several defineCommand blocks — the nested
     // `install` subcommand's meta appears FIRST in the file, and the lazy
     // metas were originally copied from that block instead of the exported
     // top-level command's meta ('ext' / 'browser-host').

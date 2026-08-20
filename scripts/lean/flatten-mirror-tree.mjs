@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 /**
- * Phase B of the lean-up: flatten every `src/generated/**` tree into
- * its package `src/**` root and drop the pure re-export facades that used to point at
- * them.
+ * Phase B of the lean-up: flatten the codegen-era mirror tree into each
+ * package's `src/` root and drop the pure re-export facades that pointed at it.
  *
- * Post-KERN-eject the `generated/` tree is ordinary hand-maintained source, so
- * the directory name is a lie and the facade layer is pure indirection.
+ * Post-eject the mirror was ordinary hand-maintained source, so its name was a
+ * lie and the facade layer in front of it was pure indirection. Kept in-repo as
+ * the record of how the move was made; it is a one-shot tool and only runs
+ * against a tree that still has the mirror.
  *
  * Subcommands:
  *   inventory   classify facades (PURE vs VALUE-ADD), list moves + collisions
@@ -26,6 +27,11 @@ import ts from 'typescript';
 
 const ROOT = path.resolve(path.dirname(url.fileURLToPath(import.meta.url)), '..', '..');
 const SRC_EXTS = ['.ts', '.tsx'];
+// The one place the retired directory is named. It is an input to this
+// tool, not vocabulary the codebase uses any more.
+const MIRROR_DIR = 'generated';
+const MIRROR_SEG = `${path.sep}${MIRROR_DIR}${path.sep}`;
+const MIRROR_SRC_SEG = `${path.sep}src${MIRROR_SEG}`;
 
 /** Recursively list files under `dir`, skipping node_modules/dist. */
 function walk(dir, out = []) {
@@ -55,11 +61,11 @@ function packages() {
     .map((e) => path.join(dir, e.name));
 }
 
-/** Every file living under a `src/generated/` tree. */
-export function generatedFiles() {
+/** Every file living under the mirror tree. */
+export function mirrorFiles() {
   const out = [];
   for (const pkg of packages()) {
-    const gen = path.join(pkg, 'src', 'generated');
+    const gen = path.join(pkg, 'src', MIRROR_DIR);
     if (!fs.existsSync(gen)) continue;
     for (const file of walk(gen)) out.push(file);
   }
@@ -67,7 +73,7 @@ export function generatedFiles() {
 }
 
 /**
- * Two legacy modules would land on a path already taken by a value-add facade
+ * Two mirror modules would land on a path already taken by a value-add facade
  * that has to survive (`forge/src/types.ts` adds ForgeEventCallback,
  * `forge/src/stages.ts` adds the determineWinner default). Both are kept, and
  * the module that moves takes an `-impl` name: public module in front, its
@@ -78,9 +84,9 @@ const COLLISION_OVERRIDES = new Map([
   ['packages/forge/src/stages.ts', 'packages/forge/src/stages-impl.ts'],
 ]);
 
-/** src/generated/a/b.ts  ->  src/a/b.ts */
+/** <mirror>/a/b.ts  ->  src/a/b.ts */
 export function targetOf(file) {
-  const naive = file.replace(`${path.sep}src${path.sep}generated${path.sep}`, `${path.sep}src${path.sep}`);
+  const naive = file.replace(MIRROR_SRC_SEG, `${path.sep}src${path.sep}`);
   const rel = path.relative(ROOT, naive).split(path.sep).join('/');
   const override = COLLISION_OVERRIDES.get(rel);
   return override ? path.join(ROOT, override) : naive;
@@ -97,7 +103,7 @@ function parse(file) {
 }
 
 /**
- * Resolve an ESM specifier (`./foo.js`, `../generated/bar/index.js`) written in
+ * Resolve an ESM specifier (`./foo.js`, `../<mirror>/bar/index.js`) written in
  * `fromFile` to an on-disk source path, or null when it is a bare/package
  * specifier or points outside the repo.
  */
@@ -121,7 +127,7 @@ function resolveSpecifier(fromFile, spec, exists = null) {
 }
 
 /**
- * Classify a non-generated source file that references the legacy tree.
+ * Classify a source file outside the mirror that references into it.
  *
  * PURE      -> every top-level statement re-exports from ONE legacy module and
  *              nothing else: pure indirection, safe to delete because every
@@ -146,12 +152,12 @@ export function classifyFacade(file) {
     if (ts.isExportDeclaration(stmt) && stmt.moduleSpecifier) {
       const spec = stmt.moduleSpecifier.text;
       const resolved = resolveSpecifier(file, spec);
-      if (resolved && resolved.includes(`${path.sep}generated${path.sep}`)) {
+      if (resolved && resolved.includes(MIRROR_SEG)) {
         targets.add(resolved);
         continue;
       }
       pure = false;
-      reasons.push(`re-export from non-generated module ${spec}`);
+      reasons.push(`re-export from a module outside the mirror: ${spec}`);
       continue;
     }
     pure = false;
@@ -172,12 +178,12 @@ export function classifyFacade(file) {
   return { file, pure, category, targets: list, reasons: [...new Set(reasons)] };
 }
 
-/** Package source files that are NOT in a generated tree. */
+/** Package source files that live outside the mirror tree. */
 function nonGeneratedSources() {
   const out = [];
   for (const pkg of packages()) {
     for (const file of walk(path.join(pkg, 'src'))) {
-      if (file.includes(`${path.sep}src${path.sep}generated${path.sep}`)) continue;
+      if (file.includes(MIRROR_SRC_SEG)) continue;
       if (!SRC_EXTS.includes(path.extname(file))) continue;
       out.push(file);
     }
@@ -186,11 +192,11 @@ function nonGeneratedSources() {
 }
 
 export function inventory() {
-  const gen = generatedFiles();
+  const gen = mirrorFiles();
   const facades = [];
   for (const file of nonGeneratedSources()) {
     const text = fs.readFileSync(file, 'utf8');
-    if (!/(\.\.?\/)+generated\//.test(text)) continue;
+    if (!text.includes(`/${MIRROR_DIR}/`)) continue;
     facades.push(classifyFacade(file));
   }
   const pureFacades = facades.filter((f) => f.category === 'pure');
@@ -203,13 +209,13 @@ export function inventory() {
     .filter((m) => fs.existsSync(m.to) && !deleted.has(m.to))
     .map((m) => ({ ...m, existing: m.to }));
 
-  // A pure facade whose freed path is not the mirror path of the generated
-  // module it re-exports still needs its importers redirected.
+  // A pure facade whose freed path is not the mirror path of the module it
+  // re-exports still needs its importers redirected.
   const redirects = [];
   for (const f of pureFacades) {
     for (const t of f.targets) {
       const mirrored = targetOf(t);
-      if (mirrored !== f.file) redirects.push({ facade: f.file, generated: t, newPath: mirrored });
+      if (mirrored !== f.file) redirects.push({ facade: f.file, module: t, newPath: mirrored });
     }
   }
   return { gen, facades, pureFacades, barrels, valueAdd, moves, collisions, redirects, deleted };
@@ -217,7 +223,7 @@ export function inventory() {
 
 /**
  * A *plan* is captured BEFORE anything moves and replayed afterwards. It holds
- *   moves   old absolute path -> new absolute path (legacy modules + the pure
+ *   moves   old absolute path -> new absolute path (mirror modules + the pure
  *           facades that get deleted, which redirect to wherever their single
  *           module landed)
  *   files   every repo file as it looked pre-move; the reference rewriter
@@ -259,7 +265,8 @@ function relSpecifier(fromFile, toFile) {
  *  - jest.mock / jest.doMock / jest.requireActual
  *
  * The mock literals matter as much as the static ones: an orphaned
- * `vi.mock('…/legacy/x.js')` is silently ignored by vitest, so the suite would
+ * `vi.mock()` whose path no longer resolves is silently ignored by vitest, so
+ * the suite would
  * quietly start exercising the real module.
  */
 function moduleLiterals(sf) {
@@ -300,13 +307,13 @@ export function rewrite(plan, { apply = false } = {}) {
   const move = new Map(Object.entries(plan.moves).map(([a, b]) => [path.join(ROOT, a), path.join(ROOT, b)]));
   // new path -> where that file's CONTENT lived before, so relative specifiers
   // still resolve. A deleted facade often shares its target path with the
-  // module that replaced it (handlers/forge.ts fronted <mirror>/handlers/
-  // forge.ts); the module wins, because the facade's body is gone.
+  // module that replaced it (handlers/forge.ts fronted the mirror's
+  // handlers/forge.ts); the module wins, because the facade's body is gone.
   const back = new Map();
   for (const [from, to] of move) {
     if (from === to) continue;
     const held = back.get(to);
-    if (held && held.includes(`${path.sep}generated${path.sep}`)) continue;
+    if (held && held.includes(MIRROR_SEG)) continue;
     back.set(to, from);
   }
   const oldFiles = new Set(plan.files.map((f) => path.join(ROOT, f)));
@@ -314,7 +321,7 @@ export function rewrite(plan, { apply = false } = {}) {
   // its repo-relative path, so build a longest-first literal replacement table.
   const literals = [...move]
     .map(([from, to]) => [rel(from), rel(to)])
-    .filter(([from]) => from.includes('/src/generated/'))
+    .filter(([from]) => from.includes(`/src/${MIRROR_DIR}/`))
     .sort((a, b) => b[0].length - a[0].length);
 
   const stats = { files: 0, static: 0, dynamic: 0, mock: 0, 'import-type': 0, text: 0 };
@@ -349,9 +356,10 @@ export function rewrite(plan, { apply = false } = {}) {
       text = text.split(from).join(to);
     }
     // Directory-level mentions left over after the per-file pass.
-    const dirs = text.replace(/(packages\/[a-z0-9-]+\/)src\/generated\//g, '$1src/');
+    const dirRe = new RegExp(`(packages/[a-z0-9-]+/)src/${MIRROR_DIR}/`, 'g');
+    const dirs = text.replace(dirRe, '$1src/');
     if (dirs !== text) {
-      stats.text += (text.match(/(packages\/[a-z0-9-]+\/)src\/generated\//g) || []).length;
+      stats.text += (text.match(dirRe) || []).length;
       text = dirs;
     }
 
@@ -380,7 +388,7 @@ function walkRepo() {
 const cmd = process.argv[2] ?? 'inventory';
 if (cmd === 'inventory') {
   const inv = inventory();
-  console.log(`legacy files to move:  ${inv.gen.length}`);
+  console.log(`mirror files to move:  ${inv.gen.length}`);
   console.log(`facades over that tree: ${inv.facades.length}`);
   console.log(`  PURE (delete):       ${inv.pureFacades.length}`);
   console.log(`  BARREL (keep):       ${inv.barrels.length}`);

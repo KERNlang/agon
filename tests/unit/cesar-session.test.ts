@@ -621,7 +621,7 @@ describe('cesar MCP session config', () => {
   });
 
   // ── Shell work suppresses the "you haven't implemented" note (codex N3) ──
-  // `sed -i`, `git commit`, `mkdir`, a codegen script: Bash we cannot prove
+  // `sed -i`, `git commit`, `mkdir`, a build script: Bash we cannot prove
   // read-only and that does not match the gate → effect `other`, so neither the
   // mutate nor the verify counter moves. The note used to fire anyway and told an
   // engine that had just rewritten files "no edit or verification yet".

@@ -1095,7 +1095,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
       // ── Shell work ledger (honesty guard on the edit-intent note) ──
       // A successful Bash step we could NOT prove read-only and that does not
       // match the gate lands in `other`: `sed -i`, `git commit`, `mkdir -p`, a
-      // codegen/build script. That is real work, but it is NOT mutate/verify, so
+      // build script. That is real work, but it is NOT mutate/verify, so
       // on effectfulStepCount alone an edit-intent turn doing its work through
       // the shell still got told "no edit or verification yet". Counted
       // separately — never folded into effectfulStepCount, which keeps its exact

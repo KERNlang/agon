@@ -1,4 +1,5 @@
-// Facade over ./generated/signals/paste-store.js — edit the source there.
+// Process-wide paste store: the single PasteStore instance every surface
+// shares, over the implementation in ./signals/paste-store.ts.
 export { PASTE_MAX_AGE, PasteStore } from './signals/paste-store.js';
 export type { PasteStoreResult } from './signals/paste-store.js';
 

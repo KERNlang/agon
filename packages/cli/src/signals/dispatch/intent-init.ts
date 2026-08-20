@@ -265,10 +265,10 @@ export async function dispatchInitIntent(intent: any, input: string, cb: Dispatc
             '',
             'Every new function, type, constant, handler MUST be in KERN. No hand-maintained TS.',
             '',
-            '1. Write `.kern` in `packages/*/src/kern/<category>/`',
+            '1. Write `.kern` under `src/kern/<category>/`',
             '2. `npm run kern:compile`',
-            '3. `.ts` facade re-exports from `generated/`',
-            '4. NEVER edit `packages/*/src/generated/` directly',
+            '3. The sibling `.ts` re-exports the compiler output',
+            '4. NEVER edit compiler output directly -- edit the `.kern`',
             '',
           );
         }

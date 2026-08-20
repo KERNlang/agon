@@ -1,21 +1,21 @@
-// Hand-maintained (formerly KERN-generated).
+// Static gap checks for the FastAPI service source.
 
 import { existsSync, readFileSync } from 'node:fs';
 
 import { join } from 'node:path';
 
-export type FastApiGeneratedGap = { id: string; severity: 'blocking' | 'important'; message: string };
+export type FastApiGap = { id: string; severity: 'blocking' | 'important'; message: string };
 
-export type FastApiGeneratedGapReport = { ok: boolean; gaps: FastApiGeneratedGap[]; checkedFiles: string[] };
+export type FastApiGapReport = { ok: boolean; gaps: FastApiGap[]; checkedFiles: string[] };
 
 /**
  * Static checks for known @kernlang/python output gaps Agon currently works around or cannot run through.
  */
-export function analyzeFastApiGenerated(generatedDir: string): FastApiGeneratedGapReport {
-  const gaps: FastApiGeneratedGap[] = [];
+export function analyzeFastApiSource(sourceDir: string): FastApiGapReport {
+  const gaps: FastApiGap[] = [];
   const checkedFiles: string[] = [];
-  const healthPath = join(generatedDir, 'health.py');
-  const routePath = join(generatedDir, 'routes', 'get_health.py');
+  const healthPath = join(sourceDir, 'health.py');
+  const routePath = join(sourceDir, 'routes', 'get_health.py');
 
   if (!existsSync(healthPath)) {
     gaps.push({
@@ -84,7 +84,7 @@ export function analyzeFastApiGenerated(generatedDir: string): FastApiGeneratedG
   return { ok: gaps.length === 0, gaps, checkedFiles };
 }
 
-export function formatFastApiGapReport(report: FastApiGeneratedGapReport): string {
+export function formatFastApiGapReport(report: FastApiGapReport): string {
   if (report.ok) {
     return `FastAPI generated output passed ${report.checkedFiles.length} gap checks.`;
   }
@@ -95,9 +95,9 @@ export function formatFastApiGapReport(report: FastApiGeneratedGapReport): strin
   return lines.join('\n');
 }
 
-export function checkFastApiGeneratedCli(generatedDir?: string): number {
-  const targetDir = generatedDir || process.argv[2] || 'src/generated';
-  const report = analyzeFastApiGenerated(targetDir);
+export function checkFastApiSourceCli(sourceDir?: string): number {
+  const targetDir = sourceDir || process.argv[2] || 'src/generated';
+  const report = analyzeFastApiSource(targetDir);
   const text = formatFastApiGapReport(report);
   if (report.ok) {
     console.log(text);

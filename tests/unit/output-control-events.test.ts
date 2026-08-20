@@ -13,7 +13,7 @@ vi.mock('@kernlang/agon-core', async () => {
 
 // Stub markdown/code-buffer transitive deps to avoid side effects.
 // output.ts imports markdown from ../blocks/markdown.js — mock the module it
-// actually resolves (generated/blocks), not the hand-TS facade.
+// actually resolves, not the re-typed facade in src/markdown.ts.
 vi.mock('../../packages/cli/src/blocks/markdown.js', () => ({
   parseMarkdownBlocks: () => [],
   cleanEngineOutput: (s: string) => s,

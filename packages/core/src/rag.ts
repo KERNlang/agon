@@ -1,4 +1,4 @@
-// Facade over the generated RAG v0 modules (source: src/kern/rag/*.kern).
+// Barrel for the RAG modules in ./rag/.
 export { buildRagIndex, queryRag } from './rag/rag.js';
 export { collectCorpusFiles, hashCorpus } from './rag/corpus.js';
 export { chunkMarkdown, RAG_CHUNK_MAX_CHARS, RAG_CHUNK_OVERLAP_CHARS } from './rag/chunking.js';

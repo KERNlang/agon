@@ -129,11 +129,16 @@ When answering, always state confidence clearly enough that the user can tell wh
 
 ## Source Layout — plain TypeScript
 
-Agon used to be authored in KERN (`.kern` sources compiled into `packages/*/src/generated/`). That authoring layer is gone: the TypeScript under `packages/*/src/generated/` is now the **hand-maintained source of truth** and is edited directly. The directory name is legacy — it was kept so every import path and test stayed valid. There is no compile step, no `.kern` file, and no codegen.
+Agon used to be authored in KERN, with `.kern` sources compiled into a mirror
+tree. That authoring layer is gone and so is the mirror: the TypeScript under
+`packages/*/src/` is the **hand-maintained source of truth** and is edited
+directly. There is no compile step, no `.kern` file, no codegen.
 
-- Edit implementations under `packages/*/src/generated/`; the sibling `.ts` files are thin facades that re-export (and sometimes tighten) that surface.
+- Edit the module itself. A handful of modules still sit behind a small public
+  surface next to them — a barrel (`core/src/tools.ts` fronts `core/src/tools/`)
+  or a facade that adds one type or default (`forge/src/types.ts` over
+  `types-impl.ts`) — but there is no mirror layer to keep in sync.
 - Ordinary TypeScript throughout: functions, classes, discriminated unions, React/Ink `.tsx` components.
-- Renaming `generated/` and merging the facades is a deliberate later phase — do not start it opportunistically.
 
 CLI runtime note:
 - The actual `agon` binary runs from `packages/cli/dist/index.js`, so rebuild with `npm run build -w packages/cli` before verifying runtime behavior.
@@ -174,7 +179,7 @@ engines/         — JSON engine definitions (claude.json, codex.json, etc.)
 tests/           — Unit + integration tests (vitest)
 ```
 
-### Directory Pattern (inside `src/generated/`)
+### Directory Pattern (inside each package's `src/`)
 - `surfaces/` — top-level screens (what the user sees)
 - `blocks/` — reusable UI/logic components
 - `signals/` — state, dispatch, routing, config, registries, stores
@@ -206,7 +211,7 @@ Agon runs in the **terminal's main buffer** (no alt-screen). Past transcript row
 - Silent `catch {}` is **intentional** for: feature detection (file probes), optional metadata reads (package.json, Cargo.toml), best-effort cleanup (unlinkSync temp files), JSON parse fallbacks
 - **Do log** (`console.warn`) for: session close failures, process kill failures, state persistence errors — anything where silent failure could corrupt state or leak resources
 - Pattern: `console.warn(\`[agon] context: \${e instanceof Error ? e.message : String(e)}\`)`
-- The long-lived `generated/` catch blocks are intentionally silent — do not flag as issues
+- The long-lived catch blocks in the older modules are intentionally silent — do not flag as issues
 
 ## Dispatch Chain
 

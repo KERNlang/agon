@@ -1,1 +1,1 @@
-# Generated Python package marker.
+# Python package marker.

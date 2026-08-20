@@ -7,7 +7,7 @@ Agon's orchestration modes.
 ## Status: Phase 0
 
 - Single `GET /health` endpoint
-- Hand-maintained Python (FastAPI + uvicorn) in `src/generated/` — the directory
+- Hand-maintained Python (FastAPI + uvicorn) in `src/` — the directory
   name is legacy (this output was originally transpiled from `.kern`); it is now
   edited directly and nothing regenerates it
 - No orchestration endpoints, no Job queue, no persistence
@@ -43,7 +43,7 @@ Synthesized from the 6-engine brainstorm + recheck (Codex / Claude / Gemini / Ki
 Subprocess-spawning CLI engines do not survive a stateless HTTP request model.
 Forge runs are minutes long; brainstorms with the full 6-engine roster take
 8-12 min. Before any real handler is wired, introduce a `Job` discriminated
-union in `packages/core/src/generated/models/`:
+union in `packages/core/src/models/`:
 
 ```
 queued | running | streaming | done | error

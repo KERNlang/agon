@@ -11,7 +11,8 @@ describe('context-scanner', () => {
     it('returns non-empty string for a git repo', () => {
       const ctx = scanProjectContext(REPO_ROOT);
       expect(ctx.length).toBeGreaterThan(0);
-      expect(ctx).not.toBe('(context scanning not available from generated code)');
+      // Not a parenthesised placeholder standing in for a real scan.
+      expect(ctx).not.toMatch(/^\([^)]*\)$/);
     });
 
     it('includes project name and branch', () => {

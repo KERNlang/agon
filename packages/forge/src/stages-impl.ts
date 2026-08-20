@@ -41,7 +41,7 @@ function makeFailedResult(engineId: string, error: string, durationMs?: number):
 }
 
 /**
- * KERN-GAP workaround: kern v3.5.0 mangles nested single quotes in `value=` attributes (e.g. `return value="value as 'improve'|'validate'"` codegens as `'validat;`). Using <<<>>> raw handler avoids the parser bug.
+ * Normalize the forge mode string; anything unrecognised is 'implement'.
  */
 export function resolveForgeMode(mode?: string): 'implement'|'improve'|'validate' {
   const value = String(mode ?? 'implement').toLowerCase();

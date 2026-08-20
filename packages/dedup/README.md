@@ -71,7 +71,7 @@ Per-call subprocess. Agon spawns `python3 sidecar.py` only when it has drafts to
 
 - [x] Sidecar built and smoke-tested
 - [x] Workspace registered
-- [x] Wired into `runBrainstorm` (`packages/forge/src/generated/dedup-bridge.ts` spawns the sidecar; result attached as `BrainstormResult.groups`)
+- [x] Wired into `runBrainstorm` (`packages/forge/src/dedup-bridge.ts` spawns the sidecar; result attached as `BrainstormResult.groups`)
 - [x] CLI `agon brainstorm` shows `(N engines agree)` tag in the bids table
 - [ ] Integration test against a real `agon brainstorm` call (manual for now — brainstorms run 8-12 min with 6 engines)
 - [ ] Optional: cache embeddings per session so identical drafts across re-runs reuse vectors

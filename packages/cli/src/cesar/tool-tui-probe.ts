@@ -11,12 +11,12 @@ import type { ToolDefinition, ToolHandler, ToolContext, ToolResult, PermissionDe
 export const TUI_PROBE_INPUT_SAFELIST: readonly string[] = ['/help', '/status', '/todos', '/plans', '/checkpoints'] as const;
 
 /**
- * Locate py/agon-tui-probe.py and dist/index.js relative to this compiled module. PACKAGED layout: tsup bundles this module into a flat chunk directly under <pkg>/dist/, so the package root is ONE level up. Dev/vitest layout: <pkg>/src/generated/cesar/ → three levels up. All candidates probed with existsSync, mirroring resolveModelProbeScript's walk in agon-core.
+ * Locate py/agon-tui-probe.py and dist/index.js relative to this compiled module. PACKAGED layout: tsup bundles this module into a flat chunk directly under <pkg>/dist/, so the package root is ONE level up. Dev/vitest layout: <pkg>/src/cesar/ → two levels up. All candidates probed with existsSync, mirroring resolveModelProbeScript's walk in agon-core.
  */
 export function resolveTuiProbePaths(): { script: string|null, agonBin: string|null } {
   const here = dirname(fileURLToPath(import.meta.url));
-  // Candidate package roots, most-specific first: dist/<tsup-chunk>.js → pkg root (PACKAGED layout — tsup emits flat chunks directly under dist/; agon-review blocking finding); src/generated/cesar → pkg root (vitest/dev layout); then two more fallback depths.
-  const roots = [join(here, '..'), join(here, '..', '..', '..'), join(here, '..', '..'), join(here, '..', '..', '..', '..')];
+  // Candidate package roots, shallowest first: dist/<tsup-chunk>.js → pkg root (PACKAGED layout — tsup emits flat chunks directly under dist/; agon-review blocking finding); src/cesar → pkg root (vitest/dev layout); then two deeper fallbacks. Every candidate is probed with existsSync, so a miss just falls through.
+  const roots = [join(here, '..'), join(here, '..', '..'), join(here, '..', '..', '..'), join(here, '..', '..', '..', '..')];
   let script = null as string | null;
   let agonBin = null as string | null;
   for (const root of roots) {

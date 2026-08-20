@@ -23,7 +23,7 @@ export const CESAR_READ_REPEAT_DEFAULT: number = 12;
 export const EDIT_INTAKE_KINDS: Set<string> = new Set(['quick-fix', 'bug', 'feature', 'big-feature', 'spec']);
 
 /**
- * Read one numeric guard threshold from config. A finite value >= 1 wins (floored); anything else — unset, 0, negative, NaN, a string — falls back to the compiled default. Non-positive MUST mean 'unset': KERN codegen emits an optional number field as 0 into DEFAULT_AGON_CONFIG (the same quirk experience.kern documents for its retrieval gates), and loadConfig merges those defaults, so a never-configured threshold arrives as 0. It also stops a malformed config value from silently disabling a guard.
+ * Read one numeric guard threshold from config. A finite value >= 1 wins (floored); anything else — unset, 0, negative, NaN, a string — falls back to the compiled default. Non-positive MUST mean 'unset': DEFAULT_AGON_CONFIG carries 0 for an unset optional number (the same convention experience.ts documents for its retrieval gates), and loadConfig merges those defaults, so a never-configured threshold arrives as 0. It also stops a malformed config value from silently disabling a guard.
  */
 export function resolveGuardThreshold(value: unknown, fallback: number): number {
   const parsed = Number(value);

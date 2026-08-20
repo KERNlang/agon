@@ -1,4 +1,4 @@
-// Facade over the generated diagnostics modules (source: src/kern/diagnostics/*.kern).
+// Barrel for the diagnostics modules in ./diagnostics/.
 // Module D2 — post-edit type/lint checker: checker discovery + the per-session
 // DiagnosticRunner (debounce 400ms/packageDir, single in-flight, 4s budget,
 // lazy fingerprint baseline with CLEAN_BASELINE sentinel, introduced/ripple

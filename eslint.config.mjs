@@ -10,7 +10,7 @@
 //
 // WARNING CEILING — LOWER-ONLY RATCHET. `npm run lint` runs with
 // `--max-warnings <N>` pinned to the exact warning count of the tree at the
-// time it was set. The codegen-era backlog is cleared, so N is 0: any new
+// time it was set. The pre-eject backlog is cleared, so N is 0: any new
 // warning fails the gate. When you clear warnings, lower N to the new count
 // in the same commit; never raise it to make a red gate green.
 //
@@ -51,7 +51,7 @@ export default tseslint.config(
       'no-fallthrough': 'error',
       // Dead bindings left behind by a refactor. `_`-prefixed names opt out.
       //
-      // WARN in severity only: the codegen-era backlog (~430 dead bindings the
+      // WARN in severity only: the pre-eject backlog (~430 dead bindings the
       // retired KERN emitter left behind) is swept, and `npm run lint` pins
       // `--max-warnings 0`, so a single new dead binding fails the gate exactly
       // like an error would.

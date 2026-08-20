@@ -1,4 +1,4 @@
-// Facade over the generated guard-telemetry modules (source: src/kern/telemetry/*.kern).
+// Barrel for the guard-telemetry modules in ./telemetry/.
 // Phase 0 guard-fire telemetry: pure derive fns + per-turn tracker (Module A)
 // and the JSONL/counters persistence layer (Module A2).
 export {

@@ -1,5 +1,5 @@
-// Facade over ./generated/blocks/markdown.js — edit the source there.
-// This file re-exports with a discriminated union type for TS consumers.
+// Public markdown surface over ./blocks/markdown.ts, re-typed so block
+// parsing returns a discriminated union instead of a widened record.
 
 import {
   parseMarkdownBlocks as _parseMarkdownBlocks,

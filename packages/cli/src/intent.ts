@@ -1,6 +1,5 @@
-// Facade over ./generated/signals/intent-types.js — edit the source there.
-// Intent union: kern/intent-types.kern → generated/intent-types.ts
-// Functions:    kern/intent.kern → generated/intent.ts
+// Public intent surface: the Intent union from ./signals/intent-types.ts and
+// the parsing helpers from ./signals/intent.ts, re-typed for consumers.
 
 export type { Intent } from './signals/intent-types.js';
 export type { SlashCommand } from './signals/intent.js';

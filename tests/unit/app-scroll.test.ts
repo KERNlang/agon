@@ -232,7 +232,7 @@ describe('app scroll helpers', () => {
       status: 'done',
       output: 'Applied edit to a.ts (1 line) · checkpoint abc12345',
     });
-    recordCesarRecapEvent(capture, { type: 'warning', message: 'One generated file was refreshed.' });
+    recordCesarRecapEvent(capture, { type: 'warning', message: 'One stale file was refreshed.' });
 
     const event = buildCesarTurnRecapEvent(
       capture,
@@ -642,7 +642,7 @@ describe('app scroll helpers', () => {
         {
           prompt: 'This is a deliberately long confirmation prompt that should wrap on a narrow terminal before the choices render underneath it.',
           choices: [
-            { key: 'y', label: 'Yes, commit and push the generated script' },
+            { key: 'y', label: 'Yes, commit and push the release script' },
             { key: 'n', label: 'No, leave it uncommitted for now' },
           ],
         },

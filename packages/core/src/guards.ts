@@ -1,4 +1,4 @@
-// Facade over the generated guard-pipeline modules (source: src/kern/guards/*.kern).
+// Barrel for the guard-pipeline modules in ./guards/.
 // P1 GuardPipeline (Module D1): pure mode resolution + per-call/per-turn guard
 // decisions (grounded-write, evidence, information-gain, confidence-gate) +
 // the per-session read-path registry. Mirrors src/telemetry.ts's re-export of

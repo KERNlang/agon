@@ -19,7 +19,7 @@
 //                              of the same name); add a separate `export { x }`
 //                              of the local binding if it must stay on the surface.
 //
-// This guard scans every TypeScript workspace source tree (generated/ modules
+// This guard scans every TypeScript workspace source tree (implementation modules
 // AND the hand-maintained facades that re-export them — post-eject both are
 // plain source that ships) and flags any re-exported-from VALUE name that is
 // ALSO CALLED in the same module body while having NO local binding (import /
@@ -48,9 +48,9 @@ import path from 'node:path';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 // Every workspace src tree that carries shipping TypeScript. Scanning the whole
-// tree (not just src/generated) is deliberate: after the eject the facades in
-// e.g. packages/cli/src/handlers/ are hand-maintained source with exactly the
-// same re-export surface, so they can carry exactly the same bug.
+// tree is deliberate: the barrels and facades that survive (core's tools.ts,
+// forge's types.ts …) are ordinary source with exactly the same re-export
+// surface as the modules behind them, so they can carry exactly the same bug.
 //
 // Not listed: packages/saas-api/src (hand-maintained Python, no TS) and
 // packages/dedup (Python sidecar, no src/ at all). Every dir listed here MUST

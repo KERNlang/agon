@@ -1,4 +1,5 @@
-// Facade over ./generated/stages.js — edit the source there.
+// Public stage surface over ./stages-impl.ts, adding the determineWinner
+// spread default that the shared core scorer does not carry.
 export {
   classifyNoDiffForgeResult,
   resolveForgeAcceptReviewOutput,

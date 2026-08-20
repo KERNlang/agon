@@ -1,4 +1,5 @@
-// Facade over ./generated/tools/tool-read.js — edit the source there.
+// Barrel for the built-in tool implementations in ./tools/ (plus the
+// orchestration helper that lives with the other blocks).
 export { createReadTool } from './tools/tool-read.js';
 export { createEditTool } from './tools/tool-edit.js';
 export { createMultiEditTool } from './tools/tool-multi-edit.js';

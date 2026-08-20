@@ -101,7 +101,7 @@ export function buildAgentApprovalCallback(dispatch: Dispatch, ctx: HandlerConte
 }
 
 /**
- * Run one autonomous agent invocation. Creates a session, calls session.step() once (which internally loops up to maxInnerSteps tool calls), emits OutputEvents throughout, handles Ctrl+C via the KERN-generated abort signal bridged to session.cancel().
+ * Run one autonomous agent invocation. Creates a session, calls session.step() once (which internally loops up to maxInnerSteps tool calls), emits OutputEvents throughout, handles Ctrl+C via the handler's abort signal bridged to session.cancel().
  */
 export async function runAgentMode(input: string, dispatch: Dispatch, ctx: HandlerContext, opts?: RunAgentOptions): Promise<AgentContinuationResult|null> {
   const abort = new AbortController();
@@ -235,7 +235,7 @@ export async function runAgentMode(input: string, dispatch: Dispatch, ctx: Handl
   // registered yet.
   let state: AgentState = createAgentState(engineId, budget, opts?.systemPrompt);
   
-  // Bridge the handler's KERN-generated abort to the session.
+  // Bridge the handler's abort signal to the session.
   // If abort fired before we got here, cancel immediately.
   if (abort.signal.aborted) {
     session.cancel();

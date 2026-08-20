@@ -243,13 +243,13 @@ export function isKernProject(cwd: string): boolean {
     }
   }
   try {
-    if (readdirSync(cwd).some((f: string) => f.endsWith('.kern'))) return true;
+    if (readdirSync(cwd, { withFileTypes: true }).some((d) => d.isFile() && d.name.endsWith('.kern'))) return true;
   } catch (err) {
     console.warn(`[agon] failed to scan directory ${cwd}: ${err instanceof Error ? err.message : String(err)}`);
   }
   try {
     const srcDir = join(cwd, 'src');
-    if (existsSync(srcDir) && readdirSync(srcDir).some((f: string) => f.endsWith('.kern'))) return true;
+    if (existsSync(srcDir) && readdirSync(srcDir, { withFileTypes: true }).some((d) => d.isFile() && d.name.endsWith('.kern'))) return true;
   } catch (err) {
     console.warn(`[agon] failed to scan src directory in ${cwd}: ${err instanceof Error ? err.message : String(err)}`);
   }

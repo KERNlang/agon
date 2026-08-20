@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import * as engineModule from '../../packages/cli/src/blocks/engine.js';
-import { DASHBOARD_TAGLINE, LOGO_LINES, TAGLINE_PAD, VERSION } from '../../packages/cli/src/blocks/engine.js';
+import { BANNER_INDENT, DASHBOARD_EXAMPLES, DASHBOARD_TAGLINE, EXAMPLE_ARROW_COLUMN, LOGO_LINES, VERSION, logoInkStartPad } from '../../packages/cli/src/blocks/engine.js';
 import { renderBlockOwnRows } from '../../packages/cli/src/surfaces/app-rendering.js';
 
 // The REPL banner is Agon's own product identity: version + KERNlang.dev org
@@ -26,7 +26,7 @@ describe('REPL banner branding', () => {
   it('renders the version line as "v<version> · Powered by KERNlang.dev"', () => {
     const row = dashboardRows().find((r: any) => String(r.key).endsWith('-dash-version'));
     expect(row).toBeDefined();
-    expect(rowText(row)).toBe(`     v${VERSION}  ·  Powered by KERNlang.dev`);
+    expect(rowText(row)).toBe(`${BANNER_INDENT}v${VERSION}  ·  Powered by KERNlang.dev`);
   });
 
   it('never shows a KERN compiler version anywhere in the banner', () => {
@@ -40,43 +40,68 @@ describe('REPL banner branding', () => {
   });
 });
 
-// The tagline sits directly under the AGON figlet, so its indent is not a free
-// hand-counted literal — it must keep the tagline's overhang balanced on both
-// sides of the logo's ink block. Both banner renderers (DashboardView's JSX and
-// app-rendering's row builder) have drifted apart before; this pins them together.
-const logoInk = () => {
-  const inked = LOGO_LINES.filter((line: string) => line.trim().length > 0);
-  const start = Math.min(...inked.map((line: string) => line.length - line.trimStart().length));
-  const end = Math.max(...inked.map((line: string) => line.trimEnd().length - 1));
-  return { start, end };
+// The launch banner is ONE text block under the AGON figlet: tagline, version,
+// workspace, engines, examples and the help line all start at the logo's ink
+// column. Centering the tagline (the previous attempt) produced three visibly
+// different left edges, so the invariant is now flush-left, not balanced. Both
+// renderers — DashboardView's JSX and app-rendering's row builder — have drifted
+// apart before, so every assertion below pins them to the same column.
+const logoInkStartColumn = (rows: any[]): number => {
+  const logoRows = rows.filter((row: any) => /-logo-\d+$/.test(String(row.key)));
+  expect(logoRows.length).toBe(LOGO_LINES.length);
+  return Math.min(...logoRows.map((row: any) => absoluteStart(row)));
 };
 
-describe('REPL banner tagline centering', () => {
-  it('balances the tagline overhang around the logo ink block', () => {
-    const { start, end } = logoInk();
-    const left = start - TAGLINE_PAD;
-    const right = (TAGLINE_PAD + DASHBOARD_TAGLINE.length - 1) - end;
-    expect(Math.abs(left - right)).toBeLessThanOrEqual(1);
+const absoluteStart = (row: any): number => {
+  const text = row.kind === 'gradient' ? String(row.text ?? '') : rowText(row);
+  const full = `${' '.repeat(row.paddingLeft ?? 0)}${text}`;
+  return full.length - full.trimStart().length;
+};
+
+describe('launch banner flush-left edge', () => {
+  it('derives the banner indent from the logo ink, never a hand-counted literal', () => {
+    const inked = LOGO_LINES.filter((line: string) => line.trim().length > 0);
+    const inkStart = Math.min(...inked.map((line: string) => line.length - line.trimStart().length));
+    expect(logoInkStartPad()).toBe(inkStart);
+    expect(BANNER_INDENT).toBe(' '.repeat(inkStart));
   });
 
-  it('renders the tagline row at the same columns as the logo rows', () => {
+  it('starts every banner text row at exactly the logo ink column', () => {
+    const rows = (renderBlockOwnRows(
+      { id: 1, event: { type: 'dashboard', enabled: ['claude', 'codex'], workspace: { path: '/tmp/ws' }, eloTop: { id: 'claude', rating: 1721 } } } as any,
+      'chat', false, true, 96, 98, 92,
+    ) as any[]);
+    const inkColumn = logoInkStartColumn(rows);
+
+    const textRows = rows.filter((row: any) => /-dash-(tag|version|workspace|engines|elo|example-\d+|help)$/.test(String(row.key)));
+    // tagline, version, workspace, engines, elo, 4 examples, help
+    expect(textRows.length).toBe(10);
+    for (const row of textRows) {
+      expect([String(row.key), absoluteStart(row)]).toEqual([String(row.key), inkColumn]);
+    }
+  });
+
+  it('puts the JSX renderer on the same left edge as the row builder', () => {
+    // DashboardView wraps the banner in paddingX={1}; the row builder gives every
+    // banner row paddingLeft: 1. Both then prepend BANNER_INDENT to each text
+    // line, so the absolute start column is identical in the two renderers.
     const rows = dashboardRows() as any[];
-    const logoRow = rows.find((r: any) => String(r.key).endsWith('-logo-1'));
-    const tagRow = rows.find((r: any) => String(r.key).endsWith('-dash-tag'));
-    expect(logoRow).toBeDefined();
-    expect(tagRow).toBeDefined();
+    const inkColumn = logoInkStartColumn(rows);
+    const jsxPadding = 1;
+    expect(jsxPadding + logoInkStartPad()).toBe(inkColumn);
+    expect(rowText(rows.find((r: any) => String(r.key).endsWith('-dash-tag')))).toBe(`${BANNER_INDENT}${DASHBOARD_TAGLINE}`);
+  });
 
-    const absolute = (row: any): { start: number; end: number } => {
-      const text = row.kind === 'gradient' ? String(row.text ?? '') : rowText(row);
-      const full = `${' '.repeat(row.paddingLeft ?? 0)}${text}`;
-      return { start: full.length - full.trimStart().length, end: full.trimEnd().length - 1 };
-    };
-
-    const logo = absolute(logoRow);
-    const tag = absolute(tagRow);
-    expect(tag.start).toBe(2);
-    expect(tag.end).toBe(41);
-    expect(Math.abs((logo.start - tag.start) - (tag.end - logo.end))).toBeLessThanOrEqual(1);
-    expect(rowText(tagRow)).toContain(DASHBOARD_TAGLINE);
+  it('keeps the example arrows on one shared column, measured from that edge', () => {
+    const rows = dashboardRows() as any[];
+    const arrowColumns = rows
+      .filter((row: any) => /-dash-example-\d+$/.test(String(row.key)))
+      .map((row: any) => {
+        const full = `${' '.repeat(row.paddingLeft ?? 0)}${rowText(row)}`;
+        return full.indexOf('→');
+      });
+    expect(arrowColumns.length).toBe(DASHBOARD_EXAMPLES.length);
+    expect(new Set(arrowColumns).size).toBe(1);
+    expect(arrowColumns[0]).toBe(1 + BANNER_INDENT.length + EXAMPLE_ARROW_COLUMN);
   });
 });

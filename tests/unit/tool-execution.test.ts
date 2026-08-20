@@ -73,6 +73,45 @@ describe('tool-execution', () => {
       expect(cache.size()).toBeLessThanOrEqual(100);
     });
 
+    it('a raw-map READ promotes that entry to most-recently-used', () => {
+      // The exposed Map is what tool code holds (ToolContext.readFileState),
+      // so its get() has to maintain the same LRU order the cache uses to
+      // choose an eviction victim. Wiping the order on read makes eviction
+      // drop the hottest entry instead of the coldest.
+      const cache = new FileStateCache();
+      const exposed = (cache as any).cache as Map<string, any>;
+      const state = (content: string) => ({ content, timestamp: Date.now(), offset: undefined, limit: undefined });
+
+      exposed.set('/a.ts', state('a'));
+      exposed.set('/b.ts', state('b'));
+      exposed.set('/c.ts', state('c'));
+      expect(cache.accessOrder).toEqual(['/a.ts', '/b.ts', '/c.ts']);
+
+      exposed.get('/a.ts');
+      expect(cache.accessOrder).toEqual(['/b.ts', '/c.ts', '/a.ts']);
+
+      // A miss must not disturb the order.
+      exposed.get('/missing.ts');
+      expect(cache.accessOrder).toEqual(['/b.ts', '/c.ts', '/a.ts']);
+    });
+
+    it('evicts the LEAST-recently-read entry, not the most-recently-read one', () => {
+      const cache = new FileStateCache();
+      const exposed = (cache as any).cache as Map<string, any>;
+      const state = (content: string) => ({ content, timestamp: Date.now(), offset: undefined, limit: undefined });
+
+      for (let i = 0; i < 100; i++) exposed.set(`/lru${i}.ts`, state(`content${i}`));
+      // Re-read the oldest entry so it becomes the newest.
+      exposed.get('/lru0.ts');
+      // One more entry pushes the cache over MAX_CACHE_ENTRIES.
+      exposed.set('/lru100.ts', state('content100'));
+
+      expect(cache.size()).toBeLessThanOrEqual(100);
+      expect(cache.has('/lru0.ts')).toBe(true);   // promoted by the read
+      expect(cache.has('/lru1.ts')).toBe(false);  // the true LRU victim
+      expect(cache.has('/lru100.ts')).toBe(true);
+    });
+
     it('evicts when callers write through the exposed raw map', () => {
       const cache = new FileStateCache();
       const exposed = (cache as any).cache as Map<string, any>;

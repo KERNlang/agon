@@ -13,13 +13,15 @@
 // from — or written back to — the persisted `active` field. Hermetic via
 // AGON_HOME redirection (same pattern as tests/unit/adapter-helpers.test.ts).
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   addWorkspace,
+  listWorkspaces,
+  getActiveWorkspace,
   resolveWorkingDir,
   setSessionRoot,
   _resetSessionRootForTests,
@@ -236,5 +238,36 @@ describe('snapshotPath — plan snapshots without a matching bookmark', () => {
     expect(snap.headSha).toBe('unknown');
     expect(snap.branch).toBe('unknown');
     expect(snap.dirty).toBe(false);
+  });
+});
+
+// ── workspaces.json load failures ─────────────────────────────────────
+// A missing store is the ordinary first-run state and must load silently; a
+// CORRUPT store means the user's workspace list was just reset and has to be
+// reported. Swapping the two makes every fresh install print a "state
+// corrupted" warning while real corruption passes unannounced.
+describe('workspaces.json load failures', () => {
+  it('loads silently when workspaces.json does not exist yet', () => {
+    expect(existsSync(workspacesJsonPath())).toBe(false);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect(listWorkspaces()).toEqual([]);
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('warns and resets to defaults when workspaces.json is corrupt', () => {
+    writeFileSync(workspacesJsonPath(), '{ this is not json');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect(listWorkspaces()).toEqual([]);
+      expect(getActiveWorkspace()).toBeNull();
+      expect(warn).toHaveBeenCalled();
+      expect(String(warn.mock.calls[0][0])).toContain('workspace state corrupted');
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

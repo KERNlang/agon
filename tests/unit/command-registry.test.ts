@@ -108,4 +108,30 @@ describe('CommandRegistry', () => {
     expect(reg.has('autonomous')).toBe(true);
     expect(reg.has('compact')).toBe(true);
   });
+
+  it('registers builtins as METADATA-ONLY handlers that do not claim the input', async () => {
+    // The builtin entries exist so /help, completion and alias resolution know
+    // the command; execution belongs to the REPL's own dispatcher. Their noop
+    // execute() must therefore report handled:false — reporting true would
+    // swallow every slash command before its real handler ever runs.
+    const reg = new CommandRegistry();
+    registerBuiltinCommands(reg);
+
+    for (const name of ['forge', 'review', 'plan', 'agent', 'compact']) {
+      const handler = reg.get(name);
+      expect(handler, name).toBeDefined();
+      await expect(handler!.execute({ input: 'anything' }, {})).resolves.toEqual({
+        handled: false,
+        ranAsJob: false,
+      });
+    }
+  });
+
+  it('builtin parseArgs passes the raw rest through as input', () => {
+    const reg = new CommandRegistry();
+    registerBuiltinCommands(reg);
+    expect(reg.get('forge')!.parseArgs('fix the bug test with npm test')).toEqual({
+      input: 'fix the bug test with npm test',
+    });
+  });
 });

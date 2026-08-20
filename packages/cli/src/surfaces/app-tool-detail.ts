@@ -167,7 +167,20 @@ export function buildFailedToolRetryDraft(event: any): string {
   return `retry the failed ${toolName} call with corrected input:\n${payload}${suffix}`;
 }
 
-export function buildToolDetailView(event: any): any {
+/**
+ * Rendered detail-viewer payload for ToolDetailBlock: a title/subtitle header,
+ * an accent color, and the transcript rows to page through. `rows` stays
+ * untyped until the shared TranscriptRow union lands (buildTranscriptRows is
+ * still `any[]`); everything above it is fixed.
+ */
+export interface ToolDetailView {
+  title: string;
+  subtitle: string;
+  accentColor: string;
+  rows: any[];
+}
+
+export function buildToolDetailView(event: any): ToolDetailView {
   if (!event) {
     return { title: 'Detail viewer', subtitle: '', accentColor: '#a78bfa', rows: [] };
   }

@@ -1,4 +1,4 @@
-import type { EngineRegistry, EngineAdapter, Plan, AgonConfig, ChatSession, PersistentSession, CesarMemory, EventBus, ToolRegistry, DiscoveredGate } from '@kernlang/agon-core';
+import type { EngineRegistry, EngineAdapter, Plan, CesarPlan, AgonConfig, ChatSession, PersistentSession, CesarMemory, EventBus, ToolRegistry, DiscoveredGate } from '@kernlang/agon-core';
 
 import type { EngineVitals } from '../cesar/telemetry.js';
 
@@ -34,9 +34,9 @@ export type OutputEvent =
   | { type: 'info'; message: string }
   | { type: 'plan'; plan: Plan }
   | { type: 'plan-list'; plans: Plan[] }
-  | { type: 'plan-proposal'; plan: any; markdown: string; planFilePath?: string; committed?: boolean; hideApproval?: boolean }
-  | { type: 'plan-execution'; plan: any }
-  | { type: 'plan-cancelled'; plan: any }
+  | { type: 'plan-proposal'; plan: CesarPlan; markdown: string; planFilePath?: string; committed?: boolean; hideApproval?: boolean }
+  | { type: 'plan-execution'; plan: CesarPlan }
+  | { type: 'plan-cancelled'; plan: CesarPlan }
   | { type: 'plan-dismiss'; outcome?: 'approved'|'superseded' }
   | { type: 'todos-set'; todos: any[] }
   | { type: 'todos-update'; id: string; state: string; note?: string }

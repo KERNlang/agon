@@ -127,7 +127,7 @@ export function cancelPendingCesarPlan(cb: DispatchCallbacks): boolean {
   }
   
   // Releases the pinned PlanApprovalPrompt (signals/output.kern 'plan-cancelled').
-  cb.dispatch({ type: 'plan-cancelled', plan: cancelled } as any);
+  cb.dispatch({ type: 'plan-cancelled', plan: cancelled });
   // The plan BODY block is already sealed in the transcript with its
   // awaiting_approval snapshot and cannot be rewritten (Ink <Static> is
   // append-only), so this line IS the transcript's outcome record.
@@ -311,7 +311,7 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
       const shouldCommitExecutionRow = !executionStartCommitted || isTerminal || previousState !== updated.state;
       if (shouldCommitExecutionRow) {
         executionStartCommitted = true;
-        cb.dispatch({ type: 'plan-execution', plan: updated } as any);
+        cb.dispatch({ type: 'plan-execution', plan: updated });
       }
       if (isTerminal) {
         flushPersist();

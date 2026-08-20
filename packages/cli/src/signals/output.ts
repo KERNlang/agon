@@ -130,7 +130,13 @@ export const _pendingFlushTimer: { timer: any, actions: any } = ({ timer: null, 
 
 export const _liveToolStreams: Record<string,LiveToolStreamEntry> = {};
 
-export const _pinnedPlan: { event: any } = ({ event: null }) as { event: any };
+/**
+ * The 'plan-proposal' variant of OutputEvent — the exact shape stashed in
+ * _pinnedPlan while a proposal is pinned above the composer.
+ */
+type PlanProposalEvent = Extract<OutputEvent, { type: 'plan-proposal' }>;
+
+export const _pinnedPlan: { event: PlanProposalEvent|null } = { event: null };
 
 export const _planStepActive: { on: boolean } = ({ on: false }) as { on: boolean };
 
@@ -564,7 +570,7 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       // The scrollback copy is a snapshot of what Cesar wrote (status line
       // included); live plan state lives in the pinned prompt + PlanChip.
       _pinnedPlan.event = event;
-      actions.addBlock({ ...(event as any), hideApproval: true } as OutputEvent);
+      actions.addBlock({ ...event, hideApproval: true });
       actions.setPendingPlanProposal(event);
       return;
     }
@@ -582,7 +588,7 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       // (agon-review #3, interrupt path). Mirrors the isTerminal check in
       // plan-execution.kern::onPlanUpdate. Guarded on terminal state so a
       // mid-execution update can't reset the bracket while a step is live.
-      const _planState = (event as any).plan?.state;
+      const _planState = event.plan?.state;
       if (_planState === 'done' || _planState === 'paused' || _planState === 'cancelled') {
         _planStepActive.on = false;
       }

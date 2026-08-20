@@ -978,8 +978,8 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
       );
     }
     case 'dashboard': return <DashboardView event={event as OutputEvent & { type: 'dashboard' }} />;
-    case 'plan-proposal': return <PlanProposalView plan={event.plan} markdown={(event as any).markdown} committed={(event as any).committed} hideApproval={(event as any).hideApproval} />;
-    case 'plan-execution': return <PlanExecutionView plan={(event as any).plan} />;
+    case 'plan-proposal': return <PlanProposalView plan={event.plan} markdown={event.markdown} committed={event.committed} hideApproval={event.hideApproval} />;
+    case 'plan-execution': return <PlanExecutionView plan={event.plan} />;
     case 'tool-call-group': return <ToolCallGroup blocks={(event as any).blocks} />;
     default: return null;
   }

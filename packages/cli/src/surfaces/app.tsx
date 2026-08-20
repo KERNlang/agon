@@ -6,7 +6,7 @@ import { ScrollBox, AlternateScreen } from '../vendor/terminal/index.js';
 
 import { EngineRegistry, loadConfig, ensureAgonHome, setSessionRoot, startChatSession, seedChatSessionFromThread, loadOrCreateActiveThread, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, getAuthKey, setAuthKey, getAgonHome, tracker, listCesarPlans, visionSupportNote } from '@kernlang/agon-core';
 
-import type { Plan, ChatSession, Skill, PersistentSession, ImageAttachment } from '@kernlang/agon-core';
+import type { Plan, CesarPlan, ChatSession, Skill, PersistentSession, ImageAttachment } from '@kernlang/agon-core';
 
 import type { EngineProgress } from '../handlers/types.js';
 
@@ -86,7 +86,15 @@ import { FileRail } from '../blocks/file-rail.js';
 
 import type { OutputBlock } from '../blocks/engine.js';
 
-import type { ReviewEvent } from '../blocks/controls.js';
+import type { ReviewEvent, ModelPickerEntry } from '../blocks/controls.js';
+
+import type { QuestionState } from '../models/ui-types.js';
+
+import type { EngineVitals } from '../cesar/telemetry.js';
+
+import type { BtwPanelState } from './app-submit.js';
+
+import type { UpdateInfo } from './app-lifecycle.js';
 
 import { join } from 'node:path';
 
@@ -224,23 +232,23 @@ export function App() {
   const [atPickerFiles, setAtPickerFiles] = useState<string[]>([]);
   const [atPickerPrefix, setAtPickerPrefix] = useState<string>('');
   const [atPickerQuery, setAtPickerQuery] = useState<string>('');
-  const [questionState, _setQuestionStateRaw] = useState<any>(null);
+  const [questionState, _setQuestionStateRaw] = useState<QuestionState|null>(null);
   const setQuestionState = useMemo(() => __inkSafe(_setQuestionStateRaw), [_setQuestionStateRaw]);
   const [questionAnswer, setQuestionAnswer] = useState<string>('');
   const [selectedChoiceIndex, setSelectedChoiceIndex] = useState<number>(0);
   const [questionOtherActive, setQuestionOtherActive] = useState<boolean>(false);
   const [planApprovalIndex, setPlanApprovalIndex] = useState<number>(0);
-  const [updateInfo, _setUpdateInfoRaw] = useState<any>(null);
+  const [updateInfo, _setUpdateInfoRaw] = useState<UpdateInfo|null>(null);
   const setUpdateInfo = useMemo(() => __inkSafe(_setUpdateInfoRaw), [_setUpdateInfoRaw]);
   const [updateChecking, _setUpdateCheckingRaw] = useState<boolean>(false);
   const setUpdateChecking = useMemo(() => __inkSafe(_setUpdateCheckingRaw), [_setUpdateCheckingRaw]);
-  const [btwPanel, _setBtwPanelRaw] = useState<any|null>(null);
+  const [btwPanel, _setBtwPanelRaw] = useState<BtwPanelState|null>(null);
   const setBtwPanel = useMemo(() => __inkSafe(_setBtwPanelRaw), [_setBtwPanelRaw]);
   const [enginePickerOpen, _setEnginePickerOpenRaw] = useState<boolean>(false);
   const setEnginePickerOpen = useMemo(() => __inkSafe(_setEnginePickerOpenRaw), [_setEnginePickerOpenRaw]);
   const [modelPickerOpen, _setModelPickerOpenRaw] = useState<boolean>(false);
   const setModelPickerOpen = useMemo(() => __inkSafe(_setModelPickerOpenRaw), [_setModelPickerOpenRaw]);
-  const [modelPickerEntries, _setModelPickerEntriesRaw] = useState<any[]>([]);
+  const [modelPickerEntries, _setModelPickerEntriesRaw] = useState<ModelPickerEntry[]>([]);
   const setModelPickerEntries = useMemo(() => __inkSafe(_setModelPickerEntriesRaw), [_setModelPickerEntriesRaw]);
   const [modelPickerLoading, _setModelPickerLoadingRaw] = useState<boolean>(false);
   const setModelPickerLoading = useMemo(() => __inkSafe(_setModelPickerLoadingRaw), [_setModelPickerLoadingRaw]);
@@ -279,7 +287,7 @@ export function App() {
   const setSessionEngines = useMemo(() => __inkSafe(_setSessionEnginesRaw), [_setSessionEnginesRaw]);
   const [, _setCurrentPlanRaw] = useState<Plan|null>(null);
   const setCurrentPlan = useMemo(() => __inkSafe(_setCurrentPlanRaw), [_setCurrentPlanRaw]);
-  const [activePlan, _setActivePlanRaw] = useState<any>(null);
+  const [activePlan, _setActivePlanRaw] = useState<CesarPlan|null>(null);
   const setActivePlan = useMemo(() => __inkSafe(_setActivePlanRaw), [_setActivePlanRaw]);
   const [chatSession, _setChatSessionRaw] = useState<ChatSession>(() => { const cwd = resolveWorkingDir(); let branch = 'unknown'; try { branch = currentBranch(cwd); } catch { /* git not available or not a repo */ } const session = startChatSession({ cwd, branch }); if (process.env.AGON_CONTINUE === '1') { try { seedChatSessionFromThread(session, loadOrCreateActiveThread(cwd)); } catch { /* best-effort: a fresh session is fine if no prior thread exists */ } } return session; });
   const setChatSession = useMemo(() => __inkSafe(_setChatSessionRaw), [_setChatSessionRaw]);
@@ -356,12 +364,12 @@ export function App() {
   const [cesarMemory, _setCesarMemoryRaw] = useState<any>(() => createCesarMemory());
   const [sessionMcpServers, _setSessionMcpServersRaw] = useState<Array<Record<string,unknown>>>([]);
   const setSessionMcpServers = useMemo(() => __inkSafe(_setSessionMcpServersRaw), [_setSessionMcpServersRaw]);
-  const [telemetryVitals, _setTelemetryVitalsRaw] = useState<Map<string,any>>(() => new Map());
+  const [telemetryVitals, _setTelemetryVitalsRaw] = useState<Map<string,EngineVitals>>(() => new Map());
   const setTelemetryVitals = useMemo(() => {
     let _lastCall = 0;
-    let _pendingValue: React.SetStateAction<Map<string,any>>;
+    let _pendingValue: React.SetStateAction<Map<string,EngineVitals>>;
     let _pendingTimer: ReturnType<typeof setTimeout> | null = null;
-    return (value: React.SetStateAction<Map<string,any>>) => {
+    return (value: React.SetStateAction<Map<string,EngineVitals>>) => {
       const now = Date.now();
       const elapsed = now - _lastCall;
       if (elapsed >= 500) {

@@ -162,12 +162,35 @@ export function runProcessInputQueue(replState: ReplStateState, inputQueue: stri
   }
 }
 
+/** One turn in the /btw side-chat: the user's question or Cesar's reply. */
+export interface BtwMessage {
+  role: 'user'|'cesar';
+  text: string;
+}
+
+/**
+ * The /btw side-chat panel. `id` is the stable conversation id an in-flight
+ * dispatch writes back against, so an orphaned reply from a closed side-chat
+ * can never cross-talk into a newer one.
+ */
+export interface BtwPanelState {
+  id: string;
+  engineId: string;
+  status: 'running'|'done'|'empty'|'error';
+  error?: string;
+  messages: BtwMessage[];
+  startedAt?: number;
+}
+
+/** Accepts a value or a React-style updater, matching the useState setter it is fed from. */
+export type SetBtwPanel = (updater: BtwPanelState | null | ((prev: BtwPanelState | null) => BtwPanelState | null)) => void;
+
 /**
  * Explicit dependencies for runSendBtwMessage — the context builder + live runtime signals (mode/replState/streams/transcript/plan/jobs) it folds into the side-chat prompt, the prior btwPanel it continues, the separate btwAbortRef it swaps, and the panel setter + dispatch it drives. Passed in rather than captured from component scope; values read at call time so staleness matches the original closure.
  */
 export interface SendBtwMessageDeps {
   buildContext: () => any;
-  btwPanel: any;
+  btwPanel: BtwPanelState | null;
   mode: string;
   replState: ReplStateState;
   outputBlocks: any[];
@@ -175,7 +198,7 @@ export interface SendBtwMessageDeps {
   streamingTextRef: {current: Record<string, StreamingEntry>};
   activePlanRef: {current: any};
   btwAbortRef: {current: AbortController | null};
-  setBtwPanel: (updater:any) => void;
+  setBtwPanel: SetBtwPanel;
   dispatch: (event:any) => void;
 }
 
@@ -289,7 +312,7 @@ export interface HandleSubmitDeps {
   planModeQueued: boolean;
   autoModeQueued: boolean;
   permissionMode: string;
-  btwPanel: any;
+  btwPanel: BtwPanelState | null;
   pendingImages: ImageAttachment[];
   outputBlocks: any[];
   allSlashCommands: any[];
@@ -317,7 +340,7 @@ export interface HandleSubmitDeps {
   setWorkspacePath: (val:string) => void;
   setReplState: (updater:any) => void;
   setJobList: (val:any) => void;
-  setBtwPanel: (updater:any) => void;
+  setBtwPanel: SetBtwPanel;
   setPendingImages: (val:any) => void;
   setSessionEngines: (val:any) => void;
   setEnginePickerOpen: (val:boolean) => void;

@@ -178,6 +178,15 @@ export async function buildServeRuntime(opts: ServeOptions): Promise<ServeRuntim
   // the current selection — and pass the canonical id as the default so the picker selects it.
   const defaultId = registry.resolveId(opts.engineId);
   const engines = available.includes(defaultId) ? [...available] : [defaultId, ...available];
+  // Job state is PER RUNTIME, by design (pre-existing `agon serve` semantics, unchanged by
+  // this module's extraction): every buildServeRuntime call constructs its OWN JobService,
+  // and there is no singleton keyed by sessionId. Two concurrent serves — or a `serve` plus
+  // an embedded /chrome bridge — therefore hold independent job registries and never see
+  // each other's jobs, and each one's limits (eventLimit/retentionLimit/maxConcurrency)
+  // apply to that runtime alone, not globally. That is correct here: a runtime owns exactly
+  // one session + one brain, and its jobs die with it (serve.close tears the service down).
+  // Do NOT hoist this to module scope to "share" it — a shared service would outlive a
+  // closed runtime and leak another session's jobs into an attached client's job list.
   const jobConfig = daemonJobConfig(opts.cwd);
   const jobService = new JobService({
     eventLimit: jobConfig.jobEventLimit,

@@ -11,8 +11,8 @@
 // window over recent TERMINAL outcomes — abort only when the window has too
 // few successes (broken gate / uniformly-too-hard queue), tolerating clusters.
 import { describe, it, expect } from 'vitest';
-import { globalBreaker, pushRecentOutcome } from '../../packages/forge/src/generated/goal/policy.js';
-import type { JournalState, GoalSpec } from '../../packages/forge/src/generated/goal/types.js';
+import { globalBreaker, pushRecentOutcome } from '../../packages/forge/src/goal/policy.js';
+import type { JournalState, GoalSpec } from '../../packages/forge/src/goal/types.js';
 
 const spec = (over: Partial<GoalSpec> = {}): GoalSpec => ({
   goalId: 'g', intent: 'x', branch: 'goal/x', gate: 'npm test', queueSource: '.kern-gaps/',

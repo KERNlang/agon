@@ -22,15 +22,15 @@ import { describe, expect, it } from 'vitest';
 import {
   chunkMayCompleteToolCall,
   classifyPreambleHead,
-} from '../../packages/cli/src/generated/cesar/brain-helpers.js';
-import { parseToolCalls } from '../../packages/core/src/generated/tools/tool-parser.js';
-import { parsePreamble } from '../../packages/cli/src/generated/cesar/todos-marker.js';
-import { cleanEngineOutput } from '../../packages/cli/src/generated/blocks/markdown.js';
+} from '../../packages/cli/src/cesar/brain-helpers.js';
+import { parseToolCalls } from '../../packages/core/src/tools/tool-parser.js';
+import { parsePreamble } from '../../packages/cli/src/cesar/todos-marker.js';
+import { cleanEngineOutput } from '../../packages/cli/src/blocks/markdown.js';
 import {
   boundStreamingTail,
   createLatestUiCommitter,
   LIVE_TAIL_CHARS,
-} from '../../packages/cli/src/generated/surfaces/app-output-bridge.js';
+} from '../../packages/cli/src/surfaces/app-output-bridge.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const stripComments = (src: string) => src
@@ -163,7 +163,7 @@ describe('classifyPreambleHead (B2: latch the [INTENT] decision)', () => {
 });
 
 describe('cesar/brain.ts wires both gates into the stream loop', () => {
-  const CODE = stripComments(readFileSync(resolve(here, '../../packages/cli/src/generated/cesar/brain.ts'), 'utf8'));
+  const CODE = stripComments(readFileSync(resolve(here, '../../packages/cli/src/cesar/brain.ts'), 'utf8'));
 
   it('gates the per-chunk XML tool scan on the arriving chunk', () => {
     expect(CODE).toContain('noteXmlToolDetected(true, chunk.content)');
@@ -184,7 +184,7 @@ describe('cesar/brain.ts wires both gates into the stream loop', () => {
 });
 
 describe('cleanEngineOutput cache evicts instead of clearing (B4)', () => {
-  const MARKDOWN = stripComments(readFileSync(resolve(here, '../../packages/cli/src/generated/blocks/markdown.ts'), 'utf8'));
+  const MARKDOWN = stripComments(readFileSync(resolve(here, '../../packages/cli/src/blocks/markdown.ts'), 'utf8'));
 
   it('drops the oldest entry rather than the whole cache', () => {
     expect(MARKDOWN).not.toContain('_cleanCache.clear()');
@@ -206,7 +206,7 @@ describe('cleanEngineOutput cache evicts instead of clearing (B4)', () => {
 });
 
 describe('the live-preview tail slice runs inside the throttled commit (B3)', () => {
-  const BRIDGE = stripComments(readFileSync(resolve(here, '../../packages/cli/src/generated/surfaces/app-output-bridge.ts'), 'utf8'));
+  const BRIDGE = stripComments(readFileSync(resolve(here, '../../packages/cli/src/surfaces/app-output-bridge.ts'), 'utf8'));
 
   it('bounds the tail in the committer, not on every enqueue', () => {
     expect(BRIDGE).toContain('createLatestUiCommitter(\n    setStreamingText,\n    66,\n    boundStreamingTail,\n  )');

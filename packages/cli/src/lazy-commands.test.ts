@@ -217,21 +217,21 @@ describe('lazySubCommands — full parity with the real command modules', () => 
   });
 });
 
-describe('index.ts — repl.js/onboarding.js stay dynamically imported', () => {
-  // repl.js (generated/surfaces/app.tsx — the whole Ink/React/Cesar surface,
-  // ~2k lines) and onboarding.js turned out to dominate `agon --help`
+describe('index.ts — the REPL surface and onboarding stay dynamically imported', () => {
+  // surfaces/app.tsx (the whole Ink/React/Cesar surface, ~2k lines) and
+  // onboarding.js turned out to dominate `agon --help`
   // startup even MORE than the ~40 command modules: they were static
   // top-level imports, so their module-eval cost landed on every
   // invocation even though neither is ever called outside the bare-REPL /
   // `setup` paths. index.ts can't easily be unit-tested directly (it's a
   // script with top-level process.argv/TTY-driven side effects, including
   // process.exit), so this is a source-level regression guard: a static
-  // `import ... from './repl.js'` (or './onboarding.js') at the top of the
-  // file would silently reintroduce the eager cost this fix removed.
+  // `import ... from './surfaces/app.js'` (or './onboarding.js') at the top
+  // of the file would silently reintroduce the eager cost this fix removed.
   const indexSource = readFileSync(join(__dirname, 'index.ts'), 'utf-8');
 
-  it('does not statically import repl.js', () => {
-    expect(indexSource).not.toMatch(/^import .*from ['"]\.\/repl\.js['"];?$/m);
+  it('does not statically import the REPL surface', () => {
+    expect(indexSource).not.toMatch(/^import .*from ['"]\.\/surfaces\/app\.js['"];?$/m);
   });
 
   it('does not statically import onboarding.js', () => {
@@ -239,7 +239,7 @@ describe('index.ts — repl.js/onboarding.js stay dynamically imported', () => {
   });
 
   it('still references both modules via dynamic import()', () => {
-    expect(indexSource).toMatch(/import\(['"]\.\/repl\.js['"]\)/);
+    expect(indexSource).toMatch(/import\(['"]\.\/surfaces\/app\.js['"]\)/);
     expect(indexSource).toMatch(/import\(['"]\.\/onboarding\.js['"]\)/);
   });
 });

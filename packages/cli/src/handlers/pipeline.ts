@@ -8,7 +8,7 @@ import type { WorkflowConformanceIssue, WorkflowPhaseEventType, WorkflowRun } fr
 
 import { ENGINE_COLORS } from '../blocks/output-format.js';
 
-import type { Dispatch, HandlerContext } from '../../handlers/types.js';
+import type { Dispatch, HandlerContext } from './types.js';
 
 import { buildAgentApprovalCallback } from './agent.js';
 

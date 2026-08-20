@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { detectIntent } from '../../packages/cli/src/intent.js';
-import { buildForgePrompt } from '../../packages/core/src/prompt-builder.js';
+import { buildForgePrompt } from '../../packages/core/src/blocks/prompt-builder.js';
 
 describe('Build Handler', () => {
   describe('Intent Detection — /build', () => {

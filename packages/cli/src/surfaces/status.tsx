@@ -10,7 +10,7 @@ import { color256toHex, engineColor } from '../blocks/rendering.js';
 
 import type { Job } from '../signals/job-manager.js';
 
-import type { EngineProgress } from '../../handlers/types.js';
+import type { EngineProgress } from '../handlers/types.js';
 
 import { renderScoreboard } from '../cesar/scoreboard.js';
 

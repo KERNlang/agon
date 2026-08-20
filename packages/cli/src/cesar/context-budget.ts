@@ -2,7 +2,7 @@ import type { SessionBudget, PersistentSession, ChatSession } from '@kernlang/ag
 
 import { estimateSessionTokens, checkSessionBudget, budgetRatioPct, updateChatSummary } from '@kernlang/agon-core';
 
-import type { Dispatch, HandlerContext } from '../../handlers/types.js';
+import type { Dispatch, HandlerContext } from '../handlers/types.js';
 
 import { buildCesarSystemPrompt } from './session.js';
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyDispatchFailure } from '../../packages/core/src/generated/signals/engine-health.js';
+import { classifyDispatchFailure } from '../../packages/core/src/signals/engine-health.js';
 
 describe('classifyDispatchFailure — binary-missing classification', () => {
   it('classifies the EngineNotFoundError binary message as binary-missing', () => {

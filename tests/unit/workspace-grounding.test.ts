@@ -27,8 +27,8 @@ import {
   snapshotPath,
 } from '@kernlang/agon-core';
 import type { HandlerContext, Dispatch } from '../../packages/cli/src/handlers/types.js';
-import { handleWorkspace } from '../../packages/cli/src/generated/handlers/info.js';
-import { createEagerToolContext } from '../../packages/cli/src/generated/cesar/tools.js';
+import { handleWorkspace } from '../../packages/cli/src/handlers/info.js';
+import { createEagerToolContext } from '../../packages/cli/src/cesar/tools.js';
 
 const savedAgonHome = process.env.AGON_HOME;
 let agonHome: string;

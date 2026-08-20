@@ -10,9 +10,9 @@ import { sessionResultStore } from '../models/session-results.js';
 
 import { ENGINE_COLORS } from '../blocks/output-format.js';
 
-import { recordRun } from '../../telemetry/index.js';
+import { recordRun } from '../telemetry/index.js';
 
-import type { Dispatch, HandlerContext } from '../../handlers/types.js';
+import type { Dispatch, HandlerContext } from './types.js';
 
 /**
  * Drive one browser-agent turn for `/chrome <task>`: resolve/embed the bridge, render the turn inline via dispatch, approve page actions via the REPL permission-ask UI, and append the answer to the chat session for Cesar. Mirrors `agon drive`'s two-connection client (blocking /send + SSE tail) but with REPL-native render + approval. Returns true only when the turn produced an answer — the dispatch layer gates the Cesar continuation on it so a no-result turn never makes Cesar summarize stale context.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { scheduleToolBatch } from '../../packages/core/src/generated/sessions/tool-scheduler.js';
+import { scheduleToolBatch } from '../../packages/core/src/sessions/tool-scheduler.js';
 
 describe('persistent-session tool scheduler', () => {
   it('runs an all-safe read batch concurrently while preserving result order', async () => {

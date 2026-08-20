@@ -5,7 +5,7 @@ const daemonMocks = vi.hoisted(() => ({
   startDaemon: vi.fn(),
 }));
 
-vi.mock('../../packages/cli/src/generated/commands/daemon.js', () => daemonMocks);
+vi.mock('../../packages/cli/src/commands/daemon.js', () => daemonMocks);
 
 import {
   buildSubmitPayload,
@@ -15,7 +15,7 @@ import {
   jobsCapability,
   parsePayload,
   timingFromArgs,
-} from '../../packages/cli/src/generated/commands/job.js';
+} from '../../packages/cli/src/commands/job.js';
 
 describe('job command client contract', () => {
   beforeEach(() => {

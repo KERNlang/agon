@@ -10,7 +10,7 @@ import {
   fuzzyFileScore,
   rankFileMatches,
   MENTION_TRAILING_PUNCT,
-} from '../../packages/cli/src/generated/signals/app-input.js';
+} from '../../packages/cli/src/signals/app-input.js';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 import {
@@ -18,7 +18,7 @@ import {
   MENTION_MAX_FILE_BYTES,
   MENTION_MAX_TOTAL_BYTES,
   MENTION_MAX_FILES,
-} from '../../packages/cli/src/generated/surfaces/app-submit.js';
+} from '../../packages/cli/src/surfaces/app-submit.js';
 
 // Pins the @-file-mention contract (Claude-Code-style composer mentions):
 //  1. extraction is email-safe and punctuation-aware,
@@ -313,7 +313,7 @@ describe('MENTION_TRAILING_PUNCT cleanliness (NIT)', () => {
 // ── F1 & F5: generated-output guards against compiler quirks recurring ─
 describe('generated controls.tsx guards', () => {
   const gen = readFileSync(
-    join(REPO_ROOT, 'packages/cli/src/generated/blocks/controls.tsx'),
+    join(REPO_ROOT, 'packages/cli/src/blocks/controls.tsx'),
     'utf-8',
   );
   it('F1: AtFilePicker filter initial is a variable reference, not a quoted literal', () => {

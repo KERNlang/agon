@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { formatRelativeTime } from '../../packages/cli/src/generated/blocks/file-rail.js';
+import { formatRelativeTime } from '../../packages/cli/src/blocks/file-rail.js';
 
 describe('formatRelativeTime', () => {
   afterEach(() => vi.useRealTimers());

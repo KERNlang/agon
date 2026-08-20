@@ -6,7 +6,7 @@ import { EngineRegistry, worktreeCreate, worktreeRemoveBestEffort, repoRoot, est
 
 import { runFitness } from './fitness.js';
 
-import type { StageResult, ForgeEventCallback, WorktreeEntry } from '../types.js';
+import type { StageResult, ForgeEventCallback, WorktreeEntry } from './types.js';
 
 function formatDispatchError(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);

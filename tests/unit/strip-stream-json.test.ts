@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { stripStreamJson } from '../../packages/adapter-cli/src/generated/adapter-helpers.js';
+import { stripStreamJson } from '../../packages/adapter-cli/src/adapter-helpers.js';
 
 function ndjson(...events: unknown[]): string {
   return events.map((e) => JSON.stringify(e)).join('\n');

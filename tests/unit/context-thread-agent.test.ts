@@ -7,13 +7,13 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-vi.mock('../../packages/core/src/generated/api/agent-loop.js', () => ({
+vi.mock('../../packages/core/src/api/agent-loop.js', () => ({
   runApiAgentLoop: vi.fn(),
 }));
 
-import { AgentSession } from '../../packages/core/src/generated/cesar/agent-session.js';
-import type { AgentSessionConfig } from '../../packages/core/src/generated/cesar/agent-session.js';
-import { runApiAgentLoop } from '../../packages/core/src/generated/api/agent-loop.js';
+import { AgentSession } from '../../packages/core/src/cesar/agent-session.js';
+import type { AgentSessionConfig } from '../../packages/core/src/cesar/agent-session.js';
+import { runApiAgentLoop } from '../../packages/core/src/api/agent-loop.js';
 import {
   ContextThread,
   loadOrCreateActiveThread,

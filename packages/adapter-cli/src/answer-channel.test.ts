@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { useFileChannelForMode, answerChannelMode } from './generated/adapter-helpers.js';
+import { useFileChannelForMode, answerChannelMode } from './adapter-helpers.js';
 
 describe('answer-channel mode gating', () => {
   let saved: string | undefined;

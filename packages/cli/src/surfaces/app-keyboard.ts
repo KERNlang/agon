@@ -2,11 +2,11 @@ import { resolveKeyboardInput } from '../signals/keyboard.js';
 
 import { cycleAgonPermissionMode, describeAgonPermissionMode } from '../cesar/permission-resolver.js';
 
-import { isTerminalFocusReport } from '../../input-utils.js';
+import { isTerminalFocusReport } from '../input-utils.js';
 
 import { listFiles } from '../signals/file-tracker.js';
 
-import type { OutputBlock } from '../../generated/blocks/engine.js';
+import type { OutputBlock } from '../blocks/engine.js';
 
 import type { ReplStateState } from '../signals/app-state.js';
 

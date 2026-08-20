@@ -8,35 +8,35 @@ import { setupTestAgonHome, cleanupTestAgonHome, agonHomePath } from '../helpers
 // ── Mode resolution + config reader ───────────────────────────────────
 import {
   resolveGuardMode, readGuardModesFromConfig, asGuardMode, DEFAULT_GUARD_MODE,
-} from '../../packages/core/src/generated/guards/config.js';
+} from '../../packages/core/src/guards/config.js';
 // ── Read-path registry ────────────────────────────────────────────────
 import {
   ReadPathRegistry, canonicalizePath, extractResultPaths,
-} from '../../packages/core/src/generated/guards/read-path-registry.js';
+} from '../../packages/core/src/guards/read-path-registry.js';
 // ── Grounded-write ────────────────────────────────────────────────────
 import {
   consultGroundedWrite, isWriteTool, writeTargetPath,
-} from '../../packages/core/src/generated/guards/grounded-write.js';
+} from '../../packages/core/src/guards/grounded-write.js';
 // ── Evidence ──────────────────────────────────────────────────────────
 import {
   consultFinalText, isCompletionClaim, hasUnresolvedFailure, hasEvidence,
   stripNonAssertionSpans, isEvidenceTool,
-} from '../../packages/core/src/generated/guards/evidence.js';
+} from '../../packages/core/src/guards/evidence.js';
 // ── Information-gain ──────────────────────────────────────────────────
 import {
   computeInfoGain, isStallStep, advanceStall, createInfoGainState, hashBashStdout,
-} from '../../packages/core/src/generated/guards/information-gain.js';
+} from '../../packages/core/src/guards/information-gain.js';
 // ── Confidence gate ───────────────────────────────────────────────────
 import {
   consultConfidenceGate, isRiskyBash, isGatedCall, gatedCategory, BROAD_WRITE_THRESHOLD,
-} from '../../packages/core/src/generated/guards/confidence-gate.js';
+} from '../../packages/core/src/guards/confidence-gate.js';
 // ── Pipeline orchestrator ─────────────────────────────────────────────
 import {
   consultGuard, consultBatch, applyShadow, countDistinctWriteFiles,
-} from '../../packages/core/src/generated/guards/guard-pipeline.js';
+} from '../../packages/core/src/guards/guard-pipeline.js';
 import type {
   GuardSnapshot, GuardCall, GuardMode,
-} from '../../packages/core/src/generated/guards/guard-types.js';
+} from '../../packages/core/src/guards/guard-types.js';
 
 // ──────────────────────────────────────────────────────────────────────
 // Snapshot builder — minimal, overridable.

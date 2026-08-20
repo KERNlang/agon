@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { compileWorkflowSpec } from '../../packages/core/src/generated/workflows/compiler.js';
-import { verifyWorkflowExecutionPlanFlow } from '../../packages/core/src/generated/workflows/flow-verification.js';
-import type { WorkflowSpec } from '../../packages/core/src/generated/workflows/specs.js';
+import { compileWorkflowSpec } from '../../packages/core/src/workflows/compiler.js';
+import { verifyWorkflowExecutionPlanFlow } from '../../packages/core/src/workflows/flow-verification.js';
+import type { WorkflowSpec } from '../../packages/core/src/workflows/specs.js';
 
 describe('compileWorkflowSpec', () => {
   it('emits deterministic logical plans in dependency order', () => {

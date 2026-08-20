@@ -4,7 +4,7 @@
 //      (npm writes them relative, so a wholesale symlink escapes the sandbox),
 //   2. a prebuilt dist hydrated into the sandbox, which a test importing the
 //      package BY NAME loads instead of the mutated source.
-// packages/forge/src/generated/mutate-sandbox.ts
+// packages/forge/src/mutate-sandbox.ts
 import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -14,7 +14,7 @@ import {
   prepareSandboxNodeModules, clearShadowingDist, workspacePackageDirs, packageEntryDirs, isInside,
   isSafePackageName, pnpmWorkspaceGlobs, repointWorkspaceLinks, gitIgnoredPaths,
   expandWorkspaceGlob, workspaceGlobToRegExp,
-} from '../../packages/forge/src/generated/mutate-sandbox.js';
+} from '../../packages/forge/src/mutate-sandbox.js';
 
 const write = (path: string, content: string): void => {
   mkdirSync(join(path, '..'), { recursive: true });

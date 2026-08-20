@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 
 import { parsePatch, patchSummary, applyPatchWithUndo, copyToClipboard, resolveWorkingDir } from '@kernlang/agon-core';
 
-import type { Dispatch } from '../../handlers/types.js';
+import type { Dispatch } from '../handlers/types.js';
 
 export interface ReviewAction {
   type: 'apply'|'edit'|'reject'|'copy';

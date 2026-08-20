@@ -1,33 +1,33 @@
-export * from './types.js';
-export * from './errors.js';
-export { loadConfig, configGet, configSet, invalidateConfigCache, ensureAgonHome, getAgonHome, agonPath, AGON_HOME, RATINGS_PATH, TEAM_ELO_PATH, CORPUS_PATH, SKILLS_DIR, RUNS_DIR } from './config.js';
-export { computeScore, tiebreak, DEFAULT_WEIGHTS } from './scoring.js';
-export { updateGlicko, updateGlickoRanked, getRatings, getEngineGlickoRating, advisorScore, rankEnginesByRating, pickTopRatedEngine, seedSuccessorRating, seedEnginesFromLineage, lineageFromRegistry, seedNewEnginesFromRegistry } from './glicko.js';
-export { computeUnknownEngineIds, computeRunManifestPurge, purgeUnknownEngineData } from './ratings-maintenance.js';
-export type { PurgeReport } from './ratings-maintenance.js';
-export { classifyTask } from './task-classifier.js';
-export { searchHistorySemantic } from './history-search.js';
-export type { HistorySearchItem, HistorySearchHit } from './history-search.js';
+export * from './models/types.js';
+export * from './models/errors.js';
+export { loadConfig, configGet, configSet, invalidateConfigCache, ensureAgonHome, getAgonHome, agonPath, AGON_HOME, RATINGS_PATH, TEAM_ELO_PATH, CORPUS_PATH, SKILLS_DIR, RUNS_DIR } from './signals/config.js';
+export { computeScore, tiebreak, DEFAULT_WEIGHTS } from './signals/scoring.js';
+export { updateGlicko, updateGlickoRanked, getRatings, getEngineGlickoRating, advisorScore, rankEnginesByRating, pickTopRatedEngine, seedSuccessorRating, seedEnginesFromLineage, lineageFromRegistry, seedNewEnginesFromRegistry } from './signals/glicko.js';
+export { computeUnknownEngineIds, computeRunManifestPurge, purgeUnknownEngineData } from './signals/ratings-maintenance.js';
+export type { PurgeReport } from './signals/ratings-maintenance.js';
+export { classifyTask } from './blocks/task-classifier.js';
+export { searchHistorySemantic } from './sessions/history-search-bridge.js';
+export type { HistorySearchItem, HistorySearchHit } from './sessions/history-search-bridge.js';
 export {
   validateSyntax, detectLanguageFromPath,
   SYNTAX_VALIDATOR_TIMEOUT_MS, SYNTAX_VALIDATOR_DISABLE_ENV,
-} from './syntax-validator.js';
-export { resolveDedupSidecar, resolveSidecarPython } from './generated/blocks/dedup-resolver.js';
-export { scanText, cleanText, countsByChannel } from './generated/text/forensics.js';
-export type { TextFinding, ScanReport, CleanResult } from './generated/text/forensics.js';
-export { scanMetadata, stripMetadata, countsByChannelMetadata } from './generated/text/metadata-forensics.js';
-export type { MetadataFinding, MetadataScanReport, MetadataStripResult } from './generated/text/metadata-forensics.js';
+} from './blocks/syntax-validator-bridge.js';
+export { resolveDedupSidecar, resolveSidecarPython } from './blocks/dedup-resolver.js';
+export { scanText, cleanText, countsByChannel } from './text/forensics.js';
+export type { TextFinding, ScanReport, CleanResult } from './text/forensics.js';
+export { scanMetadata, stripMetadata, countsByChannelMetadata } from './text/metadata-forensics.js';
+export type { MetadataFinding, MetadataScanReport, MetadataStripResult } from './text/metadata-forensics.js';
 export {
   createRunDir, writeRunStatus, printRunSummary, findLatestRunDir,
   sanitizeRunLabel,
-} from './run-dir.js';
+} from './signals/run-dir.js';
 export type {
   CreateRunDirOptions, RunDirHandle, RunStatus, RunStatusEngine,
-} from './run-dir.js';
+} from './signals/run-dir.js';
 export type {
   SyntaxValidatorInput, SyntaxValidatorResult, SyntaxValidationError,
-} from './syntax-validator.js';
-export { defaultFinalizeOnScoreForTask } from './generated/blocks/finalize-policy.js';
+} from './blocks/syntax-validator-bridge.js';
+export { defaultFinalizeOnScoreForTask } from './blocks/finalize-policy.js';
 export {
   repoRoot, headSha, worktreePrune, worktreeCreate, worktreeRemove,
   worktreeRemoveBestEffort, worktreePruneAll, worktreePruneOrphaned, stashSnapshot,
@@ -39,68 +39,68 @@ export {
   coAuthorTrailer, appendCoAuthor,
   AGON_ATTRIBUTION, AGON_ATTRIBUTION_PR, appendAttribution, appendPrAttribution,
   normalizeGitHubRemote, githubRepoUrl, defaultBaseBranch, prefilledPrUrl,
-} from './git.js';
+} from './blocks/git.js';
 export {
   createSessionWorktree, listSessionWorktrees, findSessionWorktree,
   removeSessionWorktree, pruneSessionWorktrees, rehydrateSessionWorktree,
   detectPackageManager, sessionWorktreesDir, worktreePathFor,
-} from './worktree-session.js';
-export type { SessionWorktree } from './worktree-session.js';
+} from './blocks/worktree-session.js';
+export type { SessionWorktree } from './blocks/worktree-session.js';
 export {
   acquireApplyLock, releaseApplyLock, headChanged, branchChanged,
-} from './worktree-lock.js';
-export type { ApplyLockInfo, ApplyLockResult } from './worktree-lock.js';
-export { withFileLock } from './file-lock.js';
-export type { FileLockInfo } from './file-lock.js';
-export { spawnWithTimeout, spawnStream } from './process.js';
-export type { SpawnOptions } from './process.js';
+} from './blocks/worktree-lock.js';
+export type { ApplyLockInfo, ApplyLockResult } from './blocks/worktree-lock.js';
+export { withFileLock } from './blocks/file-lock.js';
+export type { FileLockInfo } from './blocks/file-lock.js';
+export { spawnWithTimeout, spawnStream } from './blocks/process.js';
+export type { SpawnOptions } from './blocks/process.js';
 export {
   buildForgePrompt, buildCritiquePrompt, buildSynthesisPrompt,
   buildBrainstormPrompt, buildTribunalPrompt, buildReviewPrompt,
   buildForgePromptWithContext,
-} from './prompt-builder.js';
-export { createLogger } from './logger.js';
-export type { Logger } from './logger.js';
-export { EngineRegistry } from './engine-registry.js';
-export { scanProjectContext, isKernProject, hasProjectBrief, buildKernContextSpine, discoverGate, bashRanGate, isGateSkipSignal } from './context-scanner.js';
-export type { DiscoveredGate } from './context-scanner.js';
-export { buildCodebaseMap, collectSourceFiles, extractSymbols, clearCodebaseMapCache } from './generated/blocks/codebase-map.js';
+} from './blocks/prompt-builder.js';
+export { createLogger } from './signals/logger.js';
+export type { Logger } from './signals/logger.js';
+export { EngineRegistry } from './signals/engine-registry.js';
+export { scanProjectContext, isKernProject, hasProjectBrief, buildKernContextSpine, discoverGate, bashRanGate, isGateSkipSignal } from './blocks/context-scanner.js';
+export type { DiscoveredGate } from './blocks/context-scanner.js';
+export { buildCodebaseMap, collectSourceFiles, extractSymbols, clearCodebaseMapCache } from './blocks/codebase-map.js';
 export {
   addWorkspace, removeWorkspace, listWorkspaces,
   getActiveWorkspace, switchWorkspace, getWorkspace,
   ensureCurrentWorkspace, snapshotWorkspace, snapshotPath, resolveWorkingDir,
   setSessionRoot, _resetSessionRootForTests,
-} from './workspace.js';
-export type { Workspace, WorkspaceState } from './workspace.js';
-export type { ContextFormat } from './context-scanner.js';
-export { tracker, estimateTokens, estimateCost, estimateCostCacheAware, isFlatRateEngine } from './token-tracker.js';
-export type { TokenUsage, SessionStats } from './token-tracker.js';
+} from './blocks/workspace.js';
+export type { Workspace, WorkspaceState } from './blocks/workspace.js';
+export type { ContextFormat } from './blocks/context-scanner.js';
+export { tracker, estimateTokens, estimateCost, estimateCostCacheAware, isFlatRateEngine } from './signals/token-tracker.js';
+export type { TokenUsage, SessionStats } from './signals/token-tracker.js';
 export {
   createPlan, advanceStep, canAutoApprove,
   mergeStepResult, approvePlan, startPlan, cancelPlan, failPlan, resetStepForRetry,
-} from './plan.js';
+} from './blocks/plan.js';
 export type {
   Plan, PlanStep, PlanStepInput, PlanAction, StepResult, StepAttempt,
   ArtifactRef, WorkspaceSnapshot, PlanState, StepState, StepEffect,
   PlanStepKind, ApprovalLevel,
-} from './plan.js';
-export { savePlan, loadPlan, listPlans, deletePlan } from './plan-store.js';
-export { wordWrap } from './text.js';
+} from './blocks/plan.js';
+export { savePlan, loadPlan, listPlans, deletePlan } from './signals/plan-store.js';
+export { wordWrap } from './blocks/text.js';
 export {
   formatSpinnerFrame, formatEngineBlock, formatStatusLine,
   clearLinesSequence, cursorUpSequence, clearLineSequence,
-} from './output-manager.js';
-export { parseStreamChunk, StreamParser, parseStreamJsonFailure, isDeterministicStreamFailure } from './stream-parser.js';
-export type { ParsedChunk, StreamJsonFailure } from './stream-parser.js';
-export { discoverEngines } from './engine-discover.js';
-export type { DiscoveryResult } from './engine-discover.js';
-export { preflightApply, applyPatchToTree, readPatchFromManifest, readPatchFromPath, applyPatchWithUndo, undoPatch } from './patch-apply.js';
-export type { PatchInfo, ApplyPreflight } from './patch-apply.js';
-export { parsePatch, patchSummary, invertPatch } from './patch-parser.js';
-export type { PatchFile, PatchHunk } from './patch-parser.js';
-export { takeSnapshot, revertSnapshot, listSnapshots, getLatestSnapshotId } from './file-history.js';
-export type { FileSnapshot, HistoryEntry } from './file-history.js';
-export { copyToClipboard } from './clipboard.js';
+} from './signals/output-manager.js';
+export { parseStreamChunk, StreamParser, parseStreamJsonFailure, isDeterministicStreamFailure } from './blocks/stream-parser.js';
+export type { ParsedChunk, StreamJsonFailure } from './blocks/stream-parser.js';
+export { discoverEngines } from './blocks/engine-discover.js';
+export type { DiscoveryResult } from './blocks/engine-discover.js';
+export { preflightApply, applyPatchToTree, readPatchFromManifest, readPatchFromPath, applyPatchWithUndo, undoPatch } from './blocks/patch-apply.js';
+export type { PatchInfo, ApplyPreflight } from './blocks/patch-apply.js';
+export { parsePatch, patchSummary, invertPatch } from './blocks/patch-parser.js';
+export type { PatchFile, PatchHunk } from './blocks/patch-parser.js';
+export { takeSnapshot, revertSnapshot, listSnapshots, getLatestSnapshotId } from './blocks/file-history.js';
+export type { FileSnapshot, HistoryEntry } from './blocks/file-history.js';
+export { copyToClipboard } from './blocks/clipboard.js';
 export { pasteStore, PASTE_MAX_AGE } from './paste-store.js';
 export type { PasteStoreResult } from './paste-store.js';
 export {
@@ -108,98 +108,98 @@ export {
   saveToolResultToDisk, loadToolResultFromDisk, pruneToolCache,
   sessionCacheDir,
   saveConversation, loadConversation, clearConversation, stripEngineArtifacts,
-} from './session-store.js';
+} from './signals/session-store.js';
 // ── Session budget — proactive context-window management ──
 export {
   estimateSessionTokens, estimateMessageHistoryTokens, estimateFlatHistoryTokens,
   estimatePtyTokens, estimateMessageTokens, effectiveWindow, resolveCharsPerToken,
-} from './generated/sessions/token-estimator.js';
+} from './sessions/token-estimator.js';
 export type {
   EstimatorMessage, PtyAccumulation, SessionTokenInputs,
-} from './generated/sessions/token-estimator.js';
+} from './sessions/token-estimator.js';
 export {
   checkSessionBudget, resolveThresholds, budgetRatioPct,
-} from './generated/sessions/session-budget.js';
+} from './sessions/session-budget.js';
 export type {
   BudgetCheck, BudgetThresholds,
-} from './generated/sessions/session-budget.js';
+} from './sessions/session-budget.js';
 // ── Compaction primitives (pure helpers shared by session.compact() and the in-send emergency fold) ──
 export {
   findSafeKeepStart, buildCompactionSummary, renderCompactionText, renderWorkingSet,
   buildSummarizationContext, buildCompactionPrompt,
-} from './generated/sessions/compaction.js';
-export type { CompactMessage, SummarizationCaps, WorkingSetInput } from './generated/sessions/compaction.js';
+} from './sessions/compaction.js';
+export type { CompactMessage, SummarizationCaps, WorkingSetInput } from './sessions/compaction.js';
 // ── Context Parts (structured message parts + StageContext) ──
 export {
   buildStageContext, renderStageContext,
-} from './context-parts.js';
+} from './models/context-parts.js';
 export type {
   TextPart, ToolCallPart, ToolResultPart, ReasoningPart, CompactionSummaryPart,
   WorkingSet, MessagePart, ToolCacheEntry, StageContext, StageDecision, ToolResultRef,
-} from './context-parts.js';
-export { runApiAgentLoop } from './generated/api/agent-loop.js';
-export type { ApiAgentOptions, ApiAgentResult } from './generated/api/agent-loop.js';
+} from './models/context-parts.js';
+export { runApiAgentLoop } from './api/agent-loop.js';
+export type { ApiAgentOptions, ApiAgentResult } from './api/agent-loop.js';
 // ── Delegate tool ledger — per-dispatch per-backend tool-outcome ledger ──
 export {
   recordDelegateDispatch, recordApiLoopDispatch, recordTextTransportDispatch,
   readDelegateLedgerRecords, summarizeDelegateReliability, summarizeDelegateReliabilityByEngine,
   deriveOutcomeCounts, delegateLedgerPath, buildApiLoopDigest, textTransportDigest,
   formatDelegateReliability, formatAllDelegateReliability,
-} from './generated/signals/delegate-ledger.js';
+} from './signals/delegate-ledger.js';
 export type {
   AgentToolOutcome, DelegateToolStatus, DelegateBackend, OutcomeProvenance,
   DelegateOutcomeCounts, DelegateLedgerRecord, DelegateBackendSummary,
   DelegateReliabilitySummary, TextTransportOpts,
-} from './generated/signals/delegate-ledger.js';
-export { safeAgentVisibleText } from './generated/api/agent-visible.js';
+} from './signals/delegate-ledger.js';
+export { safeAgentVisibleText } from './api/agent-visible.js';
 // ── Engine dispatch isolation ──
-export { resolveIsolationMode, planEngineIsolation, isValidIsolationMode, ISOLATION_MODES } from './generated/signals/isolation.js';
-export type { EngineIsolationPlan } from './generated/signals/isolation.js';
+export { resolveIsolationMode, planEngineIsolation, isValidIsolationMode, ISOLATION_MODES } from './signals/isolation.js';
+export type { EngineIsolationPlan } from './signals/isolation.js';
 // ── Tool System ──
-export type { ToolResult, ToolContext, ToolHandler, ToolDefinition, ToolCall, ToolCallResult, PermissionDecision, FileState as ToolFileState, ParsedPermissionRule, PermissionRuleSet, ToolHookDef, ParsedToolHooks } from './tool-types.js';
-export { parseToolHooks, hasToolHooks, runPreToolUseHooks, runPostToolUseHooks } from './tool-hooks.js';
+export type { ToolResult, ToolContext, ToolHandler, ToolDefinition, ToolCall, ToolCallResult, PermissionDecision, FileState as ToolFileState, ParsedPermissionRule, PermissionRuleSet, ToolHookDef, ParsedToolHooks } from './models/tool-types.js';
+export { parseToolHooks, hasToolHooks, runPreToolUseHooks, runPostToolUseHooks } from './tools/tool-hooks.js';
 export { FileStateCache, fileStateCache, getProjectFileStateCache, clearProjectFileStateCaches } from './file-state-cache.js';
-export { ToolRegistry, executeToolCall, executeToolCalls, PERMISSION_DENIED_MESSAGE } from './tool-registry.js';
-export { isDangerousCommand, isReadOnlyCommand, isPathUnderCwd } from './tool-permissions.js';
-export { parsePermissionRule, parsePermissionRuleSet, ruleMatches, evaluatePermissionRules, evaluateToolRules, evaluateBashRules, evaluateFilePathRules, hasShellControl, hasRedirection, hasSubstitution, splitShellSegments, resolveRulePath, pathRuleMatches } from './tool-permissions.js';
+export { ToolRegistry, executeToolCall, executeToolCalls, PERMISSION_DENIED_MESSAGE } from './signals/tool-registry.js';
+export { isDangerousCommand, isReadOnlyCommand, isPathUnderCwd } from './tools/tool-permissions.js';
+export { parsePermissionRule, parsePermissionRuleSet, ruleMatches, evaluatePermissionRules, evaluateToolRules, evaluateBashRules, evaluateFilePathRules, hasShellControl, hasRedirection, hasSubstitution, splitShellSegments, resolveRulePath, pathRuleMatches } from './tools/tool-permissions.js';
 export { createReadTool, createEditTool, createMultiEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createReportConfidenceTool, createDelegateTool, createPipelineTool, createGoalTool, createConquerTool, createReviewTool, createAgentTool, createProposePlanTool, createExitPlanModeTool, createListPlansTool, createRetrieveResultTool, createWebFetchTool, parseAndValidateUrl, htmlToText, createTodoWriteTool, normalizeTodos, createSaveMemoryTool, appendMemoryLine, normalizeMemoryLine, todayPrefix, canonicalMemorySection, MEMORY_SECTIONS, createWebSearchTool, buildSearchRequest, parseSearchResults, formatSearchResults, createQuickNeroTool, classifyQuery, cleanQuery, buildAuthoritativeRequest, parseAuthoritativeResults, extractCitations, judgeProbe, formatCitationReport, probeCitation, verifyCitations } from './tools.js';
 export type { SearchResult, SearchRequest, ResearchIntent, CitationStatus, CitationProbe, CitationVerdict, CitationReport } from './tools.js';
-export { formatCesarPlanMarkdown } from './generated/cesar/plan-formatter.js';
-export { generateToolPrompt, toolsToOpenAIFormat } from './generated/tools/tool-prompt.js';
-export { parseToolCalls, toolCallsToApiFormat, formatToolResults, formatToolResult } from './generated/tools/tool-parser.js';
-export type { ParsedToolCall, ParseResult } from './generated/tools/tool-parser.js';
-export { discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat } from './generated/tools/mcp-discovery.js';
-export type { McpServerConfig } from './generated/tools/mcp-discovery.js';
+export { formatCesarPlanMarkdown } from './cesar/plan-formatter.js';
+export { generateToolPrompt, toolsToOpenAIFormat } from './tools/tool-prompt.js';
+export { parseToolCalls, toolCallsToApiFormat, formatToolResults, formatToolResult } from './tools/tool-parser.js';
+export type { ParsedToolCall, ParseResult } from './tools/tool-parser.js';
+export { discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat } from './tools/mcp-discovery.js';
+export type { McpServerConfig } from './tools/mcp-discovery.js';
 // ── Mutation testing (shared by `agon goal`'s mutation-witness and `agon mutate`) ──
-export { canonicalPath, isInsideRealpath, resolveWithinRoot } from './generated/blocks/paths.js';
-export { generateMutants, applyMutantToSource } from './generated/tools/mutant-generator.js';
-export type { Mutant } from './generated/tools/mutant-generator.js';
-export { runMutants } from './generated/tools/mutant-runner.js';
-export type { MutantOutcome, MutationReport, MutantProgress, RunMutantsOptions } from './generated/tools/mutant-runner.js';
-export { buildToolSystemPrompt, processToolResponse, runToolLoop } from './generated/tools/tool-loop.js';
-export type { ToolLoopCallbacks, ToolLoopResult } from './generated/tools/tool-loop.js';
-export { startChatSession, appendMessage, appendUserTurnIfAbsent, updateChatSummary, formatChatHistoryForPrompt, formatChatContextForPrompt, buildHistoryPrimedPrompt, seedChatSessionFromThread, loadChatSession, resumeChatSession, listChatSessions, latestChatSession } from './chat-store.js';
-export type { ChatMessage as StoredChatMessage, ChatSession } from './chat-store.js';
+export { canonicalPath, isInsideRealpath, resolveWithinRoot } from './blocks/paths.js';
+export { generateMutants, applyMutantToSource } from './tools/mutant-generator.js';
+export type { Mutant } from './tools/mutant-generator.js';
+export { runMutants } from './tools/mutant-runner.js';
+export type { MutantOutcome, MutationReport, MutantProgress, RunMutantsOptions } from './tools/mutant-runner.js';
+export { buildToolSystemPrompt, processToolResponse, runToolLoop } from './tools/tool-loop.js';
+export type { ToolLoopCallbacks, ToolLoopResult } from './tools/tool-loop.js';
+export { startChatSession, appendMessage, appendUserTurnIfAbsent, updateChatSummary, formatChatHistoryForPrompt, formatChatContextForPrompt, buildHistoryPrimedPrompt, seedChatSessionFromThread, loadChatSession, resumeChatSession, listChatSessions, latestChatSession } from './signals/chat-store.js';
+export type { ChatMessage as StoredChatMessage, ChatSession } from './signals/chat-store.js';
 export {
   isImagePath, mimeFromExt, resolveImagePath,
   buildImageAttachment, extractImagesFromInput, normalizeDroppedPath,
   encodeImagesForDispatch, attachVisionToMessages, visionSupportNote,
   decodeDataUrlToImageFile, parseImageDimensions, sniffImageMime, MAX_DISPATCH_IMAGES, MAX_DISPATCH_IMAGE_BYTES,
-} from './image.js';
-export type { DataUrlImageResult, ImageDimensions } from './image.js';
+} from './blocks/image.js';
+export type { DataUrlImageResult, ImageDimensions } from './blocks/image.js';
 // ── Agon Rooms — multi-party room ledger (file-first; CLI/MCP/daemon are adapters) ──
 export {
   roomsDir, roomDir, createRoom, listRooms, roomExists, closeRoom, isRoomClosed,
   appendEvent, readEvents, parseMentions, slugifyRoomId,
-} from './generated/rooms/store.js';
-export { recordPresence, removePresence, listPresence, advanceReadCursor, getReadCursor, PRESENCE_TTL_MS } from './generated/rooms/presence.js';
-export { getUnreadState, listUnreadStates, isUnreadKind } from './generated/rooms/unread.js';
-export { foldLocks, listRoomLocks, claimRoomLock, releaseRoomLock, expiredLocksHeldBy } from './generated/rooms/locks.js';
-export { acquireTurnLease, releaseTurnLease, readActiveLease } from './generated/rooms/leases.js';
-export { detectTrigger, detectPingPong, evaluateStop } from './generated/rooms/auto-policy.js';
-export { drainNdjson, drainRoom, readTailOffset, writeTailOffset, createRoomWaker } from './generated/rooms/tail.js';
-export { foldTasks, pickNextTask, postTask, claimTask, postTaskResult, postTaskStop, shouldStopWork } from './generated/rooms/tasks.js';
-export type { RoomActor, RoomEvent, RoomMeta, PresenceEntry, RoomLockState, RoomUnreadState, TurnLease, AutoConfig, AutoState, StopDecision, TriggerDecision, TailCursor, TailDrain, RoomTaskState, WorkConfig, WorkState } from './generated/rooms/types.js';
+} from './rooms/store.js';
+export { recordPresence, removePresence, listPresence, advanceReadCursor, getReadCursor, PRESENCE_TTL_MS } from './rooms/presence.js';
+export { getUnreadState, listUnreadStates, isUnreadKind } from './rooms/unread.js';
+export { foldLocks, listRoomLocks, claimRoomLock, releaseRoomLock, expiredLocksHeldBy } from './rooms/locks.js';
+export { acquireTurnLease, releaseTurnLease, readActiveLease } from './rooms/leases.js';
+export { detectTrigger, detectPingPong, evaluateStop } from './rooms/auto-policy.js';
+export { drainNdjson, drainRoom, readTailOffset, writeTailOffset, createRoomWaker } from './rooms/tail.js';
+export { foldTasks, pickNextTask, postTask, claimTask, postTaskResult, postTaskStop, shouldStopWork } from './rooms/tasks.js';
+export type { RoomActor, RoomEvent, RoomMeta, PresenceEntry, RoomLockState, RoomUnreadState, TurnLease, AutoConfig, AutoState, StopDecision, TriggerDecision, TailCursor, TailDrain, RoomTaskState, WorkConfig, WorkState } from './rooms/types.js';
 // ── EventLog — append-only per-session event ledger (client/server split M1) ──
 export {
   append as eventLogAppend, flush as eventLogFlush, replay as eventLogReplay,
@@ -209,40 +209,40 @@ export {
   eventsPath as eventLogEventsPath, metaPath as eventLogMetaPath,
   sanitizeSessionId as eventLogSanitizeSessionId,
   EVENT_LOG_FLUSH_MS, EVENT_LOG_ROTATE_BYTES,
-} from './generated/sessions/event-log.js';
-export type { LoggedEvent, SessionMeta as EventLogSessionMeta, AppendOptions as EventLogAppendOptions } from './generated/sessions/event-log.js';
+} from './sessions/event-log.js';
+export type { LoggedEvent, SessionMeta as EventLogSessionMeta, AppendOptions as EventLogAppendOptions } from './sessions/event-log.js';
 // ── SessionHost — read-side seam over the EventLog ledger (client/server split M2) ──
-export { InProcessSessionHost, inProcessSessionHost, getSessionHost, SUBSCRIBE_POLL_MS } from './generated/sessions/session-host.js';
-export type { SessionHost, SessionDescriptor, SubscribeOptions } from './generated/sessions/session-host.js';
+export { InProcessSessionHost, inProcessSessionHost, getSessionHost, SUBSCRIBE_POLL_MS } from './sessions/session-host.js';
+export type { SessionHost, SessionDescriptor, SubscribeOptions } from './sessions/session-host.js';
 // ── Daemon wire protocol — newline-JSON frames agond speaks (client/server split M3) ──
 export {
   encodeDaemonRequest, encodeDaemonResponse,
   parseDaemonRequest, parseDaemonResponse, splitFrames,
-} from './generated/sessions/daemon-protocol.js';
-export type { DaemonRequest, DaemonResponse } from './generated/sessions/daemon-protocol.js';
+} from './sessions/daemon-protocol.js';
+export type { DaemonRequest, DaemonResponse } from './sessions/daemon-protocol.js';
 // ── JobService — cancellable autonomous execution + bounded replay ──
-export { JobService } from './generated/jobs/job-service.js';
-export type { JobState, JobSnapshot, JobEvent, JobEventPage, JobOutcome, JobTaskContext, JobExecutor, JobServiceOptions } from './generated/jobs/job-service.js';
+export { JobService } from './jobs/job-service.js';
+export type { JobState, JobSnapshot, JobEvent, JobEventPage, JobOutcome, JobTaskContext, JobExecutor, JobServiceOptions } from './jobs/job-service.js';
 // ── BrainClient — daemon↔brain boundary for the Agon Everywhere bridge (client/server split M4) ──
-export { canonicalCapabilityInputDigest, conservativeControlCapabilities } from './generated/sessions/brain-client.js';
+export { canonicalCapabilityInputDigest, conservativeControlCapabilities } from './sessions/brain-client.js';
 export type {
   BrainClient, BrainClientConfig, BrainEvent, BrainTurnRequest, BrainTurnResult,
   ControlAck, ControlCapabilities, ClientRef, ApprovalResponse, AnswerResponse,
   SteerRequest, CancelRequest, CapabilitySpec, CapabilityRegistration,
   CapabilityUnregister, CapabilityResult, CapabilityAuthorizationLease, BrainHealth,
-} from './generated/sessions/brain-client.js';
-export { logFlow, readFlows, analyzeFlows, FLOWS_DIR, FRICTION_TAGS } from './flow.js';
-export type { FlowRecord, FlowTelemetry, FlowFeedback, FlowModeMeta, FlowWorkflowIdentity, FlowAnalysis, ModeStats } from './flow.js';
+} from './sessions/brain-client.js';
+export { logFlow, readFlows, analyzeFlows, FLOWS_DIR, FRICTION_TAGS } from './signals/flow.js';
+export type { FlowRecord, FlowTelemetry, FlowFeedback, FlowModeMeta, FlowWorkflowIdentity, FlowAnalysis, ModeStats } from './signals/flow.js';
 // ── Full Vertical Workflow Kernel V1 ──
-export { RESERVED_WORKFLOW_ALIASES, normalizeWorkflowAlias, validateWorkflowAliases, assertWorkflowAliasesAllowed } from './generated/workflows/alias-policy.js';
-export { compileWorkflowSpec, defaultWorkflowMutationPolicy, mutationRank } from './generated/workflows/compiler.js';
-export { createWorkflowIssue, createWorkflowConformanceError, throwWorkflowConformance, hasWorkflowConformanceErrors } from './generated/workflows/conformance.js';
-export { createWorkflowRun, appendWorkflowPhaseEvent, cancelWorkflowRun } from './generated/workflows/execution.js';
-export { workflowGraphFromSpec, validateWorkflowGraphSpec, assertValidWorkflowGraphSpec } from './generated/workflows/graph.js';
-export { validateWorkflowPluginAdmission, admitWorkflowPlugin } from './generated/workflows/plugins.js';
-export { WorkflowRegistry } from './generated/workflows/registry.js';
-export { verifyWorkflowExecutionPlanFlow, verifyWorkflowRunFlow } from './generated/workflows/flow-verification.js';
-export { AGON_BUILD_REVIEW_FIX_SPEC, AGON_BRAINSTORM_FORGE_TRIBUNAL_SPEC, getCoreWorkflowRegistry, compileAndVerifyCoreWorkflowSpec } from './generated/workflows/core-specs.js';
+export { RESERVED_WORKFLOW_ALIASES, normalizeWorkflowAlias, validateWorkflowAliases, assertWorkflowAliasesAllowed } from './workflows/alias-policy.js';
+export { compileWorkflowSpec, defaultWorkflowMutationPolicy, mutationRank } from './workflows/compiler.js';
+export { createWorkflowIssue, createWorkflowConformanceError, throwWorkflowConformance, hasWorkflowConformanceErrors } from './workflows/conformance.js';
+export { createWorkflowRun, appendWorkflowPhaseEvent, cancelWorkflowRun } from './workflows/execution.js';
+export { workflowGraphFromSpec, validateWorkflowGraphSpec, assertValidWorkflowGraphSpec } from './workflows/graph.js';
+export { validateWorkflowPluginAdmission, admitWorkflowPlugin } from './workflows/plugins.js';
+export { WorkflowRegistry } from './workflows/registry.js';
+export { verifyWorkflowExecutionPlanFlow, verifyWorkflowRunFlow } from './workflows/flow-verification.js';
+export { AGON_BUILD_REVIEW_FIX_SPEC, AGON_BRAINSTORM_FORGE_TRIBUNAL_SPEC, getCoreWorkflowRegistry, compileAndVerifyCoreWorkflowSpec } from './workflows/core-specs.js';
 export type {
   WorkflowCapabilitySpec, WorkflowMutationPolicy, WorkflowMutationLevel,
   WorkflowPhaseSpec, WorkflowSpec, WorkflowGraphNodeSpec, WorkflowGraphEdgeSpec,
@@ -250,18 +250,18 @@ export type {
   WorkflowPhaseEvent, WorkflowPhaseEventType, WorkflowRun, WorkflowRunStatus,
   WorkflowConformanceIssue, WorkflowConformanceCode, WorkflowPluginSpec,
   WorkflowPluginAdmissionOptions, WorkflowPluginAdmissionResult,
-} from './generated/workflows/specs.js';
-export { apiDispatch, apiDispatchTools, apiDispatchToolsHistory, apiStreamDispatch, apiStreamDispatchWithHistory } from './api-dispatch.js';
-export type { ApiConfig } from './api-dispatch.js';
-export { companionDispatch, companionUsesNativeReview } from './companion-dispatch.js';
-export type { CompanionResult } from './companion-dispatch.js';
-export { fetchModelsRegistry, buildModelEntries, searchModels, modelEntryToEngineDef, lookupCatalogContextWindow, lookupCatalogModelCost, lookupCatalogModelAttachment, engineSupportsVision } from './models-registry.js';
-export type { CatalogModelCost } from './models-registry.js';
-export type { ModelEntry, ModelsDevProvider, ModelsDevModel } from './models-registry.js';
+} from './workflows/specs.js';
+export { apiDispatch, apiDispatchTools, apiDispatchToolsHistory, apiStreamDispatch, apiStreamDispatchWithHistory } from './api/dispatch.js';
+export type { ApiConfig } from './api/dispatch.js';
+export { companionDispatch, companionUsesNativeReview } from './sessions/companion-dispatch.js';
+export type { CompanionResult } from './sessions/companion-dispatch.js';
+export { fetchModelsRegistry, buildModelEntries, searchModels, modelEntryToEngineDef, lookupCatalogContextWindow, lookupCatalogModelCost, lookupCatalogModelAttachment, engineSupportsVision } from './signals/models-registry.js';
+export type { CatalogModelCost } from './signals/models-registry.js';
+export type { ModelEntry, ModelsDevProvider, ModelsDevModel } from './signals/models-registry.js';
 export { buildCliModelGroups, buildCliModelGroupsAsync, buildCliGroupsImmediate, refreshCliGroup, refreshCliGroupVersion, getBinaryVersionAsync, discoverCliModelsAsync, findBinary, getBinaryVersion, readProbedCliModels, refreshProbedCliModels } from './cli-models-registry.js';
 export type { CliModelEntry, CliProviderGroup } from './cli-models-registry.js';
-export { loadAuthStore, saveAuthStore, setAuthKey, removeAuthKey, getAuthKey, loadAllAuthKeys, listStoredProviders } from './auth-store.js';
-export type { AuthEntry, AuthStore } from './auth-store.js';
+export { loadAuthStore, saveAuthStore, setAuthKey, removeAuthKey, getAuthKey, loadAllAuthKeys, listStoredProviders } from './signals/auth-store.js';
+export type { AuthEntry, AuthStore } from './signals/auth-store.js';
 export {
   createPersistentSession, createCompanionSession, createAcpSession,
   createStreamJsonSession, createResumeSession,
@@ -272,93 +272,93 @@ export type {
 export {
   classifyToolEffect, normalizeStepSignature, normalizeStepToolName, primaryStepInput,
   canonicalStepSignature, isReadRepeat, stepEarnsBudgetGrowth,
-} from './generated/sessions/step-effect.js';
-export type { ToolStepEffect, ToolStepEffectEntry } from './generated/sessions/step-effect.js';
-export { claudeBrainUsesPty } from './generated/sessions/claude-backend.js';
-export { StreamBridge, createStreamBridge } from './generated/cesar/stream-bridge.js';
-export type { EngineSwitch } from './generated/cesar/stream-bridge.js';
+} from './sessions/step-effect.js';
+export type { ToolStepEffect, ToolStepEffectEntry } from './sessions/step-effect.js';
+export { claudeBrainUsesPty } from './sessions/claude-backend.js';
+export { StreamBridge, createStreamBridge } from './cesar/stream-bridge.js';
+export type { EngineSwitch } from './cesar/stream-bridge.js';
 export {
   VirtualFS, createFileSnapshot, applyEffectPackage, relocateEffectPackage, effectPackageDiff, scoreEffectPackage, snapshotRead, snapshotList,
-} from './generated/forge/virtual-fs.js';
+} from './forge/virtual-fs.js';
 export type {
   FileEffect, EffectPackage, FileSnapshot as VfsSnapshot,
-} from './generated/forge/virtual-fs.js';
-export { Speculator, createSpeculator } from './generated/cesar/speculator.js';
+} from './forge/virtual-fs.js';
+export { Speculator, createSpeculator } from './cesar/speculator.js';
 export type {
   SpeculatorMemberConfig, SpeculatorOptions, SpeculatorResult,
-} from './generated/cesar/speculator.js';
-export { createCesarMemory, buildProjectMemoryBlock, extractProjectMemorySections, stripProjectMemorySections } from './generated/cesar/memory.js';
-export type { CesarMemory, MemoryEntry } from './generated/cesar/memory.js';
+} from './cesar/speculator.js';
+export { createCesarMemory, buildProjectMemoryBlock, extractProjectMemorySections, stripProjectMemorySections } from './cesar/memory.js';
+export type { CesarMemory, MemoryEntry } from './cesar/memory.js';
 export {
   ContextThread, loadOrCreateActiveThread, forkActiveThread, listThreadsForProject, deleteThread, projectHash16, projectSha8,
-} from './generated/cesar/context-thread.js';
+} from './cesar/context-thread.js';
 export type {
   ThreadMessage, ThreadCheckpoint, FileTouch, LoopMessage, ContextThreadConfig, ThreadSize,
-} from './generated/cesar/context-thread.js';
-export { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan, exitCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans, getCesarPlansDir, cesarPlanJsonPath, cesarPlanMarkdownPath, CESAR_STEP_TYPES } from './generated/cesar/plan.js';
-export type { CesarPlan, CesarPlanStep, CesarStepResult } from './generated/cesar/plan.js';
-export { sanitizePlanSteps } from './generated/cesar/plan-validation.js';
-export { planCostEstimator } from './generated/cesar/plan-cost-estimator.js';
-export type { CostEstimate } from './generated/cesar/plan-cost-estimator.js';
-export { executePlan, getReadySteps } from './generated/cesar/plan-executor.js';
-export type { StepExecutor, PlanExecutorCallbacks } from './generated/cesar/plan-executor.js';
-export { AgentSession, makeBudgetError } from './generated/cesar/agent-session.js';
+} from './cesar/context-thread.js';
+export { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan, exitCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans, getCesarPlansDir, cesarPlanJsonPath, cesarPlanMarkdownPath, CESAR_STEP_TYPES } from './cesar/plan.js';
+export type { CesarPlan, CesarPlanStep, CesarStepResult } from './cesar/plan.js';
+export { sanitizePlanSteps } from './cesar/plan-validation.js';
+export { planCostEstimator } from './cesar/plan-cost-estimator.js';
+export type { CostEstimate } from './cesar/plan-cost-estimator.js';
+export { executePlan, getReadySteps } from './cesar/plan-executor.js';
+export type { StepExecutor, PlanExecutorCallbacks } from './cesar/plan-executor.js';
+export { AgentSession, makeBudgetError } from './cesar/agent-session.js';
 export type {
   AgentBudget, AgentStepResult, AgentSessionStats, AgentSessionConfig,
-} from './generated/cesar/agent-session.js';
+} from './cesar/agent-session.js';
 export {
   AgentTeam, makeAgentTeamError, makeAgentTeamDisposedError,
-} from './generated/cesar/agent-team.js';
+} from './cesar/agent-team.js';
 export type {
   AgentTeamConfig, AgentTeamMemberConfig, AgentTeamMemberResult, AgentTeamResult,
   AgentTeamBudget,
-} from './generated/cesar/agent-team.js';
+} from './cesar/agent-team.js';
 export {
   determineWinner, scoreAgentTeamResult,
-} from './generated/cesar/synthesis-utils.js';
+} from './cesar/synthesis-utils.js';
 export {
   buildAgentSynthesisPrompt, buildAgentInvestigateSynthesisPrompt,
   runAgentTeamSynthesis, runAgentInvestigateSynthesis,
   runPostSynthesisFitnessCheck, detectSynthesisInsightMention,
-} from './generated/cesar/agent-synthesis.js';
+} from './cesar/agent-synthesis.js';
 export type {
   AgentSynthesisLoser, AgentSynthesisOptions, AgentSynthesisResult,
   AgentInvestigateSynthesisOptions, AgentInvestigateSynthesisResult,
   PostSynthesisFitnessResult, SynthesisBiasSignal,
-} from './generated/cesar/agent-synthesis.js';
+} from './cesar/agent-synthesis.js';
 export {
   tokensToCost, estimatedTokensToCost, getEnginePricing,
-} from './generated/blocks/pricing.js';
-export type { PricingEntry } from './generated/blocks/pricing.js';
+} from './blocks/pricing.js';
+export type { PricingEntry } from './blocks/pricing.js';
 export {
   Semaphore, isHeavyTool,
-} from './generated/blocks/semaphore.js';
+} from './blocks/semaphore.js';
 export {
   createAgentState, beginTurn, completeTurn, requestApproval, approveTool, rejectTool,
   cancelAgent, failAgent, completeAgent, checkBudget, isTerminal,
-} from './generated/cesar/agent-state.js';
+} from './cesar/agent-state.js';
 export type {
   AgentMessage, AgentTurn, AgentContext, AgentPhase, AgentState,
-} from './generated/cesar/agent-state.js';
+} from './cesar/agent-state.js';
 export {
   makeAssistantChunk, makeToolCall, makeTurnComplete, makeError,
   normalizeSessionChunk, buildApiTurnEvents, unavailableUsage, estimatedUsage,
-} from './generated/models/agent-event.js';
-export type { AgentEvent, AgentUsage, RawSessionChunk } from './generated/models/agent-event.js';
-export { runHooks, hooksFailed, hooksOutput } from './hooks.js';
-export type { HookEvent, HookDef, HookResult } from './hooks.js';
-export { loadSkills, findSkill, renderSkillPrompt } from './skill-loader.js';
+} from './models/agent-event.js';
+export type { AgentEvent, AgentUsage, RawSessionChunk } from './models/agent-event.js';
+export { runHooks, hooksFailed, hooksOutput } from './blocks/hooks.js';
+export type { HookEvent, HookDef, HookResult } from './blocks/hooks.js';
+export { loadSkills, findSkill, renderSkillPrompt } from './blocks/skill-loader.js';
 export {
   loadEngineMemory, addEngineNote, setEngineStrengths, setEngineWeaknesses,
   addEngineTendency, getEngineProfile, buildRolePrompt, filePathToMemoryPattern,
   extractPatchFilePatterns, recordForgeOutcome, recordForgeJudgment,
-} from './engine-memory.js';
-export type { EngineNote, EngineProfile, EngineMemoryRecord, EngineStrengthObservation } from './engine-memory.js';
-export { rankByTaskClass, buildSpecializedPrompt, assignForgeRoles } from './role-specialization.js';
-export type { EngineRole } from './role-specialization.js';
-export type { Skill } from './skill-loader.js';
-export { createSidechainLogger } from './sidechain-logger.js';
-export type { SidechainEvent, SidechainLogger } from './sidechain-logger.js';
+} from './blocks/engine-memory.js';
+export type { EngineNote, EngineProfile, EngineMemoryRecord, EngineStrengthObservation } from './blocks/engine-memory.js';
+export { rankByTaskClass, buildSpecializedPrompt, assignForgeRoles } from './blocks/role-specialization.js';
+export type { EngineRole } from './blocks/role-specialization.js';
+export type { Skill } from './blocks/skill-loader.js';
+export { createSidechainLogger } from './blocks/sidechain-logger.js';
+export type { SidechainEvent, SidechainLogger } from './blocks/sidechain-logger.js';
 export {
   buildForgeProvenance,
   renderProvenanceMarkdown,
@@ -368,36 +368,36 @@ export {
 } from './provenance.js';
 export type { ProvenanceLedger, ProvenanceContribution } from './provenance.js';
 export { validateEngineConfig, validateEngineDir, EngineDefinitionSchema } from './schemas/engine-schema.js';
-export { validateManifest } from './extension-manifest.js';
-export type { ExtensionManifest, ExtensionContributions, CommandContribution, LoadedExtension } from './extension-manifest.js';
-export { CommandRegistry } from './command-registry.js';
-export type { CommandDefinition, CommandHandler } from './command-registry.js';
-export { initExtensions, loadExtensions, discoverExtensionDirs, buildExtensionContext } from './extension-loader.js';
-export { registerBuiltinCommands } from './builtin-commands.js';
-export { EventBus, bridgeShellHooks } from './event-bus.js';
-export type { EventPayload, EventListener } from './event-bus.js';
-export { EngineHealth, engineHealth, classifyDispatchFailure, authFailureHint, authLoginHint } from './engine-health.js';
-export type { EngineHealthRecord } from './engine-health.js';
+export { validateManifest } from './models/extension-manifest.js';
+export type { ExtensionManifest, ExtensionContributions, CommandContribution, LoadedExtension } from './models/extension-manifest.js';
+export { CommandRegistry } from './signals/command-registry.js';
+export type { CommandDefinition, CommandHandler } from './signals/command-registry.js';
+export { initExtensions, loadExtensions, discoverExtensionDirs, buildExtensionContext } from './blocks/extension-loader.js';
+export { registerBuiltinCommands } from './blocks/builtin-commands.js';
+export { EventBus, bridgeShellHooks } from './signals/event-bus.js';
+export type { EventPayload, EventListener } from './signals/event-bus.js';
+export { EngineHealth, engineHealth, classifyDispatchFailure, authFailureHint, authLoginHint } from './signals/engine-health.js';
+export type { EngineHealthRecord } from './signals/engine-health.js';
 export type { ValidatedEngineDefinition } from './schemas/engine-schema.js';
-export { sessionContext } from './session-context.js';
-export type { SessionResult, BrainstormResultData, CampfireResultData, TribunalResultData, ForgeResultData, ThinkResultData, CouncilResultData, SynthesisResultData, NeroResultData, ReviewResultData, ResearchResultData, ChromeResultData } from './generated/models/session-result-types.js';
+export { sessionContext } from './blocks/session-context.js';
+export type { SessionResult, BrainstormResultData, CampfireResultData, TribunalResultData, ForgeResultData, ThinkResultData, CouncilResultData, SynthesisResultData, NeroResultData, ReviewResultData, ResearchResultData, ChromeResultData } from './models/session-result-types.js';
 export {
   splitPromptBlocks, mergeBlocksByRole,
-} from './prompt-builder.js';
-export type { PromptBlock } from './prompt-builder.js';
+} from './blocks/prompt-builder.js';
+export type { PromptBlock } from './blocks/prompt-builder.js';
 // ── Team Competition ──
 export {
   lineupKey, makeFormat, assignTeamRoles, composeTeams, computeContributionWeights,
-} from './generated/teams/team.js';
+} from './teams/team.js';
 export type {
   TeamRole, TeamComposeMode, TeamCoopStrategy, TeamMember, TeamSpec, TeamFormat,
   TeamRoundTrace, TeamSubmission, TeamScoreCard, TeamMatchResult, TeamEvent,
-} from './generated/teams/team.js';
-export { getTeamElo, updateTeamElo, predictTeamRating } from './generated/teams/team-elo.js';
-export type { TeamCompositionRating, TeamRoleRating, TeamEloRecord } from './generated/teams/team-elo.js';
+} from './teams/team.js';
+export { getTeamElo, updateTeamElo, predictTeamRating } from './teams/team-elo.js';
+export type { TeamCompositionRating, TeamRoleRating, TeamEloRecord } from './teams/team-elo.js';
 export { buildRagIndex, queryRag, collectCorpusFiles, chunkMarkdown, embedTexts, embedSidecarHint, ragDir, loadRagIndex, cosineTopK, isGrounded, formatCitedBlocks, formatCitationFootnotes, AgonPersistentRagVectorStore, adapterNamespaceDir, createAgonRagVectorStoreContract, RAG_DEFAULT_TOP_K, RAG_GROUNDED_MIN_SCORE } from './rag.js';
 export type { RagChunk, RagHit, RagManifest, RagIndexResult, RagQueryResult } from './rag.js';
-export { classifyRuntimePilotChange } from './generated/workflows/runtime-pilot.js';
+export { classifyRuntimePilotChange } from './workflows/runtime-pilot.js';
 // ── Guard-fire telemetry (Phase 0) — pure tracker (Module A) + JSONL/counters store (Module A2) ──
 export {
   normalizeForHash, contentHashOf, tokenSetJaccard,

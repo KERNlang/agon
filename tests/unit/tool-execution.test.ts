@@ -4,10 +4,10 @@ import type { ToolContext, ToolCall, ToolHandler } from '@kernlang/agon-core';
 import { join } from 'node:path';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { getProjectFileStateCache, clearProjectFileStateCaches } from '../../packages/core/src/generated/blocks/file-state-cache.js';
-import { ToolRegistry as GeneratedToolRegistry, executeToolCall as generatedExecuteToolCall } from '../../packages/core/src/generated/signals/tool-registry.js';
-import { createReadTool as generatedCreateReadTool } from '../../packages/core/src/generated/tools/tool-read.js';
-import { createEditTool as generatedCreateEditTool } from '../../packages/core/src/generated/tools/tool-edit.js';
+import { getProjectFileStateCache, clearProjectFileStateCaches } from '../../packages/core/src/blocks/file-state-cache.js';
+import { ToolRegistry as GeneratedToolRegistry, executeToolCall as generatedExecuteToolCall } from '../../packages/core/src/signals/tool-registry.js';
+import { createReadTool as generatedCreateReadTool } from '../../packages/core/src/tools/tool-read.js';
+import { createEditTool as generatedCreateEditTool } from '../../packages/core/src/tools/tool-edit.js';
 
 const REPO_ROOT = join(import.meta.dirname, '../..');
 
@@ -154,7 +154,7 @@ describe('tool-execution', () => {
     });
 
     it('propagates string denials from the permission handler', async () => {
-      const { ToolRegistry: GeneratedToolRegistry, executeToolCall: generatedExecuteToolCall } = await import('../../packages/core/src/generated/signals/tool-registry.js');
+      const { ToolRegistry: GeneratedToolRegistry, executeToolCall: generatedExecuteToolCall } = await import('../../packages/core/src/signals/tool-registry.js');
       const registry = new GeneratedToolRegistry();
       const tool: ToolHandler = {
         definition: {

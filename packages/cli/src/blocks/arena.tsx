@@ -2,7 +2,7 @@ import React from 'react';
 import { Box, Text } from 'ink';
 
 // ── Core ───────────────────────────────────────────────
-import type { EngineProgress } from '../../handlers/types.js';
+import type { EngineProgress } from '../handlers/types.js';
 
 import { engineColor } from './rendering.js';
 

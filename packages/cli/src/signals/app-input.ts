@@ -1,6 +1,6 @@
 import { getGhostCompletion } from './ghost-text.js';
 
-import { stripBracketedPasteMarkers } from '../../input-utils.js';
+import { stripBracketedPasteMarkers } from '../input-utils.js';
 
 import { collectSourceFiles } from '@kernlang/agon-core';
 

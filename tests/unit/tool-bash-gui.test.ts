@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { guiUnavailableHint } from '../../packages/core/src/generated/tools/tool-bash.js';
+import { guiUnavailableHint } from '../../packages/core/src/tools/tool-bash.js';
 
 describe('guiUnavailableHint (#8 GUI-on-CLI detection)', () => {
   it('hints for allowlisted GUI-launch commands across package managers', () => {

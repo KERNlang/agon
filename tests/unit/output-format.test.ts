@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatConfidenceToolLabel } from '../../packages/cli/src/generated/blocks/output-format.js';
+import { formatConfidenceToolLabel } from '../../packages/cli/src/blocks/output-format.js';
 
 describe('formatConfidenceToolLabel', () => {
   it('formats parsed confidence without losing the raw value binding', () => {

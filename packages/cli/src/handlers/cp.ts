@@ -2,9 +2,9 @@ import { copyToClipboard } from '@kernlang/agon-core';
 
 import type { ChatSession } from '@kernlang/agon-core';
 
-import { codeBlockBuffer } from '../../code-buffer.js';
+import { codeBlockBuffer } from '../code-buffer.js';
 
-import type { Dispatch } from '../../handlers/types.js';
+import type { Dispatch } from './types.js';
 
 /**
  * /cp last — copy the most recent engine response (whole message, not just fenced code) to the clipboard. The terminal-native answer to 'I can't mouse-select output while the screen repaints': during an active run Ink redraws constantly and any selection is wiped, so copying must not depend on selection surviving.

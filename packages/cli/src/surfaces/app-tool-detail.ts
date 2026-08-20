@@ -6,9 +6,9 @@ import { truncateCodeLine } from '../blocks/markdown.js';
 
 import { parsePatchPreview } from '../blocks/engine-helpers.js';
 
-import type { OutputBlock } from '../../generated/blocks/engine.js';
+import type { OutputBlock } from '../blocks/engine.js';
 
-import { contentWidth, engineColor } from '../../generated/blocks/rendering.js';
+import { contentWidth, engineColor } from '../blocks/rendering.js';
 
 import { buildToolCallRows } from './app-rendering.js';
 

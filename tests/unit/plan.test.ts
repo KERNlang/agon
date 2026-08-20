@@ -7,9 +7,9 @@ import {
   cancelPlan,
   failPlan,
   resetStepForRetry,
-} from '../../packages/core/src/plan.js';
-import { PlanStateError } from '../../packages/core/src/errors.js';
-import type { Plan, PlanStepInput, WorkspaceSnapshot, PlanAction } from '../../packages/core/src/plan.js';
+} from '../../packages/core/src/blocks/plan.js';
+import { PlanStateError } from '../../packages/core/src/models/errors.js';
+import type { Plan, PlanStepInput, WorkspaceSnapshot, PlanAction } from '../../packages/core/src/blocks/plan.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decideFirstChunkRetry } from '../../packages/core/src/generated/sessions/first-chunk-retry-policy.js';
+import { decideFirstChunkRetry } from '../../packages/core/src/sessions/first-chunk-retry-policy.js';
 
 describe('first-chunk retry policy', () => {
   const timeout = 'API stream first-chunk idle timeout after 120s (received 1 chunks, 0 text chars)';

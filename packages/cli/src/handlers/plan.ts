@@ -3,7 +3,7 @@ import { loadPlan, listPlans, approvePlan, startPlan, cancelPlan, resetStepForRe
 
 import type { Plan } from '@kernlang/agon-core';
 
-import type { Dispatch, HandlerContext } from '../../handlers/types.js';
+import type { Dispatch, HandlerContext } from './types.js';
 
 export async function handlePlanShow(dispatch: Dispatch, ctx: HandlerContext, planId?: string): Promise<void> {
   let plan: Plan | null = null;
@@ -43,7 +43,7 @@ export async function handlePlanShow(dispatch: Dispatch, ctx: HandlerContext, pl
       dispatch({ type: 'success', message: 'Plan approved.' });
   
       if (approved.action.type === 'forge') {
-        const { handleForge } = await import('../handlers/forge.js');
+        const { handleForge } = await import('./forge.js');
         await handleForge(approved.action.task, approved.action.fitnessCmd ?? null, dispatch, ctx, approved, approved.action.hardened);
       } else {
         dispatch({ type: 'info', message: 'Run the build again to execute.' });
@@ -73,7 +73,7 @@ export async function handleApprove(dispatch: Dispatch, ctx: HandlerContext): Pr
   dispatch({ type: 'success', message: 'Plan approved.' });
   
   if (plan.action.type === 'forge') {
-    const { handleForge } = await import('../handlers/forge.js');
+    const { handleForge } = await import('./forge.js');
     await handleForge(plan.action.task, plan.action.fitnessCmd ?? null, dispatch, ctx, plan, plan.action.hardened);
   } else {
     dispatch({ type: 'info', message: 'Run the build again to execute.' });
@@ -105,7 +105,7 @@ export async function handleRetry(dispatch: Dispatch, ctx: HandlerContext): Prom
     plan = startPlan(plan);
     ctx.setCurrentPlan(plan);
     savePlan(plan);
-    const { handleForge } = await import('../handlers/forge.js');
+    const { handleForge } = await import('./forge.js');
     await handleForge(plan.action.task, plan.action.fitnessCmd ?? null, dispatch, ctx, plan, plan.action.hardened);
   } else {
     dispatch({ type: 'info', message: 'Plan reset to approved. Run the build again to execute.' });

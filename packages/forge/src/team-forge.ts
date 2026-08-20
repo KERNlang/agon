@@ -12,7 +12,7 @@ import { updateTeamElo } from '@kernlang/agon-core';
 
 import { runFitness } from './fitness.js';
 
-import type { WorktreeEntry } from '../types.js';
+import type { WorktreeEntry } from './types.js';
 
 export function shellQuoteForTeamForge(value: string): string {
   const s = String(value ?? '');

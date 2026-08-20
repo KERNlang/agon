@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { JobService } from '../../packages/core/src/generated/jobs/job-service.js';
+import { JobService } from '../../packages/core/src/jobs/job-service.js';
 
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 

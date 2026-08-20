@@ -7,15 +7,15 @@ export {
   discoverChecker, parseCheckerOutput,
   normalizeMessage, fingerprintOf,
   REPO_ROOT_MARKERS, RUFF_CONFIG_FILES,
-} from './generated/diagnostics/checker-discovery.js';
+} from './diagnostics/checker-discovery.js';
 export type {
   CheckerPlan, CheckerLine, CheckerLang,
-} from './generated/diagnostics/checker-discovery.js';
+} from './diagnostics/checker-discovery.js';
 export {
   DiagnosticRunner,
   normalizeEditedPath, renderDigestText,
   DEBOUNCE_MS, BUDGET_MS, DIGEST_MAX_LINES, QUEUE_CAP, CLEAN_BASELINE,
-} from './generated/diagnostics/diagnostic-runner.js';
+} from './diagnostics/diagnostic-runner.js';
 export type {
   DiagnosticDigest, SpawnLike,
-} from './generated/diagnostics/diagnostic-runner.js';
+} from './diagnostics/diagnostic-runner.js';

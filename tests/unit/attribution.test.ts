@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { AGON_ATTRIBUTION, AGON_ATTRIBUTION_PR, appendAttribution, appendPrAttribution } from '../../packages/core/src/git.js';
+import { AGON_ATTRIBUTION, AGON_ATTRIBUTION_PR, appendAttribution, appendPrAttribution } from '../../packages/core/src/blocks/git.js';
 
 const id = 'agon (KERN) <noreply@kernlang.dev>';
 

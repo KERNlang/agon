@@ -8,9 +8,9 @@ import { runConquer, createConquerIsolation } from '@kernlang/agon-forge';
 
 import type { ConquerTurn } from '@kernlang/agon-forge';
 
-import { recordRun, formatRunSummary } from '../../telemetry/index.js';
+import { recordRun, formatRunSummary } from '../telemetry/index.js';
 
-import type { Dispatch, HandlerContext } from '../../handlers/types.js';
+import type { Dispatch, HandlerContext } from './types.js';
 
 import { filterDefaultOrchestrationEngines } from './engine-filter.js';
 

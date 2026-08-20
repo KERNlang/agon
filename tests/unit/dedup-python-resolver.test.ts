@@ -3,8 +3,8 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { resolveSidecarPython } from '../../packages/core/src/generated/blocks/dedup-resolver.js';
-import { EXPECTED_SIDECARS, formatPythonSidecarInstallCommand } from '../../packages/cli/src/generated/commands/doctor.js';
+import { resolveSidecarPython } from '../../packages/core/src/blocks/dedup-resolver.js';
+import { EXPECTED_SIDECARS, formatPythonSidecarInstallCommand } from '../../packages/cli/src/commands/doctor.js';
 import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 
 let agonHome: string;

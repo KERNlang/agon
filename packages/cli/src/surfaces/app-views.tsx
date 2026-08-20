@@ -2,13 +2,13 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 
 // ── Core ───────────────────────────────────────────────
-import { EngineProgressView, BRAND, VERSION } from '../../generated/blocks/engine.js';
+import { EngineProgressView, BRAND, VERSION } from '../blocks/engine.js';
 
-import { RenderedSegments, contentWidth, engineColor, RichLineView, DiffLine, SyntaxLine, AnsiLine, GradientLine } from '../../generated/blocks/rendering.js';
+import { RenderedSegments, contentWidth, engineColor, RichLineView, DiffLine, SyntaxLine, AnsiLine, GradientLine } from '../blocks/rendering.js';
 
 import { buildPlanPhaseGauge, normalizeUiMotion } from './status-helpers.js';
 
-import type { EngineProgress } from '../../handlers/types.js';
+import type { EngineProgress } from '../handlers/types.js';
 
 import type { Job } from '../signals/job-manager.js';
 
@@ -20,11 +20,11 @@ import { loadConfig } from '@kernlang/agon-core';
 
 import { icons } from '../signals/icons.js';
 
-import { AgentProgressView } from '../../generated/surfaces/agent.js';
+import { AgentProgressView } from './agent.js';
 
-import { StatusBar, CesarStatusStrip, StatusDashboard, ExecutionRailPanel } from '../../generated/surfaces/status.js';
+import { StatusBar, CesarStatusStrip, StatusDashboard, ExecutionRailPanel } from './status.js';
 
-import { ComposerView } from '../../generated/blocks/composer.js';
+import { ComposerView } from '../blocks/composer.js';
 
 import { FileRail } from '../blocks/file-rail.js';
 

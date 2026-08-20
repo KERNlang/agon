@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { generateMutants } from '../../packages/forge/src/generated/goal/mutation.js';
-import type { Mutant } from '../../packages/forge/src/generated/goal/mutation.js';
-import { mutationGateDecision, foldMutationVerdicts } from '../../packages/forge/src/generated/goal/policy.js';
+import { generateMutants } from '../../packages/forge/src/goal/mutation.js';
+import type { Mutant } from '../../packages/forge/src/goal/mutation.js';
+import { mutationGateDecision, foldMutationVerdicts } from '../../packages/forge/src/goal/policy.js';
 
 // ── Mutation-gate calibration (tiered land / review / park) ──────────────
 // The zero-tolerance mutation gate (any surviving mutant -> hard park) parked

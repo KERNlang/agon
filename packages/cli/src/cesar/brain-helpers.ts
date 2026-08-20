@@ -4,7 +4,7 @@ import { tracker } from '@kernlang/agon-core';
 
 import { parseToolCalls } from '@kernlang/agon-core';
 
-import type { HandlerContext, PendingDelegation } from '../../handlers/types.js';
+import type { HandlerContext, PendingDelegation } from '../handlers/types.js';
 
 import { hostNowMs, hostRegexObjectTest, hostStringSet } from '../lib/kern-host.js';
 

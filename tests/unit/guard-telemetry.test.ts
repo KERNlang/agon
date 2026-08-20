@@ -13,11 +13,11 @@ import {
   deriveCalibrationBucket,
   createTurnTracker,
   GUARD_TELEMETRY_THRESHOLDS,
-} from '../../packages/core/src/generated/telemetry/guard-telemetry.js';
+} from '../../packages/core/src/telemetry/guard-telemetry.js';
 import type {
   GuardFireEvent,
   TurnTelemetryRecord,
-} from '../../packages/core/src/generated/telemetry/guard-telemetry.js';
+} from '../../packages/core/src/telemetry/guard-telemetry.js';
 // Module A2 — persistence layer.
 import {
   guardTelemetryDir as storeDir,
@@ -27,10 +27,10 @@ import {
   updateGuardCounters as storeUpdate,
   readGuardCounters as storeRead,
   recommendGuardAction as storeRecommend,
-} from '../../packages/core/src/generated/telemetry/guard-telemetry-store.js';
+} from '../../packages/core/src/telemetry/guard-telemetry-store.js';
 import type {
   GuardCounterCell,
-} from '../../packages/core/src/generated/telemetry/guard-telemetry-store.js';
+} from '../../packages/core/src/telemetry/guard-telemetry-store.js';
 
 // ──────────────────────────────────────────────────────────────────────
 // Pure fns — no fs, no env. These are reused live AND offline.

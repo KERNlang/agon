@@ -1,14 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock runApiAgentLoop so tests don't hit real APIs.
-vi.mock('../../packages/core/src/generated/api/agent-loop.js', () => ({
+vi.mock('../../packages/core/src/api/agent-loop.js', () => ({
   runApiAgentLoop: vi.fn(),
 }));
 
 // Mock worktreeChangedDiff so we can control what the recompute returns.
-vi.mock('../../packages/core/src/generated/blocks/git.js', async () => {
-  const actual = await vi.importActual<typeof import('../../packages/core/src/generated/blocks/git.js')>(
-    '../../packages/core/src/generated/blocks/git.js',
+vi.mock('../../packages/core/src/blocks/git.js', async () => {
+  const actual = await vi.importActual<typeof import('../../packages/core/src/blocks/git.js')>(
+    '../../packages/core/src/blocks/git.js',
   );
   return {
     ...actual,
@@ -18,9 +18,9 @@ vi.mock('../../packages/core/src/generated/blocks/git.js', async () => {
 
 // Mock spawnWithTimeout so runPostSynthesisFitnessCheck tests don't actually
 // spawn subprocesses. Must preserve the other exports from process.js.
-vi.mock('../../packages/core/src/generated/blocks/process.js', async () => {
-  const actual = await vi.importActual<typeof import('../../packages/core/src/generated/blocks/process.js')>(
-    '../../packages/core/src/generated/blocks/process.js',
+vi.mock('../../packages/core/src/blocks/process.js', async () => {
+  const actual = await vi.importActual<typeof import('../../packages/core/src/blocks/process.js')>(
+    '../../packages/core/src/blocks/process.js',
   );
   return {
     ...actual,
@@ -35,11 +35,11 @@ import {
   runAgentInvestigateSynthesis,
   runPostSynthesisFitnessCheck,
   detectSynthesisInsightMention,
-} from '../../packages/core/src/generated/cesar/agent-synthesis.js';
-import type { AgentSynthesisLoser } from '../../packages/core/src/generated/cesar/agent-synthesis.js';
-import { runApiAgentLoop } from '../../packages/core/src/generated/api/agent-loop.js';
-import { worktreeChangedDiff } from '../../packages/core/src/generated/blocks/git.js';
-import { spawnWithTimeout } from '../../packages/core/src/generated/blocks/process.js';
+} from '../../packages/core/src/cesar/agent-synthesis.js';
+import type { AgentSynthesisLoser } from '../../packages/core/src/cesar/agent-synthesis.js';
+import { runApiAgentLoop } from '../../packages/core/src/api/agent-loop.js';
+import { worktreeChangedDiff } from '../../packages/core/src/blocks/git.js';
+import { spawnWithTimeout } from '../../packages/core/src/blocks/process.js';
 
 const mockRun = runApiAgentLoop as unknown as ReturnType<typeof vi.fn>;
 const mockDiff = worktreeChangedDiff as unknown as ReturnType<typeof vi.fn>;

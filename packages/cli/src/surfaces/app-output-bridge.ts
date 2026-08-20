@@ -1,4 +1,4 @@
-import type { OutputEvent, EngineProgress } from '../../handlers/types.js';
+import type { OutputEvent, EngineProgress } from '../handlers/types.js';
 
 import type { OutputActions, AgentProgressSnapshot, StreamingEntry, LiveToolStreamEntry } from '../signals/output.js';
 
@@ -12,7 +12,7 @@ import type { Scoreboard } from '../cesar/scoreboard.js';
 
 import type { ModeRationale } from '../cesar/mode-rationale.js';
 
-import type { OutputBlock } from '../../generated/blocks/engine.js';
+import type { OutputBlock } from '../blocks/engine.js';
 
 import { appendTranscriptBlock } from './app-blocks.js';
 

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { clearFileTracker, getFileDiff, listFiles, recordToolCall } from '../../packages/cli/src/generated/signals/file-tracker.js';
+import { clearFileTracker, getFileDiff, listFiles, recordToolCall } from '../../packages/cli/src/signals/file-tracker.js';
 
 const tempDirs: string[] = [];
 

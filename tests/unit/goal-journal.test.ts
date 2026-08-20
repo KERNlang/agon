@@ -5,9 +5,9 @@ import { join } from 'node:path';
 import {
   createJournal, addTasks, requeueInflightTasks, nextTask, markStatus, recordAttempt,
   remainingCount, isDone, logEvent, boundEvents, saveJournal, loadJournal, journalPath,
-} from '../../packages/forge/src/generated/goal/journal.js';
-import { pushRecentOutcome, globalBreaker } from '../../packages/forge/src/generated/goal/policy.js';
-import type { GoalSpec } from '../../packages/forge/src/generated/goal/types.js';
+} from '../../packages/forge/src/goal/journal.js';
+import { pushRecentOutcome, globalBreaker } from '../../packages/forge/src/goal/policy.js';
+import type { GoalSpec } from '../../packages/forge/src/goal/types.js';
 
 const spec = (): GoalSpec => ({
   goalId: 'g-test',

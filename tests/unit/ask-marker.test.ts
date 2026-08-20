@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { parseAskMarker } from '../../packages/cli/src/generated/cesar/ask-marker.js';
-import { createAskDisplayStripper } from '../../packages/cli/src/generated/cesar/brain-helpers.js';
+import { parseAskMarker } from '../../packages/cli/src/cesar/ask-marker.js';
+import { createAskDisplayStripper } from '../../packages/cli/src/cesar/brain-helpers.js';
 
 const block = (body: string) => `[ASK]\n${body}\n[/ASK]`;
 

@@ -6,7 +6,7 @@ import {
   getLastFoldedRaw,
   getFoldedRaw,
   getFoldedRawCount,
-} from '../../packages/cli/src/generated/blocks/narration-fold.js';
+} from '../../packages/cli/src/blocks/narration-fold.js';
 
 // A condensed but faithful slice of a real agy (--print black-box agent)
 // "wall of text": glued research narration followed by a real answer tail.

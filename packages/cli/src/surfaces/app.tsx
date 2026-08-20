@@ -2,13 +2,13 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Static, render } from 'ink';
 
 // ── Core ───────────────────────────────────────────────
-import { ScrollBox, AlternateScreen } from '../../vendor/terminal/index.js';
+import { ScrollBox, AlternateScreen } from '../vendor/terminal/index.js';
 
 import { EngineRegistry, loadConfig, ensureAgonHome, setSessionRoot, startChatSession, seedChatSessionFromThread, loadOrCreateActiveThread, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, getAuthKey, setAuthKey, getAgonHome, tracker, listCesarPlans, visionSupportNote } from '@kernlang/agon-core';
 
 import type { Plan, ChatSession, Skill, PersistentSession, ImageAttachment } from '@kernlang/agon-core';
 
-import type { EngineProgress } from '../../handlers/types.js';
+import type { EngineProgress } from '../handlers/types.js';
 
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 
@@ -28,7 +28,7 @@ import { trackJobAbortController } from '../signals/job-abort-scope.js';
 
 import { cleanEngineOutput } from '../blocks/markdown.js';
 
-import type { OutputEvent } from '../../handlers/types.js';
+import type { OutputEvent } from '../handlers/types.js';
 
 import type { ReplStateState } from '../signals/app-state.js';
 
@@ -70,11 +70,11 @@ import { createDurableCesarTurnRuntimeHost } from '../cesar/turn-runtime.js';
 
 import type { CesarTurnRuntimeHost } from '../cesar/turn-runtime.js';
 
-import { SpinnerBlock, BackgroundJobRail, ExecutionRailPanel } from '../../generated/surfaces/status.js';
+import { SpinnerBlock, BackgroundJobRail, ExecutionRailPanel } from './status.js';
 
-import { EnginePicker, ModelPicker, ReviewBlock, CesarPicker } from '../../generated/blocks/controls.js';
+import { EnginePicker, ModelPicker, ReviewBlock, CesarPicker } from '../blocks/controls.js';
 
-import { VERSION } from '../../generated/blocks/engine.js';
+import { VERSION } from '../blocks/engine.js';
 
 import { ChromeBar, ToolDetailBlock, TranscriptRowView, LiveStreamSection, BtwSidePanel, RailTakeoverPanel, BottomChromeSection, buildPlanChromeSummary } from './app-views.js';
 
@@ -82,9 +82,9 @@ import { recordToolCall, listFiles, getFileTrackerVersion } from '../signals/fil
 
 import { FileRail } from '../blocks/file-rail.js';
 
-import type { OutputBlock } from '../../generated/blocks/engine.js';
+import type { OutputBlock } from '../blocks/engine.js';
 
-import type { ReviewEvent } from '../../generated/blocks/controls.js';
+import type { ReviewEvent } from '../blocks/controls.js';
 
 import { join } from 'node:path';
 
@@ -100,7 +100,7 @@ import { formatSessionResults, formatChatTranscript } from '../blocks/results-fo
 
 import { loadSkills } from '@kernlang/agon-core';
 
-import { useStableInput } from '../../stable-input.js';
+import { useStableInput } from '../stable-input.js';
 
 import { saveDismissedVersion } from '../services/update-check.js';
 

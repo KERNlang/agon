@@ -7,8 +7,8 @@ import { readFileSync, writeFileSync, mkdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { tracker, resolveWorkingDir } from '@kernlang/agon-core';
-import { runsStore } from '../generated/signals/runs-store.js';
-import { summarizeIntentForEpisode } from '../generated/cesar/experience.js';
+import { runsStore } from '../signals/runs-store.js';
+import { summarizeIntentForEpisode } from '../cesar/experience.js';
 
 // ── Types ──────────────────────────────────────────────────────────────
 

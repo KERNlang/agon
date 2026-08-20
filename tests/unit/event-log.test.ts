@@ -17,12 +17,12 @@ import {
   metaPath,
   sanitizeSessionId,
   type LoggedEvent,
-} from '../../packages/core/src/generated/sessions/event-log.js';
+} from '../../packages/core/src/sessions/event-log.js';
 import {
   teeOutputEvent,
   flushEventLogTee,
   resetEventLogTee,
-} from '../../packages/cli/src/generated/signals/event-log-tee.js';
+} from '../../packages/cli/src/signals/event-log-tee.js';
 
 let home: string;
 

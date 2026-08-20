@@ -29,7 +29,7 @@ describe('run pruning', () => {
       const twoDaysAgo = new Date(now - 2 * 24 * 60 * 60 * 1000);
       utimesSync(staleOverflow, twoDaysAgo, twoDaysAgo);
 
-      const { ensureAgonHome } = await import('../../packages/core/src/config.js');
+      const { ensureAgonHome } = await import('../../packages/core/src/signals/config.js');
       ensureAgonHome();
 
       expect(existsSync(freshOverflow)).toBe(true);

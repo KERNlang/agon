@@ -6,11 +6,11 @@ import { cleanEngineOutput, parseMarkdownBlocks, truncateCodeLine } from '../blo
 
 import { parsePatchPreview } from '../blocks/engine-helpers.js';
 
-import { contentWidth, color256toHex, engineColor, CODE_RAIL, CODE_RAIL_COLOR, MAX_CODE_LINES } from '../../generated/blocks/rendering.js';
+import { contentWidth, color256toHex, engineColor, CODE_RAIL, CODE_RAIL_COLOR, MAX_CODE_LINES } from '../blocks/rendering.js';
 
-import { LOGO_LINES, VERSION, BRAND } from '../../generated/blocks/engine.js';
+import { LOGO_LINES, VERSION, BRAND } from '../blocks/engine.js';
 
-import type { OutputBlock } from '../../generated/blocks/engine.js';
+import type { OutputBlock } from '../blocks/engine.js';
 
 import { parseProseToRichLines } from '../blocks/rich-text.js';
 

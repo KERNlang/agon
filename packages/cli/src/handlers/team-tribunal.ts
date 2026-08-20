@@ -8,7 +8,7 @@ import { runTeamTribunal } from '@kernlang/agon-forge';
 
 import type { TribunalMode } from '@kernlang/agon-forge';
 
-import type { Dispatch, HandlerContext } from '../../handlers/types.js';
+import type { Dispatch, HandlerContext } from './types.js';
 
 import { filterDefaultOrchestrationEngines } from './engine-filter.js';
 

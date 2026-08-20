@@ -2,7 +2,7 @@ import { execSync, execFileSync } from 'node:child_process';
 
 import { loadConfig, resolveWorkingDir, configGet, appendAttribution, appendCoAuthor } from '@kernlang/agon-core';
 
-import type { Dispatch, HandlerContext } from '../../handlers/types.js';
+import type { Dispatch, HandlerContext } from './types.js';
 
 import { hostPromiseAllValues } from '../lib/kern-host.js';
 

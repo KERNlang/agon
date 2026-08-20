@@ -5,13 +5,13 @@ import { tmpdir } from 'node:os';
 import {
   chunkMarkdown,
   RAG_CHUNK_MAX_CHARS,
-} from '../../packages/core/src/generated/rag/chunking.js';
-import { collectCorpusFiles, hashCorpus } from '../../packages/core/src/generated/rag/corpus.js';
-import { cosineTopK, RAG_GROUNDED_MIN_SCORE } from '../../packages/core/src/generated/rag/retriever.js';
-import { isGrounded, formatCitedBlocks, formatCitationFootnotes } from '../../packages/core/src/generated/rag/grounding.js';
-import { saveRagIndex, loadRagIndex, ragDir } from '../../packages/core/src/generated/rag/store.js';
-import { embedTexts } from '../../packages/core/src/generated/rag/embed.js';
-import type { RagChunk, RagManifest } from '../../packages/core/src/generated/rag/types.js';
+} from '../../packages/core/src/rag/chunking.js';
+import { collectCorpusFiles, hashCorpus } from '../../packages/core/src/rag/corpus.js';
+import { cosineTopK, RAG_GROUNDED_MIN_SCORE } from '../../packages/core/src/rag/retriever.js';
+import { isGrounded, formatCitedBlocks, formatCitationFootnotes } from '../../packages/core/src/rag/grounding.js';
+import { saveRagIndex, loadRagIndex, ragDir } from '../../packages/core/src/rag/store.js';
+import { embedTexts } from '../../packages/core/src/rag/embed.js';
+import type { RagChunk, RagManifest } from '../../packages/core/src/rag/types.js';
 
 const tempDirs: string[] = [];
 function tempRepo(): string {

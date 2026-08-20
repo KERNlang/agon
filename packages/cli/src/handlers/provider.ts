@@ -6,7 +6,7 @@ import { homedir } from 'node:os';
 
 import { setAuthKey, removeAuthKey, listStoredProviders } from '@kernlang/agon-core';
 
-import type { Dispatch, HandlerContext } from '../../handlers/types.js';
+import type { Dispatch, HandlerContext } from './types.js';
 
 export interface ProviderKeyCmd {
   sub: 'set'|'clear'|'list'|'help';

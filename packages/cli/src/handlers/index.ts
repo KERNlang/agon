@@ -28,7 +28,7 @@ export {
   handleRetry,
   handleCancel,
   handleApplyPatch,
-} from './plan-handlers.js';
+} from './plan.js';
 export { handleCp, handleCpLast } from './cp.js';
 export { handleBuild } from './build.js';
 export { handleRun } from './run.js';
@@ -36,13 +36,13 @@ export { handlePipeline } from './pipeline.js';
 export { handleFlowReport, handleFlowAnalysis, autoLogFlow } from './flow.js';
 export { handleCommit } from './commit.js';
 export { handleReview, handleReviewMany, handleReviewRoles } from './review.js';
-export { runAgentMode, runAgentTeam } from '../generated/handlers/agent.js';
-export { handleThink } from '../generated/handlers/think.js';
-export { handleCouncil } from '../generated/handlers/council.js';
-export { handleConquer } from '../generated/handlers/conquer.js';
-export { handleSynthesis } from '../generated/handlers/synthesis.js';
-export { handleNeroChallenge } from '../generated/handlers/nero-challenge.js';
-export { handleResearch } from '../generated/handlers/research.js';
-export { handleChrome } from '../generated/handlers/chrome.js';
-export { handleSanitize, handleNaturalize } from '../generated/handlers/naturalize.js';
-export { handleMutate } from '../generated/handlers/mutate.js';
+export { runAgentMode, runAgentTeam } from './agent.js';
+export { handleThink } from './think.js';
+export { handleCouncil } from './council.js';
+export { handleConquer } from './conquer.js';
+export { handleSynthesis } from './synthesis.js';
+export { handleNeroChallenge } from './nero-challenge.js';
+export { handleResearch } from './research.js';
+export { handleChrome } from './chrome.js';
+export { handleSanitize, handleNaturalize } from './naturalize.js';
+export { handleMutate } from './mutate.js';

@@ -1,6 +1,6 @@
 import type { ImageAttachment, ChatSession } from '@kernlang/agon-core';
 
-import type { Dispatch, HandlerContext } from '../../handlers/types.js';
+import type { Dispatch, HandlerContext } from '../handlers/types.js';
 
 export interface DispatchCallbacks {
   dispatch: Dispatch;

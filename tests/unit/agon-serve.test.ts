@@ -7,7 +7,7 @@ import { join } from 'node:path';
 // (event-log resolves paths at call time, so setting it pre-import is enough).
 process.env.AGON_HOME = mkdtempSync(join(tmpdir(), 'agon-serve-test-'));
 
-import { createAgonServe } from '../../packages/cli/src/generated/bridge/agon-serve.js';
+import { createAgonServe } from '../../packages/cli/src/bridge/agon-serve.js';
 import type { BrainClient } from '@kernlang/agon-core';
 
 // Minimal fake brain — agon-serve only calls runTurn + cancel + (now) provideAnswer.

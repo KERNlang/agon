@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan, exitCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans, cesarPlanJsonPath, cesarPlanMarkdownPath } from '../../packages/core/src/generated/cesar/plan.js';
-import type { CesarPlan, CesarPlanStep } from '../../packages/core/src/generated/cesar/plan.js';
-import { executePlan } from '../../packages/core/src/generated/cesar/plan-executor.js';
+import { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan, exitCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans, cesarPlanJsonPath, cesarPlanMarkdownPath } from '../../packages/core/src/cesar/plan.js';
+import type { CesarPlan, CesarPlanStep } from '../../packages/core/src/cesar/plan.js';
+import { executePlan } from '../../packages/core/src/cesar/plan-executor.js';
 
 const makeStep = (id: string, overrides?: Partial<CesarPlanStep>): CesarPlanStep => ({
   id,

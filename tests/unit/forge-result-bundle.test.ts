@@ -7,7 +7,7 @@ import {
   buildForgeCleanupCommand,
   completeMissingForgeResults,
   writeForgeResultBundle,
-} from '../../packages/forge/src/generated/forge.js';
+} from '../../packages/forge/src/forge.js';
 
 let tempDir: string | undefined;
 

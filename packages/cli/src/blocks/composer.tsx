@@ -2,13 +2,13 @@ import React from 'react';
 import { Box, Text } from 'ink';
 
 // ── Core ───────────────────────────────────────────────
-import { PromptTextInput } from '../../generated/blocks/prompt-input.js';
+import { PromptTextInput } from './prompt-input.js';
 
-import { SlashPicker, AtFilePicker } from '../../generated/blocks/controls.js';
+import { SlashPicker, AtFilePicker } from './controls.js';
 
 import { icons } from '../signals/icons.js';
 
-import { getGhostCompletion } from '../../ghost-text.js';
+import { getGhostCompletion } from '../signals/ghost-text.js';
 
 import { truncateCodeLine } from './markdown.js';
 

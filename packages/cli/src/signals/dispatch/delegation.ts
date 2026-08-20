@@ -1,7 +1,7 @@
 
 import { FITNESS_PATTERN } from '../intent.js';
 
-import type { HandlerContext } from '../../../handlers/types.js';
+import type { HandlerContext } from '../../handlers/types.js';
 
 import { loadOrCreateActiveThread } from '@kernlang/agon-core';
 

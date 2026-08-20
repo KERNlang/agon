@@ -7,7 +7,7 @@ import {
   type ControlCapabilities,
   type BrainTurnRequest,
   type ClientRef,
-} from '../../packages/core/src/generated/sessions/brain-client.js';
+} from '../../packages/core/src/sessions/brain-client.js';
 
 // The BrainClient contract makes two load-bearing promises the doc strings can
 // only assert: (1) the v1 host declares a known-conservative capability matrix,

@@ -3,8 +3,8 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { witnessVerifyCommand } from '../../packages/forge/src/generated/goal/oracle.js';
-import { worktreeCreate, worktreeRemoveBestEffort } from '../../packages/core/src/generated/blocks/git.js';
+import { witnessVerifyCommand } from '../../packages/forge/src/goal/oracle.js';
+import { worktreeCreate, worktreeRemoveBestEffort } from '../../packages/core/src/blocks/git.js';
 
 // The differential behavioral oracle is the load-bearing fix for "green ≠ correct":
 // a verify command that EXECUTES the produced artifact must fail on base and pass on

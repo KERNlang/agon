@@ -15,7 +15,7 @@ vi.mock('@ai-sdk/anthropic', () => ({
 }));
 
 import { generateText } from 'ai';
-import { apiDispatch } from '../../packages/core/src/generated/api/dispatch.js';
+import { apiDispatch } from '../../packages/core/src/api/dispatch.js';
 
 const mockGenerateText = vi.mocked(generateText);
 

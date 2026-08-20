@@ -12,7 +12,7 @@ import { runNaturalize } from '@kernlang/agon-forge';
 
 import { filterDefaultOrchestrationEngines } from './engine-filter.js';
 
-import type { Dispatch, HandlerContext } from '../../handlers/types.js';
+import type { Dispatch, HandlerContext } from './types.js';
 
 export async function handleSanitize(input: string, dispatch: Dispatch, _ctx: HandlerContext): Promise<void> {
   // Parse: /sanitize [file] [--detect] [--metadata] [--strip] [--out <f>] [--in-place]

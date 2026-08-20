@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { parseLiveTodos, parsePreamble } from '../../packages/cli/src/generated/cesar/todos-marker.js';
-import { createTodosDisplayStripper, createPreambleStripper } from '../../packages/cli/src/generated/cesar/brain-helpers.js';
+import { parseLiveTodos, parsePreamble } from '../../packages/cli/src/cesar/todos-marker.js';
+import { createTodosDisplayStripper, createPreambleStripper } from '../../packages/cli/src/cesar/brain-helpers.js';
 import {
   updateTodoState,
   clearLiveTodos,
   type Todo,
-} from '../../packages/cli/src/generated/signals/todos.js';
+} from '../../packages/cli/src/signals/todos.js';
 
 describe('parseLiveTodos — live [TODOS] marker parser', () => {
   it('parses a well-formed block, forces source:live, and strips it from rest', () => {

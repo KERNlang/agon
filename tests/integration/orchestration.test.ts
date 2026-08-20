@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 // ── 1. Config Corruption Handling ──────────────────────────────────
 describe('Config Corruption Handling', () => {
   it('EngineRegistry warns on corrupt JSON and continues loading', async () => {
-    const { EngineRegistry } = await import('../../packages/core/src/engine-registry.js');
+    const { EngineRegistry } = await import('../../packages/core/src/signals/engine-registry.js');
     const registry = new EngineRegistry();
 
     const tempDir = join(tmpdir(), `agon-test-corrupt-${Date.now()}`);
@@ -54,7 +54,7 @@ describe('Config Corruption Handling', () => {
 // ── 2. Manifest/History Writes ─────────────────────────────────────
 describe('Manifest Writes', () => {
   it('sidechain logger creates JSONL file and writes events', async () => {
-    const { createSidechainLogger } = await import('../../packages/core/src/sidechain-logger.js');
+    const { createSidechainLogger } = await import('../../packages/core/src/blocks/sidechain-logger.js');
     const tempDir = join(tmpdir(), `agon-test-sidechain-${Date.now()}`);
 
     const logger = createSidechainLogger({
@@ -86,7 +86,7 @@ describe('Manifest Writes', () => {
   });
 
   it('sidechain logger child creates nested log', async () => {
-    const { createSidechainLogger } = await import('../../packages/core/src/sidechain-logger.js');
+    const { createSidechainLogger } = await import('../../packages/core/src/blocks/sidechain-logger.js');
     const tempDir = join(tmpdir(), `agon-test-sidechain-child-${Date.now()}`);
 
     const parent = createSidechainLogger({
@@ -166,7 +166,7 @@ describe('Nero ↔ Cesar Confidence Transitions', () => {
 // ── 4. Output Directory Creation ───────────────────────────────────
 describe('Output Directory Creation', () => {
   it('sidechain logger creates nested output dirs', async () => {
-    const { createSidechainLogger } = await import('../../packages/core/src/sidechain-logger.js');
+    const { createSidechainLogger } = await import('../../packages/core/src/blocks/sidechain-logger.js');
     const tempDir = join(tmpdir(), `agon-test-outdir-${Date.now()}`, 'nested', 'deep');
 
     // Should create the full path without throwing
@@ -187,7 +187,7 @@ describe('Output Directory Creation', () => {
 // ── 5. Scoring Integration ─────────────────────────────────────────
 describe('Scoring ↔ Winner Determination Integration', () => {
   it('computeScore feeds correctly into determineWinner', async () => {
-    const { computeScore } = await import('../../packages/core/src/scoring.js');
+    const { computeScore } = await import('../../packages/core/src/signals/scoring.js');
     const { determineWinner } = await import('../../packages/forge/src/stages.js');
 
     // Simulate two engines with real scoring
@@ -274,7 +274,7 @@ describe('Scoring ↔ Winner Determination Integration', () => {
 // ── 6. Task Classification ↔ Routing ──────────────────────────────
 describe('Task Classification → Routing Pipeline', () => {
   it('classifyTask returns valid task class for all categories', async () => {
-    const { classifyTask } = await import('../../packages/core/src/task-classifier.js');
+    const { classifyTask } = await import('../../packages/core/src/blocks/task-classifier.js');
 
     const cases: [string, string][] = [
       ['implement a binary search tree', 'algorithm'],
@@ -292,8 +292,8 @@ describe('Task Classification → Routing Pipeline', () => {
   });
 
   it('prompt builders include task context', async () => {
-    const { buildForgePrompt } = await import('../../packages/core/src/prompt-builder.js');
-    const { classifyTask } = await import('../../packages/core/src/task-classifier.js');
+    const { buildForgePrompt } = await import('../../packages/core/src/blocks/prompt-builder.js');
+    const { classifyTask } = await import('../../packages/core/src/blocks/task-classifier.js');
 
     const task = 'refactor the auth module to use JWT tokens';
     const taskClass = classifyTask(task);

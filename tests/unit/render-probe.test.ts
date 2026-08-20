@@ -2,9 +2,9 @@ import React from 'react';
 import { render } from 'ink';
 import { describe, expect, it } from 'vitest';
 
-import { createRenderProbeTool } from '../../packages/cli/src/generated/cesar/tool-render-probe.js';
-import { createPseudoTty } from '../../packages/cli/src/generated/blocks/frame-capture.js';
-import { TodoList } from '../../packages/cli/src/generated/blocks/todo-list.js';
+import { createRenderProbeTool } from '../../packages/cli/src/cesar/tool-render-probe.js';
+import { createPseudoTty } from '../../packages/cli/src/blocks/frame-capture.js';
+import { TodoList } from '../../packages/cli/src/blocks/todo-list.js';
 
 const ctx = { cwd: process.cwd(), readFileState: new Map() } as any;
 

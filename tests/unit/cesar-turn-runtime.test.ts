@@ -16,9 +16,9 @@ import {
   transitionCesarTurn,
   fenceStaleCesarTurn,
   isReadOnlyToolCall,
-} from '../../packages/cli/src/generated/cesar/turn-runtime.js';
-import { appendControlPlaneEvent } from '../../packages/core/src/generated/sessions/control-plane-ledger.js';
-import { resetEventLogState } from '../../packages/core/src/generated/sessions/event-log.js';
+} from '../../packages/cli/src/cesar/turn-runtime.js';
+import { appendControlPlaneEvent } from '../../packages/core/src/sessions/control-plane-ledger.js';
+import { resetEventLogState } from '../../packages/core/src/sessions/event-log.js';
 import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 
 describe('Cesar turn runtime host', () => {

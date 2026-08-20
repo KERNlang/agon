@@ -1,11 +1,11 @@
-// Pins the Cesar mutate reflex (packages/cli/src/generated/cesar/mutate-reflex.ts):
+// Pins the Cesar mutate reflex (packages/cli/src/cesar/mutate-reflex.ts):
 // which turns earn the one-line "/mutate?" nudge, and which lens the changed
 // paths earn. Veto-first, like the delegation reflex — a false positive costs
 // the user attention on every turn, so the rule must stay quiet by default.
 import { describe, it, expect } from 'vitest';
 import {
   assessMutateReflex, buildMutateSuggestionLine, mutateLensForPaths, mutatedPathFromToolArgs,
-} from '../../packages/cli/src/generated/cesar/mutate-reflex.js';
+} from '../../packages/cli/src/cesar/mutate-reflex.js';
 
 const assess = (over: Partial<{ input: string; response: string; paths: string[] }> = {}) =>
   assessMutateReflex({ input: '', response: '', paths: [], ...over });

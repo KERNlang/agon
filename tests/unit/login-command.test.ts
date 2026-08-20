@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { planEngineLogin } from '../../packages/cli/src/generated/commands/login.js';
-import type { EngineDefinition } from '../../packages/core/src/generated/models/types.js';
+import { planEngineLogin } from '../../packages/cli/src/commands/login.js';
+import type { EngineDefinition } from '../../packages/core/src/models/types.js';
 
 const eng = (id: string, isolationHints?: EngineDefinition['isolationHints']): EngineDefinition =>
   ({ schemaVersion: 3, id, displayName: id, isLocal: false, tier: 'builtin', timeout: 120, isolationHints } as unknown as EngineDefinition);

@@ -2,12 +2,12 @@ import { defineCommand } from 'citty';
 import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
 import { EngineRegistry, ensureAgonHome, loadConfig, RUNS_DIR } from '@kernlang/agon-core';
-import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
+import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 import type { ForgeEvent, TeamEvent } from '@kernlang/agon-core';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { runTeamBrainstorm } from '@kernlang/agon-forge';
-import { header, info, green, bold, dim } from '../output.js';
-import { filterDefaultOrchestrationEngines } from '../generated/handlers/engine-filter.js';
+import { header, info, green, bold, dim } from '../blocks/output-format.js';
+import { filterDefaultOrchestrationEngines } from '../handlers/engine-filter.js';
 
 export const teamBrainstormCommand = defineCommand({
   meta: {

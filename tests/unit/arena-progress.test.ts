@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CampfireFire, ForgeArena, TribunalCourt } from '../../packages/cli/src/generated/blocks/arena.js';
+import { CampfireFire, ForgeArena, TribunalCourt } from '../../packages/cli/src/blocks/arena.js';
 
 describe('ForgeArena progress', () => {
   it('clamps negative elapsed time instead of passing a negative count to repeat()', () => {

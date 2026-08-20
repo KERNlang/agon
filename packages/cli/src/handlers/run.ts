@@ -1,6 +1,6 @@
 import { spawnWithTimeout, appendMessage } from '@kernlang/agon-core';
 
-import type { Dispatch, HandlerContext } from '../../handlers/types.js';
+import type { Dispatch, HandlerContext } from './types.js';
 
 export const RUN_CONTEXT_OUTPUT_CAP: number = 4000;
 

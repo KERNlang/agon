@@ -2,14 +2,14 @@ import { defineCommand, runMain } from 'citty';
 import { lazySubCommands } from './lazy-commands.js';
 import { loadConfig, loadAllAuthKeys } from '@kernlang/agon-core';
 
-// `repl.js` (the whole interactive Cesar/Ink surface, generated/surfaces/app.tsx
-// — ~2k lines pulling in React/Ink + the full tool/agent stack) and
+// `surfaces/app.js` (the whole interactive Cesar/Ink surface — ~2k lines
+// pulling in React/Ink + the full tool/agent stack) and
 // `onboarding.js` (React/Ink + EngineRegistry + the adapter) were previously
 // STATIC imports here, so their module-eval cost landed on every invocation —
 // including `agon --help` and any one-shot subcommand — even though neither is
 // ever called outside the bare-REPL/`setup` paths below. Loaded lazily instead,
 // exactly like the subcommands in lazy-commands.ts.
-const importRepl = () => import('./repl.js').then((m) => m.startRepl);
+const importRepl = () => import('./surfaces/app.js').then((m) => m.startRepl);
 const importOnboarding = () => import('./onboarding.js').then((m) => m.runOnboarding);
 
 // A rejected dynamic import must be LOUD. When these were static imports, a

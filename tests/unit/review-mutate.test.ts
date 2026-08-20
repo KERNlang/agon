@@ -6,14 +6,14 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Mutant, MutationReport } from '@kernlang/agon-core';
 
-import { runReviewMutation } from '../../packages/cli/src/generated/blocks/review-mutate.js';
+import { runReviewMutation } from '../../packages/cli/src/blocks/review-mutate.js';
 
 import {
   renderMutationLines, formatMutateProgressLine, mutateSpendLine, mutateActualSpendLine,
   mutationScorePct, mutateChatSummary, fenceMutationReport, mutateCesarPrompt,
-} from '../../packages/cli/src/generated/blocks/mutate-render.js';
-import { parseMutateArgs, parsePositiveInt, validateMutateFlags, resolveMutatePanel } from '../../packages/cli/src/generated/handlers/mutate.js';
-import { reviewMutateOverrides } from '../../packages/cli/src/generated/blocks/review-mutate.js';
+} from '../../packages/cli/src/blocks/mutate-render.js';
+import { parseMutateArgs, parsePositiveInt, validateMutateFlags, resolveMutatePanel } from '../../packages/cli/src/handlers/mutate.js';
+import { reviewMutateOverrides } from '../../packages/cli/src/blocks/review-mutate.js';
 
 // The review layout is `grouped: true`; the flat layout is what `agon mutate`
 // and the REPL print. ONE renderer, two layouts — this used to be two copies.

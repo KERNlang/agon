@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os';
 import {
   appendControlPlaneEvent,
   recoverControlPlane,
-} from '../../packages/core/src/generated/sessions/control-plane-ledger.js';
-import { resetEventLogState } from '../../packages/core/src/generated/sessions/event-log.js';
+} from '../../packages/core/src/sessions/control-plane-ledger.js';
+import { resetEventLogState } from '../../packages/core/src/sessions/event-log.js';
 
 let home = '';
 

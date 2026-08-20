@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { removeSessionWorktree } from '../../packages/core/src/generated/blocks/worktree-session.js';
-import { createConquerIsolation } from '../../packages/forge/src/generated/conquer.js';
+import { removeSessionWorktree } from '../../packages/core/src/blocks/worktree-session.js';
+import { createConquerIsolation } from '../../packages/forge/src/conquer.js';
 
 describe('Conquer worktree isolation', () => {
   let base: string;

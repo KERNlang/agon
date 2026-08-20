@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { companionDispatch } from '../../packages/core/src/generated/sessions/companion-dispatch.js';
+import { companionDispatch } from '../../packages/core/src/sessions/companion-dispatch.js';
 
 describe('companionDispatch', () => {
   it('returns an error result instead of crashing when companion stdin closes early', async () => {

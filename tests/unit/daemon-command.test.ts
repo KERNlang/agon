@@ -17,7 +17,7 @@ import {
   probeDaemon,
   HEARTBEAT_STALE_MS,
   type DaemonPidInfo,
-} from '../../packages/cli/src/generated/commands/daemon.js';
+} from '../../packages/cli/src/commands/daemon.js';
 
 let home: string;
 

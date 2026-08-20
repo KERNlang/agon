@@ -4,11 +4,11 @@ import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ToolRegistry } from '@kernlang/agon-core';
 import type { ToolContext, ToolHandler } from '@kernlang/agon-core';
-import { buildCesarConversationSnapshot, buildCesarSystemPrompt, buildOnApproval, buildOnToolCall, canUseCesarMcp, loadCesarMcpServers, normalizeCesarMcpServers, prepareCesarSystemPrompt, resolveCesarGuardMode } from '../../packages/cli/src/generated/cesar/session.js';
-import { applyInvariantsRule1, _resetInvariantsRule1DriftWarning, CESAR_RULE_1_STRICT, CESAR_RULE_1_INVARIANTS, CESAR_SYSTEM_PROMPT } from '../../packages/cli/src/generated/cesar/session.js';
-import { CESAR_AGENTIC_SYSTEM_PROMPT } from '../../packages/cli/src/generated/cesar/session.js';
-import { createTaskExecutionLease } from '../../packages/cli/src/generated/cesar/task-execution-lease.js';
-import { beginCesarTurn, createCesarTurnRuntimeHost } from '../../packages/cli/src/generated/cesar/turn-runtime.js';
+import { buildCesarConversationSnapshot, buildCesarSystemPrompt, buildOnApproval, buildOnToolCall, canUseCesarMcp, loadCesarMcpServers, normalizeCesarMcpServers, prepareCesarSystemPrompt, resolveCesarGuardMode } from '../../packages/cli/src/cesar/session.js';
+import { applyInvariantsRule1, _resetInvariantsRule1DriftWarning, CESAR_RULE_1_STRICT, CESAR_RULE_1_INVARIANTS, CESAR_SYSTEM_PROMPT } from '../../packages/cli/src/cesar/session.js';
+import { CESAR_AGENTIC_SYSTEM_PROMPT } from '../../packages/cli/src/cesar/session.js';
+import { createTaskExecutionLease } from '../../packages/cli/src/cesar/task-execution-lease.js';
+import { beginCesarTurn, createCesarTurnRuntimeHost } from '../../packages/cli/src/cesar/turn-runtime.js';
 
 const testDirs: string[] = [];
 

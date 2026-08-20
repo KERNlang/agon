@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   assessDelegationShape,
   buildDelegationAdvisory,
-} from '../../packages/cli/src/generated/cesar/delegation-reflex.js';
+} from '../../packages/cli/src/cesar/delegation-reflex.js';
 
 const listTask = [
   'Please handle these independent cleanups across the repo:',

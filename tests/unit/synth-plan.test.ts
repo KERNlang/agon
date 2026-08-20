@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { planSynthesis } from '../../packages/forge/src/lib/synth-plan.js';
-import type { SynthCandidate } from '../../packages/forge/src/lib/synth-plan.js';
+import { planSynthesis } from '../../packages/forge/src/synth-plan.js';
+import type { SynthCandidate } from '../../packages/forge/src/synth-plan.js';
 
 // planSynthesis is the PURE decision layer for forge's always-on synthesis pass:
 // given the forge winner, every candidate (pass/score/whether its patch adds a

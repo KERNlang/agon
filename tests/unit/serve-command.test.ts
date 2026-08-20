@@ -27,9 +27,9 @@ import {
   emitServeConnectionLine,
   buildServeRuntime,
   runServe,
-} from '../../packages/cli/src/generated/commands/serve.js';
-import { resolveBuiltinEnginesDir } from '../../packages/cli/src/generated/lib/engines-dir.js';
-import { createAgonServe } from '../../packages/cli/src/generated/bridge/agon-serve.js';
+} from '../../packages/cli/src/commands/serve.js';
+import { resolveBuiltinEnginesDir } from '../../packages/cli/src/lib/engines-dir.js';
+import { createAgonServe } from '../../packages/cli/src/bridge/agon-serve.js';
 import { EngineRegistry, getSessionHost } from '@kernlang/agon-core';
 import type { BrainClient } from '@kernlang/agon-core';
 

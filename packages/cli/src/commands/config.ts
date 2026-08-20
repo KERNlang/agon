@@ -1,7 +1,7 @@
 import { defineCommand } from 'citty';
 import type { AgonConfig } from '@kernlang/agon-core';
 import { loadConfig, configSet, DEFAULT_CONFIG, ensureAgonHome } from '@kernlang/agon-core';
-import { header, info, table, bold, success, fail } from '../output.js';
+import { header, info, table, bold, success, fail } from '../blocks/output-format.js';
 
 export const configCommand = defineCommand({
   meta: {

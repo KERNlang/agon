@@ -8,8 +8,8 @@ export {
   renderProvenanceJson,
   sha256OfFile,
   writeProvenanceReport,
-} from './generated/blocks/provenance.js';
+} from './blocks/provenance.js';
 export type {
   ProvenanceLedger,
   ProvenanceContribution,
-} from './generated/models/provenance.js';
+} from './models/provenance.js';

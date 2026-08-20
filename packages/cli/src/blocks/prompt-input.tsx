@@ -4,11 +4,11 @@ import { Box, Text } from 'ink';
 // ── Core ───────────────────────────────────────────────
 import chalk from 'chalk';
 
-import { stripTerminalInputMarkers } from '../../input-utils.js';
+import { stripTerminalInputMarkers } from '../input-utils.js';
 
-import { applyInlineInputEdits, classifyDeleteInput, deleteWordBackward, findLineEnd, findLineStart, findWordBoundaryLeft, findWordBoundaryRight, syncControlledInputCursor } from '../../generated/signals/text-editing.js';
+import { applyInlineInputEdits, classifyDeleteInput, deleteWordBackward, findLineEnd, findLineStart, findWordBoundaryLeft, findWordBoundaryRight, syncControlledInputCursor } from '../signals/text-editing.js';
 
-import { useStableInput } from '../../stable-input.js';
+import { useStableInput } from '../stable-input.js';
 
 export interface PromptToken {
   dimmed: boolean|undefined;

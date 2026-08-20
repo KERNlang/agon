@@ -9,7 +9,7 @@ import {
   findWordBoundaryLeft,
   findWordBoundaryRight,
   syncControlledInputCursor,
-} from '../../packages/cli/src/generated/signals/text-editing.js';
+} from '../../packages/cli/src/signals/text-editing.js';
 
 describe('safe text input helpers', () => {
   it('classifies delete keys even when Ink emits an empty input string', () => {

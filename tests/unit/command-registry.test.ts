@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { CommandRegistry } from '../../packages/core/src/command-registry.js';
-import { registerBuiltinCommands } from '../../packages/core/src/builtin-commands.js';
+import { CommandRegistry } from '../../packages/core/src/signals/command-registry.js';
+import { registerBuiltinCommands } from '../../packages/core/src/blocks/builtin-commands.js';
 
 describe('CommandRegistry', () => {
   it('registers and retrieves a command', () => {

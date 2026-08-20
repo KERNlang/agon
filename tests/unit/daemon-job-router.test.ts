@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { JobService, type JobTaskContext } from '@kernlang/agon-core';
-import { handleDaemonJobRequest } from '../../packages/cli/src/generated/jobs/daemon-job-router.js';
+import { handleDaemonJobRequest } from '../../packages/cli/src/jobs/daemon-job-router.js';
 
 describe('daemon jobs-v1 router', () => {
   const resolver = {

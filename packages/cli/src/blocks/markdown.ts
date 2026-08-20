@@ -357,7 +357,7 @@ function shortenFilePaths(text: string): string {
     }
   
     // Collapse to just filename:line for inline references
-    // packages/cli/src/generated/handlers-cesar-brain.ts:91 → handlers-cesar-brain.ts:91
+    // packages/cli/src/handlers-cesar-brain.ts:91 → handlers-cesar-brain.ts:91
     const parts = shortened.split('/');
     if (parts.length > 2) {
       shortened = parts[parts.length - 1];

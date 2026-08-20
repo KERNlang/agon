@@ -1,10 +1,10 @@
-import { isCurrentControlPlaneEnvelope, isCurrentCesarResponse, isTerminalTurnState, reduceTurnLifecycle } from '../../../../core/src/generated/sessions/turn-protocol.js';
+import { isCurrentControlPlaneEnvelope, isCurrentCesarResponse, isTerminalTurnState, reduceTurnLifecycle } from '../../../core/src/sessions/turn-protocol.js';
 
-import type { ControlPlaneEnvelopeV1, TurnLifecycleState, TurnLifecycleTransition } from '../../../../core/src/generated/sessions/turn-protocol.js';
+import type { ControlPlaneEnvelopeV1, TurnLifecycleState, TurnLifecycleTransition } from '../../../core/src/sessions/turn-protocol.js';
 
-import { appendControlPlaneEvent, recoverControlPlane } from '../../../../core/src/generated/sessions/control-plane-ledger.js';
+import { appendControlPlaneEvent, recoverControlPlane } from '../../../core/src/sessions/control-plane-ledger.js';
 
-import type { CesarState } from '../../handlers/types.js';
+import type { CesarState } from '../handlers/types.js';
 
 import { isApprovedPermissionResponse } from './task-execution-lease.js';
 

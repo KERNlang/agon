@@ -21,7 +21,7 @@ import {
   taskExplicitlyRequestsAction,
   taskActionApprovalMessage,
   DEFAULT_DESTRUCTIVE_PATTERN,
-} from '../../packages/cli/src/generated/cesar/task-execution-lease.js';
+} from '../../packages/cli/src/cesar/task-execution-lease.js';
 
 describe('Cesar task execution lease', () => {
   it('labels each boundary accurately', () => {

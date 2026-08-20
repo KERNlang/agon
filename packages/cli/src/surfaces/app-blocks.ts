@@ -10,9 +10,9 @@ import { runsStore } from '../signals/runs-store.js';
 
 import { hostNowMs, hostRandom } from '../lib/kern-host.js';
 
-import type { OutputBlock } from '../../generated/blocks/engine.js';
+import type { OutputBlock } from '../blocks/engine.js';
 
-import type { OutputEvent } from '../../handlers/types.js';
+import type { OutputEvent } from '../handlers/types.js';
 
 import { estimateOutputEventRows } from './app-layout.js';
 

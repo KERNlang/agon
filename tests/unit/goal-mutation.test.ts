@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { generateMutants, applyMutantToSource } from '../../packages/forge/src/generated/goal/mutation.js';
-import { hashOracleInputs } from '../../packages/forge/src/generated/goal/oracle.js';
-import { assertSafeGoalId, resolveWithin } from '../../packages/forge/src/generated/goal/paths.js';
+import { generateMutants, applyMutantToSource } from '../../packages/forge/src/goal/mutation.js';
+import { hashOracleInputs } from '../../packages/forge/src/goal/oracle.js';
+import { assertSafeGoalId, resolveWithin } from '../../packages/forge/src/goal/paths.js';
 
 describe('mutation-witness — generateMutants', () => {
   const src = [

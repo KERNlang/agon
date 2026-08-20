@@ -1,4 +1,4 @@
-import type { HandlerContext } from '../../handlers/types.js';
+import type { HandlerContext } from '../handlers/types.js';
 
 import { isReadOnlyCommand } from '@kernlang/agon-core';
 

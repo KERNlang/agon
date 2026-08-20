@@ -3,10 +3,10 @@ import { join } from 'node:path';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
-import { createRoom, isRoomClosed, appendEvent } from '../../packages/core/src/generated/rooms/store.js';
-import { drainRoom, createRoomWaker } from '../../packages/core/src/generated/rooms/tail.js';
-import { foldTasks, pickNextTask, postTask, claimTask, postTaskResult, postTaskStop, shouldStopWork } from '../../packages/core/src/generated/rooms/tasks.js';
-import type { RoomActor, RoomEvent, TailCursor, WorkConfig, WorkState } from '../../packages/core/src/generated/rooms/types.js';
+import { createRoom, isRoomClosed, appendEvent } from '../../packages/core/src/rooms/store.js';
+import { drainRoom, createRoomWaker } from '../../packages/core/src/rooms/tail.js';
+import { foldTasks, pickNextTask, postTask, claimTask, postTaskResult, postTaskStop, shouldStopWork } from '../../packages/core/src/rooms/tasks.js';
+import type { RoomActor, RoomEvent, TailCursor, WorkConfig, WorkState } from '../../packages/core/src/rooms/types.js';
 
 let home: string;
 beforeEach(() => { home = mkdtempSync(join(tmpdir(), 'agon-work-')); process.env.AGON_HOME = home; });

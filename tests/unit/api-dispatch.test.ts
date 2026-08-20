@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { convertMessagesForSdk, convertToolsForSdk, buildModel, isIgnorableAnthropicEmptyDeltaError } from '../../packages/core/src/generated/api/dispatch.js';
+import { convertMessagesForSdk, convertToolsForSdk, buildModel, isIgnorableAnthropicEmptyDeltaError } from '../../packages/core/src/api/dispatch.js';
 
 // --- Usage capture tests (mocked generateText) ---
 
@@ -377,7 +377,7 @@ describe('api-dispatch — provider creation', () => {
 // --- Usage capture from generateText ---
 
 import { generateText, streamText } from 'ai';
-import { apiDispatch, apiStreamDispatchWithHistory } from '../../packages/core/src/generated/api/dispatch.js';
+import { apiDispatch, apiStreamDispatchWithHistory } from '../../packages/core/src/api/dispatch.js';
 
 const mockGenerateText = vi.mocked(generateText);
 const mockStreamText = vi.mocked(streamText);

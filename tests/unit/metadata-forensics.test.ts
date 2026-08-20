@@ -4,7 +4,7 @@ import {
   scanMetadata,
   stripMetadata,
   countsByChannelMetadata,
-} from '../../packages/core/src/generated/text/metadata-forensics.js';
+} from '../../packages/core/src/text/metadata-forensics.js';
 
 // ── fixtures (hand-built, deterministic) ────────────────────────────────────
 

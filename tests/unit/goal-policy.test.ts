@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   gateFailureSignature, taskParkDecision, globalBreaker, budgetExceeded, timeExceeded, pickImplementWinner, chooseImplementRoster,
-} from '../../packages/forge/src/generated/goal/policy.js';
-import type { JournalState, GoalTask, GoalSpec } from '../../packages/forge/src/generated/goal/types.js';
+} from '../../packages/forge/src/goal/policy.js';
+import type { JournalState, GoalTask, GoalSpec } from '../../packages/forge/src/goal/types.js';
 
 const spec = (over: Partial<GoalSpec> = {}): GoalSpec => ({
   goalId: 'g', intent: 'x', branch: 'goal/x', gate: 'npm test', queueSource: '.kern-gaps/',

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { scoutScore } from '../../packages/forge/src/generated/brainstorm.js';
-import type { ScoutBid } from '../../packages/core/src/types.js';
+import { scoutScore } from '../../packages/forge/src/brainstorm.js';
+import type { ScoutBid } from '../../packages/core/src/models/types.js';
 
 function makeBid(overrides: Partial<ScoutBid> = {}): ScoutBid {
   return {

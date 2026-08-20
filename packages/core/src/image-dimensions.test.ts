@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseImageDimensions } from './image.js';
+import { parseImageDimensions } from './blocks/image.js';
 
 function pngFixture(width: number, height: number): Buffer {
   const buf = Buffer.alloc(33);

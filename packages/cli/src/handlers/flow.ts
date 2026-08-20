@@ -2,7 +2,7 @@ import { logFlow, analyzeFlows, FRICTION_TAGS, tracker } from '@kernlang/agon-co
 
 import type { FlowRecord, FlowFeedback, FlowTelemetry, FlowModeMeta } from '@kernlang/agon-core';
 
-import type { Dispatch, HandlerContext } from '../../handlers/types.js';
+import type { Dispatch, HandlerContext } from './types.js';
 
 import { hostNowMs } from '../lib/kern-host.js';
 

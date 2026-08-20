@@ -21,8 +21,8 @@ import {
   originCovered,
   findReusableServe,
   runPair,
-} from '../../packages/cli/src/generated/bridge/browser-host.js';
-import type { PairDeps, ServeConnRecord } from '../../packages/cli/src/generated/bridge/browser-host.js';
+} from '../../packages/cli/src/bridge/browser-host.js';
+import type { PairDeps, ServeConnRecord } from '../../packages/cli/src/bridge/browser-host.js';
 
 import {
   resolveInstallBrowsers,
@@ -35,7 +35,7 @@ import {
   readInstallState,
   listOwnedServes,
   browserHostStatePath,
-} from '../../packages/cli/src/generated/commands/browser-host.js';
+} from '../../packages/cli/src/commands/browser-host.js';
 
 const VALID_ID = 'abcdefghijklmnopabcdefghijklmnop';
 const VALID_ORIGIN = `chrome-extension://${VALID_ID}`;

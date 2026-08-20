@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { compileWorkflowSpec } from '../../packages/core/src/generated/workflows/compiler.js';
+import { compileWorkflowSpec } from '../../packages/core/src/workflows/compiler.js';
 import {
   appendWorkflowPhaseEvent,
   createWorkflowRun,

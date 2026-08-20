@@ -7,8 +7,8 @@ import {
   normalizeStepToolName,
   primaryStepInput,
   stepEarnsBudgetGrowth,
-} from '../../packages/core/src/generated/sessions/step-effect.js';
-import type { ToolStepEffectEntry } from '../../packages/core/src/generated/sessions/step-effect.js';
+} from '../../packages/core/src/sessions/step-effect.js';
+import type { ToolStepEffectEntry } from '../../packages/core/src/sessions/step-effect.js';
 
 // Loose matchers exactly as discoverGate produces them for this repo.
 const GATE_MATCHERS = ['npm run test', 'test', 'npm test', 'vitest', 'npm run typecheck', 'typecheck', 'tsc'];

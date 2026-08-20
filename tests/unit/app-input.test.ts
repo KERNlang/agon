@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { appendInputHistory, cleanInputValue, cleanSubmitValue, findInputChange, getSlashMatches, hasBtwSideChannelTarget, movePickerCursor, parseAutoModeCommand, parsePermissionModeCommand, resolveEscapeAction, shouldQueuePlanModeOnTab, tryGhostComplete } from '../../packages/cli/src/generated/signals/app-input.js';
-import { expandPastePlaceholders, processPasteContent, recordPastePlaceholder } from '../../packages/cli/src/generated/signals/paste-handler.js';
+import { appendInputHistory, cleanInputValue, cleanSubmitValue, findInputChange, getSlashMatches, hasBtwSideChannelTarget, movePickerCursor, parseAutoModeCommand, parsePermissionModeCommand, resolveEscapeAction, shouldQueuePlanModeOnTab, tryGhostComplete } from '../../packages/cli/src/signals/app-input.js';
+import { expandPastePlaceholders, processPasteContent, recordPastePlaceholder } from '../../packages/cli/src/signals/paste-handler.js';
 import { pasteStore } from '@kernlang/agon-core';
 
 afterEach(() => {

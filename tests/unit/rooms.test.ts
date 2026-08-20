@@ -13,9 +13,9 @@ import {
   eventsPath,
   closeRoom,
   isRoomClosed,
-} from '../../packages/core/src/generated/rooms/store.js';
-import { recordPresence, removePresence, listPresence } from '../../packages/core/src/generated/rooms/presence.js';
-import type { RoomActor } from '../../packages/core/src/generated/rooms/types.js';
+} from '../../packages/core/src/rooms/store.js';
+import { recordPresence, removePresence, listPresence } from '../../packages/core/src/rooms/presence.js';
+import type { RoomActor } from '../../packages/core/src/rooms/types.js';
 
 let home: string;
 

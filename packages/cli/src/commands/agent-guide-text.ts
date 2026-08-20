@@ -83,7 +83,7 @@ export function agentGuideMarkdown(): string {
  */
 export function modeDocsMarkdown(): string {
   return [
-    '<!-- GENERATED — do not edit directly. Source: packages/cli/src/generated/commands/agent-guide-text.ts (agentGuideMarkdown) · Regenerate: npm run docs:modes -->',
+    '<!-- GENERATED — do not edit directly. Source: packages/cli/src/commands/agent-guide-text.ts (agentGuideMarkdown) · Regenerate: npm run docs:modes -->',
     '',
     '# Agon modes — what exists and when to use what',
     '',

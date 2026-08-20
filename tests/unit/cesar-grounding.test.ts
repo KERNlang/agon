@@ -7,7 +7,7 @@ import {
   shouldGroundInput,
   buildGroundingBlock,
   GROUND_MIN_INPUT_CHARS,
-} from '../../packages/cli/src/generated/cesar/grounding.js';
+} from '../../packages/cli/src/cesar/grounding.js';
 
 const tempRepos: string[] = [];
 function tempRepo(): string {

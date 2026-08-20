@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { coAuthorTrailer, appendCoAuthor } from '../../packages/core/src/git.js';
-import { loadConfig } from '../../packages/core/src/config.js';
+import { coAuthorTrailer, appendCoAuthor } from '../../packages/core/src/blocks/git.js';
+import { loadConfig } from '../../packages/core/src/signals/config.js';
 import { setupTestAgonHome, cleanupTestAgonHome, agonHomePath } from '../helpers/agon-home.js';
 
 describe('coAuthorTrailer', () => {

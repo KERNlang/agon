@@ -6,7 +6,7 @@ import { ensureAgonHome, RUNS_DIR, scanProjectContext, appendMessage, resolveWor
 
 import { runTeamBrainstorm } from '@kernlang/agon-forge';
 
-import type { Dispatch, HandlerContext } from '../../handlers/types.js';
+import type { Dispatch, HandlerContext } from './types.js';
 
 import { filterDefaultOrchestrationEngines } from './engine-filter.js';
 

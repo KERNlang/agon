@@ -8,7 +8,7 @@ import type { AgentDispatchResult, Plan, PlanStepInput, ApprovalLevel } from '@k
 
 import { ENGINE_COLORS } from '../blocks/output-format.js';
 
-import type { Dispatch, HandlerContext } from '../../handlers/types.js';
+import type { Dispatch, HandlerContext } from './types.js';
 
 import { buildAgentApprovalCallback } from './agent.js';
 

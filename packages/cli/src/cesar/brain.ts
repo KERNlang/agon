@@ -10,7 +10,7 @@ import type { ToolContext, ToolCallResult } from '@kernlang/agon-core';
 
 import { ENGINE_COLORS } from '../blocks/output-format.js';
 
-import type { Dispatch, HandlerContext, PendingDelegation, CesarTurnOutcome } from '../../handlers/types.js';
+import type { Dispatch, HandlerContext, PendingDelegation, CesarTurnOutcome } from '../handlers/types.js';
 
 import { CONFIDENCE_TIERS, parseConfidence, confidenceBadge, extractStrictConfidence, buildEscalationSuggestionLine, ESCALATION_SUGGESTION_THRESHOLD } from './confidence.js';
 
@@ -42,7 +42,7 @@ import { assessDelegationShape, buildDelegationAdvisory } from './delegation-ref
 
 import { assessMutateReflex, buildMutateSuggestionLine, mutatedPathFromToolArgs } from './mutate-reflex.js';
 
-import { recentRunRecords, currentProjectKey } from '../../telemetry/index.js';
+import { recentRunRecords, currentProjectKey } from '../telemetry/index.js';
 
 import { readCesarToolReliability, formatCesarReliabilityLine, shouldDowngradeCesarToolWork, buildWhatHappenedSummary } from './reliability.js';
 

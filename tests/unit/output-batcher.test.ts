@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { createLatestUiCommitter, createTranscriptCommitBatcher } from '../../packages/cli/src/generated/surfaces/app-output-bridge.js';
+import { createLatestUiCommitter, createTranscriptCommitBatcher } from '../../packages/cli/src/surfaces/app-output-bridge.js';
 
 describe('transcript frame commit batcher', () => {
   afterEach(() => {
@@ -72,13 +72,13 @@ describe('transcript frame commit batcher', () => {
   });
 
   it('generates stable mount-only React effects instead of nested dependency arrays', () => {
-    const generated = readFileSync(new URL('../../packages/cli/src/generated/surfaces/app.tsx', import.meta.url), 'utf8');
+    const generated = readFileSync(new URL('../../packages/cli/src/surfaces/app.tsx', import.meta.url), 'utf8');
     expect(generated).not.toContain('}, [[]]);');
     expect(generated).toContain('if (uiInteractionTimerRef.current) clearTimeout(uiInteractionTimerRef.current);');
   });
 
   it('threads the visible persistent AUTO state into Cesar task contexts', () => {
-    const generated = readFileSync(new URL('../../packages/cli/src/generated/surfaces/app.tsx', import.meta.url), 'utf8');
+    const generated = readFileSync(new URL('../../packages/cli/src/surfaces/app.tsx', import.meta.url), 'utf8');
     const start = generated.indexOf('const buildContext = useCallback');
     const end = generated.indexOf('\n\n  const ', start + 1);
     const buildContext = generated.slice(start, end);
@@ -88,7 +88,7 @@ describe('transcript frame commit batcher', () => {
   });
 
   it('keeps plan approval controls visible before long plan bodies', () => {
-    const generated = readFileSync(new URL('../../packages/cli/src/generated/blocks/plan-view.tsx', import.meta.url), 'utf8');
+    const generated = readFileSync(new URL('../../packages/cli/src/blocks/plan-view.tsx', import.meta.url), 'utf8');
     const markdownBranch = generated.slice(generated.indexOf('if (markdown && markdown.trim())'), generated.indexOf('// ── Steps ──'));
 
     expect(markdownBranch.indexOf('{approvalControls}')).toBeGreaterThan(-1);

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { detectIntent } from '../../packages/cli/src/intent.js';
-import { handleRun } from '../../packages/cli/src/generated/handlers/run.js';
-import { buildMentionedFilesContext, isLiteralCommandLine } from '../../packages/cli/src/generated/surfaces/app-submit.js';
+import { handleRun } from '../../packages/cli/src/handlers/run.js';
+import { buildMentionedFilesContext, isLiteralCommandLine } from '../../packages/cli/src/surfaces/app-submit.js';
 import { extractImagesFromInput } from '@kernlang/agon-core';
 import { startChatSession } from '@kernlang/agon-core';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';

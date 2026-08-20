@@ -3,7 +3,7 @@ import { resolveWorkingDir, undoPatch, listSnapshots, revertSnapshot, resumeChat
 
 import { icons } from '../icons.js';
 
-import { handleForge, handleChat, handleBrainstorm, handleTribunal } from '../../../handlers/index.js';
+import { handleForge, handleChat, handleBrainstorm, handleTribunal } from '../../handlers/index.js';
 
 import type { DispatchCallbacks, DispatchResult } from '../dispatch.js';
 

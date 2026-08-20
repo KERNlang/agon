@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   supervisorDecision, computeBackoffMs, isDeterministicExit, runSupervisor,
-} from '../../packages/forge/src/generated/goal/supervisor.js';
+} from '../../packages/forge/src/goal/supervisor.js';
 
 describe('computeBackoffMs — exponential backoff, capped', () => {
   it('grows exponentially from the base', () => {

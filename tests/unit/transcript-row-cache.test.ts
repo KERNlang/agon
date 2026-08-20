@@ -3,15 +3,15 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   buildTranscriptRows,
   nativeArchiveBlockCount,
-} from '../../packages/cli/src/generated/surfaces/app.js';
+} from '../../packages/cli/src/surfaces/app.js';
 import {
   _blockRowCache,
   blockRowFingerprint,
   cachedBlockOwnRows,
   clearBlockRowCache,
   isCacheableBlockType,
-} from '../../packages/cli/src/generated/surfaces/app-rendering.js';
-import { withContentWidthOverride } from '../../packages/cli/src/generated/blocks/rendering.js';
+} from '../../packages/cli/src/surfaces/app-rendering.js';
+import { withContentWidthOverride } from '../../packages/cli/src/blocks/rendering.js';
 
 // Resolved content widths used by buildTranscriptRows (contentWidth(4/2/8)) at
 // a fixed 100-col terminal. Passing them explicitly keeps the cache key stable

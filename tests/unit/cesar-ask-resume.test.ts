@@ -30,16 +30,16 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
-import { runCesarConfirmationFollowUp } from '../../packages/cli/src/generated/cesar/confirmation-follow-up.js';
+import { runCesarConfirmationFollowUp } from '../../packages/cli/src/cesar/confirmation-follow-up.js';
 import {
   chunkMayCompleteToolCall,
   splitBeforeToolMarkup,
   textHasToolCalls,
   XML_TOOL_MARKUP_HOLD_CHARS,
-} from '../../packages/cli/src/generated/cesar/brain-helpers.js';
+} from '../../packages/cli/src/cesar/brain-helpers.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const CODE = readFileSync(resolve(here, '../../packages/cli/src/generated/cesar/brain.ts'), 'utf8')
+const CODE = readFileSync(resolve(here, '../../packages/cli/src/cesar/brain.ts'), 'utf8')
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .split('\n')
   .map((line) => line.replace(/(^|\s)\/\/.*$/, '$1'))

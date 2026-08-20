@@ -22,7 +22,7 @@ import { recordTextTransportDispatch, textTransportDigest } from '@kernlang/agon
 
 import type { GuardMode } from '@kernlang/agon-core';
 
-import type { HandlerContext } from '../../handlers/types.js';
+import type { HandlerContext } from '../handlers/types.js';
 
 import { createCesarToolRegistry } from './tools.js';
 

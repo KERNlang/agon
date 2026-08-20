@@ -10,7 +10,7 @@ import type { Intent } from '../signals/intent.js';
 
 import { icons } from '../signals/icons.js';
 
-import type { Dispatch, HandlerContext } from '../../handlers/types.js';
+import type { Dispatch, HandlerContext } from './types.js';
 
 import { deriveRoutingHints, buildRoutingContext } from '../cesar/routing.js';
 

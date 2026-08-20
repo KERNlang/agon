@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { resolveForgeDispatchTimeout, shouldHarvestFailedDispatch } from '../../packages/forge/src/generated/stages.js';
-import { resolveForgeRunTimeout, resolveForgeSynthesisTimeout } from '../../packages/forge/src/generated/forge.js';
+import { resolveForgeDispatchTimeout, shouldHarvestFailedDispatch } from '../../packages/forge/src/stages-impl.js';
+import { resolveForgeRunTimeout, resolveForgeSynthesisTimeout } from '../../packages/forge/src/forge.js';
 
 describe('forge dispatch timeout selection', () => {
   const config = { forgeTimeout: 600, forgeDispatchTimeout: 480 } as any;

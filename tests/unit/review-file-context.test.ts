@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { gatherReviewFileContext, resolveReviewTarget } from '../../packages/cli/src/generated/handlers/review.js';
+import { gatherReviewFileContext, resolveReviewTarget } from '../../packages/cli/src/handlers/review.js';
 
 let dir: string | undefined;
 afterEach(() => {

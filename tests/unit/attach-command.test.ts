@@ -4,8 +4,8 @@ import {
   attachCommand,
   sortSessionsByRecency,
   renderLoggedEvent,
-} from '../../packages/cli/src/generated/commands/attach.js';
-import type { SessionDescriptor, LoggedEvent } from '../../packages/core/src/generated/sessions/session-host.js';
+} from '../../packages/cli/src/commands/attach.js';
+import type { SessionDescriptor, LoggedEvent } from '../../packages/core/src/sessions/session-host.js';
 
 // Strip ANSI so assertions read on the visible text, not the color codes.
 const plain = (s: string | null): string | null =>

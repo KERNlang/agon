@@ -11,8 +11,8 @@ vi.mock('node:child_process', async () => {
   return { ...actual, spawn: spawnMock };
 });
 
-vi.mock('../../packages/core/src/generated/api/dispatch.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../packages/core/src/generated/api/dispatch.js')>();
+vi.mock('../../packages/core/src/api/dispatch.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../packages/core/src/api/dispatch.js')>();
   return {
     ...actual,
     apiStreamDispatchWithHistory: apiStreamDispatchWithHistoryMock,

@@ -8,7 +8,7 @@ import { classifyTask, extractPatchFilePatterns, recordForgeJudgment } from '@ke
 
 import { ENGINE_COLORS } from '../blocks/output-format.js';
 
-import type { Dispatch, HandlerContext } from '../../handlers/types.js';
+import type { Dispatch, HandlerContext } from '../handlers/types.js';
 
 import { parseConfidence, confidenceBadge } from './confidence.js';
 

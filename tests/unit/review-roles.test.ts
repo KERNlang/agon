@@ -5,7 +5,7 @@ import {
   assignReviewRoles,
   buildRoleInstructions,
   resolveReviewRole,
-} from '../../packages/cli/src/generated/handlers/review.js';
+} from '../../packages/cli/src/handlers/review.js';
 
 describe('resolveReviewRole', () => {
   it('resolves a known role case-insensitively', () => {

@@ -10,9 +10,9 @@ import type { Plan, PlanStepInput, ApprovalLevel } from '@kernlang/agon-core';
 
 import { runForge } from '@kernlang/agon-forge';
 
-import type { Dispatch, HandlerContext, EngineProgress } from '../../handlers/types.js';
+import type { Dispatch, HandlerContext, EngineProgress } from './types.js';
 
-import { cesarJudgeForge, cesarConvergeForge, cesarReviewForgeOutcome } from '../../handlers/cesar-brain.js';
+import { cesarJudgeForge, cesarConvergeForge, cesarReviewForgeOutcome } from './cesar-brain.js';
 
 import { sessionResultStore } from '../models/session-results.js';
 
@@ -20,7 +20,7 @@ import { createScoreboard, scoreboardUpdateProgress, scoreboardFinishEngine, sco
 
 import { buildCheckpoint, recordCheckpoint } from '../cesar/checkpoint.js';
 
-import { recordRun, formatRunSummary } from '../../telemetry/index.js';
+import { recordRun, formatRunSummary } from '../telemetry/index.js';
 
 import { filterDefaultOrchestrationEngines } from './engine-filter.js';
 

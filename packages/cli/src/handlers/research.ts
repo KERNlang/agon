@@ -8,9 +8,9 @@ import { runResearch, formatResearchResult } from '@kernlang/agon-forge';
 
 import { sessionResultStore } from '../models/session-results.js';
 
-import { recordRun, formatRunSummary } from '../../telemetry/index.js';
+import { recordRun, formatRunSummary } from '../telemetry/index.js';
 
-import type { Dispatch, HandlerContext, EngineProgress } from '../../handlers/types.js';
+import type { Dispatch, HandlerContext, EngineProgress } from './types.js';
 
 import { filterDefaultOrchestrationEngines } from './engine-filter.js';
 

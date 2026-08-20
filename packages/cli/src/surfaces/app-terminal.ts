@@ -6,13 +6,13 @@ import { estimateVisibleBlockBudget, estimateBottomChromeExtraRows, estimatePinn
 
 import { nativeTranscriptBlocksForStatic, nativeArchiveBlockCount } from './app-blocks.js';
 
-import { withContentWidthOverride } from '../../generated/blocks/rendering.js';
+import { withContentWidthOverride } from '../blocks/rendering.js';
 
 import { buildTranscriptRows } from './app-rendering.js';
 
 import { historyBlocksForTranscript } from './app-blocks.js';
 
-import type { OutputBlock } from '../../generated/blocks/engine.js';
+import type { OutputBlock } from '../blocks/engine.js';
 
 // ── Module: AppTerminal ──
 

@@ -2,13 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock the inner agent loop so tests don't hit real APIs.
 // Path must match the specifier used by agent-session.ts (relative to its own location).
-vi.mock('../../packages/core/src/generated/api/agent-loop.js', () => ({
+vi.mock('../../packages/core/src/api/agent-loop.js', () => ({
   runApiAgentLoop: vi.fn(),
 }));
 
-import { AgentSession } from '../../packages/core/src/generated/cesar/agent-session.js';
-import type { AgentSessionConfig } from '../../packages/core/src/generated/cesar/agent-session.js';
-import { runApiAgentLoop } from '../../packages/core/src/generated/api/agent-loop.js';
+import { AgentSession } from '../../packages/core/src/cesar/agent-session.js';
+import type { AgentSessionConfig } from '../../packages/core/src/cesar/agent-session.js';
+import { runApiAgentLoop } from '../../packages/core/src/api/agent-loop.js';
 
 const mockRun = runApiAgentLoop as unknown as ReturnType<typeof vi.fn>;
 

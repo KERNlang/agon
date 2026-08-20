@@ -11,7 +11,7 @@ import {
   refundContinuationForSteeringYield,
   resolveGuardThreshold,
   shouldNoteReadSpiral,
-} from '../../packages/cli/src/generated/cesar/step-guards.js';
+} from '../../packages/cli/src/cesar/step-guards.js';
 
 const EDIT_INTAKES = ['quick-fix', 'bug', 'feature', 'big-feature', 'spec'];
 const INVESTIGATE_INTAKES = ['chat', 'review', 'decision', 'exploration', '', 'something-new'];

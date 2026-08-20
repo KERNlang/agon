@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { JobManager } from '../../packages/cli/src/generated/signals/job-manager.js';
+import { JobManager } from '../../packages/cli/src/signals/job-manager.js';
 
 describe('JobManager', () => {
   let jm: JobManager;

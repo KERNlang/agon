@@ -7,7 +7,7 @@ import {
   parseAndValidateUrl,
   htmlToText,
   createWebFetchTool,
-} from '../../packages/core/src/generated/tools/tool-web-fetch.js';
+} from '../../packages/core/src/tools/tool-web-fetch.js';
 
 const ctx = () => ({ cwd: process.cwd(), readFileState: new Map() }) as never;
 

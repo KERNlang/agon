@@ -1,4 +1,4 @@
-// Pins the shared, budgeted mutant runner (packages/core/src/generated/tools/mutant-runner.ts).
+// Pins the shared, budgeted mutant runner (packages/core/src/tools/mutant-runner.ts).
 //
 // Every case runs against a disposable COPY of tests/fixtures/mutate-tautology,
 // a dependency-free mini-repo whose two test variants (real assertions vs.
@@ -10,9 +10,9 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writ
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { generateMutants } from '../../packages/core/src/generated/tools/mutant-generator.js';
-import { runMutants } from '../../packages/core/src/generated/tools/mutant-runner.js';
-import type { Mutant } from '../../packages/core/src/generated/tools/mutant-generator.js';
+import { generateMutants } from '../../packages/core/src/tools/mutant-generator.js';
+import { runMutants } from '../../packages/core/src/tools/mutant-runner.js';
+import type { Mutant } from '../../packages/core/src/tools/mutant-generator.js';
 
 const FIXTURE = fileURLToPath(new URL('../fixtures/mutate-tautology', import.meta.url));
 const sandboxes: string[] = [];

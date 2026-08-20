@@ -3,8 +3,8 @@ import {
   withControlPlaneEnvelope,
   type PersistentSession,
   type SessionChunk,
-} from '../../packages/core/src/generated/sessions/persistent-session.js';
-import type { ControlPlaneEnvelopeV1 } from '../../packages/core/src/generated/sessions/turn-protocol.js';
+} from '../../packages/core/src/sessions/persistent-session.js';
+import type { ControlPlaneEnvelopeV1 } from '../../packages/core/src/sessions/turn-protocol.js';
 
 function createSession(chunks: SessionChunk[]): PersistentSession {
   return {

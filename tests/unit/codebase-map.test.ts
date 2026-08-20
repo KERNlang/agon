@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
-import { extractSymbols, collectSourceFiles, buildCodebaseMap, clearCodebaseMapCache } from '../../packages/core/src/generated/blocks/codebase-map.js';
+import { extractSymbols, collectSourceFiles, buildCodebaseMap, clearCodebaseMapCache } from '../../packages/core/src/blocks/codebase-map.js';
 import { setupTestAgonHome, cleanupTestAgonHome, agonHomePath } from '../helpers/agon-home.js';
 
 describe('codebase-map — extractSymbols', () => {

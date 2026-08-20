@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { runToolLoop } from '../../packages/core/src/generated/tools/tool-loop.js';
-import { ToolRegistry } from '../../packages/core/src/generated/signals/tool-registry.js';
+import { runToolLoop } from '../../packages/core/src/tools/tool-loop.js';
+import { ToolRegistry } from '../../packages/core/src/signals/tool-registry.js';
 
 describe('tool loop orchestration stops', () => {
   it('stops before executing or reinjecting a ProposePlan XML tool call', async () => {

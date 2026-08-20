@@ -2,9 +2,9 @@ import React from 'react';
 import { render } from 'ink';
 import { describe, expect, it } from 'vitest';
 
-import { StatusBar } from '../../packages/cli/src/generated/surfaces/status.js';
-import { buildPriorityStatusLine } from '../../packages/cli/src/generated/surfaces/status-helpers.js';
-import { createPseudoTty } from '../../packages/cli/src/generated/blocks/frame-capture.js';
+import { StatusBar } from '../../packages/cli/src/surfaces/status.js';
+import { buildPriorityStatusLine } from '../../packages/cli/src/surfaces/status-helpers.js';
+import { createPseudoTty } from '../../packages/cli/src/blocks/frame-capture.js';
 
 function statusProps(termWidth: number) {
   return {

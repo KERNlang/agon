@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { compileWorkflowSpec } from '../../packages/core/src/generated/workflows/compiler.js';
+import { compileWorkflowSpec } from '../../packages/core/src/workflows/compiler.js';
 import { createWorkflowRun, verifyWorkflowRunFlow, logFlow, readFlows } from '../../packages/core/src/index.js';
 import type { FlowRecord, WorkflowRun } from '../../packages/core/src/index.js';
 

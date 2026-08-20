@@ -220,7 +220,7 @@ All handlers support `AbortSignal` for cancellation.
 
 ## Key Patterns
 
-- `spawnWithTimeout(opts)` — external process with timeout + abort (`packages/core/src/generated/blocks/process.ts`)
+- `spawnWithTimeout(opts)` — external process with timeout + abort (`packages/core/src/blocks/process.ts`)
 - `spawnStream(opts)` — async generator yielding stdout chunks
 - `companionDispatch` — JSONRPC (Codex), ACP (Antigravity/OpenCode), stream-json (Claude)
 

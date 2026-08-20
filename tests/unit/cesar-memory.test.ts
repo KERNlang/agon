@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createCesarMemory } from '../../packages/core/src/generated/cesar/memory.js';
+import { createCesarMemory } from '../../packages/core/src/cesar/memory.js';
 
 describe('CesarMemory.toPromptContext', () => {
   it('is empty when nothing has been remembered', () => {

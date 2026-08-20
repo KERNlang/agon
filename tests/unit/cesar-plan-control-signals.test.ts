@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { consumeCesarPlanControlSignals } from '../../packages/cli/src/generated/cesar/plan-control-signals.js';
+import { consumeCesarPlanControlSignals } from '../../packages/cli/src/cesar/plan-control-signals.js';
 
 describe('consumeCesarPlanControlSignals', () => {
   it('applies and clears a stashed ProposePlan signal in the same turn', async () => {

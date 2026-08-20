@@ -4,10 +4,10 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { EngineRegistry } from '../../packages/core/src/engine-registry.js';
-import { runForge } from '../../packages/forge/src/generated/forge.js';
+import { EngineRegistry } from '../../packages/core/src/signals/engine-registry.js';
+import { runForge } from '../../packages/forge/src/forge.js';
 
-vi.mock('../../packages/forge/src/generated/quality.js', () => ({
+vi.mock('../../packages/forge/src/quality.js', () => ({
   runLint: vi.fn(async () => 0),
   runStyleCheck: vi.fn(async () => 100),
   // Test fixtures write plain .txt files; the real runSyntaxCheck would

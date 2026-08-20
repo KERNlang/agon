@@ -1,10 +1,10 @@
-import type { OutputEvent, EngineProgress } from '../../handlers/types.js';
+import type { OutputEvent, EngineProgress } from '../handlers/types.js';
 
 import { parseMarkdownBlocks, cleanEngineOutput } from '../blocks/markdown.js';
 
 import { foldNarration, setLastFoldedRaw } from '../blocks/narration-fold.js';
 
-import { codeBlockBuffer } from '../../code-buffer.js';
+import { codeBlockBuffer } from '../code-buffer.js';
 
 import { loadConfig, resolveWorkingDir, evaluateToolRules } from '@kernlang/agon-core';
 

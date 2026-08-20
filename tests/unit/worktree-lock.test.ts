@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 
 import {
   acquireApplyLock, releaseApplyLock, headChanged, branchChanged,
-} from '../../packages/core/src/generated/blocks/worktree-lock.js';
+} from '../../packages/core/src/blocks/worktree-lock.js';
 
 // ── Advisory apply-lock + HEAD-CAS contract ──────────────────────────────
 // Pins the cross-session guards: a per-checkout O_EXCL lock with pid/TTL/host

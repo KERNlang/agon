@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MAX_DISPATCH_IMAGE_BYTES } from '@kernlang/agon-core';
-import { AgenticTurnBrainClient, buildAgentSystemPrompt } from './generated/bridge/agentic-brain-client.js';
-import { MAX_SEND_BODY_BYTES } from './generated/bridge/agon-serve.js';
+import { AgenticTurnBrainClient, buildAgentSystemPrompt } from './bridge/agentic-brain-client.js';
+import { MAX_SEND_BODY_BYTES } from './bridge/agon-serve.js';
 
 function pngFixture(width: number, height: number): Buffer {
   const buf = Buffer.alloc(33);

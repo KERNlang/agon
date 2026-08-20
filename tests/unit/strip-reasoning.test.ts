@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractSummary, stripReasoning, stripTuiChrome, formatDuration } from '../../packages/cli/src/generated/blocks/engine-helpers.js';
+import { extractSummary, stripReasoning, stripTuiChrome, formatDuration } from '../../packages/cli/src/blocks/engine-helpers.js';
 
 describe('formatDuration', () => {
   it('renders sub-second durations as milliseconds', () => {

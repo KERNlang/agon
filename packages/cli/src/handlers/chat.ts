@@ -8,7 +8,7 @@ import { RUNS_DIR, appendMessage, tracker, StreamParser, sessionContext, resolve
 
 import { ENGINE_COLORS } from '../blocks/output-format.js';
 
-import type { Dispatch, HandlerContext } from '../../handlers/types.js';
+import type { Dispatch, HandlerContext } from './types.js';
 
 import { yieldToInk } from '../cesar/brain-helpers.js';
 

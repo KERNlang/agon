@@ -7,7 +7,7 @@ import {
 } from '@kernlang/agon-core';
 import type { EngineDefinition, RunStatusEngine } from '@kernlang/agon-core';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
-import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
+import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 import {
   assignReviewRoles,
   remainingReviewRetrySeconds,
@@ -16,17 +16,17 @@ import {
   runReviewCore,
   selectReviewEngines,
   shouldRetryReviewAttempt,
-} from '../generated/handlers/review.js';
+} from '../handlers/review.js';
 import {
   routeReviewers,
   serializeReviewRoutingManifest,
   type ReviewRiskRequest,
   type ReviewRoutingEngine,
   type ReviewRoutingManifest,
-} from '../generated/handlers/review-router.js';
-import { runReviewMutation, reviewMutateOverrides } from '../generated/blocks/review-mutate.js';
-import { buildConsensus, formatConsensusRow } from '../generated/blocks/consensus.js';
-import { fail, header, info, warn, bold } from '../output.js';
+} from '../handlers/review-router.js';
+import { runReviewMutation, reviewMutateOverrides } from '../blocks/review-mutate.js';
+import { buildConsensus, formatConsensusRow } from '../blocks/consensus.js';
+import { fail, header, info, warn, bold } from '../blocks/output-format.js';
 
 // A captured "review" that is really just the claude TUI's collapsed-paste
 // placeholder ("[Pasted text #1 +34 lines]") is not a review — it means the

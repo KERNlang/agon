@@ -3,7 +3,7 @@ import { writeFileSync, mkdirSync, unlinkSync, readdirSync, readFileSync, exists
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { createInterface } from 'node:readline';
-import { header, success, fail, info, table, bold, green, red, dim, yellow } from '../output.js';
+import { header, success, fail, info, table, bold, green, red, dim, yellow } from '../blocks/output-format.js';
 import { fetchModelsRegistry, buildModelEntries, searchModels, modelEntryToEngineDef, getAuthKey, setAuthKey, removeAuthKey, loadAllAuthKeys, listStoredProviders } from '@kernlang/agon-core';
 import type { ModelEntry } from '@kernlang/agon-core';
 

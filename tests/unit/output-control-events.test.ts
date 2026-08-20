@@ -14,7 +14,7 @@ vi.mock('@kernlang/agon-core', async () => {
 // Stub markdown/code-buffer transitive deps to avoid side effects.
 // output.ts imports markdown from ../blocks/markdown.js — mock the module it
 // actually resolves (generated/blocks), not the hand-TS facade.
-vi.mock('../../packages/cli/src/generated/blocks/markdown.js', () => ({
+vi.mock('../../packages/cli/src/blocks/markdown.js', () => ({
   parseMarkdownBlocks: () => [],
   cleanEngineOutput: (s: string) => s,
 }));
@@ -22,9 +22,9 @@ vi.mock('../../packages/cli/src/code-buffer.js', () => ({
   codeBlockBuffer: { recordFromSegments: () => {}, clear: () => {} },
 }));
 
-// Source of truth: packages/cli/src/generated/signals/output.ts
-import { handleOutputEvent } from '../../packages/cli/src/generated/signals/output.js';
-import type { OutputActions, OutputState } from '../../packages/cli/src/generated/signals/output.js';
+// Source of truth: packages/cli/src/signals/output.ts
+import { handleOutputEvent } from '../../packages/cli/src/signals/output.js';
+import type { OutputActions, OutputState } from '../../packages/cli/src/signals/output.js';
 
 function createMockActions(): OutputActions & { calls: Record<string, unknown[][]> } {
   const calls: Record<string, unknown[][]> = { addBlock: [], flushStream: [] };

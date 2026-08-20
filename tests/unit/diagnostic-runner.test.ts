@@ -8,7 +8,7 @@ import {
   parseCheckerOutput,
   fingerprintOf,
   normalizeMessage,
-} from '../../packages/core/src/generated/diagnostics/checker-discovery.js';
+} from '../../packages/core/src/diagnostics/checker-discovery.js';
 import {
   DiagnosticRunner as Runner,
   normalizeEditedPath,
@@ -16,11 +16,11 @@ import {
   DEBOUNCE_MS,
   DIGEST_MAX_LINES,
   QUEUE_CAP,
-} from '../../packages/core/src/generated/diagnostics/diagnostic-runner.js';
+} from '../../packages/core/src/diagnostics/diagnostic-runner.js';
 import type {
   DiagnosticDigest, SpawnLike,
-} from '../../packages/core/src/generated/diagnostics/diagnostic-runner.js';
-import type { DispatchResult } from '../../packages/core/src/generated/models/types.js';
+} from '../../packages/core/src/diagnostics/diagnostic-runner.js';
+import type { DispatchResult } from '../../packages/core/src/models/types.js';
 
 // ──────────────────────────────────────────────────────────────────────
 // Fixtures

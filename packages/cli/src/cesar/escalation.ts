@@ -6,7 +6,7 @@ import { ENGINE_COLORS } from '../blocks/output-format.js';
 
 import { icons } from '../signals/icons.js';
 
-import type { Dispatch, HandlerContext } from '../../handlers/types.js';
+import type { Dispatch, HandlerContext } from '../handlers/types.js';
 
 import { parseConfidence } from './confidence.js';
 

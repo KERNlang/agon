@@ -10,7 +10,7 @@ import type { EngineDefinition, EngineMode, AgonConfig } from '../models/types.j
 
 import { EngineNotFoundError } from '../models/errors.js';
 
-import { validateEngineConfig } from '../../schemas/engine-schema.js';
+import { validateEngineConfig } from '../schemas/engine-schema.js';
 
 import { hostCreateSet, hostNowMs } from '../blocks/host-runtime.js';
 
@@ -431,7 +431,7 @@ export class EngineRegistry {
     const available = (candidateIds ?? this.availableIds()).filter((id: string) => id !== sourceId);
     if (available.length === 0) return [];
     try {
-      const { getEngineGlickoRating } = require('../signals/glicko.js');
+      const { getEngineGlickoRating } = require('./glicko.js');
       const scored = available.map((id: string) => {
         const r = getEngineGlickoRating(id, taskClass);
         return { id, score: r.mu - 2 * r.phi };

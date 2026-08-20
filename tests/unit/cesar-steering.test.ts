@@ -12,7 +12,7 @@ import {
   popSteering,
   hasPendingSteering,
   formatSteeringIntoSend,
-} from '../../packages/cli/src/generated/cesar/steering.js';
+} from '../../packages/cli/src/cesar/steering.js';
 
 describe('Cesar steering buffer', () => {
   // The singleton is module-level and shared across tests in this process —

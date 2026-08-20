@@ -7,7 +7,7 @@ export {
   runBaseline,
   runStage1,
   runStage2,
-} from './generated/stages.js';
+} from './stages-impl.js';
 
 import type { EngineResult } from '@kernlang/agon-core';
 import { determineWinner as determineWinnerKern } from '@kernlang/agon-core';

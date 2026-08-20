@@ -14,7 +14,7 @@ import { sessionResultStore } from '../models/session-results.js';
 
 import { icons } from '../signals/icons.js';
 
-import type { Dispatch, HandlerContext } from '../../handlers/types.js';
+import type { Dispatch, HandlerContext } from './types.js';
 
 import type { DispatchResult } from '@kernlang/agon-core';
 

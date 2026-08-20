@@ -5,11 +5,11 @@ import { tmpdir } from 'node:os';
 
 const apiStreamDispatchWithHistoryMock = vi.hoisted(() => vi.fn());
 
-vi.mock('../../packages/core/src/generated/api/dispatch.js', () => ({
+vi.mock('../../packages/core/src/api/dispatch.js', () => ({
   apiStreamDispatchWithHistory: apiStreamDispatchWithHistoryMock,
 }));
 
-import { repairToolName, runApiAgentLoop } from '../../packages/core/src/generated/api/agent-loop.js';
+import { repairToolName, runApiAgentLoop } from '../../packages/core/src/api/agent-loop.js';
 
 async function* streamChunks(chunks: string[]) {
   for (const chunk of chunks) yield chunk;

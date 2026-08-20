@@ -6,7 +6,7 @@ import { EngineRegistry, FitnessError, buildCritiquePrompt, buildSynthesisPrompt
 
 import { runFitness } from './fitness.js';
 
-import type { SynthesisResult, ForgeEventCallback, WorktreeEntry } from '../types.js';
+import type { SynthesisResult, ForgeEventCallback, WorktreeEntry } from './types.js';
 
 export function parseCritiques(output: string): Critique[] {
   const allMatches = [...output.matchAll(/\[[\s\S]*?\]/g)];

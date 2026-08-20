@@ -2,7 +2,7 @@ import { classifyTask, getRatings, getEngineProfile, rankByTaskClass, resolveWor
 
 import type { TaskClass, EngineRole } from '@kernlang/agon-core';
 
-import type { HandlerContext } from '../../handlers/types.js';
+import type { HandlerContext } from '../handlers/types.js';
 
 import { readCesarToolReliability, formatCesarReliabilityLine, shouldDowngradeCesarToolWork } from './reliability.js';
 

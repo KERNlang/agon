@@ -21,7 +21,7 @@ describe('Plan State Machine', () => {
   const makeStep = (label: string) => ({ id: `step-${label}`, kind: 'dispatch' as const, label, effects: [] });
 
   it('creates a plan with steps in draft state', async () => {
-    const { createPlan } = await import('../../packages/core/src/plan.js');
+    const { createPlan } = await import('../../packages/core/src/blocks/plan.js');
 
     const plan = createPlan(makeAction(), makeWorkspace(), [
       makeStep('Step 1'),
@@ -36,7 +36,7 @@ describe('Plan State Machine', () => {
   });
 
   it('transitions through states: draft → approved → running', async () => {
-    const { createPlan, approvePlan, startPlan } = await import('../../packages/core/src/plan.js');
+    const { createPlan, approvePlan, startPlan } = await import('../../packages/core/src/blocks/plan.js');
 
     let plan = createPlan(makeAction(), makeWorkspace(), [makeStep('Step 1')]);
     expect(plan.state).toBe('draft');
@@ -49,7 +49,7 @@ describe('Plan State Machine', () => {
   });
 
   it('cannot approve an already running plan', async () => {
-    const { createPlan, approvePlan, startPlan } = await import('../../packages/core/src/plan.js');
+    const { createPlan, approvePlan, startPlan } = await import('../../packages/core/src/blocks/plan.js');
 
     let plan = createPlan(makeAction(), makeWorkspace(), [makeStep('Step 1')]);
     plan = approvePlan(plan);
@@ -59,7 +59,7 @@ describe('Plan State Machine', () => {
   });
 
   it('can cancel a plan', async () => {
-    const { createPlan, approvePlan, startPlan, cancelPlan } = await import('../../packages/core/src/plan.js');
+    const { createPlan, approvePlan, startPlan, cancelPlan } = await import('../../packages/core/src/blocks/plan.js');
 
     let plan = createPlan(makeAction(), makeWorkspace(), [makeStep('Step 1')]);
     plan = approvePlan(plan);
@@ -73,7 +73,7 @@ describe('Plan State Machine', () => {
 // ── 2. Process Spawn & Abort ──────────────────────────────────────
 describe('Process Spawn', () => {
   it('spawnWithTimeout runs a command and captures output', async () => {
-    const { spawnWithTimeout } = await import('../../packages/core/src/process.js');
+    const { spawnWithTimeout } = await import('../../packages/core/src/blocks/process.js');
 
     const result = await spawnWithTimeout({
       command: 'echo',
@@ -89,7 +89,7 @@ describe('Process Spawn', () => {
   });
 
   it('spawnWithTimeout captures stderr', async () => {
-    const { spawnWithTimeout } = await import('../../packages/core/src/process.js');
+    const { spawnWithTimeout } = await import('../../packages/core/src/blocks/process.js');
 
     const result = await spawnWithTimeout({
       command: 'sh',
@@ -103,7 +103,7 @@ describe('Process Spawn', () => {
   });
 
   it('spawnWithTimeout respects timeout', async () => {
-    const { spawnWithTimeout } = await import('../../packages/core/src/process.js');
+    const { spawnWithTimeout } = await import('../../packages/core/src/blocks/process.js');
 
     const result = await spawnWithTimeout({
       command: 'sleep',
@@ -117,7 +117,7 @@ describe('Process Spawn', () => {
   });
 
   it('spawnWithTimeout respects abort signal', async () => {
-    const { spawnWithTimeout } = await import('../../packages/core/src/process.js');
+    const { spawnWithTimeout } = await import('../../packages/core/src/blocks/process.js');
 
     const ac = new AbortController();
     setTimeout(() => ac.abort(), 200);
@@ -138,7 +138,7 @@ describe('Process Spawn', () => {
 // ── 3. File History Snapshots ─────────────────────────────────────
 describe('File History Snapshots', () => {
   it('takes and lists snapshots', async () => {
-    const { takeSnapshot, listSnapshots } = await import('../../packages/core/src/file-history.js');
+    const { takeSnapshot, listSnapshots } = await import('../../packages/core/src/blocks/file-history.js');
 
     const tempDir = join(tmpdir(), `agon-test-snapshot-${Date.now()}`);
     mkdirSync(tempDir, { recursive: true });
@@ -155,7 +155,7 @@ describe('File History Snapshots', () => {
   });
 
   it('orders snapshots by creation time and reverts empty/new files correctly', async () => {
-    const { takeSnapshot, listSnapshots, getLatestSnapshotId, revertSnapshot } = await import('../../packages/core/src/file-history.js');
+    const { takeSnapshot, listSnapshots, getLatestSnapshotId, revertSnapshot } = await import('../../packages/core/src/blocks/file-history.js');
 
     const tempDir = join(tmpdir(), `agon-test-snapshot-revert-${Date.now()}`);
     mkdirSync(tempDir, { recursive: true });
@@ -183,7 +183,7 @@ describe('File History Snapshots', () => {
 // ── 4. Context Scanner ────────────────────────────────────────────
 describe('Context Scanner', () => {
   it('detects project type from directory', async () => {
-    const { scanProjectContext } = await import('../../packages/core/src/context-scanner.js');
+    const { scanProjectContext } = await import('../../packages/core/src/blocks/context-scanner.js');
 
     // Scan the Agon AI project itself
     const context = scanProjectContext(process.cwd());
@@ -194,7 +194,7 @@ describe('Context Scanner', () => {
   });
 
   it('detects a KERN project from .kern sources on disk', async () => {
-    const { isKernProject } = await import('../../packages/core/src/context-scanner.js');
+    const { isKernProject } = await import('../../packages/core/src/blocks/context-scanner.js');
 
     const fixture = join(tmpdir(), `agon-iskern-${Date.now()}`);
     mkdirSync(fixture, { recursive: true });
@@ -207,7 +207,7 @@ describe('Context Scanner', () => {
   });
 
   it('does not detect Agon itself as a KERN project (ejected to TypeScript)', async () => {
-    const { isKernProject } = await import('../../packages/core/src/context-scanner.js');
+    const { isKernProject } = await import('../../packages/core/src/blocks/context-scanner.js');
 
     const result = isKernProject(process.cwd());
     expect(result).toBe(false);
@@ -217,7 +217,7 @@ describe('Context Scanner', () => {
 // ── 5. Chat Store ─────────────────────────────────────────────────
 describe('Chat Store Integration', () => {
   it('starts a session and appends messages', async () => {
-    const { startChatSession, appendMessage } = await import('../../packages/core/src/chat-store.js');
+    const { startChatSession, appendMessage } = await import('../../packages/core/src/signals/chat-store.js');
 
     const session = startChatSession({ cwd: tmpdir(), branch: 'test-branch' });
     expect(session.id).toBeDefined();
@@ -245,7 +245,7 @@ describe('Chat Store Integration', () => {
 // ── 6. Workspace Management ───────────────────────────────────────
 describe('Workspace Management', () => {
   it('resolveWorkingDir returns a valid path', async () => {
-    const { resolveWorkingDir } = await import('../../packages/core/src/workspace.js');
+    const { resolveWorkingDir } = await import('../../packages/core/src/blocks/workspace.js');
 
     const cwd = resolveWorkingDir();
     expect(typeof cwd).toBe('string');
@@ -257,7 +257,7 @@ describe('Workspace Management', () => {
 // ── 7. Image Path Handling ────────────────────────────────────────
 describe('Image Path Handling', () => {
   it('detects image paths correctly', async () => {
-    const { isImagePath } = await import('../../packages/core/src/image.js');
+    const { isImagePath } = await import('../../packages/core/src/blocks/image.js');
 
     expect(isImagePath('photo.png')).toBe(true);
     expect(isImagePath('photo.jpg')).toBe(true);
@@ -269,7 +269,7 @@ describe('Image Path Handling', () => {
   });
 
   it('returns correct MIME types', async () => {
-    const { mimeFromExt } = await import('../../packages/core/src/image.js');
+    const { mimeFromExt } = await import('../../packages/core/src/blocks/image.js');
 
     // mimeFromExt takes a full filename/path, not just extension
     expect(mimeFromExt('photo.png')).toBe('image/png');
@@ -282,7 +282,7 @@ describe('Image Path Handling', () => {
 // ── 8. Text Utilities ─────────────────────────────────────────────
 describe('Text Utilities', () => {
   it('wordWrap wraps at specified width', async () => {
-    const { wordWrap } = await import('../../packages/core/src/text.js');
+    const { wordWrap } = await import('../../packages/core/src/blocks/text.js');
 
     const input = 'This is a long line that should be wrapped at a certain column width for display';
     const lines = wordWrap(input, 30);
@@ -298,7 +298,7 @@ describe('Text Utilities', () => {
 // ── 9. Engine Registry ────────────────────────────────────────────
 describe('Engine Registry Integration', () => {
   it('loads builtin engines and resolves availability', async () => {
-    const { EngineRegistry } = await import('../../packages/core/src/engine-registry.js');
+    const { EngineRegistry } = await import('../../packages/core/src/signals/engine-registry.js');
     const registry = new EngineRegistry();
 
     registry.load(join(process.cwd(), 'engines'));
@@ -312,14 +312,14 @@ describe('Engine Registry Integration', () => {
   });
 
   it('get throws EngineNotFoundError for unknown engine', async () => {
-    const { EngineRegistry } = await import('../../packages/core/src/engine-registry.js');
+    const { EngineRegistry } = await import('../../packages/core/src/signals/engine-registry.js');
     const registry = new EngineRegistry();
 
     expect(() => registry.get('nonexistent-engine')).toThrow();
   });
 
   it('pickStarter selects from available engines', async () => {
-    const { EngineRegistry } = await import('../../packages/core/src/engine-registry.js');
+    const { EngineRegistry } = await import('../../packages/core/src/signals/engine-registry.js');
     const registry = new EngineRegistry();
 
     const starter = registry.pickStarter(['claude', 'codex', 'agy'], 'fixed');
@@ -330,7 +330,7 @@ describe('Engine Registry Integration', () => {
   });
 
   it('pickStarter respects preferred engine', async () => {
-    const { EngineRegistry } = await import('../../packages/core/src/engine-registry.js');
+    const { EngineRegistry } = await import('../../packages/core/src/signals/engine-registry.js');
     const registry = new EngineRegistry();
 
     const starter = registry.pickStarter(['claude', 'codex', 'agy'], 'fixed', 'agy');
@@ -341,7 +341,7 @@ describe('Engine Registry Integration', () => {
 // ── 10. Patch Parser ──────────────────────────────────────────────
 describe('Patch Parser Integration', () => {
   it('parses a unified diff correctly', async () => {
-    const { parsePatch } = await import('../../packages/core/src/patch-parser.js');
+    const { parsePatch } = await import('../../packages/core/src/blocks/patch-parser.js');
 
     const diff = `diff --git a/src/index.ts b/src/index.ts
 --- a/src/index.ts
@@ -359,7 +359,7 @@ describe('Patch Parser Integration', () => {
   });
 
   it('patchSummary returns human-readable summary', async () => {
-    const { parsePatch, patchSummary } = await import('../../packages/core/src/patch-parser.js');
+    const { parsePatch, patchSummary } = await import('../../packages/core/src/blocks/patch-parser.js');
 
     const diff = `diff --git a/src/a.ts b/src/a.ts
 --- a/src/a.ts
@@ -380,7 +380,7 @@ diff --git a/src/b.ts b/src/b.ts
   });
 
   it('invertPatch swaps + and - lines', async () => {
-    const { invertPatch } = await import('../../packages/core/src/patch-parser.js');
+    const { invertPatch } = await import('../../packages/core/src/blocks/patch-parser.js');
 
     const diff = `diff --git a/test.ts b/test.ts
 --- a/test.ts

@@ -12,7 +12,7 @@ import { ENGINE_COLORS, shortToolPath, isCesarTelemetryLine, formatConfidenceToo
 
 import { icons } from '../signals/icons.js';
 
-import type { OutputEvent, EngineProgress } from '../../handlers/types.js';
+import type { OutputEvent, EngineProgress } from '../handlers/types.js';
 
 import { contentWidth, color256toHex, engineColor, RenderedSegments, RichLineView, DiffLine, GradientLine, AnsiLine } from './rendering.js';
 

@@ -5,18 +5,18 @@ const mocks = vi.hoisted(() => ({
   worktreeCreate: vi.fn(async () => { throw new Error('worktree unavailable'); }),
 }));
 
-vi.mock('../../packages/core/src/generated/api/agent-loop.js', () => ({
+vi.mock('../../packages/core/src/api/agent-loop.js', () => ({
   runApiAgentLoop: mocks.runApiAgentLoop,
 }));
 
-vi.mock('../../packages/core/src/generated/blocks/git.js', async () => {
-  const actual = await vi.importActual<typeof import('../../packages/core/src/generated/blocks/git.js')>(
-    '../../packages/core/src/generated/blocks/git.js',
+vi.mock('../../packages/core/src/blocks/git.js', async () => {
+  const actual = await vi.importActual<typeof import('../../packages/core/src/blocks/git.js')>(
+    '../../packages/core/src/blocks/git.js',
   );
   return { ...actual, worktreeCreate: mocks.worktreeCreate };
 });
 
-import { Speculator } from '../../packages/core/src/generated/cesar/speculator.js';
+import { Speculator } from '../../packages/core/src/cesar/speculator.js';
 
 describe('Speculator isolation fail-closed behavior', () => {
   it('does not dispatch an isolated member in the shared cwd when worktree creation fails', async () => {

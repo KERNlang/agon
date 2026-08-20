@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { handleOutputEvent } from '../../packages/cli/src/generated/signals/output.js';
-import { asLiveTodos, clearLiveTodos, setTodos as reduceSetTodos } from '../../packages/cli/src/generated/signals/todos.js';
-import { estimateBottomChromeExtraRows, estimateTodoListRows } from '../../packages/cli/src/generated/surfaces/app-layout.js';
-import { createEagerToolContext } from '../../packages/cli/src/generated/cesar/tools.js';
-import { extractAdjacentForkOptions } from '../../packages/cli/src/generated/cesar/fork-options.js';
+import { handleOutputEvent } from '../../packages/cli/src/signals/output.js';
+import { asLiveTodos, clearLiveTodos, setTodos as reduceSetTodos } from '../../packages/cli/src/signals/todos.js';
+import { estimateBottomChromeExtraRows, estimateTodoListRows } from '../../packages/cli/src/surfaces/app-layout.js';
+import { createEagerToolContext } from '../../packages/cli/src/cesar/tools.js';
+import { extractAdjacentForkOptions } from '../../packages/cli/src/cesar/fork-options.js';
 
 // Exact payload captured from ~/.agon/sessions/chat-1784293814413/events.ndjson seq 600 —
 // the live session where a TodoWrite checklist was set twice yet never appeared on screen.

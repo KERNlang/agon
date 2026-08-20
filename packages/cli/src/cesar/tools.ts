@@ -2,7 +2,7 @@ import { ToolRegistry, getProjectFileStateCache, createReadTool, createEditTool,
 
 import type { ToolContext, ToolCallResult } from '@kernlang/agon-core';
 
-import type { Dispatch, HandlerContext } from '../../handlers/types.js';
+import type { Dispatch, HandlerContext } from '../handlers/types.js';
 
 import { createCouncilTool } from './council-tool.js';
 

@@ -10,13 +10,13 @@ import type { TribunalMode, TribunalProtocol } from '@kernlang/agon-forge';
 
 import { sessionResultStore } from '../models/session-results.js';
 
-import type { Dispatch, HandlerContext, EngineProgress } from '../../handlers/types.js';
+import type { Dispatch, HandlerContext, EngineProgress } from './types.js';
 
 import { createScoreboard, scoreboardFinishEngine, renderScoreboard } from '../cesar/scoreboard.js';
 
 import { buildCheckpoint, recordCheckpoint } from '../cesar/checkpoint.js';
 
-import { recordRun, formatRunSummary } from '../../telemetry/index.js';
+import { recordRun, formatRunSummary } from '../telemetry/index.js';
 
 import { filterDefaultOrchestrationEngines } from './engine-filter.js';
 

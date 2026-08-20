@@ -2,7 +2,7 @@ import { AgentSession, AgentTeam, createAgentState, beginTurn, completeTurn, fai
 
 import type { AgentBudget, AgentState, AgentTeamConfig, AgentTeamMemberConfig, EngineDefinition, EngineResult, AgentSynthesisLoser } from '@kernlang/agon-core';
 
-import type { Dispatch, HandlerContext } from '../../handlers/types.js';
+import type { Dispatch, HandlerContext } from './types.js';
 
 import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
 

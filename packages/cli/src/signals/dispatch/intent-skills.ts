@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 
 import { resolveWorkingDir, findSkill, renderSkillPrompt, startChatSession, currentBranch, getAgonHome, updateChatSummary } from '@kernlang/agon-core';
 
-import { handleChat } from '../../../handlers/index.js';
+import { handleChat } from '../../handlers/index.js';
 
 import type { DispatchCallbacks, DispatchResult } from '../dispatch.js';
 

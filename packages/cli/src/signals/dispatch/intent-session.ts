@@ -11,7 +11,7 @@ import type { CesarPlan } from '@kernlang/agon-core';
 
 import { ENGINE_COLORS } from '../../blocks/output-format.js';
 
-import { handleLeaderboard, handleCesarReport, handleCesarHints, handleHistory, handleEngines, handleDiscover, handleConfig, handlePermissions, handleUse, handleCesar, handleTokens, handleRaw, handleWorkspace, handleChats, handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel, handleApplyPatch, handleCp, handleCpLast, handleCommit, handleFlowReport, handleFlowAnalysis, handleRun } from '../../../handlers/index.js';
+import { handleLeaderboard, handleCesarReport, handleCesarHints, handleHistory, handleEngines, handleDiscover, handleConfig, handlePermissions, handleUse, handleCesar, handleTokens, handleRaw, handleWorkspace, handleChats, handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel, handleApplyPatch, handleCp, handleCpLast, handleCommit, handleFlowReport, handleFlowAnalysis, handleRun } from '../../handlers/index.js';
 
 import { handleProvider } from '../../handlers/provider.js';
 

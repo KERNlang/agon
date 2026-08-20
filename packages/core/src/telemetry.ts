@@ -6,17 +6,17 @@ export {
   deriveGroundedWriteResolution, deriveGroundedWriteResolutionMulti, deriveCalibrationBucket,
   createTurnTracker, GuardTurnTracker,
   GUARD_TELEMETRY_THRESHOLDS,
-} from './generated/telemetry/guard-telemetry.js';
+} from './telemetry/guard-telemetry.js';
 export type {
   GuardId, GuardResolutionLabel, CalibrationBucket,
   BlockedCallInfo, GuardFireResolution, GuardFireEvent,
   TurnTelemetryRecord, GuardTelemetryThresholds, ReadSpinThresholds,
-} from './generated/telemetry/guard-telemetry.js';
+} from './telemetry/guard-telemetry.js';
 export {
   guardTelemetryDir, guardTelemetryEnabled,
   appendGuardTelemetry, applyGuardCounters, updateGuardCounters,
   readGuardCounters, recommendGuardAction,
-} from './generated/telemetry/guard-telemetry-store.js';
+} from './telemetry/guard-telemetry-store.js';
 export type {
   GuardCounterCell, GuardTurnAggregate, GuardCounters,
-} from './generated/telemetry/guard-telemetry-store.js';
+} from './telemetry/guard-telemetry-store.js';

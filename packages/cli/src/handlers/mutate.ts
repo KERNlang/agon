@@ -10,7 +10,7 @@ import { resolveReviewTarget, resolveAutoReviewBase } from './review.js';
 
 import { renderMutationLines, formatMutateProgressLine, mutateSpendLine, mutateActualSpendLine, mutateChatSummary, mutationScorePct, mutateLensLine, mutateLensImpliesSemanticLine } from '../blocks/mutate-render.js';
 
-import type { Dispatch, HandlerContext } from '../../handlers/types.js';
+import type { Dispatch, HandlerContext } from './types.js';
 
 export const MUTATE_TARGET_GRAMMAR: RegExp = /^(uncommitted$|branch:|commit:|range:)/;
 

@@ -8,7 +8,7 @@ import {
   parseSearchResults,
   formatSearchResults,
   createWebSearchTool,
-} from '../../packages/core/src/generated/tools/tool-web-search.js';
+} from '../../packages/core/src/tools/tool-web-search.js';
 
 describe('buildSearchRequest', () => {
   it('builds a Brave GET with the subscription-token header', () => {

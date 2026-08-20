@@ -6,14 +6,14 @@ import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
-import { replay } from '../../packages/core/src/generated/sessions/event-log.js';
+import { replay } from '../../packages/core/src/sessions/event-log.js';
 import {
   encodeDaemonRequest,
   parseDaemonResponse,
   splitFrames,
   type DaemonRequest,
   type DaemonResponse,
-} from '../../packages/core/src/generated/sessions/daemon-protocol.js';
+} from '../../packages/core/src/sessions/daemon-protocol.js';
 
 // The built CLI entry the daemon re-spawns itself from. The test drives the
 // REAL binary so it exercises the detached + unref survival path end-to-end.

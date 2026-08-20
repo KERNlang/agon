@@ -8,7 +8,7 @@ import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, stashSnapshot, 
 
 import { healthCheckEngines, HEALTH_CHECK_DEFAULT_PROMPT } from './health-check.js';
 
-import { runBaseline, runStage1, runStage2, resolveForgeMode, resolveForgeRequireDiff, resolveForgeAcceptReviewOutput } from './stages.js';
+import { runBaseline, runStage1, runStage2, resolveForgeMode, resolveForgeRequireDiff, resolveForgeAcceptReviewOutput } from './stages-impl.js';
 
 import { determineWinner } from '@kernlang/agon-core';
 
@@ -22,7 +22,7 @@ import { addToCorpus } from './corpus.js';
 
 import { writeManifest } from './manifest.js';
 
-import type { WorktreeEntry } from '../types.js';
+import type { WorktreeEntry } from './types.js';
 
 export function shellQuoteForForge(value: string): string {
   const s = String(value ?? '');

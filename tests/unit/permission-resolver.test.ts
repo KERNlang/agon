@@ -32,9 +32,9 @@ import {
   resolvePermissionDecision,
   synthesizePermissionRule,
   validateSynthesizedRule,
-} from '../../packages/cli/src/generated/cesar/permission-resolver.js';
-import { persistPermissionRule } from '../../packages/cli/src/generated/cesar/permission-resolver.js';
-import { createTaskExecutionLease } from '../../packages/cli/src/generated/cesar/task-execution-lease.js';
+} from '../../packages/cli/src/cesar/permission-resolver.js';
+import { persistPermissionRule } from '../../packages/cli/src/cesar/permission-resolver.js';
+import { createTaskExecutionLease } from '../../packages/cli/src/cesar/task-execution-lease.js';
 
 const WS = process.cwd();
 
@@ -587,7 +587,7 @@ describe('authorizeResolvedTaskAction', () => {
 
 // ── Dogfood: gaps a live `agon mutate` run found in THIS suite ──────────────
 // Every case below kills a mutant that survived the mutation run on
-// packages/cli/src/generated/cesar/permission-resolver.ts — wrong code these
+// packages/cli/src/cesar/permission-resolver.ts — wrong code these
 // tests used to call green. The run went 67% → 93%.
 //
 // The three mutants that still survive are EQUIVALENT BY CONSTRUCTION — no

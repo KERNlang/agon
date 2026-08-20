@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { modeDocsMarkdown, agentGuideMarkdown } from '../../packages/cli/src/generated/commands/agent-guide-text.js';
+import { modeDocsMarkdown, agentGuideMarkdown } from '../../packages/cli/src/commands/agent-guide-text.js';
 
 const DOC_PATH = fileURLToPath(new URL('../../docs/modes.md', import.meta.url));
 

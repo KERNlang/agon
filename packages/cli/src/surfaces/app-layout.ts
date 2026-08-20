@@ -6,11 +6,11 @@ import { parsePatchPreview } from '../blocks/engine-helpers.js';
 
 import { cleanEngineOutput } from '../blocks/markdown.js';
 
-import { contentWidth } from '../../generated/blocks/rendering.js';
+import { contentWidth } from '../blocks/rendering.js';
 
-import type { OutputBlock } from '../../generated/blocks/engine.js';
+import type { OutputBlock } from '../blocks/engine.js';
 
-import type { OutputEvent } from '../../handlers/types.js';
+import type { OutputEvent } from '../handlers/types.js';
 
 // ── Module: AppLayout ──
 

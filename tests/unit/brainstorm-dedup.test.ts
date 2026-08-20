@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { dedupBrainstormDrafts } from '../../packages/forge/src/generated/dedup-bridge.js';
+import { dedupBrainstormDrafts } from '../../packages/forge/src/dedup-bridge.js';
 
 const originalPython = process.env.AGON_PYTHON;
 const tempDirs: string[] = [];

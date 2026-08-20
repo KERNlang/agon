@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 // Generated sources, not the package dist — the dist lags until `npm run build`,
 // so package imports here would test STALE code (bit us 2026-07-17).
-import { isPathUnderCwd, parsePermissionRuleSet } from '../../packages/core/src/generated/tools/tool-permissions.js';
-import { createReadTool } from '../../packages/core/src/generated/tools/tool-read.js';
-import { createWriteTool } from '../../packages/core/src/generated/tools/tool-write.js';
+import { isPathUnderCwd, parsePermissionRuleSet } from '../../packages/core/src/tools/tool-permissions.js';
+import { createReadTool } from '../../packages/core/src/tools/tool-read.js';
+import { createWriteTool } from '../../packages/core/src/tools/tool-write.js';
 import type { ToolContext } from '@kernlang/agon-core';
 
 function makeCtx(overrides?: Partial<ToolContext>): ToolContext {

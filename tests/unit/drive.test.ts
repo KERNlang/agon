@@ -9,7 +9,7 @@ import {
   agentActivityLabel,
   approvalTargetsClient,
   renderDriveEvent,
-} from '../../packages/cli/src/generated/commands/drive.js';
+} from '../../packages/cli/src/commands/drive.js';
 
 // ── Connection discovery ──────────────────────────────────────────────────────
 

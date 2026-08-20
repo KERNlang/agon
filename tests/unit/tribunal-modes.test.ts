@@ -8,7 +8,7 @@ import {
   TRIBUNAL_MODES,
   TRIBUNAL_PROTOCOLS,
 } from '@kernlang/agon-forge';
-import { detectIntent } from '../../packages/cli/src/generated/signals/intent.js';
+import { detectIntent } from '../../packages/cli/src/signals/intent.js';
 
 describe('tribunal-modes', () => {
   describe('TRIBUNAL_MODES', () => {

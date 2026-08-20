@@ -8,13 +8,13 @@ import type { ImageAttachment } from '@kernlang/agon-core';
 
 import type { CesarPlan } from '@kernlang/agon-core';
 
-import type { HandlerContext } from '../../../handlers/types.js';
+import type { HandlerContext } from '../../handlers/types.js';
 
 import { ENGINE_COLORS } from '../../blocks/output-format.js';
 
-import { handleForge, handleBrainstorm, handleCampfire, handleTribunal, handleBuild, handleReviewMany, runAgentMode, runAgentTeam } from '../../../handlers/index.js';
+import { handleForge, handleBrainstorm, handleCampfire, handleTribunal, handleBuild, handleReviewMany, runAgentMode, runAgentTeam } from '../../handlers/index.js';
 
-import type { AgentContinuationResult } from '../../../generated/handlers/agent.js';
+import type { AgentContinuationResult } from '../../handlers/agent.js';
 
 import { prepareForgeFitnessCommand, inferProjectFitnessCommand } from '../../handlers/forge.js';
 
@@ -26,7 +26,7 @@ import { handleTeamBrainstorm } from '../../handlers/team-brainstorm.js';
 
 import { handleCouncil } from '../../handlers/council.js';
 
-import { handleCesarBrain, parseSuggestion } from '../../../handlers/cesar-brain.js';
+import { handleCesarBrain, parseSuggestion } from '../../handlers/cesar-brain.js';
 
 import { appendUserTurnIfAbsent, buildHistoryPrimedPrompt, formatChatContextForPrompt } from '@kernlang/agon-core';
 

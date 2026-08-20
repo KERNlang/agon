@@ -4,8 +4,8 @@ import {
   reviewOutcome,
   buildReviewConsensusLines,
   formatReviewCounts,
-} from '../../packages/cli/src/generated/handlers/review.js';
-import { buildConsensus } from '../../packages/cli/src/generated/blocks/consensus.js';
+} from '../../packages/cli/src/handlers/review.js';
+import { buildConsensus } from '../../packages/cli/src/blocks/consensus.js';
 
 const SENTINEL = '<!--AGON_REVIEW_FINDINGS_v1-->';
 

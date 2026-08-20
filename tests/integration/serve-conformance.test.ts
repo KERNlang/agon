@@ -10,7 +10,7 @@ import { connect, type Socket } from 'node:net';
 const TMP_HOME = mkdtempSync(join(tmpdir(), 'agon-serve-conformance-'));
 process.env.AGON_HOME = TMP_HOME;
 
-import { createAgonServe } from '../../packages/cli/src/generated/bridge/agon-serve.js';
+import { createAgonServe } from '../../packages/cli/src/bridge/agon-serve.js';
 import type { BrainClient } from '@kernlang/agon-core';
 
 // ─────────────────────────────────────────────────────────────────────────────

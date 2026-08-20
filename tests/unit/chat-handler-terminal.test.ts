@@ -34,11 +34,11 @@ vi.mock('@kernlang/agon-core', async () => {
   };
 });
 
-vi.mock('../../packages/cli/src/generated/cesar/brain-helpers.js', () => ({
+vi.mock('../../packages/cli/src/cesar/brain-helpers.js', () => ({
   yieldToInk: vi.fn(async () => {}),
 }));
 
-import { handleChat } from '../../packages/cli/src/generated/handlers/chat.js';
+import { handleChat } from '../../packages/cli/src/handlers/chat.js';
 
 describe('handleChat streamed terminal outcomes', () => {
   beforeEach(() => appendMessageMock.mockClear());

@@ -124,7 +124,7 @@ const DETERMINISTIC_RESULT_SUBTYPES = ['error_max_turns', 'error_max_tokens'];
  */
 function describeResultSubtype(subtype: string): string {
   if (subtype === 'error_max_turns') {
-    return 'the CLI used its whole --max-turns budget on tool rounds and never emitted an answer — raise the engine\'s review/exec --max-turns, or make the dispatch non-agentic (engine "agenticCli": true)';
+    return 'the CLI used its whole --max-turns budget on tool rounds and never emitted an answer — raise the engine\'s review/exec --max-turns, or make the dispatch non-agentic (engine "nonAgenticFraming")';
   }
   if (subtype === 'error_max_tokens') {
     return 'the CLI hit its output-token cap before emitting an answer';

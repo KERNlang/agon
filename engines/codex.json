@@ -18,6 +18,7 @@
     "args": ["exec", "{prompt}"]
   },
   "review": {
+    "_comment": "Deliberately `codex exec`, NOT `codex review`. An agon review seat pastes a self-contained diff INSIDE the prompt; `codex review` ignores that prompt-borne diff and reviews the WORKING TREE instead, so it would review the wrong thing (and find nothing on a clean tree). Keep this exec-equivalent unless codex grows a flag that reviews a diff handed to it on stdin/argv.",
     "args": ["exec", "{prompt}"]
   },
   "agent": {

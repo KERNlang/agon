@@ -784,9 +784,19 @@ export async function runReviewCore(diff: string, label: string, engineId: strin
   // to tell apart from a transient failure, which is why it got retried at full
   // price for a guaranteed-identical outcome. Checked BEFORE the generic
   // exitCode/stderr branch so the specific reason always wins over "exit 1".
+  //
+  // A terminal `result` envelope WINS OVER PARTIAL TEXT. It is the last thing on
+  // the wire and it says the run ENDED without completing — any text before it is
+  // a preamble ("Let me look at the diff…"), not a review. Gating this on an empty
+  // response (the first cut) meant one line of preamble suppressed the error
+  // entirely: the seat then parsed that preamble, found no findings block,
+  // repaired it into `[]`, and reported a clean PASS for a review that never
+  // happened — the worst possible failure mode for a gate. The partial text is
+  // attached to the error instead, so it stays available for diagnosis.
   const streamFailure = parseStreamJsonFailure(rawTail);
-  if (!response && streamFailure) {
-    throw new Error(`${engineId} returned no review — ${streamFailure.message}`);
+  if (streamFailure) {
+    const partial = response ? `\n\nPartial output before the failure:\n${response}` : '';
+    throw new Error(`${engineId} returned no usable review — ${streamFailure.message}${partial}`);
   }
   // Surface the REAL dispatch failure instead of letting an empty response fall through to the generic 'parse-failure: empty or unusable response' misdiagnosis below. This is the double-swallowed-error fix: a stalled SSE stream (dispatch.kern's idle-timeout paths) now returns exitCode 124 / timedOut:true / a real stderr instead of a silent success, and here we refuse to treat that as an ordinary empty answer. A NON-empty response with a nonzero exitCode is still surfaced as a (possibly partial) review — some engines emit real text before a late-stage error.
   if (!response && dispatchOutcome && (dispatchOutcome.exitCode !== 0 || dispatchOutcome.timedOut || dispatchOutcome.stderr && dispatchOutcome.stderr.trim())) {

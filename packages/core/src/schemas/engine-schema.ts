@@ -187,14 +187,19 @@ export const EngineDefinitionSchema = z.object({
   guards: z.enum(['strict', 'invariants', 'shadow']).optional(),
   imageFlag: z.string().optional(),
   systemPromptFlag: z.string().optional(),
-  // Agentic-CLI marker (drives the non-agent OUTPUT RULES framing in
-  // buildCommand). MUST be modelled here or Zod silently strips it at load
-  // (z.object drops unknown keys), leaving every registry-loaded engine with
-  // agenticCli=undefined — the framing would then never apply from an engine
-  // config and the bug it fixes (claude burning --max-turns on tool rounds and
-  // returning zero text) would silently come back. Mirrors
-  // EngineDefinition.agenticCli in models/types.ts.
-  agenticCli: z.boolean().optional(),
+  // Scope of the non-agentic OUTPUT RULES framing buildCommand prepends for this
+  // engine's agentic-by-default print CLI:
+  //   'all'    — every non-agent dispatch (exec + review). agy's long-standing
+  //              behavior; its framing text is the legacy single-pass string.
+  //   'review' — REVIEW dispatches only. claude: exec dispatches (brainstorm,
+  //              tribunal, campfire, Cesar sub-dispatches) are deliberately left
+  //              untouched, because those legitimately want tool use; only a
+  //              review seat must stay a single non-agentic pass.
+  // MUST be modelled here or Zod silently strips it at load (z.object drops
+  // unknown keys), leaving every registry-loaded engine unframed and quietly
+  // resurrecting the bug (claude burning --max-turns on tool rounds, zero text).
+  // Mirrors EngineDefinition.nonAgenticFraming in models/types.ts.
+  nonAgenticFraming: z.enum(['all', 'review']).optional(),
   api: ApiConfigSchema.optional(),
   companion: CompanionConfigSchema.optional(),
   isolationHints: IsolationHintsSchema.optional(),

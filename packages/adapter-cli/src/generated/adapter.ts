@@ -6,7 +6,7 @@ import type { ApiAgentResult, ApiConfig, EngineAdapter, EngineDefinition, Dispat
 
 import { EngineRegistry, spawnWithTimeout, spawnStream, EngineNotFoundError, readOnlyDiff, apiDispatch, apiDispatchTools, apiDispatchToolsHistory, attachVisionToMessages, apiStreamDispatch, companionDispatch, runHooks, hooksFailed, runApiAgentLoop, safeAgentVisibleText, sessionContext, resolveWorkingDir, engineSupportsVision } from '@kernlang/agon-core';
 
-import { buildCommand, checkEnvVars, resolveModel, stripStreamJson, usesStreamJson, recordDispatchHealth, shouldUseCompanionForAgent, shouldUseClaudePty, runClaudePtyDispatch, runClaudePtyStreamDispatch, resolveClaudePtyExtraArgs, computeEngineIsolation, hasEnvVar, nowMs, captureNewAgentDiff } from './adapter-helpers.js';
+import { buildCommand, checkEnvVars, resolveModel, stripStreamJson, usesStreamJson, recordDispatchHealth, shouldUseCompanionForAgent, shouldUseClaudePty, planClaudePtyDispatch, runClaudePtyDispatch, runClaudePtyStreamDispatch, resolveClaudePtyExtraArgs, computeEngineIsolation, hasEnvVar, nowMs, captureNewAgentDiff } from './adapter-helpers.js';
 
 import { AgentStreamQueue, buildApiAgentContext, cancelledApiAgentResult, createLinkedAbortController, encodeAgentStreamText, normalizeApiAgentOutcome, normalizeDispatchOptions, planEngineExecution } from './execution-plan.js';
 
@@ -75,7 +75,10 @@ export class CliAdapter implements EngineAdapter {
     // Subscription path: drive interactive `claude` TUI via pty when opted-in (AGON_CLAUDE_PTY=1).
     // Avoids `claude -p` (SDK credits). If kern-engines peer deps are missing, falls through.
     if (shouldUseClaudePty(options.engine, options.cwd)) {
-      const ptyResult = await runClaudePtyDispatch(options.prompt, options.timeout, options.signal, 'exec', options.cwd, options.systemPrompt, iso.env, resolveClaudePtyExtraArgs(options.engine, options.cwd));
+      // Same mode-block resolution + non-agentic framing the spawned path gets:
+      // a pty review dispatch must not silently run as an unframed exec.
+      const ptyPlan = planClaudePtyDispatch(options.engine, options.mode, options.prompt);
+      const ptyResult = await runClaudePtyDispatch(ptyPlan.prompt, options.timeout, options.signal, ptyPlan.sessionMode, options.cwd, options.systemPrompt, iso.env, resolveClaudePtyExtraArgs(options.engine, options.cwd));
       if (!ptyResult.unavailable) {
         const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
         mkdirSync(dirname(outputPath), { recursive: true });
@@ -136,7 +139,10 @@ export class CliAdapter implements EngineAdapter {
     // Subscription pty path for claude — yields response deltas, returns final result.
     // Falls through if peer deps missing (unavailable:true).
     if (shouldUseClaudePty(options.engine, options.cwd)) {
-      const gen = runClaudePtyStreamDispatch(options.prompt, options.timeout, options.signal, 'exec', options.cwd, options.systemPrompt, iso.env, resolveClaudePtyExtraArgs(options.engine, options.cwd));
+      // Same mode-block resolution + non-agentic framing the spawned path gets:
+      // a pty review dispatch must not silently run as an unframed exec.
+      const ptyPlan = planClaudePtyDispatch(options.engine, options.mode, options.prompt);
+      const gen = runClaudePtyStreamDispatch(ptyPlan.prompt, options.timeout, options.signal, ptyPlan.sessionMode, options.cwd, options.systemPrompt, iso.env, resolveClaudePtyExtraArgs(options.engine, options.cwd));
       let last: DispatchResult | undefined;
       while (true) {
         const next = await gen.next();
@@ -246,8 +252,13 @@ export class CliAdapter implements EngineAdapter {
     // Subscription pty path for claude (agent mode: tools + bypassed perms).
     // We still diff the cwd before/after so callers get filesChanged/diffLines.
     if (shouldUseClaudePty(options.engine, options.cwd)) {
+      // dispatchAgent IS the agent entry point, so plan for 'agent' explicitly
+      // rather than trusting options.mode — the pre-fix code hardcoded 'agent'
+      // here and a caller that leaves mode at its default must not silently lose
+      // its tools. Agent dispatches are never framed.
+      const ptyPlan = planClaudePtyDispatch(options.engine, 'agent', options.prompt);
       const ptyBaseline = readOnlyDiff(options.cwd);
-      const ptyResult = await runClaudePtyDispatch(options.prompt, options.timeout, options.signal, 'agent', options.cwd, options.systemPrompt, iso.env, resolveClaudePtyExtraArgs(options.engine, options.cwd));
+      const ptyResult = await runClaudePtyDispatch(ptyPlan.prompt, options.timeout, options.signal, ptyPlan.sessionMode, options.cwd, options.systemPrompt, iso.env, resolveClaudePtyExtraArgs(options.engine, options.cwd));
       if (!ptyResult.unavailable) {
         const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
         mkdirSync(dirname(outputPath), { recursive: true });
@@ -338,8 +349,10 @@ export class CliAdapter implements EngineAdapter {
     const iso = computeEngineIsolation(options.engine, { isolation: options.isolation, cwd: options.cwd });
     // Subscription pty path for claude (agent mode). Same diff capture as dispatchAgent.
     if (shouldUseClaudePty(options.engine, options.cwd)) {
+      // Agent entry point — plan for 'agent' explicitly (see dispatchAgent).
+      const ptyPlan = planClaudePtyDispatch(options.engine, 'agent', options.prompt);
       const baselineDiff = readOnlyDiff(options.cwd);
-      const gen = runClaudePtyStreamDispatch(options.prompt, options.timeout, options.signal, 'agent', options.cwd, options.systemPrompt, iso.env, resolveClaudePtyExtraArgs(options.engine, options.cwd));
+      const gen = runClaudePtyStreamDispatch(ptyPlan.prompt, options.timeout, options.signal, ptyPlan.sessionMode, options.cwd, options.systemPrompt, iso.env, resolveClaudePtyExtraArgs(options.engine, options.cwd));
       let last: DispatchResult & { unavailable?: boolean } | undefined;
       const collected: string[] = [];
       while (true) {

@@ -202,13 +202,61 @@ export function resolveModeConfig(engine: EngineDefinition, mode: EngineMode): E
 }
 
 /**
- * Does this dispatch need the single-pass OUTPUT RULES framing? True for engines
- * whose non-interactive CLI is agentic by default (engine.agenticCli, declared in
- * the engine config — never an engine id in source) on any NON-agent dispatch.
- * Agent mode is deliberately left agentic.
+ * Legacy single-pass framing (nonAgenticFraming: 'all'). Byte-for-byte the string
+ * that used to be hardcoded behind `engine.id === 'agy'` — agy's exec dispatches
+ * must keep producing exactly this prompt, so do NOT edit this text.
  */
-export function needsNonAgenticFraming(engine: EngineDefinition, mode: EngineMode): boolean {
-  return engine.agenticCli === true && mode !== 'agent';
+export const SINGLE_PASS_FRAMING: string =
+  'OUTPUT RULES (important): Reply with your COMPLETE final answer as plain text in THIS response only. ' +
+  'Do NOT create, write, edit, or reference any files or artifacts. ' +
+  'Do NOT ask clarifying questions — make reasonable assumptions and proceed. ' +
+  'Do NOT use slash commands or start an interactive session. ' +
+  'Do all the work in a single pass and output the final result directly as text now.\n\n';
+
+/**
+ * Review framing (nonAgenticFraming: 'review'). Deliberately NOT the single-pass
+ * text: that one says "do not reference any files", which flatly contradicts the
+ * review contract — a review with no file:line citations is unusable, and every
+ * finding the seat reports is required to name one. What a review seat must not
+ * do is ACT: run builds/tests, or write files. Everything it needs is already
+ * pasted into the prompt, so citing the given diff is both allowed and required.
+ */
+export const REVIEW_FRAMING: string =
+  'OUTPUT RULES (important): Reply with your COMPLETE review as plain text in THIS response only. ' +
+  'Do NOT run any commands, builds, or tests. Do NOT create, write, or edit any files. ' +
+  'Everything you need is pasted below — DO cite concrete file:line references from the provided diff and context. ' +
+  'Do NOT ask clarifying questions — make reasonable assumptions and proceed. ' +
+  'Do NOT use slash commands or start an interactive session. ' +
+  'Do the whole review in a single pass and output the final result directly as text now.\n\n';
+
+/**
+ * Which non-agentic framing (if any) this dispatch gets, from the engine CONFIG —
+ * never an engine id in source. 'none' | 'single-pass' | 'review'.
+ *
+ * Agent mode is never framed (it is agentic on purpose). Scope 'all' frames every
+ * non-agent dispatch with the legacy text (agy, unchanged). Scope 'review' frames
+ * ONLY review dispatches: claude's ordinary exec dispatches (brainstorm, tribunal,
+ * campfire, Cesar sub-dispatches) legitimately want tools, and blanket-framing them
+ * would have been a far broader behavior change than the review-seat bug required.
+ */
+export function nonAgenticFramingKind(engine: EngineDefinition, mode: EngineMode): 'none'|'single-pass'|'review' {
+  if (mode === 'agent') return 'none';
+  const scope = engine.nonAgenticFraming;
+  if (scope === 'all') return 'single-pass';
+  if (scope === 'review' && mode === 'review') return 'review';
+  return 'none';
+}
+
+/**
+ * Prepend the framing this engine+mode calls for. Single source of truth shared by
+ * buildCommand (spawned CLI dispatch) and the claude pty path, so a configured pty
+ * dispatch can never silently miss the framing an exec-spawned one gets.
+ */
+export function applyNonAgenticFraming(engine: EngineDefinition, mode: EngineMode, prompt: string): string {
+  const kind = nonAgenticFramingKind(engine, mode);
+  if (kind === 'single-pass') return SINGLE_PASS_FRAMING + prompt;
+  if (kind === 'review') return REVIEW_FRAMING + prompt;
+  return prompt;
 }
 
 export function buildCommand(engine: EngineDefinition, mode: EngineMode, prompt: string, cwd: string, timeout: number, binaryPath: string, images?: ImageAttachment[]): {command:string, args:string[]} {
@@ -240,24 +288,13 @@ export function buildCommand(engine: EngineDefinition, mode: EngineMode, prompt:
     effectivePrompt = labels.join('\n') + '\n\nPlease read and analyze the image(s) above.\n\n' + prompt;
   }
 
-  // Agentic-by-default print modes (engine.agenticCli): left to themselves these
-  // CLIs write the answer to artifact FILES, ask clarifying questions, and run
-  // many tool rounds — which blows past the timeout and returns prose the caller
-  // can't parse (agy), or burns the whole --max-turns budget running builds and
-  // tests and emits ZERO text (claude review seats: error_max_turns).
-  // For non-agent dispatch (exec/review → ask/brainstorm/tribunal/review) force a
-  // single-pass, inline, plain-text answer. Agent mode is left agentic on purpose.
-  // Driven by the engine CONFIG, never by an engine id — a new agentic CLI opts
-  // in by declaring "agenticCli": true, with no source change here.
-  if (needsNonAgenticFraming(engine, mode)) {
-    effectivePrompt =
-      'OUTPUT RULES (important): Reply with your COMPLETE final answer as plain text in THIS response only. ' +
-      'Do NOT create, write, edit, or reference any files or artifacts. ' +
-      'Do NOT ask clarifying questions — make reasonable assumptions and proceed. ' +
-      'Do NOT use slash commands or start an interactive session. ' +
-      'Do all the work in a single pass and output the final result directly as text now.\n\n' +
-      effectivePrompt;
-  }
+  // Agentic-by-default print CLIs: left to themselves they write the answer to
+  // artifact FILES, ask clarifying questions, and run many tool rounds — which
+  // blows past the timeout and returns prose the caller can't parse (agy), or
+  // burns the whole --max-turns budget running builds and tests and emits ZERO
+  // text (claude review seats: error_max_turns). Scope + text come from the engine
+  // CONFIG (nonAgenticFraming), never from an engine id here.
+  effectivePrompt = applyNonAgenticFraming(engine, mode, effectivePrompt);
 
   const vars: Record<string, string> = {
     prompt: effectivePrompt,
@@ -397,6 +434,37 @@ export function checkEnvVars(engine: EngineDefinition): string|null {
 /**
  * Drive `claude` via the kern-engines PTY subscription TUI? DEFAULT is now NO — claude dispatches via `claude --print` (-p), which Anthropic no longer meters under the subscription and is far more reliable than scraping the TUI. Opt back INTO the PTY brain with AGON_CLAUDE_PTY=1 / `agon config claudeBackend pty` (single source of truth: claudeBrainUsesPty). Claude is identified by id OR binary === 'claude' so this agrees with the persistent-session and cesar/session gates. cwd (when known) lets a project-local config override apply.
  */
+/**
+ * Plan a claude PTY dispatch through the SAME mode + framing logic buildCommand
+ * uses, so the opt-in pty backend can't silently behave differently from the
+ * spawned one. Before this, all four pty call sites hardcoded the session mode to
+ * 'exec'/'agent' and passed options.prompt through untouched — so a review seat
+ * dispatched over pty got neither the engine's declared review block nor any
+ * non-agentic framing, i.e. exactly the bug this branch fixes, still live behind
+ * `agon config claudeBackend pty`.
+ *
+ * resolveModeConfig is consulted for the same reason buildCommand consults it: a
+ * mode the engine does not declare (and that does not fall back) is a real
+ * capability gap and must fail loudly here too, not quietly run as an exec.
+ * The pty drives claude's INTERACTIVE TUI, so the review block's print-mode argv
+ * (--print/--output-format/--max-turns) is deliberately not forwarded — those
+ * flags are meaningless (and would corrupt the TUI) in a pty session. What carries over is the
+ * part that governs behavior in a TUI: the framing.
+ */
+export function planClaudePtyDispatch(engine: EngineDefinition, mode: EngineMode, prompt: string): {sessionMode: 'exec'|'agent', prompt: string} {
+  const modeConfig = resolveModeConfig(engine, mode);
+  if (!modeConfig) {
+    throw new EngineNotFoundError(
+      engine.id,
+      `Engine "${engine.id}" does not support mode "${mode}"`,
+    );
+  }
+  return {
+    sessionMode: mode === 'agent' ? 'agent' : 'exec',
+    prompt: applyNonAgenticFraming(engine, mode, prompt),
+  };
+}
+
 export function shouldUseClaudePty(engine: EngineDefinition, cwd?: string): boolean {
   if (engine.id !== 'claude' && engine.binary !== 'claude') {
     return false;

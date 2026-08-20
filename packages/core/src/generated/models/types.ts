@@ -116,6 +116,13 @@ export interface DispatchOptions {
   prompt: string;
   cwd: string;
   mode: EngineMode;
+  // What a mode 'review' dispatch is reviewing. Undefined (the default) means
+  // PROMPT-BORNE: the caller pasted a self-contained diff into `prompt`, which is
+  // what every agon review seat does. 'uncommittedChanges' is the explicit opt-in
+  // for an engine's NATIVE working-tree review (codex `review/start`), which
+  // ignores `prompt` entirely — asking for it implicitly would silently review the
+  // wrong content. Ignored for exec/agent modes.
+  reviewTarget?: 'uncommittedChanges';
   timeout: number;
   outputDir: string;
   maxTokens?: number;

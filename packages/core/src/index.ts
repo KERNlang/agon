@@ -253,7 +253,7 @@ export type {
 } from './generated/workflows/specs.js';
 export { apiDispatch, apiDispatchTools, apiDispatchToolsHistory, apiStreamDispatch, apiStreamDispatchWithHistory } from './api-dispatch.js';
 export type { ApiConfig } from './api-dispatch.js';
-export { companionDispatch } from './companion-dispatch.js';
+export { companionDispatch, companionUsesNativeReview } from './companion-dispatch.js';
 export type { CompanionResult } from './companion-dispatch.js';
 export { fetchModelsRegistry, buildModelEntries, searchModels, modelEntryToEngineDef, lookupCatalogContextWindow, lookupCatalogModelCost, lookupCatalogModelAttachment, engineSupportsVision } from './models-registry.js';
 export type { CatalogModelCost } from './models-registry.js';

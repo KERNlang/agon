@@ -133,53 +133,73 @@ function describeResultSubtype(subtype: string): string {
 }
 
 /**
- * Scan raw stream-json NDJSON for the LAST `type: "result"` envelope that reports a
- * failure, and describe it honestly. This is what turns a silent `exit 1` into
+ * Read the TERMINAL stream-json `result` envelope off the tail of a raw stream and
+ * describe its failure honestly. This is what turns a silent `exit 1` into
  * "error_max_turns: …" at the call site — the generic exit code carries no cause,
  * so a doomed dispatch used to be indistinguishable from a transient one and got
- * retried at full price. Returns null when the stream carries no failing result
- * envelope (including non-JSON output from non-Claude engines).
- * Tolerant of a truncated tail: unparseable lines are skipped, not thrown on.
+ * retried at full price.
+ *
+ * DELIBERATELY NARROW, because a false positive here is expensive in both
+ * directions: it fails a review that actually succeeded AND suppresses its retry.
+ * Three gates:
+ *   1. `streamJson` — the dispatch must actually have run in stream-json output
+ *      mode (claude's --output-format stream-json). Every other engine returns
+ *      PROSE, and a prose review that quotes a result envelope (reviews of THIS
+ *      code do exactly that) is not a failed dispatch.
+ *   2. Only the FINAL non-empty line is inspected. In stream-json the terminal
+ *      envelope is by definition the last thing on the wire; anything earlier is
+ *      either superseded or quoted content. This also subsumes the old
+ *      "a later success supersedes an earlier failure" scan.
+ *   3. The line must parse WHOLE (not JSON embedded in prose) into a top-level
+ *      result envelope: `type === 'result'` plus an envelope-shaped field
+ *      (`subtype` string or `is_error` boolean). A bare `{"type":"result"}` inside
+ *      someone's example is not enough.
+ * Returns null when any gate fails. Tolerant of a truncated tail: an unparseable
+ * final line is skipped, not thrown on.
  */
-export function parseStreamJsonFailure(raw: string): StreamJsonFailure|null {
-  if (!raw || !raw.includes('"result"')) {
+export function parseStreamJsonFailure(raw: string, streamJson: boolean): StreamJsonFailure|null {
+  if (!streamJson || !raw || !raw.includes('"result"')) {
     return null;
   }
-  let found: StreamJsonFailure|null = null;
-  for (const line of raw.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.charAt(0) !== '{') {
-      continue;
-    }
-    let msg: any;
-    try {
-      msg = JSON.parse(trimmed);
-    } catch {
-      continue;
-    }
-    if (!msg || typeof msg !== 'object' || msg.type !== 'result') {
-      continue;
-    }
-    const subtype = typeof msg.subtype === 'string' ? msg.subtype : '';
-    const isFailure = msg.is_error === true || subtype.startsWith('error');
-    if (!isFailure) {
-      // A later SUCCESS result supersedes an earlier failure in the same stream.
-      found = null;
-      continue;
-    }
-    const label = subtype || 'error';
-    const detail = typeof msg.error === 'string' && msg.error.trim()
-      ? msg.error.trim()
-      : (Array.isArray(msg.errors) && msg.errors.length
-        ? msg.errors.map((e: any) => (typeof e === 'string' ? e : (e && typeof e.message === 'string' ? e.message : JSON.stringify(e)))).join('; ')
-        : describeResultSubtype(subtype));
-    found = {
-      subtype: label,
-      message: `${label}: ${detail}`,
-      deterministic: DETERMINISTIC_RESULT_SUBTYPES.includes(subtype),
-    };
+  const lines = raw.split('\n');
+  let last = '';
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const trimmed = lines[i].trim();
+    if (trimmed) { last = trimmed; break; }
   }
-  return found;
+  if (!last || last.charAt(0) !== '{') {
+    return null;
+  }
+  let msg: any;
+  try {
+    msg = JSON.parse(last);
+  } catch {
+    return null;
+  }
+  if (!msg || typeof msg !== 'object' || msg.type !== 'result') {
+    return null;
+  }
+  const hasSubtype = typeof msg.subtype === 'string';
+  // Envelope shape, not just any object that happens to say type:"result".
+  if (!hasSubtype && typeof msg.is_error !== 'boolean') {
+    return null;
+  }
+  const subtype = hasSubtype ? msg.subtype as string : '';
+  const isFailure = msg.is_error === true || subtype.startsWith('error');
+  if (!isFailure) {
+    return null;
+  }
+  const label = subtype || 'error';
+  const detail = typeof msg.error === 'string' && msg.error.trim()
+    ? msg.error.trim()
+    : (Array.isArray(msg.errors) && msg.errors.length
+      ? msg.errors.map((e: any) => (typeof e === 'string' ? e : (e && typeof e.message === 'string' ? e.message : JSON.stringify(e)))).join('; ')
+      : describeResultSubtype(subtype));
+  return {
+    subtype: label,
+    message: `${label}: ${detail}`,
+    deterministic: DETERMINISTIC_RESULT_SUBTYPES.includes(subtype),
+  };
 }
 
 /**

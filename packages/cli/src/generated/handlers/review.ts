@@ -347,6 +347,19 @@ export const REVIEW_SENTINEL: string = '<!--AGON_REVIEW_FINDINGS_v1-->';
  */
 const STREAM_TAIL_SCAN_CHARS = 65536;
 
+/**
+ * Does a review dispatch for this engine speak stream-json NDJSON? Read off the
+ * block the dispatch will actually spawn (its `review` block, or `exec` when it
+ * declares none — the same one-step fallback resolveModeConfig applies). Only such
+ * a stream carries a machine-readable terminal `result` envelope; everything else
+ * is prose, where a quoted envelope is just text.
+ */
+function reviewUsesStreamJson(engine: unknown): boolean {
+  const e = engine as { review?: { args?: string[] }, exec?: { args?: string[] } } | null | undefined;
+  const args = e?.review?.args ?? e?.exec?.args ?? [];
+  return Array.isArray(args) && args.includes('stream-json');
+}
+
 export interface ReviewSeverityCounts {
   blocking: number;
   important: number;
@@ -725,7 +738,22 @@ export async function runReviewCore(diff: string, label: string, engineId: strin
   // thing on the wire, and StreamParser deliberately drops it (it yields no
   // text), so the reason is unrecoverable once the chunks are parsed away.
   // Bounded so a huge stream is never held in memory twice.
-  let rawTail = '';
+  //
+  // Kept as a CHUNK RING, joined once at read time. The obvious
+  // `rawTail = (rawTail + chunk).slice(-N)` rebuilds a 64KB string on EVERY
+  // chunk — O(n·N) over a stream that arrives in thousands of small deltas.
+  // Appending is O(chunk); only whole chunks that fall entirely outside the
+  // window are dropped, so the retained text always covers the last N chars.
+  const rawTailChunks: string[] = [];
+  let rawTailLen = 0;
+  const pushRawTail = (chunk: string): void => {
+    if (!chunk) return;
+    rawTailChunks.push(chunk);
+    rawTailLen += chunk.length;
+    while (rawTailChunks.length > 1 && rawTailLen - rawTailChunks[0].length >= STREAM_TAIL_SCAN_CHARS) {
+      rawTailLen -= (rawTailChunks.shift() ?? '').length;
+    }
+  };
   let usage = undefined as DispatchResult['usage'];
   // Full final DispatchResult (exitCode/stderr/timedOut), not just usage — so a genuine dispatch failure (e.g. an idle-timed-out stream) can be told apart from a real empty answer below. Undefined only if the adapter's generator/promise never settles (never happens in practice).
   let dispatchOutcome = undefined as DispatchResult | undefined;
@@ -747,7 +775,7 @@ export async function runReviewCore(diff: string, label: string, engineId: strin
       if (chunk.startsWith('\x00')) {
         continue;
       }
-      rawTail = (rawTail + chunk).slice(-STREAM_TAIL_SCAN_CHARS);
+      pushRawTail(chunk);
       for (const parsed of parser.feed(chunk)) {
         if (parsed.type === 'text' || parsed.type === 'raw') {
           response += parsed.content;
@@ -769,7 +797,7 @@ export async function runReviewCore(diff: string, label: string, engineId: strin
     const result = await ctx.adapter.dispatch(dispatchOpts);
     dispatchOutcome = result;
     response = result.stdout;
-    rawTail = String(result.stdout ?? '').slice(-STREAM_TAIL_SCAN_CHARS);
+    pushRawTail(String(result.stdout ?? ''));
     usage = result.usage;
   }
   response = response.trim();
@@ -793,7 +821,13 @@ export async function runReviewCore(diff: string, label: string, engineId: strin
   // repaired it into `[]`, and reported a clean PASS for a review that never
   // happened — the worst possible failure mode for a gate. The partial text is
   // attached to the error instead, so it stays available for diagnosis.
-  const streamFailure = parseStreamJsonFailure(rawTail);
+  //
+  // Gated on the engine actually dispatching in stream-json output mode: a
+  // PROSE-returning engine (codex, kimi, zai…) that quotes a result envelope in
+  // its review text — reviews of this very code do — must not be misread as a
+  // failed dispatch, which would both discard a real review and suppress its retry.
+  const rawTail = rawTailChunks.join('').slice(-STREAM_TAIL_SCAN_CHARS);
+  const streamFailure = parseStreamJsonFailure(rawTail, reviewUsesStreamJson(engine));
   if (streamFailure) {
     const partial = response ? `\n\nPartial output before the failure:\n${response}` : '';
     throw new Error(`${engineId} returned no usable review — ${streamFailure.message}${partial}`);

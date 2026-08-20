@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +9,8 @@ import {
   nonAgenticFramingKind,
   applyNonAgenticFraming,
   planClaudePtyDispatch,
+  useFileChannelForDispatch,
+  fileChannelInstruction,
   SINGLE_PASS_FRAMING,
   REVIEW_FRAMING,
 } from '../../packages/adapter-cli/src/generated/adapter-helpers.js';
@@ -16,6 +18,7 @@ import {
   parseStreamJsonFailure,
   isDeterministicStreamFailure,
 } from '../../packages/core/src/generated/blocks/stream-parser.js';
+import { companionUsesNativeReview } from '../../packages/core/src/generated/sessions/companion-dispatch.js';
 import {
   runReviewCore,
   shouldRetryReviewAttempt,
@@ -142,9 +145,20 @@ describe('non-agentic OUTPUT RULES framing (config-driven, no engine ids)', () =
       .toEqual(['--print', 'ASK']);
   });
 
-  it("scope 'all' still frames both exec and review", () => {
+  it("scope 'all' frames both exec and review — but a review gets the REVIEW text", () => {
+    // The scope says WHETHER to frame; the mode says WHICH text. Handing a review
+    // the single-pass string would tell it "do not reference any files" while the
+    // review contract requires a file:line citation on every finding.
     expect(nonAgenticFramingKind(allScoped, 'exec')).toBe('single-pass');
-    expect(nonAgenticFramingKind(allScoped, 'review')).toBe('single-pass');
+    expect(nonAgenticFramingKind(allScoped, 'review')).toBe('review');
+    expect(applyNonAgenticFraming(allScoped, 'review', 'REVIEW THIS'))
+      .toBe(REVIEW_FRAMING + 'REVIEW THIS');
+  });
+
+  it("agy's NON-review framing stays byte-identical under the review-text change", () => {
+    const agy = { id: 'agy', nonAgenticFraming: 'all', exec: { args: ['{prompt}'] } } as any;
+    expect(applyNonAgenticFraming(agy, 'exec', 'ASK')).toBe(SINGLE_PASS_FRAMING + 'ASK');
+    expect(nonAgenticFramingKind(agy, 'exec')).toBe('single-pass');
   });
 
   it('leaves agent mode agentic on purpose, under either scope', () => {
@@ -210,6 +224,18 @@ describe('review seats are not privileged', () => {
     expect(raw.review.args[raw.review.args.indexOf('--max-turns') + 1]).toBe('50');
   });
 
+  it('agy records WHY its review block keeps the print-mode permission flag', () => {
+    // ACCEPTED RISK, verified empirically: with the flag absent, agy --print does
+    // not degrade to a denied tool — the first permission request aborts the whole
+    // run with no answer. It is agy's print baseline (exec/agent carry it too), and
+    // the seat's containment is the non-agentic review framing, not the flag.
+    const raw = JSON.parse(readFileSync(join(ENGINES_DIR, 'agy.json'), 'utf-8'));
+    expect(raw.review.args).toContain('--dangerously-skip-permissions');
+    expect(raw.exec.args, 'must remain the exec baseline, not a review escalation')
+      .toContain('--dangerously-skip-permissions');
+    expect(String(raw.review._comment)).toMatch(/permission check failed|print-mode baseline|PRINT-MODE BASELINE/i);
+  });
+
   it('NO engine\'s review block grants privilege its exec block did not already have', () => {
     // Making the `review` blocks live (the point of this branch) must not hand any
     // seat MORE power than it had when every review ran through `exec`. agy, for
@@ -234,6 +260,16 @@ describe('review seats are not privileged', () => {
 // --- (2c) the pty backend gets the same treatment as the spawned one ----
 
 describe('claude pty path routes through the same mode + framing logic', () => {
+  let savedChannel: string | undefined;
+  beforeEach(() => {
+    savedChannel = process.env.AGON_CLAUDE_ANSWER_CHANNEL;
+    delete process.env.AGON_CLAUDE_ANSWER_CHANNEL; // unset → the default 'file' channel
+  });
+  afterEach(() => {
+    if (savedChannel === undefined) delete process.env.AGON_CLAUDE_ANSWER_CHANNEL;
+    else process.env.AGON_CLAUDE_ANSWER_CHANNEL = savedChannel;
+  });
+
   const claudePty = {
     id: 'claude',
     nonAgenticFraming: 'review',
@@ -253,9 +289,33 @@ describe('claude pty path routes through the same mode + framing logic', () => {
 
   it('leaves exec and agent pty dispatches byte-identical', () => {
     expect(planClaudePtyDispatch(claudePty, 'exec', 'ASK'))
-      .toEqual({ sessionMode: 'exec', prompt: 'ASK' });
+      .toEqual({ sessionMode: 'exec', prompt: 'ASK', useFileChannel: true });
     expect(planClaudePtyDispatch(claudePty, 'agent', 'BUILD IT'))
-      .toEqual({ sessionMode: 'agent', prompt: 'BUILD IT' });
+      .toEqual({ sessionMode: 'agent', prompt: 'BUILD IT', useFileChannel: true });
+  });
+
+  it('SUPPRESSES the file answer-channel for a pty review (it contradicts the framing)', () => {
+    // A review's pty SESSION mode is 'exec', and the answer channel keys off the
+    // session mode — so without an explicit veto the prompt would carry both
+    // "Do NOT create, write, or edit any files" (framing) and "use your Write tool
+    // to write your answer to <path>" (channel). An agentic CLI handed that
+    // contradiction burns its turn budget on it: the exact exhaustion this fixes.
+    const plan = planClaudePtyDispatch(claudePty, 'review', 'REVIEW THIS');
+    expect(plan.sessionMode).toBe('exec');
+    expect(plan.useFileChannel).toBe(false);
+    expect(useFileChannelForDispatch('review')).toBe(false);
+    // The prompt the pty actually sends: framing present, Write instruction absent.
+    const sent = plan.useFileChannel
+      ? plan.prompt + fileChannelInstruction('/tmp/answer.md')
+      : plan.prompt;
+    expect(sent).toContain(REVIEW_FRAMING);
+    expect(sent).not.toContain('use your Write tool');
+    expect(sent).not.toContain('[ANSWER DELIVERY — REQUIRED]');
+  });
+
+  it('keeps the answer channel for non-review pty dispatches', () => {
+    expect(useFileChannelForDispatch('exec')).toBe(true);
+    expect(useFileChannelForDispatch('agent')).toBe(true);
   });
 
   it('fails loudly for a mode the engine does not declare, instead of silently running exec', () => {
@@ -274,7 +334,7 @@ const MAX_TURNS_STREAM = [
 
 describe('stream-json terminal-reason parsing', () => {
   it('names error_max_turns and marks it deterministic', () => {
-    const failure = parseStreamJsonFailure(MAX_TURNS_STREAM);
+    const failure = parseStreamJsonFailure(MAX_TURNS_STREAM, true);
     expect(failure).not.toBeNull();
     expect(failure!.subtype).toBe('error_max_turns');
     expect(failure!.deterministic).toBe(true);
@@ -285,6 +345,7 @@ describe('stream-json terminal-reason parsing', () => {
   it('carries an is_error errors[] payload through', () => {
     const failure = parseStreamJsonFailure(
       '{"type":"result","is_error":true,"errors":[{"message":"tool crashed"},"and again"]}',
+      true,
     );
     expect(failure!.message).toContain('tool crashed');
     expect(failure!.message).toContain('and again');
@@ -292,26 +353,99 @@ describe('stream-json terminal-reason parsing', () => {
   });
 
   it('returns null for a clean stream, plain text, and a superseding success result', () => {
-    expect(parseStreamJsonFailure('')).toBeNull();
-    expect(parseStreamJsonFailure('just some prose from codex\nline two')).toBeNull();
-    expect(parseStreamJsonFailure('{"type":"result","subtype":"success","result":"all good"}')).toBeNull();
+    expect(parseStreamJsonFailure('', true)).toBeNull();
+    expect(parseStreamJsonFailure('just some prose from codex\nline two', true)).toBeNull();
+    expect(parseStreamJsonFailure('{"type":"result","subtype":"success","result":"all good"}', true)).toBeNull();
     expect(parseStreamJsonFailure(
       '{"type":"result","subtype":"error_max_turns","is_error":true}\n'
       + '{"type":"result","subtype":"success","result":"retried inline"}',
+      true,
     )).toBeNull();
   });
 
   it('tolerates a truncated/garbage tail without throwing', () => {
-    expect(() => parseStreamJsonFailure('{"type":"resul')).not.toThrow();
-    expect(parseStreamJsonFailure('{"ty' + MAX_TURNS_STREAM)!.subtype).toBe('error_max_turns');
+    expect(() => parseStreamJsonFailure('{"type":"resul', true)).not.toThrow();
+    expect(parseStreamJsonFailure('{"ty' + MAX_TURNS_STREAM, true)!.subtype).toBe('error_max_turns');
+  });
+
+  it('is INERT unless the dispatch actually ran in stream-json output mode', () => {
+    // Every non-stream-json engine returns prose. Scanning it for envelopes can
+    // only produce false positives, and a false positive here both discards a real
+    // review AND suppresses its retry.
+    expect(parseStreamJsonFailure(MAX_TURNS_STREAM, false)).toBeNull();
+  });
+
+  it('does NOT misread a prose review that QUOTES a result envelope', () => {
+    // Reviews of this very code quote the envelope verbatim. Only the FINAL
+    // non-empty line is inspected, so a quote mid-review is just text — and a
+    // review that ENDS on a quoted line is still prose from a prose engine.
+    const quoting = [
+      'The seat failed with:',
+      '',
+      '    {"type":"result","subtype":"error_max_turns","is_error":true}',
+      '',
+      'which the handler should surface by name.',
+      '<!--AGON_REVIEW_FINDINGS_v1-->',
+      '```json',
+      '[]',
+      '```',
+    ].join('\n');
+    expect(parseStreamJsonFailure(quoting, true)).toBeNull();
+    expect(parseStreamJsonFailure(quoting, false)).toBeNull();
+    // Same envelope, quoted as the very last line, from a prose engine.
+    const trailingQuote = 'It ended with {"type":"result","subtype":"error_max_turns"}\nSee above.';
+    expect(parseStreamJsonFailure(trailingQuote, true)).toBeNull();
+  });
+
+  it('requires a real top-level ENVELOPE, not any object saying type:"result"', () => {
+    expect(parseStreamJsonFailure('{"type":"result"}', true)).toBeNull();
+    expect(parseStreamJsonFailure('{"type":"result","payload":{"is_error":true}}', true)).toBeNull();
+    // An embedded envelope inside a larger message is not the terminal envelope.
+    expect(parseStreamJsonFailure(
+      '{"type":"assistant","message":{"text":"{\\"type\\":\\"result\\",\\"is_error\\":true}"}}',
+      true,
+    )).toBeNull();
+  });
+
+  it('still fails on a REAL terminal envelope at the end of a stream-json stream', () => {
+    const realStream = [
+      '{"type":"system","subtype":"init"}',
+      '{"type":"assistant","message":{"content":[{"type":"text","text":"Reading the diff..."}]}}',
+      '{"type":"result","subtype":"error_max_turns","is_error":true}',
+      '',
+    ].join('\n');
+    expect(parseStreamJsonFailure(realStream, true)!.subtype).toBe('error_max_turns');
+  });
+});
+
+// --- (3b) prompt-borne reviews never hit a companion's NATIVE review path ----
+
+describe('prompt-borne review vs native working-tree review', () => {
+  it('mode review alone does NOT trigger the native review call', () => {
+    // codex review/start targets uncommittedChanges and DROPS the prompt, so the
+    // seat would review the working tree instead of the diff it pasted in.
+    expect(companionUsesNativeReview('review', undefined)).toBe(false);
+    expect(companionUsesNativeReview('exec', undefined)).toBe(false);
+    expect(companionUsesNativeReview('agent', undefined)).toBe(false);
+  });
+
+  it('native review is opt-in via an explicit working-tree target', () => {
+    expect(companionUsesNativeReview('review', 'uncommittedChanges')).toBe(true);
+    // The target is meaningless outside review mode.
+    expect(companionUsesNativeReview('exec', 'uncommittedChanges')).toBe(false);
   });
 });
 
 describe('runReviewCore surfaces the max_turns reason instead of "exit 1"', () => {
   const diff = 'diff --git a/foo.ts b/foo.ts\n@@ -0,0 +1 @@\n+foo';
+  // The terminal-envelope scan only applies to a dispatch that really speaks
+  // stream-json, so the fake engine must declare the review block that does.
+  const CLAUDE_SEAT = { id: 'claude', review: { args: ['--print', '--output-format', 'stream-json', '{prompt}'] } };
+  // A prose engine: whatever it says, it is text, not a machine envelope.
+  const CODEX_SEAT = { id: 'codex', exec: { args: ['exec', '{prompt}'] }, review: { args: ['exec', '{prompt}'] } };
   const ctx = {
     config: { reviewFileContext: false },
-    registry: { get: () => ({ id: 'claude', name: 'claude' }) },
+    registry: { get: () => ({ ...CLAUDE_SEAT, name: 'claude' }) },
     adapter: {
       dispatchStream: (_opts: unknown) => (async function* () {
         yield MAX_TURNS_STREAM;
@@ -325,14 +459,16 @@ describe('runReviewCore surfaces the max_turns reason instead of "exit 1"', () =
     await expect(runReviewCore(diff, 'label', 'claude', ctx)).rejects.not.toThrow(/^exit 1$/);
   });
 
-  it('dispatches the review seat in review mode', async () => {
+  it('dispatches the review seat in review mode, prompt-borne (no native review target)', async () => {
     let seenMode = '';
+    let seenTarget: unknown = 'unset';
     const spyCtx = {
       config: { reviewFileContext: false },
-      registry: { get: () => ({ id: 'claude' }) },
+      registry: { get: () => CLAUDE_SEAT },
       adapter: {
         dispatchStream: (opts: any) => (async function* () {
           seenMode = opts.mode;
+          seenTarget = opts.reviewTarget;
           yield 'Looks fine.\n<!--AGON_REVIEW_FINDINGS_v1-->\n```json\n[]\n```';
           return { exitCode: 0, stdout: '', stderr: '', timedOut: false };
         })(),
@@ -340,6 +476,28 @@ describe('runReviewCore surfaces the max_turns reason instead of "exit 1"', () =
     } as any;
     await runReviewCore(diff, 'label', 'claude', spyCtx);
     expect(seenMode).toBe('review');
+    // The seat pastes a self-contained diff INTO the prompt, so it must never ask
+    // for a native working-tree review (which drops the prompt entirely).
+    expect(seenTarget).toBeUndefined();
+  });
+
+  it('a PROSE review that quotes a result envelope still passes as a success', async () => {
+    // The false positive this guards: rawTail scanning is engine-blind, so a codex
+    // review discussing the very envelope this branch parses used to be reported as
+    // a terminal dispatch failure — and its retry suppressed as "deterministic".
+    const quotingCtx = {
+      config: { reviewFileContext: false },
+      registry: { get: () => CODEX_SEAT },
+      adapter: {
+        dispatchStream: (_opts: unknown) => (async function* () {
+          yield 'The seat dies on:\n{"type":"result","subtype":"error_max_turns","is_error":true}\n';
+          yield 'Fix: raise --max-turns.\n<!--AGON_REVIEW_FINDINGS_v1-->\n```json\n[]\n```';
+          return { exitCode: 0, stdout: '', stderr: '', timedOut: false };
+        })(),
+      },
+    } as any;
+    const result = await runReviewCore(diff, 'label', 'codex', quotingCtx);
+    expect(result.response).toContain('Fix: raise --max-turns.');
   });
 
   it('FAILS the seat when a terminal result envelope follows partial text', async () => {
@@ -349,7 +507,7 @@ describe('runReviewCore surfaces the max_turns reason instead of "exit 1"', () =
     // envelope must win, with the partial text attached for diagnosis.
     const partialCtx = {
       config: { reviewFileContext: false },
-      registry: { get: () => ({ id: 'claude' }) },
+      registry: { get: () => CLAUDE_SEAT },
       adapter: {
         dispatchStream: (_opts: unknown) => (async function* () {
           yield '{"type":"assistant","message":{"content":[{"type":"text","text":"Let me start by reading the diff and the surrounding files."}]}}\n';
@@ -368,7 +526,7 @@ describe('runReviewCore surfaces the max_turns reason instead of "exit 1"', () =
     // seat. A normal successful review must be unaffected.
     const okCtx = {
       config: { reviewFileContext: false },
-      registry: { get: () => ({ id: 'claude' }) },
+      registry: { get: () => CLAUDE_SEAT },
       adapter: {
         dispatchStream: (_opts: unknown) => (async function* () {
           yield 'Looks fine.\n<!--AGON_REVIEW_FINDINGS_v1-->\n```json\n[]\n```\n';

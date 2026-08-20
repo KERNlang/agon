@@ -195,6 +195,15 @@ export const EngineDefinitionSchema = z.object({
   //              tribunal, campfire, Cesar sub-dispatches) are deliberately left
   //              untouched, because those legitimately want tool use; only a
   //              review seat must stay a single non-agentic pass.
+  // OMITTED means NO framing, and that is the correct default, not an oversight:
+  // most engines' print mode is already a single non-agentic pass, so framing them
+  // would only add noise. Declare this ONLY for a CLI that is agentic by default in
+  // print mode (it will spend turns running builds/tests unless told not to) —
+  // currently claude and agy. If a newly added engine's review seats come back empty
+  // with a turn/token-budget terminal reason, that is the signal to declare it.
+  // WHICH text is used follows the MODE: a review dispatch always gets the review
+  // text (which requires file:line citations); only non-review dispatches under
+  // scope 'all' get the legacy single-pass text. See nonAgenticFramingKind.
   // MUST be modelled here or Zod silently strips it at load (z.object drops
   // unknown keys), leaving every registry-loaded engine unframed and quietly
   // resurrecting the bug (claude burning --max-turns on tool rounds, zero text).

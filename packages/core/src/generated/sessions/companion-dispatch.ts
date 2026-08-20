@@ -20,7 +20,21 @@ export interface CompanionResult {
   commands: Array<{command:string,exitCode:number,output:string}>;
 }
 
-export async function companionDispatch(opts: {config:CompanionConfig, binaryPath:string, prompt:string, cwd:string, timeout:number, mode:'exec'|'review'|'agent', model?:string, signal?:AbortSignal, systemPrompt?:string, textOnly?:boolean, env?:Record<string,string>, onApproval?:(tool:string, command:string, reason?:string)=>Promise<boolean|string>}): Promise<DispatchResult> {
+/**
+ * Should this companion dispatch use the engine's NATIVE review call (codex
+ * `review/start`) instead of an ordinary prompt turn? Only when the caller
+ * explicitly asked for a working-tree target. Mode 'review' alone is NOT enough:
+ * `review/start` targets the server's own uncommittedChanges and DROPS the prompt,
+ * while an agon review seat's whole subject is the diff it pasted INTO the prompt
+ * (for a synthesis/team review that diff may not match the working tree at all,
+ * and on a clean tree the native path reviews nothing). Prompt-borne is the
+ * default; native review is opt-in.
+ */
+export function companionUsesNativeReview(mode: 'exec'|'review'|'agent', reviewTarget?: 'uncommittedChanges'): boolean {
+  return mode === 'review' && reviewTarget === 'uncommittedChanges';
+}
+
+export async function companionDispatch(opts: {config:CompanionConfig, binaryPath:string, prompt:string, cwd:string, timeout:number, mode:'exec'|'review'|'agent', reviewTarget?:'uncommittedChanges', model?:string, signal?:AbortSignal, systemPrompt?:string, textOnly?:boolean, env?:Record<string,string>, onApproval?:(tool:string, command:string, reason?:string)=>Promise<boolean|string>}): Promise<DispatchResult> {
   if (opts.config.protocol !== 'jsonrpc' && opts.config.protocol !== 'acp' && opts.config.protocol !== 'stream-json') {
     return { exitCode: 2, stdout: '', stderr: `Protocol "${opts.config.protocol}" not supported for one-shot dispatch`, durationMs: 0, timedOut: false };
   }
@@ -422,7 +436,15 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
       const threadResult = await send('thread/start', threadParams) as any;
       threadId = threadResult?.thread?.id ?? null;
 
-      if (opts.mode === 'review') {
+      // NATIVE review is OPT-IN, not implied by mode 'review'. `review/start`
+      // targets the server's own uncommittedChanges and DROPS opts.prompt on the
+      // floor — but an agon review seat's entire subject is the diff it pasted
+      // INTO the prompt (a synthesis/team review may not correspond to the working
+      // tree at all, and on a clean tree the native path reviews nothing). So a
+      // prompt-borne review takes the ordinary turn/start path, exactly like exec;
+      // only a caller that explicitly asks for 'uncommittedChanges' gets the
+      // native one. The read-only sandbox above still applies either way.
+      if (companionUsesNativeReview(opts.mode, opts.reviewTarget)) {
         await send('review/start', { threadId, target: { type: 'uncommittedChanges' } });
       } else {
         await send('turn/start', { threadId, input: [{ type: 'text', text: opts.prompt, text_elements: [] }] });

@@ -234,16 +234,25 @@ export const REVIEW_FRAMING: string =
  * never an engine id in source. 'none' | 'single-pass' | 'review'.
  *
  * Agent mode is never framed (it is agentic on purpose). Scope 'all' frames every
- * non-agent dispatch with the legacy text (agy, unchanged). Scope 'review' frames
- * ONLY review dispatches: claude's ordinary exec dispatches (brainstorm, tribunal,
- * campfire, Cesar sub-dispatches) legitimately want tools, and blanket-framing them
- * would have been a far broader behavior change than the review-seat bug required.
+ * non-agent dispatch (agy). Scope 'review' frames ONLY review dispatches: claude's
+ * ordinary exec dispatches (brainstorm, tribunal, campfire, Cesar sub-dispatches)
+ * legitimately want tools, and blanket-framing them would have been a far broader
+ * behavior change than the review-seat bug required.
+ *
+ * WHICH TEXT is then chosen by the MODE, not the scope: a review dispatch always
+ * gets REVIEW_FRAMING, under either scope. Only a non-review dispatch under scope
+ * 'all' gets the legacy SINGLE_PASS_FRAMING (agy exec — byte-identical, asserted).
  */
 export function nonAgenticFramingKind(engine: EngineDefinition, mode: EngineMode): 'none'|'single-pass'|'review' {
   if (mode === 'agent') return 'none';
   const scope = engine.nonAgenticFraming;
+  // A REVIEW dispatch gets the review text under EITHER scope. Scope 'all' says
+  // "this CLI is agentic by default, frame every non-agent dispatch" — it does not
+  // say "use the single-pass text for reviews too", and that text bans referencing
+  // files, which flatly contradicts the review contract (every finding must cite
+  // file:line). agy's non-review dispatches keep the byte-identical legacy string.
+  if (mode === 'review' && (scope === 'all' || scope === 'review')) return 'review';
   if (scope === 'all') return 'single-pass';
-  if (scope === 'review' && mode === 'review') return 'review';
   return 'none';
 }
 
@@ -434,6 +443,13 @@ export function checkEnvVars(engine: EngineDefinition): string|null {
 /**
  * Drive `claude` via the kern-engines PTY subscription TUI? DEFAULT is now NO — claude dispatches via `claude --print` (-p), which Anthropic no longer meters under the subscription and is far more reliable than scraping the TUI. Opt back INTO the PTY brain with AGON_CLAUDE_PTY=1 / `agon config claudeBackend pty` (single source of truth: claudeBrainUsesPty). Claude is identified by id OR binary === 'claude' so this agrees with the persistent-session and cesar/session gates. cwd (when known) lets a project-local config override apply.
  */
+export function shouldUseClaudePty(engine: EngineDefinition, cwd?: string): boolean {
+  if (engine.id !== 'claude' && engine.binary !== 'claude') {
+    return false;
+  }
+  return claudeBrainUsesPty(cwd);
+}
+
 /**
  * Plan a claude PTY dispatch through the SAME mode + framing logic buildCommand
  * uses, so the opt-in pty backend can't silently behave differently from the
@@ -448,10 +464,18 @@ export function checkEnvVars(engine: EngineDefinition): string|null {
  * capability gap and must fail loudly here too, not quietly run as an exec.
  * The pty drives claude's INTERACTIVE TUI, so the review block's print-mode argv
  * (--print/--output-format/--max-turns) is deliberately not forwarded — those
- * flags are meaningless (and would corrupt the TUI) in a pty session. What carries over is the
- * part that governs behavior in a TUI: the framing.
+ * flags are meaningless (and would corrupt the TUI) in a pty session. What carries
+ * over is the part that governs behavior in a TUI: the framing.
+ *
+ * `useFileChannel` is planned here too, because a review's session mode is 'exec'
+ * and the file answer-channel keys off the SESSION mode — so a pty review would
+ * otherwise be handed the mandatory "use your Write tool to write the answer to
+ * this file" instruction immediately after framing that says "Do NOT create,
+ * write, or edit any files". A direct contradiction, and the exact shape of the
+ * bug this branch exists to kill (claude burning its turn budget resolving it).
+ * Review answers come back inline; see useFileChannelForDispatch.
  */
-export function planClaudePtyDispatch(engine: EngineDefinition, mode: EngineMode, prompt: string): {sessionMode: 'exec'|'agent', prompt: string} {
+export function planClaudePtyDispatch(engine: EngineDefinition, mode: EngineMode, prompt: string): {sessionMode: 'exec'|'agent', prompt: string, useFileChannel: boolean} {
   const modeConfig = resolveModeConfig(engine, mode);
   if (!modeConfig) {
     throw new EngineNotFoundError(
@@ -462,14 +486,8 @@ export function planClaudePtyDispatch(engine: EngineDefinition, mode: EngineMode
   return {
     sessionMode: mode === 'agent' ? 'agent' : 'exec',
     prompt: applyNonAgenticFraming(engine, mode, prompt),
+    useFileChannel: useFileChannelForDispatch(mode),
   };
-}
-
-export function shouldUseClaudePty(engine: EngineDefinition, cwd?: string): boolean {
-  if (engine.id !== 'claude' && engine.binary !== 'claude') {
-    return false;
-  }
-  return claudeBrainUsesPty(cwd);
 }
 
 /**
@@ -496,6 +514,22 @@ export function answerChannelMode(): string {
 export function useFileChannelForMode(mode?: 'exec'|'agent'): boolean {
   const m = mode ?? 'exec';
   return (m === 'exec' || m === 'agent') && answerChannelMode() === 'file';
+}
+
+/**
+ * Whether the file answer-channel applies for a DISPATCH mode (as opposed to the
+ * pty SESSION mode useFileChannelForMode takes). Review is the one dispatch that
+ * must never get it: the channel appends a MANDATORY "use your Write tool to write
+ * your answer to <path>" instruction, which directly contradicts the review framing
+ * ("Do NOT create, write, or edit any files") sitting a few lines above it in the
+ * same prompt. An agentic CLI handed both spends turns trying to reconcile them —
+ * the exact turn-exhaustion this branch fixes — and a review seat is fed an
+ * UNTRUSTED diff, so keeping its tool surface at zero is the point. Review answers
+ * come back inline, which is what the review parser reads anyway.
+ */
+export function useFileChannelForDispatch(mode: EngineMode): boolean {
+  if (mode === 'review') return false;
+  return useFileChannelForMode(mode === 'agent' ? 'agent' : 'exec');
 }
 
 /**
@@ -536,7 +570,7 @@ export function setupFileAnswerChannel(composed: string): { prompt:string, answe
 /**
  * Drive interactive `claude` under a pty so the subscription billing path is used. Lazy-imports @kernlang/agon-engines — runs a python3 daemon (kern_engines.cli.daemon) over stdio JSON-RPC, no native node deps. cwd is plumbed through so worktree dispatches land in the right repo; systemPrompt is prepended to the prompt; extraArgv (model/effort launch flags) is forwarded to the engine exec. When AGON_CLAUDE_ANSWER_CHANNEL=file and mode is exec OR agent, claude is asked to Write its answer to a temp file we read as the AUTHORITATIVE result (clean — no TUI scrape), falling back to the scrape if the file is absent. Never throws — returns unavailable:true on any unexpected failure so kern callers can fall through to legacy paths with a simple !result.unavailable check.
  */
-export async function runClaudePtyDispatch(prompt: string, timeoutSec: number, signal?: AbortSignal, mode?: 'exec'|'agent', cwd?: string, systemPrompt?: string, env?: Record<string,string>, extraArgv?: string[]): Promise<{exitCode:number,stdout:string,stderr:string,durationMs:number,timedOut:boolean,unavailable?:boolean}> {
+export async function runClaudePtyDispatch(prompt: string, timeoutSec: number, signal?: AbortSignal, mode?: 'exec'|'agent', cwd?: string, systemPrompt?: string, env?: Record<string,string>, extraArgv?: string[], fileChannel?: boolean): Promise<{exitCode:number,stdout:string,stderr:string,durationMs:number,timedOut:boolean,unavailable?:boolean}> {
   const start = Date.now();
   try {
     let mod: any;
@@ -584,7 +618,9 @@ export async function runClaudePtyDispatch(prompt: string, timeoutSec: number, s
     // File answer-channel: for one-shot exec (council/forge/brainstorm/tribunal
     // members) AND agent (forge one-shot agent dispatch). claude writes its answer
     // to a temp file we read as authoritative, bypassing the flaky scrape.
-    const useFileChannel = useFileChannelForMode(mode);
+    // The caller may VETO it (fileChannel === false) for a dispatch whose framing
+    // forbids file writes — a review. Undefined keeps the session-mode default.
+    const useFileChannel = fileChannel ?? useFileChannelForMode(mode);
     let channelDir = '';
     try {
       let composed = composeClaudePtyPrompt(prompt, systemPrompt);
@@ -645,7 +681,7 @@ export async function runClaudePtyDispatch(prompt: string, timeoutSec: number, s
 /**
  * Streaming variant of runClaudePtyDispatch — yields response deltas as they arrive, returns the final DispatchResult. extraArgv (model/effort launch flags) is forwarded to the engine exec. Never throws — any unforeseen error returns unavailable:true via the generator's return value, so kern callers can fall through to legacy paths.
  */
-export async function* runClaudePtyStreamDispatch(prompt: string, timeoutSec: number, signal?: AbortSignal, mode?: 'exec'|'agent', cwd?: string, systemPrompt?: string, env?: Record<string,string>, extraArgv?: string[]): AsyncGenerator<string, {exitCode:number,stdout:string,stderr:string,durationMs:number,timedOut:boolean,unavailable?:boolean}, void> {
+export async function* runClaudePtyStreamDispatch(prompt: string, timeoutSec: number, signal?: AbortSignal, mode?: 'exec'|'agent', cwd?: string, systemPrompt?: string, env?: Record<string,string>, extraArgv?: string[], fileChannel?: boolean): AsyncGenerator<string, {exitCode:number,stdout:string,stderr:string,durationMs:number,timedOut:boolean,unavailable?:boolean}, void> {
   const start = Date.now();
   let session: any;
   try {
@@ -692,7 +728,8 @@ export async function* runClaudePtyStreamDispatch(prompt: string, timeoutSec: nu
 
     // File answer-channel (one-shot exec AND agent): stream the scraped deltas for
     // live UX, but read the FINAL answer from the authoritative file claude writes.
-    const useFileChannel = useFileChannelForMode(mode);
+    // Caller veto (fileChannel === false) applies here too — see runClaudePtyDispatch.
+    const useFileChannel = fileChannel ?? useFileChannelForMode(mode);
     let channelDir = '';
     const collected: string[] = [];
     try {

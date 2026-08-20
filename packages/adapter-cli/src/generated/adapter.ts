@@ -78,7 +78,7 @@ export class CliAdapter implements EngineAdapter {
       // Same mode-block resolution + non-agentic framing the spawned path gets:
       // a pty review dispatch must not silently run as an unframed exec.
       const ptyPlan = planClaudePtyDispatch(options.engine, options.mode, options.prompt);
-      const ptyResult = await runClaudePtyDispatch(ptyPlan.prompt, options.timeout, options.signal, ptyPlan.sessionMode, options.cwd, options.systemPrompt, iso.env, resolveClaudePtyExtraArgs(options.engine, options.cwd));
+      const ptyResult = await runClaudePtyDispatch(ptyPlan.prompt, options.timeout, options.signal, ptyPlan.sessionMode, options.cwd, options.systemPrompt, iso.env, resolveClaudePtyExtraArgs(options.engine, options.cwd), ptyPlan.useFileChannel);
       if (!ptyResult.unavailable) {
         const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
         mkdirSync(dirname(outputPath), { recursive: true });
@@ -90,7 +90,13 @@ export class CliAdapter implements EngineAdapter {
     }
     // Try companion protocol (JSONRPC app-server) first — faster, more stable
     if (options.engine.companion) {
-      const companionResult = await companionDispatch({ config: options.engine.companion, binaryPath: binaryPath, prompt: options.prompt, cwd: options.cwd, timeout: options.timeout, mode: (options.mode === 'agent') ? 'agent' : ((options.mode === 'review') ? 'review' : 'exec'), model: resolveModel(options.engine, options.cwd) ?? undefined, signal: options.signal, systemPrompt: options.systemPrompt, textOnly: options.textOnly, env: iso.env });
+      // reviewTarget is forwarded so a PROMPT-BORNE review (the agon review seat
+      // pastes a self-contained diff INTO the prompt) never reaches a companion's
+      // NATIVE review call — codex's `review/start` targets uncommittedChanges and
+      // DROPS opts.prompt entirely, so the seat would review the working tree
+      // instead of the diff it was asked about (and find nothing on a clean tree).
+      // Undefined means prompt-borne: native working-tree review is opt-in only.
+      const companionResult = await companionDispatch({ config: options.engine.companion, binaryPath: binaryPath, prompt: options.prompt, cwd: options.cwd, timeout: options.timeout, mode: (options.mode === 'agent') ? 'agent' : ((options.mode === 'review') ? 'review' : 'exec'), reviewTarget: options.reviewTarget, model: resolveModel(options.engine, options.cwd) ?? undefined, signal: options.signal, systemPrompt: options.systemPrompt, textOnly: options.textOnly, env: iso.env });
       // Exit code 2 = companion not available, fall through to CLI spawn
       // Also fall through if companion returned empty output (stream-json capture failure)
       if (companionResult.exitCode !== 2 && companionResult.stdout.trim()) {
@@ -142,7 +148,7 @@ export class CliAdapter implements EngineAdapter {
       // Same mode-block resolution + non-agentic framing the spawned path gets:
       // a pty review dispatch must not silently run as an unframed exec.
       const ptyPlan = planClaudePtyDispatch(options.engine, options.mode, options.prompt);
-      const gen = runClaudePtyStreamDispatch(ptyPlan.prompt, options.timeout, options.signal, ptyPlan.sessionMode, options.cwd, options.systemPrompt, iso.env, resolveClaudePtyExtraArgs(options.engine, options.cwd));
+      const gen = runClaudePtyStreamDispatch(ptyPlan.prompt, options.timeout, options.signal, ptyPlan.sessionMode, options.cwd, options.systemPrompt, iso.env, resolveClaudePtyExtraArgs(options.engine, options.cwd), ptyPlan.useFileChannel);
       let last: DispatchResult | undefined;
       while (true) {
         const next = await gen.next();
@@ -258,7 +264,7 @@ export class CliAdapter implements EngineAdapter {
       // its tools. Agent dispatches are never framed.
       const ptyPlan = planClaudePtyDispatch(options.engine, 'agent', options.prompt);
       const ptyBaseline = readOnlyDiff(options.cwd);
-      const ptyResult = await runClaudePtyDispatch(ptyPlan.prompt, options.timeout, options.signal, ptyPlan.sessionMode, options.cwd, options.systemPrompt, iso.env, resolveClaudePtyExtraArgs(options.engine, options.cwd));
+      const ptyResult = await runClaudePtyDispatch(ptyPlan.prompt, options.timeout, options.signal, ptyPlan.sessionMode, options.cwd, options.systemPrompt, iso.env, resolveClaudePtyExtraArgs(options.engine, options.cwd), ptyPlan.useFileChannel);
       if (!ptyResult.unavailable) {
         const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
         mkdirSync(dirname(outputPath), { recursive: true });
@@ -352,7 +358,7 @@ export class CliAdapter implements EngineAdapter {
       // Agent entry point — plan for 'agent' explicitly (see dispatchAgent).
       const ptyPlan = planClaudePtyDispatch(options.engine, 'agent', options.prompt);
       const baselineDiff = readOnlyDiff(options.cwd);
-      const gen = runClaudePtyStreamDispatch(ptyPlan.prompt, options.timeout, options.signal, ptyPlan.sessionMode, options.cwd, options.systemPrompt, iso.env, resolveClaudePtyExtraArgs(options.engine, options.cwd));
+      const gen = runClaudePtyStreamDispatch(ptyPlan.prompt, options.timeout, options.signal, ptyPlan.sessionMode, options.cwd, options.systemPrompt, iso.env, resolveClaudePtyExtraArgs(options.engine, options.cwd), ptyPlan.useFileChannel);
       let last: DispatchResult & { unavailable?: boolean } | undefined;
       const collected: string[] = [];
       while (true) {

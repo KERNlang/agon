@@ -254,6 +254,21 @@ const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:O
 });
 export { CesarRecapBlock };
 
+/**
+ * Launch-banner examples: a plain prompt and the mode Cesar routes it to. The
+ * arrow column is computed from the prompt length — the four hand-counted
+ * spacers this replaced had drifted, leaving the first arrow one column short
+ * of the other three.
+ */
+const DASHBOARD_EXAMPLES: { prompt: string; target: string; color: string }[] = [
+  { prompt: '"explain the auth flow"', target: 'chat', color: '#fbbf24' },
+  { prompt: '"codex how would you do this?"', target: 'codex', color: '#22d3ee' },
+  { prompt: '"fix login bug, test with npm test"', target: 'forge', color: '#f97316' },
+  { prompt: '"should we use REST or GraphQL?"', target: 'tribunal', color: '#a78bfa' },
+];
+
+const EXAMPLE_ARROW_COLUMN: number = 46;
+
 export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboard' } }) {
   return (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
@@ -288,30 +303,14 @@ export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboar
   
       <Text> </Text>
       <Box flexDirection="column">
-        <Box>
-          <Text dimColor>{'  '}</Text>
-          <Text italic dimColor>{'"explain the auth flow"'}</Text>
-          <Text dimColor>{'                      '}</Text>
-          <Text color="#fbbf24">{'\u2192 chat'}</Text>
-        </Box>
-        <Box>
-          <Text dimColor>{'  '}</Text>
-          <Text italic dimColor>{'"codex how would you do this?"'}</Text>
-          <Text dimColor>{'                '}</Text>
-          <Text color="#22d3ee">{'\u2192 codex'}</Text>
-        </Box>
-        <Box>
-          <Text dimColor>{'  '}</Text>
-          <Text italic dimColor>{'"fix login bug, test with npm test"'}</Text>
-          <Text dimColor>{'           '}</Text>
-          <Text color="#f97316">{'\u2192 forge'}</Text>
-        </Box>
-        <Box>
-          <Text dimColor>{'  '}</Text>
-          <Text italic dimColor>{'"should we use REST or GraphQL?"'}</Text>
-          <Text dimColor>{'              '}</Text>
-          <Text color="#a78bfa">{'\u2192 tribunal'}</Text>
-        </Box>
+        {DASHBOARD_EXAMPLES.map((example: { prompt: string; target: string; color: string }) => (
+          <Box key={example.target}>
+            <Text dimColor>{'  '}</Text>
+            <Text italic dimColor>{example.prompt}</Text>
+            <Text dimColor>{' '.repeat(Math.max(1, EXAMPLE_ARROW_COLUMN - example.prompt.length))}</Text>
+            <Text color={example.color}>{'\u2192 '}{example.target}</Text>
+          </Box>
+        ))}
       </Box>
       <Text> </Text>
       <Text dimColor>

@@ -18,8 +18,6 @@
 // service), the test suite and root TS config files (untyped — they are
 // outside every package tsconfig, so the project service cannot see them),
 // and the plain-ESM tooling under `scripts/` (untyped).
-// `*.entry.tsx` is excluded from the CLI tsconfig, so it is out of the
-// project service's reach and is ignored here too.
 
 import tseslint from 'typescript-eslint';
 
@@ -29,7 +27,6 @@ export default tseslint.config(
       '**/dist/**',
       '**/dist-tsc/**',
       '**/node_modules/**',
-      '**/*.entry.tsx',
       'packages/dedup/**',
       'packages/saas-api/**',
     ],

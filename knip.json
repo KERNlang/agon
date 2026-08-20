@@ -1,0 +1,14 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": ["tests/**/*.{ts,tsx}", "scripts/**/*.mjs", "vitest.config.ts"],
+      "project": ["tests/**/*.{ts,tsx}", "scripts/**/*.mjs"]
+    },
+    "packages/core": { "entry": ["src/index.ts"], "project": ["src/**/*.{ts,tsx}"] },
+    "packages/forge": { "entry": ["src/index.ts"], "project": ["src/**/*.{ts,tsx}"] },
+    "packages/adapter-cli": { "entry": ["src/index.ts"], "project": ["src/**/*.{ts,tsx}"] },
+    "packages/cli": { "entry": ["src/index.ts", "src/*.entry.tsx"], "project": ["src/**/*.{ts,tsx}"] }
+  },
+  "ignoreWorkspaces": ["packages/dedup", "packages/saas-api", "packages/mcp"]
+}

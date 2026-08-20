@@ -12,7 +12,10 @@ import { getGhostCompletion } from '../signals/ghost-text.js';
 
 import { truncateCodeLine } from './markdown.js';
 
+import { countRender } from '../signals/input-perf.js';
+
 const ComposerView = React.memo(function ComposerView({ mode, replState, planModeQueued, autoModeQueued, activePlanState, slashPickerOpen, atPickerOpen, atPickerFiles, atPickerPrefix, atPickerQuery, onAtSelect, onAtCancel, inputValue, handleInputChange, handlePasteInput, handleSubmit, allSlashCommands, availableEngines, onSlashSelect, onSlashCancel, questionState, questionAnswer, selectedChoiceIndex, questionOtherActive, onQuestionAnswerChange, onQuestionAnswerSubmit, onCtrlShortcut, updateBannerActive, termWidth, termHeight }: { mode:'chat'|'campfire'|'brainstorm'|'tribunal'; replState:string; planModeQueued:boolean; autoModeQueued:boolean; activePlanState:string|null; slashPickerOpen:boolean; atPickerOpen:boolean; atPickerFiles:string[]; atPickerPrefix:string; atPickerQuery:string; onAtSelect:(path:string) => void; onAtCancel:(typed:string) => void; inputValue:string; handleInputChange:(value:string) => void; handlePasteInput:(raw:string) => string; handleSubmit:(value:string) => void; allSlashCommands:any[]; availableEngines:string[]; onSlashSelect:(cmd:string) => void; onSlashCancel:() => void; questionState:any; questionAnswer:string; selectedChoiceIndex:number; questionOtherActive:boolean; onQuestionAnswerChange:(value:string) => void; onQuestionAnswerSubmit:(value:string) => void; onCtrlShortcut:(shortcut:string) => void; updateBannerActive:boolean; termWidth:number; termHeight:number }) {
+  countRender('ComposerView');
   const placeholder = replState === 'idle'
     ? (mode === 'chat'
         ? ''

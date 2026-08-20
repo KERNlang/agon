@@ -261,3 +261,25 @@ export function appendTranscriptBlock(blocks: OutputBlock[], event: any, archive
   }
   return appendBlockWithCap(blocks, { id: hostNowMs() + hostRandom(), event: event }, archivePath);
 }
+
+/**
+ * Synthetic transcript blocks for the scripted typing probe (scripts/perf/repl-typing-probe.mjs).
+ * Returns [] unless AGON_PERF_SEED_BLOCKS is a positive integer, so a normal REPL never pays for it.
+ * The probe needs a LONG transcript to reproduce keystroke lag; a freshly booted REPL has one
+ * dashboard block and is trivially fast, which would make any before/after comparison meaningless.
+ */
+export function seedPerfTranscriptBlocks(): OutputBlock[] {
+  const requested = Number.parseInt(String(process.env.AGON_PERF_SEED_BLOCKS ?? ''), 10);
+  if (!Number.isFinite(requested) || requested <= 0) return [];
+  const count = Math.min(2000, requested);
+  const blocks: OutputBlock[] = [];
+  for (let index = 0; index < count; index += 1) {
+    if (index % 2 === 0) {
+      blocks.push({ id: 1_000_000 + index, event: { type: 'user-message', content: `probe message ${index}` } as any });
+    } else {
+      const body = Array.from({ length: 6 }, (_, line) => `probe line ${index}.${line} ${'lorem ipsum dolor sit amet '.repeat(2)}`).join('\n');
+      blocks.push({ id: 1_000_000 + index, event: { type: 'engine-block', engineId: 'probe', content: body } as any });
+    }
+  }
+  return blocks;
+}

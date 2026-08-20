@@ -87,6 +87,18 @@ describe('parseAgentToolCall — forgiving sentinel extraction', () => {
   it('returns null when there is no sentinel (a final prose answer)', () => {
     expect(parseAgentToolCall('Here is your final answer.')).toBeNull();
   });
+  // The sentinel is the ONLY authorisation to act. A prose answer that merely
+  // QUOTES a tool-call object (explaining what it would do, or echoing an
+  // example back at the user) must stay inert — parsing it would let the agent
+  // click/type on the page without ever emitting the marker.
+  it('returns null when prose quotes a tool-call object without the sentinel', () => {
+    const prose = 'I could not reach the page, so I stopped. For reference, the call I would have made is {"name":"click","input":{"selector":"#buy"}} — say the word and I will retry.';
+    expect(prose.length).toBeGreaterThan(MARK.length);
+    expect(parseAgentToolCall(prose)).toBeNull();
+  });
+  it('returns null for a marker-like-but-wrong sentinel', () => {
+    expect(parseAgentToolCall('__AGON_TOOLS__ {"name":"click","input":{}}')).toBeNull();
+  });
   it('returns null on garbled JSON', () => {
     expect(parseAgentToolCall(`${MARK} {name: click}`)).toBeNull();
   });

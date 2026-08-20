@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyLine, parseInlineSpans, richWrap, parseProseToRichLines } from '../../packages/cli/src/blocks/rich-text.js';
+import { DEFAULT_STYLE, classifyLine, parseInlineSpans, richWrap, parseProseToRichLines } from '../../packages/cli/src/blocks/rich-text.js';
 
 describe('classifyLine', () => {
   it('detects h1', () => {
@@ -195,5 +195,31 @@ describe('parseProseToRichLines', () => {
     expect(lines.filter(l => l.kind === 'bullet')).toHaveLength(2);
     expect(lines.find(l => l.kind === 'blockquote')).toBeDefined();
     expect(lines.find(l => l.kind === 'hr')).toBeDefined();
+  });
+});
+
+// DEFAULT_STYLE is the UNSTYLED baseline every fallback span is built from
+// (empty text, the horizontal rule, the no-token fallback) and the object
+// `{ ...DEFAULT_STYLE, dimColor: true }` spreads. A styled default silently
+// bolds/italicises whole classes of plain output.
+describe('DEFAULT_STYLE baseline', () => {
+  it('carries no styling at all', () => {
+    expect(DEFAULT_STYLE).toEqual({ bold: false, italic: false, code: false, dimColor: false, linkUrl: undefined });
+  });
+
+  it('leaves an empty inline span unstyled', () => {
+    const [span] = parseInlineSpans('');
+
+    expect(span.text).toBe('');
+    expect(span.style.bold).toBe(false);
+    expect(span.style.italic).toBe(false);
+  });
+
+  it('renders a horizontal rule dim but not bold', () => {
+    const [hr] = parseProseToRichLines('---', 40);
+
+    expect(hr.kind).toBe('hr');
+    expect(hr.spans[0].style.dimColor).toBe(true);
+    expect(hr.spans[0].style.bold).toBe(false);
   });
 });

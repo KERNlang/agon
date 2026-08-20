@@ -33,9 +33,15 @@ export function createPseudoTty(width: number, height: number): PseudoTty {
   stdout.rows = height;
   const stderr = new PassThrough() as PassThrough & { isTTY: boolean };
   stderr.isTTY = true;
-  const stdin = new PassThrough() as PassThrough & { isTTY: boolean; setRawMode: (mode: boolean) => void };
+  const stdin = new PassThrough() as PassThrough & { isTTY: boolean; setRawMode: (mode: boolean) => void; ref: () => void; unref: () => void };
   stdin.isTTY = true;
   stdin.setRawMode = () => {};
+  // Ink's useInput ref()s/unref()s the input handle so the process can exit
+  // while a component listens for keys. PassThrough has no ref/unref, so any
+  // surface that uses useInput crashed the capture with
+  // "stdin.ref is not a function" instead of rendering a frame.
+  stdin.ref = () => {};
+  stdin.unref = () => {};
   const chunks: string[] = [];
   stdout.on('data', (chunk: Buffer | string) => { chunks.push(chunk.toString()); });
   return {

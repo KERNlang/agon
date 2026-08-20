@@ -15,9 +15,11 @@ import { parseConfidence, confidenceBadge } from './confidence.js';
 import { ensureCesarSession } from './session.js';
 
 /**
- * Parse Cesar's structured judgment response.
+ * Parse Cesar's structured judgment response. Exported for direct testing —
+ * the convergence flag it produces commits real spend, so it is asserted on
+ * directly rather than through a live judging session.
  */
-function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
+export function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   const stripped = parseConfidence(response).rest;
   const lines = stripped.split('\n');
   let winner = manifest.winner ?? '';
@@ -29,11 +31,18 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
     const trimmed = line.trim();
     const winnerMatch = trimmed.match(/^WINNER:\s*(.+)/i);
     if (winnerMatch) winner = winnerMatch[1].trim();
-    const convergeMatch = trimmed.match(/^CONVERGE:\s*(yes|no)/i);
+    // Word-boundary: the field is a yes/no flag, and turning "CONVERGE:
+    // yesterday we merged them" into an opt-in buys a whole convergence pass
+    // (real engine spend) off a prose prefix.
+    const convergeMatch = trimmed.match(/^CONVERGE:\s*(yes|no)\b/i);
     if (convergeMatch) shouldConverge = convergeMatch[1].toLowerCase() === 'yes';
     const summaryMatch = trimmed.match(/^SUMMARY:\s*(.+)/i);
     if (summaryMatch) summary = summaryMatch[1].trim();
-    const strengthMatch = trimmed.match(/^-\s+(\w+):\s+(.+?)\s+[—–-]\s+(.+)/);
+    // Engine ids are hyphenated/dotted in the real roster (kimi-code,
+    // minimax-coding-plan-minimax-m3, zai-coding-plan-glm-5.2). A \w-only
+    // capture matched none of them, so their strengths were dropped in
+    // silence. The '- file:' convergence lines are excluded just below.
+    const strengthMatch = trimmed.match(/^-\s+([\w.-]+):\s+(.+?)\s+[—–-]\s+(.+)/);
     if (strengthMatch && !trimmed.startsWith('- file:')) {
       strengths.push({ engineId: strengthMatch[1], category: strengthMatch[2], reason: strengthMatch[3] });
     }

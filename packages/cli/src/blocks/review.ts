@@ -39,8 +39,21 @@ export function handleReviewAction(action: ReviewAction, review: ReviewState, di
     case 'edit': {
       try {
         const editor = process.env.EDITOR || process.env.VISUAL || 'vi';
-        spawnSync(editor, [review.patchPath], { stdio: 'inherit' });
-        dispatch({ type: 'info', message: `Opened ${review.patchPath} in ${editor}` });
+        // spawnSync does NOT throw when the editor cannot be launched (a
+        // missing binary comes back as result.error = ENOENT with a null
+        // status), so the failure has to be read off the result. Reporting
+        // "Opened …" for an editor that never ran leaves the user waiting on
+        // a window that will not appear.
+        const result = spawnSync(editor, [review.patchPath], { stdio: 'inherit' });
+        if (result?.error) {
+          dispatch({ type: 'error', message: `Editor failed: ${result.error instanceof Error ? result.error.message : String(result.error)}` });
+        } else if (result?.signal) {
+          dispatch({ type: 'error', message: `Editor ${editor} terminated by ${result.signal}` });
+        } else if (typeof result?.status === 'number' && result.status !== 0) {
+          dispatch({ type: 'error', message: `Editor ${editor} exited with code ${result.status}` });
+        } else {
+          dispatch({ type: 'info', message: `Opened ${review.patchPath} in ${editor}` });
+        }
       } catch (err) {
         dispatch({ type: 'error', message: `Editor failed: ${err instanceof Error ? err.message : String(err)}` });
       }

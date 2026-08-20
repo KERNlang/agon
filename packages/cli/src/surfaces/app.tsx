@@ -52,6 +52,8 @@ import { cleanInputValue, findInputChange, parseActiveAtMention, safeCollectSour
 
 import { makeBlockArchivePath, transcriptDroppedTotal } from '../signals/block-archive.js';
 
+import { createComposerInputStore, useComposerInputEmpty } from '../signals/composer-input-store.js';
+
 import { perfNow, recordKeystrokeLatency, countRender } from '../signals/input-perf.js';
 
 import { handleReviewAction } from '../blocks/review.js';
@@ -149,7 +151,15 @@ export function App() {
   const setReplState = useMemo(() => __inkSafe(_setReplStateRaw), [_setReplStateRaw]);
   const [outputBlocks, _setOutputBlocksRaw] = useState<OutputBlock[]>(() => { const cfg = loadConfig(); const saved = cfg.engineActivationMode === 'explicit' ? cfg.forgeEnabledEngines : null; return [buildDashboardBlock(saved), ...seedPerfTranscriptBlocks()]; });
   const setOutputBlocks = useMemo(() => __inkSafe(_setOutputBlocksRaw), [_setOutputBlocksRaw]);
-  const [inputValue, setInputValue] = useState<string>('');
+  // Composer text lives OUTSIDE App state. App is the whole surface, so a
+  // useState here re-rendered the entire tree on every keystroke (measured:
+  // 1.00 App commit/keystroke, p50 ~6.5ms — scripts/perf/repl-typing-probe.mjs).
+  // Only the composer leaf subscribes to the value; App subscribes to the far
+  // rarer emptiness flip that the side rails need.
+  const composerInput = useMemo(() => createComposerInputStore(), []);
+  const setInputValue = composerInput.set;
+  const inputValueRef = composerInput.ref;
+  const inputIsEmpty = useComposerInputEmpty(composerInput);
   const [uiInteractionActive, setUiInteractionActive] = useState<boolean>(false);
   const [inputHistory, _setInputHistoryRaw] = useState<string[]>(loadComposerInputHistory());
   const setInputHistory = useMemo(() => __inkSafe(_setInputHistoryRaw), [_setInputHistoryRaw]);
@@ -449,10 +459,10 @@ export function App() {
   const lastReviewResultRef = useRef<{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | null>(null);
   const modeRef = useRef<'chat'|'campfire'|'brainstorm'|'tribunal'>('chat');
   const inputEpochRef = useRef<number>(0);
-  const inputValueRef = useRef<string>('');
   const uiInteractionTimerRef = useRef<ReturnType<typeof setTimeout>|null>(null);
   const atPickerPrefixRef = useRef<string>('');
   const keyT0Ref = useRef<number>(0);
+  const perfCountsRef = useRef<{blocks:number,archive:number,live:number}>({ blocks: 0, archive: 0, live: 0 });
   const ctrlKeyHandledRef = useRef<boolean>(false);
   const pendingPasteTransformRef = useRef<boolean>(false);
   const pasteHashesRef = useRef<Map<string,string>>(new Map());
@@ -915,6 +925,15 @@ export function App() {
     return replacement;
   }, []);
 
+  // Called by the composer leaf after IT commits the new text — App is no
+  // longer in the keystroke render path, so the latency sample cannot be taken
+  // from an App effect any more. Stable identity: never breaks the leaf memo.
+  const handleInputCommitted = useCallback((length:number) => {
+    const counts = perfCountsRef.current;
+    recordKeystrokeLatency(keyT0Ref.current, counts.blocks, counts.archive, counts.live, length);
+    keyT0Ref.current = 0;
+  }, []);
+
   const handleInputChange = useCallback((value:string) => {
     // Diagnostic: stamp keystroke arrival; read post-commit by the AGON_PERF effect (0 when off).
     keyT0Ref.current = perfNow();
@@ -1292,11 +1311,11 @@ export function App() {
 
   const handleCancelOrExit = useCallback(() => {
     runHandleCancelOrExit({
-      questionState, replState, inputValue, activeAbortRef,
+      questionState, replState, inputValue: inputValueRef.current, activeAbortRef,
       setQuestionState, setQuestionAnswer, setSelectedChoiceIndex, setQuestionOtherActive,
       interruptActiveRun, setInputValue, dispatch,
     });
-  }, [questionState,replState,inputValue,dispatch]);
+  }, [questionState,replState,dispatch]);
 
   const handleComposerCtrlShortcut = useCallback((shortcut:string) => {
     runHandleComposerCtrlShortcut({
@@ -1311,7 +1330,7 @@ export function App() {
       modelPickerOpen, cesarPickerOpen, slashPickerOpen, atPickerOpen, enginePickerOpen,
       reviewEvent, toolDetailEvent, btwPanel, statusDashboardOpen,
       questionState, selectedChoiceIndex, questionOtherActive,
-      replState, jobManager, inputValue, inputHistory, historyIndex,
+      replState, jobManager, inputValue: inputValueRef.current, inputHistory, historyIndex,
       steeringCount, setPendingImages,
       planModeQueued, autoModeQueued, permissionMode, applyPermissionMode, planApprovalIndex,
       outputBlocks, allSlashCommands, availableEngines, updateInfo, terminalMode,
@@ -1329,7 +1348,7 @@ export function App() {
       openLatestToolDetail, openResultsPager, draftLatestFailedToolRetry,
       triggerUpdatePrompt, dismissUpdateBanner, dispatch,
     }, input, key);
-  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,atPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,btwPanel,questionState,replState,inputValue,inputHistory,historyIndex,steeringCount,planModeQueued,autoModeQueued,permissionMode,applyPermissionMode,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen,updateInfo,triggerUpdatePrompt,dismissUpdateBanner,selectedChoiceIndex,questionOtherActive,newestLiveToolStreamId]);
+  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,atPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,btwPanel,questionState,replState,inputHistory,historyIndex,steeringCount,planModeQueued,autoModeQueued,permissionMode,applyPermissionMode,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen,updateInfo,triggerUpdatePrompt,dismissUpdateBanner,selectedChoiceIndex,questionOtherActive,newestLiveToolStreamId]);
 
   useEffect(() => {
     const activeIds = new Set(Object.keys(liveToolStreams ?? {}));
@@ -1613,10 +1632,6 @@ export function App() {
   }, [replState,inputQueue]);
 
   useEffect(() => {
-    inputValueRef.current = inputValue;
-  }, [inputValue]);
-
-  useEffect(() => {
     return () => {
       if (uiInteractionTimerRef.current) clearTimeout(uiInteractionTimerRef.current);
       uiInteractionTimerRef.current = null;
@@ -1624,9 +1639,8 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    recordKeystrokeLatency(keyT0Ref.current, outputBlocks.length, effectiveNativeArchiveCount, nativeLiveBlocks.length, inputValue.length);
-    keyT0Ref.current = 0;
-  }, [inputValue]);
+    perfCountsRef.current = { blocks: outputBlocks.length, archive: effectiveNativeArchiveCount, live: nativeLiveBlocks.length };
+  }, [outputBlocks,effectiveNativeArchiveCount,nativeLiveBlocks]);
 
   useEffect(() => {
     if (questionState && Array.isArray(questionState.choices) && questionState.choices.length > 0) {
@@ -1956,7 +1970,8 @@ export function App() {
         atPickerQuery={atPickerQuery}
         onAtSelect={handleAtSelect}
         onAtCancel={handleAtCancel}
-        inputValue={inputValue}
+        composerInput={composerInput}
+        onValueCommitted={handleInputCommitted}
         handleInputChange={handleInputChange}
         handlePasteInput={handlePasteInput}
         handleSubmit={handleSubmit}
@@ -2017,7 +2032,7 @@ export function App() {
   {lowerPanel}
   </Box>
   {showFileRail && (
-    <FileRail files={fileRailFiles} maxRows={sideRailMaxRows} width={sideRailWidth} focused={fileRailOpen && inputValue.trim().length === 0} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} autoExpandSelected={fileRailOpen && inputValue.trim().length === 0} />
+    <FileRail files={fileRailFiles} maxRows={sideRailMaxRows} width={sideRailWidth} focused={fileRailOpen && inputIsEmpty} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} autoExpandSelected={fileRailOpen && inputIsEmpty} />
   )}
   {showExecutionRail && (
     <ExecutionRailPanel
@@ -2033,7 +2048,7 @@ export function App() {
       isActive={replState !== 'idle' || runningJobs.length > 0}
       width={sideRailWidth}
       maxRows={sideRailMaxRows}
-      focused={executionRailOpen && inputValue.trim().length === 0}
+      focused={executionRailOpen && inputIsEmpty}
     />
   )}
   </Box>

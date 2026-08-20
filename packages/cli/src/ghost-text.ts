@@ -1,3 +1,2 @@
-// ── Ghost Text — KERN-sourced ────────────────────────────────────────
-// Source of truth: kern/ghost-text.kern → generated/ghost-text.ts
+// Facade over ./generated/signals/ghost-text.js — edit the source there.
 export { getGhostCompletion } from './generated/signals/ghost-text.js';

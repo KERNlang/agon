@@ -1,4 +1,4 @@
-// ── Cesar Brain handler — KERN-sourced (refactored into modules) ─────
+// Facade over ../generated/cesar/brain.js — edit the source there.
 // Source files: cesar-confidence, cesar-suggestion, cesar-session, cesar-tools, cesar-escalation, cesar-judge, handlers-cesar-brain
 export { handleCesarBrain } from '../generated/cesar/brain.js';
 export { yieldToInk, buildReviewFollowupPrompt, detectNarratedToolStall } from '../generated/cesar/brain-helpers.js';

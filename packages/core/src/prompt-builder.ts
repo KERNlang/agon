@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated prompt builders ───────────────────
-// Source of truth: src/kern/prompt-builder.kern
+// Facade over ./generated/blocks/prompt-builder.js — edit the source there.
 export * from './generated/blocks/prompt-builder.js';

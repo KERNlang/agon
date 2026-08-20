@@ -1,3 +1,2 @@
-// ── Run handler — KERN-sourced ──────────────────────────────────────
-// Source of truth: kern/handlers-run.kern → generated/handlers-run.ts
+// Facade over ../generated/handlers/run.js — edit the source there.
 export { handleRun } from '../generated/handlers/run.js';

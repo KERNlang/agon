@@ -1,4 +1,4 @@
-// ── PersistentSession — KERN-sourced ─────────────────────────────────
+// Facade over ./generated/sessions/persistent-session.js — edit the source there.
 // Source: kern/persistent-session.kern → generated/persistent-session.ts
 export { createPersistentSession } from './generated/sessions/persistent-session.js';
 export {

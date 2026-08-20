@@ -1,3 +1,2 @@
-// ── CLI adapter — KERN-sourced ───────────────────────────────────────
-// Source of truth: kern/adapter.kern → generated/adapter.ts
+// Facade over ./generated/adapter.js — edit the source there.
 export * from './generated/adapter.js';

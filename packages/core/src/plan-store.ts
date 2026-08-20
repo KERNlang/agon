@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated plan store ────────────────────────
-// Source of truth: src/kern/plan-store.kern
+// Facade over ./generated/signals/plan-store.js — edit the source there.
 export * from './generated/signals/plan-store.js';

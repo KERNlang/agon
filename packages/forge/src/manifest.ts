@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated manifest ──────────────────────────
-// Source of truth: src/kern/manifest.kern
+// Facade over ./generated/manifest.js — edit the source there.
 export * from './generated/manifest.js';

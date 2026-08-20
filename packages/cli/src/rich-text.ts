@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated rich-text parser ───────────────────
-// Source of truth: src/kern/rich-text.kern
+// Facade over ./generated/blocks/rich-text.js — edit the source there.
 export * from './generated/blocks/rich-text.js';

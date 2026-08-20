@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated engine discovery ──────────────────
-// Source of truth: src/kern/engine-discover.kern
+// Facade over ./generated/blocks/engine-discover.js — edit the source there.
 export * from './generated/blocks/engine-discover.js';

@@ -1,5 +1,4 @@
-// ── Re-export from KERN-generated types ─────────────────────────────
-// Source of truth: src/kern/types.kern
+// Facade over ./generated/types.js — edit the source there.
 export * from './generated/types.js';
 
 // ForgeEventCallback — KERN's type node can't express function types

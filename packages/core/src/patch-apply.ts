@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated patch apply ──────────────────────
-// Source of truth: src/kern/patch-apply.kern
+// Facade over ./generated/blocks/patch-apply.js — edit the source there.
 export * from './generated/blocks/patch-apply.js';

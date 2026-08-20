@@ -1,2 +1,2 @@
-// Re-export from KERN-generated council command
+// Facade over ../generated/commands/council.js — edit the source there.
 export { councilCommand } from '../generated/commands/council.js';

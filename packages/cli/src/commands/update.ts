@@ -1,2 +1,2 @@
-// Re-export from KERN-generated update command
+// Facade over ../generated/commands/update.js — edit the source there.
 export { updateCommand, runUpdate } from '../generated/commands/update.js';

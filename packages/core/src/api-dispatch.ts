@@ -1,3 +1,2 @@
-// ── API dispatch — KERN-sourced ──────────────────────────────────────
-// Source of truth: kern/api-dispatch.kern
+// Facade over ./generated/api/dispatch.js — edit the source there.
 export * from './generated/api/dispatch.js';

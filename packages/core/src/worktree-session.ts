@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated session-worktree operations ──────────
-// Source of truth: src/kern/blocks/worktree-session.kern
+// Facade over ./generated/blocks/worktree-session.js — edit the source there.
 export * from './generated/blocks/worktree-session.js';

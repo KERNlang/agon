@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated engine memory ────────────────────
-// Source of truth: src/kern/engine-memory.kern
+// Facade over ./generated/blocks/engine-memory.js — edit the source there.
 export * from './generated/blocks/engine-memory.js';

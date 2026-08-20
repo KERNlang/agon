@@ -1,5 +1,4 @@
-// ── Flow handlers — KERN-sourced ─────────────────────────────────────
-// Source of truth: kern/handlers-flow.kern → generated/handlers-flow.ts
+// Facade over ../generated/handlers/flow.js — edit the source there.
 export {
   handleFlowReport,
   handleFlowAnalysis,

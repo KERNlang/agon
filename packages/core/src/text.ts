@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated text helpers ─────────────────────
-// Source of truth: src/kern/text.kern
+// Facade over ./generated/blocks/text.js — edit the source there.
 export * from './generated/blocks/text.js';

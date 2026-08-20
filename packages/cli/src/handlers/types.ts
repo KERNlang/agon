@@ -1,7 +1,6 @@
-// ── Handler types — KERN-sourced ─────────────────────────────────────
-// Source of truth: kern/handler-types.kern → generated/handler-types.ts
-// This facade adds: Dispatch type alias (KERN type node can't generate function aliases)
-//                   readonly on HandlerContext.currentPlan
+// Facade over ../generated/models/handler-types.js — edit the source there.
+// This facade adds: the Dispatch function-type alias and `readonly` on
+// HandlerContext.currentPlan on top of the generated types.
 
 export type { OutputEvent, EngineProgress, PendingDelegation, CesarState, CesarTurnOutcome, CesarLiveMode } from '../generated/models/handler-types.js';
 export type { HandlerContext } from '../generated/models/handler-types.js';

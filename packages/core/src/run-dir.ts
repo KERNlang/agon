@@ -1,3 +1,2 @@
-// Re-export from KERN-generated run-dir signals.
-// Source of truth: src/kern/signals/run-dir.kern
+// Facade over ./generated/signals/run-dir.js — edit the source there.
 export * from './generated/signals/run-dir.js';

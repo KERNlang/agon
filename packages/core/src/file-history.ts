@@ -1,3 +1,2 @@
-// ── File History — KERN-sourced ──────────────────────────────────────
-// Source of truth: src/kern/file-history.kern
+// Facade over ./generated/blocks/file-history.js — edit the source there.
 export * from './generated/blocks/file-history.js';

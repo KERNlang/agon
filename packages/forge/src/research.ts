@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated research ──────────────────────────
-// Source of truth: src/kern/research.kern
+// Facade over ./generated/research.js — edit the source there.
 export * from './generated/research.js';

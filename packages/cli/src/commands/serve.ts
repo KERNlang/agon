@@ -1,2 +1,2 @@
-// Re-export from KERN-generated serve command
+// Facade over ../generated/commands/serve.js — edit the source there.
 export { serveCommand } from '../generated/commands/serve.js';

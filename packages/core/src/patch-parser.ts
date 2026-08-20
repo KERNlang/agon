@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated patch parser ──────────────────────
-// Source of truth: src/kern/patch-parser.kern
+// Facade over ./generated/blocks/patch-parser.js — edit the source there.
 export * from './generated/blocks/patch-parser.js';

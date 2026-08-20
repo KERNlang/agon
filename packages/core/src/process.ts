@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated process spawner ───────────────────
-// Source of truth: src/kern/process.kern
+// Facade over ./generated/blocks/process.js — edit the source there.
 export * from './generated/blocks/process.js';

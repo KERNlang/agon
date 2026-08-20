@@ -1,5 +1,4 @@
-// ── Image detection — KERN-sourced ───────────────────────────────────
-// Source of truth: kern/image.kern → generated/image.ts
+// Facade over ./generated/blocks/image.js — edit the source there.
 export {
   isImagePath,
   mimeFromExt,

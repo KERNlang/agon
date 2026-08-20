@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated fitness ───────────────────────────
-// Source of truth: src/kern/fitness.kern
+// Facade over ./generated/fitness.js — edit the source there.
 export * from './generated/fitness.js';

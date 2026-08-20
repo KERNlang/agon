@@ -1,2 +1,2 @@
-// Re-export from KERN-generated mutate command (source: kern/commands/mutate.kern)
+// Facade over ../generated/commands/mutate.js — edit the source there.
 export { mutateCommand } from '../generated/commands/mutate.js';

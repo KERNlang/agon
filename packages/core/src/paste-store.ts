@@ -1,5 +1,4 @@
-// ── Paste Store — KERN-sourced ──────────────────────────────────────
-// Source of truth: src/kern/paste-store.kern
+// Facade over ./generated/signals/paste-store.js — edit the source there.
 export { PASTE_MAX_AGE, PasteStore } from './generated/signals/paste-store.js';
 export type { PasteStoreResult } from './generated/signals/paste-store.js';
 

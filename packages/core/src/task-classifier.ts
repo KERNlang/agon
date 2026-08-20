@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated task classifier ───────────────────
-// Source of truth: src/kern/task-classifier.kern
+// Facade over ./generated/blocks/task-classifier.js — edit the source there.
 export * from './generated/blocks/task-classifier.js';

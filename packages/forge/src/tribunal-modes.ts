@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated tribunal modes ─────────────────────
-// Source of truth: src/kern/tribunal-modes.kern
+// Facade over ./generated/tribunal-modes.js — edit the source there.
 export * from './generated/tribunal-modes.js';

@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated workspace ────────────────────────
-// Source of truth: src/kern/workspace.kern
+// Facade over ./generated/blocks/workspace.js — edit the source there.
 export * from './generated/blocks/workspace.js';

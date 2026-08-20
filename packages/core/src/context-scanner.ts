@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated context scanner ───────────────────
-// Source of truth: src/kern/context-scanner.kern
+// Facade over ./generated/blocks/context-scanner.js — edit the source there.
 export * from './generated/blocks/context-scanner.js';

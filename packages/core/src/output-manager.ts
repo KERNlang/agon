@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated output-manager helpers ─────────────
-// Source of truth: src/kern/output-manager.kern
+// Facade over ./generated/signals/output-manager.js — edit the source there.
 export * from './generated/signals/output-manager.js';

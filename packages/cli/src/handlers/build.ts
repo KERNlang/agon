@@ -1,3 +1,2 @@
-// ── Build handler — KERN-sourced ────────────────────────────────────
-// Source of truth: kern/handlers-build.kern → generated/handlers-build.ts
+// Facade over ../generated/handlers/build.js — edit the source there.
 export { handleBuild } from '../generated/handlers/build.js';

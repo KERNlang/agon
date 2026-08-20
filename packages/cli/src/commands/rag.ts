@@ -1,2 +1,2 @@
-// Re-export from KERN-generated rag command
+// Facade over ../generated/commands/rag.js — edit the source there.
 export { ragCommand } from '../generated/commands/rag.js';

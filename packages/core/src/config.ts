@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated config ────────────────────────────
-// Source of truth: src/kern/config.kern
+// Facade over ./generated/signals/config.js — edit the source there.
 export * from './generated/signals/config.js';

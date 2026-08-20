@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated quality ───────────────────────────
-// Source of truth: src/kern/quality.kern
+// Facade over ./generated/quality.js — edit the source there.
 export * from './generated/quality.js';

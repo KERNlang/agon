@@ -1,4 +1,4 @@
-// ── Provenance / transparency reports — KERN-sourced ─────────────────
+// Facade over ./generated/blocks/provenance.js — edit the source there.
 // Source of truth:
 //   kern/models/provenance.kern → generated/models/provenance.ts  (schema)
 //   kern/blocks/provenance.kern → generated/blocks/provenance.ts  (logic)

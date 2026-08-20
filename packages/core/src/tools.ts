@@ -1,4 +1,4 @@
-// ── Tool Implementations — KERN-sourced ──────────────────────────
+// Facade over ./generated/tools/tool-read.js — edit the source there.
 export { createReadTool } from './generated/tools/tool-read.js';
 export { createEditTool } from './generated/tools/tool-edit.js';
 export { createMultiEditTool } from './generated/tools/tool-multi-edit.js';

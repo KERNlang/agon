@@ -1,5 +1,4 @@
-// ── Markdown fence parser — KERN-sourced, type-safe facade ───────────
-// Source of truth: kern/markdown.kern → generated/markdown.ts
+// Facade over ./generated/blocks/markdown.js — edit the source there.
 // This file re-exports with a discriminated union type for TS consumers.
 
 import {

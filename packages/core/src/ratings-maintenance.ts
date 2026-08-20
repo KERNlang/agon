@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated ratings maintenance ───────────────
-// Source of truth: src/kern/signals/ratings-maintenance.kern
+// Facade over ./generated/signals/ratings-maintenance.js — edit the source there.
 export * from './generated/signals/ratings-maintenance.js';

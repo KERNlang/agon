@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated brainstorm ────────────────────────
-// Source of truth: src/kern/brainstorm.kern
+// Facade over ./generated/brainstorm.js — edit the source there.
 export * from './generated/brainstorm.js';

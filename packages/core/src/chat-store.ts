@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated chat store ───────────────────────
-// Source of truth: src/kern/chat-store.kern
+// Facade over ./generated/signals/chat-store.js — edit the source there.
 export * from './generated/signals/chat-store.js';

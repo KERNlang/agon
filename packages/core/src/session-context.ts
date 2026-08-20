@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated session context ───────────────────
-// Source of truth: src/kern/session-context.kern
+// Facade over ./generated/blocks/session-context.js — edit the source there.
 export * from './generated/blocks/session-context.js';

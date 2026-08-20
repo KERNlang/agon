@@ -1,5 +1,4 @@
-// ── Re-export from KERN-generated stages ────────────────────────────
-// Source of truth: src/kern/stages.kern
+// Facade over ./generated/stages.js — edit the source there.
 export {
   classifyNoDiffForgeResult,
   resolveForgeAcceptReviewOutput,

@@ -1,4 +1,4 @@
-// Re-export from KERN-generated job command (source: kern/commands/job.kern)
+// Facade over ../generated/commands/job.js — edit the source there.
 export {
   jobCommand,
   buildSubmitPayload,

@@ -41,12 +41,16 @@ const PromptTextInput = React.memo(function PromptTextInput({ value, placeholder
   const resolvedHighlightPastedText = highlightPastedText ?? true;
   const resolvedMaxVisibleLines = maxVisibleLines ?? 6;
   const resolvedReservedPlainKeys = reservedPlainKeys ?? [];
-  const [bufferedValue, setBufferedValue] = useState(originalValue);
+  // ONE state object per keystroke: value and cursor live together so every
+  // write site commits them in a single setState, and a no-op write can be
+  // recognised (and skipped) by comparing all three fields at once. Two
+  // separate useState hooks made that impossible — see the guards below.
   const [state, setState] = useState({
+    value: originalValue,
     cursorOffset: originalValue.length,
     cursorWidth: 0,
   });
-  const { cursorOffset, cursorWidth } = state;
+  const { value: bufferedValue, cursorOffset, cursorWidth } = state;
   const bufferedValueRef = useRef(originalValue);
   const cursorStateRef = useRef({ cursorOffset: originalValue.length, cursorWidth: 0 });
   const pendingEchoValueRef = useRef<string|null>(null);
@@ -60,11 +64,21 @@ const PromptTextInput = React.memo(function PromptTextInput({ value, placeholder
       showCursor: resolvedShowCursor,
       lastCommittedValue: lastCommittedValueRef.current,
     });
+    // Skip the write entirely when nothing moved. The refs mirror the last
+    // committed state exactly, so this compares against what is on screen.
+    // An unconditional setState here was the *second* render commit per
+    // keystroke: even when the new state is equal, React re-renders this
+    // component once before bailing out of the subtree.
+    const previousValue = bufferedValueRef.current;
+    const previousCursor = cursorStateRef.current;
     cursorStateRef.current = syncedState;
-    setState(syncedState);
-    if (bufferedValueRef.current !== effectiveValue) {
-      bufferedValueRef.current = effectiveValue;
-      setBufferedValue(effectiveValue);
+    bufferedValueRef.current = effectiveValue;
+    if (
+      previousValue !== effectiveValue ||
+      previousCursor.cursorOffset !== syncedState.cursorOffset ||
+      previousCursor.cursorWidth !== syncedState.cursorWidth
+    ) {
+      setState({ value: effectiveValue, cursorOffset: syncedState.cursorOffset, cursorWidth: syncedState.cursorWidth });
     }
     if (shouldAdopt) {
       pendingEchoValueRef.current = null;
@@ -244,15 +258,27 @@ const PromptTextInput = React.memo(function PromptTextInput({ value, placeholder
     if (nextCursorOffset < 0) nextCursorOffset = 0;
     if (nextCursorOffset > nextValue.length) nextCursorOffset = nextValue.length;
   
-    const nextState = { cursorOffset: nextCursorOffset, cursorWidth: nextCursorWidth };
-    cursorStateRef.current = nextState;
-    setState(nextState);
+    const previousValue = bufferedValueRef.current;
+    const previousCursor = cursorStateRef.current;
+    cursorStateRef.current = { cursorOffset: nextCursorOffset, cursorWidth: nextCursorWidth };
   
-    if (nextValue !== currentValue) {
+    const valueChanged = nextValue !== currentValue;
+    if (valueChanged) {
       pendingEchoValueRef.current = nextValue;
       bufferedValueRef.current = nextValue;
-      setBufferedValue(nextValue);
       lastCommittedValueRef.current = nextValue;
+    }
+  
+    // Single commit: value + cursor in one write, before onChange.
+    if (
+      previousValue !== nextValue ||
+      previousCursor.cursorOffset !== nextCursorOffset ||
+      previousCursor.cursorWidth !== nextCursorWidth
+    ) {
+      setState({ value: nextValue, cursorOffset: nextCursorOffset, cursorWidth: nextCursorWidth });
+    }
+  
+    if (valueChanged) {
       onChange(nextValue);
     }
   }, { isActive: resolvedFocus });

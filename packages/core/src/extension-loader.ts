@@ -1,1 +1,0 @@
-export { discoverExtensionDirs, loadExtensionManifest, loadExtensions, registerExtensionCommands, registerExtensionEngines, registerExtensionSkills, registerExtensionHooks, initExtensions, buildExtensionContext } from './generated/blocks/extension-loader.js';

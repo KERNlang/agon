@@ -1,0 +1,115 @@
+import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
+
+import { EngineRegistry } from '@kernlang/agon-core';
+
+import { estimateVisibleBlockBudget, estimateBottomChromeExtraRows, estimatePinnedLiveRows, estimateTodoListRows } from './app-layout.js';
+
+import { nativeTranscriptBlocksForStatic, nativeArchiveBlockCount } from './app-blocks.js';
+
+import { withContentWidthOverride } from '../blocks/rendering.js';
+
+import { buildTranscriptRows } from './app-rendering.js';
+
+import { historyBlocksForTranscript } from './app-blocks.js';
+
+import type { OutputBlock } from '../blocks/engine.js';
+
+// ── Module: AppTerminal ──
+
+export function createInitialRegistry(): EngineRegistry {
+  const reg = new EngineRegistry();
+  reg.load(resolveBuiltinEnginesDir());
+  return reg;
+}
+
+export function drainStdinBuffer(): void {
+  if (!process.stdin.isTTY || typeof process.stdin.read !== 'function') return;
+  let chunk: string | Buffer | null;
+  do {
+    chunk = process.stdin.read();
+  } while (chunk !== null);
+}
+
+/**
+ * Normalize the configured terminal policy without inspecting process state. Invalid/missing values use the Codex-like auto policy.
+ */
+export function normalizeTerminalMode(value: unknown): 'auto'|'native'|'fullscreen' {
+  return value === 'native' || value === 'fullscreen' ? value : 'auto';
+}
+
+/**
+ * Resolve the terminal policy deterministically. Explicit modes win. Auto is NATIVE: the Static-sealed transcript lives in real terminal scrollback with the composer/status pinned at the bottom (the Claude-Code/Codex mix). Fullscreen (alternate screen) kills terminal scrollback, so it is strictly opt-in via `agon config terminalMode fullscreen` — never a default (regression 2026-07-16: auto→fullscreen shipped and broke scroll-up for every user).
+ */
+export function resolveTerminalMode(value: unknown, _env?: Record<string,string|undefined>, _isTTY?: boolean): 'native'|'fullscreen' {
+  const configured = normalizeTerminalMode(value);
+  if (configured === 'native' || configured === 'fullscreen') return configured;
+  return 'native';
+}
+
+/**
+ * Clamp a terminal resize into one atomic viewport value so width and height never render as mismatched frames.
+ */
+export function normalizeTerminalSize(columns: unknown, rows: unknown): {width:number,height:number} {
+  const width = Math.max(40, Math.floor(Number(columns) || 100));
+  const height = Math.max(8, Math.floor(Number(rows) || 24));
+  return { width, height };
+}
+
+export function fileRailWidthForTerminal(termWidth: number, expanded: boolean): number {
+  const safeWidth = Math.max(40, Math.floor((Number(termWidth) || 100)));
+  if (expanded) {
+    return Math.max(36, Math.min(84, Math.floor((safeWidth * 0.35))));
+  }
+  return Math.max(28, Math.min(42, Math.floor((safeWidth * 0.22))));
+}
+
+export function fileRailMaxRowsForTerminal(termHeight: number, terminalMode: string, expanded: boolean): number {
+  const safeHeight = Math.max(8, Math.floor((Number(termHeight) || 24)));
+  if (terminalMode === 'native') {
+    if (expanded) {
+      return Math.max(8, Math.min(36, (safeHeight - 4)));
+    }
+    return Math.max(5, Math.min(14, (safeHeight - 8)));
+  }
+  if (expanded) {
+    return Math.max(12, (safeHeight - 4));
+  }
+  return Math.max(6, Math.min(12, 10));
+}
+
+/**
+ * Pure terminal replay harness: summarizes the layout-sensitive parts of the REPL for fixed viewport sizes so unit tests can catch native/fullscreen regressions without launching an interactive TTY.
+ */
+export function buildTerminalReplaySnapshot(blocks: OutputBlock[], opts: any): {terminalMode:'native'|'fullscreen'; mode:string; termWidth:number; termHeight:number; visibleBudget:number; transcriptRowCount:number; staticBlockCount:number; liveBlockCount:number; fileRailWidth:number; fileRailRows:number; headerRows:number; lowerChromeRows:number} {
+  const terminalMode = resolveTerminalMode(opts?.terminalMode, opts?.env ?? {}, opts?.isTTY ?? true);
+  const mode = String(opts?.mode ?? 'chat');
+  const terminalSize = normalizeTerminalSize(opts?.termWidth, opts?.termHeight);
+  const termWidth = terminalSize.width;
+  const termHeight = terminalSize.height;
+  const toolOutputExpanded = opts?.toolOutputExpanded !== false;
+  const thinkingExpanded = opts?.thinkingExpanded !== false;
+  const questionState = opts?.questionState ?? null;
+  const pendingImageCount = Math.max(0, Math.floor((Number(opts?.pendingImageCount) || 0)));
+  const inputQueueCount = Math.max(0, Math.floor((Number(opts?.inputQueueCount) || 0)));
+  const hasLiveSpinner = !(!opts?.hasLiveSpinner);
+  const hasPlanChip = !(!opts?.hasPlanChip);
+  const hasPlanApproval = !(!opts?.hasPlanApproval);
+  const hasStream = !(!opts?.hasStream);
+  const hasProgress = !(!opts?.hasProgress);
+  const agentCount = Math.max(0, Math.floor((Number(opts?.agentCount) || 0)));
+  const todoReserveRows = estimateTodoListRows(Array.isArray(opts?.todos) ? opts.todos : [], hasPlanChip, termWidth);
+  const bottomChromeExtraRows = estimateBottomChromeExtraRows(mode, questionState, termWidth, pendingImageCount, inputQueueCount, hasLiveSpinner, hasPlanChip, todoReserveRows, hasPlanApproval);
+  const pinnedLiveRows = estimatePinnedLiveRows(mode, hasStream, hasProgress, agentCount, Math.max(0, Math.floor((Number(opts?.toolStreamCount) || 0))));
+  const visibleBudget = estimateVisibleBlockBudget(termHeight, mode, bottomChromeExtraRows + pinnedLiveRows);
+  const transcriptBlocks = (terminalMode === 'native') ? nativeTranscriptBlocksForStatic(blocks) : historyBlocksForTranscript(blocks);
+  const staticBlockCount = (terminalMode === 'native') ? nativeArchiveBlockCount(transcriptBlocks, mode, visibleBudget, toolOutputExpanded, thinkingExpanded) : 0;
+  const liveBlocks = (terminalMode === 'native') ? transcriptBlocks.slice(staticBlockCount) : transcriptBlocks;
+  const transcriptRowCount = withContentWidthOverride(termWidth, () => buildTranscriptRows(liveBlocks, mode, toolOutputExpanded, thinkingExpanded).length);
+  const fileRailOpen = !(!opts?.fileRailOpen);
+  const fileRailExpanded = !(!opts?.fileRailExpanded);
+  const fileRailWidth = fileRailOpen ? fileRailWidthForTerminal(termWidth, fileRailExpanded) : 0;
+  const fileRailRows = fileRailOpen ? fileRailMaxRowsForTerminal(termHeight, terminalMode, fileRailExpanded) : 0;
+  const baseChromeRows = (mode === 'chat') ? 6 : 8;
+  const lowerChromeRows = baseChromeRows + bottomChromeExtraRows;
+  return { terminalMode: terminalMode, mode: mode, termWidth: termWidth, termHeight: termHeight, visibleBudget: visibleBudget, transcriptRowCount: transcriptRowCount, staticBlockCount: staticBlockCount, liveBlockCount: liveBlocks.length, fileRailWidth: fileRailWidth, fileRailRows: fileRailRows, headerRows: 1, lowerChromeRows: lowerChromeRows };
+}

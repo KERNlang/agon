@@ -5,7 +5,7 @@ import {
   buildDoctorCleanupCommand,
   diagnoseEngineDoctorEntry,
   shellQuoteForDoctor,
-} from '../../packages/cli/src/generated/commands/doctor.js';
+} from '../../packages/cli/src/commands/doctor.js';
 
 describe('doctor command helpers', () => {
   it('quotes cleanup paths safely', () => {

@@ -8,11 +8,11 @@ import {
   flush,
   replay as logReplay,
   resetEventLogState,
-} from '../../packages/core/src/generated/sessions/event-log.js';
+} from '../../packages/core/src/sessions/event-log.js';
 import {
   InProcessSessionHost,
   type LoggedEvent,
-} from '../../packages/core/src/generated/sessions/session-host.js';
+} from '../../packages/core/src/sessions/session-host.js';
 
 let home: string;
 let host: InProcessSessionHost;

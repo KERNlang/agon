@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveAskInputs } from '../../packages/cli/src/generated/commands/ask.js';
+import { resolveAskInputs } from '../../packages/cli/src/commands/ask.js';
 
 const ACTIVE = ['codex', 'gemini', 'claude'];
 

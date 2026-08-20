@@ -26,23 +26,23 @@ import {
   PLAN_APPROVAL_PROMPT_ROWS,
   stringDisplayWidth,
   transcriptRowsToPlainText,
-} from '../../packages/cli/src/generated/surfaces/app.js';
+} from '../../packages/cli/src/surfaces/app.js';
 import {
   fileRailDetailRows,
   resolveFileRailExpandedFile,
-} from '../../packages/cli/src/generated/blocks/file-rail.js';
+} from '../../packages/cli/src/blocks/file-rail.js';
 import {
   buildCesarRecapDiffPreview,
   buildCesarTurnRecapEvent,
   createCesarRecapCapture,
   recordCesarRecapEvent,
   shouldEmitCesarRecap,
-} from '../../packages/cli/src/generated/cesar/recap.js';
+} from '../../packages/cli/src/cesar/recap.js';
 import {
   contextualizeSlicedMarkdown,
-} from '../../packages/cli/src/generated/surfaces/app-views.js';
+} from '../../packages/cli/src/surfaces/app-views.js';
 import { cleanupTestAgonHome } from '../helpers/agon-home.js';
-import type { OutputBlock } from '../../packages/cli/src/generated/blocks/engine.js';
+import type { OutputBlock } from '../../packages/cli/src/blocks/engine.js';
 
 let testHome: string | undefined;
 
@@ -232,7 +232,7 @@ describe('app scroll helpers', () => {
       status: 'done',
       output: 'Applied edit to a.ts (1 line) · checkpoint abc12345',
     });
-    recordCesarRecapEvent(capture, { type: 'warning', message: 'One generated file was refreshed.' });
+    recordCesarRecapEvent(capture, { type: 'warning', message: 'One stale file was refreshed.' });
 
     const event = buildCesarTurnRecapEvent(
       capture,
@@ -598,7 +598,7 @@ describe('app scroll helpers', () => {
       estimateQuestionReservedRows(
         {
           kind: 'permission',
-          command: 'cd /repo && kern compile packages/core/src/kern/signals/cli-models-registry.kern --outdir=packages/core/src/generated/signals',
+          command: 'cd /repo && kern compile packages/core/src/kern/signals/cli-models-registry.kern --outdir=packages/core/src/signals',
           reason: 'needs approval',
           choices: [{ key: 'y' }, { key: 'n' }, { key: 'a' }],
         },
@@ -642,7 +642,7 @@ describe('app scroll helpers', () => {
         {
           prompt: 'This is a deliberately long confirmation prompt that should wrap on a narrow terminal before the choices render underneath it.',
           choices: [
-            { key: 'y', label: 'Yes, commit and push the generated script' },
+            { key: 'y', label: 'Yes, commit and push the release script' },
             { key: 'n', label: 'No, leave it uncommitted for now' },
           ],
         },

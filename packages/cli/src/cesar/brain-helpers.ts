@@ -1,0 +1,573 @@
+import type { ToolCallResult } from '@kernlang/agon-core';
+
+import { tracker } from '@kernlang/agon-core';
+
+import { parseToolCalls } from '@kernlang/agon-core';
+
+import type { HandlerContext, PendingDelegation } from '../handlers/types.js';
+
+import { hostNowMs, hostRegexObjectTest, hostStringSet } from '../lib/kern-host.js';
+
+export const yieldToInk: () => Promise<void> = () => new Promise<void>(resolve => setImmediate(resolve));
+
+/**
+ * Record a Cesar turn into the token tracker. Prefers the session's REAL billed usage (getTurnUsage — API backend, drained sum across the turn's dispatch steps, with the model id for model-specific pricing) so cost is metered; falls back to the chars/4 text estimate for PTY/CLI brains, whose per-token cost is not countable (subscription) and stays marked source:'estimated'.
+ */
+export function recordCesarTurn(ctx: HandlerContext, cesarEngineId: string, input: string, response: string): any {
+  try {
+    const s: any = ctx.cesarSession;
+    const u = s && typeof s.getTurnUsage === 'function' ? s.getTurnUsage() : null;
+    if (u && u.totalTokens > 0) {
+      return tracker.record(cesarEngineId, {
+        usage: { promptTokens: u.promptTokens, completionTokens: u.completionTokens, totalTokens: u.totalTokens, cachedInputTokens: u.cachedInputTokens, source: u.source ?? 'sdk' },
+        model: u.model,
+      });
+    }
+  } catch { /* fall through to the estimate */ }
+  return tracker.record(cesarEngineId, { prompt: input, response });
+}
+
+export const splitBeforeToolMarkup: (text:string) => { visible:string, hasToolMarkup:boolean } = (text: string) => {
+  const markers = ['<tool ', '<invoke ', '<tool_call', '<toolcall', '<tool_call_tool>', '<function=', '[TOOL_CALLS]', '[TODOS]', '[ASK]'];
+  const lower = text.toLowerCase();
+  let idx = -1;
+  for (const marker of markers) {
+    const pos = lower.indexOf(marker.toLowerCase());
+    if (pos >= 0 && (idx === -1 || pos < idx)) idx = pos;
+  }
+  if (idx < 0) return { visible: text, hasToolMarkup: false };
+  return { visible: text.slice(0, idx), hasToolMarkup: true };
+};
+
+export const XML_TOOL_MARKUP_HOLD_CHARS: number = 24;
+
+/**
+ * True when the arriving text could have COMPLETED a tool call, so the full-buffer parse is worth running.
+ *
+ * The carry-over tail to pass as prevTail on the next chunk (so a marker split across chunks is still seen).
+ */
+export interface ToolCloseGate {
+  scan: boolean;
+  tail: string;
+}
+
+/**
+ * Cheap gate before a full parseToolCalls scan. A tool call can only become COMPLETE when the newly arrived text carries the FINAL character of a known close marker: every XML form ends its close tag with '>', Mistral closes its [TOOL_CALLS] array with ']', Cohere closes its Action fence with a backtick. Chunk size is therefore irrelevant for the XML forms (the completing '>' is always in the arriving chunk); the 24-char carry-over tail covers Mistral's optional trailing newline and keeps the gate stable across tiny chunks.
+ */
+export function chunkMayCompleteToolCall(prevTail: string, chunkText: string): ToolCloseGate {
+  const window = String(prevTail ?? '') + String(chunkText ?? '');
+  const nextTail = (window.length > 24) ? window.slice(-24) : window;
+  return { scan: /[>\]\u0060]/.test(window), tail: nextTail };
+}
+
+/**
+ * Does this text CONTAIN a complete textual tool call, in ANY format parseToolCalls understands (XML <tool>/<invoke>, Gemini, Mistral [TOOL_CALLS], Functionary, Cohere Action fences)? The single predicate every display gate shares with the executors, so 'is this text a tool call?' is answered the same way everywhere instead of being re-guessed from a marker list. Never throws — a parser failure means 'no tool call' so display is never blanked by a parse bug.
+ */
+export function textHasToolCalls(text: string): boolean {
+  try {
+    return parseToolCalls(String(text ?? '')).hasToolCalls;
+  } catch (parseErr) {
+    return false;
+  }
+}
+
+/**
+ * Decide, from the HEAD of a streaming response, whether a start-anchored [INTENT] preamble is present ('match'), impossible ('absent' — 8+ non-space chars already differ from the marker, and the head only ever grows at the end), or still undecidable ('maybe' — keep accumulating). Lets the brain latch the decision once instead of re-parsing the whole response on every chunk.
+ */
+export function classifyPreambleHead(head: string): 'match'|'absent'|'maybe' {
+  const lead = String(head ?? '').trimStart();
+  if (/^\[intent\]/i.test(lead.slice(0, 8))) {
+    return 'match';
+  }
+  return (lead.length >= 8) ? 'absent' : 'maybe';
+}
+
+/**
+ * Generic factory for a [TAG]…[/TAG] incremental display stripper — the shared machinery behind createTodosDisplayStripper and createAskDisplayStripper. Takes the lowercase open/close markers; returns a stateful strip fn (chunk, force?) => string closing over its own hold buffer + insideBlock flag — one instance per turn per marker. force=true flushes any held tail verbatim (bypassing holds) for the stream-end flush; force=false holds partial-marker prefixes (open AND close) across chunks so a marker split mid-stream neither leaks nor latches the block open forever.
+ */
+export const createBlockDisplayStripper: (open: string, close: string) => ((chunk: string, force?: boolean) => string) = (open: string, close: string) => {
+  let insideBlock = false;  // between [TAG] and [/TAG]
+  let hold = '';            // partial trailing marker prefix carried to next chunk
+  const OPEN = open.toLowerCase();
+  const CLOSE = close.toLowerCase();
+  // Longest suffix of `combined` that is a strict prefix of `marker` (len < marker.length).
+  const trailingPrefixLen = (combined: string, marker: string): number => {
+    const lower = combined.toLowerCase();
+    for (let n = Math.min(marker.length - 1, combined.length); n > 0; n--) {
+      if (lower.slice(combined.length - n) === marker.slice(0, n)) return n;
+    }
+    return 0;
+  };
+  return (chunk: string, force = false): string => {
+    let combined = hold + chunk;
+    hold = '';
+    // Force flush: bypass all holds, return held+combined verbatim. We do NOT
+    // suppress here — a half-open block at true stream end is malformed text the
+    // committed transcript keeps anyway, and dropping it loses real content.
+    if (force) {
+      insideBlock = false;
+      return combined;
+    }
+    let out = '';
+    // Walk, toggling on [TODOS] / off at [/TODOS].
+    while (combined.length > 0) {
+      if (insideBlock) {
+        const end = combined.toLowerCase().indexOf(CLOSE);
+        if (end < 0) {
+          // Still inside: hold a trailing partial-prefix of [/TODOS] so an
+          // end-tag split across chunks (…"[/TO" | "DOS]"…) survives to the
+          // next chunk instead of being dropped and latching the block open
+          // forever. Drop the rest of the in-block body (it's marker payload).
+          const p = trailingPrefixLen(combined, CLOSE);
+          if (p > 0) hold = combined.slice(combined.length - p);
+          combined = '';
+          break;
+        }
+        insideBlock = false;
+        combined = combined.slice(end + CLOSE.length);
+        continue;
+      }
+      const start = combined.toLowerCase().indexOf(OPEN);
+      if (start < 0) break;
+      out += combined.slice(0, start);
+      insideBlock = true;
+      combined = combined.slice(start + OPEN.length);
+    }
+    if (!insideBlock) {
+      // Guard a partial trailing open marker (or shorter prefix) split mid-marker.
+      const p = trailingPrefixLen(combined, OPEN);
+      if (p > 0) {
+        hold = combined.slice(combined.length - p);
+        combined = combined.slice(0, combined.length - p);
+      }
+      out += combined;
+    }
+    return out;
+  };
+};
+
+/**
+ * Per-turn [TODOS]…[/TODOS] display stripper — createBlockDisplayStripper bound to the live-todos marker.
+ */
+export const createTodosDisplayStripper: () => ((chunk: string, force?: boolean) => string) = () => createBlockDisplayStripper('[todos]', '[/todos]');
+
+/**
+ * Per-turn [ASK]…[/ASK] display stripper — createBlockDisplayStripper bound to the structured-ask marker (RULE 7d), so the JSON question block never leaks into the streamed display.
+ */
+export const createAskDisplayStripper: () => ((chunk: string, force?: boolean) => string) = () => createBlockDisplayStripper('[ask]', '[/ask]');
+
+/**
+ * Factory for the native-path START-anchored [INTENT] preamble display stripper. Returns a stateful strip fn (chunk, force?) => string closing over its own decision flags + hold buffer — one instance per turn. Holds leading text until it can decide whether the response opens with an [INTENT] line; suppresses the matched line; once decided (matched-and-consumed, or provably-not-a-marker) it is a pass-through. force=true flushes any held tail verbatim for the stream-end flush. Mirrors createTodosDisplayStripper's hold/flush guarantees for the single-line, no-close-tag marker shape.
+ */
+export const createPreambleStripper: () => ((chunk: string, force?: boolean) => string) = () => {
+  const MARKER = '[intent]';
+  let decided = false;   // start-anchored decision resolved → pass-through
+  let hold = '';         // leading text held while deciding
+  // True when `lower` (already lowercased, leading ws stripped) is a strict
+  // prefix of MARKER or vice-versa up to its length — i.e. still *could* be
+  // a leading [INTENT].
+  const couldBeMarker = (lowerTrimmed: string): boolean => {
+    const n = Math.min(lowerTrimmed.length, MARKER.length);
+    return lowerTrimmed.slice(0, n) === MARKER.slice(0, n);
+  };
+  // Strip a complete START-anchored "[INTENT] <line>" prefix from `text`,
+  // returning the remainder. Handles the no-trailing-newline case (the whole
+  // tail is the intent line → remainder is ''). Returns the text unchanged
+  // when it does not open with the full marker, OR when the intent is
+  // bare/whitespace-only — parsePreamble treats a bare marker as absent
+  // (leaves it in the committed text), so display must show it too.
+  const stripLeadingPreamble = (text: string): string => {
+    const m = text.match(/^(\s*)\[intent\][ \t]*([^\r\n]*)(\r?\n)?/i);
+    if (!m) return text;
+    if (!String(m[2] ?? '').trim()) return text;
+    return text.slice(m[0].length).replace(/^\r?\n/, '');
+  };
+  return (chunk: string, force = false): string => {
+    if (decided) return chunk;
+    hold += chunk;
+    if (force) {
+      // Stream end. If the held text still opens with a (now complete, since
+      // the stream is over) "[INTENT] …" line, suppress that line and flush
+      // only the remainder — so a newline-less marker-only tail never leaks.
+      // Otherwise flush verbatim; never drop genuine content.
+      decided = true;
+      const afterWs = hold.replace(/^\s*/, '');
+      const out = couldBeMarker(afterWs.toLowerCase()) && afterWs.toLowerCase().startsWith(MARKER)
+        ? stripLeadingPreamble(hold)
+        : hold;
+      hold = '';
+      return out;
+    }
+    // Inspect the held text with leading whitespace ignored for the anchor.
+    const leadingWsMatch = hold.match(/^\s*/);
+    const leadingWs = leadingWsMatch ? leadingWsMatch[0] : '';
+    const afterWs = hold.slice(leadingWs.length);
+    const lower = afterWs.toLowerCase();
+    // Not a possible leading marker → flush everything, stop holding.
+    if (!couldBeMarker(lower)) {
+      decided = true;
+      const out = hold;
+      hold = '';
+      return out;
+    }
+    // Possible marker but not yet the full '[intent]' token → keep holding.
+    if (lower.length < MARKER.length) return '';
+    // We have the full '[INTENT]' token at the start. Wait for the line's end.
+    const nlIdx = afterWs.search(/\r?\n/);
+    if (nlIdx < 0) {
+      // No newline yet — keep holding the whole (possibly long) intent line.
+      return '';
+    }
+    // Bare/whitespace-only intent → parsePreamble keeps the marker in the
+    // committed text, so display must too: flush verbatim, stop holding.
+    if (!afterWs.slice(MARKER.length, nlIdx).trim()) {
+      decided = true;
+      const out = hold;
+      hold = '';
+      return out;
+    }
+    // Suppress the preamble line (leading ws + '[INTENT] …' + its newline) and
+    // emit only what follows. Past this point we are a pure pass-through.
+    const nlMatch = afterWs.slice(nlIdx).match(/^\r?\n/);
+    const nlLen = nlMatch ? nlMatch[0].length : 0;
+    const rest = afterWs.slice(nlIdx + nlLen);
+    decided = true;
+    hold = '';
+    return rest;
+  };
+};
+
+/**
+ * True when the last line of a Cesar turn is a question directed at the USER — either keyword-addressed (which/should/want/your call/…) OR an either/or fork ('A, or B?'). Auto-continuation uses this to STOP and wait for the user instead of treating the question as a mid-task stall and re-prompting Cesar (which caused fork questions like 'plan it all, or start with X?' to loop).
+ */
+export function isUserDirectedQuestion(lastLine: string): boolean {
+  const last = String(lastLine ?? '').trim();
+  if (!/\?\s*$/.test(last)) return false;
+  const userAddressed = /\b(want|shall|should|ready|proceed|go ahead|dispatch|confirm|implement|which|what|how|do you|would you|can you|should i|shall i|prefer|pick|choose|decide|option)\b/i.test(last)
+    || /\b(your call|up to you|your decision|let me know|waiting on (?:you|your)|which way|either way)\b/i.test(last);
+  // Either/or fork ("… A, or B?") offers the user a choice → their turn.
+  const isForkChoice = /\bor\b[^?]{0,160}\?\s*$/i.test(last);
+  return userAddressed || isForkChoice;
+}
+
+/**
+ * Return the nearest user-directed question in the TAIL of a Cesar turn (last 6 non-empty lines), or null. Unlike checking only the LAST line, this catches the common 'ask, then advise' shape — a question FOLLOWED BY a recommendation / rationale / confidence line (esp. minimax) — so auto-continuation recognizes it as the user's turn instead of barreling through it ('asked but never got a chance to answer'). Bounded to the last 6 non-empty lines so a question buried mid-narration does NOT stop the loop; reuses isUserDirectedQuestion for the per-line test. NOTE: we deliberately do NOT try to detect 'the model proceeded past its own question' (matching done / I'll / 'I renamed …') — every anchored attempt produced false positives ('ill', 'I'll wait for your input', 'this is not done yet') that SUPPRESS real questions and reintroduce the very bug this fixes. A stale trailing question merely STOPS the auto-continuation loop when the model is already done, which is benign — the done/effect logic in _detectTurnState already classifies genuine completions. (2 rounds of multi-engine agon review, 2026-06-07.)
+ */
+export function findTrailingUserQuestion(text: string): string | null {
+  const lines = String(text ?? '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const TAIL = 6;
+  const start = Math.max(0, lines.length - TAIL);
+  for (let i = lines.length - 1; i >= start; i--) {
+    if (isUserDirectedQuestion(lines[i])) return lines[i];
+  }
+  return null;
+}
+
+/**
+ * True when a Cesar turn ENDS awaiting user input — either a trailing user-directed question (findTrailingUserQuestion) OR a 'holding / awaiting your approval / greenlight' STATEMENT in the tail (which has no '?'). PLAN EXECUTION uses this to pause an approved plan to idle when the brain stalls asking for input it cannot receive mid-run (the weak-brain 'I'll hold for your greenlight' re-ask of already-granted approval). Scoped to plan execution only; a false positive merely causes a recoverable pause (the one-shot executor override + /plan resume recover it), so the statement pattern is tuned to catch that shape without firing on ordinary completion text.
+ */
+export function detectAwaitingUserInput(text: string): boolean {
+  const body = String(text ?? '');
+  if (findTrailingUserQuestion(body)) return true;
+  // Strip a leading markdown list / blockquote / numbering marker so "- Holding …"
+  // or "1. Awaiting …" still match — trim() alone leaves the marker (agon-review).
+  const tail = body.split(/\r?\n/)
+    .map((l) => l.trim().replace(/^(?:[-*>•]\s+|\d+[.)]\s+)/, ''))
+    .filter(Boolean)
+    .slice(-3);
+  if (tail.length === 0) return false;
+  // "Holding" only counts as a stall when it stands alone or is qualified
+  // (Holding. / Holding — / Holding for/until/off) — NOT "Holding references…"
+  // or "Holding the lock" (agon-review round-2).
+  const HOLDING_RE = /^holding\b(?:\s*$|\s*[.,;:!?…—–-]|\s+for\b|\s+until\b|\s+off\b)/i;
+  // Only QUALIFIED await/hold/approval phrasing pauses a step. NO bare "greenlight"
+  // ("I received the greenlight"), NO bare "let me know", NO bare "waiting for your X"
+  // ("waiting for your files"). Spaced "go ahead"/"sign off" handled via [-\s]?.
+  // (agon-review rounds 1-2). A false positive only costs a recoverable pause, but
+  // spurious pauses are still noise — keep it conservative.
+  // "awaiting" requires an approval-related NOUN (optionally after your/user) — so
+  // "awaiting your files"/"awaiting your branch build" do NOT match (agon-review r3).
+  const AWAITING_RE = /\b(?:awaiting\s+(?:(?:your|user|the\s+user'?s?|explicit\s+user|my)\s+(?:approval|greenlight|sign[-\s]?off|go[-\s]?ahead|confirmation|input|decision|response|reply|call|word|ok)|(?:approval|greenlight|sign[-\s]?off|go[-\s]?ahead|a\s+decision))|waiting\s+(?:on|for)\s+(?:you\s+to\s+(?:approve|confirm|decide|respond|reply)|your\s+(?:approval|greenlight|sign[-\s]?off|go[-\s]?ahead|input|confirmation|decision|response|reply|ok)|approval|greenlight|sign[-\s]?off|confirmation)|hold(?:ing)?\s+(?:for|until|off)|need(?:s|ing)?\s+(?:your|explicit\s+user|user)\s+(?:approval|greenlight|go[-\s]?ahead|sign[-\s]?off|input|confirmation|ok|decision)|your\s+(?:greenlight|go[-\s]?ahead|sign[-\s]?off)\s+(?:to|before)|need\s+(?:a\s+|the\s+)?greenlight|explicit\s+(?:user\s+)?approval|stand(?:ing)?\s+by\s+(?:for|until))\b/i;
+  for (const line of tail) {
+    // Cap per-line scan length: stall phrasing sits at the head, and this bounds
+    // any regex backtracking on pathological input (agon-review ReDoS note).
+    const head = line.slice(0, 300);
+    if (HOLDING_RE.test(head)) return true;
+    if (AWAITING_RE.test(head)) return true;
+  }
+  return false;
+}
+
+/**
+ * Detect responses where a model narrates tool intent instead of actually calling tools. Used for Cesar tool-use telemetry, especially API models with weak function calling.
+ */
+export function detectNarratedToolStall(text: string): boolean {
+  const body = String(text ?? '').trim();
+  if (!body) {
+    return false;
+  }
+  const tail = body.slice(-700);
+  const FAKE_GATE_RE = /\b(?:need (?:user )?(?:permission|approval)|await(?:ing)? approval|tool (?:keeps )?blocking me|(?:edit|write|bash|command) tool (?:keeps )?blocking me|blocked by (?:the )?(?:edit|write|bash) tool|let me try writing|try writing the full file|since i(?:'ve| have) already read it)\b/i;
+  const READ_INTENT_RE = /\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:read|check|look at|examine|see|review|open|view)[ \t\n\r\f\v]+[`"']?[a-zA-Z0-9_./-]+\.[a-zA-Z]{1,6}[`"']?/i;
+  const SEARCH_INTENT_RE = /\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:search|grep|find|look)[ \t\n\r\f\v]+(?:for[ \t\n\r\f\v]+)?[`"']?.+?[`"']?[ \t\n\r\f\v]*(?:in[ \t\n\r\f\v]+|$)/i;
+  const DIR_INTENT_RE = /\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:check|see|look at|list|find)[ \t\n\r\f\v]+(?:what's in |files in |the )?[ \t\n\r\f\v]*[`"']?[a-zA-Z0-9_./-]+\/[`"']?/i;
+  const STALL_RE = /\b(?:let me (?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab|continue)|i (?:need|want|should|will) (?:to )?(?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab|continue)|now (?:let me|i'll)|continu(?:e|ing)|keep (?:reading|investigating|looking)|next[,.]?[ \t\n\r\f\v]*(?:i|let)|before (?:i can|proceeding|implementing|deciding))\b/i;
+  return hostRegexObjectTest(FAKE_GATE_RE, tail) || hostRegexObjectTest(READ_INTENT_RE, tail) || hostRegexObjectTest(SEARCH_INTENT_RE, tail) || hostRegexObjectTest(DIR_INTENT_RE, tail) || hostRegexObjectTest(STALL_RE, tail);
+}
+
+/**
+ * Layer 1 of the watchdog pipeline (brainstorm-validated 2026-06-11): remove NON-ASSERTED spans before any guard regex runs, so quoted/demonstrated text can never read as a claim. Strips fenced code blocks, inline backtick spans, double/curly-quoted spans, and parenthesized capitalized enumerations like '(Read/Edit/Write/Bash)' — the exact shape that false-fired the guards on a description OF the harness. Carve-out: a backticked/quoted span that is ITSELF an active first-person/imperative claim ('I'll edit foo') is kept, so an engine cannot hide a real stall inside quotes. Straight single-quoted spans are deliberately NOT stripped — apostrophes in contractions (can't … don't) would pair up and delete real assertions. Pure; exported for unit tests.
+ */
+export function stripNonAssertionSpans(text: string): string {
+  let body = String(text ?? '');
+  // A span that is itself a claim stays visible to the guards.
+  const KEEP_CLAIM_RE = /^(?:i(?:'ll|'m|\s+will|\s+have|\s+need\s+to|\s+want\s+to|\s+already)\b|let\s+me\b|please\s+\w+)/i;
+  // Fenced code blocks (``` … ``` , tolerate an unclosed trailing fence).
+  body = body.replace(/```[\s\S]*?(?:```|$)/g, ' ');
+  // Inline backtick spans.
+  body = body.replace(/`([^`\n]{1,300})`/g, (_m: string, inner: string) => (KEEP_CLAIM_RE.test(inner.trim()) ? ` ${inner} ` : ' '));
+  // Double / curly quoted spans.
+  body = body.replace(/["“”]([^"“”\n]{1,300})["“”]/g, (_m: string, inner: string) => (KEEP_CLAIM_RE.test(inner.trim()) ? ` ${inner} ` : ' '));
+  // Parenthesized capitalized enumerations: (Read/Edit/Write/Bash), (Forge, Tribunal).
+  body = body.replace(/\([A-Z][A-Za-z]*(?:\s*[,/&]\s*[A-Z][A-Za-z]*)+\)/g, ' ');
+  return body;
+}
+
+/**
+ * Detect a 'false read-only hand-back': the orchestrator narrated a concrete change (claim-shaped: first-person intent, result-first 'patch ready', or an apply-it-yourself instruction) AND claimed it cannot write / delegated the write to an agent / pushed the apply to the user — WITHOUT emitting a mutating tool call. CLAIM-SHAPED matching (Layer 2, brainstorm-validated 2026-06-11): bare nouns like 'Edit/Write tools' or 'read-only investigation phase' in a DESCRIPTION of the harness must NOT fire — only inability/hand-back/intent CLAIMS do. Runs on stripNonAssertionSpans output so quoted failure text can't trip it. Result-first phrasing ('Patch ready. Please apply it manually; this environment is read-only.') is the recall-preserving branch — real stalls are often not first-person.
+ */
+export function detectMutationIntentStall(text: string): boolean {
+  const body = stripNonAssertionSpans(String(text ?? '')).trim();
+  if (!body) return false;
+  // Inability CLAIMS (first-person / this-session), not the bare word 'read-only'.
+  const CANNOT_RE = /\b(?:i\s+(?:cannot|can'?t|am\s+unable\s+to)\s+(?:write|edit|apply|mutate|touch)|i'?m\s+read-?only|(?:this|the)\s+(?:session|environment|context|sandbox)\s+is\s+read-?only|i\s+have\s+no\s+(?:write|edit|bash)\s+tools?|no\s+(?:write|edit)\s+access|(?:edit|write|bash)(?:\s+tool)?\s+is\s+(?:not\s+(?:enabled|available|wired)|disabled|unavailable)|not\s+(?:enabled|wired|reachable)\s+in\s+this\s+(?:context|session|turn))\b/i;
+  // Push-the-write-to-the-user instructions.
+  const USER_APPLY_RE = /\b(?:paste\s+(?:it|this|the)\b|git\s+apply\b|apply\s+(?:it|this)\b|in\s+your\s+terminal|you\s+(?:can\s+)?(?:run|apply|paste)\b|copy[- ]?paste|hand\s+you\s+the\s+(?:patch|diff|commands?))/i;
+  // Delegate-the-write-to-an-agent escape hatch.
+  const AGENT_ESCAPE_RE = /\b(?:spawn|dispatch)\s+(?:an?\s+)?agent\b/i;
+  // First-person mutation intent ('I'll edit', 'let me apply').
+  const INTENT_RE = /\b(?:i(?:'ll|\s+will|\s+need\s+to|\s+want\s+to|'?m\s+going\s+to)|let\s+me)\s+(?:\w+\s+){0,3}?(?:edit|write|apply|commit|patch|fix|update|implement|modify|create|make)\b/i;
+  // Result-first stall ('patch ready', 'the fix is below', 'ready to paste').
+  const RESULT_FIRST_RE = /\b(?:patch|fix|change|diff|edit|update)e?s?\s+(?:is|are)?\s*(?:ready|done|complete|prepared|below|attached)\b|\bready\s+to\s+(?:paste|apply)\b/i;
+  // First-person PAST-tense mutation claim ('I made the change', 'I already updated') —
+  // the review-verified miss: a hand-back is often phrased as work-already-done.
+  const PAST_DONE_RE = /\bi(?:'ve)?\s+(?:already\s+)?(?:made|updated|edited|wrote|written|applied|changed|fixed|patched|implemented|created|prepared)\b/i;
+  // Presenting the artifact ('here is the diff', 'the patch below').
+  const PRESENTATION_RE = /\bhere(?:'s|\s+is|\s+are)\s+(?:the\s+|a\s+)?(?:full\s+)?(?:diff|patch|change|fix|edit|code)\b|\b(?:diff|patch)\s+(?:is\s+)?(?:below|above)\b/i;
+  const intentish = INTENT_RE.test(body) || RESULT_FIRST_RE.test(body) || PAST_DONE_RE.test(body) || PRESENTATION_RE.test(body);
+  if (CANNOT_RE.test(body) && (intentish || USER_APPLY_RE.test(body) || AGENT_ESCAPE_RE.test(body))) return true;
+  if (USER_APPLY_RE.test(body) && intentish) return true;
+  if (AGENT_ESCAPE_RE.test(body) && (intentish || CANNOT_RE.test(body))) return true;
+  return false;
+}
+
+/**
+ * Detect a response that CLAIMS an async review/forge/tribunal/brainstorm/agent or background job was dispatched or is now running — e.g. 'review delegated to codex, claude, agy', 'three reviewers are reading the diff in parallel', 'I kicked off the review'. CLAIM-SHAPED matching (Layer 2, brainstorm-validated 2026-06-11): descriptive prose like 'Forge dispatches engines that work in parallel and report back with a winner' must NOT fire — the dispatch/running claim must be first-person ('I kicked off…'), a delegated-to statement, a present-continuous running state adjacent to a delegable target ('the review is still running', 'background review in progress'), or a they-will-report promise. Runs on stripNonAssertionSpans output. The caller pairs this with 'no delegation was actually emitted this turn' (ctx.cesar.pendingDelegation is null).
+ */
+export function detectFabricatedDelegation(text: string): boolean {
+  const body = stripNonAssertionSpans(String(text ?? '')).trim();
+  if (!body) return false;
+  // A delegable target must appear at all.
+  const TARGET_RE = /\b(?:review(?:er)?s?|forg(?:e|ing)|tribunal|brainstorm|campfire|agents?|engines?|jobs?)\b/i;
+  if (!TARGET_RE.test(body)) return false;
+  // First-person dispatch claim: 'I kicked off the review', "I'm running a tribunal".
+  const FP_DISPATCH_RE = /\b(?:i(?:'ve)?\s+(?:already\s+)?(?:kick(?:ed)?\s*(?:it|them|that|the\s+\w+)?\s*off|fired\s+(?:it|them|off)|dispatch(?:ed)?|delegat(?:ed)?|started|launched|spun\s+up|queued)|i'?m\s+(?:running|dispatching|launching|starting))\b/i;
+  // Passive delegated-to: 'Review delegated to codex, claude, agy'.
+  const DELEGATED_TO_RE = /\b(?:review|forge|tribunal|brainstorm|campfire|jobs?|agents?)\s+(?:was|were|has\s+been|have\s+been)?\s*delegated\s+to\b/i;
+  // Running-state adjacent to a target, within one clause (no sentence break):
+  // 'the review is still running', 'reviewers … are reading the diff', 'background review in progress'.
+  const RUNNING_STATE_RE = /\b(?:review(?:er)?s?|forge|tribunal|brainstorm|campfire|agents?|engines?|jobs?)\b[^.!?\n]{0,60}?(?:\b(?:is|are)\s+(?:still\s+|currently\s+|each\s+|now\s+)?(?:running|working|reading|evaluating|analyzing|reviewing|on\s+it)\b|\bin\s+progress\b|\bunder\s*way\b)/i;
+  // Passive dispatch claim adjacent to a target: 'the review was queued',
+  // 'the team of reviewers has been kicked off' — review-verified misses.
+  const PASSIVE_DISPATCH_RE = /\b(?:review(?:er)?s?|forge|tribunal|brainstorm|campfire|agents?|engines?|jobs?)\b[^.!?\n]{0,60}?\b(?:was|were|has\s+been|have\s+been|is|are)\s+(?:queued|dispatched|launched|kicked\s+off|spun\s+up|fired\s+off)\b/i;
+  // They-will-report promise: "I'll get back when they report", 'when they finish'.
+  const REPORT_BACK_RE = /\bi'?ll\s+(?:get\s+back|report\s+back|let\s+you\s+know|surface|update)\b|\bwhen\s+they\s+(?:report|land|return|finish|come\s+back)\b/i;
+  return FP_DISPATCH_RE.test(body) || DELEGATED_TO_RE.test(body) || RUNNING_STATE_RE.test(body) || PASSIVE_DISPATCH_RE.test(body) || REPORT_BACK_RE.test(body);
+}
+
+/**
+ * Layer 3 of the watchdog pipeline: NEVER suppresses a guard, only converts a positive match into a visible warning WITHOUT the injected corrective nudge. True only when every available signal says conversational: router intake chat (with its 'answer' flow — chat is the router's DEFAULT bucket, so a chat intake the router escalated to any other flow does NOT de-escalate) or a positively-classified exploration intake (campfire/brainstorm/answer flows), AND no mutating tool (Write/Edit/Bash family) ran this turn. Missing/unknown signals return false → full nudge (the nero-validated answer to 'frame it as chat' bypasses). HONEST LIMIT (review finding, 0.60): chat+answer is the router's no-signal default, so a genuinely stalling work turn the router failed to classify can land here — the deliberate trade is that de-escalation is WARN-ONLY (the match is still surfaced, the claim-shaped detector already had to fire, and no nudge is injected); it can never silently swallow a stall. The confidence self-report ('informational') joins as a third positive signal once ReportConfidence carries a structured task type.
+ */
+export function shouldDeescalateGuard(opts: {intakeKind?:string, recommendedFlow?:string, usedMutatingTool?:boolean}): boolean {
+  const kind = String(opts.intakeKind ?? '');
+  const flow = String(opts.recommendedFlow ?? '');
+  const conversational = (kind === 'chat' && flow === 'answer')
+    || (kind === 'exploration' && (flow === 'campfire' || flow === 'brainstorm' || flow === 'answer'));
+  if (!conversational) return false;
+  if (opts.usedMutatingTool !== false) return false;
+  return true;
+}
+
+/**
+ * Give an uncorrelated eager streaming call one stable identity before any lifecycle event is emitted. The same enriched metadata must feed the running event and executeEagerTool terminal event so recap correlation cannot split one call into two records.
+ */
+export function withEagerToolCallId(meta: Record<string,unknown>, fallbackId: string): Record<string,unknown> {
+  const existing = typeof meta?.toolCallId === 'string' ? meta.toolCallId.trim() : '';
+  if (existing) return meta;
+  return { ...meta, toolCallId: fallbackId };
+}
+
+/**
+ * Claim one correlated eager tool execution for the current Cesar turn. Streaming adapters may repeat a running chunk while assembling arguments; a stable toolCallId executes once. Uncorrelated calls remain fail-open because a tool name or payload cannot safely distinguish duplicates from independent calls.
+ */
+export function claimEagerToolExecution(claimed: Set<string>, toolCallId: unknown): boolean {
+  const id = String(toolCallId ?? '').trim();
+  if (!id) {
+    return true;
+  }
+  if (claimed.has(id)) {
+    return false;
+  }
+  claimed.add(id);
+  return true;
+}
+
+/**
+ * Return unique tool names from failed eager tool results. Used to restrict one-shot repair retries to the tool that just failed.
+ */
+export function eagerFailedToolNames(results: ToolCallResult[]): string[] {
+  const names: string[] = [];
+  for (const result of results ?? []) {
+    if (result?.result?.ok) {
+      continue;
+    }
+    const name = String(result?.toolName ?? '').trim();
+    if (name && !names.includes(name)) {
+      names.push(name);
+    }
+  }
+  return names;
+}
+
+/**
+ * Gate eager tool repair retries. A corrected tool call may run once only if the same tool failed in the immediately previous eager batch.
+ */
+export function shouldRunEagerRepairTool(toolName: string, meta: any, failedToolNames: string[], usedToolNames: string[]): boolean {
+  const name = String(toolName ?? '').trim();
+  if (!name) return false;
+  if (!failedToolNames.includes(name)) return false;
+  if (usedToolNames.includes(name)) return false;
+  const status = String(meta?.status ?? 'running').toLowerCase();
+  if (status !== 'running' && status !== 'native') return false;
+  if (!meta || !('input' in meta)) return false;
+  return true;
+}
+
+/**
+ * Return true for XML tools that hand control back to the Agon dispatcher. These tools do not produce inline results; continuing the XML tool loop after them can make Cesar claim a delegation happened while the actual forge/brainstorm/etc. job has not started yet.
+ */
+export function shouldStopAfterXmlToolCall(toolName: string): boolean {
+  const HANDOFF_TOOLS = hostStringSet(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Council', 'Pipeline', 'Review', 'Agent', 'Goal', 'Conquer', 'ProposePlan', 'ExitPlanMode']);
+  return HANDOFF_TOOLS.has(String(toolName ?? ''));
+}
+
+/**
+ * Strip the 'Agon' orchestration alias prefix from a tool name. The default companion/MCP path surfaces write/bash tools as AgonBash/AgonEdit/AgonWrite (the MCP completion's done.tool is the ORIGINAL alias, not the mapped kern tool — see agon-orchestration.kern handleWriteToolCall), while the native/XML loop uses the bare names. Case-insensitive prefix match; returns the un-prefixed remainder so both paths classify identically.
+ */
+export function stripAgonToolPrefix(name: string): string {
+  const n = String(name ?? '');
+  return n.toLowerCase().startsWith('agon') ? n.slice(4) : n;
+}
+
+/**
+ * True when a tool name denotes a shell/bash call on EITHER path — bare 'Bash' (native/XML) or 'AgonBash' (MCP). Path-agnostic so the verify-before-done gate arms on the default companion path, not only the native one.
+ */
+export function isBashToolName(name: string): boolean {
+  return stripAgonToolPrefix(name).toLowerCase() === 'bash';
+}
+
+export const WRITE_TOOL_NAMES: Set<string> = hostStringSet(['edit', 'write', 'multiedit', 'notebookedit']);
+
+/**
+ * True when a tool name denotes project write-work (file edit/create) on EITHER path — bare Edit/Write/MultiEdit/NotebookEdit (native/XML) or the AgonEdit/AgonWrite MCP aliases. SaveMemory is deliberately NOT write-work: it appends to .agon/project.md (durable memory), not the project tree, so the project's verification gate has nothing to verify for it.
+ */
+export function isWriteToolName(name: string): boolean {
+  return WRITE_TOOL_NAMES.has(stripAgonToolPrefix(name).toLowerCase());
+}
+
+/**
+ * Expand a bare 'fix it' follow-up into an explicit prompt grounded in the most recent stored review result. This avoids making Cesar guess which reviewer findings the user means, especially because /review runs outside Cesar's live session history.
+ */
+export function buildReviewFollowupPrompt(input: string, ctx: HandlerContext): { matched: boolean; prompt: string } {
+  const trimmed = input.trim();
+  const match = ((__m) => __m === null ? null : { full: __m[0], groups: Array.from(__m).slice(1).map((g) => g === undefined ? null : g), index: __m.index, named: __m.groups ? Object.fromEntries(Object.entries(__m.groups).map(([__k, __v]) => [__k, __v === undefined ? null : __v])) : {} })(trimmed.match(/^fix it(?:[ \t\n\r\f\v]+with[ \t\n\r\f\v]+([a-z0-9._-]+))?[ \t\n\r\f\v?!.,;:]*$/i));
+  const review = ctx.lastReviewResult;
+  if (!match || !review) {
+    return { matched: false, prompt: input };
+  }
+  const ageMs = hostNowMs() - Number(review.timestamp ?? 0);
+  const maxAgeMs = 30 * 60 * 1000;
+  if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > maxAgeMs) {
+    return { matched: false, prompt: input };
+  }
+  const requestedEngine = match.groups[0]?.toLowerCase();
+  const reviewOutput = String(review.reviewOutput ?? '').trim();
+  const cappedReview = (reviewOutput.length > 8000) ? `${reviewOutput.slice(0, 8000)}\n… [review output truncated]` : reviewOutput;
+  const label = String(review.label ?? review.target ?? 'uncommitted changes').trim() || 'uncommitted changes';
+  const prompt = ['[REVIEW FOLLOW-UP]', 'The user\'s "fix it" refers to the MOST RECENT code review below.', `Review target: ${label}`, `Review engine: ${String(review.engineId ?? 'unknown')}`, requestedEngine ? `Preferred implementation engine: ${requestedEngine}` : null, 'Do not ask which findings they mean. Address the review findings in the current workspace, prioritizing blocking and important issues first.', '', '## REVIEW FINDINGS', cappedReview || '(review output missing)', '', '## USER FOLLOW-UP', trimmed].filter(Boolean).join('\n');
+  return { matched: true, prompt: prompt };
+}
+
+export function extractDelegation(toolName: string, args: Record<string,unknown>): PendingDelegation {
+  const argsRecord = args as Record<string, unknown>;
+  const taskKindRaw = argsRecord.taskKind;
+  const enginesRaw = argsRecord.engines;
+  const reviewEngines = toolName.toLowerCase() === 'review'
+    ? Array.isArray(enginesRaw)
+      ? (enginesRaw as unknown[]).map((id) => String(id).trim().toLowerCase()).filter(Boolean)
+      : typeof argsRecord.engine === 'string'
+        ? (argsRecord.engine as string).split(/[,\s]+/).map((id) => id.trim().toLowerCase()).filter(Boolean)
+        : []
+    : [];
+  const delegatedTask = (argsRecord.task ?? argsRecord.question ?? argsRecord.topic ?? argsRecord.target ?? argsRecord.intent ?? '') as string;
+  return {
+    action: toolName.toLowerCase(),
+    task: delegatedTask,
+    reasoning: delegatedTask,
+    scope: (argsRecord.scope === 'slice' || argsRecord.scope === 'full') ? argsRecord.scope as 'slice' | 'full' : undefined,
+    fitnessCmd: typeof argsRecord.fitnessCmd === 'string'
+      ? (argsRecord.fitnessCmd as string)
+      : typeof argsRecord.fitness === 'string'
+        ? (argsRecord.fitness as string)
+        : undefined,
+    hardened: (argsRecord.hardened as boolean) ?? false,
+    tribunalMode: argsRecord.mode as string | undefined,
+    team: (argsRecord.team as boolean) ?? false,
+    target: argsRecord.target as string | undefined,
+    engineId: reviewEngines[0] ?? argsRecord.engine as string | undefined,
+    // Phase 4: Agent tool args
+    engines: Array.isArray(enginesRaw) ? (enginesRaw as string[]) : reviewEngines.length > 0 ? reviewEngines : undefined,
+    taskKind: (taskKindRaw === 'investigate' ? 'investigate' : (taskKindRaw === 'edit' ? 'edit' : undefined)) as 'edit' | 'investigate' | undefined,
+    maxTurns: typeof argsRecord.maxTurns === 'number' ? (argsRecord.maxTurns as number) : undefined,
+    queue: typeof argsRecord.queue === 'string' ? (argsRecord.queue as string) : undefined,
+    gate: typeof argsRecord.gate === 'string' ? (argsRecord.gate as string) : undefined,
+    builder: typeof argsRecord.builder === 'string' ? (argsRecord.builder as string) : undefined,
+    push: (argsRecord.push as boolean) ?? undefined,
+    pr: (argsRecord.pr as boolean) ?? undefined,
+    maxHours: typeof argsRecord.maxHours === 'number' ? (argsRecord.maxHours as number) : undefined,
+    budget: typeof argsRecord.budget === 'number' ? (argsRecord.budget as number) : undefined,
+    createdAt: Date.now(),
+  };
+}
+
+/**
+ * Forward a session-stream 'status' chunk from a CONTINUATION send (the auto-continue nudge, the confirmation/steering follow-up, and its tool-loop sends) to the UI exactly like the main turn loop does: a context-usage metadata chunk becomes the context-usage event (live gauge), any other status becomes a spinner-update ('Cesar <status>'). Returns true when the chunk was a status chunk (the caller `continue`s past it). Without this, a follow-up that runs tools or thinks for minutes sits on a frozen '<engine> continuing…' spinner — a black box to the user.
+ */
+export function forwardContinuationStatus(chunk: any, dispatch: (event:any) => void): boolean {
+  if (String((chunk as any)?.type) !== 'status') return false;
+  const meta = ((chunk as any).metadata ?? {}) as Record<string, unknown>;
+  if (meta.kind === 'context-usage') {
+    dispatch({
+      type: 'context-usage',
+      pct: Number(meta.pct ?? 0),
+      used: Number(meta.used ?? 0),
+      limit: Number(meta.limit ?? 0),
+      compacted: Number(meta.compacted ?? 0),
+      cached: Number(meta.cached ?? 0),
+      source: typeof meta.source === 'string' ? meta.source : undefined,
+    });
+    return true;
+  }
+  dispatch({ type: 'spinner-update', message: `Cesar ${String((chunk as any).content ?? '')}` });
+  return true;
+}

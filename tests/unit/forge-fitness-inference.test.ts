@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { extractFitnessCommandFromCesarOutput, inferProjectFitnessCommand, normalizeGithubRemoteLiteral, repairContradictoryFitnessLiterals, repairFitnessCommandRepositoryLiteral, repairFitnessCommandTaskLiterals, repairForgeTaskRepositoryLiteral, repairOverbroadForbiddenLiterals, taskWantsRepositoryLinkCheck, validateFitnessCommandIntent } from '../../packages/cli/src/generated/handlers/forge.js';
+import { extractFitnessCommandFromCesarOutput, inferProjectFitnessCommand, normalizeGithubRemoteLiteral, repairContradictoryFitnessLiterals, repairFitnessCommandRepositoryLiteral, repairFitnessCommandTaskLiterals, repairForgeTaskRepositoryLiteral, repairOverbroadForbiddenLiterals, taskWantsRepositoryLinkCheck, validateFitnessCommandIntent } from '../../packages/cli/src/handlers/forge.js';
 
 describe('forge fitness preparation', () => {
   it('parses Cesar JSON fitness output', () => {

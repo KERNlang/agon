@@ -1,12 +1,11 @@
-// Facade over ./generated/signals/intent-types.js — edit the source there.
-// Intent union: kern/intent-types.kern → generated/intent-types.ts
-// Functions:    kern/intent.kern → generated/intent.ts
+// Public intent surface: the Intent union from ./signals/intent-types.ts and
+// the parsing helpers from ./signals/intent.ts, re-typed for consumers.
 
-export type { Intent } from './generated/signals/intent-types.js';
-export type { SlashCommand } from './generated/signals/intent.js';
+export type { Intent } from './signals/intent-types.js';
+export type { SlashCommand } from './signals/intent.js';
 
-import { detectIntent as _detectIntent, classifyTask as _classifyTask, SLASH_COMMANDS as _SLASH_COMMANDS } from './generated/signals/intent.js';
-import type { Intent } from './generated/signals/intent-types.js';
+import { detectIntent as _detectIntent, classifyTask as _classifyTask, SLASH_COMMANDS as _SLASH_COMMANDS } from './signals/intent.js';
+import type { Intent } from './signals/intent-types.js';
 
 export function detectIntent(raw: string, commandRegistry?: any): Intent {
   return _detectIntent(raw, commandRegistry) as Intent;

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   assessDelegationShape,
   buildDelegationAdvisory,
-} from '../../packages/cli/src/generated/cesar/delegation-reflex.js';
+} from '../../packages/cli/src/cesar/delegation-reflex.js';
 
 const listTask = [
   'Please handle these independent cleanups across the repo:',
@@ -44,7 +44,7 @@ describe('assessDelegationShape — veto-first fan-out detection', () => {
   });
 
   it('shared-artifact mentions veto — parallel-looking work on one artifact is not parallel', () => {
-    const shape = assessDelegationShape(`${listTask}\nAll three write to the same generated schema module.`);
+    const shape = assessDelegationShape(`${listTask}\nAll three write to the same shared schema module.`);
     expect(shape.decision).toBe('none');
     expect(shape.vetoes).toContain('shared-artifact-mention');
   });

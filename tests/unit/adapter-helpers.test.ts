@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { shouldUseCompanionForAgent, buildCommand, resolveArgs, computeEngineIsolation, resolveClaudePtyExtraArgs, answerChannelMode, fileChannelInstruction, readAnswerChannelFile, setupFileAnswerChannel, createStringSet } from '../../packages/adapter-cli/src/generated/adapter-helpers.js';
+import { shouldUseCompanionForAgent, buildCommand, resolveArgs, computeEngineIsolation, resolveClaudePtyExtraArgs, answerChannelMode, fileChannelInstruction, readAnswerChannelFile, setupFileAnswerChannel, createStringSet } from '../../packages/adapter-cli/src/adapter-helpers.js';
 
 describe('adapter helper routing', () => {
   it('creates a real string Set for repeated baseline-diff membership checks', () => {

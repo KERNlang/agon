@@ -4,8 +4,8 @@ import {
   buildMcpJobCommand,
   isJobTool,
   JOB_TOOLS,
-} from '../../packages/mcp/src/generated/job-tools.js';
-import { listMcpTools } from '../../packages/mcp/src/generated/agon-orchestration.js';
+} from '../../packages/mcp/src/job-tools.js';
+import { listMcpTools } from '../../packages/mcp/src/agon-orchestration.js';
 
 describe('MCP autonomous job tools', () => {
   it('registers the complete non-blocking job control surface', () => {

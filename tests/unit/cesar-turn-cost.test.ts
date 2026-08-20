@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-// Source of truth: packages/cli/src/generated/cesar/brain-helpers.ts +
-// packages/core/src/generated/signals/token-tracker.ts
-import { recordCesarTurn } from '../../packages/cli/src/generated/cesar/brain-helpers.js';
-import { estimateCost, estimateCostCacheAware } from '../../packages/core/src/generated/signals/token-tracker.js';
+// Source of truth: packages/cli/src/cesar/brain-helpers.ts +
+// packages/core/src/signals/token-tracker.ts
+import { recordCesarTurn } from '../../packages/cli/src/cesar/brain-helpers.js';
+import { estimateCost, estimateCostCacheAware } from '../../packages/core/src/signals/token-tracker.js';
 
 function ctxWithTurnUsage(usage: Record<string, unknown> | null) {
   return { cesarSession: { getTurnUsage: () => usage } } as any;

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
 // Import via the facade — convertMessagesForSdk is exported from api-dispatch
-import { convertMessagesForSdk } from '../../packages/core/src/generated/api/dispatch.js';
+import { convertMessagesForSdk } from '../../packages/core/src/api/dispatch.js';
 
 describe('provider-aware message normalization', () => {
   const baseMessages = [

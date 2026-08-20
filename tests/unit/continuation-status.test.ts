@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-// Source of truth: packages/cli/src/generated/cesar/brain-helpers.ts
-import { forwardContinuationStatus } from '../../packages/cli/src/generated/cesar/brain-helpers.js';
+// Source of truth: packages/cli/src/cesar/brain-helpers.ts
+import { forwardContinuationStatus } from '../../packages/cli/src/cesar/brain-helpers.js';
 
 describe('forwardContinuationStatus — continuation sends are not a black box', () => {
   it('forwards a plain status chunk as a spinner update (live activity)', () => {

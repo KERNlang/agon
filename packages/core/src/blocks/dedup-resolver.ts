@@ -1,0 +1,49 @@
+import { createRequire } from 'node:module';
+
+import { dirname, resolve } from 'node:path';
+
+import { fileURLToPath } from 'node:url';
+
+import { existsSync } from 'node:fs';
+
+import { agonPath } from '../signals/config.js';
+
+/**
+ * Resolve the Python interpreter for optional sidecars: explicit AGON_PYTHON, then Agon managed virtualenv, then python3.
+ */
+export function resolveSidecarPython(): string {
+  if (process.env.AGON_PYTHON) return process.env.AGON_PYTHON;
+  const managed = process.platform === 'win32'
+    ? agonPath('python-sidecar', 'Scripts', 'python.exe')
+    : agonPath('python-sidecar', 'bin', 'python');
+  return existsSync(managed) ? managed : 'python3';
+}
+
+/**
+ * Return the absolute path of a Python sidecar shipped in @kernlang/agon-dedup, or null if not found. `filename` is the bare filename (e.g. 'history-search.py'), not a path.
+ */
+export function resolveDedupSidecar(filename: string): string | null {
+  // Mode 1 — production install. require.resolve finds package.json by
+  // package-name resolution, dirname gives us the install location.
+  try {
+    const requireFn = createRequire(import.meta.url);
+    const pkgJsonPath = requireFn.resolve('@kernlang/agon-dedup/package.json');
+    const candidate = resolve(dirname(pkgJsonPath), filename);
+    if (existsSync(candidate)) return candidate;
+  } catch {
+    // Fall through — @kernlang/agon-dedup not in resolution paths (e.g. bundler
+    // ate the require). Try dev-mode fallback below.
+  }
+  // Mode 2 — dev fallback. This file compiles to
+  //   packages/core/dist/blocks/dedup-resolver.js
+  // and the sidecar lives at packages/dedup/<filename>: three ups
+  // (blocks → dist → core) lands on packages/.
+  try {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const fallback = resolve(here, '..', '..', '..', 'dedup', filename);
+    if (existsSync(fallback)) return fallback;
+  } catch {
+    // ignored — both paths failed
+  }
+  return null;
+}

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { appendBlockWithCap, archiveBlocks, nextStaticEpoch } from '../../packages/cli/src/generated/signals/block-archive.js';
+import { appendBlockWithCap, archiveBlocks, nextStaticEpoch } from '../../packages/cli/src/signals/block-archive.js';
 
 const makeBlock = (id: number) => ({ id, event: { type: 'info', message: `msg-${id}` } as any });
 

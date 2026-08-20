@@ -1,4 +1,4 @@
-// Facade over the generated guard-telemetry modules (source: src/kern/telemetry/*.kern).
+// Barrel for the guard-telemetry modules in ./telemetry/.
 // Phase 0 guard-fire telemetry: pure derive fns + per-turn tracker (Module A)
 // and the JSONL/counters persistence layer (Module A2).
 export {
@@ -6,17 +6,17 @@ export {
   deriveGroundedWriteResolution, deriveGroundedWriteResolutionMulti, deriveCalibrationBucket,
   createTurnTracker, GuardTurnTracker,
   GUARD_TELEMETRY_THRESHOLDS,
-} from './generated/telemetry/guard-telemetry.js';
+} from './telemetry/guard-telemetry.js';
 export type {
   GuardId, GuardResolutionLabel, CalibrationBucket,
   BlockedCallInfo, GuardFireResolution, GuardFireEvent,
   TurnTelemetryRecord, GuardTelemetryThresholds, ReadSpinThresholds,
-} from './generated/telemetry/guard-telemetry.js';
+} from './telemetry/guard-telemetry.js';
 export {
   guardTelemetryDir, guardTelemetryEnabled,
   appendGuardTelemetry, applyGuardCounters, updateGuardCounters,
   readGuardCounters, recommendGuardAction,
-} from './generated/telemetry/guard-telemetry-store.js';
+} from './telemetry/guard-telemetry-store.js';
 export type {
   GuardCounterCell, GuardTurnAggregate, GuardCounters,
-} from './generated/telemetry/guard-telemetry-store.js';
+} from './telemetry/guard-telemetry-store.js';

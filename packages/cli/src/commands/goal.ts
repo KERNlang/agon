@@ -1,2 +1,839 @@
-// Facade over ../generated/commands/goal.js — edit the source there.
-export { goalCommand } from '../generated/commands/goal.js';
+import { defineCommand } from 'citty';
+
+import { readFileSync, readdirSync, existsSync, statSync, writeFileSync } from 'node:fs';
+
+import { resolve } from 'node:path';
+
+import { EngineRegistry, ensureAgonHome, loadConfig, createRunDir, applyPatch, spawnWithTimeout, estimateCost, worktreePruneOrphaned, appendPrAttribution, githubRepoUrl, defaultBaseBranch, prefilledPrUrl } from '@kernlang/agon-core';
+
+import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
+
+import { createCliAdapter } from '@kernlang/agon-adapter-cli';
+
+import { runForge, runDelegate, runPrText, runGoalController, runSupervisor, loadJournal, summarizeGoal, goalDir, isTestFile, parseChangedLines, pickImplementWinner, chooseImplementRoster, runThinkChain, buildOracleCheatPrompt, oracleProbeConclusive, DEFAULT_ORACLE_GATE } from '@kernlang/agon-forge';
+
+import { deriveRoutingHints } from '../cesar/routing.js';
+
+import { runReviewCore, extractReviewFindings } from '../handlers/review.js';
+
+import { buildConsensus } from '../blocks/consensus.js';
+
+import { header, success, fail, warn, info, cyan, green } from '../blocks/output-format.js';
+
+export const goalCommand: any = (() => {
+const slug = (s: string): string =>
+  String(s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 128);
+
+const toTask = (o: { id?: string; source?: string; dependsOn?: string[]; verify?: string }, i: number) => {
+  const id = slug(o.id ?? '') || `task-${i}`;
+  const verify = typeof o.verify === 'string' && o.verify.trim() ? o.verify.trim() : undefined;
+  return { id, source: String(o.source ?? o.id ?? id), dependsOn: o.dependsOn, verify };
+};
+
+const loadQueue = (queuePath: string): Array<{ id: string; source: string; dependsOn?: string[]; verify?: string }> => {
+  const abs = resolve(queuePath);
+  if (!existsSync(abs)) throw new Error(`queue not found: ${queuePath}`);
+  const st = statSync(abs);
+  if (st.isDirectory()) {
+    // source is the repo-relative path (e.g. .kern-gaps/alpha.md) so the
+    // agent — running from the worktree root — can actually open the spec.
+    const relDir = queuePath.replace(/[\/\\]+$/, '');
+    const used = new Set<string>();
+    return readdirSync(abs)
+      .filter((f) => !f.startsWith('.'))
+      .sort()
+      .map((f, i) => {
+        let id = slug(f) || `task-${i}`;
+        // disambiguate slug collisions (e.g. a.md / a.txt both -> "a")
+        let n = 1; const base = id;
+        while (used.has(id)) id = `${base}-${n++}`;
+        used.add(id);
+        return { id, source: `${relDir}/${f}` };
+      });
+  }
+  // A whole-document JSON queue: an array, a {tasks:[...]} envelope, or a
+  // single object. (.jsonl stays line-delimited.)
+  if (abs.endsWith('.json')) {
+    const parsed = JSON.parse(readFileSync(abs, 'utf-8')) as unknown;
+    const arr = Array.isArray(parsed)
+      ? parsed
+      : (parsed && Array.isArray((parsed as { tasks?: unknown[] }).tasks) ? (parsed as { tasks: unknown[] }).tasks : [parsed]);
+    return arr.map((o, i) => toTask(o as { id?: string; source?: string; dependsOn?: string[]; verify?: string }, i));
+  }
+  if (abs.endsWith('.jsonl')) {
+    return readFileSync(abs, 'utf-8').split('\n').map((l) => l.trim()).filter(Boolean).map((line, i) => {
+      try { return toTask(JSON.parse(line), i); }
+      catch (e) { throw new Error(`malformed JSON on line ${i + 1} of ${queuePath}: ${e instanceof Error ? e.message : String(e)}`); }
+    });
+  }
+  throw new Error(`unsupported queue ${queuePath} — expected a directory or a .jsonl/.json file`);
+};
+
+return defineCommand({
+  meta: {
+    name: 'goal',
+    description: 'Autonomously drive a task queue (e.g. .kern-gaps/) to completion. Per task: forge implements, the diff is witnessed + mutation-witnessed, the frozen gate runs, ALL engines review and a judge decides, blockers get one fix pass, then one commit lands on the goal branch (never main) — and is pushed with --push. Bound it with --max-hours and/or --budget, or neither (free).',
+  },
+  args: {
+    intent: { type: 'positional', description: 'What the goal is (human description; also seeds the goal id)', required: false },
+    queue: { type: 'string', alias: 'q', description: 'Task source: a directory (one task per file) or a .jsonl/.json of {id,source,dependsOn,verify}. Optional per-task "verify" is a frozen behavioral command run fail-on-base/pass-on-head (e.g. "npm run build && node check.mjs") — the engine cannot weaken it, so a non-executing toContain test can no longer close the task.' },
+    gate: { type: 'string', alias: 'g', description: 'Green oracle command — the authoritative pass/fail, frozen at start (e.g. "npm run build && npm run typecheck && npm test")' },
+    witnessCmd: { type: 'string', description: 'Test-only command for witness + mutation steps (defaults to --gate). A narrower command makes fail-on-base witnessing precise.' },
+    branch: { type: 'string', alias: 'b', description: 'Goal branch (default goal/<id>) — never main; one commit per closed task' },
+    id: { type: 'string', description: 'Explicit goal id (slug). Defaults to a slug of the intent.' },
+    engines: { type: 'string', alias: 'e', description: 'Comma-separated engines that implement (forge roster)' },
+    reviewEngines: { type: 'string', alias: 'r', description: 'Comma-separated engines that review each task diff BEFORE the commit (default: all active). All review; a judge then decides which flagged findings are real.' },
+    judge: { type: 'string', alias: 'j', description: 'Deciding reviewer that adjudicates the panel’s flagged findings (real blocker vs false positive). Default: config.forgeJudgeEngine, else Cesar, else the first reviewer.' },
+    maxAttempts: { type: 'string', description: 'Attempts per task before park (default 3)' },
+    budget: { type: 'string', description: 'Optional USD ceiling — stop when metered spend reaches it (default 0 = no price limit).' },
+    maxHours: { type: 'string', description: 'Optional wall-clock ceiling in hours — stop when reached (default 0 = no time limit).' },
+    gateTimeout: { type: 'string', description: 'Per-gate timeout in seconds (default 1800)' },
+    timeout: { type: 'string', description: 'Per-engine implement timeout in seconds' },
+    maxParkStreak: { type: 'string', description: 'Legacy consecutive-park abort cap (default 0 = OFF — the sliding-window breaker replaces it). Set >0 to also stop after N parks in a row.' },
+    maxNoProgress: { type: 'string', description: 'Stop after N cycles with no net decrease in remaining work (default max(5, attempts+2)) — catches retry-thrash.' },
+    breakerWindow: { type: 'string', description: 'Sliding-window breaker: number of recent TERMINAL outcomes to weigh (default 8; 0 disables it). A cluster of hard tasks shorter than this never aborts the run.' },
+    breakerMinSuccessRate: { type: 'string', description: 'Sliding-window breaker: stop when the fraction of "done" in the last --breaker-window outcomes is below this (default 0.125). Trips on a broken gate / uniformly-too-hard queue, not a hard cluster.' },
+    mutationHighSignalMax: { type: 'string', description: 'Mutation gate threshold (default 2): a task PARKS when MORE than this many HIGH-SIGNAL mutants (===/!==, &&/||, +/-, true/false) survive; 1..N surviving route the diff to the ensemble review with the survivors as evidence; when none survive the task lands. Set to 0 for the strictest gate (any high-signal survivor parks). Equivalent boundary/guard survivors never park on their own — fixes the old zero-tolerance gate that parked correct contracts.' },
+    mutationSurvivorRatio: { type: 'string', description: 'Mutation gate fallback (only for diffs that generate NO high-signal mutants, e.g. relational/return-only): route to review when surviving mutants exceed this fraction of generated (default 0.15).' },
+    mutationFloor: { type: 'string', description: 'Mutation gate fallback: minimum surviving-mutant count before the --mutation-survivor-ratio check applies (default 3) — tiny mutant counts always land.' },
+    cwd: { type: 'string', description: 'Repo working directory', default: process.cwd() },
+    requireTests: { type: 'boolean', description: 'Reject a task whose diff changes source but adds no test (the witness has nothing to witness). Default true; --no-require-tests to allow test-free changes.', default: true },
+    oracleGate: { type: 'string', description: 'Oracle red-team (off|warn|strict, DEFAULT warn): just before each task with a --queue "verify" is forged, the review panel tries to make that verify PASS with a CHEATING impl (hardcode/ignore inputs). off = skip; warn = run + report any gameable verify but continue; strict = STOP the run when a gameable verify is found (the probe is per task, per launch, so a strict stop can land mid-run — not only at launch). Catches a non-discriminating oracle before it lets buggy code land green and wastes the run. The probe runs once per task per launch (never cached across launches — the panel is stochastic), so the cost is one adversarial forge per verify-carrying task. Note: a "gameable" verdict only proves a panel engine made the verify pass — it can\'t prove the engine cheated vs. implemented it correctly, so strict can rarely false-positive; that is why warn (report, never abort) is the default.' },
+    // NOTE: deliberately NO citty `default` here — citty fails to map a kebab
+    // flag (--oracle-gate) onto a camelCase key that carries a citty default, so
+    // a default would silently swallow `--oracle-gate=strict`. The code below
+    // applies the 'warn' default via `?? 'warn'` instead.
+    push: { type: 'boolean', description: 'Push the goal branch to origin after EACH task commits (build→review→fix→commit→push per task). Only the goal/* branch, never main.', default: false },
+    pr: { type: 'boolean', description: 'With --push, open a PR for the goal branch when the run finishes (needs gh).', default: false },
+    remote: { type: 'string', description: 'Git remote to push to (default origin).', default: 'origin' },
+    resume: { type: 'boolean', description: 'Resume an existing goal from its journal', default: false },
+    status: { type: 'boolean', description: 'Print the status/summary of an existing goal (by id or intent) and exit', default: false },
+    dryRun: { type: 'boolean', description: 'Resolve the queue + spec and print the plan without running', default: false },
+    think: { type: 'boolean', description: 'Run a sequential-thinking decompose pass on the intent BEFORE the run — surface sub-problems, open questions, and grounding, and feed a refined spec as the goal intent. Frontloads reasoning so an 8-24h run never starts from a half-understood prompt.', default: false },
+    thinkStrategy: { type: 'string', description: 'Strategy for --think (linear|reflexion|tot|graph|hypothesis). Default hypothesis — surface competing problem framings.', default: 'hypothesis' },
+    thinkSteps: { type: 'string', description: 'Max thoughts for the --think decompose pass (1..20, default 8).', default: '8' },
+    supervised: { type: 'boolean', description: 'Run UNATTENDED: a supervisor re-execs `agon goal --resume` if the run CRASHES (non-zero exit), with exponential backoff + a restart cap, until done / a clean stop / a deterministic misconfig / the cap. Survives a terminal close or transient crash overnight; the journal makes each restart resume where it left off.', default: false },
+    maxRestarts: { type: 'string', description: 'With --supervised: max crash-restarts before giving up (default 10; 0 = one-shot).' },
+  },
+  async run({ args }) {
+    ensureAgonHome();
+    const config = loadConfig(args.cwd);
+    const repoRoot = resolve(args.cwd);
+
+    let goalId = args.id ? slug(args.id) : slug(args.intent ?? '');
+    // Finding #4: `--status` keyed only on id/intent. Let it resolve a
+    // `goal/<id>` branch name too, so you can query a run you only know by
+    // branch (e.g. `agon goal --status --branch goal/semantic-spec-moat`).
+    if (!goalId && args.status && args.branch) {
+      goalId = slug(String(args.branch).replace(/^goal\//, ''));
+    }
+    if (!goalId) {
+      fail('A goal id is required. Pass an intent ("agon goal \"close all kern gaps\""), --id, or (with --status) --branch goal/<id>.');
+      process.exit(1);
+    }
+
+    // `--status`: read-only digest from the durable journal — works from any
+    // session, long after the originating run is gone.
+    if (args.status) {
+      const state = loadJournal(goalId);
+      if (!state) { fail(`No goal '${goalId}' found under ${goalDir(goalId)}. Pass --id, the original intent, or --branch goal/<id>.`); process.exit(1); }
+      header(`Goal ${goalId}`);
+      console.log(summarizeGoal(state!));
+      info(`Artifacts: ${goalDir(goalId)}`);
+      return;
+    }
+
+    const branch = args.branch ?? `goal/${goalId}`;
+    if (branch === 'main' || branch === 'master') {
+      fail(`Refusing to use ${branch} as the goal branch — pick a goal/* branch.`);
+      process.exit(1);
+    }
+
+    const gate = (args.gate ?? '').trim();
+    if (!gate) {
+      fail('A --gate command is required (the green oracle). E.g. --gate "npm run build && npm run typecheck && npm test".');
+      process.exit(1);
+    }
+    const queueSource = (args.queue ?? '').trim();
+    if (!queueSource && !args.resume) {
+      fail('A --queue is required (a directory of tasks or a .jsonl/.json file). E.g. --queue .kern-gaps/.');
+      process.exit(1);
+    }
+
+    // Validate --oracle-gate EARLY (before the run plan prints) so a typo fails
+    // fast instead of silently disabling the gate. The flag carries no citty
+    // `default` (see its definition) so the kebab form maps correctly here.
+    // Default WARN, not off: the red-team is the cheapest defense against a
+    // non-discriminating verify, it never aborts in warn mode, and an off-by-
+    // default safety check is one nobody remembers to switch on. Opt out with
+    // --oracle-gate=off.
+    const oracleGateMode = String(args.oracleGate ?? DEFAULT_ORACLE_GATE).trim().toLowerCase();
+    if (!['off', 'warn', 'strict'].includes(oracleGateMode)) {
+      fail(`--oracle-gate must be off, warn, or strict (got "${args.oracleGate}").`);
+      process.exit(1);
+    }
+
+    // --supervised: this process becomes a SUPERVISOR that re-execs the run
+    // (`agon goal <same args> --resume`, supervisor-only flags stripped) so
+    // an overnight run survives a crash. We delegate to runSupervisor here,
+    // before the parent does any engine setup — the children own that.
+    if (args.supervised && !args.dryRun) {
+      const maxRestarts = args.maxRestarts != null && Number.isFinite(Number(args.maxRestarts)) && Number(args.maxRestarts) >= 0
+        ? Math.floor(Number(args.maxRestarts)) : 10;
+      // Filter the RAW argv (robust to every goal flag without enumerating
+      // them) — drop supervisor-only flags, force --resume so each restart
+      // picks up the journal rather than starting over.
+      const raw = process.argv.slice(2);
+      const childArgs: string[] = [];
+      for (let i = 0; i < raw.length; i += 1) {
+        const tok = raw[i];
+        if (tok === '--supervised' || tok === '--supervised=true' || tok === '--supervised=false' || tok === '--no-supervised') continue;
+        if (tok === '--max-restarts') { i += 1; continue; }
+        if (tok.startsWith('--max-restarts=')) continue;
+        childArgs.push(tok);
+      }
+      if (!childArgs.includes('--resume')) childArgs.push('--resume');
+
+      header(`Supervised goal: ${args.intent ?? goalId}`);
+      info(`Id: ${goalId}  ·  Branch: ${branch}  ·  Max restarts: ${maxRestarts}`);
+      info(`Child: agon ${childArgs.join(' ')}`);
+      warn('Supervisor re-execs the run on a CRASH (non-zero exit) with backoff; a clean stop or Ctrl-C ends it.');
+
+      const result = await runSupervisor({
+        nodeExec: process.execPath,
+        agonEntry: process.argv[1],
+        childArgs,
+        goalId,
+        maxRestarts,
+        baseBackoffMs: 5000,
+        capBackoffMs: 300000,
+        onEvent: (e: { kind: string; detail?: string }) => {
+          switch (e.kind) {
+            case 'supervisor-start': info(`▶ supervisor: starting child (${e.detail ?? ''})`); break;
+            case 'supervisor-restart': warn(`↻ supervisor: restarting child (${e.detail ?? ''})`); break;
+            case 'supervisor-backoff': warn(`⏸ supervisor: ${e.detail ?? ''}`); break;
+            case 'supervisor-stop': info(`■ supervisor: ${e.detail ?? ''}`); break;
+          }
+        },
+      });
+
+      const finalState = loadJournal(goalId);
+      console.log('');
+      header('Supervised run complete');
+      if (finalState) console.log(summarizeGoal(finalState));
+      info(`Supervisor stopped: ${result.reason} — after ${result.restarts} restart(s).`);
+      info(`Artifacts: ${goalDir(goalId)}`);
+      // Exit non-zero so automation distinguishes a FAILED supervised run
+      // (restart cap exhausted / deterministic misconfig) from success. A
+      // clean stop (done/budget/time/breaker) or an interrupt is exit 0.
+      if (result.reason.startsWith('restart cap') || result.reason.includes('deterministic')) {
+        process.exit(1);
+      }
+      return;
+    }
+
+    const registry = new EngineRegistry();
+    registry.load(resolveBuiltinEnginesDir());
+    const adapter = createCliAdapter(registry);
+    const available = registry.activeIds(config as any);
+    if (available.length === 0) {
+      fail('No engines found. Install at least one AI CLI tool.');
+      process.exit(1);
+    }
+
+    let requestedEngines: string[] | undefined;
+    if (args.engines) {
+      // resolveId echoes unknown ids back rather than returning empty, so
+      // validate the canonical ids against the ACTIVE set: skip ones that
+      // aren't real/active (with a warning) and fail if none survive — a
+      // typo'd --engines must not silently dispatch the wrong roster.
+      const raw = args.engines.split(',').map((s: string) => s.trim()).filter(Boolean);
+      const resolved = raw.map((s: string) => registry.resolveId(s));
+      requestedEngines = resolved.filter((id: string) => available.includes(id));
+      const unknown = raw.filter((_: string, i: number) => !available.includes(resolved[i]));
+      if (unknown.length > 0) warn(`Ignoring unknown/inactive engines: ${unknown.join(', ')}`);
+      if (requestedEngines.length === 0) {
+        fail(`None of the requested engines are active: ${raw.join(', ')}. Run "agon doctor" to see what's available.`);
+        process.exit(1);
+      }
+    }
+
+    // --think: frontload reasoning before a long autonomous run. Decompose the
+    // intent, surface sub-problems + open questions + grounding, and feed the
+    // refined spec back in as the goal intent. Runs AFTER --engines is validated
+    // (so a typo fails before we spend a think dispatch); skipped on --dry-run
+    // and on --resume (the journal already carries the spec, and supervised
+    // restarts add --resume — we must not re-run an unmetered pass each restart).
+    // Skip only on a GENUINE resume (a journal already exists). --supervised
+    // forces --resume onto the first child too, so gating on the journal — not
+    // the flag — means the first supervised launch still thinks, restarts don't.
+    const goalJournalExists = (() => { try { return !!loadJournal(goalId); } catch { return false; } })();
+    let thinkRefinedIntent: string | undefined;
+    if (args.think && !args.dryRun && !goalJournalExists && (args.intent ?? '').toString().trim()) {
+      const thinkEngine = requestedEngines?.[0] ?? available[0];
+      const thinkSteps = Math.max(1, Math.min(parseInt(String(args.thinkSteps ?? '8'), 10) || 8, 20));
+      const thinkCwd = (args.cwd && existsSync(args.cwd)) ? args.cwd : undefined;
+      const { path: thinkDir } = createRunDir({ mode: 'think', label: goalId, announce: false });
+      info(cyan(`Thinking through the goal first (${args.thinkStrategy}, ${thinkEngine})...`));
+      const tr = await runThinkChain({
+        problem: (args.intent ?? goalId).toString(),
+        strategy: String(args.thinkStrategy || 'hypothesis'),
+        engineId: thinkEngine,
+        registry,
+        adapter,
+        maxThoughts: thinkSteps,
+        timeout: parseInt(String(args.timeout ?? '120'), 10) || 120,
+        outputDir: thinkDir,
+        cwd: thinkCwd,
+        ground: true,
+      });
+      // Persist the decomposition so a crash/forensics keeps it.
+      try { writeFileSync(`${thinkDir}/think.json`, JSON.stringify(tr, null, 2)); } catch { /* best-effort */ }
+      if (tr.ok) {
+        for (const t of tr.thoughts) info(`  • [${t.kind}] ${t.thought.slice(0, 160)}`);
+        if (tr.openQuestions.length > 0) {
+          warn(`Open questions before this run is fully specified:`);
+          for (const q of tr.openQuestions) warn(`  ? ${q}`);
+        }
+        if (tr.groundingIssues.length > 0) {
+          warn(`Grounding warnings (thoughts cited paths that don't exist):`);
+          for (const g of tr.groundingIssues) warn(`  ⚠ ${g}`);
+        }
+        // Only adopt the refined spec when the chain actually held its protocol;
+        // a malformed decomposition shouldn't silently rewrite the goal intent.
+        if (!tr.protocolValid) {
+          warn('Think pass did not satisfy its strategy protocol — keeping the original intent.');
+        } else if (tr.refinedSpec && tr.refinedSpec.trim()) {
+          thinkRefinedIntent = tr.refinedSpec.trim();
+          info(green(`Refined intent: ${thinkRefinedIntent.slice(0, 200)}`));
+        } else {
+          info('Think pass produced no refined spec — keeping the original intent.');
+        }
+      } else {
+        warn('Think pass produced no usable chain — proceeding with the original intent.');
+      }
+    }
+    // Every task's diff is reviewed by ALL active engines before its commit
+    // (the design's ensemble gate) — narrow it with --review-engines if the
+    // full roster is too slow/expensive for an overnight run.
+    // Default review panel (when -r omitted): a config-pinned roster if set,
+    // else every active engine EXCEPT local ones (e.g. ollama) — they were
+    // being pulled into the gate by the old all-active default (finding #3).
+    const configPanel = (((config as any).goalReviewEngines ?? []) as string[])
+      .map((s: string) => registry.resolveId(String(s).trim())).filter(Boolean);
+    const smartDefault = available.filter((id: string) => {
+      try { return !(registry.get(id) as any).isLocal; } catch { return true; }
+    });
+    const reviewEngines = (args.reviewEngines
+      ? args.reviewEngines.split(',').map((s: string) => registry.resolveId(s.trim())).filter(Boolean)
+      : configPanel.length > 0
+        ? configPanel
+        : (smartDefault.length > 0 ? smartDefault : available)
+    ).filter((id: string, i: number, arr: string[]) => arr.indexOf(id) === i);
+    if (reviewEngines.length === 0) {
+      fail('No review engines resolved. Pass --review-engines or check "agon doctor".');
+      process.exit(1);
+    }
+    // The judge adjudicates the panel: when reviewers flag blocking findings,
+    // it decides which are real must-fix blockers vs false positives.
+    const judgeRaw = (args.judge ?? (config as any).forgeJudgeEngine ?? (config as any).cesarEngine ?? reviewEngines[0]).toString().trim();
+    const judge = registry.resolveId(judgeRaw) || reviewEngines[0];
+    const implementTimeout = args.timeout != null && args.timeout !== '' ? Number(args.timeout) : undefined;
+
+    // citty coerces numeric flags (e.g. --max-hours 1) to a number, not a
+    // string, so accept both rather than assuming .trim() exists.
+    const num = (v: unknown, dflt: number): number => {
+      if (v == null || (typeof v === 'string' && v.trim() === '')) return dflt;
+      const n = Number(v);
+      return Number.isFinite(n) && n >= 0 ? n : dflt;
+    };
+    // Optional numeric flag: absent OR unparseable -> undefined, so the
+    // controller's own default applies. (Using num(...,0) here would let a
+    // typo'd --max-no-progress coerce to 0, which the controller reads as
+    // DISABLED — silently worse than omitting the flag. Review finding.)
+    const optNum = (v: unknown): number | undefined => {
+      if (v == null || (typeof v === 'string' && v.trim() === '')) return undefined;
+      const n = Number(v);
+      return Number.isFinite(n) && n >= 0 ? n : undefined;
+    };
+
+    let tasks: Array<{ id: string; source: string; dependsOn?: string[]; verify?: string }> = [];
+    if (queueSource) {
+      try { tasks = loadQueue(queueSource); }
+      catch (e) { fail(`Could not load queue: ${e instanceof Error ? e.message : String(e)}`); process.exit(1); }
+      if (tasks.length === 0 && !args.resume) { fail(`Queue '${queueSource}' is empty.`); process.exit(1); }
+    }
+
+    const spec = {
+      goalId,
+      intent: (thinkRefinedIntent ?? args.intent ?? goalId).toString(),
+      branch,
+      gate,
+      queueSource: queueSource || '(resume)',
+      maxAttempts: num(args.maxAttempts, 3),
+      budgetUsd: num(args.budget, 0),
+      maxHours: num(args.maxHours, 0),
+      engines: requestedEngines,
+      supervised: true,
+    };
+
+    header(`Goal: ${spec.intent}`);
+    info(`Id: ${goalId}  ·  Branch: ${branch}`);
+    info(`Gate: ${gate}`);
+    info(`Implement: ${requestedEngines?.join(', ') ?? available.join(', ')}`);
+    info(`Review panel: ${reviewEngines.join(', ')}  ·  Judge: ${judge}`);
+    const ceiling = [spec.maxHours > 0 ? `${spec.maxHours}h` : null, spec.budgetUsd > 0 ? `$${spec.budgetUsd}` : null].filter(Boolean).join(' or ') || 'none (free — runs until the queue is empty)';
+    info(`Stop ceiling: ${ceiling}  ·  Attempts/task: ${spec.maxAttempts}`);
+    info(`Tasks: ${tasks.length}${args.resume ? ' (+ resumed journal)' : ''}`);
+    if (spec.budgetUsd > 0) info('Budget is metered best-effort (implement + judge token cost; panel-review cost not counted yet).');
+    if (spec.budgetUsd === 0 && spec.maxHours === 0) warn('No --max-hours or --budget set — the run continues until the queue is empty (or Ctrl-C). Set one to bound it.');
+
+    if (args.dryRun) {
+      warn('Dry-run — nothing will be dispatched.');
+      for (const t of tasks.slice(0, 50)) console.log(`  • ${t.id} — ${t.source}${t.dependsOn?.length ? ` (after ${t.dependsOn.join(', ')})` : ''}`);
+      if (tasks.length > 50) info(`  … and ${tasks.length - 50} more`);
+      return;
+    }
+
+    // Ctrl-C → cooperative abort: the controller checkpoints the journal and
+    // returns, so the run is resumable rather than corrupt.
+    const abort = new AbortController();
+    const onSig = () => { warn('\nAbort requested — checkpointing and stopping after the current step…'); abort.abort(); };
+    process.once('SIGINT', onSig);
+
+    // IMPLEMENT — forge races engines to satisfy the gate inside the task
+    // worktree; we apply the winning patch. A fixContext re-runs forge to
+    // address blocking review findings on the existing changes.
+    const implement = async (a: { task: { id: string; source: string; verify?: string }; worktree: string; baseSha: string; repoRoot: string; fixContext?: string; signal?: AbortSignal }) => {
+      // Surface the task's frozen behavioral oracle so the engine knows the
+      // exact acceptance bar. It cannot weaken it (verify lives in the journal,
+      // not the worktree, and runs fail-on-base/pass-on-head out of tree), so
+      // telling the engine only raises the pass rate — and signals that a
+      // source-string assertion won't be enough; the produced artifact must run.
+      const verifyHint = a.task.verify
+        ? `\n\nThis task has a behavioral acceptance check that will be run automatically (it must FAIL on the base code and PASS after your change). Your implementation MUST make this command pass — and note it EXECUTES the produced artifact, so a test that only asserts on generated source is not sufficient:\n  ${a.task.verify}`
+        : '';
+      const task = a.fixContext
+        ? `These changes have BLOCKING review findings. Fix them without regressing the gate or weakening tests:\n${a.fixContext}`
+        : `Close this gap: ${a.task.source}\n\nImplement the fix AND add a test that FAILS before your change and PASSES after. Do not weaken or skip existing tests.${verifyHint}`;
+      const { path: forgeDir } = createRunDir({ mode: 'forge', label: `goal-${a.task.id}` });
+
+      // Cesar routes the implement roster per task: a trivial gap goes to a
+      // single engine (cheap/fast), a real feature races the full panel. The
+      // free heuristic decides; the judge confirms/adjusts the roster only for
+      // big/expensive tasks (escalation). REVIEW always uses all engines.
+      //
+      // An EXPLICIT --engines roster is AUTHORITATIVE: when you name the
+      // engines, all of them compete on every task — routing/escalation never
+      // narrows a set you asked for. Per-task routing only optimizes the
+      // DEFAULT (all-active) roster when --engines was not passed.
+      const baseRoster = (requestedEngines ?? available) as string[];
+      const explicitRoster = requestedEngines != null;
+      let taskEngines: string[] = baseRoster;
+      if (!a.fixContext && !explicitRoster && baseRoster.length > 1) {
+        try {
+          const hints = deriveRoutingHints(a.task.source, { activeEngines: () => baseRoster } as any);
+          const r = chooseImplementRoster({
+            flow: hints.recommendedFlow,
+            forgeScope: hints.recommendedForgeScope,
+            escalationHint: hints.escalationHint,
+            estimatedCostUsd: 0,
+            allEngines: baseRoster,
+            soloEngine: baseRoster[0],
+            escalateThresholdUsd: 0,
+          });
+          taskEngines = r.engines.length > 0 ? r.engines : baseRoster;
+          let note = r.reason;
+          if (r.escalate) {
+            try {
+              const { path: rdir } = createRunDir({ mode: 'forge', label: 'goal-route' });
+              const rPrompt = `You are routing an autonomous coding task to engines. Task:\n${a.task.source}\n\nAvailable engines: ${baseRoster.join(', ')}\nHeuristic proposed: ${taskEngines.join(', ')}\n\nReturn ONLY a JSON array of the engine ids that should COMPETE on this task — a subset of the available engines (more engines = more cost but more options). Example: ["claude","codex"].`;
+              const rr = await runDelegate({ engineId: judge, task: rPrompt, cwd: a.worktree, registry, adapter, timeout: implementTimeout ?? 180, outputDir: rdir, signal: abort.signal });
+              const m = (rr.response || '').match(/\[[\s\S]*?\]/);
+              if (m) {
+                const picked = (JSON.parse(m[0]) as unknown[]).map((s) => registry.resolveId(String(s).trim())).filter((id: string) => baseRoster.includes(id));
+                if (picked.length > 0) { taskEngines = picked; note += ` -> judge: ${picked.join(', ')}`; }
+              }
+            } catch { /* keep the heuristic roster */ }
+          }
+          info(`Route [${a.task.id}]: ${note}`);
+        } catch { /* routing is best-effort — fall back to the full roster */ }
+      }
+
+      try {
+        const manifest = await runForge(
+          {
+            task,
+            fitnessCmd: gate,
+            cwd: a.worktree,
+            forgeDir,
+            engines: taskEngines,
+            timeout: implementTimeout,
+            mode: 'implement',
+            requireDiff: !a.fixContext,
+            // The judge synthesizes the best-of-all result (only active when
+            // config.forgeEnableSynthesis is on); falls back to the winner if unset.
+            synthEngine: judge,
+            synthesize: 'always',
+            signal: abort.signal,
+          } as any,
+          registry,
+          adapter,
+        );
+        // Meter real spend from forge's per-dispatch ledger. EngineResult has
+        // no token field; the recorded dollar cost lives in dispatchLog[].tokens
+        // .costUsd (already priced per engine/model), so summing results.usage
+        // always yielded $0.00 even when forge charged real cost. Parked attempts
+        // count too — the cost was incurred regardless of whether the patch landed.
+        const costUsd = ((manifest.dispatchLog ?? []) as Array<{ tokens?: { costUsd?: number } }>)
+          .reduce((sum, d) => sum + (d?.tokens?.costUsd ?? 0), 0);
+        if (!manifest.winner) return { ok: false, costUsd, error: 'forge produced no winning patch' };
+
+        // Test-aware winner selection. Forge scores by fitness alone, so it can
+        // hand goal a higher-scoring patch that adds NO test while lower-scoring
+        // PASSING patches do include one — the witness then rejects it and the
+        // task parks, wasting the whole panel. When requireTests is on and the
+        // forge winner is test-less, prefer the highest-scoring passing candidate
+        // whose patch actually adds a test. (Fall back to forge's winner if none
+        // has a test — the witness will still park it, correctly.)
+        const results = manifest.results as Record<string, { pass?: boolean; score?: number }>;
+        const patches = manifest.patches as Record<string, string> | undefined;
+        const readPatchPath = (p?: string): string => {
+          try { return p ? readFileSync(p, 'utf-8') : ''; } catch { return ''; }
+        };
+        const readPatch = (eng: string): string => readPatchPath(patches?.[eng]);
+        const patchAddsTest = (diff: string): boolean =>
+          !!diff.trim() && Object.keys(parseChangedLines(diff)).some((f) => isTestFile(f));
+
+        // Forge's synthesis pass may have won (winner === 'synthesis'). Apply
+        // it directly when it satisfies the test requirement; otherwise fall
+        // through to the constraint-aware pick so the witness is never handed
+        // a test-less patch.
+        const synthPatch = manifest.winner === 'synthesis' ? readPatchPath(((manifest as any).synthesis ?? {}).patchPath) : '';
+        if (synthPatch.trim() && (!!a.fixContext || args.requireTests === false || patchAddsTest(synthPatch))) {
+          applyPatch(a.worktree, synthPatch);
+          return { ok: true, costUsd };
+        }
+
+        const candidates = Object.keys(results).map((eng) => ({
+          engine: eng,
+          pass: !!results[eng]?.pass,
+          score: results[eng]?.score ?? 0,
+          addsTest: patchAddsTest(readPatch(eng)),
+        }));
+        // If synthesis was the nominal winner but we fell through (no test),
+        // pick over the original engines using the best passing one as the base.
+        const baseWinner = manifest.winner === 'synthesis'
+          ? (candidates.filter((c) => c.pass).sort((x, y) => y.score - x.score)[0]?.engine ?? manifest.winner)
+          : manifest.winner;
+        const winner = pickImplementWinner(baseWinner, candidates, args.requireTests !== false, !!a.fixContext);
+        if (winner !== manifest.winner) {
+          info(`Forge winner ${manifest.winner} not test-bearing; applying passing test-bearing candidate ${winner} instead (requireTests).`);
+        }
+
+        const patch = readPatch(winner);
+        if (patch.trim()) applyPatch(a.worktree, patch);
+        return { ok: true, costUsd };
+      } catch (e) {
+        return { ok: false, costUsd: 0, error: e instanceof Error ? e.message : String(e) };
+      }
+    };
+
+    // REVIEW — ALL review engines look at the task diff in parallel, then
+    // buildConsensus folds their findings into tiers under the two-signal
+    // rule: a verified blocker (one blocking finding >= 0.85, or two engines
+    // on the same blocking/important issue each >= 0.70) blocks immediately;
+    // medium-confidence "needs-check" findings go to the judge for a second
+    // opinion before they can block; speculative/nits never block. Engine
+    // timeouts/parse-failures land in their own lane, so a flaky engine can't
+    // impersonate a blocker — but a total reviewer wipeout still fail-closes.
+    const review = async (a: { worktree: string; baseSha: string; diff: string; label: string; mutationEvidence?: string; signal?: AbortSignal }) => {
+      if (!a.diff.trim()) return { blocking: false, summary: 'no diff' };
+      let diff = a.diff;
+      // The mutation gate routed this task to review (1..max high-signal
+      // survivors, or an over-ratio equiv-prone band): surface the surviving
+      // mutants to the panel so it adjudicates weak-test vs equivalent, rather
+      // than reviewing a diff that looks clean while a mutant slipped through.
+      if (a.mutationEvidence) diff = `### MUTATION-WITNESS EVIDENCE — adjudicate before approving\n${a.mutationEvidence}\n\n### DIFF UNDER REVIEW\n${diff}`;
+      if (diff.length > 100_000) diff = diff.slice(0, 100_000) + '\n... [truncated — diff exceeds 100K chars]';
+      // Each engine's STATUS (ok / parse-failed / error) is captured apart
+      // from its parsed per-finding {severity, confidence}.
+      const outcomes = await Promise.all(reviewEngines.map(async (eng: string) => {
+        try {
+          // Pin the review engine to the task WORKTREE (a.worktree), not the
+          // parent repo: runReviewCore otherwise defaults to resolveWorkingDir()
+          // (= process.cwd(), the dir agon was launched from), which made review
+          // engines run in — and write scratch/fix files into — the parent repo,
+          // invisible to the goal pipeline (it only diffs the worktree). It also
+          // graded findings against the wrong repo's file content.
+          const r = await runReviewCore(diff, `${a.label} [${eng}]`, eng, { config, adapter, registry } as any, abort.signal, undefined, a.worktree);
+          // Meter this reviewer's spend so the budget counts the WHOLE panel,
+          // not just implement + judge (the review panel cost was previously
+          // invisible to --budget). estimateCost prices the engine's tokens.
+          const costUsd = estimateCost(eng, r.usage?.totalTokens ?? 0);
+          if (r.parseFailed || r.unstructured) {
+            return { engine: eng, status: 'parse-failed', findings: [], note: (r.response || '').slice(0, 400), costUsd };
+          }
+          const raw = extractReviewFindings(r.response || '') || [];
+          const findings = raw.map((x: any) => ({
+            engine: eng,
+            severity: typeof x.severity === 'string' ? x.severity : (x.blocking ? 'blocking' : 'nit'),
+            blocking: x.blocking,
+            // pass confidence through raw — buildConsensus coerces numeric strings ("0.72") too
+            confidence: x.confidence,
+            file: x.file, lines: x.lines, problem: x.problem, minimalFix: x.minimalFix,
+          }));
+          return { engine: eng, status: 'ok', findings, costUsd };
+        } catch (e) {
+          return { engine: eng, status: 'error', findings: [], note: e instanceof Error ? e.message : String(e), costUsd: 0 };
+        }
+      }));
+
+      // Panel-review spend (summed across all reviewers) is added to every
+      // return path below so the controller meters it into state.spentUsd.
+      const panelCostUsd = (outcomes as Array<{ costUsd?: number }>).reduce((s, o) => s + (o?.costUsd ?? 0), 0);
+      const consensus = buildConsensus(outcomes as any);
+
+      // Verified blockers (or a no-verdict wipeout) block now — the panel
+      // already cleared the two-signal bar, so no judge is needed.
+      if (consensus.autoBlock) {
+        const why = consensus.blockers.length
+          ? consensus.blockers.map((b) => `• [${b.severity} ${b.maxConfidence.toFixed(2)} ×${b.engines.length}] ${b.problem}${b.file ? ` (${b.file}${b.lines ? ':' + b.lines : ''})` : ''}`).join('\n')
+          : '(no engine produced a verdict)';
+        return { blocking: true, summary: `${consensus.summary}\nVERIFIED BLOCKERS:\n${why}`, costUsd: panelCostUsd };
+      }
+
+      // Nothing verified, nothing uncertain → pass (speculative + nits are informational).
+      if (!consensus.needsJudge) {
+        return { blocking: false, summary: consensus.summary, costUsd: panelCostUsd };
+      }
+
+      // Medium-confidence findings get a SECOND opinion before they can block.
+      // The judge sees ONLY the uncertain findings, not the whole noisy panel.
+      const toAdjudicate = consensus.needsCheck
+        .map((c) => `- [${c.severity}, conf ${c.maxConfidence.toFixed(2)}, ${c.engines.join('+')}] ${c.problem}${c.file ? ` (${c.file}${c.lines ? ':' + c.lines : ''})` : ''}${c.minimalFix ? ` — fix: ${c.minimalFix}` : ''}`)
+        .join('\n');
+      const judgePrompt = `You are the deciding reviewer (judge). The review panel raised ${consensus.needsCheck.length} MEDIUM-confidence finding(s) that need a second opinion before they can block. For each, decide whether it is a REAL must-fix blocker (a genuine bug, regression, or security hole) given the diff — or a false positive / mere nit.\n\nDIFF:\n${diff}\n\nFINDINGS TO ADJUDICATE:\n${toAdjudicate}\n\nGive a one-paragraph rationale, then end with a line containing exactly <!--AGON_REVIEW_FINDINGS_v1--> followed by a JSON array of ONLY the findings you confirm as genuinely blocking (each {"severity":"blocking","file":"...","lines":"...","problem":"..."}). If none are real, output [].`;
+      try {
+        const { path: jdir } = createRunDir({ mode: 'forge', label: `goal-judge` });
+        const jr = await runDelegate({ engineId: judge, task: judgePrompt, cwd: a.worktree, registry, adapter, timeout: implementTimeout ?? 420, outputDir: jdir, signal: abort.signal });
+        const findings = extractReviewFindings(jr.response || '');
+        const realBlock = !!findings && findings.some((fi: { severity?: string; blocking?: boolean }) => fi.blocking === true || (fi.severity ?? '').toLowerCase() === 'blocking');
+        return {
+          blocking: realBlock,
+          summary: `${consensus.summary}\njudge ${judge}: ${realBlock ? 'BLOCK' : 'pass'} (adjudicated ${consensus.needsCheck.length} needs-check)\n${(jr.response || '').slice(0, 2500)}`,
+          costUsd: panelCostUsd + estimateCost(judge, jr.usage?.totalTokens ?? 0),
+        };
+      } catch (e) {
+        // Judge unreachable and only medium-confidence items were flagged
+        // (nothing crossed the verified bar) — fail-closed on the uncertain set.
+        return { blocking: true, summary: `${consensus.summary}\njudge ${judge} errored (${e instanceof Error ? e.message : String(e)}); ${consensus.needsCheck.length} needs-check finding(s) unadjudicated — blocking conservatively.`, costUsd: panelCostUsd };
+      }
+    };
+
+    // ORACLE RED-TEAM — the panel attacks each task's `verify` with a CHEAT prompt
+    // (make it pass WITHOUT really implementing the gap). It reuses forge in the
+    // SAME base worktree the controller hands us: forge isolates each engine in its
+    // own sub-worktree and only reads the base, so a winner means some engine made
+    // the verify pass by cheating → the oracle is gameable. We never apply a patch —
+    // a winner is the signal, not work. Built only when --oracle-gate is on.
+    const oracleRedTeam = (oracleGateMode === 'warn' || oracleGateMode === 'strict')
+      ? async (a: { tasks: Array<{ id: string; source: string; verify?: string }>; baseWorktree: string; repoRoot: string; signal?: AbortSignal }) => {
+          const holes: Array<{ taskId: string; engine: string; evidence: string }> = [];
+          let costUsd = 0;
+          // A probe that could not MEASURE anything must never come back as
+          // `holes: []` — that is byte-identical to "nobody could cheat this
+          // verify" and would mark the task checked on the strength of a
+          // failure. `errored` makes the difference visible to the probe,
+          // which journals it and leaves the task unmarked for a retry.
+          let errored = false;
+          const errorNotes: string[] = [];
+          for (const t of a.tasks) {
+            // An ABORT measured nothing either. Without this the loop
+            // `continue`s over every task and returns holes:[] errored:false,
+            // and probeTaskOracle durably journals `oracle-gate-ok` for a
+            // probe that never ran a single seat.
+            if (a.signal?.aborted) {
+              errored = true;
+              errorNotes.push(`[${t.id}] aborted before the probe could run`);
+              continue;
+            }
+            if (!t.verify) continue;
+            const { path: rtDir } = createRunDir({ mode: 'forge', label: `oracle-redteam-${t.id}` });
+            try {
+              const manifest = await runForge(
+                {
+                  task: buildOracleCheatPrompt({ source: t.source, verify: t.verify }),
+                  fitnessCmd: t.verify,
+                  cwd: a.baseWorktree,
+                  forgeDir: rtDir,
+                  // Honor an explicit --engines cost constraint; else use the full review panel.
+                  engines: requestedEngines ?? reviewEngines,
+                  timeout: implementTimeout,
+                  mode: 'implement',
+                  requireDiff: true,
+                  signal: a.signal,
+                } as any,
+                registry,
+                adapter,
+              );
+              costUsd += ((manifest.dispatchLog ?? []) as Array<{ tokens?: { costUsd?: number } }>)
+                .reduce((s, d) => s + (d?.tokens?.costUsd ?? 0), 0);
+              // A forge winner = some engine made the verify pass. Since the prompt
+              // told them to CHEAT, a winner proves the verify is non-discriminating.
+              if (manifest.winner) {
+                holes.push({ taskId: t.id, engine: String(manifest.winner), evidence: 'a cheating implementation made the verify pass — the oracle is non-discriminating' });
+              } else {
+                // winner === null means EITHER "the oracle held" OR "the forge
+                // learned nothing". oracleProbeConclusive (forge, unit-tested)
+                // is the one place that tells them apart.
+                const verdict = oracleProbeConclusive(manifest as any);
+                if (!verdict.conclusive) {
+                  errored = true;
+                  errorNotes.push(`[${t.id}] ${verdict.reason}`);
+                  warn(`oracle red-team [${t.id}] was INCONCLUSIVE: ${verdict.reason} — not counting it as a clean pass`);
+                }
+              }
+            } catch (e) {
+              errored = true;
+              const why = e instanceof Error ? e.message : String(e);
+              errorNotes.push(`[${t.id}] ${why}`);
+              warn(`oracle red-team [${t.id}] could not run: ${why} (continuing)`);
+            }
+          }
+          return { holes, costUsd, errored, errorDetail: errorNotes.join('; ') || undefined };
+        }
+      : undefined;
+
+    try {
+    const state = await runGoalController({
+      spec: spec as any,
+      repoRoot,
+      tasks,
+      oracleFiles: [],
+      resume: args.resume,
+      push: args.push,
+      remote: args.remote,
+      requireTests: args.requireTests,
+      gateTimeoutSec: num(args.gateTimeout, 1800),
+      witnessCmd: args.witnessCmd?.trim() || undefined,
+      // Pass undefined when a flag is unset so the controller's own default
+      // applies — note `?? ` would NOT catch a coerced 0, so an unset flag
+      // must stay undefined (e.g. maxNoProgress 0 would WRONGLY disable it).
+      maxParkStreak: optNum(args.maxParkStreak),
+      maxNoProgress: optNum(args.maxNoProgress),
+      breakerWindow: optNum(args.breakerWindow),
+      breakerMinSuccessRate: optNum(args.breakerMinSuccessRate),
+      mutationHighSignalMax: optNum(args.mutationHighSignalMax),
+      mutationSurvivorRatio: optNum(args.mutationSurvivorRatio),
+      mutationFloor: optNum(args.mutationFloor),
+      signal: abort.signal,
+      oracleGate: (oracleGateMode === 'warn' || oracleGateMode === 'strict') ? oracleGateMode : 'off',
+      oracleRedTeam: oracleRedTeam as any,
+      implement: implement as any,
+      review: review as any,
+      onEvent: (e: { kind: string; taskId?: string; detail?: string }) => {
+        const id = e.taskId ? ` [${e.taskId}]` : '';
+        switch (e.kind) {
+          case 'preflight-start': info('Pre-flight: verifying the gate is green at base (runs your gate once)…'); break;
+          case 'preflight-ok': success('✓ gate is green at base'); break;
+          case 'oracle-gate-start': info(`Oracle red-team${id}: ${e.detail ?? ''} — the panel tries to game this verify before forging…`); break;
+          case 'oracle-gate-ok': success(`✓ oracle red-team${id}: no gameable verify (this oracle looks discriminating)`); break;
+          case 'oracle-gate-holes': warn(`⚠ oracle red-team${id} found a gameable verify: ${e.detail ?? ''} — strengthen it`); break;
+          case 'oracle-gameable': warn(`  ⚠ gameable${id}: ${e.detail ?? ''}`); break;
+          case 'oracle-gate-error': warn(`oracle red-team error${id}: ${e.detail ?? ''} (continuing — safety check, not the work)`); break;
+          case 'resume-requeue': info(`↺ resume: ${e.detail ?? ''}`); break;
+          case 'task-start': info(`▶ implementing${id}: ${e.detail ?? ''}`); break;
+          case 'verify-ok': success(`✓ behavioral verify witnessed${id} (fail-on-base, pass-on-head)`); break;
+          case 'task-done': success(`✓ closed${id} → ${String(e.detail ?? '').slice(0, 8)}`); break;
+          case 'task-pushed': info(`⇡ pushed${id} → ${e.detail ?? ''}`); break;
+          case 'push-failed': warn(`⇡ push failed${id}: ${e.detail ?? ''} (commit is safe locally)`); break;
+          case 'mutation-graded': info(`⚗ mutation gate${id}: ${e.detail ?? ''}`); break;
+          case 'task-parked': warn(`⏸ parked${id}: ${e.detail ?? ''}`); break;
+          case 'task-retry': warn(`↻ retrying${id}: ${e.detail ?? ''}`); break;
+          case 'review-block': warn(`⚑ review blocking${id} — one fix pass`); break;
+          case 'witness-skip': warn(`⚠ witness skipped${id}: ${e.detail ?? ''}`); break;
+          case 'stop': warn(`■ stopping run: ${e.detail ?? ''}`); break;
+          case 'aborted': warn('■ aborted by user'); break;
+        }
+      },
+    });
+
+    console.log('');
+    header('Goal run complete');
+    console.log(summarizeGoal(state));
+    console.log('');
+    info(`Artifacts: ${goalDir(goalId)}`);
+    const done = state.tasks.filter((t: any) => t.status === 'done').length;
+    if (done > 0) {
+      if (args.push) {
+        success(`${done} commit(s) pushed to ${cyan(`${args.remote}/${branch}`)} (one push per task).`);
+        // Engine-written PR text from the branch's real diff, falling back to
+        // the templated summarizeGoal digest on a miss. Delivered two ways:
+        // a prefilled GitHub compare link (no gh/token needed — click, review,
+        // merge) and, with --pr, the gh path for users who have it. The task
+        // pushes went to --remote, so PR history/diff/link MUST use that same
+        // remote — never a hardcoded origin.
+        const prRemote = String(args.remote ?? 'origin');
+        const base = defaultBaseBranch(repoRoot, prRemote);
+        let title = `goal: ${spec.intent}`.slice(0, 72);
+        let body = summarizeGoal(state);
+        const prEngine = (requestedEngines ?? available)[0];
+        const logRes = await spawnWithTimeout({ command: 'git', args: ['log', '--oneline', `${prRemote}/${base}..${branch}`], cwd: repoRoot, timeout: 15_000 });
+        const diffRes = await spawnWithTimeout({ command: 'git', args: ['diff', `${prRemote}/${base}...${branch}`], cwd: repoRoot, timeout: 30_000 });
+        const rawDiff = diffRes.exitCode === 0 ? String(diffRes.stdout ?? '') : '';
+        const diffLines = rawDiff.split('\n');
+        const cappedDiff = diffLines.length > 1200 ? diffLines.slice(0, 1200).join('\n') + `\n... (${diffLines.length - 1200} more lines)` : rawDiff;
+        info(`Writing PR text (${prEngine})…`);
+        const prText = await runPrText({
+          engineId: prEngine,
+          intent: spec.intent,
+          context: `Goal run summary (verified):\n${summarizeGoal(state)}\nFrozen acceptance gate (every commit passed it): ${spec.gate}`,
+          commits: logRes.exitCode === 0 ? String(logRes.stdout ?? '').trim() : '',
+          diff: cappedDiff,
+          registry,
+          adapter,
+          timeout: 300,
+          outputDir: goalDir(goalId),
+          cwd: repoRoot,
+        });
+        if (prText.ok) { title = prText.title; body = prText.body; }
+        else warn('PR-text engine call failed — using the templated run digest.');
+        body = appendPrAttribution(body, config);
+        console.log('');
+        console.log(`${title}\n\n${body}`);
+        console.log('');
+        if (args.pr) {
+          info('Opening a PR…');
+          const pr = await spawnWithTimeout({
+            command: 'gh',
+            args: ['pr', 'create', '--head', branch, '--title', title, '--body', body],
+            cwd: repoRoot,
+            timeout: 120_000,
+          });
+          if (pr.exitCode === 0) success(`PR: ${pr.stdout.trim()}`);
+          else warn(`Could not open PR (${pr.stderr.trim() || 'gh failed'}). Open one manually from ${branch}.`);
+        }
+        const prUrl = prefilledPrUrl({ repoUrl: githubRepoUrl(repoRoot, prRemote), base, branch, title, body });
+        if (prUrl) info(`Open the PR (form prefilled with the text above): ${prUrl}`);
+        else if (!args.pr) info(`Open a PR from ${cyan(branch)} when ready (or re-run with --pr).`);
+      } else {
+        // Default (no --push): land on the goal branch; the human reviews
+        // and pushes. Pass --push for the full review→fix→commit→push cycle.
+        success(`${done} commit(s) on ${cyan(branch)}.`);
+        info(`Review them, then: ${green(`git push -u origin ${branch}`)} — or re-run with --push to push each task automatically.`);
+      }
+    } else {
+      warn('No tasks closed. See the parked list above and the journal for why.');
+    }
+    } finally {
+      process.removeListener('SIGINT', onSig);
+      try {
+        worktreePruneOrphaned(repoRoot);
+      } catch (e) {
+        /* non-fatal */
+      }
+    }
+  },
+});
+})();

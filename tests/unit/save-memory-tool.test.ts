@@ -12,13 +12,13 @@ import {
   normalizeMemoryLine,
   todayPrefix,
   canonicalMemorySection,
-} from '../../packages/core/src/generated/tools/tool-save-memory.js';
+} from '../../packages/core/src/tools/tool-save-memory.js';
 import {
   buildProjectMemoryBlock,
   extractProjectMemorySections,
   stripProjectMemorySections,
-} from '../../packages/core/src/generated/cesar/memory.js';
-import { parseFitnessLine } from '../../packages/core/src/generated/blocks/context-scanner.js';
+} from '../../packages/core/src/cesar/memory.js';
+import { parseFitnessLine } from '../../packages/core/src/blocks/context-scanner.js';
 
 const ctx = (cwd: string) => ({ cwd, readFileState: new Map() }) as never;
 const D = '2026-06-11';

@@ -19,7 +19,7 @@ import {
   looksLikeDeferral,
   looksLikeFalseToolLimitation,
   AGENT_TOOL_MARKER as MARK,
-} from '../../packages/cli/src/generated/bridge/agentic-brain-client.js';
+} from '../../packages/cli/src/bridge/agentic-brain-client.js';
 import type { BrainEvent, BrainTurnResult, EngineAdapter, EngineRegistry, CapabilitySpec } from '@kernlang/agon-core';
 
 // The agent brain runs a ReAct loop over adapter.dispatch. We inject a fake adapter

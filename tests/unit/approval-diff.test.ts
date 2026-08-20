@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import {
   approvalToolIsFileMutating,
   buildApprovalDiffPreview,
-} from '../../packages/cli/src/generated/cesar/approval-diff.js';
+} from '../../packages/cli/src/cesar/approval-diff.js';
 
 describe('approvalToolIsFileMutating', () => {
   it('matches the file-mutating tools (raw + Agon-mapped names)', () => {

@@ -3,11 +3,11 @@ import {
   EngineRegistry, ensureAgonHome, loadConfig,
   createRunDir, writeRunStatus, printRunSummary,
 } from '@kernlang/agon-core';
-import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
+import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { runCampfire } from '@kernlang/agon-forge';
-import { header, info, bold, dim } from '../output.js';
-import { filterDefaultOrchestrationEngines } from '../generated/handlers/engine-filter.js';
+import { header, info, bold, dim } from '../blocks/output-format.js';
+import { filterDefaultOrchestrationEngines } from '../handlers/engine-filter.js';
 
 export const campfireCommand = defineCommand({
   meta: {

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { afterEach } from 'vitest';
 import { join } from 'node:path';
-import { parseReviewBlocking, selectReviewEngine, selectReviewEngines, summarizeReviewFindings } from '../../packages/cli/src/generated/handlers/review.js';
+import { parseReviewBlocking, selectReviewEngine, selectReviewEngines, summarizeReviewFindings } from '../../packages/cli/src/handlers/review.js';
 import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 
 const SENTINEL = '<!--AGON_REVIEW_FINDINGS_v1-->';

@@ -7,7 +7,7 @@
 //
 // Four invariants come out of that, all inside handleCesarBrain — one ~3600-line
 // turn machine with no injection seam, so (as with cesar-steering-yield-wiring)
-// the guards below read the GENERATED brain.ts and assert the wiring, plus
+// the guards below read brain.ts as text and assert the wiring, plus
 // behavioural tests on the follow-up module itself.
 //
 //   A1  a real pick is ECHOED into the transcript before the follow-up starts.
@@ -30,16 +30,16 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
-import { runCesarConfirmationFollowUp } from '../../packages/cli/src/generated/cesar/confirmation-follow-up.js';
+import { runCesarConfirmationFollowUp } from '../../packages/cli/src/cesar/confirmation-follow-up.js';
 import {
   chunkMayCompleteToolCall,
   splitBeforeToolMarkup,
   textHasToolCalls,
   XML_TOOL_MARKUP_HOLD_CHARS,
-} from '../../packages/cli/src/generated/cesar/brain-helpers.js';
+} from '../../packages/cli/src/cesar/brain-helpers.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const CODE = readFileSync(resolve(here, '../../packages/cli/src/generated/cesar/brain.ts'), 'utf8')
+const CODE = readFileSync(resolve(here, '../../packages/cli/src/cesar/brain.ts'), 'utf8')
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .split('\n')
   .map((line) => line.replace(/(^|\s)\/\/.*$/, '$1'))
@@ -192,7 +192,7 @@ describe('A5 — follow-up tool markup never streams raw, on any session', () =>
   });
 
   it('suppresses display from the first chunk when the follow-up is a tool call', () => {
-    // Replay the generated gate: a follow-up whose whole answer is XML markup
+    // Replay the gate: a follow-up whose whole answer is XML markup
     // must produce no visible text at all, so streaming-end never commits it.
     const parts = ['<tool name=', '"Read">{"file_path"', ':"a.ts"}</tool>'];
     let acc = '';
@@ -256,7 +256,7 @@ describe('A6 — the live follow-up entry is always ended', () => {
   });
 });
 
-// ── Replicas of the generated follow-up gate/teardown ──────────────────
+// ── Replicas of the follow-up gate/teardown ────────────────────────────
 // handleCesarBrain has no injection seam, so the structural guards above pin the
 // wiring and these tiny replicas exercise the behaviour the wiring produces.
 function makeFollowUpGate() {

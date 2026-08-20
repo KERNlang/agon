@@ -13,16 +13,16 @@ import {
   fileChannelInstruction,
   SINGLE_PASS_FRAMING,
   REVIEW_FRAMING,
-} from '../../packages/adapter-cli/src/generated/adapter-helpers.js';
+} from '../../packages/adapter-cli/src/adapter-helpers.js';
 import {
   parseStreamJsonFailure,
   isDeterministicStreamFailure,
-} from '../../packages/core/src/generated/blocks/stream-parser.js';
-import { companionUsesNativeReview } from '../../packages/core/src/generated/sessions/companion-dispatch.js';
+} from '../../packages/core/src/blocks/stream-parser.js';
+import { companionUsesNativeReview } from '../../packages/core/src/sessions/companion-dispatch.js';
 import {
   runReviewCore,
   shouldRetryReviewAttempt,
-} from '../../packages/cli/src/generated/handlers/review.js';
+} from '../../packages/cli/src/handlers/review.js';
 import { validateEngineConfig } from '../../packages/core/src/schemas/engine-schema.js';
 
 // Regression suite for the dead-`review`-block bug that made every `agon review`

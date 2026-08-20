@@ -7,7 +7,7 @@ import {
   takeSnapshot,
   revertSnapshot,
   listSnapshots,
-} from '../../packages/core/src/generated/blocks/file-history.js';
+} from '../../packages/core/src/blocks/file-history.js';
 
 // These tests pin the per-edit checkpoint contract that AgonEdit/AgonWrite rely
 // on. Each Edit/Write execute() call takes exactly one snapshot of one file

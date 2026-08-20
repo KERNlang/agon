@@ -70,7 +70,7 @@ vi.mock('@kernlang/agon-core', async (importOriginal) => {
   };
 });
 
-import { CliAdapter } from '../../packages/adapter-cli/src/generated/adapter.js';
+import { CliAdapter } from '../../packages/adapter-cli/src/adapter.js';
 import { engineHealth, EngineRegistry, EngineNotFoundError } from '@kernlang/agon-core';
 import type { EngineDefinition, DispatchOptions } from '@kernlang/agon-core';
 

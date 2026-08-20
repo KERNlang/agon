@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { fenceSeedPlan } from '../../packages/cli/src/handlers/cesar.js';
-import { deriveRoutingHints, buildRoutingContext, executionActionForPlan, shouldSpeculate } from '../../packages/cli/src/generated/cesar/routing.js';
+import { fenceSeedPlan } from '../../packages/cli/src/cesar/orchestration.js';
+import { deriveRoutingHints, buildRoutingContext, executionActionForPlan, shouldSpeculate } from '../../packages/cli/src/cesar/routing.js';
 
 const routingCtx = {
   activeEngines: () => ['claude'],
@@ -83,9 +83,9 @@ describe('César Routing', () => {
 
   describe('RoutingDecision types', () => {
     it('ScoutBid has all required fields', async () => {
-      const { } = await import('../../packages/core/src/types.js');
+      const { } = await import('../../packages/core/src/models/types.js');
       // Type-level test — if it compiles, the types exist
-      const bid: import('../../packages/core/src/types.js').ScoutBid = {
+      const bid: import('../../packages/core/src/models/types.js').ScoutBid = {
         engineId: 'claude',
         confidence: 90,
         approach: 'test',
@@ -98,7 +98,7 @@ describe('César Routing', () => {
     });
 
     it('RoutingDecision has all required fields', async () => {
-      const decision: import('../../packages/core/src/types.js').RoutingDecision = {
+      const decision: import('../../packages/core/src/models/types.js').RoutingDecision = {
         action: 'build',
         leadEngine: 'claude',
         confidence: 92,
@@ -110,7 +110,7 @@ describe('César Routing', () => {
     });
 
     it('RoutingDecision action union covers all modes', async () => {
-      const actions: import('../../packages/core/src/types.js').RoutingDecision['action'][] = [
+      const actions: import('../../packages/core/src/models/types.js').RoutingDecision['action'][] = [
         'chat', 'build', 'campfire', 'forge',
       ];
       expect(actions).toHaveLength(4);
@@ -119,37 +119,37 @@ describe('César Routing', () => {
 
   describe('Config defaults', () => {
     it('cesarEnabled defaults to true', async () => {
-      const { DEFAULT_AGON_CONFIG } = await import('../../packages/core/src/types.js');
+      const { DEFAULT_AGON_CONFIG } = await import('../../packages/core/src/models/types.js');
       expect(DEFAULT_AGON_CONFIG.cesarEnabled).toBe(true);
     });
 
     it('cesarScoutCount defaults to 2', async () => {
-      const { DEFAULT_AGON_CONFIG } = await import('../../packages/core/src/types.js');
+      const { DEFAULT_AGON_CONFIG } = await import('../../packages/core/src/models/types.js');
       expect(DEFAULT_AGON_CONFIG.cesarScoutCount).toBe(2);
     });
 
     it('cesarDirectThreshold defaults to 85', async () => {
-      const { DEFAULT_AGON_CONFIG } = await import('../../packages/core/src/types.js');
+      const { DEFAULT_AGON_CONFIG } = await import('../../packages/core/src/models/types.js');
       expect(DEFAULT_AGON_CONFIG.cesarDirectThreshold).toBe(85);
     });
 
     it('campfireObserverStrategy defaults to lead-first', async () => {
-      const { DEFAULT_AGON_CONFIG } = await import('../../packages/core/src/types.js');
+      const { DEFAULT_AGON_CONFIG } = await import('../../packages/core/src/models/types.js');
       expect(DEFAULT_AGON_CONFIG.campfireObserverStrategy).toBe('lead-first');
     });
 
     it('speculativeThresholdUsd defaults to 0.50', async () => {
-      const { DEFAULT_AGON_CONFIG } = await import('../../packages/core/src/types.js');
+      const { DEFAULT_AGON_CONFIG } = await import('../../packages/core/src/models/types.js');
       expect(DEFAULT_AGON_CONFIG.speculativeThresholdUsd).toBe(0.50);
     });
 
     it('speculativeEloSpreadThreshold defaults to 15', async () => {
-      const { DEFAULT_AGON_CONFIG } = await import('../../packages/core/src/types.js');
+      const { DEFAULT_AGON_CONFIG } = await import('../../packages/core/src/models/types.js');
       expect(DEFAULT_AGON_CONFIG.speculativeEloSpreadThreshold).toBe(15);
     });
 
     it('persistent Cesar auto mode defaults off until the first-run prompt', async () => {
-      const { DEFAULT_AGON_CONFIG } = await import('../../packages/core/src/types.js');
+      const { DEFAULT_AGON_CONFIG } = await import('../../packages/core/src/models/types.js');
       expect(DEFAULT_AGON_CONFIG.cesarAutoMode).toBe(false);
       expect(DEFAULT_AGON_CONFIG.cesarAutoModePrompted).toBe(false);
     });

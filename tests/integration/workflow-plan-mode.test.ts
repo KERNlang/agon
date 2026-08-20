@@ -22,7 +22,7 @@ vi.mock('@kernlang/agon-core', async (importOriginal) => {
   };
 });
 
-vi.mock('../../packages/cli/src/generated/cesar/brain.js', () => ({
+vi.mock('../../packages/cli/src/cesar/brain.js', () => ({
   handleCesarBrain: handleCesarBrainMock,
 }));
 
@@ -34,7 +34,7 @@ vi.mock('@kernlang/agon-forge', () => ({
   runDelegate: runDelegateMock,
 }));
 
-import { buildStepExecutors } from '../../packages/cli/src/generated/handlers/plan-mode.js';
+import { buildStepExecutors } from '../../packages/cli/src/handlers/plan-mode.js';
 
 function makeCtx(overrides: Record<string, unknown> = {}) {
   return {

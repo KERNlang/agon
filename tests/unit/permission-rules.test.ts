@@ -15,11 +15,11 @@ import {
   hasShellControl,
   hasRedirection,
   splitShellSegments,
-} from '../../packages/core/src/generated/tools/tool-permissions.js';
-import { createBashTool } from '../../packages/core/src/generated/tools/tool-bash.js';
-import { createEditTool } from '../../packages/core/src/generated/tools/tool-edit.js';
-import { ToolRegistry, executeToolCall, PERMISSION_DENIED_MESSAGE } from '../../packages/core/src/generated/signals/tool-registry.js';
-import { loadConfig } from '../../packages/core/src/generated/signals/config.js';
+} from '../../packages/core/src/tools/tool-permissions.js';
+import { createBashTool } from '../../packages/core/src/tools/tool-bash.js';
+import { createEditTool } from '../../packages/core/src/tools/tool-edit.js';
+import { ToolRegistry, executeToolCall, PERMISSION_DENIED_MESSAGE } from '../../packages/core/src/signals/tool-registry.js';
+import { loadConfig } from '../../packages/core/src/signals/config.js';
 import { setupTestAgonHome, cleanupTestAgonHome } from '../helpers/agon-home.js';
 
 const baseCtx = (extra: Record<string, unknown> = {}) => ({

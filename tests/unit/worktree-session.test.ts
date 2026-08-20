@@ -8,7 +8,7 @@ import {
   createSessionWorktree, listSessionWorktrees, findSessionWorktree,
   removeSessionWorktree, pruneSessionWorktrees, rehydrateSessionWorktree,
   detectPackageManager, sessionWorktreesDir, worktreePathFor,
-} from '../../packages/core/src/generated/blocks/worktree-session.js';
+} from '../../packages/core/src/blocks/worktree-session.js';
 
 // ── Session worktrees: per-session isolation contract ────────────────────
 // These pin the behavior the worktree hardening depends on, so a logic flip
@@ -153,7 +153,7 @@ describe('session worktrees', () => {
     });
 
     it('worktreePruneOrphaned removes worktrees registered in git pointing to runs or agent-worktrees', async () => {
-      const { worktreePruneOrphaned } = await import('../../packages/core/src/generated/blocks/git.js');
+      const { worktreePruneOrphaned } = await import('../../packages/core/src/blocks/git.js');
 
       const fakeAgentWtDir = join(repo, '.agon', 'agent-worktrees', 'run-xyz', 'scout');
       mkdirSync(fakeAgentWtDir, { recursive: true });
@@ -171,7 +171,7 @@ describe('session worktrees', () => {
     });
 
     it('worktreePruneOrphaned does NOT remove persistent session worktrees under ~/.agon/worktrees', async () => {
-      const { worktreePruneOrphaned } = await import('../../packages/core/src/generated/blocks/git.js');
+      const { worktreePruneOrphaned } = await import('../../packages/core/src/blocks/git.js');
 
       const sessionWtDir = join(home, 'worktrees', 'abc123', 'feat-session');
       mkdirSync(sessionWtDir, { recursive: true });
@@ -191,7 +191,7 @@ describe('session worktrees', () => {
     });
 
     it('worktreePruneAll removes aged engine worktrees under .agon/agent-worktrees', async () => {
-      const { worktreePruneAll } = await import('../../packages/core/src/generated/blocks/git.js');
+      const { worktreePruneAll } = await import('../../packages/core/src/blocks/git.js');
 
       const runDir = join(repo, '.agon', 'agent-worktrees', 'run-old');
       const engineWtDir = join(runDir, 'codex');

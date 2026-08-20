@@ -6,10 +6,10 @@ import {
   ensureAgonHome,
   configSet,
 } from '@kernlang/agon-core';
-import { resolveBuiltinEnginesDir } from './generated/lib/engines-dir.js';
+import { resolveBuiltinEnginesDir } from './lib/engines-dir.js';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
-import { ENGINE_COLORS } from './output.js';
-import { icons } from './icons.js';
+import { ENGINE_COLORS } from './blocks/output-format.js';
+import { icons } from './signals/icons.js';
 
 interface EngineInfo {
   id: string;

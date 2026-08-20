@@ -8,8 +8,8 @@ import {
   formatCitationReport,
   verifyCitations,
   probeCitation,
-} from '../../packages/core/src/generated/tools/research-verifier.js';
-import type { CitationProbe } from '../../packages/core/src/generated/tools/research-verifier.js';
+} from '../../packages/core/src/tools/research-verifier.js';
+import type { CitationProbe } from '../../packages/core/src/tools/research-verifier.js';
 
 const probe = (over: Partial<CitationProbe>): CitationProbe => ({
   url: 'https://example.com/a',

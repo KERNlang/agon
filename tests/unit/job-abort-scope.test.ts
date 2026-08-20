@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   runInJobAbortScope,
   trackJobAbortController,
-} from '../../packages/cli/src/generated/signals/job-abort-scope.js';
+} from '../../packages/cli/src/signals/job-abort-scope.js';
 
 describe('per-job abort scope', () => {
   it('forwards a job cancellation to the handler controller it publishes', async () => {

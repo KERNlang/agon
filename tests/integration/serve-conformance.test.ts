@@ -5,12 +5,12 @@ import { join } from 'node:path';
 import { connect, type Socket } from 'node:net';
 
 // Throwaway AGON_HOME before the event ledger resolves any path (set pre-import,
-// matching the sibling bridge tests — the generated modules resolve paths at call
+// matching the sibling bridge tests — those modules resolve paths at call
 // time). Captured so afterAll can remove it instead of leaking a temp dir per run.
 const TMP_HOME = mkdtempSync(join(tmpdir(), 'agon-serve-conformance-'));
 process.env.AGON_HOME = TMP_HOME;
 
-import { createAgonServe } from '../../packages/cli/src/generated/bridge/agon-serve.js';
+import { createAgonServe } from '../../packages/cli/src/bridge/agon-serve.js';
 import type { BrainClient } from '@kernlang/agon-core';
 
 // ─────────────────────────────────────────────────────────────────────────────

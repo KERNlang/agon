@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildPlanChromeSummary, streamFrameIntervalMs } from '../../packages/cli/src/generated/surfaces/app-views.js';
-import { buildExecutionRailTimeline, buildPlanPhaseGauge } from '../../packages/cli/src/generated/surfaces/status.js';
+import { buildPlanChromeSummary, streamFrameIntervalMs } from '../../packages/cli/src/surfaces/app-views.js';
+import { buildExecutionRailTimeline, buildPlanPhaseGauge } from '../../packages/cli/src/surfaces/status.js';
 import {
   buildFleetTelemetryText,
   buildGuardTelemetryView,
@@ -17,7 +17,7 @@ import {
   formatStatusLine,
   normalizeUiMotion,
   parseHeartbeatPhase,
-} from '../../packages/cli/src/generated/surfaces/status-helpers.js';
+} from '../../packages/cli/src/surfaces/status-helpers.js';
 
 describe('context gauge amounts (pct-of-WHAT)', () => {
   it('renders used/limit alongside the percentage when both are known', () => {
@@ -224,7 +224,7 @@ describe('buildPlanPhaseGauge', () => {
       state: 'paused',
       steps: [
         { state: 'done', description: 'Spec' },
-        { state: 'failed', description: 'Compile generated files' },
+        { state: 'failed', description: 'Compile the bundle' },
         { state: 'pending', description: 'Test' },
       ],
     }, 10);
@@ -233,7 +233,7 @@ describe('buildPlanPhaseGauge', () => {
     expect(gauge.phase).toBe('paused');
     expect(gauge.failed).toBe(1);
     expect(gauge.color).toBe('#ef4444');
-    expect(gauge.current).toBe('Compile generated files');
+    expect(gauge.current).toBe('Compile the bundle');
   });
 
   it('normalizes stale paused plans with all steps done to complete', () => {

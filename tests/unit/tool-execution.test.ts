@@ -4,10 +4,10 @@ import type { ToolContext, ToolCall, ToolHandler } from '@kernlang/agon-core';
 import { join } from 'node:path';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { getProjectFileStateCache, clearProjectFileStateCaches } from '../../packages/core/src/generated/blocks/file-state-cache.js';
-import { ToolRegistry as GeneratedToolRegistry, executeToolCall as generatedExecuteToolCall } from '../../packages/core/src/generated/signals/tool-registry.js';
-import { createReadTool as generatedCreateReadTool } from '../../packages/core/src/generated/tools/tool-read.js';
-import { createEditTool as generatedCreateEditTool } from '../../packages/core/src/generated/tools/tool-edit.js';
+import { getProjectFileStateCache, clearProjectFileStateCaches } from '../../packages/core/src/blocks/file-state-cache.js';
+import { ToolRegistry, executeToolCall } from '../../packages/core/src/signals/tool-registry.js';
+import { createReadTool } from '../../packages/core/src/tools/tool-read.js';
+import { createEditTool } from '../../packages/core/src/tools/tool-edit.js';
 
 const REPO_ROOT = join(import.meta.dirname, '../..');
 
@@ -94,18 +94,18 @@ describe('tool-execution', () => {
       const filePath = join(cwd, 'sample.ts');
       writeFileSync(filePath, 'const value = 1;\n');
 
-      const registry = new GeneratedToolRegistry();
-      registry.register(generatedCreateReadTool());
-      registry.register(generatedCreateEditTool());
+      const registry = new ToolRegistry();
+      registry.register(createReadTool());
+      registry.register(createEditTool());
 
       const readCache = getProjectFileStateCache(cwd);
       const readCtx = { cwd, readFileState: (readCache as any).cache, permissionMode: 'auto' } as ToolContext;
-      const readResult = await generatedExecuteToolCall({ id: 'read_1', name: 'Read', input: { file_path: 'sample.ts' } }, readCtx, registry);
+      const readResult = await executeToolCall({ id: 'read_1', name: 'Read', input: { file_path: 'sample.ts' } }, readCtx, registry);
       expect(readResult.result.ok).toBe(true);
 
       const editCache = getProjectFileStateCache(cwd);
       const editCtx = { cwd, readFileState: (editCache as any).cache, permissionMode: 'auto' } as ToolContext;
-      const editResult = await generatedExecuteToolCall(
+      const editResult = await executeToolCall(
         { id: 'edit_1', name: 'Edit', input: { file_path: 'sample.ts', old_string: 'value = 1', new_string: 'value = 2' } },
         editCtx,
         registry,
@@ -154,8 +154,7 @@ describe('tool-execution', () => {
     });
 
     it('propagates string denials from the permission handler', async () => {
-      const { ToolRegistry: GeneratedToolRegistry, executeToolCall: generatedExecuteToolCall } = await import('../../packages/core/src/generated/signals/tool-registry.js');
-      const registry = new GeneratedToolRegistry();
+      const registry = new ToolRegistry();
       const tool: ToolHandler = {
         definition: {
           name: 'AskTool',
@@ -171,13 +170,13 @@ describe('tool-execution', () => {
       };
       registry.register(tool);
       const call: ToolCall = { id: 'tc_ask', name: 'AskTool', input: {} };
-      const result = await generatedExecuteToolCall(call, makeCtx(), registry, async () => 'BLOCKED: test denial');
+      const result = await executeToolCall(call, makeCtx(), registry, async () => 'BLOCKED: test denial');
       expect(result.result.ok).toBe(false);
       expect(result.result.error).toBe('BLOCKED: test denial');
     });
 
     it('runs the execution-context authorization gate before an auto-allowed tool', async () => {
-      const registry = new GeneratedToolRegistry();
+      const registry = new ToolRegistry();
       let executed = false;
       const tool: ToolHandler = {
         definition: {
@@ -197,7 +196,7 @@ describe('tool-execution', () => {
       };
       registry.register(tool);
 
-      const result = await generatedExecuteToolCall(
+      const result = await executeToolCall(
         { id: 'tc_authority', name: 'AutoAllowedMutation', input: { target: 'outside lease' } },
         {
           ...makeCtx(),
@@ -245,7 +244,7 @@ describe('tool-execution', () => {
     });
 
     it('classifies policy skips, denials, cancellation, and execution failures', async () => {
-      const registry = new GeneratedToolRegistry();
+      const registry = new ToolRegistry();
       const makeTool = (name: string, permission: ToolHandler['checkPermission'], execute: ToolHandler['execute']): ToolHandler => ({
         definition: {
           name,
@@ -269,14 +268,14 @@ describe('tool-execution', () => {
         throw new Error('boom');
       }));
 
-      const skipped = await generatedExecuteToolCall(
+      const skipped = await executeToolCall(
         { id: 'skip', name: 'Skipped', input: {} },
         { ...makeCtx(), readOnlyMode: true },
         registry,
       );
-      const denied = await generatedExecuteToolCall({ id: 'deny', name: 'Denied', input: {} }, makeCtx(), registry);
-      const cancelled = await generatedExecuteToolCall({ id: 'cancel', name: 'Cancelled', input: {} }, makeCtx(), registry);
-      const failed = await generatedExecuteToolCall({ id: 'fail', name: 'Failed', input: {} }, makeCtx(), registry);
+      const denied = await executeToolCall({ id: 'deny', name: 'Denied', input: {} }, makeCtx(), registry);
+      const cancelled = await executeToolCall({ id: 'cancel', name: 'Cancelled', input: {} }, makeCtx(), registry);
+      const failed = await executeToolCall({ id: 'fail', name: 'Failed', input: {} }, makeCtx(), registry);
 
       expect(skipped.result.terminalReason).toBe('skipped_policy');
       expect(denied.result.terminalReason).toBe('denied');
@@ -285,7 +284,7 @@ describe('tool-execution', () => {
     });
 
     it('marks a successful handler result as succeeded when it omits a reason', async () => {
-      const registry = new GeneratedToolRegistry();
+      const registry = new ToolRegistry();
       registry.register({
         definition: {
           name: 'Success',
@@ -300,7 +299,7 @@ describe('tool-execution', () => {
         execute: async () => ({ ok: true, content: 'done' }),
       });
 
-      const result = await generatedExecuteToolCall({ id: 'ok', name: 'Success', input: {} }, makeCtx(), registry);
+      const result = await executeToolCall({ id: 'ok', name: 'Success', input: {} }, makeCtx(), registry);
       expect(result.result.terminalReason).toBe('succeeded');
     });
   });

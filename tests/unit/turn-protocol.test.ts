@@ -5,7 +5,7 @@ import {
   isTerminalTurnState,
   reduceTurnLifecycle,
   validateControlPlaneEnvelope,
-} from '../../packages/core/src/generated/sessions/turn-protocol.js';
+} from '../../packages/core/src/sessions/turn-protocol.js';
 
 const envelope = {
   schemaVersion: 1 as const,

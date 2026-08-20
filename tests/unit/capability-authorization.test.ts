@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import * as brainContract from '../../packages/core/src/generated/sessions/brain-client.js';
+import * as brainContract from '../../packages/core/src/sessions/brain-client.js';
 import type {
   BrainEvent,
   BrainTurnResult,
@@ -8,10 +8,10 @@ import type {
   CapabilitySpec,
   EngineAdapter,
   EngineRegistry,
-} from '../../packages/core/src/generated/sessions/brain-client.js';
-import { AgenticTurnBrainClient, AGENT_TOOL_MARKER as MARK } from '../../packages/cli/src/generated/bridge/agentic-brain-client.js';
-import { createAgonServe } from '../../packages/cli/src/generated/bridge/agon-serve.js';
-import * as drive from '../../packages/cli/src/generated/commands/drive.js';
+} from '../../packages/core/src/sessions/brain-client.js';
+import { AgenticTurnBrainClient, AGENT_TOOL_MARKER as MARK } from '../../packages/cli/src/bridge/agentic-brain-client.js';
+import { createAgonServe } from '../../packages/cli/src/bridge/agon-serve.js';
+import * as drive from '../../packages/cli/src/commands/drive.js';
 import type { BrainClient } from '@kernlang/agon-core';
 
 type ApprovalDecision = 'approve' | 'approve-session' | 'deny' | 'deny-session' | 'abort';

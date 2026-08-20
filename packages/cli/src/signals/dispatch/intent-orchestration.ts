@@ -1,0 +1,463 @@
+
+import { resolveWorkingDir, spawnWithTimeout } from '@kernlang/agon-core';
+
+import { ENGINE_COLORS } from '../../blocks/output-format.js';
+
+import { handleForge, handleBrainstorm, handleCampfire, handleTribunal, handleThink, handleCouncil, handleSynthesis, handleNeroChallenge, handleResearch, handleChrome, handleConquer, handleBuild, handleReviewMany, handleSanitize, handleNaturalize, handleMutate, runAgentMode, runAgentTeam } from '../../handlers/index.js';
+
+import { handleTeamTribunal } from '../../handlers/team-tribunal.js';
+
+import { handleTeamForge } from '../../handlers/team-forge.js';
+
+import { handleTeamBrainstorm } from '../../handlers/team-brainstorm.js';
+
+import { handlePipeline } from '../../handlers/pipeline.js';
+
+import { shouldUseAgentTeam } from '../../cesar/routing.js';
+
+import { createSpeculator, loadOrCreateActiveThread } from '@kernlang/agon-core';
+
+import type { SpeculatorMemberConfig } from '@kernlang/agon-core';
+
+import type { DispatchCallbacks, DispatchResult } from '../dispatch.js';
+
+import { countTrackedUserTurns } from './utils.js';
+
+import { withThreadOutcome, buildBrainstormContinuationMessage, collectRecentEngineContext } from './delegation.js';
+
+import { absorbReviewResultIntoCesar, continueCesarAfterResult, runAgentJobWithAutoResume } from './cesar-router.js';
+
+import { emitPostDispatch } from './utils.js';
+
+import { mutateCesarPrompt } from '../../blocks/mutate-render.js';
+
+export async function dispatchOrchestrationIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult | null> {
+  switch (intent.type) {
+    case 'forge': {
+      const _fCwd = resolveWorkingDir();
+      const _fLabel = intent.task?.slice(0, 40) ?? 'forge';
+      if (intent.action === 'natural') {
+        cb.dispatch({ type: 'info', message: `Cesar route: explicit-forge -> forge | fitness: ${intent.fitnessCmd ? 'provided' : 'auto'}` });
+      }
+      cb.runAsJob('forge', _fLabel, withThreadOutcome(_fCwd, 'forge', _fLabel, async () => {
+        if (cb.eventBus) await cb.eventBus.emit('pre:forge', { task: intent.task, cwd: _fCwd });
+        await handleForge(intent.task, intent.fitnessCmd, cb.dispatch, cb.ctx, undefined, intent.hardened, true);
+        if (cb.eventBus) cb.eventBus.emit('post:forge', { task: intent.task, cwd: _fCwd }).catch(() => {});
+      }, cb.ctx));
+      return { handled: true, ranAsJob: true };
+    }
+    case 'brainstorm': {
+      const _bCwd = resolveWorkingDir();
+      const _bLabel = intent.question?.slice(0, 40) ?? 'brainstorm';
+      const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+      const continuationUserTurns = countTrackedUserTurns(cb.ctx);
+      cb.runAsJob('brainstorm', _bLabel, withThreadOutcome(_bCwd, 'brainstorm', _bLabel, async () => {
+        if (cb.eventBus) await cb.eventBus.emit('pre:brainstorm', { question: intent.question, cwd: _bCwd });
+        const bsR = await handleBrainstorm(intent.question, cb.dispatch, cb.ctx);
+        if (cb.eventBus) cb.eventBus.emit('post:brainstorm', { question: intent.question, cwd: _bCwd }).catch(() => {});
+        if (bsR) {
+          cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
+          await continueCesarAfterResult(buildBrainstormContinuationMessage('Brainstorm complete', intent.question, bsR), cb, continuationEpoch, continuationUserTurns);
+        }
+        return bsR;
+      }, cb.ctx));
+      return { handled: true, ranAsJob: true };
+    }
+    case 'tribunal': {
+      const _tCwd = resolveWorkingDir();
+      const _tLabel = intent.question?.slice(0, 40) ?? 'tribunal';
+      const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+      const continuationUserTurns = countTrackedUserTurns(cb.ctx);
+      cb.runAsJob('tribunal', _tLabel, withThreadOutcome(_tCwd, 'tribunal', _tLabel, async () => {
+        if (cb.eventBus) await cb.eventBus.emit('pre:tribunal', { question: intent.question, mode: intent.tribunalMode, protocol: intent.tribunalProtocol, cwd: _tCwd });
+        await handleTribunal(intent.question, cb.dispatch, cb.ctx, intent.tribunalMode, intent.tribunalProtocol);
+        if (cb.eventBus) cb.eventBus.emit('post:tribunal', { question: intent.question, cwd: _tCwd }).catch(() => {});
+        const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
+        if (chatContext) await continueCesarAfterResult(`Tribunal concluded on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb, continuationEpoch, continuationUserTurns);
+      }, cb.ctx));
+      return { handled: true, ranAsJob: true };
+    }
+    case 'campfire': {
+      const _cCwd = resolveWorkingDir();
+      const _cLabel = intent.topic?.slice(0, 40) ?? 'campfire';
+      const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+      const continuationUserTurns = countTrackedUserTurns(cb.ctx);
+      cb.runAsJob('campfire', _cLabel, withThreadOutcome(_cCwd, 'campfire', _cLabel, async () => {
+        if (cb.eventBus) await cb.eventBus.emit('pre:campfire', { topic: intent.topic, cwd: _cCwd });
+        await handleCampfire(intent.topic, cb.dispatch, cb.ctx);
+        if (cb.eventBus) cb.eventBus.emit('post:campfire', { topic: intent.topic, cwd: _cCwd }).catch(() => {});
+        const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
+        if (chatContext) await continueCesarAfterResult(`Campfire discussion on: "${(intent.topic ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the key insights and any consensus reached.`, cb, continuationEpoch, continuationUserTurns);
+      }, cb.ctx));
+      return { handled: true, ranAsJob: true };
+    }
+    case 'think': {
+      if (!intent.input?.trim()) { cb.dispatch({ type: 'warning', message: 'Usage: /think <problem> [--strategy reflexion] [--steps 8]' }); return { handled: true, ranAsJob: false }; }
+      const _thCwd = resolveWorkingDir();
+      const _thLabel = intent.input?.slice(0, 40) ?? 'think';
+      const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+      const continuationUserTurns = countTrackedUserTurns(cb.ctx);
+      cb.runAsJob('think', _thLabel, withThreadOutcome(_thCwd, 'think', _thLabel, async () => {
+        await handleThink(intent.input, cb.dispatch, cb.ctx, { strategy: intent.strategy, steps: intent.steps });
+        const chatContext = collectRecentEngineContext(cb.ctx, 12, 2000);
+        if (chatContext) await continueCesarAfterResult(`Think chain on: "${(intent.input ?? '').slice(0, 200)}"\n\n${chatContext}\n\nReview the reasoning, resolve any open questions, and take the next concrete step.`, cb, continuationEpoch, continuationUserTurns);
+      }, cb.ctx));
+      return { handled: true, ranAsJob: true };
+    }
+    case 'council': {
+      if (!intent.question?.trim()) { cb.dispatch({ type: 'warning', message: 'Usage: /council <decision>' }); return { handled: true, ranAsJob: false }; }
+      const _coCwd = resolveWorkingDir();
+      const _coLabel = intent.question?.slice(0, 40) ?? 'council';
+      const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+      const continuationUserTurns = countTrackedUserTurns(cb.ctx);
+      cb.runAsJob('council', _coLabel, withThreadOutcome(_coCwd, 'council', _coLabel, async () => {
+        await handleCouncil(intent.question, cb.dispatch, cb.ctx);
+        const chatContext = collectRecentEngineContext(cb.ctx, 14, 1500);
+        if (chatContext) await continueCesarAfterResult(`Council deliberated on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the chairman verdict and the strongest dissent, then recommend the next step.`, cb, continuationEpoch, continuationUserTurns);
+      }, cb.ctx));
+      return { handled: true, ranAsJob: true };
+    }
+    case 'chrome': {
+      if (!intent.input?.trim()) { cb.dispatch({ type: 'warning', message: 'Usage: /chrome <task> — e.g. /chrome "open the pricing page and tell me if the hero is cluttered"' }); return { handled: true, ranAsJob: false }; }
+      const _chrCwd = resolveWorkingDir();
+      const _chrLabel = intent.input?.slice(0, 40) ?? 'chrome';
+      const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+      const continuationUserTurns = countTrackedUserTurns(cb.ctx);
+      cb.runAsJob('chrome', _chrLabel, withThreadOutcome(_chrCwd, 'chrome', _chrLabel, async () => {
+        const produced = await handleChrome(intent.input, cb.dispatch, cb.ctx);
+        if (!produced) return; // no browser result this turn → don't feed Cesar stale context
+        const chatContext = collectRecentEngineContext(cb.ctx, 8, 2000);
+        if (chatContext) await continueCesarAfterResult(`Browser task: "${(intent.input ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize what the browser agent found/did and recommend the next step.`, cb, continuationEpoch, continuationUserTurns);
+      }, cb.ctx));
+      return { handled: true, ranAsJob: true };
+    }
+    case 'research': {
+      if (!intent.question?.trim()) { cb.dispatch({ type: 'warning', message: 'Usage: /research <question> [--count N] [--engine X]' }); return { handled: true, ranAsJob: false }; }
+      const _rsCwd = resolveWorkingDir();
+      const _rsLabel = intent.question?.slice(0, 40) ?? 'research';
+      const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+      const continuationUserTurns = countTrackedUserTurns(cb.ctx);
+      cb.runAsJob('research', _rsLabel, withThreadOutcome(_rsCwd, 'research', _rsLabel, async () => {
+        await handleResearch(intent.question, cb.dispatch, cb.ctx, { engine: intent.engineId, count: intent.count });
+        const chatContext = collectRecentEngineContext(cb.ctx, 12, 2000);
+        if (chatContext) await continueCesarAfterResult(`Research (keyless, web-grounded, cited) on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the findings WITH their citations, flag any unverified ones, then take the next concrete step.`, cb, continuationEpoch, continuationUserTurns);
+      }, cb.ctx));
+      return { handled: true, ranAsJob: true };
+    }
+    case 'conquer': {
+      if (!intent.task?.trim()) { cb.dispatch({ type: 'warning', message: 'Usage: /conquer <task> --gate "<test cmd>"' }); return { handled: true, ranAsJob: false }; }
+      if (!intent.gate?.trim()) { cb.dispatch({ type: 'warning', message: '/conquer needs a --gate command (the done-oracle), e.g. /conquer build X --gate "npm test"' }); return { handled: true, ranAsJob: false }; }
+      const _cqCwd = resolveWorkingDir();
+      const _cqLabel = intent.task?.slice(0, 40) ?? 'conquer';
+      const cqEpoch = cb.ctx.inputEpoch ?? 0;
+      const cqUserTurns = countTrackedUserTurns(cb.ctx);
+      cb.runAsJob('conquer', _cqLabel, withThreadOutcome(_cqCwd, 'conquer', _cqLabel, async () => {
+        await handleConquer(intent.task ?? '', cb.dispatch, cb.ctx, { gate: intent.gate, builder: intent.builder, engineIds: intent.engineIds, maxTurns: intent.maxTurns, gateTimeoutSec: intent.gateTimeout, maxHours: intent.maxHours, turnTimeoutSec: intent.turnTimeout });
+        const chatContext = collectRecentEngineContext(cb.ctx, 14, 1500);
+        if (chatContext) await continueCesarAfterResult(`Conquer build on: "${(intent.task ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize what was built + the done-oracle outcome, and recommend the next step (review/merge or keep going).`, cb, cqEpoch, cqUserTurns);
+      }, cb.ctx));
+      return { handled: true, ranAsJob: true };
+    }
+    case 'synthesis': {
+      if (!intent.input?.trim()) { cb.dispatch({ type: 'warning', message: 'Usage: /synthesis <task> [--swaps 2]' }); return { handled: true, ranAsJob: false }; }
+      const _syCwd = resolveWorkingDir();
+      const _syLabel = intent.input?.slice(0, 40) ?? 'synthesis';
+      const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+      const continuationUserTurns = countTrackedUserTurns(cb.ctx);
+      cb.runAsJob('synthesis', _syLabel, withThreadOutcome(_syCwd, 'synthesis', _syLabel, async () => {
+        await handleSynthesis(intent.input, cb.dispatch, cb.ctx, { swaps: intent.swaps });
+        const chatContext = collectRecentEngineContext(cb.ctx, 12, 2000);
+        if (chatContext) await continueCesarAfterResult(`Synthesis completed on: "${(intent.input ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the winning artifact and take the next concrete step.`, cb, continuationEpoch, continuationUserTurns);
+      }, cb.ctx));
+      return { handled: true, ranAsJob: true };
+    }
+    case 'nero-challenge': {
+      if (!intent.input?.trim()) { cb.dispatch({ type: 'warning', message: 'Usage: /nero <decision to challenge>' }); return { handled: true, ranAsJob: false }; }
+      const _neCwd = resolveWorkingDir();
+      const _neLabel = intent.input?.slice(0, 40) ?? 'nero';
+      const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+      const continuationUserTurns = countTrackedUserTurns(cb.ctx);
+      cb.runAsJob('nero', _neLabel, withThreadOutcome(_neCwd, 'nero', _neLabel, async () => {
+        await handleNeroChallenge(intent.input, cb.dispatch, cb.ctx, { reasoning: intent.reasoning });
+        const chatContext = collectRecentEngineContext(cb.ctx, 12, 2000);
+        if (chatContext) await continueCesarAfterResult(`Nero challenged: "${(intent.input ?? '').slice(0, 200)}"\n\n${chatContext}\n\nWeigh the critic's verdict honestly: if it found a real flaw, adjust the plan; if not, say why and proceed.`, cb, continuationEpoch, continuationUserTurns);
+      }, cb.ctx));
+      return { handled: true, ranAsJob: true };
+    }
+    case 'team-tribunal': {
+      const _ttCwd = resolveWorkingDir();
+      const _ttLabel = intent.question?.slice(0, 40) ?? 'team-tribunal';
+      const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+      const continuationUserTurns = countTrackedUserTurns(cb.ctx);
+      cb.runAsJob('team-tribunal', _ttLabel, withThreadOutcome(_ttCwd, 'team-tribunal', _ttLabel, async () => {
+        await handleTeamTribunal(intent.question, cb.dispatch, cb.ctx, intent.tribunalMode, intent.membersPerSide);
+        const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
+        if (chatContext) await continueCesarAfterResult(`Team tribunal concluded on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb, continuationEpoch, continuationUserTurns);
+      }, cb.ctx));
+      return { handled: true, ranAsJob: true };
+    }
+    case 'team-forge': {
+      const _tfCwd = resolveWorkingDir();
+      const _tfLabel = intent.task?.slice(0, 40) ?? 'team-forge';
+      cb.runAsJob('team-forge', _tfLabel, withThreadOutcome(_tfCwd, 'team-forge', _tfLabel, () => handleTeamForge(intent.task, intent.fitnessCmd, cb.dispatch, cb.ctx, intent.membersPerSide), cb.ctx));
+      return { handled: true, ranAsJob: true };
+    }
+    case 'team-brainstorm': {
+      const _tbCwd = resolveWorkingDir();
+      const _tbLabel = intent.question?.slice(0, 40) ?? 'team-brainstorm';
+      const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+      const continuationUserTurns = countTrackedUserTurns(cb.ctx);
+      cb.runAsJob('team-brainstorm', _tbLabel, withThreadOutcome(_tbCwd, 'team-brainstorm', _tbLabel, async () => {
+        await handleTeamBrainstorm(intent.question, cb.dispatch, cb.ctx, intent.membersPerSide);
+        const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
+        if (chatContext) await continueCesarAfterResult(`Team brainstorm completed on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSynthesize the winning approach into a concrete plan.`, cb, continuationEpoch, continuationUserTurns);
+      }, cb.ctx));
+      return { handled: true, ranAsJob: true };
+    }
+    case 'build':
+      cb.runAsJob('build', intent.input?.slice(0, 40) ?? 'build', () => handleBuild(intent.input, cb.dispatch, cb.ctx));
+      return { handled: true, ranAsJob: true };
+    case 'sanitize': {
+      // Deterministic forensics — no engine dispatch, fast. Runs inline (not
+      // as a job) like the info commands; output is a couple of tables.
+      await handleSanitize(intent.input ?? '', cb.dispatch, cb.ctx);
+      return { handled: true, ranAsJob: false };
+    }
+    case 'naturalize': {
+      if (!intent.input?.trim()) { cb.dispatch({ type: 'warning', message: 'Usage: /naturalize <file> [--author X] [--engine Y] [--min-change N] [--max-attempts N] [--out <file>]' }); return { handled: true, ranAsJob: false }; }
+      const _naLabel = intent.input.slice(0, 40);
+      cb.runAsJob('naturalize', _naLabel, () => handleNaturalize(intent.input ?? '', cb.dispatch, cb.ctx));
+      return { handled: true, ranAsJob: true };
+    }
+    case 'mutate': {
+      // Mutation runs are long (one full suite per mutant) — always a job.
+      // Advisory by design: the survivor list is fed back to Cesar so the
+      // next turn can strengthen the assertions that failed to notice.
+      const _mtCwd = resolveWorkingDir();
+      const _mtLabel = intent.input?.trim().slice(0, 40) || 'mutate';
+      const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+      const continuationUserTurns = countTrackedUserTurns(cb.ctx);
+      cb.runAsJob('mutate', _mtLabel, withThreadOutcome(_mtCwd, 'mutate', _mtLabel, async () => {
+        const produced = await handleMutate(intent.input ?? '', cb.dispatch, cb.ctx);
+        // Only continue when a report actually exists. A bad flag, an
+        // unresolvable diff, a missing gate or a crashed run all return early
+        // WITHOUT appending anything — and collectRecentEngineContext would
+        // then hand Cesar some PRIOR turn's engine output under a "mutation
+        // testing finished" headline, i.e. invite it to invent survivors for a
+        // run that never happened. Same guard the chrome case uses.
+        if (!produced) return;
+        const chatContext = collectRecentEngineContext(cb.ctx, 6, 2000);
+        if (!chatContext) return;
+        // FENCED: the mutation body is repository source plus engine-authored
+        // rationales, and this continuation turn can call tools. It goes in as
+        // data, control-stripped and capped — never as free prose in Cesar's
+        // own instructions.
+        await continueCesarAfterResult(
+          mutateCesarPrompt({ label: intent.input ?? '', body: chatContext }),
+          cb, continuationEpoch, continuationUserTurns,
+        );
+      }, cb.ctx));
+      return { handled: true, ranAsJob: true };
+    }
+    case 'agent': {
+      // Phase B/C — Cesar-routed /agent with engine-switch attribution.
+      // Zero-LLM-cost regex classification decides solo vs team; emits
+      // typed agent-routing + engine-switch events so the UI shows the
+      // routing decision and transitions rather than a plain info message.
+      const input = intent.input;
+      const useTeam = shouldUseAgentTeam(input, cb.ctx);
+      if (useTeam) {
+        const teamEngines = cb.ctx.activeEngines().filter(id => {
+          try { return !!cb.ctx.registry.get(id).api; } catch { return false; }
+        });
+        cb.dispatch({
+          type: 'agent-routing',
+          mode: 'team',
+          engines: teamEngines,
+          reason: 'complexity hint: multi-step-fanout — task pattern suggests cross-module work',
+        });
+        cb.runAsJob('team-agent', input?.slice(0, 40) ?? 'team-agent', (signal) => runAgentJobWithAutoResume(input, cb, () => runAgentTeam(input, cb.dispatch, cb.ctx, {
+          taskKind: 'edit',
+          parentSignal: signal,
+        })));
+      } else {
+        // Phase D: check for a second API engine to run as a silent shadow.
+        // If available, use runAgentTeam with shadowMode=true so the user
+        // sees only the foreground engine's stream, but the shadow races in
+        // a background worktree and its patch applies if it wins post-step.
+        const apiEngines = cb.ctx.activeEngines().filter(id => {
+          try { return !!cb.ctx.registry.get(id).api; } catch { return false; }
+        });
+        const hasShadow = apiEngines.length >= 2;
+        const firstEngine = apiEngines[0] ?? cb.ctx.activeEngines()[0] ?? 'default';
+        if (hasShadow) {
+          cb.dispatch({
+            type: 'agent-routing',
+            mode: 'solo',
+            engines: [firstEngine],
+            reason: `shadow worker active (${apiEngines[1]} running silently in background)`,
+          });
+          cb.dispatch({
+            type: 'shadow-active',
+            foregroundEngineId: firstEngine,
+            shadowEngineId: apiEngines[1],
+          });
+          cb.runAsJob('agent', input?.slice(0, 40) ?? 'agent', (signal) => runAgentJobWithAutoResume(input, cb, () => runAgentTeam(input, cb.dispatch, cb.ctx, {
+            engines: apiEngines.slice(0, 2),
+            shadowMode: true,
+            foregroundEngineId: firstEngine,
+            taskKind: 'edit',
+            parentSignal: signal,
+          })));
+        } else {
+          cb.dispatch({
+            type: 'agent-routing',
+            mode: 'solo',
+            engines: [firstEngine],
+            reason: 'single engine — no shadow available',
+          });
+          cb.runAsJob('agent', input?.slice(0, 40) ?? 'agent', (signal) => runAgentJobWithAutoResume(input, cb, () => runAgentMode(input, cb.dispatch, cb.ctx, { parentSignal: signal })));
+        }
+      }
+      return { handled: true, ranAsJob: true };
+    }
+    case 'agent-solo': {
+      // Explicit opt-out of shadow workers — always runs pure solo.
+      const soloInput = intent.input;
+      cb.dispatch({ type: 'agent-routing', mode: 'solo', engines: [cb.ctx.activeEngines()[0] ?? 'default'], reason: 'explicit /agent-solo — shadow mode disabled' });
+      cb.runAsJob('agent', soloInput?.slice(0, 40) ?? 'agent', (signal) => runAgentJobWithAutoResume(soloInput, cb, () => runAgentMode(soloInput, cb.dispatch, cb.ctx, { maxTurns: intent.maxTurns, parentSignal: signal })));
+      return { handled: true, ranAsJob: true };
+    }
+    case 'team-agent':
+      cb.runAsJob('team-agent', intent.input?.slice(0, 40) ?? 'team-agent', (signal) => runAgentJobWithAutoResume(intent.input, cb, () => runAgentTeam(intent.input, cb.dispatch, cb.ctx, {
+        engines: intent.engines,
+        taskKind: intent.taskKind,
+        maxTurns: intent.maxTurns,
+        parentSignal: signal,
+      })));
+      return { handled: true, ranAsJob: true };
+    case 'speculate': {
+      const specInput = intent.input;
+      const specLabel = specInput?.slice(0, 40) ?? 'speculate';
+      cb.runAsJob('speculate', specLabel, async () => {
+        const cwd = resolveWorkingDir();
+        const available = cb.ctx.activeEngines();
+        // Resolve API engines — speculator needs API access for runApiAgentLoop.
+        const specEngineIds: string[] = (intent.engines ?? available).filter((id: string) => {
+          try { return !!cb.ctx.registry.get(id).api; } catch { return false; }
+        }).slice(0, 3);
+        if (specEngineIds.length === 0) {
+          cb.dispatch({ type: 'error', message: 'Speculate requires at least one API engine.' });
+          return;
+        }
+        const members: SpeculatorMemberConfig[] = specEngineIds.map((id: string) => {
+          const eng = cb.ctx.registry.get(id);
+          return { engineId: id, api: eng.api! };
+        });
+        cb.dispatch({
+          type: 'agent-routing',
+          mode: 'team',
+          engines: specEngineIds,
+          reason: `speculative VirtualFS execution — ${specEngineIds.length} engines race, winner applied`,
+        });
+        // Emit step-start events so the agent progress UI shows each engine.
+        for (const m of members) {
+          cb.dispatch({ type: 'agent-step-start', engineId: m.engineId, turnIndex: 0, userPrompt: specInput, maxTurns: 1, maxDurationMs: 120_000, maxTokens: null });
+        }
+        let thread;
+        if ((cb.ctx.config as any).sessionContinuity === true) {
+          try { thread = loadOrCreateActiveThread(cwd); } catch { /* non-fatal */ }
+        }
+        const speculator = createSpeculator();
+        let result;
+        try {
+          result = await speculator.run({
+            members,
+            prompt: specInput,
+            cwd,
+            timeoutSec: 120,
+            thread,
+            taskKeywords: specInput.split(/\s+/).slice(0, 8),
+            onMemberStart: (eid: string) => cb.dispatch({ type: 'spinner-update', message: `${eid} speculating…` }),
+            onMemberPreview: (pkg: any, diff: string, path: string) => {
+              const effectCount = Array.isArray(pkg.effects) ? pkg.effects.length : 0;
+              const lineCount = String(diff ?? '').split('\n').filter((line: string) =>
+                (line.startsWith('+') && !line.startsWith('+++')) || (line.startsWith('-') && !line.startsWith('---'))
+              ).length;
+              const capped = diff && diff.length > 2400 ? `${diff.slice(0, 2400)}\n\n[preview truncated: ${diff.length - 2400} more chars]` : diff;
+              cb.dispatch({
+                type: 'engine-block',
+                engineId: pkg.engineId,
+                color: ENGINE_COLORS[pkg.engineId] ?? 0x9333ea,
+                content: `Speculative VirtualFS preview: ${effectCount} file effect(s), ${lineCount} changed line(s)\nPath: ${path}\n\n${capped || '(empty diff preview)'}`,
+              });
+            },
+            onMemberComplete: (pkg: any, score: number) => cb.dispatch({ type: 'agent-step-end', engineId: pkg.engineId, turnIndex: 0, outcome: 'completed', toolCalls: pkg.toolCallCount, tokensUsed: pkg.tokensUsed, stopReason: `score:${score}` }),
+          });
+        } catch (err: any) {
+          cb.dispatch({ type: 'error', message: `Speculator failed: ${err.message ?? err}` });
+          return;
+        }
+        // Announce winner.
+        if (result.winnerId) {
+          cb.dispatch({ type: 'engine-switch', from: specEngineIds[0] !== result.winnerId ? specEngineIds[0] : undefined, to: result.winnerId, reason: 'synthesis' });
+          const appliedSummary = result.appliedFiles.length > 0
+            ? `\nApplied ${result.appliedFiles.length} file(s): ${result.appliedFiles.slice(0, 5).map((f: string) => f.split('/').pop()).join(', ')}`
+            : '\n(no file changes)';
+          cb.dispatch({ type: 'engine-block', engineId: result.winnerId, color: 0x9333ea, content: `Speculator winner: ${result.winnerId}${appliedSummary}\n\n${result.winner?.slice(0, 500) ?? ''}` });
+        } else {
+          cb.dispatch({ type: 'warning', message: 'Speculator: no winner — all engines produced empty results.' });
+        }
+      });
+      return { handled: true, ranAsJob: true };
+    }
+    case 'pipeline': {
+      const _pCwd = resolveWorkingDir();
+      const _pLabel = intent.task?.slice(0, 40) ?? 'pipeline';
+      cb.runAsJob('pipeline', _pLabel, withThreadOutcome(_pCwd, 'pipeline', _pLabel, () => handlePipeline(intent.task, cb.dispatch, cb.ctx, intent.fitnessCmd ?? undefined), cb.ctx));
+      return { handled: true, ranAsJob: true };
+    }
+    case 'review':
+      {
+        const _reviewLabel = intent.target?.slice(0, 40) ?? 'review';
+        const _cwdReview = resolveWorkingDir();
+        cb.runAsJob('review', _reviewLabel, withThreadOutcome(_cwdReview, 'review', _reviewLabel, async () => {
+        if (cb.eventBus) await cb.eventBus.emit('pre:review', { target: intent.target, cwd: resolveWorkingDir() });
+        const reviewEngines = Array.isArray(intent.engineIds) && intent.engineIds.length > 0
+          ? intent.engineIds
+          : intent.engineId ? [intent.engineId] : undefined;
+        await handleReviewMany(cb.dispatch, cb.ctx, intent.target, reviewEngines);
+        await absorbReviewResultIntoCesar(input, cb);
+        if (cb.eventBus) cb.eventBus.emit('post:review', { target: intent.target, cwd: resolveWorkingDir() }).catch(() => {});
+        }, cb.ctx));
+      }
+      return { handled: true, ranAsJob: true };
+
+    case 'goal': {
+      const _gInput = (intent.input ?? '').trim();
+      if (!_gInput) {
+        cb.dispatch({ type: 'info', message: 'Usage: /goal <intent> --queue <dir|file> --gate "<cmd>" [--push] [--pr] [--max-hours N]. Runs in the background — track with /jobs, /focus <id>, or from any terminal: agon goal --status --id <slug>.' });
+        return { handled: true, ranAsJob: false };
+      }
+      const _gCwd = resolveWorkingDir();
+      const _gLabel = _gInput.slice(0, 40);
+      // Spawn the CLI as a child process so the hours-long loop never blocks
+      // the REPL event loop. The durable source of truth is the goal journal
+      // (agon goal --status --id <slug>); we surface a tail on completion.
+      cb.runAsJob('goal', _gLabel, withThreadOutcome(_gCwd, 'goal', _gLabel, async () => {
+        cb.dispatch({ type: 'info', message: `goal: launched in the background — \`agon goal ${_gInput}\`. Check progress with /jobs, /focus, or \`agon goal --status\`.` });
+        const res = await spawnWithTimeout({ command: '/bin/sh', args: ['-c', `agon goal ${_gInput}`], cwd: _gCwd, timeout: 24 * 60 * 60 * 1000 });
+        const tail = (res.stdout || '').slice(-4000);
+        if (tail.trim()) cb.dispatch({ type: 'text', content: tail });
+        if (res.exitCode !== 0) throw new Error((res.stderr || `agon goal exited ${res.exitCode}`).slice(-1000));
+      }, cb.ctx));
+      return { handled: true, ranAsJob: true };
+    }
+
+    // ── Inline commands ──
+    default: return null;
+  }
+  // break-path cases land here — mirrors the original switch's shared _emitPost() tail
+  emitPostDispatch(intent, input, cb);
+  return { handled: true, ranAsJob: false };
+}

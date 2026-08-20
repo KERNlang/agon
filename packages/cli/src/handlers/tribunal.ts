@@ -1,2 +1,215 @@
-// Facade over ../generated/handlers/tribunal.js — edit the source there.
-export { handleTribunal } from '../generated/handlers/tribunal.js';
+import { join } from 'node:path';
+
+import { mkdirSync } from 'node:fs';
+
+import { ensureAgonHome, RUNS_DIR, scanProjectContext, tracker, appendMessage, resolveWorkingDir } from '@kernlang/agon-core';
+
+import { runTribunal, getModeConfig, isTribunalProtocol } from '@kernlang/agon-forge';
+
+import type { TribunalMode, TribunalProtocol } from '@kernlang/agon-forge';
+
+import { sessionResultStore } from '../models/session-results.js';
+
+import type { Dispatch, HandlerContext, EngineProgress } from './types.js';
+
+import { createScoreboard, scoreboardFinishEngine, renderScoreboard } from '../cesar/scoreboard.js';
+
+import { buildCheckpoint, recordCheckpoint } from '../cesar/checkpoint.js';
+
+import { recordRun, formatRunSummary } from '../telemetry/index.js';
+
+import { filterDefaultOrchestrationEngines } from './engine-filter.js';
+
+export async function handleTribunal(question: string, dispatch: Dispatch, ctx: HandlerContext, tribunalMode?: string, tribunalProtocol?: string): Promise<void> {
+  const tribunalAbort = new AbortController();
+  try {
+    ensureAgonHome();
+    
+    if (!question) {
+      dispatch({ type: 'warning', message: 'No question provided. Usage: /tribunal [mode] <question>' });
+      dispatch({ type: 'info', message: 'Modes: adversarial (default), socratic, red-team, steelman, synthesis, postmortem' });
+      return;
+    }
+    
+    const allActive = ctx.activeEngines();
+    const active = filterDefaultOrchestrationEngines(allActive);
+    const excluded = allActive.filter((id: string) => !active.includes(id));
+    if (excluded.length > 0) dispatch({ type: 'info', message: `Skipping disabled orchestration engines: ${excluded.join(', ')}` });
+    if (active.length < 2) {
+      dispatch({ type: 'error', message: `Tribunal needs at least 2 engines. Only found: ${active.join(', ') || 'none'}` });
+      return;
+    }
+    
+    const engines = active.slice(0, 4);
+    const mode = (tribunalMode ?? 'adversarial') as TribunalMode;
+    const requestedProtocol = tribunalProtocol?.trim().toLowerCase();
+    if (requestedProtocol && requestedProtocol !== 'auto' && !isTribunalProtocol(requestedProtocol)) {
+      dispatch({ type: 'error', message: `Invalid tribunal protocol: ${requestedProtocol}. Use auto, parallel, chained, or hybrid.` });
+      return;
+    }
+    const protocol = requestedProtocol && requestedProtocol !== 'auto'
+      ? requestedProtocol as TribunalProtocol
+      : getModeConfig(mode, engines.length).protocol;
+    const outputDir = join(RUNS_DIR, `tribunal-${Date.now()}`);
+    mkdirSync(outputDir, { recursive: true });
+    
+    const config = ctx.config;
+    const tribunalCwd = resolveWorkingDir();
+    const projectCtx = scanProjectContext(tribunalCwd, config.projectContext || undefined, config.contextFormat);
+    const enrichedQuestion = projectCtx
+      ? `${question}\n\n## PROJECT CONTEXT\n${projectCtx}`
+      : question;
+    
+    dispatch({ type: 'header', title: `Tribunal (${mode}): ${question}` });
+    dispatch({ type: 'info', message: `Engines: ${engines.join(', ')}` });
+    dispatch({ type: 'info', message: `Mode: ${mode}` });
+    dispatch({ type: 'info', message: `Protocol: ${protocol}` });
+    if (projectCtx) dispatch({ type: 'info', message: `Context: ${tribunalCwd}` });
+    
+    ctx.setActiveAbort(tribunalAbort);
+    
+    // ── Scoreboard + Checkpoint ──
+    const runId = `tribunal-${Date.now()}`;
+    const scoreboard = createScoreboard(runId, 'tribunal', engines);
+    const preCp = buildCheckpoint(runId, 'pre-dispatch', 'tribunal', engines, { question, mode, protocol });
+    recordCheckpoint(preCp);
+    
+    // Track per-engine state for progress-update
+    const engineState: Record<string, { status: string; done: boolean }> = {};
+    for (const id of engines) engineState[id] = { status: 'waiting', done: false };
+    const startTime = Date.now();
+    
+    const emitProgress = () => {
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      const progress: EngineProgress[] = engines.map((id: string) => ({
+        id,
+        status: engineState[id]?.status ?? 'waiting',
+        elapsed,
+        done: engineState[id]?.done ?? false,
+        failed: false,
+      }));
+      dispatch({ type: 'progress-update', engines: progress });
+    };
+    
+    // Emit initial progress + start interval
+    emitProgress();
+    const progressInterval = setInterval(emitProgress, 250);
+    
+    let result: any;
+    try {
+      result = await runTribunal({
+        question: enrichedQuestion,
+        engines,
+        rounds: 2,
+        mode,
+        protocol,
+        registry: ctx.registry,
+        adapter: ctx.adapter,
+        timeout: 120,
+        outputDir,
+        onEvent: (event: any) => {
+          if (tribunalAbort.signal.aborted) return;
+          if (event.data?.round) {
+            const engineId = event.engineId;
+            const position = event.data?.position;
+            if (engineId && position) {
+              engineState[engineId] = { status: `R${event.data.round} ${String(position)}`, done: false };
+              emitProgress();
+            }
+          }
+        },
+      });
+    } catch (err) {
+      clearInterval(progressInterval);
+      dispatch({ type: 'progress-clear' });
+      throw err;
+    }
+    
+    clearInterval(progressInterval);
+    
+    if (tribunalAbort.signal.aborted) {
+      dispatch({ type: 'progress-clear' });
+      return;
+    }
+    
+    // Finalize scoreboard + checkpoint
+    for (const id of engines) {
+      scoreboardFinishEngine(scoreboard, id, { result: engineState[id]?.status ?? 'done' });
+    }
+    dispatch({ type: 'info', message: renderScoreboard(scoreboard) });
+    const postCp = buildCheckpoint(runId, 'post-dispatch', 'tribunal', engines, { question, mode, protocol });
+    recordCheckpoint(postCp);
+    
+    // Final progress with done state
+    for (const id of engines) engineState[id] = { status: '\u2713 done', done: true };
+    emitProgress();
+    dispatch({ type: 'progress-clear' });
+    
+    for (const round of result.rounds) {
+      dispatch({ type: 'header', title: `Round ${round.round}` });
+      for (const pos of round.positions) {
+        const arg = pos.arguments[0] ?? '';
+        dispatch({
+          type: 'debate-round',
+          round: round.round,
+          engineId: pos.engineId,
+          position: pos.position,
+          argument: arg,
+        });
+      }
+    }
+    
+    // Panel health is non-negotiable output: a retried or dropped seat-round
+    // must be visible right next to the verdict it shaped.
+    if (result.panelHealth?.banner) dispatch({ type: 'info', message: `⚠ ${result.panelHealth.banner}` });
+    dispatch({ type: 'header', title: mode === 'socratic' ? 'Unresolved Questions' : mode === 'red-team' ? 'Risk Register' : mode === 'synthesis' ? 'Decision Matrix' : mode === 'postmortem' ? 'Postmortem Report' : 'Verdict' });
+    dispatch({ type: 'verdict', summary: result.summary });
+    dispatch({ type: 'info', message: `Full debate saved: ${outputDir}` });
+    
+    // Save verdict to chat history for follow-ups
+    appendMessage(ctx.chatSession, { role: 'user', content: `[tribunal:${mode}/${protocol}] ${question}`, timestamp: new Date().toISOString() });
+    appendMessage(ctx.chatSession, { role: 'engine', engineId: 'tribunal', content: result.summary, timestamp: new Date().toISOString() });
+    
+    sessionResultStore.add({
+      type: 'tribunal',
+      timestamp: new Date().toISOString(),
+      question,
+      engines,
+      winner: null,
+      data: {
+        rounds: result.rounds.flatMap((round: any) =>
+          round.positions.map((pos: any) => ({
+            round: round.round,
+            engineId: pos.engineId,
+            position: pos.position,
+            argument: pos.arguments[0] ?? '',
+          }))
+        ),
+        verdict: result.summary,
+        protocol,
+      },
+    });
+    
+    const runRecord = recordRun({
+      mode: 'tribunal',
+      intent: question,
+      winner: undefined,
+      success: true,
+      durationMs: Date.now() - startTime,
+      engineIds: engines,
+      completionState: 'completed',
+    });
+    if (!process.env.AGON_NO_SUMMARY) {
+      dispatch({ type: 'info', message: formatRunSummary(runRecord) });
+    }
+    
+    for (const round of result.rounds) {
+      for (const pos of round.positions) {
+        tracker.record(pos.engineId, { prompt: question, response: pos.arguments.join(' ') });
+      }
+    }
+  } finally {
+    dispatch({ type: 'progress-clear' });
+    ctx.setActiveAbort(null);
+  }
+}

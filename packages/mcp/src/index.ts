@@ -8,6 +8,6 @@
 // Spawned by companion engines (Codex, Gemini, OpenCode) to expose
 // Tribunal, Brainstorm, Campfire, Forge, etc. as MCP tools.
 
-import { startMcpServer } from './generated/agon-orchestration.js';
+import { startMcpServer } from './agon-orchestration.js';
 
 startMcpServer();

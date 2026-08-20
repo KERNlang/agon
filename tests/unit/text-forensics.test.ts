@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { scanText, cleanText } from '../../packages/core/src/generated/text/forensics.js';
+import { scanText, cleanText } from '../../packages/core/src/text/forensics.js';
 
 const ZWSP = '\u{200B}';
 const BOM = '\u{FEFF}';

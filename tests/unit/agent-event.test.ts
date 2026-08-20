@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   makeAssistantChunk, makeToolCall, makeTurnComplete, makeError,
   normalizeSessionChunk, buildApiTurnEvents, estimatedUsage, unavailableUsage,
-} from '../../packages/core/src/generated/models/agent-event.js';
-import type { RawSessionChunk } from '../../packages/core/src/generated/models/agent-event.js';
+} from '../../packages/core/src/models/agent-event.js';
+import type { RawSessionChunk } from '../../packages/core/src/models/agent-event.js';
 
 describe('agent-event constructors', () => {
   it('makeAssistantChunk produces the correct shape', () => {

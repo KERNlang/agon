@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   createAgentState, beginTurn, completeTurn, requestApproval, approveTool, rejectTool,
   cancelAgent, failAgent, completeAgent, checkBudget, isTerminal,
-} from '../../packages/core/src/generated/cesar/agent-state.js';
-import type { AgentState, AgentBudget, AgentStepResult } from '../../packages/core/src/generated/cesar/agent-state.js';
+} from '../../packages/core/src/cesar/agent-state.js';
+import type { AgentState, AgentBudget, AgentStepResult } from '../../packages/core/src/cesar/agent-state.js';
 
 const BUDGET: AgentBudget = { maxTurns: 5, maxTokens: 100_000, maxDurationMs: 60_000 };
 const T0 = 1_000_000;

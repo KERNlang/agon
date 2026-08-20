@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import * as engineModule from '../../packages/cli/src/generated/blocks/engine.js';
-import { VERSION } from '../../packages/cli/src/generated/blocks/engine.js';
-import { renderBlockOwnRows } from '../../packages/cli/src/generated/surfaces/app-rendering.js';
+import * as engineModule from '../../packages/cli/src/blocks/engine.js';
+import { VERSION } from '../../packages/cli/src/blocks/engine.js';
+import { renderBlockOwnRows } from '../../packages/cli/src/surfaces/app-rendering.js';
 
 // The REPL banner is Agon's own product identity: version + KERNlang.dev org
 // branding. It must NOT advertise a KERN compiler version — Agon ejected from

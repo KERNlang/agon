@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { resolveKeyboardInput } from '../../packages/cli/src/generated/signals/keyboard.js';
+import { resolveKeyboardInput } from '../../packages/cli/src/signals/keyboard.js';
 
 function baseCtx(overrides: Record<string, unknown> = {}) {
   return {

@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   resolveIsolationMode, planEngineIsolation, isValidIsolationMode,
-} from '../../packages/core/src/generated/signals/isolation.js';
-import type { EngineDefinition } from '../../packages/core/src/generated/models/types.js';
+} from '../../packages/core/src/signals/isolation.js';
+import type { EngineDefinition } from '../../packages/core/src/models/types.js';
 
 // Minimal engine fixtures — only the fields the planner reads matter.
 const eng = (id: string, isolationHints?: EngineDefinition['isolationHints']): EngineDefinition =>

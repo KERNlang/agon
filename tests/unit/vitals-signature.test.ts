@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { vitalsRenderSignature } from '../../packages/cli/src/generated/cesar/telemetry.js';
-import type { EngineVitals } from '../../packages/cli/src/generated/cesar/telemetry.js';
+import { vitalsRenderSignature } from '../../packages/cli/src/cesar/telemetry.js';
+import type { EngineVitals } from '../../packages/cli/src/cesar/telemetry.js';
 
 function vitals(partial: Partial<EngineVitals> & { engineId: string }): EngineVitals {
   return {

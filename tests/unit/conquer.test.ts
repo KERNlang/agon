@@ -147,7 +147,7 @@ describe('isProtectedPushBranch — unattended --push guard', () => {
   });
 
   it('an EMPTY protectedPushBranches array means defaults, never protect-nothing — the DEFAULT_AGON_CONFIG production state', () => {
-    // KERN codegen emits optional array fields as [] into DEFAULT_AGON_CONFIG,
+    // DEFAULT_AGON_CONFIG carries [] for an unset optional array,
     // so every real loadConfig() caller passes { protectedPushBranches: [] }.
     // 5/6-engine review consensus: an empty-array-disables rule silently kills
     // the guard in production. Empty MUST fall back to main/master.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { promptDelegation } from '../../packages/cli/src/generated/cesar/escalation.js';
-import { createTaskExecutionLease } from '../../packages/cli/src/generated/cesar/task-execution-lease.js';
+import { promptDelegation } from '../../packages/cli/src/cesar/escalation.js';
+import { createTaskExecutionLease } from '../../packages/cli/src/cesar/task-execution-lease.js';
 
 describe('Cesar delegation autonomy', () => {
   it('never prompts for optional read-only thinking modes', async () => {

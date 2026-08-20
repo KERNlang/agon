@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateManifest } from '../../packages/core/src/extension-manifest.js';
+import { validateManifest } from '../../packages/core/src/models/extension-manifest.js';
 
 describe('Extension Manifest', () => {
   describe('validateManifest', () => {

@@ -6,7 +6,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { linkWorktreeNodeModules } from '../../packages/core/src/generated/blocks/git.js';
+import { linkWorktreeNodeModules } from '../../packages/core/src/blocks/git.js';
 
 // ── pnpm-workspace worktree node_modules linking ─────────────────────────
 // Regression contract: worktreeCreate -> linkWorktreeNodeModules must make a

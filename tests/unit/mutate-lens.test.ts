@@ -6,17 +6,17 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildSemanticMutantPrompt, normalizeLens, validateSemanticMutants, MUTATE_LENS_PRESETS,
-} from '../../packages/forge/src/generated/mutate-semantic.js';
-import { mutateLensSuffix, mutateVerdictLine } from '../../packages/forge/src/generated/mutate-report.js';
+} from '../../packages/forge/src/mutate-semantic.js';
+import { mutateLensSuffix, mutateVerdictLine } from '../../packages/forge/src/mutate-report.js';
 import {
   mutateLensLine, mutateLensImpliesSemanticLine, mutateChatSummary,
-} from '../../packages/cli/src/generated/blocks/mutate-render.js';
+} from '../../packages/cli/src/blocks/mutate-render.js';
 import {
   parseMutateArgs, validateMutateFlags, resolveMutatePanel,
-} from '../../packages/cli/src/generated/handlers/mutate.js';
-import { reviewMutateOverrides } from '../../packages/cli/src/generated/blocks/review-mutate.js';
-import type { Mutant } from '../../packages/core/src/generated/tools/mutant-generator.js';
-import type { MutationReport } from '../../packages/core/src/generated/tools/mutant-runner.js';
+} from '../../packages/cli/src/handlers/mutate.js';
+import { reviewMutateOverrides } from '../../packages/cli/src/blocks/review-mutate.js';
+import type { Mutant } from '../../packages/core/src/tools/mutant-generator.js';
+import type { MutationReport } from '../../packages/core/src/tools/mutant-runner.js';
 
 const targets = [{ file: 'src/auth.ts', lines: [{ line: 2, text: '  return token.valid;' }] }];
 

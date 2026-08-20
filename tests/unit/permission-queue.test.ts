@@ -26,9 +26,9 @@ import {
   clearPermissionQueue,
   flushPendingToolCalls,
   _permissionQueue,
-} from '../../packages/cli/src/generated/signals/output.js';
-import type { OutputActions, OutputState } from '../../packages/cli/src/generated/signals/output.js';
-import { clearSessionPermissionRules } from '../../packages/cli/src/generated/cesar/permission-resolver.js';
+} from '../../packages/cli/src/signals/output.js';
+import type { OutputActions, OutputState } from '../../packages/cli/src/signals/output.js';
+import { clearSessionPermissionRules } from '../../packages/cli/src/cesar/permission-resolver.js';
 
 function createMockActions(): OutputActions & { calls: Record<string, unknown[][]> } {
   const calls: Record<string, unknown[][]> = {

@@ -8,7 +8,7 @@ import {
   createFileSnapshot,
   effectPackageDiff,
   relocateEffectPackage,
-} from '../../packages/core/src/generated/forge/virtual-fs.js';
+} from '../../packages/core/src/forge/virtual-fs.js';
 
 describe('VirtualFS', () => {
   it('relocates isolated worktree overlays before applying to the main workspace', () => {

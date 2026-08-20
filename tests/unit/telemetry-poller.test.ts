@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { EngineRegistry } from '../../packages/core/src/engine-registry.js';
-import { createMockStallProbe, createTelemetryPoller } from '../../packages/cli/src/generated/cesar/telemetry-poller.js';
+import { EngineRegistry } from '../../packages/core/src/signals/engine-registry.js';
+import { createMockStallProbe, createTelemetryPoller } from '../../packages/cli/src/cesar/telemetry-poller.js';
 
 function makeRegistry(): EngineRegistry {
   const registry = new EngineRegistry();

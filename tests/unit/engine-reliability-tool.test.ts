@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { createEngineReliabilityTool } from '../../packages/cli/src/generated/cesar/tool-engine-reliability.js';
-import { recordApiLoopDispatch, recordTextTransportDispatch } from '../../packages/core/src/generated/signals/delegate-ledger.js';
+import { createEngineReliabilityTool } from '../../packages/cli/src/cesar/tool-engine-reliability.js';
+import { recordApiLoopDispatch, recordTextTransportDispatch } from '../../packages/core/src/signals/delegate-ledger.js';
 import { setupTestAgonHome, cleanupTestAgonHome } from '../helpers/agon-home.js';
 
 const ctx = { cwd: process.cwd(), readFileState: new Map() } as any;

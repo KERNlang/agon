@@ -122,7 +122,7 @@ if (metaRe.test(indexSrc)) {
 
 // 3. Stamp the VERSION fallback literal in engine.tsx — last resort if runtime
 //    resolution fails; keep it equal to the release so the banner is never wrong.
-const enginePath = join(ROOT, 'packages', 'cli', 'src', 'generated', 'blocks', 'engine.tsx');
+const enginePath = join(ROOT, 'packages', 'cli', 'src', 'blocks', 'engine.tsx');
 let engineSrc = readFileSync(enginePath, 'utf8');
 const fallbackRe = /(resolvePackageVersion\('@kernlang\/agon', ')[^']*(')/;
 if (fallbackRe.test(engineSrc)) {

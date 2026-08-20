@@ -3,13 +3,13 @@ import {
   EngineRegistry, ensureAgonHome, loadConfig,
   createRunDir, writeRunStatus, printRunSummary,
 } from '@kernlang/agon-core';
-import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
+import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 import type { BrainstormBid, BrainstormResult } from '@kernlang/agon-core';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { runBrainstorm } from '@kernlang/agon-forge';
-import { header, info, warn, table, bold, green } from '../output.js';
-import { icons } from '../icons.js';
-import { filterDefaultOrchestrationEngines } from '../generated/handlers/engine-filter.js';
+import { header, info, warn, table, bold, green } from '../blocks/output-format.js';
+import { icons } from '../signals/icons.js';
+import { filterDefaultOrchestrationEngines } from '../handlers/engine-filter.js';
 
 export const brainstormCommand = defineCommand({
   meta: {

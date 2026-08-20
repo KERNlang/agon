@@ -1,9 +1,9 @@
-// Pins the shared MECHANICAL operator set (packages/core/src/generated/tools/mutant-generator.ts).
+// Pins the shared MECHANICAL operator set (packages/core/src/tools/mutant-generator.ts).
 // The runner's kill/survive behavior lives in mutant-runner.test.ts; what is
 // pinned here is which LINES earn a mutant at all, and that the operator classes
 // did not move when comment skipping landed.
 import { describe, it, expect } from 'vitest';
-import { commentOnlyLines, generateMutants } from '../../packages/core/src/generated/tools/mutant-generator.js';
+import { commentOnlyLines, generateMutants } from '../../packages/core/src/tools/mutant-generator.js';
 
 const allLines = (src: string): number[] => src.split('\n').map((_, i) => i + 1);
 

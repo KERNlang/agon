@@ -10,7 +10,7 @@ import {
   buildToolErrorDiagnostic,
   replayCesarHarnessLogs,
   classifyCesarToolEffect,
-} from '../../packages/cli/src/generated/cesar/tool-observability.js';
+} from '../../packages/cli/src/cesar/tool-observability.js';
 import { setupTestAgonHome, cleanupTestAgonHome, agonHomePath } from '../helpers/agon-home.js';
 
 describe('Cesar tool observability', () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { AgentStepResult } from '../../packages/core/src/generated/cesar/agent-session.js';
+import type { AgentStepResult } from '../../packages/core/src/cesar/agent-session.js';
 
 // Mock @kernlang/agon-core so the handler's AgentSession is a stub we control.
 // This isolates the test to handler composition logic — Phase 1's AgentSession
@@ -61,8 +61,8 @@ vi.mock('@kernlang/agon-core', async (importOriginal) => {
   };
 });
 
-import { runAgentMode } from '../../packages/cli/src/generated/handlers/agent.js';
-import type { OutputEvent } from '../../packages/cli/src/generated/models/handler-types.js';
+import { runAgentMode } from '../../packages/cli/src/handlers/agent.js';
+import type { OutputEvent } from '../../packages/cli/src/models/handler-types.js';
 
 function makeCtx(engineIds: string[] = ['test-engine'], engineHasApi = true) {
   const events: OutputEvent[] = [];

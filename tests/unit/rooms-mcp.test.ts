@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
-import { ROOM_TOOLS, isRoomTool, handleRoomTool } from '../../packages/mcp/src/generated/rooms.js';
+import { ROOM_TOOLS, isRoomTool, handleRoomTool } from '../../packages/mcp/src/rooms.js';
 
 let home: string;
 beforeEach(() => {

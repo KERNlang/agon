@@ -6,7 +6,7 @@ import {
   shouldDowngradeCesarToolWork,
   summarizeCesarLatency,
   summarizeCesarToolReliability,
-} from '../../packages/cli/src/generated/cesar/reliability.js';
+} from '../../packages/cli/src/cesar/reliability.js';
 
 describe('Cesar tool reliability', () => {
   it('marks tool-heavy stalled engines as advisory-only', () => {

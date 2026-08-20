@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import type { DispatchMetric, EngineResult } from '../../packages/core/src/types.js';
+import type { DispatchMetric, EngineResult } from '../../packages/core/src/models/types.js';
 import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 
 let testHome = '';
@@ -68,7 +68,7 @@ describe('DispatchMetric Type', () => {
 // ── 2. Token Tracker Integration ──────────────────────────────────
 describe('Token Tracker', () => {
   it('estimates tokens from text length', async () => {
-    const { estimateTokens } = await import('../../packages/core/src/token-tracker.js');
+    const { estimateTokens } = await import('../../packages/core/src/signals/token-tracker.js');
 
     // ~4 chars per token
     expect(estimateTokens('hello world')).toBe(3); // ceil(11/4) = 3
@@ -77,7 +77,7 @@ describe('Token Tracker', () => {
   });
 
   it('estimates cost per engine', async () => {
-    const { estimateCost } = await import('../../packages/core/src/token-tracker.js');
+    const { estimateCost } = await import('../../packages/core/src/signals/token-tracker.js');
 
     // Claude: $9/1M tokens
     const claudeCost = estimateCost('claude', 1_000_000);
@@ -93,7 +93,7 @@ describe('Token Tracker', () => {
   });
 
   it('tracker records and aggregates by engine', async () => {
-    const { TokenTracker } = await import('../../packages/core/src/token-tracker.js');
+    const { TokenTracker } = await import('../../packages/core/src/signals/token-tracker.js');
     const tracker = new TokenTracker();
 
     tracker.record('claude', 'prompt text here', 'response text');
@@ -111,7 +111,7 @@ describe('Token Tracker', () => {
   });
 
   it('tracker.recent returns last N entries', async () => {
-    const { TokenTracker } = await import('../../packages/core/src/token-tracker.js');
+    const { TokenTracker } = await import('../../packages/core/src/signals/token-tracker.js');
     const tracker = new TokenTracker();
 
     for (let i = 0; i < 10; i++) {
@@ -125,7 +125,7 @@ describe('Token Tracker', () => {
   });
 
   it('tracker.reset clears all data', async () => {
-    const { TokenTracker } = await import('../../packages/core/src/token-tracker.js');
+    const { TokenTracker } = await import('../../packages/core/src/signals/token-tracker.js');
     const tracker = new TokenTracker();
 
     tracker.record('claude', 'p', 'r');
@@ -206,7 +206,7 @@ describe('Timeout Isolation', () => {
 // ── 4. Scoring Component Breakdown ────────────────────────────────
 describe('Scoring Component Breakdown', () => {
   it('computeScore returns all individual components', async () => {
-    const { computeScore } = await import('../../packages/core/src/scoring.js');
+    const { computeScore } = await import('../../packages/core/src/signals/scoring.js');
 
     const result = computeScore({
       pass: true,
@@ -241,7 +241,7 @@ describe('Scoring Component Breakdown', () => {
   });
 
   it('penalizes heavily for large diffs (500+ lines)', async () => {
-    const { computeScore } = await import('../../packages/core/src/scoring.js');
+    const { computeScore } = await import('../../packages/core/src/signals/scoring.js');
 
     const small = computeScore({
       pass: true, diffLines: 20, filesChanged: 1, durationSec: 10,
@@ -263,7 +263,7 @@ describe('Scoring Component Breakdown', () => {
 // ── 5. Glicko-2 Rating Integration ───────────────────────────────
 describe('Glicko-2 Rating Integration', () => {
   it('updateGlicko adjusts ratings after forge outcome', async () => {
-    const { updateGlicko, getRatings } = await import('../../packages/core/src/glicko.js');
+    const { updateGlicko, getRatings } = await import('../../packages/core/src/signals/glicko.js');
 
     const before = getRatings();
     const claudeBefore = before.global?.claude?.mu ?? 1500;
@@ -282,7 +282,7 @@ describe('Glicko-2 Rating Integration', () => {
   });
 
   it('Glicko-2 tracks per mode and task class', async () => {
-    const { updateGlicko, getRatings } = await import('../../packages/core/src/glicko.js');
+    const { updateGlicko, getRatings } = await import('../../packages/core/src/signals/glicko.js');
 
     updateGlicko('gemini', 'claude', 'algorithm', 'brainstorm');
 

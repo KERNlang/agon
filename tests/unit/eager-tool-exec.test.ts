@@ -81,7 +81,7 @@ describe('Eager Tool Execution', () => {
 
   it('collects tool results for batch send-back', async () => {
     // After eager execution, results should be formatted for re-injection
-    const { formatToolResults } = await import('../../packages/core/src/generated/tools/tool-parser.js');
+    const { formatToolResults } = await import('../../packages/core/src/tools/tool-parser.js');
 
     const results = formatToolResults([
       { name: 'Read', content: 'const x = 1;' },
@@ -150,10 +150,10 @@ describe('Eager Tool Execution', () => {
   });
 
   it('executeToolCalls works with native-protocol parsed inputs', async () => {
-    const { ToolRegistry, executeToolCall } = await import('../../packages/core/src/generated/signals/tool-registry.js');
-    const { createReadTool } = await import('../../packages/core/src/generated/tools/tool-read.js');
-    const { createGrepTool } = await import('../../packages/core/src/generated/tools/tool-grep.js');
-    const { createGlobTool } = await import('../../packages/core/src/generated/tools/tool-glob.js');
+    const { ToolRegistry, executeToolCall } = await import('../../packages/core/src/signals/tool-registry.js');
+    const { createReadTool } = await import('../../packages/core/src/tools/tool-read.js');
+    const { createGrepTool } = await import('../../packages/core/src/tools/tool-grep.js');
+    const { createGlobTool } = await import('../../packages/core/src/tools/tool-glob.js');
 
     const registry = new ToolRegistry();
     registry.register(createReadTool());
@@ -179,8 +179,8 @@ describe('Eager Tool Execution', () => {
   });
 
   it('surfaces malformed streaming tool input as a retryable tool error', async () => {
-    const { ToolRegistry } = await import('../../packages/core/src/generated/signals/tool-registry.js');
-    const { executeEagerTool } = await import('../../packages/cli/src/generated/cesar/tools.js');
+    const { ToolRegistry } = await import('../../packages/core/src/signals/tool-registry.js');
+    const { executeEagerTool } = await import('../../packages/cli/src/cesar/tools.js');
 
     const registry = new ToolRegistry();
     const events: any[] = [];
@@ -205,9 +205,9 @@ describe('Eager Tool Execution', () => {
   });
 
   it('enforces the task lease before an eager auto-allowed mutation', async () => {
-    const { ToolRegistry } = await import('../../packages/core/src/generated/signals/tool-registry.js');
-    const { executeEagerTool } = await import('../../packages/cli/src/generated/cesar/tools.js');
-    const { createTaskExecutionLease } = await import('../../packages/cli/src/generated/cesar/task-execution-lease.js');
+    const { ToolRegistry } = await import('../../packages/core/src/signals/tool-registry.js');
+    const { executeEagerTool } = await import('../../packages/cli/src/cesar/tools.js');
+    const { createTaskExecutionLease } = await import('../../packages/cli/src/cesar/task-execution-lease.js');
 
     const registry = new ToolRegistry();
     let executed = false;
@@ -249,9 +249,9 @@ describe('Eager Tool Execution', () => {
   });
 
   it('enforces the task lease for case-insensitive eager bash aliases', async () => {
-    const { ToolRegistry } = await import('../../packages/core/src/generated/signals/tool-registry.js');
-    const { executeEagerTool } = await import('../../packages/cli/src/generated/cesar/tools.js');
-    const { createTaskExecutionLease } = await import('../../packages/cli/src/generated/cesar/task-execution-lease.js');
+    const { ToolRegistry } = await import('../../packages/core/src/signals/tool-registry.js');
+    const { executeEagerTool } = await import('../../packages/cli/src/cesar/tools.js');
+    const { createTaskExecutionLease } = await import('../../packages/cli/src/cesar/task-execution-lease.js');
 
     const registry = new ToolRegistry();
     let executed = false;

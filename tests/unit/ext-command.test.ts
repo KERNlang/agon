@@ -15,7 +15,7 @@ import {
   parseNativeFrames,
   runExtInstall,
   AGON_EXTENSION_ID,
-} from '../../packages/cli/src/generated/commands/ext.js';
+} from '../../packages/cli/src/commands/ext.js';
 
 // A second well-formed id (32 chars a–p) standing in for a custom/unpacked install.
 const CUSTOM_ID = 'abcdefghijklmnopabcdefghijklmnop';

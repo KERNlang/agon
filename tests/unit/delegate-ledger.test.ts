@@ -13,8 +13,8 @@ import {
   formatDelegateReliability,
   formatAllDelegateReliability,
   delegateLedgerPath,
-} from '../../packages/core/src/generated/signals/delegate-ledger.js';
-import type { AgentToolOutcome } from '../../packages/core/src/generated/signals/delegate-ledger.js';
+} from '../../packages/core/src/signals/delegate-ledger.js';
+import type { AgentToolOutcome } from '../../packages/core/src/signals/delegate-ledger.js';
 import { setupTestAgonHome, cleanupTestAgonHome } from '../helpers/agon-home.js';
 
 const native = (tool: string, status: AgentToolOutcome['status']): AgentToolOutcome => ({

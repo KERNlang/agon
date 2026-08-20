@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { EngineNotFoundError } from '../../packages/core/src/generated/models/errors.js';
+import { EngineNotFoundError } from '../../packages/core/src/models/errors.js';
 
 describe('EngineNotFoundError (mode vs engine, #2)', () => {
   it('hints that a known mode name is a command, not an engine', () => {

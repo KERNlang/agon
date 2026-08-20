@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
-// Import the internal extraction function via the generated module
+// Import the internal extraction function straight from its module
 // Since _extractMcpServers is not exported, we test through discoverMcpServers behavior
 // and test the wire format conversion directly
 import { mcpServersToWireFormat } from '@kernlang/agon-core';

@@ -1,0 +1,372 @@
+import { join } from 'node:path';
+
+import { readFileSync } from 'node:fs';
+
+import { resolveWorkingDir, findSkill, renderSkillPrompt, startChatSession, currentBranch, getAgonHome, updateChatSummary } from '@kernlang/agon-core';
+
+import { handleChat } from '../../handlers/index.js';
+
+import type { DispatchCallbacks, DispatchResult } from '../dispatch.js';
+
+import { clearPersistedSessionContext } from './utils.js';
+
+import { routeWithCesar } from './cesar-router.js';
+
+import { emitPostDispatch } from './utils.js';
+
+export async function dispatchSkillsUiIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult | null> {
+  switch (intent.type) {
+    case 'create-skill': {
+      const csIntent = intent as any;
+      const skillName = csIntent.skillName as string;
+      const slug = skillName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      const trigger = `/${slug}`;
+      const skillDir = join(resolveWorkingDir(), '.agon', 'skills');
+      const skillPath = join(skillDir, `${slug}.md`);
+  
+      const { mkdirSync, existsSync, writeFileSync } = await import('node:fs');
+      if (existsSync(skillPath)) {
+        cb.dispatch({ type: 'warning', message: `Skill already exists: ${skillPath}` });
+        break;
+      }
+  
+      mkdirSync(skillDir, { recursive: true });
+      const template = [
+        '---',
+        `name: ${skillName}`,
+        `trigger: ${trigger}`,
+        `description: Describe what this skill does in one sentence.`,
+        '---',
+        '',
+        'You are in {name} mode.',
+        '',
+        'The user said: {input}',
+        '',
+        '## Instructions',
+        '',
+        '1. Replace this list with concrete steps.',
+        '2. Use {input} for the user\'s message after the trigger.',
+        '3. Be specific about output format (e.g. "return a bulleted list").',
+        '4. Add any constraints (e.g. "never suggest regex for HTML parsing").',
+        '',
+        '## Example',
+        '',
+        'Input: "src/auth.ts"',
+        'Output:',
+        '- Issue: ...',
+        '- Suggested fix: ...',
+        '',
+      ].join('\n');
+  
+      writeFileSync(skillPath, template);
+      cb.dispatch({ type: 'success', message: `Created skill: ${skillPath}` });
+      cb.dispatch({ type: 'info', message: `Edit the file, then use ${trigger} <args> to invoke it.` });
+      break;
+    }
+  
+    // ── MCP management ──
+    case 'mcp': {
+      if (!cb.ctx.cesar) {
+        cb.ctx.cesar = {
+          busy: false, busySince: null, queue: null,
+          toolRegistry: null, hasNativeTools: false, lastDispatch: null,
+          pendingDelegation: null, reportedConfidence: undefined, reportedConfidenceReasoning: undefined, confidenceSatisfied: false, blockedOnConfidence: null,
+          autoNero: false, advisorPending: false, lastEscalation: null,
+          mcpFingerprint: undefined, mcpSignalPath: undefined, planDispatch: null, proposedPlan: undefined, sessionMcpServers: [],
+        };
+      }
+      const mcpIntent = intent as any;
+      const sessionServers: Array<Record<string,unknown>> = cb.ctx.sessionMcpServers ?? [];
+  
+      if (mcpIntent.action === 'list') {
+        if (sessionServers.length === 0) {
+          cb.dispatch({ type: 'info', message: 'No MCP servers connected. Use /mcp connect <name|url>' });
+        } else {
+          const lines = sessionServers.map((s: any) => `  ${s.name} — ${s.url ?? s.command ?? 'local'}`).join('\n');
+          cb.dispatch({ type: 'text', content: `MCP servers (session):\n${lines}` });
+        }
+        break;
+      }
+  
+      if (mcpIntent.action === 'connect') {
+        const serverInput = (mcpIntent.server ?? '').trim();
+        if (!serverInput) {
+          cb.dispatch({ type: 'warning', message: 'Usage: /mcp connect <name|url>' });
+          break;
+        }
+  
+        // Resolve: URL or name lookup from .mcp.json
+        let serverEntry: {name:string, type?:string, url?:string, command?:string, args?:string[]};
+        if (serverInput.startsWith('http://') || serverInput.startsWith('https://')) {
+          const name = serverInput.replace(/^https?:\/\//, '').split('/')[0].replace(/\./g, '-');
+          serverEntry = { name, type: 'http', url: serverInput };
+        } else {
+          // Look up in .mcp.json (project) or ~/.agon/mcp.json (global)
+          let found: any = null;
+          for (const configPath of [join(resolveWorkingDir(), '.mcp.json'), join(getAgonHome(), 'mcp.json')]) {
+            try {
+              const raw = JSON.parse(readFileSync(configPath, 'utf-8'));
+              const servers = raw.mcpServers ?? raw.servers ?? raw;
+              if (servers[serverInput]) {
+                found = { name: serverInput, ...servers[serverInput] };
+                break;
+              }
+            } catch { /* file not found — expected */ }
+          }
+          if (!found) {
+            cb.dispatch({ type: 'error', message: `MCP server "${serverInput}" not found in .mcp.json or ~/.agon/mcp.json` });
+            break;
+          }
+          serverEntry = found;
+        }
+  
+        // Check if already connected
+        if (sessionServers.some((s: any) => s.name === serverEntry.name)) {
+          cb.dispatch({ type: 'info', message: `MCP server "${serverEntry.name}" already connected.` });
+          break;
+        }
+  
+        sessionServers.push(serverEntry);
+        if (cb.ctx.setSessionMcpServers) cb.ctx.setSessionMcpServers([...sessionServers]);
+  
+        // Restart Cesar session to pick up new MCP server
+        if (cb.ctx.cesarSession) {
+          cb.ctx.cesarSession.close();
+          cb.ctx.setCesarSession(null);
+        }
+        cb.dispatch({ type: 'success', message: `MCP connected: ${serverEntry.name}${serverEntry.url ? ` (${serverEntry.url})` : ''}. Cesar session restarting…` });
+        break;
+      }
+  
+      if (mcpIntent.action === 'disconnect') {
+        const serverName = (mcpIntent.server ?? '').trim();
+        if (!serverName) {
+          cb.dispatch({ type: 'warning', message: 'Usage: /mcp disconnect <name>' });
+          break;
+        }
+        const idx = sessionServers.findIndex((s: any) => s.name === serverName);
+        if (idx === -1) {
+          cb.dispatch({ type: 'warning', message: `MCP server "${serverName}" not connected.` });
+          break;
+        }
+        sessionServers.splice(idx, 1);
+        if (cb.ctx.setSessionMcpServers) cb.ctx.setSessionMcpServers([...sessionServers]);
+  
+        if (cb.ctx.cesarSession) {
+          cb.ctx.cesarSession.close();
+          cb.ctx.setCesarSession(null);
+        }
+        cb.dispatch({ type: 'success', message: `MCP disconnected: ${serverName}. Cesar session restarting…` });
+        break;
+      }
+      break;
+    }
+  
+    // ── UI commands ──
+    case 'extensions': {
+      const exts = cb.loadedExtensions ?? [];
+      if (exts.length === 0) {
+        cb.dispatch({ type: 'info', message: 'No extensions loaded. Add extensions to ~/.agon/extensions/ or .agon/extensions/' });
+      } else {
+        const lines = exts.map((ext: any) => {
+          const m = ext.manifest;
+          const contribs: string[] = [];
+          if (m.contributes?.commands?.length) contribs.push(`${m.contributes.commands.length} cmd`);
+          if (m.contributes?.skills?.length) contribs.push(`${m.contributes.skills.length} skill`);
+          if (m.contributes?.hooks?.length) contribs.push(`${m.contributes.hooks.length} hook`);
+          if (m.contributes?.engines?.length) contribs.push(`${m.contributes.engines.length} engine`);
+          if (m.contributes?.systemPromptFragments?.length) contribs.push(`${m.contributes.systemPromptFragments.length} prompt`);
+          const contribStr = contribs.length > 0 ? ` (${contribs.join(', ')})` : '';
+          return `  ${m.id} v${m.version} [${ext.source}]${contribStr} — ${m.description}`;
+        });
+        cb.dispatch({ type: 'text', content: `Extensions (${exts.length}):\n${lines.join('\n')}` });
+      }
+      break;
+    }
+    case 'slash-list': cb.dispatch({ type: 'text', content: cb.allSlashCommands.map((c: any) => `${c.cmd.padEnd(16)} ${c.desc}`).join('\n') }); break;
+    case 'compact': {
+      // ── In-place path (API brain): summarize older turns INSIDE the live
+      // session, keep the recent tail, keep the session running — Claude
+      // Code's /compact semantics. No reboot, no lost engine context.
+      //
+      // A live "Compacting conversation…" spinner runs through the (often
+      // multi-second) summarization so it isn't a dead pause. It is stopped
+      // right before the completion message on EVERY exit path, and a finally
+      // net guarantees it can never be left spinning even if something throws.
+      let compactSpinnerStopped = false;
+      // The spinner-stop is best-effort UI: guard the dispatch so that, when
+      // called from the finally net, it can never throw and mask a real error
+      // propagating out of the try block.
+      const stopCompactSpinner = () => { if (!compactSpinnerStopped) { compactSpinnerStopped = true; try { cb.dispatch({ type: 'spinner-stop' }); } catch { /* best-effort */ } } };
+      cb.dispatch({ type: 'spinner-start', message: 'Compacting conversation…' });
+      try {
+      const liveSession = cb.ctx.cesarSession as any;
+      if (liveSession && typeof liveSession.compact === 'function') {
+        let res: { ok: boolean; method: string; beforeTokens: number; afterTokens: number; limit: number } | null = null;
+        try { res = await liveSession.compact(); } catch { res = null; }
+        if (res && res.ok) {
+          const pctOf = (n: number) => res!.limit > 0 ? Math.max(0, Math.round((n / res!.limit) * 100)) : 0;
+          stopCompactSpinner();
+          cb.setMode('chat');
+          cb.dispatch({ type: 'success', message: `⤵ Context compacted: ${pctOf(res.beforeTokens)}% → ${pctOf(res.afterTokens)}% of the window (${res.method === 'llm' ? 'older turns summarized by the engine' : 'older turns folded into a structured summary'}). Session continues — Cesar's brain stays warm, nothing to re-prompt.` });
+          // Refresh the gauge immediately so the strip matches the message
+          // instead of showing the stale pre-compaction pct until next turn.
+          cb.dispatch({ type: 'context-usage', pct: pctOf(res.afterTokens), used: res.afterTokens, limit: res.limit, compacted: 1, cached: 0, source: 'projected' } as any);
+          break;
+        }
+        if (res && res.method === 'none') {
+          stopCompactSpinner();
+          cb.setMode('chat');
+          cb.dispatch({ type: 'info', message: 'Nothing to compact yet — the conversation is still short. The session continues unchanged.' });
+          break;
+        }
+        // deferred (send in flight) or failed → fall through to the legacy
+        // compact-and-reboot path below.
+        cb.dispatch({ type: 'info', message: 'In-place compaction unavailable right now — falling back to compact-and-reboot.' });
+      }
+      const chatSession = cb.ctx.chatSession;
+      const hasChatSession = !!chatSession;
+      let messageCount = 0;
+      let chatCompacted = false;
+      let newlySummarized = 0;
+      let summaryError: string | null = null;
+      try {
+        if (chatSession) {
+          messageCount = Array.isArray(chatSession.messages) ? chatSession.messages.length : 0;
+          const beforeSummarized = Math.max(0, chatSession.summarizedMessageCount ?? 0);
+          chatCompacted = updateChatSummary(chatSession);
+          const afterSummarized = Math.max(0, chatSession.summarizedMessageCount ?? 0);
+          newlySummarized = Math.max(0, afterSummarized - beforeSummarized);
+        }
+      } catch (err) {
+        summaryError = err instanceof Error ? err.message : String(err ?? 'unknown error');
+      }
+      const cesarSession = cb.ctx.cesarSession;
+      if (cesarSession) {
+        try { cesarSession.close(); } catch { /* best-effort */ }
+      }
+      cb.ctx.lastReviewResult = undefined;
+      // Keep ctx.cesarSession visible until this helper records its engineId for cleanup.
+      const clearedEngineIds = clearPersistedSessionContext(cb.ctx, { clearConversation: false });
+      if (cesarSession) {
+        cb.ctx.setCesarSession(null);
+      }
+      try {
+        cb.ctx.cesarMemory?.clearSession?.();
+      } catch { /* best-effort */ }
+      stopCompactSpinner();
+      cb.setMode('chat');
+      if (summaryError) {
+        const displayError = summaryError.length > 160 ? `${summaryError.slice(0, 157)}...` : summaryError;
+        cb.dispatch({ type: 'warning', message: `Could not compact chat summary: ${displayError}. Continuing with fresh engine context.` });
+      }
+      const transcriptNote = summaryError
+        ? 'Transcript summary unavailable'
+        : hasChatSession
+        ? `Transcript has ${messageCount} entr${messageCount === 1 ? 'y' : 'ies'}`
+        : 'No active chat session';
+      const summaryNote = !hasChatSession
+        ? 'cleared engine context only'
+        : summaryError
+        ? 'chat summary unchanged'
+        : chatCompacted && newlySummarized > 0
+        ? `folded ${newlySummarized} older message${newlySummarized === 1 ? '' : 's'} into the bounded summary`
+        : chatCompacted
+        ? 'refreshed the bounded summary'
+        : 'transcript already fits in the bounded recent context';
+      cb.dispatch({ type: 'success', message: `Session compacted. ${transcriptNote}; ${summaryNote}. Next Cesar turn will reboot with fresh engine context.` });
+      if (clearedEngineIds.length > 0) {
+        cb.dispatch({ type: 'info', message: `Cleared persisted engine context: ${clearedEngineIds.join(', ')}` });
+      }
+      break;
+      } finally {
+        stopCompactSpinner();
+      }
+    }
+    case 'clear': {
+      // Option 3: Save context before clearing, kill brain, reset everything
+      const oldChatId = cb.ctx.chatSession?.id ?? null;
+  
+      // 1. Kill Cesar's brain subprocess
+      const cesarSession = cb.ctx.cesarSession;
+      if (cesarSession) {
+        try { cesarSession.close(); } catch { /* best-effort */ }
+      }
+      cb.ctx.lastReviewResult = undefined;
+      // Keep ctx.cesarSession visible until this helper records its engineId for cleanup.
+      const clearedEngineIds = clearPersistedSessionContext(cb.ctx, { clearConversation: true });
+      if (cesarSession) {
+        cb.ctx.setCesarSession(null);
+      }
+      try {
+        cb.ctx.cesarMemory?.clearSession?.();
+      } catch { /* best-effort */ }
+  
+      // 2. Clear visual output (blocks, streaming, clipboard)
+      cb.dispatch({ type: 'clear' });
+  
+      // 3. Start fresh chat session (old one is already persisted to ~/.agon/chats/)
+      const clearCwd = resolveWorkingDir();
+      let clearBranch = 'unknown';
+      try { clearBranch = currentBranch(clearCwd); } catch { /* git not available */ }
+      cb.setChatSession(startChatSession({ cwd: clearCwd, branch: clearBranch }));
+  
+      // 4. Reset mode back to chat
+      cb.setMode('chat');
+  
+      // 5. Confirm with saved session reference
+      const clearMsg = oldChatId
+        ? `Session cleared. Previous chat saved as ${oldChatId} — use /chats resume ${oldChatId} to recover.`
+        : 'Session cleared.';
+      cb.dispatch({ type: 'success', message: clearMsg });
+      if (clearedEngineIds.length > 0) {
+        cb.dispatch({ type: 'info', message: `Cleared persisted engine context: ${clearedEngineIds.join(', ')}` });
+      }
+      break;
+    }
+    case 'help': cb.dispatch({ type: 'text', content: cb.allSlashCommands.map((c: any) => `${c.cmd.padEnd(16)} ${c.desc}`).join('\n') }); break;
+    case 'exit': cb.exit(); return { handled: true, ranAsJob: true };
+  
+    // ── Cesar-routed intents ──
+    case 'auto':
+    case 'unknown': {
+      // Check dynamic skills for unknown slash commands
+      const trimmed = (intent.input ?? '').trim();
+      if (intent.type === 'unknown' && trimmed.startsWith('/')) {
+        const spaceIdx = trimmed.indexOf(' ');
+        const trigger = spaceIdx > 0 ? trimmed.slice(0, spaceIdx) : trimmed;
+        const skillArg = spaceIdx > 0 ? trimmed.slice(spaceIdx + 1).trim() : '';
+        const skill = findSkill(trigger, cb.dynamicSkills);
+        if (skill) {
+          // Handler-based skill — execute directly
+          if (skill.handler) {
+            const result = await skill.handler(skillArg, cb);
+            if (result?.handled) break;
+          }
+          // Template-based skill — render and send to chat
+          const skillPrompt = renderSkillPrompt(skill, skillArg);
+          cb.setPendingImages(() => []);
+          await handleChat(skillPrompt, cb.dispatch, cb.ctx, cb.allImages);
+          break;
+        }
+      }
+      const explicitAutoMode = (intent as any).autoMode === true;
+      if (explicitAutoMode && !(intent.input ?? '').trim()) {
+        cb.dispatch({ type: 'info', message: 'Usage: /auto <task> — run one task with autonomous mode enabled.' });
+        break;
+      }
+      const previousAutoMode = cb.ctx.autoModeQueued;
+      if (explicitAutoMode) cb.ctx.autoModeQueued = true;
+      try {
+        if (await routeWithCesar(intent.input ?? input, cb.allImages, cb)) return { handled: true, ranAsJob: true };
+      } finally {
+        if (explicitAutoMode) cb.ctx.autoModeQueued = previousAutoMode;
+      }
+      break;
+    }
+    default: return null;
+  }
+  // break-path cases land here — mirrors the original switch's shared _emitPost() tail
+  emitPostDispatch(intent, input, cb);
+  return { handled: true, ranAsJob: false };
+}

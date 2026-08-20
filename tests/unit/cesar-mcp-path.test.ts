@@ -10,7 +10,7 @@ import { pathToFileURL } from 'node:url';
 // spawned and Cesar saw zero tools. resolveAgonMcpServerPath() must find it
 // robustly across layouts.
 
-const { resolveAgonMcpServerPath } = await import('../../packages/cli/src/generated/cesar/session.js');
+const { resolveAgonMcpServerPath } = await import('../../packages/cli/src/cesar/session.js');
 
 let tmp: string;
 beforeEach(() => { tmp = mkdtempSync(join(tmpdir(), 'mcp-path-')); });

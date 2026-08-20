@@ -28,7 +28,7 @@ import type { CommandDef, CommandMeta, SubCommandsDef } from 'citty';
 // nested subCommands — otherwise that truthy check passes, the resolved
 // value comes back `undefined`, and citty's `Object.entries(undefined)`
 // throws. `models`, `ratings`, `ext`, `browser-host`, and `job` currently nest
-// subCommands (confirmed against the generated command sources), so only
+// subCommands (confirmed against the command modules themselves), so only
 // those parent commands get a lazy `subCommands` field; every other entry omits it
 // entirely, exactly like the real leaf commands do.
 

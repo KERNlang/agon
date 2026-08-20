@@ -4,7 +4,7 @@ import { tmpdir, hostname } from 'node:os';
 import { join, resolve } from 'node:path';
 import { execFile } from 'node:child_process';
 
-import { withFileLock } from '../../packages/core/src/generated/blocks/file-lock.js';
+import { withFileLock } from '../../packages/core/src/blocks/file-lock.js';
 
 // ── Generic cross-process file lock contract ─────────────────────────────
 // Pins the primitive that serializes every shared-~/.agon read-modify-write

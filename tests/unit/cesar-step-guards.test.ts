@@ -11,7 +11,7 @@ import {
   refundContinuationForSteeringYield,
   resolveGuardThreshold,
   shouldNoteReadSpiral,
-} from '../../packages/cli/src/generated/cesar/step-guards.js';
+} from '../../packages/cli/src/cesar/step-guards.js';
 
 const EDIT_INTAKES = ['quick-fix', 'bug', 'feature', 'big-feature', 'spec'];
 const INVESTIGATE_INTAKES = ['chat', 'review', 'decision', 'exploration', '', 'something-new'];
@@ -56,7 +56,7 @@ describe('shouldNoteReadSpiral', () => {
   });
 
   // ── Shell work is work (codex review N3) ──
-  // `sed -i`, `git commit`, `mkdir -p`, a codegen script: all classify as `other`
+  // `sed -i`, `git commit`, `mkdir -p`, a build script: all classify as `other`
   // (Bash we could not prove read-only, not gate-matching), so effectfulSteps
   // stays 0 and the edit-intent note used to tell an engine that had just
   // rewritten files "no edit or verification yet".

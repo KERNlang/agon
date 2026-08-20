@@ -4,7 +4,7 @@ import {
   TUI_PROBE_INPUT_SAFELIST,
   createTuiProbeTool,
   resolveTuiProbePaths,
-} from '../../packages/cli/src/generated/cesar/tool-tui-probe.js';
+} from '../../packages/cli/src/cesar/tool-tui-probe.js';
 
 const ctx = {} as never;
 

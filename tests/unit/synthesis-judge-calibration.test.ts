@@ -3,7 +3,7 @@ import {
   synthesisRoutingAdvice,
   buildSynthesisJudgePrompt,
   parseSynthesisJudgeOutput,
-} from '../../packages/forge/src/generated/synthesis-modus.js';
+} from '../../packages/forge/src/synthesis-modus.js';
 
 // Regex-only classification (no Python sidecar) keeps these deterministic.
 const PRIOR_DISABLE = process.env.AGON_DISABLE_CLASSIFIER_SIDECAR;

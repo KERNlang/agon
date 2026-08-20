@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { remainingReviewRetrySeconds, shouldRetryReviewAttempt } from '../../packages/cli/src/generated/handlers/review.js';
+import { remainingReviewRetrySeconds, shouldRetryReviewAttempt } from '../../packages/cli/src/handlers/review.js';
 
 describe('standalone Review retry policy', () => {
   it('keeps a retry inside the original total timeout', () => {

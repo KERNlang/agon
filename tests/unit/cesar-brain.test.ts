@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { parseSuggestion, parseConfidence, confidenceBadge, CONFIDENCE_TIERS, CESAR_SYSTEM_PROMPT, buildReviewFollowupPrompt, detectNarratedToolStall, extractStrictConfidence, buildEscalationSuggestionLine, ESCALATION_SUGGESTION_THRESHOLD } from '../../packages/cli/src/handlers/cesar-brain.js';
-import { claimEagerToolExecution, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, splitBeforeToolMarkup, isUserDirectedQuestion, findTrailingUserQuestion, detectAwaitingUserInput, detectMutationIntentStall, detectFabricatedDelegation, stripNonAssertionSpans, shouldDeescalateGuard, isBashToolName, isWriteToolName, stripAgonToolPrefix, withEagerToolCallId } from '../../packages/cli/src/generated/cesar/brain-helpers.js';
+import { claimEagerToolExecution, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, splitBeforeToolMarkup, isUserDirectedQuestion, findTrailingUserQuestion, detectAwaitingUserInput, detectMutationIntentStall, detectFabricatedDelegation, stripNonAssertionSpans, shouldDeescalateGuard, isBashToolName, isWriteToolName, stripAgonToolPrefix, withEagerToolCallId } from '../../packages/cli/src/cesar/brain-helpers.js';
 import { createReportConfidenceTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createPipelineTool } from '../../packages/core/src/tools.js';
 // Rigid DECISION/CONFIDENCE parser for ACTUALLY-FIRED nero/advisor results — C4
 // must leave this untouched (downstream escalation routing depends on it).
-import { parseQuickNeroDecision } from '../../packages/cli/src/generated/cesar/escalation.js';
+import { parseQuickNeroDecision } from '../../packages/cli/src/cesar/escalation.js';
 
 describe('Cesar Brain', () => {
   describe('splitBeforeToolMarkup', () => {

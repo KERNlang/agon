@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { compileWorkflowSpec } from '../../packages/core/src/generated/workflows/compiler.js';
+import { compileWorkflowSpec } from '../../packages/core/src/workflows/compiler.js';
 import {
   createWorkflowConformanceError,
   createWorkflowIssue,
   hasWorkflowConformanceErrors,
-} from '../../packages/core/src/generated/workflows/conformance.js';
+} from '../../packages/core/src/workflows/conformance.js';
 
 describe('workflow conformance errors', () => {
   it('creates named errors carrying structured issues', () => {

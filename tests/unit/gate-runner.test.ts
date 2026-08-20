@@ -22,8 +22,8 @@ import {
   runDiscoveredGate,
   shouldAutoRunGate,
   type GateRunResult,
-} from '../../packages/cli/src/generated/cesar/gate-runner.js';
-import { clearSessionPermissionRules } from '../../packages/cli/src/generated/cesar/permission-resolver.js';
+} from '../../packages/cli/src/cesar/gate-runner.js';
+import { clearSessionPermissionRules } from '../../packages/cli/src/cesar/permission-resolver.js';
 
 const WS = process.cwd();
 

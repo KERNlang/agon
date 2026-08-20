@@ -8,7 +8,7 @@ import { describe, it, expect } from 'vitest';
 import {
   normalizeTodos,
   createTodoWriteTool,
-} from '../../packages/core/src/generated/tools/tool-todo-write.js';
+} from '../../packages/core/src/tools/tool-todo-write.js';
 
 describe('normalizeTodos', () => {
   it('maps Claude-style content/status onto agon {id,text,state}', () => {

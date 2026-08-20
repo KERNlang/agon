@@ -21,7 +21,7 @@ import {
   taskExplicitlyRequestsAction,
   taskActionApprovalMessage,
   DEFAULT_DESTRUCTIVE_PATTERN,
-} from '../../packages/cli/src/generated/cesar/task-execution-lease.js';
+} from '../../packages/cli/src/cesar/task-execution-lease.js';
 
 describe('Cesar task execution lease', () => {
   it('labels each boundary accurately', () => {
@@ -302,7 +302,7 @@ describe('Cesar task execution lease', () => {
     const lease = createTaskExecutionLease('finish the implementation', true, '/repo', undefined, 'agentic');
     expect(shellMutationEscapesWorkspace(lease, 'rm /tmp/outside.txt')).toBe(true);
     expect(shellMutationEscapesWorkspace(lease, 'printf ok > ../outside.txt')).toBe(true);
-    expect(shellMutationEscapesWorkspace(lease, 'rm src/generated.ts')).toBe(false);
+    expect(shellMutationEscapesWorkspace(lease, 'rm src/bundle.ts')).toBe(false);
     expect(evaluateTaskAction(lease, 'Edit', '/repo/release.ts').decision).toBe('allow');
     expect(evaluateTaskAction(lease, 'Bash', 'printf ok > ../outside.txt').decision).toBe('ask_boundary_once');
   });

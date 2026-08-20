@@ -4,7 +4,7 @@ import {
   assertValidWorkflowGraphSpec,
   validateWorkflowGraphSpec,
   workflowGraphFromSpec,
-} from '../../packages/core/src/generated/workflows/graph.js';
+} from '../../packages/core/src/workflows/graph.js';
 
 describe('workflow graph validation', () => {
   it('builds a graph from phase dependencies', () => {

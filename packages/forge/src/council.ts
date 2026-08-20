@@ -1,2 +1,437 @@
-// Facade over ./generated/council.js — edit the source there.
-export * from './generated/council.js';
+import { randomUUID } from 'node:crypto';
+
+import type { EngineAdapter, ForgeEvent, DispatchResult, RatingRecord } from '@kernlang/agon-core';
+
+import { EngineRegistry, getRatings, pickTopRatedEngine, rankEnginesByRating, resolveWorkingDir, seedNewEnginesFromRegistry, createSidechainLogger, classifyTask, updateGlickoRanked, loadConfig, engineHealth } from '@kernlang/agon-core';
+
+import { preflightHealthFilter } from './health-check.js';
+
+/**
+ * Advisor roles in PRIORITY order — when engines are scarce the lowest-priority roles drop first, so a 2-advisor council is Contrarian + First-Principles. Expansionist (upside-max) is last because high-stakes decisions are usually sunk by missed risk, not missed upside.
+ */
+export const DEFAULT_COUNCIL_ROLES: readonly string[] = ['Contrarian', 'First-Principles', 'Red-Team', 'Outsider', 'Expansionist'] as const;
+
+export interface CouncilSeat {
+  engineId: string;
+  role: string;
+  response: string;
+  critique: string;
+  critiquedRole: string;
+}
+
+export interface CouncilOptions {
+  question: string;
+  engines: string[];
+  roles?: string[] | undefined;
+  chairman?: string | undefined;
+  registry: EngineRegistry;
+  adapter: EngineAdapter;
+  timeout: number;
+  outputDir: string;
+  cwd?: string | undefined;
+  onEvent?: ((event:ForgeEvent) => void) | undefined;
+  signal?: AbortSignal | undefined;
+}
+
+export interface CouncilResult {
+  ok: boolean;
+  question: string;
+  brief: string;
+  chairmanId: string;
+  chairmanReason: 'top-rated' | 'random' | 'forced' | 'cesar' | 'none';
+  actingChairmanId: string;
+  seats: CouncilSeat[];
+  verdict: string;
+  confidence: number | null;
+  degraded: boolean;
+  warnings: string[];
+  outputDir: string;
+}
+
+/**
+ * Map a council role name to its in-character instruction. Pure — exported for testing. Unknown/custom roles fall back to a generic 'sharpest distinctive take' brief.
+ */
+export function roleGuidance(role: string): string {
+  const r = role.toLowerCase();
+  if (r === 'contrarian') return 'You are the CONTRARIAN. Assume the leading answer is wrong. Attack it with the single most damaging objection and a concrete failure scenario. Do not hedge or balance.';
+  if (r === 'first-principles') return 'You are FIRST-PRINCIPLES. Ignore convention. Re-derive the right answer from the fundamental constraints, and question whether this is even the right problem to be solving.';
+  if (r === 'red-team') return 'You are RED-TEAM. Run a pre-mortem: assume this decision shipped and then failed catastrophically in production. Describe exactly how it failed and the earliest signal that would have warned us.';
+  if (r === 'outsider') return 'You are the OUTSIDER. Bring an analogy or precedent from a DIFFERENT domain. What does this decision resemble elsewhere, and what actually happened there?';
+  if (r === 'expansionist') return 'You are the EXPANSIONIST. Find the highest-upside version of this decision and the asymmetric bet hidden inside it — what is the 10x outcome if it goes right, and what unlocks it?';
+  return `You are the ${role}. Give your sharpest, most distinctive take on the decision from that vantage point.`;
+}
+
+/**
+ * Assign roles to advisors. Pure — exported for testing. The first role (Contrarian by default) goes to the top CRITIQUE-rated advisor (critique discipline, then tribunal — the same cascade Nero uses, since the best builder is not the best critic); the remaining advisors fill the remaining roles in global-rating order. Roles are trimmed to the advisor count (lowest-priority dropped first) and padded with generic 'Advisor N' when there are more advisors than roles.
+ */
+export function assignCouncilRoles(advisors: string[], ratings: RatingRecord, roleNames: string[]): { engineId: string; role: string }[] {
+  const k = advisors.length;
+  if (k === 0) return [];
+  const roles = roleNames.slice(0, k);
+  while (roles.length < k) roles.push(`Advisor ${roles.length + 1}`);
+  // Contrarian seat -> the proven critic.
+  const pick = pickTopRatedEngine(advisors, ratings, { modes: ['critique', 'tribunal'] });
+  const contrarian = pick.engineId && advisors.includes(pick.engineId) ? pick.engineId : advisors[0];
+  const rest = advisors.filter((a) => a !== contrarian);
+  const restRanked = rankEnginesByRating(rest, ratings);
+  const orderedRest = [...restRanked, ...rest.filter((a) => !restRanked.includes(a))];
+  const ordered = [contrarian, ...orderedRest];
+  return ordered.map((engineId, i) => ({ engineId, role: roles[i] }));
+}
+
+/**
+ * Chairman prompt that frames the decision object BEFORE the council debates, so every advisor argues the same decision. Pure — exported for testing.
+ */
+export function buildCouncilBriefPrompt(question: string): string {
+  return [
+    'You are the chairman of an expert council. Before the council debates, frame the decision precisely so every member argues the SAME decision object.',
+    '',
+    'QUESTION FROM THE USER:',
+    question.trim(),
+    '',
+    'Produce a tight DECISION BRIEF with exactly these sections (a few bullets or one short paragraph each — no preamble):',
+    '1. DECISION — the single decision to be made, as a yes/no or a choice between named options.',
+    '2. OPTIONS — the realistic options on the table (at least two).',
+    '3. CONSTRAINTS — the hard constraints and non-negotiables.',
+    '4. STAKES & REVERSIBILITY — what is at risk and how hard this is to undo.',
+    '5. KNOWN EVIDENCE — facts we already have that bear on the choice.',
+    '6. WHAT WOULD CHANGE THE ANSWER — the key unknowns that, if resolved, would flip the decision.',
+    "Keep it under 250 words. Do NOT recommend an option yet — that is the council's job.",
+  ].join('\n');
+}
+
+/**
+ * Round-1 prompt: an advisor answers the framed brief strictly in its role. Pure — exported for testing.
+ */
+export function buildRolePrompt(opts: { role:string; brief:string }): string {
+  return [
+    roleGuidance(opts.role),
+    '',
+    'DECISION BRIEF:',
+    opts.brief.trim(),
+    '',
+    'Respond ONLY from your role. Be concrete and specific — name mechanisms, scenarios, numbers, or precedents, not platitudes. Maximum ~250 words.',
+    'End with one line: "Position: <your one-sentence recommendation>".',
+  ].join('\n');
+}
+
+/**
+ * Round-2 prompt: directed, structured peer critique (O(N) round-robin). The advisor extracts deltas — blind spot, fragile assumption, best rival option — NOT a ranking. Pure — exported for testing.
+ */
+export function buildCritiquePrompt(opts: { critiqueRole:string; brief:string; targetRole:string; targetResponse:string }): string {
+  return [
+    `You are the ${opts.critiqueRole} on an expert council. Critique ONE peer's argument below. Do not rank it and do not be polite — extract what is missing or wrong.`,
+    '',
+    'DECISION BRIEF:',
+    opts.brief.trim(),
+    '',
+    `PEER ARGUMENT (role: ${opts.targetRole}):`,
+    opts.targetResponse.trim(),
+    '',
+    'Answer these four, each in 1-2 sentences, specific to THIS argument:',
+    '1. BIGGEST BLIND SPOT — what did this argument fail to see?',
+    '2. MOST FRAGILE ASSUMPTION — which load-bearing assumption is most likely false, and what happens if it is?',
+    '3. BEST RIVAL OPTION — a stronger alternative this argument dismissed or ignored.',
+    '4. WHAT WOULD MAKE IT RIGHT — the one change that would most strengthen it.',
+    'No summaries, no praise.',
+  ].join('\n');
+}
+
+/**
+ * Round-3 synthesis prompt. Anti-laundering: the verdict MUST cite which critiques it accepted/rejected, carry a confidence, and a kill-switch (what evidence would reverse it). Pure — exported for testing.
+ */
+export function buildChairmanPrompt(opts: { brief:string; seats:{ role:string; response:string; critique:string; critiquedRole:string }[] }): string {
+  const responses = opts.seats
+    .map((s) => `### ${s.role}\n${(s.response || '(no response)').trim()}`)
+    .join('\n\n');
+  const critiques = opts.seats
+    .filter((s) => s.critique && s.critique.trim())
+    .map((s) => `- ${s.role} → critiquing ${s.critiquedRole}: ${s.critique.trim()}`)
+    .join('\n');
+  return [
+    'You are the chairman of an expert council. Synthesize the advisors below into ONE decision. You are accountable for the verdict — do not just average opinions, and do not hide disagreement.',
+    '',
+    'DECISION BRIEF:',
+    opts.brief.trim(),
+    '',
+    'ADVISOR POSITIONS:',
+    responses,
+    '',
+    'PEER CRITIQUES:',
+    critiques || '(none)',
+    '',
+    'Produce the verdict with exactly these sections:',
+    '1. RECOMMENDATION — the decision, stated plainly. BEGIN this section with "Confidence: X%".',
+    '2. WHY — the 2-3 load-bearing reasons.',
+    '3. STRONGEST COUNTERARGUMENT — the single best reason this could be wrong (the shared blind spot, if there is one).',
+    '4. HOW THE CRITIQUES CHANGED THIS — name which peer critiques you ACCEPTED (and how they changed the verdict) and which you REJECTED (and why). Do not skip this; an unexamined critique is a failure.',
+    '5. NEXT STEP — the one concrete action to take now.',
+    '6. KILL-SWITCH — the specific evidence or outcome that would REVERSE this decision. If you cannot name one, say so explicitly and lower your confidence.',
+  ].join('\n');
+}
+
+/**
+ * Extract the chairman's confidence (0-100) from the verdict. Pure — exported for testing. Prefers an explicit 'Confidence: X%' marker, else the first percentage.
+ */
+export function parseCouncilConfidence(text: string): number | null {
+  const marked = text.match(/confidence[:\s]*~?\s*(\d{1,3})\s*%/i);
+  const m = marked ?? text.match(/~?\s*(\d{1,3})\s*%/);
+  if (!m) return null;
+  const n = parseInt(m[1], 10);
+  if (Number.isNaN(n) || n < 0 || n > 100) return null;
+  return n;
+}
+
+/**
+ * Run a full council: decision brief -> role responses -> directed peer critique -> chairman verdict. Scales to the engine count (N-1 advisors + 1 chair; N==2 -> both advisors, Cesar chairs); refuses below 2. A single engine failing degrades (warning) rather than aborting; ok is true only when the chairman returns a usable verdict.
+ */
+export async function runCouncil(opts: CouncilOptions): Promise<CouncilResult> {
+  const { question, registry, adapter, timeout, outputDir } = opts;
+  const signal = opts.signal;
+  const cwd = opts.cwd ?? resolveWorkingDir();
+  const warnings: string[] = [];
+
+  // Pre-flight: drop session-quarantined engines (Layer 1, pure zero-dispatch)
+  // BEFORE the floor check, so a degraded panel fails loud rather than silently
+  // seating a dead engine. Active probe is opt-in only.
+  const __hc = await preflightHealthFilter({ engineIds: opts.engines, registry, adapter, signal });
+  for (const s of __hc.skipped) {
+    // Surface skips in the STRUCTURED warnings the UI renders, not just console
+    // (claude review 0.55) — mirrors how dispatch failures already populate warnings.
+    warnings.push(`${s.engineId} skipped — ${s.status} (${s.reason})`);
+    console.warn(`[agon] council: skipping ${s.engineId} — ${s.status} (${s.reason})`);
+  }
+  const engines = __hc.healthy;
+  // Role sub-param resolved AFTER the filter: a quarantined forced chairman
+  // fails loud instead of being silently ignored (council verdict 2026-06-04).
+  const __forcedChair = opts.chairman?.trim();
+  if (__forcedChair && __hc.skipped.some((s) => s.engineId === __forcedChair)) {
+    return {
+      ok: false, question, brief: '', chairmanId: __forcedChair, chairmanReason: 'forced', actingChairmanId: '', seats: [],
+      verdict: `Requested chairman '${__forcedChair}' is quarantined this session (auth-failed/unreachable) and cannot chair. Restore with 'agon engine add <id>' or pick another chair.`,
+      confidence: null, degraded: true, warnings: [`Chairman ${__forcedChair} quarantined this session.`], outputDir,
+    };
+  }
+
+  if (engines.length < 2) {
+    return {
+      ok: false, question, brief: '', chairmanId: '', chairmanReason: 'none', actingChairmanId: '', seats: [],
+      verdict: 'A council needs at least 2 engines. Add engines with `agon engine add <id>` or widen --engines.',
+      confidence: null, degraded: true, warnings: ['Fewer than 2 engines available.'], outputDir,
+    };
+  }
+
+  seedNewEnginesFromRegistry(registry);
+  const ratings = getRatings();
+
+  // ── Seating ───────────────────────────────────────────────────────────
+  let chairmanId = '';
+  let chairmanReason: 'top-rated' | 'random' | 'forced' | 'cesar' | 'none' = 'none';
+  let advisors: string[] = [];
+  let degraded = false;
+
+  const forcedChair = opts.chairman?.trim();
+  if (forcedChair && engines.includes(forcedChair)) {
+    // An explicit chair wins in EVERY case, including a 2-engine council — never
+    // let the N==2 fallback below silently override what the caller asked for.
+    chairmanId = forcedChair;
+    chairmanReason = 'forced';
+    advisors = engines.filter((e) => e !== chairmanId);
+  } else if (engines.length === 2) {
+    // Don't burn an engine to chair a 2-person panel — seat both as advisors and
+    // let the configured Cesar engine chair. Cesar is often a THIRD engine outside
+    // the pool (a genuinely separate synthesizer); if it's unset or is itself one
+    // of the two, one engine ends up chairing too — the warning says so honestly.
+    advisors = engines.slice();
+    let cesarId = '';
+    try { cesarId = (loadConfig(cwd).cesarEngine ?? '').trim(); } catch { cesarId = ''; }
+    // The external Cesar chair sits OUTSIDE opts.engines, so preflightHealthFilter
+    // never saw it. Quarantine-check it here too, else a dead Cesar engine still
+    // burns a chair dispatch before failover (codex review 0.86).
+    if (cesarId && !engines.includes(cesarId)) {
+      const __ch = engineHealth.get(cesarId);
+      if (__ch && (__ch.status === 'auth-failed' || __ch.status === 'unreachable' || __ch.status === 'binary-missing')) {
+        warnings.push(`Configured Cesar chair '${cesarId}' is quarantined this session (${__ch.status}); falling back to ${engines[0]} as chair.`);
+        cesarId = '';
+      }
+    }
+    chairmanId = cesarId || engines[0];
+    chairmanReason = 'cesar';
+    degraded = true;
+    const separate = !!chairmanId && !advisors.includes(chairmanId);
+    warnings.push(separate
+      ? `Only 2 advisors: ${chairmanId} chairs separately. A 2-advisor panel is thin — treat the verdict as indicative, not authoritative; add more engines for a fuller council.`
+      : `Only 2 engines: ${chairmanId} both advises and chairs (no separate synthesizer available). The verdict is indicative, not authoritative — add a third engine or set cesarEngine for a real council.`);
+  } else {
+    const pick = pickTopRatedEngine(engines, ratings, { modes: ['tribunal'] });
+    chairmanId = pick.engineId || engines[0];
+    chairmanReason = pick.reason === 'random' ? 'random' : (pick.reason === 'none' ? 'none' : 'top-rated');
+    advisors = engines.filter((e) => e !== chairmanId);
+  }
+
+  // A forced chair on a 2-engine pool (or any thin roster) can leave fewer than two
+  // advisors — honest about the weaker panel rather than pretending it's a full council.
+  if (advisors.length < 2) {
+    degraded = true;
+    warnings.push(`Only ${advisors.length} advisor${advisors.length === 1 ? '' : 's'} after seating the chair — the panel is thin; treat the verdict as indicative.`);
+  }
+
+  const roleNames = (opts.roles && opts.roles.length > 0) ? opts.roles : [...DEFAULT_COUNCIL_ROLES];
+  const assigned = assignCouncilRoles(advisors, ratings, roleNames);
+  const seats: CouncilSeat[] = assigned.map((a) => ({ engineId: a.engineId, role: a.role, response: '', critique: '', critiquedRole: '' }));
+
+  const councilId = randomUUID().slice(0, 8);
+  const sidechain = createSidechainLogger({ sessionId: councilId, sessionType: 'council', outputDir });
+  sidechain.log('council:init', undefined, { question, chairmanId, chairmanReason, advisors: seats.map((s) => `${s.engineId}:${s.role}`) });
+
+  const dispatchTextOnce = async (engineId: string, prompt: string, sys: string, timeoutSec: number): Promise<{ text: string; ok: boolean; diag: string }> => {
+    try {
+      const engine = registry.get(engineId);
+      const result: DispatchResult = await adapter.dispatch({
+        engine, prompt, systemPrompt: sys, textOnly: true, cwd, mode: 'exec', timeout: timeoutSec, outputDir, signal,
+      });
+      const raw = String(result.stdout ?? '').trim();
+      const cleaned = raw.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+      const dispatchOk = result.exitCode === 0 && !result.timedOut && cleaned.length > 0;
+      if (dispatchOk) return { text: cleaned, ok: true, diag: '' };
+      // Not-ok reaches here on timeout, non-zero exit, OR a clean exit with no visible
+      // output (e.g. an engine that emitted only <think>…</think>). Don't report the
+      // last case as a bare "exit 0" — say "empty response" so the warning is honest.
+      const diag = result.timedOut
+        ? 'timed out'
+        : (result.stderr?.trim() || (cleaned.length === 0 ? 'empty response (no visible output)' : `exit ${result.exitCode}`));
+      return { text: cleaned, ok: false, diag };
+    } catch (err) {
+      return { text: '', ok: false, diag: err instanceof Error ? err.message : String(err) };
+    }
+  };
+  const dispatchText = async (engineId: string, prompt: string, sys: string, phase: string): Promise<{ text: string; ok: boolean }> => {
+    const first = await dispatchTextOnce(engineId, prompt, sys, timeout);
+    if (first.ok) return { text: first.text, ok: true };
+    // One auto-retry per seat (shorter timeout) before the seat degrades —
+    // transient flake must not quietly shrink the council. Never retry an abort.
+    if (signal?.aborted) {
+      warnings.push(`${phase} (${engineId}) aborted: ${first.diag}`);
+      opts.onEvent?.({ type: 'engine:failed', data: { engineId, phase, error: first.diag } });
+      return { text: first.text, ok: false };
+    }
+    // Half the wall clock, floored at 30s, but never LONGER than the first
+    // attempt — for sub-60s timeouts a "retry" must not raise the budget.
+    const second = await dispatchTextOnce(engineId, prompt, sys, Math.min(timeout, Math.max(30, Math.floor(timeout / 2))));
+    if (second.ok) {
+      warnings.push(`${phase} (${engineId}) ${first.diag} → retried OK`);
+      return { text: second.text, ok: true };
+    }
+    warnings.push(`${phase} (${engineId}) failed: ${first.diag} → retry: ${second.diag}`);
+    opts.onEvent?.({ type: 'engine:failed', data: { engineId, phase, error: second.diag } });
+    return { text: second.text, ok: false };
+  };
+
+  const ADVISOR_SYS = 'You are an expert council member. Respond directly with your analysis as plain text. Do NOT use tools, read files, or run commands.';
+  const CHAIR_SYS = 'You are the council chairman. Respond directly with your verdict as plain text. Do NOT use tools, read files, or run commands.';
+
+  // Chair failover order: the seated chair first, then advisors best-first. A
+  // chair that returns no usable output (empty / timeout / error) must not sink
+  // the whole council — promote the next-best engine to ACTING chair, exactly as
+  // a failed advisor already degrades gracefully. Without this, one flaky chair
+  // loses the brief AND the verdict. Dedupe preserves order.
+  // rankEnginesByRating drops engines with no rating, so recover the unranked ones
+  // (mirrors the seating logic above) — else failover has no candidates on a cold roster.
+  const rankedAdvisors = rankEnginesByRating(advisors, ratings);
+  const orderedAdvisors = [...rankedAdvisors, ...advisors.filter((a) => !rankedAdvisors.includes(a))];
+  const chairCandidates = Array.from(new Set([chairmanId, ...orderedAdvisors])).filter((id) => !!id);
+
+  const dispatchChair = async (prompt: string, phase: string): Promise<{ text: string; ok: boolean; engineId: string }> => {
+    for (const cand of chairCandidates) {
+      if (signal?.aborted) break;
+      const res = await dispatchText(cand, prompt, CHAIR_SYS, cand === chairmanId ? phase : `${phase}-failover`);
+      if (res.ok && res.text.length > 0) {
+        if (cand !== chairmanId) {
+          const what = phase === 'council-brief' ? 'brief' : 'verdict';
+          warnings.push(`Chair ${chairmanId} returned no ${what}; ${cand} stepped in as acting chair.`);
+          degraded = true; // the council did not run with its seated chair
+        }
+        return { text: res.text, ok: true, engineId: cand };
+      }
+    }
+    return { text: '', ok: false, engineId: chairmanId };
+  };
+
+  // ── Round 0: decision brief (chairman) ────────────────────────────────
+  opts.onEvent?.({ type: 'synthesis:start' });
+  let brief = question.trim();
+  let briefBy = chairmanId;
+  if (!signal?.aborted) {
+    const briefRes = await dispatchChair(buildCouncilBriefPrompt(question), 'council-brief');
+    if (briefRes.ok) { brief = briefRes.text; briefBy = briefRes.engineId; }
+    else warnings.push('Decision brief failed on every engine — advisors argued the raw question instead of a framed brief.');
+  }
+  sidechain.log('council:brief', briefBy, { length: brief.length });
+
+  // ── Round 1: role responses (parallel) ────────────────────────────────
+  if (!signal?.aborted) {
+    await Promise.all(seats.map(async (seat) => {
+      opts.onEvent?.({ type: 'synthesis:critique', engineId: seat.engineId });
+      const res = await dispatchText(seat.engineId, buildRolePrompt({ role: seat.role, brief }), ADVISOR_SYS, `council-role-${seat.role}`);
+      seat.response = res.ok ? res.text : '(no response)';
+    }));
+  }
+  for (const s of seats) sidechain.log('council:response', s.engineId, { role: s.role, length: s.response.length });
+
+  // ── Round 2: directed pairwise critique — O(N) round-robin ────────────
+  const k = seats.length;
+  if (k >= 2 && !signal?.aborted) {
+    await Promise.all(seats.map(async (seat, i) => {
+      const target = seats[(i + 1) % k];
+      seat.critiquedRole = target.role;
+      if (!target.response || target.response === '(no response)') { seat.critique = ''; return; }
+      opts.onEvent?.({ type: 'synthesis:critique', engineId: seat.engineId });
+      const res = await dispatchText(seat.engineId, buildCritiquePrompt({ critiqueRole: seat.role, brief, targetRole: target.role, targetResponse: target.response }), ADVISOR_SYS, `council-critique-${seat.role}`);
+      seat.critique = res.ok ? res.text : '';
+    }));
+  }
+  for (const s of seats) sidechain.log('council:critique', s.engineId, { role: s.role, critiquedRole: s.critiquedRole, length: s.critique.length });
+
+  // ── Round 3: chairman verdict ─────────────────────────────────────────
+  let verdict = '';
+  let ok = false;
+  let actingChairmanId = chairmanId;
+  if (!signal?.aborted) {
+    const chairRes = await dispatchChair(
+      buildChairmanPrompt({ brief, seats: seats.map((s) => ({ role: s.role, response: s.response, critique: s.critique, critiquedRole: s.critiquedRole })) }),
+      'council-verdict',
+    );
+    verdict = chairRes.text;
+    ok = chairRes.ok && chairRes.text.length > 0;
+    if (ok) actingChairmanId = chairRes.engineId;
+  }
+  if (!verdict) verdict = 'The chairman produced no verdict on any engine. See the advisor positions above and the warnings below.';
+
+  sidechain.log('council:done', actingChairmanId, { ok, seats: seats.length, verdictLength: verdict.length, warnings: warnings.length });
+  opts.onEvent?.({ type: 'forge:done' });
+
+  // ── Glicko: council is debate + critique. Only rate a REAL competition — a
+  // usable verdict AND at least two advisors that actually responded. Failed /
+  // timed-out seats are EXCLUDED (not ranked last), so a transient engine outage
+  // never corrupts the critique/tribunal ratings that Nero and council seating
+  // read. Feed both disciplines so future seating keeps improving. ─────────────
+  const scored = seats.filter((s) => s.response && s.response !== '(no response)');
+  if (ok && scored.length >= 2) {
+    const taskClass = classifyTask(question);
+    const ranked = scored
+      .map((s) => {
+        const respCredit = Math.min(s.response.length, 2000);
+        const critCredit = s.critique ? Math.min(s.critique.length, 2000) : 0;
+        const rounds = 1 + (critCredit > 0 ? 1 : 0);
+        return { engineId: s.engineId, score: rounds * 1000 + respCredit + critCredit };
+      })
+      .sort((a, b) => b.score - a.score);
+    updateGlickoRanked(ranked, taskClass, 'tribunal');
+    updateGlickoRanked(ranked, taskClass, 'critique');
+  }
+
+  return {
+    ok, question, brief, chairmanId, chairmanReason, actingChairmanId, seats, verdict,
+    confidence: parseCouncilConfidence(verdict), degraded, warnings, outputDir,
+  };
+}

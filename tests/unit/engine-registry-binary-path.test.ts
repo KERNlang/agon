@@ -2,8 +2,8 @@ import { describe, expect, it, afterEach } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { EngineRegistry } from '../../packages/core/src/engine-registry.js';
-import type { EngineDefinition } from '../../packages/core/src/generated/models/types.js';
+import { EngineRegistry } from '../../packages/core/src/signals/engine-registry.js';
+import type { EngineDefinition } from '../../packages/core/src/models/types.js';
 import { setupTestAgonHome, cleanupTestAgonHome, agonHomePath } from '../helpers/agon-home.js';
 
 // Fix 2: EngineRegistry.findBinary used to shell out to `execFileSync('which', …)`

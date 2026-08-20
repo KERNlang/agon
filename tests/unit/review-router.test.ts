@@ -7,7 +7,7 @@ import {
   serializeReviewRoutingManifest,
   type ReviewExecutionBackend,
   type ReviewRoutingEngine,
-} from '../../packages/cli/src/generated/handlers/review-router.js';
+} from '../../packages/cli/src/handlers/review-router.js';
 
 function engine(id: string, overrides: Partial<EngineDefinition> = {}): EngineDefinition {
   return {

@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import {
   HeadlessTurnBrainClient,
   createHeadlessTurnBrainClient,
-} from '../../packages/cli/src/generated/bridge/headless-brain-client.js';
+} from '../../packages/cli/src/bridge/headless-brain-client.js';
 import type { BrainEvent, BrainTurnResult, EngineAdapter, EngineRegistry } from '@kernlang/agon-core';
 import { writeFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';

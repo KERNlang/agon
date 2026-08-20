@@ -1,0 +1,304 @@
+
+import { resolveWorkingDir, buildImageAttachment, sessionContext, visionSupportNote } from '@kernlang/agon-core';
+
+import { invalidateCwdCache } from '../../handlers/chat.js';
+
+import type { ImageAttachment } from '@kernlang/agon-core';
+
+import { loadCesarPlan } from '@kernlang/agon-core';
+
+import type { CesarPlan } from '@kernlang/agon-core';
+
+import { ENGINE_COLORS } from '../../blocks/output-format.js';
+
+import { handleLeaderboard, handleCesarReport, handleCesarHints, handleHistory, handleEngines, handleDiscover, handleConfig, handlePermissions, handleUse, handleCesar, handleTokens, handleRaw, handleWorkspace, handleChats, handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel, handleApplyPatch, handleCp, handleCpLast, handleCommit, handleFlowReport, handleFlowAnalysis, handleRun } from '../../handlers/index.js';
+
+import { handleProvider } from '../../handlers/provider.js';
+
+import { diagnoseEngineDoctorEntry, checkDoctorWorktree, buildHarnessDoctorReport } from '../../commands/doctor.js';
+
+import { replayCesarHarnessLogs } from '../../cesar/tool-observability.js';
+
+import { renderTelemetrySnapshot, computeOverallHealth, createEngineVitals } from '../../cesar/telemetry.js';
+
+import type { TelemetrySnapshot } from '../../cesar/telemetry.js';
+
+import type { DispatchCallbacks, DispatchResult } from '../dispatch.js';
+
+import { findResumableCesarPlan } from './plan-queries.js';
+
+import { resumeCesarPlan, approvePendingCesarPlan, cancelPendingCesarPlan, handleProposedCesarPlan } from './plan-execution.js';
+
+import { routeWithCesar } from './cesar-router.js';
+
+import { emitPostDispatch } from './utils.js';
+
+export async function dispatchSessionInfoIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult | null> {
+  switch (intent.type) {
+    case 'run': await handleRun(intent.input, cb.dispatch, cb.ctx); break;
+    case 'chat': {
+      if (await routeWithCesar(intent.input ?? '', cb.allImages, cb)) return { handled: true, ranAsJob: true };
+      break;
+    }
+    case 'img': {
+      const att = buildImageAttachment(intent.path, resolveWorkingDir());
+      if (!att) cb.dispatch({ type: 'error', message: `Image not found: ${intent.path}` });
+      else {
+        cb.setPendingImages((prev: ImageAttachment[]) => [...prev, att]);
+        cb.dispatch({ type: 'success', message: `Attached: ${att.filename}` });
+        // Warn at attach time, not after dispatch: the user should know the
+        // current brain can't see the image while they can still /cesar away.
+        try {
+          const cesarId = (cb.ctx.config as any).cesarEngine ?? cb.ctx.config.forgeFixedStarter ?? 'claude';
+          const note = visionSupportNote(cb.ctx.registry.get(cesarId));
+          if (note) cb.dispatch({ type: 'warning', message: note });
+        } catch { /* unknown engine id — dispatch-time status note still covers it */ }
+      }
+      break;
+    }
+  
+    // ── Info commands ──
+    case 'leaderboard': handleLeaderboard(cb.dispatch); break;
+    case 'cesar-report': handleCesarReport(cb.dispatch); break;
+    case 'cesar-hints': handleCesarHints(intent.input, cb.dispatch, cb.ctx); break;
+    case 'history': handleHistory(cb.dispatch, intent.id); break;
+    case 'doctor': {
+      const scope = String(intent.scope ?? 'engines').trim() || 'engines';
+      if (scope === 'harness') {
+        const report = buildHarnessDoctorReport(cb.ctx.registry, cb.ctx.config, cb.ctx.cesar);
+        cb.dispatch({ type: 'header', title: 'Harness Doctor' });
+        cb.dispatch({
+          type: 'table',
+          headers: report.headers,
+          rows: report.rows,
+        });
+        cb.dispatch({ type: report.ok ? 'success' : 'warning', message: `Summary: ${report.summary}` });
+        break;
+      }
+      if (scope !== 'engines') {
+        cb.dispatch({ type: 'error', message: `Unknown doctor scope: ${scope}` });
+        cb.dispatch({ type: 'info', message: 'Available: engines, harness' });
+        break;
+      }
+      const enabledIds = cb.ctx.config.forgeEnabledEngines ?? [];
+      const entries = cb.ctx.registry.list()
+        .map((engine: any) => diagnoseEngineDoctorEntry(engine, cb.ctx.registry, enabledIds))
+        .sort((a: any, b: any) => {
+          if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
+          return a.id.localeCompare(b.id);
+        });
+      cb.dispatch({ type: 'header', title: 'Engine Doctor' });
+      cb.dispatch({
+        type: 'table',
+        headers: ['Engine', 'Forge', 'Status', 'Backend', 'Modes', 'Detail'],
+        rows: entries.map((entry: any) => [
+          entry.id,
+          entry.enabled ? 'yes' : 'no',
+          entry.status,
+          entry.backend,
+          entry.modes,
+          entry.detail,
+        ]),
+      });
+      const worktree = checkDoctorWorktree(resolveWorkingDir());
+      cb.dispatch({ type: worktree.ok ? 'success' : 'warning', message: worktree.ok ? worktree.message : `worktree check failed: ${worktree.message}` });
+      const failing = entries.filter((entry: any) => entry.status === 'fail').length;
+      const warnings = entries.filter((entry: any) => entry.status === 'warn').length;
+      cb.dispatch({ type: 'info', message: `Summary: ${entries.length - failing - warnings} ok, ${warnings} warn, ${failing} fail` });
+      break;
+    }
+    case 'harness-replay': {
+      const result = replayCesarHarnessLogs({ turnId: (intent as any).turnId, limit: 8 });
+      cb.dispatch({ type: 'engine-block', engineId: 'harness-replay', color: ENGINE_COLORS.cesar ?? 124, content: result.rendered });
+      break;
+    }
+    case 'status': {
+      const registry = cb.ctx.registry;
+      const ids = registry.listIds();
+      // Prefer the live poller read: telemetryVitals (React state) is
+      // repaint-deduped and may lag by a signature bucket between commits.
+      const liveVitals = cb.ctx.telemetrySnapshot?.() ?? cb.ctx.telemetryVitals;
+      const engines = ids.map((id: string) => {
+        const v = liveVitals?.get(id);
+        if (v) return v;
+        return createEngineVitals(id);
+      });
+      const snap: TelemetrySnapshot = {
+        timestamp: Date.now(),
+        engines,
+        overallHealth: computeOverallHealth(engines),
+        activeRuns: 0,
+        recentFallbacks: (cb.ctx.recentFallbacks ?? []).slice(-5),
+      };
+      cb.dispatch({ type: 'info', message: renderTelemetrySnapshot(snap) });
+      break;
+    }
+    case 'engines':
+      if ((intent as any).action) await handleEngines(cb.dispatch, cb.ctx, intent as any);
+      else cb.setEnginePickerOpen(true);
+      break;
+    case 'discover': await handleDiscover(cb.dispatch, cb.ctx); break;
+    case 'provider': await handleProvider(intent.action, intent.args, cb.dispatch, cb.ctx); break;
+    case 'config': handleConfig(intent, cb.dispatch, cb.ctx); break;
+    case 'permissions': handlePermissions(cb.dispatch, intent); break;
+    case 'use': handleUse(intent.engineIds, cb.dispatch, cb.ctx, cb.setSessionEngines); break;
+    case 'cesar': {
+      const cesarTarget = (intent.engineIds ?? []).join(' ').trim();
+      if (cesarTarget) {
+        handleCesar(cesarTarget, cb.dispatch, cb.ctx);
+      } else {
+        cb.setCesarPickerOpen(true);
+      }
+      break;
+    }
+    case 'tokens': handleTokens(cb.dispatch); break;
+    case 'raw': handleRaw(cb.dispatch, intent.index); break;
+    case 'models': {
+      cb.setModelPickerTargetEngine?.(null);
+      cb.setModelPickerInitialFilter?.('');
+      cb.setModelPickerTitle?.('Select model');
+      cb.setModelPickerLoading(true);
+      cb.setModelPickerOpen(true);
+      import('@kernlang/agon-core').then(({ fetchModelsRegistry, buildModelEntries, buildCliGroupsImmediate, refreshCliGroup, refreshCliGroupVersion }) => {
+        // CLI engines: render cached/static models instantly (each installed
+        // probe-capable engine flagged loading), then probe each engine's live
+        // /model list in the background and swap its group in as it resolves —
+        // no global wait, and a slow/broken probe only spins its own row.
+        let cliGroups = buildCliGroupsImmediate();
+        cb.setModelPickerCliGroups?.(cliGroups);
+        for (const g of cliGroups) {
+          if (!g.loading) continue;
+          const clearLoading = () => {
+            cliGroups = cliGroups.map((x: any) => x.engineId === g.engineId ? { ...x, loading: false } : x);
+            cb.setModelPickerCliGroups?.([...cliGroups]);
+          };
+          refreshCliGroup(g.engineId).then((fresh: any) => {
+            if (!fresh) { clearLoading(); return; }
+            cliGroups = cliGroups.map((x: any) => x.engineId === fresh.engineId ? fresh : x);
+            cb.setModelPickerCliGroups?.([...cliGroups]);
+          }).catch(clearLoading);
+        }
+        // Versions resolve off the main thread too (buildCliGroupsImmediate no
+        // longer shells out per engine — that was the picker's open latency), so
+        // first paint is instant; swap each engine's version into its header as
+        // it resolves. Skip rows the probe loop already owns (refreshCliGroup
+        // returns their version) and any version already in the session cache.
+        for (const g of cliGroups) {
+          if (!g.installed || g.loading || g.version) continue;
+          refreshCliGroupVersion(g.engineId).then((v: any) => {
+            if (!v) return;
+            cliGroups = cliGroups.map((x: any) => x.engineId === g.engineId ? { ...x, version: v } : x);
+            cb.setModelPickerCliGroups?.([...cliGroups]);
+          }).catch(() => {});
+        }
+        // API models (models.dev) — independent; clears the global loading state.
+        fetchModelsRegistry().then((reg: any) => {
+          cb.setModelPickerEntries(buildModelEntries(reg));
+          cb.setModelPickerLoading(false);
+        }).catch((err: any) => {
+          // models.dev failed — but the CLI tab still lists local engines, so
+          // keep the picker OPEN (just stop the API spinner) instead of locking
+          // the user out of offline/local model selection.
+          cb.setModelPickerLoading(false);
+          cb.dispatch({ type: 'error', message: `models.dev registry unavailable (CLI engines still selectable): ${err.message}` } as any);
+        });
+      });
+      break;
+    }
+    case 'workspace': {
+      handleWorkspace(intent.action, cb.dispatch, cb.ctx, intent.path);
+      // Invalidate caches that depend on cwd — workspace just changed
+      invalidateCwdCache();
+      sessionContext.invalidate();
+      // Reload extensions from new workspace
+      if (cb.setWorkspacePath) cb.setWorkspacePath(resolveWorkingDir());
+      break;
+    }
+    case 'flow': await handleFlowReport(cb.dispatch, cb.ctx, cb.mode, cb.sessionStartTime); break;
+    case 'flows': handleFlowAnalysis(cb.dispatch); break;
+    case 'chats': handleChats(cb.dispatch, intent.sessionId); break;
+  
+    // ── Plan commands ──
+    case 'plan': await handlePlanShow(cb.dispatch, cb.ctx, intent.planId); break;
+    case 'plan-task': {
+      // Enter plan mode — Cesar thinks and proposes a plan
+      const { createCesarPlan } = await import('@kernlang/agon-core');
+      const cesarPlan = createCesarPlan(intent.task, []);
+      cb.setActivePlan(cesarPlan);
+      if (!cb.ctx.cesar) {
+        cb.ctx.cesar = {
+          busy: false, busySince: null, queue: null,
+          toolRegistry: null, hasNativeTools: false, lastDispatch: null,
+          pendingDelegation: null, reportedConfidence: undefined, reportedConfidenceReasoning: undefined, confidenceSatisfied: false, blockedOnConfidence: null,
+          autoNero: false, advisorPending: false, lastEscalation: null,
+          mcpFingerprint: undefined, mcpSignalPath: undefined, planDispatch: null, proposedPlan: undefined, sessionMcpServers: [],
+        };
+      }
+      cb.ctx.cesar.planDispatch = cb.dispatch;
+      const cesarInput = `[PLAN MODE] ${intent.task}`;
+      const wasJob = await routeWithCesar(cesarInput, [], cb);
+  
+      // After routeWithCesar, check if Cesar proposed a plan
+      const proposed: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
+      if (proposed && proposed.state === 'awaiting_approval') {
+        await handleProposedCesarPlan(proposed, cb);
+      } else if (wasJob) {
+        return { handled: true, ranAsJob: true };
+      } else {
+        cb.setActivePlan(null);
+      }
+      break;
+    }
+    case 'plan-resume': {
+      // Explicit planId/path: load from disk. No arg: only resume the in-session active plan.
+      // Disk discovery is intentionally OFF so innocuous words like "go" cannot resurrect stale persisted plans.
+      const explicitArg = (intent.planId ?? '').trim();
+      let resumePlan: CesarPlan | null = null;
+      if (explicitArg) {
+        // Allow either a bare plan ID (cplan-…) or a full path. Strip dir + .json if a path was pasted.
+        const tail = explicitArg.split(/[\\/]/).pop() ?? explicitArg;
+        const planId = tail.endsWith('.json') ? tail.slice(0, -5) : tail;
+        resumePlan = loadCesarPlan(planId);
+        if (!resumePlan) {
+          cb.dispatch({ type: 'warning', message: `No plan found for id "${planId}". Tip: \`ls ~/.agon/plans\` to list saved plan IDs.` });
+          break;
+        }
+      } else {
+        resumePlan = findResumableCesarPlan(cb.ctx);
+        if (!resumePlan) {
+          cb.dispatch({ type: 'info', message: 'No active plan in this session. Pass an ID to resume a saved plan: `/plan resume <plan-id>`.' });
+          break;
+        }
+      }
+      await resumeCesarPlan(resumePlan, cb);
+      break;
+    }
+    case 'plans': handlePlansList(cb.dispatch); break;
+    case 'approve': {
+      if (await approvePendingCesarPlan(cb)) break;
+      await handleApprove(cb.dispatch, cb.ctx);
+      break;
+    }
+    case 'retry': await handleRetry(cb.dispatch, cb.ctx); break;
+    case 'cancel': {
+      // Cesar proposals first, legacy plan runner second — the exact mirror of
+      // 'approve' above. Both reject routes (typing /cancel, and the pinned
+      // approval prompt's '3. Reject', which submits /cancel) come through here.
+      if (cancelPendingCesarPlan(cb)) break;
+      handleCancel(cb.dispatch, cb.ctx);
+      break;
+    }
+    case 'apply': await handleApplyPatch(cb.dispatch, cb.ctx, intent.patchPath, intent.force); break;
+    case 'cp': {
+      if (intent.last) handleCpLast(cb.ctx.chatSession, cb.dispatch);
+      else handleCp(intent.index, cb.dispatch);
+      break;
+    }
+    case 'commit': await handleCommit(intent.input, cb.dispatch, cb.ctx); break;
+  
+    default: return null;
+  }
+  // break-path cases land here — mirrors the original switch's shared _emitPost() tail
+  emitPostDispatch(intent, input, cb);
+  return { handled: true, ranAsJob: false };
+}

@@ -1,4 +1,5 @@
-// Facade over ./generated/stages.js — edit the source there.
+// Public stage surface over ./stages-impl.ts, adding the determineWinner
+// spread default that the shared core scorer does not carry.
 export {
   classifyNoDiffForgeResult,
   resolveForgeAcceptReviewOutput,
@@ -7,7 +8,7 @@ export {
   runBaseline,
   runStage1,
   runStage2,
-} from './generated/stages.js';
+} from './stages-impl.js';
 
 import type { EngineResult } from '@kernlang/agon-core';
 import { determineWinner as determineWinnerKern } from '@kernlang/agon-core';

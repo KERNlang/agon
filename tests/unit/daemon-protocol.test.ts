@@ -8,7 +8,7 @@ import {
   splitFrames,
   type DaemonRequest,
   type DaemonResponse,
-} from '../../packages/core/src/generated/sessions/daemon-protocol.js';
+} from '../../packages/core/src/sessions/daemon-protocol.js';
 
 // ── encode — one message → one newline-terminated JSON line ──────────────────
 

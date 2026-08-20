@@ -8,7 +8,7 @@ import {
   summarizeIntentForEpisode,
   tokenizeExperienceText,
   type ExperienceEpisode,
-} from '../../packages/cli/src/generated/cesar/experience.js';
+} from '../../packages/cli/src/cesar/experience.js';
 
 const episode = (overrides: Partial<ExperienceEpisode> = {}): ExperienceEpisode => ({
   mode: 'forge',

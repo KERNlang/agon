@@ -1,4 +1,4 @@
-// Pins the ONE path-containment primitive (packages/core/src/generated/blocks/paths.ts).
+// Pins the ONE path-containment primitive (packages/core/src/blocks/paths.ts).
 // Every surface that writes a file whose path came from somewhere untrusted goes
 // through it: the mutant runner, `agon mutate`'s target resolution, and goal's
 // worktree writes.
@@ -6,7 +6,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { canonicalPath, isInsideRealpath, resolveWithinRoot } from '../../packages/core/src/generated/blocks/paths.js';
+import { canonicalPath, isInsideRealpath, resolveWithinRoot } from '../../packages/core/src/blocks/paths.js';
 
 const dirs: string[] = [];
 const sandbox = (): string => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { WorkflowRegistry } from '../../packages/core/src/index.js';
-import type { WorkflowSpec } from '../../packages/core/src/generated/workflows/specs.js';
+import type { WorkflowSpec } from '../../packages/core/src/workflows/specs.js';
 
 function spec(overrides: Partial<WorkflowSpec> = {}): WorkflowSpec {
   return {

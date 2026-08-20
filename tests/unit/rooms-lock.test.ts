@@ -3,8 +3,8 @@ import { join } from 'node:path';
 import { mkdtempSync, rmSync, writeFileSync, existsSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
-import { createRoom, roomDir, appendEvent, readEvents, withRoomLock } from '../../packages/core/src/generated/rooms/store.js';
-import type { RoomActor } from '../../packages/core/src/generated/rooms/types.js';
+import { createRoom, roomDir, appendEvent, readEvents, withRoomLock } from '../../packages/core/src/rooms/store.js';
+import type { RoomActor } from '../../packages/core/src/rooms/types.js';
 
 let home: string;
 beforeEach(() => { home = mkdtempSync(join(tmpdir(), 'agon-lock-')); process.env.AGON_HOME = home; });

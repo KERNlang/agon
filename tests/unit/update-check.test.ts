@@ -23,7 +23,7 @@ import {
   isLinkedDevInstall,
   fetchLatestFromRegistry,
   resolveLatestVersion,
-} from '../../packages/cli/src/generated/services/update-check.js';
+} from '../../packages/cli/src/services/update-check.js';
 
 function makeFakeChild(stdout: string, exitCode: number = 0) {
   // The service uses execFile's callback signature (err, stdout, stderr). Fire
@@ -339,7 +339,7 @@ describe('update prompt sentinel collision guard', () => {
   it('app.tsx does not use the __other sentinel as an update-prompt choice key', async () => {
     const { readFile } = await import('node:fs/promises');
     const { join } = await import('node:path');
-    const appPath = join(__dirname, '../../packages/cli/src/generated/surfaces/app.tsx');
+    const appPath = join(__dirname, '../../packages/cli/src/surfaces/app.tsx');
     const src = await readFile(appPath, 'utf8');
 
     // Anchor on the triggerUpdatePrompt choices array itself (the literal

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { bell, setWindowTitle } from '../../packages/cli/src/generated/lib/terminal-notify.js';
+import { bell, setWindowTitle } from '../../packages/cli/src/lib/terminal-notify.js';
 
 const BEL = String.fromCharCode(7); // 0x07 BEL
 const OSC = String.fromCharCode(27) + ']0;'; // ESC ] 0 ; window-title opener

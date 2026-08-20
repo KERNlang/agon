@@ -7,7 +7,7 @@ import {
   cleanQuery,
   buildAuthoritativeRequest,
   parseAuthoritativeResults,
-} from '../../packages/core/src/generated/tools/research-router.js';
+} from '../../packages/core/src/tools/research-router.js';
 
 describe('classifyQuery', () => {
   it('routes npm package/library queries to the package lane', () => {

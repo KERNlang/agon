@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runReviewCore } from '../../packages/cli/src/generated/handlers/review.js';
+import { runReviewCore } from '../../packages/cli/src/handlers/review.js';
 
 // Regression: a goal task's review MUST run the review engine in the per-task
 // worktree, not the dir agon was launched from. runReviewCore used to hardcode

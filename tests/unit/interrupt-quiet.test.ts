@@ -3,17 +3,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildCancelCallback,
   runInterruptActiveRun,
-} from '../../packages/cli/src/generated/surfaces/app-interrupt.js';
+} from '../../packages/cli/src/surfaces/app-interrupt.js';
 import {
   buildInterruptedTurnRedirect,
   runHandleSubmit,
-} from '../../packages/cli/src/generated/surfaces/app-submit.js';
+} from '../../packages/cli/src/surfaces/app-submit.js';
 import {
   clearSteering,
   markSteeringTurn,
   peekSteeringCount,
   pushSteering,
-} from '../../packages/cli/src/generated/cesar/steering.js';
+} from '../../packages/cli/src/cesar/steering.js';
 
 const REDIRECT_MARKER = '[INTERRUPTED TURN REDIRECT]';
 

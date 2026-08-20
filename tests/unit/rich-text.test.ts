@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyLine, parseInlineSpans, richWrap, parseProseToRichLines } from '../../packages/cli/src/rich-text.js';
+import { classifyLine, parseInlineSpans, richWrap, parseProseToRichLines } from '../../packages/cli/src/blocks/rich-text.js';
 
 describe('classifyLine', () => {
   it('detects h1', () => {

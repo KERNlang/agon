@@ -1,0 +1,647 @@
+import { randomUUID } from 'node:crypto';
+
+import { mkdirSync, writeFileSync, renameSync } from 'node:fs';
+
+import type { EngineAdapter, EngineResult, ForgeEvent } from '@kernlang/agon-core';
+
+import type { TeamSpec, TeamComposeMode, TeamRoundTrace, TeamSubmission, TeamScoreCard, TeamMatchResult, TeamEvent } from '@kernlang/agon-core';
+
+import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, stashSnapshot, worktreeCreate, worktreeRemoveBestEffort, classifyTask, createSidechainLogger, composeTeams, makeFormat, spawnWithTimeout, tiebreak } from '@kernlang/agon-core';
+
+import { updateTeamElo } from '@kernlang/agon-core';
+
+import { runFitness } from './fitness.js';
+
+import type { WorktreeEntry } from './types.js';
+
+export function shellQuoteForTeamForge(value: string): string {
+  const s = String(value ?? '');
+  if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(s)) return s;
+  return `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+export function buildTeamForgeCleanupCommand(repoRootPath: string, forgeDir: string): string {
+  return `git -C ${shellQuoteForTeamForge(repoRootPath)} worktree prune && rm -rf ${shellQuoteForTeamForge(forgeDir)}`;
+}
+
+export function writeTeamForgeResultBundle(matchId: string, options: TeamForgeOptions, worktrees: WorktreeEntry[], repoRootPath: string, baseSha: string, sidechainPath: string, result?: TeamMatchResult|null, errorMessage?: string): string {
+  const cleanupCommand = buildTeamForgeCleanupCommand(repoRootPath, options.forgeDir);
+  const bundlePath = `${options.forgeDir}/result.json`;
+  const readmePath = `${options.forgeDir}/README.md`;
+  const submissions = result?.submissions ?? {};
+  const teamSummaries = Object.fromEntries(
+    Object.entries(submissions).map(([teamId, sub]: [string, any]) => {
+      const finalOutput = sub.finalOutput as any;
+      return [teamId, {
+        pass: !!finalOutput?.pass,
+        score: finalOutput?.score ?? 0,
+        patchPath: finalOutput?.patchPath,
+        fitnessLogPath: finalOutput?.fitnessLogPath,
+        worktreePath: finalOutput?.worktreePath,
+        tokens: sub.totalTokens ?? 0,
+        wallClockMs: sub.wallClockMs ?? 0,
+        collaborationLift: sub.collaborationLift ?? 0,
+      }];
+    }),
+  );
+  const failedTeams = Object.entries(teamSummaries)
+    .filter(([, summary]: [string, any]) => !summary.pass)
+    .map(([teamId]) => teamId);
+  const bundle = {
+    type: 'team-forge',
+    matchId,
+    status: errorMessage ? 'failed' : (result?.winnerTeamId ? 'completed' : 'draw-or-no-winner'),
+    winnerTeamId: result?.winnerTeamId ?? null,
+    failedTeams,
+    task: options.task,
+    cwd: options.cwd,
+    repoRoot: repoRootPath,
+    baseSha,
+    forgeDir: options.forgeDir,
+    exactFitnessCommand: options.fitnessCmd,
+    teams: result?.teams ?? [],
+    scorecards: result?.scorecards ?? {},
+    submissions: teamSummaries,
+    worktrees: worktrees.map((wt: WorktreeEntry) => ({ engineId: wt.engineId, path: wt.path, repoRoot: wt.repoRoot, cleanupPlanned: true, cleanupMode: 'best-effort-after-bundle' })),
+    logs: {
+      result: bundlePath,
+      sidechain: sidechainPath,
+    },
+    cleanupCommand,
+    error: errorMessage,
+    timestamp: new Date().toISOString(),
+  };
+  // Atomic-as-a-bundle write: README.md FIRST (so it's present when bundle
+  // appears), then bundle.json as the commit marker. Each via .tmp+rename
+  // for per-file atomicity. A reader observing bundle.json can trust README
+  // is already on disk; observing only README means the run is still in
+  // flight. Previous order (bundle then README) left a window where a kill
+  // produced "bundle present, README missing".
+  const readmeBody = [
+    `# Team Forge Result ${matchId}`,
+    '',
+    `Status: ${bundle.status}`,
+    `Winner team: ${bundle.winnerTeamId ?? 'none'}`,
+    `Task: ${options.task}`,
+    `Fitness: ${options.fitnessCmd}`,
+    `Result bundle: ${bundlePath}`,
+    `Sidechain log: ${sidechainPath}`,
+    '',
+    '## Failed Teams',
+    failedTeams.length ? failedTeams.map((id: string) => `- ${id}`).join('\n') : '- none',
+    '',
+    '## Cleanup',
+    '```sh',
+    cleanupCommand,
+    '```',
+    '',
+  ].join('\n');
+  const readmeTmp = readmePath + '.tmp';
+  writeFileSync(readmeTmp, readmeBody);
+  renameSync(readmeTmp, readmePath);
+  const bundleBody = JSON.stringify(bundle, null, 2);
+  const bundleTmp = bundlePath + '.tmp';
+  writeFileSync(bundleTmp, bundleBody);
+  renameSync(bundleTmp, bundlePath);
+  return bundlePath;
+}
+
+/**
+ * Pure winner rule for a team-forge match. Pass beats fail; higher composite score wins; a score TIE between two PASSING teams is settled by core's multi-axis tiebreak (composite → lint → style → diff size → files → duration) — coarse composites tie often (pass dominates the weights) and a draw is a dead end with no applicable patch. Returns null only when both teams failed the gate (neither patch is safe to offer) or on an absolute dead-heat across every axis.
+ */
+export function decideTeamWinner(resultA: EngineResult, resultB: EngineResult, teamAId: string, teamBId: string): string | null {
+  if (resultA.pass && !resultB.pass) return teamAId;
+  if (!resultA.pass && resultB.pass) return teamBId;
+  // Both failed: ALWAYS a draw, even on unequal scores — a "winner" here
+  // would put a gate-failing patch behind the /apply prompt.
+  if (!resultA.pass && !resultB.pass) return null;
+  if (resultA.score > resultB.score) return teamAId;
+  if (resultB.score > resultA.score) return teamBId;
+  const tb = tiebreak(resultA as any, resultB as any);
+  if (tb < 0) return teamAId;
+  if (tb > 0) return teamBId;
+  return null;
+}
+
+export interface TeamForgeOptions {
+  task: string;
+  fitnessCmd: string;
+  cwd: string;
+  forgeDir: string;
+  context?: string;
+  membersPerSide: number;
+  composeMode?: TeamComposeMode;
+  explicitTeams?: [string[],string[]];
+  engines?: string[];
+  maxReviewLoops?: number;
+  timeout?: number;
+  signal?: AbortSignal;
+}
+
+export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd: string, forgePrompt: string, registry: EngineRegistry, adapter: EngineAdapter, cwd: string, baseSha: string, forgeDir: string, worktrees: WorktreeEntry[], timeout: number, fitnessTimeout: number, maxReviewLoops: number, onEvent?: (event:ForgeEvent|TeamEvent)=>void, signal?: AbortSignal): Promise<TeamSubmission> {
+  const trace: TeamRoundTrace[] = [];
+  const start = Date.now();
+  let round = 0;
+  let tokenSum = 0;
+
+  const architect = team.members.find((m) => m.role === 'architect') ?? team.members[0];
+  const implementers = team.members.filter((m) => m.role === 'implementer');
+  const reviewer = team.members.find((m) => m.role === 'reviewer');
+
+  // If 2-member team, architect also acts as reviewer
+  const actualReviewer = reviewer ?? architect;
+  const actualImplementers = implementers.length > 0 ? implementers : [team.members[team.members.length - 1]];
+
+  // --- Phase 1: Architect plans ---
+  round++;
+  onEvent?.({ type: 'team:member-dispatch' as any, data: { teamId: team.teamId, engineId: architect.engineId, role: 'architect' } });
+
+  const planEngine = registry.get(architect.engineId);
+  const planPrompt = `${forgePrompt}\n\n## YOUR ROLE: ARCHITECT\nYou are the architect for your team. Produce a detailed implementation plan. Do NOT write code yet — describe exactly what files to change, what approach to take, and what edge cases to handle.\n\nTask: ${task}`;
+
+  let plan = '';
+  try {
+    const planResult = await adapter.dispatch({
+      engine: planEngine,
+      prompt: planPrompt,
+      systemPrompt: 'Produce a plan only. Do not edit files, run tools, or execute commands.',
+      cwd: forgeDir,
+      mode: 'exec',
+      timeout,
+      outputDir: forgeDir,
+      signal,
+      onSpawn: (pid: number) => onEvent?.({ type: 'engine:pid' as any, engineId: architect.engineId, data: { teamId: team.teamId, engineId: architect.engineId, pid, phase: 'team-architect' } }),
+    });
+
+    tokenSum += planResult.usage?.totalTokens ?? 0;
+    plan = planResult.stdout.trim();
+    trace.push({ round, actor: architect.engineId, role: 'architect', action: 'planned', artifactSummary: plan.slice(0, 200), durationMs: planResult.durationMs });
+    onEvent?.({ type: 'team:member-done' as any, data: { teamId: team.teamId, engineId: architect.engineId } });
+    onEvent?.({ type: 'engine:pid-clear' as any, engineId: architect.engineId, data: { teamId: team.teamId, engineId: architect.engineId } });
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    console.warn(`[agon] team forge architect ${architect.engineId} failed: ${error}`);
+    trace.push({ round, actor: architect.engineId, role: 'architect', action: 'failed' as any, artifactSummary: error.slice(0, 200), durationMs: 0 });
+    onEvent?.({ type: 'engine:failed' as any, engineId: architect.engineId, data: { teamId: team.teamId, engineId: architect.engineId, phase: 'team-architect', error } });
+    onEvent?.({ type: 'engine:pid-clear' as any, engineId: architect.engineId, data: { teamId: team.teamId, engineId: architect.engineId } });
+    const finalResult: EngineResult = {
+      engineId: `team:${team.teamId}`,
+      pass: false,
+      score: 0,
+      diffLines: 0,
+      filesChanged: 0,
+      durationSec: (Date.now() - start) / 1000,
+      lintWarnings: 0,
+      styleScore: 0,
+      dispatchStdout: `ERROR: team architect ${architect.engineId} failed: ${error}`,
+    };
+    return {
+      teamId: team.teamId,
+      finalOutput: finalResult,
+      trace,
+      totalTokens: tokenSum,
+      wallClockMs: Date.now() - start,
+      collaborationLift: 0,
+    };
+  }
+
+  // --- Phase 2: Implementers build (parallel if multiple) ---
+
+  const implPromises = actualImplementers.map(async (impl) => {
+    round++;
+    const implRound = round;
+    onEvent?.({ type: 'team:member-dispatch' as any, data: { teamId: team.teamId, engineId: impl.engineId, role: 'implementer' } });
+
+    const root = repoRoot(cwd);
+    const wtPath = `${forgeDir}/${team.teamId}-${impl.engineId}`;
+    worktreeCreate(root, wtPath, baseSha);
+    const wt: WorktreeEntry = { engineId: impl.engineId, path: wtPath, repoRoot: root };
+    worktrees.push(wt);
+
+    const implEngine = registry.get(impl.engineId);
+    const implPrompt = `${forgePrompt}\n\n## YOUR ROLE: IMPLEMENTER\nYou are implementing code based on the architect's plan below. Write the actual code changes.\n\n## ARCHITECT'S PLAN:\n${plan}\n\nTask: ${task}`;
+
+    // Team implementers mutate isolated worktrees. API-only engines must use
+    // the same tool loop as agent engines; plain API dispatch only returns text.
+    const hasAgent = !!adapter.dispatchAgent && (!!implEngine.agent || !!implEngine.api);
+    let implResult;
+    if (hasAgent) {
+      implResult = await adapter.dispatchAgent!({
+        engine: implEngine,
+        prompt: implPrompt,
+        cwd: wt.path,
+        mode: 'agent',
+        timeout,
+        outputDir: forgeDir,
+        signal,
+        onSpawn: (pid: number) => onEvent?.({ type: 'engine:pid' as any, engineId: impl.engineId, data: { teamId: team.teamId, engineId: impl.engineId, pid, phase: 'team-implementer' } }),
+      });
+    } else {
+      implResult = await adapter.dispatch({
+        engine: implEngine,
+        prompt: implPrompt,
+        cwd: wt.path,
+        mode: 'exec',
+        timeout,
+        outputDir: forgeDir,
+        signal,
+        onSpawn: (pid: number) => onEvent?.({ type: 'engine:pid' as any, engineId: impl.engineId, data: { teamId: team.teamId, engineId: impl.engineId, pid, phase: 'team-implementer' } }),
+      });
+    }
+
+    tokenSum += implResult.usage?.totalTokens ?? 0;
+
+    // Score this implementation
+    const fitness = await runFitness({ engineId: impl.engineId, worktreePath: wt.path, fitnessCmd, timeout: fitnessTimeout, forgeDir });
+
+    trace.push({ round: implRound, actor: impl.engineId, role: 'implementer', action: 'implemented', artifactSummary: `score=${fitness.score}`, durationMs: implResult.durationMs });
+
+    onEvent?.({ type: 'team:member-done' as any, data: { teamId: team.teamId, engineId: impl.engineId } });
+    onEvent?.({ type: 'engine:pid-clear' as any, engineId: impl.engineId, data: { teamId: team.teamId, engineId: impl.engineId } });
+
+    return { engineId: impl.engineId, fitness, worktree: wt, durationMs: implResult.durationMs };
+  });
+
+  // Promise.allSettled is INTENTIONAL here — we want every implementer's
+  // patch before picking the best one. Killing a slow implementer would
+  // lose its candidate patch. A 6-engine brainstorm (2026-05-13) split on
+  // whether to add a straggler-abort (50%+done → 60s grace → cancel
+  // remaining): claude/kimi/zai/minimax voted yes; codex voted no
+  // ("risks killing the slow-but-winning engine"); gemini suggested 66%
+  // quorum. Worst-case latency is already bounded by:
+  //   - 90s api-dispatch idle-timeout (api/dispatch.kern:391) catches dead-silence
+  //   - 300s per-engine cap (config.forgeTimeout) is the hard ceiling
+  // so the existing safeguards already address the original "hung engine
+  // blocks the team forever" failure mode. Leave V2 straggler-abort to a
+  // dedicated brainstorm when we have telemetry on real tail latencies.
+  const settledImpls = await Promise.allSettled(implPromises);
+  const implResults: Array<{ engineId: string; fitness: EngineResult; worktree: WorktreeEntry; durationMs: number }> = [];
+  for (let i = 0; i < settledImpls.length; i++) {
+    const outcome = settledImpls[i];
+    if (outcome.status === 'fulfilled') {
+      implResults.push(outcome.value);
+    } else {
+      const failed = actualImplementers[i];
+      const error = outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason);
+      console.warn(`[agon] team forge implementer ${failed.engineId} failed: ${error}`);
+      trace.push({ round, actor: failed.engineId, role: 'implementer', action: 'failed' as any, artifactSummary: error.slice(0, 200), durationMs: 0 });
+      onEvent?.({ type: 'engine:failed' as any, engineId: failed.engineId, data: { teamId: team.teamId, engineId: failed.engineId, phase: 'team-implementer', error } });
+      onEvent?.({ type: 'engine:pid-clear' as any, engineId: failed.engineId, data: { teamId: team.teamId, engineId: failed.engineId } });
+    }
+  }
+
+  if (implResults.length === 0) {
+    const finalResult: EngineResult = {
+      engineId: `team:${team.teamId}`,
+      pass: false,
+      score: 0,
+      diffLines: 0,
+      filesChanged: 0,
+      durationSec: (Date.now() - start) / 1000,
+      lintWarnings: 0,
+      styleScore: 0,
+    };
+    return {
+      teamId: team.teamId,
+      finalOutput: finalResult,
+      trace,
+      totalTokens: tokenSum,
+      wallClockMs: Date.now() - start,
+      collaborationLift: 0,
+    };
+  }
+
+  // Pick best implementation
+  const bestImpl = implResults.sort((a, b) => b.fitness.score - a.fitness.score)[0];
+
+  // --- Phase 3: Review loop ---
+  let currentWorktree = bestImpl.worktree;
+  let currentScore = bestImpl.fitness.score;
+  let reviewLoops = 0;
+
+  while (reviewLoops < maxReviewLoops && actualReviewer.engineId !== bestImpl.engineId) {
+    round++;
+    reviewLoops++;
+    onEvent?.({ type: 'team:member-dispatch' as any, data: { teamId: team.teamId, engineId: actualReviewer.engineId, role: 'reviewer' } });
+
+    const reviewEngine = registry.get(actualReviewer.engineId);
+
+    // Generate diff for review — async spawn to keep the event loop responsive
+    // for other concurrent engines. Synchronous execSync here used to block
+    // every other parallel team-forge engine for up to 10s per review iteration.
+    let diff: string;
+    try {
+      const diffResult = await spawnWithTimeout({
+        command: 'git',
+        args: ['diff', 'HEAD'],
+        cwd: currentWorktree.path,
+        timeout: 10_000,
+        signal,
+      });
+      diff = diffResult.exitCode === 0 ? diffResult.stdout : '(unable to generate diff)';
+    } catch {
+      diff = '(unable to generate diff)';
+    }
+
+    if (!diff || diff.trim().length === 0 || diff === '(unable to generate diff)') break;
+
+    const reviewPrompt = `## YOUR ROLE: REVIEWER\nReview this code change for the task below. If the code is good, respond with exactly "APPROVED". If it needs changes, describe the specific issues.\n\nTask: ${task}\n\n## DIFF:\n\`\`\`diff\n${diff.slice(0, 5000)}\n\`\`\``;
+
+    const reviewResult = await adapter.dispatch({
+      engine: reviewEngine,
+      prompt: reviewPrompt,
+      cwd,
+      mode: 'review',
+      timeout,
+      outputDir: forgeDir,
+      signal,
+      onSpawn: (pid: number) => onEvent?.({ type: 'engine:pid' as any, engineId: actualReviewer.engineId, data: { teamId: team.teamId, engineId: actualReviewer.engineId, pid, phase: 'team-reviewer' } }),
+    });
+
+    tokenSum += reviewResult.usage?.totalTokens ?? 0;
+    const reviewText = reviewResult.stdout.trim();
+    const approved = /\bAPPROVED\b/i.test(reviewText) && reviewText.length < 200;
+
+    trace.push({
+      round,
+      actor: actualReviewer.engineId,
+      role: 'reviewer',
+      action: approved ? 'reviewed-accept' : 'reviewed-reject',
+      artifactSummary: reviewText.slice(0, 200),
+      durationMs: reviewResult.durationMs,
+    });
+
+    onEvent?.({ type: 'team:member-done' as any, data: { teamId: team.teamId, engineId: actualReviewer.engineId } });
+    onEvent?.({ type: 'engine:pid-clear' as any, engineId: actualReviewer.engineId, data: { teamId: team.teamId, engineId: actualReviewer.engineId } });
+
+    if (approved) break;
+
+    // Implementer revises based on review feedback
+    onEvent?.({ type: 'team:member-dispatch' as any, data: { teamId: team.teamId, engineId: bestImpl.engineId, role: 'implementer' } });
+
+    const revisePrompt = `${forgePrompt}\n\n## REVISION REQUIRED\nThe reviewer found issues with your implementation. Fix them.\n\n## REVIEW FEEDBACK:\n${reviewText}\n\nTask: ${task}`;
+
+    const reviseEngine = registry.get(bestImpl.engineId);
+    if (adapter.dispatchAgent && (reviseEngine.agent || reviseEngine.api)) {
+      await adapter.dispatchAgent({
+        engine: reviseEngine,
+        prompt: revisePrompt,
+        cwd: currentWorktree.path,
+        mode: 'agent',
+        timeout,
+        outputDir: forgeDir,
+        signal,
+        onSpawn: (pid: number) => onEvent?.({ type: 'engine:pid' as any, engineId: bestImpl.engineId, data: { teamId: team.teamId, engineId: bestImpl.engineId, pid, phase: 'team-revision' } }),
+      });
+    } else {
+      await adapter.dispatch({
+        engine: reviseEngine,
+        prompt: revisePrompt,
+        cwd: currentWorktree.path,
+        mode: 'exec',
+        timeout,
+        outputDir: forgeDir,
+        signal,
+        onSpawn: (pid: number) => onEvent?.({ type: 'engine:pid' as any, engineId: bestImpl.engineId, data: { teamId: team.teamId, engineId: bestImpl.engineId, pid, phase: 'team-revision' } }),
+      });
+    }
+
+    // Re-score after revision
+    const revisedFitness = await runFitness({ engineId: bestImpl.engineId, worktreePath: currentWorktree.path, fitnessCmd, timeout: fitnessTimeout, forgeDir });
+    currentScore = revisedFitness.score;
+
+    trace.push({ round, actor: bestImpl.engineId, role: 'implementer', action: 'implemented', artifactSummary: `revised score=${currentScore}`, durationMs: 0 });
+
+    onEvent?.({ type: 'team:member-done' as any, data: { teamId: team.teamId, engineId: bestImpl.engineId } });
+    onEvent?.({ type: 'engine:pid-clear' as any, engineId: bestImpl.engineId, data: { teamId: team.teamId, engineId: bestImpl.engineId } });
+  }
+
+  // --- Final scoring ---
+  const finalFitness = await runFitness({ engineId: `team:${team.teamId}`, worktreePath: currentWorktree.path, fitnessCmd, timeout: fitnessTimeout, forgeDir });
+
+  const finalResult: EngineResult = {
+    engineId: `team:${team.teamId}`,
+    pass: finalFitness.pass,
+    score: finalFitness.score,
+    diffLines: finalFitness.diffLines,
+    filesChanged: finalFitness.filesChanged,
+    durationSec: (Date.now() - start) / 1000,
+    lintWarnings: finalFitness.lintWarnings,
+    styleScore: finalFitness.styleScore,
+    patchPath: finalFitness.patchPath,
+    worktreePath: currentWorktree.path,
+    fitnessLogPath: finalFitness.fitnessLogPath,
+  };
+
+  const collaborationLift = finalResult.score - bestImpl.fitness.score;
+
+  return {
+    teamId: team.teamId,
+    finalOutput: finalResult,
+    trace,
+    totalTokens: tokenSum,
+    wallClockMs: Date.now() - start,
+    collaborationLift,
+  };
+}
+
+export async function runTeamForge(options: TeamForgeOptions, registry: EngineRegistry, adapter: EngineAdapter, onEvent?: (event:ForgeEvent|TeamEvent)=>void): Promise<TeamMatchResult> {
+  const config = loadConfig(options.cwd);
+  const matchId = randomUUID().slice(0, 8);
+  const forgeDir = options.forgeDir;
+  const worktrees: WorktreeEntry[] = [];
+
+  // Internal abort: fires before worktree cleanup so in-flight team
+  // dispatches receive SIGTERM via their own spawnWithTimeout signal handlers.
+  // External signal forwards into teamAbort instead of using AbortSignal.any
+  // (which kern-guard rejects as an undeclared reference).
+  const teamAbort = new AbortController();
+  if (options.signal) {
+    if (options.signal.aborted) {
+      teamAbort.abort();
+    } else {
+      options.signal.addEventListener('abort', () => teamAbort.abort(), { once: true });
+    }
+  }
+  const teamSignal = teamAbort.signal;
+
+  mkdirSync(forgeDir, { recursive: true });
+
+  const sidechain = createSidechainLogger({
+    sessionId: matchId,
+    sessionType: 'team-forge',
+    outputDir: forgeDir,
+  });
+
+  const __roster = registry.partitionRoster(options.engines ?? null, config as any);
+  if (__roster.removed.length > 0) {
+    throw new Error(`Removed engine(s) cannot run: ${__roster.removed.join(', ')}. Restore with 'agon engine add <id>' (or /engines restore <id>).`);
+  }
+  const enabledEngines = __roster.active;
+  const available = enabledEngines.filter((id: string) => {
+    try {
+      const engine = registry.get(id);
+      return registry.isAvailable(engine);
+    } catch { return false; }
+  });
+
+  // Engines can appear on both teams — minimum is 2 engines
+  // Forge doesn't need a judge (fitness scoring is objective)
+  if (available.length < 2) {
+    const error = `Team forge requires at least 2 available engines, only ${available.length} available: ${available.join(', ')}`;
+    try {
+      writeTeamForgeResultBundle(matchId, options, worktrees, options.cwd, 'unknown', sidechain.path, null, error);
+      sidechain.log('team-forge:error', undefined, { error, phase: 'availability' });
+    } catch (bundleErr) {
+      console.warn(`[agon] team forge result bundle write failed: ${bundleErr instanceof Error ? bundleErr.message : String(bundleErr)}`);
+    }
+    throw new Error(error);
+  }
+
+  const taskClass = classifyTask(options.task);
+  const format = makeFormat(options.membersPerSide);
+  const composeMode = options.composeMode ?? 'auto-balanced';
+
+  const [teamA, teamB] = composeTeams(
+    available,
+    options.membersPerSide,
+    composeMode,
+    taskClass,
+    options.explicitTeams,
+  );
+
+  sidechain.log('team:compose', undefined, {
+    format: format.label,
+    teamA: teamA.members.map((m) => `${m.engineId}:${m.role}`),
+    teamB: teamB.members.map((m) => `${m.engineId}:${m.role}`),
+  });
+
+  onEvent?.({ type: 'team:compose' as any, data: { teams: [teamA, teamB] } });
+
+  const forgePrompt = buildForgePrompt({
+    task: options.task,
+    fitnessCmd: options.fitnessCmd,
+    context: options.context,
+    agentMode: true,
+  });
+
+  const maxLoops = options.maxReviewLoops ?? 2;
+  const timeout = options.timeout ?? config.forgeTimeout;
+  const fitnessTimeout = config.forgeFitnessTimeout;
+  let baseSha = 'unknown';
+  let root = options.cwd;
+  try {
+    baseSha = stashSnapshot(options.cwd);
+    root = repoRoot(options.cwd);
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    try {
+      writeTeamForgeResultBundle(matchId, options, worktrees, root, baseSha, sidechain.path, null, error);
+      sidechain.log('team-forge:error', undefined, { error, phase: 'preflight' });
+    } catch (bundleErr) {
+      console.warn(`[agon] team forge result bundle write failed: ${bundleErr instanceof Error ? bundleErr.message : String(bundleErr)}`);
+    }
+    throw err;
+  }
+
+  // Run both teams in parallel — allSettled so one team's failure doesn't
+  // discard the other team's (potentially winning) submission.
+  try {
+    const settled = await Promise.allSettled([
+      runTeamCoopForge(teamA, options.task, options.fitnessCmd, forgePrompt, registry, adapter, options.cwd, baseSha, forgeDir, worktrees, timeout, fitnessTimeout, maxLoops, onEvent, teamSignal),
+      runTeamCoopForge(teamB, options.task, options.fitnessCmd, forgePrompt, registry, adapter, options.cwd, baseSha, forgeDir, worktrees, timeout, fitnessTimeout, maxLoops, onEvent, teamSignal),
+    ]);
+    const [outA, outB] = settled;
+    if (outA.status === 'rejected' && outB.status === 'rejected') {
+      const errA = outA.reason instanceof Error ? outA.reason.message : String(outA.reason);
+      const errB = outB.reason instanceof Error ? outB.reason.message : String(outB.reason);
+      throw new Error(`Both teams failed — teamA: ${errA}; teamB: ${errB}`);
+    }
+    if (outA.status === 'rejected') {
+      const errA = outA.reason instanceof Error ? outA.reason.message : String(outA.reason);
+      console.warn(`[agon] team-forge: teamA (${teamA.teamId}) failed — awarding teamB by default: ${errA}`);
+      sidechain.log('team-forge:partial-failure', teamA.teamId, { failedTeam: 'A', error: errA });
+    }
+    if (outB.status === 'rejected') {
+      const errB = outB.reason instanceof Error ? outB.reason.message : String(outB.reason);
+      console.warn(`[agon] team-forge: teamB (${teamB.teamId}) failed — awarding teamA by default: ${errB}`);
+      sidechain.log('team-forge:partial-failure', teamB.teamId, { failedTeam: 'B', error: errB });
+    }
+    const subA = outA.status === 'fulfilled' ? outA.value : null;
+    const subB = outB.status === 'fulfilled' ? outB.value : null;
+
+    if (subA) onEvent?.({ type: 'team:submit' as any, data: { teamId: teamA.teamId } });
+    if (subB) onEvent?.({ type: 'team:submit' as any, data: { teamId: teamB.teamId } });
+
+    // Build EngineResult-shaped surrogates for failed teams so scoring + ELO
+    // still produce a valid match record (loss by forfeit).
+    const resultA: EngineResult = subA
+      ? (subA.finalOutput as EngineResult)
+      : { engineId: teamA.teamId, pass: false, score: 0, diffLines: 0, filesChanged: 0, durationSec: 0, lintWarnings: 0, styleScore: 0, patchPath: '', worktreePath: '' };
+    const resultB: EngineResult = subB
+      ? (subB.finalOutput as EngineResult)
+      : { engineId: teamB.teamId, pass: false, score: 0, diffLines: 0, filesChanged: 0, durationSec: 0, lintWarnings: 0, styleScore: 0, patchPath: '', worktreePath: '' };
+
+    const scoreA: TeamScoreCard = { teamId: teamA.teamId, score: resultA.score, breakdown: { pass: resultA.pass ? 1 : 0, fitness: resultA.score, diffLines: resultA.diffLines } };
+    const scoreB: TeamScoreCard = { teamId: teamB.teamId, score: resultB.score, breakdown: { pass: resultB.pass ? 1 : 0, fitness: resultB.score, diffLines: resultB.diffLines } };
+
+    onEvent?.({ type: 'team:score' as any, data: { teamId: teamA.teamId, score: resultA.score } });
+    onEvent?.({ type: 'team:score' as any, data: { teamId: teamB.teamId, score: resultB.score } });
+
+    // Determine winner — see decideTeamWinner for the full rule (pass beats
+    // fail, higher score wins, passing-tie settled by core's tiebreak).
+    const winnerTeamId: string | null = decideTeamWinner(resultA, resultB, teamA.teamId, teamB.teamId);
+
+    onEvent?.({ type: 'team:winner' as any, data: { winnerTeamId } });
+
+    const submissions: Record<string, any> = {};
+    if (subA) submissions[teamA.teamId] = subA;
+    if (subB) submissions[teamB.teamId] = subB;
+    const matchResult: TeamMatchResult = {
+      matchId,
+      mode: 'forge',
+      task: options.task,
+      format,
+      teams: [teamA, teamB],
+      submissions,
+      scorecards: { [teamA.teamId]: scoreA, [teamB.teamId]: scoreB },
+      winnerTeamId,
+      timestamp: new Date().toISOString(),
+    };
+
+    // Update team ELO
+    if (config.ratingsEnabled) {
+      updateTeamElo(matchResult, 32);
+    }
+
+    sidechain.log('team-forge:done', winnerTeamId ?? undefined, {
+      scoreA: resultA.score,
+      scoreB: resultB.score,
+      winnerTeamId,
+    });
+
+    onEvent?.({ type: 'team:match-done' as any, data: {} });
+
+    writeTeamForgeResultBundle(matchId, options, worktrees, root, baseSha, sidechain.path, matchResult);
+    return matchResult;
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    try {
+      writeTeamForgeResultBundle(matchId, options, worktrees, root, baseSha, sidechain.path, null, error);
+      sidechain.log('team-forge:error', undefined, { error });
+    } catch (bundleErr) {
+      console.warn(`[agon] team forge result bundle write failed: ${bundleErr instanceof Error ? bundleErr.message : String(bundleErr)}`);
+    }
+    throw err;
+  } finally {
+    // Abort in-flight team dispatches before cleanup — same rationale as
+    // runForge: SIGTERM lands first, dirs get removed after. 1000ms grace
+    // matches spawnWithTimeout's SIGTERM→SIGKILL window so file handles
+    // are released before we try to remove worktree directories.
+    if (!teamAbort.signal.aborted) teamAbort.abort();
+    try { await new Promise(resolve => setTimeout(resolve, 1000)); } catch { /* non-fatal */ }
+    for (const wt of worktrees) {
+      worktreeRemoveBestEffort(wt.repoRoot, wt.path);
+    }
+  }
+}

@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   runCesarConfirmationFollowUp,
-} from '../../packages/cli/src/generated/cesar/confirmation-follow-up.js';
-import { hostWaitForInteractiveChoice } from '../../packages/cli/src/generated/lib/kern-host.js';
+} from '../../packages/cli/src/cesar/confirmation-follow-up.js';
+import { hostWaitForInteractiveChoice } from '../../packages/cli/src/lib/kern-host.js';
 
 describe('runCesarConfirmationFollowUp', () => {
   it('executes tool markup returned after Yes instead of rendering raw XML as a completed answer', async () => {

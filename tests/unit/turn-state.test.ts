@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-// Source of truth: packages/cli/src/generated/cesar/turn-reducer.ts (+ the CesarTurn machine in cesar/turn-state.ts)
+// Source of truth: packages/cli/src/cesar/turn-reducer.ts (+ the CesarTurn machine in cesar/turn-state.ts)
 import {
   reduceTurn,
   initialTurnSnapshot,
   TurnDriver,
-} from '../../packages/cli/src/generated/cesar/turn-reducer.js';
+} from '../../packages/cli/src/cesar/turn-reducer.js';
 
 describe('reduceTurn — pure turn reducer (Phase 0c spike)', () => {
   it('drives the happy path: stream → toolLoop → verifying → committing → done', () => {

@@ -3,8 +3,8 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runRagVectorStoreConformance, validateRagVectorStoreAdapterManifest } from '@kernlang/core';
-import { adapterNamespaceDir, createAgonRagVectorStoreContract } from '../../packages/core/src/generated/rag/adapter.js';
-import { classifyRuntimePilotChange } from '../../packages/core/src/generated/workflows/runtime-pilot.js';
+import { adapterNamespaceDir, createAgonRagVectorStoreContract } from '../../packages/core/src/rag/adapter.js';
+import { classifyRuntimePilotChange } from '../../packages/core/src/workflows/runtime-pilot.js';
 import { loadRagIndexAt, saveRagIndexAt } from '../../packages/core/src/rag.js';
 
 const tempDirs: string[] = [];

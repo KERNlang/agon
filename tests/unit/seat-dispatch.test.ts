@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifySeatFailure, dispatchSeatWithRetry, buildPanelHealth } from '../../packages/forge/src/generated/seat-dispatch.js';
+import { classifySeatFailure, dispatchSeatWithRetry, buildPanelHealth } from '../../packages/forge/src/seat-dispatch.js';
 
 const ok = (stdout: string) => ({ exitCode: 0, stdout, stderr: '', durationMs: 1, timedOut: false });
 const timedOut = () => ({ exitCode: 124, stdout: '', stderr: 'Timed out', durationMs: 1, timedOut: true });

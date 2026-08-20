@@ -7,7 +7,7 @@ import {
   ORCHESTRATION_TOOLS,
   buildDirectAgonCommand,
   handleWriteToolCall,
-} from '../../packages/mcp/src/generated/agon-orchestration.js';
+} from '../../packages/mcp/src/agon-orchestration.js';
 
 const tempDirs: string[] = [];
 const OLD_ENV = {

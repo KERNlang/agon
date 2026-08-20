@@ -40,7 +40,7 @@ describe('loadConfig() memoization', () => {
     home = setupTestAgonHome('config-memo-same');
     writeFileSync(agonHomePath('config.json'), JSON.stringify({ commitCoAuthor: 'v1' }));
 
-    const { loadConfig } = await import('../../packages/core/src/config.js');
+    const { loadConfig } = await import('../../packages/core/src/signals/config.js');
     const first = loadConfig();
     expect(first.commitCoAuthor).toBe('v1');
 
@@ -56,7 +56,7 @@ describe('loadConfig() memoization', () => {
     home = setupTestAgonHome('config-memo-mutation');
     writeFileSync(agonHomePath('config.json'), JSON.stringify({ permissions: { allow: ['Read(a)'] } }));
 
-    const { loadConfig } = await import('../../packages/core/src/config.js');
+    const { loadConfig } = await import('../../packages/core/src/signals/config.js');
     const first = loadConfig();
     expect(first.permissions.allow).toEqual(['Read(a)']);
 
@@ -77,7 +77,7 @@ describe('loadConfig() memoization', () => {
     const path = agonHomePath('config.json');
     writeFileSync(path, JSON.stringify({ commitCoAuthor: 'v1' }));
 
-    const { loadConfig } = await import('../../packages/core/src/config.js');
+    const { loadConfig } = await import('../../packages/core/src/signals/config.js');
     const first = loadConfig();
     expect(first.commitCoAuthor).toBe('v1');
 
@@ -98,7 +98,7 @@ describe('loadConfig() memoization', () => {
   it('treats a missing config file as mtime 0 and still caches correctly', async () => {
     home = setupTestAgonHome('config-memo-missing');
     // No config.json written at all.
-    const { loadConfig } = await import('../../packages/core/src/config.js');
+    const { loadConfig } = await import('../../packages/core/src/signals/config.js');
     const first = loadConfig();
     expect(first.commitCoAuthor).not.toBe('v1');
 
@@ -110,7 +110,7 @@ describe('loadConfig() memoization', () => {
 
   it('keys the cache per-cwd: a project .agon.json changing invalidates only that cwd', async () => {
     home = setupTestAgonHome('config-memo-cwd');
-    const { loadConfig } = await import('../../packages/core/src/config.js');
+    const { loadConfig } = await import('../../packages/core/src/signals/config.js');
 
     const projectDir = join(home, 'project');
     mkdirSync(projectDir, { recursive: true });
@@ -135,7 +135,7 @@ describe('loadConfig() memoization', () => {
     const path = agonHomePath('config.json');
     writeFileSync(path, JSON.stringify({ commitCoAuthor: 'v1' }));
 
-    const { loadConfig, invalidateConfigCache } = await import('../../packages/core/src/config.js');
+    const { loadConfig, invalidateConfigCache } = await import('../../packages/core/src/signals/config.js');
     const first = loadConfig();
     expect(first.commitCoAuthor).toBe('v1');
 
@@ -151,7 +151,7 @@ describe('loadConfig() memoization', () => {
 
   it('configSet() calls invalidateConfigCache() internally, so a subsequent loadConfig() sees the write', async () => {
     home = setupTestAgonHome('config-memo-configset');
-    const { loadConfig, configSet } = await import('../../packages/core/src/config.js');
+    const { loadConfig, configSet } = await import('../../packages/core/src/signals/config.js');
 
     const first = loadConfig();
     expect(first.commitCoAuthor).not.toBe('via-configset');
@@ -166,7 +166,7 @@ describe('loadConfig() memoization', () => {
     home = setupTestAgonHome('config-memo-ui-motion');
     writeFileSync(agonHomePath('config.json'), JSON.stringify({ uiMotion: 'jitter', terminalMode: 'unknown' }));
 
-    const { loadConfig } = await import('../../packages/core/src/config.js');
+    const { loadConfig } = await import('../../packages/core/src/signals/config.js');
     expect(loadConfig().uiMotion).toBe('reduced');
     expect(loadConfig().terminalMode).toBe('auto');
   });

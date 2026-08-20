@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { applyPatchToTree } from '../../packages/core/src/patch-apply.js';
-import { worktreeDiff } from '../../packages/core/src/git.js';
+import { applyPatchToTree } from '../../packages/core/src/blocks/patch-apply.js';
+import { worktreeDiff } from '../../packages/core/src/blocks/git.js';
 
 const tempRoots: string[] = [];
 

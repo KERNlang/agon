@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { handleReviewMany } from '../../packages/cli/src/generated/handlers/review.js';
+import { handleReviewMany } from '../../packages/cli/src/handlers/review.js';
 import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 
 const VALID_FINDINGS = '<!--AGON_REVIEW_FINDINGS_v1-->\n```json\n[]\n```';

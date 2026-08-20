@@ -1,3 +1,720 @@
-// Facade over ../generated/commands/call.js — edit the source there.
-export { callCommand, buildCallCommands, normalizeCallWorkflow, validateCallEngineRoster } from '../generated/commands/call.js';
-export type { CallCommandOptions, BuiltCallCommands } from '../generated/commands/call.js';
+import { spawn } from 'node:child_process';
+
+import { defineCommand } from 'citty';
+
+import { EngineRegistry, loadConfig, getCoreWorkflowRegistry, compileWorkflowSpec, verifyWorkflowExecutionPlanFlow, verifyWorkflowRunFlow, throwWorkflowConformance, createWorkflowIssue, createWorkflowRun, appendWorkflowPhaseEvent } from '@kernlang/agon-core';
+
+import type { WorkflowConformanceIssue, WorkflowRun } from '@kernlang/agon-core';
+
+import { fail, info } from '../blocks/output-format.js';
+
+import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
+
+export interface CallCommandOptions {
+  workflow: string;
+  input?: string;
+  team?: boolean;
+  engines?: string;
+  fitnessCmd?: string;
+  rounds?: string;
+  swaps?: string;
+  tribunalMode?: string;
+  tribunalProtocol?: string;
+  members?: string;
+  cwd?: string;
+  engineTimeout?: string;
+  strategy?: string;
+  lead?: string;
+  finalizeOnScore?: string;
+  gate?: string;
+  queue?: string;
+  steps?: string;
+  branches?: string;
+  critic?: string;
+  reasoning?: string;
+  focus?: string;
+  confidence?: string;
+  roles?: string;
+  chairman?: string;
+  oracleGate?: string;
+  count?: string;
+  engine?: string;
+  autoApprove?: boolean;
+  detect?: boolean;
+  out?: string;
+  author?: string;
+  diff?: string;
+  mechanicalOnly?: boolean;
+  maxMutants?: string;
+  semantic?: boolean;
+  lens?: string;
+  build?: string;
+  test?: string;
+}
+
+export interface WorkflowCallMeta {
+  workflowId: string;
+  version: string;
+  planId: string;
+}
+
+export interface BuiltCallCommands {
+  cwd: string;
+  commands: string[][];
+  workflowMeta?: WorkflowCallMeta;
+}
+
+export function textFlag(flag: string, value: string|undefined): string[] {
+  const text = value?.trim();
+  return text ? [flag, text] : [];
+}
+
+export function requireInput(workflow: string, input: string|undefined): string {
+  const text = input?.trim();
+  if (!text) {
+    throw new Error(`agon call ${workflow} requires a prompt/task argument`);
+  }
+  return text;
+}
+
+export function exitWithFailure(message: string): never {
+  fail(message);
+  process.exit(1);
+  throw new Error('process.exit returned unexpectedly');
+}
+
+/**
+ * Enforce the HARD removedEngines denylist at the external-CLI boundary, BEFORE any --engines list is forwarded to a subcommand. Without this, an external CLI (Codex/Antigravity) that passes --engines a,b,<removed> would resurrect a hard-removed engine, since explicit -e lists bypass the registry's auto roster. Fails loudly (pre-run error) rather than silently dropping — silent roster rewrite is the trust hazard (Council batch-2 verdict).
+ */
+export function validateCallEngineRoster(enginesCsv: string|undefined, cwd?: string): void {
+  const text = enginesCsv?.trim();
+  if (!text) return;
+  const requested = text.split(',').map((s) => s.trim()).filter(Boolean);
+  if (requested.length === 0) return;
+  const config = loadConfig(cwd);
+  const registry = new EngineRegistry();
+  registry.load(resolveBuiltinEnginesDir());
+  const { removed } = registry.partitionRoster(requested, config as any);
+  if (removed.length > 0) {
+    const plural = removed.length > 1;
+    throw new Error(
+      `Refusing to run: ${removed.join(', ')} ${plural ? 'were' : 'was'} hard-removed via ` +
+        '`agon engine remove` and cannot run in any agon session. ' +
+        `Restore with \`agon engine add <id>\`, or drop ${plural ? 'them' : 'it'} from --engines.`,
+    );
+  }
+}
+
+export function normalizeCallWorkflow(workflow: string): string {
+  return workflow.trim().toLowerCase().replace(/_/g, '-');
+}
+
+export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
+  const workflow = normalizeCallWorkflow(opts.workflow);
+  const cwd = opts.cwd?.trim() || process.cwd();
+  const engines = textFlag('--engines', opts.engines);
+  const timeout = textFlag('--timeout', opts.engineTimeout);
+  const tribunalMode = textFlag('--mode', opts.tribunalMode);
+  const protocolValue = opts.tribunalProtocol?.trim().toLowerCase();
+  if (protocolValue && !['auto', 'parallel', 'chained', 'hybrid'].includes(protocolValue)) {
+    throw new Error(`Invalid tribunal protocol: ${opts.tribunalProtocol}. Use auto, parallel, chained, or hybrid.`);
+  }
+  const tribunalProtocol = textFlag('--protocol', protocolValue);
+  const commands: string[][] = [];
+
+  if (workflow === 'tribunal' || workflow === 'team-tribunal') {
+    const question = requireInput(workflow, opts.input);
+    const team = opts.team || workflow === 'team-tribunal';
+    if (team && protocolValue && protocolValue !== 'auto') {
+      throw new Error('Tribunal --protocol currently applies to solo tribunal only; team-tribunal has its own team orchestration.');
+    }
+    commands.push([
+      team ? 'team-tribunal' : 'tribunal',
+      question,
+      ...textFlag('--rounds', opts.rounds),
+      ...tribunalMode,
+      ...(team ? [] : tribunalProtocol),
+      ...(team ? textFlag('--members', opts.members) : []),
+      ...timeout,
+      ...engines,
+    ]);
+  } else if (workflow === 'brainstorm' || workflow === 'team-brainstorm') {
+    const question = requireInput(workflow, opts.input);
+    const team = opts.team || workflow === 'team-brainstorm';
+    commands.push([
+      team ? 'team-brainstorm' : 'brainstorm',
+      question,
+      ...(team ? textFlag('--members', opts.members) : []),
+      ...timeout,
+      ...engines,
+    ]);
+  } else if (workflow === 'synthesis') {
+    const task = requireInput(workflow, opts.input);
+    commands.push([
+      'synthesis',
+      task,
+      ...textFlag('--swaps', opts.swaps),
+      ...timeout,
+      ...engines,
+    ]);
+  } else if (workflow === 'forge' || workflow === 'team-forge') {
+    const task = requireInput(workflow, opts.input);
+    const team = opts.team || workflow === 'team-forge';
+    commands.push([
+      team ? 'team-forge' : 'forge',
+      task,
+      '--test',
+      opts.fitnessCmd?.trim() || 'true',
+      '--cwd',
+      cwd,
+      ...(team ? textFlag('--members', opts.members) : []),
+      ...timeout,
+      ...engines,
+      ...(team ? [] : textFlag('--finalize-on-score', opts.finalizeOnScore)),
+    ]);
+  } else if (workflow === 'campfire') {
+    commands.push([
+      'campfire',
+      requireInput(workflow, opts.input),
+      ...textFlag('--strategy', opts.strategy),
+      ...textFlag('--lead', opts.lead),
+      ...timeout,
+      ...engines,
+    ]);
+  } else if (workflow === 'think') {
+    // Sequential thinking. External CLIs can decompose a problem (and optionally
+    // branch) before handing the refined spec to forge/goal. --strategy is
+    // linear|reflexion here (distinct from campfire's lead-first/all-respond).
+    const problem = requireInput(workflow, opts.input);
+    commands.push([
+      'think',
+      problem,
+      ...textFlag('--strategy', opts.strategy),
+      ...textFlag('--steps', opts.steps),
+      ...textFlag('--branches', opts.branches),
+      ...textFlag('--critic', opts.critic),
+      ...timeout,
+      ...engines,
+    ]);
+  } else if (workflow === 'nero') {
+    // Adversarial self-challenge — Agon's /evil-twin for external CLIs. The
+    // top-rated adversarial engine (tribunal-discipline Glicko, with global then
+    // random fallback) attacks the decision. --engines constrains the candidate
+    // pool; selection inside that pool is by rating, so external AIs normally
+    // pass just the decision and let Agon pick the best critic.
+    const decision = requireInput(workflow, opts.input);
+    commands.push([
+      'nero',
+      decision,
+      ...textFlag('--reasoning', opts.reasoning),
+      ...textFlag('--focus', opts.focus),
+      ...textFlag('--confidence', opts.confidence),
+      ...timeout,
+      ...engines,
+    ]);
+  } else if (workflow === 'council') {
+    // Roundtable of all engines, each in a role, chaired by the top-rated engine.
+    // Agon's stronger LLM-Council: heterogeneous models, decision brief, directed
+    // critique, a chairman verdict with confidence + kill-switch. --engines sets
+    // the panel (>= 2); --roles overrides advisor roles; --chairman forces the chair.
+    const question = requireInput(workflow, opts.input);
+    commands.push([
+      'council',
+      question,
+      ...textFlag('--roles', opts.roles),
+      ...textFlag('--chairman', opts.chairman),
+      ...timeout,
+      ...engines,
+    ]);
+  } else if (workflow === 'research') {
+    // Keyless web-grounded, cited research. Agon discovers sources (npm/GitHub/
+    // MDN/IETF/Stack Overflow/Wikipedia — no key), an engine drafts a cited
+    // answer, Agon verifies the citations. --count sets sources; --engines the pool.
+    const question = requireInput(workflow, opts.input);
+    commands.push([
+      'research',
+      question,
+      ...textFlag('--count', opts.count),
+      ...textFlag('--engine', opts.engine),
+      ...timeout,
+      ...engines,
+    ]);
+  } else if (workflow === 'chrome') {
+    // Drive the user's browser through a running agon (serve/REPL) the side panel is
+    // attached to, else a transient embedded bridge. Read-only page tools (read/
+    // screenshot) need no approval; --auto-approve lets a non-interactive external CLI
+    // perform page-changing actions (click/type) unattended — without it they're denied.
+    // --engine is the per-turn engine override (singular; chrome takes no --engines pool).
+    const task = requireInput(workflow, opts.input);
+    commands.push([
+      'chrome',
+      task,
+      ...(opts.autoApprove ? ['--auto-approve'] : []),
+      ...textFlag('--engine', opts.engine),
+    ]);
+  } else if (workflow === 'review') {
+    commands.push([
+      'review',
+      opts.input?.trim() || 'uncommitted',
+      ...textFlag('--engine', opts.engine),
+      // Role-lens review: 'auto' deals the fixed roster (security, correctness,
+      // dryness, performance, overall backstop); a comma list zips per engine.
+      ...textFlag('--roles', opts.roles),
+      ...timeout,
+      ...engines,
+    ]);
+  } else if (workflow === 'goal') {
+    // Autonomous controller. goal itself enforces that --gate and --queue are
+    // present (and prints a clear error otherwise), so the bridge just forwards
+    // them. --engines sets the implement roster; review uses the full panel by
+    // default. Long-running — the bridge call blocks until the goal finishes.
+    const intent = requireInput(workflow, opts.input);
+    commands.push([
+      'goal',
+      intent,
+      '--cwd',
+      cwd,
+      ...textFlag('--queue', opts.queue),
+      ...textFlag('--gate', opts.gate),
+      ...textFlag('--oracle-gate', opts.oracleGate),
+      ...timeout,
+      ...engines,
+    ]);
+  } else if (workflow === 'conquer') {
+    // Supervised-autonomous build. conquer enforces --gate itself (the done-oracle)
+    // and errors otherwise, so the bridge just forwards it + the advisor pool.
+    // Builder defaults to codex; long-running — the bridge call blocks until done.
+    const task = requireInput(workflow, opts.input);
+    commands.push([
+      'conquer',
+      task,
+      ...textFlag('--gate', opts.gate),
+      ...timeout,
+      ...engines,
+    ]);
+  } else if (workflow === 'sanitize') {
+    // Deterministic invisible-watermark forensics (no AI). Input is the file
+    // path; omit it to scan stdin. --detect is report-only with exit 1 on
+    // actionable findings; --out writes cleaned text to a file.
+    commands.push([
+      'sanitize',
+      opts.input?.trim() || '',
+      ...(opts.detect ? ['--detect'] : []),
+      ...textFlag('--out', opts.out),
+    ]);
+  } else if (workflow === 'naturalize') {
+    // Phase 2: sanitize → non-author engine rewrite → re-scan → word-diff.
+    // --engine picks the rewriter; --author names the writing engine so the
+    // rewriter is forced to differ (writer ≠ rewriter).
+    commands.push([
+      'naturalize',
+      opts.input?.trim() || '',
+      ...textFlag('--engine', opts.engine),
+      ...textFlag('--author', opts.author),
+      ...textFlag('--out', opts.out),
+      ...timeout,
+    ]);
+  } else if (workflow === 'mutate') {
+    // Mutation testing as a test-strength oracle. The positional is a file or
+    // directory; with none, mutate targets the changed lines of the current
+    // work. --test is REQUIRED unless the repo has a discoverable gate, and
+    // --mechanical-only keeps the run free of engine spend.
+    // --build is not optional polish: in a monorepo whose suite runs against a
+    // prebuilt dist, a run without it reports a fake 0% and the agent reads
+    // "your tests are worthless". The bridge must be able to say it.
+    // --test wins over the generic --fitness-cmd when both are given, and
+    // --lens forwards verbatim: `agon mutate` owns the "a lens implies
+    // --semantic" decision, so the bridge must not second-guess it here.
+    commands.push([
+      'mutate',
+      ...(opts.input?.trim() ? [opts.input.trim()] : []),
+      ...textFlag('--diff', opts.diff),
+      ...textFlag('--test', opts.test?.trim() ? opts.test : opts.fitnessCmd),
+      ...textFlag('--build', opts.build),
+      ...textFlag('--max-mutants', opts.maxMutants),
+      ...textFlag('--lens', opts.lens),
+      ...(opts.semantic ? ['--semantic'] : []),
+      ...(opts.mechanicalOnly ? ['--mechanical-only'] : []),
+      ...timeout,
+      ...engines,
+    ]);
+  } else if (workflow === 'doctor') {
+    // Passthrough so external CLIs that standardize on `agon call <workflow>`
+    // can reach the top-level doctor. `agon call doctor` -> `agon doctor`,
+    // `agon call doctor harness` -> `agon doctor harness`. Forward --timeout
+    // and --engines too so `agon call doctor review --engines x --timeout 15`
+    // reaches the doctor-review smoke test (they're ignored by other scopes).
+    commands.push(['doctor', opts.input?.trim() || 'engines', ...timeout, ...engines]);
+  } else if (workflow === 'pipeline') {
+    const task = requireInput(workflow, opts.input);
+    const fitness = opts.fitnessCmd?.trim() || 'true';
+    // Resolve, compile, and verify the certified workflow spec before building commands.
+    const registry = getCoreWorkflowRegistry();
+    const spec = registry.require('agon.brainstorm-forge-tribunal@v1');
+    const plan = compileWorkflowSpec(spec);
+    const flowIssues: WorkflowConformanceIssue[] = verifyWorkflowExecutionPlanFlow(plan);
+    if (flowIssues.length > 0) throwWorkflowConformance(flowIssues, 'agon.brainstorm-forge-tribunal@v1 flow verification failed');
+    commands.push(['brainstorm', task, ...timeout, ...engines]);
+    commands.push(['forge', task, '--test', fitness, '--cwd', cwd, ...timeout, ...engines]);
+    commands.push(['tribunal', `Review the pipeline result for: ${task}`, '--rounds', opts.rounds?.trim() || '1', ...tribunalMode, ...tribunalProtocol, ...timeout, ...engines]);
+    return { cwd, commands, workflowMeta: { workflowId: spec.id, version: spec.version, planId: plan.logicalPlanId } };
+  } else {
+    throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, chrome, pipeline, review, goal, sanitize, naturalize, mutate, doctor, or a team-* workflow.`);
+  }
+
+  return { cwd, commands };
+}
+
+export function writeJsonl(event: Record<string,unknown>): void {
+  process.stdout.write(`${JSON.stringify({ ...event, timestamp: new Date().toISOString() })}\n`);
+}
+
+export async function runCommand(command: string, args: string[], cwd: string, jsonl: boolean, workflowMeta?: WorkflowCallMeta): Promise<number> {
+  return new Promise((resolve) => {
+    const startedAt = Date.now();
+    if (jsonl) {
+      writeJsonl({ type: 'agon.call.command.start', command: [command, ...args], cwd, workflow: workflowMeta });
+    }
+
+    const child = spawn(command, args, {
+      cwd,
+      env: {
+        ...process.env,
+        AGON_CALL_DEPTH: String(Number(process.env.AGON_CALL_DEPTH ?? '0') + 1),
+        AGON_CWD: cwd,
+      },
+      stdio: jsonl ? ['ignore', 'pipe', 'pipe'] : 'inherit',
+    });
+
+    if (jsonl) {
+      child.stdout?.on('data', (chunk) => writeJsonl({ type: 'agon.call.stdout', data: String(chunk) }));
+      child.stderr?.on('data', (chunk) => writeJsonl({ type: 'agon.call.stderr', data: String(chunk) }));
+    }
+
+    child.on('error', (err) => {
+      if (jsonl) writeJsonl({ type: 'agon.call.command.error', error: err.message });
+      else fail(err.message);
+      resolve(1);
+    });
+
+    child.on('close', (code, signal) => {
+      const exitCode = typeof code === 'number' ? code : 1;
+      if (jsonl) {
+        writeJsonl({
+          type: 'agon.call.command.done',
+          exitCode,
+          signal,
+          durationMs: Date.now() - startedAt,
+        });
+      }
+      resolve(exitCode);
+    });
+  });
+}
+
+export const callCommand: any = defineCommand({
+  meta: {
+    name: 'call',
+    description: 'Live bridge for external CLIs to run Agon modes',
+  },
+  args: {
+    workflow: {
+      type: 'positional',
+      description: 'Workflow: forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, chrome, pipeline, review, goal, sanitize, naturalize, mutate, doctor, or team-*',
+      required: true,
+    },
+    input: {
+      type: 'positional',
+      description: 'Prompt, task, topic, decision, or review target',
+      required: false,
+    },
+    team: {
+      type: 'boolean',
+      description: 'Use the team variant when available',
+      default: false,
+    },
+    engines: {
+      type: 'string',
+      alias: 'e',
+      description: 'Comma-separated engine list',
+    },
+    test: {
+      type: 'string',
+      alias: 't',
+      description: 'Fitness/test command: the fitness gate for forge/pipeline/conquer, and the per-mutant test command for mutate',
+    },
+    rounds: {
+      type: 'string',
+      alias: 'r',
+      description: 'Tribunal rounds',
+    },
+    swaps: {
+      type: 'string',
+      alias: 's',
+      description: 'Synthesis swap rounds',
+    },
+    tribunalMode: {
+      type: 'string',
+      description: 'Tribunal mode: adversarial, synthesis, steelman, socratic, red-team, postmortem',
+    },
+    protocol: {
+      type: 'string',
+      description: 'Tribunal protocol: auto, parallel, chained, hybrid',
+    },
+    members: {
+      type: 'string',
+      alias: 'm',
+      description: 'Team members per side',
+    },
+    cwd: {
+      type: 'string',
+      description: 'Working directory',
+    },
+    timeout: {
+      type: 'string',
+      description: 'Per-engine timeout in seconds',
+    },
+    strategy: {
+      type: 'string',
+      description: 'Campfire strategy (lead-first|all-respond) or think strategy (linear|reflexion)',
+    },
+    steps: {
+      type: 'string',
+      description: 'For think: max thoughts (steps of thought), 1..20',
+    },
+    branches: {
+      type: 'string',
+      description: 'For think: alternative reasoning branches to explore, 1..8',
+    },
+    critic: {
+      type: 'string',
+      description: 'For think: a second engine that adversarially critiques the chain',
+    },
+    lead: {
+      type: 'string',
+      description: 'Lead engine for campfire lead-first strategy',
+    },
+    jsonl: {
+      type: 'boolean',
+      description: 'Emit machine-readable JSONL lifecycle and output chunks',
+      default: false,
+    },
+    finalizeOnScore: {
+      type: 'string',
+      description: 'For solo forge: finalize as soon as any engine PASSES with score >= N',
+    },
+    gate: {
+      type: 'string',
+      description: 'For goal: the green-oracle gate command (e.g. "npm test")',
+    },
+    queue: {
+      type: 'string',
+      description: 'For goal: the task queue (a directory of tasks or a .jsonl)',
+    },
+    reasoning: {
+      type: 'string',
+      description: 'For nero: the reasoning behind the decision being challenged',
+    },
+    focus: {
+      type: 'string',
+      description: 'For nero: steer the critique toward a specific concern',
+    },
+    confidence: {
+      type: 'string',
+      description: "For nero: the author's confidence (0-100) so Nero can compare",
+    },
+    roles: {
+      type: 'string',
+      description: "For council: override advisor roles (comma-separated, priority order). For review: role-lens review — 'auto' or a comma-separated role list (security, correctness, dryness, performance, overall)",
+    },
+    chairman: {
+      type: 'string',
+      description: 'For council: force a specific engine to chair',
+    },
+    oracleGate: {
+      type: 'string',
+      description: 'For goal: oracle red-team pre-flight (off|warn|strict) — panel tries to game each verify before forging',
+    },
+    count: {
+      type: 'string',
+      description: 'For research: number of sources to discover and read (1-10)',
+    },
+    engine: {
+      type: 'string',
+      description: 'For review/research/chrome: force a specific engine (review: narrow the panel; research: draft the answer; chrome: per-turn engine override)',
+    },
+    'auto-approve': {
+      type: 'boolean',
+      description: 'For chrome: auto-approve page-changing actions (click/type) unattended — required for a non-interactive caller to act on the page (read-only tools never prompt)',
+      default: false,
+    },
+    detect: {
+      type: 'boolean',
+      description: 'For sanitize: report-only forensic scan; exits 1 when actionable hidden channels are found',
+      default: false,
+    },
+    out: {
+      type: 'string',
+      description: 'For sanitize/naturalize: write cleaned/naturalized output to this file instead of stdout',
+    },
+    author: {
+      type: 'string',
+      description: 'For naturalize: engine that wrote the text — the rewriter is forced to differ (writer ≠ rewriter)',
+    },
+    diff: {
+      type: 'string',
+      description: 'For mutate: mutate changed lines only — a base ref, or uncommitted | branch:NAME | commit:SHA | range:BASE...TARGET',
+    },
+    'mechanical-only': {
+      type: 'boolean',
+      description: 'For mutate: mechanical operators only, zero engine spend — this is already the default; the flag says so explicitly',
+      default: false,
+    },
+    semantic: {
+      type: 'boolean',
+      description: 'For mutate: add the AI-semantic panel (real engine spend — your changed source is sent to each panel engine). Off by default',
+      default: false,
+    },
+    lens: {
+      type: 'string',
+      description: 'For mutate: steer the AI-semantic panel toward one bug family — IMPLIES --semantic. Presets: security | privacy | perf | ratelimit | concurrency; anything else is free text',
+    },
+    'max-mutants': {
+      type: 'string',
+      description: 'For mutate: cap the mutant pool (default 40)',
+    },
+    build: {
+      type: 'string',
+      description: 'For mutate: build command run before the baseline AND each mutant — REQUIRED when the suite runs against a prebuilt dist, otherwise every mutant survives and the run reports a fake 0%',
+    },
+  },
+  async run({ args }) {
+    let built: BuiltCallCommands;
+    try {
+      validateCallEngineRoster(args.engines, args.cwd);
+      validateCallEngineRoster(args.engine, args.cwd);
+      built = buildCallCommands({
+        workflow: args.workflow,
+        input: args.input,
+        team: args.team,
+        engines: args.engines,
+        fitnessCmd: args.test,
+        rounds: args.rounds,
+        swaps: args.swaps,
+        tribunalMode: args.tribunalMode,
+        tribunalProtocol: args.protocol,
+        members: args.members,
+        cwd: args.cwd,
+        engineTimeout: args.timeout,
+        strategy: args.strategy,
+        lead: args.lead,
+        finalizeOnScore: args.finalizeOnScore,
+        gate: args.gate,
+        queue: args.queue,
+        steps: args.steps,
+        branches: args.branches,
+        critic: args.critic,
+        reasoning: args.reasoning,
+        focus: args.focus,
+        confidence: args.confidence,
+        roles: args.roles,
+        chairman: args.chairman,
+        oracleGate: args.oracleGate,
+        count: args.count,
+        engine: args.engine,
+        autoApprove: args['auto-approve'],
+        detect: args.detect,
+        out: args.out,
+        author: args.author,
+        diff: args.diff,
+        mechanicalOnly: args['mechanical-only'],
+        maxMutants: args['max-mutants'],
+        semantic: args.semantic,
+        lens: args.lens,
+        build: args.build,
+        test: args.test,
+      });
+    } catch (err) {
+      exitWithFailure(err instanceof Error ? err.message : String(err));
+    }
+
+    const script = process.argv[1];
+    if (!script) {
+      exitWithFailure('Unable to resolve current Agon CLI entry script.');
+    }
+
+    if (!args.jsonl) {
+      info(`Agon call: ${built.commands.map((cmd) => cmd[0]).join(' -> ')}`);
+    } else {
+      writeJsonl({ type: 'agon.call.start', commands: built.commands, cwd: built.cwd, workflow: built.workflowMeta });
+    }
+
+    let workflowRun: WorkflowRun | null = null;
+    if (args.jsonl && built.workflowMeta) {
+      const registry = getCoreWorkflowRegistry();
+      const spec = registry.require(`${built.workflowMeta.workflowId}@${built.workflowMeta.version}`);
+      const plan = compileWorkflowSpec(spec);
+      const planPhaseIds = new Set(plan.phases.map((phase) => phase.id));
+      const commandPhaseIssues = built.commands
+        .map((commandArgs) => commandArgs[0])
+        .filter((phaseId) => !planPhaseIds.has(phaseId))
+        .map((phaseId) => createWorkflowIssue('missing-node', `Workflow call command "${phaseId}" is not a phase in ${spec.id}@${spec.version}`, 'commands'));
+      if (commandPhaseIssues.length > 0) throwWorkflowConformance(commandPhaseIssues, 'Workflow call command sequence does not match the certified workflow plan');
+      workflowRun = createWorkflowRun(plan, `call-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      writeJsonl({ type: 'workflow-run-start', workflowId: spec.id, runId: workflowRun.id, planId: plan.logicalPlanId });
+    }
+    const workflowIssuesFromError = (err: unknown): WorkflowConformanceIssue[] => {
+      const issues = (err as { issues?: WorkflowConformanceIssue[] } | null)?.issues;
+      if (Array.isArray(issues)) return issues;
+      return [{ code: 'invalid-phase', message: err instanceof Error ? err.message : String(err), path: 'workflowRun' }];
+    };
+    const writeWorkflowTrackingFailure = (err: unknown, exitCode = 1) => {
+      if (!workflowRun) return;
+      const issues = workflowIssuesFromError(err);
+      writeJsonl({ type: 'workflow-run-conformance-failed', workflowId: workflowRun.workflowId, runId: workflowRun.id, issues });
+      writeJsonl({ type: 'workflow-run-completed', workflowId: workflowRun.workflowId, runId: workflowRun.id, planId: workflowRun.plan.logicalPlanId, status: 'failed', workflowStatus: 'failed' });
+      writeJsonl({ type: 'agon.call.done', ok: false, exitCode, error: err instanceof Error ? err.message : String(err) });
+    };
+    const appendTrackedWorkflowPhase = (phaseId: string, type: 'started' | 'completed' | 'failed', reason = '', extra: Record<string, unknown> = {}, exitCode = 1) => {
+      if (!workflowRun) return true;
+      try {
+        workflowRun = appendWorkflowPhaseEvent(workflowRun, phaseId, type, reason || undefined, Object.keys(extra).length > 0 ? extra : undefined);
+      } catch (err) {
+        writeWorkflowTrackingFailure(err, exitCode);
+        return false;
+      }
+      const eventType = type === 'started' ? 'workflow-phase-started' : type === 'completed' ? 'workflow-phase-completed' : 'workflow-phase-failed';
+      writeJsonl({ type: eventType, workflowId: workflowRun.workflowId, runId: workflowRun.id, phaseId, status: workflowRun.status, ...extra });
+      return true;
+    };
+
+    for (const commandArgs of built.commands) {
+      const phaseId = workflowRun ? commandArgs[0] : '';
+      if (workflowRun && phaseId) {
+        if (!appendTrackedWorkflowPhase(phaseId, 'started')) process.exit(1);
+      }
+      const exitCode = await runCommand(process.execPath, [script, ...commandArgs], built.cwd, args.jsonl, built.workflowMeta);
+      if (exitCode !== 0) {
+        if (workflowRun && phaseId) {
+          if (!appendTrackedWorkflowPhase(phaseId, 'failed', `exit ${exitCode}`, { exitCode }, exitCode)) process.exit(exitCode);
+          const issues = verifyWorkflowRunFlow(workflowRun);
+          if (issues.length > 0) writeJsonl({ type: 'workflow-run-conformance-failed', workflowId: workflowRun.workflowId, runId: workflowRun.id, issues });
+          writeJsonl({ type: 'workflow-run-completed', workflowId: workflowRun.workflowId, runId: workflowRun.id, planId: workflowRun.plan.logicalPlanId, status: 'failed', workflowStatus: workflowRun.status });
+        }
+        if (args.jsonl) writeJsonl({ type: 'agon.call.done', ok: false, exitCode });
+        process.exit(exitCode);
+      }
+      if (workflowRun && phaseId) {
+        if (!appendTrackedWorkflowPhase(phaseId, 'completed')) process.exit(1);
+      }
+    }
+
+    if (workflowRun) {
+      const issues = verifyWorkflowRunFlow(workflowRun);
+      if (issues.length > 0) writeJsonl({ type: 'workflow-run-conformance-failed', workflowId: workflowRun.workflowId, runId: workflowRun.id, issues });
+      const terminalStatus = issues.length > 0 || workflowRun.status !== 'completed' ? 'failed' : 'completed';
+      writeJsonl({ type: 'workflow-run-completed', workflowId: workflowRun.workflowId, runId: workflowRun.id, planId: workflowRun.plan.logicalPlanId, status: terminalStatus, workflowStatus: workflowRun.status });
+    }
+    if (args.jsonl) writeJsonl({ type: 'agon.call.done', ok: true, exitCode: 0 });
+  },
+});

@@ -5,7 +5,7 @@ import {
   assertWorkflowAliasesAllowed,
   normalizeWorkflowAlias,
   validateWorkflowAliases,
-} from '../../packages/core/src/generated/workflows/alias-policy.js';
+} from '../../packages/core/src/workflows/alias-policy.js';
 
 describe('workflow alias policy', () => {
   it('normalizes aliases before policy checks', () => {

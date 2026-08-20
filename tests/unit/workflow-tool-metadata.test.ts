@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { createPipelineTool } from '../../packages/core/src/tools.js';
-import { ORCHESTRATION_TOOLS, listMcpTools, workflowToolMetadata } from '../../packages/mcp/src/generated/agon-orchestration.js';
+import { ORCHESTRATION_TOOLS, listMcpTools, workflowToolMetadata } from '../../packages/mcp/src/agon-orchestration.js';
 
 describe('workflow tool metadata', () => {
   it('exposes certified workflow metadata on the core Pipeline tool', () => {

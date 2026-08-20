@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractAdjacentForkOptions } from '../../packages/cli/src/generated/cesar/fork-options.js';
+import { extractAdjacentForkOptions } from '../../packages/cli/src/cesar/fork-options.js';
 
 describe('extractAdjacentForkOptions — end-of-turn fork detection', () => {
   it('detects a contiguous option block directly above the closing question', () => {

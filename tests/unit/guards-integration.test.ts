@@ -4,7 +4,7 @@
 // persistent-session.test.ts: createResumeSession (API path) with
 // apiStreamDispatchWithHistory mocked per turn + a fake onToolCall. They assert
 // the PROGRAM-PLAN behaviors of the GuardPipeline as wired into the session loop
-// (Wiring D3, packages/core/src/generated/sessions/session-resume.ts), against the contract at
+// (Wiring D3, packages/core/src/sessions/session-resume.ts), against the contract at
 // docs/p1p2-guardpipeline-contract.md.
 //
 // DEPENDENCY ON D3 (concurrent): these tests exercise the invariants/shadow
@@ -32,13 +32,13 @@ import { vi } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import type { DispatchResult } from '../../packages/core/src/generated/models/types.js';
-import type { SpawnLike } from '../../packages/core/src/generated/diagnostics/diagnostic-runner.js';
+import type { DispatchResult } from '../../packages/core/src/models/types.js';
+import type { SpawnLike } from '../../packages/core/src/diagnostics/diagnostic-runner.js';
 
 const apiStreamDispatchWithHistoryMock = vi.hoisted(() => vi.fn());
 
-vi.mock('../../packages/core/src/generated/api/dispatch.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../packages/core/src/generated/api/dispatch.js')>();
+vi.mock('../../packages/core/src/api/dispatch.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../packages/core/src/api/dispatch.js')>();
   return {
     ...actual,
     apiStreamDispatchWithHistory: apiStreamDispatchWithHistoryMock,
@@ -587,8 +587,8 @@ describe('GuardPipeline integration — invariants mode', () => {
     const home = setupTestAgonHome('guards-fix2-compact-readpaths');
     try {
       const { createResumeSession } = await import('../../packages/core/src/persistent-session.js');
-      const { loadSessionState } = await import('../../packages/core/src/generated/signals/session-store.js');
-      const { canonicalizePath } = await import('../../packages/core/src/generated/guards/read-path-registry.js');
+      const { loadSessionState } = await import('../../packages/core/src/signals/session-store.js');
+      const { canonicalizePath } = await import('../../packages/core/src/guards/read-path-registry.js');
 
       const ENGINE_ID = 'api-fix2-compact';
       // Read enough DISTINCT existing files across steps that messageHistory grows
@@ -901,8 +901,8 @@ describe('GuardPipeline integration — invariants mode', () => {
     const home = setupTestAgonHome('guards-fix1-cross-engine-handoff');
     try {
       const { createResumeSession } = await import('../../packages/core/src/persistent-session.js');
-      const { saveConversation } = await import('../../packages/core/src/generated/signals/session-store.js');
-      const { canonicalizePath } = await import('../../packages/core/src/generated/guards/read-path-registry.js');
+      const { saveConversation } = await import('../../packages/core/src/signals/session-store.js');
+      const { canonicalizePath } = await import('../../packages/core/src/guards/read-path-registry.js');
 
       // ── Engine A's handoff: a stripped-style conversation + the serialized
       //    read set (canonical, exactly what getReadPaths() would produce). ──

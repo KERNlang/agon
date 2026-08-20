@@ -6,6 +6,6 @@
 // shebang; `browser-host install` chmods it +x). It ONLY runs the pairing broker
 // loop — it has no CLI subcommands, and it spawns `agon serve` via its sibling
 // dist/index.js (see resolveCliEntry), never itself.
-import { runBrowserHostLauncher } from './generated/commands/browser-host.js';
+import { runBrowserHostLauncher } from './commands/browser-host.js';
 
 void runBrowserHostLauncher();

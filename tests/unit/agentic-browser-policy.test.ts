@@ -9,7 +9,7 @@ import {
   requiresShoppingMutationVerification,
   confirmsShoppingMutationObservation,
   isShoppingAddAction,
-} from '../../packages/cli/src/generated/bridge/agentic-browser-policy.js';
+} from '../../packages/cli/src/bridge/agentic-browser-policy.js';
 
 describe('deterministic browser research policy', () => {
   it('requires post-action observation only for explicit basket/cart mutation goals with an observation tool', () => {

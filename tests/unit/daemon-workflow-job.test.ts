@@ -7,7 +7,7 @@ import {
   buildDaemonWorkflowPlan,
   daemonWorkflowKinds,
   validateDaemonWorkflowEngines,
-} from '../../packages/cli/src/generated/jobs/workflow-job.js';
+} from '../../packages/cli/src/jobs/workflow-job.js';
 
 describe('daemon workflow jobs', () => {
   it('exposes a closed registry of supported autonomous workflows', () => {

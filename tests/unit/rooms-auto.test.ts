@@ -3,10 +3,10 @@ import { join } from 'node:path';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
-import { createRoom, roomDir } from '../../packages/core/src/generated/rooms/store.js';
-import { acquireTurnLease, releaseTurnLease, readActiveLease } from '../../packages/core/src/generated/rooms/leases.js';
-import { detectTrigger, detectPingPong, evaluateStop } from '../../packages/core/src/generated/rooms/auto-policy.js';
-import type { RoomEvent, AutoConfig, AutoState } from '../../packages/core/src/generated/rooms/types.js';
+import { createRoom, roomDir } from '../../packages/core/src/rooms/store.js';
+import { acquireTurnLease, releaseTurnLease, readActiveLease } from '../../packages/core/src/rooms/leases.js';
+import { detectTrigger, detectPingPong, evaluateStop } from '../../packages/core/src/rooms/auto-policy.js';
+import type { RoomEvent, AutoConfig, AutoState } from '../../packages/core/src/rooms/types.js';
 
 let home: string;
 beforeEach(() => { home = mkdtempSync(join(tmpdir(), 'agon-auto-')); process.env.AGON_HOME = home; });

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { computeScore, tiebreak, DEFAULT_WEIGHTS } from '../../packages/core/src/scoring.js';
-import type { FitnessResult } from '../../packages/core/src/types.js';
+import { computeScore, tiebreak, DEFAULT_WEIGHTS } from '../../packages/core/src/signals/scoring.js';
+import type { FitnessResult } from '../../packages/core/src/models/types.js';
 
 function makeFitness(overrides: Partial<FitnessResult> = {}): FitnessResult {
   return {

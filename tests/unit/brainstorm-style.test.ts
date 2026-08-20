@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { assignStances, collectRankedDrafts, runBrainstorm } from '../../packages/forge/src/generated/brainstorm.js';
+import { assignStances, collectRankedDrafts, runBrainstorm } from '../../packages/forge/src/brainstorm.js';
 
 const STANCE_LABELS = ['ANCHOR', 'CONTRARIAN', 'FIRST-PRINCIPLES', 'OUTSIDER', 'EXPANSIONIST', 'WILDCARD'];
 

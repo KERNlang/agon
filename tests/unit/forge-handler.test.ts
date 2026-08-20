@@ -45,16 +45,16 @@ vi.mock('@kernlang/agon-core', async () => ({
   updateChatSummary: vi.fn(() => false),
 }));
 
-vi.mock('../../packages/cli/src/generated/cesar/brain.js', () => ({
+vi.mock('../../packages/cli/src/cesar/brain.js', () => ({
   cesarJudgeForge: vi.fn(async () => null),
   cesarConvergeForge: vi.fn(async () => null),
 }));
 
-vi.mock('../../packages/cli/src/generated/models/session-results.js', () => ({
+vi.mock('../../packages/cli/src/models/session-results.js', () => ({
   sessionResultStore: { add: vi.fn() },
 }));
 
-vi.mock('../../packages/cli/src/generated/handlers/agent.js', () => ({
+vi.mock('../../packages/cli/src/handlers/agent.js', () => ({
   buildAgentApprovalCallback: vi.fn(() => undefined),
 }));
 
@@ -82,7 +82,7 @@ describe('handleForge', () => {
   });
 
   it('skips the internal plan approval prompt when already approved upstream', async () => {
-    const { handleForge } = await import('../../packages/cli/src/generated/handlers/forge.js');
+    const { handleForge } = await import('../../packages/cli/src/handlers/forge.js');
 
     const ctx: any = {
       askQuestion: askQuestionMock,
@@ -104,7 +104,7 @@ describe('handleForge', () => {
   });
 
   it('uses Cesar to prepare missing forge fitness before falling back', async () => {
-    const { handleForge } = await import('../../packages/cli/src/generated/handlers/forge.js');
+    const { handleForge } = await import('../../packages/cli/src/handlers/forge.js');
     const adapterDispatchMock = vi.fn(async () => ({
       stdout: '{"fitnessCmd":"npm run test:ts -- tests/unit/intent.test.ts","reason":"focused parser regression"}',
     }));
@@ -131,7 +131,7 @@ describe('handleForge', () => {
   });
 
   it('skips the internal build approval prompt when already approved upstream', async () => {
-    const { handleBuild } = await import('../../packages/cli/src/generated/handlers/build.js');
+    const { handleBuild } = await import('../../packages/cli/src/handlers/build.js');
 
     const ctx: any = {
       askQuestion: askQuestionMock,
@@ -155,7 +155,7 @@ describe('handleForge', () => {
   });
 
   it('fails the build plan when a streamed agent returns a nonzero terminal result', async () => {
-    const { handleBuild } = await import('../../packages/cli/src/generated/handlers/build.js');
+    const { handleBuild } = await import('../../packages/cli/src/handlers/build.js');
     dispatchAgentStreamMock.mockImplementation(async function* () {
       yield `${JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'partial work' }] } })}\n`;
       return {

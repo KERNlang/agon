@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createAcpSession } from '../../packages/core/src/generated/sessions/session-acp.js';
+import { createAcpSession } from '../../packages/core/src/sessions/session-acp.js';
 
 // Strict ACP agents (kimi) validate session/new params against the spec:
 // stdio mcpServers entries REQUIRE args/env with env as EnvVariable[]

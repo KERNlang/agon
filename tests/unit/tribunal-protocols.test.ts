@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { EngineRegistry } from '@kernlang/agon-core';
-import type { DispatchOptions, DispatchResult, EngineAdapter, EngineDefinition } from '../../packages/core/src/types.js';
+import type { DispatchOptions, DispatchResult, EngineAdapter, EngineDefinition } from '../../packages/core/src/models/types.js';
 import { runTribunal } from '@kernlang/agon-forge';
 import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 

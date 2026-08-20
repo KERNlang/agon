@@ -1,2 +1,209 @@
-// Facade over ../generated/commands/models.js — edit the source there.
-export { modelsCommand } from '../generated/commands/models.js';
+import { defineCommand } from 'citty';
+
+import { EngineRegistry, loadConfig, configSet } from '@kernlang/agon-core';
+
+import type { AgonConfig } from '@kernlang/agon-core';
+
+import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
+
+import { header, success, fail, info, table, green, red, dim } from '../blocks/output-format.js';
+
+export const modelsCommand: any = defineCommand({
+  meta: {
+    name: 'models',
+    description: 'Manage engine→model mappings',
+  },
+  subCommands: {
+    list: defineCommand({
+      meta: { name: 'list', description: 'List engine model mappings and activation mode' },
+      async run(_ctx) {
+        const config = loadConfig();
+        const mappings = config.engineModels || {};
+        header('Engine → Model Mappings');
+        const rows = Object.entries(mappings).map(([engine, model]) => [engine, model]);
+        if (rows.length === 0) {
+          console.log('  No custom model mappings. Use: agon models set <engine> <model>');
+        } else {
+          table(['Engine', 'Model'], rows);
+        }
+        const registry = new EngineRegistry();
+        registry.load(resolveBuiltinEnginesDir());
+        const active = new Set(registry.activeIds(config as any));
+        const hidden = new Set((config as any).hiddenEngines ?? []);
+        const removed = new Set((config as any).removedEngines ?? []);
+
+        console.log('');
+        header('Engine Activation');
+        console.log(`  Mode: ${(config as any).engineActivationMode ?? 'auto'}`);
+        console.log(`  Currently active: ${Array.from(active).join(', ') || '(none)'}`);
+        console.log(`  Saved explicit list: ${(config.forgeEnabledEngines ?? []).join(', ') || '(none)'}`);
+        console.log(`  Hidden (soft, -e still works): ${((config as any).hiddenEngines ?? []).join(', ') || '(none)'}`);
+        console.log(`  Removed (hard, blocked everywhere): ${((config as any).removedEngines ?? []).join(', ') || '(none)'}`);
+
+        const cliRows: string[][] = [];
+        for (const engine of registry.list()) {
+          if (!engine.binary || !registry.findBinary(engine)) continue;
+          cliRows.push([
+            removed.has(engine.id) || hidden.has(engine.id) ? red(engine.id) : green(engine.id),
+            engine.displayName,
+            removed.has(engine.id) ? red('removed') : hidden.has(engine.id) ? dim('hidden') : active.has(engine.id) ? green('active') : dim('inactive'),
+            (config.engineModels as any)?.[engine.id] ?? dim('(default)'),
+          ]);
+        }
+        console.log('');
+        header('Installed CLI Engines');
+        if (cliRows.length === 0) {
+          console.log('  No installed CLI engines found. Run: agon doctor engines');
+        } else {
+          table(['Engine', 'Name', 'State', 'Model'], cliRows);
+        }
+      },
+    }),
+    enable: defineCommand({
+      meta: { name: 'enable', description: 'Activate an engine for routing/fallback' },
+      args: {
+        engine: { type: 'positional', required: true, description: 'Engine ID' },
+      },
+      async run(ctx) {
+        const engine = String(ctx.args.engine).trim();
+        if (!engine) return;
+        const registry = new EngineRegistry();
+        registry.load(resolveBuiltinEnginesDir());
+        let def: any;
+        try { def = registry.get(engine); } catch {
+          fail(`Engine "${engine}" not found`);
+          info('Run: agon models list');
+          process.exit(1);
+        }
+        if (!registry.isAvailable(def)) {
+          fail(`Engine "${engine}" is not available on this machine`);
+          if (def.installHint) info(`Install: ${def.installHint}`);
+          process.exit(1);
+        }
+        const config = loadConfig();
+        const canonical = def.id;
+        const next = Array.from(new Set([...(config.forgeEnabledEngines ?? []), canonical]));
+        const hidden = ((config as any).hiddenEngines ?? []).filter((id: string) => id !== canonical);
+        const removed = ((config as any).removedEngines ?? []).filter((id: string) => id !== canonical);
+        configSet('engineActivationMode' as any, 'explicit' as any);
+        configSet('forgeEnabledEngines', next as AgonConfig['forgeEnabledEngines']);
+        configSet('hiddenEngines', hidden as any);
+        configSet('removedEngines', removed as any);
+        success(`Activated ${canonical}`);
+      },
+    }),
+    add: defineCommand({
+      meta: { name: 'add', description: 'Alias for enable' },
+      args: {
+        engine: { type: 'positional', required: true, description: 'Engine ID' },
+      },
+      async run(ctx) {
+        const engine = String(ctx.args.engine).trim();
+        if (!engine) return;
+        const registry = new EngineRegistry();
+        registry.load(resolveBuiltinEnginesDir());
+        let def: any;
+        try { def = registry.get(engine); } catch {
+          fail(`Engine "${engine}" not found`);
+          info('Run: agon models list');
+          process.exit(1);
+        }
+        if (!registry.isAvailable(def)) {
+          fail(`Engine "${engine}" is not available on this machine`);
+          if (def.installHint) info(`Install: ${def.installHint}`);
+          process.exit(1);
+        }
+        const config = loadConfig();
+        const canonical = def.id;
+        const next = Array.from(new Set([...(config.forgeEnabledEngines ?? []), canonical]));
+        const hidden = ((config as any).hiddenEngines ?? []).filter((id: string) => id !== canonical);
+        const removed = ((config as any).removedEngines ?? []).filter((id: string) => id !== canonical);
+        configSet('engineActivationMode' as any, 'explicit' as any);
+        configSet('forgeEnabledEngines', next as AgonConfig['forgeEnabledEngines']);
+        configSet('hiddenEngines', hidden as any);
+        configSet('removedEngines', removed as any);
+        success(`Activated ${canonical}`);
+      },
+    }),
+    disable: defineCommand({
+      meta: { name: 'disable', description: 'Remove an engine from routing/fallback' },
+      args: {
+        engine: { type: 'positional', required: true, description: 'Engine ID' },
+      },
+      async run(ctx) {
+        const raw = String(ctx.args.engine).trim();
+        if (!raw) return;
+        const registry = new EngineRegistry();
+        registry.load(resolveBuiltinEnginesDir());
+        const engine = registry.resolveId(raw);
+        const config = loadConfig();
+        const next = (config.forgeEnabledEngines ?? []).filter((id: string) => id !== engine);
+        const hidden = Array.from(new Set([...((config as any).hiddenEngines ?? []), engine]));
+        const removed = ((config as any).removedEngines ?? []).filter((id: string) => id !== engine);
+        configSet('engineActivationMode' as any, 'explicit' as any);
+        configSet('forgeEnabledEngines', next as AgonConfig['forgeEnabledEngines']);
+        configSet('hiddenEngines', hidden as any);
+        configSet('removedEngines', removed as any);
+        success(`Hid ${engine} (soft — explicit -e still works)`);
+      },
+    }),
+    hide: defineCommand({
+      meta: { name: 'hide', description: 'Alias for disable' },
+      args: {
+        engine: { type: 'positional', required: true, description: 'Engine ID' },
+      },
+      async run(ctx) {
+        const raw = String(ctx.args.engine).trim();
+        if (!raw) return;
+        const registry = new EngineRegistry();
+        registry.load(resolveBuiltinEnginesDir());
+        const engine = registry.resolveId(raw);
+        const config = loadConfig();
+        const next = (config.forgeEnabledEngines ?? []).filter((id: string) => id !== engine);
+        const hidden = Array.from(new Set([...((config as any).hiddenEngines ?? []), engine]));
+        const removed = ((config as any).removedEngines ?? []).filter((id: string) => id !== engine);
+        configSet('engineActivationMode' as any, 'explicit' as any);
+        configSet('forgeEnabledEngines', next as AgonConfig['forgeEnabledEngines']);
+        configSet('hiddenEngines', hidden as any);
+        configSet('removedEngines', removed as any);
+        success(`Hid ${engine} (soft — explicit -e still works)`);
+      },
+    }),
+    auto: defineCommand({
+      meta: { name: 'auto', description: 'Use every non-removed available engine automatically' },
+      async run(_ctx) {
+        configSet('engineActivationMode' as any, 'auto' as any);
+        success('Engine activation mode set to auto; removed engines stay removed');
+      },
+    }),
+    set: defineCommand({
+      meta: { name: 'set', description: 'Set model for an engine' },
+      args: {
+        engine: { type: 'positional', required: true, description: 'Engine ID (e.g., claude)' },
+        model: { type: 'positional', required: true, description: 'Model ID (e.g., gpt-4o)' },
+      },
+      async run(ctx) {
+        const engine = String(ctx.args.engine);
+        const model = String(ctx.args.model);
+        const config = loadConfig();
+        const engineModels = { ...config.engineModels, [engine]: model };
+        configSet('engineModels', engineModels as AgonConfig['engineModels']);
+        success(`Set ${engine} → ${model}`);
+      },
+    }),
+    remove: defineCommand({
+      meta: { name: 'remove', description: 'Remove model mapping' },
+      args: {
+        engine: { type: 'positional', required: true, description: 'Engine ID' },
+      },
+      async run(ctx) {
+        const engine = String(ctx.args.engine);
+        const config = loadConfig();
+        const engineModels = { ...config.engineModels };
+        delete engineModels[engine];
+        configSet('engineModels', engineModels as AgonConfig['engineModels']);
+        success(`Removed mapping for ${engine}`);
+      },
+    }),
+  },
+});

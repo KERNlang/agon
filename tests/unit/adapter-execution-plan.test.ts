@@ -8,7 +8,7 @@ import {
   normalizeDispatchOptions,
   normalizeApiAgentOutcome,
   planEngineExecution,
-} from '../../packages/adapter-cli/src/generated/execution-plan.js';
+} from '../../packages/adapter-cli/src/execution-plan.js';
 
 const API = {
   baseUrl: 'https://example.com/v1',

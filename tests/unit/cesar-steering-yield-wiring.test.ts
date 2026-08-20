@@ -4,8 +4,8 @@
 // three review findings below cannot be driven behaviorally from a unit test.
 // They are all *structural* invariants — "this bookkeeping happens in exactly one
 // place", "this early exit consults that helper" — and the review explicitly
-// asked for a source-level guard for #7. These assertions read the GENERATED
-// brain.ts (packages/cli/src/generated/cesar/brain.ts) so a future
+// asked for a source-level guard for #7. These assertions read
+// packages/cli/src/cesar/brain.ts as text so a future
 // edit that reintroduces the bug fails a test instead of silently shipping.
 //
 //   #1  an empty-text continuation must not `break` out of the loop with the
@@ -22,7 +22,7 @@ import { describe, expect, it } from 'vitest';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const BRAIN = readFileSync(
-  resolve(here, '../../packages/cli/src/generated/cesar/brain.ts'),
+  resolve(here, '../../packages/cli/src/cesar/brain.ts'),
   'utf8',
 );
 

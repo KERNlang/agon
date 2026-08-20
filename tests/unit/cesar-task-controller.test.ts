@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { HandlerContext } from '../../packages/cli/src/generated/models/handler-types.js';
+import type { HandlerContext } from '../../packages/cli/src/models/handler-types.js';
 import {
   buildAgenticAutoTurnDirective,
   buildAgenticProgressSignature,
@@ -9,7 +9,7 @@ import {
   isSubstantiveAnswerText,
   resolveCesarHarnessProfile,
   resolveCesarToolReadOnlyMode,
-} from '../../packages/cli/src/generated/cesar/task-controller.js';
+} from '../../packages/cli/src/cesar/task-controller.js';
 
 function context(overrides: {
   auto?: boolean;

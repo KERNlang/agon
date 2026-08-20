@@ -7,7 +7,7 @@ import {
   classifyConsequence,
   formatCesarRecapToolSummary,
   readRecapConfidence,
-} from '../../packages/cli/src/generated/cesar/recap.js';
+} from '../../packages/cli/src/cesar/recap.js';
 
 const bashCall = (command: string, status: string, output = '') => ({
   type: 'tool-call' as const,

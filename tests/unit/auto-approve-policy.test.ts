@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { applyAgenticAutoApprovePolicy, applyAutoApprovePolicy } from '../../packages/cli/src/generated/cesar/auto-approve-policy.js';
-import { createTaskExecutionLease } from '../../packages/cli/src/generated/cesar/task-execution-lease.js';
-import { createCesarPlan } from '../../packages/core/src/generated/cesar/plan.js';
-import type { AgonConfig } from '../../packages/core/src/generated/models/types.js';
-import type { CesarPlan, CesarPlanStep, CesarStepType } from '../../packages/core/src/generated/cesar/plan.js';
+import { applyAgenticAutoApprovePolicy, applyAutoApprovePolicy } from '../../packages/cli/src/cesar/auto-approve-policy.js';
+import { createTaskExecutionLease } from '../../packages/cli/src/cesar/task-execution-lease.js';
+import { createCesarPlan } from '../../packages/core/src/cesar/plan.js';
+import type { AgonConfig } from '../../packages/core/src/models/types.js';
+import type { CesarPlan, CesarPlanStep, CesarStepType } from '../../packages/core/src/cesar/plan.js';
 
 const makeStep = (id: string, type: CesarStepType, overrides?: Partial<CesarPlanStep>): CesarPlanStep => ({
   id,

@@ -7,7 +7,7 @@ import { mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ToolContext } from '@kernlang/agon-core';
-import { createMultiEditTool } from '../../packages/core/src/generated/tools/tool-multi-edit.js';
+import { createMultiEditTool } from '../../packages/core/src/tools/tool-multi-edit.js';
 
 // Redirect AGON_HOME to a temp dir so takeSnapshot() (called on the real-FS
 // write path) never writes under the user's real ~/.agon in CI/sandboxes.

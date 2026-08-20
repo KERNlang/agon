@@ -4,12 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
-import { EngineRegistry } from '../../packages/core/src/engine-registry.js';
-import { EventBus } from '../../packages/core/src/event-bus.js';
+import { EngineRegistry } from '../../packages/core/src/signals/engine-registry.js';
+import { EventBus } from '../../packages/core/src/signals/event-bus.js';
 import { runForge } from '../../packages/forge/src/index.js';
-import { MockStallEngine } from '../fixtures/generated/mock-stall-engine.js';
-import { createTelemetryService } from '../../packages/cli/src/generated/signals/telemetry-service.js';
-import { createScoreboard, scoreboardStartEngine, scoreboardFailEngine } from '../../packages/cli/src/generated/cesar/scoreboard.js';
+import { MockStallEngine } from '../fixtures/mock-stall-engine.js';
+import { createTelemetryService } from '../../packages/cli/src/signals/telemetry-service.js';
+import { createScoreboard, scoreboardStartEngine, scoreboardFailEngine } from '../../packages/cli/src/cesar/scoreboard.js';
 
 function makeRegistry(): EngineRegistry {
   const registry = new EngineRegistry();

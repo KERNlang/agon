@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { createConquerTool } from '../../packages/core/src/generated/blocks/tool-orchestration.js';
-import { extractDelegation } from '../../packages/cli/src/generated/cesar/brain-helpers.js';
+import { createConquerTool } from '../../packages/core/src/blocks/tool-orchestration.js';
+import { extractDelegation } from '../../packages/cli/src/cesar/brain-helpers.js';
 
 describe('Conquer tool', () => {
   it('defines a Conquer signal tool requiring task + gate', () => {

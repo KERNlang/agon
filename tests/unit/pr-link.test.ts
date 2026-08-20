@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { normalizeGitHubRemote, prefilledPrUrl } from '../../packages/core/src/git.js';
+import { normalizeGitHubRemote, prefilledPrUrl } from '../../packages/core/src/blocks/git.js';
 
 describe('normalizeGitHubRemote', () => {
   it('normalizes scp-like ssh remotes', () => {

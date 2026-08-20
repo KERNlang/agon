@@ -13,8 +13,8 @@ import {
   encodeImagesForDispatch,
   attachVisionToMessages,
   visionSupportNote,
-} from '../../packages/core/src/image.js';
-import { buildCommand } from '../../packages/adapter-cli/src/generated/adapter-helpers.js';
+} from '../../packages/core/src/blocks/image.js';
+import { buildCommand } from '../../packages/adapter-cli/src/adapter-helpers.js';
 
 // ── isImagePath ─────────────────────────────────────────────────────
 

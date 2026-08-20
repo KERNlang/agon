@@ -1,6 +1,6 @@
 
 import type { EngineProgress } from './handlers/types.js';
-import type { AgentProgressSnapshot, StreamingEntry } from './generated/signals/output.js';
+import type { AgentProgressSnapshot, StreamingEntry } from './signals/output.js';
 
 type LiveSpinner = { message: string; color?: number; engineId?: string } | null;
 

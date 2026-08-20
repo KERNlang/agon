@@ -4,7 +4,7 @@ import {
   setEngineWeaknesses, addEngineTendency, getEngineProfile,
   buildRolePrompt, filePathToMemoryPattern, extractPatchFilePatterns,
   recordForgeOutcome, recordForgeJudgment,
-} from '../../packages/core/src/generated/blocks/engine-memory.js';
+} from '../../packages/core/src/blocks/engine-memory.js';
 import { rmSync } from 'node:fs';
 import { agonHomePath, cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 
@@ -74,26 +74,32 @@ describe('EngineMemory', () => {
 
   it('extractPatchFilePatterns collapses touched paths into reusable scopes', () => {
     const patch = [
-      'diff --git a/packages/cli/src/generated/handlers/build.ts b/packages/cli/src/generated/handlers/build.ts',
+      'diff --git a/packages/cli/src/handlers/build.ts b/packages/cli/src/handlers/build.ts',
       '--- a/packages/core/src/kern/blocks/engine-memory.kern',
       '+++ b/packages/core/src/kern/blocks/engine-memory.kern',
       '+++ /dev/null',
     ].join('\n');
 
-    expect(filePathToMemoryPattern('packages/cli/src/generated/handlers/build.ts')).toBe('packages/cli/src/generated/**/*.ts');
+    expect(filePathToMemoryPattern('packages/cli/src/handlers/build.ts')).toBe('packages/cli/**/*.ts');
     expect(extractPatchFilePatterns(patch)).toEqual([
-      'packages/cli/src/generated/**/*.ts',
+      'packages/cli/**/*.ts',
       'packages/core/**/*.kern',
     ]);
   });
 
+  it('anchors the scope at a build-output dir when the workspace has one', () => {
+    // Workspaces that really do commit compiler output want the whole tree
+    // below it treated as one scope, not split per subdirectory.
+    expect(filePathToMemoryPattern('app/src/generated/api/client.ts')).toBe('app/src/generated/**/*.ts');
+  });
+
   it('recordForgeOutcome logs winner and losers', () => {
     rmSync(agonHomePath('engine-memory.json'), { force: true });
-    recordForgeOutcome('claude', ['codex', 'gemini'], 'feature', 'forge-123', 92, { codex: 78, gemini: 0 }, ['packages/cli/src/generated/**/*.ts']);
+    recordForgeOutcome('claude', ['codex', 'gemini'], 'feature', 'forge-123', 92, { codex: 78, gemini: 0 }, ['packages/cli/**/*.ts']);
 
     const claudeProfile = getEngineProfile('claude');
     expect(claudeProfile!.notes.some(n => n.observation.includes('Won'))).toBe(true);
-    expect(claudeProfile!.notes[0].filePatterns).toEqual(['packages/cli/src/generated/**/*.ts']);
+    expect(claudeProfile!.notes[0].filePatterns).toEqual(['packages/cli/**/*.ts']);
 
     const codexProfile = getEngineProfile('codex');
     expect(codexProfile!.notes.some(n => n.observation.includes('Lost'))).toBe(true);

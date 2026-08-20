@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { tracker, estimateTokens, estimateCost, estimateCostCacheAware, isFlatRateEngine } from '../../packages/core/src/generated/signals/token-tracker.js';
+import { tracker, estimateTokens, estimateCost, estimateCostCacheAware, isFlatRateEngine } from '../../packages/core/src/signals/token-tracker.js';
 
 describe('TokenTracker', () => {
   beforeEach(() => {

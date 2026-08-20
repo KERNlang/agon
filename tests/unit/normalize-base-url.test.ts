@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeBaseUrl } from '../../packages/core/src/generated/signals/models-registry.js';
+import { normalizeBaseUrl } from '../../packages/core/src/signals/models-registry.js';
 
 describe('normalizeBaseUrl', () => {
   it('strips /anthropic/ when it is the first path segment (proxy prefix)', () => {

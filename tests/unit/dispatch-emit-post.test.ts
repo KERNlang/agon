@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { dispatchIntent } from '../../packages/cli/src/generated/signals/dispatch.js';
+import { dispatchIntent } from '../../packages/cli/src/signals/dispatch.js';
 
 // Locks in the control-flow invariant preserved by the dispatchIntent sub-dispatcher
 // split (Option B, nero Ch.1/Ch.5): post:dispatch fires ONLY on the break-path

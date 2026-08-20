@@ -125,7 +125,7 @@ jobs:
             packages/saas-api/package.json \
             packages/dedup/package.json \
             packages/cli/src/index.ts \
-            packages/cli/src/generated/blocks/engine.tsx \
+            packages/cli/src/blocks/engine.tsx \
             package-lock.json
           if git diff --cached --quiet; then
             echo "main already at ${VERSION}; nothing to sync."

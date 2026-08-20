@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   admitWorkflowPlugin,
   validateWorkflowPluginAdmission,
-} from '../../packages/core/src/generated/workflows/plugins.js';
+} from '../../packages/core/src/workflows/plugins.js';
 
 describe('workflow plugin admission', () => {
   it('admits read-only plugins with unclaimed aliases', () => {

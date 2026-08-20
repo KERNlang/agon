@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   buildConsensus, inferConfidence, normSeverity, clusterKey, clampConfidence,
   engineBadges, formatConsensusRow,
-} from '../../packages/cli/src/generated/blocks/consensus.js';
-import type { RawFinding, EngineOutcome } from '../../packages/cli/src/generated/blocks/consensus.js';
+} from '../../packages/cli/src/blocks/consensus.js';
+import type { RawFinding, EngineOutcome } from '../../packages/cli/src/blocks/consensus.js';
 
 const f = (over: Partial<RawFinding> = {}): RawFinding => ({
   engine: 'claude', severity: 'blocking', problem: 'null deref on user', file: 'src/a.ts', lines: '42', ...over,

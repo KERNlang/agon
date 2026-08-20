@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { authFailureHint, authLoginHint } from '../../packages/core/src/engine-health.js';
+import { authFailureHint, authLoginHint } from '../../packages/core/src/signals/engine-health.js';
 
 // A 401 under agon's workspace-pure isolation used to surface as a bare "no answer" / raw stderr,
 // with no clue that `agon login <engine>` is the fix. authLoginHint/authFailureHint are the generic,

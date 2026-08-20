@@ -53,20 +53,20 @@ Verified external sources inspected locally:
 Verified local Agon sources inspected:
 
 - `packages/cli/src/kern/commands/call.kern`
-- `packages/cli/src/generated/commands/call.ts`
+- `packages/cli/src/commands/call.ts`
 - `packages/cli/src/kern/signals/intent.kern`
-- `packages/cli/src/generated/signals/intent.ts`
+- `packages/cli/src/signals/intent.ts`
 - `packages/cli/src/kern/signals/dispatch/intent-orchestration.kern`
-- `packages/cli/src/generated/signals/dispatch/intent-orchestration.ts`
+- `packages/cli/src/signals/dispatch/intent-orchestration.ts`
 - `packages/cli/src/kern/signals/dispatch/cesar-router.kern`
-- `packages/cli/src/generated/signals/dispatch/cesar-router.ts`
+- `packages/cli/src/signals/dispatch/cesar-router.ts`
 - `packages/cli/src/kern/signals/dispatch/delegation.kern`
-- `packages/cli/src/generated/signals/dispatch/delegation.ts`
+- `packages/cli/src/signals/dispatch/delegation.ts`
 - `packages/cli/src/kern/handlers/plan-mode.kern`
-- `packages/cli/src/generated/handlers/plan-mode.ts`
+- `packages/cli/src/handlers/plan-mode.ts`
 - `packages/cli/src/kern/handlers/forge.kern`
-- `packages/cli/src/generated/handlers/forge.ts`
-- `packages/mcp/src/generated/agon-orchestration.ts`
+- `packages/cli/src/handlers/forge.ts`
+- `packages/mcp/src/agon-orchestration.ts`
 
 ## What Transformers.js Actually Does
 

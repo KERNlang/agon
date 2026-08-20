@@ -17,9 +17,9 @@ import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync, readFileSy
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runGoalController } from '../../packages/forge/src/generated/goal/controller.js';
-import { journalPath, loadJournal } from '../../packages/forge/src/generated/goal/journal.js';
-import type { GoalSpec, JournalState } from '../../packages/forge/src/generated/goal/types.js';
+import { runGoalController } from '../../packages/forge/src/goal/controller.js';
+import { journalPath, loadJournal } from '../../packages/forge/src/goal/journal.js';
+import type { GoalSpec, JournalState } from '../../packages/forge/src/goal/types.js';
 
 const git = (cwd: string, ...args: string[]) =>
   execFileSync('git', args, { cwd, stdio: 'pipe' }).toString();

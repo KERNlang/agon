@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-vi.mock('../../packages/core/src/generated/api/agent-loop.js', () => ({
+vi.mock('../../packages/core/src/api/agent-loop.js', () => ({
   runApiAgentLoop: vi.fn(async (opts: any) => {
     if (opts.prompt === 'throw while aborted') throw new Error('AbortError');
     if (opts.api.model === 'slow-success') {
@@ -37,7 +37,7 @@ vi.mock('../../packages/core/src/generated/api/agent-loop.js', () => ({
   }),
 }));
 
-import { Speculator } from '../../packages/core/src/generated/cesar/speculator.js';
+import { Speculator } from '../../packages/core/src/cesar/speculator.js';
 
 describe('Speculator structured agent failures', () => {
   it('keeps a failed candidate for diagnostics but never selects or applies it', async () => {

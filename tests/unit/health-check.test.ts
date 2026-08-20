@@ -4,9 +4,9 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { EngineRegistry } from '../../packages/core/src/engine-registry.js';
-import { healthCheckEngine } from '../../packages/forge/src/generated/health-check.js';
-import { runForge } from '../../packages/forge/src/generated/forge.js';
+import { EngineRegistry } from '../../packages/core/src/signals/engine-registry.js';
+import { healthCheckEngine } from '../../packages/forge/src/health-check.js';
+import { runForge } from '../../packages/forge/src/forge.js';
 
 const tempDirs: string[] = [];
 

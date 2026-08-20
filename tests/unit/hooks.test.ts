@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { runHook, hooksFailed, hooksOutput } from '../../packages/core/src/generated/blocks/hooks.js';
+import { runHook, hooksFailed, hooksOutput } from '../../packages/core/src/blocks/hooks.js';
 
 describe('Hooks', () => {
   describe('runHook', () => {

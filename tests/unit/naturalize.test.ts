@@ -5,7 +5,7 @@ import {
   buildNaturalizePrompt,
   wordDiffStats,
   type NaturalizeOptions,
-} from '../../packages/forge/src/generated/naturalize.js';
+} from '../../packages/forge/src/naturalize.js';
 
 // ── wordDiffStats ────────────────────────────────────────────────────────────
 

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { cancelLatestRunningJob, runInterruptActiveRun } from '../../packages/cli/src/generated/surfaces/app-interrupt.js';
-import { buildInterruptedTurnRedirect } from '../../packages/cli/src/generated/surfaces/app-submit.js';
+import { cancelLatestRunningJob, runInterruptActiveRun } from '../../packages/cli/src/surfaces/app-interrupt.js';
+import { buildInterruptedTurnRedirect } from '../../packages/cli/src/surfaces/app-submit.js';
 
 function interruptDeps(overrides: Record<string, unknown> = {}) {
   return {

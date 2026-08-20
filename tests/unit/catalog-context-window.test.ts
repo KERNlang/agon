@@ -3,9 +3,9 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-// Source of truth: packages/core/src/generated/signals/models-registry.ts
-import { lookupCatalogContextWindow, lookupCatalogModelCost, lookupCatalogModelAttachment, engineSupportsVision } from '../../packages/core/src/generated/signals/models-registry.js';
-import { estimateCost, estimateCostCacheAware } from '../../packages/core/src/generated/signals/token-tracker.js';
+// Source of truth: packages/core/src/signals/models-registry.ts
+import { lookupCatalogContextWindow, lookupCatalogModelCost, lookupCatalogModelAttachment, engineSupportsVision } from '../../packages/core/src/signals/models-registry.js';
+import { estimateCost, estimateCostCacheAware } from '../../packages/core/src/signals/token-tracker.js';
 
 const CATALOG = {
   'kimi-for-coding': {

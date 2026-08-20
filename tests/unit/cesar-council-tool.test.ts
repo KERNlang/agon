@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createCesarToolRegistry } from '../../packages/cli/src/generated/cesar/tools.js';
-import { extractDelegation, shouldStopAfterXmlToolCall } from '../../packages/cli/src/generated/cesar/brain-helpers.js';
+import { createCesarToolRegistry } from '../../packages/cli/src/cesar/tools.js';
+import { extractDelegation, shouldStopAfterXmlToolCall } from '../../packages/cli/src/cesar/brain-helpers.js';
 
 describe('Cesar native Council tool', () => {
   it('is available to the native tool loop as an optional signal tool', () => {

@@ -6,9 +6,9 @@ import {
   resolveForgeMode,
   resolveForgeRequireDiff,
 } from '../../packages/forge/src/stages.js';
-import { classifyTask } from '../../packages/core/src/task-classifier.js';
-import { buildForgePrompt, buildCritiquePrompt, buildSynthesisPrompt, buildBrainstormPrompt, buildTribunalPrompt } from '../../packages/core/src/prompt-builder.js';
-import type { EngineResult, Critique } from '../../packages/core/src/types.js';
+import { classifyTask } from '../../packages/core/src/blocks/task-classifier.js';
+import { buildForgePrompt, buildCritiquePrompt, buildSynthesisPrompt, buildBrainstormPrompt, buildTribunalPrompt } from '../../packages/core/src/blocks/prompt-builder.js';
+import type { EngineResult, Critique } from '../../packages/core/src/models/types.js';
 
 function makeResult(overrides: Partial<EngineResult> = {}): EngineResult {
   return {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { filterDefaultOrchestrationEngines, isDefaultOrchestrationEngineAllowed } from '../../packages/cli/src/generated/handlers/engine-filter.js';
+import { filterDefaultOrchestrationEngines, isDefaultOrchestrationEngineAllowed } from '../../packages/cli/src/handlers/engine-filter.js';
 
 describe('orchestration engine filter', () => {
   it('keeps default orchestration off disabled local/problem engines but keeps usable subvariants like kimi-for-coding-*', () => {

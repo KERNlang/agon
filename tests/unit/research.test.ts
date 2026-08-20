@@ -8,8 +8,8 @@ import {
   buildResearchPrompt,
   formatResearchResult,
   runResearch,
-} from '../../packages/forge/src/generated/research.js';
-import type { ResearchResult } from '../../packages/forge/src/generated/research.js';
+} from '../../packages/forge/src/research.js';
+import type { ResearchResult } from '../../packages/forge/src/research.js';
 
 describe('buildResearchPrompt', () => {
   it('includes the question, numbered sources with URLs + content, and citation rules', () => {

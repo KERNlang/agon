@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { runReviewCore } from '../../packages/cli/src/generated/handlers/review.js';
+import { runReviewCore } from '../../packages/cli/src/handlers/review.js';
 
 // Regression for the double-swallowed-error bug: a stalled SSE stream used to
 // come back from api/dispatch.ts as a silent success (exitCode 0, stderr ''),

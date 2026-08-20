@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatSessionResults, formatChatTranscript } from '../../packages/cli/src/generated/blocks/results-formatter.js';
+import { formatSessionResults, formatChatTranscript } from '../../packages/cli/src/blocks/results-formatter.js';
 import type { SessionResult, ChatSession } from '@kernlang/agon-core';
 
 describe('formatSessionResults', () => {

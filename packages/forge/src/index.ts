@@ -23,76 +23,76 @@ export type { TribunalResult, TribunalRound, TribunalPosition } from './tribunal
 export { getModeConfig, buildModePrompt, buildModeSummaryPrompt, isTribunalMode, isTribunalProtocol, TRIBUNAL_MODES, TRIBUNAL_PROTOCOLS } from './tribunal-modes.js';
 export type { TribunalMode, TribunalModeConfig, TribunalProtocol } from './tribunal-modes.js';
 // ── Gauntlet ──
-export { runGauntlet } from './generated/gauntlet.js';
-export { addToCorpus, getCorpusForReplay, getGapPatterns, getCorpusStats, loadCorpus } from './generated/corpus.js';
-export type { CorpusRecord } from './generated/corpus.js';
+export { runGauntlet } from './gauntlet.js';
+export { addToCorpus, getCorpusForReplay, getGapPatterns, getCorpusStats, loadCorpus } from './corpus.js';
+export type { CorpusRecord } from './corpus.js';
 // ── Team Competition ──
-export { runTeamForge, decideTeamWinner } from './generated/team-forge.js';
-export type { TeamForgeOptions } from './generated/team-forge.js';
-export { runTeamTribunal } from './generated/team-tribunal.js';
-export type { TeamTribunalOptions } from './generated/team-tribunal.js';
-export { runTeamBrainstorm } from './generated/team-brainstorm.js';
-export type { TeamBrainstormOptions } from './generated/team-brainstorm.js';
+export { runTeamForge, decideTeamWinner } from './team-forge.js';
+export type { TeamForgeOptions } from './team-forge.js';
+export { runTeamTribunal } from './team-tribunal.js';
+export type { TeamTribunalOptions } from './team-tribunal.js';
+export { runTeamBrainstorm } from './team-brainstorm.js';
+export type { TeamBrainstormOptions } from './team-brainstorm.js';
 // ── Campfire ──
-export { runCampfire } from './generated/campfire.js';
-export type { CampfireResult } from './generated/campfire.js';
+export { runCampfire } from './campfire.js';
+export type { CampfireResult } from './campfire.js';
 // ── Sequential thinking ──
-export { runThinkChain, buildThinkPrompt, parseThoughts, groundThoughts, validateChain, isThinkStrategy, joinProblemInput, selectBranch, runAdversarialCritique } from './generated/thinking.js';
-export type { ThoughtNode, ThinkResult } from './generated/thinking.js';
+export { runThinkChain, buildThinkPrompt, parseThoughts, groundThoughts, validateChain, isThinkStrategy, joinProblemInput, selectBranch, runAdversarialCritique } from './thinking.js';
+export type { ThoughtNode, ThinkResult } from './thinking.js';
 // ── Naturalize (Phase 2: sanitize → non-author rewrite → re-scan) ──
-export { runNaturalize, buildNaturalizePrompt, wordDiffStats } from './generated/naturalize.js';
-export type { NaturalizeOptions, NaturalizeResult } from './generated/naturalize.js';
+export { runNaturalize, buildNaturalizePrompt, wordDiffStats } from './naturalize.js';
+export type { NaturalizeOptions, NaturalizeResult } from './naturalize.js';
 // ── Mutate (mutation testing as a test-strength oracle) ──
 export {
   runMutate, dedupeMutants, selectMutants,
   mutationTargetsFromDiff, isMutableFile,
-} from './generated/mutate.js';
-export type { MutateOptions, MutateResult } from './generated/mutate.js';
+} from './mutate.js';
+export type { MutateOptions, MutateResult } from './mutate.js';
 // The ONE mutation-report renderer — every surface (mutate, /mutate, review
 // --mutate) must render through formatMutationReportLines, never its own copy.
 export {
   formatMutationReportLines, formatMutateVerdict, mutateVerdictLine,
   allMutantsSurvived, noMutantsRanLine, staleDistHint, mutateLensSuffix, MUTATE_ALL_SURVIVED_WARNING,
-} from './generated/mutate-report.js';
+} from './mutate-report.js';
 export {
   prepareSandboxNodeModules, clearShadowingDist, workspacePackageDirs,
   packageEntryDirs, repointWorkspaceLinks, isInside, isSafePackageName,
   pnpmWorkspaceGlobs, gitIgnoredPaths, expandWorkspaceGlob, workspaceGlobToRegExp,
-} from './generated/mutate-sandbox.js';
-export type { SandboxNodeModules, SandboxLinkRepair } from './generated/mutate-sandbox.js';
+} from './mutate-sandbox.js';
+export type { SandboxNodeModules, SandboxLinkRepair } from './mutate-sandbox.js';
 export {
   buildSemanticMutantPrompt, extractJsonArray, validateSemanticMutants, collectSemanticMutants,
   seatGrantsWriteAccess, stripControlChars, normalizeLens, MUTATE_LENS_PRESETS,
-} from './generated/mutate-semantic.js';
+} from './mutate-semantic.js';
 export type {
   SemanticTarget, SemanticTargetLine, SemanticMutantsResult, DroppedSemanticEntry,
-} from './generated/mutate-semantic.js';
+} from './mutate-semantic.js';
 // ── Delegate ──
-export { runDelegate } from './generated/delegate.js';
-export type { DelegateResult } from './generated/delegate.js';
+export { runDelegate } from './delegate.js';
+export type { DelegateResult } from './delegate.js';
 // ── PR text (engine-written title/body for pushed branches) ──
-export { runPrText, buildPrTextPrompt, parsePrText } from './generated/pr-text.js';
-export type { PrTextOptions, PrTextResult } from './generated/pr-text.js';
+export { runPrText, buildPrTextPrompt, parsePrText } from './pr-text.js';
+export type { PrTextOptions, PrTextResult } from './pr-text.js';
 // ── Goal controller ──
-export type { GoalSpec, GoalTask, AttemptRecord, GoalEvent, JournalState } from './generated/goal/types.js';
+export type { GoalSpec, GoalTask, AttemptRecord, GoalEvent, JournalState } from './goal/types.js';
 export {
   goalDir, journalPath, createJournal, saveJournal, loadJournal,
   addTasks, nextTask, markStatus, recordAttempt, remainingCount, isDone, logEvent, boundEvents,
-} from './generated/goal/journal.js';
-export { assertSafeGoalId, resolveWithin, safePathSegment } from './generated/goal/paths.js';
-export type { Mutant } from './generated/goal/mutation.js';
-export { generateMutants, applyMutantToSource, mutationSurvivors } from './generated/goal/mutation.js';
-export type { FrozenOracle, WitnessResult } from './generated/goal/oracle.js';
-export { hashOracleInputs, snapshotOracle, oracleTampered, witnessTest } from './generated/goal/oracle.js';
-export { isTestFile, parseChangedLines, newFilesInDiff } from './generated/goal/diff.js';
-export { gateFailureSignature, taskParkDecision, globalBreaker, budgetExceeded, timeExceeded, pickImplementWinner, chooseImplementRoster } from './generated/goal/policy.js';
-export { planSynthesis } from './generated/synth-plan.js';
-export type { SynthCandidate, SynthPlanOpts, SynthPlan } from './generated/synth-plan.js';
-export { summarizeGoal, writeGoalArtifacts, runGoalController } from './generated/goal/controller.js';
-export { supervisorDecision, computeBackoffMs, isDeterministicExit, runSupervisor } from './generated/goal/supervisor.js';
-export type { SupervisorDecision } from './generated/goal/supervisor.js';
-export { buildOracleCheatPrompt, oracleGateDecision, oracleProbeConclusive, DEFAULT_ORACLE_GATE } from './generated/goal/oracle-redteam.js';
-export type { OracleHole } from './generated/goal/oracle-redteam.js';
+} from './goal/journal.js';
+export { assertSafeGoalId, resolveWithin, safePathSegment } from './goal/paths.js';
+export type { Mutant } from './goal/mutation.js';
+export { generateMutants, applyMutantToSource, mutationSurvivors } from './goal/mutation.js';
+export type { FrozenOracle, WitnessResult } from './goal/oracle.js';
+export { hashOracleInputs, snapshotOracle, oracleTampered, witnessTest } from './goal/oracle.js';
+export { isTestFile, parseChangedLines, newFilesInDiff } from './goal/diff.js';
+export { gateFailureSignature, taskParkDecision, globalBreaker, budgetExceeded, timeExceeded, pickImplementWinner, chooseImplementRoster } from './goal/policy.js';
+export { planSynthesis } from './synth-plan.js';
+export type { SynthCandidate, SynthPlanOpts, SynthPlan } from './synth-plan.js';
+export { summarizeGoal, writeGoalArtifacts, runGoalController } from './goal/controller.js';
+export { supervisorDecision, computeBackoffMs, isDeterministicExit, runSupervisor } from './goal/supervisor.js';
+export type { SupervisorDecision } from './goal/supervisor.js';
+export { buildOracleCheatPrompt, oracleGateDecision, oracleProbeConclusive, DEFAULT_ORACLE_GATE } from './goal/oracle-redteam.js';
+export type { OracleHole } from './goal/oracle-redteam.js';
 // ── Conquer (supervised-autonomous build) ──
 export {
   pickEscalationMode, classifyStuck, shouldEscalate, shouldAutoApprove, summarizeConsultForBuilder,
@@ -103,5 +103,5 @@ export {
   ESCAPING_OPS, DONE_SENTINEL, ASK_SENTINEL,
 } from './conquer.js';
 export type { StuckSignals, ConquerCaps, ConquerState, ConquerTurn, ConquerOptions, ConquerResult, ConquerIsolation, DoneOracleInput, SandboxOps, FalsifierResult } from './conquer.js';
-export { dispatchSeatWithRetry, buildPanelHealth, classifySeatFailure } from './generated/seat-dispatch.js';
-export type { SeatOutcome } from './generated/seat-dispatch.js';
+export { dispatchSeatWithRetry, buildPanelHealth, classifySeatFailure } from './seat-dispatch.js';
+export type { SeatOutcome } from './seat-dispatch.js';

@@ -1,0 +1,829 @@
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Box, Text, useInput } from 'ink';
+
+// ── Core ───────────────────────────────────────────────
+import { EngineProgressView, BRAND, VERSION } from '../blocks/engine.js';
+
+import { RenderedSegments, contentWidth, engineColor, RichLineView, DiffLine, SyntaxLine, AnsiLine, GradientLine } from '../blocks/rendering.js';
+
+import { buildPlanPhaseGauge, normalizeUiMotion } from './status-helpers.js';
+
+import type { EngineProgress } from '../handlers/types.js';
+
+import type { Job } from '../signals/job-manager.js';
+
+import { parseMarkdownBlocks, cleanEngineOutput } from '../blocks/markdown.js';
+
+import { foldNarrationLines } from '../blocks/narration-fold.js';
+
+import { loadConfig } from '@kernlang/agon-core';
+
+import { icons } from '../signals/icons.js';
+
+import { AgentProgressView } from './agent.js';
+
+import { StatusBar, CesarStatusStrip, StatusDashboard, ExecutionRailPanel } from './status.js';
+
+import { ComposerView } from '../blocks/composer.js';
+
+import { FileRail } from '../blocks/file-rail.js';
+
+import type { AgentProgressSnapshot, LiveToolStreamEntry } from '../signals/output.js';
+
+const PlanChip = React.memo(function PlanChip({ activePlan, activePlanState, planModeQueued, autoModeQueued }: { activePlan?:any; activePlanState?:string|null; planModeQueued?:boolean; autoModeQueued?:boolean }) {
+  const planChrome = buildPlanChromeSummary(activePlan, activePlanState, planModeQueued, autoModeQueued);
+  if (!planChrome.visible) return null;
+  // wrap="truncate-end" pins the chip to exactly one row even when the
+  // assembled line (state + id + step + bar + % + current + action) exceeds a
+  // narrow terminal's width — so it never wraps past the single row reserved
+  // for it in estimateBottomChromeExtraRows (hasPlanChip), which would
+  // otherwise under-budget the transcript and clip/jitter the last row.
+  return (
+    <Box>
+      <Text wrap="truncate-end">
+        <Text color={planChrome.color} bold>{'◈ '}{String(planChrome.label).toUpperCase()}</Text>
+        {planChrome.shortId ? <Text color={planChrome.color} bold>{' · PLAN '}{planChrome.shortId}</Text> : null}
+        {planChrome.stepLabel ? <Text dimColor>{' · '}{planChrome.stepLabel}</Text> : null}
+        {planChrome.bar ? <Text color={planChrome.color}>{' '}{planChrome.bar}</Text> : null}
+        {planChrome.bar ? <Text dimColor>{' '}{planChrome.pct}{'%'}</Text> : null}
+        {planChrome.failed > 0 ? <Text color="#ef4444">{' · '}{planChrome.failed}{' failed'}</Text> : null}
+        {planChrome.current ? <Text dimColor>{' · '}{String(planChrome.current).slice(0, 72)}</Text> : null}
+        {planChrome.action ? <Text dimColor>{' · '}{planChrome.action}</Text> : null}
+      </Text>
+    </Box>
+  );
+});
+export { PlanChip };
+
+const ChromeBar = React.memo(function ChromeBar({ mode, cwdLabel, engineCount, replState, runningJobs }: { mode:string; cwdLabel:string; engineCount:number; replState:string; runningJobs:Job[] }) {
+  if (mode === 'chat') {
+    return (
+      <Box paddingX={1} flexDirection="column">
+        <Text>
+          <Text color="#f97316" bold>{'AGON'}</Text>
+          <Text dimColor>{' \u2502 '}{cwdLabel}</Text>
+          <Text dimColor>{' \u2502 '}{engineCount}{' engines'}</Text>
+          {replState !== 'idle' && (<><Text dimColor>{' \u2502 '}</Text><Text color="yellow">{replState}</Text></>)}
+          {runningJobs.length > 0 && (<><Text dimColor>{' \u203a '}</Text><Text color="#facc15">{runningJobs.map((j: Job) => `${j.type}: ${j.label.slice(0, 20)}`).join(', ')}</Text></>)}
+        </Text>
+      </Box>
+    );
+  }
+  return (
+    <Box paddingX={1} flexDirection="column">
+      <Text>
+        <Text dimColor>{icons().find + ' '}{cwdLabel}</Text>
+        <Text dimColor>{' \u2502 '}</Text>
+        <Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'}>{mode}</Text>
+        <Text dimColor>{' \u2502 '}</Text>
+        <Text dimColor>{engineCount}{' engines'}</Text>
+        {replState !== 'idle' && (<><Text dimColor>{' \u2502 '}</Text><Text color="yellow">{replState}</Text></>)}
+        {runningJobs.length > 0 && (<><Text dimColor>{' \u203a '}</Text><Text color="#facc15">{runningJobs.map((j: Job) => `${j.type}: ${j.label.slice(0, 20)}`).join(', ')}</Text></>)}
+      </Text>
+    </Box>
+  );
+});
+export { ChromeBar };
+
+const TranscriptRowView = React.memo(function TranscriptRowView({ row }: { row:any }) {
+  const borderPrefix = row.borderColor ? <Text color={row.borderColor}>{'\u2502 '}</Text> : null;
+  const selectionRail = <Text color={row.selected ? '#60a5fa' : '#2b2b2b'}>{row.selected ? '\u258c' : ' '}</Text>;
+  const prefix = row.prefixText
+    ? row.prefixDimColor
+      ? <Text dimColor>{row.prefixText}</Text>
+      : <Text color={row.prefixColor}>{row.prefixText}</Text>
+    : null;
+  const wrap = (child: any) => (
+    <Box paddingLeft={row.paddingLeft ?? 0}>
+      {selectionRail}
+      {borderPrefix}
+      {child}
+    </Box>
+  );
+  const selectedText = row.selected ? renderSelectedText(
+    row.selectionText ?? '',
+    row.selectionStart ?? 0,
+    row.selectionEnd ?? String(row.selectionText ?? '').length,
+    row.key,
+  ) : null;
+
+  if (row.kind === 'spacer') {
+    return (
+      <Box paddingLeft={row.paddingLeft ?? 0}>
+        {selectionRail}
+        <Text>{' '}</Text>
+      </Box>
+    );
+  }
+
+  if (row.kind === 'gradient') {
+    if (selectedText) {
+      return (
+        <Box paddingLeft={row.paddingLeft ?? 0}>
+          {selectionRail}
+          {selectedText}
+        </Box>
+      );
+    }
+    return (
+      <Box paddingLeft={row.paddingLeft ?? 0}>
+        {selectionRail}
+        <GradientLine text={row.text} colors={row.colors ?? BRAND} />
+      </Box>
+    );
+  }
+
+  if (row.kind === 'rich') {
+    if (selectedText) {
+      return (
+        <Box paddingLeft={row.paddingLeft ?? 0}>
+          {selectionRail}
+          {borderPrefix}
+          {selectedText}
+        </Box>
+      );
+    }
+    return (
+      <Box paddingLeft={row.paddingLeft ?? 0}>
+        {selectionRail}
+        <RichLineView line={row.richLine} borderColor={row.borderColor || undefined} />
+      </Box>
+    );
+  }
+
+  if (row.kind === 'segments') {
+    if (selectedText) {
+      return wrap(selectedText);
+    }
+    return wrap(
+      <Text>
+        {(row.segments ?? []).map((segment: any, index: number) => {
+          if (!segment || !segment.text) return null;
+          return (
+            <Text
+              key={`${row.key}-segment-${index}`}
+              color={segment.color}
+              bold={segment.bold}
+              dimColor={segment.dimColor}
+              italic={segment.italic}
+              backgroundColor={segment.backgroundColor}
+            >
+              {segment.text}
+            </Text>
+          );
+        })}
+      </Text>,
+    );
+  }
+
+  if (row.kind === 'ansi') {
+    if (selectedText) {
+      return wrap(selectedText);
+    }
+    return wrap(
+      <>
+        {prefix}
+        <AnsiLine text={row.text} maxWidth={row.maxWidth} fallbackDim={row.fallbackDim} />
+      </>,
+    );
+  }
+
+  if (row.kind === 'diff') {
+    if (selectedText) {
+      return wrap(selectedText);
+    }
+    return wrap(
+      <>
+        {prefix}
+        <DiffLine line={row.text} maxWidth={row.maxWidth} />
+      </>,
+    );
+  }
+
+  if (row.kind === 'syntax') {
+    if (selectedText) {
+      return wrap(selectedText);
+    }
+    return wrap(
+      <>
+        {prefix}
+        <SyntaxLine line={row.text} maxWidth={row.maxWidth} />
+      </>,
+    );
+  }
+
+  return null;
+});
+export { TranscriptRowView };
+
+export function ToolDetailBlock({ title, subtitle, accentColor, rows, maxVisibleRows, onClose }: { title:string; subtitle:string; accentColor:string; rows:any[]; maxVisibleRows:number; onClose:() => void }) {
+  // Ink-safe setter: bridges microtask → macrotask for reliable repaints
+  function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
+    return (value) => setTimeout(() => setter(value), 0);
+  }
+
+  const [offset, _setOffsetRaw] = useState<number>(0);
+  const setOffset = useMemo(() => __inkSafe(_setOffsetRaw), [_setOffsetRaw]);
+
+  const totalRows = rows.length;
+  const visibleCount = Math.max(6, Math.min(Math.max(1, maxVisibleRows), Math.max(1, totalRows)));
+  const maxOffset = Math.max(0, totalRows - visibleCount);
+  const visibleRows = useMemo(() => rows.slice(offset, offset + visibleCount), [rows, offset, visibleCount]);
+
+  useEffect(() => {
+    setOffset(0);
+  }, [title, subtitle, totalRows, visibleCount]);
+
+  useInput((input: string, key: any) => {
+    const lower = input.toLowerCase();
+    if (key.escape || (key.ctrl && lower === 'o')) {
+      onClose();
+      return;
+    }
+    if (key.upArrow || lower === 'k') {
+      setOffset((prev: number) => Math.max(0, prev - 1));
+      return;
+    }
+    if (key.downArrow || lower === 'j') {
+      setOffset((prev: number) => Math.min(maxOffset, prev + 1));
+      return;
+    }
+    if (key.pageUp) {
+      setOffset((prev: number) => Math.max(0, prev - visibleCount));
+      return;
+    }
+    if (key.pageDown) {
+      setOffset((prev: number) => Math.min(maxOffset, prev + visibleCount));
+      return;
+    }
+    if (key.home) {
+      setOffset(0);
+      return;
+    }
+    if (key.end) {
+      setOffset(maxOffset);
+    }
+  });
+
+  return (
+    <Box flexDirection="column" borderStyle="round" borderColor={accentColor} paddingX={1} marginY={1} width="100%">
+      <Box justifyContent="space-between">
+        <Text bold color={accentColor}>{title}</Text>
+        <Text dimColor>{'Esc closes'}</Text>
+      </Box>
+      {subtitle ? <Text dimColor>{subtitle}</Text> : null}
+      <Text dimColor>{'↑↓ or j/k scroll  PgUp/PgDn page  Home/End jump'}</Text>
+      <Text dimColor>{'\u2500'.repeat(48)}</Text>
+      {visibleRows.length === 0 ? (
+        <Text dimColor>{'No detailed output available.'}</Text>
+      ) : (
+        <Box flexDirection="column">
+          {visibleRows.map((row: any, index: number) => (
+            <TranscriptRowView key={`${row.key ?? 'tool-detail'}-${index}`} row={row} />
+          ))}
+        </Box>
+      )}
+      <Text dimColor>
+        {totalRows === 0
+          ? '0 lines'
+          : `lines ${offset + 1}-${Math.min(totalRows, offset + visibleCount)} of ${totalRows}`}
+      </Text>
+    </Box>
+  );
+}
+
+const StreamingView = React.memo(function StreamingView({ streamingText, mode, liveProgress, liveToolStreams, liveToolTailFrozen }: { streamingText:{engineId:string,content:string,draft?:boolean} | null; mode:string; liveProgress:EngineProgress[] | null; liveToolStreams?:Record<string,LiveToolStreamEntry>; liveToolTailFrozen?:Record<string,boolean> }) {
+  const frozenToolOutputRef = useRef<Record<string, string>>({});
+
+  // Narration-fold policy (off|safe|aggressive) — read once per mount so a
+  // verbose engine's live wall is collapsed the same way the committed
+  // block is. Cheap + stable; config rarely changes mid-stream.
+  const narrationPolicy = useMemo(() => {
+    try { return String((loadConfig() as any).narrationFold ?? 'safe'); } catch { return 'safe'; }
+  }, []);
+  const uiMotion = useMemo(() => {
+    try { return normalizeUiMotion((loadConfig() as any).uiMotion); } catch { return 'reduced' as const; }
+  }, []);
+  const textFrameMs = streamFrameIntervalMs(uiMotion, mode === 'chat' ? 'chat' : 'detail');
+  const toolFrameMs = streamFrameIntervalMs(uiMotion, 'tool');
+
+  // ── Throttled rendered state for main engine stream ──
+  const [renderedText, setRenderedText] = useState<{engineId:string;content:string;draft?:boolean} | null>(null);
+  const textRef = useRef<{engineId:string;content:string;draft?:boolean} | null>(null);
+  textRef.current = streamingText;
+
+  useEffect(() => {
+    if (!streamingText) {
+      setRenderedText(null);
+      return;
+    }
+
+    let lastHash = '';
+    let frameTimer: any = null;
+
+    const updateTick = () => {
+      const current = textRef.current;
+      if (!current) {
+        setRenderedText(null);
+        return;
+      }
+
+      // Content-aware diff before state commit
+      const content = current.content;
+      const hash = `${current.engineId}:${content.length}:${content.slice(-20)}`;
+      if (hash !== lastHash) {
+        lastHash = hash;
+
+        // Double buffering: cork stdout writes
+        if (process.stdout.cork) {
+          process.stdout.cork();
+        }
+        setRenderedText(current);
+        if (process.stdout.uncork) {
+          process.nextTick(() => {
+            process.stdout.uncork();
+          });
+        }
+      }
+
+      frameTimer = setTimeout(updateTick, textFrameMs);
+    };
+
+    updateTick();
+
+    return () => {
+      if (frameTimer) {
+        clearTimeout(frameTimer);
+      }
+    };
+  }, [streamingText ? streamingText.engineId : null, textFrameMs]);
+
+  // ── Throttled rendered state for tool streams ──
+  const [renderedToolStreams, setRenderedToolStreams] = useState<Record<string, LiveToolStreamEntry>>({});
+  const toolRef = useRef<Record<string, LiveToolStreamEntry>>({});
+  toolRef.current = liveToolStreams ?? {};
+
+  useEffect(() => {
+    if (!liveToolStreams || Object.keys(liveToolStreams).length === 0) {
+      setRenderedToolStreams({});
+      return;
+    }
+
+    let lastHash = '';
+    let frameTimer: any = null;
+
+    const updateTick = () => {
+      const current = toolRef.current;
+      if (!current || Object.keys(current).length === 0) {
+        setRenderedToolStreams({});
+        return;
+      }
+
+      // Build a structural hash of all tool streams
+      let hash = '';
+      const keys = Object.keys(current).sort();
+      for (const key of keys) {
+        const entry = current[key];
+        const output = String(entry.output ?? '');
+        hash += `|${key}:${entry.engineId}:${entry.tool}:${output.length}:${output.slice(-20)}`;
+      }
+
+      if (hash !== lastHash) {
+        lastHash = hash;
+
+        if (process.stdout.cork) {
+          process.stdout.cork();
+        }
+        setRenderedToolStreams(current);
+        if (process.stdout.uncork) {
+          process.nextTick(() => {
+            process.stdout.uncork();
+          });
+        }
+      }
+
+      frameTimer = setTimeout(updateTick, toolFrameMs);
+    };
+
+    updateTick();
+
+    return () => {
+      if (frameTimer) {
+        clearTimeout(frameTimer);
+      }
+    };
+  }, [liveToolStreams ? Object.keys(liveToolStreams).join(',') : null, toolFrameMs]);
+
+  const toolStreams = Object.values(renderedToolStreams ?? {});
+
+  useEffect(() => {
+    const activeIds = new Set(Object.keys(liveToolStreams ?? {}));
+    for (const id of Object.keys(frozenToolOutputRef.current)) {
+      if (!activeIds.has(id) || !liveToolTailFrozen?.[id]) {
+        delete frozenToolOutputRef.current[id];
+      }
+    }
+  }, [liveToolStreams, liveToolTailFrozen]);
+
+  return (
+    <>
+      {renderedText && (() => {
+        const c = engineColor(renderedText.engineId);
+        // The live preview only ever shows the tail (chat: last line; box: last
+        // few lines), so clean/parse the TAIL — not the whole accumulated stream.
+        // Re-cleaning + parseMarkdownBlocks over the full buffer on every chunk is
+        // O(n) and grows over a long forge/brainstorm run → flicker + progressive
+        // lag, and an ever-taller box that makes the text "jump".
+        const rawStream = renderedText.content;
+        // Slice the tail, then drop the (possibly partial) first line so the window
+        // never starts mid-line — avoids splitting a multi-byte char / ANSI escape.
+        const rawTailLen = 6000;
+        const slicedStream = rawStream.length > rawTailLen ? rawStream.slice(-rawTailLen) : rawStream;
+        const firstNl = rawStream.length > rawTailLen ? slicedStream.indexOf('\n') : -1;
+        const windowed = firstNl >= 0 ? slicedStream.slice(firstNl + 1) : slicedStream;
+        const cleaned = cleanEngineOutput(windowed);
+        const wrapWidth = contentWidth(mode === 'chat' ? 6 : 8);
+        if (mode === 'chat') {
+          const lines = cleaned.split('\n').filter((line: string) => line.trim());
+          const lastLine = lines.length > 0 ? lines[lines.length - 1].trim() : '';
+          const previewLimit = Math.max(24, wrapWidth - renderedText.engineId.length - 6);
+          const preview = lastLine.length > previewLimit ? lastLine.slice(0, previewLimit - 1) + '…' : lastLine;
+          return (
+            <Box marginY={1} paddingLeft={1}>
+              <Text color={c} bold>{icons().dotOn + ' '}{renderedText.engineId}</Text>
+              {renderedText.draft ? <Text dimColor>{' (draft preview)'}</Text> : null}
+              <Text dimColor>{preview ? ` ${preview}` : ' thinking…'}</Text>
+            </Box>
+          );
+        }
+        // Box preview: cap to the last ~24 lines so the pinned live pane keeps a
+        // stable height instead of growing (and repainting) with every chunk.
+        const allLines = cleaned.split('\n');
+        const tailLines = allLines.length > 24 ? allLines.slice(-24).join('\n') : cleaned;
+        // Phase 2: live narration fold. Collapse research play-by-play in the
+        // visible window into a transient '\u25b8 N steps \u00b7 <current step>' line so a
+        // verbose / black-box engine's wall never appears even mid-stream. Runs
+        // on the already-bounded 24-line window (O(24)/frame), respecting the
+        // anti-O(n) slicing above. The committed block re-folds with the
+        // substance-tail-anchored foldNarration at streaming-end.
+        const live = foldNarrationLines(tailLines, narrationPolicy);
+        const foldedTail = live.visible;
+        // Fence-parity for re-opening a sliced code block uses the cleaned
+        // window prefix ONLY -- not a raw+cleaned mix (cleanEngineOutput can
+        // drop a fenced block nested in a tool tag, so a raw ``` count
+        // diverges from the cleaned text) and not the full raw head (O(n)
+        // per frame). Trade-off: a single code block longer than the ~6000
+        // char window won't re-open, which is rare and self-heals once its
+        // closing fence scrolls into view.
+        const cleanedPrefix = allLines.length > 24 ? allLines.slice(0, -24).join('\n') + '\n' : '';
+        const contextualized = contextualizeSlicedMarkdown(cleanedPrefix, foldedTail);
+        const segments = parseMarkdownBlocks(contextualized);
+        const stepLimit = Math.max(16, wrapWidth - 14);
+        const stepHint = live.lastStep.length > stepLimit ? live.lastStep.slice(0, stepLimit - 1) + '\u2026' : live.lastStep;
+        return (
+          <Box flexDirection="column" marginY={1} paddingLeft={2}>
+            <Text color={c} bold>{'\u250c\u2500\u2500 '}{renderedText.engineId}{renderedText.draft ? <Text dimColor>{' (draft preview)'}</Text> : null}</Text>
+            {live.foldedSteps > 0 ? (
+              <Text color={c}>{'\u2502 '}<Text dimColor>{'\u25b8 '}{String(live.foldedSteps)}{' step'}{live.foldedSteps === 1 ? '' : 's'}{stepHint ? ` \u00b7 ${stepHint}` : ''}</Text></Text>
+            ) : null}
+            <Text color={c}>{'\u2502'}</Text>
+            {foldedTail.trim() ? <RenderedSegments segments={segments} borderColor={c} wrapWidth={wrapWidth} /> : null}
+          </Box>
+        );
+      })()}
+      {toolStreams.length > 0 && (
+        <Box flexDirection="column" paddingLeft={mode === 'chat' ? 1 : 2}>
+          {toolStreams.map((entry: any) => {
+            const c = engineColor(entry.engineId);
+            const streamId = String(entry.streamId ?? `${entry.engineId}-${entry.tool}`);
+            const isFrozen = !!liveToolTailFrozen?.[streamId];
+            const currentOutput = String(entry.output ?? '');
+            if (isFrozen && frozenToolOutputRef.current[streamId] == null) {
+              frozenToolOutputRef.current[streamId] = currentOutput;
+            } else if (!isFrozen && frozenToolOutputRef.current[streamId] != null) {
+              delete frozenToolOutputRef.current[streamId];
+            }
+            const displayOutput = isFrozen ? (frozenToolOutputRef.current[streamId] ?? currentOutput) : currentOutput;
+            const nonEmptyLines = displayOutput.split('\n').filter((line: string) => line.trim());
+            const previewOutput = nonEmptyLines.slice(-2).join(' ');
+            const preview = previewOutput.length > 96 ? previewOutput.slice(0, 95) + '…' : previewOutput;
+            const rawTailLen = 6000;
+            const rawTail = displayOutput.length > rawTailLen ? displayOutput.slice(-rawTailLen) : displayOutput;
+            const firstNl = displayOutput.length > rawTailLen ? rawTail.indexOf('\n') : -1;
+            const windowedTail = firstNl >= 0 ? rawTail.slice(firstNl + 1) : rawTail;
+            const cleanedTail = cleanEngineOutput(windowedTail);
+            const tailLines = cleanedTail.split('\n');
+            const boundedTail = tailLines.length > 12 ? tailLines.slice(-12).join('\n') : cleanedTail;
+            // Cleaned-prefix-only fence parity (see main stream branch).
+            const cleanedPrefix = tailLines.length > 12 ? tailLines.slice(0, -12).join('\n') + '\n' : '';
+            const contextualized = contextualizeSlicedMarkdown(cleanedPrefix, boundedTail);
+            const segments = parseMarkdownBlocks(contextualized);
+            const wrapWidth = contentWidth(mode === 'chat' ? 8 : 10);
+            return (
+              <Box key={streamId} flexDirection="column" marginBottom={1}>
+                <Text>
+                  <Text color={c} bold>{icons().dotOn + ' '}{entry.engineId}</Text>
+                  <Text dimColor>{' tool '}</Text>
+                  <Text color={c}>{entry.tool}</Text>
+                  <Text dimColor>{preview ? ` ${preview}` : ' running…'}</Text>
+                </Text>
+                {boundedTail.trim() ? (
+                  <Box flexDirection="column" paddingLeft={2}>
+                    <RenderedSegments segments={segments} borderColor={c} wrapWidth={wrapWidth} />
+                  </Box>
+                ) : null}
+                <Text dimColor>
+                  {'  '}
+                  {isFrozen ? (
+                    <Text color="#111827" backgroundColor="#93c5fd">{' '}{icons().play}{' Resume tail '}</Text>
+                  ) : (
+                    <Text color="#111827" backgroundColor="#fbbf24">{' ❚❚ Freeze tail '}</Text>
+                  )}
+                  <Text dimColor>{' Shift+T'}</Text>
+                </Text>
+              </Box>
+            );
+          })}
+        </Box>
+      )}
+      {liveProgress && <EngineProgressView engines={liveProgress} mode={mode} />}
+    </>
+  );
+});
+export { StreamingView };
+
+const LiveStreamSection = React.memo(function LiveStreamSection({ activeStream, mode, liveProgress, liveToolStreams, liveToolTailFrozen, agentProgress }: { activeStream:{engineId:string,content:string,draft?:boolean} | null; mode:string; liveProgress:EngineProgress[] | null; liveToolStreams?:Record<string,LiveToolStreamEntry>; liveToolTailFrozen?:Record<string,boolean>; agentProgress:Record<string,AgentProgressSnapshot> }) {
+  return (
+    <>
+      <StreamingView streamingText={activeStream} mode={mode} liveProgress={liveProgress} liveToolStreams={liveToolStreams} liveToolTailFrozen={liveToolTailFrozen} />
+      {Object.keys(agentProgress).length > 0 && (
+        <Box flexDirection="column">
+          {Object.values(agentProgress).map((snap: AgentProgressSnapshot) => (
+            <AgentProgressView
+              key={snap.engineId}
+              engineId={snap.engineId}
+              turnIndex={snap.turnIndex}
+              phase={snap.phase}
+              userPrompt={snap.userPrompt}
+              toolCalls={snap.toolCalls}
+              lastTool={snap.lastTool}
+              lastToolStatus={snap.lastToolStatus}
+              tokensUsed={snap.tokensUsed}
+              elapsedMs={snap.elapsedMs}
+              turnsRemaining={snap.turnsRemaining}
+              maxTurns={snap.maxTurns}
+              tokensRemaining={snap.tokensRemaining}
+              maxTokens={snap.maxTokens}
+              error={snap.error}
+            />
+          ))}
+        </Box>
+      )}
+    </>
+  );
+});
+export { LiveStreamSection };
+
+const BtwSidePanel = React.memo(function BtwSidePanel({ btwPanel }: { btwPanel:any }) {
+  return (
+    <Box flexDirection="column" borderStyle="round" borderColor="#22d3ee" paddingX={1} marginY={1}>
+      <Box justifyContent="space-between">
+        <Text bold color="#22d3ee">{`BTW · side-chat${btwPanel.engineId ? ' · ' + btwPanel.engineId : ''}`}</Text>
+        <Text dimColor>{btwPanel.status === 'running' ? 'thinking…' : 'type to continue · Esc to leave'}</Text>
+      </Box>
+      {(() => {
+        const msgs = Array.isArray(btwPanel.messages) ? btwPanel.messages : [];
+        const shown = msgs.slice(-2);
+        const baseIdx = msgs.length - shown.length;
+        const hidden = baseIdx;
+        return (<>
+          {hidden > 0 && <Text dimColor>{`… ${hidden} earlier turn${hidden === 1 ? '' : 's'}`}</Text>}
+          {shown.map((m: any, i: number) => {
+            const isUser = m.role === 'user';
+            const raw = String(m.text ?? '').split('\n').filter((l: string) => l.trim()).slice(0, isUser ? 2 : 8);
+            const displayLines = raw.length > 0 ? raw : [''];
+            return (
+              <Box key={baseIdx + i} flexDirection="column">
+                {displayLines.map((line: string, j: number) => (
+                  <Text key={j} color={isUser ? '#fbbf24' : undefined} dimColor={isUser}>{j === 0 ? (isUser ? '› ' : `${btwPanel.engineId ?? 'cesar'}: `) : '  '}{line}</Text>
+                ))}
+              </Box>
+            );
+          })}
+        </>);
+      })()}
+      {btwPanel.status === 'running' && (
+        <Text color="#fbbf24">{'Answering in a side channel; main work continues.'}</Text>
+      )}
+      {btwPanel.error && btwPanel.status !== 'running' && (
+        <Text color="#ef4444">{btwPanel.error}</Text>
+      )}
+    </Box>
+  );
+});
+export { BtwSidePanel };
+
+const RailTakeoverPanel = React.memo(function RailTakeoverPanel({ showFileRail, showExecutionRail, fileRailFiles, sideRailMaxRows, termWidth, fileRailOpen, fileRailSelectedIdx, fileRailExpandedPath, liveSpinner, liveProgress, activePlan, latestToolEvent, recentFallbacks, executionRailStats, toolOutputExpanded, chatStartTime, isActive, executionRailOpen }: { showFileRail:boolean; showExecutionRail:boolean; fileRailFiles:any[]; sideRailMaxRows:number; termWidth:number; fileRailOpen:boolean; fileRailSelectedIdx:number; fileRailExpandedPath:string|null; liveSpinner:any; liveProgress:EngineProgress[] | null; activePlan:any; latestToolEvent:any; recentFallbacks:any[]; executionRailStats:any; toolOutputExpanded:boolean; chatStartTime:number; isActive:boolean; executionRailOpen:boolean }) {
+  return (
+    <>
+      {showFileRail && (
+        <FileRail files={fileRailFiles} maxRows={sideRailMaxRows} width={Math.max(20, termWidth - 2)} focused={fileRailOpen} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} autoExpandSelected={fileRailOpen} />
+      )}
+      {showExecutionRail && (
+        <ExecutionRailPanel
+          spinner={liveSpinner}
+          engines={liveProgress}
+          activePlanState={activePlan?.state ?? null}
+          activePlan={activePlan}
+          lastTool={latestToolEvent}
+          recentFallbacks={recentFallbacks}
+          stats={executionRailStats}
+          toolOutputExpanded={toolOutputExpanded}
+          startTime={chatStartTime}
+          isActive={isActive}
+          width={Math.max(20, termWidth - 2)}
+          maxRows={sideRailMaxRows}
+          focused={executionRailOpen} />
+      )}
+      <Box paddingX={1}><Text dimColor>{showFileRail ? '↑↓ navigate · Tab expand · Esc to return to chat' : 'Esc to return to chat'}</Text></Box>
+    </>
+  );
+});
+export { RailTakeoverPanel };
+
+const UpdateBanner = React.memo(function UpdateBanner({ updateInfo, updateChecking }: { updateInfo:any; updateChecking:boolean }) {
+  return (
+    <Box flexDirection="row" borderStyle="round" borderColor="#fbbf24" paddingX={1} marginBottom={1}>
+      <Box flexDirection="column" flexGrow={1}>
+        <Box>
+          <Text color="#fbbf24" bold>{'⤴ '}</Text>
+          <Text bold>Agon v{updateInfo.latestVersion}</Text>
+          <Text>{' is available (you\'re on v'}{updateInfo.currentVersion || VERSION}{')'}</Text>
+        </Box>
+        <Box>
+          <Text dimColor>{'Press '}</Text>
+          <Text color="#fbbf24" bold>{'u'}</Text>
+          <Text dimColor>{' to update · '}</Text>
+          <Text dimColor>{'l'}</Text>
+          <Text dimColor>{' to view changelog · '}</Text>
+          <Text dimColor>{'x'}</Text>
+          <Text dimColor>{' to dismiss for v'}{updateInfo.latestVersion}</Text>
+        </Box>
+      </Box>
+      {updateChecking && <Text dimColor>{' · checking'}</Text>}
+    </Box>
+  );
+});
+export { UpdateBanner };
+
+const BottomChromeSection = React.memo(function BottomChromeSection({ updateInfo, updateChecking, questionState, pendingImages, imageVisionNote, inputQueue, steeringCount, liveSpinner, mode, statusDashboardOpen, telemetryVitals, recentFallbacks, termWidth, termHeight, statusDashboardFilter, replState, planModeQueued, autoModeQueued, permissionMode, activePlan, slashPickerOpen, atPickerOpen, atPickerFiles, atPickerPrefix, atPickerQuery, onAtSelect, onAtCancel, inputValue, handleInputChange, handlePasteInput, handleSubmit, allSlashCommands, availableEngines, onSlashSelect, onSlashCancel, questionAnswer, selectedChoiceIndex, questionOtherActive, onQuestionAnswerChange, onQuestionAnswerSubmit, updateBannerActive, onCtrlShortcut, cesarId, cesarConfidence, cesarContext, liveProgress, runningJobs, chatStartTime, streamSnippet, statusStats, statusCwd, statusBranch, explorationMode, toolOutputExpanded, fullscreenEnabled, uiMotion, interactionActive }: { updateInfo:any; updateChecking:boolean; questionState:any; pendingImages:any[]; imageVisionNote?:string|null; inputQueue:string[]; steeringCount:number; liveSpinner:any; mode:'chat'|'campfire'|'brainstorm'|'tribunal'; statusDashboardOpen:boolean; telemetryVitals:Map<string, any>; recentFallbacks:any[]; termWidth:number; termHeight:number; statusDashboardFilter:any; replState:string; planModeQueued:boolean; autoModeQueued:boolean; permissionMode?:string; activePlan:any; slashPickerOpen:boolean; atPickerOpen:boolean; atPickerFiles:string[]; atPickerPrefix:string; atPickerQuery:string; onAtSelect:(path:string) => void; onAtCancel:(typed:string) => void; inputValue:string; handleInputChange:(value:string) => void; handlePasteInput:(raw:string) => string; handleSubmit:(value:string) => void; allSlashCommands:any[]; availableEngines:string[]; onSlashSelect:(cmd:string) => void; onSlashCancel:() => void; questionAnswer:string; selectedChoiceIndex:number; questionOtherActive:boolean; onQuestionAnswerChange:(value:string) => void; onQuestionAnswerSubmit:(value:string) => void; updateBannerActive:boolean; onCtrlShortcut:(shortcut:string) => void; cesarId:string; cesarConfidence:any; cesarContext:any; liveProgress:EngineProgress[] | null; runningJobs:Job[]; chatStartTime:number; streamSnippet:any; statusStats:any; statusCwd:string; statusBranch:string; explorationMode:any; toolOutputExpanded:boolean; fullscreenEnabled:boolean; uiMotion?:'full'|'reduced'|'off'; interactionActive?:boolean }) {
+  const isActive = replState !== 'idle' || runningJobs.length > 0;
+  return (
+    <Box flexDirection="column" paddingX={1} marginTop={1}>
+      {/* ── Update-available banner ──
+          Sits between the picker row and the composer. Renders ONLY when
+          updateInfo is populated; otherwise nothing is emitted (zero-cost
+          when the user is up-to-date). The banner is keyboard-driven via
+          the global 'u' shortcut (handleKeyboardInput) — see KEY_MAP
+          below for the full surface (u / Enter / x / Esc). */}
+      {updateInfo && updateInfo.latestVersion && !questionState && (
+        <UpdateBanner updateInfo={updateInfo} updateChecking={updateChecking} />
+      )}
+      {pendingImages.length > 0 && (<Box><Text color="#22d3ee">{icons().image + ' '}</Text>{pendingImages.map((img: any, i: number) => (<Text key={i} dimColor>{'[Image #' + (i + 1) + '] ' + img.filename}{i < pendingImages.length - 1 ? '  ' : ''}</Text>))}{imageVisionNote ? (() => {
+        // Keep the chip row a single line: the layout estimator budgets one
+        // row for pending images, so clip the note to the remaining width
+        // instead of letting it wrap into unbudgeted rows. Each chip is now
+        // "[Image #N] filename" + a 2-space sep, so ~13 chars of overhead per image.
+        const chipLen = 2 + pendingImages.reduce((n: number, img: any) => n + String(img.filename ?? '').length + 13, 0);
+        const avail = Math.max(0, (termWidth ?? 80) - chipLen - 6);
+        if (avail < 12) return null;
+        const text = '  ⚠ ' + imageVisionNote;
+        return <Text color="#f97316">{text.length > avail ? text.slice(0, avail - 1) + '…' : text}</Text>;
+      })() : null}</Box>)}
+      {inputQueue.length > 0 && (<Box><Text dimColor>{icons().queue + ' '}{inputQueue.length} queued: </Text><Text dimColor italic>{inputQueue[0].length > 40 ? inputQueue[0].slice(0, 40) + '…' : inputQueue[0]}</Text></Box>)}
+      {/* Mid-turn steering hint: a message was typed while Cesar works and
+          will be injected at the next tool boundary. One dim line; shows the
+          count when more than one is queued. Only while a turn is running. */}
+      {replState !== 'idle' && steeringCount > 0 && (<Box><Text dimColor>{'▎'}{'Queued'}{steeringCount > 1 ? ` (${steeringCount})` : ''}{' — delivers after the current tool call · ↑ edit/remove · esc to interrupt'}</Text></Box>)}
+      {/* One-line plan glance pinned directly above the composer — the
+          chip relocated out of the top ChromeBar so plan state sits at the
+          user's point of focus (the input). Renders nothing when no plan. */}
+      <PlanChip activePlan={activePlan} activePlanState={activePlan?.state ?? null} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} />
+      {statusDashboardOpen ? (
+        <StatusDashboard telemetryVitals={telemetryVitals} recentFallbacks={recentFallbacks} width={termWidth} height={termHeight} filter={statusDashboardFilter} />
+      ) : (
+        <ComposerView
+          mode={mode}
+          replState={replState}
+          planModeQueued={planModeQueued}
+          autoModeQueued={autoModeQueued}
+          activePlanState={activePlan?.state ?? null}
+          slashPickerOpen={slashPickerOpen}
+          atPickerOpen={atPickerOpen}
+          atPickerFiles={atPickerFiles}
+          atPickerPrefix={atPickerPrefix}
+          atPickerQuery={atPickerQuery}
+          onAtSelect={onAtSelect}
+          onAtCancel={onAtCancel}
+          inputValue={inputValue}
+          handleInputChange={handleInputChange}
+          handlePasteInput={handlePasteInput}
+          handleSubmit={handleSubmit}
+          allSlashCommands={allSlashCommands}
+          availableEngines={availableEngines}
+          onSlashSelect={onSlashSelect}
+          onSlashCancel={onSlashCancel}
+          questionState={questionState}
+          questionAnswer={questionAnswer}
+          selectedChoiceIndex={selectedChoiceIndex}
+          questionOtherActive={questionOtherActive}
+          onQuestionAnswerChange={onQuestionAnswerChange}
+          onQuestionAnswerSubmit={onQuestionAnswerSubmit}
+          updateBannerActive={updateBannerActive}
+          termWidth={termWidth}
+          termHeight={termHeight}
+          onCtrlShortcut={onCtrlShortcut} />
+      )}
+      <CesarStatusStrip cesarId={cesarId} confidence={cesarConfidence} context={cesarContext} spinner={liveSpinner} engines={liveProgress} jobs={runningJobs} startTime={chatStartTime} streamSnippet={streamSnippet} isActive={isActive} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} activePlan={activePlan} scoreboard={null} rationale={null} uiMotion={uiMotion} interactionActive={interactionActive} />
+      {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} meteredCostUsd={statusStats.meteredCostUsd} hasPlanApiUsage={statusStats.hasPlanApiUsage} hasCliUsage={statusStats.hasCliUsage} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} autoModeQueued={autoModeQueued} permissionMode={permissionMode} isActive={replState !== 'idle'} fullscreenEnabled={fullscreenEnabled} telemetryVitals={telemetryVitals} context={cesarContext} termWidth={termWidth} />}
+    </Box>
+  );
+});
+export { BottomChromeSection };
+
+export function renderSelectedText(text: string, start: number, end: number, keyPrefix: string): any {
+  const safeText = String(text ?? '');
+  const startIndex = Math.max(0, Math.min(safeText.length, Number.isFinite(start) ? start : 0));
+  const endIndex = Math.max(startIndex, Math.min(safeText.length, Number.isFinite(end) ? end : safeText.length));
+  const before = safeText.slice(0, startIndex);
+  const middle = safeText.slice(startIndex, endIndex);
+  const after = safeText.slice(endIndex);
+  return (
+    <Text>
+      {before ? <Text key={`${keyPrefix}-before`}>{before}</Text> : null}
+      {middle ? <Text key={`${keyPrefix}-middle`} backgroundColor="#2563eb" color="white">{middle}</Text> : null}
+      {after ? <Text key={`${keyPrefix}-after`}>{after}</Text> : null}
+    </Text>
+  );
+}
+
+/**
+ * Bound live repaint cadence by motion policy. Output still advances in off mode, but cosmetic frame pressure drops to four updates per second.
+ */
+export function streamFrameIntervalMs(uiMotion: unknown, kind: 'chat'|'detail'|'tool' = 'chat'): number {
+  const motion = normalizeUiMotion(uiMotion);
+  if (motion === 'off') return 250;
+  if (motion === 'reduced') return kind === 'detail' ? 66 : kind === 'tool' ? 75 : 100;
+  return kind === 'detail' ? 42 : kind === 'tool' ? 50 : 60;
+}
+
+/**
+ * Compact sticky plan chip for the top chrome. Keeps plan progress out of the noisy bottom status strip.
+ */
+export function buildPlanChromeSummary(activePlan: any, activePlanState?: string|null, planModeQueued?: boolean, _autoModeQueued?: boolean): any {
+  const gauge = buildPlanPhaseGauge(activePlan, 8);
+  const displayState = (gauge.visible && gauge.phase === 'complete') ? 'done' : String(activePlanState ?? '');
+  const visible = !(!(planModeQueued || gauge.visible || ['planning', 'awaiting_approval', 'running', 'paused', 'done'].includes(displayState)));
+  if (!visible) {
+    return { visible: false };
+  }
+  let label = '';
+  if (planModeQueued) {
+    label = 'ready';
+  } else if (displayState === 'planning') {
+    label = 'thinking';
+  } else if (displayState === 'awaiting_approval') {
+    label = 'approval';
+  } else if (displayState === 'running') {
+    label = 'running';
+  } else if (displayState === 'paused') {
+    label = 'paused';
+  } else if (displayState === 'done') {
+    label = 'done';
+  } else {
+    label = displayState || 'plan';
+  }
+  let action = '';
+  if (displayState === 'awaiting_approval') {
+    action = 'go/yes';
+  } else if (displayState === 'paused') {
+    action = '/plan resume';
+  } else if (displayState === 'running') {
+    action = 'Ctrl+G rail';
+  } else if (planModeQueued) {
+    action = 'type task';
+  }
+  const failed = Number(gauge.failed ?? 0);
+  return { visible: true, label: label, color: gauge.visible ? gauge.color : '#c084fc', shortId: gauge.shortId ?? '', bar: gauge.bar ?? '', pct: Number(gauge.pct ?? 0), stepLabel: gauge.label ?? '', current: gauge.current ?? '', failed: failed, action: action };
+}
+
+export function contextualizeSlicedMarkdown(prefix: string, slicedText: string): string {
+  const parts = prefix.split('```');
+  if (parts.length % 2 === 0) {
+    const lastPart = parts[parts.length - 1];
+    const firstLine = lastPart.split('\n')[0].trim();
+    const lang = /^[a-zA-Z0-9_\-]+$/.test(firstLine) ? firstLine : '';
+    return `\`\`\`${lang}\n${slicedText}`;
+  }
+  return slicedText;
+}

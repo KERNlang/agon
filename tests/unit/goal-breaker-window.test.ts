@@ -1,7 +1,7 @@
 // ── agon goal — sliding-window breaker oracle ─────────────────────────────
 // The contract for the long-run global breaker. Authored as the FROZEN ORACLE
 // for the forge build: forge engines implement globalBreaker's window branch
-// and pushRecentOutcome in policy.kern to satisfy these; the tests do not move.
+// and pushRecentOutcome in goal/policy.ts to satisfy these; the tests do not move.
 //
 // The bug being fixed: the old breaker aborted the whole run on 5 CONSECUTIVE
 // parks (parkedStreak), so a queue ordered [hard,hard,hard,hard,hard,easy,...]

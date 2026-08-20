@@ -557,7 +557,7 @@ describe('buildGuardTelemetryView', () => {
 
 describe('parseHeartbeatPhase', () => {
   it('PRESERVES the provider-wait subphase verb (no collapse to "thinking")', () => {
-    // The actual spinner strings the brain emits (cesar/brain.kern) must each map
+    // The actual spinner strings the brain emits (cesar/brain.ts) must each map
     // to their real verb so the heartbeat label never contradicts the activity line.
     expect(parseHeartbeatPhase('Cesar thinking…')).toEqual({ kind: 'waiting', names: [], wait: 'thinking' });
     expect(parseHeartbeatPhase('Cesar responding…')).toEqual({ kind: 'waiting', names: [], wait: 'responding' });
@@ -642,7 +642,7 @@ describe('buildHeartbeatSig', () => {
     expect(buildHeartbeatSig(phase, 'claude:building', 'running:1', 'foo')).toBe(base);
   });
 
-  // Model the strip's exact anchor bookkeeping (status.kern): on a sig change OR
+  // Model the strip's exact anchor bookkeeping (surfaces/status.tsx): on a sig change OR
   // the uninitialized sentinel (at === 0), anchor := now; otherwise the anchor is
   // preserved. With the OLD raw-message fingerprint the sig changed every counter tick,
   // so `at` was reset to `now` each tick and elapsed never reached the gate. With
@@ -777,13 +777,13 @@ describe('buildHeartbeatSuffix', () => {
 // codex FIX 2: a JOBS-ONLY active strip (background tribunal/forge job running, no
 // Cesar wait) has NO spinner and NO engine activity, so parseHeartbeatPhase(undefined)
 // yields waiting/'thinking' and the strip used to append a misleading '· thinking… Ns'
-// next to the job label. The call site (status.kern) now gates the heartbeat on a
+// next to the job label. The call site (surfaces/status.tsx) now gates the heartbeat on a
 // genuine wait — turnActive := isActive && (spinner present OR engines active) — so a
 // jobs-only strip passes turnActive=false and buildHeartbeatSuffix suppresses the
 // suffix; every genuine wait (spinner set, OR multi-engine forge/tribunal progress)
 // is unchanged. This models that exact call-site gate.
 describe('heartbeat call-site gate — jobs-only run suppresses the suffix (codex FIX 2)', () => {
-  // Mirror status.kern's _hbGenuineWait + the suffix call.
+  // Mirror surfaces/status.tsx's _hbGenuineWait + the suffix call.
   const genuineWait = (isActive: boolean, spinner: unknown, engines: unknown[] | null) =>
     isActive && (!!spinner || (Array.isArray(engines) && engines.length > 0));
   const suffixFor = (

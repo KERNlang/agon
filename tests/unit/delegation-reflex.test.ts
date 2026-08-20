@@ -67,7 +67,7 @@ describe('buildDelegationAdvisory', () => {
     const advisory = buildDelegationAdvisory(assessDelegationShape(listTask));
     expect(advisory).toContain('[DELEGATION SHAPE]');
     expect(advisory).toContain('3 explicit list items');
-    // 'team-agent' is the action routing.kern/parseSuggestion actually
+    // 'team-agent' is the action cesar/routing.ts parseSuggestion actually
     // recognize (team- prefix + agent) — NOT 'agent-team' (review: kimi).
     expect(advisory).toContain('SUGGEST:team-agent');
     expect(advisory).toContain('ignore this note');

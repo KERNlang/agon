@@ -118,7 +118,7 @@ describe('forge pre-flight health check', () => {
           if (engine.id === 'dead') {
             // A hung/timed-out engine surfaces as timedOut:true from the bridge
             // (spawnWithTimeout). Return it directly — health-check keys off the
-            // flag (health-check.kern:108), so this is deterministic and doesn't
+            // flag (health-check.ts:108), so this is deterministic and doesn't
             // depend on a real probe-timeout firing under CI load.
             return { exitCode: 0, stdout: '', stderr: '', timedOut: true };
           }

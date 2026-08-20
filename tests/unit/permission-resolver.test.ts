@@ -396,7 +396,7 @@ describe('authorizeResolvedTaskAction — the resolver ask is authoritative', ()
 });
 
 describe('resolvePermissionDecision — mode × action-class decision table', () => {
-  // The lease's autoMode mirrors how brain.kern builds it: true exactly when
+  // The lease's autoMode mirrors how cesar/brain.ts builds it: true exactly when
   // the effective permission mode is auto (or a one-shot /auto is queued).
   const decide = (mode: 'ask' | 'auto-edit' | 'auto', tool: string, target: string, prompt = 'do the work', extra: Record<string, unknown> = {}) =>
     resolvePermissionDecision(request({

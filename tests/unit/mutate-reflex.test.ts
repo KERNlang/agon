@@ -1,4 +1,4 @@
-// Pins the Cesar mutate reflex (packages/cli/src/kern/cesar/mutate-reflex.kern):
+// Pins the Cesar mutate reflex (packages/cli/src/generated/cesar/mutate-reflex.ts):
 // which turns earn the one-line "/mutate?" nudge, and which lens the changed
 // paths earn. Veto-first, like the delegation reflex — a false positive costs
 // the user attention on every turn, so the rule must stay quiet by default.

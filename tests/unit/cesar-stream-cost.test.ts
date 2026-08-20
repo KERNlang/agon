@@ -1,4 +1,4 @@
-// ── Streaming cost guards (brain.kern hot loop) ────────────────────────
+// ── Streaming cost guards (cesar/brain.ts hot loop) ────────────────────
 //
 // `response` grows by concatenation, so any regex/scan over the WHOLE
 // accumulated answer on every streamed chunk is O(n) per chunk = quadratic
@@ -40,7 +40,7 @@ const stripComments = (src: string) => src
   .join('\n');
 
 // Feed `text` through the gate in `size`-char chunks and report, for each
-// chunk, whether the gate allowed the full scan. Mirrors brain.kern's loop.
+// chunk, whether the gate allowed the full scan. Mirrors cesar/brain.ts's loop.
 function gateRun(text: string, size: number): { scanned: boolean; buffer: string }[] {
   const steps: { scanned: boolean; buffer: string }[] = [];
   let tail = '';
@@ -162,7 +162,7 @@ describe('classifyPreambleHead (B2: latch the [INTENT] decision)', () => {
   });
 });
 
-describe('brain.kern wires both gates into the stream loop', () => {
+describe('cesar/brain.ts wires both gates into the stream loop', () => {
   const CODE = stripComments(readFileSync(resolve(here, '../../packages/cli/src/generated/cesar/brain.ts'), 'utf8'));
 
   it('gates the per-chunk XML tool scan on the arriving chunk', () => {

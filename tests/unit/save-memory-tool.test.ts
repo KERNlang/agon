@@ -1,6 +1,5 @@
 // Behavioral tests for the SaveMemory tool (Cesar→CC parity, Phase C).
-// The .kern test pins KERN validity + structure; this pins the runtime
-// behavior the in-prompt interpreter can't execute: append-with-dedup, the
+// This pins the runtime behavior the in-prompt interpreter can't execute: append-with-dedup, the
 // per-section cap, the dated prefix, the 'ask' confirm gate, the [PROJECT
 // MEMORY] prompt block, and that a `fitness:` line in the same file survives.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';

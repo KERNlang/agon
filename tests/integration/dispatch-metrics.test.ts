@@ -140,7 +140,7 @@ describe('Token Tracker', () => {
 // ── 3. Timeout Isolation (Promise.allSettled) ─────────────────────
 describe('Timeout Isolation', () => {
   it('Promise.allSettled handles mixed success/failure', async () => {
-    // Simulate the pattern used in stages.kern
+    // Simulate the pattern used in stages.ts
     const enginePromises = [
       Promise.resolve({ engineId: 'claude', pass: true, score: 90 }),
       Promise.reject(new Error('Engine timed out')),

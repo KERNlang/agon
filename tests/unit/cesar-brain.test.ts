@@ -674,7 +674,7 @@ describe('Cesar Brain', () => {
       expect(ESCALATION_SUGGESTION_THRESHOLD).toBe(85);
     });
 
-    // The brain.kern gate is `strictConf < ESCALATION_SUGGESTION_THRESHOLD`.
+    // The brain.ts gate is `strictConf < ESCALATION_SUGGESTION_THRESHOLD`.
     // 84 → line, 85/90 → none (fail toward silence at/above threshold).
     it('84 is below threshold (line); 85 and 90 are not (no line)', () => {
       expect(extractStrictConfidence('CONFIDENCE: 84%')! < ESCALATION_SUGGESTION_THRESHOLD).toBe(true);

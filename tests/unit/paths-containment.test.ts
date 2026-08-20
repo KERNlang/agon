@@ -1,4 +1,4 @@
-// Pins the ONE path-containment primitive (packages/core/src/kern/blocks/paths.kern).
+// Pins the ONE path-containment primitive (packages/core/src/generated/blocks/paths.ts).
 // Every surface that writes a file whose path came from somewhere untrusted goes
 // through it: the mutant runner, `agon mutate`'s target resolution, and goal's
 // worktree writes.

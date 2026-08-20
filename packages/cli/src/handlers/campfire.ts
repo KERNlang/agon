@@ -1,3 +1,2 @@
-// ── Campfire handler — KERN-sourced ──────────────────────────────────
-// Source of truth: kern/handlers-campfire.kern → generated/handlers-campfire.ts
+// Facade over ../generated/handlers/campfire.js — edit the source there.
 export { handleCampfire } from '../generated/handlers/campfire.js';

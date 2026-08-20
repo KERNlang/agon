@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated advisory apply-lock / HEAD-CAS ───────
-// Source of truth: src/kern/blocks/worktree-lock.kern
+// Facade over ./generated/blocks/worktree-lock.js — edit the source there.
 export * from './generated/blocks/worktree-lock.js';

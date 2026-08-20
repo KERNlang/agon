@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated nero ──────────────────────────────
-// Source of truth: src/kern/nero.kern
+// Facade over ./generated/nero.js — edit the source there.
 export * from './generated/nero.js';

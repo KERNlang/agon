@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-// Source of truth: packages/forge/src/kern/team-forge.kern
+// Source of truth: packages/forge/src/generated/team-forge.ts
 import { decideTeamWinner } from '../../packages/forge/src/generated/team-forge.js';
 
 type Result = Parameters<typeof decideTeamWinner>[0];

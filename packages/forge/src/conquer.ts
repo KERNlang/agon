@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated conquer ───────────────────────────
-// Source of truth: src/kern/conquer.kern
+// Facade over ./generated/conquer.js — edit the source there.
 export * from './generated/conquer.js';

@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated sidechain logger ──────────────────
-// Source of truth: src/kern/sidechain-logger.kern
+// Facade over ./generated/blocks/sidechain-logger.js — edit the source there.
 export * from './generated/blocks/sidechain-logger.js';

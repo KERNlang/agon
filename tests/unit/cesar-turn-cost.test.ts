@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-// Source of truth: packages/cli/src/kern/cesar/brain-helpers.kern +
-// packages/core/src/kern/signals/token-tracker.kern
+// Source of truth: packages/cli/src/generated/cesar/brain-helpers.ts +
+// packages/core/src/generated/signals/token-tracker.ts
 import { recordCesarTurn } from '../../packages/cli/src/generated/cesar/brain-helpers.js';
 import { estimateCost, estimateCostCacheAware } from '../../packages/core/src/generated/signals/token-tracker.js';
 

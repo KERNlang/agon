@@ -22,7 +22,7 @@ vi.mock('../../packages/cli/src/code-buffer.js', () => ({
   codeBlockBuffer: { recordFromSegments: () => {}, clear: () => {} },
 }));
 
-// Source of truth: packages/cli/src/kern/signals/output.kern
+// Source of truth: packages/cli/src/generated/signals/output.ts
 import { handleOutputEvent } from '../../packages/cli/src/generated/signals/output.js';
 import type { OutputActions, OutputState } from '../../packages/cli/src/generated/signals/output.js';
 

@@ -1,3 +1,2 @@
-// ── Commit handler — KERN-sourced ────────────────────────────────────
-// Source of truth: kern/handlers-commit.kern → generated/handlers-commit.ts
+// Facade over ../generated/handlers/commit.js — edit the source there.
 export { handleCommit } from '../generated/handlers/commit.js';

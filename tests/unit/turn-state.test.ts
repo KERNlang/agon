@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-// Source of truth: packages/cli/src/kern/cesar/turn-reducer.kern (+ the CesarTurn machine in turn-state.kern)
+// Source of truth: packages/cli/src/generated/cesar/turn-reducer.ts (+ the CesarTurn machine in cesar/turn-state.ts)
 import {
   reduceTurn,
   initialTurnSnapshot,

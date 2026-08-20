@@ -49,10 +49,8 @@
     "access": "public"
   },
   "scripts": {
-    "prebuild": "npm run kern:compile",
     "build": "tsup",
-    "typecheck": "tsc --noEmit",
-    "kern:compile": "node ../../scripts/run-kern-compile.mjs src/kern/ src/generated/ --target=auto --recursive"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@kernlang/agon-engines": "^0.1.2",
@@ -60,7 +58,6 @@
     "@ai-sdk/anthropic": "^3.0.67",
     "@ai-sdk/openai-compatible": "^2.0.40",
     "@kernlang/protocol": "~4.5.0",
-    "@kernlang/terminal": "~4.5.0",
     "ai": "^6.0.149",
     "citty": "^0.1.6",
     "ink": "^7.0.1",

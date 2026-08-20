@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-// Source of truth: packages/cli/src/kern/cesar/brain-helpers.kern
+// Source of truth: packages/cli/src/generated/cesar/brain-helpers.ts
 import { forwardContinuationStatus } from '../../packages/cli/src/generated/cesar/brain-helpers.js';
 
 describe('forwardContinuationStatus — continuation sends are not a black box', () => {

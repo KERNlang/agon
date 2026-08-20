@@ -105,7 +105,7 @@ describeMaybe('agond survival — the daemon outlives its launcher', () => {
       process.execPath,
       [CLI_ENTRY, 'job', 'submit', 'brainstorm', 'cold-start job', '--wait', '--json'],
       {
-        env: { ...process.env, AGON_HOME: home, AGON_DAEMON_ECHO: '1', AGON_NO_STACK_TRACE_MAPPER: '1' },
+        env: { ...process.env, AGON_HOME: home, AGON_DAEMON_ECHO: '1' },
         stdio: ['ignore', 'pipe', 'pipe'],
       },
     );
@@ -136,7 +136,7 @@ describeMaybe('agond survival — the daemon outlives its launcher', () => {
     //    turn echo into the ledger instead of dispatching a real engine — a
     //    DOCUMENTED test seam so the survival proof never depends on an engine.
     const launcher = spawn(process.execPath, [CLI_ENTRY, 'daemon', 'start'], {
-      env: { ...process.env, AGON_HOME: home, AGON_DAEMON_ECHO: '1', AGON_NO_STACK_TRACE_MAPPER: '1' },
+      env: { ...process.env, AGON_HOME: home, AGON_DAEMON_ECHO: '1' },
       stdio: 'ignore',
     });
 
@@ -235,7 +235,7 @@ describeMaybe('agond survival — the daemon outlives its launcher', () => {
   }, 60_000);
 
   it('daemon stop stays alive for its bounded poll and exits cleanly', async () => {
-    const env = { ...process.env, AGON_HOME: home, AGON_DAEMON_ECHO: '1', AGON_NO_STACK_TRACE_MAPPER: '1' };
+    const env = { ...process.env, AGON_HOME: home, AGON_DAEMON_ECHO: '1' };
     const launcher = spawn(process.execPath, [CLI_ENTRY, 'daemon', 'start'], { env, stdio: 'ignore' });
     expect(await waitFor(() => existsSync(pidPath) && existsSync(sockPath), 10_000)).toBe(true);
     expect(await waitFor(() => launcher.exitCode !== null || launcher.killed, 10_000)).toBe(true);

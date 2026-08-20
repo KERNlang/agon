@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated synthesis ─────────────────────────
-// Source of truth: src/kern/synthesis.kern
+// Facade over ./generated/synthesis.js — edit the source there.
 export * from './generated/synthesis.js';

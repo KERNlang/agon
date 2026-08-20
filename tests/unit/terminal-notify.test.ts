@@ -1,6 +1,4 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-// Source of truth is packages/cli/src/kern/lib/terminal-notify.kern;
-// the generated/*.js below is regenerated from it (npm run kern:compile).
 import { bell, setWindowTitle } from '../../packages/cli/src/generated/lib/terminal-notify.js';
 
 const BEL = String.fromCharCode(7); // 0x07 BEL

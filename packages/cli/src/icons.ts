@@ -1,4 +1,4 @@
-// ── Re-export from KERN-generated icons ────────────────────────────
+// Facade over ./generated/signals/icons.js — edit the source there.
 export {
   type IconSet,
   ROMAN_ICONS, CLASSIC_ICONS,

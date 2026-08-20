@@ -1,2 +1,2 @@
-// Re-export from KERN-generated research command
+// Facade over ../generated/commands/research.js — edit the source there.
 export { researchCommand } from '../generated/commands/research.js';

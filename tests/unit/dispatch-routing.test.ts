@@ -832,7 +832,7 @@ describe('Dispatch routing helpers', () => {
 });
 
 // The pinned plan-approval prompt advertises "/cancel reject", and its "3. Reject"
-// row submits literally '/cancel' (app-keyboard.kern planControl). Both therefore
+// row submits literally '/cancel' (app-keyboard.ts planControl). Both therefore
 // arrive here as intent {type:'cancel'} — the REAL runtime path, no injected
 // plan-cancelled event. Before cancelPendingCesarPlan existed, this route went
 // straight to the legacy plan-runner handleCancel (which only knows

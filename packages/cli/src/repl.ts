@@ -1,3 +1,2 @@
-// ── REPL entry point — KERN-sourced ─────────────────────────────────
-// Source of truth: kern/ui-app.kern (compiled with --target=ink)
+// Facade over ./generated/surfaces/app.js — edit the source there.
 export { startRepl } from './generated/surfaces/app.js';

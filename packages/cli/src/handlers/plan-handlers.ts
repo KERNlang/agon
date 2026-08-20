@@ -1,5 +1,4 @@
-// ── Plan handlers — KERN-sourced ─────────────────────────────────────
-// Source of truth: kern/handlers-plan.kern → generated/handlers-plan.ts
+// Facade over ../generated/handlers/plan.js — edit the source there.
 export {
   handlePlanShow,
   handlePlansList,

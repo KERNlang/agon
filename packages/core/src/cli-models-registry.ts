@@ -1,5 +1,4 @@
-// ── CLI Models Registry — KERN-sourced ──────────────────────────────────
-// Source of truth: kern/cli-models-registry.kern
+// Facade over ./generated/signals/cli-models-registry.js — edit the source there.
 
 // Re-export types and functions from generated file
 export type { CliModelEntry, CliProviderGroup, ProbedModel } from './generated/signals/cli-models-registry.js';

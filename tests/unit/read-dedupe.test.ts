@@ -3,7 +3,7 @@
 // Drives the SAME fake-dispatch harness as guards-integration / persistent-
 // session: createResumeSession (API path) with apiStreamDispatchWithHistory
 // mocked per turn + a fake onToolCall. Asserts the mode-independent Read dedupe
-// wired into the session loop (packages/core/session-resume.kern):
+// wired into the session loop (packages/core/session-resume.ts):
 //   • identical re-Read of an UNCHANGED file → tier-1 stub (bytes NOT re-fed)
 //   • file touched between reads (mtime differs) → full re-feed
 //   • Edit-to-path between reads → full re-feed (explicit invalidation)

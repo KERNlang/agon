@@ -1,4 +1,4 @@
-// Pins the shared, budgeted mutant runner (packages/core/src/kern/tools/mutant-runner.kern).
+// Pins the shared, budgeted mutant runner (packages/core/src/generated/tools/mutant-runner.ts).
 //
 // Every case runs against a disposable COPY of tests/fixtures/mutate-tautology,
 // a dependency-free mini-repo whose two test variants (real assertions vs.

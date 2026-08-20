@@ -1,3 +1,2 @@
-// ── Engine registry — KERN-sourced ───────────────────────────────────
-// Source of truth: kern/engine-registry.kern → generated/engine-registry.ts
+// Facade over ./generated/signals/engine-registry.js — edit the source there.
 export * from './generated/signals/engine-registry.js';

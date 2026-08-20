@@ -1,2 +1,2 @@
-// Re-export from KERN-generated sanitize command (source: kern/commands/sanitize.kern)
+// Facade over ../generated/commands/sanitize.js — edit the source there.
 export { sanitizeCommand } from '../generated/commands/sanitize.js';

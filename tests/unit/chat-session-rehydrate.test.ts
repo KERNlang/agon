@@ -2,8 +2,8 @@
 //
 // The chat path builds its prompt from `formatChatContextForPrompt(ctx.chatSession)`,
 // and `ctx.chatSession` is initialised empty via `startChatSession(...)` on every new
-// process (surfaces/app.kern). The durable ContextThread IS written after each turn
-// (handlers/chat.kern, gated on config.sessionContinuity) but is NEVER read back, so a
+// process (surfaces/app.tsx). The durable ContextThread IS written after each turn
+// (handlers/chat.ts, gated on config.sessionContinuity) but is NEVER read back, so a
 // new process cannot see prior turns unless the user manually `/chats resume`s.
 //
 // This test pins the missing read-back seam: `seedChatSessionFromThread(session, thread)`

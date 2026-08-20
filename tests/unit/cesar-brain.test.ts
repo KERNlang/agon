@@ -1,7 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { parseSuggestion, parseConfidence, confidenceBadge, CONFIDENCE_TIERS, CESAR_SYSTEM_PROMPT, buildReviewFollowupPrompt, detectNarratedToolStall, extractStrictConfidence, buildEscalationSuggestionLine, ESCALATION_SUGGESTION_THRESHOLD } from '../../packages/cli/src/handlers/cesar-brain.js';
-// Source of truth for these helpers is packages/cli/src/kern/cesar/brain-helpers.kern;
-// the generated/*.js below is regenerated from it (npm run kern:compile) — do not edit by hand.
 import { claimEagerToolExecution, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, splitBeforeToolMarkup, isUserDirectedQuestion, findTrailingUserQuestion, detectAwaitingUserInput, detectMutationIntentStall, detectFabricatedDelegation, stripNonAssertionSpans, shouldDeescalateGuard, isBashToolName, isWriteToolName, stripAgonToolPrefix, withEagerToolCallId } from '../../packages/cli/src/generated/cesar/brain-helpers.js';
 import { createReportConfidenceTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createPipelineTool } from '../../packages/core/src/tools.js';
 // Rigid DECISION/CONFIDENCE parser for ACTUALLY-FIRED nero/advisor results — C4
@@ -676,7 +674,7 @@ describe('Cesar Brain', () => {
       expect(ESCALATION_SUGGESTION_THRESHOLD).toBe(85);
     });
 
-    // The brain.kern gate is `strictConf < ESCALATION_SUGGESTION_THRESHOLD`.
+    // The brain.ts gate is `strictConf < ESCALATION_SUGGESTION_THRESHOLD`.
     // 84 → line, 85/90 → none (fail toward silence at/above threshold).
     it('84 is below threshold (line); 85 and 90 are not (no line)', () => {
       expect(extractStrictConfidence('CONFIDENCE: 84%')! < ESCALATION_SUGGESTION_THRESHOLD).toBe(true);

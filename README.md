@@ -7,7 +7,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/node-%3E%3D22-brightgreen" alt="Node.js >= 22">
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT">
-  <img src="https://img.shields.io/badge/100%25-KERN-orange" alt="100% KERN">
+  <img src="https://img.shields.io/badge/TypeScript-ESM-blue" alt="TypeScript ESM">
   <img src="https://img.shields.io/badge/rating-Glicko--2-red" alt="Glicko-2 rated">
 </p>
 
@@ -58,7 +58,7 @@ Agon isn't just about competition; it's a unified platform for AI collaboration.
 - Node.js >= 22
 - A Git repository
 - At least one supported AI CLI installed globally (e.g., Claude Code, Codex, Antigravity) or an API key for API-based engines
-- **Optional:** Python 3.10+ to unlock the semantic features that run as sidecars to KERN — semantic history search (`agon history --query`), tree-sitter syntax validation in forge fitness, brainstorm paraphrase dedup, and the task classifier. Agon still runs without Python; these features fall back to substring/regex paths.
+- **Optional:** Python 3.10+ to unlock the semantic features that run as Python sidecars — semantic history search (`agon history --query`), tree-sitter syntax validation in forge fitness, brainstorm paraphrase dedup, and the task classifier. Agon still runs without Python; these features fall back to substring/regex paths.
 
 ## Installation
 
@@ -87,7 +87,7 @@ python3 -m pip install --user fastembed numpy tree-sitter tree-sitter-python tre
 git clone https://github.com/KERNlang/agon.git
 cd agon
 
-# 2. Install dependencies (pulls @kernlang/agon-engines + sidecars, compiles KERN → TS → JS)
+# 2. Install dependencies (pulls @kernlang/agon-engines + the Python sidecars)
 npm install
 
 # 3. Build and install the global CLI
@@ -411,8 +411,8 @@ Autonomous, long-running orchestration. You hand Agon a finite, checkable task q
 The run is **journaled and resumable** (`--resume`), checkpoints cleanly on Ctrl-C, **meters real spend** (implement + the whole review panel + judge), and **never auto-pushes** by default — you review the commits and open the PR.
 
 ```bash
-agon goal "Close all KERN gaps" \
-  --queue .kern-gaps/ \
+agon goal "Close the backlog gaps" \
+  --queue .agon-gaps/ \
   --gate "npm run build && npm run typecheck && npm test" \
   --branch goal/close-gaps \
   --require-tests --max-attempts 3 \
@@ -435,7 +435,7 @@ agon goal "Close all KERN gaps" \
 | `--push` / `--pr` | Push the goal branch per task / open a PR via `gh` at the end (never `main`). With `--push`, the run ends with an engine-written PR title/body and a **prefilled GitHub PR link** — click it and the form is already filled (no `gh`/token needed) | off |
 | `--resume` / `--status` / `--dry-run` | Resume from journal / print a run's digest / plan only | — |
 
-Read a run's digest from any session with `agon goal --status --id close-all-kern-gaps`. Reachable from external CLIs via `agon call goal "<intent>" --queue <dir> --gate "<cmd>"`.
+Read a run's digest from any session with `agon goal --status --id close-gaps`. Reachable from external CLIs via `agon call goal "<intent>" --queue <dir> --gate "<cmd>"`.
 
 **Designing the gate — it _is_ the spec.** The forge only optimizes to make your `--gate` (and each task's `verify`) pass, so that command is the actual specification. Make it **discriminating**: it must FAIL a plausibly-wrong implementation, not merely pass the intended one (use distinct/edge inputs — `atan2(3,4)`, not `atan2(0,1)`). Before a long run, red-team your own oracle with `agon nero "<the gate I wrote>" --reasoning "is this gameable?"` — if a wrong impl can slip through, add a killer case first. A non-discriminating gate lets buggy-but-passing code land green and dead-loops the run.
 
@@ -756,13 +756,13 @@ PR bodies agon writes end with the same line rendered with the **real AGON logo*
 
 ## Architecture
 
-Agon is built using **KERN**, a structured meta-language that compiles down to optimized TypeScript. Nearly the entire codebase — including Ink screens, signals, blocks, and orchestration logic — is authored in `.kern` files and regenerated via `npm run kern:compile`. The monorepo:
+Agon is a plain TypeScript monorepo (ESM, Node >= 22). It was originally authored in [KERN](https://kernlang.dev) and compiled to TypeScript; that authoring layer has since been removed and the TypeScript is now the hand-maintained source. The monorepo:
 
-- `packages/core` — types, config, Glicko-2 + Team Elo scoring, Cesar routing, session state (100% KERN, 69 files)
-- `packages/cli` — the interactive REPL, Ink surfaces, command handlers (~99% KERN, 60+ files)
-- `packages/forge` — competitive worktree orchestration, fitness, M-of-N quorum finalize (100% KERN, 17 files)
-- `packages/adapter-cli` — CLI engine integrations (100% KERN)
-- `packages/dedup` — Python sidecars for semantic features (history search via fastembed/MiniLM, tree-sitter syntax validation, task classifier, brainstorm paraphrase dedup). Bridged from KERN via JSON over stdin/stdout — KERN imports Python where Python is strictly better than a TS/JS port.
+- `packages/core` — types, config, Glicko-2 + Team Elo scoring, Cesar routing, session state
+- `packages/cli` — the interactive REPL, Ink surfaces, command handlers
+- `packages/forge` — competitive worktree orchestration, fitness, M-of-N quorum finalize
+- `packages/adapter-cli` — CLI engine integrations
+- `packages/dedup` — Python sidecars for semantic features (history search via fastembed/MiniLM, tree-sitter syntax validation, task classifier, brainstorm paraphrase dedup). Bridged via JSON over stdin/stdout — Python is used where it is strictly better than a TS/JS port.
 - `packages/mcp` — exposes Agon's orchestration modes as MCP tools so other CLIs (Claude Code, Codex, Antigravity) can drive Agon
 
 The entire project is ESM, uses strict TypeScript, and is thoroughly tested with Vitest.

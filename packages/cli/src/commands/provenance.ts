@@ -1,2 +1,2 @@
-// Re-export from KERN-generated provenance command
+// Facade over ../generated/commands/provenance.js — edit the source there.
 export { provenanceCommand } from '../generated/commands/provenance.js';

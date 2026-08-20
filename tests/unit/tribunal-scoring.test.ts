@@ -6,7 +6,7 @@ import { describe, it, expect } from 'vitest';
  * where substantive = args > 20 chars and not '(failed to respond)'.
  */
 
-// Replicate the scoring logic from tribunal.kern for unit testing
+// Replicate the scoring logic from tribunal.ts for unit testing
 function tribunalScore(args: string[]): number {
   const substantive = args.filter((a) => a.length > 20 && a !== '(failed to respond)');
   const roundCredit = substantive.length;

@@ -1,5 +1,4 @@
-// ── Flow tracking — KERN-sourced ─────────────────────────────────────
-// Source of truth: kern/flow.kern → generated/flow.ts
+// Facade over ./generated/signals/flow.js — edit the source there.
 export {
   logFlow,
   readFlows,

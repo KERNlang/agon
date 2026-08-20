@@ -63,12 +63,22 @@ jobs:
       - name: Set version from tag
         run: npm run release:set-version -- "${GITHUB_REF_NAME}"
 
-      - name: Compile KERN sources
-        run: npm run kern:compile
+      # Gate the release on the same checks CI runs, in the same order — never
+      # publish a red tree. `build:cli` matters here beyond parity: `npm run
+      # release` publishes @kernlang/agon-dedup BEFORE it builds and publishes
+      # the CLI, so a bundling failure discovered mid-publish would leave the
+      # family half-released. Build first, publish second.
+      - name: Re-export surface guard
+        run: npm run guard:reexports
 
-      # Gate the release on the same checks CI runs — never publish a red tree.
+      - name: Lint
+        run: npm run lint
+
       - name: Type check
         run: npm run typecheck
+
+      - name: Build CLI
+        run: npm run build:cli
 
       - name: Run tests
         run: npm run test
@@ -102,7 +112,6 @@ jobs:
           git fetch origin main
           git checkout -B "${BRANCH}" origin/main
           npm run release:set-version -- "${VERSION}"
-          npm run kern:compile
           # Reconcile the lockfile with the bumped versions/ranges so `npm ci`
           # stays green on main (metadata only — no install, no scripts).
           npm install --package-lock-only --ignore-scripts
@@ -116,7 +125,6 @@ jobs:
             packages/saas-api/package.json \
             packages/dedup/package.json \
             packages/cli/src/index.ts \
-            packages/cli/src/kern/blocks/engine.kern \
             packages/cli/src/generated/blocks/engine.tsx \
             package-lock.json
           if git diff --cached --quiet; then

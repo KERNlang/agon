@@ -1,8 +1,7 @@
 # Contributing to Agon
 
-Thanks for your interest. Agon is a competitive multi-AI orchestration CLI,
-built **entirely in [KERN](https://kernlang.dev)** — it's also the proving
-ground for the KERN language.
+Thanks for your interest. Agon is a competitive multi-AI orchestration CLI: a
+plain TypeScript monorepo (ESM, Node ≥ 22, vitest).
 
 ## Issues — welcome
 
@@ -18,24 +17,31 @@ approach.** Drive-by PRs that change architecture without discussion will usuall
 be asked to start as a design conversation. This keeps the orchestration core
 coherent.
 
-### The one hard rule: ALL IN KERN
+### Where the source lives
 
-Every function, type, constant, handler, and screen is authored in `.kern` and
-compiled to `src/generated/`. **Do not edit `packages/*/src/generated/` by hand**
-— edit the `.kern` source and recompile. PRs that hand-edit generated files will
-be closed.
+Agon was originally authored in KERN and compiled into `packages/*/src/generated/`.
+That authoring layer has been removed: **the TypeScript under
+`packages/*/src/generated/` is the hand-maintained source and you edit it
+directly.** The directory name is legacy — it was kept so every import path and
+test stayed valid. There is no compile step and no codegen. The sibling `.ts`
+files (e.g. `packages/cli/src/commands/*.ts`) are thin facades that re-export
+that surface; add the implementation under `generated/` and expose it via the
+facade.
 
 ```bash
 git clone --recurse-submodules https://github.com/KERNlang/agon.git
 cd agon && npm install
-npm run kern:compile     # .kern -> generated
-npm run build            # bundle
+npm run build            # bundle CLI + emit types
 npm run typecheck        # tsc -b
-npm run test             # vitest + kern tests — must be green before a PR
+npm run test             # vitest
+npm run lint             # eslint (typed, minimal ruleset)
+npm run guard:reexports  # re-export surface guard (catches a real runtime bug class)
 ```
 
-A PR is ready when: `kern:compile`, `typecheck`, and `test` are all green, and the
-change is in `.kern` source (with the regenerated output committed alongside).
+A PR is ready when `build`, `typecheck`, `test`, `lint`, and `guard:reexports`
+are all green. If you touched a mode or a CLI command, also run
+`npm run docs:modes` and commit the regenerated `docs/modes.md` — a unit test
+byte-compares it.
 
 ## License
 

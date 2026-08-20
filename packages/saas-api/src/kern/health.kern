@@ -1,8 +1,0 @@
-server name=AgonAPI port=3030
-  middleware name=cors
-  middleware name=json
-
-  route method=get path=/health
-    handler <<<
-      res.json({ ok: true, version: '0.1.0', service: 'agon-saas-api' });
-    >>>

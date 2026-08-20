@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 // ── Mock the kern-engines PTY claude session ────────────────────────────────
-// session-pty.kern lazy-imports '@kernlang/agon-engines/cli/claude.js'.
+// session-pty.ts lazy-imports '@kernlang/agon-engines/cli/claude.js'.
 const ptyState = vi.hoisted(() => ({
   spawnOpts: null as any,
   prompts: [] as string[],

@@ -1,6 +1,6 @@
 // Pins `agon mutate`: the pure logic (target resolution, pool shaping, the
-// advisory verdict — packages/forge/src/kern/mutate.kern) and the untrusted
-// AI-semantic wire format (mutate-semantic.kern), plus ONE end-to-end pass over
+// advisory verdict — packages/forge/src/generated/mutate.ts) and the untrusted
+// AI-semantic wire format (mutate-semantic.ts), plus ONE end-to-end pass over
 // a throwaway git repo for the worktree/hydration path. Mutant classification
 // itself lives in tests/unit/mutant-runner.test.ts.
 import { describe, it, expect } from 'vitest';

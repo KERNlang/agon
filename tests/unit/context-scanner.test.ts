@@ -215,21 +215,34 @@ describe('context-scanner', () => {
   });
 
   describe('isKernProject', () => {
-    it('detects Agon as a KERN project', () => {
-      expect(isKernProject(REPO_ROOT)).toBe(true);
+    const dirs: string[] = [];
+    function tmpRepo(prefix: string): string {
+      const d = mkdtempSync(join(tmpdir(), prefix));
+      dirs.push(d);
+      return d;
+    }
+    afterEach(() => { while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true }); });
+
+    it('detects a directory holding .kern sources as a KERN project', () => {
+      const root = tmpRepo('agon-iskern-');
+      writeFileSync(join(root, 'app.kern'), 'fn name=main\n');
+      expect(isKernProject(root)).toBe(true);
+    });
+
+    it('detects .kern sources nested under src/', () => {
+      const root = tmpRepo('agon-iskern-src-');
+      mkdirSync(join(root, 'src'), { recursive: true });
+      writeFileSync(join(root, 'src/app.kern'), 'fn name=main\n');
+      expect(isKernProject(root)).toBe(true);
+    });
+
+    it('is false for Agon itself — the repo is ejected from KERN', () => {
+      expect(isKernProject(REPO_ROOT)).toBe(false);
     });
 
     it('returns false for non-kern directory', () => {
-      // Use a directory that definitely has no .kern files
-      const os = require('node:os');
-      const fs = require('node:fs');
-      const path = require('node:path');
-      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agon-test-'));
-      try {
-        expect(isKernProject(tmpDir)).toBe(false);
-      } finally {
-        fs.rmdirSync(tmpDir);
-      }
+      const tmpDir = tmpRepo('agon-test-');
+      expect(isKernProject(tmpDir)).toBe(false);
     });
   });
 

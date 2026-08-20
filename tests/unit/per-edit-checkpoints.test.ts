@@ -11,12 +11,12 @@ import {
 
 // These tests pin the per-edit checkpoint contract that AgonEdit/AgonWrite rely
 // on. Each Edit/Write execute() call takes exactly one snapshot of one file
-// BEFORE the mutation hits disk (tool-edit.kern / tool-write.kern), so three
+// BEFORE the mutation hits disk (tools/tool-edit.ts / tools/tool-write.ts), so three
 // edits in one turn produce three independent restore points. `/undo` with no
 // arg picks listSnapshots()[0] — the newest — then deletes it, so repeated
-// `/undo` peels edits most-recent-first (intent-meta.kern).
+// `/undo` peels edits most-recent-first (signals/dispatch/intent-meta.ts).
 
-// Mirrors the no-arg `/undo` selection in intent-meta.kern:
+// Mirrors the no-arg `/undo` selection in signals/dispatch/intent-meta.ts:
 //   listSnapshots().find((e) => e.cwd === cwd)  // newest for this workspace
 function pickUndoTarget(cwd: string) {
   return listSnapshots().find((e) => String(e?.cwd ?? '') === cwd);
@@ -92,7 +92,7 @@ describe('per-edit undo checkpoints', () => {
 
   it('Write of a NEW file checkpoints non-existence; /undo deletes the created file', () => {
     const file = 'created.txt';
-    // tool-write.kern path for a non-existent file: snapshot records existed:false
+    // tools/tool-write.ts path for a non-existent file: snapshot records existed:false
     const cp = takeSnapshot(`Write (new): ${file}`, cwd, [file]);
     writeFileSync(join(cwd, file), 'fresh content\n');
     expect(existsSync(join(cwd, file))).toBe(true);
@@ -124,8 +124,8 @@ describe('per-edit undo checkpoints', () => {
   });
 
   it('a failed/denied edit takes NO snapshot (snapshot is created inside execute, after validation)', () => {
-    // tool-registry.kern short-circuits on deny/ask-refusal BEFORE execute(),
-    // and tool-edit.kern/tool-write.kern return on validation errors BEFORE
+    // signals/tool-registry.ts short-circuits on deny/ask-refusal BEFORE execute(),
+    // and tools/tool-edit.ts / tools/tool-write.ts return on validation errors BEFORE
     // takeSnapshot(). We model that contract: no takeSnapshot call => no
     // checkpoint, so /undo has nothing to revert for the workspace.
     writeFileSync(join(cwd, 'x.txt'), 'x0\n');

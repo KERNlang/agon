@@ -1,3 +1,2 @@
-// ── Models.dev registry — KERN-sourced ───────────────────────────────
-// Source of truth: kern/models-registry.kern
+// Facade over ./generated/signals/models-registry.js — edit the source there.
 export * from './generated/signals/models-registry.js';

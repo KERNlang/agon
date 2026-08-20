@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated types ─────────────────────────────
-// Source of truth: src/kern/types.kern
+// Facade over ./generated/models/types.js — edit the source there.
 export * from './generated/models/types.js';

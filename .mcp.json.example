@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "kern": {
-      "type": "http",
-      "url": "https://kernlang.dev/api/mcp"
-    }
-  }
-}

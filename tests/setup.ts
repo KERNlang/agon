@@ -11,7 +11,7 @@
 // baseline temp dir below guarantees no test file can ever touch ~/.agon,
 // even when it forgets per-test isolation. It runs in each vitest worker
 // BEFORE any module import, so module-load-frozen path consts (RUNS_DIR,
-// AGON_HOME in config.kern) also freeze onto the temp dir.
+// AGON_HOME in signals/config.ts) also freeze onto the temp dir.
 // tests/helpers/agon-home.ts#cleanupTestAgonHome restores THIS baseline
 // (via AGON_TEST_HOME_BASELINE) instead of deleting AGON_HOME, so later
 // tests in the same file never fall back to the real home either.

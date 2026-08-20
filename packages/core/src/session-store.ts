@@ -1,4 +1,4 @@
-// ── Session Store — KERN-sourced ──
+// Facade over ./generated/signals/session-store.js — edit the source there.
 export {
   saveSessionState, loadSessionState, clearSessionState,
   saveToolResultToDisk, loadToolResultFromDisk, pruneToolCache,

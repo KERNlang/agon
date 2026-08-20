@@ -1,3 +1,2 @@
-// ── Token tracker — KERN-sourced ─────────────────────────────────────
-// Source of truth: kern/token-tracker.kern → generated/token-tracker.ts
+// Facade over ./generated/signals/token-tracker.js — edit the source there.
 export * from './generated/signals/token-tracker.js';

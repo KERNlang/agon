@@ -251,7 +251,7 @@ describe('Cesar task execution lease', () => {
     // The target still binds every authority-widening field (audit trail), but
     // in AUTO a plain push/PR/external-queue delegation now runs without a
     // prompt (CC bypassPermissions parity). Goal/Conquer keep their own
-    // explicit-user-request gate in escalation.kern.
+    // explicit-user-request gate in escalation.ts.
     expect(evaluateTaskAction(lease, 'goal', target).decision).toBe('allow');
   });
 

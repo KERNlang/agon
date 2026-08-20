@@ -4,7 +4,7 @@
 //      (npm writes them relative, so a wholesale symlink escapes the sandbox),
 //   2. a prebuilt dist hydrated into the sandbox, which a test importing the
 //      package BY NAME loads instead of the mutated source.
-// packages/forge/src/kern/mutate-sandbox.kern
+// packages/forge/src/generated/mutate-sandbox.ts
 import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';

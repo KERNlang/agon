@@ -1,3 +1,2 @@
-// ── Brainstorm handler — KERN-sourced ────────────────────────────────
-// Source of truth: kern/handlers-brainstorm.kern → generated/handlers-brainstorm.ts
+// Facade over ../generated/handlers/brainstorm.js — edit the source there.
 export { handleBrainstorm } from '../generated/handlers/brainstorm.js';

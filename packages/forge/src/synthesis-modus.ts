@@ -1,4 +1,4 @@
-// Re-export from KERN-generated synthesis modus.
+// Facade over ./generated/synthesis-modus.js — edit the source there.
 export {
   runSynthesisModus,
   buildSynthesisDraftPrompt,

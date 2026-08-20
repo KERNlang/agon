@@ -203,7 +203,7 @@ describe('isGateSkipSignal — user waiver phrases', () => {
 
 // ── Nudge decision state-machine ─────────────────────────────────────
 // Models the _shouldGateNudge predicate + one-nudge-per-claim guard from
-// brain.kern against the documented contract: nudge once per distinct
+// brain.ts against the documented contract: nudge once per distinct
 // done-claim when (gate exists) && !waived && !ranGate && wroteFiles &&
 // claim-not-already-nudged. gateAbsent or waiver → never.
 type GateSession = { gateWaived?: boolean; gateNudgedClaim?: string };
@@ -248,7 +248,7 @@ describe('verify-before-done nudge decision', () => {
     const session: GateSession = {};
     const firstClaim = { ranGate: false, wroteFiles: true, toolCount: 3, resp: 'Done with the refactor.' };
     expect(shouldGateNudge(gate, session, firstClaim)).toBe(true);
-    // Record the nudge (as brain.kern does on inject)
+    // Record the nudge (as brain.ts does on inject)
     session.gateNudgedClaim = claimSignature(firstClaim.toolCount, firstClaim.resp);
     // Same claim re-evaluated → suppressed
     expect(shouldGateNudge(gate, session, firstClaim)).toBe(false);
@@ -265,7 +265,7 @@ describe('verify-before-done nudge decision', () => {
 
   it('a user skip-signal after a nudge sets the sticky waiver', () => {
     const session: GateSession = { gateNudgedClaim: 'sig' };
-    // Mirror brain.kern: skip-signal honored only once a nudge has fired
+    // Mirror brain.ts: skip-signal honored only once a nudge has fired
     if (session.gateNudgedClaim && isGateSkipSignal('skip the gate')) session.gateWaived = true;
     expect(session.gateWaived).toBe(true);
     expect(shouldGateNudge(gate, session, { ranGate: false, wroteFiles: true, toolCount: 3, resp: 'Done.' })).toBe(false);
@@ -273,7 +273,7 @@ describe('verify-before-done nudge decision', () => {
 });
 
 // ── F1: re-nudge loop — signature re-stamp against the MUTATED response ───────
-// brain.kern records gateNudgedClaim at inject time (pre-mutation), then the nudge
+// brain.ts records gateNudgedClaim at inject time (pre-mutation), then the nudge
 // handler APPENDS Cesar's reply to `response` before the loop's `continue`. Without
 // the F1 re-stamp, the re-entry computes a fresh signature (new tail), misses the
 // one-nudge guard, and re-nudges. This models that lifecycle.
@@ -312,7 +312,7 @@ describe('F1 — claim signature re-stamped after response mutation', () => {
 });
 
 // ── F2 + F4: per-turn skip-signal window (turn-start lifecycle) ───────────────
-// brain.kern turn-start: (F2) a gate-less turn no longer flips gateWaived; (F4) a
+// brain.ts turn-start: (F2) a gate-less turn no longer flips gateWaived; (F4) a
 // skip-signal is evaluated against the PREVIOUS turn's gateNudgedClaim, then the
 // claim is CLEARED — narrowing the waiver to the message immediately after a nudge.
 function applyTurnStart(session: GateSession, gate: DiscoveredGate, input: string): void {

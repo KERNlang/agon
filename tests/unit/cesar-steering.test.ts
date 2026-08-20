@@ -1,7 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-// Source of truth: packages/cli/src/kern/cesar/steering.kern
-// (regenerated via npm run kern:compile — do not edit the generated .ts by hand).
 import {
   markSteeringTurn,
   pushSteering,
@@ -115,7 +113,7 @@ describe('Cesar steering buffer', () => {
   });
 
   // ── The drain path, end to end (agy B1) ──────────────────────────────────
-  // What brain.kern's drainSteeringIntoSend does with the queue, driven against
+  // What brain.ts's drainSteeringIntoSend does with the queue, driven against
   // the REAL steering singleton: pop this turn's entries, render + persist each
   // one and record one telemetry event per message from that message's own text,
   // collect the images, then frame the whole thing as user content. The review

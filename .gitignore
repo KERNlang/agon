@@ -20,14 +20,16 @@ AGON-GOAL-DESIGN.md
 scripts/guard/engine-pool-rfc.md
 .agon/
 .agon.local.json
-.kern-dev.local.json
 .CLAUDE.md
 .CLAUDE
 .Agent.md
 .Agent
-.kern/cache/*
 .kern-gaps/
 packages/*/.kern-gaps/
+# Stale KERN compiler cache dirs. The literal name '.kern' ends with '.kern', so a
+# leftover cache directory makes isKernProject() report true for this now-ejected repo.
+.kern/
+packages/*/.kern/
 .mcp.json
 
 # TypeScript build outputs that occasionally leak into src/ when tsc is
@@ -48,7 +50,8 @@ kern_engines/*.egg-info/
 .antigravitycli/
 GO-LIVE-PLAN.local.md
 
-# Stray repo-root generated/ — kern:compile must only emit into packages/*/src/generated/
+# Stray repo-root generated/ — no tool should emit a repo-root generated/;
+# the only legitimate generated trees are packages/*/src/generated/.
 /generated/
 # Same rule at the package level: any packages/*/generated/ is a leak, not a source.
 /packages/*/generated/

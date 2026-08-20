@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated generic cross-process file lock ──────
-// Source of truth: src/kern/blocks/file-lock.kern
+// Facade over ./generated/blocks/file-lock.js — edit the source there.
 export * from './generated/blocks/file-lock.js';

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { runReviewCore } from '../../packages/cli/src/generated/handlers/review.js';
 
 // Regression for the double-swallowed-error bug: a stalled SSE stream used to
-// come back from dispatch.kern as a silent success (exitCode 0, stderr ''),
+// come back from api/dispatch.ts as a silent success (exitCode 0, stderr ''),
 // and runReviewCore only ever read `.usage`/`.stdout` off the final
 // DispatchResult — so a genuine dispatch failure (idle timeout, stream error)
 // with no accumulated text was indistinguishable from a real empty answer and

@@ -193,12 +193,24 @@ describe('Context Scanner', () => {
     expect(context.length).toBeGreaterThan(0);
   });
 
-  it('detects KERN project', async () => {
+  it('detects a KERN project from .kern sources on disk', async () => {
     const { isKernProject } = await import('../../packages/core/src/context-scanner.js');
 
-    // Agon AI is a KERN project
+    const fixture = join(tmpdir(), `agon-iskern-${Date.now()}`);
+    mkdirSync(fixture, { recursive: true });
+    try {
+      writeFileSync(join(fixture, 'app.kern'), 'fn name=main\n');
+      expect(isKernProject(fixture)).toBe(true);
+    } finally {
+      rmSync(fixture, { recursive: true, force: true });
+    }
+  });
+
+  it('does not detect Agon itself as a KERN project (ejected to TypeScript)', async () => {
+    const { isKernProject } = await import('../../packages/core/src/context-scanner.js');
+
     const result = isKernProject(process.cwd());
-    expect(result).toBe(true);
+    expect(result).toBe(false);
   });
 });
 

@@ -1,11 +1,11 @@
-// ── Steering-yield wiring guards (brain.kern) ──────────────────────────
+// ── Steering-yield wiring guards (cesar/brain.ts) ──────────────────────
 //
 // handleCesarBrain is one ~3000-line turn machine with no injection seam, so the
 // three review findings below cannot be driven behaviorally from a unit test.
 // They are all *structural* invariants — "this bookkeeping happens in exactly one
 // place", "this early exit consults that helper" — and the review explicitly
 // asked for a source-level guard for #7. These assertions read the GENERATED
-// brain.ts (compiled from packages/cli/src/kern/cesar/brain.kern) so a future
+// brain.ts (packages/cli/src/generated/cesar/brain.ts) so a future
 // edit that reintroduces the bug fails a test instead of silently shipping.
 //
 //   #1  an empty-text continuation must not `break` out of the loop with the

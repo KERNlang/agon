@@ -1,2 +1,2 @@
-// Re-export from KERN-generated last command
+// Facade over ../generated/commands/last.js — edit the source there.
 export { lastCommand } from '../generated/commands/last.js';

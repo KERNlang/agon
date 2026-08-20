@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated Glicko-2 ──────────────────────────
-// Source of truth: src/kern/signals/glicko.kern
+// Facade over ./generated/signals/glicko.js — edit the source there.
 export * from './generated/signals/glicko.js';

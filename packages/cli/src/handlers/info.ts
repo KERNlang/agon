@@ -1,5 +1,4 @@
-// ── Info handlers — KERN-sourced ─────────────────────────────────────
-// Source of truth: kern/handlers-info.kern → generated/handlers-info.ts
+// Facade over ../generated/handlers/info.js — edit the source there.
 export {
   handleLeaderboard,
   handleCesarReport,

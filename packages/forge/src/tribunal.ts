@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated tribunal ──────────────────────────
-// Source of truth: src/kern/tribunal.kern
+// Facade over ./generated/tribunal.js — edit the source there.
 export * from './generated/tribunal.js';

@@ -305,7 +305,7 @@ describeProcessMaybe('agon serve process lifecycle', () => {
   it('exits zero after the first SIGINT', async () => {
     const home = mkdtempSync(join(tmpdir(), 'agon-serve-signal-'));
     const child = spawn(process.execPath, [CLI_ENTRY, 'serve', '--port', '0', '--emit-connection'], {
-      env: { ...process.env, AGON_HOME: home, AGON_NO_STACK_TRACE_MAPPER: '1' },
+      env: { ...process.env, AGON_HOME: home },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     let stdout = '';

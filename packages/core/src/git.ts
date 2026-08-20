@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated git operations ────────────────────
-// Source of truth: src/kern/git.kern
+// Facade over ./generated/blocks/git.js — edit the source there.
 export * from './generated/blocks/git.js';

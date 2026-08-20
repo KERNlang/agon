@@ -1,3 +1,2 @@
-// ── Tribunal handler — KERN-sourced ──────────────────────────────────
-// Source of truth: kern/handlers-tribunal.kern → generated/handlers-tribunal.ts
+// Facade over ../generated/handlers/tribunal.js — edit the source there.
 export { handleTribunal } from '../generated/handlers/tribunal.js';

@@ -1,4 +1,4 @@
-// Pins the shared MECHANICAL operator set (packages/core/src/kern/tools/mutant-generator.kern).
+// Pins the shared MECHANICAL operator set (packages/core/src/generated/tools/mutant-generator.ts).
 // The runner's kill/survive behavior lives in mutant-runner.test.ts; what is
 // pinned here is which LINES earn a mutant at all, and that the operator classes
 // did not move when comment skipping landed.

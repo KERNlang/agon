@@ -398,7 +398,6 @@ describe('attachVisionToMessages', () => {
     writeFileSync(p, Buffer.alloc(bytes, 0x41));
     return p;
   };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const thread = (): any[] => [
     { role: 'user', content: 'goal' },
     { role: 'assistant', content: '', tool_calls: [{ id: 'call_0', type: 'function', function: { name: 'screenshot', arguments: '{}' } }] },

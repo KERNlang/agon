@@ -1,5 +1,4 @@
-// ── Re-export from KERN-generated syntax validator bridge ─────────
-// Source of truth: src/kern/blocks/syntax-validator-bridge.kern
+// Facade over ./generated/blocks/syntax-validator-bridge.js — edit the source there.
 // Keep explicit exports in sync so static guard checks can resolve this facade.
 export {
   SYNTAX_VALIDATOR_DISABLE_ENV,

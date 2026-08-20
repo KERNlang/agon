@@ -9,8 +9,6 @@
     "dist"
   ],
   "scripts": {
-    "kern:compile": "node ../../scripts/run-kern-compile.mjs src/kern/ src/generated/ --target=auto --recursive",
-    "prebuild": "npm run kern:compile",
     "build": "tsc -b",
     "typecheck": "tsc --noEmit"
   },

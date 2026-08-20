@@ -1,2 +1,2 @@
-// Re-export from KERN-generated chrome command (source: kern/commands/chrome.kern)
+// Facade over ../generated/commands/chrome.js — edit the source there.
 export { chromeCommand, runChrome } from '../generated/commands/chrome.js';

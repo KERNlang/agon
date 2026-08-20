@@ -1,4 +1,4 @@
-// ── Intent detection — KERN-sourced ──────────────────────────────────
+// Facade over ./generated/signals/intent-types.js — edit the source there.
 // Intent union: kern/intent-types.kern → generated/intent-types.ts
 // Functions:    kern/intent.kern → generated/intent.ts
 

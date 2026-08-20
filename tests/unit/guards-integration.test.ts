@@ -4,14 +4,14 @@
 // persistent-session.test.ts: createResumeSession (API path) with
 // apiStreamDispatchWithHistory mocked per turn + a fake onToolCall. They assert
 // the PROGRAM-PLAN behaviors of the GuardPipeline as wired into the session loop
-// (Wiring D3, packages/core/session-resume.kern), against the contract at
+// (Wiring D3, packages/core/src/generated/sessions/session-resume.ts), against the contract at
 // docs/p1p2-guardpipeline-contract.md.
 //
 // DEPENDENCY ON D3 (concurrent): these tests exercise the invariants/shadow
 // branches of the session loop. They are written to the CONTRACT, not to a
 // half-landed loop — if a test fails because D3's wiring isn't fully landed yet,
 // it is the wiring that is behind, not the test. The overseer re-runs after D3
-// lands. (As of writing, D3's branches are present in session-resume.kern, so
+// lands. (As of writing, D3's branches are present in session-resume.ts, so
 // these are expected to pass; the grounded-write/evidence/info-gain/shadow paths
 // are all wired.)
 //
@@ -20,7 +20,7 @@
 // context) needs a FAKE spawn injected into the per-session DiagnosticRunner so
 // no real `tsc` runs in a unit test. createResumeSession instantiates
 // `new DiagnosticRunner(config.engine.id)` with NO spawn-injection seam on
-// PersistentSessionConfig (session-resume.kern:308), so the runner uses the
+// PersistentSessionConfig (sessions/session-resume.ts), so the runner uses the
 // default real spawnWithTimeout → real tsc, which is too slow/flaky for a unit
 // test and cannot be faked through config. See the it.skip below + the report:
 // D3 (or a follow-up) must expose a config seam (e.g.

@@ -1,3 +1,2 @@
-// ── Cesar handler — KERN-sourced ────────────────────────────────────
-// Source of truth: kern/handlers-cesar.kern → generated/handlers-cesar.ts
+// Facade over ../generated/cesar/orchestration.js — edit the source there.
 export { fenceSeedPlan } from '../generated/cesar/orchestration.js';

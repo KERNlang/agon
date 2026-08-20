@@ -73,7 +73,7 @@ describe('appendCoAuthor (paragraph-aware join)', () => {
   it('joins when the message already ends in the legacy autoCredit Agon AI line (proves the orphaning bug is fixed)', () => {
     // This mirrors the /commit handler shape when autoCredit applies AND a
     // commitCoAuthor identity is also set. The handler now SKIPS autoCredit when
-    // commitCoAuthor is active (inspection-verified at commit.kern), but even if
+    // commitCoAuthor is active (inspection-verified at commit.ts), but even if
     // both were present, appendCoAuthor keeps them in one trailer paragraph
     // rather than orphaning the autoCredit line.
     const msg = 'feat: do thing\n\nCo-authored-by: Agon AI <agon@local>';

@@ -1,3 +1,2 @@
-// ── Re-export from KERN-generated forge ──────────────────────────────
-// Source of truth: src/kern/forge.kern
+// Facade over ./generated/forge.js — edit the source there.
 export * from './generated/forge.js';

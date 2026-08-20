@@ -407,6 +407,16 @@ describe('stream-json terminal-reason parsing', () => {
     )).toBeNull();
   });
 
+  it('the SHIPPED claude config still satisfies the stream-json gate', () => {
+    // The gate is engine-config-driven, so every other assertion here runs against
+    // a hand-built fixture. Without this, renaming/dropping claude's output-format
+    // flag would silently turn the terminal-reason diagnostic back off — the
+    // original bug — with a fully green suite.
+    const raw = JSON.parse(readFileSync(join(ENGINES_DIR, 'claude.json'), 'utf-8'));
+    expect(raw.review.args, 'claude review must speak stream-json').toContain('stream-json');
+    expect(raw.review.args).toContain('--output-format');
+  });
+
   it('still fails on a REAL terminal envelope at the end of a stream-json stream', () => {
     const realStream = [
       '{"type":"system","subtype":"init"}',

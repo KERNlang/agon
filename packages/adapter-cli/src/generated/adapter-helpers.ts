@@ -185,10 +185,91 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
 
+/**
+ * Resolve the mode block a dispatch should spawn from, with ONE fallback: a
+ * 'review' dispatch on an engine that declares no `review` block falls back to
+ * its `exec` block. Callers ask for the mode they mean; engines that never
+ * modelled a review variant (aider, kimi-code) keep their exec behavior instead
+ * of hard-failing with "does not support mode review". 'exec' and 'agent' never
+ * fall back — a missing exec/agent block is a real capability gap, and silently
+ * downgrading an agent dispatch to a one-shot exec would be a correctness bug.
+ * Returns null when nothing applies, so buildCommand still throws for real gaps.
+ */
+export function resolveModeConfig(engine: EngineDefinition, mode: EngineMode): EngineModeConfig|null {
+  if (mode === 'agent') return engine.agent ?? null;
+  if (mode === 'exec') return engine.exec ?? null;
+  return engine.review ?? engine.exec ?? null;
+}
+
+/**
+ * Legacy single-pass framing (nonAgenticFraming: 'all'). Byte-for-byte the string
+ * that used to be hardcoded behind `engine.id === 'agy'` — agy's exec dispatches
+ * must keep producing exactly this prompt, so do NOT edit this text.
+ */
+export const SINGLE_PASS_FRAMING: string =
+  'OUTPUT RULES (important): Reply with your COMPLETE final answer as plain text in THIS response only. ' +
+  'Do NOT create, write, edit, or reference any files or artifacts. ' +
+  'Do NOT ask clarifying questions — make reasonable assumptions and proceed. ' +
+  'Do NOT use slash commands or start an interactive session. ' +
+  'Do all the work in a single pass and output the final result directly as text now.\n\n';
+
+/**
+ * Review framing (nonAgenticFraming: 'review'). Deliberately NOT the single-pass
+ * text: that one says "do not reference any files", which flatly contradicts the
+ * review contract — a review with no file:line citations is unusable, and every
+ * finding the seat reports is required to name one. What a review seat must not
+ * do is ACT: run builds/tests, or write files. Everything it needs is already
+ * pasted into the prompt, so citing the given diff is both allowed and required.
+ */
+export const REVIEW_FRAMING: string =
+  'OUTPUT RULES (important): Reply with your COMPLETE review as plain text in THIS response only. ' +
+  'Do NOT run any commands, builds, or tests. Do NOT create, write, or edit any files. ' +
+  'Everything you need is pasted below — DO cite concrete file:line references from the provided diff and context. ' +
+  'Do NOT ask clarifying questions — make reasonable assumptions and proceed. ' +
+  'Do NOT use slash commands or start an interactive session. ' +
+  'Do the whole review in a single pass and output the final result directly as text now.\n\n';
+
+/**
+ * Which non-agentic framing (if any) this dispatch gets, from the engine CONFIG —
+ * never an engine id in source. 'none' | 'single-pass' | 'review'.
+ *
+ * Agent mode is never framed (it is agentic on purpose). Scope 'all' frames every
+ * non-agent dispatch (agy). Scope 'review' frames ONLY review dispatches: claude's
+ * ordinary exec dispatches (brainstorm, tribunal, campfire, Cesar sub-dispatches)
+ * legitimately want tools, and blanket-framing them would have been a far broader
+ * behavior change than the review-seat bug required.
+ *
+ * WHICH TEXT is then chosen by the MODE, not the scope: a review dispatch always
+ * gets REVIEW_FRAMING, under either scope. Only a non-review dispatch under scope
+ * 'all' gets the legacy SINGLE_PASS_FRAMING (agy exec — byte-identical, asserted).
+ */
+export function nonAgenticFramingKind(engine: EngineDefinition, mode: EngineMode): 'none'|'single-pass'|'review' {
+  if (mode === 'agent') return 'none';
+  const scope = engine.nonAgenticFraming;
+  // A REVIEW dispatch gets the review text under EITHER scope. Scope 'all' says
+  // "this CLI is agentic by default, frame every non-agent dispatch" — it does not
+  // say "use the single-pass text for reviews too", and that text bans referencing
+  // files, which flatly contradicts the review contract (every finding must cite
+  // file:line). agy's non-review dispatches keep the byte-identical legacy string.
+  if (mode === 'review' && (scope === 'all' || scope === 'review')) return 'review';
+  if (scope === 'all') return 'single-pass';
+  return 'none';
+}
+
+/**
+ * Prepend the framing this engine+mode calls for. Single source of truth shared by
+ * buildCommand (spawned CLI dispatch) and the claude pty path, so a configured pty
+ * dispatch can never silently miss the framing an exec-spawned one gets.
+ */
+export function applyNonAgenticFraming(engine: EngineDefinition, mode: EngineMode, prompt: string): string {
+  const kind = nonAgenticFramingKind(engine, mode);
+  if (kind === 'single-pass') return SINGLE_PASS_FRAMING + prompt;
+  if (kind === 'review') return REVIEW_FRAMING + prompt;
+  return prompt;
+}
+
 export function buildCommand(engine: EngineDefinition, mode: EngineMode, prompt: string, cwd: string, timeout: number, binaryPath: string, images?: ImageAttachment[]): {command:string, args:string[]} {
-  const modeConfig = mode === 'agent' ? engine.agent
-    : mode === 'exec' ? engine.exec
-    : engine.review;
+  const modeConfig = resolveModeConfig(engine, mode);
 
   if (!modeConfig) {
     throw new EngineNotFoundError(
@@ -216,20 +297,13 @@ export function buildCommand(engine: EngineDefinition, mode: EngineMode, prompt:
     effectivePrompt = labels.join('\n') + '\n\nPlease read and analyze the image(s) above.\n\n' + prompt;
   }
 
-  // agy (Antigravity) print mode is agentic by default: left to itself it writes
-  // the answer to artifact FILES, asks clarifying questions, and runs many tool
-  // rounds — which blows past the timeout and returns prose the caller can't parse.
-  // For non-agent dispatch (exec/review → ask/brainstorm/tribunal/review) force a
-  // single-pass, inline, plain-text answer. Agent mode is left agentic on purpose.
-  if (engine.id === 'agy' && mode !== 'agent') {
-    effectivePrompt =
-      'OUTPUT RULES (important): Reply with your COMPLETE final answer as plain text in THIS response only. ' +
-      'Do NOT create, write, edit, or reference any files or artifacts. ' +
-      'Do NOT ask clarifying questions — make reasonable assumptions and proceed. ' +
-      'Do NOT use slash commands or start an interactive session. ' +
-      'Do all the work in a single pass and output the final result directly as text now.\n\n' +
-      effectivePrompt;
-  }
+  // Agentic-by-default print CLIs: left to themselves they write the answer to
+  // artifact FILES, ask clarifying questions, and run many tool rounds — which
+  // blows past the timeout and returns prose the caller can't parse (agy), or
+  // burns the whole --max-turns budget running builds and tests and emits ZERO
+  // text (claude review seats: error_max_turns). Scope + text come from the engine
+  // CONFIG (nonAgenticFraming), never from an engine id here.
+  effectivePrompt = applyNonAgenticFraming(engine, mode, effectivePrompt);
 
   const vars: Record<string, string> = {
     prompt: effectivePrompt,
@@ -377,6 +451,46 @@ export function shouldUseClaudePty(engine: EngineDefinition, cwd?: string): bool
 }
 
 /**
+ * Plan a claude PTY dispatch through the SAME mode + framing logic buildCommand
+ * uses, so the opt-in pty backend can't silently behave differently from the
+ * spawned one. Before this, all four pty call sites hardcoded the session mode to
+ * 'exec'/'agent' and passed options.prompt through untouched — so a review seat
+ * dispatched over pty got neither the engine's declared review block nor any
+ * non-agentic framing, i.e. exactly the bug this branch fixes, still live behind
+ * `agon config claudeBackend pty`.
+ *
+ * resolveModeConfig is consulted for the same reason buildCommand consults it: a
+ * mode the engine does not declare (and that does not fall back) is a real
+ * capability gap and must fail loudly here too, not quietly run as an exec.
+ * The pty drives claude's INTERACTIVE TUI, so the review block's print-mode argv
+ * (--print/--output-format/--max-turns) is deliberately not forwarded — those
+ * flags are meaningless (and would corrupt the TUI) in a pty session. What carries
+ * over is the part that governs behavior in a TUI: the framing.
+ *
+ * `useFileChannel` is planned here too, because a review's session mode is 'exec'
+ * and the file answer-channel keys off the SESSION mode — so a pty review would
+ * otherwise be handed the mandatory "use your Write tool to write the answer to
+ * this file" instruction immediately after framing that says "Do NOT create,
+ * write, or edit any files". A direct contradiction, and the exact shape of the
+ * bug this branch exists to kill (claude burning its turn budget resolving it).
+ * Review answers come back inline; see useFileChannelForDispatch.
+ */
+export function planClaudePtyDispatch(engine: EngineDefinition, mode: EngineMode, prompt: string): {sessionMode: 'exec'|'agent', prompt: string, useFileChannel: boolean} {
+  const modeConfig = resolveModeConfig(engine, mode);
+  if (!modeConfig) {
+    throw new EngineNotFoundError(
+      engine.id,
+      `Engine "${engine.id}" does not support mode "${mode}"`,
+    );
+  }
+  return {
+    sessionMode: mode === 'agent' ? 'agent' : 'exec',
+    prompt: applyNonAgenticFraming(engine, mode, prompt),
+    useFileChannel: useFileChannelForDispatch(mode),
+  };
+}
+
+/**
  * When a caller passed a systemPrompt, prepend it to the prompt with the same [System Instructions]/[User Message] framing the legacy non-flag CLI path uses. Claude's TUI has no --system-prompt equivalent we can apply through stdin, so this is the honest way to keep forge/tribunal/brainstorm system instructions intact on the pty path.
  */
 export function composeClaudePtyPrompt(prompt: string, systemPrompt?: string): string {
@@ -400,6 +514,22 @@ export function answerChannelMode(): string {
 export function useFileChannelForMode(mode?: 'exec'|'agent'): boolean {
   const m = mode ?? 'exec';
   return (m === 'exec' || m === 'agent') && answerChannelMode() === 'file';
+}
+
+/**
+ * Whether the file answer-channel applies for a DISPATCH mode (as opposed to the
+ * pty SESSION mode useFileChannelForMode takes). Review is the one dispatch that
+ * must never get it: the channel appends a MANDATORY "use your Write tool to write
+ * your answer to <path>" instruction, which directly contradicts the review framing
+ * ("Do NOT create, write, or edit any files") sitting a few lines above it in the
+ * same prompt. An agentic CLI handed both spends turns trying to reconcile them —
+ * the exact turn-exhaustion this branch fixes — and a review seat is fed an
+ * UNTRUSTED diff, so keeping its tool surface at zero is the point. Review answers
+ * come back inline, which is what the review parser reads anyway.
+ */
+export function useFileChannelForDispatch(mode: EngineMode): boolean {
+  if (mode === 'review') return false;
+  return useFileChannelForMode(mode === 'agent' ? 'agent' : 'exec');
 }
 
 /**
@@ -440,7 +570,7 @@ export function setupFileAnswerChannel(composed: string): { prompt:string, answe
 /**
  * Drive interactive `claude` under a pty so the subscription billing path is used. Lazy-imports @kernlang/agon-engines — runs a python3 daemon (kern_engines.cli.daemon) over stdio JSON-RPC, no native node deps. cwd is plumbed through so worktree dispatches land in the right repo; systemPrompt is prepended to the prompt; extraArgv (model/effort launch flags) is forwarded to the engine exec. When AGON_CLAUDE_ANSWER_CHANNEL=file and mode is exec OR agent, claude is asked to Write its answer to a temp file we read as the AUTHORITATIVE result (clean — no TUI scrape), falling back to the scrape if the file is absent. Never throws — returns unavailable:true on any unexpected failure so kern callers can fall through to legacy paths with a simple !result.unavailable check.
  */
-export async function runClaudePtyDispatch(prompt: string, timeoutSec: number, signal?: AbortSignal, mode?: 'exec'|'agent', cwd?: string, systemPrompt?: string, env?: Record<string,string>, extraArgv?: string[]): Promise<{exitCode:number,stdout:string,stderr:string,durationMs:number,timedOut:boolean,unavailable?:boolean}> {
+export async function runClaudePtyDispatch(prompt: string, timeoutSec: number, signal?: AbortSignal, mode?: 'exec'|'agent', cwd?: string, systemPrompt?: string, env?: Record<string,string>, extraArgv?: string[], fileChannel?: boolean): Promise<{exitCode:number,stdout:string,stderr:string,durationMs:number,timedOut:boolean,unavailable?:boolean}> {
   const start = Date.now();
   try {
     let mod: any;
@@ -488,7 +618,9 @@ export async function runClaudePtyDispatch(prompt: string, timeoutSec: number, s
     // File answer-channel: for one-shot exec (council/forge/brainstorm/tribunal
     // members) AND agent (forge one-shot agent dispatch). claude writes its answer
     // to a temp file we read as authoritative, bypassing the flaky scrape.
-    const useFileChannel = useFileChannelForMode(mode);
+    // The caller may VETO it (fileChannel === false) for a dispatch whose framing
+    // forbids file writes — a review. Undefined keeps the session-mode default.
+    const useFileChannel = fileChannel ?? useFileChannelForMode(mode);
     let channelDir = '';
     try {
       let composed = composeClaudePtyPrompt(prompt, systemPrompt);
@@ -549,7 +681,7 @@ export async function runClaudePtyDispatch(prompt: string, timeoutSec: number, s
 /**
  * Streaming variant of runClaudePtyDispatch — yields response deltas as they arrive, returns the final DispatchResult. extraArgv (model/effort launch flags) is forwarded to the engine exec. Never throws — any unforeseen error returns unavailable:true via the generator's return value, so kern callers can fall through to legacy paths.
  */
-export async function* runClaudePtyStreamDispatch(prompt: string, timeoutSec: number, signal?: AbortSignal, mode?: 'exec'|'agent', cwd?: string, systemPrompt?: string, env?: Record<string,string>, extraArgv?: string[]): AsyncGenerator<string, {exitCode:number,stdout:string,stderr:string,durationMs:number,timedOut:boolean,unavailable?:boolean}, void> {
+export async function* runClaudePtyStreamDispatch(prompt: string, timeoutSec: number, signal?: AbortSignal, mode?: 'exec'|'agent', cwd?: string, systemPrompt?: string, env?: Record<string,string>, extraArgv?: string[], fileChannel?: boolean): AsyncGenerator<string, {exitCode:number,stdout:string,stderr:string,durationMs:number,timedOut:boolean,unavailable?:boolean}, void> {
   const start = Date.now();
   let session: any;
   try {
@@ -596,7 +728,8 @@ export async function* runClaudePtyStreamDispatch(prompt: string, timeoutSec: nu
 
     // File answer-channel (one-shot exec AND agent): stream the scraped deltas for
     // live UX, but read the FINAL answer from the authoritative file claude writes.
-    const useFileChannel = useFileChannelForMode(mode);
+    // Caller veto (fileChannel === false) applies here too — see runClaudePtyDispatch.
+    const useFileChannel = fileChannel ?? useFileChannelForMode(mode);
     let channelDir = '';
     const collected: string[] = [];
     try {

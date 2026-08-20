@@ -95,6 +95,15 @@ export interface EngineDefinition {
   imageFlag?: string;
   systemPromptFlag?: string;
   agent?: EngineModeConfig;
+  /**
+   * The engine's non-interactive CLI is AGENTIC by default: left alone it runs tool
+   * rounds (builds, tests, file writes) and may never emit a plain answer. This field
+   * declares WHERE the single-pass OUTPUT RULES framing applies: 'all' = every
+   * non-agent dispatch (exec + review), 'review' = review dispatches only (so ordinary
+   * exec work like brainstorm/tribunal/Cesar sub-dispatches keeps its tools). Agent
+   * mode is never framed.
+   */
+  nonAgenticFraming?: 'all'|'review';
   api?: {baseUrl:string, apiKeyEnv:string, model:string, maxTokens?:number, contextWindow?:number, format?:'openai'|'anthropic', firstChunkTimeoutMs?:number, idleTimeoutMs?:number, firstChunkRetryCount?:number, firstChunkRetryBackoffMs?:number, emptyResponseRetryCount?:number};
   companion?: CompanionConfig;
   sessionBudget?: SessionBudget;
@@ -107,6 +116,13 @@ export interface DispatchOptions {
   prompt: string;
   cwd: string;
   mode: EngineMode;
+  // What a mode 'review' dispatch is reviewing. Undefined (the default) means
+  // PROMPT-BORNE: the caller pasted a self-contained diff into `prompt`, which is
+  // what every agon review seat does. 'uncommittedChanges' is the explicit opt-in
+  // for an engine's NATIVE working-tree review (codex `review/start`), which
+  // ignores `prompt` entirely — asking for it implicitly would silently review the
+  // wrong content. Ignored for exec/agent modes.
+  reviewTarget?: 'uncommittedChanges';
   timeout: number;
   outputDir: string;
   maxTokens?: number;

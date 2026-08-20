@@ -90,8 +90,8 @@ export {
   formatSpinnerFrame, formatEngineBlock, formatStatusLine,
   clearLinesSequence, cursorUpSequence, clearLineSequence,
 } from './output-manager.js';
-export { parseStreamChunk, StreamParser } from './stream-parser.js';
-export type { ParsedChunk } from './stream-parser.js';
+export { parseStreamChunk, StreamParser, parseStreamJsonFailure, isDeterministicStreamFailure } from './stream-parser.js';
+export type { ParsedChunk, StreamJsonFailure } from './stream-parser.js';
 export { discoverEngines } from './engine-discover.js';
 export type { DiscoveryResult } from './engine-discover.js';
 export { preflightApply, applyPatchToTree, readPatchFromManifest, readPatchFromPath, applyPatchWithUndo, undoPatch } from './patch-apply.js';
@@ -253,7 +253,7 @@ export type {
 } from './generated/workflows/specs.js';
 export { apiDispatch, apiDispatchTools, apiDispatchToolsHistory, apiStreamDispatch, apiStreamDispatchWithHistory } from './api-dispatch.js';
 export type { ApiConfig } from './api-dispatch.js';
-export { companionDispatch } from './companion-dispatch.js';
+export { companionDispatch, companionUsesNativeReview } from './companion-dispatch.js';
 export type { CompanionResult } from './companion-dispatch.js';
 export { fetchModelsRegistry, buildModelEntries, searchModels, modelEntryToEngineDef, lookupCatalogContextWindow, lookupCatalogModelCost, lookupCatalogModelAttachment, engineSupportsVision } from './models-registry.js';
 export type { CatalogModelCost } from './models-registry.js';

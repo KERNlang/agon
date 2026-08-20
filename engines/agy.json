@@ -18,6 +18,7 @@
     "args": ["--print-timeout", "400s", "--print", "{prompt}", "--dangerously-skip-permissions"]
   },
   "review": {
+    "_comment": "--dangerously-skip-permissions is agy's PRINT-MODE BASELINE, not a review escalation — it is present on exec/agent for the same reason. Verified empirically: in --print with the flag absent, the first tool-permission request does not degrade to a denied tool, it ABORTS the whole run with `Error: permission check failed ... user denied permission` and returns no answer at all. A review seat that cannot read is still expected to answer from the pasted diff, but agy reaches for a tool unprompted, so without the flag the seat dies rather than reviewing. The seat's real containment is the non-agentic REVIEW framing (nonAgenticFraming: 'all' -> review text for review dispatches), which tells it not to act. Do not remove without re-running that probe.",
     "args": ["--print-timeout", "400s", "--print", "{prompt}", "--dangerously-skip-permissions"]
   },
   "agent": {
@@ -25,6 +26,7 @@
   },
 
   "capabilities": ["vision"],
+  "nonAgenticFraming": "all",
 
   "api": {
     "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai",

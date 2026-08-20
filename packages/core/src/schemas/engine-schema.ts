@@ -187,6 +187,28 @@ export const EngineDefinitionSchema = z.object({
   guards: z.enum(['strict', 'invariants', 'shadow']).optional(),
   imageFlag: z.string().optional(),
   systemPromptFlag: z.string().optional(),
+  // Scope of the non-agentic OUTPUT RULES framing buildCommand prepends for this
+  // engine's agentic-by-default print CLI:
+  //   'all'    — every non-agent dispatch (exec + review). agy's long-standing
+  //              behavior; its framing text is the legacy single-pass string.
+  //   'review' — REVIEW dispatches only. claude: exec dispatches (brainstorm,
+  //              tribunal, campfire, Cesar sub-dispatches) are deliberately left
+  //              untouched, because those legitimately want tool use; only a
+  //              review seat must stay a single non-agentic pass.
+  // OMITTED means NO framing, and that is the correct default, not an oversight:
+  // most engines' print mode is already a single non-agentic pass, so framing them
+  // would only add noise. Declare this ONLY for a CLI that is agentic by default in
+  // print mode (it will spend turns running builds/tests unless told not to) —
+  // currently claude and agy. If a newly added engine's review seats come back empty
+  // with a turn/token-budget terminal reason, that is the signal to declare it.
+  // WHICH text is used follows the MODE: a review dispatch always gets the review
+  // text (which requires file:line citations); only non-review dispatches under
+  // scope 'all' get the legacy single-pass text. See nonAgenticFramingKind.
+  // MUST be modelled here or Zod silently strips it at load (z.object drops
+  // unknown keys), leaving every registry-loaded engine unframed and quietly
+  // resurrecting the bug (claude burning --max-turns on tool rounds, zero text).
+  // Mirrors EngineDefinition.nonAgenticFraming in models/types.ts.
+  nonAgenticFraming: z.enum(['all', 'review']).optional(),
   api: ApiConfigSchema.optional(),
   companion: CompanionConfigSchema.optional(),
   isolationHints: IsolationHintsSchema.optional(),

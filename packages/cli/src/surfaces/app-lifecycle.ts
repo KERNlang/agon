@@ -84,7 +84,18 @@ export function startPlanSyncWatcher(activePlan: CesarPlan | null, setActivePlan
   };
 }
 
-export function startUpdateCheck(version: string, setUpdateChecking: (v:boolean) => void, setUpdateInfo: (info:any) => void): (() => void) | undefined {
+/**
+ * Result of the background npm-registry update check, as rendered by the
+ * UpdateBanner and the /update prompt. Built in startUpdateCheck below; null
+ * whenever there is no newer version to offer (or the banner was dismissed).
+ */
+export interface UpdateInfo {
+  currentVersion: string;
+  latestVersion: string;
+  checkedAt: number;
+}
+
+export function startUpdateCheck(version: string, setUpdateChecking: (v:boolean) => void, setUpdateInfo: (info:UpdateInfo|null) => void): (() => void) | undefined {
   // On a linked/dev checkout the global `agon` IS this build (via npm link),
   // so an npm-update banner would offer to install OVER the link and clobber
   // it. Never auto-check on a dev build — real npm installs still get it.

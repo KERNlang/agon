@@ -12,6 +12,10 @@ import type { Job } from '../signals/job-manager.js';
 
 import type { EngineProgress } from '../handlers/types.js';
 
+import type { EngineVitals } from '../cesar/telemetry.js';
+
+import type { CesarPlan } from '@kernlang/agon-core';
+
 import { renderScoreboard } from '../cesar/scoreboard.js';
 
 import type { Scoreboard } from '../cesar/scoreboard.js';
@@ -36,7 +40,7 @@ export function SpinnerBlock({ message, color }: { message:string; color?:number
 }
 
 
-const StatusBar = React.memo(function StatusBar({ chatMessageCount, totalTokens, totalCostUsd, cwd, branch, explorationMode, autoModeQueued, permissionMode, isActive, telemetryVitals, context, meteredCostUsd, hasPlanApiUsage, hasCliUsage, termWidth }: { cesarId:string; chatMessageCount:number; totalTokens:number; totalCostUsd:number; cwd:string; branch?:string; explorationMode?:boolean; toolOutputExpanded?:boolean; autoModeQueued?:boolean; permissionMode?:string; isActive?:boolean; fullscreenEnabled?:boolean; telemetryVitals?:Map<string, any>; context?:{pct:number,used:number,limit:number,compacted:number,cached:number,source?:string}|null; meteredCostUsd?:number; hasPlanApiUsage?:boolean; hasCliUsage?:boolean; termWidth?:number }) {
+const StatusBar = React.memo(function StatusBar({ chatMessageCount, totalTokens, totalCostUsd, cwd, branch, explorationMode, autoModeQueued, permissionMode, isActive, telemetryVitals, context, meteredCostUsd, hasPlanApiUsage, hasCliUsage, termWidth }: { cesarId:string; chatMessageCount:number; totalTokens:number; totalCostUsd:number; cwd:string; branch?:string; explorationMode?:boolean; toolOutputExpanded?:boolean; autoModeQueued?:boolean; permissionMode?:string; isActive?:boolean; fullscreenEnabled?:boolean; telemetryVitals?:Map<string, EngineVitals>; context?:{pct:number,used:number,limit:number,compacted:number,cached:number,source?:string}|null; meteredCostUsd?:number; hasPlanApiUsage?:boolean; hasCliUsage?:boolean; termWidth?:number }) {
   // Cost honesty: only REAL API token usage is billable per token. A
   // coding-plan API has real tokens but its cost is included in the plan;
   // a subscription CLI brain has no countable per-turn cost. Keep those
@@ -112,7 +116,7 @@ const StatusBar = React.memo(function StatusBar({ chatMessageCount, totalTokens,
 });
 export { StatusBar };
 
-const StatusDashboard = React.memo(function StatusDashboard({ telemetryVitals, recentFallbacks, width, height, filter }: { telemetryVitals:Map<string, any>; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; width?:number; height?:number; filter?:'all'|'problem' }) {
+const StatusDashboard = React.memo(function StatusDashboard({ telemetryVitals, recentFallbacks, width, height, filter }: { telemetryVitals:Map<string, EngineVitals>; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; width?:number; height?:number; filter?:'all'|'problem' }) {
   const vitals = Array.from(telemetryVitals?.values?.() ?? []);
   const severity: Record<string, number> = { stalled: 5, fallback: 4, offline: 3, busy: 2, idle: 1 };
   const filtered = filter === 'problem'
@@ -250,7 +254,7 @@ const StatusDashboard = React.memo(function StatusDashboard({ telemetryVitals, r
 });
 export { StatusDashboard };
 
-const ExecutionRail = React.memo(function ExecutionRail({ spinner, engines, activePlanState, activePlan, lastTool, stats, recentFallbacks, toolOutputExpanded, startTime, isActive }: { spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; activePlanState?:string|null; activePlan?:any; lastTool?:any; stats?:any; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; toolOutputExpanded?:boolean; startTime?:number; isActive?:boolean }) {
+const ExecutionRail = React.memo(function ExecutionRail({ spinner, engines, activePlanState, activePlan, lastTool, stats, recentFallbacks, toolOutputExpanded, startTime, isActive }: { spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; activePlanState?:string|null; activePlan?:CesarPlan|null; lastTool?:any; stats?:any; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; toolOutputExpanded?:boolean; startTime?:number; isActive?:boolean }) {
   const planGauge = buildPlanPhaseGauge(activePlan, 10);
   const now = Date.now();
   const elapsedMs = startTime && startTime > 0 ? Math.max(0, now - startTime) : 0;
@@ -353,7 +357,7 @@ const ExecutionRail = React.memo(function ExecutionRail({ spinner, engines, acti
 });
 export { ExecutionRail };
 
-const ExecutionRailPanel = React.memo(function ExecutionRailPanel({ spinner, engines, activePlanState, activePlan, lastTool, stats, recentFallbacks, toolOutputExpanded, startTime, isActive, width, maxRows, focused }: { spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; activePlanState?:string|null; activePlan?:any; lastTool?:any; stats?:any; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; toolOutputExpanded?:boolean; startTime?:number; isActive?:boolean; width?:number; maxRows?:number; focused?:boolean }) {
+const ExecutionRailPanel = React.memo(function ExecutionRailPanel({ spinner, engines, activePlanState, activePlan, lastTool, stats, recentFallbacks, toolOutputExpanded, startTime, isActive, width, maxRows, focused }: { spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; activePlanState?:string|null; activePlan?:CesarPlan|null; lastTool?:any; stats?:any; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; toolOutputExpanded?:boolean; startTime?:number; isActive?:boolean; width?:number; maxRows?:number; focused?:boolean }) {
   const safeWidth = Math.max(32, Math.floor(Number(width ?? 42)));
   const safeRows = Math.max(8, Math.floor(Number(maxRows ?? 12)));
   const inner = Math.max(12, safeWidth - 4);
@@ -481,7 +485,7 @@ const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs
 });
 export { BackgroundJobRail };
 
-const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confidence, context, spinner, engines, jobs, startTime, streamSnippet, isActive, activePlan, scoreboard, rationale, uiMotion, interactionActive }: { cesarId:string; confidence?:number|null; context?:{pct:number,used:number,limit:number,compacted:number,cached:number,source?:string}|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; jobs?:Job[]; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; autoModeQueued?:boolean; activePlanState?:string|null; activePlan?:any; scoreboard?:Scoreboard|null; rationale?:ModeRationale|null; uiMotion?:'full'|'reduced'|'off'; interactionActive?:boolean }) {
+const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confidence, context, spinner, engines, jobs, startTime, streamSnippet, isActive, activePlan, scoreboard, rationale, uiMotion, interactionActive }: { cesarId:string; confidence?:number|null; context?:{pct:number,used:number,limit:number,compacted:number,cached:number,source?:string}|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; jobs?:Job[]; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; autoModeQueued?:boolean; activePlanState?:string|null; activePlan?:CesarPlan|null; scoreboard?:Scoreboard|null; rationale?:ModeRationale|null; uiMotion?:'full'|'reduced'|'off'; interactionActive?:boolean }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
     return (value) => setTimeout(() => setter(value), 0);

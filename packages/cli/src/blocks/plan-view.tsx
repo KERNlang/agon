@@ -6,7 +6,9 @@ import { contentWidth, engineColor, RenderedSegments } from './rendering.js';
 
 import { parseMarkdownBlocks } from './markdown.js';
 
-const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, costEstimate, committed, selectedIndex, hideApproval }: { plan:any; markdown?:string; costEstimate?:{ totalTokens: number; totalCostUsd: number; steps: { id: string; tokens: number; costUsd: number }[] } | null; committed?:boolean; selectedIndex?:number; hideApproval?:boolean }) {
+import type { CesarPlan } from '@kernlang/agon-core';
+
+const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, costEstimate, committed, selectedIndex, hideApproval }: { plan:CesarPlan; markdown?:string; costEstimate?:{ totalTokens: number; totalCostUsd: number; steps: { id: string; tokens: number; costUsd: number }[] } | null; committed?:boolean; selectedIndex?:number; hideApproval?:boolean }) {
   const steps = plan.steps ?? [];
   const est = costEstimate;
   const totalTokens = est?.totalTokens ?? plan.totalEstimatedTokens ?? steps.reduce((sum: number, s: any) => sum + (s.estimatedTokens ?? 0), 0);
@@ -197,7 +199,7 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
 });
 export { PlanProposalView };
 
-const PlanApprovalPrompt = React.memo(function PlanApprovalPrompt({ plan, selectedIndex }: { plan?:any; selectedIndex?:number }) {
+const PlanApprovalPrompt = React.memo(function PlanApprovalPrompt({ plan, selectedIndex }: { plan?:CesarPlan|null; selectedIndex?:number }) {
   const steps = plan?.steps ?? [];
   const totalTokens = plan?.totalEstimatedTokens ?? steps.reduce((sum: number, s: any) => sum + (s.estimatedTokens ?? 0), 0);
   const totalCost = plan?.totalEstimatedCostUsd ?? steps.reduce((sum: number, s: any) => sum + (s.estimatedCostUsd ?? 0), 0);
@@ -217,7 +219,7 @@ const PlanApprovalPrompt = React.memo(function PlanApprovalPrompt({ plan, select
 });
 export { PlanApprovalPrompt };
 
-export function PlanExecutionView({ plan }: { plan:any }) {
+export function PlanExecutionView({ plan }: { plan:CesarPlan }) {
   const steps: any[] = plan.steps ?? [];
   const doneSteps = steps.filter((s: any) => s.state === 'done');
   const failedSteps = steps.filter((s: any) => s.state === 'failed');

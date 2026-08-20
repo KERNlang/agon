@@ -39,7 +39,7 @@ export async function handleProposePlan(args: Record<string,unknown>, dispatch: 
     ...plan,
     // Gemini fix (f1): planningCost is no longer accepted from the LLM.
     // Cost trust model is estimator-only — Cesar cannot self-report cost.
-    state: 'awaiting_approval' as any,
+    state: 'awaiting_approval',
     autoApprove: isAgenticAutoMode(ctx) || args.autoApprove === true ? true : undefined,
     selfReview: typeof args.selfReview === 'boolean' ? args.selfReview : undefined,
   };
@@ -68,7 +68,7 @@ export async function handleProposePlan(args: Record<string,unknown>, dispatch: 
     ctx.cesar.proposedPlan = undefined;
   }
   
-  dispatch({ type: 'plan-proposal' as any, plan, markdown, planFilePath: filePath });
+  dispatch({ type: 'plan-proposal', plan, markdown, planFilePath: filePath });
   return plan;
 }
 
@@ -94,7 +94,7 @@ export function handleExitPlanMode(reason: string, dispatch: Dispatch|null, ctx:
     if (ctx.setActivePlan) ctx.setActivePlan(null);
     // plan-cancelled clears the pinned live-pane proposal. Guarded: state
     // cleanup already happened, so a missing dispatch is non-fatal.
-    if (dispatch) dispatch({ type: 'plan-cancelled', plan: current } as any);
+    if (dispatch) dispatch({ type: 'plan-cancelled', plan: current });
   }
   if (dispatch) dispatch({ type: 'info', message: `Left plan mode — ${r}` } as any);
   return `[PLAN_EXITED] Left plan mode (${r}). You are now live: investigate and act directly with tools, or answer the user. Do NOT propose a plan again this turn.`;

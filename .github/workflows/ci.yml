@@ -37,6 +37,9 @@ jobs:
       - name: Re-export surface guard
         run: npm run guard:reexports
 
+      - name: Lint
+        run: npm run lint
+
       - name: Type check
         run: npm run typecheck
 

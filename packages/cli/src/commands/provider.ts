@@ -351,6 +351,9 @@ export const providerCommand = defineCommand({
         process.exit(1);
       }
 
+      // The 'key' case above ends in process.exit(1); ESLint does not model
+      // process.exit as terminating, so it reads this as a fallthrough.
+      // eslint-disable-next-line no-fallthrough
       case 'browse': {
         // Show full registry grouped by provider
         header('Available Models — models.dev');

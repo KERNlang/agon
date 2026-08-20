@@ -341,6 +341,11 @@ export function runHandleKeyboardInput(opts: KeyboardInputDeps, input: string, k
     liveToolStreamCount: Object.keys(opts.liveToolStreamsRef.current ?? {}).length,
   });
 
+  // The pause-menu KeyAction variants ('togglePauseMenu' / 'movePauseCursor' /
+  // 'selectPauseAction') are deliberately absent: Ctrl+C during a run is served
+  // by the SIGINT layer (handleSigint + _pauseState in app-interrupt.ts), not by
+  // this reducer, so handling them here would double-drive the pause state.
+  // eslint-disable-next-line @typescript-eslint/switch-exhaustiveness-check
   switch (action.type) {
     case 'none': return;
     case 'exit': process.exit(0); return;

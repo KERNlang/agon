@@ -16,6 +16,7 @@ const review = { winnerId: 'codex', patchPath: '/tmp/agon-review.patch', patchCo
 
 beforeEach(() => {
   spawnSyncMock.mockReset();
+  spawnSyncMock.mockReturnValue({ status: 0, signal: null, error: undefined });
   delete process.env.EDITOR;
   delete process.env.VISUAL;
 });
@@ -72,6 +73,54 @@ describe('handleReviewAction — edit', () => {
 
     expect(handleReviewAction({ type: 'edit' }, review, dispatch)).toBeNull();
     expect(dispatch).toHaveBeenCalledWith({ type: 'error', message: 'Editor failed: spawn failed' });
+  });
+});
+
+// spawnSync reports a launch failure on the RESULT, not by throwing: a missing
+// binary comes back as { error: ENOENT, status: null }. Claiming "Opened …"
+// then leaves the user waiting on an editor window that will never open.
+describe('handleReviewAction — edit failures reported without a throw', () => {
+  const messages = (dispatch: ReturnType<typeof vi.fn>) => dispatch.mock.calls.map((c) => c[0]);
+
+  it('reports a missing editor binary (ENOENT) as an error', () => {
+    process.env.EDITOR = 'agon-missing-editor';
+    spawnSyncMock.mockReturnValue({ error: Object.assign(new Error('spawn agon-missing-editor ENOENT'), { code: 'ENOENT' }), status: null, signal: null });
+    const dispatch = vi.fn();
+
+    expect(handleReviewAction({ type: 'edit' }, review, dispatch)).toBeNull();
+
+    expect(messages(dispatch)).toEqual([{ type: 'error', message: 'Editor failed: spawn agon-missing-editor ENOENT' }]);
+    expect(messages(dispatch)).not.toContainEqual(expect.objectContaining({ type: 'info' }));
+  });
+
+  it('reports a non-zero editor exit code', () => {
+    process.env.EDITOR = 'agon-test-editor';
+    spawnSyncMock.mockReturnValue({ status: 3, signal: null, error: undefined });
+    const dispatch = vi.fn();
+
+    handleReviewAction({ type: 'edit' }, review, dispatch);
+
+    expect(messages(dispatch)).toEqual([{ type: 'error', message: 'Editor agon-test-editor exited with code 3' }]);
+  });
+
+  it('reports an editor killed by a signal', () => {
+    process.env.EDITOR = 'agon-test-editor';
+    spawnSyncMock.mockReturnValue({ status: null, signal: 'SIGKILL', error: undefined });
+    const dispatch = vi.fn();
+
+    handleReviewAction({ type: 'edit' }, review, dispatch);
+
+    expect(messages(dispatch)).toEqual([{ type: 'error', message: 'Editor agon-test-editor terminated by SIGKILL' }]);
+  });
+
+  it('still confirms a clean editor session', () => {
+    process.env.EDITOR = 'agon-test-editor';
+    spawnSyncMock.mockReturnValue({ status: 0, signal: null, error: undefined });
+    const dispatch = vi.fn();
+
+    handleReviewAction({ type: 'edit' }, review, dispatch);
+
+    expect(messages(dispatch)).toEqual([{ type: 'info', message: `Opened ${review.patchPath} in agon-test-editor` }]);
   });
 });
 

@@ -55,4 +55,51 @@ describe('parseForgeJudgment — convergence flag', () => {
   it('returns null when no winner can be resolved', () => {
     expect(parseForgeJudgment('CONVERGE: yes', {} as unknown as ForgeManifest)).toBeNull();
   });
+
+  it('does not opt in on prose that merely STARTS with yes/no', () => {
+    expect(judgment('WINNER: codex\nCONVERGE: yesterday we merged the two halves').shouldConverge).toBe(false);
+    expect(judgment('WINNER: codex\nCONVERGE: nonetheless keep them separate').shouldConverge).toBe(false);
+  });
+
+  it('still accepts the flag with trailing punctuation or case', () => {
+    expect(judgment('WINNER: codex\nCONVERGE: YES.').shouldConverge).toBe(true);
+    expect(judgment('WINNER: codex\nCONVERGE: yes — take the retry loop from claude').shouldConverge).toBe(true);
+  });
+});
+
+// The registered roster is mostly hyphenated (kimi-code,
+// minimax-coding-plan-minimax-m3) and some ids carry a dot
+// (zai-coding-plan-glm-5.2). A word-character-only id capture matched NONE of
+// them, so those engines' strengths were dropped from the judgment in silence.
+describe('parseForgeJudgment — engine ids in strength lines', () => {
+  it('keeps strengths attributed to hyphenated and dotted engine ids', () => {
+    const j = judgment([
+      'WINNER: codex',
+      '- kimi-code: tests — covers the retry path',
+      '- minimax-coding-plan-minimax-m3: perf — avoids the second pass',
+      '- zai-coding-plan-glm-5.2: style — cleanest diff',
+      '- codex: correctness — handles the 429 case',
+    ].join('\n'));
+
+    expect(j.strengths.map((s) => s.engineId)).toEqual([
+      'kimi-code',
+      'minimax-coding-plan-minimax-m3',
+      'zai-coding-plan-glm-5.2',
+      'codex',
+    ]);
+    expect(j.strengths[0]).toEqual({ engineId: 'kimi-code', category: 'tests', reason: 'covers the retry path' });
+  });
+
+  it('still excludes the structured convergence lines from strengths', () => {
+    const j = judgment([
+      'WINNER: codex',
+      '- kimi-code: tests — covers the retry path',
+      '- file:src/a.ts fn:retry from:kimi-code reason:handles the 429 case',
+    ].join('\n'));
+
+    expect(j.strengths).toHaveLength(1);
+    expect(j.convergencePlan).toEqual([
+      { file: 'src/a.ts', fn: 'retry', from: 'kimi-code', reason: 'handles the 429 case' },
+    ]);
+  });
 });

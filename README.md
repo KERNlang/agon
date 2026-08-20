@@ -11,9 +11,9 @@
   <img src="https://img.shields.io/badge/rating-Glicko--2-red" alt="Glicko-2 rated">
 </p>
 
-**The competitive multi-AI orchestration CLI.**
+**The multi-AI orchestration CLI — engines compete to build, collaborate to think.**
 
-Agon AI pits the world's best AI engines against each other to solve your software engineering problems. Multiple AI engines compete in isolated git worktrees on the exact same task, the best solution wins and is applied automatically, and Glicko-2 ratings continuously track each model's performance over time. 
+Agon AI puts the world's best AI engines on your software engineering problems two ways. They **compete** on implementation: the same task runs in isolated git worktrees, the best solution wins and is applied automatically. They **collaborate** on judgment: brainstorm panels feeding a synthesis, council roundtables with assigned roles and a chair, tribunal debates, and multi-engine review consensus — pooling model strengths instead of betting on one. Glicko-2 ratings continuously track each model's performance over time, so routing keeps getting sharper.
 
 ```bash
 npm install -g @kernlang/agon

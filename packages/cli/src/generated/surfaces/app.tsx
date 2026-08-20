@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Static, Text, render } from 'ink';
 
 // ── Core ───────────────────────────────────────────────
-import { ScrollBox, AlternateScreen } from '@kernlang/terminal/runtime';
+import { ScrollBox, AlternateScreen } from '../../vendor/terminal/index.js';
 
 import { EngineRegistry, loadConfig, ensureAgonHome, setSessionRoot, startChatSession, seedChatSessionFromThread, loadOrCreateActiveThread, getRatings, getActiveWorkspace, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, getAuthKey, setAuthKey, getAgonHome, tracker, planCostEstimator, listCesarPlans, visionSupportNote } from '@kernlang/agon-core';
 

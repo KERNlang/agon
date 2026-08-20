@@ -1231,4 +1231,4 @@ export function resolvePackageVersion(resolveSpecifier: string|null, wantName: s
 
 export const VERSION: string = resolvePackageVersion(null, '@kernlang/agon', '0.2.5');
 
-export const KERN_VERSION: string = resolvePackageVersion('@kernlang/terminal/runtime', '@kernlang/terminal', '4.0.0');
+export const KERN_VERSION: string = resolvePackageVersion('@kernlang/protocol', '@kernlang/protocol', '4.0.0');

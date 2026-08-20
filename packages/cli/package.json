@@ -60,7 +60,6 @@
     "@ai-sdk/anthropic": "^3.0.67",
     "@ai-sdk/openai-compatible": "^2.0.40",
     "@kernlang/protocol": "~4.5.0",
-    "@kernlang/terminal": "~4.5.0",
     "ai": "^6.0.149",
     "citty": "^0.1.6",
     "ink": "^7.0.1",

@@ -68,7 +68,6 @@
     "@kernlang/react": "~4.5.0",
     "@kernlang/review": "~4.5.0",
     "@kernlang/review-mcp": "~4.5.0",
-    "@kernlang/terminal": "~4.5.0",
     "@kernlang/test": "~4.5.0",
     "@kernlang/vue": "~4.5.0"
   }

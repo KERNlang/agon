@@ -48,7 +48,7 @@ export default defineConfig({
     // so they install from the registry rather than inlining (avoids React
     // singleton + AI-SDK duplication hazards).
     'ai', '@ai-sdk/anthropic', '@ai-sdk/openai-compatible',
-    '@kernlang/protocol', '@kernlang/terminal', 'citty', 'pidusage',
+    '@kernlang/protocol', 'citty', 'pidusage',
   ],
   banner: {
     js: '#!/usr/bin/env node',

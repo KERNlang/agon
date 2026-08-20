@@ -2,9 +2,9 @@ import { ensureAgonHome, appendMessage, resolveWorkingDir } from '@kernlang/agon
 
 import { randomUUID } from 'node:crypto';
 
-import { ensureChromeBridge } from '../signals/chrome-bridge.js';
+import { ensureChromeBridge } from '../bridge/chrome-bridge.js';
 
-import { parseSseChunk, approvalTargetsClient, buildApprovalPostBody } from '../commands/drive.js';
+import { parseSseChunk, approvalTargetsClient, buildApprovalPostBody } from '../bridge/serve-protocol.js';
 
 import { sessionResultStore } from '../models/session-results.js';
 

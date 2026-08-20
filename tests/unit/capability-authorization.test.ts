@@ -11,7 +11,7 @@ import type {
 } from '../../packages/core/src/sessions/brain-client.js';
 import { AgenticTurnBrainClient, AGENT_TOOL_MARKER as MARK } from '../../packages/cli/src/bridge/agentic-brain-client.js';
 import { createAgonServe } from '../../packages/cli/src/bridge/agon-serve.js';
-import * as drive from '../../packages/cli/src/commands/drive.js';
+import * as drive from '../../packages/cli/src/bridge/serve-protocol.js';
 import type { BrainClient } from '@kernlang/agon-core';
 
 type ApprovalDecision = 'approve' | 'approve-session' | 'deny' | 'deny-session' | 'abort';

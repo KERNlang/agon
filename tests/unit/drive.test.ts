@@ -3,13 +3,15 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  listServeConnections,
   pickServeConnection,
-  parseSseChunk,
   agentActivityLabel,
-  approvalTargetsClient,
   renderDriveEvent,
 } from '../../packages/cli/src/commands/drive.js';
+import {
+  listServeConnections,
+  parseSseChunk,
+  approvalTargetsClient,
+} from '../../packages/cli/src/bridge/serve-protocol.js';
 
 // ── Connection discovery ──────────────────────────────────────────────────────
 

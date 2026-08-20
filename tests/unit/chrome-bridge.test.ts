@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { resolveChromeOrigins } from '../../packages/cli/src/signals/chrome-bridge.js';
+import { resolveChromeOrigins } from '../../packages/cli/src/bridge/chrome-bridge.js';
 
 // resolveChromeOrigins reads $AGON_HOME/serve/*.json for an existing serve's allowedOrigins
 // when config has no chromeExtensionOrigin. Drive it with a temp AGON_HOME + cwd.

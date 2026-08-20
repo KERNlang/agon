@@ -29,7 +29,9 @@
     "test": "npm run test:ts",
     "test:ts": "node scripts/run-node22.mjs vitest run",
     "test:watch": "node scripts/run-node22.mjs vitest",
-    "lint": "eslint . --max-warnings 0"
+    "lint": "eslint . --max-warnings 0",
+    "knip": "knip",
+    "lint:dead": "npm run knip"
   },
   "engines": {
     "node": ">=22"

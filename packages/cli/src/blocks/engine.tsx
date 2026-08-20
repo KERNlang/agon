@@ -276,7 +276,7 @@ export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboar
         <GradientLine key={i} text={line} colors={BRAND} />
       ))}
       <Text> </Text>
-      <Text italic color="#d4a041">{'     Any AI can join. They compete. You ship.'}</Text>
+      <Text italic color="#d4a041">{' '.repeat(TAGLINE_PAD)}{DASHBOARD_TAGLINE}</Text>
       <Text dimColor>{'     v'}{VERSION}{'  ·  Powered by '}<Text bold color="#fbbf24">{'KERNlang.dev'}</Text></Text>
       {event.workspace && (
         <Text dimColor>{'     workspace: '}{event.workspace.path}</Text>
@@ -1201,6 +1201,30 @@ export { BidGroup };
 export const BRAND: readonly string[] = ['#fbbf24', '#f9a816', '#f97316', '#f45a2a', '#ef4444'] as const;
 
 export const LOGO_LINES: string[] = ['    █████╗  ██████╗  ██████╗ ███╗   ██╗', '   ██╔══██╗██╔════╝ ██╔═══██╗████╗  ██║', '   ███████║██║  ███╗██║   ██║██╔██╗ ██║', '   ██╔══██╗██║   ██╗██║   ██║██║╚██╗██║', '   ██║  ██║╚██████╔╝╚██████╔╝██║ ╚████║', '   ╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═══╝'];
+
+export const DASHBOARD_TAGLINE: string = 'Any AI can join. They compete. You ship.';
+
+/**
+ * Left pad, in columns relative to the LOGO_LINES strings' own origin (column 0
+ * of each figlet row), that centers `text` under the AGON figlet's ink block.
+ *
+ * Derived, never hand-counted — the four hand-counted banner spacers this file
+ * already replaced had all drifted. The figlet rows are 39 chars wide but the
+ * ink only spans columns 3..38 (36 columns, centre 20.5); the tagline is 40
+ * chars, so it is wider than the logo and the balanced start column is
+ * 3 + (36 - 40) / 2 = 1 (two columns of overhang on each side).
+ */
+export function centerPadUnderLogo(text: string): number {
+  const inked = LOGO_LINES.filter((line: string) => line.trim().length > 0);
+  if (inked.length === 0) return 0;
+  const start = Math.min(...inked.map((line: string) => line.length - line.trimStart().length));
+  const end = Math.max(...inked.map((line: string) => line.trimEnd().length - 1));
+  const width = end - start + 1;
+  return Math.max(0, start + Math.round((width - text.length) / 2));
+}
+
+/** Columns of indent that centre DASHBOARD_TAGLINE under the logo. Currently 1. */
+export const TAGLINE_PAD: number = centerPadUnderLogo(DASHBOARD_TAGLINE);
 
 /**
  * Read this package's installed version from its package.json at runtime so the banner auto-reflects npm upgrades instead of a frozen literal. Walks up from this module to the nearest package.json whose name matches. Falls back to the literal if resolution fails — e.g. an exports-locked package.json that can't be read by path.

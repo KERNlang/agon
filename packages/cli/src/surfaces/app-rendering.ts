@@ -8,7 +8,7 @@ import { parsePatchPreview } from '../blocks/engine-helpers.js';
 
 import { contentWidth, color256toHex, engineColor, CODE_RAIL, CODE_RAIL_COLOR, MAX_CODE_LINES } from '../blocks/rendering.js';
 
-import { LOGO_LINES, VERSION, BRAND } from '../blocks/engine.js';
+import { LOGO_LINES, VERSION, BRAND, DASHBOARD_TAGLINE, TAGLINE_PAD } from '../blocks/engine.js';
 
 import type { OutputBlock } from '../blocks/engine.js';
 
@@ -1240,7 +1240,10 @@ export function renderBlockOwnRows(block: OutputBlock, mode: string, toolOutputE
           });
         });
         pushSpacer(`${baseKey}-dash-gap-1`);
-        pushSegmentsRow(`${baseKey}-dash-tag`, 0, [{ text: '     Any AI can join. They compete. You ship.', color: '#d4a041', italic: true }]);
+        // Same paddingLeft as the logo rows above, so TAGLINE_PAD (derived from
+        // the figlet's ink extent in blocks/engine.tsx) centres the tagline under
+        // the AGON block here exactly as it does in DashboardView.
+        pushSegmentsRow(`${baseKey}-dash-tag`, 1, [{ text: `${' '.repeat(TAGLINE_PAD)}${DASHBOARD_TAGLINE}`, color: '#d4a041', italic: true }]);
         pushSegmentsRow(`${baseKey}-dash-version`, 0, [
           { text: `     v${VERSION}  ·  Powered by `, dimColor: true },
           { text: 'KERNlang.dev', color: '#fbbf24', bold: true },

@@ -1,12 +1,22 @@
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 
-import { AGON_HOME } from '@kernlang/agon-core';
+import { homedir } from 'node:os';
+
+/**
+ * Perf output dir. Resolved here rather than through the core barrel so this
+ * module — imported by the composer leaf, i.e. the keystroke path — pulls in no
+ * package barrel at all (and stays loadable under tests that mock core).
+ */
+function perfDir(): string {
+  const override = process.env.AGON_HOME?.trim();
+  return join(override ? resolve(override) : join(homedir(), '.agon'), 'perf');
+}
 
 export const PERF_ENABLED: boolean = process.env.AGON_PERF === '1';
 
-export const PERF_PATH: string = join(AGON_HOME, 'perf', 'input-latency.ndjson');
+export const PERF_PATH: string = join(perfDir(), 'input-latency.ndjson');
 
 
 export function perfNow(): number {
@@ -40,7 +50,7 @@ export function recordKeystrokeLatency(t0: number, blocks: number, archive: numb
 
 export const RENDER_PROBE_ENABLED: boolean = process.env.AGON_RENDER_PROBE === '1';
 
-export const RENDER_PROBE_PATH: string = join(AGON_HOME, 'perf', 'render-counts.json');
+export const RENDER_PROBE_PATH: string = join(perfDir(), 'render-counts.json');
 
 const renderCounts: Record<string, number> = Object.create(null);
 

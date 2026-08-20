@@ -1,7 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-// Source of truth: packages/cli/src/kern/cesar/steering.kern
-// (regenerated via npm run kern:compile — do not edit the generated .ts by hand).
 import {
   markSteeringTurn,
   pushSteering,

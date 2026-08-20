@@ -3,7 +3,6 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runRagVectorStoreConformance, validateRagVectorStoreAdapterManifest } from '@kernlang/core';
-import { analyzeKernSourceCapabilities, executeKernSource } from '@kernlang/core/runner';
 import { adapterNamespaceDir, createAgonRagVectorStoreContract } from '../../packages/core/src/generated/rag/adapter.js';
 import { classifyRuntimePilotChange } from '../../packages/core/src/generated/workflows/runtime-pilot.js';
 import { loadRagIndexAt, saveRagIndexAt } from '../../packages/core/src/rag.js';
@@ -148,22 +147,12 @@ describe('Agon persistent RAG adapter', () => {
   });
 });
 
-describe('KERN 4.5 direct source-runner pilot', () => {
+describe('runtime pilot change classification', () => {
   it.each([
     ['docs', 'live'],
     ['bounded-code', 'review'],
     ['cross-contract', 'plan'],
-  ])('matches compiled policy for %s without host capabilities', (changeKind, expected) => {
-    const sourcePath = join(process.cwd(), 'packages/core/src/kern/workflows/runtime-pilot.kern');
-    const source = readFileSync(sourcePath, 'utf8')
-      .concat(`\nfn name=main returns=void\n  handler lang="kern"\n    print value="classifyRuntimePilotChange('${changeKind}')"\n`);
-    const analysis = analyzeKernSourceCapabilities(source, { entryHandlerName: 'main' });
-
-    expect(analysis.hasParseErrors).toBe(false);
-    expect(analysis.requirements).toEqual([]);
-    expect(analysis.unknownCapabilities).toEqual([]);
-    expect(analysis.plannedCapabilities).toEqual([]);
-    expect(executeKernSource(source).trim()).toBe(expected);
+  ])('routes a %s change to the %s lane', (changeKind, expected) => {
     expect(classifyRuntimePilotChange(changeKind)).toBe(expected);
   });
 });

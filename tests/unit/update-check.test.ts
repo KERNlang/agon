@@ -328,28 +328,28 @@ describe('update-check service', () => {
   });
 });
 
-// Regression guard: the update prompt in app.kern used to ship a choice with
+// Regression guard: the update prompt in app.tsx used to ship a choice with
 // key '__other' meaning "dismiss this version." That collided with the
 // question-row sentinel that signals "open the inline text editor" (added
-// concurrently in output.kern / keyboard.kern). If '__other' ever re-appears
+// concurrently in the output/keyboard surfaces). If '__other' ever re-appears
 // as an update-prompt choice key, picking "Don't ask again" would open a
 // blank text box instead of dismissing. The compiler won't catch it because
 // both sides are typed `any`/`string` — only this guard does.
 describe('update prompt sentinel collision guard', () => {
-  it('app.kern does not use the __other sentinel as an update-prompt choice key', async () => {
+  it('app.tsx does not use the __other sentinel as an update-prompt choice key', async () => {
     const { readFile } = await import('node:fs/promises');
     const { join } = await import('node:path');
-    const appKernPath = join(__dirname, '../../packages/cli/src/kern/surfaces/app.kern');
-    const src = await readFile(appKernPath, 'utf8');
+    const appPath = join(__dirname, '../../packages/cli/src/generated/surfaces/app.tsx');
+    const src = await readFile(appPath, 'utf8');
 
     // Anchor on the triggerUpdatePrompt choices array itself (the literal
     // `const choices = [` inside that callback) so the order of rows is
     // irrelevant — the guard cares only that the four intent keys exist and
-    // that `__other` does NOT. The array literal is the only one in app.kern
+    // that `__other` does NOT. The array literal is the only one in app.tsx
     // whose keys we care about; permission prompts use a different shape.
     const promptMarker = "const current = info.currentVersion || VERSION;";
     const blockStart = src.indexOf(promptMarker);
-    expect(blockStart, "expected to find the triggerUpdatePrompt choices array in app.kern").toBeGreaterThan(-1);
+    expect(blockStart, "expected to find the triggerUpdatePrompt choices array in app.tsx").toBeGreaterThan(-1);
     const arrayStart = src.indexOf('const choices = [', blockStart);
     expect(arrayStart, "expected to find `const choices = [` after the update-prompt marker").toBeGreaterThan(-1);
     const blockEnd = src.indexOf('];', arrayStart) + 2;

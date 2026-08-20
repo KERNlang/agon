@@ -38,6 +38,7 @@
     "npm": "10.9.4"
   },
   "devDependencies": {
+    "@kernlang/core": "~4.5.0",
     "@types/node": "^22.0.0",
     "@vitest/coverage-v8": "^3.2.4",
     "patch-package": "^8.0.1",

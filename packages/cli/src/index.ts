@@ -1,6 +1,6 @@
 import { defineCommand, runMain } from 'citty';
 import { lazySubCommands } from './lazy-commands.js';
-import { loadConfig, loadAllAuthKeys, installKernStackTraceMapper } from '@kernlang/agon-core';
+import { loadConfig, loadAllAuthKeys } from '@kernlang/agon-core';
 
 // `repl.js` (the whole interactive Cesar/Ink surface, generated/surfaces/app.tsx
 // — ~2k lines pulling in React/Ink + the full tool/agent stack) and
@@ -22,14 +22,6 @@ function reportInteractiveLoadFailure(err: unknown): void {
   const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
   process.stderr.write(`[agon] failed to load the interactive UI module: ${detail}\n`);
   process.exitCode = 1;
-}
-
-try {
-  if (!process.env.AGON_NO_STACK_TRACE_MAPPER) {
-    installKernStackTraceMapper();
-  }
-} catch {
-  // Stack trace mapping is diagnostic sugar; startup should not depend on it.
 }
 
 // Load stored API keys from ~/.agon/auth.json into process.env at startup

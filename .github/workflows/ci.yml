@@ -15,12 +15,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # No submodules: kern_engines was extracted into its own repo
+      # (KERNlang/kern-engines) and .gitmodules no longer exists.
       - name: Checkout
         uses: actions/checkout@v5
-        with:
-          # kern_engines is a public submodule (KERNlang/kern-engines) over HTTPS,
-          # so the default GITHUB_TOKEN checks it out with no extra credentials.
-          submodules: recursive
 
       - name: Setup Node.js
         uses: actions/setup-node@v6

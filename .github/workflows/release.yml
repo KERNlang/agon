@@ -63,12 +63,22 @@ jobs:
       - name: Set version from tag
         run: npm run release:set-version -- "${GITHUB_REF_NAME}"
 
-      # Gate the release on the same checks CI runs — never publish a red tree.
+      # Gate the release on the same checks CI runs, in the same order — never
+      # publish a red tree. `build:cli` matters here beyond parity: `npm run
+      # release` publishes @kernlang/agon-dedup BEFORE it builds and publishes
+      # the CLI, so a bundling failure discovered mid-publish would leave the
+      # family half-released. Build first, publish second.
       - name: Re-export surface guard
         run: npm run guard:reexports
 
+      - name: Lint
+        run: npm run lint
+
       - name: Type check
         run: npm run typecheck
+
+      - name: Build CLI
+        run: npm run build:cli
 
       - name: Run tests
         run: npm run test

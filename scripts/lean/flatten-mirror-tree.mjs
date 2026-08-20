@@ -33,6 +33,24 @@ const MIRROR_DIR = 'generated';
 const MIRROR_SEG = `${path.sep}${MIRROR_DIR}${path.sep}`;
 const MIRROR_SRC_SEG = `${path.sep}src${MIRROR_SEG}`;
 
+/**
+ * Trees this codemod must never rewrite.
+ *
+ * `docs/analysis/` holds historical analysis notes: point-in-time snapshots of
+ * how the tree looked when they were written, quoted alongside the `.kern`
+ * sources and KERN compile flow of that era. Repointing a single path inside
+ * such a note does not modernise it — it makes it self-contradictory, a
+ * document that prescribes compiling KERN into a directory it no longer names.
+ * Frozen-as-written is the only coherent state for a historical record.
+ */
+const FROZEN_PREFIXES = ['docs/analysis/'];
+
+/** Is `file` (an absolute path) inside a frozen, never-rewritten tree? */
+function isFrozen(file) {
+  const relative = rel(file);
+  return FROZEN_PREFIXES.some((prefix) => relative.startsWith(prefix));
+}
+
 /** Recursively list files under `dir`, skipping node_modules/dist. */
 function walk(dir, out = []) {
   let entries;
@@ -242,7 +260,7 @@ export function buildPlan() {
     const full = path.join(ROOT, name);
     if (fs.statSync(full).isFile()) files.push(full);
   }
-  return { moves, files: [...new Set(files)].map(rel).sort() };
+  return { moves, files: [...new Set(files)].filter((f) => !isFrozen(f)).map(rel).sort() };
 }
 
 function rel(p) {
@@ -380,7 +398,7 @@ function walkRepo() {
     const full = path.join(ROOT, name);
     if (fs.statSync(full).isFile()) out.push(full);
   }
-  return [...new Set(out)].sort();
+  return [...new Set(out)].filter((f) => !isFrozen(f)).sort();
 }
 
 // ---------------------------------------------------------------------------

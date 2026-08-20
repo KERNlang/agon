@@ -47,7 +47,7 @@ The branch file is an analysis note, not an implementation patch. The review the
 ### Slash And In-Session Pipeline
 
 - `packages/cli/src/kern/signals/intent.kern` registers `/pipeline` as `<task> [test with <cmd>] -- build->review->fix loop`.
-- `packages/cli/src/signals/intent.ts` parses `pipeline` and `pipe` into `{ type: 'pipeline', task, fitnessCmd }`.
+- `packages/cli/src/generated/signals/intent.ts` parses `pipeline` and `pipe` into `{ type: 'pipeline', task, fitnessCmd }`.
 - `packages/cli/src/kern/signals/dispatch/intent-orchestration.kern` routes that intent to `handlePipeline`.
 - `packages/cli/src/kern/signals/dispatch/cesar-router.kern` routes Cesar action `pipeline` to `handlePipeline`.
 - `packages/cli/src/kern/handlers/pipeline.kern` implements the build-review-fix loop:

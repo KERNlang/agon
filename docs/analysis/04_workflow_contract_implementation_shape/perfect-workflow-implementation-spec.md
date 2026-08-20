@@ -118,7 +118,7 @@ packages/core/src/kern/workflows/
 ```
 
 Generated TypeScript should be produced by the existing KERN compile flow under
-`packages/core/src/`, then exported from `packages/core/src/index.ts`
+`packages/core/src/generated/`, then exported from `packages/core/src/index.ts`
 or a dedicated core facade.
 
 ### `types.kern`

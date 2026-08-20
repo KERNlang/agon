@@ -2,7 +2,7 @@ import { join } from 'node:path';
 
 import { mkdirSync } from 'node:fs';
 
-import { ensureAgonHome, RUNS_DIR, scanProjectContext, tracker, appendMessage, resolveWorkingDir, loadConfig } from '@kernlang/agon-core';
+import { ensureAgonHome, RUNS_DIR, scanProjectContext, appendMessage, resolveWorkingDir, loadConfig } from '@kernlang/agon-core';
 
 import { runTeamBrainstorm } from '@kernlang/agon-forge';
 

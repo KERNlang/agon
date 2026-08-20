@@ -1,10 +1,7 @@
-import { join } from 'node:path';
 
 import { FITNESS_PATTERN } from '../intent.js';
 
-import type { Dispatch, HandlerContext } from '../../../handlers/types.js';
-
-import { handleBrainstorm } from '../../../handlers/index.js';
+import type { HandlerContext } from '../../../handlers/types.js';
 
 import { loadOrCreateActiveThread } from '@kernlang/agon-core';
 

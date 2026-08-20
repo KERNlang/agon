@@ -4,9 +4,8 @@ import { realpathSync } from 'node:fs';
 
 import { execSync } from 'node:child_process';
 
-import type { PermissionDecision, ToolContext, ParsedPermissionRule, PermissionRuleSet } from '../models/tool-types.js';
+import type { ParsedPermissionRule, PermissionRuleSet } from '../models/tool-types.js';
 
-import { PERMISSION_DENIED_MESSAGE } from '../signals/tool-registry.js';
 
 export interface PermissionRule {
   tool: string;

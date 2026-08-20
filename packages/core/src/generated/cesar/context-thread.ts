@@ -10,7 +10,7 @@ import { join, resolve, basename } from 'node:path';
 
 import { randomUUID, createHash } from 'node:crypto';
 
-import { homedir, tmpdir } from 'node:os';
+import { homedir } from 'node:os';
 
 import { ensureAgonHome } from '../signals/config.js';
 

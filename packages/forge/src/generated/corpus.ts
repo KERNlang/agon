@@ -1,10 +1,10 @@
-import { readFileSync, writeFileSync, mkdirSync, renameSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 
 import { dirname } from 'node:path';
 
 import type { BreakerArtifact, CorpusEntry, GapPattern, TaskClass } from '@kernlang/agon-core';
 
-import { CORPUS_PATH, SKILLS_DIR } from '@kernlang/agon-core';
+import { CORPUS_PATH } from '@kernlang/agon-core';
 
 export interface CorpusRecord {
   entries: CorpusEntry[];

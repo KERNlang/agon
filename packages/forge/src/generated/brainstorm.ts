@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 
-import type { EngineAdapter, BrainstormBid, BrainstormResult, BrainstormGroup, ScoutBid } from '@kernlang/agon-core';
+import type { EngineAdapter, BrainstormBid, BrainstormResult, ScoutBid } from '@kernlang/agon-core';
 
-import { EngineRegistry, buildBrainstormPrompt, getRatings, loadConfig, createSidechainLogger, updateGlickoRanked, classifyTask, seedNewEnginesFromRegistry } from '@kernlang/agon-core';
+import { EngineRegistry, getRatings, createSidechainLogger, updateGlickoRanked, classifyTask, seedNewEnginesFromRegistry } from '@kernlang/agon-core';
 
-import { buildKernDraftPrompt, parseKernDraft, buildKernRankPrompt } from '@kernlang/protocol';
+import { buildKernDraftPrompt, parseKernDraft } from '@kernlang/protocol';
 
 import type { KernDraft } from '@kernlang/protocol';
 
@@ -276,7 +276,7 @@ export async function runBrainstorm(opts: {question:string, context?:string, eng
   if (panelHealth.banner) console.warn(`[agon] brainstorm ${panelHealth.banner}`);
   sidechain.log('brainstorm:panel-health', undefined, panelHealth);
 
-  const bids: BrainstormBid[] = ranked.map((d, i) => {
+  const bids: BrainstormBid[] = ranked.map((d) => {
     const reasoning = d.draft.approach + (d.draft.reasoning ? ` — ${d.draft.reasoning}` : '');
     const approach = d.draft.steps.map((s: string, j: number) => `${j + 1}. ${s}`).join('\n');
     const score = qualityScore(d.engineId, d.draft, style);

@@ -103,7 +103,7 @@ export class DiagnosticRunner {
     this.lastDigest = null;
   }
 
-  noteEdit(filePath: string, callId: string): void {
+  noteEdit(filePath: string, _callId: string): void {
     try {
       const plan = discoverChecker(filePath, process.cwd());
       if (!plan) return;

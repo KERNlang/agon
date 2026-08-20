@@ -2,9 +2,7 @@ import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 
 import { dirname } from 'node:path';
 
-import type { TaskClass } from '../models/types.js';
-
-import type { TeamRole, TeamSpec, TeamMatchResult, TeamMember } from './team.js';
+import type { TeamRole, TeamMatchResult, TeamMember } from './team.js';
 
 import { computeContributionWeights } from './team.js';
 
@@ -85,13 +83,11 @@ export function predictTeamRating(members: TeamMember[], format: string): number
   const compRating = formatData.compositions[lineupKey];
 
   let roleSum = 0;
-  let roleCount = 0;
   for (const m of members) {
     const roleKey = `${m.engineId}:${m.role}`;
     const roleRating = formatData.roles[roleKey];
     if (roleRating) {
       roleSum += roleRating.rating * m.weight;
-      roleCount++;
     } else {
       roleSum += 1500 * m.weight;
     }

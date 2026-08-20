@@ -7,7 +7,7 @@ import type { ForgeEvent, TeamEvent } from '@kernlang/agon-core';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { runTeamTribunal } from '@kernlang/agon-forge';
 import type { TribunalMode } from '@kernlang/agon-forge';
-import { header, success, fail, info, bold, dim, green } from '../output.js';
+import { header, info, bold, dim, green } from '../output.js';
 import { filterDefaultOrchestrationEngines } from '../generated/handlers/engine-filter.js';
 
 export const teamTribunalCommand = defineCommand({

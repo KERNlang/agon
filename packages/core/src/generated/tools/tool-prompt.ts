@@ -73,29 +73,11 @@ export function generateToolPrompt(handlers: ToolHandler[]): string {
   return sections.join('\n\n');
 }
 
-function generateReadToolSchema(): Record<string,unknown> {
-  return { file_path: { type: 'string', required: true, description: 'Absolute or relative path to file' }, offset: { type: 'number', required: false, description: 'Line number to start reading from (0-based)' }, limit: { type: 'number', required: false, description: 'Max lines to read (default 2000)' } };
-}
 
-function generateEditToolSchema(): Record<string,unknown> {
-  return { file_path: { type: 'string', required: true, description: 'Path to file to edit' }, old_string: { type: 'string', required: true, description: 'Exact text to find and replace' }, new_string: { type: 'string', required: true, description: 'Replacement text' }, replace_all: { type: 'boolean', required: false, description: 'Replace all occurrences (default false)' } };
-}
 
-function generateWriteToolSchema(): Record<string,unknown> {
-  return { file_path: { type: 'string', required: true, description: 'Path to file to write' }, content: { type: 'string', required: true, description: 'Complete file content' } };
-}
 
-function generateBashToolSchema(): Record<string,unknown> {
-  return { command: { type: 'string', required: true, description: 'Shell command to execute' }, timeout: { type: 'number', required: false, description: 'Timeout in ms (default 120000)' } };
-}
 
-function generateGrepToolSchema(): Record<string,unknown> {
-  return { pattern: { type: 'string', required: true, description: 'Regex pattern to search for' }, path: { type: 'string', required: false, description: 'Directory or file to search (default: cwd)' }, glob: { type: 'string', required: false, description: 'Glob filter (e.g. "*.ts")' }, output_mode: { type: 'string', required: false, description: 'files_with_matches | count | content (default: files_with_matches)' } };
-}
 
-function generateGlobToolSchema(): Record<string,unknown> {
-  return { pattern: { type: 'string', required: true, description: 'Glob pattern (e.g. "**/*.ts")' }, path: { type: 'string', required: false, description: 'Base directory (default: cwd)' } };
-}
 
 /**
  * Recursively convert a JSON Schema property, preserving nested structures for arrays/objects.

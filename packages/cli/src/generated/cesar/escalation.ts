@@ -12,9 +12,7 @@ import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
 import { recordCesarTurn } from './brain-helpers.js';
 
-import { CONFIDENCE_TIERS, confidenceBadge, parseConfidence } from './confidence.js';
-
-import { CESAR_SYSTEM_PROMPT } from './session.js';
+import { CONFIDENCE_TIERS, parseConfidence } from './confidence.js';
 
 import { approveTaskAction, buildTaskActionTarget, claimTaskActionPrompt, evaluateTaskAction, taskExplicitlyRequestsAction } from './task-execution-lease.js';
 
@@ -192,7 +190,7 @@ export async function fireNero(input: string, response: string, confidence: numb
 /**
  * Display advisor opinion and present escalation menu. At <70%, advisor replaces STOP.
  */
-export async function handleSecondOpinion(secondResult: {stdout:string, engineId:string, color:number}|null, input: string, response: string, parsedConfidence: number|null, cesarEngineId: string, dispatch: Dispatch, ctx: HandlerContext, abortSignal?: AbortSignal): Promise<{delegated:boolean, responded:boolean, action?:string, task?:string, reasoning?:string}|null> {
+export async function handleSecondOpinion(secondResult: {stdout:string, engineId:string, color:number}|null, input: string, response: string, parsedConfidence: number|null, cesarEngineId: string, dispatch: Dispatch, ctx: HandlerContext, _abortSignal?: AbortSignal): Promise<{delegated:boolean, responded:boolean, action?:string, task?:string, reasoning?:string}|null> {
   if (!secondResult || !secondResult.stdout.trim()) return null;
   
   // Strip <think> blocks from advisor response

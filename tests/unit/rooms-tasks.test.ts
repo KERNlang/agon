@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
 import { createRoom, readEvents, appendEvent } from '../../packages/core/src/generated/rooms/store.js';
-import { foldTasks, pickNextTask, postTask, claimTask, postTaskResult, postTaskStop, shouldStopWork } from '../../packages/core/src/generated/rooms/tasks.js';
+import { foldTasks, pickNextTask, postTask, claimTask, postTaskResult, shouldStopWork } from '../../packages/core/src/generated/rooms/tasks.js';
 import type { RoomActor, RoomEvent, WorkConfig, WorkState } from '../../packages/core/src/generated/rooms/types.js';
 
 let home: string;

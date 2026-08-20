@@ -1,4 +1,4 @@
-import { hostEcmaRegex, hostStringSet } from '../lib/kern-host.js';
+import { hostEcmaRegex } from '../lib/kern-host.js';
 
 // ── Module: MarkdownParsing ──
 

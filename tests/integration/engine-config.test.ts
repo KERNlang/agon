@@ -152,7 +152,7 @@ describe('Engine Config Validation', () => {
     });
 
     it('binary engines have searchPaths', () => {
-      for (const { filename, raw } of configs) {
+      for (const { raw } of configs) {
         if (raw.binary) {
           expect(raw.searchPaths).toBeDefined();
           expect(Array.isArray(raw.searchPaths)).toBe(true);
@@ -161,7 +161,7 @@ describe('Engine Config Validation', () => {
     });
 
     it('API engines have apiKeyEnv', () => {
-      for (const { filename, raw } of configs) {
+      for (const { raw } of configs) {
         if (raw.api) {
           expect(typeof raw.api.apiKeyEnv).toBe('string');
           expect(raw.api.apiKeyEnv.length).toBeGreaterThan(0);

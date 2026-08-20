@@ -1,4 +1,3 @@
-import { join } from 'node:path';
 
 import { writeFileSync } from 'node:fs';
 
@@ -13,8 +12,6 @@ import { buildStepExecutors } from '../../handlers/plan-mode.js';
 import { applyAutoApprovePolicy, applyAgenticAutoApprovePolicy } from '../../cesar/auto-approve-policy.js';
 
 import { isAgenticAutoMode } from '../../cesar/task-controller.js';
-
-import type { Dispatch } from '../../../handlers/types.js';
 
 import { todosFromPlanSteps } from '../todos.js';
 

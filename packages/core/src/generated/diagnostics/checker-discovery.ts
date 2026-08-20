@@ -80,7 +80,7 @@ function pyprojectDeclaresRuff(dir: string): boolean {
 /**
  * Resolve the checker for one edited file. .ts/.tsx → nearest tsconfig.json upward (npx tsc --noEmit -p <dir>); .py → ruff (ruff.toml/.ruff.toml/pyproject[tool.ruff]) then pyright (pyrightconfig.json); else / no config → null. cwd is unused for resolution today (kept for signature stability + future repo-relative anchoring). Never throws — any fs error degrades to null.
  */
-export function discoverChecker(filePath: string, cwd: string): CheckerPlan|null {
+export function discoverChecker(filePath: string, _cwd: string): CheckerPlan|null {
   try {
     const ext = extname(filePath).toLowerCase();
     const startDir = dirname(filePath);

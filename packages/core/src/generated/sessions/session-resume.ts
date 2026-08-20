@@ -1,7 +1,5 @@
 import { spawn } from 'node:child_process';
 
-import type { ChildProcess } from 'node:child_process';
-
 import { createInterface } from 'node:readline';
 
 import { randomUUID } from 'node:crypto';
@@ -22,7 +20,7 @@ import { saveSessionState, loadSessionState, saveToolResultToDisk, loadToolResul
 
 import { lookupCatalogContextWindow } from '../signals/models-registry.js';
 
-import { parseToolCalls, toolCallsToApiFormat } from '../tools/tool-parser.js';
+import { parseToolCalls } from '../tools/tool-parser.js';
 
 import { createTurnTracker, contentHashOf } from '../telemetry/guard-telemetry.js';
 
@@ -1120,7 +1118,6 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
         // ── Solo-coding gate: track investigation vs write behavior ──
         // Architecture, not prompts: block writes that skip investigation
         let readCount = 0;   // Read, Grep, Glob calls this turn
-        let writeCount = 0;  // Edit, Write calls this turn
         let orchCount = 0;   // Forge, Brainstorm, Tribunal, etc. calls this turn
         const READ_TOOLS = new Set(['Read', 'Grep', 'Glob', 'RetrieveResult']);
         // GROUNDING reads only (codex FIX 2): Read/Grep/Glob actually inspect the
@@ -2010,7 +2007,6 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             // ── Telemetry: time the gate's condition evaluation (fired or not) ──
             const guardGateT0 = performance.now();
             const hasWrites = parsedCalls.some(tc => WRITE_TOOLS.has(tc.name));
-            const hasReads = parsedCalls.some(tc => READ_TOOLS.has(tc.name));
             const investigatedAlready = readCount > 0 || hasHistoryToolCall(READ_TOOLS);
             const orchestratedAlready = orchCount > 0 || hasHistoryToolCall(ORCH_TOOLS);
             const guardGateFires = !pipelineActive && hasWrites && !investigatedAlready && !orchestratedAlready && step <= 2 && !isSingleFileMention && isComplexTask;
@@ -2132,7 +2128,6 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             // Track tool usage for the solo-coding gate
             for (const tc of parsedCalls) {
               if (READ_TOOLS.has(tc.name)) readCount++;
-              if (WRITE_TOOLS.has(tc.name)) writeCount++;
               if (ORCH_TOOLS.has(tc.name)) orchCount++;
             }
 

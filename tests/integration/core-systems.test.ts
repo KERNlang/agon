@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -257,7 +257,7 @@ describe('Workspace Management', () => {
 // ── 7. Image Path Handling ────────────────────────────────────────
 describe('Image Path Handling', () => {
   it('detects image paths correctly', async () => {
-    const { isImagePath, mimeFromExt } = await import('../../packages/core/src/image.js');
+    const { isImagePath } = await import('../../packages/core/src/image.js');
 
     expect(isImagePath('photo.png')).toBe(true);
     expect(isImagePath('photo.jpg')).toBe(true);

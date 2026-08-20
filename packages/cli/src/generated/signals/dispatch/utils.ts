@@ -1,6 +1,6 @@
 import { clearConversation, clearSessionState, resolveWorkingDir } from '@kernlang/agon-core';
 
-import type { Dispatch, HandlerContext } from '../../../handlers/types.js';
+import type { HandlerContext } from '../../../handlers/types.js';
 
 import type { DispatchCallbacks } from '../dispatch.js';
 

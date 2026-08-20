@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { join } from 'node:path';
-import { mkdtempSync, rmSync, writeFileSync, appendFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, appendFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
-import { createRoom, roomDir, appendEvent, eventsPath } from '../../packages/core/src/generated/rooms/store.js';
+import { createRoom, appendEvent } from '../../packages/core/src/generated/rooms/store.js';
 import { drainNdjson, drainRoom, readTailOffset, writeTailOffset, createRoomWaker } from '../../packages/core/src/generated/rooms/tail.js';
 import type { RoomActor, TailCursor } from '../../packages/core/src/generated/rooms/types.js';
 

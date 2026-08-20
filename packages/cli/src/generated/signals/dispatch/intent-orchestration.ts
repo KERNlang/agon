@@ -1,12 +1,9 @@
-import { join } from 'node:path';
 
 import { resolveWorkingDir, spawnWithTimeout } from '@kernlang/agon-core';
 
-import type { Dispatch } from '../../../handlers/types.js';
-
 import { ENGINE_COLORS } from '../../blocks/output-format.js';
 
-import { handleForge, handleBrainstorm, handleCampfire, handleTribunal, handleThink, handleCouncil, handleSynthesis, handleNeroChallenge, handleResearch, handleChrome, handleConquer, handleBuild, handleReviewMany, handleReviewRoles, handleSanitize, handleNaturalize, handleMutate, runAgentMode, runAgentTeam } from '../../../handlers/index.js';
+import { handleForge, handleBrainstorm, handleCampfire, handleTribunal, handleThink, handleCouncil, handleSynthesis, handleNeroChallenge, handleResearch, handleChrome, handleConquer, handleBuild, handleReviewMany, handleSanitize, handleNaturalize, handleMutate, runAgentMode, runAgentTeam } from '../../../handlers/index.js';
 
 import { handleTeamTribunal } from '../../handlers/team-tribunal.js';
 

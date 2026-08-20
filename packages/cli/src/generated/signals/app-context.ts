@@ -1,6 +1,6 @@
 import { loadConfig } from '@kernlang/agon-core';
 
-import type { EngineRegistry, AgonConfig, EngineAdapter, Plan, ChatSession, PersistentSession, CesarMemory } from '@kernlang/agon-core';
+import type { EngineRegistry, EngineAdapter, Plan, ChatSession, PersistentSession, CesarMemory } from '@kernlang/agon-core';
 
 import type { HandlerContext } from '../../handlers/types.js';
 

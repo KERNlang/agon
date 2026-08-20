@@ -1,8 +1,8 @@
 import type { EngineResult } from '../models/types.js';
 
-import type { AgentTeamResult, AgentTeamMemberResult } from './agent-team.js';
+import type { AgentTeamResult } from './agent-team.js';
 
-import { worktreeChangedDiff, worktreeChangedShortstat } from '../blocks/git.js';
+import { worktreeChangedShortstat } from '../blocks/git.js';
 
 /**
  * Pick the winning engine via deterministic multi-factor tiebreaker. Filters to passing+positive-score results, then sorts by score desc, lintWarnings asc, styleScore desc, diffLines asc, filesChanged asc, durationSec asc. Moved from forge/stages.kern in Phase 3 — the canonical fleet scoring path used by both forge and AgentTeam.

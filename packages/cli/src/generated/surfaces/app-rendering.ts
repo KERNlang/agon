@@ -14,14 +14,6 @@ import type { OutputBlock } from '../../generated/blocks/engine.js';
 
 import { parseProseToRichLines } from '../blocks/rich-text.js';
 
-import { stringDisplayWidth } from './app-display-utils.js';
-
-import { normalizeTextSelection } from './app-selection.js';
-
-import { estimateOutputEventRows } from './app-layout.js';
-
-import { isToolCallLikeBlock, coalesceToolCallBlocks } from './app-blocks.js';
-
 import { isMutatingToolCall, parseToolCallPayload, toolPreviewWindow } from './app-tool-detail.js';
 
 // ── Module: AppRendering ──

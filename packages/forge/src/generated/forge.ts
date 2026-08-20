@@ -60,7 +60,7 @@ export function resolveForgeSynthesisTimeout(config: Required<AgonConfig>, taskC
 /**
  * Pick the per-engine forge timeout. Explicit user timeout wins; otherwise use the configured Forge timeout without task-class caps. Forge is expected to run until engines finish or the user cancels.
  */
-export function resolveForgeRunTimeout(config: AgonConfig, explicitTimeout: number|undefined, taskClass: string): number {
+export function resolveForgeRunTimeout(config: AgonConfig, explicitTimeout: number|undefined, _taskClass: string): number {
   const explicit = Number(explicitTimeout ?? 0);
   if (Number.isFinite(explicit) && explicit > 0) {
     return explicit;

@@ -50,7 +50,6 @@ const ComposerView = React.memo(function ComposerView({ mode, replState, planMod
     ? truncateCodeLine(permissionLinesAll[0], permissionLineWidth)
     : '';
   const permissionHasMoreLines = permissionLinesAll.length > 1;
-  const permissionNeedsDetail = permissionHasMoreLines || permissionCommand.length > permissionLineWidth;
   const permissionSummary = permissionReason || permissionDescription;
   // File-mutating tools (AgonEdit/AgonWrite/Edit/Write) carry a unified diff
   // computed at approval time. Render it with the same shape/idiom as the

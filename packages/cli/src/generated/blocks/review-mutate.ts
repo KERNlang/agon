@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { discoverGate } from '@kernlang/agon-core';
 
-import type { Mutant, MutationReport, EngineRegistry, EngineAdapter } from '@kernlang/agon-core';
+import type { EngineRegistry, EngineAdapter } from '@kernlang/agon-core';
 
 import { runMutate } from '@kernlang/agon-forge';
 

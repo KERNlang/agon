@@ -1,8 +1,5 @@
-import { join } from 'node:path';
 
 import { resolveWorkingDir, undoPatch, listSnapshots, revertSnapshot, resumeChatSession, configSet, clearConversation } from '@kernlang/agon-core';
-
-import type { Dispatch } from '../../../handlers/types.js';
 
 import { icons } from '../icons.js';
 

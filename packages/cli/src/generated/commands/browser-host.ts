@@ -10,7 +10,7 @@ import { homedir } from 'node:os';
 
 import { spawn } from 'node:child_process';
 
-import { HOST_NAME, PROTOCOL, isExtensionOrigin, nativeHostDir, manifestPath, buildHostManifest, parseConnRecord, decodeFrames, encodeFrame, runPair, findReusableServe } from '../bridge/browser-host.js';
+import { PROTOCOL, isExtensionOrigin, nativeHostDir, manifestPath, buildHostManifest, parseConnRecord, decodeFrames, encodeFrame, runPair, findReusableServe } from '../bridge/browser-host.js';
 
 import type { ServeConnRecord, PairDeps, PairResponse } from '../bridge/browser-host.js';
 

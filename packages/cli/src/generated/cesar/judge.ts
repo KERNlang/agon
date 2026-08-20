@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 
 import type { ForgeManifest, ForgeJudgment, ConvergenceEntry } from '@kernlang/agon-core';
 
-import { RUNS_DIR, classifyTask, extractPatchFilePatterns, recordForgeJudgment } from '@kernlang/agon-core';
+import { classifyTask, extractPatchFilePatterns, recordForgeJudgment } from '@kernlang/agon-core';
 
 import { ENGINE_COLORS } from '../blocks/output-format.js';
 

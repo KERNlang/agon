@@ -1,6 +1,6 @@
 import type { TaskClass } from '../models/types.js';
 
-import { getRatings, advisorScore } from '../signals/glicko.js';
+import { getRatings } from '../signals/glicko.js';
 
 import { buildRolePrompt } from './engine-memory.js';
 

@@ -1,8 +1,8 @@
-import { randomUUID, randomBytes } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 
 import { runApiAgentLoop } from '../api/agent-loop.js';
 
-import type { ApiAgentOptions, ApiAgentResult } from '../api/agent-loop.js';
+import type { ApiAgentResult } from '../api/agent-loop.js';
 
 import { recordApiLoopDispatch } from '../signals/delegate-ledger.js';
 
@@ -12,7 +12,7 @@ import type { ContextThread } from './context-thread.js';
 
 import { VirtualFS, createFileSnapshot, scoreEffectPackage, applyEffectPackage, relocateEffectPackage, effectPackageDiff } from '../forge/virtual-fs.js';
 
-import type { EffectPackage, FileSnapshot, FileEffect } from '../forge/virtual-fs.js';
+import type { EffectPackage, FileSnapshot } from '../forge/virtual-fs.js';
 
 import { resolve, join } from 'node:path';
 
@@ -140,7 +140,6 @@ export class Speculator {
           catch (err: any) { console.warn(`[agon] speculator: onMemberPreview failed for ${member.engineId}: ${err?.message ?? err}`); }
         });
       }
-      const startedAt = Date.now();
 
       // Pre-load thread context.
       const historyMessages = opts.thread
@@ -265,7 +264,7 @@ export class Speculator {
 
     // Clean up all worktrees — best effort, non-fatal.
     if (isolate && root) {
-      for (const [eid, wtPath] of Object.entries(worktreesByEngine)) {
+      for (const [, wtPath] of Object.entries(worktreesByEngine)) {
         try { worktreeRemoveBestEffort(root, wtPath); } catch { /* ignore */ }
       }
     }

@@ -12,7 +12,7 @@ import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 
 import { runBrainstorm } from '@kernlang/agon-forge';
 
-import { header, success, fail, info, table, bold, cyan, green } from '../blocks/output-format.js';
+import { header, fail, info, table, bold, cyan, green } from '../blocks/output-format.js';
 
 import { icons } from '../signals/icons.js';
 

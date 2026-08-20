@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 
-import type { EngineAdapter, BrainstormBid, ForgeEvent, TaskClass } from '@kernlang/agon-core';
+import type { EngineAdapter, ForgeEvent } from '@kernlang/agon-core';
 
-import type { TeamSpec, TeamFormat, TeamComposeMode, TeamRoundTrace, TeamSubmission, TeamScoreCard, TeamMatchResult, TeamEvent } from '@kernlang/agon-core';
+import type { TeamSpec, TeamComposeMode, TeamRoundTrace, TeamSubmission, TeamScoreCard, TeamMatchResult, TeamEvent } from '@kernlang/agon-core';
 
 import { EngineRegistry, loadConfig, classifyTask, createSidechainLogger, composeTeams, makeFormat } from '@kernlang/agon-core';
 
@@ -10,9 +10,7 @@ import { updateTeamElo } from '@kernlang/agon-core';
 
 import { buildKernDraftPrompt, parseKernDraft } from '@kernlang/protocol';
 
-import type { KernDraft } from '@kernlang/protocol';
-
-import { calibrateConfidence, qualityScore } from './brainstorm.js';
+import { qualityScore } from './brainstorm.js';
 
 export interface TeamBrainstormOptions {
   question: string;
@@ -35,7 +33,6 @@ export async function runTeamCoopBrainstorm(team: TeamSpec, question: string, co
   let tokenSum = 0;
 
   const architect = team.members.find((m) => m.role === 'architect') ?? team.members[0];
-  const others = team.members.filter((m) => m.engineId !== architect.engineId);
 
   // --- Phase 1: All members draft independently (parallel) ---
   onEvent?.({ type: 'team:round-start' as any, data: { teamId: team.teamId, round: 1 } });

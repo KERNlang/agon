@@ -1,12 +1,12 @@
 import { join, resolve } from 'node:path';
 
-import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync, existsSync } from 'node:fs';
 
 import { homedir } from 'node:os';
 
 import { validateManifest } from '../models/extension-manifest.js';
 
-import type { ExtensionManifest, LoadedExtension, CommandContribution } from '../models/extension-manifest.js';
+import type { LoadedExtension } from '../models/extension-manifest.js';
 
 import { CommandRegistry } from '../signals/command-registry.js';
 

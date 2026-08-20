@@ -12,7 +12,7 @@ import type { InlineSpan, RichLine } from './rich-text.js';
 
 import { ENGINE_COLORS } from './output-format.js';
 
-import { parseAnsiText, hasAnsiCodes, stripAnsi } from '../signals/ansi-parse.js';
+import { parseAnsiText, hasAnsiCodes } from '../signals/ansi-parse.js';
 
 import type { AnsiSegment } from '../signals/ansi-parse.js';
 

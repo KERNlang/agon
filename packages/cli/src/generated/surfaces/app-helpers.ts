@@ -1,20 +1,11 @@
-import { probeEngineVitals } from './app-telemetry.js';
 
-import { isMutatingToolCall, parseToolCallPayload, toolPreviewWindow, toolCallSupportsDetailView, detailViewerSupportsEvent, toolDetailViewportRows, findLatestToolDetailEvent, findLatestToolEvent, findLatestFailedToolEvent, buildFailedToolRetryDraft, buildToolDetailView } from './app-tool-detail.js';
 
-import { COMPOSER_HISTORY_LIMIT, composerHistoryPath, loadComposerInputHistory, saveComposerInputHistory } from './app-composer.js';
 
-import { maxScrollOffsetForRowCount, nextWheelAnimationStep, clampNumber, charDisplayWidth, stringDisplayWidth, displayColumnToStringIndex } from './app-display-utils.js';
 
-import { normalizeRowSelection, normalizeTextSelection, richLineToPlainText, transcriptRowToPlainText, transcriptRowTextStartColumn, resolveTranscriptColumnFromMouse, transcriptRowsToPlainText, resolveTranscriptRowFromMouse } from './app-selection.js';
 
-import { estimateVisibleBlockBudget, estimateWrappedRowCount, estimateQuestionReservedRows, estimateBottomChromeExtraRows, estimatePinnedLiveRows, estimateWrappedRows, estimateToolCallRows, estimateOutputEventRows, estimateDisplayItemRows } from './app-layout.js';
 
-import { buildDisplayItems, isToolCallLikeBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, isDuplicateEngineBlock, appendTranscriptBlock, buildDashboardBlock, summarizeBtwTranscriptEvent } from './app-blocks.js';
 
-import { createInitialRegistry, drainStdinBuffer, normalizeTerminalMode, resolveTerminalMode, normalizeTerminalSize, fileRailWidthForTerminal, fileRailMaxRowsForTerminal, buildTerminalReplaySnapshot } from './app-terminal.js';
 
-import { parseMarkdownToRows, buildToolCallRows, buildCollapsedToolGroupRows, buildTranscriptRows, buildExecutionRailStats } from './app-rendering.js';
 
 // ── Module: AppHelpers ──
 

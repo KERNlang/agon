@@ -38,7 +38,7 @@ export async function handleCommit(message: string|undefined, dispatch: Dispatch
   const cwd = resolveWorkingDir();
   dispatch({ type: 'spinner-start', message: 'Analyzing changes...' });
   // Step 1: Parallel git context (like Claude Code)
-  const [status, diff, diffStat, log] = await hostPromiseAllValues([gitExec('git status --short', cwd), gitExec('git diff --cached', cwd) || gitExec('git diff', cwd), gitExec('git diff --stat', cwd), gitExec('git log --oneline -5', cwd)]);
+  const [status, diff, diffStat] = await hostPromiseAllValues([gitExec('git status --short', cwd), gitExec('git diff --cached', cwd) || gitExec('git diff', cwd), gitExec('git diff --stat', cwd), gitExec('git log --oneline -5', cwd)]);
   dispatch({ type: 'spinner-stop' });
   if (!status && !diff) {
     dispatch({ type: 'info', message: 'Nothing to commit — working tree clean.' });

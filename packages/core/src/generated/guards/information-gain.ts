@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import type { GuardSnapshot, GuardVerdict, SpinState } from './guard-types.js';
+import type { GuardVerdict, SpinState } from './guard-types.js';
 
 /**
  * What a single step's tool results surfaced, as raw token sources for info-gain. All optional/defaulted so a caller can pass only what it has.

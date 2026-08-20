@@ -22,7 +22,7 @@ import { icons } from '../signals/icons.js';
 
 import { AgentProgressView } from '../../generated/surfaces/agent.js';
 
-import { SpinnerBlock, StatusBar, CesarStatusStrip, StatusDashboard, ExecutionRailPanel } from '../../generated/surfaces/status.js';
+import { StatusBar, CesarStatusStrip, StatusDashboard, ExecutionRailPanel } from '../../generated/surfaces/status.js';
 
 import { ComposerView } from '../../generated/blocks/composer.js';
 
@@ -780,7 +780,7 @@ export function streamFrameIntervalMs(uiMotion: unknown, kind: 'chat'|'detail'|'
 /**
  * Compact sticky plan chip for the top chrome. Keeps plan progress out of the noisy bottom status strip.
  */
-export function buildPlanChromeSummary(activePlan: any, activePlanState?: string|null, planModeQueued?: boolean, autoModeQueued?: boolean): any {
+export function buildPlanChromeSummary(activePlan: any, activePlanState?: string|null, planModeQueued?: boolean, _autoModeQueued?: boolean): any {
   const gauge = buildPlanPhaseGauge(activePlan, 8);
   const displayState = (gauge.visible && gauge.phase === 'complete') ? 'done' : String(activePlanState ?? '');
   const visible = !(!(planModeQueued || gauge.visible || ['planning', 'awaiting_approval', 'running', 'paused', 'done'].includes(displayState)));

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -233,7 +233,7 @@ describe('Scoring ↔ Winner Determination Integration', () => {
       styleScore: 60,
     });
 
-    const { winner, closeCall } = determineWinner(results);
+    const { winner } = determineWinner(results);
 
     // Clean, focused changes should win over scattered, slow changes
     expect(winner).toBe('claude');
@@ -241,7 +241,6 @@ describe('Scoring ↔ Winner Determination Integration', () => {
   });
 
   it('close call detected when scores are within spread', async () => {
-    const { computeScore } = await import('../../packages/core/src/scoring.js');
     const { determineWinner } = await import('../../packages/forge/src/stages.js');
 
     // Two nearly identical results

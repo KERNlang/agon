@@ -74,7 +74,6 @@ export function findHomoglyphWords(text: string): TextFinding[] {
     let hasFold = false;
     let folded = '';
     for (const ch of word) {
-      const code = ch.codePointAt(0) ?? 0;
       if (asciiRe.test(ch)) {
         hasAscii = true;
         folded += ch;

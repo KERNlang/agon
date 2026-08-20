@@ -10,7 +10,6 @@ import {
   cachedBlockOwnRows,
   clearBlockRowCache,
   isCacheableBlockType,
-  renderBlockOwnRows,
 } from '../../packages/cli/src/generated/surfaces/app-rendering.js';
 import { withContentWidthOverride } from '../../packages/cli/src/generated/blocks/rendering.js';
 

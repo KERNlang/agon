@@ -12,7 +12,7 @@ import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 
 import { runTribunal } from '@kernlang/agon-forge';
 
-import { header, success, fail, info, bold, cyan, dim, green, yellow } from '../blocks/output-format.js';
+import { header, fail, info, bold, dim } from '../blocks/output-format.js';
 
 export const tribunalCommand: ReturnType<typeof defineCommand> = defineCommand({
   meta: {

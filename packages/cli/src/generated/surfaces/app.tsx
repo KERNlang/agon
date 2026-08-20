@@ -1,12 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Box, Static, Text, render } from 'ink';
+import { Box, Static, render } from 'ink';
 
 // ── Core ───────────────────────────────────────────────
 import { ScrollBox, AlternateScreen } from '../../vendor/terminal/index.js';
 
-import { EngineRegistry, loadConfig, ensureAgonHome, setSessionRoot, startChatSession, seedChatSessionFromThread, loadOrCreateActiveThread, getRatings, getActiveWorkspace, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, getAuthKey, setAuthKey, getAgonHome, tracker, planCostEstimator, listCesarPlans, visionSupportNote } from '@kernlang/agon-core';
-
-import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
+import { EngineRegistry, loadConfig, ensureAgonHome, setSessionRoot, startChatSession, seedChatSessionFromThread, loadOrCreateActiveThread, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, getAuthKey, setAuthKey, getAgonHome, tracker, listCesarPlans, visionSupportNote } from '@kernlang/agon-core';
 
 import type { Plan, ChatSession, Skill, PersistentSession, ImageAttachment } from '@kernlang/agon-core';
 
@@ -28,19 +26,9 @@ import type { Job } from '../signals/job-manager.js';
 
 import { trackJobAbortController } from '../signals/job-abort-scope.js';
 
-import { shortToolPath, isCesarTelemetryLine, formatConfidenceToolLabel } from '../blocks/output-format.js';
+import { cleanEngineOutput } from '../blocks/markdown.js';
 
-import { icons } from '../signals/icons.js';
-
-import { cleanEngineOutput, parseMarkdownBlocks, truncateCodeLine } from '../blocks/markdown.js';
-
-import { extractPatchText, parsePatchPreview } from '../blocks/engine-helpers.js';
-
-import type { OutputEvent, HandlerContext } from '../../handlers/types.js';
-
-import { codeBlockBuffer } from '../../code-buffer.js';
-
-import { finishReplState } from '../signals/app-state.js';
+import type { OutputEvent } from '../../handlers/types.js';
 
 import type { ReplStateState } from '../signals/app-state.js';
 
@@ -54,7 +42,7 @@ import { processPasteContent, recordPastePlaceholder } from '../signals/paste-ha
 
 import { handleOutputEvent } from '../signals/output.js';
 
-import type { OutputActions, OutputState, AgentProgressSnapshot, StreamingEntry, LiveToolStreamEntry } from '../signals/output.js';
+import type { OutputState, AgentProgressSnapshot, StreamingEntry, LiveToolStreamEntry } from '../signals/output.js';
 
 import { teeOutputEvent } from '../signals/event-log-tee.js';
 
@@ -62,7 +50,7 @@ import { resetEventLogState } from '@kernlang/agon-core';
 
 import { cleanInputValue, findInputChange, parseActiveAtMention, safeCollectSourceFiles } from '../signals/app-input.js';
 
-import { makeBlockArchivePath, appendBlockWithCap } from '../signals/block-archive.js';
+import { makeBlockArchivePath } from '../signals/block-archive.js';
 
 import { perfNow, recordKeystrokeLatency } from '../signals/input-perf.js';
 
@@ -76,8 +64,6 @@ import { TodoList } from '../blocks/todo-list.js';
 
 import type { Todo } from '../signals/todos.js';
 
-import { clearTodos } from '../signals/todos.js';
-
 import { saveCesarConversationSnapshot } from '../cesar/session.js';
 
 import { createDurableCesarTurnRuntimeHost } from '../cesar/turn-runtime.js';
@@ -88,13 +74,11 @@ import { SpinnerBlock, BackgroundJobRail, ExecutionRailPanel } from '../../gener
 
 import { EnginePicker, ModelPicker, ReviewBlock, CesarPicker } from '../../generated/blocks/controls.js';
 
-import { contentWidth, withContentWidthOverride, color256toHex, engineColor, CODE_RAIL, CODE_RAIL_COLOR, MAX_CODE_LINES } from '../../generated/blocks/rendering.js';
-
-import { LOGO_LINES, VERSION, BRAND } from '../../generated/blocks/engine.js';
+import { VERSION } from '../../generated/blocks/engine.js';
 
 import { ChromeBar, ToolDetailBlock, TranscriptRowView, LiveStreamSection, BtwSidePanel, RailTakeoverPanel, BottomChromeSection, buildPlanChromeSummary } from './app-views.js';
 
-import { recordToolCall, listFiles, getFileTrackerVersion, clearFileTracker } from '../signals/file-tracker.js';
+import { recordToolCall, listFiles, getFileTrackerVersion } from '../signals/file-tracker.js';
 
 import { FileRail } from '../blocks/file-rail.js';
 
@@ -104,11 +88,9 @@ import type { ReviewEvent } from '../../generated/blocks/controls.js';
 
 import { join } from 'node:path';
 
-import { fileURLToPath } from 'node:url';
+import { writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
 
-import { readdirSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
-
-import { tmpdir, totalmem, cpus } from 'node:os';
+import { tmpdir } from 'node:os';
 
 import { spawnSync } from 'node:child_process';
 
@@ -119,8 +101,6 @@ import { formatSessionResults, formatChatTranscript } from '../blocks/results-fo
 import { loadSkills } from '@kernlang/agon-core';
 
 import { useStableInput } from '../../stable-input.js';
-
-import { parseProseToRichLines } from '../blocks/rich-text.js';
 
 import { saveDismissedVersion } from '../services/update-check.js';
 
@@ -133,8 +113,6 @@ import { loadComposerInputHistory } from './app-composer.js';
 import { toolDetailViewportRows, findLatestToolDetailEvent, findLatestToolEvent, findLatestFailedToolEvent, buildFailedToolRetryDraft, buildToolDetailView } from './app-tool-detail.js';
 
 import { createInitialRegistry, drainStdinBuffer, resolveTerminalMode, normalizeTerminalSize, fileRailWidthForTerminal, fileRailMaxRowsForTerminal } from './app-terminal.js';
-
-import { normalizeTextSelection } from './app-selection.js';
 
 import { estimateVisibleBlockBudget, estimateBottomChromeExtraRows, estimatePinnedLiveRows, estimateTodoListRows } from './app-layout.js';
 
@@ -182,7 +160,6 @@ export function App() {
   const [mode, _setModeRaw] = useState<'chat'|'campfire'|'brainstorm'|'tribunal'>('chat');
   const setMode = useMemo(() => __inkSafe(_setModeRaw), [_setModeRaw]);
   const [sessionStartTime, _setSessionStartTimeRaw] = useState<number>(hostNowMs());
-  const setSessionStartTime = useMemo(() => __inkSafe(_setSessionStartTimeRaw), [_setSessionStartTimeRaw]);
   const [liveSpinner, _setLiveSpinnerRaw] = useState<any>(null);
   const setLiveSpinner = useMemo(() => {
     let _lastCall = 0;
@@ -283,20 +260,19 @@ export function App() {
   const [toolDetailEvent, _setToolDetailEventRaw] = useState<any|null>(null);
   const setToolDetailEvent = useMemo(() => __inkSafe(_setToolDetailEventRaw), [_setToolDetailEventRaw]);
   const [jobManager, _setJobManagerRaw] = useState<any>(() => { const cfg = loadConfig(); return new JobManager({ eventLimit: cfg.jobEventLimit, retentionLimit: cfg.jobRetentionLimit, maxConcurrency: cfg.jobMaxConcurrency }); });
-  const setJobManager = useMemo(() => __inkSafe(_setJobManagerRaw), [_setJobManagerRaw]);
   const [jobList, _setJobListRaw] = useState<Job[]>([]);
   const setJobList = useMemo(() => __inkSafe(_setJobListRaw), [_setJobListRaw]);
   const [lastUndoToken, _setLastUndoTokenRaw] = useState<string|null>(null);
   const setLastUndoToken = useMemo(() => __inkSafe(_setLastUndoTokenRaw), [_setLastUndoTokenRaw]);
   const [sessionEngines, _setSessionEnginesRaw] = useState<string[]|null>(() => { const cfg = loadConfig(); return cfg.engineActivationMode === 'explicit' ? cfg.forgeEnabledEngines : null; });
   const setSessionEngines = useMemo(() => __inkSafe(_setSessionEnginesRaw), [_setSessionEnginesRaw]);
-  const [currentPlan, _setCurrentPlanRaw] = useState<Plan|null>(null);
+  const [, _setCurrentPlanRaw] = useState<Plan|null>(null);
   const setCurrentPlan = useMemo(() => __inkSafe(_setCurrentPlanRaw), [_setCurrentPlanRaw]);
   const [activePlan, _setActivePlanRaw] = useState<any>(null);
   const setActivePlan = useMemo(() => __inkSafe(_setActivePlanRaw), [_setActivePlanRaw]);
   const [chatSession, _setChatSessionRaw] = useState<ChatSession>(() => { const cwd = resolveWorkingDir(); let branch = 'unknown'; try { branch = currentBranch(cwd); } catch { /* git not available or not a repo */ } const session = startChatSession({ cwd, branch }); if (process.env.AGON_CONTINUE === '1') { try { seedChatSessionFromThread(session, loadOrCreateActiveThread(cwd)); } catch { /* best-effort: a fresh session is fine if no prior thread exists */ } } return session; });
   const setChatSession = useMemo(() => __inkSafe(_setChatSessionRaw), [_setChatSessionRaw]);
-  const [activeAbort, _setActiveAbortRaw] = useState<AbortController|null>(null);
+  const [, _setActiveAbortRaw] = useState<AbortController|null>(null);
   const setActiveAbort = useMemo(() => __inkSafe(_setActiveAbortRaw), [_setActiveAbortRaw]);
   const [cesarSession, _setCesarSessionRaw] = useState<PersistentSession|null>(null);
   const setCesarSession = useMemo(() => __inkSafe(_setCesarSessionRaw), [_setCesarSessionRaw]);
@@ -307,7 +283,6 @@ export function App() {
   const [toolOutputExpanded, _setToolOutputExpandedRaw] = useState<boolean>(false);
   const setToolOutputExpanded = useMemo(() => __inkSafe(_setToolOutputExpandedRaw), [_setToolOutputExpandedRaw]);
   const [thinkingExpanded, _setThinkingExpandedRaw] = useState<boolean>(true);
-  const setThinkingExpanded = useMemo(() => __inkSafe(_setThinkingExpandedRaw), [_setThinkingExpandedRaw]);
   const [cesarConfidence, _setCesarConfidenceRaw] = useState<number|null>(null);
   const setCesarConfidence = useMemo(() => {
     let _lastCall = 0;
@@ -356,9 +331,9 @@ export function App() {
       }
     };
   }, []);
-  const [liveScoreboard, _setLiveScoreboardRaw] = useState<Scoreboard|null>(null);
+  const [, _setLiveScoreboardRaw] = useState<Scoreboard|null>(null);
   const setLiveScoreboard = useMemo(() => __inkSafe(_setLiveScoreboardRaw), [_setLiveScoreboardRaw]);
-  const [liveRationale, _setLiveRationaleRaw] = useState<ModeRationale|null>(null);
+  const [, _setLiveRationaleRaw] = useState<ModeRationale|null>(null);
   const setLiveRationale = useMemo(() => __inkSafe(_setLiveRationaleRaw), [_setLiveRationaleRaw]);
   const [agentProgress, _setAgentProgressRaw] = useState<Record<string,AgentProgressSnapshot>>({});
   const setAgentProgress = useMemo(() => __inkSafe(_setAgentProgressRaw), [_setAgentProgressRaw]);
@@ -368,7 +343,6 @@ export function App() {
   const [autoModeQueued, setAutoModeQueued] = useState<boolean>(() => loadConfig().cesarAutoMode === true);
   const [permissionMode, setPermissionMode] = useState<string>(() => resolveAgonPermissionMode(loadConfig()));
   const [cesarMemory, _setCesarMemoryRaw] = useState<any>(() => createCesarMemory());
-  const setCesarMemory = useMemo(() => __inkSafe(_setCesarMemoryRaw), [_setCesarMemoryRaw]);
   const [sessionMcpServers, _setSessionMcpServersRaw] = useState<Array<Record<string,unknown>>>([]);
   const setSessionMcpServers = useMemo(() => __inkSafe(_setSessionMcpServersRaw), [_setSessionMcpServersRaw]);
   const [telemetryVitals, _setTelemetryVitalsRaw] = useState<Map<string,any>>(() => new Map());
@@ -400,15 +374,10 @@ export function App() {
   const [statusDashboardOpen, setStatusDashboardOpen] = useState<boolean>(false);
   const [statusDashboardFilter, setStatusDashboardFilter] = useState<'all'|'problem'>('all');
   const [registry, _setRegistryRaw] = useState<EngineRegistry>(createInitialRegistry());
-  const setRegistry = useMemo(() => __inkSafe(_setRegistryRaw), [_setRegistryRaw]);
   const [adapter, _setAdapterRaw] = useState<EngineAdapter>(createCliAdapter(registry));
-  const setAdapter = useMemo(() => __inkSafe(_setAdapterRaw), [_setAdapterRaw]);
   const [dynamicSkills, _setDynamicSkillsRaw] = useState<Skill[]>(() => loadSkills(resolveWorkingDir()));
-  const setDynamicSkills = useMemo(() => __inkSafe(_setDynamicSkillsRaw), [_setDynamicSkillsRaw]);
   const [commandRegistry, _setCommandRegistryRaw] = useState<any>(() => (() => { const reg = new CommandRegistry(); registerBuiltinCommands(reg); return reg; })());
-  const setCommandRegistry = useMemo(() => __inkSafe(_setCommandRegistryRaw), [_setCommandRegistryRaw]);
   const [eventBus, _setEventBusRaw] = useState<any>(() => (() => { const bus = new EventBus(); const cfg = loadConfig(); if (cfg.hooks) bridgeShellHooks(bus, cfg.hooks); return bus; })());
-  const setEventBus = useMemo(() => __inkSafe(_setEventBusRaw), [_setEventBusRaw]);
   const [extensionSkills, _setExtensionSkillsRaw] = useState<Skill[]>([]);
   const setExtensionSkills = useMemo(() => __inkSafe(_setExtensionSkillsRaw), [_setExtensionSkillsRaw]);
   const [extensionPromptFragments, _setExtensionPromptFragmentsRaw] = useState<string[]>([]);
@@ -456,7 +425,6 @@ export function App() {
   const [fileRailExpandedPath, _setFileRailExpandedPathRaw] = useState<string|null>(null);
   const setFileRailExpandedPath = useMemo(() => __inkSafe(_setFileRailExpandedPathRaw), [_setFileRailExpandedPathRaw]);
   const [mouseSelection, _setMouseSelectionRaw] = useState<{ anchorRow: number | null; anchorCol: number | null; focusRow: number | null; focusCol: number | null; active: boolean; moved: boolean }>({ anchorRow: null, anchorCol: null, focusRow: null, focusCol: null, active: false, moved: false });
-  const setMouseSelection = useMemo(() => __inkSafe(_setMouseSelectionRaw), [_setMouseSelectionRaw]);
   const [registryVersion, _setRegistryVersionRaw] = useState<number>(0);
   const setRegistryVersion = useMemo(() => __inkSafe(_setRegistryVersionRaw), [_setRegistryVersionRaw]);
   const [configVersion, _setConfigVersionRaw] = useState<number>(0);
@@ -496,12 +464,7 @@ export function App() {
   const awaitingPlanAnnouncedRef = useRef<string>('');
   const blockArchivePathRef = useRef<string>(makeBlockArchivePath(hostNowMs()));
   const nestedCtrlShortcutRef = useRef<{ key: string; at: number }>({ key: '', at: 0 });
-  const displayRowCountRef = useRef<number>(0);
-  const mouseInputBufferRef = useRef<string>('');
-  const wheelDeltaRef = useRef<number>(0);
-  const wheelFlushTimerRef = useRef<ReturnType<typeof setTimeout>|null>(null);
   const mouseSelectionRef = useRef<{ anchorRow: number | null; anchorCol: number | null; focusRow: number | null; focusCol: number | null; active: boolean; moved: boolean }>({ anchorRow: null, anchorCol: null, focusRow: null, focusCol: null, active: false, moved: false });
-  const lastTerminalInputAtRef = useRef<number>(hostNowMs());
   const scrollBoxRef = useRef<any>(null);
   const nativeTranscriptBlockCountRef = useRef<number>(0);
 
@@ -652,9 +615,6 @@ export function App() {
           return estimateBottomChromeExtraRows(mode, questionState, termWidth, pendingImages.length, inputQueue.length, !(!liveSpinner), planChipVisible, estimateTodoListRows(todos, planChipVisible, termWidth), !(!pendingPlanProposal));
   }, [mode,questionState,termWidth,pendingImages,inputQueue,liveSpinner,planChipVisible,todos,pendingPlanProposal]);
 
-  const overlayActive = useMemo(() => {
-          return enginePickerOpen || modelPickerOpen || cesarPickerOpen || !(!reviewEvent) || !(!toolDetailEvent);
-  }, [enginePickerOpen, modelPickerOpen, cesarPickerOpen, reviewEvent, toolDetailEvent]);
 
   const imageVisionNote = useMemo(() => {
           if (pendingImages.length === 0) return null;
@@ -724,14 +684,7 @@ export function App() {
           return displayRows.length;
   }, [displayRows]);
 
-  const selectedRowRange = useMemo(() => {
-          const range = normalizeTextSelection(mouseSelection.anchorRow, mouseSelection.anchorCol, mouseSelection.focusRow, mouseSelection.focusCol);
-          return range ? { start: range.startRow, end: range.endRow } : null;
-  }, [mouseSelection]);
 
-  const selectedTextRange = useMemo(() => {
-          return normalizeTextSelection(mouseSelection.anchorRow, mouseSelection.anchorCol, mouseSelection.focusRow, mouseSelection.focusCol);
-  }, [mouseSelection]);
 
   const startupFitsViewport = useMemo(() => {
           return startupOnly && totalDisplayRows <= currentVisibleRowBudget;

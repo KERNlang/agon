@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 
-import type { EngineAdapter, EngineResult, ForgeOptions, AgonConfig, DispatchMetric, StageContext } from '@kernlang/agon-core';
+import type { EngineAdapter, EngineResult, AgonConfig, DispatchMetric, StageContext } from '@kernlang/agon-core';
 
 import { EngineRegistry, worktreeCreate, worktreeRemoveBestEffort, repoRoot, worktreeDiff, estimateTokens, estimateCost, buildStageContext, renderStageContext } from '@kernlang/agon-core';
 
@@ -71,7 +71,6 @@ export function resolveForgeAcceptReviewOutput(mode: 'implement'|'improve'|'vali
 export function classifyNoDiffForgeResult(opts: {stdout:string, timedOut:boolean, exitCode:number, fitnessPassed:boolean, baselinePasses:boolean, mode:'implement'|'improve'|'validate', requireDiff:boolean, acceptReviewOutput:boolean}): {status:string,pass:boolean,score:number,engineCompleted:boolean,reason:string} {
   const stdout = String(opts.stdout ?? '');
   const normalized = stdout.replace(/\s+/g, ' ').trim();
-  const lower = normalized.toLowerCase();
   const toolLoopLimit = /tool loop limit|step tool loop limit|maximum tool loop|reached the \d+[- ]step tool loop limit/i.test(normalized);
   const engineCompleted = !opts.timedOut && Number(opts.exitCode) === 0 && !toolLoopLimit;
   const usefulReport = normalized.length >= 80;

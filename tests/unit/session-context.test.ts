@@ -18,7 +18,7 @@ describe('SessionContext', () => {
 
   it('invalidate forces recompute', () => {
     const ctx = new SessionContext();
-    const first = ctx.get(process.cwd());
+    ctx.get(process.cwd());
     ctx.invalidate();
     const second = ctx.get(process.cwd());
     // Content should be same but it's a new string (recomputed)

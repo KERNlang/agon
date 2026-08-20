@@ -10,15 +10,13 @@ import type { Plan, PlanStepInput, ApprovalLevel } from '@kernlang/agon-core';
 
 import { runForge } from '@kernlang/agon-forge';
 
-import { ENGINE_COLORS } from '../blocks/output-format.js';
-
 import type { Dispatch, HandlerContext, EngineProgress } from '../../handlers/types.js';
 
 import { cesarJudgeForge, cesarConvergeForge, cesarReviewForgeOutcome } from '../../handlers/cesar-brain.js';
 
 import { sessionResultStore } from '../models/session-results.js';
 
-import { createScoreboard, scoreboardStartEngine, scoreboardUpdateProgress, scoreboardFinishEngine, scoreboardFailEngine, renderScoreboard } from '../cesar/scoreboard.js';
+import { createScoreboard, scoreboardUpdateProgress, scoreboardFinishEngine, scoreboardFailEngine, renderScoreboard } from '../cesar/scoreboard.js';
 
 import { buildCheckpoint, recordCheckpoint } from '../cesar/checkpoint.js';
 

@@ -303,25 +303,6 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
     const chunks: SessionChunk[] = [];
     let turnDone = false;
     let resolveWait: (() => void) | null = null;
-    let emittedText = '';
-
-    const pushDelta = (text: string) => {
-      if (!text) return;
-      chunks.push({ type: 'text', content: text });
-      emittedText += text;
-    };
-
-    const pushSnapshot = (text: string) => {
-      if (!text) return;
-      let overlap = Math.min(emittedText.length, text.length);
-      while (overlap > 0 && !emittedText.endsWith(text.slice(0, overlap))) {
-        overlap -= 1;
-      }
-      const suffix = text.slice(overlap);
-      if (!suffix) return;
-      chunks.push({ type: 'text', content: suffix });
-      emittedText += suffix;
-    };
 
     const onAbort = () => {
       turnDone = true;
@@ -372,7 +353,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
         });
 
         // Yield streamed chunks while waiting for prompt response
-        const donePromise = promptPromise.then((result: any) => {
+        void promptPromise.then((result: any) => {
           turnDone = true;
           chunks.push({ type: 'done', content: result?.stopReason ?? 'end_turn' });
           if (resolveWait) { resolveWait(); resolveWait = null; }

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
-import { createRoom, appendEvent, readEvents, parseMentions } from '../../packages/core/src/generated/rooms/store.js';
+import { createRoom, appendEvent, parseMentions } from '../../packages/core/src/generated/rooms/store.js';
 import { recordPresence, advanceReadCursor, getReadCursor } from '../../packages/core/src/generated/rooms/presence.js';
 import { getUnreadState, listUnreadStates, isUnreadKind } from '../../packages/core/src/generated/rooms/unread.js';
 import { foldLocks, listRoomLocks, claimRoomLock, releaseRoomLock, expiredLocksHeldBy } from '../../packages/core/src/generated/rooms/locks.js';

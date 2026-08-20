@@ -1,4 +1,4 @@
-import type { EngineResult, ForgeEvent, Critique, DispatchMetric } from '@kernlang/agon-core';
+import type { EngineResult, Critique, DispatchMetric } from '@kernlang/agon-core';
 
 export interface StageResult {
   engineResults: Map<string, EngineResult>;

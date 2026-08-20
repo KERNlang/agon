@@ -10,9 +10,9 @@
 //
 // WARNING CEILING — LOWER-ONLY RATCHET. `npm run lint` runs with
 // `--max-warnings <N>` pinned to the exact warning count of the tree at the
-// time it was set (431). New warnings therefore fail the gate. When you clear
-// warnings, lower N to the new count in the same commit; never raise it to
-// make a red gate green.
+// time it was set. The codegen-era backlog is cleared, so N is 0: any new
+// warning fails the gate. When you clear warnings, lower N to the new count
+// in the same commit; never raise it to make a red gate green.
 //
 // Scope: TypeScript under `packages/*/src` (typed, via the TS project
 // service), the test suite and root TS config files (untyped — they are
@@ -54,12 +54,10 @@ export default tseslint.config(
       'no-fallthrough': 'error',
       // Dead bindings left behind by a refactor. `_`-prefixed names opt out.
       //
-      // WARN, not error: the tree inherited ~390 unused bindings from the
-      // retired KERN codegen (mostly dead imports it emitted per-module).
-      // Clearing them is a mechanical source sweep of its own; until then an
-      // `error` here would either fail the gate or force a mass edit through a
-      // change that is meant to be behavior-preserving. Promote to `error`
-      // once the backlog is zero.
+      // WARN in severity only: the codegen-era backlog (~430 dead bindings the
+      // retired KERN emitter left behind) is swept, and `npm run lint` pins
+      // `--max-warnings 0`, so a single new dead binding fails the gate exactly
+      // like an error would.
       '@typescript-eslint/no-unused-vars': [
         'warn',
         {

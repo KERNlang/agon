@@ -18,7 +18,7 @@ import type { AgonServe } from '../bridge/agon-serve.js';
 
 import { daemonJobConfig, resolveDaemonWorkflowJob } from '../jobs/workflow-job.js';
 
-import { header, info, success, warn, bold, dim, green, cyan, yellow, red } from '../blocks/output-format.js';
+import { header, info, success, warn, bold, dim, green, cyan, yellow } from '../blocks/output-format.js';
 
 /**
  * Pick the engine that answers a served turn. An explicit --engine wins; otherwise mirror `agon daemon`'s headless turn EXACTLY — the configured cesarEngine, then forgeFixedStarter, then 'claude' — so the two headless paths can never semantically diverge. Pure given loadConfig(cwd), so the test asserts the precedence.

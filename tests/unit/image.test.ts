@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { join } from 'node:path';
 import { writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -361,7 +361,7 @@ describe('encodeImagesForDispatch', () => {
   });
 
   it('enforces the image-count cap and reports the overflow', () => {
-    const paths = ['a.png', 'b.png', 'c.png'].map((n, i) => mkImage(n, 4));
+    const paths = ['a.png', 'b.png', 'c.png'].map((n) => mkImage(n, 4));
     const { parts, skipped } = encodeImagesForDispatch(paths, undefined, 2);
     expect(parts).toHaveLength(2);
     expect(skipped).toHaveLength(1);

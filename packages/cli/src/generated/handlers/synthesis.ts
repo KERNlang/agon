@@ -2,7 +2,7 @@ import { join } from 'node:path';
 
 import { mkdirSync } from 'node:fs';
 
-import { ensureAgonHome, RUNS_DIR, tracker, appendMessage, resolveWorkingDir } from '@kernlang/agon-core';
+import { ensureAgonHome, RUNS_DIR, tracker, appendMessage } from '@kernlang/agon-core';
 
 import { runSynthesisModus } from '@kernlang/agon-forge';
 

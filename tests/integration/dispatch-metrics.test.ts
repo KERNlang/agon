@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { DispatchMetric, EngineResult, TokenUsage } from '../../packages/core/src/types.js';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import type { DispatchMetric, EngineResult } from '../../packages/core/src/types.js';
 import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 
 let testHome = '';

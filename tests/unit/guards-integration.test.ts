@@ -757,7 +757,7 @@ describe('GuardPipeline integration — invariants mode', () => {
           { type: 'function', function: { name: 'Edit', description: 'e', parameters: { type: 'object', properties: {} } } },
           { type: 'function', function: { name: 'Read', description: 'r', parameters: { type: 'object', properties: {} } } },
         ] as any,
-        onToolCall: async (name: string, args: Record<string, unknown>) => {
+        onToolCall: async (name: string, _args: Record<string, unknown>) => {
           executed.push(name);
           return name === 'Read' ? 'file contents here' : 'ok';
         },
@@ -818,7 +818,7 @@ describe('GuardPipeline integration — invariants mode', () => {
           { type: 'function', function: { name: 'Edit', description: 'e', parameters: { type: 'object', properties: {} } } },
           { type: 'function', function: { name: 'Read', description: 'r', parameters: { type: 'object', properties: {} } } },
         ] as any,
-        onToolCall: async (name: string, args: Record<string, unknown>) => {
+        onToolCall: async (name: string, _args: Record<string, unknown>) => {
           executed.push(name);
           return name === 'Read' ? 'file contents here' : 'ok';
         },

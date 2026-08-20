@@ -1,6 +1,6 @@
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 
-import { join, resolve, relative, dirname, basename } from 'node:path';
+import { join, resolve, relative, dirname } from 'node:path';
 
 import { createHash } from 'node:crypto';
 

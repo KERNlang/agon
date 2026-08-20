@@ -2,11 +2,11 @@ import { randomUUID } from 'node:crypto';
 
 import { mkdirSync, writeFileSync, renameSync } from 'node:fs';
 
-import type { ForgeOptions, EngineAdapter, EngineResult, ForgeEvent, TaskClass } from '@kernlang/agon-core';
+import type { EngineAdapter, EngineResult, ForgeEvent } from '@kernlang/agon-core';
 
-import type { TeamSpec, TeamFormat, TeamComposeMode, TeamMember, TeamRoundTrace, TeamSubmission, TeamScoreCard, TeamMatchResult, TeamEvent } from '@kernlang/agon-core';
+import type { TeamSpec, TeamComposeMode, TeamRoundTrace, TeamSubmission, TeamScoreCard, TeamMatchResult, TeamEvent } from '@kernlang/agon-core';
 
-import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, stashSnapshot, worktreeCreate, worktreeRemoveBestEffort, classifyTask, createSidechainLogger, composeTeams, makeFormat, computeContributionWeights, spawnWithTimeout, tiebreak } from '@kernlang/agon-core';
+import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, stashSnapshot, worktreeCreate, worktreeRemoveBestEffort, classifyTask, createSidechainLogger, composeTeams, makeFormat, spawnWithTimeout, tiebreak } from '@kernlang/agon-core';
 
 import { updateTeamElo } from '@kernlang/agon-core';
 
@@ -206,8 +206,6 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
   }
 
   // --- Phase 2: Implementers build (parallel if multiple) ---
-  let bestPatch = '';
-  let bestImplResult: EngineResult | null = null;
 
   const implPromises = actualImplementers.map(async (impl) => {
     round++;

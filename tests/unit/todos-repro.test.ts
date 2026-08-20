@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { handleOutputEvent } from '../../packages/cli/src/generated/signals/output.js';
 import { asLiveTodos, clearLiveTodos, setTodos as reduceSetTodos } from '../../packages/cli/src/generated/signals/todos.js';

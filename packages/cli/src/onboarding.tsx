@@ -8,7 +8,6 @@ import {
 } from '@kernlang/agon-core';
 import { resolveBuiltinEnginesDir } from './generated/lib/engines-dir.js';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
-import type { EngineAdapter } from '@kernlang/agon-core';
 import { ENGINE_COLORS } from './output.js';
 import { icons } from './icons.js';
 
@@ -25,7 +24,7 @@ function OnboardingApp() {
   const [scanning, setScanning] = useState(true);
   const [engines, setEngines] = useState<EngineInfo[]>([]);
   const [selectedEngines, setSelectedEngines] = useState<string[]>([]);
-  const [defaultEngine, setDefaultEngine] = useState<string>('');
+  const [, setDefaultEngine] = useState<string>('');
   const [cursorIndex, setCursorIndex] = useState(0);
 
   // Scan engines on mount

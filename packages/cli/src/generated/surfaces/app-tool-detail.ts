@@ -1,10 +1,10 @@
-import { ENGINE_COLORS, shortToolPath, formatConfidenceToolLabel } from '../blocks/output-format.js';
+import { shortToolPath } from '../blocks/output-format.js';
 
 import { icons } from '../signals/icons.js';
 
 import { truncateCodeLine } from '../blocks/markdown.js';
 
-import { extractPatchText, parsePatchPreview } from '../blocks/engine-helpers.js';
+import { parsePatchPreview } from '../blocks/engine-helpers.js';
 
 import type { OutputBlock } from '../../generated/blocks/engine.js';
 

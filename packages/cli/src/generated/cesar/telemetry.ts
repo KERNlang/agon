@@ -4,7 +4,6 @@ function __kern_loose_eq(a: unknown, b: unknown): boolean {
   return a === b;
 }
 
-import type { Scoreboard, ScoreboardEntry } from './scoreboard.js';
 
 import { hostDateIso, hostNowMs } from '../lib/kern-host.js';
 

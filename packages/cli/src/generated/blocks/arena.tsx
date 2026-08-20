@@ -6,7 +6,6 @@ import type { EngineProgress } from '../../handlers/types.js';
 
 import { engineColor } from './rendering.js';
 
-import { icons } from '../signals/icons.js';
 
 export function ForgeArena({ engines }: { engines:EngineProgress[] }) {
   return (

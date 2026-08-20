@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, renameSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 
 import { join, resolve, basename } from 'node:path';
 

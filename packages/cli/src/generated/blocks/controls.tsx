@@ -8,9 +8,7 @@ import { SLASH_COMMANDS } from '../signals/intent.js';
 
 import { getSlashMatches, movePickerCursor, rankFileMatches } from '../signals/app-input.js';
 
-import { contentWidth, engineColor, color256toHex, DiffLine, CODE_RAIL, CODE_RAIL_COLOR } from './rendering.js';
-
-import { ENGINE_COLORS } from './output-format.js';
+import { contentWidth, engineColor, DiffLine, CODE_RAIL, CODE_RAIL_COLOR } from './rendering.js';
 
 import { icons } from '../signals/icons.js';
 
@@ -18,7 +16,6 @@ import { setAuthKey, getAuthKey, loadConfig, configSet } from '@kernlang/agon-co
 
 import type { CliModelEntry, CliProviderGroup } from '@kernlang/agon-core';
 
-import { buildCliModelGroups } from '@kernlang/agon-core';
 
 export interface ReviewEvent {
   winnerId: string;

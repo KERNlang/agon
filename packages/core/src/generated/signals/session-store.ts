@@ -1,6 +1,6 @@
-import { writeFileSync, readFileSync, existsSync, mkdirSync, unlinkSync, readdirSync, statSync, rmdirSync, renameSync } from 'node:fs';
+import { writeFileSync, readFileSync, existsSync, mkdirSync, unlinkSync, readdirSync, rmdirSync, renameSync } from 'node:fs';
 
-import { join, dirname } from 'node:path';
+import { join } from 'node:path';
 
 import { createHash } from 'node:crypto';
 

@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 
-import type { EngineAdapter, EngineDefinition, ForgeEvent, DispatchResult } from '@kernlang/agon-core';
+import type { EngineAdapter, ForgeEvent, DispatchResult } from '@kernlang/agon-core';
 
-import { EngineRegistry, buildTribunalPrompt, createSidechainLogger, updateGlickoRanked, classifyTask, loadConfig, seedNewEnginesFromRegistry } from '@kernlang/agon-core';
+import { EngineRegistry, createSidechainLogger, updateGlickoRanked, classifyTask, loadConfig, seedNewEnginesFromRegistry } from '@kernlang/agon-core';
 
-import type { TribunalMode, TribunalModeConfig, TribunalProtocol } from './tribunal-modes.js';
+import type { TribunalMode, TribunalProtocol } from './tribunal-modes.js';
 
 import { getModeConfig, buildModePrompt, buildModeSummaryPrompt } from './tribunal-modes.js';
 

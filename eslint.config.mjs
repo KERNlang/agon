@@ -8,8 +8,16 @@
 // mass source edits to satisfy it. Adding a rule here means committing to
 // keeping the whole tree clean under it.
 //
+// WARNING CEILING — LOWER-ONLY RATCHET. `npm run lint` runs with
+// `--max-warnings <N>` pinned to the exact warning count of the tree at the
+// time it was set (431). New warnings therefore fail the gate. When you clear
+// warnings, lower N to the new count in the same commit; never raise it to
+// make a red gate green.
+//
 // Scope: TypeScript under `packages/*/src` (typed, via the TS project
-// service) plus the plain-ESM tooling under `scripts/` (untyped).
+// service), the test suite and root TS config files (untyped — they are
+// outside every package tsconfig, so the project service cannot see them),
+// and the plain-ESM tooling under `scripts/` (untyped).
 // `*.entry.tsx` is excluded from the CLI tsconfig, so it is out of the
 // project service's reach and is ignored here too.
 
@@ -63,6 +71,29 @@ export default tseslint.config(
         },
       ],
       // TypeScript already resolves globals/imports.
+      'no-undef': 'off',
+    },
+  },
+  {
+    // Tests and root TS config files: untyped lint. They belong to no package
+    // tsconfig, so the typed project service cannot resolve them — linting them
+    // with type-aware rules would error out per file. Listing them explicitly
+    // (rather than leaving them to match nothing) is the point: an unmatched
+    // file is silently unlinted.
+    files: ['tests/**/*.ts', 'tests/**/*.tsx', '*.ts'],
+    extends: [tseslint.configs.base],
+    rules: {
+      'no-fallthrough': 'error',
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        {
+          args: 'after-used',
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrors: 'none',
+          ignoreRestSiblings: true,
+        },
+      ],
       'no-undef': 'off',
     },
   },

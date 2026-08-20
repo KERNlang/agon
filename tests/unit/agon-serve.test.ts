@@ -7,7 +7,8 @@ import { join } from 'node:path';
 // (event-log resolves paths at call time, so setting it pre-import is enough).
 process.env.AGON_HOME = mkdtempSync(join(tmpdir(), 'agon-serve-test-'));
 
-import { createAgonServe } from '../../packages/cli/src/bridge/agon-serve.js';
+import { createAgonServe, MAX_SEND_BODY_BYTES } from '../../packages/cli/src/bridge/agon-serve.js';
+import { MAX_DISPATCH_IMAGES, MAX_DISPATCH_IMAGE_BYTES } from '@kernlang/agon-core';
 import type { BrainClient } from '@kernlang/agon-core';
 
 // Minimal fake brain — agon-serve only calls runTurn + cancel + (now) provideAnswer.
@@ -328,5 +329,22 @@ describe('AgonServe — authenticated asynchronous jobs', () => {
   it('keeps every job route behind the existing bearer-token boundary', async () => {
     expect((await fetch(`${url}/v1/jobs`)).status).toBe(401);
     expect((await fetch(`${url}/v1/jobs`, { method: 'POST', body: '{}' })).status).toBe(401);
+  });
+});
+
+// The /send body cap is derived, not guessed: a turn may legitimately carry
+// MAX_DISPATCH_IMAGES images of MAX_DISPATCH_IMAGE_BYTES each, base64-encoded
+// (4/3 expansion), plus the JSON envelope around them. If the cap ever lands
+// BELOW that payload, the 413 guard rejects a request the dispatch layer
+// considers perfectly legal — images silently stop working over the bridge.
+describe('MAX_SEND_BODY_BYTES', () => {
+  const base64Payload = Math.ceil((MAX_DISPATCH_IMAGES * MAX_DISPATCH_IMAGE_BYTES * 4) / 3);
+
+  it('admits a full complement of max-size images', () => {
+    expect(MAX_SEND_BODY_BYTES).toBeGreaterThan(base64Payload);
+  });
+
+  it('leaves envelope headroom on top of the encoded images', () => {
+    expect(MAX_SEND_BODY_BYTES - base64Payload).toBeGreaterThanOrEqual(1024 * 1024);
   });
 });

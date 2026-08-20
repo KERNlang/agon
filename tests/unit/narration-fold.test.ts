@@ -6,6 +6,7 @@ import {
   getLastFoldedRaw,
   getFoldedRaw,
   getFoldedRawCount,
+  _NARR_TOOL_VERB_RE,
 } from '../../packages/cli/src/blocks/narration-fold.js';
 
 // A condensed but faithful slice of a real agy (--print black-box agent)
@@ -157,5 +158,39 @@ describe('folded-raw ring (/raw block-addressed replay)', () => {
     const before = getFoldedRawCount();
     setLastFoldedRaw('');
     expect(getFoldedRawCount()).toBe(before);
+  });
+});
+
+// The narration predicate needs BOTH an intent starter and a tool verb. Losing
+// a verb from the tool-verb set does not make the fold noisier — it makes it
+// silently WEAKER: "Let me look at X" stops folding and the wall of research
+// narration comes back.
+describe('tool-verb coverage', () => {
+  const wall = [
+    'Let me look at the router module to see which handler owns this path.',
+    'Let me look at the config loader to find where the defaults are merged.',
+    'The handler is registered twice, which is why the second route never fires.',
+  ].join('\n\n');
+
+  it('folds "look at" narration like any other tool verb', () => {
+    expect(_NARR_TOOL_VERB_RE.test('Let me look at the router module')).toBe(true);
+    expect(_NARR_TOOL_VERB_RE.test('Let me looking at the router module')).toBe(true);
+
+    const result = foldNarration(wall);
+
+    expect(result.didFold).toBe(true);
+    expect(result.foldedSteps).toBeGreaterThanOrEqual(2);
+    expect(result.visible).toContain('registered twice');
+    expect(result.visible).not.toContain('look at the router');
+  });
+
+  it('still requires a tool verb — an intent starter alone is substance', () => {
+    const noVerb = [
+      'Let me restate the constraint before we go further with this decision.',
+      'Let me restate the second constraint before we go further with it too.',
+      'Both constraints hold, so the migration can land in one pass.',
+    ].join('\n\n');
+
+    expect(foldNarration(noVerb).didFold).toBe(false);
   });
 });

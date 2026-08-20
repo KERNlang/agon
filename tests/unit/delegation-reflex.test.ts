@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   assessDelegationShape,
   buildDelegationAdvisory,
+  DELEGATION_SMALL_RE,
 } from '../../packages/cli/src/cesar/delegation-reflex.js';
 
 const listTask = [
@@ -87,5 +88,42 @@ describe('buildDelegationAdvisory', () => {
 
   it('returns null for a none decision', () => {
     expect(buildDelegationAdvisory(assessDelegationShape('fix the typo in the readme'))).toBeNull();
+  });
+});
+
+// "one-liner" is the hyphenated spelling people actually type. If the small-task
+// veto only recognised the spaced form, a "these are all one-liners" request
+// would still be pitched as a fan-out — spawning a worktree-isolated team for
+// trivia is exactly the money burn this veto exists to prevent.
+describe('small-task veto spellings', () => {
+  const hyphenated = [
+    'These are all one-liner edits, but here they are:',
+    '1. update the audio player component header comment to the new format',
+    '2. rewrite the settings screen placeholder copy for the new brand voice',
+    '3. adjust the notification badge padding to match the design tokens',
+  ].join('\n');
+
+  it('vetoes the hyphenated "one-liner"', () => {
+    expect(DELEGATION_SMALL_RE.test('these are one-liner edits')).toBe(true);
+
+    const shape = assessDelegationShape(hyphenated);
+
+    expect(shape.decision).toBe('none');
+    expect(shape.vetoes).toContain('small-task-language');
+    expect(buildDelegationAdvisory(shape)).toBeNull();
+  });
+
+  it('vetoes the spaced "one liner" the same way', () => {
+    const shape = assessDelegationShape(hyphenated.replace('one-liner', 'one liner'));
+
+    expect(shape.decision).toBe('none');
+    expect(shape.vetoes).toContain('small-task-language');
+  });
+
+  it('still suggests when the same list carries no small-task wording', () => {
+    const shape = assessDelegationShape(hyphenated.replace('These are all one-liner edits, but here they are:', 'Three independent pieces of work:'));
+
+    expect(shape.decision).toBe('suggest');
+    expect(shape.vetoes).toEqual([]);
   });
 });

@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { StatusBar } from '../../packages/cli/src/surfaces/status.js';
 import { buildPriorityStatusLine } from '../../packages/cli/src/surfaces/status-helpers.js';
-import { createPseudoTty } from '../../packages/cli/src/blocks/frame-capture.js';
+import { createPseudoTty, stripTerminalControl } from '../../packages/cli/src/blocks/frame-capture.js';
 
 function statusProps(termWidth: number) {
   return {
@@ -90,5 +90,33 @@ describe('pseudo-TTY terminal frames', () => {
     });
     expect(tty.read()).toContain(narrow);
     expect(narrow.split('\n')).toHaveLength(1);
+  });
+});
+
+// Frame capture is the oracle every render assertion in this repo leans on, so
+// its CSI matcher has to cover the WHOLE grammar: optional parameter bytes
+// (0x30-0x3F), then optional INTERMEDIATE bytes (0x20-0x2F — space through
+// slash, which includes '!', '"', '#', '$'), then one final byte. A matcher
+// that only knows a couple of intermediates leaks raw escapes into the text a
+// test then compares, turning a real regression into a passing string diff.
+describe('stripTerminalControl', () => {
+  it('strips a CSI sequence that carries an intermediate byte', () => {
+    // DECSTR soft reset: ESC [ ! p  — '!' is an intermediate byte.
+    expect(stripTerminalControl('before\x1b[!pafter')).toBe('beforeafter');
+    // DECSCUSR cursor style: ESC [ 2 SP q
+    expect(stripTerminalControl('a\x1b[2 qb')).toBe('ab');
+    // DECRQM request: ESC [ ? 2 0 0 4 $ p
+    expect(stripTerminalControl('x\x1b[?2004$py')).toBe('xy');
+  });
+
+  it('strips ordinary SGR/cursor sequences, OSC titles and carriage returns', () => {
+    expect(stripTerminalControl('\x1b[31mred\x1b[0m')).toBe('red');
+    expect(stripTerminalControl('\x1b[2J\x1b[Hclean')).toBe('clean');
+    expect(stripTerminalControl('\x1b]0;window title\x07kept')).toBe('kept');
+    expect(stripTerminalControl('one\r\ntwo')).toBe('one\ntwo');
+  });
+
+  it('leaves ordinary text — including brackets — untouched', () => {
+    expect(stripTerminalControl('plain [not ansi] text')).toBe('plain [not ansi] text');
   });
 });

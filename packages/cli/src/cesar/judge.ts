@@ -15,9 +15,11 @@ import { parseConfidence, confidenceBadge } from './confidence.js';
 import { ensureCesarSession } from './session.js';
 
 /**
- * Parse Cesar's structured judgment response.
+ * Parse Cesar's structured judgment response. Exported for direct testing —
+ * the convergence flag it produces commits real spend, so it is asserted on
+ * directly rather than through a live judging session.
  */
-function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
+export function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   const stripped = parseConfidence(response).rest;
   const lines = stripped.split('\n');
   let winner = manifest.winner ?? '';

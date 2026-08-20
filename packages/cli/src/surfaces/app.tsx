@@ -120,7 +120,7 @@ import { estimateVisibleBlockBudget, estimateBottomChromeExtraRows, estimatePinn
 
 import { normalizeUiMotion } from './status-helpers.js';
 
-import { buildDashboardBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, seedPerfTranscriptBlocks, archiveCountAfterPrefixDrop, padStaticFeed } from './app-blocks.js';
+import { buildDashboardBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, seedPerfTranscriptBlocks, absoluteSealedCount, sealedBoundaryFromAbsolute, padStaticFeed } from './app-blocks.js';
 
 import { buildExecutionRailStats, buildTranscriptRows } from './app-rendering.js';
 
@@ -423,8 +423,12 @@ export function App() {
   }, []);
   const [clearEpoch, _setClearEpochRaw] = useState<number>(0);
   const setClearEpoch = useMemo(() => __inkSafe(_setClearEpochRaw), [_setClearEpochRaw]);
-  const [nativeArchiveCount, _setNativeArchiveCountRaw] = useState<number>(0);
-  const setNativeArchiveCount = useMemo(() => __inkSafe(_setNativeArchiveCountRaw), [_setNativeArchiveCountRaw]);
+  // Sealed/live boundary in ABSOLUTE transcript coordinates (see
+  // absoluteSealedCount): blocks the cap dropped off the front are counted in,
+  // so a cap-spill never invalidates this number and the render can derive the
+  // live-array boundary from it without any effect-committed bookkeeping.
+  const [sealedAbsoluteCount, _setSealedAbsoluteCountRaw] = useState<number>(0);
+  const setSealedAbsoluteCount = useMemo(() => __inkSafe(_setSealedAbsoluteCountRaw), [_setSealedAbsoluteCountRaw]);
   const [fileRailOpen, _setFileRailOpenRaw] = useState<boolean>(false);
   const setFileRailOpen = useMemo(() => __inkSafe(_setFileRailOpenRaw), [_setFileRailOpenRaw]);
   const [executionRailOpen, _setExecutionRailOpenRaw] = useState<boolean>(false);
@@ -478,10 +482,6 @@ export function App() {
   const mouseSelectionRef = useRef<{ anchorRow: number | null; anchorCol: number | null; focusRow: number | null; focusCol: number | null; active: boolean; moved: boolean }>({ anchorRow: null, anchorCol: null, focusRow: null, focusCol: null, active: false, moved: false });
   const scrollBoxRef = useRef<any>(null);
   const nativeTranscriptBlockCountRef = useRef<number>(0);
-  // Cumulative blocks the transcript cap has dropped off the front since the
-  // last /clear. Pads the <Static> feed so Ink's print cursor keeps pointing at
-  // the same blocks (see padStaticFeed).
-  const droppedPrefixRef = useRef<number>(0);
 
   const allSlashCommands = useMemo(() => {
           const builtinCmds = SLASH_COMMANDS;
@@ -674,22 +674,25 @@ export function App() {
           return nativeArchiveBlockCount(nativeTranscriptBlocks, mode, currentVisibleRowBudget, toolOutputExpanded, thinkingExpanded);
   }, [nativeTranscriptBlocks,mode,currentVisibleRowBudget,toolOutputExpanded,thinkingExpanded]);
 
-  // Blocks the transcript cap has dropped off the FRONT of the live array.
-  // `staticDroppedPrefixCount` is the running total (Ink's <Static> print
-  // cursor is a position, so every dropped block must keep its slot);
-  // `droppedPrefixThisRender` is what fell off since the last commit and slides
-  // the sealed/live boundary down with it. The ref is committed in an effect,
-  // so the drop is visible on the very frame it happens.
+  // Blocks the transcript cap has dropped off the FRONT of the live array — the
+  // running total, since Ink's <Static> print cursor is a position and every
+  // dropped block must keep its slot. Read during render on purpose: the sealed
+  // boundary is stored ABSOLUTELY (sealedAbsoluteCount) and projected onto the
+  // live array right here, so the split is a pure function of this frame's
+  // (count, drop total). No effect-committed ref feeds it — a ref lands
+  // synchronously while every setState is deferred a macrotask by __inkSafe, so
+  // a repaint in that window used to seal blocks that were still live.
   const staticDroppedPrefixCount = transcriptDroppedTotal();
 
-  const droppedPrefixThisRender = Math.max(0, staticDroppedPrefixCount - droppedPrefixRef.current);
-
   const effectiveNativeArchiveCount = useMemo(() => {
-          const baseArchiveCount = archiveCountAfterPrefixDrop(nativeArchiveCount, droppedPrefixThisRender);
+          const baseArchiveCount = sealedBoundaryFromAbsolute(sealedAbsoluteCount, staticDroppedPrefixCount);
           return effectiveNativeArchiveBlockCount(nativeTranscriptBlocks, baseArchiveCount, nativeArchiveTarget, toolOutputExpanded);
-  }, [nativeArchiveCount,nativeArchiveTarget,nativeTranscriptBlocks,toolOutputExpanded,droppedPrefixThisRender]);
+  }, [sealedAbsoluteCount,nativeArchiveTarget,nativeTranscriptBlocks,toolOutputExpanded,staticDroppedPrefixCount]);
 
-  const nativeArchiveBlocks = useMemo(() => {
+  // Padded feed handed to <Static>: a null is a cap-dropped placeholder holding
+  // an index slot, never a block. Kept local to the <Static> element so the
+  // nullable slot type cannot leak into block-shaped consumers.
+  const staticFeedSlots: (OutputBlock | null)[] = useMemo(() => {
           return padStaticFeed(coalesceToolCallBlocks(nativeTranscriptBlocks.slice(0, effectiveNativeArchiveCount)), staticDroppedPrefixCount);
   }, [nativeTranscriptBlocks,effectiveNativeArchiveCount,staticDroppedPrefixCount]);
 
@@ -730,7 +733,7 @@ export function App() {
             setOutputBlocks,
             blockArchivePathRef,
             setClearEpoch,
-            setNativeArchiveCount,
+            setSealedAbsoluteCount,
             setPendingPlanProposal,
             setReviewEvent,
             setQuestionState,
@@ -1416,28 +1419,21 @@ export function App() {
   }, [activePlan,setActivePlanWrapped]);
 
   useEffect(() => {
-    const nextCount = nativeTranscriptBlocks.length;
-    if (terminalMode !== 'native') {
-      nativeTranscriptBlockCountRef.current = nextCount;
-      return;
-    }
-    const droppedTotal = transcriptDroppedTotal();
-    const dropped = Math.max(0, droppedTotal - droppedPrefixRef.current);
-    if (dropped > 0) {
-      setNativeArchiveCount((count: number) => archiveCountAfterPrefixDrop(count, dropped));
-    }
-    droppedPrefixRef.current = droppedTotal;
-    nativeTranscriptBlockCountRef.current = nextCount;
-  }, [terminalMode,nativeTranscriptBlocks]);
+    nativeTranscriptBlockCountRef.current = nativeTranscriptBlocks.length;
+  }, [nativeTranscriptBlocks]);
 
   useEffect(() => {
     if (terminalMode !== 'native') {
       return;
     }
-    if (effectiveNativeArchiveCount !== nativeArchiveCount) {
-      setNativeArchiveCount(effectiveNativeArchiveCount);
+    // Store what THIS frame sealed, converted to absolute coordinates with the
+    // same drop total the boundary was derived from. A later cap-spill then
+    // slides the boundary purely by arithmetic on read — nothing to catch up.
+    const nextAbsolute = absoluteSealedCount(effectiveNativeArchiveCount, staticDroppedPrefixCount);
+    if (nextAbsolute !== sealedAbsoluteCount) {
+      setSealedAbsoluteCount(nextAbsolute);
     }
-  }, [terminalMode,effectiveNativeArchiveCount,nativeArchiveCount]);
+  }, [terminalMode,effectiveNativeArchiveCount,staticDroppedPrefixCount,sealedAbsoluteCount]);
 
   useEffect(() => {
     lastReviewResultRef.current = lastReviewResult;
@@ -2007,7 +2003,7 @@ export function App() {
 
   if (terminalMode === 'native') return (
   <>
-    <Static key={`native-static-${clearEpoch}`} items={nativeArchiveBlocks}>
+    <Static key={`native-static-${clearEpoch}`} items={staticFeedSlots}>
       {(block: any) => (
         // null = a cap-dropped placeholder holding an index slot (padStaticFeed).
         block ? (

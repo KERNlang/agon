@@ -5,6 +5,8 @@ import { join } from 'node:path';
 
 import {
   archiveCountAfterPrefixDrop,
+  absoluteSealedCount,
+  sealedBoundaryFromAbsolute,
   padStaticFeed,
   effectiveNativeArchiveBlockCount,
   nativeArchiveBlockCount,
@@ -105,5 +107,99 @@ describe('<Static> transcript feed across a cap-spill', () => {
     const printed = runTranscript({ pad: false, carryArchiveCount: false });
     const contiguous = printed.every((id, index) => id === index);
     expect(contiguous).toBe(false);
+  });
+});
+
+/**
+ * Model of App's sealed/live boundary across one commit, including the window
+ * that `__inkSafe` opens: EVERY setState in App is deferred by a `setTimeout(0)`,
+ * while a ref assigned in the same effect lands synchronously. Any repaint that
+ * happens between the effect commit and the deferred setState therefore sees a
+ * ref that has already moved and a count that has not.
+ *
+ * `policy` is what the render uses to derive the boundary:
+ *   'delta-from-ref' — subtract only the drop the committed ref has not seen yet.
+ *   'absolute'       — keep the boundary in absolute (never-shifting) transcript
+ *                      coordinates and project it onto the live array on read.
+ */
+type BoundaryFrame = { feedLength: number; firstLiveId: number | null };
+
+function driveBoundary(policy: 'delta-from-ref' | 'absolute', repaintInDeferredWindow: boolean): { append: BoundaryFrame[]; all: BoundaryFrame[] } {
+  const dir = mkdtempSync(join(tmpdir(), 'agon-static-window-'));
+  const archivePath = join(dir, 'transcript.ndjson');
+  try {
+    resetTranscriptDroppedTotal();
+    let blocks: OutputBlock[] = [];
+    let archiveState = 0;         // useState: nativeArchiveCount / sealedAbsoluteCount
+    let seenDroppedRef = 0;       // useRef: droppedPrefixRef.current
+    let pending: number | null = null; // the __inkSafe-deferred setState payload
+    const append: BoundaryFrame[] = [];
+    const all: BoundaryFrame[] = [];
+
+    const render = (): number => {
+      const droppedTotal = transcriptDroppedTotal();
+      const base = policy === 'absolute'
+        ? sealedBoundaryFromAbsolute(archiveState, droppedTotal)
+        : archiveCountAfterPrefixDrop(archiveState, droppedTotal - seenDroppedRef);
+      const target = nativeArchiveBlockCount(blocks, 'chat', 30, false, false);
+      const effective = effectiveNativeArchiveBlockCount(blocks, base, target, false);
+      const frame: BoundaryFrame = {
+        feedLength: padStaticFeed(blocks.slice(0, effective), droppedTotal).length,
+        firstLiveId: blocks[effective]?.id ?? null,
+      };
+      all.push(frame);
+      return effective;
+    };
+    const commitEffects = (effective: number): void => {
+      const droppedTotal = transcriptDroppedTotal();
+      // The count update is deferred; the ref lands now.
+      pending = policy === 'absolute' ? absoluteSealedCount(effective, droppedTotal) : effective;
+      seenDroppedRef = droppedTotal;
+    };
+    const flushDeferredState = (): void => {
+      if (pending !== null) { archiveState = pending; pending = null; }
+    };
+
+    for (let id = 0; id < 900; id += 1) {
+      blocks = appendBlockWithCap(blocks, { id, event: { type: 'info', message: `m${id}` } as any }, archivePath);
+      commitEffects(render());
+      append.push(all[all.length - 1]!);
+      // An unrelated repaint (spinner tick, telemetry poll, stream chunk — every
+      // one of them is its own deferred macrotask) lands here, BEFORE the count
+      // setState queued above has been applied.
+      if (repaintInDeferredWindow) commitEffects(render());
+      flushDeferredState();
+    }
+    return { append, all };
+  } finally {
+    resetTranscriptDroppedTotal();
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+describe('sealed/live boundary inside the deferred-setState window', () => {
+  it('an unrelated repaint neither moves the boundary nor changes what gets sealed', () => {
+    const withRepaint = driveBoundary('absolute', true);
+    const withoutRepaint = driveBoundary('absolute', false);
+
+    // The repaint (frame 2n+1) must land on exactly the same split as the
+    // append render (frame 2n) that preceded it: no block added, no block moved.
+    for (let index = 1; index < withRepaint.all.length; index += 2) {
+      expect(withRepaint.all[index]).toEqual(withRepaint.all[index - 1]);
+    }
+    // …and it must not perturb any later frame either.
+    expect(withRepaint.append).toEqual(withoutRepaint.append);
+  });
+
+  it('regression: deriving the boundary from the effect-committed ref breaks in that window', () => {
+    const withRepaint = driveBoundary('delta-from-ref', true);
+    const withoutRepaint = driveBoundary('delta-from-ref', false);
+
+    const movedFrames = withRepaint.all.filter(
+      (frame, index) => index % 2 === 1 && JSON.stringify(frame) !== JSON.stringify(withRepaint.all[index - 1]),
+    );
+    // The stale count seals blocks that are still live: same blocks, longer feed.
+    expect(movedFrames.length).toBeGreaterThan(0);
+    expect(withRepaint.append).not.toEqual(withoutRepaint.append);
   });
 });

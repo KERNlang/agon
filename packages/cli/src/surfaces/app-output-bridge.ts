@@ -33,7 +33,8 @@ export interface OutputBridgeDeps {
   setOutputBlocks: (updater:OutputBlock[] | ((prev:OutputBlock[]) => OutputBlock[])) => void;
   blockArchivePathRef: {current: string};
   setClearEpoch: (updater:(epoch:number) => number) => void;
-  setNativeArchiveCount: (val:number) => void;
+  /** Sealed/live boundary in absolute transcript coordinates (see absoluteSealedCount). */
+  setSealedAbsoluteCount: (val:number) => void;
   setPendingPlanProposal: (val:OutputEvent | null) => void;
   setReviewEvent: (val:any) => void;
   setQuestionState: (val:any) => void;
@@ -151,7 +152,7 @@ export function buildOutputActions(opts: OutputBridgeDeps): OutputActions {
     setOutputBlocks,
     blockArchivePathRef,
     setClearEpoch,
-    setNativeArchiveCount,
+    setSealedAbsoluteCount,
     setPendingPlanProposal,
     setReviewEvent,
     setQuestionState,
@@ -215,7 +216,7 @@ export function buildOutputActions(opts: OutputBridgeDeps): OutputActions {
       transcriptBatcher.discard();
       setOutputBlocks([]);
       setClearEpoch((epoch: number) => nextStaticEpoch(epoch, 'reset'));
-      setNativeArchiveCount(0);
+      setSealedAbsoluteCount(0);
       clearBlockRowCache();
     },
     setPendingPlanProposal: (val: OutputEvent | null) => {

@@ -189,6 +189,31 @@ export function archiveCountAfterPrefixDrop(previousArchiveCount: number, droppe
 }
 
 /**
+ * The sealed/live boundary in ABSOLUTE transcript coordinates: how many blocks,
+ * counting every one the cap has already dropped off the front, are sealed.
+ *
+ * Live-array indices shift under a cap-spill; absolute ones never do. Storing
+ * the boundary absolutely is what makes it derivable from a single render-time
+ * read of transcriptDroppedTotal(), with no "how much of the drop has my
+ * committed state already seen?" bookkeeping — the bookkeeping was the bug: App
+ * defers every setState by a macrotask (__inkSafe) while a ref assigned in the
+ * same effect lands synchronously, so a repaint in between saw a ref that had
+ * already advanced and a count that had not, and sealed still-live blocks.
+ */
+export function absoluteSealedCount(boundaryIndex: number, droppedPrefixCount: number): number {
+  return Math.max(0, boundaryIndex) + Math.max(0, droppedPrefixCount);
+}
+
+/**
+ * Project an absolute sealed count back onto today's live array. Pure function
+ * of (stored count, current drop total) — same inputs, same boundary, on every
+ * render of a given frame.
+ */
+export function sealedBoundaryFromAbsolute(sealedAbsoluteCount: number, droppedPrefixCount: number): number {
+  return archiveCountAfterPrefixDrop(sealedAbsoluteCount, droppedPrefixCount);
+}
+
+/**
  * Keep the <Static> feed index-stable across a transcript cap-spill.
  *
  * Ink's <Static> tracks "how many items have already been printed" as a plain

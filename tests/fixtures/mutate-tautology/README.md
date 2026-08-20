@@ -1,7 +1,7 @@
 # mutate-tautology fixture
 
 A tiny, dependency-free "repo" for exercising the mutation runner
-(`packages/core/src/kern/tools/mutant-runner.kern`).
+(`packages/core/src/tools/mutant-runner.ts`).
 
 Two test variants over the same source prove the oracle works in both
 directions:

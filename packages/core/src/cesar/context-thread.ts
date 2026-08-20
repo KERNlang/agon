@@ -1,5 +1,6 @@
-// ── KERN stdlib (auto-emitted) ──────────────────────────────────────
-function __kern_loose_eq(a: unknown, b: unknown): boolean {
+// Loose equality: null and undefined compare equal to each other; everything
+// else compares strictly.
+function looseEq(a: unknown, b: unknown): boolean {
   if ((a === null || a === undefined) && (b === null || b === undefined)) return true;
   return a === b;
 }
@@ -340,7 +341,7 @@ export function loopEntryToThreadMessage(entry: Record<string,unknown>, engineId
   const ts = now ?? hostNowMs();
   const id = `msg_${ts}_${randomUUID().slice(0, 8)}`;
   const role = (entry.role as ThreadMessage['role']) ?? 'assistant';
-  const content = (typeof entry.content === 'string') ? entry.content : ((__kern_loose_eq(entry.content, null)) ? '' : String(entry.content));
+  const content = (typeof entry.content === 'string') ? entry.content : ((looseEq(entry.content, null)) ? '' : String(entry.content));
   const msg: ThreadMessage = { id: id, role: role, content: content, engineId: engineId, timestamp: ts };
   const tc = entry.tool_calls as Array<{ id: string, type: string, function: { name: string, arguments: string } }> | undefined;
   if (tc && Array.isArray(tc) && tc.length > 0) {
@@ -736,7 +737,7 @@ export class ContextThread {
     const stale: FileTouch[] = [];
     for (const touch of hostObjectValues(this.fileTouches) as FileTouch[]) {
       const current = getCurrentHash(touch.path);
-      if (!__kern_loose_eq(current, null) && current !== touch.contentHash) {
+      if (!looseEq(current, null) && current !== touch.contentHash) {
         stale.push(touch);
       }
     }

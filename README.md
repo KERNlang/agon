@@ -756,7 +756,7 @@ PR bodies agon writes end with the same line rendered with the **real AGON logo*
 
 ## Architecture
 
-Agon is a plain TypeScript monorepo (ESM, Node >= 22). It was originally authored in [KERN](https://kernlang.dev) and compiled to TypeScript; that authoring layer has since been removed and the TypeScript is now the hand-maintained source. The monorepo:
+Agon is a plain TypeScript monorepo (ESM, Node >= 22):
 
 - `packages/core` — types, config, Glicko-2 + Team Elo scoring, Cesar routing, session state
 - `packages/cli` — the interactive REPL, Ink surfaces, command handlers

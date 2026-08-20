@@ -1,5 +1,6 @@
-// ── KERN stdlib (auto-emitted) ──────────────────────────────────────
-function __kern_loose_eq(a: unknown, b: unknown): boolean {
+// Loose equality: null and undefined compare equal to each other; everything
+// else compares strictly.
+function looseEq(a: unknown, b: unknown): boolean {
   if ((a === null || a === undefined) && (b === null || b === undefined)) return true;
   return a === b;
 }
@@ -86,13 +87,13 @@ export function renderEngineVitalLine(v: EngineVitals): string {
   const latencyMs = v.latencyMs ?? 0;
   const stallDurationMs = v.stallDurationMs ?? 0;
   parts.push(`${stateIcon[v.state]} ${v.engineId}`);
-  if (!__kern_loose_eq(v.cpuPercent, null)) {
+  if (!looseEq(v.cpuPercent, null)) {
     parts.push(formatVitalBar('CPU', cpuPercent, 8));
   }
-  if (!__kern_loose_eq(v.memPercent, null)) {
+  if (!looseEq(v.memPercent, null)) {
     parts.push(formatVitalBar('MEM', memPercent, 8));
   }
-  if (!__kern_loose_eq(v.latencyMs, null)) {
+  if (!looseEq(v.latencyMs, null)) {
     parts.push(`${latencyMs}ms`);
   }
   if (v.network) {
@@ -101,7 +102,7 @@ export function renderEngineVitalLine(v: EngineVitals): string {
   if (v.task) {
     parts.push(`— ${v.task}${v.taskDetail ? ` (${v.taskDetail})` : ''}`);
   }
-  if (!__kern_loose_eq(v.stallDurationMs, null)) {
+  if (!looseEq(v.stallDurationMs, null)) {
     parts.push(`[stalled ${(stallDurationMs / 1000).toFixed(1)}s]`);
   }
   if (v.fallbackTo) {

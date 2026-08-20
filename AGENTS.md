@@ -129,15 +129,13 @@ When answering, always state confidence clearly enough that the user can tell wh
 
 ## Source Layout — plain TypeScript
 
-Agon used to be authored in KERN, with `.kern` sources compiled into a mirror
-tree. That authoring layer is gone and so is the mirror: the TypeScript under
-`packages/*/src/` is the **hand-maintained source of truth** and is edited
-directly. There is no compile step, no `.kern` file, no codegen.
+The source is the TypeScript under `packages/*/src/`. Edit it directly.
 
-- Edit the module itself. A handful of modules still sit behind a small public
-  surface next to them — a barrel (`core/src/tools.ts` fronts `core/src/tools/`)
-  or a facade that adds one type or default (`forge/src/types.ts` over
-  `types-impl.ts`) — but there is no mirror layer to keep in sync.
+- Some directories are fronted by a small public surface: a barrel
+  (`core/src/tools.ts` fronts `core/src/tools/`) or a thin facade that adds a
+  type or a default (`forge/src/types.ts` over `types-impl.ts`). Add new exports
+  where the implementation lives and re-export them through the barrel or facade
+  when the directory has one.
 - Ordinary TypeScript throughout: functions, classes, discriminated unions, React/Ink `.tsx` components.
 
 CLI runtime note:

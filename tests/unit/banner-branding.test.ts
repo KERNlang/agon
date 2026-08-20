@@ -5,9 +5,9 @@ import { VERSION } from '../../packages/cli/src/blocks/engine.js';
 import { renderBlockOwnRows } from '../../packages/cli/src/surfaces/app-rendering.js';
 
 // The REPL banner is Agon's own product identity: version + KERNlang.dev org
-// branding. It must NOT advertise a KERN compiler version — Agon ejected from
-// the compiler and the TypeScript is now the hand-maintained source, so a
-// "(KERN x.y.z)" chip would be stale, misleading branding.
+// branding. It must NOT advertise a KERN compiler version — Agon's source is
+// plain TypeScript, so a "(KERN x.y.z)" chip would be stale, misleading
+// branding.
 const dashboardRows = () =>
   renderBlockOwnRows(
     { id: 1, event: { type: 'dashboard', enabled: ['claude', 'codex'] } } as any,

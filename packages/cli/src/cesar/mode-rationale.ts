@@ -1,5 +1,6 @@
-// ── KERN stdlib (auto-emitted) ──────────────────────────────────────
-function __kern_loose_eq(a: unknown, b: unknown): boolean {
+// Loose equality: null and undefined compare equal to each other; everything
+// else compares strictly.
+function looseEq(a: unknown, b: unknown): boolean {
   if ((a === null || a === undefined) && (b === null || b === undefined)) return true;
   return a === b;
 }
@@ -37,7 +38,7 @@ export function buildModeRationale(hints: CesarRoutingHints, opts?: {confidence?
     kind = 'scope-hint';
     reason = `Multi-step work — ${hints.flowReason}`;
   }
-  if (!__kern_loose_eq(costUsd, null) && resolvedCostUsd > 1.0) {
+  if (!looseEq(costUsd, null) && resolvedCostUsd > 1.0) {
     kind = 'cost-warning';
     reason = `${reason} (est. $${resolvedCostUsd.toFixed(2)})`;
   }
@@ -47,7 +48,7 @@ export function buildModeRationale(hints: CesarRoutingHints, opts?: {confidence?
 export function formatModeRationale(r: ModeRationale): string {
   const flowLabel = r.flow.replace(/-/g, ' ');
   const resolvedCostUsd = r.costUsd ?? 0;
-  const cost = (!__kern_loose_eq(r.costUsd, null)) ? ` [$${resolvedCostUsd.toFixed(2)}]` : '';
-  const conf = (!__kern_loose_eq(r.confidence, null)) ? ` ~${r.confidence}%` : '';
+  const cost = (!looseEq(r.costUsd, null)) ? ` [$${resolvedCostUsd.toFixed(2)}]` : '';
+  const conf = (!looseEq(r.confidence, null)) ? ` ~${r.confidence}%` : '';
   return `▸ ${flowLabel}${conf}${cost} — ${r.reason}`;
 }

@@ -19,9 +19,9 @@
 //                              of the same name); add a separate `export { x }`
 //                              of the local binding if it must stay on the surface.
 //
-// This guard scans every TypeScript workspace source tree (implementation modules
-// AND the hand-maintained facades that re-export them — post-eject both are
-// plain source that ships) and flags any re-exported-from VALUE name that is
+// This guard scans every TypeScript workspace source tree — implementation
+// modules AND the barrels/facades that re-export them, since both ship — and
+// flags any re-exported-from VALUE name that is
 // ALSO CALLED in the same module body while having NO local binding (import /
 // declaration). A call to an unbound name is a guaranteed runtime
 // ReferenceError, so this is high-precision.
@@ -52,7 +52,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 // forge's types.ts …) are ordinary source with exactly the same re-export
 // surface as the modules behind them, so they can carry exactly the same bug.
 //
-// Not listed: packages/saas-api/src (hand-maintained Python, no TS) and
+// Not listed: packages/saas-api/src (Python, no TS) and
 // packages/dedup (Python sidecar, no src/ at all). Every dir listed here MUST
 // exist — a typo or a moved package would otherwise silently scan nothing and
 // exit green (see the existence check in check()).

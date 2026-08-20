@@ -1,17 +1,15 @@
 // Minimal typed ESLint config.
 //
-// Agon used to get a class of structural checks for free from the KERN
-// compiler (`kern check`). After the eject to plain TypeScript those
-// invariants have to come from somewhere, so this config replaces the few
-// that actually caught bugs — nothing more. It is deliberately NOT a style
-// linter: no formatting rules, no opinionated `recommended` preset, no
-// mass source edits to satisfy it. Adding a rule here means committing to
-// keeping the whole tree clean under it.
+// This config carries the few structural invariants that actually catch bugs
+// in this codebase — nothing more. It is deliberately NOT a style linter: no
+// formatting rules, no opinionated `recommended` preset, no mass source edits
+// to satisfy it. Adding a rule here means committing to keeping the whole tree
+// clean under it.
 //
 // WARNING CEILING — LOWER-ONLY RATCHET. `npm run lint` runs with
 // `--max-warnings <N>` pinned to the exact warning count of the tree at the
-// time it was set. The pre-eject backlog is cleared, so N is 0: any new
-// warning fails the gate. When you clear warnings, lower N to the new count
+// time it was set. The tree is clean, so N is 0: any new warning fails the
+// gate. When you clear warnings, lower N to the new count
 // in the same commit; never raise it to make a red gate green.
 //
 // Scope: TypeScript under `packages/*/src` (typed, via the TS project
@@ -51,8 +49,7 @@ export default tseslint.config(
       'no-fallthrough': 'error',
       // Dead bindings left behind by a refactor. `_`-prefixed names opt out.
       //
-      // WARN in severity only: the pre-eject backlog (~430 dead bindings the
-      // retired KERN emitter left behind) is swept, and `npm run lint` pins
+      // WARN in severity only: the tree is clean and `npm run lint` pins
       // `--max-warnings 0`, so a single new dead binding fails the gate exactly
       // like an error would.
       '@typescript-eslint/no-unused-vars': [

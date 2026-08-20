@@ -1,5 +1,6 @@
-// ── KERN stdlib (auto-emitted) ──────────────────────────────────────
-function __kern_loose_eq(a: unknown, b: unknown): boolean {
+// Loose equality: null and undefined compare equal to each other; everything
+// else compares strictly.
+function looseEq(a: unknown, b: unknown): boolean {
   if ((a === null || a === undefined) && (b === null || b === undefined)) return true;
   return a === b;
 }
@@ -102,14 +103,14 @@ function parseOptionalBoolean(value: unknown): boolean {
   if (value === true) {
     return true;
   }
-  if (value === false || __kern_loose_eq(value, null)) {
+  if (value === false || looseEq(value, null)) {
     return false;
   }
   return ['1', 'true', 'yes', 'team'].includes(String(value).trim().toLowerCase());
 }
 
 function optionalFlag(flag: string, value: unknown): string[] {
-  const text = (__kern_loose_eq(value, null)) ? '' : String(value).trim();
+  const text = (looseEq(value, null)) ? '' : String(value).trim();
   return text ? [flag, text] : [];
 }
 

@@ -26,6 +26,19 @@
  *   latency ms        : p50 3.66/3.69/3.78 · p95 4.73/7.50/4.61
  *
  *   App no longer commits per keystroke; only the composer leaf does.
+ *
+ * ── AFTER single state commit per keystroke (2026-08-20,
+ *    perf/prompt-input-single-commit, same box/settings, 3 runs) ──────────
+ *   renders/keystroke : App 0.00 · ComposerView 1.00 · PromptTextInput 1.00
+ *   latency ms        : p50 3.72/3.69/3.56 · p95 4.99/4.50/4.52
+ *
+ *   PromptTextInput now commits once per keystroke. The second commit was
+ *   never the two useState hooks (React batches those with the parent's
+ *   onChange into one commit) — it was the controlled-value adoption effect
+ *   calling setState unconditionally: React re-renders the component once
+ *   even when the next state is equal before bailing out of the subtree.
+ *   Merging value+cursor into one state object is what makes that no-op
+ *   detectable, so the effect (and the key handler) can skip the write.
  */
 import { spawn } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';

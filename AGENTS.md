@@ -127,69 +127,54 @@ When answering, always state confidence clearly enough that the user can tell wh
 - If confidence is low or mixed, say why.
 - Do not hide uncertainty behind confident wording.
 
-## ALL IN KERN — No Exceptions
+## Source Layout — plain TypeScript
 
-Every new function, type, constant, and handler MUST be written in KERN. No hand-maintained TypeScript unless physically impossible (React/Ink JSX, external library bindings).
+Agon used to be authored in KERN (`.kern` sources compiled into `packages/*/src/generated/`). That authoring layer is gone: the TypeScript under `packages/*/src/generated/` is now the **hand-maintained source of truth** and is edited directly. The directory name is legacy — it was kept so every import path and test stayed valid. There is no compile step, no `.kern` file, and no codegen.
 
-Workflow:
-1. Write `.kern` source in `packages/*/src/kern/<category>/`
-2. Compile: `npm run kern:compile`
-3. The `.ts` facade re-exports from `generated/`
-
-Compiler resolution:
-- `npm run kern:compile` uses the root-installed `@kernlang/*` family pinned in `package.json`.
-- Agon validates the resolved `@kernlang/*` package family and rejects stale installs instead of trusting the CLI package alone.
+- Edit implementations under `packages/*/src/generated/`; the sibling `.ts` files are thin facades that re-export (and sometimes tighten) that surface.
+- Ordinary TypeScript throughout: functions, classes, discriminated unions, React/Ink `.tsx` components.
+- Renaming `generated/` and merging the facades is a deliberate later phase — do not start it opportunistically.
 
 CLI runtime note:
-- For changes under `packages/cli/src/kern/`, `npm run kern:compile -w packages/cli` only updates `packages/cli/src/generated/`.
-- The actual `agon` binary runs from `packages/cli/dist/index.js`, so rebuild it with `npm run build -w packages/cli` before verifying runtime behavior.
-- A running `agon` session will not hot-reload compiled KERN changes. Restart the process after rebuilding.
+- The actual `agon` binary runs from `packages/cli/dist/index.js`, so rebuild with `npm run build -w packages/cli` before verifying runtime behavior.
+- A running `agon` session will not hot-reload source changes. Restart the process after rebuilding.
 
-**NEVER edit `packages/*/src/generated/` directly.** These are compiled output.
+### Re-export surface guard
 
-### KERN Primitives
-- `fn` — functions (`async=true`, `signal` + `cleanup` for AbortController)
-- `service` — classes with methods, `implements`, `constructor`, `singleton`, `stream=true`
-- `union` — discriminated unions with variants
-- `const` — constants (regex, arrays, records)
-- `interface` — type definitions
-- `screen target=ink` — React/Ink components
-- `import` — ESM imports
-- `machine` — state machines
-- `event` — event definitions
-
-### KERN MCP
-Add `https://kernlang.dev/api/mcp` to your MCP config for compile, validate, review, schema, and 8 more tools. See `.mcp.json.example`.
+`npm run guard:reexports` catches a runtime bug class both `tsc` and `esbuild` accept: a module that re-exports a symbol (`export { foo } from './x.js'`, no local binding) and then calls `foo()` in its own body → `ReferenceError` at runtime with a green typecheck. When a symbol is both used locally and exported: in `packages/core` (tsc) `import from` **and** `export from`; in `packages/cli` (esbuild) `import from` only plus a separate `export { x }` of the local binding. It runs in CI — do not loosen it.
 
 ## Build & Test
 
 ```bash
-npm run kern:compile   # Compile all KERN sources
-npm run kern:test      # Kern runtime tests
-npm run typecheck      # tsc -b
-npm run build          # build CLI and types
-npm test               # Kern tests + vitest
+npm run typecheck       # tsc -b
+npm run build           # build CLI and types
+npm test                # vitest
+npm run lint            # eslint (typed, minimal ruleset)
+npm run guard:reexports # re-export surface guard
+npm run docs:modes      # regenerate docs/modes.md (byte-compared by a unit test)
 ```
 
 ## Git Workflow — NEVER commit/push to main
 
 - NEVER commit or push directly to `main`/`master`. Always: feature branch → push → open PR. This applies to **Cesar/builder auto-commits too** — an autonomous build leaves work for a human merge gate; it does not land on main.
 - Stage explicit paths; never `git add -A` in the shared working tree (it sweeps other sessions' WIP).
-- Run the gate (`npm run kern:compile && npm run test`) green before committing; "done" from a builder is unverified until the gate passes.
+- Run the gate (`npm run build && npm run typecheck && npm test && npm run lint && npm run guard:reexports`) green before committing; "done" from a builder is unverified until the gate passes.
 
 ## Architecture
 
 ```
 packages/
-  core/          — 69 .kern files. Types, config, scoring, tools, sessions, API. 100% KERN.
-  cli/           — 60 .kern files. Surfaces, blocks, signals, handlers, commands. ~95% KERN.
-  forge/         — 17 .kern files. Forge, brainstorm, tribunal, campfire. 100% KERN.
-  adapter-cli/   — 2 .kern files. CliAdapter (service implements EngineAdapter). 100% KERN.
+  core/          — Types, config, engine registry, scoring, Cesar routing, tools, sessions, API.
+  cli/           — The `agon` binary: citty subcommands, Ink REPL surfaces/blocks/signals, handlers.
+  forge/         — Forge, brainstorm, synthesis, tribunal, campfire, council, nero, research, mutate, conquer, goal.
+  adapter-cli/   — CliAdapter (implements EngineAdapter): spawns/streams external engine CLIs.
+  mcp/           — MCP server exposing Agon orchestration as tools (private).
+  dedup/         — Python sidecars for semantic features (JSON over stdio).
 engines/         — JSON engine definitions (claude.json, codex.json, etc.)
 tests/           — Unit + integration tests (vitest)
 ```
 
-### Directory Pattern
+### Directory Pattern (inside `src/generated/`)
 - `surfaces/` — top-level screens (what the user sees)
 - `blocks/` — reusable UI/logic components
 - `signals/` — state, dispatch, routing, config, registries, stores
@@ -204,7 +189,7 @@ Agon runs in the **terminal's main buffer** (no alt-screen). Past transcript row
 - Dynamic region renders below Static (live streaming, file rail, composer, status)
 - No `<AlternateScreen>`, no `<ScrollBox>`, no mouse tracking (SGR 1000/1002/1006 never emitted)
 - `patches/ink+5.2.1.patch` removes Ink's `outputHeight >= stdout.rows → clearTerminal` branch so scrollback is preserved when output fills the viewport
-- Bracketed paste (`ESC[?2004h/l`) is the only raw escape written from app.kern
+- Bracketed paste (`ESC[?2004h/l`) is the only raw escape written from the app surface
 - File rail: Ctrl+B toggles. When rail open + composer empty: ↑/↓ select, →/← expand/collapse, Esc closes
 - Ctrl+G toggles "selection mode" state — vestigial from alt-screen days; no longer changes mouse tracking since terminal always owns the mouse
 
@@ -221,7 +206,7 @@ Agon runs in the **terminal's main buffer** (no alt-screen). Past transcript row
 - Silent `catch {}` is **intentional** for: feature detection (file probes), optional metadata reads (package.json, Cargo.toml), best-effort cleanup (unlinkSync temp files), JSON parse fallbacks
 - **Do log** (`console.warn`) for: session close failures, process kill failures, state persistence errors — anything where silent failure could corrupt state or leak resources
 - Pattern: `console.warn(\`[agon] context: \${e instanceof Error ? e.message : String(e)}\`)`
-- The `generated/` catch blocks are intentionally silent — do not flag as issues
+- The long-lived `generated/` catch blocks are intentionally silent — do not flag as issues
 
 ## Dispatch Chain
 
@@ -235,10 +220,8 @@ All handlers support `AbortSignal` for cancellation.
 
 ## Key Patterns
 
-- `spawnWithTimeout(opts)` — external process with timeout + abort (KERN: `blocks/process.kern`)
+- `spawnWithTimeout(opts)` — external process with timeout + abort (`packages/core/src/generated/blocks/process.ts`)
 - `spawnStream(opts)` — async generator yielding stdout chunks
-- `signal` + `cleanup` on `fn` — generates AbortController + try/finally
-- `service` with `stream=true` method — generates `async *method(): AsyncGenerator<T>`
 - `companionDispatch` — JSONRPC (Codex), ACP (Antigravity/OpenCode), stream-json (Claude)
 
 ## Adding a New Engine

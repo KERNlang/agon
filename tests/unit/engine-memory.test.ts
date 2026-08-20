@@ -1,11 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   loadEngineMemory, addEngineNote, setEngineStrengths,
   setEngineWeaknesses, addEngineTendency, getEngineProfile,
   buildRolePrompt, filePathToMemoryPattern, extractPatchFilePatterns,
   recordForgeOutcome, recordForgeJudgment,
 } from '../../packages/core/src/blocks/engine-memory.js';
-import { rmSync } from 'node:fs';
+import { rmSync, writeFileSync } from 'node:fs';
 import { agonHomePath, cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 
 describe('EngineMemory', () => {
@@ -134,5 +134,37 @@ describe('EngineMemory', () => {
     const profile = getEngineProfile('claude');
     expect(profile!.notes).toHaveLength(50);
     expect(profile!.notes[0].observation).toBe('Note 10'); // First 10 dropped
+  });
+
+  // ── Load-failure reporting ───────────────────────────────────────────
+  // A missing file is the normal first-run state and must stay SILENT; a
+  // corrupt file is data loss and must warn. Swapping the two either spams
+  // every fresh install with a scary warning or silently eats a corrupted
+  // memory store.
+  describe('loadEngineMemory failure reporting', () => {
+    it('is silent when the memory file simply does not exist', () => {
+      rmSync(agonHomePath('engine-memory.json'), { force: true });
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const record = loadEngineMemory();
+        expect(record.engines).toEqual({});
+        expect(warn).not.toHaveBeenCalled();
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it('warns (and resets) when the memory file is corrupt', () => {
+      writeFileSync(agonHomePath('engine-memory.json'), '{ this is not json');
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const record = loadEngineMemory();
+        expect(record.engines).toEqual({});
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(String(warn.mock.calls[0][0])).toContain('failed to load engine memory');
+      } finally {
+        warn.mockRestore();
+      }
+    });
   });
 });

@@ -217,3 +217,30 @@ describe('spawnWithTimeout — Output handling', () => {
     expect(result.exitCode).toBe(0);
   });
 });
+
+describe('spawnWithTimeout — pre-aborted signal', () => {
+  it('short-circuits without spawning and reports an abort, NOT a timeout', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    let spawned = false;
+
+    const result = await spawnWithTimeout({
+      // A command that would take a full second if it were ever spawned.
+      command: 'sleep',
+      args: ['1'],
+      cwd: process.cwd(),
+      timeout: 30_000,
+      signal: controller.signal,
+      onSpawn: () => { spawned = true; },
+    });
+
+    expect(spawned).toBe(false);
+    expect(result.exitCode).toBe(130);
+    expect(result.stderr).toBe('Aborted');
+    expect(result.stdout).toBe('');
+    expect(result.durationMs).toBe(0);
+    // Cancellation is not a timeout: callers that retry-on-timeout must not
+    // re-dispatch work the user explicitly cancelled.
+    expect(result.timedOut).toBe(false);
+  });
+});

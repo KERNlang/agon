@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync, utimesSync } from 'node:fs';
 import { tmpdir, hostname } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -53,6 +53,37 @@ describe('withFileLock', () => {
     }), { flag: 'wx' });
     expect(() => withFileLock(lockPath, () => {}, { timeoutMs: 80 })).toThrow(/file lock timeout/);
     expect(existsSync(lockPath)).toBe(true); // never steals a live lock
+  });
+
+  it('actually WAITS between attempts when SharedArrayBuffer is unavailable', () => {
+    // fileLockSleep parks on Atomics.wait; environments without
+    // SharedArrayBuffer fall back to a busy-wait bounded by a deadline. If
+    // that deadline is computed wrong the fallback returns instantly and the
+    // "wait" becomes a hot spin that pegs a core for the whole timeout.
+    const waitSpy = vi.spyOn(globalThis.Atomics, 'wait').mockImplementation(() => {
+      throw new Error('SharedArrayBuffer unavailable');
+    });
+    try {
+      writeFileSync(lockPath, JSON.stringify({
+        pid: process.pid, uuid: 'live-holder', hostname: hostname(), acquiredAt: new Date().toISOString(),
+      }), { flag: 'wx' });
+
+      const startedAt = Date.now();
+      expect(() => withFileLock(lockPath, () => {}, { timeoutMs: 150, staleMs: 60_000 })).toThrow(/file lock timeout/);
+      const elapsed = Date.now() - startedAt;
+
+      // Both bounds are one-sided and slack in the direction load pushes
+      // them. The loop can only exit AFTER the deadline, so elapsed is >=
+      // timeoutMs however busy the box is (measured: 157-159ms against a 120
+      // floor). And a slower machine makes each iteration LONGER, so the
+      // attempt count only ever falls (measured: 13 against a 60 ceiling).
+      // A broken deadline turns those 13 into thousands.
+      expect(elapsed).toBeGreaterThanOrEqual(120);
+      expect(waitSpy.mock.calls.length).toBeGreaterThan(0);
+      expect(waitSpy.mock.calls.length).toBeLessThan(60);
+    } finally {
+      waitSpy.mockRestore();
+    }
   });
 
   it('reclaims a same-host lock whose pid is dead', () => {

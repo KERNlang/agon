@@ -40,6 +40,27 @@ function makePlan(state?: Plan['state']): Plan {
 
 // ── Tests ────────────────────────────────────────────────────────────
 
+describe('createPlan', () => {
+  it('mints a plan-<epoch-ms>-<suffix> id', () => {
+    const plan = createPlan(makeAction(), makeWorkspace(), makeSteps());
+    expect(plan.id).toMatch(/^plan-\d+-[0-9a-z]{1,6}$/);
+  });
+
+  it('mints distinct ids for plans created back to back', () => {
+    const a = createPlan(makeAction(), makeWorkspace(), makeSteps());
+    const b = createPlan(makeAction(), makeWorkspace(), makeSteps());
+    expect(a.id).not.toBe(b.id);
+  });
+
+  it('starts in draft with every step pending and no current step', () => {
+    const plan = createPlan(makeAction(), makeWorkspace(), makeSteps());
+    expect(plan.state).toBe('draft');
+    expect(plan.currentStepId).toBeNull();
+    expect(plan.steps.every((s) => s.result.state === 'pending')).toBe(true);
+    expect(plan.steps.every((s) => s.result.attempts.length === 0)).toBe(true);
+  });
+});
+
 describe('Plan Model — Transition Functions', () => {
   // ── mergeStepResult ──
 

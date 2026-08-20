@@ -1,5 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { rankByTaskClass, assignForgeRoles } from '../../packages/core/src/blocks/role-specialization.js';
+import { loadRatings, saveRatings } from '../../packages/core/src/signals/glicko.js';
+import { setupTestAgonHome, cleanupTestAgonHome } from '../helpers/agon-home.js';
 
 describe('RoleSpecialization', () => {
   describe('rankByTaskClass', () => {
@@ -29,6 +31,54 @@ describe('RoleSpecialization', () => {
         expect(value.role).toBeTruthy();
         expect(value.specialization).toBeTruthy();
       }
+    });
+  });
+
+  // ── Ranking metric ──────────────────────────────────────────────────
+  // Engines are ranked by the Glicko-2 CONFIDENCE FLOOR (mu - 2*phi), so a
+  // high-but-uncertain rating cannot outrank a slightly lower, well-measured
+  // one. Ranking by the ceiling (mu + 2*phi) inverts exactly that: brand-new
+  // engines with huge deviations would lead every roster.
+  describe('rankByTaskClass ranking metric', () => {
+    let home = '';
+
+    afterEach(() => {
+      cleanupTestAgonHome(home);
+      home = '';
+    });
+
+    it('prefers the well-measured engine over the high-but-uncertain one', () => {
+      home = setupTestAgonHome('role-spec-ratings');
+      // loadRatings() JSON.parses the store on every call (or returns a fresh
+      // literal when the file is absent), so `record` is this test's own
+      // object — there is no module-level ratings singleton to mutate. The
+      // store itself is per-test via setupTestAgonHome/AGON_HOME.
+      const record = loadRatings();
+      const now = new Date().toISOString();
+      record.byTaskClass.bugfix = {
+        // floor 1600 - 400 = 1200, ceiling 2000
+        uncertain: { mu: 1600, phi: 200, sigma: 0.06, wins: 5, losses: 1, lastActive: now },
+        // floor 1400 - 20 = 1380, ceiling 1420
+        measured: { mu: 1400, phi: 10, sigma: 0.06, wins: 5, losses: 1, lastActive: now },
+      };
+      saveRatings(record);
+
+      const roles = rankByTaskClass(['uncertain', 'measured'], 'bugfix');
+      expect(roles.map((r) => r.engineId)).toEqual(['measured', 'uncertain']);
+    });
+
+    it('ranks a higher floor first when the deviations match', () => {
+      home = setupTestAgonHome('role-spec-ratings-tie');
+      const record = loadRatings();
+      const now = new Date().toISOString();
+      record.byTaskClass.bugfix = {
+        low: { mu: 1400, phi: 50, sigma: 0.06, wins: 3, losses: 3, lastActive: now },
+        high: { mu: 1600, phi: 50, sigma: 0.06, wins: 3, losses: 3, lastActive: now },
+      };
+      saveRatings(record);
+
+      const roles = rankByTaskClass(['low', 'high'], 'bugfix');
+      expect(roles.map((r) => r.engineId)).toEqual(['high', 'low']);
     });
   });
 });

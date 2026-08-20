@@ -3,7 +3,7 @@
 // @kernlang/agon-* family at once — every workspace package's version AND its
 // internal dependency ranges — plus the two hand-maintained version literals
 // (the citty meta in index.ts that drives `agon --version`, and the VERSION
-// fallback in engine.kern that drives the banner). One tag => the whole product
+// fallback in engine.tsx that drives the banner). One tag => the whole product
 // moves together, so a release NEVER needs a manual per-package bump.
 //
 // Usage: node scripts/release/set-version.mjs <version|vX.Y.Z> [--dry-run]
@@ -16,7 +16,7 @@
 //     Ranges in INDEPENDENT_DEPS (engines) and "*"/"workspace:" ranges are left
 //     as-is.
 //   - Stamps the citty meta version in packages/cli/src/index.ts (this is what
-//     `agon --version` prints) and the VERSION fallback literal in engine.kern
+//     `agon --version` prints) and the VERSION fallback literal in engine.tsx
 //     (the banner's last resort when runtime package.json resolution fails).
 //   - --dry-run prints the planned changes without writing any file.
 //
@@ -120,17 +120,17 @@ if (metaRe.test(indexSrc)) {
   console.error('warning: citty meta.version literal not found in index.ts — `agon --version` not updated');
 }
 
-// 3. Stamp the VERSION fallback literal in engine.kern — last resort if runtime
+// 3. Stamp the VERSION fallback literal in engine.tsx — last resort if runtime
 //    resolution fails; keep it equal to the release so the banner is never wrong.
-const enginePath = join(ROOT, 'packages', 'cli', 'src', 'kern', 'blocks', 'engine.kern');
+const enginePath = join(ROOT, 'packages', 'cli', 'src', 'generated', 'blocks', 'engine.tsx');
 let engineSrc = readFileSync(enginePath, 'utf8');
 const fallbackRe = /(resolvePackageVersion\(null, '@kernlang\/agon', ')[^']*(')/;
 if (fallbackRe.test(engineSrc)) {
   engineSrc = engineSrc.replace(fallbackRe, `$1${version}$2`);
   write(enginePath, engineSrc);
-  console.log(`engine.kern VERSION fallback → ${version}`);
+  console.log(`engine.tsx VERSION fallback → ${version}`);
 } else {
-  console.error('warning: VERSION fallback literal not found in engine.kern — banner fallback not updated');
+  console.error('warning: VERSION fallback literal not found in engine.tsx — banner fallback not updated');
 }
 
 console.log(dryRun

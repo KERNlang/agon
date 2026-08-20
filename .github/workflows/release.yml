@@ -63,10 +63,10 @@ jobs:
       - name: Set version from tag
         run: npm run release:set-version -- "${GITHUB_REF_NAME}"
 
-      - name: Compile KERN sources
-        run: npm run kern:compile
-
       # Gate the release on the same checks CI runs — never publish a red tree.
+      - name: Re-export surface guard
+        run: npm run guard:reexports
+
       - name: Type check
         run: npm run typecheck
 
@@ -102,7 +102,6 @@ jobs:
           git fetch origin main
           git checkout -B "${BRANCH}" origin/main
           npm run release:set-version -- "${VERSION}"
-          npm run kern:compile
           # Reconcile the lockfile with the bumped versions/ranges so `npm ci`
           # stays green on main (metadata only — no install, no scripts).
           npm install --package-lock-only --ignore-scripts
@@ -116,7 +115,6 @@ jobs:
             packages/saas-api/package.json \
             packages/dedup/package.json \
             packages/cli/src/index.ts \
-            packages/cli/src/kern/blocks/engine.kern \
             packages/cli/src/generated/blocks/engine.tsx \
             package-lock.json
           if git diff --cached --quiet; then

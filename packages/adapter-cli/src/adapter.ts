@@ -469,11 +469,34 @@ export class CliAdapter implements EngineAdapter {
       throw new EngineNotFoundError(options.engine.id, options.engine.installHint, options.engine.binary);
     }
     const binaryPath = execution.binaryPath as string;
+    // Env-var check AFTER the binary check, exactly as dispatchAgent orders it:
+    // a missing binary must never surface as a missing key, but a present
+    // binary with an unset required var must still fail loudly here rather
+    // than as opaque engine output mid-stream.
+    const envError = checkEnvVars(options.engine);
+    if (envError) {
+      throw new EngineNotFoundError(options.engine.id, envError);
+    }
+
+    // Resolve system prompt for direct CLI agent dispatch: native flag if the
+    // engine has one, else prepend. Identical to dispatchAgent — a caller's
+    // systemPrompt must not silently vanish just because it streamed.
+    let effectivePrompt = options.prompt;
+    const sysFlag = options.engine.systemPromptFlag;
+    if (options.systemPrompt && !sysFlag) {
+      effectivePrompt = `[System Instructions]\n${options.systemPrompt}\n\n[User Message]\n${options.prompt}`;
+    }
 
     const { command, args } = buildCommand(
-      options.engine, options.mode, options.prompt,
+      options.engine, options.mode, effectivePrompt,
       options.cwd, options.timeout, binaryPath, options.images,
     );
+
+    if (options.systemPrompt && sysFlag) {
+      const promptIdx = args.indexOf(effectivePrompt);
+      const insertAt = (promptIdx >= 0) ? promptIdx : 0;
+      args.splice(insertAt, 0, sysFlag, options.systemPrompt);
+    }
 
     // Capture baseline before agent runs
     const baselineDiff = readOnlyDiff(options.cwd);
@@ -514,11 +537,18 @@ export class CliAdapter implements EngineAdapter {
   }
 
   async getVersion(engine: EngineDefinition): Promise<string|null> {
-    if (engine.api) return resolveModel(engine) ?? engine.api.model;
-      const binaryPath = this.registry.findBinary(engine);
-      if (!binaryPath) return null;
-      if (!engine.versionCmd) return null;
-
+    // BINARY FIRST, api as the fallback — this must agree with how the engine
+    // will actually run. Every dispatch path prefers the CLI binary whenever
+    // it is installed and only falls back to the API for binary-less engines,
+    // so a dual-mode engine (cli + api) whose binary is present is a CLI
+    // engine, and reporting its API model id as its "Version" describes a
+    // backend that will never be used. Consumers agree: `agon engine list`
+    // and discoverEngines both gate the version column on binary
+    // availability, and doctor already prints the API model separately in its
+    // backend column ("api:<format>:<model>"). API-only engines still reach
+    // the model id below, which is what doctor's "Version/Model" column wants.
+    const binaryPath = engine.binary ? this.registry.findBinary(engine) : null;
+    if (binaryPath && engine.versionCmd) {
       try {
         const result = await spawnWithTimeout({
           command: binaryPath,
@@ -526,10 +556,15 @@ export class CliAdapter implements EngineAdapter {
           cwd: process.cwd(),
           timeout: 5000,
         });
-        return result.stdout.trim() || null;
+        const version = result.stdout.trim();
+        if (version) return version;
       } catch (err) {
         console.warn(`[agon] failed to get version for ${engine.id}: ${err instanceof Error ? err.message : String(err)}`);
-        return null;
       }
+    }
+    // No usable binary version: an unreachable/silent versionCmd on a
+    // dual-mode engine still deserves the model id rather than nothing.
+    if (engine.api) return resolveModel(engine) ?? engine.api.model;
+    return null;
   }
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Guard: catch the re-export-without-local-binding bug class.
 //
-// KERN modules sometimes need to BOTH use a symbol internally AND re-export it.
+// A module sometimes needs to BOTH use a symbol internally AND re-export it.
 // The failure mode (shipped in 88ba7aa4, crashed Cesar at runtime with
 // "convertMessagesForSdk is not defined"):
 //
@@ -12,17 +12,19 @@
 // tsc ACCEPTS this (the re-export is valid), so typecheck is green while the
 // bundle crashes. esbuild also accepts it. Only running the code reveals it.
 //
-// The correct KERN pattern when a symbol is BOTH used internally AND on the
+// The correct pattern when a symbol is BOTH used internally AND on the
 // export surface:
 //   - packages/core (tsc):     import from + export from BOTH (tsc allows it)
 //   - packages/cli  (esbuild): import from ONLY (esbuild rejects import+export
 //                              of the same name); add a separate `export { x }`
 //                              of the local binding if it must stay on the surface.
 //
-// This guard scans GENERATED output (what actually runs) and flags any
-// re-exported-from VALUE name that is ALSO CALLED in the same module body
-// while having NO local binding (import / declaration). A call to an unbound
-// name is a guaranteed runtime ReferenceError, so this is high-precision.
+// This guard scans every TypeScript workspace source tree (generated/ modules
+// AND the hand-maintained facades that re-export them — post-eject both are
+// plain source that ships) and flags any re-exported-from VALUE name that is
+// ALSO CALLED in the same module body while having NO local binding (import /
+// declaration). A call to an unbound name is a guaranteed runtime
+// ReferenceError, so this is high-precision.
 //
 // KNOWN LIMITATIONS (deliberate — conservative bias toward false-NEGATIVES so a
 // passing build is never blocked by a phantom): `export * from` is not analyzed
@@ -45,17 +47,25 @@ import path from 'node:path';
 // WITHOUT scanning. It also fixes the Windows /C:/ leading-slash case.
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
-// Every workspace that carries a src/generated tree. A missing dir is skipped,
-// but each listed dir MUST resolve — see the existence assertion in check().
-const GENERATED_DIRS = [
-  'packages/core/src/generated',
-  'packages/cli/src/generated',
-  'packages/forge/src/generated',
-  'packages/adapter-cli/src/generated',
-  'packages/mcp/src/generated',
-  'packages/saas-api/src/generated',
-  'packages/dedup/src/generated',
+// Every workspace src tree that carries shipping TypeScript. Scanning the whole
+// tree (not just src/generated) is deliberate: after the eject the facades in
+// e.g. packages/cli/src/handlers/ are hand-maintained source with exactly the
+// same re-export surface, so they can carry exactly the same bug.
+//
+// Not listed: packages/saas-api/src (hand-maintained Python, no TS) and
+// packages/dedup (Python sidecar, no src/ at all). Every dir listed here MUST
+// exist — a typo or a moved package would otherwise silently scan nothing and
+// exit green (see the existence check in check()).
+const SCAN_DIRS = [
+  'packages/core/src',
+  'packages/cli/src',
+  'packages/forge/src',
+  'packages/adapter-cli/src',
+  'packages/mcp/src',
 ];
+
+// Build output that can appear inside a src tree; never source.
+const SKIP_DIRS = new Set(['node_modules', 'dist', 'dist-tsc']);
 
 function walk(dir) {
   const out = [];
@@ -70,7 +80,10 @@ function walk(dir) {
       // Resolve the link target; skip it entirely if dangling.
       try { isDir = statSync(full).isDirectory(); } catch { continue; }
     }
-    if (isDir) out.push(...walk(full));
+    if (isDir) {
+      if (SKIP_DIRS.has(e.name)) continue;
+      out.push(...walk(full));
+    }
     else if (/\.(ts|tsx)$/.test(e.name)) out.push(full);
   }
   return out;
@@ -121,8 +134,17 @@ function parseClause(clause) {
 
 function check() {
   const findings = [];
-  for (const rel of GENERATED_DIRS) {
+  for (const rel of SCAN_DIRS) {
     const abs = path.join(ROOT, rel);
+    // Loud, not silent: walk() swallows ENOENT, so a configured dir that no
+    // longer exists would make this guard pass while scanning nothing.
+    let isDir = false;
+    try { isDir = statSync(abs).isDirectory(); } catch { isDir = false; }
+    if (!isDir) {
+      console.error(`\nguard:reexports — FAILED: configured scan dir is missing: ${rel}`);
+      console.error('Fix the path in scripts/guard/reexport-surface.mjs (or restore the tree).');
+      process.exit(1);
+    }
     for (const file of walk(abs)) {
       const raw = readFileSync(file, 'utf8');
 

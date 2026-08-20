@@ -175,6 +175,37 @@ export function effectiveNativeArchiveBlockCount(blocks: OutputBlock[], baseArch
   return count;
 }
 
+/**
+ * Archive count after the transcript dropped a prefix.
+ *
+ * appendBlockWithCap archives+drops the oldest blocks once the live transcript
+ * passes MAX_LIVE_BLOCKS. The sealed/live split must slide down by exactly the
+ * number of dropped blocks — resetting it to 0 (the old behavior) re-points the
+ * boundary at different blocks and makes the <Static> feed non-monotonic.
+ */
+export function archiveCountAfterPrefixDrop(previousArchiveCount: number, droppedPrefixCount: number): number {
+  if (droppedPrefixCount <= 0) return Math.max(0, previousArchiveCount);
+  return Math.max(0, previousArchiveCount - droppedPrefixCount);
+}
+
+/**
+ * Keep the <Static> feed index-stable across a transcript cap-spill.
+ *
+ * Ink's <Static> tracks "how many items have already been printed" as a plain
+ * index into the items array (it renders items.slice(index)). A front-drop
+ * shortens that array, so the stale index silently re-points at different
+ * blocks: the next seal boundary swallows a completed row, and once the array
+ * grows back past the stale index, blocks that are already in terminal
+ * scrollback get printed a second time. Padding the front with placeholders
+ * keeps every archived block at the same index for the whole session, so each
+ * completed row is handed to <Static> exactly once. The placeholders always sit
+ * below the index and are therefore never rendered.
+ */
+export function padStaticFeed(archived: OutputBlock[], droppedPrefixCount: number): (OutputBlock | null)[] {
+  if (droppedPrefixCount <= 0) return archived;
+  return [...new Array<OutputBlock | null>(droppedPrefixCount).fill(null), ...archived];
+}
+
 export function historyBlocksForTranscript(blocks: OutputBlock[]): OutputBlock[] {
   if (blocks.length === 1 && blocks[0]?.event?.type === 'dashboard') {
     return [];

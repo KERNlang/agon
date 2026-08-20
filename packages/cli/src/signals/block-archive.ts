@@ -32,6 +32,25 @@ export function archiveBlocks(archivePath: string, blocks: OutputBlock[]): void 
   }
 }
 
+let droppedBlockTotal = 0;
+
+/**
+ * Blocks the cap has dropped off the FRONT of the live transcript in this
+ * process. The array length alone cannot express this (a spill drops N and
+ * appends 1 in the same step), and Ink's <Static> indexes by position, so the
+ * renderer needs the exact front-drop to keep its print cursor aligned. Never
+ * reset on /clear: <Static> remounts under a new key there and its cursor
+ * restarts at 0, so a permanent offset stays consistent.
+ */
+export function transcriptDroppedTotal(): number {
+  return droppedBlockTotal;
+}
+
+/** Test-only: reset the process-wide front-drop counter. */
+export function resetTranscriptDroppedTotal(): void {
+  droppedBlockTotal = 0;
+}
+
 export function appendBlockWithCap(prev: OutputBlock[], block: OutputBlock, archivePath: string): OutputBlock[] {
   const next = [...prev, block];
   if (next.length <= MAX_LIVE_BLOCKS) {
@@ -39,6 +58,7 @@ export function appendBlockWithCap(prev: OutputBlock[], block: OutputBlock, arch
   }
   const overflow = next.length - MAX_LIVE_BLOCKS + ARCHIVE_BATCH;
   archiveBlocks(archivePath, next.slice(0, overflow));
+  droppedBlockTotal += overflow;
   return next.slice(overflow);
 }
 

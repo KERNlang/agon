@@ -50,7 +50,7 @@ import { resetEventLogState } from '@kernlang/agon-core';
 
 import { cleanInputValue, findInputChange, parseActiveAtMention, safeCollectSourceFiles } from '../signals/app-input.js';
 
-import { makeBlockArchivePath } from '../signals/block-archive.js';
+import { makeBlockArchivePath, transcriptDroppedTotal } from '../signals/block-archive.js';
 
 import { perfNow, recordKeystrokeLatency, countRender } from '../signals/input-perf.js';
 
@@ -118,7 +118,7 @@ import { estimateVisibleBlockBudget, estimateBottomChromeExtraRows, estimatePinn
 
 import { normalizeUiMotion } from './status-helpers.js';
 
-import { buildDashboardBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, seedPerfTranscriptBlocks } from './app-blocks.js';
+import { buildDashboardBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, seedPerfTranscriptBlocks, archiveCountAfterPrefixDrop, padStaticFeed } from './app-blocks.js';
 
 import { buildExecutionRailStats, buildTranscriptRows } from './app-rendering.js';
 
@@ -468,6 +468,10 @@ export function App() {
   const mouseSelectionRef = useRef<{ anchorRow: number | null; anchorCol: number | null; focusRow: number | null; focusCol: number | null; active: boolean; moved: boolean }>({ anchorRow: null, anchorCol: null, focusRow: null, focusCol: null, active: false, moved: false });
   const scrollBoxRef = useRef<any>(null);
   const nativeTranscriptBlockCountRef = useRef<number>(0);
+  // Cumulative blocks the transcript cap has dropped off the front since the
+  // last /clear. Pads the <Static> feed so Ink's print cursor keeps pointing at
+  // the same blocks (see padStaticFeed).
+  const droppedPrefixRef = useRef<number>(0);
 
   const allSlashCommands = useMemo(() => {
           const builtinCmds = SLASH_COMMANDS;
@@ -660,14 +664,24 @@ export function App() {
           return nativeArchiveBlockCount(nativeTranscriptBlocks, mode, currentVisibleRowBudget, toolOutputExpanded, thinkingExpanded);
   }, [nativeTranscriptBlocks,mode,currentVisibleRowBudget,toolOutputExpanded,thinkingExpanded]);
 
+  // Blocks the transcript cap has dropped off the FRONT of the live array.
+  // `staticDroppedPrefixCount` is the running total (Ink's <Static> print
+  // cursor is a position, so every dropped block must keep its slot);
+  // `droppedPrefixThisRender` is what fell off since the last commit and slides
+  // the sealed/live boundary down with it. The ref is committed in an effect,
+  // so the drop is visible on the very frame it happens.
+  const staticDroppedPrefixCount = transcriptDroppedTotal();
+
+  const droppedPrefixThisRender = Math.max(0, staticDroppedPrefixCount - droppedPrefixRef.current);
+
   const effectiveNativeArchiveCount = useMemo(() => {
-          const baseArchiveCount = (nativeTranscriptBlocks.length < nativeTranscriptBlockCountRef.current) ? 0 : nativeArchiveCount;
+          const baseArchiveCount = archiveCountAfterPrefixDrop(nativeArchiveCount, droppedPrefixThisRender);
           return effectiveNativeArchiveBlockCount(nativeTranscriptBlocks, baseArchiveCount, nativeArchiveTarget, toolOutputExpanded);
-  }, [nativeArchiveCount,nativeArchiveTarget,nativeTranscriptBlocks,toolOutputExpanded]);
+  }, [nativeArchiveCount,nativeArchiveTarget,nativeTranscriptBlocks,toolOutputExpanded,droppedPrefixThisRender]);
 
   const nativeArchiveBlocks = useMemo(() => {
-          return coalesceToolCallBlocks(nativeTranscriptBlocks.slice(0, effectiveNativeArchiveCount));
-  }, [nativeTranscriptBlocks,effectiveNativeArchiveCount]);
+          return padStaticFeed(coalesceToolCallBlocks(nativeTranscriptBlocks.slice(0, effectiveNativeArchiveCount)), staticDroppedPrefixCount);
+  }, [nativeTranscriptBlocks,effectiveNativeArchiveCount,staticDroppedPrefixCount]);
 
   const nativeLiveBlocks = useMemo(() => {
           return nativeTranscriptBlocks.slice(effectiveNativeArchiveCount);
@@ -1388,10 +1402,12 @@ export function App() {
       nativeTranscriptBlockCountRef.current = nextCount;
       return;
     }
-    const previousCount = nativeTranscriptBlockCountRef.current;
-    if (nextCount < previousCount) {
-      setNativeArchiveCount(0);
+    const droppedTotal = transcriptDroppedTotal();
+    const dropped = Math.max(0, droppedTotal - droppedPrefixRef.current);
+    if (dropped > 0) {
+      setNativeArchiveCount((count: number) => archiveCountAfterPrefixDrop(count, dropped));
     }
+    droppedPrefixRef.current = droppedTotal;
     nativeTranscriptBlockCountRef.current = nextCount;
   }, [terminalMode,nativeTranscriptBlocks]);
 
@@ -1978,7 +1994,10 @@ export function App() {
   <>
     <Static key={`native-static-${clearEpoch}`} items={nativeArchiveBlocks}>
       {(block: any) => (
-        <OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} />
+        // null = a cap-dropped placeholder holding an index slot (padStaticFeed).
+        block ? (
+          <OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} />
+        ) : null
       )}
     </Static>
     <Box flexDirection="column" width={termWidth}>

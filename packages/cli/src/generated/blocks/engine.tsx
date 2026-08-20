@@ -26,7 +26,6 @@ import { PlanProposalView, PlanExecutionView } from './plan-view.js';
 
 import { parseToolInputPayload, extractPatchText, parsePatchPreview, extractSummary, formatDuration } from './engine-helpers.js';
 
-import { createRequire } from 'node:module';
 
 import { readFileSync, existsSync } from 'node:fs';
 
@@ -266,7 +265,7 @@ export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboar
       ))}
       <Text> </Text>
       <Text italic color="#d4a041">{'     Any AI can join. They compete. You ship.'}</Text>
-      <Text dimColor>{'     v'}{VERSION}{'  ·  Powered by '}<Text bold color="#fbbf24">{'KERNlang.dev'}</Text>{KERN_VERSION ? ` (KERN ${KERN_VERSION})` : ''}</Text>
+      <Text dimColor>{'     v'}{VERSION}{'  ·  Powered by '}<Text bold color="#fbbf24">{'KERNlang.dev'}</Text></Text>
       {event.workspace && (
         <Text dimColor>{'     workspace: '}{event.workspace.path}</Text>
       )}
@@ -1208,12 +1207,11 @@ export const BRAND: readonly string[] = ['#fbbf24', '#f9a816', '#f97316', '#f45a
 export const LOGO_LINES: string[] = ['    █████╗  ██████╗  ██████╗ ███╗   ██╗', '   ██╔══██╗██╔════╝ ██╔═══██╗████╗  ██║', '   ███████║██║  ███╗██║   ██║██╔██╗ ██║', '   ██╔══██╗██║   ██╗██║   ██║██║╚██╗██║', '   ██║  ██║╚██████╔╝╚██████╔╝██║ ╚████║', '   ╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═══╝'];
 
 /**
- * Read a package's installed version from its package.json at runtime so the banner auto-reflects npm upgrades instead of a frozen literal. Walks up from a resolvable entry (or this module for the own package) to the nearest package.json whose name matches. Falls back to the literal if resolution fails — e.g. an exports-locked package.json that can't be required by path.
+ * Read this package's installed version from its package.json at runtime so the banner auto-reflects npm upgrades instead of a frozen literal. Walks up from this module to the nearest package.json whose name matches. Falls back to the literal if resolution fails — e.g. an exports-locked package.json that can't be read by path.
  */
-export function resolvePackageVersion(resolveSpecifier: string|null, wantName: string, fallback: string): string {
+export function resolvePackageVersion(wantName: string, fallback: string): string {
   try {
-    const req = createRequire(import.meta.url);
-    const startFile = resolveSpecifier ? req.resolve(resolveSpecifier) : fileURLToPath(import.meta.url);
+    const startFile = fileURLToPath(import.meta.url);
     let dir = dirname(startFile);
     for (let i = 0; i < 10; i += 1) {
       const pkgPath = join(dir, 'package.json');
@@ -1229,6 +1227,4 @@ export function resolvePackageVersion(resolveSpecifier: string|null, wantName: s
   return fallback;
 }
 
-export const VERSION: string = resolvePackageVersion(null, '@kernlang/agon', '0.2.5');
-
-export const KERN_VERSION: string = resolvePackageVersion('@kernlang/protocol', '@kernlang/protocol', '4.0.0');
+export const VERSION: string = resolvePackageVersion('@kernlang/agon', '0.2.5');

@@ -124,7 +124,7 @@ if (metaRe.test(indexSrc)) {
 //    resolution fails; keep it equal to the release so the banner is never wrong.
 const enginePath = join(ROOT, 'packages', 'cli', 'src', 'generated', 'blocks', 'engine.tsx');
 let engineSrc = readFileSync(enginePath, 'utf8');
-const fallbackRe = /(resolvePackageVersion\(null, '@kernlang\/agon', ')[^']*(')/;
+const fallbackRe = /(resolvePackageVersion\('@kernlang\/agon', ')[^']*(')/;
 if (fallbackRe.test(engineSrc)) {
   engineSrc = engineSrc.replace(fallbackRe, `$1${version}$2`);
   write(enginePath, engineSrc);

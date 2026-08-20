@@ -8,7 +8,7 @@ import { parsePatchPreview } from '../blocks/engine-helpers.js';
 
 import { contentWidth, color256toHex, engineColor, CODE_RAIL, CODE_RAIL_COLOR, MAX_CODE_LINES } from '../../generated/blocks/rendering.js';
 
-import { LOGO_LINES, VERSION, KERN_VERSION, BRAND } from '../../generated/blocks/engine.js';
+import { LOGO_LINES, VERSION, BRAND } from '../../generated/blocks/engine.js';
 
 import type { OutputBlock } from '../../generated/blocks/engine.js';
 
@@ -1252,7 +1252,6 @@ export function renderBlockOwnRows(block: OutputBlock, mode: string, toolOutputE
         pushSegmentsRow(`${baseKey}-dash-version`, 0, [
           { text: `     v${VERSION}  ·  Powered by `, dimColor: true },
           { text: 'KERNlang.dev', color: '#fbbf24', bold: true },
-          { text: KERN_VERSION ? ` (KERN ${KERN_VERSION})` : '', dimColor: true },
         ]);
         if (event.workspace) {
           pushSegmentsRow(`${baseKey}-dash-workspace`, 0, [

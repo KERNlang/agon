@@ -26,6 +26,10 @@ scripts/guard/engine-pool-rfc.md
 .Agent
 .kern-gaps/
 packages/*/.kern-gaps/
+# Stale KERN compiler cache dirs. The literal name '.kern' ends with '.kern', so a
+# leftover cache directory makes isKernProject() report true for this now-ejected repo.
+.kern/
+packages/*/.kern/
 .mcp.json
 
 # TypeScript build outputs that occasionally leak into src/ when tsc is

@@ -18,7 +18,7 @@
     "args": ["exec", "{prompt}"]
   },
   "review": {
-    "args": ["review", "{prompt}"]
+    "args": ["exec", "{prompt}"]
   },
   "agent": {
     "args": ["exec", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check", "{prompt}"]

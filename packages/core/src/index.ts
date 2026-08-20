@@ -90,8 +90,8 @@ export {
   formatSpinnerFrame, formatEngineBlock, formatStatusLine,
   clearLinesSequence, cursorUpSequence, clearLineSequence,
 } from './output-manager.js';
-export { parseStreamChunk, StreamParser } from './stream-parser.js';
-export type { ParsedChunk } from './stream-parser.js';
+export { parseStreamChunk, StreamParser, parseStreamJsonFailure, isDeterministicStreamFailure } from './stream-parser.js';
+export type { ParsedChunk, StreamJsonFailure } from './stream-parser.js';
 export { discoverEngines } from './engine-discover.js';
 export type { DiscoveryResult } from './engine-discover.js';
 export { preflightApply, applyPatchToTree, readPatchFromManifest, readPatchFromPath, applyPatchWithUndo, undoPatch } from './patch-apply.js';

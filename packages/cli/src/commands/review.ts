@@ -363,7 +363,11 @@ export const reviewCommand = defineCommand({
       let outcome = await attempt(timeoutSec);
       let retryNote = '';
       const remainingSec = remainingReviewRetrySeconds(engineStart, timeoutSec);
-      if (shouldRetryReviewAttempt(outcome.kind, remainingSec)) {
+      // Pass the failure text: a DETERMINISTIC terminal reason (error_max_turns)
+      // reproduces exactly on attempt two, so retrying it is a guaranteed second
+      // full-price review with the same zero-text outcome. Transient errors still
+      // get their retry.
+      if (shouldRetryReviewAttempt(outcome.kind, remainingSec, outcome.kind === 'error' ? outcome.message : undefined)) {
         const firstKind = outcome.kind;
         outcome = await attempt(remainingSec);
         retryNote = outcome.kind === 'ok'
@@ -378,6 +382,12 @@ export const reviewCommand = defineCommand({
           return { id: engineId, status: 'timeout', durationMs: Date.now() - engineStart, detail: `exceeded ${outcome.afterSec}s per-engine timeout${retryNote}`, outputPath };
         }
         if (outcome.kind === 'error') {
+          // Materialise the ADVERTISED outputPath even on the failure path. The
+          // status line and run-status JSON both point at it, and a path that
+          // doesn't exist turns a diagnosable failure into a dead end — the
+          // reader can't tell "the engine wrote nothing" from "the file is
+          // missing". Write the real reason there instead.
+          writeOutput(`${engineId} produced no review.\n\nReason: ${outcome.message}${retryNote}\n`);
           flush([`✖ ${outcome.message}${retryNote}`]);
           return { id: engineId, status: 'error', durationMs: Date.now() - engineStart, detail: `${outcome.message}${retryNote}`, outputPath };
         }

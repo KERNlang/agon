@@ -25,6 +25,7 @@
   },
 
   "capabilities": ["vision"],
+  "agenticCli": true,
 
   "api": {
     "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai",

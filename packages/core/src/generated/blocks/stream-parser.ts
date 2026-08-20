@@ -98,3 +98,97 @@ export function parseStreamChunk(chunk: string): ParsedChunk[] {
   results.push(...parser.flush());
   return results;
 }
+
+/**
+ * A terminal failure reported by a stream-json `result` envelope.
+ * `deterministic` marks a failure that WILL recur identically on a retry
+ * (the CLI hit a hard-coded budget), as opposed to a transient one
+ * (network/tool error) that a second attempt could get past.
+ */
+export interface StreamJsonFailure {
+  subtype: string;
+  message: string;
+  deterministic: boolean;
+}
+
+/**
+ * Result subtypes that are a deterministic property of the DISPATCH, not of the
+ * moment: re-running the exact same command reproduces them exactly. Retrying one
+ * is pure spend with a guaranteed identical outcome, so callers must not.
+ */
+const DETERMINISTIC_RESULT_SUBTYPES = ['error_max_turns', 'error_max_tokens'];
+
+/**
+ * Human-readable cause per deterministic subtype. Kept beside the subtype list so
+ * a new terminal reason lands in one place.
+ */
+function describeResultSubtype(subtype: string): string {
+  if (subtype === 'error_max_turns') {
+    return 'the CLI used its whole --max-turns budget on tool rounds and never emitted an answer — raise the engine\'s review/exec --max-turns, or make the dispatch non-agentic (engine "agenticCli": true)';
+  }
+  if (subtype === 'error_max_tokens') {
+    return 'the CLI hit its output-token cap before emitting an answer';
+  }
+  return 'the CLI reported an error result';
+}
+
+/**
+ * Scan raw stream-json NDJSON for the LAST `type: "result"` envelope that reports a
+ * failure, and describe it honestly. This is what turns a silent `exit 1` into
+ * "error_max_turns: …" at the call site — the generic exit code carries no cause,
+ * so a doomed dispatch used to be indistinguishable from a transient one and got
+ * retried at full price. Returns null when the stream carries no failing result
+ * envelope (including non-JSON output from non-Claude engines).
+ * Tolerant of a truncated tail: unparseable lines are skipped, not thrown on.
+ */
+export function parseStreamJsonFailure(raw: string): StreamJsonFailure|null {
+  if (!raw || !raw.includes('"result"')) {
+    return null;
+  }
+  let found: StreamJsonFailure|null = null;
+  for (const line of raw.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.charAt(0) !== '{') {
+      continue;
+    }
+    let msg: any;
+    try {
+      msg = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    if (!msg || typeof msg !== 'object' || msg.type !== 'result') {
+      continue;
+    }
+    const subtype = typeof msg.subtype === 'string' ? msg.subtype : '';
+    const isFailure = msg.is_error === true || subtype.startsWith('error');
+    if (!isFailure) {
+      // A later SUCCESS result supersedes an earlier failure in the same stream.
+      found = null;
+      continue;
+    }
+    const label = subtype || 'error';
+    const detail = typeof msg.error === 'string' && msg.error.trim()
+      ? msg.error.trim()
+      : (Array.isArray(msg.errors) && msg.errors.length
+        ? msg.errors.map((e: any) => (typeof e === 'string' ? e : (e && typeof e.message === 'string' ? e.message : JSON.stringify(e)))).join('; ')
+        : describeResultSubtype(subtype));
+    found = {
+      subtype: label,
+      message: `${label}: ${detail}`,
+      deterministic: DETERMINISTIC_RESULT_SUBTYPES.includes(subtype),
+    };
+  }
+  return found;
+}
+
+/**
+ * True when an error message carries a deterministic stream-json result subtype —
+ * i.e. the failure is a property of the command, so a retry burns the same spend
+ * for the same outcome. Matches on the subtype token the message embeds, so it
+ * survives the message being wrapped/prefixed by an intermediate layer.
+ */
+export function isDeterministicStreamFailure(message: string): boolean {
+  if (!message) return false;
+  return DETERMINISTIC_RESULT_SUBTYPES.some((s) => message.includes(s));
+}

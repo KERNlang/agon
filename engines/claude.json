@@ -18,7 +18,7 @@
     "args": ["--print", "--verbose", "--output-format", "stream-json", "--max-turns", "10", "{prompt}"]
   },
   "review": {
-    "args": ["--print", "--dangerously-skip-permissions", "--max-turns", "50", "{prompt}"]
+    "args": ["--print", "--verbose", "--output-format", "stream-json", "--dangerously-skip-permissions", "--max-turns", "50", "{prompt}"]
   },
   "agent": {
     "args": ["--print", "--dangerously-skip-permissions", "--verbose", "--max-turns", "100", "{prompt}"]
@@ -71,6 +71,7 @@
   "capabilities": ["vision"],
   "imageFlag": "--image",
   "systemPromptFlag": "--system-prompt",
+  "agenticCli": true,
 
   "isolationHints": {
     "configEnv": "CLAUDE_CONFIG_DIR",

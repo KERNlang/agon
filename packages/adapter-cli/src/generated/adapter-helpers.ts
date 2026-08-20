@@ -185,10 +185,34 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
 
+/**
+ * Resolve the mode block a dispatch should spawn from, with ONE fallback: a
+ * 'review' dispatch on an engine that declares no `review` block falls back to
+ * its `exec` block. Callers ask for the mode they mean; engines that never
+ * modelled a review variant (aider, kimi-code) keep their exec behavior instead
+ * of hard-failing with "does not support mode review". 'exec' and 'agent' never
+ * fall back — a missing exec/agent block is a real capability gap, and silently
+ * downgrading an agent dispatch to a one-shot exec would be a correctness bug.
+ * Returns null when nothing applies, so buildCommand still throws for real gaps.
+ */
+export function resolveModeConfig(engine: EngineDefinition, mode: EngineMode): EngineModeConfig|null {
+  if (mode === 'agent') return engine.agent ?? null;
+  if (mode === 'exec') return engine.exec ?? null;
+  return engine.review ?? engine.exec ?? null;
+}
+
+/**
+ * Does this dispatch need the single-pass OUTPUT RULES framing? True for engines
+ * whose non-interactive CLI is agentic by default (engine.agenticCli, declared in
+ * the engine config — never an engine id in source) on any NON-agent dispatch.
+ * Agent mode is deliberately left agentic.
+ */
+export function needsNonAgenticFraming(engine: EngineDefinition, mode: EngineMode): boolean {
+  return engine.agenticCli === true && mode !== 'agent';
+}
+
 export function buildCommand(engine: EngineDefinition, mode: EngineMode, prompt: string, cwd: string, timeout: number, binaryPath: string, images?: ImageAttachment[]): {command:string, args:string[]} {
-  const modeConfig = mode === 'agent' ? engine.agent
-    : mode === 'exec' ? engine.exec
-    : engine.review;
+  const modeConfig = resolveModeConfig(engine, mode);
 
   if (!modeConfig) {
     throw new EngineNotFoundError(
@@ -216,12 +240,16 @@ export function buildCommand(engine: EngineDefinition, mode: EngineMode, prompt:
     effectivePrompt = labels.join('\n') + '\n\nPlease read and analyze the image(s) above.\n\n' + prompt;
   }
 
-  // agy (Antigravity) print mode is agentic by default: left to itself it writes
-  // the answer to artifact FILES, asks clarifying questions, and runs many tool
-  // rounds — which blows past the timeout and returns prose the caller can't parse.
+  // Agentic-by-default print modes (engine.agenticCli): left to themselves these
+  // CLIs write the answer to artifact FILES, ask clarifying questions, and run
+  // many tool rounds — which blows past the timeout and returns prose the caller
+  // can't parse (agy), or burns the whole --max-turns budget running builds and
+  // tests and emits ZERO text (claude review seats: error_max_turns).
   // For non-agent dispatch (exec/review → ask/brainstorm/tribunal/review) force a
   // single-pass, inline, plain-text answer. Agent mode is left agentic on purpose.
-  if (engine.id === 'agy' && mode !== 'agent') {
+  // Driven by the engine CONFIG, never by an engine id — a new agentic CLI opts
+  // in by declaring "agenticCli": true, with no source change here.
+  if (needsNonAgenticFraming(engine, mode)) {
     effectivePrompt =
       'OUTPUT RULES (important): Reply with your COMPLETE final answer as plain text in THIS response only. ' +
       'Do NOT create, write, edit, or reference any files or artifacts. ' +

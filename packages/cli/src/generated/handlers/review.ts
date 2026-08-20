@@ -4,7 +4,7 @@ import { join, resolve, sep } from 'node:path';
 
 import { mkdirSync, readFileSync, statSync, lstatSync, openSync, readSync, closeSync, constants } from 'node:fs';
 
-import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, StreamParser, scanProjectContext, resolveWorkingDir, rankByTaskClass } from '@kernlang/agon-core';
+import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, StreamParser, scanProjectContext, resolveWorkingDir, rankByTaskClass, parseStreamJsonFailure, isDeterministicStreamFailure } from '@kernlang/agon-core';
 
 import { ENGINE_COLORS } from '../blocks/output-format.js';
 
@@ -340,6 +340,13 @@ export interface ReviewCoreResult {
 
 export const REVIEW_SENTINEL: string = '<!--AGON_REVIEW_FINDINGS_v1-->';
 
+/**
+ * How much of the RAW dispatch stream to keep for the terminal-reason scan. The
+ * stream-json `result` envelope is always the last line, so a tail is enough —
+ * and a fixed bound keeps a very long review stream from being buffered twice.
+ */
+const STREAM_TAIL_SCAN_CHARS = 65536;
+
 export interface ReviewSeverityCounts {
   blocking: number;
   important: number;
@@ -495,9 +502,18 @@ export function remainingReviewRetrySeconds(startedAtMs: number, timeoutSec: num
 
 /**
  * Retry one hard dispatch error only when at least five seconds remain in the original wall-clock budget. Timeouts are final: the outer attempt already consumed the budget, and reserving retry time would prematurely abort legitimately slow reviewers.
+ *
+ * `message` is the first attempt's error text. A DETERMINISTIC terminal failure —
+ * one the CLI reported as a property of the command itself, e.g. error_max_turns —
+ * reproduces exactly on a second identical dispatch, so retrying it buys nothing
+ * and costs a full second review's worth of tokens. Those are never retried; a
+ * transient error (network, tool crash, empty stream) still gets its one retry.
+ * Omitting `message` keeps the old behavior for callers that have no error text.
  */
-export function shouldRetryReviewAttempt(kind: 'ok'|'timeout'|'error', remainingSec: number): boolean {
-  return kind === 'error' && remainingSec >= 5;
+export function shouldRetryReviewAttempt(kind: 'ok'|'timeout'|'error', remainingSec: number, message?: string): boolean {
+  if (kind !== 'error' || remainingSec < 5) return false;
+  if (message && isDeterministicStreamFailure(message)) return false;
+  return true;
 }
 
 /**
@@ -514,7 +530,10 @@ export async function runReviewRepair(priorReview: string, engineId: string, ctx
   const engine = ctx.registry.get(engineId);
   const outputDir = join(RUNS_DIR, `review-repair-${hostNowMs()}`);
   mkdirSync(outputDir, { recursive: true });
-  const dispatchOpts = { engine: engine, prompt: prompt, cwd: cwd, mode: 'exec' as const, timeout: (config as any).reviewTimeout ?? config.agentTimeout ?? 420, maxTokens: resolveReviewMaxTokens(config, engine), outputDir: outputDir, signal: signal };
+  // mode 'review' (not 'exec'): the engine's DECLARED review block is what carries
+  // its review-shaped launch flags. The adapter falls back to exec for engines that
+  // declare no review block, so this is a no-op for them.
+  const dispatchOpts = { engine: engine, prompt: prompt, cwd: cwd, mode: 'review' as const, timeout: (config as any).reviewTimeout ?? config.agentTimeout ?? 420, maxTokens: resolveReviewMaxTokens(config, engine), outputDir: outputDir, signal: signal };
   let response = '';
   if (ctx.adapter.dispatchStream) {
     const gen = ctx.adapter.dispatchStream(dispatchOpts);
@@ -692,8 +711,21 @@ export async function runReviewCore(diff: string, label: string, engineId: strin
   mkdirSync(outputDir, { recursive: true });
   // Output-token budget: positive config.reviewMaxTokens is explicit; 0/missing means automatic. Never silently squeeze reasoning engines below their native output budget.
   const reviewMaxTokens = resolveReviewMaxTokens(config, engine);
-  const dispatchOpts = { engine: engine, prompt: prompt, cwd: cwd, mode: 'exec' as const, timeout: (config as any).reviewTimeout ?? config.agentTimeout ?? 420, maxTokens: reviewMaxTokens, outputDir: outputDir, signal: signal };
+  // mode 'review' (NOT 'exec'). The review seat must spawn from the engine's own
+  // DECLARED review block — that is where its review-shaped launch flags live
+  // (e.g. claude's larger --max-turns + skip-permissions). Dispatching 'exec' here
+  // silently made every engines/*.json `review` block dead code and ran review
+  // seats under exec's much tighter budget, which is what produced claude's
+  // zero-text error_max_turns seats. buildCommand falls back to `exec` for engines
+  // that declare no review block (aider, kimi-code), so those are byte-identical.
+  const dispatchOpts = { engine: engine, prompt: prompt, cwd: cwd, mode: 'review' as const, timeout: (config as any).reviewTimeout ?? config.agentTimeout ?? 420, maxTokens: reviewMaxTokens, outputDir: outputDir, signal: signal };
   let response = '';
+  // Rolling TAIL of the raw stream, for the terminal-reason scan below. The
+  // stream-json `result` envelope that names WHY the CLI stopped is the LAST
+  // thing on the wire, and StreamParser deliberately drops it (it yields no
+  // text), so the reason is unrecoverable once the chunks are parsed away.
+  // Bounded so a huge stream is never held in memory twice.
+  let rawTail = '';
   let usage = undefined as DispatchResult['usage'];
   // Full final DispatchResult (exitCode/stderr/timedOut), not just usage — so a genuine dispatch failure (e.g. an idle-timed-out stream) can be told apart from a real empty answer below. Undefined only if the adapter's generator/promise never settles (never happens in practice).
   let dispatchOutcome = undefined as DispatchResult | undefined;
@@ -715,6 +747,7 @@ export async function runReviewCore(diff: string, label: string, engineId: strin
       if (chunk.startsWith('\x00')) {
         continue;
       }
+      rawTail = (rawTail + chunk).slice(-STREAM_TAIL_SCAN_CHARS);
       for (const parsed of parser.feed(chunk)) {
         if (parsed.type === 'text' || parsed.type === 'raw') {
           response += parsed.content;
@@ -736,12 +769,25 @@ export async function runReviewCore(diff: string, label: string, engineId: strin
     const result = await ctx.adapter.dispatch(dispatchOpts);
     dispatchOutcome = result;
     response = result.stdout;
+    rawTail = String(result.stdout ?? '').slice(-STREAM_TAIL_SCAN_CHARS);
     usage = result.usage;
   }
   response = response.trim();
   // Clean engine output BEFORE parse + persist: first strip claude TUI spinner/glyph chrome leaked by the pty path, then reasoning scaffolding (<think> etc.) from MiniMax-style models. Both run before parsing so neither the saved review nor the findings parser sees the junk. MUST also run BEFORE the dispatch-failure checks below: a failed dispatch whose only output is spinner chrome or <think> scaffolding is non-empty raw but empty as the parser will see it — checking pre-strip would skip the throw and fall back into the generic parse-failure misdiagnosis.
   response = stripTuiChrome(response);
   response = stripReasoning(response);
+  // HONEST TERMINAL REASON. An agentic CLI that stops without answering closes its
+  // stream-json with a failing `result` envelope naming the cause (error_max_turns:
+  // it spent every turn running builds/tests and never emitted text). That envelope
+  // is the only place the cause exists — the process just exits 1, so without this
+  // the seat reported a bare "exit 1" that is (a) undiagnosable and (b) impossible
+  // to tell apart from a transient failure, which is why it got retried at full
+  // price for a guaranteed-identical outcome. Checked BEFORE the generic
+  // exitCode/stderr branch so the specific reason always wins over "exit 1".
+  const streamFailure = parseStreamJsonFailure(rawTail);
+  if (!response && streamFailure) {
+    throw new Error(`${engineId} returned no review — ${streamFailure.message}`);
+  }
   // Surface the REAL dispatch failure instead of letting an empty response fall through to the generic 'parse-failure: empty or unusable response' misdiagnosis below. This is the double-swallowed-error fix: a stalled SSE stream (dispatch.kern's idle-timeout paths) now returns exitCode 124 / timedOut:true / a real stderr instead of a silent success, and here we refuse to treat that as an ordinary empty answer. A NON-empty response with a nonzero exitCode is still surfaced as a (possibly partial) review — some engines emit real text before a late-stage error.
   if (!response && dispatchOutcome && (dispatchOutcome.exitCode !== 0 || dispatchOutcome.timedOut || dispatchOutcome.stderr && dispatchOutcome.stderr.trim())) {
     const failureMsg = dispatchOutcome.stderr && dispatchOutcome.stderr.trim() || `exit ${dispatchOutcome.exitCode ?? 1}${dispatchOutcome.timedOut ? ' (timed out)' : ''}`;

@@ -95,6 +95,13 @@ export interface EngineDefinition {
   imageFlag?: string;
   systemPromptFlag?: string;
   agent?: EngineModeConfig;
+  /**
+   * The engine's non-interactive CLI is AGENTIC by default: left alone it runs tool
+   * rounds (builds, tests, file writes) and may never emit a plain answer. When true,
+   * non-agent dispatch (exec/review) prepends single-pass OUTPUT RULES framing so the
+   * engine answers inline instead of burning its turn budget. Agent mode is untouched.
+   */
+  agenticCli?: boolean;
   api?: {baseUrl:string, apiKeyEnv:string, model:string, maxTokens?:number, contextWindow?:number, format?:'openai'|'anthropic', firstChunkTimeoutMs?:number, idleTimeoutMs?:number, firstChunkRetryCount?:number, firstChunkRetryBackoffMs?:number, emptyResponseRetryCount?:number};
   companion?: CompanionConfig;
   sessionBudget?: SessionBudget;

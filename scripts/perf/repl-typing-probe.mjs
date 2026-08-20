@@ -12,6 +12,11 @@
  *
  * Usage:
  *   node scripts/perf/repl-typing-probe.mjs [--keys 60] [--blocks 300] [--delay 45]
+ *                                           [--min-keys N] [--keep]
+ *
+ * The probe FAILS (nonzero exit, no metrics printed) when the PTY driver
+ * crashes or is killed, or when fewer than --min-keys keystroke samples were
+ * captured. Half-measured runs must never look like evidence.
  *
  * Requires a prior `npm run build` (it drives packages/cli/dist/index.js) and
  * python3 (stdlib pty; see scripts/perf/pty-drive.py).
@@ -56,6 +61,11 @@ function arg(name, fallback) {
 }
 
 const KEYS = arg('keys', 60);
+// A run that lost keystrokes measures nothing trustworthy: renders/keystroke
+// is a mean of deltas between consecutive samples, so a short run silently
+// reports a different (or NaN) number. Default floor: 90% of the requested
+// keystrokes, and never fewer than 2 samples (1 sample = 0 deltas = NaN).
+const MIN_KEYS = Math.max(2, arg('min-keys', Math.ceil(KEYS * 0.9)));
 const BLOCKS = arg('blocks', 300);
 const DELAY = arg('delay', 45);
 const COLS = arg('cols', 120);
@@ -120,10 +130,31 @@ const driver = spawn(
   },
 );
 
+function cleanup() {
+  if (!process.argv.includes('--keep')) rmSync(home, { recursive: true, force: true });
+  else console.log(`[probe] artifacts kept in ${home}`);
+}
+
+/** Abort the run: report why, emit NO metrics, exit nonzero. */
+function fail(reason) {
+  console.error(`\n[probe] FAILED: ${reason}`);
+  console.error('[probe] no metrics emitted — a half-measured run is not evidence.');
+  process.exitCode = 1;
+  cleanup();
+}
+
+// A dead driver closes the pipe mid-write; the exit/error handlers below own
+// the reporting, so swallow the EPIPE instead of crashing on it here.
+driver.stdin.on('error', () => {});
+driver.on('error', (error) => fail(`could not start the PTY driver (${error.message})`));
+
 driver.stdin.write(steps.join('\n') + '\n');
 driver.stdin.end();
 
-driver.on('exit', () => {
+driver.on('exit', (code, signal) => {
+  if (signal) return fail(`PTY driver killed by ${signal} (scripts/perf/pty-drive.py)`);
+  if (code !== 0) return fail(`PTY driver exited with code ${code} (scripts/perf/pty-drive.py)`);
+
   const latencyPath = join(home, 'perf', 'input-latency.ndjson');
   const rendersPath = join(home, 'perf', 'render-counts.json');
 
@@ -131,6 +162,13 @@ driver.on('exit', () => {
     ? readFileSync(latencyPath, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))
     : [];
   const counts = existsSync(rendersPath) ? JSON.parse(readFileSync(rendersPath, 'utf8')).counts : {};
+
+  if (!samples.length) {
+    return fail(`no keystroke samples in ${latencyPath} — the REPL never reached the composer (AGON_PERF=1 not honoured, or boot ate the keystrokes).`);
+  }
+  if (samples.length < MIN_KEYS) {
+    return fail(`captured ${samples.length} of ${KEYS} keystrokes, below the ${MIN_KEYS}-sample floor (--min-keys).`);
+  }
 
   const dts = samples.map((s) => s.dtMs).sort((a, b) => a - b);
   const pct = (p) => (dts.length ? dts[Math.min(dts.length - 1, Math.floor((p / 100) * dts.length))] : NaN);
@@ -148,6 +186,14 @@ driver.on('exit', () => {
     perKeystroke[component] = samples.length > 1 ? sum / (samples.length - 1) : NaN;
   }
 
+  if (!components.length) {
+    return fail(`no render-probe counters in the samples — AGON_RENDER_PROBE=1 produced nothing (${rendersPath}).`);
+  }
+  const nonFinite = components.filter((component) => !Number.isFinite(perKeystroke[component]));
+  if (nonFinite.length) {
+    return fail(`non-finite renders/keystroke for ${nonFinite.join(', ')} — refusing to print NaN.`);
+  }
+
   console.log('\n── REPL typing probe ────────────────────────────────');
   console.log(`seeded blocks       : ${BLOCKS}`);
   console.log(`keystrokes measured : ${samples.length} (requested ${KEYS})`);
@@ -160,6 +206,5 @@ driver.on('exit', () => {
   console.log(`  p50 ${pct(50)?.toFixed(2)}  p95 ${pct(95)?.toFixed(2)}  max ${dts.at(-1)?.toFixed(2)}`);
   console.log('─────────────────────────────────────────────────────\n');
 
-  if (!process.argv.includes('--keep')) rmSync(home, { recursive: true, force: true });
-  else console.log(`[probe] artifacts kept in ${home}`);
+  cleanup();
 });

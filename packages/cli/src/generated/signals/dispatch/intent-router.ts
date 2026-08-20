@@ -1,7 +1,5 @@
 import { resolveWorkingDir, buildExtensionContext } from '@kernlang/agon-core';
 
-import type { Dispatch } from '../../../handlers/types.js';
-
 import type { DispatchCallbacks, DispatchResult } from '../dispatch.js';
 
 import { findResumableCesarPlan, shouldApprovePendingCesarPlanInput, isCesarPlanResumeInput, isCesarPlanStatusInput, formatCesarPlanRuntimeStatus } from './plan-queries.js';

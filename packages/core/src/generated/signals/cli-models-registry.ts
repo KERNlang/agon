@@ -176,42 +176,6 @@ export async function refreshProbedCliModels(engineId: string, binary: string, l
   }
 }
 
-export async function fetchCliModelsRegistry(): Promise<Record<string, any> | null> {
-  const cacheDir = getCacheDir();
-  const cacheFile = join(cacheDir, 'models-dev.json');
-  try {
-    if (existsSync(cacheFile)) {
-      const stat = statSync(cacheFile);
-      const age = Date.now() - stat.mtimeMs;
-      if (age < CACHE_TTL_MS) {
-        return JSON.parse(readFileSync(cacheFile, 'utf-8'));
-      }
-    }
-  } catch { /* cache read failed, refetch */ }
-
-  try {
-    const response = await fetch('https://models.dev/api.json');
-    if (!response.ok) {
-      // Try stale cache
-      if (existsSync(cacheFile)) {
-        return JSON.parse(readFileSync(cacheFile, 'utf-8'));
-      }
-      return null;
-    }
-    const data = await response.json();
-    mkdirSync(cacheDir, { recursive: true });
-    writeFileSync(cacheFile, JSON.stringify(data));
-    return data;
-  } catch {
-    // Stale cache fallback
-    try {
-      if (existsSync(cacheFile)) {
-        return JSON.parse(readFileSync(cacheFile, 'utf-8'));
-      }
-    } catch { /* give up */ }
-    return null;
-  }
-}
 
 export function findBinary(binary: string): string|null {
   try {

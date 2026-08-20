@@ -18,8 +18,6 @@ import {
   ContextThread,
   loadOrCreateActiveThread,
   deleteThread,
-  projectHash16,
-  listThreadsForProject,
 } from '@kernlang/agon-core';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

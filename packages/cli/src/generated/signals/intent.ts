@@ -119,44 +119,14 @@ function parseAgentShortcut(input: string): Intent|null {
   return { type: 'agent', input: task } as Intent;
 }
 
-function stripCollaborationLeadIn(input: string): string {
-  return input.replace(/^(?:can[ \t\n\r\f\v]+you[ \t\n\r\f\v]+|could[ \t\n\r\f\v]+you[ \t\n\r\f\v]+|please[ \t\n\r\f\v]+)?(?:ask|have|get)[ \t\n\r\f\v]+(?:the[ \t\n\r\f\v]+)?(?:others|other[ \t\n\r\f\v]+engines|team|engines|models|everyone|all[ \t\n\r\f\v]+engines)[ \t\n\r\f\v]+(?:to[ \t\n\r\f\v]+)?/i, '').replace(/^(?:can[ \t\n\r\f\v]+you[ \t\n\r\f\v]+|could[ \t\n\r\f\v]+you[ \t\n\r\f\v]+|please[ \t\n\r\f\v]+)?what[ \t\n\r\f\v]+do[ \t\n\r\f\v]+(?:the[ \t\n\r\f\v]+)?(?:others|other[ \t\n\r\f\v]+engines|team|engines|models|everyone|all[ \t\n\r\f\v]+engines)[ \t\n\r\f\v]+(?:think[ \t\n\r\f\v]+about[ \t\n\r\f\v]+|say[ \t\n\r\f\v]+about[ \t\n\r\f\v]+|recommend[ \t\n\r\f\v]+for[ \t\n\r\f\v]+)?/i, '').replace(/^(?:can[ \t\n\r\f\v]+you[ \t\n\r\f\v]+|could[ \t\n\r\f\v]+you[ \t\n\r\f\v]+|please[ \t\n\r\f\v]+)?(?:talk|think)[ \t\n\r\f\v]+(?:it|this)?[ \t\n\r\f\v]*(?:through[ \t\n\r\f\v]+)?with[ \t\n\r\f\v]+(?:the[ \t\n\r\f\v]+)?(?:others|other[ \t\n\r\f\v]+engines|team|engines|models|everyone|all[ \t\n\r\f\v]+engines)[ \t\n\r\f\v]*/i, '').trim();
-}
 
-function hasCollaborationAskShape(input: string): boolean {
-  return /^(?:can[ \t\n\r\f\v]+you[ \t\n\r\f\v]+|could[ \t\n\r\f\v]+you[ \t\n\r\f\v]+|please[ \t\n\r\f\v]+)?(?:ask|have|get)[ \t\n\r\f\v]+(?:the[ \t\n\r\f\v]+)?(?:others|other[ \t\n\r\f\v]+engines|team|engines|models|everyone|all[ \t\n\r\f\v]+engines)\b/i.test(input) || /^(?:can[ \t\n\r\f\v]+you[ \t\n\r\f\v]+|could[ \t\n\r\f\v]+you[ \t\n\r\f\v]+|please[ \t\n\r\f\v]+)?what[ \t\n\r\f\v]+do[ \t\n\r\f\v]+(?:the[ \t\n\r\f\v]+)?(?:others|other[ \t\n\r\f\v]+engines|team|engines|models|everyone|all[ \t\n\r\f\v]+engines)[ \t\n\r\f\v]+(?:think|say|recommend)\b/i.test(input) || /^(?:can[ \t\n\r\f\v]+you[ \t\n\r\f\v]+|could[ \t\n\r\f\v]+you[ \t\n\r\f\v]+|please[ \t\n\r\f\v]+)?(?:brainstorm|compare|weigh[ \t\n\r\f\v]+in)[ \t\n\r\f\v]+(?:this|it)?[ \t\n\r\f\v]*(?:with[ \t\n\r\f\v]+)?(?:the[ \t\n\r\f\v]+)?(?:others|other[ \t\n\r\f\v]+engines|team|engines|models|everyone|all[ \t\n\r\f\v]+engines)\b/i.test(input);
-}
 
-function parseSemanticCollaborationShortcut(input: string): Intent|null {
-  const question = stripCollaborationLeadIn(input);
-  if (/\b(?:debate|argue|tribunal|red-team|red[ \t\n\r\f\v]+team)\b/i.test(input)) {
-    const cleaned = input.replace(/^(?:can[ \t\n\r\f\v]+you[ \t\n\r\f\v]+|could[ \t\n\r\f\v]+you[ \t\n\r\f\v]+|please[ \t\n\r\f\v]+)?(?:have|get|ask)?[ \t\n\r\f\v]*(?:the[ \t\n\r\f\v]+)?(?:others|team|engines|models|everyone|all[ \t\n\r\f\v]+engines)?[ \t\n\r\f\v]*(?:to[ \t\n\r\f\v]+)?(?:debate|argue|tribunal|red-team|red[ \t\n\r\f\v]+team)[ \t\n\r\f\v]*/i, '').trim();
-    return { type: 'tribunal', question: cleaned || input } as Intent;
-  }
-  if (/\b(?:campfire|talk[ \t\n\r\f\v]+(?:it|this)?[ \t\n\r\f\v]*through|think[ \t\n\r\f\v]+(?:it|this)?[ \t\n\r\f\v]*through)\b/i.test(input) && /\b(?:others|team|engines|models|everyone|all[ \t\n\r\f\v]+engines)\b/i.test(input)) {
-    return { type: 'campfire', topic: question || input } as Intent;
-  }
-  if (hasCollaborationAskShape(input)) {
-    return { type: 'brainstorm', question: question || input } as Intent;
-  }
-  return null;
-}
 
-function parseSemanticForgeShortcut(input: string): Intent|null {
-  const explicitForgeImperative = /^(?:can[ \t\n\r\f\v]+you[ \t\n\r\f\v]+|could[ \t\n\r\f\v]+you[ \t\n\r\f\v]+|please[ \t\n\r\f\v]+)?forge\b/i.test(input) && !/^(?:can[ \t\n\r\f\v]+you[ \t\n\r\f\v]+|could[ \t\n\r\f\v]+you[ \t\n\r\f\v]+|please[ \t\n\r\f\v]+)?forge[ \t\n\r\f\v]+(?:is|was|seems?|looks?|does|did|can|should|would|will|not|still)\b/i.test(input);
-  const hasForgeShape = explicitForgeImperative || /\b(?:forge[ \t\n\r\f\v]+this|forge[ \t\n\r\f\v]+it|have[ \t\n\r\f\v]+(?:the[ \t\n\r\f\v]+)?(?:engines|models|team|others)[ \t\n\r\f\v]+compete|make[ \t\n\r\f\v]+(?:the[ \t\n\r\f\v]+)?(?:engines|models|team|others)[ \t\n\r\f\v]+compete|competitive[ \t\n\r\f\v]+(?:build|implementation|fix))\b/i.test(input);
-  if (!hasForgeShape) {
-    return null;
-  }
-  const task = input.replace(/^(?:can[ \t\n\r\f\v]+you[ \t\n\r\f\v]+|could[ \t\n\r\f\v]+you[ \t\n\r\f\v]+|please[ \t\n\r\f\v]+)?/i, '').replace(/^forge[ \t\n\r\f\v]+(?:this|it)[ \t\n\r\f\v]*/i, '').replace(/^forge[ \t\n\r\f\v]+/i, '').replace(/^have[ \t\n\r\f\v]+(?:the[ \t\n\r\f\v]+)?(?:engines|models|team|others)[ \t\n\r\f\v]+compete[ \t\n\r\f\v]+(?:on[ \t\n\r\f\v]+|to[ \t\n\r\f\v]+)?/i, '').replace(/^make[ \t\n\r\f\v]+(?:the[ \t\n\r\f\v]+)?(?:engines|models|team|others)[ \t\n\r\f\v]+compete[ \t\n\r\f\v]+(?:on[ \t\n\r\f\v]+|to[ \t\n\r\f\v]+)?/i, '').trim();
-  const parsed = parseForgeInput(task || input);
-  return { ...parsed, type: 'forge', action: 'natural' } as Intent;
-}
 
 /**
  * Plain text must not start orchestration. Brainstorm, tribunal, campfire, forge, and review are slash-only from chat input; mention words like 'tribunal' or 'forge' should reach Cesar as normal text unless the user uses /tribunal, /forge, etc.
  */
-function parseSemanticDelegationShortcut(input: string): Intent|null {
+function parseSemanticDelegationShortcut(_input: string): Intent|null {
   return null;
 }
 
@@ -232,32 +202,6 @@ function parseReviewInput(input: string, bareWordsAreEngines?: boolean): Intent 
   return { type: 'review', engineId, engineIds: engineIds.length > 0 ? engineIds : undefined, target } as Intent;
 }
 
-function parseReviewShortcut(input: string): Intent|null {
-  const match = ((__m) => __m === null ? null : { full: __m[0], groups: Array.from(__m).slice(1).map((g) => g === undefined ? null : g), index: __m.index, named: __m.groups ? Object.fromEntries(Object.entries(__m.groups).map(([__k, __v]) => [__k, __v === undefined ? null : __v])) : {} })(input.match(/^(?:review|cr)(?:[ \t\n\r\f\v]+([ \t\n\r\f\v\S]+))?$/i));
-  if (!match) {
-    return null;
-  }
-  const rest = (match.groups[0] ?? '').trim();
-  if (!rest) {
-    return parseReviewInput('');
-  }
-  const parsed = parseReviewInput(rest) as any;
-  const target = String(parsed.target ?? '').toLowerCase();
-  const hasEngines = Array.isArray(parsed.engineIds) && parsed.engineIds.length > 0;
-  const validTarget = !target || isReviewTargetArg(target);
-  if (hasEngines && target && isImplicitReviewSubjectArg(target)) {
-    return { ...parsed, target: undefined } as Intent;
-  }
-  if (hasEngines && validTarget) {
-    return parsed;
-  }
-  if (!hasEngines && validTarget) {
-    return parsed;
-  }
-  // Let natural-language review requests go through Cesar instead of
-  // mis-parsing "review this code" as an invalid target named "this".
-  return null;
-}
 
 function parseSlashCommand(input: string, commandRegistry?: any): Intent {
   const stripped = input.slice(1).trim();

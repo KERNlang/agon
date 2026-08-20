@@ -25,10 +25,6 @@ export interface UpdateCheckOptions {
   registryTimeoutMs: number;
 }
 
-export interface UpdateState {
-  dismissedFor: string;
-  lastChecked: number;
-}
 
 export function isLinkedDevInstall(): boolean {
   try {

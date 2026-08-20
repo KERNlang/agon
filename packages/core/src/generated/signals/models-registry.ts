@@ -4,7 +4,6 @@ import { join } from 'node:path';
 
 import { getCacheDir } from '../utils/paths.js';
 
-import type { EngineDefinition } from '../models/types.js';
 
 export interface ModelsDevModel {
   id: string;

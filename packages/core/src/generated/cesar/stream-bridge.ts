@@ -1,11 +1,5 @@
 import type { AgentEvent } from '../models/agent-event.js';
 
-/**
- * Minimal dispatch contract for StreamBridge. Compatible with the full Dispatch from handlers/types.ts — callers can pass it directly.
- */
-export interface BridgeDispatch {
-  call: (event: Record<string,unknown>) => void;
-}
 
 /**
  * Fired by StreamBridge when the active engine changes. Mirrors the engine-switch OutputEvent variant.

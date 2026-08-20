@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 
-import type { EngineAdapter, ForgeEvent, TaskClass } from '@kernlang/agon-core';
+import type { EngineAdapter, ForgeEvent } from '@kernlang/agon-core';
 
-import type { TeamSpec, TeamFormat, TeamComposeMode, TeamRoundTrace, TeamSubmission, TeamScoreCard, TeamMatchResult, TeamEvent } from '@kernlang/agon-core';
+import type { TeamSpec, TeamComposeMode, TeamRoundTrace, TeamSubmission, TeamScoreCard, TeamMatchResult, TeamEvent } from '@kernlang/agon-core';
 
 import { EngineRegistry, loadConfig, classifyTask, createSidechainLogger, composeTeams, makeFormat } from '@kernlang/agon-core';
 

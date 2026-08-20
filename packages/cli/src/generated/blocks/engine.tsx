@@ -1,10 +1,8 @@
 import React from 'react';
-import { Box, Static, Text } from 'ink';
+import { Box, Text } from 'ink';
 
 // ── Core ───────────────────────────────────────────────
 import { parseMarkdownBlocks, cleanEngineOutput } from './markdown.js';
-
-import type { ContentSegment } from './markdown.js';
 
 import { parseProseToRichLines } from './rich-text.js';
 
@@ -16,7 +14,7 @@ import { icons } from '../signals/icons.js';
 
 import type { OutputEvent, EngineProgress } from '../../handlers/types.js';
 
-import { contentWidth, color256toHex, engineColor, RenderedSegments, RichLineView, DiffLine, SyntaxLine, GradientLine, AnsiLine, CODE_RAIL, CODE_RAIL_COLOR, MAX_CODE_LINES } from './rendering.js';
+import { contentWidth, color256toHex, engineColor, RenderedSegments, RichLineView, DiffLine, GradientLine, AnsiLine } from './rendering.js';
 
 import { truncateCodeLine } from './markdown.js';
 
@@ -24,8 +22,7 @@ import { ForgeArena, BrainstormStorm, CampfireFire, TribunalCourt } from './aren
 
 import { PlanProposalView, PlanExecutionView } from './plan-view.js';
 
-import { parseToolInputPayload, extractPatchText, parsePatchPreview, extractSummary, formatDuration } from './engine-helpers.js';
-
+import { parseToolInputPayload, parsePatchPreview, extractSummary, formatDuration } from './engine-helpers.js';
 
 import { readFileSync, existsSync } from 'node:fs';
 

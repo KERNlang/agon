@@ -14,7 +14,7 @@ import { filterDefaultOrchestrationEngines } from './engine-filter.js';
 
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
-export async function handleSanitize(input: string, dispatch: Dispatch, ctx: HandlerContext): Promise<void> {
+export async function handleSanitize(input: string, dispatch: Dispatch, _ctx: HandlerContext): Promise<void> {
   // Parse: /sanitize [file] [--detect] [--metadata] [--strip] [--out <f>] [--in-place]
   let rest = input.trim();
   let file: string | undefined;
@@ -124,7 +124,7 @@ export async function handleSanitize(input: string, dispatch: Dispatch, ctx: Han
   }
 }
 
-export async function handleNaturalize(input: string, dispatch: Dispatch, ctx: HandlerContext): Promise<void> {
+export async function handleNaturalize(input: string, dispatch: Dispatch, _ctx: HandlerContext): Promise<void> {
   // Parse: /naturalize <file> [--engine X] [--author Y] [--min-change N] [--max-attempts N] [--out <f>]
   let rest = input.trim();
   let file: string | undefined;

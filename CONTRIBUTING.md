@@ -43,6 +43,13 @@ are all green. If you touched a mode or a CLI command, also run
 `npm run docs:modes` and commit the regenerated `docs/modes.md` — a unit test
 byte-compares it.
 
+`npm run knip` (alias `npm run lint:dead`) is an **advisory** dead-code probe —
+unreferenced files, exports and dependencies. It is deliberately *not* part of
+the blocking gate: knip reports false positives on dynamic imports and on
+entry points it cannot see, and those should never block an unrelated PR. Run it
+before a large refactor or a dead-code sweep, and treat every hit as a lead to
+verify by hand rather than a verdict.
+
 ## License
 
 By contributing you agree your contributions are licensed under the repository's

@@ -1,6 +1,6 @@
 import { defineCommand } from 'citty';
 
-import { getRatings, advisorScore } from '@kernlang/agon-core';
+import { getRatings } from '@kernlang/agon-core';
 
 import type { GlickoRating } from '@kernlang/agon-core';
 

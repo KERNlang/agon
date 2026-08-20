@@ -2,7 +2,7 @@ import { apiStreamDispatchWithHistory } from './dispatch.js';
 
 import type { ApiConfig } from './dispatch.js';
 
-import type { ToolHandler, ToolContext, ToolResult, ToolDefinition } from '../models/tool-types.js';
+import type { ToolContext } from '../models/tool-types.js';
 
 import { ToolRegistry, executeToolCall } from '../signals/tool-registry.js';
 
@@ -41,8 +41,6 @@ import { createWebFetchTool } from '../tools/tool-web-fetch.js';
 import { createTodoWriteTool } from '../tools/tool-todo-write.js';
 
 import { createWebSearchTool } from '../tools/tool-web-search.js';
-
-import type { ToolCacheEntry } from '../models/context-parts.js';
 
 import { safeAgentVisibleText } from './agent-visible.js';
 

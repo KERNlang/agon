@@ -12,9 +12,9 @@ import { createRequire } from 'node:module';
 
 import type { PersistentSession, PersistentSessionConfig } from '@kernlang/agon-core';
 
-import { EngineRegistry, loadConfig, ensureAgonHome, getAgonHome, resolveWorkingDir, scanProjectContext, buildCodebaseMap, buildKernContextSpine, buildProjectMemoryBlock, createPersistentSession, ToolRegistry, getProjectFileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat, listCesarPlans, saveConversation, formatChatContextForPrompt, isReadOnlyCommand, AGON_MODE_NAMES, parsePermissionRuleSet, parseToolHooks, PERMISSION_DENIED_MESSAGE, claudeBrainUsesPty } from '@kernlang/agon-core';
+import { ensureAgonHome, getAgonHome, resolveWorkingDir, scanProjectContext, buildCodebaseMap, buildKernContextSpine, buildProjectMemoryBlock, createPersistentSession, ToolRegistry, getProjectFileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat, listCesarPlans, saveConversation, formatChatContextForPrompt, isReadOnlyCommand, AGON_MODE_NAMES, parsePermissionRuleSet, parseToolHooks, PERMISSION_DENIED_MESSAGE, claudeBrainUsesPty } from '@kernlang/agon-core';
 
-import type { ToolContext, ToolCallResult } from '@kernlang/agon-core';
+import type { ToolContext } from '@kernlang/agon-core';
 
 import { resolveGuardMode, readGuardModesFromConfig } from '@kernlang/agon-core';
 
@@ -27,8 +27,6 @@ import type { HandlerContext } from '../../handlers/types.js';
 import { createCesarToolRegistry } from './tools.js';
 
 import { getSessionAllowList } from '../signals/output.js';
-
-import { buildRoutingContext } from './routing.js';
 
 import { extractDelegation } from './brain-helpers.js';
 
@@ -1139,7 +1137,6 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
  * Build the onApproval callback for engine tool approvals. Returns true to approve, false to deny silently, or a string to deny with a reason the engine can see.
  */
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string, controlPlane?:any) => Promise<boolean|string> {
-  const engine = ctx.registry.get(engineId);
   const evaluateApproval = async (tool: string, command: string): Promise<boolean | string> => {
     const cfg = ctx.config;
     const perms = (cfg as any).toolPermissions ?? {};
@@ -1552,7 +1549,6 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
     engine = { ...engine, api: { ...engine.api, model: engineModelOverride } };
   }
   const binaryPath = resolved.binaryPath;
-  const usingApi = resolved.backend === 'api';
   // MCP servers: manual config takes priority, then auto-discovery from standard paths
   let mcpServers: Array<Record<string, unknown>> | undefined;
   if (canUseCesarMcp(engine, binaryPath)) {

@@ -14,7 +14,7 @@ import { runForge } from '@kernlang/agon-forge';
 
 import { runReviewCore } from '../handlers/review.js';
 
-import { header, success, fail, warn, info, table, green, red, yellow, bold, cyan } from '../blocks/output-format.js';
+import { header, success, fail, warn, info, table, green, red, yellow, bold } from '../blocks/output-format.js';
 
 import { icons } from '../signals/icons.js';
 

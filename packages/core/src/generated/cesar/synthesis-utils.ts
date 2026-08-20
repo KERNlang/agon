@@ -1,8 +1,8 @@
 import type { EngineResult } from '../models/types.js';
 
-import type { AgentTeamResult, AgentTeamMemberResult } from './agent-team.js';
+import type { AgentTeamResult } from './agent-team.js';
 
-import { worktreeChangedDiff, worktreeChangedShortstat } from '../blocks/git.js';
+import { worktreeChangedShortstat } from '../blocks/git.js';
 
 /**
  * Pick the winning engine via deterministic multi-factor tiebreaker. Filters to passing+positive-score results, then sorts by score desc, lintWarnings asc, styleScore desc, diffLines asc, filesChanged asc, durationSec asc. Moved from forge/stages.kern in Phase 3 — the canonical fleet scoring path used by both forge and AgentTeam.
@@ -30,12 +30,6 @@ export function determineWinner(results: Map<string,EngineResult>, spread: numbe
   return { winner: passing[0][0], closeCall, bestScore, secondScore };
 }
 
-/**
- * Discriminator for how to score an AgentTeam result. 'edit' uses fitness gate + diff metrics. 'investigate' uses text-output metrics.
- */
-export interface AgentTaskKind {
-  kind: 'edit'|'investigate';
-}
 
 /**
  * Convert an AgentTeamResult into a Map<engineId,EngineResult> suitable for determineWinner. For taskKind='edit', fitnessPassed must be provided (pre-computed by runAgentTeam from typecheck-or-fail gate). For 'investigate', no fitness check; scoring uses message length + tool-call density.

@@ -1,10 +1,8 @@
-import type { ToolCall, ToolCallResult, ToolContext, ToolHandler } from '../models/tool-types.js';
+import type { ToolCallResult, ToolContext, ToolHandler } from '../models/tool-types.js';
 
 import { ToolRegistry, executeToolCalls } from '../signals/tool-registry.js';
 
 import { parseToolCalls, toolCallsToApiFormat, formatToolResults } from './tool-parser.js';
-
-import type { ParseResult } from './tool-parser.js';
 
 import { generateToolPrompt } from './tool-prompt.js';
 

@@ -1,10 +1,6 @@
 import { join, basename } from 'node:path';
 
-import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
-
 import { resolveWorkingDir, getAgonHome } from '@kernlang/agon-core';
-
-import type { Dispatch } from '../../../handlers/types.js';
 
 import type { DispatchCallbacks, DispatchResult } from '../dispatch.js';
 
@@ -200,7 +196,6 @@ export async function dispatchInitIntent(intent: any, input: string, cb: Dispatc
             if (/\[workspace\]/.test(cargo)) cargoBin = 'workspace';
           } catch {}
         }
-        const hasRustTests = hasCargo; // cargo test is always available
   
         // Detect Go signals
         const hasGoMod = existsSync2(join(cwd, 'go.mod'));

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildCommand, supportsAgentMode, resolveAgentArgs } from '../../packages/adapter-cli/src/generated/adapter-helpers.js';
 import { EngineRegistry } from '../../packages/core/src/engine-registry.js';
-import type { EngineDefinition, EngineModeConfig } from '../../packages/core/src/types.js';
+import type { EngineDefinition } from '../../packages/core/src/types.js';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';

@@ -1,6 +1,6 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, unlinkSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, unlinkSync } from 'node:fs';
 
-import { join, dirname, relative, resolve } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 
 import { randomUUID } from 'node:crypto';
 

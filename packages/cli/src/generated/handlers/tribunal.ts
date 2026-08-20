@@ -12,7 +12,7 @@ import { sessionResultStore } from '../models/session-results.js';
 
 import type { Dispatch, HandlerContext, EngineProgress } from '../../handlers/types.js';
 
-import { createScoreboard, scoreboardStartEngine, scoreboardFinishEngine, scoreboardFailEngine, renderScoreboard } from '../cesar/scoreboard.js';
+import { createScoreboard, scoreboardFinishEngine, renderScoreboard } from '../cesar/scoreboard.js';
 
 import { buildCheckpoint, recordCheckpoint } from '../cesar/checkpoint.js';
 

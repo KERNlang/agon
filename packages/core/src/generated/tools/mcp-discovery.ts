@@ -1,6 +1,6 @@
 import { readFileSync, existsSync, statSync } from 'node:fs';
 
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 
 import { homedir } from 'node:os';
 

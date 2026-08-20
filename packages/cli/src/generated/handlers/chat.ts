@@ -4,7 +4,7 @@ import { mkdirSync } from 'node:fs';
 
 import type { ImageAttachment, DispatchResult } from '@kernlang/agon-core';
 
-import { RUNS_DIR, appendMessage, tracker, StreamParser, loadConfig, sessionContext, resolveWorkingDir, loadOrCreateActiveThread, createStreamBridge, formatChatContextForPrompt } from '@kernlang/agon-core';
+import { RUNS_DIR, appendMessage, tracker, StreamParser, sessionContext, resolveWorkingDir, loadOrCreateActiveThread, createStreamBridge, formatChatContextForPrompt } from '@kernlang/agon-core';
 
 import { ENGINE_COLORS } from '../blocks/output-format.js';
 

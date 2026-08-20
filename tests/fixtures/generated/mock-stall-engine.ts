@@ -52,11 +52,11 @@ export class MockStallEngine implements EngineAdapter {
     };
   }
 
-  async isAvailable(engine: EngineDefinition): Promise<boolean> {
+  async isAvailable(_engine: EngineDefinition): Promise<boolean> {
     return true;
   }
 
-  async getVersion(engine: EngineDefinition): Promise<string|null> {
+  async getVersion(_engine: EngineDefinition): Promise<string|null> {
     return 'mock-stall-engine 1.0.0';
   }
 

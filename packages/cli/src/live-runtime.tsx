@@ -1,13 +1,6 @@
-import React, { useMemo, useRef, useSyncExternalStore } from 'react';
-import { Box, Text } from 'ink';
 
 import type { EngineProgress } from './handlers/types.js';
 import type { AgentProgressSnapshot, StreamingEntry } from './generated/signals/output.js';
-import { StreamingView } from './generated/surfaces/app-views.js';
-import { AgentProgressView } from './generated/surfaces/agent.js';
-import { CesarStatusStrip, SpinnerBlock } from './generated/surfaces/status.js';
-import { cleanEngineOutput } from './generated/blocks/markdown.js';
-import { icons } from './generated/signals/icons.js';
 
 type LiveSpinner = { message: string; color?: number; engineId?: string } | null;
 
@@ -43,56 +36,9 @@ function updateLiveRuntimeState(updater: (previous: LiveRuntimeState) => LiveRun
   emitLiveRuntimeChange();
 }
 
-function subscribeLiveRuntime(listener: () => void) {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-}
 
-function useLiveRuntimeField<T>(selector: (state: LiveRuntimeState) => T): T {
-  const selectorRef = useRef(selector);
-  selectorRef.current = selector;
 
-  const lastValueRef = useRef(selector(liveRuntimeState));
 
-  return useSyncExternalStore(
-    subscribeLiveRuntime,
-    () => {
-      const nextValue = selectorRef.current(liveRuntimeState);
-      if (Object.is(nextValue, lastValueRef.current)) return lastValueRef.current;
-      lastValueRef.current = nextValue;
-      return nextValue;
-    },
-    () => lastValueRef.current,
-  );
-}
-
-function pickLatestStream(streamingText: Record<string, StreamingEntry>): StreamingEntry | null {
-  const entries = Object.values(streamingText);
-  if (entries.length === 0) return null;
-
-  let latest: StreamingEntry | null = null;
-  for (const entry of entries) {
-    if (!latest || entry.startedAt > latest.startedAt) latest = entry;
-  }
-
-  return latest;
-}
-
-function pickStreamSnippet(streamingText: Record<string, StreamingEntry>): { engineId: string; line: string } | null {
-  const latest = pickLatestStream(streamingText);
-  if (!latest || !latest.content) return null;
-
-  const cleaned = cleanEngineOutput(latest.content);
-  const lines = cleaned.split('\n').filter((line) => line.trim());
-  if (lines.length === 0) return null;
-
-  return {
-    engineId: latest.engineId,
-    line: lines[lines.length - 1].trim(),
-  };
-}
 
 export function getLiveRuntimeState(): LiveRuntimeState {
   return liveRuntimeState;
@@ -215,94 +161,6 @@ export function resetLiveRuntimeState(options?: { preserveConfidence?: boolean }
   });
 }
 
-export function LiveTranscriptPane({ mode }: { mode: string }) {
-  const streamingText = useLiveRuntimeField((state) => state.streamingText);
-  const liveProgress = useLiveRuntimeField((state) => state.liveProgress);
-  const agentProgress = useLiveRuntimeField((state) => state.agentProgress);
 
-  const activeStream = useMemo(() => pickLatestStream(streamingText), [streamingText]);
-  const snapshots = useMemo(() => Object.values(agentProgress), [agentProgress]);
 
-  return (
-    <>
-      <StreamingView
-        streamingText={activeStream ? { engineId: activeStream.engineId, content: activeStream.content } : null}
-        mode={mode}
-        liveProgress={liveProgress}
-      />
-      {snapshots.length > 0 && (
-        <Box flexDirection="column">
-          {snapshots.map((snapshot) => (
-            <AgentProgressView
-              key={snapshot.engineId}
-              engineId={snapshot.engineId}
-              turnIndex={snapshot.turnIndex}
-              phase={snapshot.phase}
-              userPrompt={snapshot.userPrompt}
-              toolCalls={snapshot.toolCalls}
-              lastTool={snapshot.lastTool}
-              lastToolStatus={snapshot.lastToolStatus}
-              tokensUsed={snapshot.tokensUsed}
-              elapsedMs={snapshot.elapsedMs}
-              turnsRemaining={snapshot.turnsRemaining}
-              maxTurns={snapshot.maxTurns}
-              tokensRemaining={snapshot.tokensRemaining}
-              maxTokens={snapshot.maxTokens}
-              error={snapshot.error}
-            />
-          ))}
-        </Box>
-      )}
-    </>
-  );
-}
 
-export function LiveTopSpinner({ mode }: { mode: string }) {
-  const liveSpinner = useLiveRuntimeField((state) => state.liveSpinner);
-  if (!liveSpinner || mode === 'chat') return null;
-  return <SpinnerBlock message={liveSpinner.message} color={liveSpinner.color} />;
-}
-
-export function LiveInlineSpinner({ questionState }: { questionState: any }) {
-  const liveSpinner = useLiveRuntimeField((state) => state.liveSpinner);
-  if (!liveSpinner) return null;
-
-  return (
-    <Box paddingLeft={1}>
-      <Text color={questionState && questionState.choices ? '#ef4444' : '#fbbf24'}>
-        {questionState && questionState.choices
-          ? `${icons().warning} PERMISSION REQUIRED — respond below`
-          : liveSpinner.message}
-      </Text>
-    </Box>
-  );
-}
-
-export function LiveStatusRegion(props: {
-  cesarId: string;
-  isActive: boolean;
-  planModeQueued?: boolean;
-  activePlanState?: string | null;
-}) {
-  const confidence = useLiveRuntimeField((state) => state.cesarConfidence);
-  const liveSpinner = useLiveRuntimeField((state) => state.liveSpinner);
-  const liveProgress = useLiveRuntimeField((state) => state.liveProgress);
-  const streamingText = useLiveRuntimeField((state) => state.streamingText);
-  const chatStartTime = useLiveRuntimeField((state) => state.chatStartTime);
-
-  const streamSnippet = useMemo(() => pickStreamSnippet(streamingText), [streamingText]);
-
-  return (
-    <CesarStatusStrip
-      cesarId={props.cesarId}
-      confidence={confidence}
-      spinner={liveSpinner}
-      engines={liveProgress}
-      startTime={chatStartTime}
-      streamSnippet={streamSnippet}
-      isActive={props.isActive}
-      planModeQueued={props.planModeQueued}
-      activePlanState={props.activePlanState ?? null}
-    />
-  );
-}

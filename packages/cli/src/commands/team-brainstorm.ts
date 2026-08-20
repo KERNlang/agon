@@ -6,7 +6,7 @@ import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
 import type { ForgeEvent, TeamEvent } from '@kernlang/agon-core';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { runTeamBrainstorm } from '@kernlang/agon-forge';
-import { header, success, info, table, green, bold, dim } from '../output.js';
+import { header, info, green, bold, dim } from '../output.js';
 import { filterDefaultOrchestrationEngines } from '../generated/handlers/engine-filter.js';
 
 export const teamBrainstormCommand = defineCommand({

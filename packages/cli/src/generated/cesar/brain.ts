@@ -2,9 +2,9 @@ import { join } from 'node:path';
 
 import { mkdirSync, appendFileSync, existsSync, readFileSync, unlinkSync, readdirSync, writeFileSync } from 'node:fs';
 
-import type { ImageAttachment, PersistentSession, ForgeManifest, ForgeJudgment } from '@kernlang/agon-core';
+import type { ImageAttachment, PersistentSession } from '@kernlang/agon-core';
 
-import { ensureAgonHome, RUNS_DIR, appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, tracker, resolveWorkingDir, ToolRegistry, getProjectFileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask, loadConfig, configSet, createStreamBridge, engineHealth, authLoginHint, discoverGate, bashRanGate, isGateSkipSignal, parsePermissionRuleSet, parseToolHooks, evaluatePermissionRules, evaluateToolRules, isReadOnlyCommand } from '@kernlang/agon-core';
+import { ensureAgonHome, RUNS_DIR, appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, tracker, resolveWorkingDir, ToolRegistry, getProjectFileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask, loadConfig, createStreamBridge, engineHealth, authLoginHint, discoverGate, bashRanGate, isGateSkipSignal, parsePermissionRuleSet, parseToolHooks, isReadOnlyCommand } from '@kernlang/agon-core';
 
 import type { ToolContext, ToolCallResult } from '@kernlang/agon-core';
 
@@ -24,13 +24,13 @@ import { asLiveTodos } from '../signals/todos.js';
 
 import { parseAskMarker } from './ask-marker.js';
 
-import { ensureCesarSession, CESAR_SYSTEM_PROMPT, buildCesarSystemPrompt, resolveCesarBackend, renderToolPermissionCommand } from './session.js';
+import { ensureCesarSession, buildCesarSystemPrompt, resolveCesarBackend, renderToolPermissionCommand } from './session.js';
 
 import { enforceContextBudget } from './context-budget.js';
 
 import { createCesarToolRegistry, createEagerToolContext, executeEagerTool } from './tools.js';
 
-import { fireQuickNero, fireNero, fireAdvisor, handleSecondOpinion, activateNero, deactivateNero, promptDelegation, promptProtocolEnforcement } from './escalation.js';
+import { fireQuickNero, deactivateNero, promptDelegation } from './escalation.js';
 
 import { buildRoutingContext, deriveRoutingHints, shouldSpeculate } from './routing.js';
 

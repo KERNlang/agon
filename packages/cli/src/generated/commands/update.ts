@@ -2,13 +2,11 @@ import { defineCommand } from 'citty';
 
 import { spawn } from 'node:child_process';
 
-import { platform } from 'node:os';
-
-import { bold, dim, green, red, yellow, info, success, fail, header } from '../blocks/output-format.js';
+import { bold, dim, yellow, info, success, fail, header } from '../blocks/output-format.js';
 
 import { VERSION } from '../blocks/engine.js';
 
-import { checkForUpdate, loadDismissedVersion, saveDismissedVersion } from '../services/update-check.js';
+import { checkForUpdate } from '../services/update-check.js';
 
 export const DEFAULT_PACKAGE: string = "@kernlang/agon";
 

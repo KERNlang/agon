@@ -2,10 +2,6 @@ import { loadConfig, getRatings, getActiveWorkspace, resolveWorkingDir, isKernPr
 
 import { basename } from 'node:path';
 
-import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
-
-import { EngineRegistry } from '@kernlang/agon-core';
-
 import { cleanEngineOutput } from '../blocks/markdown.js';
 
 import { appendBlockWithCap } from '../signals/block-archive.js';
@@ -86,7 +82,7 @@ export function buildDashboardBlock(enabledOverride: string[]|null): OutputBlock
   };
 }
 
-export function buildDisplayItems(blocks: OutputBlock[], toolOutputExpanded: boolean): OutputBlock[] {
+export function buildDisplayItems(blocks: OutputBlock[], _toolOutputExpanded: boolean): OutputBlock[] {
   // Keep collapse as a per-block display concern, not a synthetic grouped
   // scroll unit. Grouped tool summaries make wheel scrolling jump because
   // one collapsed row can stand in for many logical rows.

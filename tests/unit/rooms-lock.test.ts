@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { join } from 'node:path';
-import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync, utimesSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, existsSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
 import { createRoom, roomDir, appendEvent, readEvents, withRoomLock } from '../../packages/core/src/generated/rooms/store.js';

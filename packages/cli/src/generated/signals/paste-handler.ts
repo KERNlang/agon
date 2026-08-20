@@ -1,6 +1,5 @@
 import { pasteStore } from '@kernlang/agon-core';
 
-import type { PasteStoreResult } from '@kernlang/agon-core';
 
 export type PasteResult =
   | { type: 'stored'; tag: string; fullHash: string; placeholder: string }

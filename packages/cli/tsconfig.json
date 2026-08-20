@@ -7,7 +7,6 @@
     "jsx": "react-jsx"
   },
   "include": ["src"],
-  "exclude": ["src/generated/**/*.entry.tsx"],
   "references": [
     { "path": "../core" },
     { "path": "../forge" },

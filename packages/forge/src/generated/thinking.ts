@@ -66,14 +66,6 @@ export function finalizeThinkChain<T extends { state: ThinkChainState }>(entity:
   return { ...entity, state: 'complete' as ThinkChainState };
 }
 
-/** thinking|critiquing|revising → aborted */
-export function abortThinkChain<T extends { state: ThinkChainState }>(entity: T): T {
-  const validStates: ThinkChainState[] = ['thinking', 'critiquing', 'revising'];
-  if (!validStates.includes(entity.state)) {
-    throw new ThinkChainStateError(validStates, entity.state);
-  }
-  return { ...entity, state: 'aborted' as ThinkChainState };
-}
 
 
 export interface ThoughtNode {

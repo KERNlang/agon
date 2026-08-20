@@ -6,9 +6,7 @@ import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 
 import { tmpdir, homedir } from 'node:os';
 
-import { join, dirname, basename } from 'node:path';
-
-import { fileURLToPath } from 'node:url';
+import { join, basename } from 'node:path';
 
 import { EngineRegistry, loadConfig, resolveWorkingDir, repoRoot, headSha, worktreeCreate, worktreeRemoveBestEffort, resolveDedupSidecar, resolveSidecarPython, agonPath } from '@kernlang/agon-core';
 

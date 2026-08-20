@@ -1,6 +1,3 @@
-export interface ToolInput {
-  type: string;
-}
 
 export type ToolTerminalReason = 'succeeded' | 'failed' | 'skipped_policy' | 'denied' | 'cancelled' | 'unknown';
 

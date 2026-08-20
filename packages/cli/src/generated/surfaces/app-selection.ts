@@ -1,4 +1,4 @@
-import { charDisplayWidth, stringDisplayWidth, displayColumnToStringIndex, clampNumber } from './app-display-utils.js';
+import { stringDisplayWidth, displayColumnToStringIndex, clampNumber } from './app-display-utils.js';
 
 // ── Module: AppSelection ──
 

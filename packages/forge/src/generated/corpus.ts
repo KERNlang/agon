@@ -1,10 +1,10 @@
-import { readFileSync, writeFileSync, mkdirSync, renameSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 
 import { dirname } from 'node:path';
 
 import type { BreakerArtifact, CorpusEntry, GapPattern, TaskClass } from '@kernlang/agon-core';
 
-import { CORPUS_PATH, SKILLS_DIR } from '@kernlang/agon-core';
+import { CORPUS_PATH } from '@kernlang/agon-core';
 
 export interface CorpusRecord {
   entries: CorpusEntry[];
@@ -137,15 +137,6 @@ export function getGapPatterns(taskClass?: TaskClass, threshold?: number): GapPa
   return record.patterns.filter((p) => p.frequency >= minFreq && !p.skillProposed).filter((p) => !taskClass || p.taskClass === taskClass).sort((a, b) => b.frequency - a.frequency);
 }
 
-export function markPatternSkillProposed(pattern: string, taskClass: TaskClass, skillPath: string): void {
-  const record = loadCorpus();
-  const gap = record.patterns.find((p) => p.pattern === pattern && p.taskClass === taskClass);
-  if (gap) {
-    gap.skillProposed = true;
-    gap.skillPath = skillPath;
-    saveCorpus(record);
-  }
-}
 
 export function getCorpusStats(): { totalEntries: number, totalPatterns: number, topPatterns: { pattern: string, frequency: number, taskClass: string }[] } {
   const record = loadCorpus();

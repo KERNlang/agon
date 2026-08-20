@@ -58,11 +58,8 @@ export function extractFilePaths(tool: string, input: string): string[] {
   return paths;
 }
 
-export function extractFilePath(input: string): string|null {
-  return extractFilePaths('', input)[0] ?? null;
-}
 
-export function recordToolCall(tool: string, input: string, status: string): void {
+export function recordToolCall(tool: string, input: string, _status: string): void {
   const rawPaths = extractFilePaths(tool, input);
   if (rawPaths.length === 0) return;
   const toolKey = String(tool ?? '').toLowerCase();

@@ -1,6 +1,6 @@
 import { readFileSync, existsSync } from 'node:fs';
 
-import type { EngineAdapter, EngineResult, ForgeManifest, Critique, StageContext } from '@kernlang/agon-core';
+import type { EngineAdapter, ForgeManifest, Critique } from '@kernlang/agon-core';
 
 import { EngineRegistry, FitnessError, buildCritiquePrompt, buildSynthesisPrompt, worktreeCreate, worktreeRemoveBestEffort, applyPatch, buildStageContext, renderStageContext } from '@kernlang/agon-core';
 

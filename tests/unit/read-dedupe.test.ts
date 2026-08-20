@@ -14,7 +14,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
-import { mkdtempSync, writeFileSync, utimesSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, utimesSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -115,7 +115,7 @@ describe('Read dedupe — tier 1 (unchanged, still in context)', () => {
       cwd: process.cwd(),
       systemPrompt: 'You are Cesar.',
       nativeTools: READ_TOOLS,
-      onToolCall: async (name: string) => { reads++; return `FULL FILE BYTES read ${reads}`; },
+      onToolCall: async (_name: string) => { reads++; return `FULL FILE BYTES read ${reads}`; },
       toolLoopBaseBudget: 6,
       toolLoopMaxBudget: 6,
     });
@@ -454,7 +454,7 @@ describe('Read dedupe — large read truncated in-send (tier-1 lie regression)',
         cwd: process.cwd(),
         systemPrompt: 'You are Cesar.',
         nativeTools: READ_TOOLS,
-        onToolCall: async (name: string) => { reads++; return `${BIG} (read ${reads})`; },
+        onToolCall: async (_name: string) => { reads++; return `${BIG} (read ${reads})`; },
         toolLoopBaseBudget: 6,
         toolLoopMaxBudget: 6,
       });

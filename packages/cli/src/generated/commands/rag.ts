@@ -2,7 +2,6 @@ import { defineCommand } from 'citty';
 
 import { buildRagIndex, queryRag, formatCitedBlocks, loadRagIndex, ragDir } from '@kernlang/agon-core';
 
-import { header, info, bold, dim } from '../blocks/output-format.js';
 
 export const ragCommand: any = defineCommand({
   meta: {

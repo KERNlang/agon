@@ -3,11 +3,71 @@ import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
 import { EngineRegistry, ensureAgonHome, loadConfig, RUNS_DIR } from '@kernlang/agon-core';
 import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
-import type { ForgeEvent, TeamEvent } from '@kernlang/agon-core';
+import type { ForgeEvent, TeamEvent, TeamSpec } from '@kernlang/agon-core';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { runTeamForge } from '@kernlang/agon-forge';
-import { header, success, fail, warn, info, table, green, red, bold, dim } from '../output.js';
+import { header, info, warn, green, bold, dim } from '../output.js';
 import { filterDefaultOrchestrationEngines } from '../generated/handlers/engine-filter.js';
+
+/** One rendered result row for a team that took part in the match. */
+export interface TeamForgeResultRow {
+  teamId: string;
+  isWinner: boolean;
+  /** null when the match carries no scorecard for this team. */
+  score: string | null;
+  /** null when this team never submitted (its members are then unknown). */
+  members: string | null;
+}
+
+export interface TeamForgeResultView {
+  rows: TeamForgeResultRow[];
+  /** Non-null when fewer than the expected two teams reported. */
+  warning: string | null;
+}
+
+/** The loose shape this renderer needs — a real TeamMatchResult satisfies it. */
+export interface TeamForgeResultInput {
+  teams?: readonly (TeamSpec | undefined)[];
+  submissions?: Record<string, unknown>;
+  scorecards?: Record<string, { score?: number } | undefined>;
+  winnerTeamId?: string | null;
+}
+
+/**
+ * Build the "Results" rows for a finished team-forge match.
+ *
+ * `TeamMatchResult.teams` is TYPED as a 2-tuple, but that is a promise only the
+ * happy path keeps: a run aborted mid-compose, a result rehydrated from a
+ * `result.json` bundle (which persists `teams: []` on the error path), or any
+ * future producer can hand back fewer than two teams. The old code indexed
+ * `teams[0]`/`teams[1]` and dereferenced `team.teamId`, so one missing team
+ * turned into a TypeError that ALSO destroyed the half of the match that did
+ * complete. Render whatever exists and say what is missing instead.
+ */
+export function buildTeamForgeResultView(result: TeamForgeResultInput): TeamForgeResultView {
+  const rawTeams: readonly (TeamSpec | undefined)[] = result.teams ?? [];
+  const teams = rawTeams.filter((team): team is TeamSpec => !!team && typeof team.teamId === 'string');
+
+  const rows = teams.map((team): TeamForgeResultRow => {
+    const sub = result.submissions?.[team.teamId];
+    const card = result.scorecards?.[team.teamId];
+    return {
+      teamId: team.teamId,
+      isWinner: !!result.winnerTeamId && result.winnerTeamId === team.teamId,
+      score: card ? String(card.score ?? 'N/A') : null,
+      members: sub ? (team.members ?? []).map((m) => `${m.engineId}(${m.role})`).join(', ') : null,
+    };
+  });
+
+  let warning: string | null = null;
+  if (rows.length === 0) {
+    warning = 'No team results to show — the match reported no teams (engine failures or an aborted run).';
+  } else if (rows.length < 2) {
+    warning = `Only ${rows.length} of 2 teams reported — showing the partial match.`;
+  }
+
+  return { rows, warning };
+}
 
 export const teamForgeCommand = defineCommand({
   meta: {
@@ -97,22 +157,21 @@ export const teamForgeCommand = defineCommand({
     console.log('');
     header('Results');
 
-    const teamA = result.teams[0];
-    const teamB = result.teams[1];
+    const view = buildTeamForgeResultView(result);
+    if (view.warning) {
+      warn(view.warning);
+    }
 
-    for (const team of [teamA, teamB]) {
-      const sub = result.submissions[team.teamId];
-      const card = result.scorecards[team.teamId];
-      const isWinner = result.winnerTeamId === team.teamId;
-      const label = isWinner ? green(`${team.teamId} (WINNER)`) : team.teamId;
+    for (const row of view.rows) {
+      const label = row.isWinner ? green(`${row.teamId} (WINNER)`) : row.teamId;
 
       console.log('');
       info(`${bold(label)}`);
-      if (card) {
-        info(`  Score: ${card.score ?? 'N/A'}`);
+      if (row.score !== null) {
+        info(`  Score: ${row.score}`);
       }
-      if (sub) {
-        info(`  Members: ${team.members.map((m: any) => `${m.engineId}(${m.role})`).join(', ')}`);
+      if (row.members !== null) {
+        info(`  Members: ${row.members}`);
       }
     }
 

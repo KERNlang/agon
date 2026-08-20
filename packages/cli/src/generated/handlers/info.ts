@@ -12,8 +12,6 @@ import { icons } from '../signals/icons.js';
 
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
-import { EngineRegistry } from '@kernlang/agon-core';
-
 import { deriveRoutingHints, buildRoutingContext } from '../cesar/routing.js';
 
 import { persistPermissionRule, removePermissionRule, getSessionPermissionRules, resolveAgonPermissionMode, describeAgonPermissionMode } from '../cesar/permission-resolver.js';
@@ -22,7 +20,7 @@ import { parsePermissionRule } from '@kernlang/agon-core';
 
 import { summarizeAllCesarToolReliability, readCesarDecisionRecords, summarizeCesarLatency } from '../cesar/reliability.js';
 
-import { getLastFoldedRaw, getFoldedRaw, getFoldedRawCount } from '../blocks/narration-fold.js';
+import { getFoldedRaw, getFoldedRawCount } from '../blocks/narration-fold.js';
 
 // ── Module: InfoHandlers ──
 

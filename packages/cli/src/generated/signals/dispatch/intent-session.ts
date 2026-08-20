@@ -1,4 +1,3 @@
-import { join } from 'node:path';
 
 import { resolveWorkingDir, buildImageAttachment, sessionContext, visionSupportNote } from '@kernlang/agon-core';
 
@@ -9,8 +8,6 @@ import type { ImageAttachment } from '@kernlang/agon-core';
 import { loadCesarPlan } from '@kernlang/agon-core';
 
 import type { CesarPlan } from '@kernlang/agon-core';
-
-import type { Dispatch } from '../../../handlers/types.js';
 
 import { ENGINE_COLORS } from '../../blocks/output-format.js';
 

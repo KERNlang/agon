@@ -1,16 +1,16 @@
 import { randomUUID } from 'node:crypto';
 
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 
 import { join } from 'node:path';
 
-import type { EngineAdapter, EngineResult, ForgeEvent, BreakerArtifact, GauntletResult, TaskClass } from '@kernlang/agon-core';
+import type { EngineAdapter, ForgeEvent, BreakerArtifact, GauntletResult, TaskClass } from '@kernlang/agon-core';
 
-import { EngineRegistry, loadConfig, worktreeCreate, worktreeRemoveBestEffort, worktreeDiff, repoRoot, spawnWithTimeout, createSidechainLogger } from '@kernlang/agon-core';
+import { EngineRegistry, worktreeCreate, worktreeRemoveBestEffort, worktreeDiff, repoRoot, spawnWithTimeout, createSidechainLogger } from '@kernlang/agon-core';
 
 import { runFitness } from './fitness.js';
 
-export function buildBreakerPrompt(task: string, winnerDiff: string, engineId: string): string {
+export function buildBreakerPrompt(task: string, winnerDiff: string, _engineId: string): string {
   return [`## BREAKER MODE`, `You are in breaker mode. Your job is to BREAK the winning patch below.`, `Write a minimal, deterministic test script that exposes a bug, edge case, or vulnerability in this patch.`, ``, `Rules:`, `- The test MUST fail when the patch is applied`, `- The test SHOULD pass on the original code (before the patch) — this proves you're testing the right thing`, `- The test must be deterministic — no randomness, no timing dependencies, no network calls`, `- Output a single executable test file. Use the project's existing test framework if possible.`, `- Focus on: edge cases, null/undefined inputs, boundary conditions, concurrency issues, type coercion bugs`, ``, `## ORIGINAL TASK`, task, ``, `## WINNING PATCH TO BREAK`, '```diff', winnerDiff.slice(0, 8000), '```', ``, `Write ONLY the test file content. No explanations.`].join('\n');
 }
 

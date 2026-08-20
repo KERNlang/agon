@@ -1,7 +1,5 @@
 import { defineCommand } from 'citty';
 
-import { join } from 'node:path';
-
 import { EngineRegistry, loadConfig, configSet } from '@kernlang/agon-core';
 
 import type { AgonConfig } from '@kernlang/agon-core';
@@ -18,7 +16,7 @@ export const modelsCommand: any = defineCommand({
   subCommands: {
     list: defineCommand({
       meta: { name: 'list', description: 'List engine model mappings and activation mode' },
-      async run(ctx) {
+      async run(_ctx) {
         const config = loadConfig();
         const mappings = config.engineModels || {};
         header('Engine → Model Mappings');
@@ -173,7 +171,7 @@ export const modelsCommand: any = defineCommand({
     }),
     auto: defineCommand({
       meta: { name: 'auto', description: 'Use every non-removed available engine automatically' },
-      async run(ctx) {
+      async run(_ctx) {
         configSet('engineActivationMode' as any, 'auto' as any);
         success('Engine activation mode set to auto; removed engines stay removed');
       },

@@ -1,4 +1,4 @@
-import type { ToolDefinition, ToolCall, ToolCallResult, ToolResult, ToolContext, PermissionDecision, ToolHandler } from '../models/tool-types.js';
+import type { ToolDefinition, ToolCall, ToolCallResult, ToolContext, ToolHandler } from '../models/tool-types.js';
 
 import { runPreToolUseHooks, runPostToolUseHooks, hasToolHooks } from '../tools/tool-hooks.js';
 

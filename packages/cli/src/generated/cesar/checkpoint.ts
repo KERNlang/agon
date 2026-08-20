@@ -80,13 +80,4 @@ export function listCheckpoints(opts?: {runId?:string,phase?:CheckpointPhase,lim
   return out.slice(0, limit);
 }
 
-export function lastCheckpointForRun(runId: string, runsDir?: string): Checkpoint|undefined {
-  return listCheckpoints({ runId, limit: 1, runsDir })[0];
-}
 
-export function formatCheckpointLine(cp: Checkpoint): string {
-  const ago = Math.round(((hostNowMs() - cp.ts) / 1000));
-  const agoText = (ago < 60) ? `${ago}s ago` : ((ago < 3600) ? `${Math.round((ago / 60))}m ago` : `${Math.round((ago / 3600))}h ago`);
-  const files = (cp.changedFiles.length > 0) ? ` (${cp.changedFiles.length} changed)` : '';
-  return `${cp.phase} ${cp.mode} ${cp.engineIds.join('+')}${files} — ${agoText}`;
-}

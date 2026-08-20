@@ -4,7 +4,6 @@ function __kern_loose_eq(a: unknown, b: unknown): boolean {
   return a === b;
 }
 
-import type { Scoreboard, ScoreboardEntry } from './scoreboard.js';
 
 import { hostDateIso, hostNowMs } from '../lib/kern-host.js';
 
@@ -133,13 +132,7 @@ export function renderTelemetrySnapshot(snap: TelemetrySnapshot): string {
  */
 export const STALL_THRESHOLD_MS: number = 30000;
 
-export function shouldAutoFallback(v: EngineVitals, thresholdMs: number): boolean {
-  return v.state === 'stalled' && (v.stallDurationMs ?? 0) >= thresholdMs;
-}
 
-export function buildFallbackToast(from: string, to: string, reason: string): string {
-  return `\u26a0  ${from} stalled \u2192 fallback to ${to} (${reason})`;
-}
 
 /**
  * Coarse fingerprint of a vitals snapshot for repaint dedupe while only the one-line StatusBar is visible (it renders just per-state counts and fallback markers). Volatile fields are excluded (lastHeartbeatAt) or bucketed (cpu/mem to 5%, latency to health bands, stall duration to 10s) so probe jitter does not retrigger renders \u2014 an Ink repaint clears the user's terminal text selection, so an idle screen must stay byte-for-byte still. Deliberately COARSER than the /status dashboard's 1%/1ms rows: while that dashboard is open the subscriber bypasses this dedupe entirely (see startTelemetryPoller).

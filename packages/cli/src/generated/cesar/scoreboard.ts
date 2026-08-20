@@ -81,16 +81,6 @@ export function scoreboardFailEngine(board: Scoreboard, engineId: string, error:
   return board;
 }
 
-export function scoreboardCancelEngine(board: Scoreboard, engineId: string): Scoreboard {
-  const entry = scoreboardFind(board, engineId);
-  if (!entry) {
-    return board;
-  }
-  entry.state = 'cancelled';
-  entry.finishedAt = hostNowMs();
-  scoreboardRecomputeOverall(board);
-  return board;
-}
 
 function scoreboardRecomputeOverall(board: Scoreboard): void {
   if (board.entries.every((e) => e.state === 'done')) {

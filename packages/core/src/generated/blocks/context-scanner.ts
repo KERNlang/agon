@@ -4,7 +4,7 @@ import { join, basename, dirname } from 'node:path';
 
 import { createRequire } from 'node:module';
 
-import { currentBranch, gitStatusShort, gitChangedFiles, gitTruncatedDiff, recentCommits, repoRoot, headSha } from './git.js';
+import { currentBranch, gitStatusShort, gitChangedFiles, gitTruncatedDiff, recentCommits, headSha } from './git.js';
 
 import { spawnWithTimeout } from './process.js';
 

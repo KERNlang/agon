@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 
-import { resolve, join, dirname } from 'node:path';
+import { resolve, dirname } from 'node:path';
 
 import type { ToolResult, ToolContext, ToolHandler, ToolDefinition, PermissionDecision } from '../models/tool-types.js';
 

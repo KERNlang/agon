@@ -8,7 +8,7 @@ import type { ImageAttachment } from '@kernlang/agon-core';
 
 import type { CesarPlan } from '@kernlang/agon-core';
 
-import type { Dispatch, HandlerContext } from '../../../handlers/types.js';
+import type { HandlerContext } from '../../../handlers/types.js';
 
 import { ENGINE_COLORS } from '../../blocks/output-format.js';
 
@@ -28,7 +28,7 @@ import { handleCouncil } from '../../handlers/council.js';
 
 import { handleCesarBrain, parseSuggestion } from '../../../handlers/cesar-brain.js';
 
-import { appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, formatChatContextForPrompt } from '@kernlang/agon-core';
+import { appendUserTurnIfAbsent, buildHistoryPrimedPrompt, formatChatContextForPrompt } from '@kernlang/agon-core';
 
 import { handlePipeline } from '../../handlers/pipeline.js';
 

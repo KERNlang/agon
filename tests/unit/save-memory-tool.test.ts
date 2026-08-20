@@ -3,7 +3,7 @@
 // per-section cap, the dated prefix, the 'ask' confirm gate, the [PROJECT
 // MEMORY] prompt block, and that a `fitness:` line in the same file survives.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {

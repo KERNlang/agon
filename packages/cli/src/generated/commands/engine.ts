@@ -1,7 +1,5 @@
 import { defineCommand } from 'citty';
 
-import { join } from 'node:path';
-
 import { EngineRegistry, getEngineGlickoRating, loadConfig, configSet } from '@kernlang/agon-core';
 
 import type { AgonConfig } from '@kernlang/agon-core';

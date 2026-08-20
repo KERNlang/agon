@@ -246,7 +246,6 @@ export class CliAdapter implements EngineAdapter {
     // Subscription pty path for claude (agent mode: tools + bypassed perms).
     // We still diff the cwd before/after so callers get filesChanged/diffLines.
     if (shouldUseClaudePty(options.engine, options.cwd)) {
-      const ptyStart = nowMs();
       const ptyBaseline = readOnlyDiff(options.cwd);
       const ptyResult = await runClaudePtyDispatch(options.prompt, options.timeout, options.signal, 'agent', options.cwd, options.systemPrompt, iso.env, resolveClaudePtyExtraArgs(options.engine, options.cwd));
       if (!ptyResult.unavailable) {

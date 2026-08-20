@@ -2,7 +2,7 @@ import { join } from 'node:path';
 
 import { randomBytes } from 'node:crypto';
 
-import { repoRoot, worktreeCreate, worktreeRemove, worktreeRemoveBestEffort, worktreePruneAll, stashSnapshot } from '../blocks/git.js';
+import { repoRoot, worktreeCreate, worktreeRemoveBestEffort, worktreePruneAll, stashSnapshot } from '../blocks/git.js';
 
 import { Semaphore } from '../blocks/semaphore.js';
 

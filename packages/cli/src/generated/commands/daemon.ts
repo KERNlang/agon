@@ -2,7 +2,7 @@ import { defineCommand } from 'citty';
 
 import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, utimesSync, statSync, chmodSync } from 'node:fs';
 
-import { join, dirname, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { createServer, connect } from 'node:net';
 
@@ -335,11 +335,9 @@ export async function runDaemonServer(): Promise<void> {
   const openSockets = new Set<Socket>();
   
   return await new Promise<void>((resolve, reject) => {
-    let shuttingDown = false;
     let cleanupPromise: Promise<void> | null = null;
     const cleanup = (failure?: Error): Promise<void> => {
       if (cleanupPromise) return cleanupPromise;
-      shuttingDown = true;
       cleanupPromise = (async () => {
         jobs.cancelAll('daemon shutting down');
         const drained = await jobs.waitForIdle(jobConfig.jobShutdownTimeoutMs);

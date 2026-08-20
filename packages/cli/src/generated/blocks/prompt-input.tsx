@@ -302,25 +302,6 @@ function stripMouseReportInput(input: string): string {
   return input.replace(/\x1b\[<[0-9]+;[0-9]+;[0-9]+[mM]/g, '').replace(/\[<[0-9]+;[0-9]+;[0-9]+[mM]/g, '').replace(/(?:\x1b\[|\[)?<[0-9]+;[0-9]+;[0-9]*(?:[mM])?/g, '');
 }
 
-export function wrapPromptText(value: string, width: number): string[] {
-  const safeWidth = Math.max(1, width);
-  const lines = [''];
-  let col = 0;
-  for (const char of value) {
-    if (char === '\n') {
-      lines.push('');
-      col = 0;
-      continue;
-    }
-    if (col === safeWidth) {
-      lines.push('');
-      col = 0;
-    }
-    lines[lines.length - 1] += char;
-    col += 1;
-  }
-  return lines;
-}
 
 export function locatePromptCursor(value: string, width: number, cursorOffset: number): {column:number, line:number, synthetic:boolean} {
   const safeWidth = Math.max(1, width);

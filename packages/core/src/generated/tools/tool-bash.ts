@@ -1,6 +1,6 @@
 import type { ToolResult, ToolContext, ToolDefinition, PermissionDecision, ToolHandler } from '../models/tool-types.js';
 
-import { spawnWithTimeout, spawnStream } from '../blocks/process.js';
+import { spawnStream } from '../blocks/process.js';
 
 import { evaluateBashRules, hasShellControl, splitShellSegments } from './tool-permissions.js';
 
@@ -138,8 +138,6 @@ export function createBashTool(): ToolHandler {
   // ── Runtime redirect: intercept cat/head/tail/grep → proper tools ──
   // Engines habitually use Bash for file reads. Redirect silently to Read/Grep
   // so it goes through the tool system (permissions, caching, history).
-  const FILE_READ_RE = /^\s*(?:cat|head|tail)(?:\s+-[A-Za-z0-9]+)*\s+(.+)$/;
-  const GREP_RE = /^\s*(?:grep|rg)\s+(.+)$/;
 
   function tryRedirectToRead(command: string): { file: string; offset?: number; limit?: number } | null {
     const trimmed = command.trim();

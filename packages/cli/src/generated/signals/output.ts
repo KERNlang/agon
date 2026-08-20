@@ -6,7 +6,7 @@ import { foldNarration, setLastFoldedRaw } from '../blocks/narration-fold.js';
 
 import { codeBlockBuffer } from '../../code-buffer.js';
 
-import { loadConfig, configSet, resolveWorkingDir, evaluateToolRules } from '@kernlang/agon-core';
+import { loadConfig, resolveWorkingDir, evaluateToolRules } from '@kernlang/agon-core';
 
 import { synthesizePermissionRule, validateSynthesizedRule, persistPermissionRule, addSessionPermissionRule, buildEffectivePermissionRuleSet } from '../cesar/permission-resolver.js';
 
@@ -176,7 +176,7 @@ function _permissionRuleTarget(entry: {tool:string,command:string,diffPreview?:a
 /**
  * Auto-approve queued permissions already covered by an allow source: the legacy allowedCommands base-token list, or a persisted/session allow rule (so one Always/Yes-for-session answer drains coalesced sibling prompts for the same pattern).
  */
-function _drainAutoApproved(actions: OutputActions): void {
+function _drainAutoApproved(_actions: OutputActions): void {
   const cfg = loadConfig();
   const allowed: string[] = (cfg as any).allowedCommands ?? [];
   const rules = buildEffectivePermissionRuleSet(cfg);

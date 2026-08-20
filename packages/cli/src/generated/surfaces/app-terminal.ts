@@ -1,8 +1,6 @@
 import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
-import { EngineRegistry, loadConfig } from '@kernlang/agon-core';
-
-import { clampNumber } from './app-display-utils.js';
+import { EngineRegistry } from '@kernlang/agon-core';
 
 import { estimateVisibleBlockBudget, estimateBottomChromeExtraRows, estimatePinnedLiveRows, estimateTodoListRows } from './app-layout.js';
 
@@ -42,7 +40,7 @@ export function normalizeTerminalMode(value: unknown): 'auto'|'native'|'fullscre
 /**
  * Resolve the terminal policy deterministically. Explicit modes win. Auto is NATIVE: the Static-sealed transcript lives in real terminal scrollback with the composer/status pinned at the bottom (the Claude-Code/Codex mix). Fullscreen (alternate screen) kills terminal scrollback, so it is strictly opt-in via `agon config terminalMode fullscreen` — never a default (regression 2026-07-16: auto→fullscreen shipped and broke scroll-up for every user).
  */
-export function resolveTerminalMode(value: unknown, env?: Record<string,string|undefined>, isTTY?: boolean): 'native'|'fullscreen' {
+export function resolveTerminalMode(value: unknown, _env?: Record<string,string|undefined>, _isTTY?: boolean): 'native'|'fullscreen' {
   const configured = normalizeTerminalMode(value);
   if (configured === 'native' || configured === 'fullscreen') return configured;
   return 'native';

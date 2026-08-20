@@ -68,7 +68,7 @@ describe('buildReviewConsensusLines', () => {
 
   it('attributes a verified finding with engine badges (not ×N) and keeps the tier label backward-compatible', () => {
     // Two engines pair-block the same anchored important finding → verified row.
-    const block = (engine: string) =>
+    const block = (_engine: string) =>
       `review\n\n${SENTINEL}\n[{"file":"a.ts","lines":"42","severity":"important","blocking":false,"confidence":0.75,"problem":"missing null guard on user object"}]`;
     const consensus = buildConsensus([
       reviewOutcome('codex', block('codex'), 'ok'),

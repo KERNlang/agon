@@ -6,7 +6,7 @@ function __kern_loose_eq(a: unknown, b: unknown): boolean {
 
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 
-import type { PersistentSessionConfig, PersistentSession, SessionChunk, SessionSendOptions } from './persistent-session.js';
+import type { PersistentSessionConfig, PersistentSession, SessionSendOptions } from './persistent-session.js';
 
 /**
  * A scraped TUI extract with fewer than this many visible (trimmed) chars is treated as non-substantive (empty / chrome-like noise / a fused status row) and triggers the DeliverAnswer retry-nudge. Conservative on purpose: a real one-word answer is delivered over the answer-channel, so a short SCRAPE is the unreliable case we want to re-ask, not suppress.

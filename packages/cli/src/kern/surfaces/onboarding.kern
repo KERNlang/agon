@@ -1,6 +1,0 @@
-// Orphaned — real onboarding flow lives in hand-maintained packages/cli/src/onboarding.tsx.
-// This stub exists only so surfaces/onboarding.kern still compiles.
-screen name=Onboarding target=ink
-  render
-    handler lang="kern"
-      return value="null"

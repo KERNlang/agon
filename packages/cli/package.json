@@ -49,10 +49,8 @@
     "access": "public"
   },
   "scripts": {
-    "prebuild": "npm run kern:compile",
     "build": "tsup",
-    "typecheck": "tsc --noEmit",
-    "kern:compile": "node ../../scripts/run-kern-compile.mjs src/kern/ src/generated/ --target=auto --recursive"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@kernlang/agon-engines": "^0.1.2",

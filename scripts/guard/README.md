@@ -1,12 +1,12 @@
 # Cesar Guard Scripts
 
-## pre-commit-kern.mjs
-Auto-runs `npm run kern:compile` when `.kern` files are staged. Aborts commit on failure.
+## reexport-surface.mjs
+Catches `export { x } from './y.js'` re-exports of a symbol that is also CALLED
+locally without a local binding (a runtime ReferenceError TypeScript can't see).
 
-Install:
+Usage:
 ```bash
-# Already wired via .git/hooks/pre-commit
-cat .git/hooks/pre-commit
+npm run guard:reexports
 ```
 
 ## forge-retry.mjs

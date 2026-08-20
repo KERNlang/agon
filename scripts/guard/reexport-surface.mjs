@@ -45,10 +45,8 @@ import path from 'node:path';
 // WITHOUT scanning. It also fixes the Windows /C:/ leading-slash case.
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
-// Every workspace that kern:compile:workspaces builds AND emits generated output.
-// Keep in sync with package.json kern:compile:workspaces (mcp/saas-api were the
-// omitted ones); dedup also emits generated code. A missing dir is skipped, but
-// each listed dir MUST resolve — see the existence assertion in check().
+// Every workspace that carries a src/generated tree. A missing dir is skipped,
+// but each listed dir MUST resolve — see the existence assertion in check().
 const GENERATED_DIRS = [
   'packages/core/src/generated',
   'packages/cli/src/generated',
@@ -176,14 +174,14 @@ function check() {
 
 const findings = check();
 if (findings.length === 0) {
-  console.log('guard:reexport — OK (no re-export-without-local-binding crashes)');
+  console.log('guard:reexports — OK (no re-export-without-local-binding crashes)');
   process.exit(0);
 }
 
-console.error('\nguard:reexport — FAILED: re-exported symbol is CALLED locally but has no local binding.');
+console.error('\nguard:reexports — FAILED: re-exported symbol is CALLED locally but has no local binding.');
 console.error('This compiles green (tsc/esbuild accept the re-export) but crashes at runtime:');
-console.error('  "<name> is not defined". Fix: add an `import from` for the symbol (core), or');
-console.error('  switch the .kern `export from` to `import from` and re-export the local binding (cli).\n');
+console.error('  "<name> is not defined". Fix: import the symbol locally, then');
+console.error('  re-export that local binding instead of re-exporting straight through.\n');
 for (const f of findings) {
   console.error(`  ✖ ${f.file}: re-exports + calls "${f.name}" with no local binding`);
 }

@@ -1,3 +1,4 @@
+import type { Dirent } from 'node:fs';
 import { join, basename } from 'node:path';
 
 import { resolveWorkingDir, getAgonHome } from '@kernlang/agon-core';
@@ -5,6 +6,28 @@ import { resolveWorkingDir, getAgonHome } from '@kernlang/agon-core';
 import type { DispatchCallbacks, DispatchResult } from '../dispatch.js';
 
 import { emitPostDispatch } from './utils.js';
+
+type ReaddirSync = (dir: string, opts: { recursive: true; withFileTypes: true }) => Dirent[];
+
+/**
+ * Count real `*.kern` FILES under `dir`, recursively.
+ *
+ * A `src/kern` directory only counts as KERN evidence when it actually holds
+ * KERN sources. Probing it with `readdirSync(dir, { recursive: true }).length`
+ * accepted empty subdirectories, stray `.ts` files, and — matching on the entry
+ * name alone — directories *named* `foo.kern`, so `/init` emitted the KERN
+ * sections for projects with zero KERN code. Returns 0 when `dir` is missing.
+ *
+ * `readdirSync` is passed in because this module imports `node:fs` lazily.
+ */
+export function countKernFiles(dir: string, readdir: ReaddirSync): number {
+  try {
+    return readdir(dir, { recursive: true, withFileTypes: true })
+      .filter((d) => d.isFile() && d.name.endsWith('.kern')).length;
+  } catch {
+    return 0;
+  }
+}
 
 export async function dispatchInitIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult | null> {
   switch (intent.type) {
@@ -161,12 +184,9 @@ export async function dispatchInitIntent(intent: any, input: string, cb: Dispatc
         // Detect language / framework signals. `src/kern` at cwd covers
         // package-level dirs (e.g. /init run from packages/core); the
         // topDirs probe below covers repo roots with workspace layout.
-        const hasSrcKern = (() => {
-          try { return readdirSync(join(cwd, 'src', 'kern'), { recursive: true }).length > 0; } catch { return false; }
-        })();
-        const hasKern = existsSync2(join(cwd, 'kern.config.ts')) || hasSrcKern || topDirs.some((d: string) => {
-          try { return readdirSync(join(cwd, d, 'src', 'kern'), { recursive: true }).length > 0; } catch { return false; }
-        });
+        const hasSrcKern = countKernFiles(join(cwd, 'src', 'kern'), readdirSync) > 0;
+        const hasKern = existsSync2(join(cwd, 'kern.config.ts')) || hasSrcKern
+          || topDirs.some((d: string) => countKernFiles(join(cwd, d, 'src', 'kern'), readdirSync) > 0);
         const hasTs = existsSync2(join(cwd, 'tsconfig.json'));
         const hasVitest = existsSync2(join(cwd, 'vitest.config.ts')) || existsSync2(join(cwd, 'vitest.config.mts'));
   
@@ -229,10 +249,7 @@ export async function dispatchInitIntent(intent: any, input: string, cb: Dispatc
               .map((d: any) => d.name);
             for (const pd of pkgDirs) {
               const kernDir = join(cwd, 'packages', pd, 'src', 'kern');
-              let kernCount = 0;
-              try {
-                kernCount = readdirSync(kernDir, { recursive: true, withFileTypes: true }).filter((d: any) => d.isFile() && d.name.endsWith('.kern')).length;
-              } catch {}
+              const kernCount = countKernFiles(kernDir, readdirSync);
               archLines.push(`  ${pd}/ -- ${kernCount > 0 ? kernCount + ' .kern files' : 'package'}`);
             }
           } catch {}

@@ -49,19 +49,6 @@
     "zod": "^4.3.6"
   },
   "optionalDependencies": {
-    "@kernlang/cli": "~4.5.0",
-    "@kernlang/core": "~4.5.0",
-    "@kernlang/evolve": "~4.5.0",
-    "@kernlang/express": "~4.5.0",
-    "@kernlang/mcp": "~4.5.0",
-    "@kernlang/metrics": "~4.5.0",
-    "@kernlang/native": "~4.5.0",
-    "@kernlang/protocol": "~4.5.0",
-    "@kernlang/python": "~4.5.0",
-    "@kernlang/react": "~4.5.0",
-    "@kernlang/review": "~4.5.0",
-    "@kernlang/review-mcp": "~4.5.0",
-    "@kernlang/test": "~4.5.0",
-    "@kernlang/vue": "~4.5.0"
+    "@kernlang/cli": "~4.5.0"
   }
 }

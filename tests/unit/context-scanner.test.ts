@@ -245,6 +245,18 @@ describe('context-scanner', () => {
       const tmpDir = tmpRepo('agon-test-');
       expect(isKernProject(tmpDir)).toBe(false);
     });
+
+    it('is false when a *.kern entry at the root is a directory, not a file', () => {
+      const root = tmpRepo('agon-iskern-dir-');
+      mkdirSync(join(root, 'foo.kern'), { recursive: true });
+      expect(isKernProject(root)).toBe(false);
+    });
+
+    it('is false when a *.kern entry under src/ is a directory, not a file', () => {
+      const root = tmpRepo('agon-iskern-srcdir-');
+      mkdirSync(join(root, 'src', 'foo.kern'), { recursive: true });
+      expect(isKernProject(root)).toBe(false);
+    });
   });
 
   describe('git read-only helpers', () => {

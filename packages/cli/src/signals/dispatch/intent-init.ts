@@ -231,7 +231,7 @@ export async function dispatchInitIntent(intent: any, input: string, cb: Dispatc
               const kernDir = join(cwd, 'packages', pd, 'src', 'kern');
               let kernCount = 0;
               try {
-                kernCount = readdirSync(kernDir, { recursive: true }).filter((f: any) => String(f).endsWith('.kern')).length;
+                kernCount = readdirSync(kernDir, { recursive: true, withFileTypes: true }).filter((d: any) => d.isFile() && d.name.endsWith('.kern')).length;
               } catch {}
               archLines.push(`  ${pd}/ -- ${kernCount > 0 ? kernCount + ' .kern files' : 'package'}`);
             }

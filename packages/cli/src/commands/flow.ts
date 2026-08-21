@@ -86,7 +86,10 @@ export const flowValidateCommand: any = defineCommand({
         null,
         2,
       )}\n`);
-      if (!result.ok) process.exit(1);
+      // exitCode (not process.exit) — a hard exit can truncate a piped stdout
+      // write that has not flushed yet, which is exactly how this command is
+      // used: `agon flow validate --json … | jq`.
+      if (!result.ok) process.exitCode = 1;
       return;
     }
 
@@ -94,7 +97,7 @@ export const flowValidateCommand: any = defineCommand({
     if (!result.ok) {
       info(dim(file));
       printErrors(result.errors);
-      process.exit(1);
+      process.exitCode = 1;
       return;
     }
     printFlow(result.flow, file);

@@ -31,11 +31,13 @@ const FIXTURES = join(import.meta.dirname, '..', 'fixtures', 'flow');
 
 let out: string[];
 let tmp: string;
-let exitCode: number | undefined;
+let hardExits: Array<number | undefined>;
+const previousExitCode = process.exitCode;
 
 beforeEach(() => {
   out = [];
-  exitCode = undefined;
+  hardExits = [];
+  process.exitCode = undefined;
   spawnCalls.count = 0;
   spawnCalls.commands = [];
   tmp = mkdtempSync(join(tmpdir(), 'agon-flow-cmd-'));
@@ -48,14 +50,17 @@ beforeEach(() => {
   vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
     out.push(`${args.map((arg) => String(arg)).join(' ')}\n`);
   });
+  // A hard exit here would truncate a not-yet-flushed piped stdout write, so
+  // the command must never call it — record any call and assert it stays empty.
   vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
-    exitCode = code;
+    hardExits.push(code);
     return undefined as never;
   }) as never);
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
+  process.exitCode = previousExitCode; // don't poison the test runner's exit code
   rmSync(tmp, { recursive: true, force: true });
 });
 
@@ -80,7 +85,8 @@ describe('agon flow validate', () => {
     expect(payload.flow.steps.length).toBe(8);
     expect(payload.flow.params.map((param: { key: string }) => param.key))
       .toEqual(['experience', 'rubric', 'destination']);
-    expect(exitCode).toBeUndefined();
+    expect(process.exitCode).toBeUndefined();
+    expect(hardExits).toEqual([]);
   });
 
   it('accepts the subflow golden flow with its namespaced params', async () => {
@@ -96,7 +102,8 @@ describe('agon flow validate', () => {
     const text = out.join('');
     expect(text).toContain('sort-folder');
     expect(text).toContain('valid');
-    expect(exitCode).toBeUndefined();
+    expect(process.exitCode).toBeUndefined();
+    expect(hardExits).toEqual([]);
   });
 
   it('exits 1 with node-id-addressed errors for a bad flow', async () => {
@@ -120,13 +127,15 @@ describe('agon flow validate', () => {
     expect(payload.ok).toBe(false);
     expect(payload.errors[0].code).toBe('PORT_TYPE_MISMATCH');
     expect(payload.errors[0].nodeId).toBe('01JSCAN000000000000000000B');
-    expect(exitCode).toBe(1);
+    expect(process.exitCode).toBe(1);
+    expect(hardExits).toEqual([]);
   });
 
   it('exits 1 when the file does not exist', async () => {
     await run({ file: join(tmp, 'nope.agon-flow.json'), json: true });
     expect(JSON.parse(out.join('')).ok).toBe(false);
-    expect(exitCode).toBe(1);
+    expect(process.exitCode).toBe(1);
+    expect(hardExits).toEqual([]);
   });
 
   it('spawns NO process for any of the above — validation is free', async () => {

@@ -17,6 +17,8 @@
     "build": "tsup && tsc -b tsconfig.json --force",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {},
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
   "optionalDependencies": {}
 }

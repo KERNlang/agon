@@ -130,7 +130,29 @@ describe('flow-core stays engine-free (zero dispatches by construction)', () => 
 
   it('declares no runtime dependency on any agon package', () => {
     const pkg = JSON.parse(readFileSync(join(FLOW_CORE_SRC, '..', 'package.json'), 'utf-8'));
-    expect(Object.keys(pkg.dependencies ?? {})).toEqual([]);
+    const buckets = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'];
+    for (const bucket of buckets) {
+      const agon = Object.keys(pkg[bucket] ?? {}).filter((dep) => dep.startsWith('@kernlang/agon'));
+      expect(agon, `${bucket} must not pull in an agon package`).toEqual([]);
+    }
+    // zod (the schema binding) is the ONLY runtime dependency it may have.
+    expect(Object.keys(pkg.dependencies ?? {})).toEqual(['zod']);
+  });
+
+  it('declares every third-party module it imports', () => {
+    const pkg = JSON.parse(readFileSync(join(FLOW_CORE_SRC, '..', 'package.json'), 'utf-8'));
+    const declared = new Set(Object.keys(pkg.dependencies ?? {}));
+    for (const file of files) {
+      const source = readFileSync(file, 'utf-8');
+      for (const match of source.matchAll(/ from '([^']+)'/g)) {
+        const specifier = match[1];
+        if (specifier.startsWith('.') || specifier.startsWith('node:')) continue;
+        const name = specifier.startsWith('@')
+          ? specifier.split('/').slice(0, 2).join('/')
+          : specifier.split('/')[0];
+        expect(declared.has(name), `${file} imports undeclared "${name}"`).toBe(true);
+      }
+    }
   });
 
   it('keeps every source file under the 500-line house limit', () => {

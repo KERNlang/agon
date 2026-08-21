@@ -348,6 +348,17 @@ export function flattenDocument(
 
   const outputs = new Map<string, FlatRef>();
   for (const output of document.outputs) {
+    if (outputs.has(output.name)) {
+      // Outputs are a MAP keyed by name — a second declaration would silently
+      // overwrite the first (and a parent edge reading it would follow the
+      // wrong port), so the collision is an elaboration error.
+      context.errors.push(flowError(
+        'OUTPUT_NAME_COLLISION', null,
+        `flow output "${output.name}" is declared more than once — output names must be unique`,
+        { file },
+      ));
+      continue;
+    }
     const resolved = resolveSource(output.from, `output "${output.name}"`);
     if (!resolved) {
       context.errors.push(flowError(

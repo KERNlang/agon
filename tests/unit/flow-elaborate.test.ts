@@ -520,6 +520,52 @@ describe('elaborate — structural errors', () => {
   });
 });
 
+describe('elaborate — duplicate flow outputs', () => {
+  it('rejects two outputs claiming the same name instead of overwriting', () => {
+    const chat = ulid('CHAT');
+    const engine = ulid('ENG');
+    const result = elaborate(doc({
+      nodes: [
+        node(chat, 'chat-input', { paramKey: 'x' }),
+        node(engine, 'engine', { engineId: 'claude' }),
+      ],
+      edges: [edge(`${chat}.text`, `${engine}.prompt`)],
+      outputs: [
+        { name: 'answer', from: `${engine}.text` },
+        { name: 'answer', from: `${chat}.text` },
+      ],
+    }));
+    const error = errorOf(result, 'OUTPUT_NAME_COLLISION');
+    expect(error.message).toContain('"answer"');
+    expect(error.message).toContain('more than once');
+  });
+
+  it('rejects a duplicate output name inside a SUBFLOW too', () => {
+    const sub = ulid('SBF');
+    const inner = ulid('NNER');
+    const child = doc({
+      id: ulid('CHDD'),
+      name: 'child',
+      nodes: [node(inner, 'chat-input', { paramKey: 'msg' })],
+      outputs: [
+        { name: 'echo', from: `${inner}.text` },
+        { name: 'echo', from: `${inner}.text` },
+      ],
+    });
+    const main = doc({
+      nodes: [node(sub, 'subflow', {}, { flow: './child.agon-flow.json' })],
+    });
+    const result = elaborateDocument(main, {
+      loader: createMemoryFlowLoader({
+        [MAIN]: serializeFlow(main),
+        '/flows/child.agon-flow.json': serializeFlow(child),
+      }),
+      file: MAIN,
+    });
+    expect(codes(result)).toContain('OUTPUT_NAME_COLLISION');
+  });
+});
+
 // ── Graph invariants ──────────────────────────────────────────────────────
 
 describe('elaborate — graph invariants', () => {

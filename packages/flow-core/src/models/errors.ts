@@ -39,7 +39,9 @@ export type FlowErrorCode =
   /** A non-coalescing port is fed by two edges (exclusive or both-live). */
   | 'COALESCE_ILLEGAL'
   /** A declared flow output points nowhere. */
-  | 'OUTPUT_UNRESOLVED';
+  | 'OUTPUT_UNRESOLVED'
+  /** Two declared flow outputs claim the same name. */
+  | 'OUTPUT_NAME_COLLISION';
 
 export interface FlowError {
   code: FlowErrorCode;

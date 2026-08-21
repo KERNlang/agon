@@ -1,0 +1,153 @@
+{
+  "description": "Draft a CV from your experience, have Nero challenge it, approve, render to PDF and file it.",
+  "edges": [
+    {
+      "from": "01JCVCHAT00000000000000000.text",
+      "to": "01JCVDRAFT0000000000000000.prompt"
+    },
+    {
+      "from": "01JCVDRAFT0000000000000000.text",
+      "to": "01JCVVERFY0000000000000000.draft"
+    },
+    {
+      "from": "01JCVRBRC00000000000000000.text",
+      "to": "01JCVVERFY0000000000000000.rubric"
+    },
+    {
+      "from": "01JCVVERFY0000000000000000.verified",
+      "to": "01JCVAPRV00000000000000000.in"
+    },
+    {
+      "from": "01JCVAPRV00000000000000000.out",
+      "to": "01JCVPDF000000000000000000.text"
+    },
+    {
+      "from": "01JCVPDF000000000000000000.file",
+      "to": "01JCVWRTE00000000000000000.source"
+    },
+    {
+      "from": "01JCVDEST00000000000000000.folder",
+      "to": "01JCVWRTE00000000000000000.folder"
+    }
+  ],
+  "id": "01JCVFRAME0000000000000000",
+  "name": "build-CV",
+  "nodes": [
+    {
+      "id": "01JCVCHAT00000000000000000",
+      "label": "Experience",
+      "params": {
+        "label": "Your experience",
+        "paramKey": "experience"
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "type": "chat-input"
+    },
+    {
+      "id": "01JCVRBRC00000000000000000",
+      "label": "Rubric",
+      "params": {
+        "default": "Clear, honest, one page.",
+        "paramKey": "rubric"
+      },
+      "position": {
+        "x": 0,
+        "y": 160
+      },
+      "type": "chat-input"
+    },
+    {
+      "id": "01JCVDRAFT0000000000000000",
+      "label": "Draft",
+      "params": {
+        "engineId": "claude",
+        "maxRetries": 2,
+        "mode": "exec"
+      },
+      "position": {
+        "x": 260,
+        "y": 0
+      },
+      "type": "engine"
+    },
+    {
+      "id": "01JCVVERFY0000000000000000",
+      "label": "Nero Verify",
+      "params": {
+        "maxRounds": 2,
+        "passThreshold": 0.8
+      },
+      "position": {
+        "x": 520,
+        "y": 40
+      },
+      "type": "nero-verify"
+    },
+    {
+      "id": "01JCVAPRV00000000000000000",
+      "label": "Approve draft",
+      "params": {
+        "message": "Approve the CV draft?",
+        "previewMode": "full"
+      },
+      "position": {
+        "x": 780,
+        "y": 40
+      },
+      "type": "approval"
+    },
+    {
+      "id": "01JCVPDF000000000000000000",
+      "label": "Render PDF",
+      "params": {
+        "cssPreset": "cv"
+      },
+      "position": {
+        "x": 1040,
+        "y": 40
+      },
+      "type": "markdown-to-pdf"
+    },
+    {
+      "id": "01JCVDEST00000000000000000",
+      "label": "Destination",
+      "params": {
+        "paramKey": "destination"
+      },
+      "position": {
+        "x": 1040,
+        "y": 220
+      },
+      "type": "folder-picker"
+    },
+    {
+      "id": "01JCVWRTE00000000000000000",
+      "label": "Save CV",
+      "params": {
+        "filename": "cv.pdf",
+        "overwrite": "rename"
+      },
+      "position": {
+        "x": 1300,
+        "y": 120
+      },
+      "type": "write-file"
+    }
+  ],
+  "outputs": [
+    {
+      "from": "01JCVWRTE00000000000000000.file",
+      "name": "cv"
+    },
+    {
+      "from": "01JCVVERFY0000000000000000.report",
+      "name": "verification"
+    }
+  ],
+  "params": [],
+  "schemaVersion": 1,
+  "version": "1.0.0"
+}

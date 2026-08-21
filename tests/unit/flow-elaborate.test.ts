@@ -637,6 +637,17 @@ describe('elaborate — structural errors', () => {
     expect(errorOf(result, 'PORT_UNRESOLVED').message).toContain('required in-port "in"');
   });
 
+  it('reports a duplicate node id once and flattens it once', () => {
+    const id = ulid('CHAT');
+    const result = elaborate(doc({
+      nodes: [node(id, 'chat-input', { paramKey: 'x' }), node(id, 'chat-input', { paramKey: 'x' })],
+    }));
+    // Flattening the duplicate too would add a second step with the SAME id
+    // (and a phantom PARAM_KEY_COLLISION for the paramKey it re-promotes).
+    expect(codes(result)).toEqual(['SCHEMA_INVALID']);
+    expect(errorOf(result, 'SCHEMA_INVALID').message).toContain('duplicate node id');
+  });
+
   it('rejects `flow`/`version` on a node that is not a subflow', () => {
     const id = ulid('CHAT');
     const result = elaborate(doc({

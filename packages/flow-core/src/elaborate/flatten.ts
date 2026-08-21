@@ -31,8 +31,6 @@ export interface FlatNode {
   params: Record<string, unknown>;
   descriptor: NodeDescriptor;
   file: string;
-  /** Raw `paramKey` of an input-source node, before namespacing/aliasing. */
-  rawParamKey?: string;
 }
 
 export interface FlatEdge {
@@ -187,6 +185,10 @@ export function flattenDocument(
   const ownParams: EffectiveParam[] = [];
 
   for (const node of document.nodes) {
+    // A duplicate id is already reported above; flattening it a second time
+    // would put two FlatNodes with the SAME step id in the graph and corrupt
+    // the indegree count topoSort builds from them.
+    if (nodesById.get(node.id) !== node) continue;
     const stepId = qualify(prefix, node.id);
     if (node.type === SUBFLOW_NODE_TYPE) {
       const child = loadSubflow(node, file, prefix, stack, context);
@@ -231,11 +233,7 @@ export function flattenDocument(
       file,
     };
     if (node.label !== undefined) flat.label = node.label;
-    const promoted = promotedParamsOf(node, descriptor, stepId);
-    if (promoted.length > 0) {
-      flat.rawParamKey = promoted[0].paramKey;
-      ownParams.push(...promoted);
-    }
+    ownParams.push(...promotedParamsOf(node, descriptor, stepId));
     flatNodes.push(flat);
   }
 

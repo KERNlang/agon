@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "packages/core" },
+    { "path": "packages/flow-core" },
     { "path": "packages/adapter-cli" },
     { "path": "packages/forge" },
     { "path": "packages/cli" },

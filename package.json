@@ -4,6 +4,7 @@
   "type": "module",
   "workspaces": [
     "packages/core",
+    "packages/flow-core",
     "packages/forge",
     "packages/adapter-cli",
     "packages/cli",
@@ -19,7 +20,7 @@
     "build": "npm run build:cli && npm run build:types",
     "build:types": "tsc -b --force",
     "build:cli": "npm run build:cli:workspaces",
-    "build:cli:workspaces": "npm run build -w packages/core && npm run build -w packages/forge && npm run build -w packages/adapter-cli && npm run build -w packages/cli",
+    "build:cli:workspaces": "npm run build -w packages/core && npm run build -w packages/flow-core && npm run build -w packages/forge && npm run build -w packages/adapter-cli && npm run build -w packages/cli",
     "install:cli": "npm run build:cli && cd packages/cli && npm link",
     "release:set-version": "node scripts/release/set-version.mjs",
     "release:dedup": "node scripts/release/publish-if-new.mjs packages/dedup",

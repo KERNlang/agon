@@ -1,0 +1,22 @@
+{
+  "name": "@kernlang/agon-flow-core",
+  "version": "0.2.5",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup && tsc -b tsconfig.json --force",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {},
+  "optionalDependencies": {}
+}

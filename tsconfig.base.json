@@ -10,7 +10,8 @@
       "@kernlang/agon-core": ["packages/core/src/index.ts"],
       "@kernlang/agon-forge": ["packages/forge/src/index.ts"],
       "@kernlang/agon-adapter-cli": ["packages/adapter-cli/src/index.ts"],
-      "@kernlang/agon-mcp": ["packages/mcp/src/index.ts"]
+      "@kernlang/agon-mcp": ["packages/mcp/src/index.ts"],
+      "@kernlang/agon-flow-core": ["packages/flow-core/src/index.ts"]
     },
     "declaration": true,
     "declarationMap": true,

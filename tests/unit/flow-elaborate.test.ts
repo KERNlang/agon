@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import {
   createMemoryFlowLoader, elaborateDocument, elaborateFlowFile, serializeFlow,
-  type ElaborationResult, type FlowDocument, type FlowErrorCode,
+  type ElaboratedFlow, type ElaborationResult, type FlowDocument, type FlowErrorCode,
 } from '../../packages/flow-core/src/index.js';
 import { doc, edge, node, ulid } from '../helpers/flow-doc.js';
 
@@ -19,6 +19,22 @@ function elaborate(document: FlowDocument, files: Record<string, string> = {}): 
 
 function codes(result: ElaborationResult): FlowErrorCode[] {
   return result.ok ? [] : result.errors.map((error) => error.code);
+}
+
+/**
+ * Structural invariant every `ok:true` elaboration must satisfy: no step input
+ * and no declared output may point at a step id that is not in the DAG.
+ */
+function expectNoDanglingRefs(flow: ElaboratedFlow): void {
+  const ids = flow.steps.map((step) => step.id);
+  for (const step of flow.steps) {
+    for (const input of step.inputs) expect(ids).toContain(input.fromStep);
+    for (const upstream of step.requiredUpstream) expect(ids).toContain(upstream);
+  }
+  for (const output of flow.outputs) expect(ids).toContain(output.stepId);
+  for (const param of flow.params) {
+    if (param.stepId !== undefined) expect(ids).toContain(param.stepId);
+  }
 }
 
 function errorOf(result: ElaborationResult, code: FlowErrorCode) {
@@ -501,5 +517,88 @@ describe('elaborate — structural errors', () => {
   it('reports a missing entry file instead of throwing', () => {
     const result = elaborateFlowFile(join(FIXTURES, 'does-not-exist.agon-flow.json'));
     expect(codes(result)).toEqual(['FLOW_FILE_UNRESOLVED']);
+  });
+});
+
+// ── Graph invariants ──────────────────────────────────────────────────────
+
+describe('elaborate — graph invariants', () => {
+  function withChild(main: FlowDocument, child: FlowDocument): ElaborationResult {
+    return elaborateDocument(main, {
+      loader: createMemoryFlowLoader({
+        [MAIN]: serializeFlow(main),
+        '/flows/child.agon-flow.json': serializeFlow(child),
+      }),
+      file: MAIN,
+    });
+  }
+
+  it('rewires a parent edge that reads a subflow output transiting a bound input', () => {
+    const chat = ulid('CHAT');
+    const sub = ulid('SBF');
+    const show = ulid('RENDER');
+    const inner = ulid('NNER');
+    const child = doc({
+      id: ulid('CHDD'),
+      name: 'child',
+      nodes: [node(inner, 'chat-input', { paramKey: 'msg' })],
+      outputs: [{ name: 'echo', from: `${inner}.text` }],
+    });
+    const main = doc({
+      nodes: [
+        node(chat, 'chat-input', { paramKey: 'x' }),
+        node(sub, 'subflow', {}, { flow: './child.agon-flow.json' }),
+        node(show, 'chat-output', {}),
+      ],
+      edges: [edge(`${chat}.text`, `${sub}.msg`), edge(`${sub}.echo`, `${show}.in`)],
+    });
+
+    const result = withChild(main, child);
+    expect(codes(result)).toEqual([]);
+    if (!result.ok) return;
+    expectNoDanglingRefs(result.flow);
+
+    // The promoted input node is gone and the parent edge reads the parent's
+    // own Chat Input — with its real type, not a silent `json` default.
+    expect(result.flow.steps.map((step) => step.id)).not.toContain(`${sub}/${inner}`);
+    const output = result.flow.steps.find((step) => step.id === show)!;
+    expect(output.inputs).toEqual([expect.objectContaining({ fromStep: chat, fromPort: 'text', type: 'text' })]);
+    expect(result.flow.params.map((param) => param.key)).toEqual(['x']);
+  });
+
+  it('rewires a declared flow output that reads a subflow output transiting a bound input', () => {
+    const chat = ulid('CHAT');
+    const sub = ulid('SBF');
+    const inner = ulid('NNER');
+    const child = doc({
+      id: ulid('CHDD'),
+      name: 'child',
+      nodes: [node(inner, 'chat-input', { paramKey: 'msg' })],
+      outputs: [{ name: 'echo', from: `${inner}.text` }],
+    });
+    const main = doc({
+      nodes: [
+        node(chat, 'chat-input', { paramKey: 'x' }),
+        node(sub, 'subflow', {}, { flow: './child.agon-flow.json' }),
+      ],
+      edges: [edge(`${chat}.text`, `${sub}.msg`)],
+      outputs: [{ name: 'result', from: `${sub}.echo` }],
+    });
+
+    const result = withChild(main, child);
+    expect(codes(result)).toEqual([]);
+    if (!result.ok) return;
+    expectNoDanglingRefs(result.flow);
+    expect(result.flow.outputs).toEqual([
+      expect.objectContaining({ name: 'result', stepId: chat, port: 'text', type: 'text' }),
+    ]);
+  });
+
+  it('keeps the golden proof flows free of dangling refs', () => {
+    for (const name of ['build-cv', 'sort-folder', 'cv-with-subflow']) {
+      const result = elaborateFlowFile(join(FIXTURES, `${name}.agon-flow.json`));
+      if (!result.ok) throw new Error(`${name}: ${JSON.stringify(result.errors, null, 2)}`);
+      expectNoDanglingRefs(result.flow);
+    }
   });
 });

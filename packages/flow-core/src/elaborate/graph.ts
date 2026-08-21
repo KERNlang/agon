@@ -22,6 +22,28 @@ export function indexIncoming(edges: FlatEdge[]): IncomingIndex {
   return index;
 }
 
+export interface DanglingEdge {
+  edge: FlatEdge;
+  end: 'from' | 'to';
+  stepId: string;
+}
+
+/**
+ * Structural invariant: every edge endpoint names a step that is actually in
+ * the graph. `topoSort` silently ignores unknown endpoints, so without this
+ * check a rewiring bug would ship as an `ok:true` DAG whose step inputs point
+ * at nothing (and whose types quietly default to `json`).
+ */
+export function findDanglingEdges(nodes: FlatNode[], edges: FlatEdge[]): DanglingEdge[] {
+  const known = new Set(nodes.map((node) => node.id));
+  const dangling: DanglingEdge[] = [];
+  for (const edge of edges) {
+    if (!known.has(edge.from.stepId)) dangling.push({ edge, end: 'from', stepId: edge.from.stepId });
+    if (!known.has(edge.to.stepId)) dangling.push({ edge, end: 'to', stepId: edge.to.stepId });
+  }
+  return dangling;
+}
+
 export interface TopoResult {
   /** Topologically sorted step ids; empty tail when a cycle exists. */
   order: string[];

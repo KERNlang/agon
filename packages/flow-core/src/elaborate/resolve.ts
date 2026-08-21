@@ -10,7 +10,7 @@ import type {
 } from '../models/types.js';
 import { canonicalJson } from '../schema/serialize.js';
 import type { FlatEdge, FlatNode } from './flatten.js';
-import { indexIncoming, topoSort } from './graph.js';
+import { findDanglingEdges, indexIncoming, topoSort } from './graph.js';
 import { checkFieldPath, describeFieldMiss } from './json-path.js';
 import {
   allPairsExclusive, anyPairExclusive, conflictBetween, dedupeRoutes,
@@ -42,6 +42,20 @@ export function resolveSteps(
   errors: FlowError[],
 ): ResolveResult | null {
   const byId = new Map(nodes.map((node) => [node.id, node]));
+
+  const dangling = findDanglingEdges(nodes, edges);
+  if (dangling.length > 0) {
+    for (const miss of dangling) {
+      const { from, to } = miss.edge;
+      errors.push(flowError(
+        'PORT_UNRESOLVED', miss.stepId,
+        `edge ${from.stepId}.${from.port} → ${to.stepId}.${to.port} names a step "${miss.stepId}" that is not in the elaborated graph`,
+        { file: miss.edge.file },
+      ));
+    }
+    return null;
+  }
+
   const { order, cycles } = topoSort(nodes, edges);
   if (cycles.length > 0) {
     for (const cycle of cycles) {

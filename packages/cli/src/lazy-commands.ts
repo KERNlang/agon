@@ -274,6 +274,10 @@ const login = lazyCommand(() => import('./commands/login.js'), 'loginCommand', {
   name: 'login',
   description: "Log an engine's CLI into its clean workspace-pure config dir so dispatches stay authenticated without inheriting your personal Claude Code setup",
 });
+const flow = lazyCommand(() => import('./commands/flow.js'), 'flowCommand', {
+  name: 'flow',
+  description: 'Agon Flow — author and run node graphs where every AI step is a node. `agon flow validate <file>` type-checks a flow (subflows, ports, exclusive routes) before a single engine is dispatched.',
+}, { hasSubCommands: true });
 const update = lazyCommand(() => import('./commands/update.js'), 'updateCommand', {
   name: 'update',
   description: 'Update Agon to the latest (or a specific) version from npm. Streams npm output live and exits 0 on success.',
@@ -319,6 +323,7 @@ export const lazySubCommands: SubCommandsDef = {
   council,
   research,
   conquer,
+  flow,
   worktree,
   wt: worktree,
   attach,

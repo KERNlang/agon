@@ -9,9 +9,8 @@ import { modelsCommand } from './commands/models.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// The exact 43 keys `packages/cli/src/index.ts` registered before the lazy
-// refactor (41 unique commands; worktree/wt and update/upgrade are aliases
-// of the same command). If a command is ever added/removed/renamed, this
+// Every command key `packages/cli/src/index.ts` registers (worktree/wt and
+// update/upgrade are aliases of the same command). If a command is ever added/removed/renamed, this
 // snapshot must be updated deliberately — it exists so a lazy-loading bug
 // can never silently drop a command from `agon --help`.
 const EXPECTED_COMMAND_NAMES = [
@@ -50,6 +49,7 @@ const EXPECTED_COMMAND_NAMES = [
   'council',
   'research',
   'conquer',
+  'flow',
   'worktree',
   'wt',
   'attach',
@@ -90,7 +90,7 @@ describe('lazySubCommands', () => {
   });
 
   it('only commands with real nested subCommands expose a subCommands field', () => {
-    const withSubCommands = new Set(['models', 'ext', 'browser-host', 'ratings', 'job']);
+    const withSubCommands = new Set(['models', 'ext', 'browser-host', 'ratings', 'job', 'flow']);
     for (const [key, entry] of Object.entries(lazySubCommands)) {
       const canonical = key === 'wt' ? 'worktree' : key === 'upgrade' ? 'update' : key;
       const hasField = 'subCommands' in (entry as object) && (entry as { subCommands?: unknown }).subCommands !== undefined;
@@ -177,6 +177,7 @@ describe('lazySubCommands — full parity with the real command modules', () => 
     council: [() => import('./commands/council.js'), 'councilCommand'],
     research: [() => import('./commands/research.js'), 'researchCommand'],
     conquer: [() => import('./commands/conquer.js'), 'conquerCommand'],
+    flow: [() => import('./commands/flow.js'), 'flowCommand'],
     worktree: [() => import('./commands/worktree.js'), 'worktreeCommand'],
     attach: [() => import('./commands/attach.js'), 'attachCommand'],
     daemon: [() => import('./commands/daemon.js'), 'daemonCommand'],

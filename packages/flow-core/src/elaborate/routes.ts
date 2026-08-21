@@ -9,11 +9,11 @@
  */
 import type { RouteMarker } from '../models/types.js';
 
-export function decisionKey(marker: RouteMarker): string {
+function decisionKey(marker: RouteMarker): string {
   return `${marker.stepId}#${marker.group}`;
 }
 
-export function markerKey(marker: RouteMarker): string {
+function markerKey(marker: RouteMarker): string {
   return `${decisionKey(marker)}=${marker.branch}`;
 }
 
@@ -61,13 +61,8 @@ export function conflictBetween(a: RouteMarker[], b: RouteMarker[]): RouteConfli
   return null;
 }
 
-export function areMutuallyExclusive(a: RouteMarker[], b: RouteMarker[]): boolean {
+function areMutuallyExclusive(a: RouteMarker[], b: RouteMarker[]): boolean {
   return conflictBetween(a, b) !== null;
-}
-
-/** A route set that disagrees with itself can never be satisfied. */
-export function selfConflict(markers: RouteMarker[]): RouteConflict | null {
-  return conflictBetween(markers, markers);
 }
 
 export function allPairsExclusive(sets: RouteMarker[][]): boolean {

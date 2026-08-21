@@ -616,9 +616,25 @@ describe('elaborate — structural errors', () => {
   });
 
   it('rejects an unresolvable parametric passthrough', () => {
+    // `first` never resolves T, so `second` is wired to a port with no type.
+    const first = ulid('APRV');
+    const second = ulid('APRVB');
+    const result = elaborate(doc({
+      nodes: [node(first, 'approval', {}), node(second, 'approval', {})],
+      edges: [edge(`${first}.out`, `${second}.in`)],
+    }));
+    const error = errorOf(result, 'PARAMETRIC_UNRESOLVED');
+    expect(error.nodeId).toBe(second);
+    expect(error.message).toContain(`${first}.out`);
+  });
+
+  it('reports an unconnected required passthrough port exactly once', () => {
     const id = ulid('APRV');
     const result = elaborate(doc({ nodes: [node(id, 'approval', {})] }));
-    expect(codes(result)).toContain('PARAMETRIC_UNRESOLVED');
+    // One root cause, one diagnostic: the missing connection — not that plus a
+    // PARAMETRIC_UNRESOLVED restating it.
+    expect(codes(result)).toEqual(['PORT_UNRESOLVED']);
+    expect(errorOf(result, 'PORT_UNRESOLVED').message).toContain('required in-port "in"');
   });
 
   it('rejects `flow`/`version` on a node that is not a subflow', () => {

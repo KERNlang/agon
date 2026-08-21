@@ -181,10 +181,16 @@ function resolveParametric(
     return {};
   }
   if (distinct.length === 0) {
-    if (generic.some((port) => port.required)) {
+    // An UNCONNECTED required generic port is already reported, once, by
+    // checkRequiredPorts — a second PARAMETRIC_UNRESOLVED for the same root
+    // cause is noise. This error is for a port that IS wired to a source whose
+    // own type never resolved.
+    if (candidates.length > 0) {
       errors.push(flowError(
         'PARAMETRIC_UNRESOLVED', node.id,
-        `passthrough type T could not be resolved — connect ${generic.map((port) => `"${port.name}"`).join(' or ')}`,
+        `passthrough type T could not be resolved — ${candidates
+          .map((info) => `${info.edge.from.stepId}.${info.edge.from.port}`)
+          .join(', ')} produces no resolved type`,
         { file: node.file },
       ));
     }

@@ -134,4 +134,20 @@ describe('flow schema — semver ranges for subflow refs', () => {
   it('reports a malformed range instead of silently matching', () => {
     expect(checkRange('1.2.3', 'not-a-range')).toEqual({ valid: false, satisfied: false });
   });
+
+  it('rejects a malformed range rather than letting it match everything', () => {
+    // A stray/empty `||` alternative used to be read as "match anything",
+    // which silently BYPASSED the constraint the author actually wrote.
+    for (const range of ['^1 ||', '|| ^1.0.0', '||', '', '   ', '1.x.2', 'x.2', '>=*', '<x', '^']) {
+      expect({ range, ...checkRange('1.2.3', range) })
+        .toEqual({ range, valid: false, satisfied: false });
+    }
+  });
+
+  it('still accepts the wildcard and partial-wildcard ranges it documents', () => {
+    for (const range of ['*', 'x', 'X', '1.x', '1.X.x', '>=1.0.0 <2.0.0', '^1.0.0 || ^2.0.0']) {
+      expect({ range, ...checkRange('1.2.3', range) })
+        .toEqual({ range, valid: true, satisfied: true });
+    }
+  });
 });

@@ -4,7 +4,9 @@
  * Supported ranges: `*`, exact (`1.2.3`), `=`, `^`, `~`, `>`, `>=`, `<`, `<=`,
  * partial versions (`1.2` → `1.2.x`), space-separated conjunctions and
  * `||` alternatives. That is the whole surface the flow schema needs; anything
- * else is reported as an invalid range rather than silently matching.
+ * else — an empty or stray `||` alternative, a fixed part behind a wildcard
+ * (`1.x.2`), an operator with no concrete operand (`>=*`) — is reported as an
+ * invalid range rather than silently matching.
  */
 
 export interface SemVer {
@@ -77,8 +79,19 @@ function parsePartial(input: string): { parts: number[]; prerelease: string[] } 
   const segments = core.split('.');
   if (segments.length > 3) return null;
   const parts: number[] = [];
+  let wildcard = false;
   for (const segment of segments) {
-    if (segment === 'x' || segment === 'X' || segment === '*') break;
+    const isWildcard = segment === 'x' || segment === 'X' || segment === '*';
+    if (wildcard) {
+      // `1.x.2` / `x.2`: a fixed part BEHIND a wildcard pins nothing. Rather
+      // than silently reading it as `1.x`, call the range malformed.
+      if (!isWildcard) return null;
+      continue;
+    }
+    if (isWildcard) {
+      wildcard = true;
+      continue;
+    }
     if (!/^\d+$/.test(segment)) return null;
     parts.push(Number(segment));
   }
@@ -126,18 +139,18 @@ function parseComparator(token: string): Bound[] | null {
   const parsed = parsePartial(match[2]);
   if (!parsed) return null;
   const { parts, prerelease } = parsed;
-  if (parts.length === 0 && op === '') return [];
+  if (parts.length === 0) {
+    // A bare wildcard (`*`, `x.x`) matches everything; an OPERATOR with
+    // nothing concrete to bound (`>=*`, `<x`, `^x`) is malformed.
+    return op === '' ? [] : null;
+  }
   const lower = toSemver(parts, prerelease);
 
   switch (op) {
-    case '^': {
-      if (parts.length === 0) return null;
+    case '^':
       return [{ op: '>=', version: lower }, { op: '<', version: caretUpper(parts) }];
-    }
-    case '~': {
-      if (parts.length === 0) return null;
+    case '~':
       return [{ op: '>=', version: lower }, { op: '<', version: tildeUpper(parts) }];
-    }
     case '>=':
       return [{ op: '>=', version: lower }];
     case '>':
@@ -181,9 +194,10 @@ export function checkRange(version: string, range: string): RangeCheck {
   for (const alternative of alternatives) {
     const tokens = alternative.trim().split(/\s+/).filter((token) => token !== '');
     if (tokens.length === 0) {
-      // An empty alternative (`*`, or a stray `||`) matches everything.
-      satisfied = true;
-      continue;
+      // An EMPTY alternative (`""`, `"||"`, `"^1 ||"`) used to be read as
+      // "matches everything", which silently bypassed the constraint the
+      // author wrote. A wildcard has to be spelled `*`.
+      return { valid: false, satisfied: false };
     }
     let all = true;
     for (const token of tokens) {

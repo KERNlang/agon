@@ -309,6 +309,24 @@ function computeRouteSet(
     perPort.push({ name: `(${group.join('|')})`, route: intersectRoutes(routes) });
   }
 
+  // Nothing REQUIRED pins this step down, but it may still hang off a branch
+  // through an optional port only (a Template on one If branch is the common
+  // shape). Treating it as unconditional made a legal downstream coalesce read
+  // as COALESCE_ILLEGAL and stopped skip from propagating past it. Optional
+  // liveness is ANY-of, so the condition is the intersection of what is wired.
+  if (perPort.length === 0) {
+    const optional: RouteMarker[][] = [];
+    for (const descriptor of node.descriptor.in) {
+      if (descriptor.required) continue;
+      const infos = portEdges.get(descriptor.name) ?? [];
+      if (infos.length === 0) continue;
+      optional.push(infos.length === 1
+        ? infos[0].route
+        : intersectRoutes(infos.map((info) => info.route)));
+    }
+    return optional.length > 0 ? intersectRoutes(optional) : [];
+  }
+
   for (let i = 0; i < perPort.length; i += 1) {
     for (let j = i + 1; j < perPort.length; j += 1) {
       const conflict = conflictBetween(perPort[i].route, perPort[j].route);

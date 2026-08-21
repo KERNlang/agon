@@ -423,6 +423,121 @@ describe('elaborate — exclusive routes', () => {
   });
 });
 
+describe('elaborate — routes through optional-only steps', () => {
+  // Chat Input → If → Template per branch → Chat Output. Both Templates hang
+  // off the branch by their OPTIONAL `text` port, so their route condition can
+  // only come from an optional in-port.
+  function branchedTemplates(): ElaborationResult {
+    const chat = ulid('CHAT');
+    const branch = ulid('CMPARE');
+    const yes = ulid('TMPA');
+    const no = ulid('TMPB');
+    const render = ulid('RENDER');
+    return elaborate(doc({
+      nodes: [
+        node(chat, 'chat-input', { paramKey: 'x' }),
+        node(branch, 'if-compare', { operator: 'contains', threshold: 'a' }),
+        node(yes, 'template', { template: 'yes: {{text}}' }),
+        node(no, 'template', { template: 'no: {{text}}' }),
+        node(render, 'chat-output', {}),
+      ],
+      edges: [
+        edge(`${chat}.text`, `${branch}.in`),
+        edge(`${branch}.true`, `${yes}.text`),
+        edge(`${branch}.false`, `${no}.text`),
+        edge(`${yes}.text`, `${render}.in`),
+        edge(`${no}.text`, `${render}.in`),
+      ],
+    }));
+  }
+
+  it('accepts a coalesce of two branches that each transit an optional-input step', () => {
+    const result = branchedTemplates();
+    expect(codes(result)).toEqual([]);
+    if (!result.ok) return;
+
+    const branch = ulid('CMPARE');
+    const yes = result.flow.steps.find((step) => step.id === ulid('TMPA'))!;
+    const no = result.flow.steps.find((step) => step.id === ulid('TMPB'))!;
+    // Each Template inherits the branch it hangs off — it is NOT unconditional.
+    expect(yes.routeSet).toEqual([{ stepId: branch, group: 'route', branch: 'true' }]);
+    expect(no.routeSet).toEqual([{ stepId: branch, group: 'route', branch: 'false' }]);
+    // …which is exactly what makes the Chat Output coalesce legal.
+    const render = result.flow.steps.find((step) => step.id === ulid('RENDER'))!;
+    expect(render.coalescingPorts).toEqual(['in']);
+    expect(render.routeSet).toEqual([]);
+  });
+
+  it('still rejects ONE variadic port collecting both branches', () => {
+    const chat = ulid('CHAT');
+    const branch = ulid('CMPARE');
+    const merge = ulid('TMPA');
+    const result = elaborate(doc({
+      nodes: [
+        node(chat, 'chat-input', { paramKey: 'x' }),
+        node(branch, 'if-compare', { operator: 'contains', threshold: 'a' }),
+        node(merge, 'template', { template: '{{text}}' }),
+      ],
+      edges: [
+        edge(`${chat}.text`, `${branch}.in`),
+        edge(`${branch}.true`, `${merge}.text`),
+        edge(`${branch}.false`, `${merge}.text`),
+      ],
+    }));
+    // A collector cannot join routes that are never live together.
+    expect(errorOf(result, 'COALESCE_ILLEGAL').message).toContain('collects several values');
+  });
+
+  it('leaves a step unconditional when its optional ports ride different decisions', () => {
+    const chat = ulid('CHAT');
+    const textBranch = ulid('CMPARE');
+    const extract = ulid('EXTRCT');
+    const jsonBranch = ulid('CMPARB');
+    const merge = ulid('TMPA');
+    const result = elaborate(doc({
+      nodes: [
+        node(chat, 'chat-input', { paramKey: 'x' }),
+        node(textBranch, 'if-compare', { operator: 'contains', threshold: 'a' }),
+        node(extract, 'extract-structured', { schema: { type: 'object' } }),
+        node(jsonBranch, 'if-compare', { operator: 'contains', threshold: 'b' }),
+        node(merge, 'template', { template: '{{text}} {{json}}' }),
+      ],
+      edges: [
+        edge(`${chat}.text`, `${textBranch}.in`),
+        edge(`${chat}.text`, `${extract}.text`),
+        edge(`${extract}.json`, `${jsonBranch}.in`),
+        edge(`${textBranch}.true`, `${merge}.text`),
+        edge(`${jsonBranch}.false`, `${merge}.json`),
+      ],
+    }));
+    expect(codes(result)).toEqual([]);
+    if (!result.ok) return;
+    // Either optional input can carry it, so no single decision gates the step.
+    expect(result.flow.steps.find((step) => step.id === merge)!.routeSet).toEqual([]);
+  });
+
+  it('still ignores an optional input when a REQUIRED port already pins the route', () => {
+    const chat = ulid('CHAT');
+    const branch = ulid('CMPARE');
+    const engine = ulid('ENG');
+    const result = elaborate(doc({
+      nodes: [
+        node(chat, 'chat-input', { paramKey: 'x' }),
+        node(branch, 'if-compare', { operator: 'contains', threshold: 'a' }),
+        node(engine, 'engine', { engineId: 'claude' }),
+      ],
+      edges: [
+        edge(`${chat}.text`, `${branch}.in`),
+        edge(`${branch}.true`, `${engine}.prompt`),
+      ],
+    }));
+    expect(codes(result)).toEqual([]);
+    if (!result.ok) return;
+    expect(result.flow.steps.find((step) => step.id === engine)!.routeSet)
+      .toEqual([{ stepId: branch, group: 'route', branch: 'true' }]);
+  });
+});
+
 describe('elaborate — paramKey collisions', () => {
   it('rejects two input nodes claiming the same paramKey', () => {
     const a = ulid('CHATA');

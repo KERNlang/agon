@@ -1251,4 +1251,4 @@ export function resolvePackageVersion(wantName: string, fallback: string): strin
   return fallback;
 }
 
-export const VERSION: string = resolvePackageVersion('@kernlang/agon', '0.2.5');
+export const VERSION: string = resolvePackageVersion('@kernlang/agon', '0.2.7');

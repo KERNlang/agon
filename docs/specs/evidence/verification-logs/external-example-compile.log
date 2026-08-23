@@ -1,0 +1,4 @@
+command: ["npx","tsc","-p","docs/specs/fixtures/modular-agon-contracts/example-mod/tsconfig.json"]
+exitCode: 0
+signal:
+error:

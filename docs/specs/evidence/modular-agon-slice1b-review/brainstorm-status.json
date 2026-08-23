@@ -1,0 +1,24 @@
+{
+  "mode": "brainstorm",
+  "startedAt": "2026-08-23T17:53:30.145Z",
+  "endedAt": "2026-08-23T17:57:02.182Z",
+  "engines": [
+    {
+      "id": "qwopus",
+      "status": "ok",
+      "detail": "confidence=82"
+    },
+    {
+      "id": "ollama-direct-qwen",
+      "status": "ok",
+      "detail": "confidence=88"
+    },
+    {
+      "id": "ollama-direct-minimax",
+      "status": "ok",
+      "detail": "confidence=75"
+    }
+  ],
+  "summary": "3/3 bid; winner=ollama-direct-qwen; synthesis=completed; dedup=unavailable",
+  "ok": true
+}

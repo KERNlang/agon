@@ -3,6 +3,8 @@
   "private": true,
   "type": "module",
   "workspaces": [
+    "packages/mod-api",
+    "packages/mod-kernel",
     "packages/core",
     "packages/forge",
     "packages/adapter-cli",
@@ -19,7 +21,7 @@
     "build": "npm run build:cli && npm run build:types",
     "build:types": "tsc -b --force",
     "build:cli": "npm run build:cli:workspaces",
-    "build:cli:workspaces": "npm run build -w packages/core && npm run build -w packages/forge && npm run build -w packages/adapter-cli && npm run build -w packages/cli",
+    "build:cli:workspaces": "npm run build -w packages/mod-api && npm run build -w packages/mod-kernel && npm run build -w packages/core && npm run build -w packages/forge && npm run build -w packages/adapter-cli && npm run build -w packages/cli",
     "install:cli": "npm run build:cli && cd packages/cli && npm link",
     "release:set-version": "node scripts/release/set-version.mjs",
     "release:dedup": "node scripts/release/publish-if-new.mjs packages/dedup",
@@ -31,7 +33,23 @@
     "test:watch": "node scripts/run-node22.mjs vitest",
     "lint": "eslint . --max-warnings 0",
     "knip": "knip",
-    "lint:dead": "npm run knip"
+    "lint:dead": "npm run knip",
+    "spec:modular-projections": "node scripts/spec/generate-modular-agon-compat-projections.mjs",
+    "spec:modular-projections:check": "node scripts/spec/generate-modular-agon-compat-projections.mjs --check",
+    "spec:modular-package-graph": "node scripts/spec/generate-modular-agon-package-graph.mjs",
+    "spec:modular-package-graph:check": "node scripts/spec/generate-modular-agon-package-graph.mjs --check",
+    "spec:modular-generated:check": "node scripts/spec/verify-modular-generated-artifacts.mjs",
+    "spec:modular-generated:self-test": "node scripts/spec/verify-modular-generated-artifacts.mjs --self-test",
+    "spec:modular-qualification:self-test": "node scripts/spec/verify-modular-slice1a-gates.mjs",
+    "pretest:modular-slice1a": "npm run spec:modular-generated:self-test && npm run spec:modular-qualification:self-test && npm run spec:modular-generated:check && npm run build -w packages/mod-api && npm run build -w packages/mod-kernel",
+    "spec:modular-pack": "node scripts/spec/verify-modular-slice1a-pack.mjs",
+    "test:modular-slice1a": "npm run spec:modular-projections:check && npm run spec:modular-package-graph:check && npm run spec:modular-pack && node scripts/run-node22.mjs vitest run tests/unit/modular-*.test.ts tests/spec/modular-agon-contracts.test.ts",
+    "perf:modular-slice1a": "node --expose-gc scripts/spec/measure-modular-slice1a.mjs",
+    "spec:modular-slice1b:self-test": "node scripts/spec/verify-modular-slice1b-gates.mjs",
+    "spec:modular-slice1b:qualify:index": "node scripts/spec/qualify-modular-agon-clean-checkout.mjs --subject=index --run-clean",
+    "spec:modular-slice1b:qualify:commit": "node scripts/spec/qualify-modular-agon-clean-checkout.mjs --subject=commit --run-clean",
+    "test:modular-legacy-oracle": "node scripts/spec/verify-modular-legacy-oracle.mjs",
+    "test:modular-oracle-boundary": "node scripts/spec/verify-modular-legacy-oracle-negative-controls.mjs"
   },
   "engines": {
     "node": ">=22"
@@ -43,17 +61,26 @@
   "devDependencies": {
     "@kernlang/core": "~4.5.0",
     "@types/node": "^22.0.0",
-    "@vitest/coverage-v8": "^3.2.4",
+    "@types/semver": "^7.8.0",
+    "@vitest/coverage-v8": "^3.2.7",
     "eslint": "10.8.1",
     "knip": "^6.32.2",
     "patch-package": "^8.0.1",
     "tsup": "^8.4.0",
     "typescript": "6.0.3",
     "typescript-eslint": "8.67.0",
-    "vitest": "^3.0.0"
+    "vitest": "^3.2.7"
   },
   "dependencies": {
     "zod": "^4.3.6"
+  },
+  "overrides": {
+    "brace-expansion@2.0.0 - 2.1.3": "2.1.4",
+    "brace-expansion@3.0.0 - 5.0.8": "5.0.9",
+    "esbuild": "0.28.2",
+    "nanoid@<=3.3.17": "3.3.18",
+    "postcss@<=8.5.22": "8.5.26",
+    "vite@7.0.0 - 7.3.3": "7.3.6"
   },
   "optionalDependencies": {
     "@kernlang/cli": "~4.5.0"

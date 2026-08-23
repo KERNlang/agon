@@ -1,0 +1,13 @@
+{
+  "name": "@kernlang/agon-kernel",
+  "version": "0.0.0-slice.1a",
+  "private": true,
+  "type": "module",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "sideEffects": false,
+  "scripts": { "build": "tsup && tsc -b tsconfig.json --force", "typecheck": "tsc --noEmit" },
+  "dependencies": { "@kernlang/agon-mod-api": "1.0.0", "semver": "^7.7.4" }
+}

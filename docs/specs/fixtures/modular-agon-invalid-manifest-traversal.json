@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 2,
+  "id": "agon.brainstorm",
+  "name": "Brainstorm",
+  "version": "1.0.0",
+  "apiRange": "^1.0.0",
+  "execution": "executable",
+  "compatibility": {
+    "kernelRange": "^1.0.0",
+    "nodeRange": ">=22 <27"
+  },
+  "packageClass": "user-toggleable-mod-package",
+  "entrypoints": {
+    "runtime": "../escape.js",
+    "types": "dist/index.d.ts"
+  },
+  "display": {
+    "group": "create",
+    "order": 20
+  },
+  "dependencies": {
+    "required": [],
+    "optional": [
+      {
+        "id": "agon.team-brainstorm",
+        "range": "^1.0.0"
+      }
+    ],
+    "conflicts": []
+  },
+  "permissions": [
+    {
+      "capability": "engine.dispatch",
+      "resources": [
+        "configured-engines"
+      ],
+      "required": true
+    }
+  ],
+  "platforms": [
+    "darwin-arm64",
+    "darwin-x64",
+    "linux-arm64",
+    "linux-x64"
+  ],
+  "assets": [
+    {
+      "path": "dist/index.js",
+      "kind": "static",
+      "mediaType": "text/javascript",
+      "contentHash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "bytes": 128,
+      "executable": false,
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-arm64",
+        "linux-x64"
+      ],
+      "consumerContributionId": "brainstorm"
+    }
+  ],
+  "contributes": {
+    "cliCommands": [
+      {
+        "id": "brainstorm",
+        "aliases": []
+      }
+    ],
+    "tuiActions": [
+      {
+        "id": "brainstorm",
+        "aliases": []
+      }
+    ],
+    "mcpTools": [
+      {
+        "id": "Brainstorm",
+        "aliases": []
+      }
+    ],
+    "cesarTools": [
+      {
+        "id": "Brainstorm",
+        "aliases": []
+      }
+    ],
+    "lifecycleHooks": [],
+    "resultTypes": [
+      {
+        "id": "agon.brainstorm.result.v1",
+        "aliases": []
+      }
+    ],
+    "configKeys": [],
+    "generatedDocs": [
+      {
+        "id": "mode.brainstorm",
+        "aliases": []
+      }
+    ]
+  },
+  "pack": {
+    "include": [
+      "dist/index.js",
+      "dist/index.d.ts",
+      "agon.mod.json"
+    ],
+    "executable": []
+  }
+}

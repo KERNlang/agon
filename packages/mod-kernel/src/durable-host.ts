@@ -89,6 +89,7 @@ export interface DurableHostOptions {
 
 export interface CommitGenerationInput {
   readonly operation: HostTransactionOperation;
+  readonly expectedBaseGeneration?: number;
   readonly lock: CanonicalModLock;
   readonly desiredState: unknown;
   readonly installedIndex: unknown;
@@ -323,6 +324,11 @@ export class DurableModHost {
     try {
       await this.#fault('after-lock');
       const previous = await this.readCurrentPointer();
+      if (input.expectedBaseGeneration !== undefined && input.expectedBaseGeneration !== (previous?.generation ?? 0)) {
+        throw new DurableHostError('MOD_TRANSACTION_CONFLICT', 'generation changed after activation preview', {
+          expectedBaseGeneration: input.expectedBaseGeneration, actualBaseGeneration: previous?.generation ?? 0,
+        });
+      }
       const candidateGeneration = (previous?.generation ?? 0) + 1;
       const transactionId = randomUUID();
       staging = join(this.paths.staging, transactionId);

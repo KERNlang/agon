@@ -46,9 +46,34 @@ export {
 export type { LegacyCompatibilityOptions } from './compatibility.js';
 
 export { FIRST_PARTY_PACKAGE_GRAPH } from './generated/first-party-package-graph.js';
+export { FIRST_PARTY_UI_HIERARCHY } from './generated/first-party-ui-hierarchy.js';
+
+export {
+  DesiredStateConflictError, DesiredStateError, applyDesiredStatePlan, createFirstPartyModCatalog,
+  createFullCompatDesiredState, parseDesiredState, parseProfileDefinition, planDesiredStateChange,
+  projectRepositoryModSettings,
+} from './desired-state.js';
+export type {
+  AppliedProfileSnapshot, DesiredModState, DesiredStateAction, DesiredStateErrorCode, DesiredStatePlan,
+  FirstPartyModCatalog, FirstPartyModDefinition, FirstPartyPackageClass, FirstPartyPackageDefinition,
+  ProfileDefinition, RepositoryModSettingsProjection,
+} from './desired-state.js';
+export {
+  assertModManagementAccessibility, createModManagementView, reduceModManagementFocus, renderModManagementText,
+} from './mod-management-ui.js';
+export type {
+  ModAvailabilityReason, ModAvailabilityReasonCode, ModManagementEntry, ModManagementGroup,
+  ModManagementView, ModManagementViewOptions,
+} from './mod-management-ui.js';
 
 export { StaticDiscoveryError, assertContainedPackagePath, inspectStaticManifest } from './discovery.js';
 export type { InspectStaticManifestOptions, StaticManifestInspection } from './discovery.js';
+
+export { ModActivationService } from './activation-service.js';
+export type {
+  ActivationApplyResult, ActivationArtifactBuilder, ActivationArtifacts, ActivationRestartPolicy,
+  ActivationTransactionPlan,
+} from './activation-service.js';
 
 export { DurableHostError } from './host-errors.js';
 export type { DurableHostErrorCode } from './host-errors.js';

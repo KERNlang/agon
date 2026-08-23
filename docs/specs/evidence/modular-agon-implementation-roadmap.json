@@ -2613,10 +2613,12 @@
     {
       "id": "C04",
       "claim": "Durable desired state, host generation, journal, profiles and activation exist.",
-      "state": "specified-only",
+      "state": "implemented",
       "evidence": [
-        "docs/specs/modular-agon-runtime-contract.md",
-        "docs/specs/modular-agon-migration-and-verification.md"
+        "docs/specs/modular-agon-slice2-implementation.md",
+        "docs/specs/modular-agon-slice3-implementation.md",
+        "packages/mod-kernel/src/desired-state.ts",
+        "packages/mod-kernel/src/activation-service.ts"
       ]
     },
     {

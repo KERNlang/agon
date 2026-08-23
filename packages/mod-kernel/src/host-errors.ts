@@ -6,6 +6,7 @@ export type DurableHostErrorCode =
   | 'MOD_RESTART_REQUIRED'
   | 'MOD_MIGRATION_FAILED'
   | 'MOD_TRANSACTION_FAILED'
+  | 'MOD_TRANSACTION_CONFLICT'
   | 'MOD_SAFE_MODE';
 
 export class DurableHostError extends Error {

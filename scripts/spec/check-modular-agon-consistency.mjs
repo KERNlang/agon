@@ -41,8 +41,14 @@ for (const group of ui.groups) for (const child of group.children) {
   if (group.nonToggleable) continue;
   const id = typeof child === 'string' ? child : child.id;
   check(modIds.has(id), `UI child has no physical mod: ${id}`);
-  if (typeof child === 'object') check(modIds.has(child.parent), `UI parent has no physical mod: ${child.parent}`);
+  if (typeof child === 'object') {
+    check(modIds.has(child.parent), `UI parent has no physical mod: ${child.parent}`);
+    const packageEntry = packageMap.packages.find((entry) => entry.id === `@kernlang/agon-mod-${child.id}`);
+    check(packageEntry?.dependencies.includes(`@kernlang/agon-mod-${child.parent}`), `UI child ${child.id} does not depend on parent ${child.parent}`);
+  }
 }
+check(new Set(ui.groups.flatMap((group) => group.nonToggleable ? [] : group.children.map((child) => typeof child === 'string' ? child : child.id))).size === modIds.size, 'UI hierarchy must contain every user-toggleable mod exactly once');
+for (const id of modIds) check(ui.groups.some((group) => !group.nonToggleable && group.children.some((child) => (typeof child === 'string' ? child : child.id) === id)), `UI hierarchy is missing user-toggleable mod: ${id}`);
 check(new Set(killList.entries.map((entry) => entry.id)).size === killList.entries.length, 'migration kill-list IDs are not unique');
 
 for (const [name, schema] of Object.entries(schemas)) {

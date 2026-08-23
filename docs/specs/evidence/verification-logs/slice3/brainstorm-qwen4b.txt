@@ -1,0 +1,13 @@
+draft {
+  approach: "Implement a versioned desired state store with dependency-ordered execution for enables/disables, ensuring explicit profile expansions and atomic reverse dependency handling during disables"
+  reasoning: "This enforces explicit profile expansions to prevent silent changes, uses dependency ordering for deterministic preview/apply, and handles reverse dependencies atomically with the --no-cascade option. The versioned state ensures rollbacks to specific revisions without affecting current sessions."
+  tradeoffs: "concurrent modification conflicts", "complex dependency resolution during disables", "performance overhead from versioned state tracking"
+  confidence: 85
+  keyFiles: "src/state/versioned-desired-state.ts", "src/cli/dependency-order.ts", "src/view/dependency-aware-tui.ts"
+  steps {
+    1: "Implement versioned desired state store with explicit profile expansions (mod IDs, constraints) and immutable revisions"
+    2: "Build dependency resolver for enables: enforce required dependency closure; for disables: atomically disable reverse dependents with --no-cascade option"
+    3: "Introduce generation system: track desired-state revisions, allow rollbacks to specific generations, and report restart requirements for long-lived hosts"
+    4: "Develop keyboard-complete TUI view with typed blocked/unavailable reasons and recovery paths, readable without color"
+  }
+}

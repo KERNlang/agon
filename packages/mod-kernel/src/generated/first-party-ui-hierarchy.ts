@@ -1,4 +1,5 @@
-{
+/** Generated from docs/specs/evidence/modular-agon-ui-hierarchy.json. Do not edit. */
+export const FIRST_PARTY_UI_HIERARCHY = {
   "schemaVersion": 1,
   "groups": [
     {
@@ -107,4 +108,4 @@
     "style": "greyed",
     "reasonAndDependencyActionRequired": true
   }
-}
+} as const;

@@ -74,6 +74,7 @@ try {
   ]) compare(join(evidenceDir, name), join(root, 'docs/specs/evidence', name));
 
   compare(join(generatedDir, 'first-party-package-graph.ts'), join(root, 'packages/mod-kernel/src/generated/first-party-package-graph.ts'));
+  compare(join(generatedDir, 'first-party-ui-hierarchy.ts'), join(root, 'packages/mod-kernel/src/generated/first-party-ui-hierarchy.ts'));
   compare(join(generatedDir, 'legacy-surface-catalog.ts'), join(root, 'packages/mod-kernel/src/generated/legacy-surface-catalog.ts'));
   console.log('all modular generated artifacts are current');
 } finally {

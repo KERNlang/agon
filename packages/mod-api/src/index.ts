@@ -1,3 +1,11 @@
+export {
+  AppliedProfileSnapshotSchema, DesiredStateSchema, ProfileDefinitionSchema,
+  validateDesiredState, validateProfileDefinition,
+} from './state.js';
+export type {
+  AppliedProfileSnapshotDocument, DesiredStateDocument, ProfileDefinitionDocument,
+} from './state.js';
+
 export { AGON_MOD_API_VERSION } from './version.js';
 export {
   CONTENT_HASH_PATTERN,

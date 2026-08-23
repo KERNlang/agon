@@ -166,7 +166,7 @@ const uiHierarchy = {
   schemaVersion: 1,
   groups: [
     { id: 'work', label: 'Work', children: ['ask', 'think', 'plan', 'agent', 'goal', 'conquer'] },
-    { id: 'create', label: 'Create and compete', children: ['brainstorm', { id: 'team-brainstorm', parent: 'brainstorm' }, 'forge', { id: 'team-forge', parent: 'forge' }, 'synthesis', 'pipeline-orchestration', 'pipeline-delivery'] },
+    { id: 'create', label: 'Create and compete', children: ['brainstorm', { id: 'team-brainstorm', parent: 'brainstorm' }, 'campfire', 'forge', { id: 'team-forge', parent: 'forge' }, 'synthesis', 'pipeline-orchestration', 'pipeline-delivery'] },
     { id: 'judge', label: 'Review and decide', children: ['review', 'tribunal', { id: 'team-tribunal', parent: 'tribunal' }, 'council', 'nero'] },
     { id: 'knowledge', label: 'Knowledge', children: ['research', 'rag', 'memory', 'history', 'provenance', 'flow'] },
     { id: 'transform', label: 'Transform', children: ['mutate', 'naturalize', 'sanitize'] },

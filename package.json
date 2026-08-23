@@ -57,7 +57,15 @@
     "test:modular-slice2": "npm run test:modular-host && npm run test:modular-crash-recovery && npm run test:modular-migration-engine && npm run test:modular-observability",
     "perf:modular-slice2": "node --expose-gc scripts/spec/measure-modular-slice2.mjs",
     "spec:modular-slice2:qualify:index": "node scripts/spec/qualify-modular-agon-slice2.mjs --subject=index --run-clean",
-    "spec:modular-slice2:qualify:commit": "node scripts/spec/qualify-modular-agon-slice2.mjs --subject=commit --run-clean"
+    "spec:modular-slice2:qualify:commit": "node scripts/spec/qualify-modular-agon-slice2.mjs --subject=commit --run-clean",
+    "test:modular-state": "node scripts/run-node22.mjs vitest run tests/unit/modular-state.test.ts tests/unit/modular-state-schema.test.ts tests/unit/modular-state-matrix.test.ts tests/unit/modular-activation-service.test.ts",
+    "test:modular-ui": "node scripts/run-node22.mjs vitest run tests/unit/modular-ui.test.ts",
+    "test:modular-ui-accessibility": "node scripts/run-node22.mjs vitest run tests/unit/modular-ui-accessibility.test.ts",
+    "spec:modular-slice3:self-test": "node scripts/spec/verify-modular-slice3-gates.mjs",
+    "test:modular-slice3": "npm run test:modular-state && npm run test:modular-ui && npm run test:modular-ui-accessibility && npm run spec:modular-slice3:self-test",
+    "perf:modular-slice3": "node --expose-gc scripts/spec/measure-modular-slice3.mjs",
+    "spec:modular-slice3:qualify:index": "node scripts/spec/qualify-modular-agon-slice3.mjs --subject=index --run-clean",
+    "spec:modular-slice3:qualify:commit": "node scripts/spec/qualify-modular-agon-slice3.mjs --subject=commit --run-clean"
   },
   "engines": {
     "node": ">=22"

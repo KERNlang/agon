@@ -49,3 +49,19 @@ export { FIRST_PARTY_PACKAGE_GRAPH } from './generated/first-party-package-graph
 
 export { StaticDiscoveryError, assertContainedPackagePath, inspectStaticManifest } from './discovery.js';
 export type { InspectStaticManifestOptions, StaticManifestInspection } from './discovery.js';
+
+export { DurableHostError } from './host-errors.js';
+export type { DurableHostErrorCode } from './host-errors.js';
+export { DurableModHost } from './durable-host.js';
+export type {
+  CommitGenerationInput, CommitGenerationResult, DisposableOwner, DurableHostOptions,
+  GenerationLease, GenerationManifest, GenerationPointer, HostBootResult, HostFaultPoint,
+  HostJournalState, HostJournalStep, HostTransactionJournal, HostTransactionOperation,
+  HostTransactionReceipt,
+} from './durable-host.js';
+export type { HostIo } from './host-io.js';
+export { migrateStagedCopy } from './migration-engine.js';
+export type { MigrationReceipt, VersionedMigration } from './migration-engine.js';
+export type { HostBlockedReason, HostDoctorReport, HostEvent, HostEventLevel } from './host-observability.js';
+export { rollbackGeneration } from './host-rollback.js';
+export type { RollbackGenerationOptions } from './host-rollback.js';

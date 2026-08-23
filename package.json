@@ -49,7 +49,15 @@
     "spec:modular-slice1b:qualify:index": "node scripts/spec/qualify-modular-agon-clean-checkout.mjs --subject=index --run-clean",
     "spec:modular-slice1b:qualify:commit": "node scripts/spec/qualify-modular-agon-clean-checkout.mjs --subject=commit --run-clean",
     "test:modular-legacy-oracle": "node scripts/spec/verify-modular-legacy-oracle.mjs",
-    "test:modular-oracle-boundary": "node scripts/spec/verify-modular-legacy-oracle-negative-controls.mjs"
+    "test:modular-oracle-boundary": "node scripts/spec/verify-modular-legacy-oracle-negative-controls.mjs",
+    "test:modular-host": "node scripts/run-node22.mjs vitest run tests/unit/modular-host.test.ts tests/unit/modular-generation-leases.test.ts tests/unit/modular-host-boundaries.test.ts tests/unit/modular-writer-lock-safety.test.ts tests/unit/modular-lease-corruption.test.ts",
+    "test:modular-crash-recovery": "node scripts/run-node22.mjs vitest run tests/unit/modular-crash-recovery.test.ts tests/unit/modular-rollback.test.ts tests/unit/modular-host-failures.test.ts tests/unit/modular-process-crash.test.ts tests/unit/modular-host-corruption.test.ts tests/unit/modular-receipt-reconciliation.test.ts",
+    "test:modular-migration-engine": "node scripts/run-node22.mjs vitest run tests/unit/modular-migration-engine.test.ts",
+    "test:modular-observability": "node scripts/run-node22.mjs vitest run tests/unit/modular-observability.test.ts tests/unit/modular-journal-schema.test.ts tests/unit/modular-host-receipts.test.ts tests/unit/modular-receipt-immutability.test.ts",
+    "test:modular-slice2": "npm run test:modular-host && npm run test:modular-crash-recovery && npm run test:modular-migration-engine && npm run test:modular-observability",
+    "perf:modular-slice2": "node --expose-gc scripts/spec/measure-modular-slice2.mjs",
+    "spec:modular-slice2:qualify:index": "node scripts/spec/qualify-modular-agon-slice2.mjs --subject=index --run-clean",
+    "spec:modular-slice2:qualify:commit": "node scripts/spec/qualify-modular-agon-slice2.mjs --subject=commit --run-clean"
   },
   "engines": {
     "node": ">=22"

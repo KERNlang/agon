@@ -1,10 +1,12 @@
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs';
 
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { homedir } from 'node:os';
+
+import { fileURLToPath } from 'node:url';
 
 import { createRequire } from 'node:module';
 
@@ -108,6 +110,23 @@ export function resolveModelProbeScript(): string|null {
   }
 }
 
+/** Locate the Agon-owned compatibility wrapper shipped by the CLI package. */
+export function resolveAgonModelProbeWrapper(moduleUrl: string|URL = import.meta.url): string|null {
+  const here = dirname(fileURLToPath(moduleUrl));
+  const candidates = [
+    // Dev/vitest: packages/core/src/signals -> packages/cli/py.
+    join(here, '..', '..', '..', 'cli', 'py', 'agon-model-probe-wrapper.py'),
+    // Installed workspace: @kernlang/agon-core/dist -> @kernlang/agon/py.
+    join(here, '..', '..', 'agon', 'py', 'agon-model-probe-wrapper.py'),
+    // CLI bundle: @kernlang/agon/dist -> @kernlang/agon/py.
+    join(here, '..', 'py', 'agon-model-probe-wrapper.py'),
+  ];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
 /**
  * Parse a plain newline-delimited model list (e.g. `opencode models` → one provider/model id per line). Model ids never contain whitespace, so space-bearing lines (headers/prose) are dropped. id == name (the provider/model is what -m takes and is informative to show).
  */
@@ -144,12 +163,14 @@ export async function refreshProbedCliModels(engineId: string, binary: string, l
       const script = resolveModelProbeScript();
       if (!script) { dbg('model_probe.py not found — check @kernlang/agon-engines layout'); return false; }
       const slash = first.slice('__pty:'.length) || '/model';
+      const wrapper = engineId === 'claude' ? resolveAgonModelProbeWrapper() : null;
       const result = await spawnWithTimeout({
         command: pythonBin ?? 'python3',
-        args: [script, binary, slash],
+        args: wrapper ? [wrapper, script, binary, slash] : [script, binary, slash],
         cwd: process.cwd(),
         timeout: 45000,
       });
+      if (result.exitCode !== 0) { dbg(`pty probe exited ${result.exitCode}`); return false; }
       if (result.timedOut) { dbg('pty probe timed out (45s)'); return false; }
       if (!result.stdout.trim()) { dbg('pty probe produced no output'); return false; }
       const parsed = JSON.parse(result.stdout.trim());
@@ -179,7 +200,7 @@ export async function refreshProbedCliModels(engineId: string, binary: string, l
 
 export function findBinary(binary: string): string|null {
   try {
-    const result = execSync(`which ${binary}`, { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    const result = execFileSync('which', [binary], { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
     if (result) {
       return result;
     }
@@ -201,7 +222,7 @@ export function getBinaryVersion(binary: string, versionCmd: string[]): string|n
     return null;
   }
   try {
-    const result = execSync(`${binary} ${versionCmd.join(' ')}`, { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    const result = execFileSync(binary, versionCmd, { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
     return result || null;
   } catch (e) {
     return null;

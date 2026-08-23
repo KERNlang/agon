@@ -1,6 +1,6 @@
 {
   "name": "@kernlang/agon-kernel",
-  "version": "0.0.0-slice.1a",
+  "version": "0.0.0-slice.2",
   "private": true,
   "type": "module",
   "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },

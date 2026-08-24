@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "slice": "S4",
+  "sampleCount": 25,
+  "coldImportMs": {
+    "median": 38.0945,
+    "p95": 39.10591599999999,
+    "max": 39.714958,
+    "budgetP95": 500
+  },
+  "residentRssBytes": {
+    "median": 70729728,
+    "p95": 71270400,
+    "budgetP95": 100663296
+  },
+  "totalWorkspaceBytes": 1520609,
+  "passed": true
+}

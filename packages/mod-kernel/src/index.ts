@@ -90,3 +90,6 @@ export type { MigrationReceipt, VersionedMigration } from './migration-engine.js
 export type { HostBlockedReason, HostDoctorReport, HostEvent, HostEventLevel } from './host-observability.js';
 export { rollbackGeneration } from './host-rollback.js';
 export type { RollbackGenerationOptions } from './host-rollback.js';
+
+export { SUPPORT_PACKAGE_IDS } from './support-module.js';
+export type { SupportPackageDescriptor, SupportPackageFactory, SupportPackageId } from './support-module.js';

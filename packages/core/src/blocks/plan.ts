@@ -1,242 +1,33 @@
-import { PlanStateError } from '../models/errors.js';
+/** @deprecated S4 compatibility adapter. Import from @kernlang/agon-support-worktree. */
+import {
+  approvePlan as approveModularPlan,
+  cancelPlan as cancelModularPlan,
+  failPlan as failModularPlan,
+  startPlan as startModularPlan,
+  type Plan,
+  type WorktreePlanRuntime,
+} from "@kernlang/agon-support-worktree";
 
-import { hostNowIso } from './host-runtime.js';
+import { PlanStateError } from "../models/errors.js";
 
-export type PlanState = 'draft' | 'approved' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
-
-export type StepState = 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
-
-export type StepEffect = 'read' | 'write' | 'exec' | 'network';
-
-export type PlanStepKind = 'dispatch' | 'fitness' | 'critique' | 'synthesis' | 'apply' | 'routing';
-
-export type ApprovalLevel = 'auto' | 'plan' | 'step';
-
-export interface ArtifactRef {
-  type: 'patch'|'diff'|'output'|'manifest';
-  path: string;
-  engineId?: string;
-}
-
-export interface WorkspaceSnapshot {
-  id: string;
-  path: string;
-  headSha: string;
-  branch: string;
-  dirty: boolean;
-}
-
-export interface StepAttempt {
-  startedAt: string;
-  finishedAt?: string;
-  exitCode?: number;
-  error?: string;
-}
-
-export interface StepResult {
-  state: StepState;
-  attempts: StepAttempt[];
-  artifacts: ArtifactRef[];
-  engineId?: string;
-  score?: number;
-  durationMs?: number;
-}
-
-export interface PlanStep {
-  id: string;
-  kind: PlanStepKind;
-  label: string;
-  engineId?: string;
-  effects: StepEffect[];
-  result: StepResult;
-}
-
-export interface PlanAction {
-  type: 'forge'|'build';
-  task: string;
-  fitnessCmd?: string;
-  engineId?: string;
-  engines?: string[];
-  hardened?: boolean;
-}
-
-export interface Plan {
-  id: string;
-  action: PlanAction;
-  state: PlanState;
-  steps: PlanStep[];
-  workspace: WorkspaceSnapshot;
-  createdAt: string;
-  updatedAt: string;
-  currentStepId: string|null;
-}
-
-export type PlanStepInput = Omit<PlanStep,'result'>;
-
-export function createPlan(action: PlanAction, workspace: WorkspaceSnapshot, steps: PlanStepInput[]): Plan {
-  const id = `plan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  return {
-    id,
-    action,
-    state: 'draft',
-    steps: steps.map((s) => Object.assign({}, s, {
-      result: { state: 'pending' as StepState, attempts: [], artifacts: [] },
-    })),
-    workspace,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    currentStepId: null,
-  };
-}
-
-export function advanceStep(plan: Plan, stepId: string, result: StepResult): Plan {
-  const stepIdx = plan.steps.findIndex((s) => s.id === stepId);
-  if (stepIdx === -1) return plan;
-  const newSteps = plan.steps.map((s, i) => i === stepIdx ? { ...s, result } : s);
-  let newState = plan.state;
-  let newCurrentStepId = plan.currentStepId;
-  if (result.state === 'failed') {
-    newState = 'paused';
-    newCurrentStepId = stepId;
-  } else if (result.state === 'completed' || result.state === 'skipped') {
-    const nextPending = newSteps.find((s) => s.result.state === 'pending');
-    if (nextPending) {
-      newCurrentStepId = nextPending.id;
-      newState = 'running';
-    } else {
-      newCurrentStepId = null;
-      newState = 'completed';
-    }
-  }
-  return {
-    ...plan,
-    steps: newSteps,
-    state: newState,
-    currentStepId: newCurrentStepId,
-    updatedAt: new Date().toISOString(),
-  };
-}
-
-export function canAutoApprove(step: PlanStep, level: ApprovalLevel): boolean {
-  if (level === 'auto') {
-    return true;
-  }
-  if (level === 'plan') {
-    return true;
-  }
-  return step.effects.every((e) => e === 'read');
-}
-
-export function mergeStepResult(plan: Plan, stepId: string, partial: Partial<StepResult>): Plan {
-  const stepIdx = plan.steps.findIndex((s) => s.id === stepId);
-  if (stepIdx === -1) return plan;
-  const existing = plan.steps[stepIdx].result;
-  const merged: StepResult = {
-    state: partial.state ?? existing.state,
-    attempts: [...existing.attempts, ...(partial.attempts ?? [])],
-    artifacts: [...existing.artifacts, ...(partial.artifacts ?? [])],
-    engineId: partial.engineId ?? existing.engineId,
-    score: partial.score ?? existing.score,
-    durationMs: partial.durationMs ?? existing.durationMs,
-  };
-  const newSteps = plan.steps.map((s, i) => i === stepIdx ? { ...s, result: merged } : s);
-  let newState = plan.state;
-  let newCurrentStepId = plan.currentStepId;
-  if (merged.state === 'failed') {
-    newState = 'paused';
-    newCurrentStepId = stepId;
-  } else if (merged.state === 'completed' || merged.state === 'skipped') {
-    const nextPending = newSteps.find((s) => s.result.state === 'pending');
-    if (nextPending) {
-      newCurrentStepId = nextPending.id;
-      newState = 'running';
-    } else {
-      newCurrentStepId = null;
-      newState = 'completed';
-    }
-  }
-  return {
-    ...plan,
-    steps: newSteps,
-    state: newState,
-    currentStepId: newCurrentStepId,
-    updatedAt: new Date().toISOString(),
-  };
-}
+const compatibilityRuntime: WorktreePlanRuntime = Object.freeze<WorktreePlanRuntime>({
+  createStateError: (expected: string | string[], actual: string) => new PlanStateError(expected, actual),
+});
 
 export function approvePlan(plan: Plan): Plan {
-  if (plan.state !== 'draft') {
-    throw new PlanStateError('draft', plan.state);
-  }
-  return { ...plan, state: 'approved', updatedAt: hostNowIso() };
+  return approveModularPlan(plan, compatibilityRuntime);
 }
 
 export function startPlan(plan: Plan): Plan {
-  if (plan.state !== 'approved') {
-    throw new PlanStateError('approved', plan.state);
-  }
-  const firstPending = plan.steps.find((s) => s.result.state === 'pending');
-  return { ...plan, state: 'running', currentStepId: firstPending?.id ?? null, updatedAt: hostNowIso() };
+  return startModularPlan(plan, compatibilityRuntime);
 }
 
 export function cancelPlan(plan: Plan): Plan {
-  if (plan.state === 'completed' || plan.state === 'cancelled') {
-    throw new PlanStateError(['draft', 'approved', 'running', 'paused', 'failed'], plan.state);
-  }
-  return { ...plan, state: 'cancelled', updatedAt: hostNowIso() };
+  return cancelModularPlan(plan, compatibilityRuntime);
 }
 
 export function failPlan(plan: Plan, error?: string): Plan {
-  if (plan.state !== 'running' && plan.state !== 'paused') {
-    throw new PlanStateError(['running', 'paused'], plan.state);
-  }
-  let steps = plan.steps;
-  if (plan.currentStepId && error) {
-    const stepIdx = plan.steps.findIndex((s) => s.id === plan.currentStepId);
-    if (stepIdx !== -1) {
-      const step = plan.steps[stepIdx];
-      steps = plan.steps.map((s, i) => i === stepIdx ? {
-        ...s,
-        result: {
-          ...step.result,
-          state: 'failed' as StepState,
-          attempts: [
-            ...step.result.attempts,
-            {
-              startedAt: new Date().toISOString(),
-              finishedAt: new Date().toISOString(),
-              error,
-            },
-          ],
-        },
-      } : s);
-    }
-  }
-  return { ...plan, steps, state: 'failed', updatedAt: new Date().toISOString() };
+  return failModularPlan(plan, error, compatibilityRuntime);
 }
 
-export function resetStepForRetry(plan: Plan, stepId: string): Plan {
-  const stepIdx = plan.steps.findIndex((s) => s.id === stepId);
-  if (stepIdx === -1) return plan;
-
-  const step = plan.steps[stepIdx];
-  if (step.result.state !== 'failed') return plan;
-
-  const newSteps = plan.steps.map((s, i) => {
-    if (i >= stepIdx) {
-      return {
-        ...s,
-        result: { ...s.result, state: 'pending' as StepState },
-      };
-    }
-    return s;
-  });
-
-  return {
-    ...plan,
-    steps: newSteps,
-    state: 'approved',
-    currentStepId: stepId,
-    updatedAt: new Date().toISOString(),
-  };
-}
+export * from "@kernlang/agon-support-worktree";

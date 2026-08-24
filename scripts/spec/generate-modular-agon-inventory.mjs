@@ -8,7 +8,10 @@ mkdirSync(evidenceDir, { recursive: true });
 
 const posix = (value) => value.split('\\').join('/');
 const rel = (value) => posix(relative(root, value));
-const sourceRoots = ['packages/core/src', 'packages/forge/src', 'packages/cli/src', 'packages/mcp/src', 'packages/adapter-cli/src'];
+const supportSourceRoots = readdirSync(join(root, 'packages'), { withFileTypes: true })
+  .filter((entry) => entry.isDirectory() && entry.name.startsWith('support-'))
+  .map((entry) => 'packages/' + entry.name + '/src');
+const sourceRoots = ['packages/core/src', 'packages/forge/src', 'packages/cli/src', 'packages/mcp/src', 'packages/adapter-cli/src', ...supportSourceRoots];
 
 function walk(dir, predicate = () => true) {
   const out = [];

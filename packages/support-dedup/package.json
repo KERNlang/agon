@@ -1,0 +1,27 @@
+{
+  "name": "@kernlang/agon-support-dedup",
+  "version": "0.0.0-slice.4",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "python"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup && tsc -b tsconfig.json --force",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+  },
+  "dependencies": {}
+}

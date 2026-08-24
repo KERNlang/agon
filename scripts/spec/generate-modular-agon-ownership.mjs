@@ -113,6 +113,9 @@ function normalizeSurfaceId(raw) {
 function assignmentFor(category, item) {
   const raw = item.id;
   const normalized = normalizeSurfaceId(raw);
+  const source = item.source ?? '';
+  const physicalSupport = source.match(/^packages\/support-([^/]+)\//);
+  if (physicalSupport) return { class: SUPPORT, package: '@kernlang/agon-support-' + physicalSupport[1], rule: 'physical-support-owner' };
   if (raw === 'Pipeline' && category === 'mcpTools') return { class: MOD, package: '@kernlang/agon-mod-pipeline-orchestration', rule: 'pipeline-surface-split' };
   if (raw === 'pipeline' || raw === 'Pipeline') return { class: MOD, package: '@kernlang/agon-mod-pipeline-delivery', rule: 'pipeline-surface-split' };
   if (supportTools.has(raw)) return { class: SUPPORT, package: supportTools.get(raw), rule: 'exact-shared-tool' };
@@ -120,7 +123,6 @@ function assignmentFor(category, item) {
   const modName = directMod.get(raw) ?? directMod.get(normalized);
   if (modName) return { class: MOD, package: `@kernlang/agon-mod-${modName}`, rule: 'exact-user-surface' };
 
-  const source = item.source ?? '';
   const sourceRules = [
     [/\/(?:brainstorm|team-brainstorm)\b|Brainstorm/, 'brainstorm'], [/\/(?:tribunal|team-tribunal)\b|Tribunal/, 'tribunal'],
     [/\/(?:forge|gauntlet|fitness|corpus)\b|Forge|Gauntlet|Fitness|Corpus/, 'forge'], [/\/campfire\b|Campfire/, 'campfire'],

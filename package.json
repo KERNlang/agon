@@ -11,7 +11,18 @@
     "packages/cli",
     "packages/mcp",
     "packages/saas-api",
-    "packages/dedup"
+    "packages/dedup",
+    "packages/support-engine-runtime",
+    "packages/support-persistence",
+    "packages/support-dedup",
+    "packages/support-browser-bridge",
+    "packages/support-saas-api",
+    "packages/support-engine-catalog",
+    "packages/support-verification",
+    "packages/support-panel",
+    "packages/support-worktree",
+    "packages/support-agent-runtime",
+    "packages/support-judge"
   ],
   "scripts": {
     "postinstall": "node scripts/postinstall.mjs",
@@ -65,7 +76,17 @@
     "test:modular-slice3": "npm run test:modular-state && npm run test:modular-ui && npm run test:modular-ui-accessibility && npm run spec:modular-slice3:self-test",
     "perf:modular-slice3": "node --expose-gc scripts/spec/measure-modular-slice3.mjs",
     "spec:modular-slice3:qualify:index": "node scripts/spec/qualify-modular-agon-slice3.mjs --subject=index --run-clean",
-    "spec:modular-slice3:qualify:commit": "node scripts/spec/qualify-modular-agon-slice3.mjs --subject=commit --run-clean"
+    "spec:modular-slice3:qualify:commit": "node scripts/spec/qualify-modular-agon-slice3.mjs --subject=commit --run-clean",
+    "build:modular-support": "node scripts/spec/verify-modular-support-packages.mjs",
+    "spec:modular-support-metadata:check": "node scripts/spec/generate-modular-support-package-metadata.mjs --check",
+    "test:modular-support-rollback": "node scripts/spec/verify-modular-support-rollback.mjs && node scripts/spec/verify-modular-support-rollback.mjs --self-test",
+    "test:modular-support-packages": "node scripts/spec/verify-modular-support-packages.mjs && node scripts/run-node22.mjs ./node_modules/.bin/vitest run tests/unit/modular-support-parity.test.ts tests/unit/modular-support-runtime-isolation.test.ts",
+    "test:modular-boundaries": "node scripts/spec/verify-modular-support-boundaries.mjs --self-test && node scripts/spec/verify-modular-support-assets.mjs",
+    "test:modular-api-compat": "node scripts/spec/verify-modular-support-api-compat.mjs",
+    "test:modular-foundation-mutation": "node scripts/spec/verify-modular-foundation-mutation.mjs",
+    "perf:modular-slice4": "node scripts/spec/measure-modular-slice4.mjs",
+    "spec:modular-slice4:qualify:index": "node scripts/spec/qualify-modular-agon-slice4.mjs --subject=index --run-clean",
+    "spec:modular-slice4:qualify:commit": "node scripts/spec/qualify-modular-agon-slice4.mjs --subject=commit --run-clean"
   },
   "engines": {
     "node": ">=22"

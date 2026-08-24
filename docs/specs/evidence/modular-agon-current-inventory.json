@@ -2283,12 +2283,17 @@
       {
         "id": "AgentDispatchResult",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/models/types.ts:160"
+        "source": "packages/support-engine-runtime/src/types.ts:105"
       },
       {
         "id": "AgentEvent",
         "declaration": "TypeAliasDeclaration",
         "source": "packages/core/src/models/agent-event.ts:8"
+      },
+      {
+        "id": "AgentEvent",
+        "declaration": "TypeAliasDeclaration",
+        "source": "packages/support-agent-runtime/src/agent-session.ts:6"
       },
       {
         "id": "AgenticTaskSnapshot",
@@ -2308,12 +2313,17 @@
       {
         "id": "AgentSession",
         "declaration": "ClassDeclaration",
-        "source": "packages/core/src/cesar/agent-session.ts:80"
+        "source": "packages/core/src/cesar/agent-session.ts:11"
+      },
+      {
+        "id": "AgentSession",
+        "declaration": "ClassDeclaration",
+        "source": "packages/support-agent-runtime/src/agent-session.ts:83"
       },
       {
         "id": "AgentStepResult",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/cesar/agent-session.ts:27"
+        "source": "packages/support-agent-runtime/src/agent-session.ts:30"
       },
       {
         "id": "AgentSynthesisResult",
@@ -2333,12 +2343,12 @@
       {
         "id": "ApiAgentResult",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/api/agent-loop.ts:74"
+        "source": "packages/support-agent-runtime/src/agent-loop.ts:72"
       },
       {
         "id": "ApplyLockResult",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/blocks/worktree-lock.ts:21"
+        "source": "packages/support-worktree/src/worktree-lock.ts:25"
       },
       {
         "id": "AskMarkerResult",
@@ -2353,22 +2363,22 @@
       {
         "id": "BatchVerdict",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/guards/guard-pipeline.ts:42"
+        "source": "packages/support-verification/src/pipeline-types.ts:8"
       },
       {
         "id": "BrainEvent",
         "declaration": "TypeAliasDeclaration",
-        "source": "packages/core/src/sessions/brain-client.ts:83"
+        "source": "packages/support-persistence/src/brain-client.ts:83"
       },
       {
         "id": "BrainstormResult",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/models/types.ts:697"
+        "source": "packages/core/src/models/types.ts:531"
       },
       {
         "id": "BrainTurnResult",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/sessions/brain-client.ts:112"
+        "source": "packages/support-persistence/src/brain-client.ts:112"
       },
       {
         "id": "BudgetGateResult",
@@ -2383,7 +2393,7 @@
       {
         "id": "CapabilityResult",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/sessions/brain-client.ts:191"
+        "source": "packages/support-persistence/src/brain-client.ts:191"
       },
       {
         "id": "CesarApprovalLedgerRecord",
@@ -2428,12 +2438,12 @@
       {
         "id": "ChatSession",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/signals/chat-store.ts:20"
+        "source": "packages/support-persistence/src/chat-store.ts:22"
       },
       {
         "id": "CheckerPlan",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/diagnostics/checker-discovery.ts:12"
+        "source": "packages/support-verification/src/checker-discovery.ts:12"
       },
       {
         "id": "CitationVerdict",
@@ -2478,7 +2488,7 @@
       {
         "id": "DelegateLedgerRecord",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/signals/delegate-ledger.ts:49"
+        "source": "packages/support-persistence/src/delegate-ledger.ts:49"
       },
       {
         "id": "DelegateResult",
@@ -2488,7 +2498,7 @@
       {
         "id": "DiscoveryResult",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/blocks/engine-discover.ts:5"
+        "source": "packages/support-engine-runtime/src/engine-discover.ts:8"
       },
       {
         "id": "DispatchResult",
@@ -2498,22 +2508,22 @@
       {
         "id": "DispatchResult",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/models/types.ts:147"
+        "source": "packages/support-engine-runtime/src/types.ts:93"
       },
       {
         "id": "DurableAppendResult",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/sessions/event-log.ts:35"
+        "source": "packages/support-persistence/src/event-log.ts:35"
       },
       {
         "id": "EngineHealthRecord",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/signals/engine-health.ts:5"
+        "source": "packages/support-engine-runtime/src/engine-health.ts:3"
       },
       {
         "id": "EngineIsolationPlan",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/signals/isolation.ts:11"
+        "source": "packages/support-engine-runtime/src/isolation.ts:11"
       },
       {
         "id": "EngineLoginPlan",
@@ -2523,12 +2533,12 @@
       {
         "id": "EngineMemoryRecord",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/blocks/engine-memory.ts:32"
+        "source": "packages/support-engine-runtime/src/engine-memory.ts:30"
       },
       {
         "id": "EngineResult",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/models/types.ts:529"
+        "source": "packages/core/src/models/types.ts:363"
       },
       {
         "id": "ExecutionPlan",
@@ -2548,27 +2558,27 @@
       {
         "id": "FileSnapshot",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/blocks/file-history.ts:19"
+        "source": "packages/core/src/forge/virtual-fs.ts:32"
       },
       {
         "id": "FileSnapshot",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/forge/virtual-fs.ts:32"
+        "source": "packages/support-persistence/src/file-history.ts:19"
       },
       {
         "id": "FitnessResult",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/models/types.ts:175"
+        "source": "packages/core/src/models/types.ts:9"
       },
       {
         "id": "FlowRecord",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/signals/flow.ts:55"
+        "source": "packages/support-persistence/src/flow.ts:55"
       },
       {
         "id": "ForgeEvent",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/models/types.ts:617"
+        "source": "packages/core/src/models/types.ts:451"
       },
       {
         "id": "GateAutoRunSnapshot",
@@ -2583,7 +2593,7 @@
       {
         "id": "GauntletResult",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/models/types.ts:717"
+        "source": "packages/core/src/models/types.ts:551"
       },
       {
         "id": "GoalEvent",
@@ -2593,22 +2603,22 @@
       {
         "id": "GuardFireEvent",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/telemetry/guard-telemetry.ts:31"
+        "source": "packages/support-verification/src/guard-telemetry.ts:31"
       },
       {
         "id": "GuardSnapshot",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/guards/guard-types.ts:36"
+        "source": "packages/support-verification/src/guard-types.ts:36"
       },
       {
         "id": "GuardVerdict",
         "declaration": "TypeAliasDeclaration",
-        "source": "packages/core/src/guards/guard-types.ts:59"
+        "source": "packages/support-verification/src/guard-types.ts:59"
       },
       {
         "id": "HealthCheckResult",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/forge/src/health-check.ts:16"
+        "source": "packages/support-panel/src/health-check.ts:24"
       },
       {
         "id": "HookEvent",
@@ -2636,9 +2646,24 @@
         "source": "packages/core/src/jobs/job-service.ts:9"
       },
       {
+        "id": "JudgeOutputEvent",
+        "declaration": "TypeAliasDeclaration",
+        "source": "packages/support-judge/src/contracts.ts:43"
+      },
+      {
+        "id": "JudgeSession",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-judge/src/contracts.ts:38"
+      },
+      {
+        "id": "JudgeVerdict",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-judge/src/contracts.ts:25"
+      },
+      {
         "id": "LoggedEvent",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/sessions/event-log.ts:10"
+        "source": "packages/support-persistence/src/event-log.ts:10"
       },
       {
         "id": "MemoryAppendResult",
@@ -2708,7 +2733,12 @@
       {
         "id": "PasteStoreResult",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/signals/paste-store.ts:22"
+        "source": "packages/support-persistence/src/paste-store.ts:22"
+      },
+      {
+        "id": "PersistedPlan",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-persistence/src/plan-store.ts:33"
       },
       {
         "id": "PersistentSession",
@@ -2718,7 +2748,7 @@
       {
         "id": "Plan",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/blocks/plan.ts:63"
+        "source": "packages/support-worktree/src/plan.ts:68"
       },
       {
         "id": "PostSynthesisFitnessResult",
@@ -2733,7 +2763,7 @@
       {
         "id": "PreflightHealthResult",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/forge/src/health-check.ts:193"
+        "source": "packages/support-panel/src/health-check.ts:201"
       },
       {
         "id": "PrTextResult",
@@ -2743,7 +2773,12 @@
       {
         "id": "PruneResult",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/cli/src/signals/runs-store.ts:49"
+        "source": "packages/support-persistence/src/runs-store.ts:50"
+      },
+      {
+        "id": "PtyPersistentSession",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-persistence/src/session-pty.ts:28"
       },
       {
         "id": "PythonDoctorResult",
@@ -2768,7 +2803,7 @@
       {
         "id": "RatingRecord",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/models/types.ts:221"
+        "source": "packages/core/src/models/types.ts:55"
       },
       {
         "id": "ResearchResult",
@@ -2793,7 +2828,7 @@
       {
         "id": "RunJudgeVerdict",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/signals/run-dir.ts:40"
+        "source": "packages/support-persistence/src/run-dir.ts:41"
       },
       {
         "id": "RunRecord",
@@ -2803,7 +2838,7 @@
       {
         "id": "RunsSnapshot",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/cli/src/signals/runs-store.ts:44"
+        "source": "packages/support-persistence/src/runs-store.ts:45"
       },
       {
         "id": "SearchResult",
@@ -2818,17 +2853,17 @@
       {
         "id": "ServeConnRecord",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/cli/src/bridge/browser-host.ts:145"
+        "source": "packages/support-browser-bridge/src/browser-host.ts:148"
       },
       {
         "id": "SessionResult",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/models/session-result-types.ts:83"
+        "source": "packages/support-persistence/src/session-result-types.ts:83"
       },
       {
         "id": "ShadowableVerdict",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/guards/guard-pipeline.ts:10"
+        "source": "packages/support-verification/src/pipeline-types.ts:3"
       },
       {
         "id": "SidechainEvent",
@@ -2848,12 +2883,12 @@
       {
         "id": "StallResult",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/guards/information-gain.ts:99"
+        "source": "packages/support-verification/src/information-gain.ts:99"
       },
       {
         "id": "StepResult",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/blocks/plan.ts:36"
+        "source": "packages/support-worktree/src/plan.ts:41"
       },
       {
         "id": "SuggestionResult",
@@ -2868,7 +2903,7 @@
       {
         "id": "SyntaxValidatorResult",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/blocks/syntax-validator-bridge.ts:19"
+        "source": "packages/support-browser-bridge/src/syntax-validator-bridge.ts:19"
       },
       {
         "id": "SynthesisResult",
@@ -2888,7 +2923,7 @@
       {
         "id": "TeamEloRecord",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/teams/team-elo.ts:33"
+        "source": "packages/support-persistence/src/team-elo-types.ts:19"
       },
       {
         "id": "TeamEvent",
@@ -2953,7 +2988,7 @@
       {
         "id": "TurnTelemetryRecord",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/telemetry/guard-telemetry.ts:46"
+        "source": "packages/support-verification/src/guard-telemetry.ts:46"
       },
       {
         "id": "UpdateCheckResult",
@@ -2983,614 +3018,614 @@
       {
         "id": "WorkspaceSnapshot",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/blocks/plan.ts:21"
+        "source": "packages/support-worktree/src/plan.ts:26"
       }
     ],
     "configKeys": [
       {
         "id": "agentPermissionLevel",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:265"
+        "source": "packages/core/src/models/types.ts:99"
       },
       {
         "id": "agentTimeout",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:264"
+        "source": "packages/core/src/models/types.ts:98"
       },
       {
         "id": "agonPermissionMode",
         "optional": false,
-        "source": "packages/core/src/models/types.ts:327"
+        "source": "packages/core/src/models/types.ts:161"
       },
       {
         "id": "allowedCommands",
         "optional": false,
-        "source": "packages/core/src/models/types.ts:328"
+        "source": "packages/core/src/models/types.ts:162"
       },
       {
         "id": "approvalLevel",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:263"
+        "source": "packages/core/src/models/types.ts:97"
       },
       {
         "id": "autoCredit",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:348"
+        "source": "packages/core/src/models/types.ts:182"
       },
       {
         "id": "autoReviewAfterForge",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:341"
+        "source": "packages/core/src/models/types.ts:175"
       },
       {
         "id": "autoReviewAfterImpl",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:342"
+        "source": "packages/core/src/models/types.ts:176"
       },
       {
         "id": "browserExtensionIds",
         "optional": false,
-        "source": "packages/core/src/models/types.ts:350"
+        "source": "packages/core/src/models/types.ts:184"
       },
       {
         "id": "buddyTimeout",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:343"
+        "source": "packages/core/src/models/types.ts:177"
       },
       {
         "id": "campfireObserverStrategy",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:324"
+        "source": "packages/core/src/models/types.ts:158"
       },
       {
         "id": "cesarActingFallback",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:290"
+        "source": "packages/core/src/models/types.ts:124"
       },
       {
         "id": "cesarAgenticContinuationLimit",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:297"
+        "source": "packages/core/src/models/types.ts:131"
       },
       {
         "id": "cesarApprovalLedger",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:306"
+        "source": "packages/core/src/models/types.ts:140"
       },
       {
         "id": "cesarAutoApproveMaxCostUsd",
         "optional": false,
-        "source": "packages/core/src/models/types.ts:294"
+        "source": "packages/core/src/models/types.ts:128"
       },
       {
         "id": "cesarAutoApproveMode",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:293"
+        "source": "packages/core/src/models/types.ts:127"
       },
       {
         "id": "cesarAutoHarnessProfile",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:296"
+        "source": "packages/core/src/models/types.ts:130"
       },
       {
         "id": "cesarAutoMode",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:295"
+        "source": "packages/core/src/models/types.ts:129"
       },
       {
         "id": "cesarAutoModePrompted",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:302"
+        "source": "packages/core/src/models/types.ts:136"
       },
       {
         "id": "cesarAutoPipeline",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:285"
+        "source": "packages/core/src/models/types.ts:119"
       },
       {
         "id": "cesarBackend",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:288"
+        "source": "packages/core/src/models/types.ts:122"
       },
       {
         "id": "cesarCodeFastPathChars",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:284"
+        "source": "packages/core/src/models/types.ts:118"
       },
       {
         "id": "cesarDangerousTaskPattern",
         "optional": false,
-        "source": "packages/core/src/models/types.ts:299"
+        "source": "packages/core/src/models/types.ts:133"
       },
       {
         "id": "cesarDelegationReflex",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:314"
+        "source": "packages/core/src/models/types.ts:148"
       },
       {
         "id": "cesarDestructiveActionPattern",
         "optional": false,
-        "source": "packages/core/src/models/types.ts:300"
+        "source": "packages/core/src/models/types.ts:134"
       },
       {
         "id": "cesarDirectThreshold",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:282"
+        "source": "packages/core/src/models/types.ts:116"
       },
       {
         "id": "cesarDisagreementSpread",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:283"
+        "source": "packages/core/src/models/types.ts:117"
       },
       {
         "id": "cesarEnabled",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:279"
+        "source": "packages/core/src/models/types.ts:113"
       },
       {
         "id": "cesarEngine",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:287"
+        "source": "packages/core/src/models/types.ts:121"
       },
       {
         "id": "cesarExperience",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:309"
+        "source": "packages/core/src/models/types.ts:143"
       },
       {
         "id": "cesarExperienceMinEpisodes",
         "optional": false,
-        "source": "packages/core/src/models/types.ts:311"
+        "source": "packages/core/src/models/types.ts:145"
       },
       {
         "id": "cesarExperienceMinSimilarity",
         "optional": false,
-        "source": "packages/core/src/models/types.ts:310"
+        "source": "packages/core/src/models/types.ts:144"
       },
       {
         "id": "cesarExperienceTopK",
         "optional": false,
-        "source": "packages/core/src/models/types.ts:312"
+        "source": "packages/core/src/models/types.ts:146"
       },
       {
         "id": "cesarExperienceWindow",
         "optional": false,
-        "source": "packages/core/src/models/types.ts:313"
+        "source": "packages/core/src/models/types.ts:147"
       },
       {
         "id": "cesarGateAutoRun",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:316"
+        "source": "packages/core/src/models/types.ts:150"
       },
       {
         "id": "cesarGateAutoRunLimit",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:317"
+        "source": "packages/core/src/models/types.ts:151"
       },
       {
         "id": "cesarGateOutputTailChars",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:319"
+        "source": "packages/core/src/models/types.ts:153"
       },
       {
         "id": "cesarGateTimeoutSec",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:318"
+        "source": "packages/core/src/models/types.ts:152"
       },
       {
         "id": "cesarImportantTaskPattern",
         "optional": false,
-        "source": "packages/core/src/models/types.ts:298"
+        "source": "packages/core/src/models/types.ts:132"
       },
       {
         "id": "cesarMcpConfigPath",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:292"
+        "source": "packages/core/src/models/types.ts:126"
       },
       {
         "id": "cesarMcpEnabled",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:291"
+        "source": "packages/core/src/models/types.ts:125"
       },
       {
         "id": "cesarMutateReflex",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:315"
+        "source": "packages/core/src/models/types.ts:149"
       },
       {
         "id": "cesarPipelineThreshold",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:286"
+        "source": "packages/core/src/models/types.ts:120"
       },
       {
         "id": "cesarReadRepeatThreshold",
         "optional": false,
-        "source": "packages/core/src/models/types.ts:322"
+        "source": "packages/core/src/models/types.ts:156"
       },
       {
         "id": "cesarReadSpiralThreshold",
         "optional": false,
-        "source": "packages/core/src/models/types.ts:321"
+        "source": "packages/core/src/models/types.ts:155"
       },
       {
         "id": "cesarScoutCount",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:280"
+        "source": "packages/core/src/models/types.ts:114"
       },
       {
         "id": "cesarScoutTimeout",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:281"
+        "source": "packages/core/src/models/types.ts:115"
       },
       {
         "id": "cesarSearchNudgeThreshold",
         "optional": false,
-        "source": "packages/core/src/models/types.ts:320"
+        "source": "packages/core/src/models/types.ts:154"
       },
       {
         "id": "cesarSelfTurnAutoApprove",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:304"
+        "source": "packages/core/src/models/types.ts:138"
       },
       {
         "id": "cesarSelfTurnAutoApproveMaxDiffTokens",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:305"
+        "source": "packages/core/src/models/types.ts:139"
       },
       {
         "id": "cesarSensitivePathPatterns",
         "optional": false,
-        "source": "packages/core/src/models/types.ts:301"
+        "source": "packages/core/src/models/types.ts:135"
       },
       {
         "id": "cesarStreamingXmlTools",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:323"
+        "source": "packages/core/src/models/types.ts:157"
       },
       {
         "id": "cesarToolTimeline",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:307"
+        "source": "packages/core/src/models/types.ts:141"
       },
       {
         "id": "claudeBackend",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:289"
+        "source": "packages/core/src/models/types.ts:123"
       },
       {
         "id": "commitCoAuthor",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:349"
+        "source": "packages/core/src/models/types.ts:183"
       },
       {
         "id": "contextFormat",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:262"
+        "source": "packages/core/src/models/types.ts:96"
       },
       {
         "id": "contextSummary",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:258"
+        "source": "packages/core/src/models/types.ts:92"
       },
       {
         "id": "corpusReplayLimit",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:277"
+        "source": "packages/core/src/models/types.ts:111"
       },
       {
         "id": "daemonFrameMaxBytes",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:273"
+        "source": "packages/core/src/models/types.ts:107"
       },
       {
         "id": "debug",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:230"
+        "source": "packages/core/src/models/types.ts:64"
       },
       {
         "id": "engineActivationMode",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:243"
+        "source": "packages/core/src/models/types.ts:77"
       },
       {
         "id": "engineEfforts",
         "optional": false,
-        "source": "packages/core/src/models/types.ts:334"
+        "source": "packages/core/src/models/types.ts:168"
       },
       {
         "id": "engineIsolation",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:335"
+        "source": "packages/core/src/models/types.ts:169"
       },
       {
         "id": "engineModels",
         "optional": false,
-        "source": "packages/core/src/models/types.ts:333"
+        "source": "packages/core/src/models/types.ts:167"
       },
       {
         "id": "forgeAutoAcceptScore",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:234"
+        "source": "packages/core/src/models/types.ts:68"
       },
       {
         "id": "forgeClearWinnerSpread",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:235"
+        "source": "packages/core/src/models/types.ts:69"
       },
       {
         "id": "forgeDispatchTimeout",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:233"
+        "source": "packages/core/src/models/types.ts:67"
       },
       {
         "id": "forgeEarlyFinalizeEnabled",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:247"
+        "source": "packages/core/src/models/types.ts:81"
       },
       {
         "id": "forgeEarlyFinalizeMinScore",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:249"
+        "source": "packages/core/src/models/types.ts:83"
       },
       {
         "id": "forgeEarlyFinalizePassingCount",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:248"
+        "source": "packages/core/src/models/types.ts:82"
       },
       {
         "id": "forgeEnabledEngines",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:244"
+        "source": "packages/core/src/models/types.ts:78"
       },
       {
         "id": "forgeEnableSynthesis",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:236"
+        "source": "packages/core/src/models/types.ts:70"
       },
       {
         "id": "forgeFitnessTimeout",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:245"
+        "source": "packages/core/src/models/types.ts:79"
       },
       {
         "id": "forgeFixedStarter",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:239"
+        "source": "packages/core/src/models/types.ts:73"
       },
       {
         "id": "forgeHealthCheckApiTimeoutSec",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:252"
+        "source": "packages/core/src/models/types.ts:86"
       },
       {
         "id": "forgeHealthCheckEnabled",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:250"
+        "source": "packages/core/src/models/types.ts:84"
       },
       {
         "id": "forgeHealthCheckTimeoutSec",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:251"
+        "source": "packages/core/src/models/types.ts:85"
       },
       {
         "id": "forgeJudgeEngine",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:254"
+        "source": "packages/core/src/models/types.ts:88"
       },
       {
         "id": "forgeMaxCritiques",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:237"
+        "source": "packages/core/src/models/types.ts:71"
       },
       {
         "id": "forgeMaxParallelApi",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:253"
+        "source": "packages/core/src/models/types.ts:87"
       },
       {
         "id": "forgeRequireBaselineCheck",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:242"
+        "source": "packages/core/src/models/types.ts:76"
       },
       {
         "id": "forgeStarterStrategy",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:238"
+        "source": "packages/core/src/models/types.ts:72"
       },
       {
         "id": "forgeSynthesisTimeout",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:246"
+        "source": "packages/core/src/models/types.ts:80"
       },
       {
         "id": "forgeTimeout",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:232"
+        "source": "packages/core/src/models/types.ts:66"
       },
       {
         "id": "gauntletEnabled",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:274"
+        "source": "packages/core/src/models/types.ts:108"
       },
       {
         "id": "gauntletMaxBreakers",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:275"
+        "source": "packages/core/src/models/types.ts:109"
       },
       {
         "id": "gauntletRepairTimeout",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:276"
+        "source": "packages/core/src/models/types.ts:110"
       },
       {
         "id": "goalReviewEngines",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:241"
+        "source": "packages/core/src/models/types.ts:75"
       },
       {
         "id": "hiddenEngines",
         "optional": false,
-        "source": "packages/core/src/models/types.ts:331"
+        "source": "packages/core/src/models/types.ts:165"
       },
       {
         "id": "hooks",
         "optional": false,
-        "source": "packages/core/src/models/types.ts:325"
+        "source": "packages/core/src/models/types.ts:159"
       },
       {
         "id": "iconTheme",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:339"
+        "source": "packages/core/src/models/types.ts:173"
       },
       {
         "id": "jobCancelGraceMs",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:271"
+        "source": "packages/core/src/models/types.ts:105"
       },
       {
         "id": "jobEventLimit",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:266"
+        "source": "packages/core/src/models/types.ts:100"
       },
       {
         "id": "jobLabelMaxChars",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:269"
+        "source": "packages/core/src/models/types.ts:103"
       },
       {
         "id": "jobMaxConcurrency",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:268"
+        "source": "packages/core/src/models/types.ts:102"
       },
       {
         "id": "jobOutputChunkChars",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:270"
+        "source": "packages/core/src/models/types.ts:104"
       },
       {
         "id": "jobRetentionLimit",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:267"
+        "source": "packages/core/src/models/types.ts:101"
       },
       {
         "id": "jobShutdownTimeoutMs",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:272"
+        "source": "packages/core/src/models/types.ts:106"
       },
       {
         "id": "narrationFold",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:340"
+        "source": "packages/core/src/models/types.ts:174"
       },
       {
         "id": "neroExplorationRate",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:346"
+        "source": "packages/core/src/models/types.ts:180"
       },
       {
         "id": "onboarded",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:260"
+        "source": "packages/core/src/models/types.ts:94"
       },
       {
         "id": "permissionMode",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:326"
+        "source": "packages/core/src/models/types.ts:160"
       },
       {
         "id": "permissions",
         "optional": false,
-        "source": "packages/core/src/models/types.ts:330"
+        "source": "packages/core/src/models/types.ts:164"
       },
       {
         "id": "projectContext",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:261"
+        "source": "packages/core/src/models/types.ts:95"
       },
       {
         "id": "protectedPushBranches",
         "optional": false,
-        "source": "packages/core/src/models/types.ts:308"
+        "source": "packages/core/src/models/types.ts:142"
       },
       {
         "id": "ratingsEnabled",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:257"
+        "source": "packages/core/src/models/types.ts:91"
       },
       {
         "id": "ratingsPurgeKeepEngines",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:347"
+        "source": "packages/core/src/models/types.ts:181"
       },
       {
         "id": "removedEngines",
         "optional": false,
-        "source": "packages/core/src/models/types.ts:332"
+        "source": "packages/core/src/models/types.ts:166"
       },
       {
         "id": "resumePausedPlanOnStartup",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:303"
+        "source": "packages/core/src/models/types.ts:137"
       },
       {
         "id": "reviewDefaultEngine",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:240"
+        "source": "packages/core/src/models/types.ts:74"
       },
       {
         "id": "reviewFileContext",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:256"
+        "source": "packages/core/src/models/types.ts:90"
       },
       {
         "id": "reviewMaxTokens",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:255"
+        "source": "packages/core/src/models/types.ts:89"
       },
       {
         "id": "sessionContinuity",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:259"
+        "source": "packages/core/src/models/types.ts:93"
       },
       {
         "id": "skillSynthesisThreshold",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:278"
+        "source": "packages/core/src/models/types.ts:112"
       },
       {
         "id": "speculativeEloSpreadThreshold",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:345"
+        "source": "packages/core/src/models/types.ts:179"
       },
       {
         "id": "speculativeThresholdUsd",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:344"
+        "source": "packages/core/src/models/types.ts:178"
       },
       {
         "id": "statusLine",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:338"
+        "source": "packages/core/src/models/types.ts:172"
       },
       {
         "id": "terminalMode",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:336"
+        "source": "packages/core/src/models/types.ts:170"
       },
       {
         "id": "timeout",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:231"
+        "source": "packages/core/src/models/types.ts:65"
       },
       {
         "id": "toolPermissions",
         "optional": false,
-        "source": "packages/core/src/models/types.ts:329"
+        "source": "packages/core/src/models/types.ts:163"
       },
       {
         "id": "uiMotion",
         "optional": true,
-        "source": "packages/core/src/models/types.ts:337"
+        "source": "packages/core/src/models/types.ts:171"
       }
     ],
     "statePaths": [
@@ -3602,7 +3637,7 @@
       {
         "id": ".agon.json",
         "kind": "project-relative",
-        "source": "packages/core/src/signals/config.ts:49"
+        "source": "packages/core/src/signals/config.ts:23"
       },
       {
         "id": ".agon.json",
@@ -3617,7 +3652,7 @@
       {
         "id": ".agon.local.json",
         "kind": "project-relative",
-        "source": "packages/core/src/signals/config.ts:51"
+        "source": "packages/core/src/signals/config.ts:25"
       },
       {
         "id": ".agon/agent-worktrees",
@@ -3657,7 +3692,7 @@
       {
         "id": "AGON_HOME",
         "kind": "exported-path-symbol",
-        "source": "packages/core/src/signals/config.ts:30"
+        "source": "packages/support-persistence/src/paths.ts:13"
       },
       {
         "id": "browser-host",
@@ -3677,12 +3712,12 @@
       {
         "id": "config.json",
         "kind": "agon-home-relative",
-        "source": "packages/core/src/signals/config.ts:79"
+        "source": "packages/core/src/signals/config.ts:53"
       },
       {
         "id": "CORPUS_PATH",
         "kind": "exported-path-symbol",
-        "source": "packages/core/src/signals/config.ts:41"
+        "source": "packages/support-persistence/src/paths.ts:18"
       },
       {
         "id": "daemon",
@@ -3692,12 +3727,12 @@
       {
         "id": "FLOWS_DIR",
         "kind": "exported-path-symbol",
-        "source": "packages/core/src/signals/flow.ts:17"
+        "source": "packages/support-persistence/src/flow.ts:17"
       },
       {
         "id": "GLOBAL_CONFIG_PATH",
         "kind": "exported-path-symbol",
-        "source": "packages/core/src/signals/config.ts:32"
+        "source": "packages/support-persistence/src/paths.ts:14"
       },
       {
         "id": "goals/tmp",
@@ -3715,19 +3750,9 @@
         "source": "packages/cli/src/signals/input-perf.ts:19"
       },
       {
-        "id": "python-sidecar/bin/python",
-        "kind": "agon-home-relative",
-        "source": "packages/core/src/blocks/dedup-resolver.ts:18"
-      },
-      {
-        "id": "python-sidecar/Scripts/python.exe",
-        "kind": "agon-home-relative",
-        "source": "packages/core/src/blocks/dedup-resolver.ts:17"
-      },
-      {
         "id": "RATINGS_PATH",
         "kind": "exported-path-symbol",
-        "source": "packages/core/src/signals/config.ts:37"
+        "source": "packages/support-persistence/src/paths.ts:16"
       },
       {
         "id": "ratings.json",
@@ -3742,17 +3767,7 @@
       {
         "id": "runs",
         "kind": "agon-home-relative",
-        "source": "packages/cli/src/signals/runs-store.ts:61"
-      },
-      {
-        "id": "runs",
-        "kind": "agon-home-relative",
-        "source": "packages/core/src/signals/config.ts:203"
-      },
-      {
-        "id": "runs",
-        "kind": "agon-home-relative",
-        "source": "packages/core/src/signals/delegate-ledger.ts:122"
+        "source": "packages/core/src/signals/config.ts:177"
       },
       {
         "id": "runs",
@@ -3762,12 +3777,12 @@
       {
         "id": "runs",
         "kind": "agon-home-relative",
-        "source": "packages/core/src/signals/run-dir.ts:89"
+        "source": "packages/support-persistence/src/run-dir.ts:90"
       },
       {
         "id": "RUNS_DIR",
         "kind": "exported-path-symbol",
-        "source": "packages/core/src/signals/config.ts:35"
+        "source": "packages/support-persistence/src/paths.ts:15"
       },
       {
         "id": "serve",
@@ -3792,12 +3807,12 @@
       {
         "id": "SKILLS_DIR",
         "kind": "exported-path-symbol",
-        "source": "packages/core/src/signals/config.ts:43"
+        "source": "packages/support-persistence/src/paths.ts:19"
       },
       {
         "id": "TEAM_ELO_PATH",
         "kind": "exported-path-symbol",
-        "source": "packages/core/src/signals/config.ts:39"
+        "source": "packages/support-persistence/src/paths.ts:17"
       },
       {
         "id": "WORKSPACES_PATH",
@@ -3823,20 +3838,8 @@
         "source": "packages/cli/src/commands/provenance.ts"
       },
       {
-        "id": "packages/cli/src/signals/runs-store.ts",
-        "source": "packages/cli/src/signals/runs-store.ts"
-      },
-      {
         "id": "packages/cli/src/telemetry/index.ts",
         "source": "packages/cli/src/telemetry/index.ts"
-      },
-      {
-        "id": "packages/core/src/blocks/engine-memory.ts",
-        "source": "packages/core/src/blocks/engine-memory.ts"
-      },
-      {
-        "id": "packages/core/src/blocks/file-history.ts",
-        "source": "packages/core/src/blocks/file-history.ts"
       },
       {
         "id": "packages/core/src/blocks/file-state-cache.ts",
@@ -3845,10 +3848,6 @@
       {
         "id": "packages/core/src/blocks/provenance.ts",
         "source": "packages/core/src/blocks/provenance.ts"
-      },
-      {
-        "id": "packages/core/src/blocks/worktree-session.ts",
-        "source": "packages/core/src/blocks/worktree-session.ts"
       },
       {
         "id": "packages/core/src/cesar/memory.ts",
@@ -3875,48 +3874,8 @@
         "source": "packages/core/src/rooms/tail.ts"
       },
       {
-        "id": "packages/core/src/sessions/event-log.ts",
-        "source": "packages/core/src/sessions/event-log.ts"
-      },
-      {
-        "id": "packages/core/src/sessions/session-pty.ts",
-        "source": "packages/core/src/sessions/session-pty.ts"
-      },
-      {
-        "id": "packages/core/src/signals/auth-store.ts",
-        "source": "packages/core/src/signals/auth-store.ts"
-      },
-      {
-        "id": "packages/core/src/signals/chat-store.ts",
-        "source": "packages/core/src/signals/chat-store.ts"
-      },
-      {
-        "id": "packages/core/src/signals/delegate-ledger.ts",
-        "source": "packages/core/src/signals/delegate-ledger.ts"
-      },
-      {
-        "id": "packages/core/src/signals/flow.ts",
-        "source": "packages/core/src/signals/flow.ts"
-      },
-      {
-        "id": "packages/core/src/signals/paste-store.ts",
-        "source": "packages/core/src/signals/paste-store.ts"
-      },
-      {
-        "id": "packages/core/src/signals/plan-store.ts",
-        "source": "packages/core/src/signals/plan-store.ts"
-      },
-      {
         "id": "packages/core/src/signals/ratings-maintenance.ts",
         "source": "packages/core/src/signals/ratings-maintenance.ts"
-      },
-      {
-        "id": "packages/core/src/signals/session-store.ts",
-        "source": "packages/core/src/signals/session-store.ts"
-      },
-      {
-        "id": "packages/core/src/telemetry/guard-telemetry-store.ts",
-        "source": "packages/core/src/telemetry/guard-telemetry-store.ts"
       },
       {
         "id": "packages/core/src/tools/tool-save-memory.ts",
@@ -3925,6 +3884,58 @@
       {
         "id": "packages/forge/src/goal/journal.ts",
         "source": "packages/forge/src/goal/journal.ts"
+      },
+      {
+        "id": "packages/support-engine-runtime/src/auth-store.ts",
+        "source": "packages/support-engine-runtime/src/auth-store.ts"
+      },
+      {
+        "id": "packages/support-engine-runtime/src/engine-memory.ts",
+        "source": "packages/support-engine-runtime/src/engine-memory.ts"
+      },
+      {
+        "id": "packages/support-persistence/src/chat-store.ts",
+        "source": "packages/support-persistence/src/chat-store.ts"
+      },
+      {
+        "id": "packages/support-persistence/src/delegate-ledger.ts",
+        "source": "packages/support-persistence/src/delegate-ledger.ts"
+      },
+      {
+        "id": "packages/support-persistence/src/file-history.ts",
+        "source": "packages/support-persistence/src/file-history.ts"
+      },
+      {
+        "id": "packages/support-persistence/src/flow.ts",
+        "source": "packages/support-persistence/src/flow.ts"
+      },
+      {
+        "id": "packages/support-persistence/src/paste-store.ts",
+        "source": "packages/support-persistence/src/paste-store.ts"
+      },
+      {
+        "id": "packages/support-persistence/src/plan-store.ts",
+        "source": "packages/support-persistence/src/plan-store.ts"
+      },
+      {
+        "id": "packages/support-persistence/src/runs-store.ts",
+        "source": "packages/support-persistence/src/runs-store.ts"
+      },
+      {
+        "id": "packages/support-persistence/src/session-pty.ts",
+        "source": "packages/support-persistence/src/session-pty.ts"
+      },
+      {
+        "id": "packages/support-persistence/src/session-store.ts",
+        "source": "packages/support-persistence/src/session-store.ts"
+      },
+      {
+        "id": "packages/support-verification/src/guard-telemetry-store.ts",
+        "source": "packages/support-verification/src/guard-telemetry-store.ts"
+      },
+      {
+        "id": "packages/support-worktree/src/worktree-session.ts",
+        "source": "packages/support-worktree/src/worktree-session.ts"
       }
     ],
     "staticAssets": [
@@ -4002,7 +4013,7 @@
       },
       {
         "id": "packages/cli/package.json",
-        "bytes": 1720,
+        "bytes": 1894,
         "extension": ".json",
         "source": "packages/cli/package.json"
       },
@@ -4092,6 +4103,66 @@
         "id": "packages/saas-api/src/routes/get_health.py",
         "kind": "py",
         "source": "packages/saas-api/src/routes/get_health.py"
+      },
+      {
+        "id": "packages/support-dedup/python/classifier.py",
+        "kind": "py",
+        "source": "packages/support-dedup/python/classifier.py"
+      },
+      {
+        "id": "packages/support-dedup/python/embedder.py",
+        "kind": "py",
+        "source": "packages/support-dedup/python/embedder.py"
+      },
+      {
+        "id": "packages/support-dedup/python/sidecar.py",
+        "kind": "py",
+        "source": "packages/support-dedup/python/sidecar.py"
+      },
+      {
+        "id": "packages/support-dedup/python/syntax-validator.py",
+        "kind": "py",
+        "source": "packages/support-dedup/python/syntax-validator.py"
+      },
+      {
+        "id": "packages/support-engine-runtime/python/agon-model-probe-wrapper.py",
+        "kind": "py",
+        "source": "packages/support-engine-runtime/python/agon-model-probe-wrapper.py"
+      },
+      {
+        "id": "packages/support-persistence/python/history-search.py",
+        "kind": "py",
+        "source": "packages/support-persistence/python/history-search.py"
+      },
+      {
+        "id": "packages/support-saas-api/python/__init__.py",
+        "kind": "py",
+        "source": "packages/support-saas-api/python/__init__.py"
+      },
+      {
+        "id": "packages/support-saas-api/python/health.py",
+        "kind": "py",
+        "source": "packages/support-saas-api/python/health.py"
+      },
+      {
+        "id": "packages/support-saas-api/python/routes/__init__.py",
+        "kind": "py",
+        "source": "packages/support-saas-api/python/routes/__init__.py"
+      },
+      {
+        "id": "packages/support-saas-api/python/routes/get_health.py",
+        "kind": "py",
+        "source": "packages/support-saas-api/python/routes/get_health.py"
+      },
+      {
+        "id": "packages/support-verification/python/agon-tui-probe.py",
+        "kind": "py",
+        "source": "packages/support-verification/python/agon-tui-probe.py"
+      },
+      {
+        "id": "packages/support-verification/python/claude-tui-probe.py",
+        "kind": "py",
+        "source": "packages/support-verification/python/claude-tui-probe.py"
       },
       {
         "id": "scripts/agon-init.sh",

@@ -1,0 +1,291 @@
+import { writeFileSync, readFileSync, existsSync, mkdirSync, unlinkSync, readdirSync, rmdirSync, renameSync } from 'node:fs';
+
+import { join } from 'node:path';
+
+import { createHash } from 'node:crypto';
+
+import { persistencePath } from './paths.js';
+
+import type { CompactionSummaryPart, ToolCacheEntry } from './context-types.js';
+
+
+
+export const SESSION_SCHEMA_VERSION: number = 2;
+
+export const SESSION_MAX_MESSAGES: number = 80;
+
+/**
+ * 60 minutes (was 30 min in v1)
+ */
+export const SESSION_TTL_MS: number = 3600000;
+
+
+export interface SessionStateV2 {
+  schemaVersion: number;
+  messageHistory: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>;
+  compactionSummary: CompactionSummaryPart|null;
+  toolCacheManifest: ToolCacheEntry[];
+  confidence: number|null;
+  readPaths?: string[];
+  savedAt: number;
+}
+
+/**
+ * Session path scoped by engine + workspace to prevent context leaking across repos.
+ */
+export function sessionStorePath(engineId: string): string {
+  const cwdHash = createHash('md5').update(process.cwd()).digest('hex').slice(0, 8);
+  return persistencePath('sessions', `${engineId}-${cwdHash}.json`);
+}
+
+/**
+ * Directory for disk-backed tool result cache files.
+ */
+export function sessionCacheDir(engineId: string): string {
+  const cwdHash = createHash('md5').update(process.cwd()).digest('hex').slice(0, 8);
+  return persistencePath('sessions', `${engineId}-${cwdHash}-cache`);
+}
+
+/**
+ * Write a large tool result to disk cache. Returns manifest entry, or null if write failed.
+ */
+export function saveToolResultToDisk(engineId: string, toolCallId: string, toolName: string, content: string): ToolCacheEntry|null {
+  try {
+    const cacheDir = sessionCacheDir(engineId);
+    mkdirSync(cacheDir, { recursive: true });
+    const filePath = join(cacheDir, `${toolCallId}.txt`);
+    const tmpFilePath = filePath + '.tmp';
+    writeFileSync(tmpFilePath, content, 'utf-8');
+    renameSync(tmpFilePath, filePath);
+    return {
+      toolCallId,
+      toolName,
+      filePath,
+      savedAt: Date.now(),
+      byteSize: Buffer.byteLength(content, 'utf-8'),
+    };
+  } catch (err) {
+    console.warn(`[agon] session-cache: failed to write ${toolCallId}: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+}
+
+/**
+ * Read a cached tool result from disk. Returns null if not found.
+ */
+export function loadToolResultFromDisk(engineId: string, toolCallId: string): string|null {
+  try {
+    const cacheDir = sessionCacheDir(engineId);
+    const filePath = join(cacheDir, `${toolCallId}.txt`);
+    if (!existsSync(filePath)) {
+      return null;
+    }
+    return readFileSync(filePath, 'utf-8');
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Remove cached tool results not in the keep set. Prevents unbounded disk growth.
+ */
+export function pruneToolCache(engineId: string, keepIds: Set<string>): void {
+  try {
+    const cacheDir = sessionCacheDir(engineId);
+    if (!existsSync(cacheDir)) return;
+    const files = readdirSync(cacheDir);
+    for (const f of files) {
+      const id = f.replace(/\.txt$/, '');
+      if (!keepIds.has(id)) {
+        try { unlinkSync(join(cacheDir, f)); } catch { /* already removed */ }
+      }
+    }
+  } catch { /* cache dir doesn't exist or inaccessible */ }
+}
+
+/**
+ * Persist API session state to disk (v2 schema). readPaths (optional) is the serialized ReadPathRegistry set — omitted when the guard pipeline is off (strict), persisted under invariants/shadow so grounded-write knowledge survives a restart.
+ */
+export function saveSessionState(engineId: string, state: { messageHistory: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, confidence:number|null, compactionSummary?:CompactionSummaryPart|null, toolCacheManifest?:ToolCacheEntry[], readPaths?:string[] }): void {
+  const dir = persistencePath('sessions');
+  mkdirSync(dir, { recursive: true });
+  const path = sessionStorePath(engineId);
+  // Keep last SESSION_MAX_MESSAGES to avoid unbounded growth
+  const trimmed = state.messageHistory.slice(-SESSION_MAX_MESSAGES);
+  const data: SessionStateV2 = { schemaVersion: SESSION_SCHEMA_VERSION, messageHistory: trimmed, compactionSummary: state.compactionSummary ?? null, toolCacheManifest: state.toolCacheManifest ?? [], confidence: state.confidence, readPaths: state.readPaths, savedAt: Date.now() };
+  const tmpPath = path + '.tmp';
+  writeFileSync(tmpPath, JSON.stringify(data), 'utf-8');
+  renameSync(tmpPath, path);
+}
+
+/**
+ * Load persisted API session state from disk. Handles v1→v2 migration transparently. readPaths defaults to [] for any state file (v1, or v2 saved before the field existed) so the registry restore is always safe.
+ */
+export function loadSessionState(engineId: string): { messageHistory: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, confidence:number|null, compactionSummary:CompactionSummaryPart|null, toolCacheManifest:ToolCacheEntry[], readPaths:string[], savedAt: number } | null {
+  const path = sessionStorePath(engineId);
+  if (!existsSync(path)) {
+    return null;
+  }
+  try {
+    const raw = readFileSync(path, 'utf-8');
+    const data = JSON.parse(raw);
+    // TTL: discard state older than SESSION_TTL_MS.
+    if (data.savedAt && Date.now() - data.savedAt > SESSION_TTL_MS) {
+      return null;
+    }
+    if (!Array.isArray(data.messageHistory)) {
+      return null;
+    }
+    // v1 migration: old format has no schemaVersion.
+    if (!data.schemaVersion || data.schemaVersion < 2) {
+      return { messageHistory: data.messageHistory, confidence: data.confidence ?? null, compactionSummary: null, toolCacheManifest: [], readPaths: [], savedAt: data.savedAt ?? 0 };
+    }
+    return { messageHistory: data.messageHistory, confidence: data.confidence ?? null, compactionSummary: data.compactionSummary ?? null, toolCacheManifest: data.toolCacheManifest ?? [], readPaths: Array.isArray(data.readPaths) ? data.readPaths : [], savedAt: data.savedAt ?? 0 };
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Delete persisted session state and its cache directory.
+ */
+export function clearSessionState(engineId: string): void {
+  const path = sessionStorePath(engineId);
+  try { if (existsSync(path)) unlinkSync(path); } catch { /* already removed */ }
+  // Clean up cache dir too
+  try {
+    const cacheDir = sessionCacheDir(engineId);
+    if (existsSync(cacheDir)) {
+      const files = readdirSync(cacheDir);
+      for (const f of files) { try { unlinkSync(join(cacheDir, f)); } catch { /* skip */ } }
+      rmdirSync(cacheDir);
+    }
+  } catch { /* cache dir cleanup is best-effort */ }
+}
+
+export const CONVERSATION_SCHEMA_VERSION: number = 1;
+
+export interface ConversationState {
+  schemaVersion: number;
+  messageHistory: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>;
+  savedAt: number;
+  sourceEngine: string|null;
+  readPaths?: string[];
+}
+
+/**
+ * Conversation path scoped by workspace only — shared across all engines.
+ */
+export function conversationStorePath(): string {
+  const cwdHash = createHash('md5').update(process.cwd()).digest('hex').slice(0, 8);
+  return persistencePath('sessions', `conversation-${cwdHash}.json`);
+}
+
+/**
+ * Strip engine-specific artifacts (tool call IDs, internal markers) for clean replay into a different engine.
+ */
+export function stripEngineArtifacts(messages: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>): Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}> {
+  const stringifyContent = (content: any): any => {
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) return content;
+    try {
+      return content == null ? '' : JSON.stringify(content);
+    } catch {
+      return String(content ?? '');
+    }
+  };
+
+  const toolNameById = new Map<string, string>();
+  for (const msg of messages as any[]) {
+    if (msg?.role !== 'assistant' || !Array.isArray(msg.tool_calls)) continue;
+    for (const tc of msg.tool_calls) {
+      const id = typeof tc?.id === 'string' ? tc.id : '';
+      const name = tc?.function?.name ?? tc?.name;
+      if (id && typeof name === 'string' && name.trim()) toolNameById.set(id, name.trim());
+    }
+  }
+
+  return messages.map((msg: any) => {
+    const role = msg?.role === 'assistant' || msg?.role === 'system' || msg?.role === 'user'
+      ? msg.role
+      : 'user';
+    const clean: any = { role };
+
+    if (msg?.role === 'tool') {
+      const id = typeof msg.tool_call_id === 'string' ? msg.tool_call_id : '';
+      const toolName = toolNameById.get(id) ?? 'tool';
+      const content = stringifyContent(msg.content);
+      clean.content = Array.isArray(content)
+        ? content
+        : `[Tool result from previous ${toolName} call]\n${content}`;
+    } else if (msg?.role === 'assistant' && Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
+      const toolNames = msg.tool_calls
+        .map((tc: any) => tc?.function?.name ?? tc?.name ?? '')
+        .filter(Boolean);
+      const marker = toolNames.length > 0
+        ? `[Tool calls omitted during engine handoff: ${toolNames.join(', ')}]`
+        : '[Tool calls omitted during engine handoff]';
+      const content = typeof msg.content === 'string' ? msg.content.trim() : '';
+      clean.content = content ? `${content}\n${marker}` : marker;
+    } else if (typeof msg?.content === 'string') {
+      clean.content = msg.content;
+    } else if (Array.isArray(msg?.content)) {
+      // Multimodal content blocks: keep as-is.
+      clean.content = msg.content;
+    } else {
+      clean.content = stringifyContent(msg?.content);
+    }
+    return clean;
+  });
+}
+
+/**
+ * Save conversation history to the workspace-scoped conversation store. Called before engine switch. readPaths (optional) is the SOURCE engine's serialized ReadPathRegistry set — undefined when the source ran strict (so the persisted shape is byte-identical to before this field existed); the cross-engine restore in session-resume restores the registry from it (stripEngineArtifacts flattens tool_calls to text, so the read paths cannot be re-derived from the replayed history).
+ */
+export function saveConversation(messages: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, sourceEngineId: string|null, readPaths?: string[]): void {
+  const dir = persistencePath('sessions');
+  mkdirSync(dir, { recursive: true });
+  const path = conversationStorePath();
+  // Only keep last SESSION_MAX_MESSAGES to avoid unbounded growth
+  const trimmed = messages.slice(-SESSION_MAX_MESSAGES);
+  const clean = stripEngineArtifacts(trimmed);
+  // readPaths is set only when defined: JSON.stringify drops an undefined
+  // field, so a strict-source save (readPaths === undefined) writes the SAME
+  // JSON shape as before this field existed.
+  const data: ConversationState = { schemaVersion: CONVERSATION_SCHEMA_VERSION, messageHistory: clean, savedAt: Date.now(), sourceEngine: sourceEngineId, readPaths: readPaths };
+  const tmpPath = path + '.tmp';
+  writeFileSync(tmpPath, JSON.stringify(data), 'utf-8');
+  renameSync(tmpPath, path);
+}
+
+/**
+ * Load conversation history from the workspace-scoped store. Used when booting a new engine after a switch. readPaths is the SOURCE engine's serialized ReadPathRegistry set (already canonical), or [] for an old conversation file written before the field existed — the cross-engine restore uses it to ground the new engine's grounded-write check directly (the replayed history's tool_calls were flattened to text by stripEngineArtifacts, so they cannot be re-derived).
+ */
+export function loadConversation(): { messageHistory: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, sourceEngine: string|null, savedAt: number, readPaths: string[] } | null {
+  const path = conversationStorePath();
+  if (!existsSync(path)) {
+    return null;
+  }
+  try {
+    const raw = readFileSync(path, 'utf-8');
+    const data = JSON.parse(raw);
+    // TTL: discard conversations older than SESSION_TTL_MS.
+    if (data.savedAt && Date.now() - data.savedAt > SESSION_TTL_MS) {
+      return null;
+    }
+    if (!Array.isArray(data.messageHistory)) {
+      return null;
+    }
+    return { messageHistory: stripEngineArtifacts(data.messageHistory), sourceEngine: data.sourceEngine ?? null, savedAt: data.savedAt ?? 0, readPaths: Array.isArray(data.readPaths) ? data.readPaths : [] };
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Delete the workspace-scoped conversation store.
+ */
+export function clearConversation(): void {
+  const path = conversationStorePath();
+  try { if (existsSync(path)) unlinkSync(path); } catch { /* already removed */ }
+}

@@ -8,6 +8,39 @@
       "path": "packages/mod-kernel"
     },
     {
+      "path": "packages/support-engine-runtime"
+    },
+    {
+      "path": "packages/support-persistence"
+    },
+    {
+      "path": "packages/support-dedup"
+    },
+    {
+      "path": "packages/support-browser-bridge"
+    },
+    {
+      "path": "packages/support-saas-api"
+    },
+    {
+      "path": "packages/support-engine-catalog"
+    },
+    {
+      "path": "packages/support-verification"
+    },
+    {
+      "path": "packages/support-panel"
+    },
+    {
+      "path": "packages/support-worktree"
+    },
+    {
+      "path": "packages/support-agent-runtime"
+    },
+    {
+      "path": "packages/support-judge"
+    },
+    {
       "path": "packages/core"
     },
     {

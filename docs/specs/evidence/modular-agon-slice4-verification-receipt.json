@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "qualification": "modular-agon-slice4-clean-checkout",
+  "subject": {
+    "kind": "commit",
+    "hash": "sha256:f7a94c449f40d61cfa4f54fd2f2a8081f5a7a5fddf3c842a179344952d2e0b81"
+  },
+  "contamination": {
+    "ignored": [],
+    "untracked": [],
+    "unstaged": []
+  },
+  "graph": {
+    "packages": 49,
+    "declaredEdges": 144,
+    "uniqueEdges": 144,
+    "duplicateEdges": []
+  },
+  "supportExtraction": {
+    "physicalPackages": 11,
+    "sourceOccurrences": 261,
+    "physicalOwners": 90,
+    "compatibilityAdapters": 90,
+    "futureConsumers": 57,
+    "byteVerifiedMirrors": 24
+  },
+  "rollback": {
+    "retainedQualifiedSlice3Commit": "145fba53fba1",
+    "retainedSlice3Subject": "sha256:51ac3696585f273c3a65910472e84a35562f916a67faefa7abf58c1b9072d503",
+    "noSupportPackagePaths": true,
+    "representativeLegacyImplementationsIndependent": true,
+    "slice4AdapterReentry": true,
+    "negativeControl": "passed"
+  },
+  "reviewEvidence": {
+    "passed": true,
+    "engines": [
+      "ollama-direct-gpt-oss",
+      "ollama-local-qwen14",
+      "codex-local-source-adjudicator"
+    ],
+    "locallyActionableFindingsOpen": 0
+  },
+  "cleanCheckoutSteps": [
+    { "id": "npm-ci", "passed": true },
+    { "id": "support-packages", "packages": 11, "passed": true },
+    { "id": "support-boundaries", "passed": true },
+    { "id": "support-api-compat", "revisions": ["N-2", "N-1"], "passed": true },
+    { "id": "support-migration-ledger", "sourceOccurrences": 261, "passed": true },
+    { "id": "support-rollback", "passed": true },
+    { "id": "foundation-mutation", "mutationClassesKilled": 4, "passed": true },
+    { "id": "typecheck", "passed": true },
+    { "id": "lint", "passed": true },
+    { "id": "full-repository-suite", "testFiles": 395, "testsPassed": 5578, "testsSkipped": 4, "passed": true },
+    { "id": "generated-artifacts", "passed": true },
+    { "id": "spec-consistency", "inventoryAssignments": 863, "coverageCells": 1480, "passed": true },
+    { "id": "roadmap-contract", "passed": true },
+    { "id": "legacy-oracle", "workflows": 160, "rawEnvelopes": 7, "transformStages": 4, "passed": true },
+    { "id": "legacy-oracle-negative-controls", "passed": true },
+    { "id": "slice4-performance", "passed": true }
+  ],
+  "performance": {
+    "coldImportP95Ms": 41.262416,
+    "coldImportBudgetP95Ms": 500,
+    "residentRssP95Bytes": 71237632,
+    "residentRssBudgetP95Bytes": 100663296,
+    "passed": true
+  },
+  "passed": true
+}

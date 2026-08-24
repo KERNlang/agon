@@ -1,0 +1,5380 @@
+{
+  "schemaVersion": 1,
+  "slice": "S4",
+  "semantics": "Roadmap extractionSources are ownership occurrences. Whole modules move when they are support implementation; UI/mod consumers remain narrow compatibility consumers until S5/S6.",
+  "packages": 11,
+  "sourceOccurrences": 261,
+  "counts": {
+    "byte-verified-compatibility-mirror": 24,
+    "compatibility-adapter": 90,
+    "compatibility-consumer": 57,
+    "physical-owner": 90
+  },
+  "entries": [
+    {
+      "owner": "@kernlang/agon-support-browser-bridge",
+      "source": "packages/cli/src/commands/ext.ts:142",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/syntax-validator-bridge.ts",
+        "src/browser-host.ts"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-browser-bridge",
+      "source": "packages/core/src/blocks/syntax-validator-bridge.ts:19",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/syntax-validator-bridge.ts",
+        "src/browser-host.ts"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-browser-bridge",
+      "source": "packages/core/src/models/types.ts:184",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/syntax-validator-bridge.ts",
+        "src/browser-host.ts"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-browser-bridge",
+      "source": "packages/core/src/models/types.ts:350",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/syntax-validator-bridge.ts",
+        "src/browser-host.ts"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-browser-bridge",
+      "source": "packages/support-browser-bridge/src/browser-host.ts:145",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/syntax-validator-bridge.ts",
+        "src/browser-host.ts"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-browser-bridge",
+      "source": "packages/support-browser-bridge/src/browser-host.ts:148",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/syntax-validator-bridge.ts",
+        "src/browser-host.ts"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-browser-bridge",
+      "source": "packages/support-browser-bridge/src/syntax-validator-bridge.ts:19",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/syntax-validator-bridge.ts",
+        "src/browser-host.ts"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-dedup",
+      "source": "packages/core/src/blocks/dedup-resolver.ts:17",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/dedup-resolver.ts",
+        "python/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-dedup",
+      "source": "packages/core/src/blocks/dedup-resolver.ts:18",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/dedup-resolver.ts",
+        "python/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-dedup",
+      "source": "packages/dedup/classifier.py",
+      "disposition": "byte-verified-compatibility-mirror",
+      "destination": [
+        "src/dedup-resolver.ts",
+        "python/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-ASSET-PARITY",
+        "S4-PACK"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-dedup",
+      "source": "packages/dedup/embedder.py",
+      "disposition": "byte-verified-compatibility-mirror",
+      "destination": [
+        "src/dedup-resolver.ts",
+        "python/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-ASSET-PARITY",
+        "S4-PACK"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-dedup",
+      "source": "packages/dedup/sidecar.py",
+      "disposition": "byte-verified-compatibility-mirror",
+      "destination": [
+        "src/dedup-resolver.ts",
+        "python/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-ASSET-PARITY",
+        "S4-PACK"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-dedup",
+      "source": "packages/dedup/syntax-validator.py",
+      "disposition": "byte-verified-compatibility-mirror",
+      "destination": [
+        "src/dedup-resolver.ts",
+        "python/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-ASSET-PARITY",
+        "S4-PACK"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-dedup",
+      "source": "packages/support-dedup/python/classifier.py",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/dedup-resolver.ts",
+        "python/"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-dedup",
+      "source": "packages/support-dedup/python/embedder.py",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/dedup-resolver.ts",
+        "python/"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-dedup",
+      "source": "packages/support-dedup/python/sidecar.py",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/dedup-resolver.ts",
+        "python/"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-dedup",
+      "source": "packages/support-dedup/python/syntax-validator.py",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/dedup-resolver.ts",
+        "python/"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "engines/agy.json",
+      "disposition": "byte-verified-compatibility-mirror",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-ASSET-PARITY",
+        "S4-PACK"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "engines/aider.json",
+      "disposition": "byte-verified-compatibility-mirror",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-ASSET-PARITY",
+        "S4-PACK"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "engines/claude.json",
+      "disposition": "byte-verified-compatibility-mirror",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-ASSET-PARITY",
+        "S4-PACK"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "engines/codex.json",
+      "disposition": "byte-verified-compatibility-mirror",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-ASSET-PARITY",
+        "S4-PACK"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "engines/kimi-code.json",
+      "disposition": "byte-verified-compatibility-mirror",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-ASSET-PARITY",
+        "S4-PACK"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "engines/minimax-coding-plan-minimax-m3.json",
+      "disposition": "byte-verified-compatibility-mirror",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-ASSET-PARITY",
+        "S4-PACK"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "engines/mistral.json",
+      "disposition": "byte-verified-compatibility-mirror",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-ASSET-PARITY",
+        "S4-PACK"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "engines/ollama.json",
+      "disposition": "byte-verified-compatibility-mirror",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-ASSET-PARITY",
+        "S4-PACK"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "engines/opencode.json",
+      "disposition": "byte-verified-compatibility-mirror",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-ASSET-PARITY",
+        "S4-PACK"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "engines/openrouter.json",
+      "disposition": "byte-verified-compatibility-mirror",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-ASSET-PARITY",
+        "S4-PACK"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "engines/qwen.json",
+      "disposition": "byte-verified-compatibility-mirror",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-ASSET-PARITY",
+        "S4-PACK"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/adapter-cli/src/execution-plan.ts:71",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/adapter-cli/src/execution-plan.ts:76",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/adapter-cli/src/execution-plan.ts:9",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/cli/py/agon-model-probe-wrapper.py",
+      "disposition": "byte-verified-compatibility-mirror",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-ASSET-PARITY",
+        "S4-PACK"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/cli/src/cesar/tools.ts:56",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/cli/src/commands/login.ts:20",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/cli/src/signals/dispatch.ts:50",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/cli/src/signals/dispatch/intent-orchestration.ts:425",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/cli/src/signals/dispatch/intent-orchestration.ts:43",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/cli/src/signals/dispatch/intent-orchestration.ts:431",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/cli/src/signals/dispatch/intent-orchestration.ts:45",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/cli/src/signals/dispatch/intent-orchestration.ts:55",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/cli/src/signals/dispatch/intent-orchestration.ts:57",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/cli/src/signals/dispatch/intent-orchestration.ts:72",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/cli/src/signals/dispatch/intent-orchestration.ts:74",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/cli/src/signals/dispatch/intent-orchestration.ts:86",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/cli/src/signals/dispatch/intent-orchestration.ts:88",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/cli/src/signals/dispatch/intent-router.ts:27",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/cli/src/signals/dispatch/utils.ts:11",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/cli/src/signals/keyboard.ts:63",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/blocks/engine-discover.ts:5",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/blocks/engine-memory.ts",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/blocks/engine-memory.ts:32",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/blocks/hooks.ts:5",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/models/types.ts:121",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/models/types.ts:147",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/models/types.ts:165",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/models/types.ts:166",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/models/types.ts:167",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/models/types.ts:168",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/models/types.ts:169",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/models/types.ts:181",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/models/types.ts:183",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/models/types.ts:233",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/models/types.ts:240",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/models/types.ts:243",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/models/types.ts:244",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/models/types.ts:254",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/models/types.ts:287",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/models/types.ts:331",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/models/types.ts:332",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/models/types.ts:333",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/models/types.ts:334",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/models/types.ts:335",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/models/types.ts:347",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/models/types.ts:349",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/models/types.ts:363",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/models/types.ts:529",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/models/types.ts:67",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/models/types.ts:74",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/models/types.ts:77",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/models/types.ts:78",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/models/types.ts:88",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/sessions/companion-dispatch.ts:16",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/signals/auth-store.ts",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/signals/engine-health.ts:5",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/core/src/signals/isolation.ts:11",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/support-engine-runtime/python/agon-model-probe-wrapper.py",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/support-engine-runtime/src/auth-store.ts",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/support-engine-runtime/src/engine-discover.ts:8",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/support-engine-runtime/src/engine-health.ts:3",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/support-engine-runtime/src/engine-memory.ts",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/support-engine-runtime/src/engine-memory.ts:30",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/support-engine-runtime/src/isolation.ts:11",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/support-engine-runtime/src/types.ts:105",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/support-engine-runtime/src/types.ts:93",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "patches/@kernlang+agon-engines+0.1.3.patch",
+      "disposition": "byte-verified-compatibility-mirror",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-ASSET-PARITY",
+        "S4-PACK"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/cli/src/bridge/browser-host.ts:145",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/cli/src/cesar/gate-runner.ts:15",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/cli/src/cesar/session.ts",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/cli/src/cesar/telemetry.ts:30",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/cli/src/cesar/tool-observability.ts:11",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/cli/src/cesar/tool-observability.ts:24",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/cli/src/cesar/tool-observability.ts:48",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/cli/src/cesar/turn-state.ts:109",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/cli/src/commands/history.ts",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/cli/src/signals/input-perf.ts:19",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/cli/src/signals/keyboard.ts:70",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/cli/src/signals/runs-store.ts",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/cli/src/signals/runs-store.ts:44",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/cli/src/signals/runs-store.ts:49",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/cli/src/signals/runs-store.ts:61",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/cli/src/telemetry/index.ts:39",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/blocks/file-history.ts",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/blocks/file-history.ts:19",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/blocks/hooks.ts:5",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/cesar/context-thread.ts:183",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/models/session-result-types.ts:83",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/models/types.ts:116",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/models/types.ts:118",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/models/types.ts:126",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/models/types.ts:135",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/models/types.ts:140",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/models/types.ts:259",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/models/types.ts:282",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/models/types.ts:284",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/models/types.ts:292",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/models/types.ts:301",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/models/types.ts:306",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/models/types.ts:93",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/sessions/brain-client.ts:112",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/sessions/brain-client.ts:191",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/sessions/brain-client.ts:83",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/sessions/event-log.ts",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/sessions/event-log.ts:10",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/sessions/event-log.ts:35",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/sessions/persistent-session.ts:58",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/sessions/session-pty.ts",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/signals/chat-store.ts",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/signals/chat-store.ts:20",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/signals/config.ts:30",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/signals/config.ts:32",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/signals/config.ts:35",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/signals/config.ts:37",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/signals/config.ts:39",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/signals/config.ts:41",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/signals/config.ts:43",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/signals/delegate-ledger.ts",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/signals/delegate-ledger.ts:49",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/signals/flow.ts:17",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/signals/flow.ts:55",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/signals/paste-store.ts",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/signals/paste-store.ts:22",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/signals/plan-store.ts",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/signals/run-dir.ts:89",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/signals/session-store.ts",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/core/src/teams/team-elo.ts:33",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/dedup/history-search.py",
+      "disposition": "byte-verified-compatibility-mirror",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-ASSET-PARITY",
+        "S4-PACK"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/python/history-search.py",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/brain-client.ts:112",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/brain-client.ts:191",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/brain-client.ts:83",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/chat-store.ts",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/chat-store.ts:22",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/delegate-ledger.ts",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/delegate-ledger.ts:49",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/event-log.ts:10",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/event-log.ts:35",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/file-history.ts",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/file-history.ts:19",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/flow.ts",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/flow.ts:17",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/flow.ts:55",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/paste-store.ts",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/paste-store.ts:22",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/paths.ts:13",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/paths.ts:14",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/paths.ts:15",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/paths.ts:16",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/paths.ts:17",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/paths.ts:18",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/paths.ts:19",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/plan-store.ts",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/plan-store.ts:33",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/run-dir.ts:41",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/run-dir.ts:90",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/runs-store.ts",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/runs-store.ts:45",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/runs-store.ts:50",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/session-pty.ts",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/session-pty.ts:28",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/session-result-types.ts:83",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/session-store.ts",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-persistence",
+      "source": "packages/support-persistence/src/team-elo-types.ts:19",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/paths.ts",
+        "src/file-history.ts",
+        "src/event-log.ts",
+        "src/session-store.ts",
+        "src/session-pty.ts",
+        "src/brain-client.ts",
+        "src/session-result-types.ts",
+        "src/flow.ts",
+        "src/run-dir.ts",
+        "src/team-elo-types.ts",
+        "python/history-search.py"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-saas-api",
+      "source": "packages/saas-api/src/__init__.py",
+      "disposition": "byte-verified-compatibility-mirror",
+      "destination": [
+        "python/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-ASSET-PARITY",
+        "S4-PACK"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-saas-api",
+      "source": "packages/saas-api/src/health.py",
+      "disposition": "byte-verified-compatibility-mirror",
+      "destination": [
+        "python/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-ASSET-PARITY",
+        "S4-PACK"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-saas-api",
+      "source": "packages/saas-api/src/routes/__init__.py",
+      "disposition": "byte-verified-compatibility-mirror",
+      "destination": [
+        "python/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-ASSET-PARITY",
+        "S4-PACK"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-saas-api",
+      "source": "packages/saas-api/src/routes/get_health.py",
+      "disposition": "byte-verified-compatibility-mirror",
+      "destination": [
+        "python/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-ASSET-PARITY",
+        "S4-PACK"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-saas-api",
+      "source": "packages/support-saas-api/python/__init__.py",
+      "disposition": "physical-owner",
+      "destination": [
+        "python/"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-saas-api",
+      "source": "packages/support-saas-api/python/health.py",
+      "disposition": "physical-owner",
+      "destination": [
+        "python/"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-saas-api",
+      "source": "packages/support-saas-api/python/routes/__init__.py",
+      "disposition": "physical-owner",
+      "destination": [
+        "python/"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-saas-api",
+      "source": "packages/support-saas-api/python/routes/get_health.py",
+      "disposition": "physical-owner",
+      "destination": [
+        "python/"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-catalog",
+      "source": "packages/core/src/cli-models-registry.ts",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/engine-registry.ts",
+        "src/cli-models-registry.ts"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-catalog",
+      "source": "packages/core/src/signals/engine-registry.ts",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/engine-registry.ts",
+        "src/cli-models-registry.ts"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-panel",
+      "source": "packages/forge/src/health-check.ts",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/health-check.ts",
+        "src/seat-dispatch.ts"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-panel",
+      "source": "packages/forge/src/seat-dispatch.ts",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/health-check.ts",
+        "src/seat-dispatch.ts"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-panel",
+      "source": "packages/support-panel/src/health-check.ts:201",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/health-check.ts",
+        "src/seat-dispatch.ts"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-panel",
+      "source": "packages/support-panel/src/health-check.ts:207",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/health-check.ts",
+        "src/seat-dispatch.ts"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-panel",
+      "source": "packages/support-panel/src/health-check.ts:24",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/health-check.ts",
+        "src/seat-dispatch.ts"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-panel",
+      "source": "packages/support-panel/src/health-check.ts:30",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/health-check.ts",
+        "src/seat-dispatch.ts"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-verification",
+      "source": "packages/cli/py/agon-tui-probe.py",
+      "disposition": "byte-verified-compatibility-mirror",
+      "destination": [
+        "src/guard-types.ts",
+        "src/guard-telemetry.ts",
+        "src/guard-telemetry-store.ts",
+        "src/checker-discovery.ts",
+        "src/information-gain.ts",
+        "src/pipeline-types.ts",
+        "python/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-ASSET-PARITY",
+        "S4-PACK"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-verification",
+      "source": "packages/cli/src/cesar/tools.ts:57",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/guard-types.ts",
+        "src/guard-telemetry.ts",
+        "src/guard-telemetry-store.ts",
+        "src/checker-discovery.ts",
+        "src/information-gain.ts",
+        "src/pipeline-types.ts",
+        "python/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-verification",
+      "source": "packages/cli/src/cesar/tools.ts:58",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/guard-types.ts",
+        "src/guard-telemetry.ts",
+        "src/guard-telemetry-store.ts",
+        "src/checker-discovery.ts",
+        "src/information-gain.ts",
+        "src/pipeline-types.ts",
+        "python/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-verification",
+      "source": "packages/cli/src/signals/input-perf.ts:53",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/guard-types.ts",
+        "src/guard-telemetry.ts",
+        "src/guard-telemetry-store.ts",
+        "src/checker-discovery.ts",
+        "src/information-gain.ts",
+        "src/pipeline-types.ts",
+        "python/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-verification",
+      "source": "packages/core/src/diagnostics/checker-discovery.ts:12",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/guard-types.ts",
+        "src/guard-telemetry.ts",
+        "src/guard-telemetry-store.ts",
+        "src/checker-discovery.ts",
+        "src/information-gain.ts",
+        "src/pipeline-types.ts",
+        "python/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-verification",
+      "source": "packages/core/src/guards/guard-pipeline.ts:10",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/guard-types.ts",
+        "src/guard-telemetry.ts",
+        "src/guard-telemetry-store.ts",
+        "src/checker-discovery.ts",
+        "src/information-gain.ts",
+        "src/pipeline-types.ts",
+        "python/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-verification",
+      "source": "packages/core/src/guards/guard-pipeline.ts:42",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/guard-types.ts",
+        "src/guard-telemetry.ts",
+        "src/guard-telemetry-store.ts",
+        "src/checker-discovery.ts",
+        "src/information-gain.ts",
+        "src/pipeline-types.ts",
+        "python/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-verification",
+      "source": "packages/core/src/guards/guard-types.ts:36",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/guard-types.ts",
+        "src/guard-telemetry.ts",
+        "src/guard-telemetry-store.ts",
+        "src/checker-discovery.ts",
+        "src/information-gain.ts",
+        "src/pipeline-types.ts",
+        "python/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-verification",
+      "source": "packages/core/src/guards/guard-types.ts:59",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/guard-types.ts",
+        "src/guard-telemetry.ts",
+        "src/guard-telemetry-store.ts",
+        "src/checker-discovery.ts",
+        "src/information-gain.ts",
+        "src/pipeline-types.ts",
+        "python/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-verification",
+      "source": "packages/core/src/guards/information-gain.ts:99",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/guard-types.ts",
+        "src/guard-telemetry.ts",
+        "src/guard-telemetry-store.ts",
+        "src/checker-discovery.ts",
+        "src/information-gain.ts",
+        "src/pipeline-types.ts",
+        "python/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-verification",
+      "source": "packages/core/src/signals/run-dir.ts:40",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/guard-types.ts",
+        "src/guard-telemetry.ts",
+        "src/guard-telemetry-store.ts",
+        "src/checker-discovery.ts",
+        "src/information-gain.ts",
+        "src/pipeline-types.ts",
+        "python/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-verification",
+      "source": "packages/core/src/telemetry/guard-telemetry-store.ts",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/guard-types.ts",
+        "src/guard-telemetry.ts",
+        "src/guard-telemetry-store.ts",
+        "src/checker-discovery.ts",
+        "src/information-gain.ts",
+        "src/pipeline-types.ts",
+        "python/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-verification",
+      "source": "packages/core/src/telemetry/guard-telemetry.ts:31",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/guard-types.ts",
+        "src/guard-telemetry.ts",
+        "src/guard-telemetry-store.ts",
+        "src/checker-discovery.ts",
+        "src/information-gain.ts",
+        "src/pipeline-types.ts",
+        "python/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-verification",
+      "source": "packages/core/src/telemetry/guard-telemetry.ts:46",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/guard-types.ts",
+        "src/guard-telemetry.ts",
+        "src/guard-telemetry-store.ts",
+        "src/checker-discovery.ts",
+        "src/information-gain.ts",
+        "src/pipeline-types.ts",
+        "python/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-verification",
+      "source": "packages/support-verification/python/agon-tui-probe.py",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/guard-types.ts",
+        "src/guard-telemetry.ts",
+        "src/guard-telemetry-store.ts",
+        "src/checker-discovery.ts",
+        "src/information-gain.ts",
+        "src/pipeline-types.ts",
+        "python/"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-verification",
+      "source": "packages/support-verification/python/claude-tui-probe.py",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/guard-types.ts",
+        "src/guard-telemetry.ts",
+        "src/guard-telemetry-store.ts",
+        "src/checker-discovery.ts",
+        "src/information-gain.ts",
+        "src/pipeline-types.ts",
+        "python/"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-verification",
+      "source": "packages/support-verification/src/checker-discovery.ts:12",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/guard-types.ts",
+        "src/guard-telemetry.ts",
+        "src/guard-telemetry-store.ts",
+        "src/checker-discovery.ts",
+        "src/information-gain.ts",
+        "src/pipeline-types.ts",
+        "python/"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-verification",
+      "source": "packages/support-verification/src/guard-telemetry-store.ts",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/guard-types.ts",
+        "src/guard-telemetry.ts",
+        "src/guard-telemetry-store.ts",
+        "src/checker-discovery.ts",
+        "src/information-gain.ts",
+        "src/pipeline-types.ts",
+        "python/"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-verification",
+      "source": "packages/support-verification/src/guard-telemetry.ts:31",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/guard-types.ts",
+        "src/guard-telemetry.ts",
+        "src/guard-telemetry-store.ts",
+        "src/checker-discovery.ts",
+        "src/information-gain.ts",
+        "src/pipeline-types.ts",
+        "python/"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-verification",
+      "source": "packages/support-verification/src/guard-telemetry.ts:46",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/guard-types.ts",
+        "src/guard-telemetry.ts",
+        "src/guard-telemetry-store.ts",
+        "src/checker-discovery.ts",
+        "src/information-gain.ts",
+        "src/pipeline-types.ts",
+        "python/"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-verification",
+      "source": "packages/support-verification/src/guard-types.ts:36",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/guard-types.ts",
+        "src/guard-telemetry.ts",
+        "src/guard-telemetry-store.ts",
+        "src/checker-discovery.ts",
+        "src/information-gain.ts",
+        "src/pipeline-types.ts",
+        "python/"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-verification",
+      "source": "packages/support-verification/src/guard-types.ts:59",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/guard-types.ts",
+        "src/guard-telemetry.ts",
+        "src/guard-telemetry-store.ts",
+        "src/checker-discovery.ts",
+        "src/information-gain.ts",
+        "src/pipeline-types.ts",
+        "python/"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-verification",
+      "source": "packages/support-verification/src/information-gain.ts:99",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/guard-types.ts",
+        "src/guard-telemetry.ts",
+        "src/guard-telemetry-store.ts",
+        "src/checker-discovery.ts",
+        "src/information-gain.ts",
+        "src/pipeline-types.ts",
+        "python/"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-verification",
+      "source": "packages/support-verification/src/pipeline-types.ts:3",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/guard-types.ts",
+        "src/guard-telemetry.ts",
+        "src/guard-telemetry-store.ts",
+        "src/checker-discovery.ts",
+        "src/information-gain.ts",
+        "src/pipeline-types.ts",
+        "python/"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-verification",
+      "source": "packages/support-verification/src/pipeline-types.ts:8",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/guard-types.ts",
+        "src/guard-telemetry.ts",
+        "src/guard-telemetry-store.ts",
+        "src/checker-discovery.ts",
+        "src/information-gain.ts",
+        "src/pipeline-types.ts",
+        "python/"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-verification",
+      "source": "scripts/claude-tui-probe.py",
+      "disposition": "byte-verified-compatibility-mirror",
+      "destination": [
+        "src/guard-types.ts",
+        "src/guard-telemetry.ts",
+        "src/guard-telemetry-store.ts",
+        "src/checker-discovery.ts",
+        "src/information-gain.ts",
+        "src/pipeline-types.ts",
+        "python/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-ASSET-PARITY",
+        "S4-PACK"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-agent-runtime",
+      "source": "packages/core/src/api/agent-loop.ts",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/agent-loop.ts",
+        "src/agent-session.ts"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-agent-runtime",
+      "source": "packages/core/src/cesar/agent-session.ts",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/agent-loop.ts",
+        "src/agent-session.ts"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-agent-runtime",
+      "source": "packages/support-agent-runtime/src/agent-loop.ts:72",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/agent-loop.ts",
+        "src/agent-session.ts"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-agent-runtime",
+      "source": "packages/support-agent-runtime/src/agent-loop.ts:83",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/agent-loop.ts",
+        "src/agent-session.ts"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-agent-runtime",
+      "source": "packages/support-agent-runtime/src/agent-session.ts:30",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/agent-loop.ts",
+        "src/agent-session.ts"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-agent-runtime",
+      "source": "packages/support-agent-runtime/src/agent-session.ts:41",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/agent-loop.ts",
+        "src/agent-session.ts"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-agent-runtime",
+      "source": "packages/support-agent-runtime/src/agent-session.ts:6",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/agent-loop.ts",
+        "src/agent-session.ts"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-agent-runtime",
+      "source": "packages/support-agent-runtime/src/agent-session.ts:83",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/agent-loop.ts",
+        "src/agent-session.ts"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-agent-runtime",
+      "source": "packages/support-agent-runtime/src/agent-session.ts:94",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/agent-loop.ts",
+        "src/agent-session.ts"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-judge",
+      "source": "packages/cli/src/cesar/judge.ts",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/contracts.ts",
+        "src/judge.ts"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-judge",
+      "source": "packages/support-judge/src/contracts.ts:25",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/contracts.ts",
+        "src/judge.ts"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-judge",
+      "source": "packages/support-judge/src/contracts.ts:38",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/contracts.ts",
+        "src/judge.ts"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-judge",
+      "source": "packages/support-judge/src/contracts.ts:43",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/contracts.ts",
+        "src/judge.ts"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-worktree",
+      "source": "packages/core/src/blocks/git.ts:420",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/plan.ts",
+        "src/worktree-lock.ts",
+        "src/worktree-session.ts"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-worktree",
+      "source": "packages/core/src/blocks/plan.ts:21",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/plan.ts",
+        "src/worktree-lock.ts",
+        "src/worktree-session.ts"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-worktree",
+      "source": "packages/core/src/blocks/workspace.ts:37",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/plan.ts",
+        "src/worktree-lock.ts",
+        "src/worktree-session.ts"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-worktree",
+      "source": "packages/core/src/blocks/worktree-lock.ts:21",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/plan.ts",
+        "src/worktree-lock.ts",
+        "src/worktree-session.ts"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-worktree",
+      "source": "packages/core/src/blocks/worktree-session.ts",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/plan.ts",
+        "src/worktree-lock.ts",
+        "src/worktree-session.ts"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-worktree",
+      "source": "packages/support-worktree/src/plan.ts:26",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/plan.ts",
+        "src/worktree-lock.ts",
+        "src/worktree-session.ts"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-worktree",
+      "source": "packages/support-worktree/src/plan.ts:32",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/plan.ts",
+        "src/worktree-lock.ts",
+        "src/worktree-session.ts"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-worktree",
+      "source": "packages/support-worktree/src/plan.ts:41",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/plan.ts",
+        "src/worktree-lock.ts",
+        "src/worktree-session.ts"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-worktree",
+      "source": "packages/support-worktree/src/plan.ts:47",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/plan.ts",
+        "src/worktree-lock.ts",
+        "src/worktree-session.ts"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-worktree",
+      "source": "packages/support-worktree/src/plan.ts:68",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/plan.ts",
+        "src/worktree-lock.ts",
+        "src/worktree-session.ts"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-worktree",
+      "source": "packages/support-worktree/src/plan.ts:74",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/plan.ts",
+        "src/worktree-lock.ts",
+        "src/worktree-session.ts"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-worktree",
+      "source": "packages/support-worktree/src/worktree-lock.ts:25",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/plan.ts",
+        "src/worktree-lock.ts",
+        "src/worktree-session.ts"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-worktree",
+      "source": "packages/support-worktree/src/worktree-lock.ts:31",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/plan.ts",
+        "src/worktree-lock.ts",
+        "src/worktree-session.ts"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-worktree",
+      "source": "packages/support-worktree/src/worktree-session.ts",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/plan.ts",
+        "src/worktree-lock.ts",
+        "src/worktree-session.ts"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    }
+  ]
+}

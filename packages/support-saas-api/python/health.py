@@ -1,0 +1,34 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from routes.get_health import router as get_health_router
+from uuid import uuid4
+import logging
+import os
+import uvicorn
+
+app = FastAPI(title="AgonAPI")
+
+
+@app.middleware("http")
+async def add_request_id(request, call_next):
+    request_id = str(uuid4())
+    request.state.request_id = request_id
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
+
+app.add_middleware(CORSMiddleware, allow_origins=[origin.strip() for origin in os.environ.get("CORS_ORIGINS", "http://localhost:3000").split(",") if origin.strip()], allow_credentials=True, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], allow_headers=["Authorization", "Content-Type", "X-Request-ID"])
+# JSON parsing handled automatically by FastAPI/Pydantic
+
+app.include_router(get_health_router)
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    logging.exception("Unhandled exception")
+    return JSONResponse(status_code=500, content={"error": "Internal Server Error"})
+
+
+if __name__ == "__main__":
+    uvicorn.run(app, host=os.environ.get("HOST", "127.0.0.1"), port=3030)

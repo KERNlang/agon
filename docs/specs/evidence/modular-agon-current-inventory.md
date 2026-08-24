@@ -14,12 +14,12 @@
 | cesarRoutes | 70 |
 | lifecycleHooks | 12 |
 | emittedEvents | 29 |
-| resultAndEnvelopeTypes | 142 |
+| resultAndEnvelopeTypes | 149 |
 | configKeys | 121 |
-| statePaths | 42 |
-| stateStoreModules | 30 |
+| statePaths | 38 |
+| stateStoreModules | 29 |
 | staticAssets | 18 |
-| pythonAndNativeComponents | 15 |
+| pythonAndNativeComponents | 27 |
 | generatedDocumentation | 3 |
 
 Canonical machine-readable evidence: [docs/specs/evidence/modular-agon-current-inventory.json](./evidence/modular-agon-current-inventory.json).

@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@kernlang/agon-core": "*",
+    "@kernlang/agon-support-panel": "0.0.0-slice.4",
     "@kernlang/protocol": "~4.5.0"
-  },
-  "optionalDependencies": {}
+  }
 }

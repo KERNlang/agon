@@ -179,8 +179,9 @@ describe('withFileLock', () => {
     // reclaimable while live. withFileLock spins SYNCHRONOUSLY, so the release
     // must come from a child process — an in-process setTimeout would never run.
     const staleMs = 250;
+    const holderAcquiredAt = new Date().toISOString();
     writeFileSync(lockPath, JSON.stringify({
-      pid: process.pid, uuid: 'holder', hostname: hostname(), acquiredAt: new Date().toISOString(),
+      pid: process.pid, uuid: 'holder', hostname: hostname(), acquiredAt: holderAcquiredAt,
     }), { flag: 'wx' });
     const started = Date.now();
     execFile(process.execPath, ['-e', `setTimeout(() => require('node:fs').unlinkSync(${JSON.stringify(lockPath)}), 300)`]);
@@ -189,8 +190,10 @@ describe('withFileLock', () => {
       observedAcquiredAt = JSON.parse(readFileSync(lockPath, 'utf-8')).acquiredAt;
     }, { timeoutMs: 5000, staleMs });
     const waited = Date.now() - started;
+    const oldAge = Date.now() - new Date(holderAcquiredAt).getTime();
     const age = Date.now() - new Date(observedAcquiredAt).getTime();
-    expect(waited).toBeGreaterThan(staleMs); // out-waited the holder past the TTL
+    expect(oldAge).toBeGreaterThan(staleMs); // the actual holder timestamp passed the TTL
+    expect(waited).toBeGreaterThanOrEqual(staleMs); // scheduler timing may land exactly on the boundary
     expect(age).toBeLessThan(staleMs); // pre-fix this was ≈waited: stale at birth
   });
 

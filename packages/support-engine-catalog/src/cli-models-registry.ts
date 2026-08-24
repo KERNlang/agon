@@ -1,0 +1,365 @@
+import { execFileSync } from 'node:child_process';
+
+import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs';
+
+import { dirname, join } from 'node:path';
+
+import { homedir } from 'node:os';
+
+import { fileURLToPath } from 'node:url';
+
+import { createRequire } from 'node:module';
+
+import { spawnWithTimeout } from '@kernlang/agon-support-engine-runtime';
+
+function getCacheDir(): string {
+  const override = process.env.AGON_HOME?.trim();
+  return join(override ? override : join(homedir(), '.agon'), 'cache');
+}
+
+export interface CliModelEntry {
+  id: string;
+  name: string;
+  providerId: string;
+  providerName: string;
+  engineId: string;
+  engineBinary: string;
+  contextWindow?: number;
+  toolCall?: boolean;
+  reasoning?: boolean;
+}
+
+export interface CliProviderGroup {
+  providerId: string;
+  providerName: string;
+  engineId: string;
+  engineBinary: string;
+  installed: boolean;
+  version: string|null;
+  models: CliModelEntry[];
+  effortLevels?: string[];
+  loading?: boolean;
+}
+
+export const ENGINE_PROVIDER_MAP: Record<string, {providerId:string, engineId:string, engineBinary:string, versionCmd:string[], listCmd?:string[], effortLevels?:string[]}> = ({ anthropic: { providerId: 'anthropic', engineId: 'claude', engineBinary: 'claude', versionCmd: ['--version'], listCmd: ['__pty:/model'], effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'] }, openai: { providerId: 'openai', engineId: 'codex', engineBinary: 'codex', versionCmd: ['--version'], listCmd: ['__pty:/model'], effortLevels: ['low', 'medium', 'high', 'xhigh'] }, google: { providerId: 'google', engineId: 'agy', engineBinary: 'agy', versionCmd: ['--version'], listCmd: ['__pty:/model'] }, opencode: { providerId: 'opencode', engineId: 'opencode', engineBinary: 'opencode', versionCmd: ['--version'], listCmd: ['models'] }, mistral: { providerId: 'mistral', engineId: 'mistral', engineBinary: 'mistral', versionCmd: ['--version'] }, openrouter: { providerId: 'openrouter', engineId: 'openrouter', engineBinary: 'openrouter', versionCmd: [] } });
+
+export const ENGINE_DISPLAY_NAMES: Record<string,string> = ({ claude: 'Claude', codex: 'Codex', agy: 'Antigravity', opencode: 'OpenCode', mistral: 'Mistral', openrouter: 'OpenRouter' });
+
+export const FALLBACK_MODELS: Record<string, {id:string, name:string, contextWindow?:number, toolCall?:boolean, reasoning?:boolean}[]> = ({ anthropic: [ { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', contextWindow: 200000, toolCall: true, reasoning: true }, { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5', contextWindow: 200000, toolCall: true, reasoning: true } ], openai: [ { id: 'gpt-5.5', name: 'GPT-5.5', contextWindow: 400000, toolCall: true, reasoning: true }, { id: 'gpt-5.4', name: 'GPT-5.4', contextWindow: 400000, toolCall: true, reasoning: true } ], google: [ { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', contextWindow: 1048576, toolCall: true, reasoning: true }, { id: 'gemini-3.1-pro', name: 'Gemini 3.1 Pro', contextWindow: 1048576, toolCall: true, reasoning: true }, { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash', contextWindow: 1048576, toolCall: true, reasoning: true } ], mistral: [ { id: 'mistral-large-latest', name: 'Mistral Large', contextWindow: 128000, toolCall: true, reasoning: false }, { id: 'codestral-latest', name: 'Codestral', contextWindow: 256000, toolCall: true, reasoning: false } ], openrouter: [ { id: 'auto', name: 'Auto (best for task)', toolCall: true, reasoning: false } ], opencode: [ { id: 'anthropic/claude-sonnet-4-6', name: 'anthropic/claude-sonnet-4-6', toolCall: true, reasoning: false }, { id: 'openai/gpt-5.5', name: 'openai/gpt-5.5', toolCall: true, reasoning: false } ] });
+
+export const CACHE_TTL_MS: number = 3600000;
+
+export const PROBE_TTL_MS: number = 86400000;
+
+export interface ProbedModel {
+  id: string;
+  name: string;
+  current: boolean;
+}
+
+export function probedModelsCacheFile(engineId: string): string {
+  return join(getCacheDir(), `cli-models-${engineId.replace(/[^a-zA-Z0-9_-]/g, '-')}.json`);
+}
+
+/**
+ * Read the cached live /model probe for an engine, or null when absent/stale/empty. Synchronous so the picker's group builders can prefer it without going async.
+ */
+export function readProbedCliModels(engineId: string, ttlMs?: number): ProbedModel[]|null {
+  try {
+    const file = probedModelsCacheFile(engineId);
+    if (!existsSync(file)) return null;
+    const age = Date.now() - statSync(file).mtimeMs;
+    if (age > (ttlMs ?? PROBE_TTL_MS)) return null;
+    const data = JSON.parse(readFileSync(file, 'utf-8'));
+    const raw = Array.isArray(data?.models) ? data.models : [];
+    const models: ProbedModel[] = raw
+      .map((m: any) => ({ id: String(m.id ?? ''), name: String(m.name ?? m.id ?? ''), current: !!m.current }))
+      .filter((m: ProbedModel) => m.name);
+    return models.length > 0 ? models : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Locate kern_engines/cli/model_probe.py via the @kernlang/agon-engines package (hoisted to root node_modules). The probe self-bootstraps its package path, so the absolute file path is all the caller needs — no PYTHONPATH.
+ */
+export function resolveModelProbeScript(): string|null {
+  try {
+    const req = createRequire(import.meta.url);
+    // The "." and "package.json" exports aren't reachable via the CommonJS
+    // `require` condition, but "./cli/claude.js" is a plain-string export
+    // (condition-agnostic). Anchor on it, then walk to the package root and
+    // into the (source) cli/ dir where model_probe.py lives.
+    const anchor = req.resolve('@kernlang/agon-engines/cli/claude.js'); // …/kern_engines/dist/cli/claude.js
+    const candidates = [
+      // Canonical: the package ships the probe at py/kern_engines/cli/ (see
+      // kern_engines package.json `files`), so from dist/cli/claude.js walk up
+      // to the package root, then into py/. This is the path that actually
+      // exists — the dist/cli & root/cli guesses below never matched, so the
+      // probe silently never ran and every engine fell back to its static list.
+      join(anchor, '..', '..', '..', 'py', 'kern_engines', 'cli', 'model_probe.py'), // dist/cli → root → py/kern_engines/cli
+      join(anchor, '..', '..', 'py', 'kern_engines', 'cli', 'model_probe.py'),        // (alt layout: cli/claude.js → root)
+      join(anchor, '..', '..', '..', 'cli', 'model_probe.py'),
+      join(anchor, '..', '..', 'cli', 'model_probe.py'),
+      join(anchor, '..', 'model_probe.py'),
+    ];
+    for (const c of candidates) {
+      if (existsSync(c)) return c;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Locate the Agon-owned compatibility wrapper shipped by the CLI package. */
+export function resolveAgonModelProbeWrapper(moduleUrl: string|URL = import.meta.url): string|null {
+  const here = dirname(fileURLToPath(moduleUrl));
+  const candidates = [
+    // S4 workspace: packages/support-engine-catalog/src -> packages/cli/py.
+    join(here, '..', '..', 'cli', 'py', 'agon-model-probe-wrapper.py'),
+    // Dev/vitest: packages/core/src/signals -> packages/cli/py.
+    join(here, '..', '..', '..', 'cli', 'py', 'agon-model-probe-wrapper.py'),
+    // Installed workspace: @kernlang/agon-core/dist -> @kernlang/agon/py.
+    join(here, '..', '..', 'agon', 'py', 'agon-model-probe-wrapper.py'),
+    // CLI bundle: @kernlang/agon/dist -> @kernlang/agon/py.
+    join(here, '..', 'py', 'agon-model-probe-wrapper.py'),
+  ];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+/**
+ * Parse a plain newline-delimited model list (e.g. `opencode models` → one provider/model id per line). Model ids never contain whitespace, so space-bearing lines (headers/prose) are dropped. id == name (the provider/model is what -m takes and is informative to show).
+ */
+function parsePlainModelList(stdout: string): ProbedModel[] {
+  const out: ProbedModel[] = [];
+  const seen = new Set<string>();
+  for (const raw of stdout.split('\n')) {
+    const id = raw.trim();
+    if (!id || /\s/.test(id) || id.length > 200) continue;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push({ id, name: id, current: false });
+  }
+  return out;
+}
+
+/**
+ * Probe an engine's live model list and cache it. Two modes by the first listCmd token: '__pty:<slash>' drives the interactive TUI via the python pty probe (agy/codex/claude); anything else runs `binary <listCmd...>` as a plain non-interactive subcommand and parses stdout (opencode `models`). Best-effort: returns false (caller keeps static/models.dev) on any failure/timeout/empty. The pty path is slow (~5-8s, spawns the TUI) — call behind a loading state.
+ */
+export async function refreshProbedCliModels(engineId: string, binary: string, listCmd?: string[], pythonBin?: string): Promise<boolean> {
+  // Probe failures fall back silently by design — but a silent fallback is
+  // exactly what hid the "probe never ran" bug (resolveModelProbeScript
+  // returned null for everyone). Set AGON_DEBUG_PROBE=1 to see why an engine
+  // fell back instead of showing live models.
+  const dbg = (msg: string) => { if (process.env.AGON_DEBUG_PROBE) console.error(`[agon probe:${engineId}] ${msg}`); };
+  // Fresh cache → skip the (slow) re-probe. Lets buildCliModelGroupsAsync call
+  // this for every engine on each /models open cheaply once the cache is warm.
+  if (readProbedCliModels(engineId)) return true;
+  const cmd = (listCmd && listCmd.length > 0) ? listCmd : ['__pty:/model'];
+  const first = cmd[0];
+  try {
+    let models: ProbedModel[] = [];
+    if (first.startsWith('__pty:')) {
+      const script = resolveModelProbeScript();
+      if (!script) { dbg('model_probe.py not found — check @kernlang/agon-engines layout'); return false; }
+      const slash = first.slice('__pty:'.length) || '/model';
+      const wrapper = engineId === 'claude' ? resolveAgonModelProbeWrapper() : null;
+      const result = await spawnWithTimeout({
+        command: pythonBin ?? 'python3',
+        args: wrapper ? [wrapper, script, binary, slash] : [script, binary, slash],
+        cwd: process.cwd(),
+        timeout: 45000,
+      });
+      if (result.exitCode !== 0) { dbg(`pty probe exited ${result.exitCode}`); return false; }
+      if (result.timedOut) { dbg('pty probe timed out (45s)'); return false; }
+      if (!result.stdout.trim()) { dbg('pty probe produced no output'); return false; }
+      const parsed = JSON.parse(result.stdout.trim());
+      if (parsed?.error) dbg(`probe reported: ${parsed.error}`);
+      models = Array.isArray(parsed?.models) ? parsed.models : [];
+    } else {
+      const result = await spawnWithTimeout({
+        command: binary,
+        args: cmd,
+        cwd: process.cwd(),
+        timeout: 20000,
+      });
+      if (result.timedOut || !result.stdout.trim()) { dbg('list subcommand timed out or empty'); return false; }
+      models = parsePlainModelList(result.stdout);
+    }
+    if (models.length === 0) { dbg('parsed zero models — picker format may have changed'); return false; }
+    const dir = getCacheDir();
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(probedModelsCacheFile(engineId), JSON.stringify({ ts: Date.now(), engineId, models }));
+    return true;
+  } catch (e: any) {
+    dbg(`probe threw: ${e?.message ?? e}`);
+    return false;
+  }
+}
+
+
+export function findBinary(binary: string): string|null {
+  try {
+    const result = execFileSync('which', [binary], { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    if (result) {
+      return result;
+    }
+  } catch (e) {
+  }
+  const home = homedir();
+  const searchPaths = [join(home, '.local', 'bin'), join(home, '.npm-global', 'bin'), '/usr/local/bin'];
+  for (const dir of searchPaths) {
+    const fullPath = join(dir, binary);
+    if (existsSync(fullPath)) {
+      return fullPath;
+    }
+  }
+  return null;
+}
+
+export function getBinaryVersion(binary: string, versionCmd: string[]): string|null {
+  if (!versionCmd.length) {
+    return null;
+  }
+  try {
+    const result = execFileSync(binary, versionCmd, { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    return result || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+export const VERSION_CACHE: Map<string, string> = new Map();
+
+/**
+ * Resolve `binary --version` WITHOUT blocking the event loop (unlike the sync getBinaryVersion/execSync). Memoized per session by engineId. Best-effort: returns null on empty/timeout/failure/no version command.
+ */
+export async function getBinaryVersionAsync(engineId: string, binary: string, versionCmd: string[]): Promise<string|null> {
+  if (!versionCmd.length) return null;
+  const cached = VERSION_CACHE.get(engineId);
+  if (cached) return cached;
+  try {
+    const result = await spawnWithTimeout({ command: binary, args: versionCmd, cwd: process.cwd(), timeout: 5000 });
+    // Mirror the old execSync path, which threw (→ null) on a nonzero exit:
+    // spawnWithTimeout RESOLVES on failure, so a failing `--version` that still
+    // printed to stdout must not be cached as the engine's version.
+    if (result.timedOut || result.exitCode !== 0) return null;
+    const v = (result.stdout ?? '').trim() || null;
+    if (v) VERSION_CACHE.set(engineId, v);
+    return v;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve a single installed engine's version off the main thread, for the /models picker to swap into its group header after the instant first paint. null when the engine is unknown, not installed, or has no version command.
+ */
+export async function refreshCliGroupVersion(engineId: string): Promise<string|null> {
+  const entry = Object.entries(ENGINE_PROVIDER_MAP).find(([, e]) => e.engineId === engineId);
+  if (!entry) return null;
+  const [, eng] = entry;
+  const binaryPath = findBinary(eng.engineBinary);
+  if (!binaryPath) return null;
+  return getBinaryVersionAsync(eng.engineId, binaryPath, eng.versionCmd);
+}
+
+/**
+ * Build CLI provider groups synchronously from fallback models. For async version use buildCliModelGroupsAsync.
+ */
+export function buildCliModelGroups(): CliProviderGroup[] {
+  const groups: CliProviderGroup[] = [];
+  for (const [key, eng] of Object.entries(ENGINE_PROVIDER_MAP)) {
+    const binaryPath = findBinary(eng.engineBinary);
+    const installed = binaryPath !== null;
+    const version = installed ? getBinaryVersion(eng.engineBinary, eng.versionCmd) : null;
+    const fallbackModels = FALLBACK_MODELS[key] ?? [];
+    const probedSync = readProbedCliModels(eng.engineId);
+    const displayName = ENGINE_DISPLAY_NAMES[eng.engineId] ?? eng.engineId.charAt(0).toUpperCase() + eng.engineId.slice(1);
+    const models: CliModelEntry[] = (probedSync && probedSync.length > 0) ? probedSync.map((m: ProbedModel) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, toolCall: true, reasoning: true })) : fallbackModels.map((m: any) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, contextWindow: m.contextWindow, toolCall: m.toolCall, reasoning: m.reasoning }));
+    groups.push({ providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, installed: installed, version: version, models: models, effortLevels: eng.effortLevels ?? [] });
+  }
+  return groups;
+}
+
+/**
+ * Build CLI provider groups showing each engine's REAL models: its live /model probe (cached; refreshed here in parallel for installed probe-capable engines, cheap once warm) when available, else the small static FALLBACK. Deliberately does NOT use the models.dev catalog — that's the API view (buildModelEntries). Keeps the CLI picker to what the CLI actually offers, and stays correct if a probe breaks (falls back to FALLBACK, never a 150-model dump).
+ */
+export async function buildCliModelGroupsAsync(): Promise<CliProviderGroup[]> {
+  // Phase 1: refresh probes for installed, probe-capable engines in parallel.
+  // refreshProbedCliModels short-circuits on a fresh cache, so this is cheap
+  // once warm; on a cold cache it spawns the probes concurrently (~one probe's
+  // latency, not the sum). Failures fall through to FALLBACK per engine.
+  await Promise.all(
+    Object.values(ENGINE_PROVIDER_MAP)
+      .filter((e) => Array.isArray(e.listCmd) && e.listCmd.length > 0)
+      .map((e) => {
+        const bin = findBinary(e.engineBinary);
+        return bin ? refreshProbedCliModels(e.engineId, bin, e.listCmd).catch(() => false) : Promise.resolve(false);
+      }),
+  );
+
+  // Phase 2: build groups from the probe cache → small FALLBACK (no models.dev).
+  const groups: CliProviderGroup[] = [];
+  for (const [key, eng] of Object.entries(ENGINE_PROVIDER_MAP)) {
+    const binaryPath = findBinary(eng.engineBinary);
+    const installed = binaryPath !== null;
+    const version = installed ? await getBinaryVersionAsync(eng.engineId, binaryPath as string, eng.versionCmd) : null;
+    const displayName = ENGINE_DISPLAY_NAMES[eng.engineId] ?? (eng.engineId.charAt(0).toUpperCase() + eng.engineId.slice(1));
+    const probed = readProbedCliModels(eng.engineId);
+    const models: CliModelEntry[] = (probed && probed.length > 0)
+      ? probed.map((m) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, toolCall: true, reasoning: true }))
+      : (FALLBACK_MODELS[key] ?? []).map((m: any) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, contextWindow: m.contextWindow, toolCall: m.toolCall, reasoning: m.reasoning }));
+    groups.push({ providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, installed, version, models, effortLevels: eng.effortLevels ?? [] });
+  }
+  return groups;
+}
+
+/**
+ * Synchronous, instant CLI groups for the /models picker to render right away: cached probe → static FALLBACK per engine. Marks `loading: true` on installed, probe-capable engines whose live /model probe isn't cached yet, so the picker can show a 'refreshing…' indicator while refreshCliGroup runs per engine in the background. No subprocess spawns — never blocks the picker open.
+ */
+export function buildCliGroupsImmediate(): CliProviderGroup[] {
+  const groups: CliProviderGroup[] = [];
+  for (const [key, eng] of Object.entries(ENGINE_PROVIDER_MAP)) {
+    const binaryPath = findBinary(eng.engineBinary);
+    const installed = binaryPath !== null;
+    const version = installed ? (VERSION_CACHE.get(eng.engineId) ?? null) : null;
+    const displayName = ENGINE_DISPLAY_NAMES[eng.engineId] ?? (eng.engineId.charAt(0).toUpperCase() + eng.engineId.slice(1));
+    const probed = readProbedCliModels(eng.engineId);
+    const probeCapable = Array.isArray(eng.listCmd) && eng.listCmd.length > 0;
+    const loading = installed && probeCapable && !(probed && probed.length > 0);
+    const models: CliModelEntry[] = (probed && probed.length > 0)
+      ? probed.map((m) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, toolCall: true, reasoning: true }))
+      : (FALLBACK_MODELS[key] ?? []).map((m: any) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, contextWindow: m.contextWindow, toolCall: m.toolCall, reasoning: m.reasoning }));
+    groups.push({ providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, installed, version, models, effortLevels: eng.effortLevels ?? [], loading });
+  }
+  return groups;
+}
+
+/**
+ * Probe a SINGLE engine's live /model list and return its rebuilt group (loading: false), for the picker to merge in as each probe resolves independently. Returns null for an unknown/uninstalled/non-probe-capable engine (nothing to refresh). Falls back to FALLBACK on probe failure — never throws.
+ */
+export async function refreshCliGroup(engineId: string): Promise<CliProviderGroup|null> {
+  const entry = Object.entries(ENGINE_PROVIDER_MAP).find(([, e]) => e.engineId === engineId);
+  if (!entry) return null;
+  const [key, eng] = entry;
+  const binaryPath = findBinary(eng.engineBinary);
+  const installed = binaryPath !== null;
+  const probeCapable = Array.isArray(eng.listCmd) && eng.listCmd.length > 0;
+  if (!installed || !probeCapable) return null;
+  const displayName = ENGINE_DISPLAY_NAMES[eng.engineId] ?? (eng.engineId.charAt(0).toUpperCase() + eng.engineId.slice(1));
+  const version = await getBinaryVersionAsync(eng.engineId, binaryPath, eng.versionCmd);
+  try {
+    await refreshProbedCliModels(eng.engineId, binaryPath, eng.listCmd);
+  } catch { /* keep going — fall back below */ }
+  const probed = readProbedCliModels(eng.engineId);
+  const models: CliModelEntry[] = (probed && probed.length > 0)
+    ? probed.map((m) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, toolCall: true, reasoning: true }))
+    : (FALLBACK_MODELS[key] ?? []).map((m: any) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, contextWindow: m.contextWindow, toolCall: m.toolCall, reasoning: m.reasoning }));
+  return { providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, installed, version, models, effortLevels: eng.effortLevels ?? [], loading: false };
+}

@@ -5,6 +5,6 @@
     "outDir": "dist",
     "rootDir": "src"
   },
-  "references": [{ "path": "../support-engine-runtime" }],
+  "references": [{ "path": "../support-engine-runtime" }, { "path": "../mod-rag" }],
   "include": ["src"]
 }

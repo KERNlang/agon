@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "package": "@kernlang/agon-mod-council",
+  "assignments": [
+    {
+      "category": "cesarTools",
+      "id": "Council",
+      "source": "packages/cli/src/cesar/tools.ts:41",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-council",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "cliCommands",
+      "id": "council",
+      "source": "packages/cli/src/lazy-commands.ts:319",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-council",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/council",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-council",
+      "rule": "exact-user-surface"
+    }
+  ]
+}

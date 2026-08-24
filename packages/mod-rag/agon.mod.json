@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 2,
+  "id": "agon.rag",
+  "name": "Rag",
+  "version": "0.0.0-slice.5",
+  "apiRange": ">=1.0.0 <2",
+  "execution": "executable",
+  "compatibility": {
+    "kernelRange": ">=0.0.0-0 <2",
+    "nodeRange": ">=22"
+  },
+  "packageClass": "user-toggleable-mod-package",
+  "entrypoints": {
+    "runtime": "dist/index.js",
+    "types": "dist/index.d.ts"
+  },
+  "display": {
+    "group": "Knowledge",
+    "order": 301
+  },
+  "dependencies": {
+    "required": [
+      {
+        "id": "agon.api",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.engine-runtime",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.persistence",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.dedup",
+        "range": ">=0.0.0-0"
+      }
+    ],
+    "optional": [],
+    "conflicts": []
+  },
+  "permissions": [],
+  "platforms": [
+    "darwin-arm64",
+    "darwin-x64",
+    "linux-arm64",
+    "linux-x64"
+  ],
+  "assets": [
+    {
+      "path": "ownership.json",
+      "kind": "documentation",
+      "mediaType": "application/json",
+      "contentHash": "sha256:503b6fe74606dbd0a417180241887ef51ef80ffd9fb934b3ad552a303489f9e2",
+      "bytes": 1649,
+      "executable": false,
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-arm64",
+        "linux-x64"
+      ]
+    },
+    {
+      "path": "schemas/config.schema.json",
+      "kind": "schema",
+      "mediaType": "application/schema+json",
+      "contentHash": "sha256:83bf8b9a0aac203a73204aff0523793b1325401916ae375df366a7a6fc3e9816",
+      "bytes": 212,
+      "executable": false,
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-arm64",
+        "linux-x64"
+      ]
+    }
+  ],
+  "contributes": {
+    "cliCommands": [
+      {
+        "id": "cliCommands:0050",
+        "aliases": []
+      }
+    ],
+    "tuiActions": [],
+    "mcpTools": [
+      {
+        "id": "mcpTools:0017",
+        "aliases": []
+      }
+    ],
+    "cesarTools": [],
+    "lifecycleHooks": [],
+    "resultTypes": [
+      {
+        "id": "resultAndEnvelopeTypes:0102",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0103",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0104",
+        "aliases": []
+      }
+    ],
+    "configKeys": [],
+    "generatedDocs": []
+  },
+  "pack": {
+    "include": [
+      "agon.mod.json",
+      "dist/index.js",
+      "dist/index.d.ts",
+      "dist/store.d.ts",
+      "dist/types.d.ts",
+      "ownership.json",
+      "schemas/config.schema.json"
+    ],
+    "executable": []
+  }
+}

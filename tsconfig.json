@@ -54,6 +54,114 @@
     },
     {
       "path": "packages/mcp"
+    },
+    {
+      "path": "packages/mod-ask"
+    },
+    {
+      "path": "packages/mod-plan"
+    },
+    {
+      "path": "packages/mod-think"
+    },
+    {
+      "path": "packages/mod-brainstorm"
+    },
+    {
+      "path": "packages/mod-team-brainstorm"
+    },
+    {
+      "path": "packages/mod-tribunal"
+    },
+    {
+      "path": "packages/mod-team-tribunal"
+    },
+    {
+      "path": "packages/mod-campfire"
+    },
+    {
+      "path": "packages/mod-forge"
+    },
+    {
+      "path": "packages/mod-team-forge"
+    },
+    {
+      "path": "packages/mod-synthesis"
+    },
+    {
+      "path": "packages/mod-review"
+    },
+    {
+      "path": "packages/mod-pipeline-orchestration"
+    },
+    {
+      "path": "packages/mod-pipeline-delivery"
+    },
+    {
+      "path": "packages/mod-agent"
+    },
+    {
+      "path": "packages/mod-goal"
+    },
+    {
+      "path": "packages/mod-conquer"
+    },
+    {
+      "path": "packages/mod-nero"
+    },
+    {
+      "path": "packages/mod-council"
+    },
+    {
+      "path": "packages/mod-research"
+    },
+    {
+      "path": "packages/mod-rag"
+    },
+    {
+      "path": "packages/mod-mutate"
+    },
+    {
+      "path": "packages/mod-naturalize"
+    },
+    {
+      "path": "packages/mod-sanitize"
+    },
+    {
+      "path": "packages/mod-rooms"
+    },
+    {
+      "path": "packages/mod-jobs"
+    },
+    {
+      "path": "packages/mod-browser"
+    },
+    {
+      "path": "packages/mod-ratings"
+    },
+    {
+      "path": "packages/mod-history"
+    },
+    {
+      "path": "packages/mod-provenance"
+    },
+    {
+      "path": "packages/mod-flow"
+    },
+    {
+      "path": "packages/mod-memory"
+    },
+    {
+      "path": "packages/mod-worktrees"
+    },
+    {
+      "path": "packages/mod-skill-authoring"
+    },
+    {
+      "path": "packages/mod-git-actions"
+    },
+    {
+      "path": "packages/mod-routing-docs"
     }
   ]
 }

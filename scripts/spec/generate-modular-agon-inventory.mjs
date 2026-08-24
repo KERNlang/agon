@@ -8,6 +8,9 @@ mkdirSync(evidenceDir, { recursive: true });
 
 const posix = (value) => value.split('\\').join('/');
 const rel = (value) => posix(relative(root, value));
+const modularSourceRoots = readdirSync(join(root, 'packages'), { withFileTypes: true })
+  .filter((entry) => entry.isDirectory() && entry.name.startsWith('mod-') && !['mod-api', 'mod-kernel'].includes(entry.name))
+  .map((entry) => 'packages/' + entry.name + '/src');
 const supportSourceRoots = readdirSync(join(root, 'packages'), { withFileTypes: true })
   .filter((entry) => entry.isDirectory() && entry.name.startsWith('support-'))
   .map((entry) => 'packages/' + entry.name + '/src');
@@ -23,7 +26,7 @@ function walk(dir, predicate = () => true) {
   return out.sort();
 }
 
-const sourceFiles = sourceRoots.flatMap((dir) => walk(join(root, dir), (file) => /\.tsx?$/.test(file)));
+const sourceFiles = [...sourceRoots.flatMap((dir) => walk(join(root, dir), (file) => /\.tsx?$/.test(file))), ...modularSourceRoots.flatMap((dir) => walk(join(root, dir), (file) => /\.tsx?$/.test(file) && !file.endsWith('/index.ts')))];
 const parsed = new Map(sourceFiles.map((file) => [file, ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true)]));
 
 function locator(file, node) {

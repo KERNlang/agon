@@ -1,0 +1,290 @@
+{
+  "schemaVersion": 2,
+  "id": "agon.forge",
+  "name": "Forge",
+  "version": "0.0.0-slice.5",
+  "apiRange": ">=1.0.0 <2",
+  "execution": "executable",
+  "compatibility": {
+    "kernelRange": ">=0.0.0-0 <2",
+    "nodeRange": ">=22"
+  },
+  "packageClass": "user-toggleable-mod-package",
+  "entrypoints": {
+    "runtime": "dist/index.js",
+    "types": "dist/index.d.ts"
+  },
+  "display": {
+    "group": "Create and compete",
+    "order": 103
+  },
+  "dependencies": {
+    "required": [
+      {
+        "id": "agon.api",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.engine-runtime",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.panel",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.judge",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.worktree",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.verification",
+        "range": ">=0.0.0-0"
+      }
+    ],
+    "optional": [],
+    "conflicts": []
+  },
+  "permissions": [],
+  "platforms": [
+    "darwin-arm64",
+    "darwin-x64",
+    "linux-arm64",
+    "linux-x64"
+  ],
+  "assets": [
+    {
+      "path": "ownership.json",
+      "kind": "documentation",
+      "mediaType": "application/json",
+      "contentHash": "sha256:bccd98b182197875903a5646147d152d2b999cf20ffb3f64c476e4e7284d53bf",
+      "bytes": 13623,
+      "executable": false,
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-arm64",
+        "linux-x64"
+      ]
+    },
+    {
+      "path": "schemas/config.schema.json",
+      "kind": "schema",
+      "mediaType": "application/schema+json",
+      "contentHash": "sha256:50007a043fe06fc2ba8693b82dbb6de9c1048141bbe55e9a6f7aa47b7d6bc974",
+      "bytes": 216,
+      "executable": false,
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-arm64",
+        "linux-x64"
+      ]
+    }
+  ],
+  "contributes": {
+    "cliCommands": [
+      {
+        "id": "cliCommands:0022",
+        "aliases": []
+      }
+    ],
+    "tuiActions": [
+      {
+        "id": "intentVariants:0002",
+        "aliases": []
+      },
+      {
+        "id": "intentVariants:0032",
+        "aliases": []
+      },
+      {
+        "id": "intentVariants:0056",
+        "aliases": []
+      },
+      {
+        "id": "builtinCommandMetadata:0002",
+        "aliases": []
+      },
+      {
+        "id": "builtinCommandMetadata:0025",
+        "aliases": []
+      },
+      {
+        "id": "tuiSlashCommands:0002",
+        "aliases": []
+      },
+      {
+        "id": "tuiSlashCommands:0033",
+        "aliases": []
+      }
+    ],
+    "mcpTools": [
+      {
+        "id": "mcpTools:0009",
+        "aliases": []
+      }
+    ],
+    "cesarTools": [
+      {
+        "id": "cesarRoutes:0023",
+        "aliases": []
+      },
+      {
+        "id": "cesarRoutes:0024",
+        "aliases": []
+      },
+      {
+        "id": "cesarRoutes:0025",
+        "aliases": []
+      },
+      {
+        "id": "cesarRoutes:0026",
+        "aliases": []
+      },
+      {
+        "id": "cesarRoutes:0027",
+        "aliases": []
+      },
+      {
+        "id": "cesarRoutes:0028",
+        "aliases": []
+      },
+      {
+        "id": "cesarTools:0010",
+        "aliases": []
+      }
+    ],
+    "lifecycleHooks": [],
+    "resultTypes": [
+      {
+        "id": "resultAndEnvelopeTypes:0016",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0022",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0037",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0038",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0039",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0043",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0055",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0056",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0058",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0060",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0063",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0064",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0083",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0085",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0086",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0095",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0098",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0106",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0114",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0120",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0124",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0126",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0127",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0128",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0133",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0144",
+        "aliases": []
+      }
+    ],
+    "configKeys": [
+      {
+        "id": "configKeys:0006",
+        "aliases": []
+      },
+      {
+        "id": "configKeys:0072",
+        "aliases": []
+      }
+    ],
+    "generatedDocs": []
+  },
+  "pack": {
+    "include": [
+      "agon.mod.json",
+      "dist/index.js",
+      "dist/index.d.ts",
+      "ownership.json",
+      "schemas/config.schema.json"
+    ],
+    "executable": []
+  }
+}

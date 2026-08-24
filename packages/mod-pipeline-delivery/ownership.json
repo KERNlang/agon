@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "package": "@kernlang/agon-mod-pipeline-delivery",
+  "assignments": [
+    {
+      "category": "builtinCommandMetadata",
+      "id": "pipeline",
+      "source": "packages/core/src/blocks/builtin-commands.ts:29",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-pipeline-delivery",
+      "rule": "pipeline-surface-split"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "pipeline",
+      "source": "packages/cli/src/models/handler-types.ts:113",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-pipeline-delivery",
+      "rule": "pipeline-surface-split"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "pipeline",
+      "source": "packages/core/src/cesar/plan.ts:52",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-pipeline-delivery",
+      "rule": "pipeline-surface-split"
+    },
+    {
+      "category": "cesarTools",
+      "id": "Pipeline",
+      "source": "packages/cli/src/cesar/tools.ts:42",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-pipeline-delivery",
+      "rule": "pipeline-surface-split"
+    },
+    {
+      "category": "intentVariants",
+      "id": "pipeline",
+      "source": "packages/cli/src/signals/intent-types.ts:41",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-pipeline-delivery",
+      "rule": "pipeline-surface-split"
+    }
+  ]
+}

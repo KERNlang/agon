@@ -2793,12 +2793,12 @@
       {
         "id": "RagIndexResult",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/rag/types.ts:36"
+        "source": "packages/mod-rag/src/types.ts:36"
       },
       {
         "id": "RagQueryResult",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/core/src/rag/types.ts:44"
+        "source": "packages/mod-rag/src/types.ts:44"
       },
       {
         "id": "RatingRecord",
@@ -3854,10 +3854,6 @@
         "source": "packages/core/src/cesar/memory.ts"
       },
       {
-        "id": "packages/core/src/rag/store.ts",
-        "source": "packages/core/src/rag/store.ts"
-      },
-      {
         "id": "packages/core/src/rooms/leases.ts",
         "source": "packages/core/src/rooms/leases.ts"
       },
@@ -3884,6 +3880,10 @@
       {
         "id": "packages/forge/src/goal/journal.ts",
         "source": "packages/forge/src/goal/journal.ts"
+      },
+      {
+        "id": "packages/mod-rag/src/store.ts",
+        "source": "packages/mod-rag/src/store.ts"
       },
       {
         "id": "packages/support-engine-runtime/src/auth-store.ts",

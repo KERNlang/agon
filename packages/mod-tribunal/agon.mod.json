@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 2,
+  "id": "agon.tribunal",
+  "name": "Tribunal",
+  "version": "0.0.0-slice.5",
+  "apiRange": ">=1.0.0 <2",
+  "execution": "executable",
+  "compatibility": {
+    "kernelRange": ">=0.0.0-0 <2",
+    "nodeRange": ">=22"
+  },
+  "packageClass": "user-toggleable-mod-package",
+  "entrypoints": {
+    "runtime": "dist/index.js",
+    "types": "dist/index.d.ts"
+  },
+  "display": {
+    "group": "Review and decide",
+    "order": 201
+  },
+  "dependencies": {
+    "required": [
+      {
+        "id": "agon.api",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.engine-runtime",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.panel",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.judge",
+        "range": ">=0.0.0-0"
+      }
+    ],
+    "optional": [],
+    "conflicts": []
+  },
+  "permissions": [],
+  "platforms": [
+    "darwin-arm64",
+    "darwin-x64",
+    "linux-arm64",
+    "linux-x64"
+  ],
+  "assets": [
+    {
+      "path": "ownership.json",
+      "kind": "documentation",
+      "mediaType": "application/json",
+      "contentHash": "sha256:def6b68f0a1d289d2602d89d86fa03032f686b96eb5f722ab0e2a6e5270b93c6",
+      "bytes": 3234,
+      "executable": false,
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-arm64",
+        "linux-x64"
+      ]
+    },
+    {
+      "path": "schemas/config.schema.json",
+      "kind": "schema",
+      "mediaType": "application/schema+json",
+      "contentHash": "sha256:02686441e5bd4265ddfdecadc361300e2bb08d10141bd986b4be8bea58b4d104",
+      "bytes": 222,
+      "executable": false,
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-arm64",
+        "linux-x64"
+      ]
+    }
+  ],
+  "contributes": {
+    "cliCommands": [
+      {
+        "id": "cliCommands:0063",
+        "aliases": []
+      }
+    ],
+    "tuiActions": [
+      {
+        "id": "intentVariants:0057",
+        "aliases": []
+      },
+      {
+        "id": "intentVariants:0063",
+        "aliases": []
+      },
+      {
+        "id": "builtinCommandMetadata:0048",
+        "aliases": []
+      },
+      {
+        "id": "tuiSlashCommands:0069",
+        "aliases": []
+      }
+    ],
+    "mcpTools": [
+      {
+        "id": "mcpTools:0032",
+        "aliases": []
+      }
+    ],
+    "cesarTools": [
+      {
+        "id": "cesarRoutes:0066",
+        "aliases": []
+      },
+      {
+        "id": "cesarRoutes:0067",
+        "aliases": []
+      },
+      {
+        "id": "cesarRoutes:0068",
+        "aliases": []
+      },
+      {
+        "id": "cesarRoutes:0069",
+        "aliases": []
+      },
+      {
+        "id": "cesarTools:0026",
+        "aliases": []
+      }
+    ],
+    "lifecycleHooks": [],
+    "resultTypes": [
+      {
+        "id": "resultAndEnvelopeTypes:0139",
+        "aliases": []
+      }
+    ],
+    "configKeys": [],
+    "generatedDocs": []
+  },
+  "pack": {
+    "include": [
+      "agon.mod.json",
+      "dist/index.js",
+      "dist/index.d.ts",
+      "ownership.json",
+      "schemas/config.schema.json"
+    ],
+    "executable": []
+  }
+}

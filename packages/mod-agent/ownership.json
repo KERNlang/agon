@@ -1,0 +1,310 @@
+{
+  "schemaVersion": 1,
+  "package": "@kernlang/agon-mod-agent",
+  "assignments": [
+    {
+      "category": "builtinCommandMetadata",
+      "id": "agent",
+      "source": "packages/core/src/blocks/builtin-commands.ts:24",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "builtinCommandMetadata",
+      "id": "agent-solo",
+      "source": "packages/core/src/blocks/builtin-commands.ts:25",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "builtinCommandMetadata",
+      "id": "build",
+      "source": "packages/core/src/blocks/builtin-commands.ts:23",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "builtinCommandMetadata",
+      "id": "speculate",
+      "source": "packages/core/src/blocks/builtin-commands.ts:27",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "builtinCommandMetadata",
+      "id": "team-agent",
+      "source": "packages/core/src/blocks/builtin-commands.ts:26",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "agent",
+      "source": "packages/cli/src/models/handler-types.ts:113",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "agent",
+      "source": "packages/core/src/cesar/plan.ts:52",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "bug-fix",
+      "source": "packages/cli/src/cesar/routing.ts:27",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "delegate",
+      "source": "packages/cli/src/cesar/routing.ts:19",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "delegate",
+      "source": "packages/cli/src/models/handler-types.ts:113",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "delegate",
+      "source": "packages/core/src/cesar/plan.ts:52",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "quick-fix",
+      "source": "packages/cli/src/cesar/routing.ts:25",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "quick-fix",
+      "source": "packages/cli/src/cesar/routing.ts:27",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "team-agent",
+      "source": "packages/cli/src/models/handler-types.ts:113",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "team-agent",
+      "source": "packages/core/src/cesar/plan.ts:52",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarTools",
+      "id": "Agent",
+      "source": "packages/cli/src/cesar/tools.ts:47",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "cesarTools",
+      "id": "Delegate",
+      "source": "packages/cli/src/cesar/tools.ts:46",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "configKeys",
+      "id": "cesarAgenticContinuationLimit",
+      "source": "packages/core/src/models/types.ts:131",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "generatedDocumentation",
+      "id": "AGENTS.md routing block",
+      "source": "packages/cli/src/commands/agent-guide-text.ts:1",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "intentVariants",
+      "id": "agent",
+      "source": "packages/cli/src/signals/intent-types.ts:37",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "intentVariants",
+      "id": "agent-solo",
+      "source": "packages/cli/src/signals/intent-types.ts:38",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "intentVariants",
+      "id": "build",
+      "source": "packages/cli/src/signals/intent-types.ts:36",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "intentVariants",
+      "id": "speculate",
+      "source": "packages/cli/src/signals/intent-types.ts:39",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "intentVariants",
+      "id": "team-agent",
+      "source": "packages/cli/src/signals/intent-types.ts:40",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "mcpTools",
+      "id": "Agent",
+      "source": "packages/mcp/src/agon-orchestration.ts:24",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "mcpTools",
+      "id": "Delegate",
+      "source": "packages/mcp/src/agon-orchestration.ts:24",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "AgentContinuationResult",
+      "source": "packages/cli/src/handlers/agent.ts:26",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "AgentEvent",
+      "source": "packages/core/src/models/agent-event.ts:8",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "AgentProgressSnapshot",
+      "source": "packages/cli/src/signals/output.ts:20",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "AgentSession",
+      "source": "packages/core/src/cesar/agent-session.ts:11",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "AgentTeamMemberResult",
+      "source": "packages/core/src/cesar/agent-team.ts:80",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "AgentTeamResult",
+      "source": "packages/core/src/cesar/agent-team.ts:90",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "AgenticTaskSnapshot",
+      "source": "packages/cli/src/cesar/task-controller.ts:11",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "statePaths",
+      "id": ".agon/agent-worktrees",
+      "source": "packages/core/src/blocks/git.ts:419",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/agent",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/agent-solo",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/build",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/speculate",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "exact-user-surface"
+    }
+  ]
+}

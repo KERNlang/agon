@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "package": "@kernlang/agon-mod-nero",
+  "assignments": [
+    {
+      "category": "builtinCommandMetadata",
+      "id": "nero",
+      "source": "packages/core/src/blocks/builtin-commands.ts:67",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-nero",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarTools",
+      "id": "QuickNero",
+      "source": "packages/cli/src/cesar/tools.ts:49",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-nero",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "nero",
+      "source": "packages/cli/src/lazy-commands.ts:318",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-nero",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "intentVariants",
+      "id": "nero",
+      "source": "packages/cli/src/signals/intent-types.ts:53",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-nero",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "mcpTools",
+      "id": "QuickNero",
+      "source": "packages/mcp/src/agon-orchestration.ts:24",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-nero",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/nero",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-nero",
+      "rule": "exact-user-surface"
+    }
+  ]
+}

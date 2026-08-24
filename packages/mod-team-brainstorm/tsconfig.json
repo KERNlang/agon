@@ -1,0 +1,43 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "baseUrl": ".",
+    "paths": {
+      "@kernlang/agon-mod-api": [
+        "../mod-api/src/index.ts"
+      ],
+      "@kernlang/agon-support-engine-runtime": [
+        "../support-engine-runtime/src/index.ts"
+      ],
+      "@kernlang/agon-mod-brainstorm": [
+        "../mod-brainstorm/src/index.ts"
+      ],
+      "@kernlang/agon-support-panel": [
+        "../support-panel/src/index.ts"
+      ]
+    },
+    "sourceMap": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": true
+  },
+  "references": [
+    {
+      "path": "../mod-api"
+    },
+    {
+      "path": "../support-engine-runtime"
+    },
+    {
+      "path": "../mod-brainstorm"
+    },
+    {
+      "path": "../support-panel"
+    }
+  ],
+  "include": [
+    "src"
+  ]
+}

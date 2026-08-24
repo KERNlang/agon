@@ -1064,9 +1064,9 @@
       "extractionSources": [
         "packages/cli/src/lazy-commands.ts:317",
         "packages/core/src/rag/embed.ts:15",
-        "packages/core/src/rag/store.ts",
-        "packages/core/src/rag/types.ts:36",
-        "packages/core/src/rag/types.ts:44",
+        "packages/mod-rag/src/store.ts",
+        "packages/mod-rag/src/types.ts:36",
+        "packages/mod-rag/src/types.ts:44",
         "packages/mcp/src/project-context.ts:4"
       ],
       "migrationOrder": 15,

@@ -114,6 +114,8 @@ function assignmentFor(category, item) {
   const raw = item.id;
   const normalized = normalizeSurfaceId(raw);
   const source = item.source ?? '';
+  const physicalMod = source.match(new RegExp('^packages/mod-([^/]+)/'));
+  if (physicalMod) return { class: MOD, package: '@kernlang/agon-mod-' + physicalMod[1], rule: 'physical-mod-owner' };
   const physicalSupport = source.match(/^packages\/support-([^/]+)\//);
   if (physicalSupport) return { class: SUPPORT, package: '@kernlang/agon-support-' + physicalSupport[1], rule: 'physical-support-owner' };
   if (raw === 'Pipeline' && category === 'mcpTools') return { class: MOD, package: '@kernlang/agon-mod-pipeline-orchestration', rule: 'pipeline-surface-split' };

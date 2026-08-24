@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 2,
+  "id": "agon.naturalize",
+  "name": "Naturalize",
+  "version": "0.0.0-slice.5",
+  "apiRange": ">=1.0.0 <2",
+  "execution": "executable",
+  "compatibility": {
+    "kernelRange": ">=0.0.0-0 <2",
+    "nodeRange": ">=22"
+  },
+  "packageClass": "user-toggleable-mod-package",
+  "entrypoints": {
+    "runtime": "dist/index.js",
+    "types": "dist/index.d.ts"
+  },
+  "display": {
+    "group": "Transform",
+    "order": 401
+  },
+  "dependencies": {
+    "required": [
+      {
+        "id": "agon.api",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.engine-runtime",
+        "range": ">=0.0.0-0"
+      }
+    ],
+    "optional": [],
+    "conflicts": []
+  },
+  "permissions": [],
+  "platforms": [
+    "darwin-arm64",
+    "darwin-x64",
+    "linux-arm64",
+    "linux-x64"
+  ],
+  "assets": [
+    {
+      "path": "ownership.json",
+      "kind": "documentation",
+      "mediaType": "application/json",
+      "contentHash": "sha256:f978c20690ff96c7be1ade903f9260c5602213a69b8686994a060dd6c32285bd",
+      "bytes": 620,
+      "executable": false,
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-arm64",
+        "linux-x64"
+      ]
+    },
+    {
+      "path": "schemas/config.schema.json",
+      "kind": "schema",
+      "mediaType": "application/schema+json",
+      "contentHash": "sha256:3920b9e94d0db58e88490ee02a8e92dcbed852175f556915df6159024f59d0d4",
+      "bytes": 226,
+      "executable": false,
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-arm64",
+        "linux-x64"
+      ]
+    }
+  ],
+  "contributes": {
+    "cliCommands": [
+      {
+        "id": "cliCommands:0046",
+        "aliases": []
+      }
+    ],
+    "tuiActions": [
+      {
+        "id": "tuiSlashCommands:0046",
+        "aliases": []
+      }
+    ],
+    "mcpTools": [],
+    "cesarTools": [],
+    "lifecycleHooks": [],
+    "resultTypes": [],
+    "configKeys": [],
+    "generatedDocs": []
+  },
+  "pack": {
+    "include": [
+      "agon.mod.json",
+      "dist/index.js",
+      "dist/index.d.ts",
+      "ownership.json",
+      "schemas/config.schema.json"
+    ],
+    "executable": []
+  }
+}

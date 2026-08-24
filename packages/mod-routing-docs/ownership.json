@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "package": "@kernlang/agon-mod-routing-docs",
+  "assignments": [
+    {
+      "category": "cliCommands",
+      "id": "agent-guide",
+      "source": "packages/cli/src/lazy-commands.ts:311",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-routing-docs",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "install-agent-prompts",
+      "source": "packages/cli/src/lazy-commands.ts:312",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-routing-docs",
+      "rule": "exact-user-surface"
+    }
+  ]
+}

@@ -2838,7 +2838,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.rag",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:bd3d775f05d4d834199c4cc726c9af110bc188610da03abff199bb61fc532421"
+      "contentHash": "sha256:65708a2699416a8c8185367e9d85462e1414ffb3df97e7d2fdf31a29b5716359"
     },
     "payload": {
       "publicId": "rag",
@@ -3560,7 +3560,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.rag",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:bd3d775f05d4d834199c4cc726c9af110bc188610da03abff199bb61fc532421"
+      "contentHash": "sha256:65708a2699416a8c8185367e9d85462e1414ffb3df97e7d2fdf31a29b5716359"
     },
     "payload": {
       "publicId": "ProjectContext",

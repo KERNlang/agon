@@ -1,0 +1,140 @@
+{
+  "schemaVersion": 2,
+  "id": "agon.campfire",
+  "name": "Campfire",
+  "version": "0.0.0-slice.5",
+  "apiRange": ">=1.0.0 <2",
+  "execution": "executable",
+  "compatibility": {
+    "kernelRange": ">=0.0.0-0 <2",
+    "nodeRange": ">=22"
+  },
+  "packageClass": "user-toggleable-mod-package",
+  "entrypoints": {
+    "runtime": "dist/index.js",
+    "types": "dist/index.d.ts"
+  },
+  "display": {
+    "group": "Create and compete",
+    "order": 102
+  },
+  "dependencies": {
+    "required": [
+      {
+        "id": "agon.api",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.engine-runtime",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.panel",
+        "range": ">=0.0.0-0"
+      }
+    ],
+    "optional": [],
+    "conflicts": []
+  },
+  "permissions": [],
+  "platforms": [
+    "darwin-arm64",
+    "darwin-x64",
+    "linux-arm64",
+    "linux-x64"
+  ],
+  "assets": [
+    {
+      "path": "ownership.json",
+      "kind": "documentation",
+      "mediaType": "application/json",
+      "contentHash": "sha256:43158205f822cd50a772e5c6982448aaaaa45a6b46e823ed20bfd41a980bea45",
+      "bytes": 2691,
+      "executable": false,
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-arm64",
+        "linux-x64"
+      ]
+    },
+    {
+      "path": "schemas/config.schema.json",
+      "kind": "schema",
+      "mediaType": "application/schema+json",
+      "contentHash": "sha256:b6582132d49f3af8f577eeacb1093e34f5d2d0ed3fbea5b9c20db17b39a837cb",
+      "bytes": 222,
+      "executable": false,
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-arm64",
+        "linux-x64"
+      ]
+    }
+  ],
+  "contributes": {
+    "cliCommands": [
+      {
+        "id": "cliCommands:0010",
+        "aliases": []
+      }
+    ],
+    "tuiActions": [
+      {
+        "id": "intentVariants:0007",
+        "aliases": []
+      },
+      {
+        "id": "builtinCommandMetadata:0008",
+        "aliases": []
+      },
+      {
+        "id": "tuiSlashCommands:0008",
+        "aliases": []
+      }
+    ],
+    "mcpTools": [
+      {
+        "id": "mcpTools:0005",
+        "aliases": []
+      }
+    ],
+    "cesarTools": [
+      {
+        "id": "cesarRoutes:0010",
+        "aliases": []
+      },
+      {
+        "id": "cesarRoutes:0011",
+        "aliases": []
+      },
+      {
+        "id": "cesarRoutes:0012",
+        "aliases": []
+      },
+      {
+        "id": "cesarRoutes:0013",
+        "aliases": []
+      },
+      {
+        "id": "cesarTools:0003",
+        "aliases": []
+      }
+    ],
+    "lifecycleHooks": [],
+    "resultTypes": [],
+    "configKeys": [],
+    "generatedDocs": []
+  },
+  "pack": {
+    "include": [
+      "agon.mod.json",
+      "dist/index.js",
+      "dist/index.d.ts",
+      "ownership.json",
+      "schemas/config.schema.json"
+    ],
+    "executable": []
+  }
+}

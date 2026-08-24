@@ -1,0 +1,36 @@
+{
+  "name": "@kernlang/agon-mod-synthesis",
+  "version": "0.0.0-slice.5",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./manifest": "./agon.mod.json",
+    "./ownership": "./ownership.json"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "schemas",
+    "agon.mod.json",
+    "ownership.json"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup && tsc -b tsconfig.json --force",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+  },
+  "dependencies": {
+    "@kernlang/agon-mod-api": "1.0.0",
+    "@kernlang/agon-support-engine-runtime": "0.0.0-slice.4",
+    "@kernlang/agon-support-panel": "0.0.0-slice.4",
+    "@kernlang/agon-support-judge": "0.0.0-slice.4"
+  }
+}

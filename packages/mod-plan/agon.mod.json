@@ -1,0 +1,223 @@
+{
+  "schemaVersion": 2,
+  "id": "agon.plan",
+  "name": "Plan",
+  "version": "0.0.0-slice.5",
+  "apiRange": ">=1.0.0 <2",
+  "execution": "executable",
+  "compatibility": {
+    "kernelRange": ">=0.0.0-0 <2",
+    "nodeRange": ">=22"
+  },
+  "packageClass": "user-toggleable-mod-package",
+  "entrypoints": {
+    "runtime": "dist/index.js",
+    "types": "dist/index.d.ts"
+  },
+  "display": {
+    "group": "Work",
+    "order": 2
+  },
+  "dependencies": {
+    "required": [
+      {
+        "id": "agon.api",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.engine-runtime",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.persistence",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.verification",
+        "range": ">=0.0.0-0"
+      }
+    ],
+    "optional": [],
+    "conflicts": []
+  },
+  "permissions": [],
+  "platforms": [
+    "darwin-arm64",
+    "darwin-x64",
+    "linux-arm64",
+    "linux-x64"
+  ],
+  "assets": [
+    {
+      "path": "ownership.json",
+      "kind": "documentation",
+      "mediaType": "application/json",
+      "contentHash": "sha256:aca789b4fa7c1c4742c0e9537e166af0ea5bd2ec4417dcc2041ad08a1e732d01",
+      "bytes": 7881,
+      "executable": false,
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-arm64",
+        "linux-x64"
+      ]
+    },
+    {
+      "path": "schemas/config.schema.json",
+      "kind": "schema",
+      "mediaType": "application/schema+json",
+      "contentHash": "sha256:eac294624a9eb62070ade1a09fc902170b72c1fee0409851c16bf49b16632a6b",
+      "bytes": 214,
+      "executable": false,
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-arm64",
+        "linux-x64"
+      ]
+    }
+  ],
+  "contributes": {
+    "cliCommands": [],
+    "tuiActions": [
+      {
+        "id": "intentVariants:0003",
+        "aliases": []
+      },
+      {
+        "id": "intentVariants:0004",
+        "aliases": []
+      },
+      {
+        "id": "intentVariants:0008",
+        "aliases": []
+      },
+      {
+        "id": "intentVariants:0046",
+        "aliases": []
+      },
+      {
+        "id": "intentVariants:0047",
+        "aliases": []
+      },
+      {
+        "id": "intentVariants:0050",
+        "aliases": []
+      },
+      {
+        "id": "builtinCommandMetadata:0003",
+        "aliases": []
+      },
+      {
+        "id": "builtinCommandMetadata:0004",
+        "aliases": []
+      },
+      {
+        "id": "builtinCommandMetadata:0009",
+        "aliases": []
+      },
+      {
+        "id": "builtinCommandMetadata:0035",
+        "aliases": []
+      },
+      {
+        "id": "builtinCommandMetadata:0036",
+        "aliases": []
+      },
+      {
+        "id": "builtinCommandMetadata:0039",
+        "aliases": []
+      },
+      {
+        "id": "tuiKeyboardActions:0022",
+        "aliases": []
+      },
+      {
+        "id": "tuiKeyboardActions:0026",
+        "aliases": []
+      },
+      {
+        "id": "tuiKeyboardActions:0038",
+        "aliases": []
+      },
+      {
+        "id": "tuiKeyboardActions:0041",
+        "aliases": []
+      },
+      {
+        "id": "tuiSlashCommands:0003",
+        "aliases": []
+      },
+      {
+        "id": "tuiSlashCommands:0004",
+        "aliases": []
+      },
+      {
+        "id": "tuiSlashCommands:0009",
+        "aliases": []
+      },
+      {
+        "id": "tuiSlashCommands:0051",
+        "aliases": []
+      },
+      {
+        "id": "tuiSlashCommands:0052",
+        "aliases": []
+      },
+      {
+        "id": "tuiSlashCommands:0056",
+        "aliases": []
+      }
+    ],
+    "mcpTools": [
+      {
+        "id": "mcpTools:0008",
+        "aliases": []
+      },
+      {
+        "id": "mcpTools:0018",
+        "aliases": []
+      }
+    ],
+    "cesarTools": [
+      {
+        "id": "cesarRoutes:0038",
+        "aliases": []
+      },
+      {
+        "id": "cesarRoutes:0039",
+        "aliases": []
+      },
+      {
+        "id": "cesarRoutes:0056",
+        "aliases": []
+      },
+      {
+        "id": "cesarTools:0009",
+        "aliases": []
+      },
+      {
+        "id": "cesarTools:0014",
+        "aliases": []
+      },
+      {
+        "id": "cesarTools:0017",
+        "aliases": []
+      }
+    ],
+    "lifecycleHooks": [],
+    "resultTypes": [],
+    "configKeys": [],
+    "generatedDocs": []
+  },
+  "pack": {
+    "include": [
+      "agon.mod.json",
+      "dist/index.js",
+      "dist/index.d.ts",
+      "ownership.json",
+      "schemas/config.schema.json"
+    ],
+    "executable": []
+  }
+}

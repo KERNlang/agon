@@ -14,6 +14,15 @@ export type {
   ShadowedCandidate,
 } from './resolver.js';
 export {
+  SurfaceGeneration, SurfaceGenerationError, SurfaceGenerationSelector, SurfaceClient, assertGeneratedSurfaceAccessibility,
+} from './surface-generation.js';
+export type { GeneratedSurfaceCatalogEntry, GeneratedSurfaceRuntime, SurfaceAccessibility, SurfaceGenerationMode } from './surface-generation.js';
+export { activateFirstPartySurfaceGeneration } from './activated-surface-generation.js';
+export type { ActivatedSurfaceGeneration, FirstPartySurfacePackage } from './activated-surface-generation.js';
+export { bootstrapFirstPartySurfaceGeneration } from './first-party-surface-bootstrap.js';
+export type { FirstPartySurfaceBoot } from './first-party-surface-bootstrap.js';
+
+export {
   RegistryInvariantError,
   ModRegistry,
 } from './registry.js';
@@ -45,12 +54,13 @@ export {
 } from './compatibility.js';
 export type { LegacyCompatibilityOptions } from './compatibility.js';
 
+export { FIRST_PARTY_SURFACE_CATALOG } from './generated/first-party-surface-catalog.js';
 export { FIRST_PARTY_PACKAGE_GRAPH } from './generated/first-party-package-graph.js';
 export { FIRST_PARTY_UI_HIERARCHY } from './generated/first-party-ui-hierarchy.js';
 
 export {
   DesiredStateConflictError, DesiredStateError, applyDesiredStatePlan, createFirstPartyModCatalog,
-  createFullCompatDesiredState, parseDesiredState, parseProfileDefinition, planDesiredStateChange,
+  createFullCompatDesiredState, parseDesiredState, parseProfileDefinition, planDesiredStateChange, resolveDesiredState,
   projectRepositoryModSettings,
 } from './desired-state.js';
 export type {

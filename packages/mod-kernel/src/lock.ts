@@ -76,6 +76,7 @@ export interface CreateLockOptions {
   readonly apiVersion: string;
   readonly platform: ModPlatform;
   readonly desiredIds: readonly string[];
+  readonly desiredStateHash: CanonicalModLock['desiredStateHash'];
   readonly trustRecordIds?: Readonly<Record<string, string>>;
   readonly grantRecordIds?: Readonly<Record<string, readonly string[]>>;
 }
@@ -93,7 +94,8 @@ export function createCanonicalLock(graph: ResolvedModGraph, options: CreateLock
   if (new Set(desiredIds).size !== desiredIds.length || canonicalJson(selectedIds) !== canonicalJson(desiredIds)) {
     throw new TypeError('lock desired IDs must exactly match the resolved graph');
   }
-  const desiredStateHash = sha256Canonical([...options.desiredIds].sort());
+  if (!/^sha256:[a-f0-9]{64}$/.test(options.desiredStateHash)) throw new TypeError('lock desired-state hash must be SHA-256');
+  const desiredStateHash = options.desiredStateHash;
   for (const candidate of graph.selected) {
     if (!candidate.sourceLocator.trim()) throw new TypeError('lock source locator cannot be empty: ' + candidate.manifest.id);
     if (!candidate.contentHash || !/^sha256:[a-f0-9]{64}$/.test(candidate.contentHash)) {

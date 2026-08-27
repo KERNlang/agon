@@ -1,6 +1,10 @@
+import { FIRST_PARTY_SURFACE_CATALOG } from '@kernlang/agon-kernel';
+
 import { ToolRegistry, getProjectFileStateCache, createReadTool, createEditTool, createMultiEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createPipelineTool, createGoalTool, createConquerTool, createReviewTool, createDelegateTool, createAgentTool, createReportConfidenceTool, createProposePlanTool, createExitPlanModeTool, createListPlansTool, createRetrieveResultTool, createQuickNeroTool, createTodoWriteTool, createSaveMemoryTool, executeToolCall, resolveWorkingDir, parsePermissionRuleSet, parseToolHooks, isReadOnlyCommand, loadConfig } from '@kernlang/agon-core';
 
-import type { ToolContext, ToolCallResult } from '@kernlang/agon-core';
+import { processSurfacePublicIds } from '../surface-authority-runtime.js';
+
+import type { ToolContext, ToolCallResult, ToolHandler } from '@kernlang/agon-core';
 
 import type { Dispatch, HandlerContext } from '../handlers/types.js';
 
@@ -25,37 +29,40 @@ import { isBashToolName } from './brain-helpers.js';
 /**
  * Create and populate the standard Cesar tool registry. Single source of truth — no more duplication.
  */
-export function createCesarToolRegistry(engineId?: string): ToolRegistry {
+const CESAR_SURFACE_IDS = new Set(FIRST_PARTY_SURFACE_CATALOG.filter((entry) => entry.category === 'cesarTools').map((entry) => entry.publicId));
+
+export function createCesarToolRegistry(engineId?: string, available: ReadonlySet<string> = processSurfacePublicIds('cesar')): ToolRegistry {
   const toolRegistry = new ToolRegistry();
-  toolRegistry.register(createReadTool());
-  toolRegistry.register(createEditTool());
-  toolRegistry.register(createMultiEditTool());
-  toolRegistry.register(createWriteTool());
-  toolRegistry.register(createBashTool());
-  toolRegistry.register(createGrepTool());
-  toolRegistry.register(createGlobTool());
-  toolRegistry.register(createForgeTool());
-  toolRegistry.register(createBrainstormTool());
-  toolRegistry.register(createTribunalTool());
-  toolRegistry.register(createCampfireTool());
-  toolRegistry.register(createCouncilTool());
-  toolRegistry.register(createPipelineTool());
-  toolRegistry.register(createGoalTool());
-  toolRegistry.register(createConquerTool());
-  toolRegistry.register(createReviewTool());
-  toolRegistry.register(createDelegateTool());
-  toolRegistry.register(createAgentTool());
-  toolRegistry.register(createReportConfidenceTool());
-  toolRegistry.register(createQuickNeroTool());
-  toolRegistry.register(createTodoWriteTool());
-  toolRegistry.register(createSaveMemoryTool());
-  toolRegistry.register(createProposePlanTool());
-  toolRegistry.register(createExitPlanModeTool());
-  toolRegistry.register(createListPlansTool());
-  toolRegistry.register(createRetrieveResultTool(engineId));
-  toolRegistry.register(createEngineReliabilityTool());
-  toolRegistry.register(createRenderProbeTool());
-  toolRegistry.register(createTuiProbeTool());
+  const register = (handler: ToolHandler): void => { if (CESAR_SURFACE_IDS.has(handler.definition.name) && available.has(handler.definition.name)) toolRegistry.register(handler); };
+  register(createReadTool());
+  register(createEditTool());
+  register(createMultiEditTool());
+  register(createWriteTool());
+  register(createBashTool());
+  register(createGrepTool());
+  register(createGlobTool());
+  register(createForgeTool());
+  register(createBrainstormTool());
+  register(createTribunalTool());
+  register(createCampfireTool());
+  register(createCouncilTool());
+  register(createPipelineTool());
+  register(createGoalTool());
+  register(createConquerTool());
+  register(createReviewTool());
+  register(createDelegateTool());
+  register(createAgentTool());
+  register(createReportConfidenceTool());
+  register(createQuickNeroTool());
+  register(createTodoWriteTool());
+  register(createSaveMemoryTool());
+  register(createProposePlanTool());
+  register(createExitPlanModeTool());
+  register(createListPlansTool());
+  register(createRetrieveResultTool(engineId));
+  register(createEngineReliabilityTool());
+  register(createRenderProbeTool());
+  register(createTuiProbeTool());
   return toolRegistry;
 }
 

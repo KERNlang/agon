@@ -9,5 +9,7 @@
 // Tribunal, Brainstorm, Campfire, Forge, etc. as MCP tools.
 
 import { startMcpServer } from './agon-orchestration.js';
+import { assertMcpSurfaceSelectionCurrent, initializeMcpSurfaceAuthority, mcpSurfacePublicIds } from './surface-authority.js';
 
-startMcpServer();
+await initializeMcpSurfaceAuthority();
+startMcpServer(mcpSurfacePublicIds(), assertMcpSurfaceSelectionCurrent);

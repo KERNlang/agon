@@ -155,7 +155,7 @@ export class ModRegistry {
     }
     let state: 'open' | 'committed' | 'rolled-back' = 'open';
     const ownedDisposers: Dispose[] = [];
-    const staged: Array<{ kind: RegistryKind; id: string; aliases: readonly string[]; payload: unknown }> = [];
+    const staged: Array<{ kind: RegistryKind; id: string; aliases: readonly string[]; payload: unknown; committedDispose?: Dispose }> = [];
     const registeredDeclarations = new Set<string>();
     const assertOpen = (): void => {
       if (state !== 'open') throw new RegistryInvariantError(`registration session is ${state}: ${manifest.id}`);
@@ -176,13 +176,17 @@ export class ModRegistry {
           throw new RegistryInvariantError(`duplicate contribution or alias: ${kind}/${name}`);
         }
       }
-      const entry = { kind, id, aliases: Object.freeze([...aliases]), payload };
+      const entry: (typeof staged)[number] = { kind, id, aliases: Object.freeze([...aliases]), payload };
       staged.push(entry);
       registeredDeclarations.add(declarationKey);
       let disposed = false;
       return async () => {
         if (disposed) return;
         disposed = true;
+        if (state === 'committed') {
+          await entry.committedDispose?.();
+          return;
+        }
         const index = staged.indexOf(entry);
         if (index >= 0) staged.splice(index, 1);
         registeredDeclarations.delete(declarationKey);
@@ -210,7 +214,8 @@ export class ModRegistry {
         }
         try {
           for (const entry of staged) {
-            ownedDisposers.push(this.#register(owner, entry.kind, entry.id, entry.aliases, entry.payload, false));
+            entry.committedDispose = this.#register(owner, entry.kind, entry.id, entry.aliases, entry.payload, false);
+            ownedDisposers.push(entry.committedDispose);
           }
         } catch (error) {
           for (const dispose of [...ownedDisposers].reverse()) void dispose();

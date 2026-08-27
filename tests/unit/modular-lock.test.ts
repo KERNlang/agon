@@ -4,6 +4,7 @@ import { candidate } from '../helpers/modular-agon.js';
 
 const contentHash = 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as const;
 const manifestHash = 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' as const;
+const desiredStateHash = sha256Canonical({ fixture: 'modular-lock' });
 const trustedCandidate = (id: string) => candidate(id, '1.0.0', 'registry', { contentHash, manifestHash });
 
 describe('Modular Agon canonical lock', () => {
@@ -12,10 +13,10 @@ describe('Modular Agon canonical lock', () => {
     const options = { platform: 'linux-x64' as const, kernelVersion: '1.0.0', apiVersion: '1.0.0', nodeVersion: '22.22.0' };
     const trustRecordIds = { 'example.alpha': 'trust:alpha', 'example.beta': 'trust:beta' };
     const first = createCanonicalLock(resolveCandidates(candidates, ['example.beta', 'example.alpha'], options), {
-      kernelVersion: '1.0.0', apiVersion: '1.0.0', platform: 'linux-x64', desiredIds: ['example.beta', 'example.alpha'], trustRecordIds,
+      kernelVersion: '1.0.0', apiVersion: '1.0.0', platform: 'linux-x64', desiredStateHash, desiredIds: ['example.beta', 'example.alpha'], trustRecordIds,
     });
     const second = createCanonicalLock(resolveCandidates([...candidates].reverse(), ['example.alpha', 'example.beta'], options), {
-      kernelVersion: '1.0.0', apiVersion: '1.0.0', platform: 'linux-x64', desiredIds: ['example.alpha', 'example.beta'], trustRecordIds,
+      kernelVersion: '1.0.0', apiVersion: '1.0.0', platform: 'linux-x64', desiredStateHash, desiredIds: ['example.alpha', 'example.beta'], trustRecordIds,
     });
     expect(canonicalJson(first)).toBe(canonicalJson(second));
     expect(first.graphHash).toBe(second.graphHash);
@@ -36,26 +37,26 @@ describe('Modular Agon canonical lock', () => {
     const runtime = { platform: 'linux-x64' as const, kernelVersion: '1.0.0', apiVersion: '1.0.0', nodeVersion: '22.22.0' };
     const unverified = resolveCandidates([candidate('example.mod')], ['example.mod'], runtime);
     expect(() => createCanonicalLock(unverified, {
-      kernelVersion: '1.0.0', apiVersion: '1.0.0', platform: 'linux-x64', desiredIds: ['example.mod'],
+      kernelVersion: '1.0.0', apiVersion: '1.0.0', platform: 'linux-x64', desiredStateHash, desiredIds: ['example.mod'],
       trustRecordIds: { 'example.mod': 'trust:mod' },
     })).toThrow(/content hash/i);
     const verified = resolveCandidates([trustedCandidate('example.mod')], ['example.mod'], runtime);
     expect(() => createCanonicalLock(verified, {
-      kernelVersion: '1.0.0', apiVersion: '1.0.0', platform: 'linux-x64', desiredIds: [],
+      kernelVersion: '1.0.0', apiVersion: '1.0.0', platform: 'linux-x64', desiredStateHash, desiredIds: [],
       trustRecordIds: { 'example.mod': 'trust:mod' },
     })).toThrow(/desired/i);
     expect(() => createCanonicalLock(verified, {
-      kernelVersion: '1.0.0', apiVersion: '1.0.0', platform: 'linux-x64', desiredIds: ['example.mod'],
+      kernelVersion: '1.0.0', apiVersion: '1.0.0', platform: 'linux-x64', desiredStateHash, desiredIds: ['example.mod'],
     })).toThrow(/trust/i);
     const trustRecordIds = { 'example.mod': 'trust:mod' };
     expect(() => createCanonicalLock(verified, {
-      kernelVersion: '2.0.0', apiVersion: '1.0.0', platform: 'linux-x64', desiredIds: ['example.mod'], trustRecordIds,
+      kernelVersion: '2.0.0', apiVersion: '1.0.0', platform: 'linux-x64', desiredStateHash, desiredIds: ['example.mod'], trustRecordIds,
     })).toThrow(/resolver context/i);
     expect(() => createCanonicalLock(verified, {
-      kernelVersion: '1.0.0', apiVersion: '2.0.0', platform: 'linux-x64', desiredIds: ['example.mod'], trustRecordIds,
+      kernelVersion: '1.0.0', apiVersion: '2.0.0', platform: 'linux-x64', desiredStateHash, desiredIds: ['example.mod'], trustRecordIds,
     })).toThrow(/resolver context/i);
     expect(() => createCanonicalLock(verified, {
-      kernelVersion: '1.0.0', apiVersion: '1.0.0', platform: 'darwin-arm64', desiredIds: ['example.mod'], trustRecordIds,
+      kernelVersion: '1.0.0', apiVersion: '1.0.0', platform: 'darwin-arm64', desiredStateHash, desiredIds: ['example.mod'], trustRecordIds,
     })).toThrow(/resolver context/i);
   });
 });

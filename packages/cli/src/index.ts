@@ -1,5 +1,6 @@
 import { defineCommand, runMain } from 'citty';
-import { lazySubCommands } from './lazy-commands.js';
+import { createGeneratedLazySubCommands } from './lazy-commands.js';
+import { initializeProcessSurfaceAuthority, processSurfacePublicIds } from './surface-authority-runtime.js';
 import { loadConfig, loadAllAuthKeys } from '@kernlang/agon-core';
 
 // `surfaces/app.js` (the whole interactive Cesar/Ink surface — ~2k lines
@@ -144,13 +145,15 @@ consumeGroundFlag();
 consumeContinueFlag();
 guardAgainstRecursiveDispatch();
 
+await initializeProcessSurfaceAuthority();
+
 const main = defineCommand({
   meta: {
     name: 'agon',
     version: '0.2.5',
     description: 'Any AI can join. They compete. You ship.',
   },
-  subCommands: lazySubCommands,
+  subCommands: createGeneratedLazySubCommands(processSurfacePublicIds('cli')),
 });
 
 // Interactive REPL only when: no args at all AND stdin is a TTY

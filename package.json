@@ -68,7 +68,8 @@
     "build": "npm run build:cli && npm run build:types",
     "build:types": "tsc -b --force",
     "build:cli": "npm run build:cli:workspaces",
-    "build:cli:workspaces": "npm run build -w packages/mod-api && npm run build -w packages/mod-kernel && npm run build -w packages/core && npm run build -w packages/forge && npm run build -w packages/adapter-cli && npm run build -w packages/cli",
+    "build:modular-packages": "node scripts/build-modular-packages.mjs",
+    "build:cli:workspaces": "npm run build -w packages/mod-api && npm run build -w packages/mod-kernel && npm run build:modular-packages && npm run build -w packages/core && npm run build -w packages/forge && npm run build -w packages/adapter-cli && npm run build -w packages/cli",
     "install:cli": "npm run build:cli && cd packages/cli && npm link",
     "release:set-version": "node scripts/release/set-version.mjs",
     "release:dedup": "node scripts/release/publish-if-new.mjs packages/dedup",
@@ -130,8 +131,14 @@
     "test:modular-package-data-migrations": "node scripts/spec/verify-modular-package-data-migrations.mjs --self-test",
     "test:modular-first-party-rollback": "node scripts/spec/verify-modular-first-party-rollback.mjs && node scripts/spec/verify-modular-first-party-rollback.mjs --self-test",
     "perf:modular-slice5": "node scripts/spec/measure-modular-slice5.mjs",
+    "test:modular-surface-parity": "npm run build -w packages/mod-api && npm run build -w packages/mod-kernel && npm run build:modular-packages && node scripts/run-node22.mjs vitest run tests/unit/modular-surface-generation.test.ts tests/unit/modular-surface-collision.test.ts tests/unit/modular-surface-cutover.test.ts tests/unit/modular-physical-surface-activation.test.ts tests/unit/modular-physical-activation-order.test.ts tests/unit/modular-first-party-lock-validation.test.ts tests/unit/modular-selected-lock-integrity.test.ts tests/unit/modular-production-surface-bootstrap.test.ts tests/unit/modular-mcp-production-authority.test.ts tests/unit/modular-docs-projection.test.ts",
+    "test:modular-disabled-surfaces": "node scripts/run-node22.mjs vitest run tests/unit/modular-surface-cutover.test.ts -t disabled",
+    "test:modular-slice6": "npm run test:modular-surface-parity && npm run test:modular-disabled-surfaces && node scripts/spec/verify-modular-slice6-cutover.mjs --self-test",
+    "perf:modular-slice6": "node --expose-gc scripts/spec/measure-modular-slice6.mjs",
     "spec:modular-slice5:qualify:index": "node scripts/spec/qualify-modular-agon-slice5.mjs --subject=index --run-clean",
-    "spec:modular-slice5:qualify:commit": "node scripts/spec/qualify-modular-agon-slice5.mjs --subject=commit --run-clean"
+    "spec:modular-slice5:qualify:commit": "node scripts/spec/qualify-modular-agon-slice5.mjs --subject=commit --run-clean",
+    "spec:modular-slice6:qualify:index": "node scripts/spec/qualify-modular-agon-slice6.mjs --subject=index --run-clean",
+    "spec:modular-slice6:qualify:commit": "node scripts/spec/qualify-modular-agon-slice6.mjs --subject=commit --run-clean"
   },
   "engines": {
     "node": ">=22"

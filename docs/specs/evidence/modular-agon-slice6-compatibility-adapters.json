@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "slice": "S6",
+  "authority": "generated physical-package registry generation",
+  "adapters": [
+    {
+      "id": "s6-cli-citty-executor",
+      "owner": "@kernlang/agon",
+      "path": "packages/cli/src/lazy-commands.ts",
+      "killList": ["KL-001"],
+      "purpose": "Translate generated CLI availability into existing Citty command executors.",
+      "removalCondition": "Every first-party CLI command exports a public Mod API command executor with equivalent Citty argument/help projection.",
+      "unreachableProof": "tests/unit/modular-production-surface-bootstrap.test.ts",
+      "status": "temporary"
+    },
+    {
+      "id": "s6-tui-intent-executor",
+      "owner": "@kernlang/agon-mod-plan",
+      "path": "packages/cli/src/signals/intent.ts",
+      "killList": ["KL-003"],
+      "purpose": "Translate generated TUI and intent availability into the existing parser result envelopes.",
+      "removalCondition": "Every first-party intent parser and action is activated from its physical mod package.",
+      "unreachableProof": "tests/unit/modular-surface-cutover.test.ts",
+      "status": "temporary"
+    },
+    {
+      "id": "s6-cesar-tool-executor",
+      "owner": "@kernlang/agon",
+      "path": "packages/cli/src/cesar/tools.ts",
+      "killList": ["KL-004"],
+      "purpose": "Bind generated Cesar availability to existing capability implementations.",
+      "removalCondition": "Cesar executes registry contribution payloads directly and all physical mods inject only public support capabilities.",
+      "unreachableProof": "tests/unit/modular-surface-cutover.test.ts",
+      "status": "temporary"
+    },
+    {
+      "id": "s6-mcp-jsonrpc-executor",
+      "owner": "@kernlang/agon-mod-pipeline-orchestration",
+      "path": "packages/mcp/src/agon-orchestration.ts",
+      "killList": ["KL-005", "KL-012"],
+      "purpose": "Expose generated MCP availability through the existing JSON-RPC handlers without changing tool schemas or descriptions.",
+      "removalCondition": "MCP dispatch invokes owner-tagged registry payloads directly and compatibility aliases have versioned replacements.",
+      "unreachableProof": "tests/unit/modular-mcp-production-authority.test.ts",
+      "status": "temporary"
+    },
+    {
+      "id": "s6-mode-docs-renderer",
+      "owner": "@kernlang/agon-mod-routing-docs",
+      "path": "scripts/generate-mode-docs.mjs",
+      "killList": ["KL-015"],
+      "purpose": "Render selected generated documentation with the established Agent Guide formatting.",
+      "removalCondition": "Physical docs contributions contain all generated and preserved handwritten regions.",
+      "unreachableProof": "tests/unit/modular-docs-projection.test.ts",
+      "status": "temporary"
+    }
+  ]
+}

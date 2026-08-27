@@ -1896,7 +1896,7 @@ export const LEGACY_SURFACE_CATALOG = [
       "source": "packages/cli/src/lazy-commands.ts:311",
       "ownerPackage": "@kernlang/agon-mod-routing-docs",
       "ownerClass": "user-toggleable-mod-package",
-      "aliasOf": "agentGuide",
+      "aliasOf": null,
       "compatibility": true
     }
   },
@@ -1972,7 +1972,7 @@ export const LEGACY_SURFACE_CATALOG = [
       "source": "packages/cli/src/lazy-commands.ts:330",
       "ownerPackage": "@kernlang/agon-mod-browser",
       "ownerClass": "user-toggleable-mod-package",
-      "aliasOf": "browserHost",
+      "aliasOf": null,
       "compatibility": true
     }
   },
@@ -2371,7 +2371,7 @@ export const LEGACY_SURFACE_CATALOG = [
       "source": "packages/cli/src/lazy-commands.ts:312",
       "ownerPackage": "@kernlang/agon-mod-routing-docs",
       "ownerClass": "user-toggleable-mod-package",
-      "aliasOf": "installAgentPrompts",
+      "aliasOf": null,
       "compatibility": true
     }
   },
@@ -3017,7 +3017,7 @@ export const LEGACY_SURFACE_CATALOG = [
       "source": "packages/cli/src/lazy-commands.ts:292",
       "ownerPackage": "@kernlang/agon-mod-team-brainstorm",
       "ownerClass": "user-toggleable-mod-package",
-      "aliasOf": "teamBrainstorm",
+      "aliasOf": null,
       "compatibility": true
     }
   },
@@ -3036,7 +3036,7 @@ export const LEGACY_SURFACE_CATALOG = [
       "source": "packages/cli/src/lazy-commands.ts:291",
       "ownerPackage": "@kernlang/agon-mod-team-forge",
       "ownerClass": "user-toggleable-mod-package",
-      "aliasOf": "teamForge",
+      "aliasOf": null,
       "compatibility": true
     }
   },
@@ -3055,7 +3055,7 @@ export const LEGACY_SURFACE_CATALOG = [
       "source": "packages/cli/src/lazy-commands.ts:293",
       "ownerPackage": "@kernlang/agon-mod-team-tribunal",
       "ownerClass": "user-toggleable-mod-package",
-      "aliasOf": "teamTribunal",
+      "aliasOf": null,
       "compatibility": true
     }
   },

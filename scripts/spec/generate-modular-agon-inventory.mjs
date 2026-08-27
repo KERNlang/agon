@@ -50,31 +50,17 @@ function stringValue(node) {
   return undefined;
 }
 
-function objectField(node, name) {
-  if (!node || !ts.isObjectLiteralExpression(node)) return undefined;
-  const prop = node.properties.find((entry) => ts.isPropertyAssignment(entry) && propertyName(entry.name) === name);
-  return prop && ts.isPropertyAssignment(prop) ? prop.initializer : undefined;
-}
-
-function findVariable(file, name) {
-  const sf = parsed.get(file);
-  let found;
-  function visit(node) {
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === name) found = node.initializer;
-    ts.forEachChild(node, visit);
-  }
-  visit(sf);
-  return found;
-}
-
-function arrayObjectCatalog(file, variable, nameField, extra = () => ({})) {
-  const init = findVariable(file, variable);
-  if (!init || !ts.isArrayLiteralExpression(init)) return [];
-  return init.elements.flatMap((node) => {
-    if (!ts.isObjectLiteralExpression(node)) return [];
-    const name = stringValue(objectField(node, nameField));
-    return typeof name === 'string' ? [{ id: name, source: locator(file, node), ...extra(node) }] : [];
-  });
+function generatedSurfaceCatalog(category) {
+  const file = join(root, 'packages/mod-kernel/src/generated/first-party-surface-catalog.ts');
+  const text = readFileSync(file, 'utf8');
+  const prefix = 'Object.freeze(';
+  const suffix = ') as readonly GeneratedSurfaceCatalogEntry[];';
+  const start = text.indexOf(prefix);
+  const end = text.lastIndexOf(suffix);
+  if (start < 0 || end < 0) throw new Error('generated surface catalog is unreadable');
+  return JSON.parse(text.slice(start + prefix.length, end))
+    .filter((entry) => entry.category === category)
+    .map((entry) => ({ id: entry.publicId, source: entry.source, category: entry.group, description: entry.description, ...(entry.aliasOf ? { aliasOf: entry.aliasOf } : {}) }));
 }
 
 function exportedTypeMembers(file, declarationName) {
@@ -110,15 +96,7 @@ function discriminatedUnion(file, declarationName, discriminator) {
   });
 }
 
-const lazyFile = join(root, 'packages/cli/src/lazy-commands.ts');
-const lazyMap = findVariable(lazyFile, 'lazySubCommands');
-const cliCommands = lazyMap && ts.isObjectLiteralExpression(lazyMap) ? lazyMap.properties.flatMap((node) => {
-  const id = propertyName(node.name);
-  if (!id) return [];
-  let aliasOf;
-  if (ts.isPropertyAssignment(node) && ts.isIdentifier(node.initializer) && node.initializer.text !== id) aliasOf = node.initializer.text;
-  return [{ id, ...(aliasOf ? { aliasOf } : {}), source: locator(lazyFile, node) }];
-}) : [];
+const cliCommands = generatedSurfaceCatalog('cliCommands');
 
 for (const file of walk(join(root, 'packages/cli/src/commands'), (path) => path.endsWith('.ts'))) {
   const sf = parsed.get(file);
@@ -135,38 +113,17 @@ for (const file of walk(join(root, 'packages/cli/src/commands'), (path) => path.
   visit(sf);
 }
 
-const tuiFile = join(root, 'packages/cli/src/signals/intent.ts');
-const tuiCommands = arrayObjectCatalog(tuiFile, 'SLASH_COMMANDS', 'cmd', (node) => ({ description: stringValue(objectField(node, 'desc')) }));
+const tuiCommands = generatedSurfaceCatalog('tuiSlashCommands');
 const keyboardFile = join(root, 'packages/cli/src/signals/keyboard.ts');
 const keyboardActions = discriminatedUnion(keyboardFile, 'KeyboardAction', 'type');
-const builtinFile = join(root, 'packages/core/src/blocks/builtin-commands.ts');
-const builtinCommands = arrayObjectCatalog(builtinFile, 'builtins', 'name', (node) => ({
-  category: stringValue(objectField(node, 'category')),
-  description: stringValue(objectField(node, 'desc')),
-}));
+const builtinCommands = generatedSurfaceCatalog('builtinCommandMetadata');
 
 const intentFile = join(root, 'packages/cli/src/signals/intent-types.ts');
 const intents = discriminatedUnion(intentFile, 'Intent', 'type');
 
-const mcpFiles = [
-  ['packages/mcp/src/agon-orchestration.ts', 'ORCHESTRATION_TOOLS'],
-  ['packages/mcp/src/rooms.ts', 'ROOM_TOOLS'],
-  ['packages/mcp/src/job-tools.ts', 'JOB_TOOLS'],
-  ['packages/mcp/src/project-context.ts', 'PROJECT_CONTEXT_TOOLS'],
-];
-const mcpTools = mcpFiles.flatMap(([path, variable]) => arrayObjectCatalog(join(root, path), variable, 'name').map((item) => ({ ...item, family: variable })));
+const mcpTools = generatedSurfaceCatalog("mcpTools");
 
-const cesarFile = join(root, 'packages/cli/src/cesar/tools.ts');
-const cesarSf = parsed.get(cesarFile);
-const cesarTools = [];
-function collectCesar(node) {
-  if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'register' && node.arguments.length === 1) {
-    const arg = node.arguments[0];
-    if (ts.isCallExpression(arg) && ts.isIdentifier(arg.expression)) cesarTools.push({ id: arg.expression.text.replace(/^create|Tool$/g, ''), factory: arg.expression.text, source: locator(cesarFile, node) });
-  }
-  ts.forEachChild(node, collectCesar);
-}
-collectCesar(cesarSf);
+const cesarTools = generatedSurfaceCatalog("cesarTools");
 
 const cesarRouteDeclarations = [
   ['packages/cli/src/models/handler-types.ts', 'CesarLiveMode'],

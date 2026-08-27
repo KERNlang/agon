@@ -5,670 +5,852 @@
     "cliCommands": [
       {
         "id": "agent-guide",
-        "aliasOf": "agentGuide",
-        "source": "packages/cli/src/lazy-commands.ts:311"
+        "source": "packages/cli/src/lazy-commands.ts:311",
+        "category": "user-toggleable-mod-package",
+        "description": "agent-guide"
       },
       {
         "id": "ask",
-        "source": "packages/cli/src/lazy-commands.ts:315"
+        "source": "packages/cli/src/lazy-commands.ts:315",
+        "category": "user-toggleable-mod-package",
+        "description": "ask"
       },
       {
         "id": "attach",
-        "source": "packages/cli/src/lazy-commands.ts:324"
+        "source": "packages/cli/src/lazy-commands.ts:324",
+        "category": "minimal-kernel-machinery",
+        "description": "attach"
       },
       {
         "id": "brainstorm",
-        "source": "packages/cli/src/lazy-commands.ts:288"
+        "source": "packages/cli/src/lazy-commands.ts:288",
+        "category": "competition",
+        "description": "brainstorm"
       },
       {
         "id": "browser-host",
-        "aliasOf": "browserHost",
-        "source": "packages/cli/src/lazy-commands.ts:330"
+        "source": "packages/cli/src/lazy-commands.ts:330",
+        "category": "user-toggleable-mod-package",
+        "description": "browser-host"
       },
       {
         "id": "browser-host install",
-        "kind": "subcommand",
-        "source": "packages/cli/src/commands/browser-host.ts:546"
+        "source": "packages/cli/src/commands/browser-host.ts:546",
+        "category": "user-toggleable-mod-package",
+        "description": "browser-host install"
       },
       {
         "id": "browser-host status",
-        "kind": "subcommand",
-        "source": "packages/cli/src/commands/browser-host.ts:548"
+        "source": "packages/cli/src/commands/browser-host.ts:548",
+        "category": "user-toggleable-mod-package",
+        "description": "browser-host status"
       },
       {
         "id": "browser-host stop",
-        "kind": "subcommand",
-        "source": "packages/cli/src/commands/browser-host.ts:549"
+        "source": "packages/cli/src/commands/browser-host.ts:549",
+        "category": "user-toggleable-mod-package",
+        "description": "browser-host stop"
       },
       {
         "id": "browser-host uninstall",
-        "kind": "subcommand",
-        "source": "packages/cli/src/commands/browser-host.ts:547"
+        "source": "packages/cli/src/commands/browser-host.ts:547",
+        "category": "user-toggleable-mod-package",
+        "description": "browser-host uninstall"
       },
       {
         "id": "call",
-        "source": "packages/cli/src/lazy-commands.ts:306"
+        "source": "packages/cli/src/lazy-commands.ts:306",
+        "category": "minimal-kernel-machinery",
+        "description": "call"
       },
       {
         "id": "campfire",
-        "source": "packages/cli/src/lazy-commands.ts:290"
+        "source": "packages/cli/src/lazy-commands.ts:290",
+        "category": "competition",
+        "description": "campfire"
       },
       {
         "id": "chrome",
-        "source": "packages/cli/src/lazy-commands.ts:328"
+        "source": "packages/cli/src/lazy-commands.ts:328",
+        "category": "user-toggleable-mod-package",
+        "description": "chrome"
       },
       {
         "id": "config",
-        "source": "packages/cli/src/lazy-commands.ts:304"
+        "source": "packages/cli/src/lazy-commands.ts:304",
+        "category": "config",
+        "description": "config"
       },
       {
         "id": "conquer",
-        "source": "packages/cli/src/lazy-commands.ts:321"
+        "source": "packages/cli/src/lazy-commands.ts:321",
+        "category": "user-toggleable-mod-package",
+        "description": "conquer"
       },
       {
         "id": "council",
-        "source": "packages/cli/src/lazy-commands.ts:319"
+        "source": "packages/cli/src/lazy-commands.ts:319",
+        "category": "user-toggleable-mod-package",
+        "description": "council"
       },
       {
         "id": "daemon",
-        "source": "packages/cli/src/lazy-commands.ts:325"
+        "source": "packages/cli/src/lazy-commands.ts:325",
+        "category": "user-toggleable-mod-package",
+        "description": "daemon"
       },
       {
         "id": "doctor",
-        "source": "packages/cli/src/lazy-commands.ts:300"
+        "source": "packages/cli/src/lazy-commands.ts:300",
+        "category": "info",
+        "description": "doctor"
       },
       {
         "id": "drive",
-        "source": "packages/cli/src/lazy-commands.ts:327"
+        "source": "packages/cli/src/lazy-commands.ts:327",
+        "category": "user-toggleable-mod-package",
+        "description": "drive"
       },
       {
         "id": "engine",
-        "source": "packages/cli/src/lazy-commands.ts:299"
+        "source": "packages/cli/src/lazy-commands.ts:299",
+        "category": "minimal-kernel-machinery",
+        "description": "engine"
       },
       {
         "id": "ext",
-        "source": "packages/cli/src/lazy-commands.ts:329"
+        "source": "packages/cli/src/lazy-commands.ts:329",
+        "category": "user-toggleable-mod-package",
+        "description": "ext"
       },
       {
         "id": "ext install",
-        "kind": "subcommand",
-        "source": "packages/cli/src/commands/ext.ts:321"
+        "source": "packages/cli/src/commands/ext.ts:321",
+        "category": "user-toggleable-mod-package",
+        "description": "ext install"
       },
       {
         "id": "ext native-host",
-        "kind": "subcommand",
-        "source": "packages/cli/src/commands/ext.ts:322"
+        "source": "packages/cli/src/commands/ext.ts:322",
+        "category": "user-toggleable-mod-package",
+        "description": "ext native-host"
       },
       {
         "id": "forge",
-        "source": "packages/cli/src/lazy-commands.ts:287"
+        "source": "packages/cli/src/lazy-commands.ts:287",
+        "category": "competition",
+        "description": "forge"
       },
       {
         "id": "goal",
-        "source": "packages/cli/src/lazy-commands.ts:313"
+        "source": "packages/cli/src/lazy-commands.ts:313",
+        "category": "user-toggleable-mod-package",
+        "description": "goal"
       },
       {
         "id": "history",
-        "source": "packages/cli/src/lazy-commands.ts:295"
+        "source": "packages/cli/src/lazy-commands.ts:295",
+        "category": "info",
+        "description": "history"
       },
       {
         "id": "install-agent-prompts",
-        "aliasOf": "installAgentPrompts",
-        "source": "packages/cli/src/lazy-commands.ts:312"
+        "source": "packages/cli/src/lazy-commands.ts:312",
+        "category": "user-toggleable-mod-package",
+        "description": "install-agent-prompts"
       },
       {
         "id": "job",
-        "source": "packages/cli/src/lazy-commands.ts:310"
+        "source": "packages/cli/src/lazy-commands.ts:310",
+        "category": "user-toggleable-mod-package",
+        "description": "job"
       },
       {
         "id": "job cancel",
-        "kind": "subcommand",
-        "source": "packages/cli/src/commands/job.ts:313"
+        "source": "packages/cli/src/commands/job.ts:313",
+        "category": "user-toggleable-mod-package",
+        "description": "job cancel"
       },
       {
         "id": "job events",
-        "kind": "subcommand",
-        "source": "packages/cli/src/commands/job.ts:284"
+        "source": "packages/cli/src/commands/job.ts:284",
+        "category": "user-toggleable-mod-package",
+        "description": "job events"
       },
       {
         "id": "job list",
-        "kind": "subcommand",
-        "source": "packages/cli/src/commands/job.ts:258"
+        "source": "packages/cli/src/commands/job.ts:258",
+        "category": "user-toggleable-mod-package",
+        "description": "job list"
       },
       {
         "id": "job result",
-        "kind": "subcommand",
-        "source": "packages/cli/src/commands/job.ts:300"
+        "source": "packages/cli/src/commands/job.ts:300",
+        "category": "user-toggleable-mod-package",
+        "description": "job result"
       },
       {
         "id": "job status",
-        "kind": "subcommand",
-        "source": "packages/cli/src/commands/job.ts:271"
+        "source": "packages/cli/src/commands/job.ts:271",
+        "category": "user-toggleable-mod-package",
+        "description": "job status"
       },
       {
         "id": "job submit",
-        "kind": "subcommand",
-        "source": "packages/cli/src/commands/job.ts:229"
+        "source": "packages/cli/src/commands/job.ts:229",
+        "category": "user-toggleable-mod-package",
+        "description": "job submit"
       },
       {
         "id": "last",
-        "source": "packages/cli/src/lazy-commands.ts:301"
+        "source": "packages/cli/src/lazy-commands.ts:301",
+        "category": "user-toggleable-mod-package",
+        "description": "last"
       },
       {
         "id": "leaderboard",
-        "source": "packages/cli/src/lazy-commands.ts:294"
+        "source": "packages/cli/src/lazy-commands.ts:294",
+        "category": "info",
+        "description": "leaderboard"
       },
       {
         "id": "login",
-        "source": "packages/cli/src/lazy-commands.ts:331"
+        "source": "packages/cli/src/lazy-commands.ts:331",
+        "category": "minimal-kernel-machinery",
+        "description": "login"
       },
       {
         "id": "models",
-        "source": "packages/cli/src/lazy-commands.ts:302"
+        "source": "packages/cli/src/lazy-commands.ts:302",
+        "category": "config",
+        "description": "models"
       },
       {
         "id": "models add",
-        "kind": "subcommand",
-        "source": "packages/cli/src/commands/models.ts:95"
+        "source": "packages/cli/src/commands/models.ts:95",
+        "category": "minimal-kernel-machinery",
+        "description": "models add"
       },
       {
         "id": "models auto",
-        "kind": "subcommand",
-        "source": "packages/cli/src/commands/models.ts:172"
+        "source": "packages/cli/src/commands/models.ts:172",
+        "category": "minimal-kernel-machinery",
+        "description": "models auto"
       },
       {
         "id": "models disable",
-        "kind": "subcommand",
-        "source": "packages/cli/src/commands/models.ts:128"
+        "source": "packages/cli/src/commands/models.ts:128",
+        "category": "minimal-kernel-machinery",
+        "description": "models disable"
       },
       {
         "id": "models enable",
-        "kind": "subcommand",
-        "source": "packages/cli/src/commands/models.ts:62"
+        "source": "packages/cli/src/commands/models.ts:62",
+        "category": "minimal-kernel-machinery",
+        "description": "models enable"
       },
       {
         "id": "models hide",
-        "kind": "subcommand",
-        "source": "packages/cli/src/commands/models.ts:150"
+        "source": "packages/cli/src/commands/models.ts:150",
+        "category": "minimal-kernel-machinery",
+        "description": "models hide"
       },
       {
         "id": "models list",
-        "kind": "subcommand",
-        "source": "packages/cli/src/commands/models.ts:17"
+        "source": "packages/cli/src/commands/models.ts:17",
+        "category": "minimal-kernel-machinery",
+        "description": "models list"
       },
       {
         "id": "models remove",
-        "kind": "subcommand",
-        "source": "packages/cli/src/commands/models.ts:194"
+        "source": "packages/cli/src/commands/models.ts:194",
+        "category": "minimal-kernel-machinery",
+        "description": "models remove"
       },
       {
         "id": "models set",
-        "kind": "subcommand",
-        "source": "packages/cli/src/commands/models.ts:179"
+        "source": "packages/cli/src/commands/models.ts:179",
+        "category": "minimal-kernel-machinery",
+        "description": "models set"
       },
       {
         "id": "mutate",
-        "source": "packages/cli/src/lazy-commands.ts:309"
+        "source": "packages/cli/src/lazy-commands.ts:309",
+        "category": "user-toggleable-mod-package",
+        "description": "mutate"
       },
       {
         "id": "naturalize",
-        "source": "packages/cli/src/lazy-commands.ts:308"
+        "source": "packages/cli/src/lazy-commands.ts:308",
+        "category": "user-toggleable-mod-package",
+        "description": "naturalize"
       },
       {
         "id": "nero",
-        "source": "packages/cli/src/lazy-commands.ts:318"
+        "source": "packages/cli/src/lazy-commands.ts:318",
+        "category": "session",
+        "description": "nero"
       },
       {
         "id": "provenance",
-        "source": "packages/cli/src/lazy-commands.ts:298"
+        "source": "packages/cli/src/lazy-commands.ts:298",
+        "category": "info",
+        "description": "provenance"
       },
       {
         "id": "provider",
-        "source": "packages/cli/src/lazy-commands.ts:303"
+        "source": "packages/cli/src/lazy-commands.ts:303",
+        "category": "config",
+        "description": "provider"
       },
       {
         "id": "rag",
-        "source": "packages/cli/src/lazy-commands.ts:317"
+        "source": "packages/cli/src/lazy-commands.ts:317",
+        "category": "user-toggleable-mod-package",
+        "description": "rag"
       },
       {
         "id": "ratings",
-        "source": "packages/cli/src/lazy-commands.ts:296"
+        "source": "packages/cli/src/lazy-commands.ts:296",
+        "category": "user-toggleable-mod-package",
+        "description": "ratings"
       },
       {
         "id": "ratings purge-unknown",
-        "kind": "subcommand",
-        "source": "packages/cli/src/commands/ratings.ts:18"
+        "source": "packages/cli/src/commands/ratings.ts:18",
+        "category": "user-toggleable-mod-package",
+        "description": "ratings purge-unknown"
       },
       {
         "id": "research",
-        "source": "packages/cli/src/lazy-commands.ts:320"
+        "source": "packages/cli/src/lazy-commands.ts:320",
+        "category": "user-toggleable-mod-package",
+        "description": "research"
       },
       {
         "id": "review",
-        "source": "packages/cli/src/lazy-commands.ts:305"
+        "source": "packages/cli/src/lazy-commands.ts:305",
+        "category": "execution",
+        "description": "review"
       },
       {
         "id": "room",
-        "source": "packages/cli/src/lazy-commands.ts:297"
+        "source": "packages/cli/src/lazy-commands.ts:297",
+        "category": "user-toggleable-mod-package",
+        "description": "room"
       },
       {
         "id": "sanitize",
-        "source": "packages/cli/src/lazy-commands.ts:307"
+        "source": "packages/cli/src/lazy-commands.ts:307",
+        "category": "user-toggleable-mod-package",
+        "description": "sanitize"
       },
       {
         "id": "serve",
-        "source": "packages/cli/src/lazy-commands.ts:326"
+        "source": "packages/cli/src/lazy-commands.ts:326",
+        "category": "user-toggleable-mod-package",
+        "description": "serve"
       },
       {
         "id": "synthesis",
-        "source": "packages/cli/src/lazy-commands.ts:314"
+        "source": "packages/cli/src/lazy-commands.ts:314",
+        "category": "user-toggleable-mod-package",
+        "description": "synthesis"
       },
       {
         "id": "team-brainstorm",
-        "aliasOf": "teamBrainstorm",
-        "source": "packages/cli/src/lazy-commands.ts:292"
+        "source": "packages/cli/src/lazy-commands.ts:292",
+        "category": "competition",
+        "description": "team-brainstorm"
       },
       {
         "id": "team-forge",
-        "aliasOf": "teamForge",
-        "source": "packages/cli/src/lazy-commands.ts:291"
+        "source": "packages/cli/src/lazy-commands.ts:291",
+        "category": "competition",
+        "description": "team-forge"
       },
       {
         "id": "team-tribunal",
-        "aliasOf": "teamTribunal",
-        "source": "packages/cli/src/lazy-commands.ts:293"
+        "source": "packages/cli/src/lazy-commands.ts:293",
+        "category": "competition",
+        "description": "team-tribunal"
       },
       {
         "id": "think",
-        "source": "packages/cli/src/lazy-commands.ts:316"
+        "source": "packages/cli/src/lazy-commands.ts:316",
+        "category": "user-toggleable-mod-package",
+        "description": "think"
       },
       {
         "id": "tribunal",
-        "source": "packages/cli/src/lazy-commands.ts:289"
+        "source": "packages/cli/src/lazy-commands.ts:289",
+        "category": "competition",
+        "description": "tribunal"
       },
       {
         "id": "update",
-        "source": "packages/cli/src/lazy-commands.ts:332"
+        "source": "packages/cli/src/lazy-commands.ts:332",
+        "category": "info",
+        "description": "update"
       },
       {
         "id": "upgrade",
-        "aliasOf": "update",
-        "source": "packages/cli/src/lazy-commands.ts:333"
+        "source": "packages/cli/src/lazy-commands.ts:333",
+        "category": "minimal-kernel-machinery",
+        "description": "upgrade",
+        "aliasOf": "update"
       },
       {
         "id": "worktree",
-        "source": "packages/cli/src/lazy-commands.ts:322"
+        "source": "packages/cli/src/lazy-commands.ts:322",
+        "category": "utility",
+        "description": "worktree"
       },
       {
         "id": "wt",
-        "aliasOf": "worktree",
-        "source": "packages/cli/src/lazy-commands.ts:323"
+        "source": "packages/cli/src/lazy-commands.ts:323",
+        "category": "user-toggleable-mod-package",
+        "description": "wt",
+        "aliasOf": "worktree"
       }
     ],
     "tuiSlashCommands": [
       {
         "id": "/agent",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "execution",
         "description": "<task>                   — autonomous agent loop (solo or shadow, auto-routed)"
       },
       {
         "id": "/agent-solo",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "execution",
         "description": "<task>                   — force solo agent mode, no shadow worker"
       },
       {
         "id": "/apply",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "execution",
         "description": "[path] [--force]       — apply winning forge patch"
       },
       {
         "id": "/approve",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "planning",
         "description": "                        — approve current plan"
       },
       {
         "id": "/auto",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "planning",
         "description": "[on|off|toggle|status] or <task> — autonomous mode control"
       },
       {
         "id": "/brainstorm",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "competition",
         "description": "<question>              — confidence-bidding answers"
       },
       {
         "id": "/btw",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "session",
         "description": "<question>               — ask something while engines work (side-channel)"
       },
       {
         "id": "/build",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "execution",
         "description": "<task>                   — agent builds in cwd (reads/edits/tests)"
       },
       {
         "id": "/campfire",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "competition",
         "description": "<topic>                  — think together, no competition"
       },
       {
         "id": "/cancel",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "planning",
         "description": "                        — cancel current plan"
       },
       {
         "id": "/cesar",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "config",
         "description": "<engine>                — set Cesar brain engine (e.g. /cesar codex)"
       },
       {
         "id": "/cesar-hints",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "minimal-kernel-machinery",
         "description": "<task>                 — inspect Cesar routing hints for a prompt"
       },
       {
         "id": "/cesar-report",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "minimal-kernel-machinery",
         "description": "                      — Cesar routing calibration report"
       },
       {
         "id": "/chats",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "info",
         "description": "[id|resume <id>]        — chat history or resume session"
       },
       {
         "id": "/checkpoints",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "minimal-kernel-machinery",
         "description": "                 — list recent file checkpoints"
       },
       {
         "id": "/chrome",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "user-toggleable-mod-package",
         "description": "<task>                   — drive your browser (read/navigate/screenshot/click), result feeds Cesar"
       },
       {
         "id": "/clean",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "minimal-kernel-machinery",
         "description": "                        — alias for /clear"
       },
       {
         "id": "/clear",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "session",
         "description": "                        — reset session (saves chat, clears brain)"
       },
       {
         "id": "/commit",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "execution",
         "description": "[message]                — stage & commit with auto-generated message"
       },
       {
         "id": "/compact",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "session",
         "description": "                        — shrink Cesar context without clearing transcript"
       },
       {
         "id": "/config",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "config",
         "description": "[list|get|set]          — settings"
       },
       {
         "id": "/conquer",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "user-toggleable-mod-package",
         "description": "<task> --gate \"<cmd>\" [--builder X] [-e a,b] [--max-turns N] [--gate-timeout s] [--max-hours h] [--timeout s] — supervised-autonomous build: Cesar drives a builder CLI, convenes nero/tribunal/council on forks, stops at a human merge gate (background job)"
       },
       {
         "id": "/council",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "user-toggleable-mod-package",
         "description": "<decision>               — roundtable: every engine a role, top-rated chairs"
       },
       {
         "id": "/cp",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "utility",
         "description": "[N|last]                — copy code block N, or last response, to clipboard"
       },
       {
         "id": "/create-skill",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "utility",
         "description": "<name>                  — scaffold a new skill (.agon/skills/)"
       },
       {
         "id": "/doctor",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "info",
         "description": "[engines|harness]        — diagnose engines, worktree, or Cesar harness"
       },
       {
         "id": "/engines",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "config",
         "description": "                        — select active engines"
       },
       {
         "id": "/exit",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "utility",
         "description": "                        — quit"
       },
       {
         "id": "/explore",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "session",
         "description": "                        — toggle exploration mode (read-only)"
       },
       {
         "id": "/extensions",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "minimal-kernel-machinery",
         "description": "                        — list installed extensions"
       },
       {
         "id": "/flow",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "info",
         "description": "                        — log this session"
       },
       {
         "id": "/flows",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "info",
         "description": "                        — flow analytics dashboard"
       },
       {
         "id": "/focus",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "info",
         "description": "<id>                    — switch to background job output"
       },
       {
         "id": "/forge",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "competition",
         "description": "<task> test with <cmd> [--hardened] — competitive code generation"
       },
       {
         "id": "/goal",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "user-toggleable-mod-package",
         "description": "<intent> --queue <dir> --gate \"<cmd>\" [--push] — autonomous queue: build→review(all)→judge→fix→commit→push per task (background job)"
       },
       {
         "id": "/harness-replay",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "minimal-kernel-machinery",
         "description": "[turnId]              — replay Cesar tool timeline + approval ledger"
       },
       {
         "id": "/help",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "utility",
         "description": "                        — show this help"
       },
       {
         "id": "/history",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "info",
         "description": "[id]                    — past forge runs"
       },
       {
         "id": "/img",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "utility",
         "description": "<path>                   — attach image to next prompt"
       },
       {
         "id": "/init",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "minimal-kernel-machinery",
         "description": "                        — create AGENTS.md config wizard"
       },
       {
         "id": "/jobs",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "info",
         "description": "                        — list running/completed jobs"
       },
       {
         "id": "/leaderboard",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "info",
         "description": "                        — Glicko rankings"
       },
       {
         "id": "/mcp",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "session",
         "description": "connect <name|url> | disconnect <name> | list — manage session MCP servers"
       },
       {
         "id": "/mode",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "minimal-kernel-machinery",
         "description": "[ask|auto-edit|auto|status]  — permission mode (Shift+Tab cycles)"
       },
       {
         "id": "/models",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "config",
         "description": "                        — browse & add provider models + CLI models"
       },
       {
         "id": "/mutate",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "user-toggleable-mod-package",
         "description": "[path] [--diff <base>] [--test \"<cmd>\"] [--semantic] [--lens security|privacy|perf|ratelimit|concurrency|<text>] — mutation testing: which of your tests are fake?"
       },
       {
         "id": "/naturalize",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "user-toggleable-mod-package",
         "description": "<file> [--author X] [--engine Y] [--min-change N] — sanitize → non-author rewrite → re-scan"
       },
       {
         "id": "/nero",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "session",
         "description": "[<decision>]             — toggle Nero mode, or challenge a decision (top-rated critic)"
       },
       {
         "id": "/nogate",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "minimal-kernel-machinery",
         "description": "                        — toggle the verify-before-done gate nudge for this session"
       },
       {
         "id": "/permissions",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "minimal-kernel-machinery",
         "description": "[add allow|deny <rule>|remove <rule>] — list/edit permission rules"
       },
       {
         "id": "/pipeline",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "execution",
         "description": "<task> [test with <cmd>]  — build→review→fix loop"
       },
       {
         "id": "/plan",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "planning",
         "description": "<task> or no args    — plan mode or show plan"
       },
       {
         "id": "/plans",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "planning",
         "description": "                        — list recent plans"
       },
       {
         "id": "/provider",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "config",
         "description": "add|remove|list|key      — providers & keys (key set/clear/list)"
       },
       {
         "id": "/raw",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "minimal-kernel-machinery",
         "description": "                          — reprint last folded engine output (unfolded)"
       },
       {
         "id": "/research",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "user-toggleable-mod-package",
         "description": "<question> [--count N] [--engine X] — keyless web-grounded cited research (npm/GitHub/MDN/IETF/SO/Wikipedia)"
       },
       {
         "id": "/retry",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "planning",
         "description": "                        — retry failed plan step"
       },
       {
         "id": "/review",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "execution",
         "description": "[with <engine>] [<target>] — code review (uncommitted|branch:NAME|commit:SHA)"
       },
       {
         "id": "/review role",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "user-toggleable-mod-package",
         "description": "[security|correctness|dryness|performance] [<target>] — multi-role review: each engine a focused lens + overall backstop"
       },
       {
         "id": "/run",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "execution",
         "description": "<cmd>                    — run shell command inline"
       },
       {
         "id": "/sanitize",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "user-toggleable-mod-package",
         "description": "<file> [--detect] [--metadata] [--strip] [--out f] — invisible-watermark forensics, deterministic"
       },
       {
         "id": "/speculate",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "execution",
         "description": "<task>                   — parallel speculation: N engines race in worktrees, winner applied"
       },
       {
         "id": "/status",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "minimal-kernel-machinery",
         "description": "                        — live engine telemetry snapshot"
       },
       {
         "id": "/synthesis",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "user-toggleable-mod-package",
         "description": "<task> [--swaps 2]       — engines draft, swap, improve; judge picks winner"
       },
       {
         "id": "/team-brainstorm",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "competition",
         "description": "[2v2|3v3] <question>            — team ideation"
       },
       {
         "id": "/team-forge",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "competition",
         "description": "[2v2|3v3] <task> test with <cmd> — team code competition"
       },
       {
         "id": "/team-tribunal",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "competition",
         "description": "[2v2|3v3] [mode] <question>    — team debate"
       },
       {
         "id": "/think",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "user-toggleable-mod-package",
         "description": "<problem> [--strategy reflexion] [--steps 8] — sequential thinking, one engine"
       },
       {
         "id": "/tokens",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "info",
         "description": "                        — show token usage & costs"
       },
       {
         "id": "/tribunal",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "competition",
         "description": "[mode] <question>        — debate (adversarial|socratic|red-team|steelman|synthesis|postmortem)"
       },
       {
         "id": "/undo",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "execution",
         "description": "                        — revert last patch or Cesar checkpoint"
       },
       {
         "id": "/workspace",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "config",
         "description": "add|remove|list|switch   — manage project repos"
       },
       {
         "id": "/ws",
         "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "user-toggleable-mod-package",
         "description": "                          — list workspaces (shortcut)"
       }
     ],
@@ -1444,314 +1626,376 @@
       {
         "id": "Agent",
         "source": "packages/mcp/src/agon-orchestration.ts:24",
-        "family": "ORCHESTRATION_TOOLS"
+        "category": "user-toggleable-mod-package",
+        "description": "Agent"
       },
       {
         "id": "AgonBash",
         "source": "packages/mcp/src/agon-orchestration.ts:24",
-        "family": "ORCHESTRATION_TOOLS"
+        "category": "minimal-kernel-machinery",
+        "description": "AgonBash"
       },
       {
         "id": "AgonEdit",
         "source": "packages/mcp/src/agon-orchestration.ts:24",
-        "family": "ORCHESTRATION_TOOLS"
+        "category": "minimal-kernel-machinery",
+        "description": "AgonEdit"
       },
       {
         "id": "AgonWrite",
         "source": "packages/mcp/src/agon-orchestration.ts:24",
-        "family": "ORCHESTRATION_TOOLS"
+        "category": "minimal-kernel-machinery",
+        "description": "AgonWrite"
       },
       {
         "id": "Brainstorm",
         "source": "packages/mcp/src/agon-orchestration.ts:24",
-        "family": "ORCHESTRATION_TOOLS"
+        "category": "user-toggleable-mod-package",
+        "description": "Brainstorm"
       },
       {
         "id": "Campfire",
         "source": "packages/mcp/src/agon-orchestration.ts:24",
-        "family": "ORCHESTRATION_TOOLS"
+        "category": "user-toggleable-mod-package",
+        "description": "Campfire"
       },
       {
         "id": "Delegate",
         "source": "packages/mcp/src/agon-orchestration.ts:24",
-        "family": "ORCHESTRATION_TOOLS"
+        "category": "user-toggleable-mod-package",
+        "description": "Delegate"
       },
       {
         "id": "DeliverAnswer",
         "source": "packages/mcp/src/agon-orchestration.ts:24",
-        "family": "ORCHESTRATION_TOOLS"
+        "category": "minimal-kernel-machinery",
+        "description": "DeliverAnswer"
       },
       {
         "id": "ExitPlanMode",
         "source": "packages/mcp/src/agon-orchestration.ts:24",
-        "family": "ORCHESTRATION_TOOLS"
+        "category": "user-toggleable-mod-package",
+        "description": "ExitPlanMode"
       },
       {
         "id": "Forge",
         "source": "packages/mcp/src/agon-orchestration.ts:24",
-        "family": "ORCHESTRATION_TOOLS"
+        "category": "user-toggleable-mod-package",
+        "description": "Forge"
       },
       {
         "id": "JobCancel",
         "source": "packages/mcp/src/job-tools.ts:13",
-        "family": "JOB_TOOLS"
+        "category": "user-toggleable-mod-package",
+        "description": "JobCancel"
       },
       {
         "id": "JobEvents",
         "source": "packages/mcp/src/job-tools.ts:11",
-        "family": "JOB_TOOLS"
+        "category": "user-toggleable-mod-package",
+        "description": "JobEvents"
       },
       {
         "id": "JobList",
         "source": "packages/mcp/src/job-tools.ts:9",
-        "family": "JOB_TOOLS"
+        "category": "user-toggleable-mod-package",
+        "description": "JobList"
       },
       {
         "id": "JobResult",
         "source": "packages/mcp/src/job-tools.ts:12",
-        "family": "JOB_TOOLS"
+        "category": "user-toggleable-mod-package",
+        "description": "JobResult"
       },
       {
         "id": "JobStatus",
         "source": "packages/mcp/src/job-tools.ts:10",
-        "family": "JOB_TOOLS"
+        "category": "user-toggleable-mod-package",
+        "description": "JobStatus"
       },
       {
         "id": "JobSubmit",
         "source": "packages/mcp/src/job-tools.ts:8",
-        "family": "JOB_TOOLS"
+        "category": "user-toggleable-mod-package",
+        "description": "JobSubmit"
       },
       {
         "id": "Pipeline",
         "source": "packages/mcp/src/agon-orchestration.ts:24",
-        "family": "ORCHESTRATION_TOOLS"
+        "category": "user-toggleable-mod-package",
+        "description": "Pipeline"
       },
       {
         "id": "ProjectContext",
         "source": "packages/mcp/src/project-context.ts:4",
-        "family": "PROJECT_CONTEXT_TOOLS"
+        "category": "user-toggleable-mod-package",
+        "description": "ProjectContext"
       },
       {
         "id": "ProposePlan",
         "source": "packages/mcp/src/agon-orchestration.ts:24",
-        "family": "ORCHESTRATION_TOOLS"
+        "category": "user-toggleable-mod-package",
+        "description": "ProposePlan"
       },
       {
         "id": "QuickNero",
         "source": "packages/mcp/src/agon-orchestration.ts:24",
-        "family": "ORCHESTRATION_TOOLS"
+        "category": "user-toggleable-mod-package",
+        "description": "QuickNero"
       },
       {
         "id": "ReportConfidence",
         "source": "packages/mcp/src/agon-orchestration.ts:24",
-        "family": "ORCHESTRATION_TOOLS"
+        "category": "minimal-kernel-machinery",
+        "description": "ReportConfidence"
       },
       {
         "id": "Review",
         "source": "packages/mcp/src/agon-orchestration.ts:24",
-        "family": "ORCHESTRATION_TOOLS"
+        "category": "user-toggleable-mod-package",
+        "description": "Review"
       },
       {
         "id": "RoomJoin",
         "source": "packages/mcp/src/rooms.ts:8",
-        "family": "ROOM_TOOLS"
+        "category": "user-toggleable-mod-package",
+        "description": "RoomJoin"
       },
       {
         "id": "RoomLeave",
         "source": "packages/mcp/src/rooms.ts:14",
-        "family": "ROOM_TOOLS"
+        "category": "user-toggleable-mod-package",
+        "description": "RoomLeave"
       },
       {
         "id": "RoomList",
         "source": "packages/mcp/src/rooms.ts:15",
-        "family": "ROOM_TOOLS"
+        "category": "user-toggleable-mod-package",
+        "description": "RoomList"
       },
       {
         "id": "RoomLock",
         "source": "packages/mcp/src/rooms.ts:12",
-        "family": "ROOM_TOOLS"
+        "category": "user-toggleable-mod-package",
+        "description": "RoomLock"
       },
       {
         "id": "RoomPost",
         "source": "packages/mcp/src/rooms.ts:9",
-        "family": "ROOM_TOOLS"
+        "category": "user-toggleable-mod-package",
+        "description": "RoomPost"
       },
       {
         "id": "RoomRead",
         "source": "packages/mcp/src/rooms.ts:10",
-        "family": "ROOM_TOOLS"
+        "category": "user-toggleable-mod-package",
+        "description": "RoomRead"
       },
       {
         "id": "RoomRelease",
         "source": "packages/mcp/src/rooms.ts:13",
-        "family": "ROOM_TOOLS"
+        "category": "user-toggleable-mod-package",
+        "description": "RoomRelease"
       },
       {
         "id": "RoomWho",
         "source": "packages/mcp/src/rooms.ts:11",
-        "family": "ROOM_TOOLS"
+        "category": "user-toggleable-mod-package",
+        "description": "RoomWho"
       },
       {
         "id": "SaveMemory",
         "source": "packages/mcp/src/agon-orchestration.ts:24",
-        "family": "ORCHESTRATION_TOOLS"
+        "category": "user-toggleable-mod-package",
+        "description": "SaveMemory"
       },
       {
         "id": "Synthesis",
         "source": "packages/mcp/src/agon-orchestration.ts:24",
-        "family": "ORCHESTRATION_TOOLS"
+        "category": "user-toggleable-mod-package",
+        "description": "Synthesis"
       },
       {
         "id": "Tribunal",
         "source": "packages/mcp/src/agon-orchestration.ts:24",
-        "family": "ORCHESTRATION_TOOLS"
+        "category": "user-toggleable-mod-package",
+        "description": "Tribunal"
       }
     ],
     "cesarTools": [
       {
         "id": "Agent",
-        "factory": "createAgentTool",
-        "source": "packages/cli/src/cesar/tools.ts:47"
+        "source": "packages/cli/src/cesar/tools.ts:47",
+        "category": "user-toggleable-mod-package",
+        "description": "Agent"
       },
       {
         "id": "Bash",
-        "factory": "createBashTool",
-        "source": "packages/cli/src/cesar/tools.ts:34"
+        "source": "packages/cli/src/cesar/tools.ts:34",
+        "category": "minimal-kernel-machinery",
+        "description": "Bash"
       },
       {
         "id": "Brainstorm",
-        "factory": "createBrainstormTool",
-        "source": "packages/cli/src/cesar/tools.ts:38"
+        "source": "packages/cli/src/cesar/tools.ts:38",
+        "category": "user-toggleable-mod-package",
+        "description": "Brainstorm"
       },
       {
         "id": "Campfire",
-        "factory": "createCampfireTool",
-        "source": "packages/cli/src/cesar/tools.ts:40"
+        "source": "packages/cli/src/cesar/tools.ts:40",
+        "category": "user-toggleable-mod-package",
+        "description": "Campfire"
       },
       {
         "id": "Conquer",
-        "factory": "createConquerTool",
-        "source": "packages/cli/src/cesar/tools.ts:44"
+        "source": "packages/cli/src/cesar/tools.ts:44",
+        "category": "user-toggleable-mod-package",
+        "description": "Conquer"
       },
       {
         "id": "Council",
-        "factory": "createCouncilTool",
-        "source": "packages/cli/src/cesar/tools.ts:41"
+        "source": "packages/cli/src/cesar/tools.ts:41",
+        "category": "user-toggleable-mod-package",
+        "description": "Council"
       },
       {
         "id": "Delegate",
-        "factory": "createDelegateTool",
-        "source": "packages/cli/src/cesar/tools.ts:46"
+        "source": "packages/cli/src/cesar/tools.ts:46",
+        "category": "user-toggleable-mod-package",
+        "description": "Delegate"
       },
       {
         "id": "Edit",
-        "factory": "createEditTool",
-        "source": "packages/cli/src/cesar/tools.ts:31"
+        "source": "packages/cli/src/cesar/tools.ts:31",
+        "category": "minimal-kernel-machinery",
+        "description": "Edit"
       },
       {
         "id": "EngineReliability",
-        "factory": "createEngineReliabilityTool",
-        "source": "packages/cli/src/cesar/tools.ts:56"
+        "source": "packages/cli/src/cesar/tools.ts:56",
+        "category": "hidden-shared-support-package",
+        "description": "EngineReliability"
       },
       {
         "id": "ExitPlanMode",
-        "factory": "createExitPlanModeTool",
-        "source": "packages/cli/src/cesar/tools.ts:53"
+        "source": "packages/cli/src/cesar/tools.ts:53",
+        "category": "user-toggleable-mod-package",
+        "description": "ExitPlanMode"
       },
       {
         "id": "Forge",
-        "factory": "createForgeTool",
-        "source": "packages/cli/src/cesar/tools.ts:37"
+        "source": "packages/cli/src/cesar/tools.ts:37",
+        "category": "user-toggleable-mod-package",
+        "description": "Forge"
       },
       {
         "id": "Glob",
-        "factory": "createGlobTool",
-        "source": "packages/cli/src/cesar/tools.ts:36"
+        "source": "packages/cli/src/cesar/tools.ts:36",
+        "category": "minimal-kernel-machinery",
+        "description": "Glob"
       },
       {
         "id": "Goal",
-        "factory": "createGoalTool",
-        "source": "packages/cli/src/cesar/tools.ts:43"
+        "source": "packages/cli/src/cesar/tools.ts:43",
+        "category": "user-toggleable-mod-package",
+        "description": "Goal"
       },
       {
         "id": "Grep",
-        "factory": "createGrepTool",
-        "source": "packages/cli/src/cesar/tools.ts:35"
+        "source": "packages/cli/src/cesar/tools.ts:35",
+        "category": "minimal-kernel-machinery",
+        "description": "Grep"
       },
       {
         "id": "ListPlans",
-        "factory": "createListPlansTool",
-        "source": "packages/cli/src/cesar/tools.ts:54"
+        "source": "packages/cli/src/cesar/tools.ts:54",
+        "category": "user-toggleable-mod-package",
+        "description": "ListPlans"
       },
       {
         "id": "MultiEdit",
-        "factory": "createMultiEditTool",
-        "source": "packages/cli/src/cesar/tools.ts:32"
+        "source": "packages/cli/src/cesar/tools.ts:32",
+        "category": "minimal-kernel-machinery",
+        "description": "MultiEdit"
       },
       {
         "id": "Pipeline",
-        "factory": "createPipelineTool",
-        "source": "packages/cli/src/cesar/tools.ts:42"
+        "source": "packages/cli/src/cesar/tools.ts:42",
+        "category": "user-toggleable-mod-package",
+        "description": "Pipeline"
       },
       {
         "id": "ProposePlan",
-        "factory": "createProposePlanTool",
-        "source": "packages/cli/src/cesar/tools.ts:52"
+        "source": "packages/cli/src/cesar/tools.ts:52",
+        "category": "user-toggleable-mod-package",
+        "description": "ProposePlan"
       },
       {
         "id": "QuickNero",
-        "factory": "createQuickNeroTool",
-        "source": "packages/cli/src/cesar/tools.ts:49"
+        "source": "packages/cli/src/cesar/tools.ts:49",
+        "category": "user-toggleable-mod-package",
+        "description": "QuickNero"
       },
       {
         "id": "Read",
-        "factory": "createReadTool",
-        "source": "packages/cli/src/cesar/tools.ts:30"
+        "source": "packages/cli/src/cesar/tools.ts:30",
+        "category": "minimal-kernel-machinery",
+        "description": "Read"
       },
       {
         "id": "RenderProbe",
-        "factory": "createRenderProbeTool",
-        "source": "packages/cli/src/cesar/tools.ts:57"
+        "source": "packages/cli/src/cesar/tools.ts:57",
+        "category": "hidden-shared-support-package",
+        "description": "RenderProbe"
       },
       {
         "id": "ReportConfidence",
-        "factory": "createReportConfidenceTool",
-        "source": "packages/cli/src/cesar/tools.ts:48"
+        "source": "packages/cli/src/cesar/tools.ts:48",
+        "category": "minimal-kernel-machinery",
+        "description": "ReportConfidence"
       },
       {
         "id": "RetrieveResult",
-        "factory": "createRetrieveResultTool",
-        "source": "packages/cli/src/cesar/tools.ts:55"
+        "source": "packages/cli/src/cesar/tools.ts:55",
+        "category": "minimal-kernel-machinery",
+        "description": "RetrieveResult"
       },
       {
         "id": "Review",
-        "factory": "createReviewTool",
-        "source": "packages/cli/src/cesar/tools.ts:45"
+        "source": "packages/cli/src/cesar/tools.ts:45",
+        "category": "user-toggleable-mod-package",
+        "description": "Review"
       },
       {
         "id": "SaveMemory",
-        "factory": "createSaveMemoryTool",
-        "source": "packages/cli/src/cesar/tools.ts:51"
+        "source": "packages/cli/src/cesar/tools.ts:51",
+        "category": "user-toggleable-mod-package",
+        "description": "SaveMemory"
       },
       {
         "id": "TodoWrite",
-        "factory": "createTodoWriteTool",
-        "source": "packages/cli/src/cesar/tools.ts:50"
+        "source": "packages/cli/src/cesar/tools.ts:50",
+        "category": "minimal-kernel-machinery",
+        "description": "TodoWrite"
       },
       {
         "id": "Tribunal",
-        "factory": "createTribunalTool",
-        "source": "packages/cli/src/cesar/tools.ts:39"
+        "source": "packages/cli/src/cesar/tools.ts:39",
+        "category": "user-toggleable-mod-package",
+        "description": "Tribunal"
       },
       {
         "id": "TuiProbe",
-        "factory": "createTuiProbeTool",
-        "source": "packages/cli/src/cesar/tools.ts:58"
+        "source": "packages/cli/src/cesar/tools.ts:58",
+        "category": "hidden-shared-support-package",
+        "description": "TuiProbe"
       },
       {
         "id": "Write",
-        "factory": "createWriteTool",
-        "source": "packages/cli/src/cesar/tools.ts:33"
+        "source": "packages/cli/src/cesar/tools.ts:33",
+        "category": "minimal-kernel-machinery",
+        "description": "Write"
       }
     ],
     "cesarRoutes": [
@@ -4013,7 +4257,7 @@
       },
       {
         "id": "packages/cli/package.json",
-        "bytes": 1894,
+        "bytes": 3818,
         "extension": ".json",
         "source": "packages/cli/package.json"
       },
@@ -4043,7 +4287,7 @@
       },
       {
         "id": "scripts/generate-mode-docs.mjs",
-        "bytes": 1020,
+        "bytes": 1876,
         "extension": ".mjs",
         "source": "scripts/generate-mode-docs.mjs"
       }

@@ -63,6 +63,7 @@ try {
   run('scripts/spec/generate-modular-agon-ownership.mjs');
   run('scripts/spec/generate-modular-agon-package-graph.mjs');
   run('scripts/spec/generate-modular-agon-compat-projections.mjs');
+  run('scripts/spec/generate-modular-surface-catalog.mjs');
 
   for (const name of [
     'modular-agon-current-inventory.json',
@@ -76,6 +77,7 @@ try {
   compare(join(generatedDir, 'first-party-package-graph.ts'), join(root, 'packages/mod-kernel/src/generated/first-party-package-graph.ts'));
   compare(join(generatedDir, 'first-party-ui-hierarchy.ts'), join(root, 'packages/mod-kernel/src/generated/first-party-ui-hierarchy.ts'));
   compare(join(generatedDir, 'legacy-surface-catalog.ts'), join(root, 'packages/mod-kernel/src/generated/legacy-surface-catalog.ts'));
+  compare(join(generatedDir, 'first-party-surface-catalog.ts'), join(root, 'packages/mod-kernel/src/generated/first-party-surface-catalog.ts'));
   console.log('all modular generated artifacts are current');
 } finally {
   rmSync(temporaryRoot, { recursive: true, force: true });

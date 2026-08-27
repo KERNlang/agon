@@ -8,6 +8,7 @@
   },
   "include": ["src"],
   "references": [
+    { "path": "../mod-kernel" },
     { "path": "../core" },
     { "path": "../forge" },
     { "path": "../adapter-cli" }

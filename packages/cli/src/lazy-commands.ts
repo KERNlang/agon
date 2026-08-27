@@ -1,4 +1,5 @@
 import type { CommandDef, CommandMeta, SubCommandsDef } from 'citty';
+import { assertProcessSurfaceAvailable, processSurfacePublicIds } from './surface-authority-runtime.js';
 
 // ── Lazy citty subcommand loading ──────────────────────────────────────────
 // Every `agon <anything>` — even `--help` — used to statically import all
@@ -77,6 +78,7 @@ function lazyCommand(
       return cmd.cleanup?.(ctx);
     },
     run: async (ctx) => {
+      assertProcessSurfaceAvailable('cli', String(meta.name));
       const cmd = await resolve();
       return cmd.run?.(ctx);
     },
@@ -283,7 +285,7 @@ const update = lazyCommand(() => import('./commands/update.js'), 'updateCommand'
 // static imports — `worktree`/`wt` and `update`/`upgrade` intentionally
 // share the SAME lazy entry (and therefore the same memoized import) as
 // before, matching the pre-refactor aliasing.
-export const lazySubCommands: SubCommandsDef = {
+const legacyLazyCommandImplementations: SubCommandsDef = {
   forge,
   brainstorm,
   tribunal,
@@ -332,3 +334,9 @@ export const lazySubCommands: SubCommandsDef = {
   update,
   upgrade: update,
 };
+
+export function createGeneratedLazySubCommands(available: ReadonlySet<string> = processSurfacePublicIds('cli')): SubCommandsDef {
+  return Object.fromEntries(Object.entries(legacyLazyCommandImplementations).filter(([, command]) => available.has(String(((command as CommandDef).meta as CommandMeta).name))));
+}
+
+export const lazySubCommands: SubCommandsDef = createGeneratedLazySubCommands();

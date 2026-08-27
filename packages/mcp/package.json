@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@kernlang/agon-core": "*"
+    "@kernlang/agon-core": "*",
+    "@kernlang/agon-kernel": "0.0.0-slice.2"
   }
 }

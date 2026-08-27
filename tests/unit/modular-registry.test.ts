@@ -168,4 +168,18 @@ describe('owner-tagged ModRegistry', () => {
     expect(registry.resolve('cli-command', 'first-only')).toBeUndefined();
     expect(registry.resolve('cli-command', 'shared')?.owner.id).toBe(competitor.id);
   });
+  it("makes a committed contribution unreachable through its registrar disposer", async () => {
+    const registry = new ModRegistry({ generation: "fixture:13", activeOwners: [active] });
+    const session = registry.beginRegistration(manifest(active.id, active.version, {
+      contributes: {
+        cliCommands: [{ id: "temporary", aliases: [] }],
+        tuiActions: [], mcpTools: [], cesarTools: [], lifecycleHooks: [], resultTypes: [], configKeys: [], generatedDocs: [],
+      },
+    }));
+    const dispose = session.registrar.command("cli", { id: "temporary", run: async () => ({ exitCode: 0 }) });
+    session.commit();
+    expect(registry.resolve("cli-command", "temporary")).toBeDefined();
+    await dispose();
+    expect(registry.resolve("cli-command", "temporary")).toBeUndefined();
+  });
 });

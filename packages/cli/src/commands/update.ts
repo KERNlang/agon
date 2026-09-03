@@ -76,7 +76,14 @@ export function announcePhase(phase: string, detail: string): void {
   info(`${bold(phase)} ${dim(detail)}`);
 }
 
+export function assertLegacyUpdaterAllowed(env: NodeJS.ProcessEnv = process.env): void {
+  if (env.AGON_MANAGED_INSTALLATION_ID) {
+    throw new Error('Managed Agon installations must update through the transactional lifecycle service; legacy global self-update is disabled.');
+  }
+}
+
 export async function runUpdate(latestVersion: string|undefined): Promise<number> {
+  assertLegacyUpdaterAllowed();
   const version = (typeof latestVersion === 'string' && latestVersion.trim()) ? latestVersion.trim() : 'latest';
   const packageSpec = version === 'latest' ? DEFAULT_PACKAGE : `${DEFAULT_PACKAGE}@${version}`;
   
@@ -125,6 +132,7 @@ export const updateCommand: any = defineCommand({
     },
   },
   async run({ args }: { args: { version?: string; check?: boolean; 'no-restart'?: boolean; timeout?: string } }) {
+    assertLegacyUpdaterAllowed();
     const version = (args.version ?? '').trim() || 'latest';
     const timeoutSec = parseInt(String(args.timeout ?? '300'), 10);
     const timeoutMs = (Number.isFinite(timeoutSec) && timeoutSec > 0 ? timeoutSec : 300) * 1000;

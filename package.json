@@ -61,7 +61,6 @@
     "packages/mod-routing-docs"
   ],
   "scripts": {
-    "postinstall": "node scripts/postinstall.mjs",
     "guard:reexports": "node scripts/guard/reexport-surface.mjs",
     "docs:modes": "npm run build:cli && node scripts/generate-mode-docs.mjs",
     "rebuild": "npm run build",
@@ -138,7 +137,17 @@
     "spec:modular-slice5:qualify:index": "node scripts/spec/qualify-modular-agon-slice5.mjs --subject=index --run-clean",
     "spec:modular-slice5:qualify:commit": "node scripts/spec/qualify-modular-agon-slice5.mjs --subject=commit --run-clean",
     "spec:modular-slice6:qualify:index": "node scripts/spec/qualify-modular-agon-slice6.mjs --subject=index --run-clean",
-    "spec:modular-slice6:qualify:commit": "node scripts/spec/qualify-modular-agon-slice6.mjs --subject=commit --run-clean"
+    "spec:modular-slice6:qualify:commit": "node scripts/spec/qualify-modular-agon-slice6.mjs --subject=commit --run-clean",
+    "test:modular-installer": "node scripts/run-node22.mjs node_modules/.bin/vitest run tests/unit/modular-installer.test.ts tests/unit/modular-candidate-process.test.ts tests/unit/modular-setup-actions.test.ts tests/unit/modular-lifecycle-secret-redaction.test.ts tests/unit/modular-lifecycle-approval.test.ts tests/unit/modular-third-party-s7-deny.test.ts",
+    "test:modular-updater": "node scripts/run-node22.mjs node_modules/.bin/vitest run tests/unit/modular-updater.test.ts tests/unit/modular-lifecycle-recovery.test.ts tests/unit/modular-purge-retention.test.ts tests/unit/modular-legacy-update-guard.test.ts",
+    "test:modular-fault-injection": "node scripts/run-node22.mjs node_modules/.bin/vitest run tests/unit/modular-lifecycle-fault-injection.test.ts",
+    "test:modular-lifecycle-concurrency": "node scripts/run-node22.mjs node_modules/.bin/vitest run tests/unit/modular-lifecycle-concurrency.test.ts",
+    "test:modular-slice7": "npm run test:modular-installer && npm run test:modular-updater && npm run test:modular-fault-injection && npm run test:modular-lifecycle-concurrency",
+    "prebuild": "patch-package --error-on-fail",
+    "spec:modular-slice7:self-test": "node scripts/spec/verify-modular-slice7-lifecycle.mjs --self-test",
+    "perf:modular-slice7": "npm run build -w packages/mod-kernel && node --expose-gc scripts/spec/measure-modular-slice7.mjs",
+    "spec:modular-slice7:qualify:index": "node scripts/spec/qualify-modular-agon-slice7.mjs --subject=index --run-clean",
+    "spec:modular-slice7:qualify:commit": "node scripts/spec/qualify-modular-agon-slice7.mjs --subject=commit --run-clean"
   },
   "engines": {
     "node": ">=22"

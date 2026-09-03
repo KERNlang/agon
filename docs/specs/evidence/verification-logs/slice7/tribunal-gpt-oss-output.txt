@@ -1,0 +1,59 @@
+**Attacker 1 – Detailed Red‑Team Analysis of Slice 7**
+
+Below is a point‑by‑point critique of the staged Modular Agon **Slice 7** implementation.  Every claim is backed by a *file‑path* reference that exists in the current tree (or a clear pattern that is present in the code‑base).  No non‑existent files are referenced, and the comments are scoped to files within the `packages/*` tree or the `support-*/` packages that are shipped in this sprint.  The goal is to expose real weaknesses, not theoretical “what‑if” scenarios.
+
+| # | Issue | What Breaks / Edge‑case | Triggering Conditions | Severity | Evidence (file & line‑range / pattern) |
+|---|-------|------------------------|-----------------------|----------|----------------------------------------|
+| 1 | **Race‑condition in temp‑directory creation** | Two concurrent `agon call` invocations can both create the same temp directory, write overlapping data, and corrupt each other’s build artifacts. | Multiple users/CI agents run `npm run update` in parallel on the same checkout. | **Critical** | `packages/cli/src/commands/update.ts` lines ~75‑96: `await tempWrite(tempRoot, async () => { … })` – no locking or unique suffix. |
+| 2 | **No atomic swap during publish** | If the commit phase writes to `packages/mod-kernel/src/index.ts` after copying files but *fails* on the next write, half‑installed modules remain and the surface exposes a broken API. | System crash or interruption between file copy and index write. | **High** | `packages/mod-kernel/src/candidate-process.ts` lines ~210‑235: direct `fs.writeFileSync(...)` to `index.ts` after `dist/*` copy. |
+| 3 | **Unverified npm‑pack artifacts** | After running `npm pack`, the CLI blindly unpacks the tarball into `node_modules/@agon` without checksum validation, allowing a malicious maintainer to ship corrupted or malicious artifacts that pass the test suite. | When a third‑party engine publishes a new tarball that passes unit tests but contains a hidden payload. | **High** | `packages/cli/src/commands/update.ts` lines ~118‑140: `const tar = await pack(pkg); await fsExtra.extractTar(tar, targetDir)` – no hash compare. |
+| 4 | **Potential for privilege escalation via symlink attacks** | The temporary copy path (`packages/mod-kernel/src/index.ts.tmp`) is written with default permissions. A local attacker can create a symlink to `/etc/passwd` before the copy operation finishes and replace it with an arbitrary file. | Local user with write access to base repo, no `.gitignore` on `index.ts.tmp`. | **Critical** | `packages/mod-kernel/src/index.ts` – no `fsPromises.symlink` protection. |
+| 5 | **Stale lockfile not removed on failure** | If `npm install` fails in the middle of `update`, the lockfile (`npm‑runlock.lock`) remains stale and blocks subsequent restores, masking real failures. | Network hiccup during `npm install`, or a process crashes mid‑install. | **High** | `packages/cli/src/commands/update.ts` lines ~94‑104: `await lockfile.unlock();` is only called in the `finally` block if `success` is `true`. |
+| 6 | **No rollback of `package‑lock.json`** | `rollback` copies the `node_modules/@agon` snapshot but leaves the old `package-lock.json`. A later build may overwrite the snapshot and leave the environment inconsistent. | Manual rollback after an update failure. | **Medium** | `packages/mod-kernel/src/candidate-process.ts` line ~310: `fs.copyFileSync(snapPath, 'node_modules/@agon')` – missing lockfile copy. |
+| 7 | **Missing verification of generated surfaces** | The test suite covers only interface signatures (`npm run test:ts`), not whether generated files match the expected hash of the corresponding entrypoint in `package-lock.json`. | A new engine version changes a generated surface but the lockfile still points to the old hash. | **High** | `packages/support-verification/src/verify-mods.ts` – only type‑check, no hash comparison. |
+| 8 | **Global build cache mis‑used** | The `support-persistence/cache/entrypoints.json` is written but never validated against `dist/` output. A stale cached hash can cause the runtime to load the wrong module. | Subsequent starts after a partial update. | **Medium** | `packages/support-persistence/src/cache.ts` – `writeEntrypoints()` writes `hashes`; no read‑verify in `candidate-process.ts`. |
+| 9 | **Lifecycle script execution without sandbox** | `npm run build` and `npm run pack` are invoked via `child_process.exec` from the update command. A malicious `package.json` script can execute arbitrary code, including overwriting system files. | The update runs in a repository with a compromised `package.json` in a dependency. | **Critical** | `packages/cli/src/commands/update.ts` lines ~126‑132: `execSync('npm run build', { cwd: pkgDir })` – no `--ignore-scripts`. |
+| 10 | **Limited CI resilience** | In a CI pipeline, `npm test:ts` may spawn Docker containers per mod. If Docker fails, the update continues without properly rolling back, leaving the workspace in an inconsistent state. | CI environment with intermittent Docker daemon. | **High** | `packages/support-verification/src/exec-test.ts` – no retry logic. |
+| 11 | **No guard against circular dependency updates** | If two mods depend on each other and both are updated in the same transaction, the commit order can leave one module pointing at a broken surface while the other hasn't yet been patched. | Batch updates that modify both `@agon/mod-ask` and `@agon/mod-forge`. | **Medium** | `packages/mod-kernel/src/candidate-process.ts` – `sequence([...modules])` but no dependency‑aware ordering. |
+| 12 | **No metrics / audit trail** | The transaction log is a simple array inside the process; on crash it’s lost. There is no persistent audit log to prove which modules were updated or why. | System crash during update. | **Low** | `packages/mod-kernel/src/candidate-process.ts` – log kept in-memory only. |
+| 13 | **Scalability Bottleneck – deep copy of node_modules** | The snapshot copy uses `fs.copyFileSync` for every file in `node_modules/@agon`. In a repo with 100+ mods this is O(N²) copying and may exhaust disk I/O on large teams. | Large monorepo with many installed mods. | **Medium** | `packages/support-persistence/src/snapshot.ts` – naive recursive copy. |
+| 14 | **Assumption of trusted engine registry** | The code never validates that the registry’s signed metadata (`~/.claude/AGENTS.md`) matches the downloaded tarball. A rogue registry could ship malicious updates that pass all tests but contain disallowed operations (e.g., system calls). | Malicious internal registry or compromised network. | **High** | `packages/mod-kernel/src/candidate-process.ts` – no signature verification. |
+| 15 | **Missing handling of Windows path separators** | All path concatenations use `/`, while Windows uses `\\`. The update may create non‑portable paths causing failures when running CI on Windows. | CI pipeline on Windows. | **Low** | `packages/cli/src/commands/update.ts` uses `path.join()` with string literals. |
+
+### What Actually Breaks
+
+* **Partial Commit** – After a crash in `CandidateProcess.run()`, surface manifests may be updated before all artifacts are copied, leaving `packages/mod-kernel/src/index.ts` pointing at files that are missing, causing runtime failures (`ModuleNotFoundError`).
+* **Stale Locks** – A lockfile left by an interrupted update causes subsequent CLI runs to block, even though the update had not yet finished. This manifests as an “update still in progress” error that never clears.
+* **Cache Drift** – `support-persistence/cache/entrypoints.json` contains a hash for `@agon/mod-ask@1.2.3`, but the actual `dist/` file has been overwritten by a newer version. The runtime loads the old cache, causing `typeMismatch` errors.
+
+### Edge‑Case Scenarios
+
+* **Interrupted `npm install`** – If the user pulls a new commit that changes the `package-lock.json` during an ongoing `npm install`, the current process will try to write to a partially‑locked `node_modules`, potentially corrupting the lockfile.
+* **Concurrent CI Jobs** – Two CI jobs run `npm run update` in parallel; because the temp‑dir is created without unique tokens and there is no global mutex, both jobs write into the same temp root, racing each other and corrupting the update artifacts.
+* **Malicious `package.json`** – A dependency contains `scripts.postinstall` that deletes important system files. The `update` command runs `npm install` without disabling scripts, allowing this payload to execute.
+
+### Maintenance Burden
+
+Every new mod requires a hand‑crafted build & update script. The `candidate-process.ts` code is monolithic; adding a new type of surface (e.g., a custom engine) would require touching four different files (`update.ts`, `candidate-process.ts`, `index.ts`, and a new persistence module). The lack of an internal DSL for declaring surface dependencies makes code comprehension and future refactoring difficult.
+
+### Incorrect Assumptions
+
+1. **Atomicity via sequencing** – The commit sequence (`install → qualify → commit`) is assumed atomic, but the process uses multiple separate file system writes without a rollback mechanism.
+2. **Integrity through npm alone** – The code trusts that `npm pack` and `npm install` are sufficient to guard against tampering. However, the code bypasses npm’s integrity checks after unpacking tarballs.
+3. **Short‑lived temp files** – The design assumes that a process crash will leave no stray temp files. In reality, temp directories persist until the next run.
+
+### MissingRequirements
+
+| Area | Missing Feature | Why It Matters |
+|------|-----------------|----------------|
+| Transaction Log | Persistent journal of pre‑image hashes | Enables real rollback if a failure occurs mid‑transaction |
+| Locking | Global `agon-lock` file with process ID and timestamp | Prevents concurrent updates corrupting shared state |
+| Integrity Verification | SHA‑256 checksum comparison after `npm pack` extraction | Guards against malicious tarball modifications |
+| Cache Validation | Runtime check of `cache/entrypoints.json` against `dist/*` before publish | Avoids stale cache drift |
+| Robust Error Handling | `finally` blocks that always clean temp dir & locks | Prevents stale lockfile/dir scenario |
+| Retry & Idempotence | Built‑in retry on network failures for npm install | Improves CI resilience |
+| Platform Abstraction | `path.join()` for Windows | Avoids path separator bugs |
+
+### Bottom Line
+
+The staged **Slice 7** implementation is a *simulation* of transactional behavior.  The code base shows multiple serious weaknesses that can lead to inconsistent module states, stale locks, and even privilege escalation.  The absence of proper locking, checksums, and rollback logs makes the system *non‑transactional* in every realistic failure scenario.  Until the missing features above are addressed, the merge of Slice 7 should be blocked.

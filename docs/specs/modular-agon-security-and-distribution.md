@@ -335,4 +335,4 @@ was not available at that time.
 - [ ] Tier 2 UI explicitly states that in-process code is fully trusted.
 - [ ] Untrusted executable mods are rejected until a real isolated host exists.
 - [ ] Locks, receipts, logs, and Doctor output contain no secret values.
-- [ ] Transactions are atomic and have tested crash rollback.
+- [x] Managed lifecycle transactions are atomic and have tested crash recovery and rollback in S7; packed cross-platform release qualification remains S9.

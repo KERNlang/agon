@@ -354,9 +354,7 @@ active installation:
 6. add pack-content and source-import boundary guards;
 7. convert current pressure results into sanitized fixture coverage mapping.
 
-No durable managed installer, self-update pointer switch, or Tier 2 production
-execution was built by this specification goal. Those start in the migration
-slices and remain subject to the isolated candidate gates.
+The S7 implementation now provides the durable managed lifecycle, immutable candidate-prefix promotion, recovery, rollback, purge preview, and bounded setup-action contracts. It remains isolated from the active installation. Public npm/npx promotion and Tier 2 third-party execution remain subject to S8/S9 gates.
 
 ## Specification readiness closure
 

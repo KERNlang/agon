@@ -101,5 +101,27 @@ export type { HostBlockedReason, HostDoctorReport, HostEvent, HostEventLevel } f
 export { rollbackGeneration } from './host-rollback.js';
 export type { RollbackGenerationOptions } from './host-rollback.js';
 
+export {
+  ManagedLifecycleService, createManagedLifecyclePlan, installVerifiedDirectory,
+} from './managed-lifecycle.js';
+export type {
+  CandidateInstaller, CandidateVerificationResult, CandidateVerifier, ManagedInstallationRecord,
+  ManagedLifecycleApplyResult, ManagedLifecycleFaultPoint, ManagedLifecycleOperation, ManagedLifecycleOptions,
+  ManagedLifecyclePackagePlan, ManagedLifecyclePlan, ManagedLifecycleReceipt, ManagedLifecycleRequest,
+  ManagedNetworkPolicy, ManagedPackageArtifact, ManagedPackageSourceKind,
+} from './managed-lifecycle.js';
+
+export { NpmCandidateInstaller, SubprocessCandidateVerifier, runBoundedCandidateProcess } from './candidate-process.js';
+export type {
+  BoundedProcessRequest, BoundedProcessResult, BoundedProcessRunner,
+  NpmCandidateInstallerOptions, SubprocessCandidateVerifierOptions,
+} from './candidate-process.js';
+
+export { applyManagedPurge, previewManagedPurge, recoverManagedLifecycle } from './lifecycle-recovery.js';
+export type { LifecycleRecoveryOptions, LifecycleRecoveryResult, ManagedPurgePlan } from './lifecycle-recovery.js';
+
+export { createSetupActionPlan, executeSetupAction } from './setup-actions.js';
+export type { SetupActionDefinition, SetupActionKind, SetupActionPlan, SetupActionReceipt } from './setup-actions.js';
+
 export { SUPPORT_PACKAGE_IDS } from './support-module.js';
 export type { SupportPackageDescriptor, SupportPackageFactory, SupportPackageId } from './support-module.js';

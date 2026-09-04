@@ -72,12 +72,37 @@ export {
   assertModManagementAccessibility, createModManagementView, reduceModManagementFocus, renderModManagementText,
 } from './mod-management-ui.js';
 export type {
-  ModAvailabilityReason, ModAvailabilityReasonCode, ModManagementEntry, ModManagementGroup,
+  ExternalModManagementDefinition, ModAvailabilityReason, ModAvailabilityReasonCode, ModManagementEntry, ModManagementGroup,
   ModManagementView, ModManagementViewOptions,
 } from './mod-management-ui.js';
 
 export { StaticDiscoveryError, assertContainedPackagePath, inspectStaticManifest } from './discovery.js';
 export type { InspectStaticManifestOptions, StaticManifestInspection } from './discovery.js';
+export { discoverUserFolderMods, inspectFolderMod } from './folder-mods.js';
+export type { FolderModCandidate } from './folder-mods.js';
+export { discoverUserFolderModsDetailed } from './folder-mod-diagnostics.js';
+export type { FolderModDiagnostic, FolderModDiscoveryResult } from './folder-mod-diagnostics.js';
+export { FOLDER_MOD_LIMITS } from './folder-mod-bounds.js';
+export { createFolderModSnapshot } from './folder-mod-snapshot.js';
+export type { FolderModSnapshot } from './folder-mod-snapshot.js';
+export { FolderModManager } from './folder-mod-manager.js';
+export type { FolderModActivationPreview, FolderModApprovalPreview, FolderModApprovalResult, FolderModGrantRevocationPreview, FolderModManagerOptions } from './folder-mod-manager.js';
+export { ExternalActivationStore } from './external-activation-state.js';
+export type { ExternalActivationFaultPoint, ExternalActivationIdentity, ExternalActivationPlan, ExternalActivationRecord, ExternalActivationStoreOptions } from './external-activation-state.js';
+export { resolveExternalFolderMods, resolveExternalFolderModsIsolated } from './external-resolution.js';
+export type { IsolatedExternalResolution } from './external-resolution.js';
+export { assertContributionInput, validateContributionInput } from './json-schema-input.js';
+export { createSafeExternalModServices } from './external-mod-services-safe.js';
+export { TrustGrantStore, evaluateThirdPartyAuthority, parseGrantRecord, parseTrustRecord } from './trust-authority.js';
+export type {
+  AuthorityEvaluation, AuthorityMutationPlan, GrantDecision, GrantRecord, ThirdPartyArtifactIdentity,
+  TrustDecision, TrustPublisher, TrustRecord, TrustScope,
+} from './trust-authority.js';
+export { TransactionalTrustGrantService } from './transactional-authority.js';
+export { HOST_PROVIDED_DEPENDENCY_IDS } from './package-activation-order.js';
+export type {
+  AuthorityFaultPoint, AuthorityOperation, AuthorityTransactionJournal, AuthorityTransactionReceipt, TransactionalAuthorityOptions,
+} from './transactional-authority.js';
 
 export { ModActivationService } from './activation-service.js';
 export type {
@@ -106,7 +131,7 @@ export {
 } from './managed-lifecycle.js';
 export type {
   CandidateInstaller, CandidateVerificationResult, CandidateVerifier, ManagedInstallationRecord,
-  ManagedLifecycleApplyResult, ManagedLifecycleFaultPoint, ManagedLifecycleOperation, ManagedLifecycleOptions,
+  ManagedLifecycleApplyResult, ManagedLifecycleFaultPoint, ManagedLifecycleOperation, ManagedLifecycleOptions, ManagedThirdPartyAuthority,
   ManagedLifecyclePackagePlan, ManagedLifecyclePlan, ManagedLifecycleReceipt, ManagedLifecycleRequest,
   ManagedNetworkPolicy, ManagedPackageArtifact, ManagedPackageSourceKind,
 } from './managed-lifecycle.js';
@@ -125,3 +150,10 @@ export type { SetupActionDefinition, SetupActionKind, SetupActionPlan, SetupActi
 
 export { SUPPORT_PACKAGE_IDS } from './support-module.js';
 export type { SupportPackageDescriptor, SupportPackageFactory, SupportPackageId } from './support-module.js';
+export { ThirdPartyActivationError, activatePreparedThirdPartyMod, activateTrustedFolderMod, prepareTrustedFolderMod } from './third-party-activation.js';
+export type {
+  PreparedThirdPartyMod, ThirdPartyActivationOptions, ThirdPartyActivationResult,
+} from './third-party-activation.js';
+export { createExternalSurfaceCatalog } from './external-surface-catalog.js';
+export { KERNEL_MANAGEMENT_SURFACE_CATALOG } from './kernel-management-surfaces.js';
+export { AGON_RUNTIME_VERSION } from './runtime-version.js';

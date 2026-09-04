@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { valid as validSemver } from 'semver';
+import type { ModManifest, ModSource } from '@kernlang/agon-mod-api';
 import type { CanonicalModLock, LockedModPackage } from './lock.js';
 import { canonicalJson, sha256Canonical } from './lock.js';
 import { DurableModHost, type GenerationPointer } from './durable-host.js';
@@ -9,6 +10,7 @@ import { atomicWrite, nodeHostIo, pathExists, readJson, writeNewImmutableFile, t
 import { rollbackGeneration } from './host-rollback.js';
 import { makeTreeRemovable } from './removable-tree.js';
 import { WriterFence, type WriterLockOptions } from './writer-lock.js';
+import { evaluateThirdPartyAuthority, TrustGrantStore, type TrustPublisher } from './trust-authority.js';
 
 export type ManagedLifecycleOperation = 'install' | 'update' | 'downgrade';
 export type ManagedNetworkPolicy = 'online' | 'frozen-offline';
@@ -19,6 +21,8 @@ export interface ManagedPackageArtifact {
   readonly version: string;
   readonly source: ManagedPackageSourceKind;
   readonly sourceLocator: string;
+  readonly authoritySource?: Exclude<ModSource, 'bundled'>;
+  readonly publisher?: TrustPublisher;
   readonly integrity: `sha512-${string}`;
   readonly contentHash: `sha256:${string}`;
   readonly manifestHash: `sha256:${string}`;
@@ -27,8 +31,86 @@ export interface ManagedPackageArtifact {
   readonly available: boolean;
   readonly provenance: 'verified' | 'unavailable' | 'failed';
   readonly trustTier: 'first-party' | 'third-party';
+  readonly manifest?: ModManifest;
   readonly linkedRealpath?: string;
 }
+export interface ManagedThirdPartyAuthority {
+  readonly trustRecordId: string;
+  readonly grantRecordIds: readonly string[];
+  readonly contentHash: `sha256:${string}`;
+  readonly manifestHash: `sha256:${string}`;
+  readonly trustModel: 'full-code';
+}
+
+async function assertPersistedThirdPartyAuthority(
+  host: DurableModHost,
+  artifact: ManagedPackageArtifact,
+  locked: LockedModPackage,
+  authority: ManagedThirdPartyAuthority,
+): Promise<void> {
+  if (!artifact.authoritySource || !artifact.publisher) {
+    throw new DurableHostError('MOD_TRANSACTION_FAILED', 'third-party artifact lacks source and publisher provenance binding: ' + artifact.id);
+  }
+  const store = new TrustGrantStore(host.root, host.hostIo);
+  const trustRecords = await store.readTrust();
+  const grantRecords = await store.readGrants();
+  const trust = trustRecords.find(({ recordId }) => recordId === authority.trustRecordId);
+  if (!trust || trust.decision !== 'trusted'
+    || trust.modId !== artifact.id || trust.version !== artifact.version
+    || trust.source !== artifact.authoritySource || trust.source !== locked.source
+    || trust.sourceLocator !== artifact.sourceLocator
+    || sha256Canonical(trust.publisher) !== sha256Canonical(artifact.publisher)
+    || trust.contentHash !== artifact.contentHash || trust.manifestHash !== artifact.manifestHash) {
+    throw new DurableHostError('MOD_TRANSACTION_FAILED', 'third-party trust authority is not backed by an exact immutable record: ' + artifact.id);
+  }
+  if (!artifact.manifest || artifact.manifest.id !== artifact.id || artifact.manifest.version !== artifact.version
+    || sha256Canonical(artifact.manifest) !== artifact.manifestHash) {
+    throw new DurableHostError('MOD_TRANSACTION_FAILED', 'third-party artifact lacks an exact hash-bound manifest: ' + artifact.id);
+  }
+  const grantById = new Map(grantRecords.map((record) => [record.recordId, record]));
+  const selectedGrants = [];
+  for (const recordId of authority.grantRecordIds) {
+    const grant = grantById.get(recordId);
+    if (!grant || grant.modId !== artifact.id || grant.contentHash !== artifact.contentHash
+      || grant.decision !== 'allow' || grant.revokedAt) {
+      throw new DurableHostError('MOD_TRANSACTION_FAILED', 'third-party grant authority is not backed by an exact active record: ' + artifact.id);
+    }
+    selectedGrants.push(grant);
+  }
+  const permissionKey = (capability: string, resources: readonly string[]) => JSON.stringify([capability, [...resources].sort()]);
+  const declaredPermissions = new Map(artifact.manifest.permissions.map((permission) => [permissionKey(permission.capability, permission.resources), permission]));
+  for (const grant of selectedGrants) {
+    if (!declaredPermissions.has(permissionKey(grant.capability, grant.resources))) {
+      throw new DurableHostError('MOD_TRANSACTION_FAILED', 'third-party authority contains an undeclared capability grant: ' + artifact.id);
+    }
+  }
+  for (const permission of artifact.manifest.permissions.filter(({ required }) => required)) {
+    const matching = selectedGrants.filter((grant) => permissionKey(grant.capability, grant.resources) === permissionKey(permission.capability, permission.resources));
+    if (matching.length !== 1) {
+      throw new DurableHostError('MOD_TRANSACTION_FAILED', 'third-party required permission lacks one exact active grant: ' + artifact.id + '/' + permission.capability);
+    }
+  }
+  const latest = evaluateThirdPartyAuthority({
+    modId: artifact.id,
+    version: artifact.version,
+    source: artifact.authoritySource,
+    sourceLocator: artifact.sourceLocator,
+    contentHash: artifact.contentHash,
+    manifestHash: artifact.manifestHash,
+    publisher: artifact.publisher,
+  }, artifact.manifest, trustRecords, grantRecords);
+  if (!latest.allowed || latest.trustRecordId !== authority.trustRecordId
+    || JSON.stringify([...latest.grantRecordIds].sort()) !== JSON.stringify([...authority.grantRecordIds].sort())) {
+    throw new DurableHostError('MOD_TRANSACTION_FAILED', 'third-party authority is stale, revoked, denied, or does not match latest exact records: ' + artifact.id, {
+      reason: latest.reason,
+      missingCapabilities: latest.missingCapabilities,
+    });
+  }
+  if (locked.trustRecordId !== trust.recordId) {
+    throw new DurableHostError('MOD_TRANSACTION_FAILED', 'persisted third-party trust authority does not match the canonical lock: ' + artifact.id);
+  }
+}
+
 
 export interface ManagedLifecycleRequest {
   readonly operation: ManagedLifecycleOperation;
@@ -39,6 +121,7 @@ export interface ManagedLifecycleRequest {
   readonly artifacts: readonly ManagedPackageArtifact[];
   readonly desiredState: unknown;
   readonly lock: CanonicalModLock;
+  readonly thirdPartyAuthority?: Readonly<Record<string, ManagedThirdPartyAuthority>>;
   readonly currentInvocation?: {
     readonly installationPrefix: string | null;
     readonly source: 'managed' | 'linked-development' | 'npx-ephemeral' | 'unknown';
@@ -50,6 +133,8 @@ export interface ManagedLifecyclePackagePlan {
   readonly version: string;
   readonly source: ManagedPackageSourceKind;
   readonly sourceLocator: string;
+  readonly authoritySource?: Exclude<ModSource, 'bundled'>;
+  readonly publisher?: TrustPublisher;
   readonly integrity: `sha512-${string}`;
   readonly contentHash: `sha256:${string}`;
   readonly manifestHash: `sha256:${string}`;
@@ -193,6 +278,7 @@ function planSubject(plan: Omit<ManagedLifecyclePlan, 'planHash'>): `sha256:${st
 function assertExactLockPackage(artifact: ManagedPackageArtifact, locked: LockedModPackage): void {
   if (
     locked.version !== artifact.version
+    || locked.source !== (artifact.authoritySource ?? (artifact.source === 'linked-development' ? 'explicit-dev' : 'registry'))
     || locked.sourceLocator !== artifact.sourceLocator
     || locked.contentHash !== artifact.contentHash
     || locked.manifestHash !== artifact.manifestHash
@@ -259,7 +345,23 @@ export async function createManagedLifecyclePlan(
         scripts: [...artifact.lifecycleScripts].sort(),
       });
     }
-    if (artifact.trustTier !== 'first-party') throw new DurableHostError('MOD_TRANSACTION_FAILED', 'third-party activation remains disabled until S8: ' + artifact.id);
+    if (artifact.trustTier === 'third-party') {
+      if (!artifact.authoritySource || !artifact.publisher) {
+        throw new DurableHostError('MOD_TRANSACTION_FAILED', 'third-party artifact lacks source and publisher provenance binding: ' + artifact.id);
+      }
+      if (artifact.source === 'linked-development' && artifact.authoritySource !== 'explicit-dev') throw new DurableHostError('MOD_TRANSACTION_FAILED', 'linked third-party artifact must use explicit-dev authority: ' + artifact.id);
+      if (artifact.source === 'registry' && artifact.authoritySource !== 'registry') throw new DurableHostError('MOD_TRANSACTION_FAILED', 'registry artifact authority source mismatch: ' + artifact.id);
+      const authority = request.thirdPartyAuthority?.[artifact.id];
+      if (!authority || authority.trustModel !== 'full-code' || authority.contentHash !== artifact.contentHash || authority.manifestHash !== artifact.manifestHash) {
+        throw new DurableHostError('MOD_TRANSACTION_FAILED', 'third-party artifact lacks exact S8 trust authority: ' + artifact.id);
+      }
+      if (!authority.trustRecordId.trim() || new Set(authority.grantRecordIds).size !== authority.grantRecordIds.length) throw new DurableHostError('MOD_TRANSACTION_FAILED', 'third-party trust/grant record IDs are malformed: ' + artifact.id);
+      if (locked.trustRecordId !== authority.trustRecordId || [...locked.grantRecordIds].sort().join('\0') !== [...authority.grantRecordIds].sort().join('\0')) {
+        throw new DurableHostError('MOD_TRANSACTION_FAILED', 'third-party authority does not match the canonical lock: ' + artifact.id);
+      }
+      await assertPersistedThirdPartyAuthority(host, artifact, locked, authority);
+    }
+    if (artifact.trustTier !== 'first-party' && artifact.trustTier !== 'third-party') throw new DurableHostError('MOD_TRANSACTION_FAILED', 'unknown trust tier: ' + artifact.id);
     if (artifact.provenance === 'failed') throw new DurableHostError('MOD_TRANSACTION_FAILED', `package provenance verification failed: ${artifact.id}`);
   }
   const pointer = await host.readCurrentPointer();
@@ -277,15 +379,18 @@ export async function createManagedLifecyclePlan(
     version: artifact.version,
     source: artifact.source,
     sourceLocator: artifact.sourceLocator,
+    ...(artifact.authoritySource ? { authoritySource: artifact.authoritySource } : {}),
+    ...(artifact.publisher ? { publisher: artifact.publisher } : {}),
     integrity: artifact.integrity,
     contentHash: artifact.contentHash,
     manifestHash: artifact.manifestHash,
     dependencies: [...artifact.dependencies].sort(),
     provenance: artifact.provenance,
   }));
-  const approvalReasons = packages.flatMap((entry) => [
+  const approvalReasons = closure.flatMap((entry) => [
     ...(entry.provenance === 'unavailable' ? [`provenance-unavailable:${entry.id}`] : []),
     ...(entry.source === 'linked-development' ? [`linked-source:${entry.id}`] : []),
+    ...(entry.trustTier === 'third-party' ? [`full-code-trust:${entry.id}`] : []),
   ]).sort();
   const unsigned = freeze({
     schemaVersion: 1 as const,

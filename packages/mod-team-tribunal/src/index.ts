@@ -84,7 +84,7 @@ export const MANIFEST = validateManifest({
   "contributes": {
     "cliCommands": [
       {
-        "id": "cliCommands:0061",
+        "id": "cliCommands:0070",
         "aliases": []
       }
     ],
@@ -176,7 +176,7 @@ export const COMPATIBILITY_CONTRIBUTIONS = Object.freeze([
     "source": "packages/cli/src/models/handler-types.ts:113"
   },
   {
-    "id": "cliCommands:0061",
+    "id": "cliCommands:0070",
     "publicId": "team-tribunal",
     "registryKind": "cli-command",
     "category": "cliCommands",
@@ -223,7 +223,7 @@ export function createFirstPartyCompatibilityMod(runtime: FirstPartyCompatibilit
     async activate(registrar: Registrar): Promise<Dispose> {
       const disposers: Dispose[] = [];
       disposers.push(registrar.tool('cesar', { id: "cesarRoutes:0063", description: "team-tribunal compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('cesar-tool', "team-tribunal", input, context) }));
-      disposers.push(registrar.command('cli', { id: "cliCommands:0061", description: "team-tribunal compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "team-tribunal", input, context) }));
+      disposers.push(registrar.command('cli', { id: "cliCommands:0070", description: "team-tribunal compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "team-tribunal", input, context) }));
       disposers.push(registrar.intent({ id: "intentVariants:0061", description: "team-tribunal compatibility contribution", inputSchema, parse: (input) => runtime.parseIntent("team-tribunal", input), run: (input, context) => runtime.command('intent', "team-tribunal", input, context) }));
       disposers.push(registrar.command('tui', { id: "builtinCommandMetadata:0046", description: "team-tribunal compatibility contribution", inputSchema, run: (input, context) => runtime.command('tui-action', "team-tribunal", input, context) }));
       disposers.push(registrar.command('tui', { id: "tuiSlashCommands:0066", description: "/team-tribunal compatibility contribution", inputSchema, run: (input, context) => runtime.command('tui-action', "/team-tribunal", input, context) }));

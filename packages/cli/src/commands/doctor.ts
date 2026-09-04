@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 
 import { tmpdir, homedir } from 'node:os';
 
-import { join, basename } from 'node:path';
+import { join, basename, dirname } from 'node:path';
 
 import { EngineRegistry, loadConfig, resolveWorkingDir, repoRoot, headSha, worktreeCreate, worktreeRemoveBestEffort, resolveDedupSidecar, resolveSidecarPython, agonPath } from '@kernlang/agon-core';
 
@@ -21,6 +21,8 @@ import { runReviewCore, selectReviewEngines } from '../handlers/review.js';
 import { header, table, info, success, fail, warn, green, red, yellow, dim, bold } from '../blocks/output-format.js';
 
 import { readCesarToolReliability, formatCesarReliabilityLine, shouldDowngradeCesarToolWork } from '../cesar/reliability.js';
+import { ExternalActivationStore, TrustGrantStore, discoverUserFolderModsDetailed } from '@kernlang/agon-kernel';
+import { modularHostRoot } from '../surface-authority-runtime.js';
 
 export interface EngineDoctorEntry {
   id: string;
@@ -36,6 +38,43 @@ export interface HarnessDoctorReport {
   rows: string[][];
   summary: string;
   ok: boolean;
+}
+
+export interface ModularDoctorReport extends HarnessDoctorReport {}
+
+/** Read-only diagnosis of external mod discovery and local authority state. */
+export async function buildModularDoctorReport(hostRoot: string, modsRoot: string): Promise<ModularDoctorReport> {
+  const rows: string[][] = [];
+  let failing = 0;
+  let warned = 0;
+  try {
+    const discovery = await discoverUserFolderModsDetailed(modsRoot);
+    const status = discovery.diagnostics.length ? 'warn' : 'ok';
+    if (status === 'warn') warned += 1;
+    rows.push(['Folder discovery', modsRoot, status, `${discovery.candidates.length} valid; ${discovery.diagnostics.length} rejected without execution`]);
+  } catch (error) {
+    failing += 1;
+    rows.push(['Folder discovery', modsRoot, 'fail', error instanceof Error ? error.message : String(error)]);
+  }
+  try {
+    const store = new TrustGrantStore(hostRoot);
+    const [trust, grants] = await Promise.all([store.readTrust(), store.readGrants()]);
+    rows.push(['Trust and grants', hostRoot, 'ok', `${trust.length} trust; ${grants.length} grant records are canonical`]);
+  } catch (error) {
+    failing += 1;
+    rows.push(['Trust and grants', hostRoot, 'fail', `authority state is unreadable: ${error instanceof Error ? error.message : String(error)}`]);
+  }
+  try {
+    const store = new ExternalActivationStore(hostRoot);
+    const [records, failures] = await Promise.all([store.read(), store.readFailures()]);
+    if (failures.length) warned += 1;
+    rows.push(['Activation state', hostRoot, failures.length ? 'warn' : 'ok', `${records.length} activation records; ${failures.length} durable failures. Recovery: inspect, disable, or fix the named mod, then restart.`]);
+  } catch (error) {
+    failing += 1;
+    rows.push(['Activation state', hostRoot, 'fail', `activation state is unreadable: ${error instanceof Error ? error.message : String(error)}`]);
+  }
+  return { headers: ['Check', 'Subject', 'Status', 'Detail'], rows,
+    summary: `${rows.length - failing - warned} ok, ${warned} warn, ${failing} fail`, ok: failing === 0 };
 }
 
 export function shellQuoteForDoctor(value: string): string {
@@ -466,7 +505,7 @@ export const doctorCommand: any = defineCommand({
   args: {
     scope: {
       type: 'positional',
-      description: 'Scope: engines|harness|review',
+      description: 'Scope: engines|harness|review|mods',
       required: false,
     },
     engines: {
@@ -481,10 +520,20 @@ export const doctorCommand: any = defineCommand({
   },
   async run({ args }) {
     const scope = String(args.scope ?? 'engines').trim() || 'engines';
-    if (scope !== 'engines' && scope !== 'harness' && scope !== 'review') {
+    if (scope !== 'engines' && scope !== 'harness' && scope !== 'review' && scope !== 'mods') {
       fail(`Unknown doctor scope: ${scope}`);
-      info('Available: engines, harness, review');
+      info('Available: engines, harness, review, mods');
       process.exit(1);
+    }
+
+    if (scope === 'mods') {
+      const hostRoot = modularHostRoot();
+      const report = await buildModularDoctorReport(hostRoot, process.env.AGON_MODS_ROOT ?? join(dirname(hostRoot), 'mods'));
+      header('Modular Agon Doctor');
+      table(report.headers, report.rows.map((row) => [row[0]!, row[1]!, formatDoctorStatus(row[2] as 'ok' | 'warn' | 'fail'), row[3]!]));
+      if (report.ok) success(`Summary: ${report.summary}`);
+      else { warn(`Summary: ${report.summary}`); process.exitCode = 1; }
+      return;
     }
 
     const registry = new EngineRegistry();

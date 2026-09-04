@@ -64,7 +64,7 @@ describe('Modular Agon manifest v2', () => {
         contentHash: `sha256:${'a'.repeat(64)}`, bytes: 1, executable: false, platforms: ['linux-x64'],
         consumerContributionId: 'unsafe consumer',
       }],
-      pack: { include: ['dist/index.js', 'dist/index.d.ts', 'agon.mod.json', 'asset.txt'], executable: [] },
+      pack: { include: ['dist/index.js', 'dist/index.d.ts', 'agon.mod.json', 'package.json', 'asset.txt'], executable: [] },
     }))).toThrow(ManifestValidationError);
   });
 
@@ -75,13 +75,13 @@ describe('Modular Agon manifest v2', () => {
         contentHash: `sha256:${'a'.repeat(64)}`, bytes: 1, executable: false, platforms: ['linux-x64'],
         consumerContributionId: 'missing.contribution',
       }],
-      pack: { include: ['dist/index.js', 'dist/index.d.ts', 'agon.mod.json', 'asset.txt'], executable: [] },
+      pack: { include: ['dist/index.js', 'dist/index.d.ts', 'agon.mod.json', 'package.json', 'asset.txt'], executable: [] },
     }))).toThrow(/unknown consumer contribution/);
   });
 
   it('requires the manifest itself in the packed file list', () => {
     expect(() => validateManifest(manifest('example.mod', '1.0.0', {
-      pack: { include: ['dist/index.js', 'dist/index.d.ts'], executable: [] },
+      pack: { include: ['dist/index.js', 'dist/index.d.ts', 'package.json'], executable: [] },
     }))).toThrow(/agon\.mod\.json/);
   });
 });

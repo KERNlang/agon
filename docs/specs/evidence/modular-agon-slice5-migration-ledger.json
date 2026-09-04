@@ -164,7 +164,7 @@
         "@kernlang/agon-support-verification"
       ],
       "assignments": 17,
-      "assignmentHash": "sha256:64bbb40a5ccd2f622132414d19e67b2fb4abdb5b21af95abf6392e4f456f6801",
+      "assignmentHash": "sha256:6dc1cabceecc97f450c0c417991570e32f8cb015bec5aa5d7865310137db6d90",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -5663,7 +5663,7 @@
     {
       "category": "resultAndEnvelopeTypes",
       "id": "ReviewEvent",
-      "source": "packages/cli/src/blocks/controls.tsx:20",
+      "source": "packages/cli/src/blocks/controls.tsx:36",
       "class": "user-toggleable-mod-package",
       "package": "@kernlang/agon-mod-review",
       "rule": "semantic-source-rule",

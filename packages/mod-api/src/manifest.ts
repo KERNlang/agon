@@ -17,8 +17,8 @@ const Contribution = z.object({
 }).strict();
 const Dependency = z.object({ id: ModId, range: z.string().min(1) }).strict();
 const Permission = z.object({
-  capability: z.string().min(1),
-  resources: z.array(z.string()).default([]),
+  capability: z.string().min(1).max(256).regex(/^[A-Za-z][A-Za-z0-9._:-]*$/),
+  resources: z.array(z.string().min(1).max(1024).regex(/^[\x20-\x7e]+$/)).default([]),
   required: z.boolean().default(true),
 }).strict();
 const Asset = z.object({
@@ -108,6 +108,10 @@ function deepFreeze<T>(value: T): DeepReadonly<T> {
 function assertUnique(values: readonly string[], message: string): void {
   if (new Set(values).size !== values.length) throw new ManifestValidationError(message);
 }
+function portablePathKey(path: string): string {
+  return path.split('/').filter((segment) => segment !== '.').join('/').normalize('NFC').toLowerCase();
+}
+
 
 export function validateManifest(input: unknown): ModManifest {
   const parsed = ManifestSchema.safeParse(input);
@@ -149,6 +153,23 @@ export function validateManifest(input: unknown): ModManifest {
   assertUnique(manifest.assets.map(({ path }) => path), 'duplicate asset path');
   assertUnique(manifest.pack.include, 'duplicate pack path');
   assertUnique(manifest.pack.executable, 'duplicate executable pack path');
+  assertUnique(manifest.permissions.map(({ capability }) => capability), 'duplicate permission capability');
+  for (const permission of manifest.permissions) assertUnique(permission.resources, `duplicate permission resource: ${permission.capability}`);
+  const rawPackagePaths = [...new Set([
+    ...(manifest.entrypoints ? [manifest.entrypoints.runtime, manifest.entrypoints.types] : []),
+    ...manifest.assets.map(({ path }) => path),
+    ...manifest.pack.include,
+    ...manifest.pack.executable,
+  ])];
+  assertUnique(rawPackagePaths.map(portablePathKey), 'portable package path collision');
+  if (manifest.execution === 'executable' && !manifest.id.startsWith('agon.') && manifest.entrypoints?.runtime.endsWith('.js') && !manifest.pack.include.includes('package.json')) {
+    throw new ManifestValidationError('JavaScript runtime requires declared package.json module metadata');
+  }
+  for (const contribution of manifest.id.startsWith('agon.') ? [] : manifest.contributes.tuiActions) {
+    if ([contribution.id, ...contribution.aliases].some((name) => name !== name.toLowerCase())) {
+      throw new ManifestValidationError('TUI contribution IDs and aliases must be lowercase');
+    }
+  }
   if (!manifest.pack.include.includes('agon.mod.json')) throw new ManifestValidationError('agon.mod.json missing from pack include');
   const requiredPackPaths = [...(manifest.entrypoints ? [manifest.entrypoints.runtime, manifest.entrypoints.types] : []), ...manifest.assets.map(({ path }) => path), ...manifest.pack.executable];
   if (requiredPackPaths.some((path) => !manifest.pack.include.includes(path))) throw new ManifestValidationError('entrypoint, asset, or executable path missing from pack include');

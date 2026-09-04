@@ -123,7 +123,7 @@ export const MANIFEST = validateManifest({
         "aliases": []
       },
       {
-        "id": "cliCommands:0057",
+        "id": "cliCommands:0066",
         "aliases": []
       }
     ],
@@ -361,7 +361,7 @@ export const COMPATIBILITY_CONTRIBUTIONS = Object.freeze([
     "source": "packages/cli/src/commands/ext.ts:322"
   },
   {
-    "id": "cliCommands:0057",
+    "id": "cliCommands:0066",
     "publicId": "serve",
     "registryKind": "cli-command",
     "category": "cliCommands",
@@ -403,7 +403,7 @@ export function createFirstPartyCompatibilityMod(runtime: FirstPartyCompatibilit
       disposers.push(registrar.command('cli', { id: "cliCommands:0019", description: "ext compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "ext", input, context) }));
       disposers.push(registrar.command('cli', { id: "cliCommands:0020", description: "ext install compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "ext install", input, context) }));
       disposers.push(registrar.command('cli', { id: "cliCommands:0021", description: "ext native-host compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "ext native-host", input, context) }));
-      disposers.push(registrar.command('cli', { id: "cliCommands:0057", description: "serve compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "serve", input, context) }));
+      disposers.push(registrar.command('cli', { id: "cliCommands:0066", description: "serve compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "serve", input, context) }));
       disposers.push(registrar.command('tui', { id: "tuiSlashCommands:0015", description: "/chrome compatibility contribution", inputSchema, run: (input, context) => runtime.command('tui-action', "/chrome", input, context) }));
       return async () => { for (const dispose of [...disposers].reverse()) await dispose(); };
     },

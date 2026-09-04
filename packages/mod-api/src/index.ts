@@ -137,9 +137,9 @@ export interface ModServices {
   readonly identity: ModIdentity;
   readonly source: ModSource;
   readonly logger: {
-    debug(message: string, fields?: Json): void;
-    info(message: string, fields?: Json): void;
-    warn(message: string, fields?: Json): void;
+    debug(message: string, fields?: Json): Awaitable<void>;
+    info(message: string, fields?: Json): Awaitable<void>;
+    warn(message: string, fields?: Json): Awaitable<void>;
   };
   readonly receipts: { record(kind: string, payload: Json): Awaitable<string> };
   readonly permissions: { check(capability: string, resource?: string): Awaitable<PermissionDecision> };

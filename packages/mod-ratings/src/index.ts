@@ -83,11 +83,11 @@ export const MANIFEST = validateManifest({
         "aliases": []
       },
       {
-        "id": "cliCommands:0051",
+        "id": "cliCommands:0060",
         "aliases": []
       },
       {
-        "id": "cliCommands:0052",
+        "id": "cliCommands:0061",
         "aliases": []
       }
     ],
@@ -219,14 +219,14 @@ export const COMPATIBILITY_CONTRIBUTIONS = Object.freeze([
     "source": "packages/cli/src/lazy-commands.ts:294"
   },
   {
-    "id": "cliCommands:0051",
+    "id": "cliCommands:0060",
     "publicId": "ratings",
     "registryKind": "cli-command",
     "category": "cliCommands",
     "source": "packages/cli/src/lazy-commands.ts:296"
   },
   {
-    "id": "cliCommands:0052",
+    "id": "cliCommands:0061",
     "publicId": "ratings purge-unknown",
     "registryKind": "cli-command",
     "category": "cliCommands",
@@ -280,8 +280,8 @@ export function createFirstPartyCompatibilityMod(runtime: FirstPartyCompatibilit
     async activate(registrar: Registrar): Promise<Dispose> {
       const disposers: Dispose[] = [];
       disposers.push(registrar.command('cli', { id: "cliCommands:0034", description: "leaderboard compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "leaderboard", input, context) }));
-      disposers.push(registrar.command('cli', { id: "cliCommands:0051", description: "ratings compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "ratings", input, context) }));
-      disposers.push(registrar.command('cli', { id: "cliCommands:0052", description: "ratings purge-unknown compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "ratings purge-unknown", input, context) }));
+      disposers.push(registrar.command('cli', { id: "cliCommands:0060", description: "ratings compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "ratings", input, context) }));
+      disposers.push(registrar.command('cli', { id: "cliCommands:0061", description: "ratings purge-unknown compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "ratings purge-unknown", input, context) }));
       disposers.push(registrar.intent({ id: "intentVariants:0039", description: "leaderboard compatibility contribution", inputSchema, parse: (input) => runtime.parseIntent("leaderboard", input), run: (input, context) => runtime.command('intent', "leaderboard", input, context) }));
       disposers.push(registrar.resultType({ id: "resultAndEnvelopeTypes:0105", schema: resultSchema, readableVersions: '>=0.2.0', render: (payload) => runtime.render("RatingRecord", payload) }));
       disposers.push(registrar.command('tui', { id: "builtinCommandMetadata:0030", description: "leaderboard compatibility contribution", inputSchema, run: (input, context) => runtime.command('tui-action', "leaderboard", input, context) }));

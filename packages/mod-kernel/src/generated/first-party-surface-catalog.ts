@@ -428,7 +428,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.nero",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:f7e7785d407b6b7a16a62d7f3ee5d470d040161d737c91835efaeea525ab62ca"
+      "contentHash": "sha256:239e2f53f3cdfa22d8bf23f970b54ce863410ab538cb8966a89ac7ea3f56e34c"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "QuickNero",
@@ -543,7 +543,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.review",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:df7e665c5e9839b74d39efb5839d040ccfbce92f260e9141d5da1b6b9f78d1ce"
+      "contentHash": "sha256:67f0323cd29425b5fd84c909bd03ecb332442f1ff23aa6235063db5f1471066e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "Review",
@@ -612,7 +612,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.tribunal",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:cd2bf6aec1943b8fe7b9f894edfb49a53089afdee178a3af450a8f916ad25607"
+      "contentHash": "sha256:535c3a45771de0b994fa3ff36375d6e9df72c3f5c7f6bf2c2e1a0cfef126f72b"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "Tribunal",
@@ -1647,7 +1647,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.review",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:df7e665c5e9839b74d39efb5839d040ccfbce92f260e9141d5da1b6b9f78d1ce"
+      "contentHash": "sha256:67f0323cd29425b5fd84c909bd03ecb332442f1ff23aa6235063db5f1471066e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "review",
@@ -1670,7 +1670,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.review",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:df7e665c5e9839b74d39efb5839d040ccfbce92f260e9141d5da1b6b9f78d1ce"
+      "contentHash": "sha256:67f0323cd29425b5fd84c909bd03ecb332442f1ff23aa6235063db5f1471066e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "review",
@@ -1693,7 +1693,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.review",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:df7e665c5e9839b74d39efb5839d040ccfbce92f260e9141d5da1b6b9f78d1ce"
+      "contentHash": "sha256:67f0323cd29425b5fd84c909bd03ecb332442f1ff23aa6235063db5f1471066e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "review",
@@ -1716,7 +1716,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.review",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:df7e665c5e9839b74d39efb5839d040ccfbce92f260e9141d5da1b6b9f78d1ce"
+      "contentHash": "sha256:67f0323cd29425b5fd84c909bd03ecb332442f1ff23aa6235063db5f1471066e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "review",
@@ -1739,7 +1739,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.review",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:df7e665c5e9839b74d39efb5839d040ccfbce92f260e9141d5da1b6b9f78d1ce"
+      "contentHash": "sha256:67f0323cd29425b5fd84c909bd03ecb332442f1ff23aa6235063db5f1471066e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "review",
@@ -1762,7 +1762,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.review",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:df7e665c5e9839b74d39efb5839d040ccfbce92f260e9141d5da1b6b9f78d1ce"
+      "contentHash": "sha256:67f0323cd29425b5fd84c909bd03ecb332442f1ff23aa6235063db5f1471066e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "review",
@@ -2084,7 +2084,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.team-brainstorm",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:dc7940bdfca3b10f91634c89382de849b6c52d6319703d465d093879bc3f4878"
+      "contentHash": "sha256:9c1765b50a4d8d4595ed5043595cf06863913cf682522c440c4fb0f11fe3e6ee"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "team-brainstorm",
@@ -2107,7 +2107,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.team-forge",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:64f0905a0f29ce18ba9d3f6a6359d7005c3c1b95621927ec530be2efb0be0f82"
+      "contentHash": "sha256:33aac5bf91621407d3061365c19ba08c8d36a2b08cf25d940075ed904e6c6fff"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "team-forge",
@@ -2130,7 +2130,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.team-tribunal",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:7acf17bffc9ea40f5af69f5c4a1783cdf059a262871f853e974e7080b51342a6"
+      "contentHash": "sha256:e13e87eb355ac789881c6bb1c57a175080813a2caa5e54009b93a422db054edc"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "team-tribunal",
@@ -2153,7 +2153,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.team-forge",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:64f0905a0f29ce18ba9d3f6a6359d7005c3c1b95621927ec530be2efb0be0f82"
+      "contentHash": "sha256:33aac5bf91621407d3061365c19ba08c8d36a2b08cf25d940075ed904e6c6fff"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "teamforge",
@@ -2199,7 +2199,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.tribunal",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:cd2bf6aec1943b8fe7b9f894edfb49a53089afdee178a3af450a8f916ad25607"
+      "contentHash": "sha256:535c3a45771de0b994fa3ff36375d6e9df72c3f5c7f6bf2c2e1a0cfef126f72b"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "tribunal",
@@ -2222,7 +2222,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.tribunal",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:cd2bf6aec1943b8fe7b9f894edfb49a53089afdee178a3af450a8f916ad25607"
+      "contentHash": "sha256:535c3a45771de0b994fa3ff36375d6e9df72c3f5c7f6bf2c2e1a0cfef126f72b"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "tribunal",
@@ -2245,7 +2245,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.tribunal",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:cd2bf6aec1943b8fe7b9f894edfb49a53089afdee178a3af450a8f916ad25607"
+      "contentHash": "sha256:535c3a45771de0b994fa3ff36375d6e9df72c3f5c7f6bf2c2e1a0cfef126f72b"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "tribunal",
@@ -2268,7 +2268,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.tribunal",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:cd2bf6aec1943b8fe7b9f894edfb49a53089afdee178a3af450a8f916ad25607"
+      "contentHash": "sha256:535c3a45771de0b994fa3ff36375d6e9df72c3f5c7f6bf2c2e1a0cfef126f72b"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "tribunal",
@@ -2383,7 +2383,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.browser",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:ea987228c5e9d800468722ccd4d439aa88de23b871cce21cca8106c8ae61c44b"
+      "contentHash": "sha256:fb3148399819008037f2e4486f990a338195b422c4c4e5078f7f76b8a3fea3eb"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "browser-host",
@@ -2406,7 +2406,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.browser",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:ea987228c5e9d800468722ccd4d439aa88de23b871cce21cca8106c8ae61c44b"
+      "contentHash": "sha256:fb3148399819008037f2e4486f990a338195b422c4c4e5078f7f76b8a3fea3eb"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "browser-host install",
@@ -2429,7 +2429,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.browser",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:ea987228c5e9d800468722ccd4d439aa88de23b871cce21cca8106c8ae61c44b"
+      "contentHash": "sha256:fb3148399819008037f2e4486f990a338195b422c4c4e5078f7f76b8a3fea3eb"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "browser-host status",
@@ -2452,7 +2452,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.browser",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:ea987228c5e9d800468722ccd4d439aa88de23b871cce21cca8106c8ae61c44b"
+      "contentHash": "sha256:fb3148399819008037f2e4486f990a338195b422c4c4e5078f7f76b8a3fea3eb"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "browser-host stop",
@@ -2475,7 +2475,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.browser",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:ea987228c5e9d800468722ccd4d439aa88de23b871cce21cca8106c8ae61c44b"
+      "contentHash": "sha256:fb3148399819008037f2e4486f990a338195b422c4c4e5078f7f76b8a3fea3eb"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "browser-host uninstall",
@@ -2544,7 +2544,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.browser",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:ea987228c5e9d800468722ccd4d439aa88de23b871cce21cca8106c8ae61c44b"
+      "contentHash": "sha256:fb3148399819008037f2e4486f990a338195b422c4c4e5078f7f76b8a3fea3eb"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "chrome",
@@ -2682,7 +2682,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.browser",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:ea987228c5e9d800468722ccd4d439aa88de23b871cce21cca8106c8ae61c44b"
+      "contentHash": "sha256:fb3148399819008037f2e4486f990a338195b422c4c4e5078f7f76b8a3fea3eb"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "drive",
@@ -2728,7 +2728,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.browser",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:ea987228c5e9d800468722ccd4d439aa88de23b871cce21cca8106c8ae61c44b"
+      "contentHash": "sha256:fb3148399819008037f2e4486f990a338195b422c4c4e5078f7f76b8a3fea3eb"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "ext",
@@ -2751,7 +2751,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.browser",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:ea987228c5e9d800468722ccd4d439aa88de23b871cce21cca8106c8ae61c44b"
+      "contentHash": "sha256:fb3148399819008037f2e4486f990a338195b422c4c4e5078f7f76b8a3fea3eb"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "ext install",
@@ -2774,7 +2774,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.browser",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:ea987228c5e9d800468722ccd4d439aa88de23b871cce21cca8106c8ae61c44b"
+      "contentHash": "sha256:fb3148399819008037f2e4486f990a338195b422c4c4e5078f7f76b8a3fea3eb"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "ext native-host",
@@ -3073,7 +3073,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.ratings",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:aa72371d3cc9d8f20c3d68c39673dfacc642a6ea10ca0c0c1607416c5e8bd2af"
+      "contentHash": "sha256:c60346ff8d2310c874e3eae43f9787affabe3c9406b414af741b9091c8c70fb3"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "leaderboard",
@@ -3111,6 +3111,213 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "surface": "cli",
     "kind": "cli-command",
     "registryId": "cliCommands:0036",
+    "publicId": "mod approve",
+    "category": "cliCommands",
+    "group": "minimal-kernel-machinery",
+    "source": "packages/cli/src/commands/mod.ts:312",
+    "aliases": [],
+    "owner": {
+      "id": "agon.kernel",
+      "version": "0.0.0-slice.2",
+      "contentHash": "sha256:5192c32df03ee431116b244f045ee7549e2b754d7ef975a2fedb9895b4eb7d8c"
+    },
+    "ownerClass": "minimal-kernel-machinery",
+    "description": "mod approve",
+    "accessibility": {
+      "label": "mod approve",
+      "fallbackText": "mod approve",
+      "keyboardAccessible": true,
+      "colorIndependent": true
+    }
+  },
+  {
+    "surface": "cli",
+    "kind": "cli-command",
+    "registryId": "cliCommands:0037",
+    "publicId": "mod disable",
+    "category": "cliCommands",
+    "group": "minimal-kernel-machinery",
+    "source": "packages/cli/src/commands/mod.ts:313",
+    "aliases": [],
+    "owner": {
+      "id": "agon.kernel",
+      "version": "0.0.0-slice.2",
+      "contentHash": "sha256:5192c32df03ee431116b244f045ee7549e2b754d7ef975a2fedb9895b4eb7d8c"
+    },
+    "ownerClass": "minimal-kernel-machinery",
+    "description": "mod disable",
+    "accessibility": {
+      "label": "mod disable",
+      "fallbackText": "mod disable",
+      "keyboardAccessible": true,
+      "colorIndependent": true
+    }
+  },
+  {
+    "surface": "cli",
+    "kind": "cli-command",
+    "registryId": "cliCommands:0038",
+    "publicId": "mod enable",
+    "category": "cliCommands",
+    "group": "minimal-kernel-machinery",
+    "source": "packages/cli/src/commands/mod.ts:313",
+    "aliases": [],
+    "owner": {
+      "id": "agon.kernel",
+      "version": "0.0.0-slice.2",
+      "contentHash": "sha256:5192c32df03ee431116b244f045ee7549e2b754d7ef975a2fedb9895b4eb7d8c"
+    },
+    "ownerClass": "minimal-kernel-machinery",
+    "description": "mod enable",
+    "accessibility": {
+      "label": "mod enable",
+      "fallbackText": "mod enable",
+      "keyboardAccessible": true,
+      "colorIndependent": true
+    }
+  },
+  {
+    "surface": "cli",
+    "kind": "cli-command",
+    "registryId": "cliCommands:0039",
+    "publicId": "mod inspect",
+    "category": "cliCommands",
+    "group": "minimal-kernel-machinery",
+    "source": "packages/cli/src/commands/mod.ts:312",
+    "aliases": [],
+    "owner": {
+      "id": "agon.kernel",
+      "version": "0.0.0-slice.2",
+      "contentHash": "sha256:5192c32df03ee431116b244f045ee7549e2b754d7ef975a2fedb9895b4eb7d8c"
+    },
+    "ownerClass": "minimal-kernel-machinery",
+    "description": "mod inspect",
+    "accessibility": {
+      "label": "mod inspect",
+      "fallbackText": "mod inspect",
+      "keyboardAccessible": true,
+      "colorIndependent": true
+    }
+  },
+  {
+    "surface": "cli",
+    "kind": "cli-command",
+    "registryId": "cliCommands:0040",
+    "publicId": "mod list",
+    "category": "cliCommands",
+    "group": "minimal-kernel-machinery",
+    "source": "packages/cli/src/commands/mod.ts:312",
+    "aliases": [],
+    "owner": {
+      "id": "agon.kernel",
+      "version": "0.0.0-slice.2",
+      "contentHash": "sha256:5192c32df03ee431116b244f045ee7549e2b754d7ef975a2fedb9895b4eb7d8c"
+    },
+    "ownerClass": "minimal-kernel-machinery",
+    "description": "mod list",
+    "accessibility": {
+      "label": "mod list",
+      "fallbackText": "mod list",
+      "keyboardAccessible": true,
+      "colorIndependent": true
+    }
+  },
+  {
+    "surface": "cli",
+    "kind": "cli-command",
+    "registryId": "cliCommands:0041",
+    "publicId": "mod recover",
+    "category": "cliCommands",
+    "group": "minimal-kernel-machinery",
+    "source": "packages/cli/src/commands/mod.ts:313",
+    "aliases": [],
+    "owner": {
+      "id": "agon.kernel",
+      "version": "0.0.0-slice.2",
+      "contentHash": "sha256:5192c32df03ee431116b244f045ee7549e2b754d7ef975a2fedb9895b4eb7d8c"
+    },
+    "ownerClass": "minimal-kernel-machinery",
+    "description": "mod recover",
+    "accessibility": {
+      "label": "mod recover",
+      "fallbackText": "mod recover",
+      "keyboardAccessible": true,
+      "colorIndependent": true
+    }
+  },
+  {
+    "surface": "cli",
+    "kind": "cli-command",
+    "registryId": "cliCommands:0042",
+    "publicId": "mod revoke",
+    "category": "cliCommands",
+    "group": "minimal-kernel-machinery",
+    "source": "packages/cli/src/commands/mod.ts:312",
+    "aliases": [],
+    "owner": {
+      "id": "agon.kernel",
+      "version": "0.0.0-slice.2",
+      "contentHash": "sha256:5192c32df03ee431116b244f045ee7549e2b754d7ef975a2fedb9895b4eb7d8c"
+    },
+    "ownerClass": "minimal-kernel-machinery",
+    "description": "mod revoke",
+    "accessibility": {
+      "label": "mod revoke",
+      "fallbackText": "mod revoke",
+      "keyboardAccessible": true,
+      "colorIndependent": true
+    }
+  },
+  {
+    "surface": "cli",
+    "kind": "cli-command",
+    "registryId": "cliCommands:0043",
+    "publicId": "mod trust",
+    "category": "cliCommands",
+    "group": "minimal-kernel-machinery",
+    "source": "packages/cli/src/commands/mod.ts:312",
+    "aliases": [],
+    "owner": {
+      "id": "agon.kernel",
+      "version": "0.0.0-slice.2",
+      "contentHash": "sha256:5192c32df03ee431116b244f045ee7549e2b754d7ef975a2fedb9895b4eb7d8c"
+    },
+    "ownerClass": "minimal-kernel-machinery",
+    "description": "mod trust",
+    "accessibility": {
+      "label": "mod trust",
+      "fallbackText": "mod trust",
+      "keyboardAccessible": true,
+      "colorIndependent": true
+    }
+  },
+  {
+    "surface": "cli",
+    "kind": "cli-command",
+    "registryId": "cliCommands:0044",
+    "publicId": "mod untrust",
+    "category": "cliCommands",
+    "group": "minimal-kernel-machinery",
+    "source": "packages/cli/src/commands/mod.ts:312",
+    "aliases": [],
+    "owner": {
+      "id": "agon.kernel",
+      "version": "0.0.0-slice.2",
+      "contentHash": "sha256:5192c32df03ee431116b244f045ee7549e2b754d7ef975a2fedb9895b4eb7d8c"
+    },
+    "ownerClass": "minimal-kernel-machinery",
+    "description": "mod untrust",
+    "accessibility": {
+      "label": "mod untrust",
+      "fallbackText": "mod untrust",
+      "keyboardAccessible": true,
+      "colorIndependent": true
+    }
+  },
+  {
+    "surface": "cli",
+    "kind": "cli-command",
+    "registryId": "cliCommands:0045",
     "publicId": "models",
     "category": "cliCommands",
     "group": "config",
@@ -3133,7 +3340,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
   {
     "surface": "cli",
     "kind": "cli-command",
-    "registryId": "cliCommands:0037",
+    "registryId": "cliCommands:0046",
     "publicId": "models add",
     "category": "cliCommands",
     "group": "minimal-kernel-machinery",
@@ -3156,7 +3363,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
   {
     "surface": "cli",
     "kind": "cli-command",
-    "registryId": "cliCommands:0038",
+    "registryId": "cliCommands:0047",
     "publicId": "models auto",
     "category": "cliCommands",
     "group": "minimal-kernel-machinery",
@@ -3179,7 +3386,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
   {
     "surface": "cli",
     "kind": "cli-command",
-    "registryId": "cliCommands:0039",
+    "registryId": "cliCommands:0048",
     "publicId": "models disable",
     "category": "cliCommands",
     "group": "minimal-kernel-machinery",
@@ -3202,7 +3409,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
   {
     "surface": "cli",
     "kind": "cli-command",
-    "registryId": "cliCommands:0040",
+    "registryId": "cliCommands:0049",
     "publicId": "models enable",
     "category": "cliCommands",
     "group": "minimal-kernel-machinery",
@@ -3225,7 +3432,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
   {
     "surface": "cli",
     "kind": "cli-command",
-    "registryId": "cliCommands:0041",
+    "registryId": "cliCommands:0050",
     "publicId": "models hide",
     "category": "cliCommands",
     "group": "minimal-kernel-machinery",
@@ -3248,7 +3455,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
   {
     "surface": "cli",
     "kind": "cli-command",
-    "registryId": "cliCommands:0042",
+    "registryId": "cliCommands:0051",
     "publicId": "models list",
     "category": "cliCommands",
     "group": "minimal-kernel-machinery",
@@ -3271,7 +3478,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
   {
     "surface": "cli",
     "kind": "cli-command",
-    "registryId": "cliCommands:0043",
+    "registryId": "cliCommands:0052",
     "publicId": "models remove",
     "category": "cliCommands",
     "group": "minimal-kernel-machinery",
@@ -3294,7 +3501,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
   {
     "surface": "cli",
     "kind": "cli-command",
-    "registryId": "cliCommands:0044",
+    "registryId": "cliCommands:0053",
     "publicId": "models set",
     "category": "cliCommands",
     "group": "minimal-kernel-machinery",
@@ -3317,7 +3524,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
   {
     "surface": "cli",
     "kind": "cli-command",
-    "registryId": "cliCommands:0045",
+    "registryId": "cliCommands:0054",
     "publicId": "mutate",
     "category": "cliCommands",
     "group": "user-toggleable-mod-package",
@@ -3326,7 +3533,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.mutate",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:62fdd445503de84ad41300e625f3d577d5aa2dea1176bcc5a5548bd2bda8f5ae"
+      "contentHash": "sha256:5e472671f279b3395151c7e0d581d0bce20dea512536a72bb88bf75aef01d982"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "mutate",
@@ -3340,7 +3547,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
   {
     "surface": "cli",
     "kind": "cli-command",
-    "registryId": "cliCommands:0046",
+    "registryId": "cliCommands:0055",
     "publicId": "naturalize",
     "category": "cliCommands",
     "group": "user-toggleable-mod-package",
@@ -3349,7 +3556,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.naturalize",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:6a77ec3e6f2f99b511befd8c30db1a684404b2cc772a7cb543b7678a48a2c7e6"
+      "contentHash": "sha256:a4affe3b315b32c30c91a73df77e4d34d0ac377190b3c681805405aceefae29d"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "naturalize",
@@ -3363,7 +3570,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
   {
     "surface": "cli",
     "kind": "cli-command",
-    "registryId": "cliCommands:0047",
+    "registryId": "cliCommands:0056",
     "publicId": "nero",
     "category": "cliCommands",
     "group": "session",
@@ -3372,7 +3579,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.nero",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:f7e7785d407b6b7a16a62d7f3ee5d470d040161d737c91835efaeea525ab62ca"
+      "contentHash": "sha256:239e2f53f3cdfa22d8bf23f970b54ce863410ab538cb8966a89ac7ea3f56e34c"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "nero",
@@ -3386,7 +3593,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
   {
     "surface": "cli",
     "kind": "cli-command",
-    "registryId": "cliCommands:0048",
+    "registryId": "cliCommands:0057",
     "publicId": "provenance",
     "category": "cliCommands",
     "group": "info",
@@ -3395,7 +3602,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.provenance",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:535c33520ac351d73e4a7e1375edafc0158577475c0731b43bf33f52d8dcb0e0"
+      "contentHash": "sha256:65714cb21af3b736d87eff5b78595f2cfad88003045536d94d86bd4c05421875"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "provenance",
@@ -3409,7 +3616,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
   {
     "surface": "cli",
     "kind": "cli-command",
-    "registryId": "cliCommands:0049",
+    "registryId": "cliCommands:0058",
     "publicId": "provider",
     "category": "cliCommands",
     "group": "config",
@@ -3432,7 +3639,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
   {
     "surface": "cli",
     "kind": "cli-command",
-    "registryId": "cliCommands:0050",
+    "registryId": "cliCommands:0059",
     "publicId": "rag",
     "category": "cliCommands",
     "group": "user-toggleable-mod-package",
@@ -3441,7 +3648,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.rag",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:de660e3760b1ca30762f7855e9eb188d405f0614f567990cf76f751b13e0bfbf"
+      "contentHash": "sha256:a72e65ba452c4d108228f7f96396ee8310a773d6f96659a645cb43ec83e08cd3"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "rag",
@@ -3455,7 +3662,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
   {
     "surface": "cli",
     "kind": "cli-command",
-    "registryId": "cliCommands:0051",
+    "registryId": "cliCommands:0060",
     "publicId": "ratings",
     "category": "cliCommands",
     "group": "user-toggleable-mod-package",
@@ -3464,7 +3671,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.ratings",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:aa72371d3cc9d8f20c3d68c39673dfacc642a6ea10ca0c0c1607416c5e8bd2af"
+      "contentHash": "sha256:c60346ff8d2310c874e3eae43f9787affabe3c9406b414af741b9091c8c70fb3"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "ratings",
@@ -3478,7 +3685,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
   {
     "surface": "cli",
     "kind": "cli-command",
-    "registryId": "cliCommands:0052",
+    "registryId": "cliCommands:0061",
     "publicId": "ratings purge-unknown",
     "category": "cliCommands",
     "group": "user-toggleable-mod-package",
@@ -3487,7 +3694,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.ratings",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:aa72371d3cc9d8f20c3d68c39673dfacc642a6ea10ca0c0c1607416c5e8bd2af"
+      "contentHash": "sha256:c60346ff8d2310c874e3eae43f9787affabe3c9406b414af741b9091c8c70fb3"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "ratings purge-unknown",
@@ -3501,7 +3708,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
   {
     "surface": "cli",
     "kind": "cli-command",
-    "registryId": "cliCommands:0053",
+    "registryId": "cliCommands:0062",
     "publicId": "research",
     "category": "cliCommands",
     "group": "user-toggleable-mod-package",
@@ -3510,7 +3717,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.research",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:ee2914b147ee928cedb29b1502c1128c171b3b9dfba8c47bceb4561662135470"
+      "contentHash": "sha256:af23ed75afe55ba2aff479a8fef56a4df10535846616434eaef443dbb3dfc5ee"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "research",
@@ -3524,7 +3731,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
   {
     "surface": "cli",
     "kind": "cli-command",
-    "registryId": "cliCommands:0054",
+    "registryId": "cliCommands:0063",
     "publicId": "review",
     "category": "cliCommands",
     "group": "execution",
@@ -3533,7 +3740,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.review",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:df7e665c5e9839b74d39efb5839d040ccfbce92f260e9141d5da1b6b9f78d1ce"
+      "contentHash": "sha256:67f0323cd29425b5fd84c909bd03ecb332442f1ff23aa6235063db5f1471066e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "review",
@@ -3547,7 +3754,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
   {
     "surface": "cli",
     "kind": "cli-command",
-    "registryId": "cliCommands:0055",
+    "registryId": "cliCommands:0064",
     "publicId": "room",
     "category": "cliCommands",
     "group": "user-toggleable-mod-package",
@@ -3556,7 +3763,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.rooms",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:6c86fd6748cc51bacb58c324d5351320f4ebd3924d16ce54dd40fb9fccb70b4c"
+      "contentHash": "sha256:d17df2853723a374535d8ad167b26336ae5df93d6cba0589ae1964580cfc69a0"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "room",
@@ -3570,7 +3777,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
   {
     "surface": "cli",
     "kind": "cli-command",
-    "registryId": "cliCommands:0056",
+    "registryId": "cliCommands:0065",
     "publicId": "sanitize",
     "category": "cliCommands",
     "group": "user-toggleable-mod-package",
@@ -3579,7 +3786,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.sanitize",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:7f7d242890ac79e4a20420361ca790733a57dc6009a5b2243d0dd6eb48f6f0ab"
+      "contentHash": "sha256:2323a7843ce66657f29c4bc180799bf724abd416ea1a834858605e9788e0d5da"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "sanitize",
@@ -3593,7 +3800,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
   {
     "surface": "cli",
     "kind": "cli-command",
-    "registryId": "cliCommands:0057",
+    "registryId": "cliCommands:0066",
     "publicId": "serve",
     "category": "cliCommands",
     "group": "user-toggleable-mod-package",
@@ -3602,7 +3809,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.browser",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:ea987228c5e9d800468722ccd4d439aa88de23b871cce21cca8106c8ae61c44b"
+      "contentHash": "sha256:fb3148399819008037f2e4486f990a338195b422c4c4e5078f7f76b8a3fea3eb"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "serve",
@@ -3616,7 +3823,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
   {
     "surface": "cli",
     "kind": "cli-command",
-    "registryId": "cliCommands:0058",
+    "registryId": "cliCommands:0067",
     "publicId": "synthesis",
     "category": "cliCommands",
     "group": "user-toggleable-mod-package",
@@ -3625,7 +3832,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.synthesis",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:741ca9ee5f0a7450a020797a70239407b7eca140a7ca9f5145f41a53593ef4a0"
+      "contentHash": "sha256:7203318d949042c7cc16b9665327da7011a93fbffdd7ab5f655a4e7ea26363cc"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "synthesis",
@@ -3639,7 +3846,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
   {
     "surface": "cli",
     "kind": "cli-command",
-    "registryId": "cliCommands:0059",
+    "registryId": "cliCommands:0068",
     "publicId": "team-brainstorm",
     "category": "cliCommands",
     "group": "competition",
@@ -3648,7 +3855,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.team-brainstorm",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:dc7940bdfca3b10f91634c89382de849b6c52d6319703d465d093879bc3f4878"
+      "contentHash": "sha256:9c1765b50a4d8d4595ed5043595cf06863913cf682522c440c4fb0f11fe3e6ee"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "team-brainstorm",
@@ -3662,7 +3869,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
   {
     "surface": "cli",
     "kind": "cli-command",
-    "registryId": "cliCommands:0060",
+    "registryId": "cliCommands:0069",
     "publicId": "team-forge",
     "category": "cliCommands",
     "group": "competition",
@@ -3671,7 +3878,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.team-forge",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:64f0905a0f29ce18ba9d3f6a6359d7005c3c1b95621927ec530be2efb0be0f82"
+      "contentHash": "sha256:33aac5bf91621407d3061365c19ba08c8d36a2b08cf25d940075ed904e6c6fff"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "team-forge",
@@ -3685,7 +3892,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
   {
     "surface": "cli",
     "kind": "cli-command",
-    "registryId": "cliCommands:0061",
+    "registryId": "cliCommands:0070",
     "publicId": "team-tribunal",
     "category": "cliCommands",
     "group": "competition",
@@ -3694,7 +3901,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.team-tribunal",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:7acf17bffc9ea40f5af69f5c4a1783cdf059a262871f853e974e7080b51342a6"
+      "contentHash": "sha256:e13e87eb355ac789881c6bb1c57a175080813a2caa5e54009b93a422db054edc"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "team-tribunal",
@@ -3708,7 +3915,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
   {
     "surface": "cli",
     "kind": "cli-command",
-    "registryId": "cliCommands:0062",
+    "registryId": "cliCommands:0071",
     "publicId": "think",
     "category": "cliCommands",
     "group": "user-toggleable-mod-package",
@@ -3717,7 +3924,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.think",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:900de9cd07ca42ff0021e92a0f877307fe6b7af69b71ac8f633ed27a485ce010"
+      "contentHash": "sha256:b4515df5bc683995c9d153a92f8d4b856c04572285bedbf130eb0628069d9d42"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "think",
@@ -3731,7 +3938,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
   {
     "surface": "cli",
     "kind": "cli-command",
-    "registryId": "cliCommands:0063",
+    "registryId": "cliCommands:0072",
     "publicId": "tribunal",
     "category": "cliCommands",
     "group": "competition",
@@ -3740,7 +3947,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.tribunal",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:cd2bf6aec1943b8fe7b9f894edfb49a53089afdee178a3af450a8f916ad25607"
+      "contentHash": "sha256:535c3a45771de0b994fa3ff36375d6e9df72c3f5c7f6bf2c2e1a0cfef126f72b"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "tribunal",
@@ -3754,7 +3961,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
   {
     "surface": "cli",
     "kind": "cli-command",
-    "registryId": "cliCommands:0064",
+    "registryId": "cliCommands:0073",
     "publicId": "update",
     "category": "cliCommands",
     "group": "info",
@@ -3777,7 +3984,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
   {
     "surface": "cli",
     "kind": "cli-command",
-    "registryId": "cliCommands:0065",
+    "registryId": "cliCommands:0074",
     "publicId": "upgrade",
     "category": "cliCommands",
     "group": "minimal-kernel-machinery",
@@ -3801,7 +4008,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
   {
     "surface": "cli",
     "kind": "cli-command",
-    "registryId": "cliCommands:0066",
+    "registryId": "cliCommands:0075",
     "publicId": "worktree",
     "category": "cliCommands",
     "group": "utility",
@@ -3810,7 +4017,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.worktrees",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:285184da88ac46d7394a11861ef559ec2235718d57a43605a2d8484bf99f4104"
+      "contentHash": "sha256:c46eefd3a1cbe2fd615e2c36a3e4845d964e64fef03786efb0165944f3e32fee"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "worktree",
@@ -3824,7 +4031,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
   {
     "surface": "cli",
     "kind": "cli-command",
-    "registryId": "cliCommands:0067",
+    "registryId": "cliCommands:0076",
     "publicId": "wt",
     "category": "cliCommands",
     "group": "user-toggleable-mod-package",
@@ -3834,7 +4041,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.worktrees",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:285184da88ac46d7394a11861ef559ec2235718d57a43605a2d8484bf99f4104"
+      "contentHash": "sha256:c46eefd3a1cbe2fd615e2c36a3e4845d964e64fef03786efb0165944f3e32fee"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "wt",
@@ -4317,7 +4524,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.rag",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:de660e3760b1ca30762f7855e9eb188d405f0614f567990cf76f751b13e0bfbf"
+      "contentHash": "sha256:a72e65ba452c4d108228f7f96396ee8310a773d6f96659a645cb43ec83e08cd3"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "ProjectContext",
@@ -4363,7 +4570,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.nero",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:f7e7785d407b6b7a16a62d7f3ee5d470d040161d737c91835efaeea525ab62ca"
+      "contentHash": "sha256:239e2f53f3cdfa22d8bf23f970b54ce863410ab538cb8966a89ac7ea3f56e34c"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "QuickNero",
@@ -4409,7 +4616,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.review",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:df7e665c5e9839b74d39efb5839d040ccfbce92f260e9141d5da1b6b9f78d1ce"
+      "contentHash": "sha256:67f0323cd29425b5fd84c909bd03ecb332442f1ff23aa6235063db5f1471066e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "Review",
@@ -4432,7 +4639,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.rooms",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:6c86fd6748cc51bacb58c324d5351320f4ebd3924d16ce54dd40fb9fccb70b4c"
+      "contentHash": "sha256:d17df2853723a374535d8ad167b26336ae5df93d6cba0589ae1964580cfc69a0"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "RoomJoin",
@@ -4455,7 +4662,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.rooms",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:6c86fd6748cc51bacb58c324d5351320f4ebd3924d16ce54dd40fb9fccb70b4c"
+      "contentHash": "sha256:d17df2853723a374535d8ad167b26336ae5df93d6cba0589ae1964580cfc69a0"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "RoomLeave",
@@ -4478,7 +4685,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.rooms",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:6c86fd6748cc51bacb58c324d5351320f4ebd3924d16ce54dd40fb9fccb70b4c"
+      "contentHash": "sha256:d17df2853723a374535d8ad167b26336ae5df93d6cba0589ae1964580cfc69a0"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "RoomList",
@@ -4501,7 +4708,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.rooms",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:6c86fd6748cc51bacb58c324d5351320f4ebd3924d16ce54dd40fb9fccb70b4c"
+      "contentHash": "sha256:d17df2853723a374535d8ad167b26336ae5df93d6cba0589ae1964580cfc69a0"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "RoomLock",
@@ -4524,7 +4731,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.rooms",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:6c86fd6748cc51bacb58c324d5351320f4ebd3924d16ce54dd40fb9fccb70b4c"
+      "contentHash": "sha256:d17df2853723a374535d8ad167b26336ae5df93d6cba0589ae1964580cfc69a0"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "RoomPost",
@@ -4547,7 +4754,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.rooms",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:6c86fd6748cc51bacb58c324d5351320f4ebd3924d16ce54dd40fb9fccb70b4c"
+      "contentHash": "sha256:d17df2853723a374535d8ad167b26336ae5df93d6cba0589ae1964580cfc69a0"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "RoomRead",
@@ -4570,7 +4777,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.rooms",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:6c86fd6748cc51bacb58c324d5351320f4ebd3924d16ce54dd40fb9fccb70b4c"
+      "contentHash": "sha256:d17df2853723a374535d8ad167b26336ae5df93d6cba0589ae1964580cfc69a0"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "RoomRelease",
@@ -4593,7 +4800,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.rooms",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:6c86fd6748cc51bacb58c324d5351320f4ebd3924d16ce54dd40fb9fccb70b4c"
+      "contentHash": "sha256:d17df2853723a374535d8ad167b26336ae5df93d6cba0589ae1964580cfc69a0"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "RoomWho",
@@ -4639,7 +4846,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.synthesis",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:741ca9ee5f0a7450a020797a70239407b7eca140a7ca9f5145f41a53593ef4a0"
+      "contentHash": "sha256:7203318d949042c7cc16b9665327da7011a93fbffdd7ab5f655a4e7ea26363cc"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "Synthesis",
@@ -4662,7 +4869,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.tribunal",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:cd2bf6aec1943b8fe7b9f894edfb49a53089afdee178a3af450a8f916ad25607"
+      "contentHash": "sha256:535c3a45771de0b994fa3ff36375d6e9df72c3f5c7f6bf2c2e1a0cfef126f72b"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "Tribunal",
@@ -5582,7 +5789,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.ratings",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:aa72371d3cc9d8f20c3d68c39673dfacc642a6ea10ca0c0c1607416c5e8bd2af"
+      "contentHash": "sha256:c60346ff8d2310c874e3eae43f9787affabe3c9406b414af741b9091c8c70fb3"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "leaderboard",
@@ -5651,7 +5858,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.nero",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:f7e7785d407b6b7a16a62d7f3ee5d470d040161d737c91835efaeea525ab62ca"
+      "contentHash": "sha256:239e2f53f3cdfa22d8bf23f970b54ce863410ab538cb8966a89ac7ea3f56e34c"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "nero",
@@ -5858,7 +6065,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.review",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:df7e665c5e9839b74d39efb5839d040ccfbce92f260e9141d5da1b6b9f78d1ce"
+      "contentHash": "sha256:67f0323cd29425b5fd84c909bd03ecb332442f1ff23aa6235063db5f1471066e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "review",
@@ -5996,7 +6203,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.tribunal",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:cd2bf6aec1943b8fe7b9f894edfb49a53089afdee178a3af450a8f916ad25607"
+      "contentHash": "sha256:535c3a45771de0b994fa3ff36375d6e9df72c3f5c7f6bf2c2e1a0cfef126f72b"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "suggest-tribunal",
@@ -6042,7 +6249,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.team-brainstorm",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:dc7940bdfca3b10f91634c89382de849b6c52d6319703d465d093879bc3f4878"
+      "contentHash": "sha256:9c1765b50a4d8d4595ed5043595cf06863913cf682522c440c4fb0f11fe3e6ee"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "team-brainstorm",
@@ -6065,7 +6272,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.team-forge",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:64f0905a0f29ce18ba9d3f6a6359d7005c3c1b95621927ec530be2efb0be0f82"
+      "contentHash": "sha256:33aac5bf91621407d3061365c19ba08c8d36a2b08cf25d940075ed904e6c6fff"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "team-forge",
@@ -6088,7 +6295,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.team-tribunal",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:7acf17bffc9ea40f5af69f5c4a1783cdf059a262871f853e974e7080b51342a6"
+      "contentHash": "sha256:e13e87eb355ac789881c6bb1c57a175080813a2caa5e54009b93a422db054edc"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "team-tribunal",
@@ -6134,7 +6341,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.tribunal",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:cd2bf6aec1943b8fe7b9f894edfb49a53089afdee178a3af450a8f916ad25607"
+      "contentHash": "sha256:535c3a45771de0b994fa3ff36375d6e9df72c3f5c7f6bf2c2e1a0cfef126f72b"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "tribunal",
@@ -6226,7 +6433,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.worktrees",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:285184da88ac46d7394a11861ef559ec2235718d57a43605a2d8484bf99f4104"
+      "contentHash": "sha256:c46eefd3a1cbe2fd615e2c36a3e4845d964e64fef03786efb0165944f3e32fee"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "workspace",
@@ -6945,7 +7152,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.ratings",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:aa72371d3cc9d8f20c3d68c39673dfacc642a6ea10ca0c0c1607416c5e8bd2af"
+      "contentHash": "sha256:c60346ff8d2310c874e3eae43f9787affabe3c9406b414af741b9091c8c70fb3"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "                        — Glicko rankings",
@@ -7014,7 +7221,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.nero",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:f7e7785d407b6b7a16a62d7f3ee5d470d040161d737c91835efaeea525ab62ca"
+      "contentHash": "sha256:239e2f53f3cdfa22d8bf23f970b54ce863410ab538cb8966a89ac7ea3f56e34c"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "                        — toggle Nero mode (adversarial)",
@@ -7106,7 +7313,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.provenance",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:535c33520ac351d73e4a7e1375edafc0158577475c0731b43bf33f52d8dcb0e0"
+      "contentHash": "sha256:65714cb21af3b736d87eff5b78595f2cfad88003045536d94d86bd4c05421875"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "[id] [-f md|json|both] [-o file] — AI-contribution / transparency report",
@@ -7177,7 +7384,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.review",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:df7e665c5e9839b74d39efb5839d040ccfbce92f260e9141d5da1b6b9f78d1ce"
+      "contentHash": "sha256:67f0323cd29425b5fd84c909bd03ecb332442f1ff23aa6235063db5f1471066e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "[with <engine>] [<target>] — code review (uncommitted|branch:NAME|commit:SHA)",
@@ -7269,7 +7476,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.team-brainstorm",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:dc7940bdfca3b10f91634c89382de849b6c52d6319703d465d093879bc3f4878"
+      "contentHash": "sha256:9c1765b50a4d8d4595ed5043595cf06863913cf682522c440c4fb0f11fe3e6ee"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "[2v2|3v3] <question>            — team ideation",
@@ -7292,7 +7499,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.team-forge",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:64f0905a0f29ce18ba9d3f6a6359d7005c3c1b95621927ec530be2efb0be0f82"
+      "contentHash": "sha256:33aac5bf91621407d3061365c19ba08c8d36a2b08cf25d940075ed904e6c6fff"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "[2v2|3v3] <task> test with <cmd> — team code competition",
@@ -7315,7 +7522,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.team-tribunal",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:7acf17bffc9ea40f5af69f5c4a1783cdf059a262871f853e974e7080b51342a6"
+      "contentHash": "sha256:e13e87eb355ac789881c6bb1c57a175080813a2caa5e54009b93a422db054edc"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "[2v2|3v3] [mode] <question>    — team debate",
@@ -7361,7 +7568,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.tribunal",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:cd2bf6aec1943b8fe7b9f894edfb49a53089afdee178a3af450a8f916ad25607"
+      "contentHash": "sha256:535c3a45771de0b994fa3ff36375d6e9df72c3f5c7f6bf2c2e1a0cfef126f72b"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "[mode] <question>        — debate (adversarial|socratic|red-team|steelman|synthesis|postmortem)",
@@ -7432,7 +7639,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.worktrees",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:285184da88ac46d7394a11861ef559ec2235718d57a43605a2d8484bf99f4104"
+      "contentHash": "sha256:c46eefd3a1cbe2fd615e2c36a3e4845d964e64fef03786efb0165944f3e32fee"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "add|remove|list|switch   — manage project repos",
@@ -7457,7 +7664,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.worktrees",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:285184da88ac46d7394a11861ef559ec2235718d57a43605a2d8484bf99f4104"
+      "contentHash": "sha256:c46eefd3a1cbe2fd615e2c36a3e4845d964e64fef03786efb0165944f3e32fee"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "new|list|rm|prune|rehydrate <branch> — isolated per-session git worktrees",
@@ -8822,7 +9029,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.browser",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:ea987228c5e9d800468722ccd4d439aa88de23b871cce21cca8106c8ae61c44b"
+      "contentHash": "sha256:fb3148399819008037f2e4486f990a338195b422c4c4e5078f7f76b8a3fea3eb"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "<task>                   — drive your browser (read/navigate/screenshot/click), result feeds Cesar",
@@ -9434,7 +9641,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.ratings",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:aa72371d3cc9d8f20c3d68c39673dfacc642a6ea10ca0c0c1607416c5e8bd2af"
+      "contentHash": "sha256:c60346ff8d2310c874e3eae43f9787affabe3c9406b414af741b9091c8c70fb3"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "                        — Glicko rankings",
@@ -9528,7 +9735,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.mutate",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:62fdd445503de84ad41300e625f3d577d5aa2dea1176bcc5a5548bd2bda8f5ae"
+      "contentHash": "sha256:5e472671f279b3395151c7e0d581d0bce20dea512536a72bb88bf75aef01d982"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "[path] [--diff <base>] [--test \"<cmd>\"] [--semantic] [--lens security|privacy|perf|ratelimit|concurrency|<text>] — mutation testing: which of your tests are fake?",
@@ -9551,7 +9758,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.naturalize",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:6a77ec3e6f2f99b511befd8c30db1a684404b2cc772a7cb543b7678a48a2c7e6"
+      "contentHash": "sha256:a4affe3b315b32c30c91a73df77e4d34d0ac377190b3c681805405aceefae29d"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "<file> [--author X] [--engine Y] [--min-change N] — sanitize → non-author rewrite → re-scan",
@@ -9577,7 +9784,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.nero",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:f7e7785d407b6b7a16a62d7f3ee5d470d040161d737c91835efaeea525ab62ca"
+      "contentHash": "sha256:239e2f53f3cdfa22d8bf23f970b54ce863410ab538cb8966a89ac7ea3f56e34c"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "[<decision>]             — toggle Nero mode, or challenge a decision (top-rated critic)",
@@ -9767,7 +9974,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.research",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:ee2914b147ee928cedb29b1502c1128c171b3b9dfba8c47bceb4561662135470"
+      "contentHash": "sha256:af23ed75afe55ba2aff479a8fef56a4df10535846616434eaef443dbb3dfc5ee"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "<question> [--count N] [--engine X] — keyless web-grounded cited research (npm/GitHub/MDN/IETF/SO/Wikipedia)",
@@ -9815,7 +10022,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.review",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:df7e665c5e9839b74d39efb5839d040ccfbce92f260e9141d5da1b6b9f78d1ce"
+      "contentHash": "sha256:67f0323cd29425b5fd84c909bd03ecb332442f1ff23aa6235063db5f1471066e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "[with <engine>] [<target>] — code review (uncommitted|branch:NAME|commit:SHA)",
@@ -9838,7 +10045,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.review",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:df7e665c5e9839b74d39efb5839d040ccfbce92f260e9141d5da1b6b9f78d1ce"
+      "contentHash": "sha256:67f0323cd29425b5fd84c909bd03ecb332442f1ff23aa6235063db5f1471066e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "[security|correctness|dryness|performance] [<target>] — multi-role review: each engine a focused lens + overall backstop",
@@ -9887,7 +10094,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.sanitize",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:7f7d242890ac79e4a20420361ca790733a57dc6009a5b2243d0dd6eb48f6f0ab"
+      "contentHash": "sha256:2323a7843ce66657f29c4bc180799bf724abd416ea1a834858605e9788e0d5da"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "<file> [--detect] [--metadata] [--strip] [--out f] — invisible-watermark forensics, deterministic",
@@ -9958,7 +10165,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.synthesis",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:741ca9ee5f0a7450a020797a70239407b7eca140a7ca9f5145f41a53593ef4a0"
+      "contentHash": "sha256:7203318d949042c7cc16b9665327da7011a93fbffdd7ab5f655a4e7ea26363cc"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "<task> [--swaps 2]       — engines draft, swap, improve; judge picks winner",
@@ -9981,7 +10188,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.team-brainstorm",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:dc7940bdfca3b10f91634c89382de849b6c52d6319703d465d093879bc3f4878"
+      "contentHash": "sha256:9c1765b50a4d8d4595ed5043595cf06863913cf682522c440c4fb0f11fe3e6ee"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "[2v2|3v3] <question>            — team ideation",
@@ -10004,7 +10211,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.team-forge",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:64f0905a0f29ce18ba9d3f6a6359d7005c3c1b95621927ec530be2efb0be0f82"
+      "contentHash": "sha256:33aac5bf91621407d3061365c19ba08c8d36a2b08cf25d940075ed904e6c6fff"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "[2v2|3v3] <task> test with <cmd> — team code competition",
@@ -10027,7 +10234,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.team-tribunal",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:7acf17bffc9ea40f5af69f5c4a1783cdf059a262871f853e974e7080b51342a6"
+      "contentHash": "sha256:e13e87eb355ac789881c6bb1c57a175080813a2caa5e54009b93a422db054edc"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "[2v2|3v3] [mode] <question>    — team debate",
@@ -10050,7 +10257,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.think",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:900de9cd07ca42ff0021e92a0f877307fe6b7af69b71ac8f633ed27a485ce010"
+      "contentHash": "sha256:b4515df5bc683995c9d153a92f8d4b856c04572285bedbf130eb0628069d9d42"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "<problem> [--strategy reflexion] [--steps 8] — sequential thinking, one engine",
@@ -10099,7 +10306,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.tribunal",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:cd2bf6aec1943b8fe7b9f894edfb49a53089afdee178a3af450a8f916ad25607"
+      "contentHash": "sha256:535c3a45771de0b994fa3ff36375d6e9df72c3f5c7f6bf2c2e1a0cfef126f72b"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "[mode] <question>        — debate (adversarial|socratic|red-team|steelman|synthesis|postmortem)",
@@ -10145,7 +10352,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.worktrees",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:285184da88ac46d7394a11861ef559ec2235718d57a43605a2d8484bf99f4104"
+      "contentHash": "sha256:c46eefd3a1cbe2fd615e2c36a3e4845d964e64fef03786efb0165944f3e32fee"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "add|remove|list|switch   — manage project repos",
@@ -10168,7 +10375,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.worktrees",
       "version": "0.0.0-slice.5",
-      "contentHash": "sha256:285184da88ac46d7394a11861ef559ec2235718d57a43605a2d8484bf99f4104"
+      "contentHash": "sha256:c46eefd3a1cbe2fd615e2c36a3e4845d964e64fef03786efb0165944f3e32fee"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "                          — list workspaces (shortcut)",

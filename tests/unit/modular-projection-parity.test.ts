@@ -32,7 +32,7 @@ describe('legacy compatibility surface generation', () => {
   it('has byte-for-occurrence parity with every frozen legacy surface catalog', () => {
     const generated = new Set(LEGACY_SURFACE_CATALOG.map(({ payload }) => occurrenceKey(payload.category, payload.publicId, payload.source)));
     const legacy = new Set(projectedCategories.flatMap((category) => inventory.categories[category]!.map(({ id, source }) => occurrenceKey(category, id, source))));
-    expect(generated.size).toBe(440);
+    expect(generated.size).toBe(449);
     expect(generated).toEqual(legacy);
   });
 
@@ -46,7 +46,7 @@ describe('legacy compatibility surface generation', () => {
   it('generates CLI, TUI, MCP, Cesar, and docs from one generation', () => {
     const projections = generateLegacySurfaceProjections();
     expect(Object.fromEntries(Object.entries(projections).map(([surface, projection]) => [surface, projection.entries.length]))).toEqual({
-      cli: 68,
+      cli: 77,
       tui: 237,
       mcp: 33,
       cesar: 99,

@@ -13,6 +13,7 @@ import {
 
 import type {
   FirstPartySurfaceBoot,
+  GeneratedSurfaceCatalogEntry,
   GeneratedSurfaceRuntime,
   Surface,
   SurfaceClient,
@@ -40,7 +41,11 @@ export function modularHostRoot(): string {
 
 export async function initializeProcessSurfaceAuthority(hostRoot = modularHostRoot()): Promise<void> {
   if (boot) return;
-  const candidate = await bootstrapFirstPartySurfaceGeneration({ hostRoot, runtime: compatibilityRuntime });
+  const candidate = await bootstrapFirstPartySurfaceGeneration({
+    hostRoot,
+    runtime: compatibilityRuntime,
+    safeMode: process.env.AGON_MOD_SAFE_MODE === '1',
+  });
   selector = new SurfaceGenerationSelector(candidate.activated.generation);
   boot = candidate;
   clients.clear();
@@ -54,7 +59,7 @@ export async function disposeProcessSurfaceAuthority(): Promise<void> {
 }
 
 export function assertCanonicalSurfaceSelectionCurrent(): void {
-  if (!boot) return;
+  if (!boot || boot.activated.generation.id === 'kernel-safe-mode') return;
   let current: string | null;
   try {
     current = canonicalJson(JSON.parse(readFileSync(boot.pointerPath, 'utf8')));
@@ -89,4 +94,9 @@ export function processSurfacePublicIds(surface: Surface): ReadonlySet<string> {
 export function processSurfaceNames(surface: Surface): ReadonlySet<string> {
   assertCanonicalSurfaceSelectionCurrent();
   return new Set(selector.active.catalog(surface).flatMap(({ publicId, aliases }) => [publicId, ...aliases]));
+}
+
+export function processSurfaceCatalog(surface: Surface): readonly GeneratedSurfaceCatalogEntry[] {
+  assertCanonicalSurfaceSelectionCurrent();
+  return selector.active.catalog(surface);
 }

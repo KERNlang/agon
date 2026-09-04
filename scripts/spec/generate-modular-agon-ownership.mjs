@@ -76,7 +76,7 @@ for (const [name, dependencies] of Object.entries(mods)) {
 }
 
 const kernelSurface = new Set([
-  'call', 'config', 'doctor', 'engine', 'login', 'models', 'provider', 'update', 'upgrade',
+  'call', 'config', 'doctor', 'engine', 'login', 'mod', 'models', 'provider', 'update', 'upgrade',
   '/btw', '/cesar', '/cesar-hints', '/cesar-report', '/chats', '/checkpoints', '/clean', '/clear', '/compact', '/config', '/cp', '/doctor', '/engines', '/exit', '/help', '/harness-replay', '/img', '/init', '/mcp', '/mode', '/models', '/nogate', '/permissions', '/provider', '/raw', '/run', '/status', '/tokens',
   'btw', 'cesar', 'cesar-hints', 'cesar-report', 'chat', 'chats', 'chats-resume', 'checkpoints', 'clear', 'compact', 'config', 'cp', 'discover', 'doctor', 'engines', 'exit', 'harness-replay', 'help', 'img', 'init', 'mcp', 'models', 'nogate', 'permissions', 'provider', 'raw', 'run', 'slash-list', 'status', 'tokens', 'unknown', 'use',
   'AgonBash', 'AgonEdit', 'AgonWrite', 'DeliverAnswer', 'ReportConfidence',

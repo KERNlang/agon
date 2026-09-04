@@ -79,11 +79,11 @@ export const MANIFEST = validateManifest({
   "contributes": {
     "cliCommands": [
       {
-        "id": "cliCommands:0066",
+        "id": "cliCommands:0075",
         "aliases": []
       },
       {
-        "id": "cliCommands:0067",
+        "id": "cliCommands:0076",
         "aliases": []
       }
     ],
@@ -187,14 +187,14 @@ export const SOURCE_OCCURRENCES = Object.freeze([
 ]);
 export const COMPATIBILITY_CONTRIBUTIONS = Object.freeze([
   {
-    "id": "cliCommands:0066",
+    "id": "cliCommands:0075",
     "publicId": "worktree",
     "registryKind": "cli-command",
     "category": "cliCommands",
     "source": "packages/cli/src/lazy-commands.ts:322"
   },
   {
-    "id": "cliCommands:0067",
+    "id": "cliCommands:0076",
     "publicId": "wt",
     "registryKind": "cli-command",
     "category": "cliCommands",
@@ -254,8 +254,8 @@ export function createFirstPartyCompatibilityMod(runtime: FirstPartyCompatibilit
     apiVersion: '1' as const,
     async activate(registrar: Registrar): Promise<Dispose> {
       const disposers: Dispose[] = [];
-      disposers.push(registrar.command('cli', { id: "cliCommands:0066", description: "worktree compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "worktree", input, context) }));
-      disposers.push(registrar.command('cli', { id: "cliCommands:0067", description: "wt compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "wt", input, context) }));
+      disposers.push(registrar.command('cli', { id: "cliCommands:0075", description: "worktree compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "worktree", input, context) }));
+      disposers.push(registrar.command('cli', { id: "cliCommands:0076", description: "wt compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "wt", input, context) }));
       disposers.push(registrar.intent({ id: "intentVariants:0067", description: "workspace compatibility contribution", inputSchema, parse: (input) => runtime.parseIntent("workspace", input), run: (input, context) => runtime.command('intent', "workspace", input, context) }));
       disposers.push(registrar.command('tui', { id: "builtinCommandMetadata:0051", description: "workspace compatibility contribution", inputSchema, run: (input, context) => runtime.command('tui-action', "workspace", input, context) }));
       disposers.push(registrar.command('tui', { id: "builtinCommandMetadata:0052", description: "worktree compatibility contribution", inputSchema, run: (input, context) => runtime.command('tui-action', "worktree", input, context) }));

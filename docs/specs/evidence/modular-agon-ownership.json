@@ -291,6 +291,78 @@
     },
     {
       "category": "cliCommands",
+      "id": "mod approve",
+      "source": "packages/cli/src/commands/mod.ts:312",
+      "class": "minimal-kernel-machinery",
+      "package": "@kernlang/agon-kernel",
+      "rule": "exact-kernel-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "mod disable",
+      "source": "packages/cli/src/commands/mod.ts:313",
+      "class": "minimal-kernel-machinery",
+      "package": "@kernlang/agon-kernel",
+      "rule": "exact-kernel-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "mod enable",
+      "source": "packages/cli/src/commands/mod.ts:313",
+      "class": "minimal-kernel-machinery",
+      "package": "@kernlang/agon-kernel",
+      "rule": "exact-kernel-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "mod inspect",
+      "source": "packages/cli/src/commands/mod.ts:312",
+      "class": "minimal-kernel-machinery",
+      "package": "@kernlang/agon-kernel",
+      "rule": "exact-kernel-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "mod list",
+      "source": "packages/cli/src/commands/mod.ts:312",
+      "class": "minimal-kernel-machinery",
+      "package": "@kernlang/agon-kernel",
+      "rule": "exact-kernel-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "mod recover",
+      "source": "packages/cli/src/commands/mod.ts:313",
+      "class": "minimal-kernel-machinery",
+      "package": "@kernlang/agon-kernel",
+      "rule": "exact-kernel-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "mod revoke",
+      "source": "packages/cli/src/commands/mod.ts:312",
+      "class": "minimal-kernel-machinery",
+      "package": "@kernlang/agon-kernel",
+      "rule": "exact-kernel-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "mod trust",
+      "source": "packages/cli/src/commands/mod.ts:312",
+      "class": "minimal-kernel-machinery",
+      "package": "@kernlang/agon-kernel",
+      "rule": "exact-kernel-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "mod untrust",
+      "source": "packages/cli/src/commands/mod.ts:312",
+      "class": "minimal-kernel-machinery",
+      "package": "@kernlang/agon-kernel",
+      "rule": "exact-kernel-surface"
+    },
+    {
+      "category": "cliCommands",
       "id": "models",
       "source": "packages/cli/src/lazy-commands.ts:302",
       "class": "minimal-kernel-machinery",
@@ -4188,7 +4260,7 @@
     {
       "category": "resultAndEnvelopeTypes",
       "id": "DispatchResult",
-      "source": "packages/cli/src/signals/dispatch.ts:50",
+      "source": "packages/cli/src/signals/dispatch.ts:52",
       "class": "hidden-shared-support-package",
       "package": "@kernlang/agon-support-engine-runtime",
       "rule": "engine-runtime-rule"
@@ -4636,7 +4708,7 @@
     {
       "category": "resultAndEnvelopeTypes",
       "id": "PythonDoctorResult",
-      "source": "packages/cli/src/commands/doctor.ts:172",
+      "source": "packages/cli/src/commands/doctor.ts:211",
       "class": "minimal-kernel-machinery",
       "package": "@kernlang/agon-kernel",
       "rule": "kernel-contract-default"
@@ -4692,7 +4764,7 @@
     {
       "category": "resultAndEnvelopeTypes",
       "id": "ReviewEvent",
-      "source": "packages/cli/src/blocks/controls.tsx:20",
+      "source": "packages/cli/src/blocks/controls.tsx:36",
       "class": "user-toggleable-mod-package",
       "package": "@kernlang/agon-mod-review",
       "rule": "semantic-source-rule"

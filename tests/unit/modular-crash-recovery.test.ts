@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DurableModHost, type HostFaultPoint } from '../../packages/mod-kernel/src/durable-host.js';
 import { hostLock } from '../helpers/modular-host.js';
+import { rollbackGeneration } from '../../packages/mod-kernel/src/host-rollback.js';
 
 async function fixture(): Promise<string> { return mkdtemp(join(tmpdir(), 'agon-mod-crash-')); }
 
@@ -41,6 +42,15 @@ describe('durable host crash and safe-mode recovery', () => {
     const boot = await host.boot();
     expect(boot.mode).toBe('safe-mode');
     expect(boot.pointer?.generation).toBe(1);
+  });
+
+  it('recovers an explicitly selected verified generation from a malformed pointer without importing mods', async () => {
+    const root = await fixture(); const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    await host.commitGeneration({ operation: 'install', lock: hostLock('a'), desiredState: {}, installedIndex: {} });
+    await host.commitGeneration({ operation: 'update', lock: hostLock('b'), desiredState: {}, installedIndex: {} });
+    await writeFile(host.paths.current, '{malformed');
+    const recovered = await rollbackGeneration(host, 1, { allowInvalidCurrent: true });
+    expect(recovered.pointer.generation).toBe(1); expect((await host.boot()).mode).toBe('normal');
   });
 
   it('boots kernel-only when the pointer and every immutable generation are corrupt', async () => {

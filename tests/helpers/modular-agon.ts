@@ -31,7 +31,7 @@ export function manifest(
       configKeys: [],
       generatedDocs: [],
     },
-    pack: { include: ['dist/index.js', 'dist/index.d.ts', 'agon.mod.json'], executable: [] },
+    pack: { include: ['dist/index.js', 'dist/index.d.ts', 'agon.mod.json', 'package.json'], executable: [] },
     ...overrides,
   };
 }

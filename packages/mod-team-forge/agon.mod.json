@@ -81,7 +81,7 @@
   "contributes": {
     "cliCommands": [
       {
-        "id": "cliCommands:0060",
+        "id": "cliCommands:0069",
         "aliases": []
       }
     ],

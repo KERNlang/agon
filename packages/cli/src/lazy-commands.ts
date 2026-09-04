@@ -1,5 +1,7 @@
 import type { CommandDef, CommandMeta, SubCommandsDef } from 'citty';
-import { assertProcessSurfaceAvailable, processSurfacePublicIds } from './surface-authority-runtime.js';
+import type { CommandContribution, CommandResult, Json, ModPlatform } from '@kernlang/agon-mod-api';
+import { assertContributionInput } from '@kernlang/agon-kernel';
+import { assertProcessSurfaceAvailable, processSurfaceCatalog, processSurfaceClient, processSurfacePublicIds } from './surface-authority-runtime.js';
 
 // ── Lazy citty subcommand loading ──────────────────────────────────────────
 // Every `agon <anything>` — even `--help` — used to statically import all
@@ -94,6 +96,57 @@ function lazyCommand(
   }
 
   return def;
+}
+
+function externalGeneratedCommand(publicId: string, description: string): CommandDef {
+  return {
+    meta: { name: publicId, description },
+    args: {
+      input: {
+        type: 'positional',
+        required: false,
+        description: 'Optional JSON object passed to the mod command',
+      },
+    },
+    run: async (ctx) => {
+      const record = processSurfaceClient('cli').assertAvailable(publicId);
+      const contribution = record.payload as CommandContribution;
+      let input: Json = {};
+      if (typeof ctx.args.input === 'string' && ctx.args.input.trim()) {
+        const parsed = JSON.parse(ctx.args.input) as unknown;
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          throw new TypeError('external mod command input must be a JSON object');
+        }
+        input = parsed as Json;
+      }
+      assertContributionInput(contribution.inputSchema ?? { type: 'object', additionalProperties: true }, input);
+      const platform = `${process.platform}-${process.arch === 'x64' ? 'x64' : process.arch}` as ModPlatform;
+      if (!['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'].includes(platform)) {
+        throw new TypeError(`unsupported mod platform: ${platform}`);
+      }
+      const output = await contribution.run(input, {
+        invocationId: `cli:${process.pid}:${Date.now()}`,
+        cwd: process.cwd(),
+        platform,
+        signal: new AbortController().signal,
+        config: {},
+      });
+      let result: CommandResult = { exitCode: 0 };
+      if (output && typeof output === 'object' && Symbol.asyncIterator in output) {
+        for await (const event of output) {
+          if (event.type === 'text') process.stdout.write(event.text);
+          else if (event.type === 'progress') process.stderr.write(`${event.message}\n`);
+          else if (event.type === 'result') result = event.result;
+        }
+      } else {
+        result = output as CommandResult;
+      }
+      if (result.stdout) process.stdout.write(result.stdout);
+      if (result.stderr) process.stderr.write(result.stderr);
+      if (result.result !== undefined) console.log(typeof result.result === 'string' ? result.result : JSON.stringify(result.result, null, 2));
+      if (result.exitCode !== 0) process.exitCode = result.exitCode;
+    },
+  };
 }
 
 // Commands whose real implementation nests further subCommands of its own
@@ -280,6 +333,10 @@ const update = lazyCommand(() => import('./commands/update.js'), 'updateCommand'
   name: 'update',
   description: 'Update Agon to the latest (or a specific) version from npm. Streams npm output live and exits 0 on success.',
 });
+const mod = lazyCommand(() => import('./commands/mod.js'), 'modCommand', {
+  name: 'mod',
+  description: 'Inspect and manage modular Agon packages',
+}, { hasSubCommands: true });
 
 // Same shape as the subCommands map index.ts used to build directly from
 // static imports — `worktree`/`wt` and `update`/`upgrade` intentionally
@@ -333,10 +390,23 @@ const legacyLazyCommandImplementations: SubCommandsDef = {
   login,
   update,
   upgrade: update,
+  mod,
 };
 
 export function createGeneratedLazySubCommands(available: ReadonlySet<string> = processSurfacePublicIds('cli')): SubCommandsDef {
-  return Object.fromEntries(Object.entries(legacyLazyCommandImplementations).filter(([, command]) => available.has(String(((command as CommandDef).meta as CommandMeta).name))));
+  const commands = Object.fromEntries(Object.entries(legacyLazyCommandImplementations)
+    .filter(([, command]) => available.has(String(((command as CommandDef).meta as CommandMeta).name))));
+  for (const entry of processSurfaceCatalog('cli')) {
+    if (!entry.category.startsWith('external:')) continue;
+    if (commands[entry.publicId]) continue;
+    const command = externalGeneratedCommand(entry.publicId, entry.description);
+    commands[entry.publicId] = command;
+    for (const alias of entry.aliases) {
+      if (commands[alias]) throw new TypeError(`generated CLI alias collides with an existing command: ${alias}`);
+      commands[alias] = command;
+    }
+  }
+  return commands;
 }
 
 export const lazySubCommands: SubCommandsDef = createGeneratedLazySubCommands();

@@ -42,9 +42,9 @@ function generation(id: string, disabledOwnerIds: readonly string[] = []): Surfa
 describe('generated surface generation', () => {
   it('builds one immutable owner-tagged generation for all five surfaces', () => {
     const subject = generation('generated:test');
-    expect(subject.catalog()).toHaveLength(440);
+    expect(subject.catalog()).toHaveLength(449);
     expect(Object.fromEntries(['cli', 'tui', 'mcp', 'cesar', 'docs'].map((surface) => [surface, subject.project(surface as Surface).entries.length]))).toEqual({
-      cli: 68,
+      cli: 77,
       tui: 237,
       mcp: 33,
       cesar: 99,

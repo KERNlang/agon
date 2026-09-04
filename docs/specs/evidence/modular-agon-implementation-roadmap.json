@@ -81,7 +81,10 @@
         "packages/cli/src/cesar/tools.ts:55",
         "packages/cli/src/cesar/turn-state.ts:93",
         "packages/cli/src/commands/doctor.ts:172",
+        "packages/cli/src/commands/doctor.ts:211",
         "packages/cli/src/commands/install-agent-prompts.ts:1",
+        "packages/cli/src/commands/mod.ts:312",
+        "packages/cli/src/commands/mod.ts:313",
         "packages/cli/src/commands/models.ts:128",
         "packages/cli/src/commands/models.ts:150",
         "packages/cli/src/commands/models.ts:17",
@@ -549,6 +552,7 @@
         "packages/cli/src/cesar/tools.ts:56",
         "packages/cli/src/commands/login.ts:20",
         "packages/cli/src/signals/dispatch.ts:50",
+        "packages/cli/src/signals/dispatch.ts:52",
         "packages/cli/src/signals/dispatch/intent-orchestration.ts:425",
         "packages/cli/src/signals/dispatch/intent-orchestration.ts:43",
         "packages/cli/src/signals/dispatch/intent-orchestration.ts:431",
@@ -1064,10 +1068,10 @@
       "extractionSources": [
         "packages/cli/src/lazy-commands.ts:317",
         "packages/core/src/rag/embed.ts:15",
+        "packages/mcp/src/project-context.ts:4",
         "packages/mod-rag/src/store.ts",
         "packages/mod-rag/src/types.ts:36",
-        "packages/mod-rag/src/types.ts:44",
-        "packages/mcp/src/project-context.ts:4"
+        "packages/mod-rag/src/types.ts:44"
       ],
       "migrationOrder": 15,
       "migrationSlice": "S5",
@@ -1688,6 +1692,7 @@
       "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
       "extractionSources": [
         "packages/cli/src/blocks/controls.tsx:20",
+        "packages/cli/src/blocks/controls.tsx:36",
         "packages/cli/src/cesar/routing.ts:17",
         "packages/cli/src/cesar/routing.ts:19",
         "packages/cli/src/cesar/routing.ts:25",

@@ -84,7 +84,7 @@ export const MANIFEST = validateManifest({
   "contributes": {
     "cliCommands": [
       {
-        "id": "cliCommands:0060",
+        "id": "cliCommands:0069",
         "aliases": []
       }
     ],
@@ -195,7 +195,7 @@ export const COMPATIBILITY_CONTRIBUTIONS = Object.freeze([
     "source": "packages/core/src/cesar/plan.ts:52"
   },
   {
-    "id": "cliCommands:0060",
+    "id": "cliCommands:0069",
     "publicId": "team-forge",
     "registryKind": "cli-command",
     "category": "cliCommands",
@@ -243,7 +243,7 @@ export function createFirstPartyCompatibilityMod(runtime: FirstPartyCompatibilit
       const disposers: Dispose[] = [];
       disposers.push(registrar.tool('cesar', { id: "cesarRoutes:0062", description: "team-forge compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('cesar-tool', "team-forge", input, context) }));
       disposers.push(registrar.tool('cesar', { id: "cesarRoutes:0064", description: "teamforge compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('cesar-tool', "teamforge", input, context) }));
-      disposers.push(registrar.command('cli', { id: "cliCommands:0060", description: "team-forge compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "team-forge", input, context) }));
+      disposers.push(registrar.command('cli', { id: "cliCommands:0069", description: "team-forge compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "team-forge", input, context) }));
       disposers.push(registrar.intent({ id: "intentVariants:0060", description: "team-forge compatibility contribution", inputSchema, parse: (input) => runtime.parseIntent("team-forge", input), run: (input, context) => runtime.command('intent', "team-forge", input, context) }));
       disposers.push(registrar.command('tui', { id: "builtinCommandMetadata:0045", description: "team-forge compatibility contribution", inputSchema, run: (input, context) => runtime.command('tui-action', "team-forge", input, context) }));
       disposers.push(registrar.command('tui', { id: "tuiSlashCommands:0065", description: "/team-forge compatibility contribution", inputSchema, run: (input, context) => runtime.command('tui-action', "/team-forge", input, context) }));

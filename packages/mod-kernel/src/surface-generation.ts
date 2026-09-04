@@ -178,7 +178,8 @@ export class SurfaceGeneration {
   }
 
   catalog(surface?: Surface): readonly GeneratedSurfaceCatalogEntry[] {
-    return surface ? Object.freeze(this.#catalog.filter((entry) => entry.surface === surface)) : this.#catalog;
+    const registered = this.#catalog.filter((entry) => this.registry.resolve(entry.kind, entry.registryId));
+    return Object.freeze(surface ? registered.filter((entry) => entry.surface === surface) : registered);
   }
 
   resolvePublic(surface: Surface, publicId: string, expectedGeneration = this.id): readonly RegistryRecord[] {

@@ -83,7 +83,7 @@ export const MANIFEST = validateManifest({
   "contributes": {
     "cliCommands": [
       {
-        "id": "cliCommands:0050",
+        "id": "cliCommands:0059",
         "aliases": []
       }
     ],
@@ -178,7 +178,7 @@ export const SOURCE_OCCURRENCES = Object.freeze([
 ]);
 export const COMPATIBILITY_CONTRIBUTIONS = Object.freeze([
   {
-    "id": "cliCommands:0050",
+    "id": "cliCommands:0059",
     "publicId": "rag",
     "registryKind": "cli-command",
     "category": "cliCommands",
@@ -231,7 +231,7 @@ export function createFirstPartyCompatibilityMod(runtime: FirstPartyCompatibilit
     apiVersion: '1' as const,
     async activate(registrar: Registrar): Promise<Dispose> {
       const disposers: Dispose[] = [];
-      disposers.push(registrar.command('cli', { id: "cliCommands:0050", description: "rag compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "rag", input, context) }));
+      disposers.push(registrar.command('cli', { id: "cliCommands:0059", description: "rag compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "rag", input, context) }));
       disposers.push(registrar.tool('mcp', { id: "mcpTools:0017", description: "ProjectContext compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('mcp-tool', "ProjectContext", input, context) }));
       disposers.push(registrar.resultType({ id: "resultAndEnvelopeTypes:0102", schema: resultSchema, readableVersions: '>=0.2.0', render: (payload) => runtime.render("RagEmbedResult", payload) }));
       disposers.push(registrar.resultType({ id: "resultAndEnvelopeTypes:0103", schema: resultSchema, readableVersions: '>=0.2.0', render: (payload) => runtime.render("RagIndexResult", payload) }));

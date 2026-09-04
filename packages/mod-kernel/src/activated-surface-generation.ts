@@ -16,7 +16,17 @@ export interface FirstPartySurfacePackage {
 
 export interface ActivatedSurfaceGeneration {
   readonly generation: SurfaceGeneration;
+  readonly failedOwnerIds: readonly string[];
   dispose(): Promise<void>;
+}
+
+async function disposeReverse(disposers: readonly Dispose[], context: string): Promise<void> {
+  const failures: unknown[] = [];
+  for (const dispose of [...disposers].reverse()) {
+    try { await dispose(); }
+    catch (error) { failures.push(error); }
+  }
+  if (failures.length > 0) throw new AggregateError(failures, context);
 }
 
 /** Build one generation by activating the supplied physical mod packages. */
@@ -26,7 +36,9 @@ export async function activateFirstPartySurfaceGeneration(options: {
   readonly catalog: readonly GeneratedSurfaceCatalogEntry[];
   readonly runtime: GeneratedSurfaceRuntime;
   readonly packages: readonly FirstPartySurfacePackage[];
+  readonly providedDependencyIds?: readonly string[];
   readonly disabledOwnerIds?: readonly string[];
+  readonly isolatePackageFailure?: (candidate: FirstPartySurfacePackage, error: unknown) => boolean | Promise<boolean>;
 }): Promise<ActivatedSurfaceGeneration> {
   const disabled = new Set(options.disabledOwnerIds ?? []);
   const physicalOwnerIds = new Set(options.packages.map(({ manifest }) => manifest.id));
@@ -44,30 +56,52 @@ export async function activateFirstPartySurfaceGeneration(options: {
     syntheticOwnerIds,
   });
   const disposers: Dispose[] = [];
+  const failedOwnerIds = new Set<string>();
   try {
-    for (const candidate of orderPhysicalSurfacePackages(options.packages)) {
+    for (const candidate of orderPhysicalSurfacePackages(options.packages, options.providedDependencyIds)) {
       if (disabled.has(candidate.manifest.id)) continue;
+      const failedDependencies = candidate.manifest.dependencies.required.map(({ id }) => id).filter((id) => failedOwnerIds.has(id));
+      if (failedDependencies.length > 0) {
+        const error = new Error(`physical surface package dependency failed: ${candidate.manifest.id} requires ${failedDependencies.join(', ')}`);
+        if (!options.isolatePackageFailure || !await options.isolatePackageFailure(candidate, error)) throw error;
+        failedOwnerIds.add(candidate.manifest.id);
+        continue;
+      }
       if (!activeCatalog.some(({ owner }) => owner.id === candidate.manifest.id)) {
         throw new Error(`physical surface package has no active catalog owner: ${candidate.manifest.id}`);
       }
       const session = generation.registry.beginRegistration(candidate.manifest);
+      let candidateDispose: Dispose | void = undefined;
       try {
-        const dispose = await candidate.mod.activate(session.registrar, candidate.services);
+        candidateDispose = await candidate.mod.activate(session.registrar, candidate.services);
         session.commit();
-        if (dispose) disposers.push(dispose);
+        if (candidateDispose) disposers.push(candidateDispose);
+        candidateDispose = undefined;
       } catch (error) {
-        await session.rollback();
-        throw error;
+        const cleanupFailures: unknown[] = [];
+        if (candidateDispose) {
+          try { await candidateDispose(); }
+          catch (cleanupError) { cleanupFailures.push(cleanupError); }
+        }
+        try { await session.rollback(); }
+        catch (cleanupError) { cleanupFailures.push(cleanupError); }
+        if (cleanupFailures.length > 0) {
+          throw new AggregateError([error, ...cleanupFailures], `failed to activate and clean up ${candidate.manifest.id}`);
+        }
+        if (!options.isolatePackageFailure || !await options.isolatePackageFailure(candidate, error)) throw error;
+        failedOwnerIds.add(candidate.manifest.id);
       }
     }
   } catch (error) {
-    for (const dispose of [...disposers].reverse()) await dispose();
+    try { await disposeReverse(disposers, 'one or more activated mods failed to dispose after activation failure'); }
+    catch (cleanupError) { throw new AggregateError([error, cleanupError], 'surface generation activation and cleanup failed'); }
     throw error;
   }
   return Object.freeze({
     generation,
+    failedOwnerIds: Object.freeze([...failedOwnerIds].sort()),
     dispose: async () => {
-      for (const dispose of [...disposers].reverse()) await dispose();
+      await disposeReverse(disposers, 'one or more activated mods failed to dispose');
     },
   });
 }

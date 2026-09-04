@@ -5,8 +5,14 @@ import { isAbsolute, relative, resolve } from 'node:path';
 import { validateManifest } from '@kernlang/agon-mod-api';
 import type { ModManifest } from '@kernlang/agon-mod-api';
 import { ImmutableMap } from './readonly-map.js';
+import { readExactBounded } from './bounded-file-read.js';
+import { FOLDER_MOD_LIMITS } from './folder-mod-limits.js';
+import { sha256Canonical } from './lock.js';
 
 const MAX_MANIFEST_BYTES = 256 * 1024;
+const MAX_JSON_DEPTH = 32;
+const MAX_JSON_KEYS = 4096;
+const DANGEROUS_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 
 export class StaticDiscoveryError extends Error {
   readonly code = 'INVALID_STATIC_MOD_PACKAGE';
@@ -33,16 +39,19 @@ async function requiredRealpath(path: string, description: string): Promise<stri
   }
 }
 
-export async function assertContainedPackagePath(packageRoot: string, packagePath: string): Promise<string> {
+async function assertContainedFromCanonicalRoot(canonicalRoot: string, packagePath: string): Promise<string> {
   if (isAbsolute(packagePath)) throw new StaticDiscoveryError('absolute package path is forbidden', { packagePath });
   if (packagePath.split(/[\\/]/).some((segment) => segment === '..')) throw new StaticDiscoveryError('package path traversal is forbidden', { packagePath });
-  const canonicalRoot = await requiredRealpath(packageRoot, 'package root');
   const candidate = await requiredRealpath(resolve(canonicalRoot, packagePath), 'package path');
   const fromRoot = relative(canonicalRoot, candidate);
   if (fromRoot === '' || fromRoot === '.' || fromRoot.startsWith('..') || isAbsolute(fromRoot)) {
     throw new StaticDiscoveryError('package path escapes the canonical package root', { packagePath, candidate });
   }
   return candidate;
+}
+
+export async function assertContainedPackagePath(packageRoot: string, packagePath: string): Promise<string> {
+  return assertContainedFromCanonicalRoot(await requiredRealpath(packageRoot, 'package root'), packagePath);
 }
 
 function assertNoDuplicateJsonKeys(text: string): void {
@@ -90,6 +99,26 @@ function assertNoDuplicateJsonKeys(text: string): void {
   value();
 }
 
+function assertBoundedJsonShape(input: unknown): void {
+  const pending: Array<{ value: unknown; depth: number }> = [{ value: input, depth: 0 }];
+  let keyCount = 0;
+  while (pending.length > 0) {
+    const { value, depth } = pending.pop()!;
+    if (!value || typeof value !== 'object') continue;
+    if (depth > MAX_JSON_DEPTH) throw new StaticDiscoveryError('manifest exceeds the JSON depth limit', { maxDepth: MAX_JSON_DEPTH });
+    if (Array.isArray(value)) {
+      for (const child of value) pending.push({ value: child, depth: depth + 1 });
+      continue;
+    }
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+      keyCount += 1;
+      if (keyCount > MAX_JSON_KEYS) throw new StaticDiscoveryError('manifest exceeds the JSON key limit', { maxKeys: MAX_JSON_KEYS });
+      if (DANGEROUS_KEYS.has(key)) throw new StaticDiscoveryError('dangerous JSON key in manifest', { key });
+      pending.push({ value: child, depth: depth + 1 });
+    }
+  }
+}
+
 export interface InspectStaticManifestOptions {
   readonly manifestFile?: string;
   readonly maxManifestBytes?: number;
@@ -100,8 +129,9 @@ export async function inspectStaticManifest(
   packageRoot: string,
   options: InspectStaticManifestOptions = {},
 ): Promise<StaticManifestInspection> {
+  const canonicalRoot = await requiredRealpath(packageRoot, 'package root');
   const manifestFile = options.manifestFile ?? 'agon.mod.json';
-  const manifestPath = await assertContainedPackagePath(packageRoot, manifestFile);
+  const manifestPath = await assertContainedFromCanonicalRoot(canonicalRoot, manifestFile);
   const requestedLimit = options.maxManifestBytes ?? MAX_MANIFEST_BYTES;
   if (!Number.isSafeInteger(requestedLimit) || requestedLimit <= 0) {
     throw new StaticDiscoveryError('manifest byte limit must be a positive safe integer', { requestedLimit });
@@ -116,10 +146,7 @@ export async function inspectStaticManifest(
     if (stat.size > byteLimit) {
       throw new StaticDiscoveryError('manifest exceeds the static discovery byte limit', { bytes: stat.size, byteLimit });
     }
-    bytes = await handle.readFile();
-    if (bytes.byteLength > byteLimit) {
-      throw new StaticDiscoveryError('manifest exceeds the static discovery byte limit', { bytes: bytes.byteLength, byteLimit });
-    }
+    bytes = await readExactBounded(handle, stat.size, byteLimit);
   } catch (error) {
     if (error instanceof StaticDiscoveryError) throw error;
     throw new StaticDiscoveryError('manifest cannot be opened safely', { manifestPath, cause: String(error) });
@@ -131,6 +158,7 @@ export async function inspectStaticManifest(
     const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
     input = JSON.parse(text);
     assertNoDuplicateJsonKeys(text);
+    assertBoundedJsonShape(input);
   } catch (error) {
     if (error instanceof StaticDiscoveryError) throw error;
     throw new StaticDiscoveryError('manifest is not valid JSON', { cause: String(error) });
@@ -143,14 +171,24 @@ export async function inspectStaticManifest(
   ]);
   const containedPaths = new Map<string, string>();
   for (const path of [...referenced].sort()) {
-    const canonicalPath = await assertContainedPackagePath(packageRoot, path);
+    const canonicalPath = await assertContainedFromCanonicalRoot(canonicalRoot, path);
     const referencedHandle = await open(canonicalPath, constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
       const stat = await referencedHandle.stat();
       if (!stat.isFile()) throw new StaticDiscoveryError('referenced package path is not a regular file', { path });
       const asset = manifest.assets.find((entry) => entry.path === path);
       if (asset) {
-        const assetBytes = await referencedHandle.readFile();
+        if (asset.bytes > FOLDER_MOD_LIMITS.maxFileBytes || stat.size > FOLDER_MOD_LIMITS.maxFileBytes) {
+          throw new StaticDiscoveryError('declared asset exceeds the folder-mod file byte limit', {
+            path, expected: asset.bytes, actual: stat.size, maxBytes: FOLDER_MOD_LIMITS.maxFileBytes,
+          });
+        }
+        let assetBytes: Buffer;
+        try {
+          assetBytes = await readExactBounded(referencedHandle, stat.size, FOLDER_MOD_LIMITS.maxFileBytes);
+        } catch (error) {
+          throw new StaticDiscoveryError('declared asset changed during bounded verification', { path, cause: String(error) });
+        }
         if (assetBytes.byteLength !== asset.bytes) throw new StaticDiscoveryError('asset bytes do not match manifest', { path, expected: asset.bytes, actual: assetBytes.byteLength });
         const actualHash = `sha256:${createHash('sha256').update(assetBytes).digest('hex')}`;
         if (actualHash !== asset.contentHash) throw new StaticDiscoveryError('asset hash does not match manifest', { path, expected: asset.contentHash, actual: actualHash });
@@ -161,9 +199,9 @@ export async function inspectStaticManifest(
     containedPaths.set(path, canonicalPath);
   }
   return Object.freeze({
-    packageRoot: await requiredRealpath(packageRoot, 'package root'),
+    packageRoot: canonicalRoot,
     manifestPath,
-    manifestHash: `sha256:${createHash('sha256').update(bytes).digest('hex')}`,
+    manifestHash: sha256Canonical(manifest),
     manifest,
     containedPaths: new ImmutableMap(containedPaths),
   });

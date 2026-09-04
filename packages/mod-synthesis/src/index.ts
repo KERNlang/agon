@@ -83,7 +83,7 @@ export const MANIFEST = validateManifest({
   "contributes": {
     "cliCommands": [
       {
-        "id": "cliCommands:0058",
+        "id": "cliCommands:0067",
         "aliases": []
       }
     ],
@@ -206,7 +206,7 @@ export const SOURCE_OCCURRENCES = Object.freeze([
 ]);
 export const COMPATIBILITY_CONTRIBUTIONS = Object.freeze([
   {
-    "id": "cliCommands:0058",
+    "id": "cliCommands:0067",
     "publicId": "synthesis",
     "registryKind": "cli-command",
     "category": "cliCommands",
@@ -280,7 +280,7 @@ export function createFirstPartyCompatibilityMod(runtime: FirstPartyCompatibilit
     apiVersion: '1' as const,
     async activate(registrar: Registrar): Promise<Dispose> {
       const disposers: Dispose[] = [];
-      disposers.push(registrar.command('cli', { id: "cliCommands:0058", description: "synthesis compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "synthesis", input, context) }));
+      disposers.push(registrar.command('cli', { id: "cliCommands:0067", description: "synthesis compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "synthesis", input, context) }));
       disposers.push(registrar.config("configKeys:0071", inputSchema));
       disposers.push(registrar.config("configKeys:0082", inputSchema));
       disposers.push(registrar.config("configKeys:0113", inputSchema));

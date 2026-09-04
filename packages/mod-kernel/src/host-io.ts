@@ -8,7 +8,7 @@ export interface HostIo {
   writeFile(path: string, data: string | Uint8Array, options?: { flag?: string; mode?: number }): Promise<void>;
   rename(from: string, to: string): Promise<void>;
   rm(path: string, options?: { recursive?: boolean; force?: boolean }): Promise<void>;
-  stat(path: string): Promise<{ isDirectory(): boolean; isFile(): boolean }>;
+  stat(path: string): Promise<{ readonly size: number; isDirectory(): boolean; isFile(): boolean }>;
   readdir(path: string, options?: { withFileTypes?: boolean }): Promise<readonly any[]>;
   chmod(path: string, mode: number): Promise<void>;
   copyFile(from: string, to: string): Promise<void>;

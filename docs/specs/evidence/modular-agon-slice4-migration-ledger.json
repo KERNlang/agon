@@ -3,11 +3,11 @@
   "slice": "S4",
   "semantics": "Roadmap extractionSources are ownership occurrences. Whole modules move when they are support implementation; UI/mod consumers remain narrow compatibility consumers until S5/S6.",
   "packages": 11,
-  "sourceOccurrences": 261,
+  "sourceOccurrences": 262,
   "counts": {
     "byte-verified-compatibility-mirror": 24,
     "compatibility-adapter": 90,
-    "compatibility-consumer": 57,
+    "compatibility-consumer": 58,
     "physical-owner": 90
   },
   "entries": [
@@ -643,6 +643,29 @@
     {
       "owner": "@kernlang/agon-support-engine-runtime",
       "source": "packages/cli/src/signals/dispatch.ts:50",
+      "disposition": "compatibility-consumer",
+      "destination": [
+        "src/types.ts",
+        "src/engine-discover.ts",
+        "src/engine-health.ts",
+        "src/engine-memory.ts",
+        "src/auth-store.ts",
+        "src/isolation.ts",
+        "src/process.ts",
+        "src/semaphore.ts",
+        "engines/",
+        "python/",
+        "patches/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "source": "packages/cli/src/signals/dispatch.ts:52",
       "disposition": "compatibility-consumer",
       "destination": [
         "src/types.ts",

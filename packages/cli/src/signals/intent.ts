@@ -1,6 +1,8 @@
-import { FIRST_PARTY_SURFACE_CATALOG } from '@kernlang/agon-kernel';
-import { processSurfaceNames } from '../surface-authority-runtime.js';
+import { FIRST_PARTY_SURFACE_CATALOG, KERNEL_MANAGEMENT_SURFACE_CATALOG } from '@kernlang/agon-kernel';
+import { processSurfaceCatalog, processSurfaceNames } from '../surface-authority-runtime.js';
 import { hostRegexExec, hostRegexMatch, hostRegexObjectTest } from '../lib/kern-host.js';
+
+const FALLBACK_TUI_CATALOG = Object.freeze([...FIRST_PARTY_SURFACE_CATALOG, ...KERNEL_MANAGEMENT_SURFACE_CATALOG]);
 
 // ── Module: IntentParsing ──
 
@@ -55,13 +57,14 @@ export interface Intent {
   roles: string[]|undefined;
 }
 
-export function createTuiSurfaceIds(entries: readonly { category: string; publicId: string; aliases: readonly string[] }[] = FIRST_PARTY_SURFACE_CATALOG): ReadonlySet<string> {
-  return new Set(entries.filter((entry) => entry.category === "tuiSlashCommands" || entry.category === "intentVariants" || entry.category === "builtinCommandMetadata").flatMap((entry) => [entry.publicId.startsWith("/") ? entry.publicId.slice(1) : entry.publicId, ...entry.aliases]));
+export function createTuiSurfaceIds(entries: readonly { category: string; publicId: string; aliases: readonly string[] }[] = FALLBACK_TUI_CATALOG): ReadonlySet<string> {
+  return new Set(entries.filter((entry) => entry.category === "tuiSlashCommands" || entry.category === "intentVariants" || entry.category === "builtinCommandMetadata" || entry.category === "kernelModManagement" || entry.category === "external:tuiActions").flatMap((entry) => [entry.publicId.startsWith("/") ? entry.publicId.slice(1) : entry.publicId, ...entry.aliases.map((alias) => alias.startsWith('/') ? alias.slice(1) : alias)]));
 }
 
 export function createSlashCommands(available: ReadonlySet<string> = processSurfaceNames('tui')): SlashCommand[] {
-  return FIRST_PARTY_SURFACE_CATALOG
-    .filter((entry) => entry.category === 'tuiSlashCommands' && (!available || available.has(entry.publicId)))
+  return processSurfaceCatalog('tui')
+    .filter((entry) => (entry.category === 'tuiSlashCommands' || entry.category === 'kernelModManagement' || entry.category === 'external:tuiActions')
+      && entry.kind === 'tui-action' && (!available || available.has(entry.publicId)))
     .map((entry) => ({ cmd: entry.publicId, desc: entry.description }));
 }
 
@@ -466,6 +469,8 @@ function parseSlashCommand(input: string, commandRegistry?: any, available: Read
       const value = configParts.slice(2).join(' ') || undefined;
       return { type: 'config', action, key, value } as Intent;
     }
+    case 'mod':
+      return { type: 'mod', args: rest } as Intent;
     case 'plan': {
         const text = rest.trim();
         if (text.startsWith('resume')) {
@@ -643,6 +648,9 @@ function parseSlashCommand(input: string, commandRegistry?: any, available: Read
     case 'quit':
       return { type: 'exit' } as Intent;
     default:
+      if (available.has(cmd) || available.has('/' + cmd)) {
+        return { type: 'mod-surface-command', commandName: cmd, args: rest } as Intent;
+      }
       // Check command registry for extension commands
       if (commandRegistry && commandRegistry.has(cmd)) {
         return { type: 'extension-command', commandName: cmd, args: rest } as Intent;

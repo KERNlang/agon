@@ -84,7 +84,7 @@ export const MANIFEST = validateManifest({
   "contributes": {
     "cliCommands": [
       {
-        "id": "cliCommands:0059",
+        "id": "cliCommands:0068",
         "aliases": []
       }
     ],
@@ -176,7 +176,7 @@ export const COMPATIBILITY_CONTRIBUTIONS = Object.freeze([
     "source": "packages/cli/src/models/handler-types.ts:113"
   },
   {
-    "id": "cliCommands:0059",
+    "id": "cliCommands:0068",
     "publicId": "team-brainstorm",
     "registryKind": "cli-command",
     "category": "cliCommands",
@@ -223,7 +223,7 @@ export function createFirstPartyCompatibilityMod(runtime: FirstPartyCompatibilit
     async activate(registrar: Registrar): Promise<Dispose> {
       const disposers: Dispose[] = [];
       disposers.push(registrar.tool('cesar', { id: "cesarRoutes:0061", description: "team-brainstorm compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('cesar-tool', "team-brainstorm", input, context) }));
-      disposers.push(registrar.command('cli', { id: "cliCommands:0059", description: "team-brainstorm compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "team-brainstorm", input, context) }));
+      disposers.push(registrar.command('cli', { id: "cliCommands:0068", description: "team-brainstorm compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "team-brainstorm", input, context) }));
       disposers.push(registrar.intent({ id: "intentVariants:0059", description: "team-brainstorm compatibility contribution", inputSchema, parse: (input) => runtime.parseIntent("team-brainstorm", input), run: (input, context) => runtime.command('intent', "team-brainstorm", input, context) }));
       disposers.push(registrar.command('tui', { id: "builtinCommandMetadata:0044", description: "team-brainstorm compatibility contribution", inputSchema, run: (input, context) => runtime.command('tui-action', "team-brainstorm", input, context) }));
       disposers.push(registrar.command('tui', { id: "tuiSlashCommands:0064", description: "/team-brainstorm compatibility contribution", inputSchema, run: (input, context) => runtime.command('tui-action', "/team-brainstorm", input, context) }));

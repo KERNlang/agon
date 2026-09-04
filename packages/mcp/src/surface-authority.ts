@@ -1,9 +1,11 @@
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import {
   SurfaceGenerationError,
+  assertContributionInput,
   bootstrapFirstPartySurfaceGeneration,
   canonicalJson,
 } from '@kernlang/agon-kernel';
@@ -24,7 +26,10 @@ function hostRoot(): string {
 
 export async function initializeMcpSurfaceAuthority(): Promise<void> {
   if (boot) return;
-  boot = await bootstrapFirstPartySurfaceGeneration({ hostRoot: hostRoot(), runtime: compatibilityRuntime });
+  boot = await bootstrapFirstPartySurfaceGeneration({
+    hostRoot: hostRoot(), runtime: compatibilityRuntime,
+    safeMode: process.env.AGON_MOD_SAFE_MODE === '1',
+  });
 }
 
 export async function disposeMcpSurfaceAuthority(): Promise<void> {
@@ -35,6 +40,7 @@ export async function disposeMcpSurfaceAuthority(): Promise<void> {
 
 export function assertMcpSurfaceSelectionCurrent(): void {
   if (!boot) throw new SurfaceGenerationError('MOD_SURFACE_UNAVAILABLE', 'MCP surface authority has not been initialized');
+  if (boot.activated.generation.id === 'kernel-safe-mode') return;
   let current: string | null;
   try {
     current = canonicalJson(JSON.parse(readFileSync(boot.pointerPath, 'utf8')));
@@ -49,5 +55,32 @@ export function assertMcpSurfaceSelectionCurrent(): void {
 
 export function mcpSurfacePublicIds(): ReadonlySet<string> {
   assertMcpSurfaceSelectionCurrent();
-  return new Set(boot!.activated.generation.catalog('mcp').map(({ publicId }) => publicId));
+  return new Set(boot!.activated.generation.catalog('mcp').flatMap(({ publicId, aliases }) => [publicId, ...aliases]));
+}
+
+export interface ActiveMcpSurfaceTool {
+  readonly name: string;
+  readonly description: string;
+  readonly inputSchema: Record<string, unknown>;
+}
+
+export function activeMcpSurfaceTools(): readonly ActiveMcpSurfaceTool[] {
+  assertMcpSurfaceSelectionCurrent();
+  return Object.freeze(boot!.activated.generation.project('mcp').entries.flatMap((record) => {
+    const payload = record.payload as { readonly description: string; readonly inputSchema?: Record<string, unknown> };
+    return [record.id, ...record.aliases].map((name) => Object.freeze({ name, description: payload.description, inputSchema: payload.inputSchema ?? { type: 'object' } }));
+  }));
+}
+
+export async function invokeActiveMcpSurfaceTool(name: string, input: Record<string, unknown>): Promise<unknown> {
+  assertMcpSurfaceSelectionCurrent();
+  const record = boot!.activated.generation.assertAvailable('mcp', name);
+  const payload = record.payload as { inputSchema: Record<string, unknown>; run(input: Record<string, unknown>, context: Record<string, unknown>): Promise<unknown> | unknown };
+  assertContributionInput(payload.inputSchema, input);
+  const platform = `${process.platform}-${process.arch}`;
+  if (!['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'].includes(platform)) throw new Error(`unsupported MCP platform: ${platform}`);
+  return payload.run(input, {
+    invocationId: randomUUID(), cwd: process.env.AGON_CWD ?? process.cwd(), platform,
+    signal: new AbortController().signal, config: Object.freeze({}),
+  });
 }

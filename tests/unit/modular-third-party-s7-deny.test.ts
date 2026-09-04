@@ -12,7 +12,7 @@ describe('S7 third-party fail-closed boundary', () => {
     const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
     const entry = artifact('@evil/plausible', [], { trustTier: 'third-party' });
     await expect(createManagedLifecyclePlan(host, request([entry])))
-      .rejects.toThrow('third-party activation remains disabled until S8');
+      .rejects.toThrow(/source and publisher provenance binding|lacks exact S8 trust authority/);
     expect(await host.readCurrentPointer()).toBeNull();
   });
 });

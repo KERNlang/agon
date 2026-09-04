@@ -83,7 +83,7 @@ export const MANIFEST = validateManifest({
   "contributes": {
     "cliCommands": [
       {
-        "id": "cliCommands:0063",
+        "id": "cliCommands:0072",
         "aliases": []
       }
     ],
@@ -289,7 +289,7 @@ export const COMPATIBILITY_CONTRIBUTIONS = Object.freeze([
     "source": "packages/cli/src/cesar/tools.ts:39"
   },
   {
-    "id": "cliCommands:0063",
+    "id": "cliCommands:0072",
     "publicId": "tribunal",
     "registryKind": "cli-command",
     "category": "cliCommands",
@@ -361,7 +361,7 @@ export function createFirstPartyCompatibilityMod(runtime: FirstPartyCompatibilit
       disposers.push(registrar.tool('cesar', { id: "cesarRoutes:0068", description: "tribunal compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('cesar-tool', "tribunal", input, context) }));
       disposers.push(registrar.tool('cesar', { id: "cesarRoutes:0069", description: "tribunal compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('cesar-tool', "tribunal", input, context) }));
       disposers.push(registrar.tool('cesar', { id: "cesarTools:0026", description: "Tribunal compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('cesar-tool', "Tribunal", input, context) }));
-      disposers.push(registrar.command('cli', { id: "cliCommands:0063", description: "tribunal compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "tribunal", input, context) }));
+      disposers.push(registrar.command('cli', { id: "cliCommands:0072", description: "tribunal compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "tribunal", input, context) }));
       disposers.push(registrar.intent({ id: "intentVariants:0057", description: "suggest-tribunal compatibility contribution", inputSchema, parse: (input) => runtime.parseIntent("suggest-tribunal", input), run: (input, context) => runtime.command('intent', "suggest-tribunal", input, context) }));
       disposers.push(registrar.intent({ id: "intentVariants:0063", description: "tribunal compatibility contribution", inputSchema, parse: (input) => runtime.parseIntent("tribunal", input), run: (input, context) => runtime.command('intent', "tribunal", input, context) }));
       disposers.push(registrar.tool('mcp', { id: "mcpTools:0032", description: "Tribunal compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('mcp-tool', "Tribunal", input, context) }));

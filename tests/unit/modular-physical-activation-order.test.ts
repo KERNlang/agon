@@ -19,6 +19,13 @@ describe('physical mod activation ordering', () => {
       .toEqual(['agon.alpha', 'agon.parent', 'agon.child']);
   });
 
+  it('accepts frozen host capabilities but rejects unknown missing dependencies', () => {
+    expect(orderPhysicalSurfacePackages([candidate('agon.child', ['agon.api'])]).map(({ manifest }) => manifest.id))
+      .toEqual(['agon.child']);
+    expect(() => orderPhysicalSurfacePackages([candidate('example.child', ['example.absent'])]))
+      .toThrow(/dependency is missing/);
+  });
+
   it('rejects duplicate packages and dependency cycles', () => {
     const duplicate = candidate('agon.same');
     expect(() => orderPhysicalSurfacePackages([duplicate, duplicate])).toThrow(/duplicate/);

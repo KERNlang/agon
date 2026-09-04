@@ -220,6 +220,60 @@
         "description": "login"
       },
       {
+        "id": "mod approve",
+        "source": "packages/cli/src/commands/mod.ts:312",
+        "category": "minimal-kernel-machinery",
+        "description": "mod approve"
+      },
+      {
+        "id": "mod disable",
+        "source": "packages/cli/src/commands/mod.ts:313",
+        "category": "minimal-kernel-machinery",
+        "description": "mod disable"
+      },
+      {
+        "id": "mod enable",
+        "source": "packages/cli/src/commands/mod.ts:313",
+        "category": "minimal-kernel-machinery",
+        "description": "mod enable"
+      },
+      {
+        "id": "mod inspect",
+        "source": "packages/cli/src/commands/mod.ts:312",
+        "category": "minimal-kernel-machinery",
+        "description": "mod inspect"
+      },
+      {
+        "id": "mod list",
+        "source": "packages/cli/src/commands/mod.ts:312",
+        "category": "minimal-kernel-machinery",
+        "description": "mod list"
+      },
+      {
+        "id": "mod recover",
+        "source": "packages/cli/src/commands/mod.ts:313",
+        "category": "minimal-kernel-machinery",
+        "description": "mod recover"
+      },
+      {
+        "id": "mod revoke",
+        "source": "packages/cli/src/commands/mod.ts:312",
+        "category": "minimal-kernel-machinery",
+        "description": "mod revoke"
+      },
+      {
+        "id": "mod trust",
+        "source": "packages/cli/src/commands/mod.ts:312",
+        "category": "minimal-kernel-machinery",
+        "description": "mod trust"
+      },
+      {
+        "id": "mod untrust",
+        "source": "packages/cli/src/commands/mod.ts:312",
+        "category": "minimal-kernel-machinery",
+        "description": "mod untrust"
+      },
+      {
         "id": "models",
         "source": "packages/cli/src/lazy-commands.ts:302",
         "category": "config",
@@ -2747,7 +2801,7 @@
       {
         "id": "DispatchResult",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/cli/src/signals/dispatch.ts:50"
+        "source": "packages/cli/src/signals/dispatch.ts:52"
       },
       {
         "id": "DispatchResult",
@@ -3027,7 +3081,7 @@
       {
         "id": "PythonDoctorResult",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/cli/src/commands/doctor.ts:172"
+        "source": "packages/cli/src/commands/doctor.ts:211"
       },
       {
         "id": "RagEmbedResult",
@@ -3062,7 +3116,7 @@
       {
         "id": "ReviewEvent",
         "declaration": "InterfaceDeclaration",
-        "source": "packages/cli/src/blocks/controls.tsx:20"
+        "source": "packages/cli/src/blocks/controls.tsx:36"
       },
       {
         "id": "RoomEvent",

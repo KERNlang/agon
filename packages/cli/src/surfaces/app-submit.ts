@@ -348,6 +348,8 @@ export interface HandleSubmitDeps {
   setModelPickerEntries: (val:any) => void;
   setModelPickerLoading: (val:boolean) => void;
   setCesarPickerOpen: (val:boolean) => void;
+  setModPickerOpen: (val:boolean) => void;
+  setModPickerView: (val:any) => void;
   setChatSession: (val:any) => void;
   setLastUndoToken: (val:any) => void;
   setModelPickerTargetEngine: (val:any) => void;
@@ -658,7 +660,7 @@ export async function runHandleSubmit(opts: HandleSubmitDeps, value: string): Pr
           opts.dispatch({ type: 'error', message: `Job ${job.id} tracking failed: ${err instanceof Error ? err.message : String(err)}` } as any);
         });
     },
-    setMode: opts.setMode, setPendingImages: opts.setPendingImages, setSessionEngines: opts.setSessionEngines, setEnginePickerOpen: opts.setEnginePickerOpen, setModelPickerOpen: opts.setModelPickerOpen, setModelPickerEntries: opts.setModelPickerEntries, setModelPickerLoading: opts.setModelPickerLoading, setCesarPickerOpen: opts.setCesarPickerOpen, setChatSession: opts.setChatSession, setLastUndoToken: opts.setLastUndoToken, askQuestion: opts.askQuestion, exit: () => process.exit(0),
+    setMode: opts.setMode, setPendingImages: opts.setPendingImages, setSessionEngines: opts.setSessionEngines, setEnginePickerOpen: opts.setEnginePickerOpen, setModelPickerOpen: opts.setModelPickerOpen, setModelPickerEntries: opts.setModelPickerEntries, setModelPickerLoading: opts.setModelPickerLoading, setCesarPickerOpen: opts.setCesarPickerOpen, setModPickerOpen: opts.setModPickerOpen, setModPickerView: opts.setModPickerView, setChatSession: opts.setChatSession, setLastUndoToken: opts.setLastUndoToken, askQuestion: opts.askQuestion, exit: () => process.exit(0),
     setModelPickerTargetEngine: opts.setModelPickerTargetEngine, setModelPickerInitialFilter: opts.setModelPickerInitialFilter, setModelPickerTitle: opts.setModelPickerTitle, setModelPickerCliGroups: opts.setModelPickerCliGroups,
     allImages, allSlashCommands: opts.allSlashCommands, dynamicSkills: [...opts.dynamicSkills, ...opts.extensionSkills], mode: opts.mode, lastUndoToken: opts.lastUndoToken, sessionStartTime: opts.sessionStartTime, jobManager: opts.jobManager,
     explorationMode: opts.explorationMode, setExplorationMode: opts.setExplorationMode,

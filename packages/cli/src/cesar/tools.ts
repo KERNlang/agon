@@ -1,8 +1,8 @@
-import { FIRST_PARTY_SURFACE_CATALOG } from '@kernlang/agon-kernel';
+import { FIRST_PARTY_SURFACE_CATALOG, assertContributionInput } from '@kernlang/agon-kernel';
 
 import { ToolRegistry, getProjectFileStateCache, createReadTool, createEditTool, createMultiEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createPipelineTool, createGoalTool, createConquerTool, createReviewTool, createDelegateTool, createAgentTool, createReportConfidenceTool, createProposePlanTool, createExitPlanModeTool, createListPlansTool, createRetrieveResultTool, createQuickNeroTool, createTodoWriteTool, createSaveMemoryTool, executeToolCall, resolveWorkingDir, parsePermissionRuleSet, parseToolHooks, isReadOnlyCommand, loadConfig } from '@kernlang/agon-core';
 
-import { processSurfacePublicIds } from '../surface-authority-runtime.js';
+import { assertCanonicalSurfaceSelectionCurrent, processSurfaceClient, processSurfaceNames } from '../surface-authority-runtime.js';
 
 import type { ToolContext, ToolCallResult, ToolHandler } from '@kernlang/agon-core';
 
@@ -31,7 +31,7 @@ import { isBashToolName } from './brain-helpers.js';
  */
 const CESAR_SURFACE_IDS = new Set(FIRST_PARTY_SURFACE_CATALOG.filter((entry) => entry.category === 'cesarTools').map((entry) => entry.publicId));
 
-export function createCesarToolRegistry(engineId?: string, available: ReadonlySet<string> = processSurfacePublicIds('cesar')): ToolRegistry {
+export function createCesarToolRegistry(engineId?: string, available: ReadonlySet<string> = processSurfaceNames('cesar')): ToolRegistry {
   const toolRegistry = new ToolRegistry();
   const register = (handler: ToolHandler): void => { if (CESAR_SURFACE_IDS.has(handler.definition.name) && available.has(handler.definition.name)) toolRegistry.register(handler); };
   register(createReadTool());
@@ -63,6 +63,43 @@ export function createCesarToolRegistry(engineId?: string, available: ReadonlySe
   register(createEngineReliabilityTool());
   register(createRenderProbeTool());
   register(createTuiProbeTool());
+  for (const record of processSurfaceClient('cesar').project().entries) {
+    if (record.kind !== 'cesar-tool') continue;
+    const payload = record.payload as {
+      readonly description: string;
+      readonly inputSchema: Record<string, unknown>;
+      readonly effect: 'read' | 'write' | 'network' | 'process';
+      run(input: Record<string, unknown>, context: Record<string, unknown>): Promise<unknown> | unknown;
+    };
+    const readOnly = payload.effect === 'read';
+    for (const name of [record.id, ...record.aliases]) {
+      if (toolRegistry.has(name) || !available.has(name)) continue;
+      const validate = (input: Record<string, unknown>): string | null => {
+        try { assertCanonicalSurfaceSelectionCurrent(); assertContributionInput(payload.inputSchema, input); return null; }
+        catch (error) { return error instanceof Error ? error.message : String(error); }
+      };
+      toolRegistry.register({
+        definition: { name, description: payload.description, inputSchema: payload.inputSchema,
+          maxResultSizeChars: 100_000, isReadOnly: readOnly, isConcurrencySafe: readOnly },
+        validate,
+        checkPermission: () => {
+          assertCanonicalSurfaceSelectionCurrent();
+          return readOnly ? { behavior: 'allow' } : { behavior: 'ask', message: `Allow external mod tool ${name}?` };
+        },
+        execute: async (input, context) => {
+          assertCanonicalSurfaceSelectionCurrent();
+          assertContributionInput(payload.inputSchema, input);
+          const platform = `${process.platform}-${process.arch}`;
+          if (!['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'].includes(platform)) return { ok: false, content: '', error: `unsupported platform: ${platform}` };
+          const value = await payload.run(input, {
+            invocationId: `cesar-${Date.now()}`, cwd: context.cwd, platform,
+            signal: context.abortSignal ?? new AbortController().signal, config: Object.freeze({}),
+          });
+          return { ok: true, content: typeof value === 'string' ? value : JSON.stringify(value) };
+        },
+      });
+    }
+  }
   return toolRegistry;
 }
 

@@ -8,6 +8,7 @@ export type ModAvailabilityReasonCode =
   | 'incompatible-mod-api'
   | 'integrity-mismatch'
   | 'untrusted-source'
+  | 'authority-state-invalid'
   | 'permission-not-granted'
   | 'missing-dependency'
   | 'dependency-blocked'
@@ -42,6 +43,9 @@ export interface ModManagementEntry {
   readonly ariaLabel: string;
   readonly reason: ModAvailabilityReason | null;
   readonly recovery: string | null;
+  readonly source?: 'bundled' | 'registry' | 'user-folder' | 'explicit-dev';
+  readonly trustSummary?: string;
+  readonly permissionSummary?: string;
 }
 
 export interface ModManagementGroup {
@@ -55,8 +59,20 @@ export interface ModManagementView {
   readonly groups: readonly ModManagementGroup[];
 }
 
+export interface ExternalModManagementDefinition {
+  readonly id: string;
+  readonly packageId: string;
+  readonly label: string;
+  readonly source: 'registry' | 'user-folder' | 'explicit-dev';
+  readonly enabled: boolean;
+  readonly trustSummary: string;
+  readonly permissionSummary: string;
+  readonly reason?: ModAvailabilityReason;
+}
+
 export interface ModManagementViewOptions {
   readonly availability?: Readonly<Record<string, ModAvailabilityReason>>;
+  readonly externalMods?: readonly ExternalModManagementDefinition[];
 }
 
 function title(id: string): string {
@@ -124,6 +140,28 @@ export function createModManagementView(
     });
     return freeze({ id: group.id, label: group.label, entries: freeze(entries) });
   });
+  if (options.externalMods?.length) {
+    const ids = new Set<string>();
+    const entries = [...options.externalMods].sort((left, right) => left.label.localeCompare(right.label) || left.id.localeCompare(right.id)).map((definition): ModManagementEntry => {
+      if (ids.has(definition.id) || seenMods.has(definition.id)) throw new TypeError(`duplicate external mod in UI: ${definition.id}`);
+      ids.add(definition.id);
+      const availability = definition.reason ?? options.availability?.[definition.id];
+      const status = availability ? 'blocked' : definition.enabled ? 'enabled' : 'disabled';
+      const statusText = availability ? `Blocked: ${humanReason(availability.code)}. ${availability.message}` : status === 'enabled' ? 'Enabled' : 'Disabled';
+      return freeze({
+        kind: 'mod', id: definition.id, packageId: definition.packageId, label: definition.label,
+        parentId: null, depth: 0, toggleable: true, focusable: true, keyboardIndex: keyboardIndex++,
+        status, callable: status === 'enabled', visualStyle: status === 'enabled' ? 'normal' : status === 'disabled' ? 'greyed' : 'blocked', statusText,
+        ariaLabel: `${definition.label}. ${statusText}. Source ${definition.source}. ${definition.trustSummary}. Permissions ${definition.permissionSummary}.`,
+        reason: availability ?? null,
+        recovery: availability?.recovery ?? (status === 'disabled' ? `Enable ${definition.label} after reviewing trust and permissions.` : null),
+        source: definition.source,
+        trustSummary: definition.trustSummary,
+        permissionSummary: definition.permissionSummary,
+      });
+    });
+    groups.push(freeze({ id: 'community', label: 'Local and community mods', entries: freeze(entries) }));
+  }
   const missing = catalog.mods.map(({ modId }) => modId).filter((id) => !seenMods.has(id));
   if (missing.length) throw new TypeError(`first-party mods missing from UI hierarchy: ${missing.join(', ')}`);
   return freeze({ schemaVersion: 1, groups: freeze(groups) });
@@ -138,6 +176,12 @@ export function renderModManagementText(view: ModManagementView): string {
         ? `blocked: ${humanReason(entry.reason.code)}`
         : entry.status;
       lines.push(`${entry.depth ? '  ' : ''}- [${status}] ${entry.label}`);
+      if (entry.source) {
+        const prefix = entry.depth ? '    ' : '  ';
+        lines.push(`${prefix}Source: ${entry.source}`);
+        lines.push(`${prefix}Trust: ${entry.trustSummary ?? 'not evaluated'}`);
+        lines.push(`${prefix}Permissions: ${entry.permissionSummary ?? 'none'}`);
+      }
       if (entry.status === 'blocked') {
         lines.push(`${entry.depth ? '    ' : '  '}Reason: ${entry.reason?.message ?? entry.statusText}`);
         lines.push(`${entry.depth ? '    ' : '  '}Recovery: ${entry.recovery ?? 'Inspect Agon Doctor.'}`);

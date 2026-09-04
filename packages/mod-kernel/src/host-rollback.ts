@@ -11,6 +11,8 @@ export interface RollbackGenerationOptions {
   readonly now?: () => Date;
   readonly processIdentity?: string;
   readonly faultAfterPointer?: () => void | Promise<void>;
+  /** Explicit operator-approved recovery may replace a malformed or absent pointer with a verified generation. */
+  readonly allowInvalidCurrent?: boolean;
 }
 
 export async function rollbackGeneration(
@@ -27,9 +29,11 @@ export async function rollbackGeneration(
   });
   const rollbackState = await (async () => {
     const manifest = await host.validateGeneration(targetGeneration);
-    const current = await host.readCurrentPointer();
-    if (!current) throw new DurableHostError('MOD_TRANSACTION_FAILED', 'rollback requires a selected base generation');
-    if (current.generation === targetGeneration) throw new DurableHostError('MOD_TRANSACTION_FAILED', 'rollback target is already selected');
+    let current: GenerationPointer | null = null;
+    try { current = await host.readCurrentPointer(); }
+    catch (error) { if (!options.allowInvalidCurrent) throw error; }
+    if (!current && !options.allowInvalidCurrent) throw new DurableHostError('MOD_TRANSACTION_FAILED', 'rollback requires a selected base generation');
+    if (current?.generation === targetGeneration) throw new DurableHostError('MOD_TRANSACTION_FAILED', 'rollback target is already selected');
     return { manifest, current };
   })().catch(async (error) => { await fence.release().catch(() => undefined); throw error; });
   const { manifest, current } = rollbackState;
@@ -43,10 +47,10 @@ export async function rollbackGeneration(
     state: 'verified',
     startedAt,
     updatedAt: startedAt,
-    baseGeneration: current.generation,
+    baseGeneration: current?.generation ?? 0,
     candidateGeneration: targetGeneration,
     fenceToken: fence.record.fenceToken,
-    previousLockHash: current.lockHash,
+    previousLockHash: current?.lockHash ?? null,
     candidateLockHash: manifest.lockHash,
     steps: Object.freeze([
       { id: 'verify-generation', state: 'passed' as const },

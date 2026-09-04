@@ -52,7 +52,7 @@
       "path": "ownership.json",
       "kind": "documentation",
       "mediaType": "application/json",
-      "contentHash": "sha256:8bd4317f071425700d94d00c28ea9c534ca566e5a85c8d47d91b14570268d37b",
+      "contentHash": "sha256:a8569f0569a53af69c1d519d678bfb7048a1f424d813245298110a2e884345c8",
       "bytes": 4492,
       "executable": false,
       "platforms": [
@@ -80,7 +80,7 @@
   "contributes": {
     "cliCommands": [
       {
-        "id": "cliCommands:0054",
+        "id": "cliCommands:0063",
         "aliases": []
       }
     ],

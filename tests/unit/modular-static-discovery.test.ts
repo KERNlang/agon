@@ -10,6 +10,7 @@ function fixture(): string {
   mkdirSync(join(root, 'dist'));
   writeFileSync(join(root, 'dist/index.js'), 'export default {}');
   writeFileSync(join(root, 'dist/index.d.ts'), 'declare const value: unknown; export default value;');
+  writeFileSync(join(root, 'package.json'), JSON.stringify({ type: 'module' }));
   writeFileSync(join(root, 'agon.mod.json'), JSON.stringify(manifest('example.static')));
   return root;
 }
@@ -21,7 +22,7 @@ describe('static mod discovery', () => {
     const inspection = await inspectStaticManifest(root);
     expect(inspection.manifest.id).toBe('example.static');
     expect(inspection.manifestHash).toMatch(/^sha256:[a-f0-9]{64}$/);
-    expect(inspection.containedPaths.size).toBe(3);
+    expect(inspection.containedPaths.size).toBe(4);
     expect((inspection.containedPaths as Map<string, string>).set).toBeUndefined();
   });
 
@@ -91,7 +92,7 @@ describe('static mod discovery', () => {
         contentHash: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
         bytes: 12, executable: false, platforms: ['darwin-arm64'],
       }],
-      pack: { include: ['dist/index.js', 'dist/index.d.ts', 'agon.mod.json', 'asset.txt'], executable: [] },
+      pack: { include: ['dist/index.js', 'dist/index.d.ts', 'agon.mod.json', 'package.json', 'asset.txt'], executable: [] },
     })));
     await expect(inspectStaticManifest(root)).rejects.toThrow(/asset (?:hash|bytes)/i);
   });

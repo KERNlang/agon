@@ -75,7 +75,7 @@ export const MANIFEST = validateManifest({
   "contributes": {
     "cliCommands": [
       {
-        "id": "cliCommands:0062",
+        "id": "cliCommands:0071",
         "aliases": []
       }
     ],
@@ -123,7 +123,7 @@ export const SOURCE_OCCURRENCES = Object.freeze([
 ]);
 export const COMPATIBILITY_CONTRIBUTIONS = Object.freeze([
   {
-    "id": "cliCommands:0062",
+    "id": "cliCommands:0071",
     "publicId": "think",
     "registryKind": "cli-command",
     "category": "cliCommands",
@@ -155,7 +155,7 @@ export function createFirstPartyCompatibilityMod(runtime: FirstPartyCompatibilit
     apiVersion: '1' as const,
     async activate(registrar: Registrar): Promise<Dispose> {
       const disposers: Dispose[] = [];
-      disposers.push(registrar.command('cli', { id: "cliCommands:0062", description: "think compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "think", input, context) }));
+      disposers.push(registrar.command('cli', { id: "cliCommands:0071", description: "think compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "think", input, context) }));
       disposers.push(registrar.command('tui', { id: "tuiSlashCommands:0067", description: "/think compatibility contribution", inputSchema, run: (input, context) => runtime.command('tui-action', "/think", input, context) }));
       return async () => { for (const dispose of [...disposers].reverse()) await dispose(); };
     },

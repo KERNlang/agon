@@ -11,7 +11,7 @@ const adapters = json('docs/specs/evidence/modular-agon-slice6-compatibility-ada
 const fail = (message) => { throw new Error(message); };
 const unique = (values, label) => { if (new Set(values).size !== values.length) fail(`duplicate ${label}`); };
 
-if (catalog.length !== 440) fail(`expected 440 generated entries, got ${catalog.length}`);
+if (catalog.length !== 449) fail(`expected 449 generated entries, got ${catalog.length}`);
 for (const surface of ['cli', 'tui', 'mcp', 'cesar', 'docs']) {
   const entries = catalog.filter((entry) => entry.surface === surface);
   if (!entries.length) fail(`missing ${surface} projection`);
@@ -37,7 +37,7 @@ const requirements = [
   ['packages/cli/src/surface-authority-runtime.ts', 'bootstrapFirstPartySurfaceGeneration'],
   ['packages/mcp/src/index.ts', 'await initializeMcpSurfaceAuthority()'],
   ['packages/mcp/src/agon-orchestration.ts', '!available.has(toolName)'],
-  ['packages/cli/src/cesar/tools.ts', "processSurfacePublicIds('cesar')"],
+  ['packages/cli/src/cesar/tools.ts', "processSurfaceNames('cesar')"],
   ['packages/cli/src/signals/intent.ts', "processSurfaceNames('tui')"],
 ];
 for (const [path, marker] of requirements) if (!read(path).includes(marker)) fail(`${path} lacks ${marker}`);

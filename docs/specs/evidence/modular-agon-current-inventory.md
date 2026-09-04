@@ -4,7 +4,7 @@
 
 | Category | Count |
 |---|---:|
-| cliCommands | 68 |
+| cliCommands | 77 |
 | tuiSlashCommands | 73 |
 | tuiKeyboardActions | 43 |
 | builtinCommandMetadata | 53 |

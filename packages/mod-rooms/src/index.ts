@@ -79,7 +79,7 @@ export const MANIFEST = validateManifest({
   "contributes": {
     "cliCommands": [
       {
-        "id": "cliCommands:0055",
+        "id": "cliCommands:0064",
         "aliases": []
       }
     ],
@@ -256,7 +256,7 @@ export const SOURCE_OCCURRENCES = Object.freeze([
 ]);
 export const COMPATIBILITY_CONTRIBUTIONS = Object.freeze([
   {
-    "id": "cliCommands:0055",
+    "id": "cliCommands:0064",
     "publicId": "room",
     "registryKind": "cli-command",
     "category": "cliCommands",
@@ -344,7 +344,7 @@ export function createFirstPartyCompatibilityMod(runtime: FirstPartyCompatibilit
     apiVersion: '1' as const,
     async activate(registrar: Registrar): Promise<Dispose> {
       const disposers: Dispose[] = [];
-      disposers.push(registrar.command('cli', { id: "cliCommands:0055", description: "room compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "room", input, context) }));
+      disposers.push(registrar.command('cli', { id: "cliCommands:0064", description: "room compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "room", input, context) }));
       disposers.push(registrar.tool('mcp', { id: "mcpTools:0022", description: "RoomJoin compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('mcp-tool', "RoomJoin", input, context) }));
       disposers.push(registrar.tool('mcp', { id: "mcpTools:0023", description: "RoomLeave compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('mcp-tool', "RoomLeave", input, context) }));
       disposers.push(registrar.tool('mcp', { id: "mcpTools:0024", description: "RoomList compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('mcp-tool', "RoomList", input, context) }));

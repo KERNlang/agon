@@ -79,7 +79,7 @@ export const MANIFEST = validateManifest({
   "contributes": {
     "cliCommands": [
       {
-        "id": "cliCommands:0047",
+        "id": "cliCommands:0056",
         "aliases": []
       }
     ],
@@ -184,7 +184,7 @@ export const COMPATIBILITY_CONTRIBUTIONS = Object.freeze([
     "source": "packages/cli/src/cesar/tools.ts:49"
   },
   {
-    "id": "cliCommands:0047",
+    "id": "cliCommands:0056",
     "publicId": "nero",
     "registryKind": "cli-command",
     "category": "cliCommands",
@@ -238,7 +238,7 @@ export function createFirstPartyCompatibilityMod(runtime: FirstPartyCompatibilit
     async activate(registrar: Registrar): Promise<Dispose> {
       const disposers: Dispose[] = [];
       disposers.push(registrar.tool('cesar', { id: "cesarTools:0018", description: "QuickNero compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('cesar-tool', "QuickNero", input, context) }));
-      disposers.push(registrar.command('cli', { id: "cliCommands:0047", description: "nero compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "nero", input, context) }));
+      disposers.push(registrar.command('cli', { id: "cliCommands:0056", description: "nero compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "nero", input, context) }));
       disposers.push(registrar.intent({ id: "intentVariants:0042", description: "nero compatibility contribution", inputSchema, parse: (input) => runtime.parseIntent("nero", input), run: (input, context) => runtime.command('intent', "nero", input, context) }));
       disposers.push(registrar.tool('mcp', { id: "mcpTools:0019", description: "QuickNero compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('mcp-tool', "QuickNero", input, context) }));
       disposers.push(registrar.command('tui', { id: "builtinCommandMetadata:0033", description: "nero compatibility contribution", inputSchema, run: (input, context) => runtime.command('tui-action', "nero", input, context) }));

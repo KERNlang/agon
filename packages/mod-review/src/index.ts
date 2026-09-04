@@ -55,7 +55,7 @@ export const MANIFEST = validateManifest({
       "path": "ownership.json",
       "kind": "documentation",
       "mediaType": "application/json",
-      "contentHash": "sha256:8bd4317f071425700d94d00c28ea9c534ca566e5a85c8d47d91b14570268d37b",
+      "contentHash": "sha256:a8569f0569a53af69c1d519d678bfb7048a1f424d813245298110a2e884345c8",
       "bytes": 4492,
       "executable": false,
       "platforms": [
@@ -83,7 +83,7 @@ export const MANIFEST = validateManifest({
   "contributes": {
     "cliCommands": [
       {
-        "id": "cliCommands:0054",
+        "id": "cliCommands:0063",
         "aliases": []
       }
     ],
@@ -291,7 +291,7 @@ export const SOURCE_OCCURRENCES = Object.freeze([
   {
     "category": "resultAndEnvelopeTypes",
     "id": "ReviewEvent",
-    "source": "packages/cli/src/blocks/controls.tsx:20",
+    "source": "packages/cli/src/blocks/controls.tsx:36",
     "class": "user-toggleable-mod-package",
     "package": "@kernlang/agon-mod-review",
     "rule": "semantic-source-rule"
@@ -364,7 +364,7 @@ export const COMPATIBILITY_CONTRIBUTIONS = Object.freeze([
     "source": "packages/cli/src/cesar/tools.ts:45"
   },
   {
-    "id": "cliCommands:0054",
+    "id": "cliCommands:0063",
     "publicId": "review",
     "registryKind": "cli-command",
     "category": "cliCommands",
@@ -410,7 +410,7 @@ export const COMPATIBILITY_CONTRIBUTIONS = Object.freeze([
     "publicId": "ReviewEvent",
     "registryKind": "result-type",
     "category": "resultAndEnvelopeTypes",
-    "source": "packages/cli/src/blocks/controls.tsx:20"
+    "source": "packages/cli/src/blocks/controls.tsx:36"
   },
   {
     "id": "builtinCommandMetadata:0040",
@@ -459,7 +459,7 @@ export function createFirstPartyCompatibilityMod(runtime: FirstPartyCompatibilit
       disposers.push(registrar.tool('cesar', { id: "cesarRoutes:0046", description: "review compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('cesar-tool', "review", input, context) }));
       disposers.push(registrar.tool('cesar', { id: "cesarRoutes:0047", description: "review compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('cesar-tool', "review", input, context) }));
       disposers.push(registrar.tool('cesar', { id: "cesarTools:0023", description: "Review compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('cesar-tool', "Review", input, context) }));
-      disposers.push(registrar.command('cli', { id: "cliCommands:0054", description: "review compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "review", input, context) }));
+      disposers.push(registrar.command('cli', { id: "cliCommands:0063", description: "review compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "review", input, context) }));
       disposers.push(registrar.config("configKeys:0007", inputSchema));
       disposers.push(registrar.config("configKeys:0087", inputSchema));
       disposers.push(registrar.intent({ id: "intentVariants:0051", description: "review compatibility contribution", inputSchema, parse: (input) => runtime.parseIntent("review", input), run: (input, context) => runtime.command('intent', "review", input, context) }));

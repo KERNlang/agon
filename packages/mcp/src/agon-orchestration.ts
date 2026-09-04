@@ -31,8 +31,10 @@ export function workflowToolMetadata(toolName: string): Record<string,unknown>|u
   return ORCHESTRATION_TOOLS.find((tool) => tool.name === toolName)?.annotations;
 }
 
-export function listMcpTools(available: ReadonlySet<string> = new Set(MCP_SURFACE_METADATA.keys())): Array<{name:string,description:string,inputSchema:Record<string,unknown>,annotations?:Record<string,unknown>}> {
-  return [...ORCHESTRATION_TOOLS, ...ROOM_TOOLS, ...PROJECT_CONTEXT_TOOLS, ...JOB_TOOLS].filter((tool) => MCP_SURFACE_METADATA.has(tool.name) && available.has(tool.name)).map(t => {
+export interface DynamicMcpTool { readonly name: string; readonly description: string; readonly inputSchema: Record<string, unknown> }
+
+export function listMcpTools(available: ReadonlySet<string> = new Set(MCP_SURFACE_METADATA.keys()), dynamic: readonly DynamicMcpTool[] = []): Array<{name:string,description:string,inputSchema:Record<string,unknown>,annotations?:Record<string,unknown>}> {
+  const builtins = [...ORCHESTRATION_TOOLS, ...ROOM_TOOLS, ...PROJECT_CONTEXT_TOOLS, ...JOB_TOOLS].filter((tool) => MCP_SURFACE_METADATA.has(tool.name) && available.has(tool.name)).map(t => {
     const annotations = workflowToolMetadata(t.name);
     return {
       name: t.name,
@@ -41,6 +43,8 @@ export function listMcpTools(available: ReadonlySet<string> = new Set(MCP_SURFAC
       ...(annotations !== undefined ? { annotations } : {}),
     };
   });
+  const builtinNames = new Set(builtins.map(({ name }) => name));
+  return [...builtins, ...dynamic.filter(({ name }) => available.has(name) && !builtinNames.has(name))];
 }
 
 // ── Module: OrchestrationServer ──
@@ -409,7 +413,12 @@ export async function handleWriteToolCall(name: string, args: Record<string,unkn
 /**
  * Start the Agon orchestration MCP server on stdio. Line-delimited JSONRPC 2.0.
  */
-export function startMcpServer(available: ReadonlySet<string> = new Set(MCP_SURFACE_METADATA.keys()), assertCurrent: () => void = () => undefined) {
+export function startMcpServer(
+  available: ReadonlySet<string> = new Set(MCP_SURFACE_METADATA.keys()),
+  assertCurrent: () => void = () => undefined,
+  dynamicTools: () => readonly DynamicMcpTool[] = () => [],
+  invokeDynamic: (name: string, input: Record<string, unknown>) => Promise<unknown> = async () => { throw new Error('dynamic MCP execution is unavailable'); },
+) {
   const rl = createInterface({ input: process.stdin, terminal: false });
 
   function respond(id: number | string | null, result: unknown): void {
@@ -451,7 +460,7 @@ export function startMcpServer(available: ReadonlySet<string> = new Set(MCP_SURF
 
     if (method === 'tools/list') {
       respond(id, {
-        tools: listMcpTools(available),
+        tools: listMcpTools(available, dynamicTools()),
       });
       return;
     }
@@ -459,8 +468,18 @@ export function startMcpServer(available: ReadonlySet<string> = new Set(MCP_SURF
     if (method === 'tools/call') {
       const toolName = params?.name as string;
       const toolArgs = (params?.arguments ?? {}) as Record<string, unknown>;
-      if (!MCP_SURFACE_METADATA.has(toolName) || !available.has(toolName)) {
+      const dynamic = dynamicTools().find(({ name }) => name === toolName);
+      if ((!MCP_SURFACE_METADATA.has(toolName) && !dynamic) || !available.has(toolName)) {
         respondError(id, -32602, 'Unknown or disabled tool: ' + toolName);
+        return;
+      }
+      if (dynamic && !MCP_SURFACE_METADATA.has(toolName)) {
+        invokeDynamic(toolName, toolArgs).then((result) => {
+          const text = typeof result === 'string' ? result : JSON.stringify(result);
+          respond(id, { content: [{ type: 'text', text }] });
+        }).catch((error) => {
+          respondError(id, -32603, `Dynamic MCP tool failed: ${error instanceof Error ? error.message : String(error)}`);
+        });
         return;
       }
       // Room tools are direct ledger ops (no engine dispatch / Cesar signal).

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "measuredAt": "2026-08-23T13:23:23.351Z",
+  "measuredAt": "2026-09-04T20:55:37.732Z",
   "platform": "darwin-arm64",
   "node": "v26.3.0",
   "isolation": {
@@ -15,14 +15,14 @@
       ],
       "runs": 15,
       "latencyMs": {
-        "p50": 150.494958,
-        "p95": 154.53762500000005,
-        "max": 154.53762500000005
+        "p50": 163.590417,
+        "p95": 179.13716599999998,
+        "max": 179.13716599999998
       },
       "peakRssMb": {
-        "p50": 95.703125,
-        "p95": 96.765625,
-        "max": 96.765625
+        "p50": 108.53125,
+        "p95": 109.625,
+        "max": 109.625
       }
     },
     {
@@ -31,62 +31,62 @@
       ],
       "runs": 15,
       "latencyMs": {
-        "p50": 153.52420799999982,
-        "p95": 157.38395800000035,
-        "max": 157.38395800000035
+        "p50": 163.08762499999966,
+        "p95": 166.7167919999997,
+        "max": 166.7167919999997
       },
       "peakRssMb": {
-        "p50": 96.609375,
-        "p95": 96.953125,
-        "max": 96.953125
+        "p50": 105.8125,
+        "p95": 107.1875,
+        "max": 107.1875
       }
     }
   ],
   "resolver": {
     "candidates": 1000,
     "runs": 15,
-    "p50Ms": 30.1225000000004,
-    "p95Ms": 31.203583000000435,
-    "maxMs": 31.203583000000435,
-    "maxHeapDeltaBytes": 674272
+    "p50Ms": 29.64008399999966,
+    "p95Ms": 31.560083000000304,
+    "maxMs": 31.560083000000304,
+    "maxHeapDeltaBytes": 688880
   },
   "projections": {
-    "entries": 441,
+    "entries": 449,
     "runs": 100,
-    "p50Ms": 0.2857910000002448,
-    "p95Ms": 0.42041599999993196,
-    "maxMs": 1.2331670000003214
+    "p50Ms": 0.2857079999994312,
+    "p95Ms": 0.37720899999931135,
+    "maxMs": 1.1954169999999067
   },
   "packages": {
     "reports": [
       {
         "workspace": "packages/cli",
-        "packedBytes": 1583931,
-        "unpackedBytes": 7418502,
-        "files": 197
+        "packedBytes": 1236223,
+        "unpackedBytes": 5550401,
+        "files": 95
       },
       {
         "workspace": "packages/mod-api",
-        "packedBytes": 9010,
-        "unpackedBytes": 70370,
-        "files": 19
+        "packedBytes": 13622,
+        "unpackedBytes": 95465,
+        "files": 26
       },
       {
         "workspace": "packages/mod-kernel",
-        "packedBytes": 44303,
-        "unpackedBytes": 682318,
-        "files": 11
+        "packedBytes": 150532,
+        "unpackedBytes": 1388353,
+        "files": 64
       }
     ],
     "aggregate": {
-      "packedBytes": 1637244,
-      "unpackedBytes": 8171190,
-      "files": 227
+      "packedBytes": 1400377,
+      "unpackedBytes": 7034219,
+      "files": 185
     }
   },
   "tui": {
     "exitCode": 0,
-    "p95Ms": 3.78
+    "p95Ms": 6.38
   },
   "budgetLimits": {
     "coldStartP95Ms": 185,

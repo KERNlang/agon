@@ -66,7 +66,7 @@ export async function walkBoundedPackage(root: string): Promise<readonly Bounded
 }
 
 /** Read one already-enumerated file while rechecking size and no-follow semantics. */
-export async function readBoundedPackageFile(root: string, file: BoundedPackageFile): Promise<Buffer> {
+export async function readBoundedPackageFile(root: string, file: BoundedPackageFile): Promise<Uint8Array> {
   await assertNoSymlinkComponents(root, file.path);
   const handle = await open(join(root, file.path), constants.O_RDONLY | constants.O_NOFOLLOW);
   try {

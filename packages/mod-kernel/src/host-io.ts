@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 
 export interface HostIo {
   mkdir(path: string, options?: { recursive?: boolean; mode?: number }): Promise<unknown>;
-  readFile(path: string): Promise<Buffer>;
+  readFile(path: string): Promise<Uint8Array>;
   writeFile(path: string, data: string | Uint8Array, options?: { flag?: string; mode?: number }): Promise<void>;
   rename(from: string, to: string): Promise<void>;
   rm(path: string, options?: { recursive?: boolean; force?: boolean }): Promise<void>;
@@ -73,5 +73,5 @@ export async function writeNewImmutableFile(io: HostIo, destination: string, byt
 }
 
 export async function readJson<T>(io: HostIo, path: string): Promise<T> {
-  return JSON.parse((await io.readFile(path)).toString('utf8')) as T;
+  return JSON.parse(new TextDecoder().decode(await io.readFile(path))) as T;
 }

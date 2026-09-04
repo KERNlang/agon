@@ -156,7 +156,16 @@
     "test:modular-trust": "node scripts/run-node22.mjs node_modules/.bin/vitest run tests/unit/modular-trust-authority.test.ts tests/unit/modular-third-party-activation.test.ts tests/unit/modular-third-party-lifecycle.test.ts tests/unit/modular-third-party-ui.test.ts tests/unit/modular-s8-hardening.test.ts tests/unit/modular-transactional-authority.test.ts tests/unit/modular-folder-mod-manager.test.ts tests/unit/modular-folder-mod-snapshot.test.ts tests/unit/modular-folder-mod-bootstrap.test.ts tests/unit/modular-s8-review-regressions.test.ts tests/unit/modular-s8-review-acceptance.test.ts tests/unit/modular-external-surfaces.test.ts tests/unit/modular-s8-bootstrap-isolation.test.ts tests/unit/modular-first-party-cli-recovery.test.ts tests/unit/modular-mod-picker.test.ts tests/unit/modular-tui-input-validation.test.ts",
     "test:modular-folder-mods": "node scripts/run-node22.mjs node_modules/.bin/vitest run tests/unit/modular-folder-mods.test.ts tests/unit/modular-static-discovery.test.ts",
     "test:modular-adversarial": "node scripts/run-node22.mjs node_modules/.bin/vitest run tests/unit/modular-review-regressions.test.ts tests/unit/modular-state.test.ts tests/unit/modular-third-party-s7-deny.test.ts tests/unit/modular-third-party-activation.test.ts tests/unit/modular-folder-mods.test.ts tests/unit/modular-static-discovery.test.ts tests/unit/modular-adversarial-discovery.test.ts",
-    "test:modular-slice8": "npm run test:modular-trust && npm run test:modular-folder-mods && npm run test:modular-adversarial && npm run test:modular-slice7"
+    "test:modular-slice8": "npm run test:modular-trust && npm run test:modular-folder-mods && npm run test:modular-adversarial && npm run test:modular-slice7",
+    "test:modular-release": "node scripts/spec/verify-modular-release-set.mjs --check --self-test",
+    "test:modular-supply-chain": "node scripts/spec/verify-modular-supply-chain.mjs --check --self-test",
+    "test:modular-npx": "node scripts/spec/verify-modular-npx.mjs",
+    "test:modular-platform-matrix": "node scripts/spec/verify-modular-platform-matrix.mjs",
+    "test:modular-state-migrations": "node scripts/spec/verify-modular-state-migrations.mjs",
+    "test:modular-physical-cutover": "node scripts/spec/verify-modular-physical-cutover.mjs",
+    "test:modular-manifest-capabilities": "node scripts/spec/verify-modular-manifest-capabilities.mjs --self-test",
+    "spec:modular-slice9:qualify:index": "node scripts/spec/qualify-modular-agon-slice9.mjs --subject=index --run-clean",
+    "spec:modular-slice9:qualify:commit": "node scripts/spec/qualify-modular-agon-slice9.mjs --subject=commit --run-clean"
   },
   "engines": {
     "node": ">=22"

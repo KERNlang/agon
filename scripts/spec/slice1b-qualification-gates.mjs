@@ -126,4 +126,15 @@ export function validateSubjectBoundReview(root, review, expectedSubject) {
   return { passed: true };
 }
 
+export function validateStoredSubjectBoundReview(root, reviewPath, expectedSubject) {
+  if (!safeRelativePath(reviewPath)) return { passed: false, reason: 'review evidence path must be normalized and repository-relative' };
+  let review;
+  try {
+    review = JSON.parse(String(objectBytes(root, expectedSubject, reviewPath)));
+  } catch {
+    return { passed: false, reason: 'review evidence is absent or invalid in the qualified Git subject' };
+  }
+  return validateSubjectBoundReview(root, review, expectedSubject);
+}
+
 export { sha256 };

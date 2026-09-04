@@ -332,8 +332,9 @@ export async function createManagedLifecyclePlan(
     artifactMap.set(artifact.id, artifact);
   }
   const closure = topologicalClosure(request.requestedPackageIds.map((id) => safeId(id, 'requested package ID')), artifactMap);
-  const lockedById = new Map(request.lock.packages.map((entry) => [entry.id, entry]));
-  if (lockedById.size !== request.lock.packages.length) throw new TypeError('canonical lock contains duplicate package IDs');
+  const packageIdForLock = (entry: LockedModPackage) => entry.id.startsWith('agon.') ? `@kernlang/agon-mod-${entry.id.slice('agon.'.length)}` : entry.id;
+  const lockedById = new Map(request.lock.packages.map((entry) => [packageIdForLock(entry), entry]));
+  if (lockedById.size !== request.lock.packages.length) throw new TypeError('canonical lock contains duplicate physical package identities');
   if (closure.length !== request.lock.packages.length || closure.some((artifact) => !lockedById.has(artifact.id))) {
     throw new DurableHostError('MOD_TRANSACTION_FAILED', 'resolved package closure does not exactly match the canonical lock');
   }
@@ -544,9 +545,8 @@ export class ManagedLifecycleService {
       await this.#fault('after-packages-staged');
       const verification = freeze(await verifier.verify(staging, plan));
       if (!verification.passed || verification.checks.some((check) => !check.passed)) {
-        throw new DurableHostError('MOD_TRANSACTION_FAILED', 'sacrificial candidate verification failed', {
-          failedChecks: verification.checks.filter((check) => !check.passed).map((check) => check.id),
-        });
+        const failedChecks = verification.checks.filter((check) => !check.passed);
+        throw new DurableHostError('MOD_TRANSACTION_FAILED', `sacrificial candidate verification failed: ${failedChecks.map((check) => `${check.id}${check.detail ? ` (${check.detail})` : ''}`).join(', ')}`, { failedChecks });
       }
       steps.push({ id: 'sacrificial-verification', state: 'passed' });
       const qualifiedAt = this.#now().toISOString();

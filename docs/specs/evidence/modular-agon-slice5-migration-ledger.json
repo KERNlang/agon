@@ -11,7 +11,7 @@
         "@kernlang/agon-support-engine-runtime"
       ],
       "assignments": 1,
-      "assignmentHash": "sha256:3cf591b39dc3575779491165f9a0eda5d039bbda6ca1339fcf76c9fb9f815d6c",
+      "assignmentHash": "sha256:9f0a8e504b33e4b1d13c6e6d655e492c044c8a1f5b868407efb5c6d763a56afa",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -25,7 +25,7 @@
         "@kernlang/agon-support-verification"
       ],
       "assignments": 30,
-      "assignmentHash": "sha256:c2cda747994d8913863cb90831d37f6bbfe32cd3a49d07a45197bd7aab520ffe",
+      "assignmentHash": "sha256:5002ec6e60a9d1ae274e6f4f26e0a3968230cd09f9c683154fecb35e46ec0370",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -37,7 +37,7 @@
         "@kernlang/agon-support-engine-runtime"
       ],
       "assignments": 2,
-      "assignmentHash": "sha256:884e17beb7f73d71ddf030a3ab3af67b9681cfbdbab177cd659c275707683e91",
+      "assignmentHash": "sha256:49684df3a10fb82696210b74db42f39a238dcfb661de294d92932f8ec6c588df",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -51,7 +51,7 @@
         "@kernlang/agon-support-dedup"
       ],
       "assignments": 12,
-      "assignmentHash": "sha256:ed54296a70350095ea9838d0096e54654859f2165aac87b71bd97084e701e3ed",
+      "assignmentHash": "sha256:6ed90dab5cf9aa1c0be97f6aa81c6cf656cfeb9323a43a87905d6df0a76d29ea",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -65,7 +65,7 @@
         "@kernlang/agon-support-panel"
       ],
       "assignments": 5,
-      "assignmentHash": "sha256:c9bf1eb6d84b9ecdab5be6575c9a16775fcb10c0de4b309f926c4b616f8399db",
+      "assignmentHash": "sha256:8e9eae3ba7a15847a09119ee8451b3526b9a05b0f9308b5fcaebf5f163cbe951",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -79,7 +79,7 @@
         "@kernlang/agon-support-judge"
       ],
       "assignments": 12,
-      "assignmentHash": "sha256:edfe2c32d6d51dfd5603013b26d7c97ba83faedfff1401d2520a89913d99d002",
+      "assignmentHash": "sha256:f782afb37f82ca826a824ead54b2116d6f06703b20483860ca573acffdaf8fb1",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -93,7 +93,7 @@
         "@kernlang/agon-support-panel"
       ],
       "assignments": 5,
-      "assignmentHash": "sha256:72f5e874510997cf4dc2353fc9a2b6018c78afd24e78f0aea2056a7f5e2dc545",
+      "assignmentHash": "sha256:01914ef5ea9d44c547674d08b2874809591462bd4956d0d5446b2b863e97a644",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -106,7 +106,7 @@
         "@kernlang/agon-support-panel"
       ],
       "assignments": 10,
-      "assignmentHash": "sha256:c1c0fdc34229918bf8e28731934bd7701101dcb3ba65032046df012932bbb1a6",
+      "assignmentHash": "sha256:4de3304f59c7aef45a605be886d0e435b46649f625944e21bece1057053f57f1",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -122,7 +122,7 @@
         "@kernlang/agon-support-verification"
       ],
       "assignments": 51,
-      "assignmentHash": "sha256:93630ee06e21b731cf7bd5cc718d27909a6186f10380da14b314374279f06f1d",
+      "assignmentHash": "sha256:3cc9dceab48b5c7cf36cee3650ec92dae54a58bdfa6a41704333b538d8e64f6e",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -136,7 +136,7 @@
         "@kernlang/agon-support-panel"
       ],
       "assignments": 6,
-      "assignmentHash": "sha256:9bb2a671b1d842952fe3771087607235b8ab68977b43944d048e172c00f45ed0",
+      "assignmentHash": "sha256:636fe0dca4990f6d0afc0065f5d1813e68e2ef98f5e698af19a0bcd97a1bce77",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -150,7 +150,7 @@
         "@kernlang/agon-support-judge"
       ],
       "assignments": 8,
-      "assignmentHash": "sha256:6a5bc6ebe32832c9d960477c06bc4b118689840f68bf49cb53acb6be520f9ac6",
+      "assignmentHash": "sha256:0cd7642d6966822b228aea38e6cd819700048425097277fb3686a3c304469fda",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -161,10 +161,11 @@
         "@kernlang/agon-mod-api",
         "@kernlang/agon-support-engine-runtime",
         "@kernlang/agon-support-panel",
-        "@kernlang/agon-support-verification"
+        "@kernlang/agon-support-verification",
+        "@kernlang/agon-support-worktree"
       ],
       "assignments": 17,
-      "assignmentHash": "sha256:6dc1cabceecc97f450c0c417991570e32f8cb015bec5aa5d7865310137db6d90",
+      "assignmentHash": "sha256:7b2038682d70559262ed92a3639c19fb6dd079da9eeb2cc5c6c888ffdfdecec0",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -179,7 +180,7 @@
         "@kernlang/agon-mod-tribunal"
       ],
       "assignments": 1,
-      "assignmentHash": "sha256:4bd360cf354eb42f599f1d8c64b1242d4107bd8317d7fcffacff5ff30b010c0f",
+      "assignmentHash": "sha256:9ac600abcca3ea22da41a0c28f285b66d2cd4fede3c6e290ef35af347e7cbf97",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -192,8 +193,8 @@
         "@kernlang/agon-mod-agent",
         "@kernlang/agon-mod-review"
       ],
-      "assignments": 5,
-      "assignmentHash": "sha256:9d4a82ae3e5ed1fc70eb2cd90a45fe36b476814dd8e260ff5f50bb6572cd3553",
+      "assignments": 6,
+      "assignmentHash": "sha256:33fefc447860c5633077f7ae08fd2152caa44a367b6f0273b36ee836809d27d0",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -205,8 +206,8 @@
         "@kernlang/agon-support-engine-runtime",
         "@kernlang/agon-support-agent-runtime"
       ],
-      "assignments": 38,
-      "assignmentHash": "sha256:6bd8b92474b6315eb9c292049ab3af42c58743676a9dafb4bf1adc92d8ffafe7",
+      "assignments": 37,
+      "assignmentHash": "sha256:1e8c75476b96c607152ef42c2451bc4aabf8b613bccc478dc7a0c4b961728007",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -220,10 +221,12 @@
         "@kernlang/agon-mod-agent",
         "@kernlang/agon-mod-review",
         "@kernlang/agon-mod-jobs",
-        "@kernlang/agon-mod-git-actions"
+        "@kernlang/agon-mod-git-actions",
+        "@kernlang/agon-support-worktree",
+        "@kernlang/agon-support-verification"
       ],
       "assignments": 4,
-      "assignmentHash": "sha256:1a15b0bc43a851081b97eae3a15f74acda0888d927d95373ead10bd7ee4c3f03",
+      "assignmentHash": "sha256:d147a14e582ad2375d9f037ca41187e46783ad3c63ef3bd9ad11295b49d43e50",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -236,10 +239,12 @@
         "@kernlang/agon-mod-agent",
         "@kernlang/agon-mod-nero",
         "@kernlang/agon-mod-tribunal",
-        "@kernlang/agon-mod-council"
+        "@kernlang/agon-mod-council",
+        "@kernlang/agon-support-worktree",
+        "@kernlang/agon-support-verification"
       ],
       "assignments": 4,
-      "assignmentHash": "sha256:0b6b0ff64ec9986af795d078db6f5ca9fd5de799e0be096295869525170aa19f",
+      "assignmentHash": "sha256:57521f959508aed925eb5b9babd7ee80f64c17cce9e19f14c21b942113f0f46e",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -252,7 +257,7 @@
         "@kernlang/agon-support-judge"
       ],
       "assignments": 6,
-      "assignmentHash": "sha256:47fd5bb1f0efa327c48c010604cd686af3a529221a78f0b91fc1eb2b0a178b64",
+      "assignmentHash": "sha256:3b8c7179fef401c258448b32a2d5f11ad693fca69a66ee56af52968d7490d37c",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -266,7 +271,7 @@
         "@kernlang/agon-support-judge"
       ],
       "assignments": 3,
-      "assignmentHash": "sha256:fcbcfe993d5154ce8bae5991c639b235c94e0b06e8719c5642b41296c90bb7d2",
+      "assignmentHash": "sha256:ee804fd11481297c057ecf3506a946b5e6b79f2f7568cc44a00682d80ec22449",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -278,7 +283,7 @@
         "@kernlang/agon-support-engine-runtime"
       ],
       "assignments": 3,
-      "assignmentHash": "sha256:d708158a43c719d12fa09eebddbe62672adc17fbd4aeb01763a109536508b8d8",
+      "assignmentHash": "sha256:329a5ae6de196ed312be7a5807adc59d74285a1ca16774dc823a511f8ea6c84b",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -292,7 +297,7 @@
         "@kernlang/agon-support-dedup"
       ],
       "assignments": 6,
-      "assignmentHash": "sha256:3a052f5a3578e1c8c1fb4f00ca1a60a6c480674ffa1114d96a919f292474cf8f",
+      "assignmentHash": "sha256:866d10378242caf96f74dfc7630470a193a8fad88bdd765f62eb98f41a2034c0",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -302,10 +307,11 @@
       "dependencies": [
         "@kernlang/agon-mod-api",
         "@kernlang/agon-support-engine-runtime",
-        "@kernlang/agon-support-verification"
+        "@kernlang/agon-support-verification",
+        "@kernlang/agon-support-worktree"
       ],
       "assignments": 3,
-      "assignmentHash": "sha256:59d799fa677b4d02bf48a65d3aa2de4d8f60dd34989159bed42baeaff435ef7e",
+      "assignmentHash": "sha256:31212832f2013891ab7b17310f8a0e81ad660650a4aac99bacca9ffba94b9c1b",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -314,10 +320,11 @@
       "modId": "agon.naturalize",
       "dependencies": [
         "@kernlang/agon-mod-api",
-        "@kernlang/agon-support-engine-runtime"
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-mod-sanitize"
       ],
       "assignments": 2,
-      "assignmentHash": "sha256:14bb076dfd38201248bc99f27404f9070ff07cf4edf4b58ac39f37297db246a6",
+      "assignmentHash": "sha256:58f0cc4af5b37841168bcd5986eac038932806a2d93f473c25d7bb3a4ac9561d",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -329,7 +336,7 @@
         "@kernlang/agon-support-engine-runtime"
       ],
       "assignments": 2,
-      "assignmentHash": "sha256:e807760da9e3d9c190779ac663dd7a16b67a0b8127bb3c2ed2671a29cc35227e",
+      "assignmentHash": "sha256:e800f0ab4a6d9f2efe70ae5b8155a85f3e0de068dddbf63772df6304edcb78bf",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -342,7 +349,7 @@
         "@kernlang/agon-support-persistence"
       ],
       "assignments": 14,
-      "assignmentHash": "sha256:9819b0122d51eb49ac6d0d45686e112aec8e72d63e2d60f95fbc39ebf829bde8",
+      "assignmentHash": "sha256:0bef4b469da8d624bcd10ba8d73c4b5f70a0fc4c50abba9483aac220713b84ee",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -355,7 +362,7 @@
         "@kernlang/agon-support-persistence"
       ],
       "assignments": 29,
-      "assignmentHash": "sha256:2a32659ac1324488437a7a0cf41ab4d886106a05213962d0d184e26b196c0d97",
+      "assignmentHash": "sha256:7ae3aa215c17572e6108ab840b8f2c8fc8e0f172f361c03093ab564e8d70ce95",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -369,7 +376,7 @@
         "@kernlang/agon-support-agent-runtime"
       ],
       "assignments": 17,
-      "assignmentHash": "sha256:1cfef93aa4d755a66564e9c55bc145039c7cb9da5b443cb69d67dc1e463bece5",
+      "assignmentHash": "sha256:fdfac1c6f5caca1e830a67aed95591d497dff7516123de50133117e324637ccb",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -382,7 +389,7 @@
         "@kernlang/agon-support-persistence"
       ],
       "assignments": 10,
-      "assignmentHash": "sha256:c02e7add9e5c24a15900eddea03b3b33eedac981e6cd45e139f180f992ffffaa",
+      "assignmentHash": "sha256:94733f34e7ba8bcd60b1ac8ff4d369c89e6ed525374e19fb8b9608a1f26c3bd5",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -395,7 +402,7 @@
         "@kernlang/agon-support-persistence"
       ],
       "assignments": 5,
-      "assignmentHash": "sha256:019a530fff1671cb75e7d3444d3f9c3afd5385910d36417c71a9eaf6b9628120",
+      "assignmentHash": "sha256:33ecc2728c4366d9bfabdf2ece6aa4286703ed9709a4fefc2b7be54228b03908",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -408,7 +415,7 @@
         "@kernlang/agon-support-persistence"
       ],
       "assignments": 4,
-      "assignmentHash": "sha256:41398e09934462da496f6fb66fcd5fe712584fbfd848d0655f97b15ca446ba2f",
+      "assignmentHash": "sha256:d7a47c10edb05db9830b4ea689fbda4e41079c135d8c8783a651bda23b057915",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -421,7 +428,7 @@
         "@kernlang/agon-support-persistence"
       ],
       "assignments": 6,
-      "assignmentHash": "sha256:f272d7b409afd577b00ec4a5b6ea8b5ae71ab628af5f4259eef874c1eadb410b",
+      "assignmentHash": "sha256:c52a9b6610e79be02ef57d48c5f916da906c06d70780ef02e4d09624697a9687",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -434,7 +441,7 @@
         "@kernlang/agon-support-persistence"
       ],
       "assignments": 2,
-      "assignmentHash": "sha256:03ca5e203ad30aa2548d8f133a32898663614d6efe58b114c9e9310d2c28b253",
+      "assignmentHash": "sha256:1bb5294d447014c1987a50565c8a64699cc2a17aab8b8268ed30b1ae414ff7bc",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -447,7 +454,7 @@
         "@kernlang/agon-support-worktree"
       ],
       "assignments": 7,
-      "assignmentHash": "sha256:8854f5cd0f4445d87be4d8dfecd8a21b515bec9c7c9f2e6d0fc7af231b7b1234",
+      "assignmentHash": "sha256:844547c18736fb3fb70df9ac3c25f25fd2e39de77b0d5ac9589bbc19bedd584a",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -460,7 +467,7 @@
         "@kernlang/agon-support-persistence"
       ],
       "assignments": 3,
-      "assignmentHash": "sha256:1c0e71f116d5208bbecce385bd9d412dbbc821de409fc8d14191719bb58c202e",
+      "assignmentHash": "sha256:ad19209aa7b1ae929e99b70436c15a008b857301098e04e2bcdaff152b1b3ef2",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -473,7 +480,7 @@
         "@kernlang/agon-support-verification"
       ],
       "assignments": 6,
-      "assignmentHash": "sha256:3f71bf0c0aec2f9df7ea884ffa4c54b08ffec49de7682abd1fd4563862e07a3c",
+      "assignmentHash": "sha256:3550a6bb22d7b8553c35947585566149686d1c4bd917acdd95fe8427a04f4c4a",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -485,8 +492,8 @@
         "@kernlang/agon-support-engine-runtime",
         "@kernlang/agon-support-persistence"
       ],
-      "assignments": 2,
-      "assignmentHash": "sha256:d3c1fa35a730a458f9f05c660d9ebd4ee781d74de7b51144b1d3c81fabaa7f9f",
+      "assignments": 5,
+      "assignmentHash": "sha256:98dac667b38fb85225dac70f58e8fbcdb0f7b45b520509281f5c0060dff00f77",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     }
@@ -508,6 +515,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -527,6 +535,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -546,6 +555,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -565,6 +575,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -584,6 +595,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -603,6 +615,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/cli/src/models/handler-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -622,6 +635,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/core/src/cesar/plan.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -641,6 +655,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/routing.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -660,6 +675,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/routing.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -679,6 +695,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/cli/src/models/handler-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -698,6 +715,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/core/src/cesar/plan.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -717,6 +735,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/routing.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -736,6 +755,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/routing.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -755,6 +775,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/cli/src/models/handler-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -774,6 +795,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/core/src/cesar/plan.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -793,6 +815,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/tools.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -812,6 +835,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/tools.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -831,25 +855,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/core/src/models/types.ts",
       "authority": "legacy-runtime-until-s6",
-      "registrationBoundary": "public-mod-api",
-      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
-    },
-    {
-      "category": "generatedDocumentation",
-      "id": "AGENTS.md routing block",
-      "source": "packages/cli/src/commands/agent-guide-text.ts:1",
-      "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-agent",
-      "rule": "semantic-source-rule",
-      "legacyPath": "packages/cli/src/commands/agent-guide-text.ts",
-      "physicalPackage": "packages/mod-agent",
-      "physicalEntrypoint": "packages/mod-agent/src/index.ts",
-      "implementationPaths": [
-        "packages/mod-agent/src/index.ts"
-      ],
-      "ownershipAsset": "packages/mod-agent/ownership.json",
-      "compatibilityAdapter": "packages/cli/src/commands/agent-guide-text.ts",
-      "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -869,6 +875,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -888,6 +895,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -907,6 +915,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -926,6 +935,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -945,6 +955,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -964,6 +975,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/mcp/src/agon-orchestration.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -983,6 +995,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/mcp/src/agon-orchestration.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1002,6 +1015,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/cli/src/handlers/agent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1021,6 +1035,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/core/src/models/agent-event.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1040,6 +1055,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/task-controller.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1059,6 +1075,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/output.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1078,6 +1095,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/core/src/cesar/agent-session.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1097,6 +1115,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/core/src/cesar/agent-team.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1116,6 +1135,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/core/src/cesar/agent-team.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1135,6 +1155,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/git.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1154,6 +1175,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1173,6 +1195,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1192,6 +1215,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1211,6 +1235,7 @@
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1230,6 +1255,7 @@
       "ownershipAsset": "packages/mod-ask/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1249,6 +1275,7 @@
       "ownershipAsset": "packages/mod-brainstorm/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1268,6 +1295,7 @@
       "ownershipAsset": "packages/mod-brainstorm/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/routing.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1287,6 +1315,7 @@
       "ownershipAsset": "packages/mod-brainstorm/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/routing.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1306,6 +1335,7 @@
       "ownershipAsset": "packages/mod-brainstorm/ownership.json",
       "compatibilityAdapter": "packages/cli/src/models/handler-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1325,6 +1355,7 @@
       "ownershipAsset": "packages/mod-brainstorm/ownership.json",
       "compatibilityAdapter": "packages/core/src/cesar/plan.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1344,6 +1375,7 @@
       "ownershipAsset": "packages/mod-brainstorm/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/tools.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1363,6 +1395,7 @@
       "ownershipAsset": "packages/mod-brainstorm/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1382,6 +1415,7 @@
       "ownershipAsset": "packages/mod-brainstorm/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1401,6 +1435,7 @@
       "ownershipAsset": "packages/mod-brainstorm/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1420,6 +1455,7 @@
       "ownershipAsset": "packages/mod-brainstorm/ownership.json",
       "compatibilityAdapter": "packages/mcp/src/agon-orchestration.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1439,6 +1475,7 @@
       "ownershipAsset": "packages/mod-brainstorm/ownership.json",
       "compatibilityAdapter": "packages/core/src/models/types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1458,6 +1495,7 @@
       "ownershipAsset": "packages/mod-brainstorm/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1477,6 +1515,7 @@
       "ownershipAsset": "packages/mod-browser/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1496,6 +1535,7 @@
       "ownershipAsset": "packages/mod-browser/ownership.json",
       "compatibilityAdapter": "packages/cli/src/commands/browser-host.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1515,6 +1555,7 @@
       "ownershipAsset": "packages/mod-browser/ownership.json",
       "compatibilityAdapter": "packages/cli/src/commands/browser-host.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1534,6 +1575,7 @@
       "ownershipAsset": "packages/mod-browser/ownership.json",
       "compatibilityAdapter": "packages/cli/src/commands/browser-host.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1553,6 +1595,7 @@
       "ownershipAsset": "packages/mod-browser/ownership.json",
       "compatibilityAdapter": "packages/cli/src/commands/browser-host.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1572,6 +1615,7 @@
       "ownershipAsset": "packages/mod-browser/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1591,6 +1635,7 @@
       "ownershipAsset": "packages/mod-browser/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1610,6 +1655,7 @@
       "ownershipAsset": "packages/mod-browser/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1629,6 +1675,7 @@
       "ownershipAsset": "packages/mod-browser/ownership.json",
       "compatibilityAdapter": "packages/cli/src/commands/ext.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1648,6 +1695,7 @@
       "ownershipAsset": "packages/mod-browser/ownership.json",
       "compatibilityAdapter": "packages/cli/src/commands/ext.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1667,6 +1715,7 @@
       "ownershipAsset": "packages/mod-browser/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1686,6 +1735,7 @@
       "ownershipAsset": "packages/mod-browser/ownership.json",
       "compatibilityAdapter": "packages/cli/src/commands/browser-host.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1705,6 +1755,7 @@
       "ownershipAsset": "packages/mod-browser/ownership.json",
       "compatibilityAdapter": "packages/cli/src/bridge/chrome-bridge.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1724,6 +1775,7 @@
       "ownershipAsset": "packages/mod-browser/ownership.json",
       "compatibilityAdapter": "packages/cli/src/bridge/serve-runtime.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1743,6 +1795,7 @@
       "ownershipAsset": "packages/mod-browser/ownership.json",
       "compatibilityAdapter": "packages/cli/src/commands/browser-host.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1762,6 +1815,7 @@
       "ownershipAsset": "packages/mod-browser/ownership.json",
       "compatibilityAdapter": "packages/cli/src/commands/drive.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1781,6 +1835,7 @@
       "ownershipAsset": "packages/mod-browser/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1800,6 +1855,7 @@
       "ownershipAsset": "packages/mod-campfire/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1819,6 +1875,7 @@
       "ownershipAsset": "packages/mod-campfire/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/routing.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1838,6 +1895,7 @@
       "ownershipAsset": "packages/mod-campfire/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/routing.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1857,6 +1915,7 @@
       "ownershipAsset": "packages/mod-campfire/ownership.json",
       "compatibilityAdapter": "packages/cli/src/models/handler-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1876,6 +1935,7 @@
       "ownershipAsset": "packages/mod-campfire/ownership.json",
       "compatibilityAdapter": "packages/core/src/cesar/plan.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1895,6 +1955,7 @@
       "ownershipAsset": "packages/mod-campfire/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/tools.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1914,6 +1975,7 @@
       "ownershipAsset": "packages/mod-campfire/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1933,6 +1995,7 @@
       "ownershipAsset": "packages/mod-campfire/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1952,6 +2015,7 @@
       "ownershipAsset": "packages/mod-campfire/ownership.json",
       "compatibilityAdapter": "packages/mcp/src/agon-orchestration.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1971,6 +2035,7 @@
       "ownershipAsset": "packages/mod-campfire/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -1990,6 +2055,7 @@
       "ownershipAsset": "packages/mod-conquer/ownership.json",
       "compatibilityAdapter": "packages/cli/src/models/handler-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2009,6 +2075,7 @@
       "ownershipAsset": "packages/mod-conquer/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/tools.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2028,6 +2095,7 @@
       "ownershipAsset": "packages/mod-conquer/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2047,6 +2115,7 @@
       "ownershipAsset": "packages/mod-conquer/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2066,6 +2135,7 @@
       "ownershipAsset": "packages/mod-council/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/tools.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2085,6 +2155,7 @@
       "ownershipAsset": "packages/mod-council/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2104,6 +2175,7 @@
       "ownershipAsset": "packages/mod-council/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2123,6 +2195,7 @@
       "ownershipAsset": "packages/mod-flow/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2142,6 +2215,7 @@
       "ownershipAsset": "packages/mod-flow/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2161,6 +2235,7 @@
       "ownershipAsset": "packages/mod-flow/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2180,6 +2255,7 @@
       "ownershipAsset": "packages/mod-flow/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2199,6 +2275,7 @@
       "ownershipAsset": "packages/mod-flow/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2218,6 +2295,7 @@
       "ownershipAsset": "packages/mod-flow/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2237,6 +2315,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2256,6 +2335,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2275,6 +2355,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/routing.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2294,6 +2375,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/cli/src/models/handler-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2313,6 +2395,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/core/src/cesar/plan.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2332,6 +2415,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/routing.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2351,6 +2435,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/routing.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2370,6 +2455,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/cli/src/models/handler-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2389,6 +2475,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/tools.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2408,6 +2495,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2427,6 +2515,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/core/src/models/types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2446,6 +2535,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/core/src/models/types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2465,6 +2555,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/forge/src/goal/oracle-probe.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2484,6 +2575,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/forge/src/goal/oracle-probe.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2503,6 +2595,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/forge/src/goal/oracle-probe.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2522,6 +2615,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/forge/src/goal/oracle-probe.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2541,6 +2635,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/forge/src/goal/oracle-probe.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2560,6 +2655,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2579,6 +2675,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2598,6 +2695,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2617,6 +2715,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/mcp/src/agon-orchestration.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2636,6 +2735,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/forge/src/goal/types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2655,6 +2755,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/forge/src/campfire.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2674,6 +2775,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/forge/src/conquer.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2693,6 +2795,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/forge/src/corpus.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2712,6 +2815,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/forge/src/council.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2731,6 +2835,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/forge/src/delegate.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2750,6 +2855,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/forge/src/conquer.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2769,6 +2875,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/core/src/forge/virtual-fs.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2788,6 +2895,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/core/src/models/types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2807,6 +2915,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/core/src/models/types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2826,6 +2935,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/core/src/models/types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2845,6 +2955,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/forge/src/goal/types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2864,6 +2975,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/forge/src/mutate.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2883,6 +2995,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/forge/src/naturalize.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2902,6 +3015,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/forge/src/nero.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2921,6 +3035,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/core/src/cesar/agent-synthesis.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2940,6 +3055,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/forge/src/pr-text.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2959,6 +3075,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/forge/src/research.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2978,6 +3095,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/forge/src/mutate-semantic.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -2997,6 +3115,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/forge/src/types-impl.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3016,6 +3135,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/forge/src/quality.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3035,6 +3155,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/forge/src/synthesis-modus.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3054,6 +3175,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/forge/src/types-impl.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3073,6 +3195,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/forge/src/synth-plan.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3092,6 +3215,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/forge/src/thinking.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3111,6 +3235,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/forge/src/goal/oracle.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3130,6 +3255,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/forge/src/goal/oracle.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3149,6 +3275,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/forge/src/goal/journal.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3168,6 +3295,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3187,6 +3315,7 @@
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3206,6 +3335,7 @@
       "ownershipAsset": "packages/mod-git-actions/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3225,6 +3355,7 @@
       "ownershipAsset": "packages/mod-git-actions/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3244,6 +3375,7 @@
       "ownershipAsset": "packages/mod-git-actions/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3263,6 +3395,7 @@
       "ownershipAsset": "packages/mod-git-actions/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3282,6 +3415,7 @@
       "ownershipAsset": "packages/mod-git-actions/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3301,6 +3435,7 @@
       "ownershipAsset": "packages/mod-git-actions/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3320,6 +3455,7 @@
       "ownershipAsset": "packages/mod-goal/ownership.json",
       "compatibilityAdapter": "packages/cli/src/models/handler-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3339,6 +3475,7 @@
       "ownershipAsset": "packages/mod-goal/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/tools.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3358,6 +3495,7 @@
       "ownershipAsset": "packages/mod-goal/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3377,6 +3515,7 @@
       "ownershipAsset": "packages/mod-goal/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3396,6 +3535,7 @@
       "ownershipAsset": "packages/mod-history/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3415,6 +3555,7 @@
       "ownershipAsset": "packages/mod-history/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3434,6 +3575,7 @@
       "ownershipAsset": "packages/mod-history/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3453,6 +3595,7 @@
       "ownershipAsset": "packages/mod-history/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3472,6 +3615,7 @@
       "ownershipAsset": "packages/mod-history/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3491,6 +3635,7 @@
       "ownershipAsset": "packages/mod-jobs/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3510,6 +3655,7 @@
       "ownershipAsset": "packages/mod-jobs/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3529,6 +3675,7 @@
       "ownershipAsset": "packages/mod-jobs/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3548,6 +3695,7 @@
       "ownershipAsset": "packages/mod-jobs/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3567,6 +3715,7 @@
       "ownershipAsset": "packages/mod-jobs/ownership.json",
       "compatibilityAdapter": "packages/cli/src/commands/job.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3586,6 +3735,7 @@
       "ownershipAsset": "packages/mod-jobs/ownership.json",
       "compatibilityAdapter": "packages/cli/src/commands/job.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3605,6 +3755,7 @@
       "ownershipAsset": "packages/mod-jobs/ownership.json",
       "compatibilityAdapter": "packages/cli/src/commands/job.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3624,6 +3775,7 @@
       "ownershipAsset": "packages/mod-jobs/ownership.json",
       "compatibilityAdapter": "packages/cli/src/commands/job.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3643,6 +3795,7 @@
       "ownershipAsset": "packages/mod-jobs/ownership.json",
       "compatibilityAdapter": "packages/cli/src/commands/job.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3662,6 +3815,7 @@
       "ownershipAsset": "packages/mod-jobs/ownership.json",
       "compatibilityAdapter": "packages/cli/src/commands/job.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3681,6 +3835,7 @@
       "ownershipAsset": "packages/mod-jobs/ownership.json",
       "compatibilityAdapter": "packages/cli/src/jobs/workflow-job.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3700,6 +3855,7 @@
       "ownershipAsset": "packages/mod-jobs/ownership.json",
       "compatibilityAdapter": "packages/cli/src/jobs/workflow-job.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3719,6 +3875,7 @@
       "ownershipAsset": "packages/mod-jobs/ownership.json",
       "compatibilityAdapter": "packages/cli/src/jobs/workflow-job.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3738,6 +3895,7 @@
       "ownershipAsset": "packages/mod-jobs/ownership.json",
       "compatibilityAdapter": "packages/cli/src/jobs/daemon-job-router.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3757,6 +3915,7 @@
       "ownershipAsset": "packages/mod-jobs/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3776,6 +3935,7 @@
       "ownershipAsset": "packages/mod-jobs/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3795,6 +3955,7 @@
       "ownershipAsset": "packages/mod-jobs/ownership.json",
       "compatibilityAdapter": "packages/mcp/src/job-tools.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3814,6 +3975,7 @@
       "ownershipAsset": "packages/mod-jobs/ownership.json",
       "compatibilityAdapter": "packages/mcp/src/job-tools.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3833,6 +3995,7 @@
       "ownershipAsset": "packages/mod-jobs/ownership.json",
       "compatibilityAdapter": "packages/mcp/src/job-tools.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3852,6 +4015,7 @@
       "ownershipAsset": "packages/mod-jobs/ownership.json",
       "compatibilityAdapter": "packages/mcp/src/job-tools.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3871,6 +4035,7 @@
       "ownershipAsset": "packages/mod-jobs/ownership.json",
       "compatibilityAdapter": "packages/mcp/src/job-tools.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3890,6 +4055,7 @@
       "ownershipAsset": "packages/mod-jobs/ownership.json",
       "compatibilityAdapter": "packages/mcp/src/job-tools.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3909,6 +4075,7 @@
       "ownershipAsset": "packages/mod-jobs/ownership.json",
       "compatibilityAdapter": "packages/cli/src/jobs/workflow-job.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3928,6 +4095,7 @@
       "ownershipAsset": "packages/mod-jobs/ownership.json",
       "compatibilityAdapter": "packages/core/src/jobs/job-service.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3947,6 +4115,7 @@
       "ownershipAsset": "packages/mod-jobs/ownership.json",
       "compatibilityAdapter": "packages/core/src/jobs/job-service.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3966,6 +4135,7 @@
       "ownershipAsset": "packages/mod-jobs/ownership.json",
       "compatibilityAdapter": "packages/core/src/jobs/job-service.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -3985,6 +4155,7 @@
       "ownershipAsset": "packages/mod-jobs/ownership.json",
       "compatibilityAdapter": "packages/cli/src/commands/daemon.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4004,6 +4175,7 @@
       "ownershipAsset": "packages/mod-jobs/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4023,6 +4195,7 @@
       "ownershipAsset": "packages/mod-jobs/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4042,6 +4215,7 @@
       "ownershipAsset": "packages/mod-memory/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/tools.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4061,6 +4235,7 @@
       "ownershipAsset": "packages/mod-memory/ownership.json",
       "compatibilityAdapter": "packages/mcp/src/agon-orchestration.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4080,6 +4255,7 @@
       "ownershipAsset": "packages/mod-mutate/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4099,6 +4275,7 @@
       "ownershipAsset": "packages/mod-mutate/ownership.json",
       "compatibilityAdapter": "packages/core/src/models/types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4118,6 +4295,7 @@
       "ownershipAsset": "packages/mod-mutate/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4137,6 +4315,7 @@
       "ownershipAsset": "packages/mod-naturalize/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4156,6 +4335,7 @@
       "ownershipAsset": "packages/mod-naturalize/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4175,6 +4355,7 @@
       "ownershipAsset": "packages/mod-nero/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4194,6 +4375,7 @@
       "ownershipAsset": "packages/mod-nero/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/tools.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4213,6 +4395,7 @@
       "ownershipAsset": "packages/mod-nero/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4232,6 +4415,7 @@
       "ownershipAsset": "packages/mod-nero/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4251,6 +4435,7 @@
       "ownershipAsset": "packages/mod-nero/ownership.json",
       "compatibilityAdapter": "packages/mcp/src/agon-orchestration.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4270,6 +4455,7 @@
       "ownershipAsset": "packages/mod-nero/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4289,6 +4475,7 @@
       "ownershipAsset": "packages/mod-pipeline-delivery/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4308,6 +4495,7 @@
       "ownershipAsset": "packages/mod-pipeline-delivery/ownership.json",
       "compatibilityAdapter": "packages/cli/src/models/handler-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4327,6 +4515,7 @@
       "ownershipAsset": "packages/mod-pipeline-delivery/ownership.json",
       "compatibilityAdapter": "packages/core/src/cesar/plan.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4346,6 +4535,7 @@
       "ownershipAsset": "packages/mod-pipeline-delivery/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/tools.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4365,6 +4555,27 @@
       "ownershipAsset": "packages/mod-pipeline-delivery/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
+      "registrationBoundary": "public-mod-api",
+      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/pipeline",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-pipeline-delivery",
+      "rule": "pipeline-surface-split",
+      "legacyPath": "packages/cli/src/signals/intent.ts",
+      "physicalPackage": "packages/mod-pipeline-delivery",
+      "physicalEntrypoint": "packages/mod-pipeline-delivery/src/index.ts",
+      "implementationPaths": [
+        "packages/mod-pipeline-delivery/src/index.ts"
+      ],
+      "ownershipAsset": "packages/mod-pipeline-delivery/ownership.json",
+      "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
+      "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4384,6 +4595,7 @@
       "ownershipAsset": "packages/mod-pipeline-orchestration/ownership.json",
       "compatibilityAdapter": "packages/mcp/src/agon-orchestration.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4403,6 +4615,7 @@
       "ownershipAsset": "packages/mod-plan/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4422,6 +4635,7 @@
       "ownershipAsset": "packages/mod-plan/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4441,6 +4655,7 @@
       "ownershipAsset": "packages/mod-plan/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4460,6 +4675,7 @@
       "ownershipAsset": "packages/mod-plan/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4479,6 +4695,7 @@
       "ownershipAsset": "packages/mod-plan/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4498,6 +4715,7 @@
       "ownershipAsset": "packages/mod-plan/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4517,6 +4735,7 @@
       "ownershipAsset": "packages/mod-plan/ownership.json",
       "compatibilityAdapter": "packages/cli/src/models/handler-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4536,6 +4755,7 @@
       "ownershipAsset": "packages/mod-plan/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/routing.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4555,6 +4775,7 @@
       "ownershipAsset": "packages/mod-plan/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/routing.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4574,6 +4795,7 @@
       "ownershipAsset": "packages/mod-plan/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/tools.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4593,6 +4815,7 @@
       "ownershipAsset": "packages/mod-plan/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/tools.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4612,6 +4835,7 @@
       "ownershipAsset": "packages/mod-plan/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/tools.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4631,6 +4855,7 @@
       "ownershipAsset": "packages/mod-plan/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4650,6 +4875,7 @@
       "ownershipAsset": "packages/mod-plan/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4669,6 +4895,7 @@
       "ownershipAsset": "packages/mod-plan/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4688,6 +4915,7 @@
       "ownershipAsset": "packages/mod-plan/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4707,6 +4935,7 @@
       "ownershipAsset": "packages/mod-plan/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4726,6 +4955,7 @@
       "ownershipAsset": "packages/mod-plan/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4745,6 +4975,7 @@
       "ownershipAsset": "packages/mod-plan/ownership.json",
       "compatibilityAdapter": "packages/mcp/src/agon-orchestration.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4764,6 +4995,7 @@
       "ownershipAsset": "packages/mod-plan/ownership.json",
       "compatibilityAdapter": "packages/mcp/src/agon-orchestration.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4783,6 +5015,7 @@
       "ownershipAsset": "packages/mod-plan/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/keyboard.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4802,6 +5035,7 @@
       "ownershipAsset": "packages/mod-plan/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/keyboard.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4821,6 +5055,7 @@
       "ownershipAsset": "packages/mod-plan/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/keyboard.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4840,6 +5075,7 @@
       "ownershipAsset": "packages/mod-plan/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/keyboard.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4859,6 +5095,7 @@
       "ownershipAsset": "packages/mod-plan/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4878,6 +5115,7 @@
       "ownershipAsset": "packages/mod-plan/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4897,6 +5135,7 @@
       "ownershipAsset": "packages/mod-plan/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4916,6 +5155,7 @@
       "ownershipAsset": "packages/mod-plan/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4935,6 +5175,7 @@
       "ownershipAsset": "packages/mod-plan/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4954,6 +5195,7 @@
       "ownershipAsset": "packages/mod-plan/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4973,6 +5215,7 @@
       "ownershipAsset": "packages/mod-provenance/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4992,6 +5235,7 @@
       "ownershipAsset": "packages/mod-provenance/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5011,6 +5255,7 @@
       "ownershipAsset": "packages/mod-provenance/ownership.json",
       "compatibilityAdapter": "packages/cli/src/commands/provenance.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5030,6 +5275,7 @@
       "ownershipAsset": "packages/mod-provenance/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/provenance.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5049,6 +5295,7 @@
       "ownershipAsset": "packages/mod-rag/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5068,6 +5315,7 @@
       "ownershipAsset": "packages/mod-rag/ownership.json",
       "compatibilityAdapter": "packages/mcp/src/project-context.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5087,6 +5335,7 @@
       "ownershipAsset": "packages/mod-rag/ownership.json",
       "compatibilityAdapter": "packages/core/src/rag/embed.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5106,6 +5355,7 @@
       "ownershipAsset": "packages/mod-rag/ownership.json",
       "compatibilityAdapter": "packages/mod-rag/src/types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5125,6 +5375,7 @@
       "ownershipAsset": "packages/mod-rag/ownership.json",
       "compatibilityAdapter": "packages/mod-rag/src/types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5144,6 +5395,7 @@
       "ownershipAsset": "packages/mod-rag/ownership.json",
       "compatibilityAdapter": "packages/mod-rag/src/store.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5163,6 +5415,7 @@
       "ownershipAsset": "packages/mod-ratings/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5182,6 +5435,7 @@
       "ownershipAsset": "packages/mod-ratings/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5201,6 +5455,7 @@
       "ownershipAsset": "packages/mod-ratings/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5220,6 +5475,7 @@
       "ownershipAsset": "packages/mod-ratings/ownership.json",
       "compatibilityAdapter": "packages/cli/src/commands/ratings.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5239,6 +5495,7 @@
       "ownershipAsset": "packages/mod-ratings/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5258,6 +5515,7 @@
       "ownershipAsset": "packages/mod-ratings/ownership.json",
       "compatibilityAdapter": "packages/core/src/models/types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5277,6 +5535,7 @@
       "ownershipAsset": "packages/mod-ratings/ownership.json",
       "compatibilityAdapter": "packages/core/src/signals/ratings-maintenance.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5296,6 +5555,7 @@
       "ownershipAsset": "packages/mod-ratings/ownership.json",
       "compatibilityAdapter": "packages/core/src/signals/ratings-maintenance.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5315,6 +5575,7 @@
       "ownershipAsset": "packages/mod-ratings/ownership.json",
       "compatibilityAdapter": "packages/core/src/signals/ratings-maintenance.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5334,6 +5595,7 @@
       "ownershipAsset": "packages/mod-ratings/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5353,6 +5615,7 @@
       "ownershipAsset": "packages/mod-research/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5372,6 +5635,7 @@
       "ownershipAsset": "packages/mod-research/ownership.json",
       "compatibilityAdapter": "packages/core/src/tools/research-verifier.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5391,6 +5655,7 @@
       "ownershipAsset": "packages/mod-research/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5410,6 +5675,7 @@
       "ownershipAsset": "packages/mod-review/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5429,6 +5695,7 @@
       "ownershipAsset": "packages/mod-review/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/routing.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5448,6 +5715,7 @@
       "ownershipAsset": "packages/mod-review/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/routing.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5467,6 +5735,7 @@
       "ownershipAsset": "packages/mod-review/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/routing.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5486,6 +5755,7 @@
       "ownershipAsset": "packages/mod-review/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/routing.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5505,6 +5775,7 @@
       "ownershipAsset": "packages/mod-review/ownership.json",
       "compatibilityAdapter": "packages/cli/src/models/handler-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5524,6 +5795,7 @@
       "ownershipAsset": "packages/mod-review/ownership.json",
       "compatibilityAdapter": "packages/core/src/cesar/plan.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5543,6 +5815,7 @@
       "ownershipAsset": "packages/mod-review/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/tools.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5562,6 +5835,7 @@
       "ownershipAsset": "packages/mod-review/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5581,6 +5855,7 @@
       "ownershipAsset": "packages/mod-review/ownership.json",
       "compatibilityAdapter": "packages/core/src/models/types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5600,6 +5875,7 @@
       "ownershipAsset": "packages/mod-review/ownership.json",
       "compatibilityAdapter": "packages/core/src/models/types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5619,6 +5895,7 @@
       "ownershipAsset": "packages/mod-review/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5638,6 +5915,7 @@
       "ownershipAsset": "packages/mod-review/ownership.json",
       "compatibilityAdapter": "packages/mcp/src/agon-orchestration.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5657,6 +5935,7 @@
       "ownershipAsset": "packages/mod-review/ownership.json",
       "compatibilityAdapter": "packages/cli/src/handlers/review.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5676,6 +5955,7 @@
       "ownershipAsset": "packages/mod-review/ownership.json",
       "compatibilityAdapter": "packages/cli/src/blocks/controls.tsx",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5695,6 +5975,7 @@
       "ownershipAsset": "packages/mod-review/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5714,6 +5995,7 @@
       "ownershipAsset": "packages/mod-review/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5733,6 +6015,7 @@
       "ownershipAsset": "packages/mod-rooms/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5752,6 +6035,7 @@
       "ownershipAsset": "packages/mod-rooms/ownership.json",
       "compatibilityAdapter": "packages/mcp/src/rooms.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5771,6 +6055,7 @@
       "ownershipAsset": "packages/mod-rooms/ownership.json",
       "compatibilityAdapter": "packages/mcp/src/rooms.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5790,6 +6075,7 @@
       "ownershipAsset": "packages/mod-rooms/ownership.json",
       "compatibilityAdapter": "packages/mcp/src/rooms.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5809,6 +6095,7 @@
       "ownershipAsset": "packages/mod-rooms/ownership.json",
       "compatibilityAdapter": "packages/mcp/src/rooms.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5828,6 +6115,7 @@
       "ownershipAsset": "packages/mod-rooms/ownership.json",
       "compatibilityAdapter": "packages/mcp/src/rooms.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5847,6 +6135,7 @@
       "ownershipAsset": "packages/mod-rooms/ownership.json",
       "compatibilityAdapter": "packages/mcp/src/rooms.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5866,6 +6155,7 @@
       "ownershipAsset": "packages/mod-rooms/ownership.json",
       "compatibilityAdapter": "packages/mcp/src/rooms.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5885,6 +6175,7 @@
       "ownershipAsset": "packages/mod-rooms/ownership.json",
       "compatibilityAdapter": "packages/mcp/src/rooms.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5902,8 +6193,10 @@
         "packages/mod-rooms/src/index.ts"
       ],
       "ownershipAsset": "packages/mod-rooms/ownership.json",
-      "compatibilityAdapter": "packages/core/src/rooms/types.ts",
-      "authority": "legacy-runtime-until-s6",
+      "compatibilityAdapter": null,
+      "authority": "physical-owner",
+      "legacyPresent": false,
+      "removalEvidence": "tests/unit/modular-no-legacy-orchestration-owner.test.ts:physical-room-owner",
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5921,8 +6214,10 @@
         "packages/mod-rooms/src/index.ts"
       ],
       "ownershipAsset": "packages/mod-rooms/ownership.json",
-      "compatibilityAdapter": "packages/core/src/rooms/leases.ts",
-      "authority": "legacy-runtime-until-s6",
+      "compatibilityAdapter": null,
+      "authority": "physical-owner",
+      "legacyPresent": false,
+      "removalEvidence": "tests/unit/modular-no-legacy-orchestration-owner.test.ts:physical-room-owner",
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5940,8 +6235,10 @@
         "packages/mod-rooms/src/index.ts"
       ],
       "ownershipAsset": "packages/mod-rooms/ownership.json",
-      "compatibilityAdapter": "packages/core/src/rooms/presence.ts",
-      "authority": "legacy-runtime-until-s6",
+      "compatibilityAdapter": null,
+      "authority": "physical-owner",
+      "legacyPresent": false,
+      "removalEvidence": "tests/unit/modular-no-legacy-orchestration-owner.test.ts:physical-room-owner",
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5959,8 +6256,10 @@
         "packages/mod-rooms/src/index.ts"
       ],
       "ownershipAsset": "packages/mod-rooms/ownership.json",
-      "compatibilityAdapter": "packages/core/src/rooms/store.ts",
-      "authority": "legacy-runtime-until-s6",
+      "compatibilityAdapter": null,
+      "authority": "physical-owner",
+      "legacyPresent": false,
+      "removalEvidence": "tests/unit/modular-no-legacy-orchestration-owner.test.ts:physical-room-owner",
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5978,8 +6277,10 @@
         "packages/mod-rooms/src/index.ts"
       ],
       "ownershipAsset": "packages/mod-rooms/ownership.json",
-      "compatibilityAdapter": "packages/core/src/rooms/tail.ts",
-      "authority": "legacy-runtime-until-s6",
+      "compatibilityAdapter": null,
+      "authority": "physical-owner",
+      "legacyPresent": false,
+      "removalEvidence": "tests/unit/modular-no-legacy-orchestration-owner.test.ts:physical-room-owner",
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -5999,6 +6300,7 @@
       "ownershipAsset": "packages/mod-routing-docs/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6018,6 +6320,68 @@
       "ownershipAsset": "packages/mod-routing-docs/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
+      "registrationBoundary": "public-mod-api",
+      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
+    },
+    {
+      "category": "generatedDocumentation",
+      "id": "AGENTS.md routing block",
+      "source": "packages/cli/src/commands/agent-guide-text.ts:1",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-routing-docs",
+      "rule": "generated-docs-owner",
+      "legacyPath": "packages/cli/src/commands/agent-guide-text.ts",
+      "physicalPackage": "packages/mod-routing-docs",
+      "physicalEntrypoint": "packages/mod-routing-docs/src/index.ts",
+      "implementationPaths": [
+        "packages/mod-routing-docs/src/index.ts"
+      ],
+      "ownershipAsset": "packages/mod-routing-docs/ownership.json",
+      "compatibilityAdapter": null,
+      "authority": "physical-owner",
+      "legacyPresent": false,
+      "removalEvidence": "KL-015",
+      "registrationBoundary": "public-mod-api",
+      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
+    },
+    {
+      "category": "generatedDocumentation",
+      "id": "docs/modes.md",
+      "source": "package.json:12",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-routing-docs",
+      "rule": "generated-docs-owner",
+      "legacyPath": "package.json",
+      "physicalPackage": "packages/mod-routing-docs",
+      "physicalEntrypoint": "packages/mod-routing-docs/src/index.ts",
+      "implementationPaths": [
+        "packages/mod-routing-docs/src/index.ts"
+      ],
+      "ownershipAsset": "packages/mod-routing-docs/ownership.json",
+      "compatibilityAdapter": "package.json",
+      "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
+      "registrationBoundary": "public-mod-api",
+      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
+    },
+    {
+      "category": "generatedDocumentation",
+      "id": "installed agent prompts",
+      "source": "packages/cli/src/commands/install-agent-prompts.ts:1",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-routing-docs",
+      "rule": "generated-docs-owner",
+      "legacyPath": "packages/cli/src/commands/install-agent-prompts.ts",
+      "physicalPackage": "packages/mod-routing-docs",
+      "physicalEntrypoint": "packages/mod-routing-docs/src/index.ts",
+      "implementationPaths": [
+        "packages/mod-routing-docs/src/index.ts"
+      ],
+      "ownershipAsset": "packages/mod-routing-docs/ownership.json",
+      "compatibilityAdapter": "packages/cli/src/commands/install-agent-prompts.ts",
+      "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6037,6 +6401,7 @@
       "ownershipAsset": "packages/mod-sanitize/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6056,6 +6421,7 @@
       "ownershipAsset": "packages/mod-sanitize/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6075,6 +6441,7 @@
       "ownershipAsset": "packages/mod-skill-authoring/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6094,6 +6461,7 @@
       "ownershipAsset": "packages/mod-skill-authoring/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6113,6 +6481,7 @@
       "ownershipAsset": "packages/mod-skill-authoring/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6132,6 +6501,7 @@
       "ownershipAsset": "packages/mod-synthesis/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6151,6 +6521,7 @@
       "ownershipAsset": "packages/mod-synthesis/ownership.json",
       "compatibilityAdapter": "packages/core/src/models/types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6170,6 +6541,7 @@
       "ownershipAsset": "packages/mod-synthesis/ownership.json",
       "compatibilityAdapter": "packages/core/src/models/types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6189,6 +6561,7 @@
       "ownershipAsset": "packages/mod-synthesis/ownership.json",
       "compatibilityAdapter": "packages/core/src/models/types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6208,6 +6581,7 @@
       "ownershipAsset": "packages/mod-synthesis/ownership.json",
       "compatibilityAdapter": "packages/mcp/src/agon-orchestration.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6227,6 +6601,7 @@
       "ownershipAsset": "packages/mod-synthesis/ownership.json",
       "compatibilityAdapter": "packages/core/src/cesar/agent-synthesis.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6246,6 +6621,7 @@
       "ownershipAsset": "packages/mod-synthesis/ownership.json",
       "compatibilityAdapter": "packages/core/src/cesar/agent-synthesis.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6265,6 +6641,7 @@
       "ownershipAsset": "packages/mod-synthesis/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6284,6 +6661,7 @@
       "ownershipAsset": "packages/mod-team-brainstorm/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6303,6 +6681,7 @@
       "ownershipAsset": "packages/mod-team-brainstorm/ownership.json",
       "compatibilityAdapter": "packages/cli/src/models/handler-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6322,6 +6701,7 @@
       "ownershipAsset": "packages/mod-team-brainstorm/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6341,6 +6721,7 @@
       "ownershipAsset": "packages/mod-team-brainstorm/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6360,6 +6741,7 @@
       "ownershipAsset": "packages/mod-team-brainstorm/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6379,6 +6761,7 @@
       "ownershipAsset": "packages/mod-team-forge/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6398,6 +6781,7 @@
       "ownershipAsset": "packages/mod-team-forge/ownership.json",
       "compatibilityAdapter": "packages/cli/src/models/handler-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6417,6 +6801,7 @@
       "ownershipAsset": "packages/mod-team-forge/ownership.json",
       "compatibilityAdapter": "packages/core/src/cesar/plan.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6436,6 +6821,7 @@
       "ownershipAsset": "packages/mod-team-forge/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6455,6 +6841,7 @@
       "ownershipAsset": "packages/mod-team-forge/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6474,6 +6861,7 @@
       "ownershipAsset": "packages/mod-team-forge/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6493,6 +6881,7 @@
       "ownershipAsset": "packages/mod-team-tribunal/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6512,6 +6901,7 @@
       "ownershipAsset": "packages/mod-team-tribunal/ownership.json",
       "compatibilityAdapter": "packages/cli/src/models/handler-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6531,6 +6921,7 @@
       "ownershipAsset": "packages/mod-team-tribunal/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6550,6 +6941,7 @@
       "ownershipAsset": "packages/mod-team-tribunal/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6569,6 +6961,7 @@
       "ownershipAsset": "packages/mod-team-tribunal/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6588,6 +6981,7 @@
       "ownershipAsset": "packages/mod-think/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6607,6 +7001,7 @@
       "ownershipAsset": "packages/mod-think/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6626,6 +7021,7 @@
       "ownershipAsset": "packages/mod-tribunal/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6645,6 +7041,7 @@
       "ownershipAsset": "packages/mod-tribunal/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/routing.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6664,6 +7061,7 @@
       "ownershipAsset": "packages/mod-tribunal/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/routing.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6683,6 +7081,7 @@
       "ownershipAsset": "packages/mod-tribunal/ownership.json",
       "compatibilityAdapter": "packages/cli/src/models/handler-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6702,6 +7101,7 @@
       "ownershipAsset": "packages/mod-tribunal/ownership.json",
       "compatibilityAdapter": "packages/core/src/cesar/plan.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6721,6 +7121,7 @@
       "ownershipAsset": "packages/mod-tribunal/ownership.json",
       "compatibilityAdapter": "packages/cli/src/cesar/tools.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6740,6 +7141,7 @@
       "ownershipAsset": "packages/mod-tribunal/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6759,6 +7161,7 @@
       "ownershipAsset": "packages/mod-tribunal/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6778,6 +7181,7 @@
       "ownershipAsset": "packages/mod-tribunal/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6797,6 +7201,7 @@
       "ownershipAsset": "packages/mod-tribunal/ownership.json",
       "compatibilityAdapter": "packages/mcp/src/agon-orchestration.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6816,6 +7221,7 @@
       "ownershipAsset": "packages/mod-tribunal/ownership.json",
       "compatibilityAdapter": "packages/forge/src/tribunal.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6835,6 +7241,7 @@
       "ownershipAsset": "packages/mod-tribunal/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6854,6 +7261,7 @@
       "ownershipAsset": "packages/mod-worktrees/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6873,6 +7281,7 @@
       "ownershipAsset": "packages/mod-worktrees/ownership.json",
       "compatibilityAdapter": "packages/core/src/blocks/builtin-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6892,6 +7301,7 @@
       "ownershipAsset": "packages/mod-worktrees/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6911,6 +7321,7 @@
       "ownershipAsset": "packages/mod-worktrees/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6930,6 +7341,7 @@
       "ownershipAsset": "packages/mod-worktrees/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent-types.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6949,6 +7361,7 @@
       "ownershipAsset": "packages/mod-worktrees/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -6968,13 +7381,14 @@
       "ownershipAsset": "packages/mod-worktrees/ownership.json",
       "compatibilityAdapter": "packages/cli/src/signals/intent.ts",
       "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     }
   ],
   "counts": {
     "packages": 36,
-    "assignments": 341,
+    "assignments": 344,
     "categories": {
       "builtinCommandMetadata": 34,
       "cesarRoutes": 45,
@@ -6982,14 +7396,14 @@
       "cliCommands": 50,
       "configKeys": 9,
       "emittedEvents": 9,
-      "generatedDocumentation": 1,
+      "generatedDocumentation": 3,
       "intentVariants": 35,
       "mcpTools": 28,
       "resultAndEnvelopeTypes": 49,
       "statePaths": 10,
       "stateStoreModules": 9,
       "tuiKeyboardActions": 4,
-      "tuiSlashCommands": 42
+      "tuiSlashCommands": 43
     }
   }
 }

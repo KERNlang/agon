@@ -2,18 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildMcpJobCommand,
-  isJobTool,
   JOB_TOOLS,
 } from '../../packages/mcp/src/job-tools.js';
-import { listMcpTools } from '../../packages/mcp/src/agon-orchestration.js';
 
 describe('MCP autonomous job tools', () => {
   it('registers the complete non-blocking job control surface', () => {
     expect(JOB_TOOLS.map((tool) => tool.name)).toEqual([
       'JobSubmit', 'JobList', 'JobStatus', 'JobEvents', 'JobResult', 'JobCancel',
     ]);
-    expect(listMcpTools().filter((tool) => isJobTool(tool.name)).map((tool) => tool.name))
-      .toEqual(JOB_TOOLS.map((tool) => tool.name));
   });
 
   it('submits only a structured payload through the fixed agon job client', () => {

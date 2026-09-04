@@ -16,7 +16,7 @@ function managementEntry(
   return Object.freeze({
     surface,
     kind,
-    registryId: `kernel:mod-management:${surface}`,
+    registryId: `kernel:mod-management:${surface}:${publicId}`,
     publicId,
     category: 'kernelModManagement',
     group: 'Kernel',
@@ -36,5 +36,6 @@ function managementEntry(
 
 export const KERNEL_MANAGEMENT_SURFACE_CATALOG = Object.freeze([
   managementEntry('cli', 'cli-command', 'mod'),
+  managementEntry('cli', 'cli-command', 'setup'),
   managementEntry('tui', 'tui-action', '/mod'),
 ]);

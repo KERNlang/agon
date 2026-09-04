@@ -26,6 +26,12 @@
       ],
       "@kernlang/agon-mod-git-actions": [
         "../mod-git-actions/src/index.ts"
+      ],
+      "@kernlang/agon-support-worktree": [
+        "../support-worktree/src/index.ts"
+      ],
+      "@kernlang/agon-support-verification": [
+        "../support-verification/src/index.ts"
       ]
     },
     "sourceMap": false,
@@ -53,9 +59,18 @@
     },
     {
       "path": "../mod-git-actions"
+    },
+    {
+      "path": "../support-worktree"
+    },
+    {
+      "path": "../support-verification"
     }
   ],
   "include": [
     "src"
+  ],
+  "exclude": [
+    "src/**/*.test.ts"
   ]
 }

@@ -3,6 +3,7 @@ import { mkdirSync, appendFileSync, readFileSync, readdirSync, statSync, unlinkS
 import { join } from 'node:path';
 
 import { persistencePath } from './paths.js';
+import { createPersistenceEnvelope, unwrapPersistenceEnvelope } from './persisted-envelope.js';
 
 export interface ChatContextThread {
   recentMessages(limit: number): Array<{ role: string; content: string; timestamp: number; engineId?: string }>;
@@ -86,7 +87,9 @@ export function startChatSession(opts?: {cwd?:string,branch?:string,engineIds?:s
   if (opts?.engineIds) {
     header.engineIds = opts.engineIds;
   }
-  appendFileSync(filePath, JSON.stringify(header) + '\n');
+  const envelope = createPersistenceEnvelope({ kind: 'session', status: 'active', payload: header as any, idSeed: id,
+    ownerModId: 'agon.persistence', contributionId: 'agon.persistence.chat-session', createdAt: session.startedAt, updatedAt: session.startedAt });
+  appendFileSync(filePath, JSON.stringify(envelope) + '\n');
   return session;
 }
 
@@ -300,7 +303,7 @@ export function loadChatSession(id: string): ChatSession|null {
     const lines = raw.trim().split('\n').filter(Boolean);
     if (lines.length === 0) return null;
 
-    const header = JSON.parse(lines[0]);
+    const header = unwrapPersistenceEnvelope<any>(JSON.parse(lines[0]), 'session');
     const messages: ChatMessage[] = [];
     let summary = typeof header.summary === 'string' ? header.summary : undefined;
     let summarizedMessageCount = typeof header.summarizedMessageCount === 'number' ? header.summarizedMessageCount : undefined;

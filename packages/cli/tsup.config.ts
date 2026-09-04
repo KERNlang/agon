@@ -1,17 +1,6 @@
 import { defineConfig } from 'tsup';
-import { copyFileSync, mkdirSync, readdirSync } from 'node:fs';
+import { copyFileSync } from 'node:fs';
 import { join } from 'node:path';
-
-function copyEngines(outDir: string) {
-  const src = join(process.cwd(), '..', '..', 'engines');
-  const dest = join(outDir, 'engines');
-  mkdirSync(dest, { recursive: true });
-  for (const file of readdirSync(src)) {
-    if (file.endsWith('.json')) {
-      copyFileSync(join(src, file), join(dest, file));
-    }
-  }
-}
 
 export default defineConfig({
   // Two entries from ONE build: the CLI itself, and the agon-orchestration MCP
@@ -40,7 +29,14 @@ export default defineConfig({
   // (dynamic import / require.resolve of spawned .py twins) and published as
   // their own packages, so esbuild must not try to bundle them.
   external: [
-    '@kernlang/agon-engines', '@kernlang/agon-dedup',
+    '@kernlang/agon-engines', '@kernlang/agon-dedup', '@kernlang/agon-mod-api',
+    '@kernlang/agon-kernel',
+    '@kernlang/agon-support-agent-runtime', '@kernlang/agon-support-browser-bridge',
+    '@kernlang/agon-support-dedup', '@kernlang/agon-support-engine-catalog',
+    '@kernlang/agon-support-engine-runtime', '@kernlang/agon-support-judge',
+    '@kernlang/agon-support-panel', '@kernlang/agon-support-persistence',
+    '@kernlang/agon-support-saas-api', '@kernlang/agon-support-verification',
+    '@kernlang/agon-support-worktree',
     '@huggingface/transformers', 'onnxruntime-node',
     'ink', 'react', 'ink-text-input', 'ink-spinner', 'ink-select-input',
     'chalk', 'supports-color',
@@ -54,11 +50,6 @@ export default defineConfig({
     js: '#!/usr/bin/env node',
   },
   async onSuccess() {
-    copyEngines(join(process.cwd(), 'dist'));
-    // The bundled MCP server resolves engines via <its-own-dir>/engines
-    // (resolveBuiltinEnginesDir), so it needs a copy next to dist/mcp/index.js —
-    // otherwise the spawned server starts with ZERO engines and Cesar silently
-    // loses its orchestration tools.
-    copyEngines(join(process.cwd(), 'dist', 'mcp'));
+    copyFileSync(join(process.cwd(), 'release-channel.json'), join(process.cwd(), 'dist', 'release-channel.json'));
   },
 });

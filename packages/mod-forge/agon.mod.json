@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "id": "agon.forge",
   "name": "Forge",
-  "version": "0.0.0-slice.5",
+  "version": "1.0.0",
   "apiRange": ">=1.0.0 <2",
   "execution": "executable",
   "compatibility": {
@@ -48,7 +48,13 @@
     "optional": [],
     "conflicts": []
   },
-  "permissions": [],
+  "permissions": [
+    {
+      "capability": "engine.dispatch",
+      "resources": [],
+      "required": true
+    }
+  ],
   "platforms": [
     "darwin-arm64",
     "darwin-x64",
@@ -130,6 +136,10 @@
     ],
     "cesarTools": [
       {
+        "id": "cesarTools:0010",
+        "aliases": []
+      },
+      {
         "id": "cesarRoutes:0023",
         "aliases": []
       },
@@ -151,10 +161,6 @@
       },
       {
         "id": "cesarRoutes:0028",
-        "aliases": []
-      },
-      {
-        "id": "cesarTools:0010",
         "aliases": []
       }
     ],
@@ -279,9 +285,11 @@
   },
   "pack": {
     "include": [
+      "LICENSE",
       "agon.mod.json",
       "dist/index.js",
       "dist/index.d.ts",
+      "dist/implementation.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

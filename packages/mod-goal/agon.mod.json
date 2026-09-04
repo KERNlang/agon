@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "id": "agon.goal",
   "name": "Goal",
-  "version": "0.0.0-slice.5",
+  "version": "1.0.0",
   "apiRange": ">=1.0.0 <2",
   "execution": "executable",
   "compatibility": {
@@ -47,12 +47,36 @@
       {
         "id": "agon.git-actions",
         "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.worktree",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.verification",
+        "range": ">=0.0.0-0"
       }
     ],
     "optional": [],
     "conflicts": []
   },
-  "permissions": [],
+  "permissions": [
+    {
+      "capability": "engine.dispatch",
+      "resources": [],
+      "required": true
+    },
+    {
+      "capability": "state.read",
+      "resources": [],
+      "required": true
+    },
+    {
+      "capability": "state.write",
+      "resources": [],
+      "required": true
+    }
+  ],
   "platforms": [
     "darwin-arm64",
     "darwin-x64",
@@ -105,11 +129,11 @@
     "mcpTools": [],
     "cesarTools": [
       {
-        "id": "cesarRoutes:0031",
+        "id": "cesarTools:0012",
         "aliases": []
       },
       {
-        "id": "cesarTools:0012",
+        "id": "cesarRoutes:0031",
         "aliases": []
       }
     ],
@@ -120,9 +144,11 @@
   },
   "pack": {
     "include": [
+      "LICENSE",
       "agon.mod.json",
       "dist/index.js",
       "dist/index.d.ts",
+      "dist/implementation.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

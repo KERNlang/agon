@@ -3,16 +3,16 @@
   "slice": "S5",
   "sampleCount": 25,
   "coldImportMs": {
-    "median": 50.476791999999996,
-    "p95": 51.31233400000001,
-    "max": 52.158209,
+    "median": 105.86016600000002,
+    "p95": 106.48283300000001,
+    "max": 106.55024999999999,
     "budgetP95": 750
   },
   "residentRssBytes": {
-    "median": 73842688,
-    "p95": 76103680,
+    "median": 94928896,
+    "p95": 96124928,
     "budgetP95": 134217728
   },
-  "totalWorkspaceBytes": 2826379,
+  "totalWorkspaceBytes": 3603836,
   "passed": true
 }

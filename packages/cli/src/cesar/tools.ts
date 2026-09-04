@@ -1,14 +1,12 @@
-import { FIRST_PARTY_SURFACE_CATALOG, assertContributionInput } from '@kernlang/agon-kernel';
+import { assertContributionInput } from '@kernlang/agon-kernel';
 
-import { ToolRegistry, getProjectFileStateCache, createReadTool, createEditTool, createMultiEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createPipelineTool, createGoalTool, createConquerTool, createReviewTool, createDelegateTool, createAgentTool, createReportConfidenceTool, createProposePlanTool, createExitPlanModeTool, createListPlansTool, createRetrieveResultTool, createQuickNeroTool, createTodoWriteTool, createSaveMemoryTool, executeToolCall, resolveWorkingDir, parsePermissionRuleSet, parseToolHooks, isReadOnlyCommand, loadConfig } from '@kernlang/agon-core';
+import { ToolRegistry, getProjectFileStateCache, createReadTool, createEditTool, createMultiEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createReportConfidenceTool, createRetrieveResultTool, createTodoWriteTool, executeToolCall, resolveWorkingDir, parsePermissionRuleSet, parseToolHooks, isReadOnlyCommand, loadConfig } from '@kernlang/agon-core';
 
-import { assertCanonicalSurfaceSelectionCurrent, processSurfaceClient, processSurfaceNames } from '../surface-authority-runtime.js';
+import { assertCanonicalSurfaceSelectionCurrent, processSurfaceCatalog, processSurfaceClient, processSurfaceNames } from '../surface-authority-runtime.js';
 
 import type { ToolContext, ToolCallResult, ToolHandler } from '@kernlang/agon-core';
 
 import type { Dispatch, HandlerContext } from '../handlers/types.js';
-
-import { createCouncilTool } from './council-tool.js';
 
 import { createEngineReliabilityTool } from './tool-engine-reliability.js';
 
@@ -29,50 +27,20 @@ import { isBashToolName } from './brain-helpers.js';
 /**
  * Create and populate the standard Cesar tool registry. Single source of truth — no more duplication.
  */
-const CESAR_SURFACE_IDS = new Set(FIRST_PARTY_SURFACE_CATALOG.filter((entry) => entry.category === 'cesarTools').map((entry) => entry.publicId));
-
 export function createCesarToolRegistry(engineId?: string, available: ReadonlySet<string> = processSurfaceNames('cesar')): ToolRegistry {
   const toolRegistry = new ToolRegistry();
-  const register = (handler: ToolHandler): void => { if (CESAR_SURFACE_IDS.has(handler.definition.name) && available.has(handler.definition.name)) toolRegistry.register(handler); };
-  register(createReadTool());
-  register(createEditTool());
-  register(createMultiEditTool());
-  register(createWriteTool());
-  register(createBashTool());
-  register(createGrepTool());
-  register(createGlobTool());
-  register(createForgeTool());
-  register(createBrainstormTool());
-  register(createTribunalTool());
-  register(createCampfireTool());
-  register(createCouncilTool());
-  register(createPipelineTool());
-  register(createGoalTool());
-  register(createConquerTool());
-  register(createReviewTool());
-  register(createDelegateTool());
-  register(createAgentTool());
-  register(createReportConfidenceTool());
-  register(createQuickNeroTool());
-  register(createTodoWriteTool());
-  register(createSaveMemoryTool());
-  register(createProposePlanTool());
-  register(createExitPlanModeTool());
-  register(createListPlansTool());
-  register(createRetrieveResultTool(engineId));
-  register(createEngineReliabilityTool());
-  register(createRenderProbeTool());
-  register(createTuiProbeTool());
-  for (const record of processSurfaceClient('cesar').project().entries) {
-    if (record.kind !== 'cesar-tool') continue;
+  const catalog = processSurfaceCatalog('cesar').filter((entry) => entry.kind === 'cesar-tool');
+  for (const entry of catalog.filter(({ ownerClass }) => ownerClass === 'user-toggleable-mod-package')) {
+    const record = processSurfaceClient('cesar').assertAvailable(entry.publicId);
     const payload = record.payload as {
       readonly description: string;
       readonly inputSchema: Record<string, unknown>;
       readonly effect: 'read' | 'write' | 'network' | 'process';
+      readonly metadata?: Record<string, unknown>;
       run(input: Record<string, unknown>, context: Record<string, unknown>): Promise<unknown> | unknown;
     };
     const readOnly = payload.effect === 'read';
-    for (const name of [record.id, ...record.aliases]) {
+    for (const name of [entry.publicId, ...entry.aliases]) {
       if (toolRegistry.has(name) || !available.has(name)) continue;
       const validate = (input: Record<string, unknown>): string | null => {
         try { assertCanonicalSurfaceSelectionCurrent(); assertContributionInput(payload.inputSchema, input); return null; }
@@ -80,11 +48,17 @@ export function createCesarToolRegistry(engineId?: string, available: ReadonlySe
       };
       toolRegistry.register({
         definition: { name, description: payload.description, inputSchema: payload.inputSchema,
-          maxResultSizeChars: 100_000, isReadOnly: readOnly, isConcurrencySafe: readOnly },
+          maxResultSizeChars: 100_000, isReadOnly: readOnly, isConcurrencySafe: readOnly,
+          ...(payload.metadata ? { metadata: payload.metadata } : {}) },
         validate,
         checkPermission: () => {
           assertCanonicalSurfaceSelectionCurrent();
-          return readOnly ? { behavior: 'allow' } : { behavior: 'ask', message: `Allow external mod tool ${name}?` };
+          // Bundled tools preserve their established host-intercepted approval
+          // semantics. Third-party tools remain fail-closed at this adapter in
+          // addition to their capability wrappers.
+          return !entry.category.startsWith('external:') || readOnly
+            ? { behavior: 'allow' }
+            : { behavior: 'ask', message: `Allow external mod tool ${name}?` };
         },
         execute: async (input, context) => {
           assertCanonicalSurfaceSelectionCurrent();
@@ -100,6 +74,24 @@ export function createCesarToolRegistry(engineId?: string, available: ReadonlySe
       });
     }
   }
+  const registerHost = (handler: ToolHandler): void => {
+    const entry = catalog.find(({ publicId, aliases }) => publicId === handler.definition.name || aliases.includes(handler.definition.name));
+    if (!entry || entry.ownerClass === 'user-toggleable-mod-package' || !available.has(handler.definition.name) || toolRegistry.has(handler.definition.name)) return;
+    toolRegistry.register(handler);
+  };
+  registerHost(createReadTool());
+  registerHost(createEditTool());
+  registerHost(createMultiEditTool());
+  registerHost(createWriteTool());
+  registerHost(createBashTool());
+  registerHost(createGrepTool());
+  registerHost(createGlobTool());
+  registerHost(createReportConfidenceTool());
+  registerHost(createTodoWriteTool());
+  registerHost(createRetrieveResultTool(engineId));
+  registerHost(createEngineReliabilityTool());
+  registerHost(createRenderProbeTool());
+  registerHost(createTuiProbeTool());
   return toolRegistry;
 }
 

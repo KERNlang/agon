@@ -23,6 +23,12 @@
       ],
       "@kernlang/agon-mod-council": [
         "../mod-council/src/index.ts"
+      ],
+      "@kernlang/agon-support-worktree": [
+        "../support-worktree/src/index.ts"
+      ],
+      "@kernlang/agon-support-verification": [
+        "../support-verification/src/index.ts"
       ]
     },
     "sourceMap": false,
@@ -47,9 +53,18 @@
     },
     {
       "path": "../mod-council"
+    },
+    {
+      "path": "../support-worktree"
+    },
+    {
+      "path": "../support-verification"
     }
   ],
   "include": [
     "src"
+  ],
+  "exclude": [
+    "src/**/*.test.ts"
   ]
 }

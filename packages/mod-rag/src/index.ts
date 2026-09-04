@@ -1,11 +1,10 @@
 import { validateManifest } from '@kernlang/agon-mod-api';
-import type { AgonModFactory, AgonModV1, Awaitable, Dispose, InvocationContext, InvocationOutput, Json, ModServices, Registrar } from '@kernlang/agon-mod-api';
 
 export const MANIFEST = validateManifest({
   "schemaVersion": 2,
   "id": "agon.rag",
   "name": "Rag",
-  "version": "0.0.0-slice.5",
+  "version": "1.0.0",
   "apiRange": ">=1.0.0 <2",
   "execution": "executable",
   "compatibility": {
@@ -43,7 +42,13 @@ export const MANIFEST = validateManifest({
     "optional": [],
     "conflicts": []
   },
-  "permissions": [],
+  "permissions": [
+    {
+      "capability": "fs.write",
+      "resources": [],
+      "required": true
+    }
+  ],
   "platforms": [
     "darwin-arm64",
     "darwin-x64",
@@ -115,11 +120,14 @@ export const MANIFEST = validateManifest({
   },
   "pack": {
     "include": [
+      "LICENSE",
       "agon.mod.json",
       "dist/index.js",
       "dist/index.d.ts",
+      "dist/implementation.d.ts",
       "dist/store.d.ts",
       "dist/types.d.ts",
+      "dist/grounding.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],
@@ -176,79 +184,10 @@ export const SOURCE_OCCURRENCES = Object.freeze([
     "rule": "physical-mod-owner"
   }
 ]);
-export const COMPATIBILITY_CONTRIBUTIONS = Object.freeze([
-  {
-    "id": "cliCommands:0059",
-    "publicId": "rag",
-    "registryKind": "cli-command",
-    "category": "cliCommands",
-    "source": "packages/cli/src/lazy-commands.ts:317"
-  },
-  {
-    "id": "mcpTools:0017",
-    "publicId": "ProjectContext",
-    "registryKind": "mcp-tool",
-    "category": "mcpTools",
-    "source": "packages/mcp/src/project-context.ts:4"
-  },
-  {
-    "id": "resultAndEnvelopeTypes:0102",
-    "publicId": "RagEmbedResult",
-    "registryKind": "result-type",
-    "category": "resultAndEnvelopeTypes",
-    "source": "packages/core/src/rag/embed.ts:15"
-  },
-  {
-    "id": "resultAndEnvelopeTypes:0103",
-    "publicId": "RagIndexResult",
-    "registryKind": "result-type",
-    "category": "resultAndEnvelopeTypes",
-    "source": "packages/mod-rag/src/types.ts:36"
-  },
-  {
-    "id": "resultAndEnvelopeTypes:0104",
-    "publicId": "RagQueryResult",
-    "registryKind": "result-type",
-    "category": "resultAndEnvelopeTypes",
-    "source": "packages/mod-rag/src/types.ts:44"
-  }
-]);
-
-export interface FirstPartyCompatibilityRuntime {
-  command(kind: string, id: string, input: Json, context: InvocationContext): InvocationOutput;
-  tool(kind: string, id: string, input: Json, context: InvocationContext): Awaitable<Json>;
-  parseIntent(id: string, input: string): Awaitable<Json | undefined>;
-  lifecycle(id: string, payload: Json, context: InvocationContext): Awaitable<void>;
-  render(id: string, payload: Json): Awaitable<{ readonly text: string; readonly markdown?: string }>;
-}
-
-type FirstPartyServices = ModServices & { readonly firstPartyCompatibility?: FirstPartyCompatibilityRuntime };
-const inputSchema = Object.freeze({ type: 'object', additionalProperties: true }) as Readonly<Record<string, Json>>;
-const resultSchema = Object.freeze({ type: 'object', additionalProperties: true }) as Readonly<Record<string, Json>>;
-
-export function createFirstPartyCompatibilityMod(runtime: FirstPartyCompatibilityRuntime): AgonModV1 {
-  return Object.freeze({
-    apiVersion: '1' as const,
-    async activate(registrar: Registrar): Promise<Dispose> {
-      const disposers: Dispose[] = [];
-      disposers.push(registrar.command('cli', { id: "cliCommands:0059", description: "rag compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "rag", input, context) }));
-      disposers.push(registrar.tool('mcp', { id: "mcpTools:0017", description: "ProjectContext compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('mcp-tool', "ProjectContext", input, context) }));
-      disposers.push(registrar.resultType({ id: "resultAndEnvelopeTypes:0102", schema: resultSchema, readableVersions: '>=0.2.0', render: (payload) => runtime.render("RagEmbedResult", payload) }));
-      disposers.push(registrar.resultType({ id: "resultAndEnvelopeTypes:0103", schema: resultSchema, readableVersions: '>=0.2.0', render: (payload) => runtime.render("RagIndexResult", payload) }));
-      disposers.push(registrar.resultType({ id: "resultAndEnvelopeTypes:0104", schema: resultSchema, readableVersions: '>=0.2.0', render: (payload) => runtime.render("RagQueryResult", payload) }));
-      return async () => { for (const dispose of [...disposers].reverse()) await dispose(); };
-    },
-  });
-}
-
-export const createMod: AgonModFactory = async (services: ModServices): Promise<AgonModV1> => {
-  const runtime = (services as FirstPartyServices).firstPartyCompatibility;
-  if (!runtime) {
-    throw Object.assign(new Error('@kernlang/agon-mod-rag requires the S5 legacy compatibility bridge until generated surface cutover'), { code: 'MOD_RESTART_REQUIRED' });
-  }
-  return createFirstPartyCompatibilityMod(runtime);
-};
-
-export default createMod;
+export const IMPLEMENTATION_KIND = 'physical' as const;
+export { createMod } from './implementation.js';
+export { createMod as default } from './implementation.js';
 export * from './store.js';
+export * from './grounding.js';
 export type * from './types.js';
+export { runRag, buildRagIndex, queryRag, collectCorpusFiles, chunkMarkdown } from './implementation.js';

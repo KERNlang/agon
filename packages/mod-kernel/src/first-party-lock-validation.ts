@@ -28,7 +28,9 @@ export function assertFirstPartyPackagesMatchLock(
     const record = locked.get(manifestId);
     if (!candidate || !record || !record.enabled) throw new Error(`selected first-party package is absent or disabled in lock: ${packageId}`);
     const dependencies = candidate.manifest.dependencies.required.map(({ id }) => id).sort();
-    if (record.source !== 'bundled' || record.sourceLocator !== packageId
+    if (!['bundled', 'registry', 'explicit-dev'].includes(record.source)
+      || (record.source === 'bundled' && record.sourceLocator !== packageId)
+      || !record.sourceLocator.trim()
       || record.version !== candidate.manifest.version
       || record.platform !== platform()
       || record.manifestHash !== sha256Canonical(candidate.manifest)

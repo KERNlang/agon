@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "measuredAt": "2026-08-23T20:51:25.642Z",
+  "measuredAt": "2026-09-04T20:55:42.624Z",
   "platform": "darwin-arm64",
   "node": "v26.3.0",
   "fixture": {
@@ -8,31 +8,31 @@
     "generationFiles": 53
   },
   "transaction": {
-    "firstCommitMs": 377.503667,
+    "firstCommitMs": 433.74850000000004,
     "informational": true
   },
   "coldBoot": {
     "runs": 15,
-    "p50Ms": 111.14812500000005,
-    "p95Ms": 120.88137499999993,
-    "maxMs": 120.88137499999993
+    "p50Ms": 112.99441699999988,
+    "p95Ms": 132.89016599999997,
+    "maxMs": 132.89016599999997
   },
   "warmBoot": {
     "runs": 100,
-    "p50Ms": 14.778583000000253,
-    "p95Ms": 15.751917000000049,
-    "maxMs": 19.358208999999988
+    "p50Ms": 16.744083000000046,
+    "p95Ms": 17.688958000000184,
+    "maxMs": 22.693207999999686
   },
   "peakRssMb": {
     "runs": 5,
-    "p50": 69.046875,
-    "p95": 69.515625,
-    "max": 69.515625
+    "p50": 73.71875,
+    "p95": 73.921875,
+    "max": 73.921875
   },
   "package": {
-    "packedBytes": 59752,
-    "unpackedBytes": 752157,
-    "files": 22
+    "packedBytes": 150532,
+    "unpackedBytes": 1388353,
+    "files": 64
   },
   "limits": {
     "coldP95Ms": 160,

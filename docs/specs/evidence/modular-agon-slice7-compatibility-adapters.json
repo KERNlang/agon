@@ -1,17 +1,5 @@
 {
   "schemaVersion": 1,
   "slice": "S7",
-  "adapters": [
-    {
-      "id": "s7-legacy-global-updater",
-      "owner": "@kernlang/agon",
-      "path": "packages/cli/src/commands/update.ts",
-      "killList": "KL-009",
-      "purpose": "Preserve the pre-modular update command only for installations that do not yet have a managed installation identity.",
-      "guard": "assertLegacyUpdaterAllowed rejects AGON_MANAGED_INSTALLATION_ID before npm is spawned.",
-      "removalCondition": "S9 setup/update is shipped from packed tarballs and the compatibility window closes.",
-      "unreachableProof": "tests/unit/modular-legacy-update-guard.test.ts",
-      "status": "temporary"
-    }
-  ]
+  "adapters": []
 }

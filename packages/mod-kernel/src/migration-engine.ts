@@ -68,7 +68,8 @@ export async function migrateStagedCopy(options: {
   try {
     for (const migration of path) migrated = new Uint8Array(await migration.migrate(migrated));
     const sourceAfter = await io.readFile(options.sourcePath);
-    if (!sourceAfter.equals(original)) {
+    if (sourceAfter.byteLength !== original.byteLength
+      || sourceAfter.some((byte, index) => byte !== original[index])) {
       throw new DurableHostError('MOD_MIGRATION_FAILED', 'migration modified its authoritative source bytes', { ownerId: options.ownerId });
     }
     await io.mkdir(dirname(options.stagedPath), { recursive: true, mode: 0o700 });

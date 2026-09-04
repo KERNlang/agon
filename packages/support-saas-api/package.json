@@ -1,7 +1,8 @@
 {
   "name": "@kernlang/agon-support-saas-api",
-  "version": "0.0.0-slice.4",
-  "private": true,
+  "version": "1.0.0",
+  "private": false,
+  "license": "MIT",
   "type": "module",
   "exports": {
     ".": {
@@ -13,6 +14,7 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
+    "LICENSE",
     "python"
   ],
   "sideEffects": false,

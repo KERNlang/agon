@@ -16,7 +16,7 @@ vi.mock('node:fs', async (importOriginal) => {
 });
 
 import { mkdtempSync, rmSync } from 'node:fs';
-import { createRoomWaker } from '../../packages/core/src/rooms/tail.js';
+import { createRoomWaker } from '@kernlang/agon-mod-rooms';
 
 class FakeWatcher extends EventEmitter {
   close = vi.fn();

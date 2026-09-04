@@ -985,39 +985,6 @@
       ]
     },
     {
-      "id": "@kernlang/agon-mod-naturalize",
-      "class": "user-toggleable-mod-package",
-      "owner": "@kernlang/agon-mod-naturalize",
-      "dependencies": [
-        "@kernlang/agon-mod-api",
-        "@kernlang/agon-support-engine-runtime"
-      ],
-      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
-      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
-      "extractionSources": [
-        "packages/cli/src/lazy-commands.ts:308",
-        "packages/cli/src/signals/intent.ts:56"
-      ],
-      "migrationOrder": 13,
-      "migrationSlice": "S5",
-      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
-      "killList": [
-        "KL-001",
-        "KL-002",
-        "KL-003",
-        "KL-004",
-        "KL-005",
-        "KL-007",
-        "KL-011"
-      ],
-      "acceptanceEvidence": [
-        "PKG-36-BOUNDARY",
-        "PKG-36-PARITY",
-        "PKG-36-PACK",
-        "PKG-36-DISABLED"
-      ]
-    },
-    {
       "id": "@kernlang/agon-mod-provenance",
       "class": "user-toggleable-mod-package",
       "owner": "@kernlang/agon-mod-provenance",
@@ -1034,7 +1001,7 @@
         "packages/core/src/blocks/builtin-commands.ts:56",
         "packages/core/src/blocks/provenance.ts"
       ],
-      "migrationOrder": 14,
+      "migrationOrder": 13,
       "migrationSlice": "S5",
       "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
       "killList": [
@@ -1073,7 +1040,7 @@
         "packages/mod-rag/src/types.ts:36",
         "packages/mod-rag/src/types.ts:44"
       ],
-      "migrationOrder": 15,
+      "migrationOrder": 14,
       "migrationSlice": "S5",
       "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
       "killList": [
@@ -1116,7 +1083,7 @@
         "packages/core/src/signals/ratings-maintenance.ts:121",
         "packages/core/src/signals/ratings-maintenance.ts:93"
       ],
-      "migrationOrder": 16,
+      "migrationOrder": 15,
       "migrationSlice": "S5",
       "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
       "killList": [
@@ -1150,7 +1117,7 @@
         "packages/cli/src/signals/intent.ts:56",
         "packages/core/src/tools/research-verifier.ts:15"
       ],
-      "migrationOrder": 17,
+      "migrationOrder": 16,
       "migrationSlice": "S5",
       "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
       "killList": [
@@ -1196,7 +1163,7 @@
         "packages/mcp/src/rooms.ts:8",
         "packages/mcp/src/rooms.ts:9"
       ],
-      "migrationOrder": 18,
+      "migrationOrder": 17,
       "migrationSlice": "S5",
       "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
       "killList": [
@@ -1227,10 +1194,13 @@
       "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
       "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
       "extractionSources": [
+        "package.json:12",
+        "packages/cli/src/commands/agent-guide-text.ts:1",
+        "packages/cli/src/commands/install-agent-prompts.ts:1",
         "packages/cli/src/lazy-commands.ts:311",
         "packages/cli/src/lazy-commands.ts:312"
       ],
-      "migrationOrder": 19,
+      "migrationOrder": 18,
       "migrationSlice": "S5",
       "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
       "killList": [
@@ -1264,7 +1234,7 @@
         "packages/cli/src/lazy-commands.ts:307",
         "packages/cli/src/signals/intent.ts:56"
       ],
-      "migrationOrder": 20,
+      "migrationOrder": 19,
       "migrationSlice": "S5",
       "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
       "killList": [
@@ -1299,7 +1269,7 @@
         "packages/cli/src/signals/intent.ts:56",
         "packages/core/src/blocks/builtin-commands.ts:74"
       ],
-      "migrationOrder": 21,
+      "migrationOrder": 20,
       "migrationSlice": "S5",
       "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
       "killList": [
@@ -1332,7 +1302,7 @@
         "packages/cli/src/lazy-commands.ts:316",
         "packages/cli/src/signals/intent.ts:56"
       ],
-      "migrationOrder": 22,
+      "migrationOrder": 21,
       "migrationSlice": "S5",
       "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
       "killList": [
@@ -1364,7 +1334,7 @@
         "packages/core/src/cli-models-registry.ts",
         "packages/core/src/signals/engine-registry.ts"
       ],
-      "migrationOrder": 23,
+      "migrationOrder": 22,
       "migrationSlice": "S4",
       "compatibilityAdapter": "legacy callers receive the same capability through a kernel-owned adapter until all dependants move",
       "killList": [
@@ -1395,7 +1365,7 @@
         "packages/support-panel/src/health-check.ts:24",
         "packages/support-panel/src/health-check.ts:30"
       ],
-      "migrationOrder": 24,
+      "migrationOrder": 23,
       "migrationSlice": "S4",
       "compatibilityAdapter": "legacy callers receive the same capability through a kernel-owned adapter until all dependants move",
       "killList": [
@@ -1447,7 +1417,7 @@
         "packages/support-verification/src/pipeline-types.ts:8",
         "scripts/claude-tui-probe.py"
       ],
-      "migrationOrder": 25,
+      "migrationOrder": 24,
       "migrationSlice": "S4",
       "compatibilityAdapter": "legacy callers receive the same capability through a kernel-owned adapter until all dependants move",
       "killList": [
@@ -1488,7 +1458,7 @@
         "packages/core/src/models/types.ts:697",
         "packages/mcp/src/agon-orchestration.ts:24"
       ],
-      "migrationOrder": 26,
+      "migrationOrder": 25,
       "migrationSlice": "S5",
       "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
       "killList": [
@@ -1530,7 +1500,7 @@
         "packages/core/src/cesar/plan.ts:52",
         "packages/mcp/src/agon-orchestration.ts:24"
       ],
-      "migrationOrder": 27,
+      "migrationOrder": 26,
       "migrationSlice": "S5",
       "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
       "killList": [
@@ -1567,7 +1537,7 @@
         "packages/core/src/blocks/builtin-commands.ts:31",
         "packages/core/src/blocks/builtin-commands.ts:33"
       ],
-      "migrationOrder": 28,
+      "migrationOrder": 27,
       "migrationSlice": "S5",
       "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
       "killList": [
@@ -1587,23 +1557,21 @@
       ]
     },
     {
-      "id": "@kernlang/agon-mod-mutate",
+      "id": "@kernlang/agon-mod-naturalize",
       "class": "user-toggleable-mod-package",
-      "owner": "@kernlang/agon-mod-mutate",
+      "owner": "@kernlang/agon-mod-naturalize",
       "dependencies": [
         "@kernlang/agon-mod-api",
         "@kernlang/agon-support-engine-runtime",
-        "@kernlang/agon-support-verification"
+        "@kernlang/agon-mod-sanitize"
       ],
       "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
       "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
       "extractionSources": [
-        "packages/cli/src/lazy-commands.ts:309",
-        "packages/cli/src/signals/intent.ts:56",
-        "packages/core/src/models/types.ts:149",
-        "packages/core/src/models/types.ts:315"
+        "packages/cli/src/lazy-commands.ts:308",
+        "packages/cli/src/signals/intent.ts:56"
       ],
-      "migrationOrder": 29,
+      "migrationOrder": 28,
       "migrationSlice": "S5",
       "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
       "killList": [
@@ -1616,10 +1584,10 @@
         "KL-011"
       ],
       "acceptanceEvidence": [
-        "PKG-35-BOUNDARY",
-        "PKG-35-PARITY",
-        "PKG-35-PACK",
-        "PKG-35-DISABLED"
+        "PKG-36-BOUNDARY",
+        "PKG-36-PARITY",
+        "PKG-36-PACK",
+        "PKG-36-DISABLED"
       ]
     },
     {
@@ -1659,7 +1627,7 @@
         "packages/core/src/blocks/builtin-commands.ts:41",
         "packages/mcp/src/agon-orchestration.ts:24"
       ],
-      "migrationOrder": 30,
+      "migrationOrder": 29,
       "migrationSlice": "S5",
       "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
       "killList": [
@@ -1676,58 +1644,6 @@
         "PKG-15-PARITY",
         "PKG-15-PACK",
         "PKG-15-DISABLED"
-      ]
-    },
-    {
-      "id": "@kernlang/agon-mod-review",
-      "class": "user-toggleable-mod-package",
-      "owner": "@kernlang/agon-mod-review",
-      "dependencies": [
-        "@kernlang/agon-mod-api",
-        "@kernlang/agon-support-engine-runtime",
-        "@kernlang/agon-support-panel",
-        "@kernlang/agon-support-verification"
-      ],
-      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
-      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
-      "extractionSources": [
-        "packages/cli/src/blocks/controls.tsx:20",
-        "packages/cli/src/blocks/controls.tsx:36",
-        "packages/cli/src/cesar/routing.ts:17",
-        "packages/cli/src/cesar/routing.ts:19",
-        "packages/cli/src/cesar/routing.ts:25",
-        "packages/cli/src/cesar/routing.ts:27",
-        "packages/cli/src/cesar/tools.ts:45",
-        "packages/cli/src/handlers/review.ts:332",
-        "packages/cli/src/lazy-commands.ts:305",
-        "packages/cli/src/models/handler-types.ts:113",
-        "packages/cli/src/signals/intent-types.ts:42",
-        "packages/cli/src/signals/intent.ts:56",
-        "packages/core/src/blocks/builtin-commands.ts:28",
-        "packages/core/src/cesar/plan.ts:52",
-        "packages/core/src/models/types.ts:176",
-        "packages/core/src/models/types.ts:241",
-        "packages/core/src/models/types.ts:342",
-        "packages/core/src/models/types.ts:75",
-        "packages/mcp/src/agon-orchestration.ts:24"
-      ],
-      "migrationOrder": 31,
-      "migrationSlice": "S5",
-      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
-      "killList": [
-        "KL-001",
-        "KL-002",
-        "KL-003",
-        "KL-004",
-        "KL-005",
-        "KL-007",
-        "KL-011"
-      ],
-      "acceptanceEvidence": [
-        "PKG-25-BOUNDARY",
-        "PKG-25-PARITY",
-        "PKG-25-PACK",
-        "PKG-25-DISABLED"
       ]
     },
     {
@@ -1752,7 +1668,7 @@
         "packages/support-agent-runtime/src/agent-session.ts:83",
         "packages/support-agent-runtime/src/agent-session.ts:94"
       ],
-      "migrationOrder": 32,
+      "migrationOrder": 30,
       "migrationSlice": "S4",
       "compatibilityAdapter": "legacy callers receive the same capability through a kernel-owned adapter until all dependants move",
       "killList": [
@@ -1782,7 +1698,7 @@
         "packages/support-judge/src/contracts.ts:38",
         "packages/support-judge/src/contracts.ts:43"
       ],
-      "migrationOrder": 33,
+      "migrationOrder": 31,
       "migrationSlice": "S4",
       "compatibilityAdapter": "legacy callers receive the same capability through a kernel-owned adapter until all dependants move",
       "killList": [
@@ -1822,7 +1738,7 @@
         "packages/support-worktree/src/worktree-lock.ts:31",
         "packages/support-worktree/src/worktree-session.ts"
       ],
-      "migrationOrder": 34,
+      "migrationOrder": 32,
       "migrationSlice": "S4",
       "compatibilityAdapter": "legacy callers receive the same capability through a kernel-owned adapter until all dependants move",
       "killList": [
@@ -1883,7 +1799,7 @@
         "packages/core/src/models/types.ts:297",
         "packages/mcp/src/agon-orchestration.ts:24"
       ],
-      "migrationOrder": 35,
+      "migrationOrder": 33,
       "migrationSlice": "S5",
       "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
       "killList": [
@@ -1933,7 +1849,7 @@
         "packages/cli/src/lazy-commands.ts:330",
         "packages/cli/src/signals/intent.ts:56"
       ],
-      "migrationOrder": 36,
+      "migrationOrder": 34,
       "migrationSlice": "S5",
       "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
       "killList": [
@@ -1969,7 +1885,7 @@
         "packages/cli/src/lazy-commands.ts:319",
         "packages/cli/src/signals/intent.ts:56"
       ],
-      "migrationOrder": 37,
+      "migrationOrder": 35,
       "migrationSlice": "S5",
       "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
       "killList": [
@@ -2058,7 +1974,7 @@
         "packages/forge/src/types-impl.ts:3",
         "packages/mcp/src/agon-orchestration.ts:24"
       ],
-      "migrationOrder": 38,
+      "migrationOrder": 36,
       "migrationSlice": "S5",
       "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
       "killList": [
@@ -2075,6 +1991,43 @@
         "PKG-22-PARITY",
         "PKG-22-PACK",
         "PKG-22-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-mutate",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-mutate",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-verification",
+        "@kernlang/agon-support-worktree"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/lazy-commands.ts:309",
+        "packages/cli/src/signals/intent.ts:56",
+        "packages/core/src/models/types.ts:149",
+        "packages/core/src/models/types.ts:315"
+      ],
+      "migrationOrder": 37,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-35-BOUNDARY",
+        "PKG-35-PARITY",
+        "PKG-35-PACK",
+        "PKG-35-DISABLED"
       ]
     },
     {
@@ -2096,7 +2049,7 @@
         "packages/core/src/blocks/builtin-commands.ts:67",
         "packages/mcp/src/agon-orchestration.ts:24"
       ],
-      "migrationOrder": 39,
+      "migrationOrder": 38,
       "migrationSlice": "S5",
       "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
       "killList": [
@@ -2113,6 +2066,59 @@
         "PKG-31-PARITY",
         "PKG-31-PACK",
         "PKG-31-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-review",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-review",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-panel",
+        "@kernlang/agon-support-verification",
+        "@kernlang/agon-support-worktree"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/blocks/controls.tsx:20",
+        "packages/cli/src/blocks/controls.tsx:36",
+        "packages/cli/src/cesar/routing.ts:17",
+        "packages/cli/src/cesar/routing.ts:19",
+        "packages/cli/src/cesar/routing.ts:25",
+        "packages/cli/src/cesar/routing.ts:27",
+        "packages/cli/src/cesar/tools.ts:45",
+        "packages/cli/src/handlers/review.ts:332",
+        "packages/cli/src/lazy-commands.ts:305",
+        "packages/cli/src/models/handler-types.ts:113",
+        "packages/cli/src/signals/intent-types.ts:42",
+        "packages/cli/src/signals/intent.ts:56",
+        "packages/core/src/blocks/builtin-commands.ts:28",
+        "packages/core/src/cesar/plan.ts:52",
+        "packages/core/src/models/types.ts:176",
+        "packages/core/src/models/types.ts:241",
+        "packages/core/src/models/types.ts:342",
+        "packages/core/src/models/types.ts:75",
+        "packages/mcp/src/agon-orchestration.ts:24"
+      ],
+      "migrationOrder": 39,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-25-BOUNDARY",
+        "PKG-25-PARITY",
+        "PKG-25-PACK",
+        "PKG-25-DISABLED"
       ]
     },
     {
@@ -2290,7 +2296,9 @@
         "@kernlang/agon-mod-agent",
         "@kernlang/agon-mod-nero",
         "@kernlang/agon-mod-tribunal",
-        "@kernlang/agon-mod-council"
+        "@kernlang/agon-mod-council",
+        "@kernlang/agon-support-worktree",
+        "@kernlang/agon-support-verification"
       ],
       "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
       "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
@@ -2330,7 +2338,9 @@
         "@kernlang/agon-mod-agent",
         "@kernlang/agon-mod-review",
         "@kernlang/agon-mod-jobs",
-        "@kernlang/agon-mod-git-actions"
+        "@kernlang/agon-mod-git-actions",
+        "@kernlang/agon-support-worktree",
+        "@kernlang/agon-support-verification"
       ],
       "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
       "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
@@ -2375,6 +2385,7 @@
         "packages/cli/src/cesar/tools.ts:42",
         "packages/cli/src/models/handler-types.ts:113",
         "packages/cli/src/signals/intent-types.ts:41",
+        "packages/cli/src/signals/intent.ts:56",
         "packages/core/src/blocks/builtin-commands.ts:29",
         "packages/core/src/cesar/plan.ts:52"
       ],
@@ -2652,7 +2663,7 @@
       ],
       "exitCriteria": [
         "all 36 mod packages compile and pack",
-        "all 849 staged-subject legacy assignments have a destination",
+        "all 872 frozen legacy assignments have a destination",
         "each mod can be disabled without surface reachability",
         "dependent mods degrade or block as specified",
         "each package migrates and verifies its config, state, static assets, history and persisted envelopes before legacy removal"

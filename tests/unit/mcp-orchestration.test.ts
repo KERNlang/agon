@@ -4,9 +4,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
-  ORCHESTRATION_TOOLS,
-  buildDirectAgonCommand,
-  handleWriteToolCall,
+  executeApprovedKernelWrite,
 } from '../../packages/mcp/src/agon-orchestration.js';
 
 const tempDirs: string[] = [];
@@ -54,7 +52,7 @@ describe('agon orchestration MCP write tools', () => {
     process.env.AGON_SESSION_ID = sessionId;
     process.env.AGON_CWD = cwd;
 
-    const run = handleWriteToolCall('AgonWrite', { file_path: target, content: 'hello\n' });
+    const run = executeApprovedKernelWrite('AgonWrite', { file_path: target, content: 'hello\n' });
     const requestPath = await waitForFile(signalDir, (name) => name.includes('-perm-') && !name.includes('-response'));
     const request = JSON.parse(readFileSync(requestPath, 'utf8'));
     writeFileSync(join(signalDir, `${sessionId}-perm-${request.id}-response.json`), JSON.stringify({ approved: true }));
@@ -73,160 +71,5 @@ describe('agon orchestration MCP write tools', () => {
       args: { file_path: target, content: 'hello\n' },
     });
     expect(completion.output).toContain('File written:');
-  });
-});
-
-describe('agon orchestration MCP direct command mapping', () => {
-  it('maps external team tribunal calls with mode, rounds, members, and engines', () => {
-    const result = buildDirectAgonCommand('Tribunal', {
-      question: 'Should Cesar route this through Agon?',
-      team: true,
-      mode: 'red-team',
-      rounds: 3,
-      members: 3,
-      engines: ['codex', 'claude', 'gemini'],
-      cwd: '/tmp/project',
-      timeout: 1200,
-      engineTimeout: 180,
-    });
-
-    expect(result.cwd).toBe('/tmp/project');
-    expect(result.timeoutMs).toBe(1_200_000);
-    expect(result.commands).toEqual([
-      [
-        'call',
-        'team-tribunal',
-        'Should Cesar route this through Agon?',
-        '--cwd',
-        '/tmp/project',
-        '--rounds',
-        '3',
-        '--tribunalMode',
-        'red-team',
-        '--members',
-        '3',
-        '--timeout',
-        '180',
-        '--engines',
-        'codex,claude,gemini',
-        '--jsonl',
-      ],
-    ]);
-  });
-
-  it('maps team forge and team brainstorm to their team subcommands', () => {
-    expect(buildDirectAgonCommand('Forge', {
-      task: 'Implement the bridge',
-      fitnessCmd: 'npm test',
-      team: true,
-      members: 2,
-      cwd: '/tmp/project',
-    }).commands[0]).toEqual([
-      'call',
-      'team-forge',
-      'Implement the bridge',
-      '--test',
-      'npm test',
-      '--cwd',
-      '/tmp/project',
-      '--members',
-      '2',
-      '--jsonl',
-    ]);
-
-    expect(buildDirectAgonCommand('Brainstorm', {
-      question: 'Which API should the bridge expose?',
-      team: 'true',
-      membersPerSide: 2,
-      engines: 'codex,claude',
-    }).commands[0]).toEqual([
-      'call',
-      'team-brainstorm',
-      'Which API should the bridge expose?',
-      '--cwd',
-      process.cwd(),
-      '--members',
-      '2',
-      '--engines',
-      'codex,claude',
-      '--jsonl',
-    ]);
-  });
-
-  it('advertises direct-call controls to external MCP clients', () => {
-    const tribunal = ORCHESTRATION_TOOLS.find((tool) => tool.name === 'Tribunal');
-    const properties = tribunal?.inputSchema.properties as Record<string, unknown>;
-
-    expect(properties.mode).toBeTruthy();
-    expect(properties.team).toBeTruthy();
-    expect(properties.engines).toBeTruthy();
-    expect(properties.cwd).toBeTruthy();
-    expect(properties.engineTimeout).toBeTruthy();
-  });
-
-  it('exposes finalizeOnScore and cesarSmart on the Forge tool schema', () => {
-    const forge = ORCHESTRATION_TOOLS.find((tool) => tool.name === 'Forge');
-    const properties = forge?.inputSchema.properties as Record<string, unknown>;
-    expect(properties.finalizeOnScore).toBeTruthy();
-    expect(properties.cesarSmart).toBeTruthy();
-  });
-
-  it('forwards explicit finalizeOnScore as --finalize-on-score for solo forge', () => {
-    const result = buildDirectAgonCommand('Forge', {
-      task: 'Fix the broken validator',
-      fitnessCmd: 'npm test',
-      cwd: '/tmp/project',
-      finalizeOnScore: 80,
-    });
-    const cmd = result.commands[0];
-    expect(cmd).toContain('--finalize-on-score');
-    expect(cmd[cmd.indexOf('--finalize-on-score') + 1]).toBe('80');
-  });
-
-  it('omits --finalize-on-score for team-forge (team variant ignores the flag)', () => {
-    const result = buildDirectAgonCommand('Forge', {
-      task: 'Fix the broken validator',
-      fitnessCmd: 'npm test',
-      team: true,
-      cwd: '/tmp/project',
-      finalizeOnScore: 80,
-    });
-    expect(result.commands[0]).not.toContain('--finalize-on-score');
-  });
-
-  it('derives finalizeOnScore from task class when cesarSmart=true and none explicit', () => {
-    // bugfix → 85 per defaultFinalizeOnScoreForTask
-    const result = buildDirectAgonCommand('Forge', {
-      task: 'fix the off-by-one bug in the loop',
-      fitnessCmd: 'npm test',
-      cwd: '/tmp/project',
-      cesarSmart: true,
-    });
-    const cmd = result.commands[0];
-    expect(cmd).toContain('--finalize-on-score');
-    expect(cmd[cmd.indexOf('--finalize-on-score') + 1]).toBe('85');
-  });
-
-  it('cesarSmart yields no flag for high-stakes feature/algorithm tasks', () => {
-    const result = buildDirectAgonCommand('Forge', {
-      task: 'implement a new feature for authentication',
-      fitnessCmd: 'npm test',
-      cwd: '/tmp/project',
-      cesarSmart: true,
-    });
-    expect(result.commands[0]).not.toContain('--finalize-on-score');
-  });
-
-  it('explicit finalizeOnScore wins over cesarSmart derivation', () => {
-    const result = buildDirectAgonCommand('Forge', {
-      task: 'fix the bug',
-      fitnessCmd: 'npm test',
-      cwd: '/tmp/project',
-      cesarSmart: true,
-      finalizeOnScore: 95,
-    });
-    const cmd = result.commands[0];
-    expect(cmd).toContain('--finalize-on-score');
-    expect(cmd[cmd.indexOf('--finalize-on-score') + 1]).toBe('95');
   });
 });

@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { assertLegacyUpdaterAllowed } from '../../packages/cli/src/commands/update.js';
+import { readFileSync } from 'node:fs';
+import { runManagedUpdate } from '../../packages/cli/src/commands/update.js';
 
 describe('legacy updater modular guard', () => {
-  it('makes global self-overwrite unreachable from a managed invocation', () => {
-    expect(() => assertLegacyUpdaterAllowed({ AGON_MANAGED_INSTALLATION_ID: 'qualified-prefix' }))
-      .toThrow('legacy global self-update is disabled');
+  it('contains no active-process global npm installation path', () => {
+    const source = readFileSync(new URL('../../packages/cli/src/commands/update.ts', import.meta.url), 'utf8');
+    expect(source).not.toMatch(/npm\s+install\s+-g|['"]install['"]\s*,\s*['"]-g['"]/);
+    expect(source).toContain('runManagedSetup');
   });
 
-  it('retains the explicit compatibility path only for pre-modular installations', () => {
-    expect(() => assertLegacyUpdaterAllowed({})).not.toThrow();
+  it('rejects a version outside the content-bound bundled release set before staging', async () => {
+    await expect(runManagedUpdate('9.9.9')).rejects.toThrow(/bundled release set/);
   });
 });

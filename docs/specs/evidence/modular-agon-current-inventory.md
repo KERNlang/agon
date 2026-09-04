@@ -1,6 +1,6 @@
 # Modular Agon current-surface inventory
 
-> Generated evidence. Do not edit by hand.
+> Frozen pre-extraction migration evidence. The default inventory command verifies this baseline; replacing it requires the explicit `--refresh-frozen-baseline` flag and review.
 
 | Category | Count |
 |---|---:|
@@ -13,11 +13,11 @@
 | cesarTools | 29 |
 | cesarRoutes | 70 |
 | lifecycleHooks | 12 |
-| emittedEvents | 29 |
-| resultAndEnvelopeTypes | 149 |
+| emittedEvents | 30 |
+| resultAndEnvelopeTypes | 155 |
 | configKeys | 121 |
 | statePaths | 38 |
-| stateStoreModules | 29 |
+| stateStoreModules | 38 |
 | staticAssets | 18 |
 | pythonAndNativeComponents | 27 |
 | generatedDocumentation | 3 |

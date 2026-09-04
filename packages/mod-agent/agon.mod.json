@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "id": "agon.agent",
   "name": "Agent",
-  "version": "0.0.0-slice.5",
+  "version": "1.0.0",
   "apiRange": ">=1.0.0 <2",
   "execution": "executable",
   "compatibility": {
@@ -36,7 +36,13 @@
     "optional": [],
     "conflicts": []
   },
-  "permissions": [],
+  "permissions": [
+    {
+      "capability": "engine.dispatch",
+      "resources": [],
+      "required": true
+    }
+  ],
   "platforms": [
     "darwin-arm64",
     "darwin-x64",
@@ -48,8 +54,8 @@
       "path": "ownership.json",
       "kind": "documentation",
       "mediaType": "application/json",
-      "contentHash": "sha256:0d40774f1238aa730fee8f415566ff6fc9c9237b559bab864f466a069f12ba60",
-      "bytes": 10122,
+      "contentHash": "sha256:aeb79bee1faf67185ea2c4c2b27718996d6e269dade341b85bdb8470aaadd0d4",
+      "bytes": 9831,
       "executable": false,
       "platforms": [
         "darwin-arm64",
@@ -145,6 +151,14 @@
     ],
     "cesarTools": [
       {
+        "id": "cesarTools:0000",
+        "aliases": []
+      },
+      {
+        "id": "cesarTools:0006",
+        "aliases": []
+      },
+      {
         "id": "cesarRoutes:0000",
         "aliases": []
       },
@@ -182,14 +196,6 @@
       },
       {
         "id": "cesarRoutes:0060",
-        "aliases": []
-      },
-      {
-        "id": "cesarTools:0000",
-        "aliases": []
-      },
-      {
-        "id": "cesarTools:0006",
         "aliases": []
       }
     ],
@@ -230,18 +236,15 @@
         "aliases": []
       }
     ],
-    "generatedDocs": [
-      {
-        "id": "generatedDocumentation:0000",
-        "aliases": []
-      }
-    ]
+    "generatedDocs": []
   },
   "pack": {
     "include": [
+      "LICENSE",
       "agon.mod.json",
       "dist/index.js",
       "dist/index.d.ts",
+      "dist/implementation.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

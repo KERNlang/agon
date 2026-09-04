@@ -1,3 +1,6 @@
+export { validatePersistedEnvelope } from '@kernlang/agon-mod-api';
+export type { Json, PersistedEnvelope } from '@kernlang/agon-mod-api';
+
 export {
   ModResolutionError,
   SOURCE_PRECEDENCE,
@@ -20,6 +23,7 @@ export type { GeneratedSurfaceCatalogEntry, GeneratedSurfaceRuntime, SurfaceAcce
 export { activateFirstPartySurfaceGeneration } from './activated-surface-generation.js';
 export type { ActivatedSurfaceGeneration, FirstPartySurfacePackage } from './activated-surface-generation.js';
 export { bootstrapFirstPartySurfaceGeneration } from './first-party-surface-bootstrap.js';
+export { ModStateStore, ModStateStoreError } from './mod-state-store.js';
 export type { FirstPartySurfaceBoot } from './first-party-surface-bootstrap.js';
 
 export {
@@ -156,4 +160,6 @@ export type {
 } from './third-party-activation.js';
 export { createExternalSurfaceCatalog } from './external-surface-catalog.js';
 export { KERNEL_MANAGEMENT_SURFACE_CATALOG } from './kernel-management-surfaces.js';
+export { createBuiltInProfileDefinition, createReleaseSetupSelection } from './release-setup.js';
+export type { BuiltInProfileId, ReleaseSetupRequest, ReleaseSetupSelection } from './release-setup.js';
 export { AGON_RUNTIME_VERSION } from './runtime-version.js';

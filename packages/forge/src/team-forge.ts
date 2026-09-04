@@ -13,6 +13,7 @@ import { updateTeamElo } from '@kernlang/agon-core';
 import { runFitness } from './fitness.js';
 
 import type { WorktreeEntry } from './types.js';
+import { writeVersionedResultEnvelope } from './result-envelope.js';
 
 export function shellQuoteForTeamForge(value: string): string {
   const s = String(value ?? '');
@@ -103,6 +104,15 @@ export function writeTeamForgeResultBundle(matchId: string, options: TeamForgeOp
   const bundleTmp = bundlePath + '.tmp';
   writeFileSync(bundleTmp, bundleBody);
   renameSync(bundleTmp, bundlePath);
+  writeVersionedResultEnvelope({
+    resultPath: bundlePath,
+    payload: bundle,
+    status: errorMessage ? 'failed' : result?.winnerTeamId ? 'succeeded' : 'partial',
+    idSeed: matchId,
+    ownerModId: 'agon.team-forge',
+    contributionId: 'agon.team-forge.persisted-result',
+    createdAt: bundle.timestamp,
+  });
   return bundlePath;
 }
 

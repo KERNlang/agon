@@ -1,11 +1,10 @@
 import { validateManifest } from '@kernlang/agon-mod-api';
-import type { AgonModFactory, AgonModV1, Awaitable, Dispose, InvocationContext, InvocationOutput, Json, ModServices, Registrar } from '@kernlang/agon-mod-api';
 
 export const MANIFEST = validateManifest({
   "schemaVersion": 2,
   "id": "agon.provenance",
   "name": "Provenance",
-  "version": "0.0.0-slice.5",
+  "version": "1.0.0",
   "apiRange": ">=1.0.0 <2",
   "execution": "executable",
   "compatibility": {
@@ -39,7 +38,13 @@ export const MANIFEST = validateManifest({
     "optional": [],
     "conflicts": []
   },
-  "permissions": [],
+  "permissions": [
+    {
+      "capability": "fs.write",
+      "resources": [],
+      "required": true
+    }
+  ],
   "platforms": [
     "darwin-arm64",
     "darwin-x64",
@@ -98,9 +103,11 @@ export const MANIFEST = validateManifest({
   },
   "pack": {
     "include": [
+      "LICENSE",
       "agon.mod.json",
       "dist/index.js",
       "dist/index.d.ts",
+      "dist/implementation.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],
@@ -141,53 +148,7 @@ export const SOURCE_OCCURRENCES = Object.freeze([
     "rule": "semantic-source-rule"
   }
 ]);
-export const COMPATIBILITY_CONTRIBUTIONS = Object.freeze([
-  {
-    "id": "cliCommands:0057",
-    "publicId": "provenance",
-    "registryKind": "cli-command",
-    "category": "cliCommands",
-    "source": "packages/cli/src/lazy-commands.ts:298"
-  },
-  {
-    "id": "builtinCommandMetadata:0037",
-    "publicId": "provenance",
-    "registryKind": "tui-action",
-    "category": "builtinCommandMetadata",
-    "source": "packages/core/src/blocks/builtin-commands.ts:56"
-  }
-]);
-
-export interface FirstPartyCompatibilityRuntime {
-  command(kind: string, id: string, input: Json, context: InvocationContext): InvocationOutput;
-  tool(kind: string, id: string, input: Json, context: InvocationContext): Awaitable<Json>;
-  parseIntent(id: string, input: string): Awaitable<Json | undefined>;
-  lifecycle(id: string, payload: Json, context: InvocationContext): Awaitable<void>;
-  render(id: string, payload: Json): Awaitable<{ readonly text: string; readonly markdown?: string }>;
-}
-
-type FirstPartyServices = ModServices & { readonly firstPartyCompatibility?: FirstPartyCompatibilityRuntime };
-const inputSchema = Object.freeze({ type: 'object', additionalProperties: true }) as Readonly<Record<string, Json>>;
-const _resultSchema = Object.freeze({ type: 'object', additionalProperties: true }) as Readonly<Record<string, Json>>;
-
-export function createFirstPartyCompatibilityMod(runtime: FirstPartyCompatibilityRuntime): AgonModV1 {
-  return Object.freeze({
-    apiVersion: '1' as const,
-    async activate(registrar: Registrar): Promise<Dispose> {
-      const disposers: Dispose[] = [];
-      disposers.push(registrar.command('cli', { id: "cliCommands:0057", description: "provenance compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "provenance", input, context) }));
-      disposers.push(registrar.command('tui', { id: "builtinCommandMetadata:0037", description: "provenance compatibility contribution", inputSchema, run: (input, context) => runtime.command('tui-action', "provenance", input, context) }));
-      return async () => { for (const dispose of [...disposers].reverse()) await dispose(); };
-    },
-  });
-}
-
-export const createMod: AgonModFactory = async (services: ModServices): Promise<AgonModV1> => {
-  const runtime = (services as FirstPartyServices).firstPartyCompatibility;
-  if (!runtime) {
-    throw Object.assign(new Error('@kernlang/agon-mod-provenance requires the S5 legacy compatibility bridge until generated surface cutover'), { code: 'MOD_RESTART_REQUIRED' });
-  }
-  return createFirstPartyCompatibilityMod(runtime);
-};
-
-export default createMod;
+export const IMPLEMENTATION_KIND = 'physical' as const;
+export { createMod } from './implementation.js';
+export { createMod as default } from './implementation.js';
+export { runProvenance, buildProvenance, renderMarkdown } from './implementation.js';

@@ -9,3 +9,11 @@ export * from './auth-store.js';
 export * from './isolation.js';
 export * from './process.js';
 export * from './semaphore.js';
+
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+/** Resolve engine definitions owned and shipped by this physical support package. */
+export function resolveEngineDefinitionsDir(): string {
+  return join(dirname(fileURLToPath(import.meta.url)), '..', 'engines');
+}

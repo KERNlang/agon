@@ -133,7 +133,7 @@ import { buildDashboardBlock, coalesceToolCallBlocks, effectiveNativeArchiveBloc
 
 import { buildExecutionRailStats, buildTranscriptRows } from './app-rendering.js';
 
-import { loadExtensionsForWorkspace, startPlanSyncWatcher, startUpdateCheck, subscribeOrchestrationResults, startTelemetryPoller } from './app-lifecycle.js';
+import { startPlanSyncWatcher, startUpdateCheck, subscribeOrchestrationResults, startTelemetryPoller } from './app-lifecycle.js';
 
 import { buildOutputActions } from './app-output-bridge.js';
 
@@ -402,12 +402,6 @@ export function App() {
   const [dynamicSkills, _setDynamicSkillsRaw] = useState<Skill[]>(() => loadSkills(resolveWorkingDir()));
   const [commandRegistry, _setCommandRegistryRaw] = useState<any>(() => (() => { const reg = new CommandRegistry(); registerBuiltinCommands(reg); return reg; })());
   const [eventBus, _setEventBusRaw] = useState<any>(() => (() => { const bus = new EventBus(); const cfg = loadConfig(); if (cfg.hooks) bridgeShellHooks(bus, cfg.hooks); return bus; })());
-  const [extensionSkills, _setExtensionSkillsRaw] = useState<Skill[]>([]);
-  const setExtensionSkills = useMemo(() => __inkSafe(_setExtensionSkillsRaw), [_setExtensionSkillsRaw]);
-  const [extensionPromptFragments, _setExtensionPromptFragmentsRaw] = useState<string[]>([]);
-  const setExtensionPromptFragments = useMemo(() => __inkSafe(_setExtensionPromptFragmentsRaw), [_setExtensionPromptFragmentsRaw]);
-  const [loadedExtensions, _setLoadedExtensionsRaw] = useState<any[]>([]);
-  const setLoadedExtensions = useMemo(() => __inkSafe(_setLoadedExtensionsRaw), [_setLoadedExtensionsRaw]);
   const [workspacePath, _setWorkspacePathRaw] = useState<string>(resolveWorkingDir());
   const setWorkspacePath = useMemo(() => __inkSafe(_setWorkspacePathRaw), [_setWorkspacePathRaw]);
   const [terminalSize, _setTerminalSizeRaw] = useState<{width:number,height:number}>(normalizeTerminalSize(process.stdout.columns, process.stdout.rows));
@@ -499,13 +493,13 @@ export function App() {
   const allSlashCommands = useMemo(() => {
           const builtinCmds = SLASH_COMMANDS;
           const registryCmds = commandRegistry.listForHelp();
-          const skillCmds = [...dynamicSkills, ...extensionSkills].map((s: {trigger:string,description?:string,name:string}) => Object.assign({}, { cmd: s.trigger, desc: s.description || s.name }));
+          const skillCmds = dynamicSkills.map((s: {trigger:string,description?:string,name:string}) => Object.assign({}, { cmd: s.trigger, desc: s.description || s.name }));
           // Dedupe across builtins, registry-provided commands, and dynamic skills.
           const mergedBase = [...builtinCmds, ...registryCmds].filter((cmd: any, index: number, all: any[]) => all.findIndex((other: any) => other.cmd === cmd.cmd) === index);
           const seen = hostSet(mergedBase.map((c: any) => c.cmd));
           const uniqueSkills = skillCmds.filter((s: any) => !seen.has(s.cmd));
           return [...mergedBase, ...uniqueSkills];
-  }, [dynamicSkills, extensionSkills, commandRegistry]);
+  }, [dynamicSkills, commandRegistry]);
 
   const availableEngines = useMemo(() => {
           const hidden = new Set((loadConfig() as any).hiddenEngines ?? []);
@@ -918,7 +912,7 @@ export function App() {
       neroMode, setNeroMode,
       cesarMemory,
       get activePlan() { return activePlanRef.current; }, setActivePlan: setActivePlanWrapped,
-      extensionPromptFragments,
+      extensionPromptFragments: [],
       sessionMcpServers, setSessionMcpServers,
       autoModeQueued,
       telemetryVitals,
@@ -926,7 +920,7 @@ export function App() {
       recentFallbacks,
       cesarRuntimeHost: cesarRuntimeHostRef.current,
     };
-  }, [registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,extensionPromptFragments,sessionMcpServers,autoModeQueued,telemetryVitals,recentFallbacks,setActivePlanWrapped]);
+  }, [registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,sessionMcpServers,autoModeQueued,telemetryVitals,recentFallbacks,setActivePlanWrapped]);
 
   const handlePasteInput = useCallback((raw:string) => {
     const result = processPasteContent(String(raw ?? ''));
@@ -1056,13 +1050,13 @@ export function App() {
   const handleSubmit = useCallback(async (value:string) => {
     runHandleSubmit({
       inputEpochRef, pendingBellRef, awaitingPlanAnnouncedRef, pasteHashesRef, pendingPasteTransformRef, inputValueRef, activePlanRef, activeTurnRef, interruptedTurnRef, chatStartTimeRef,
-      replState, mode, planModeQueued, autoModeQueued, permissionMode, btwPanel, pendingImages, outputBlocks, allSlashCommands, dynamicSkills, extensionSkills, lastUndoToken, sessionStartTime, explorationMode, neroMode,
-      jobManager, commandRegistry, eventBus, loadedExtensions,
+      replState, mode, planModeQueued, autoModeQueued, permissionMode, btwPanel, pendingImages, outputBlocks, allSlashCommands, dynamicSkills, extensionSkills: [], lastUndoToken, sessionStartTime, explorationMode, neroMode,
+      jobManager, commandRegistry, eventBus, loadedExtensions: [],
       setInputValue, setInputHistory, setHistoryIndex, setInputQueue, setSteeringCount, setSlashPickerOpen, setStatusDashboardOpen, setPlanModeQueued, setPersistentAutoMode, applyPermissionMode, setMode, setWorkspacePath, setReplState, setJobList, setBtwPanel,
       setPendingImages, setSessionEngines, setEnginePickerOpen, setModelPickerOpen, setModelPickerEntries, setModelPickerLoading, setCesarPickerOpen, setModPickerOpen, setModPickerView, setChatSession, setLastUndoToken, setModelPickerTargetEngine, setModelPickerInitialFilter, setModelPickerTitle, setModelPickerCliGroups, setExplorationMode, setNeroMode,
       dispatch, buildContext, sendBtwMessage, handleSubmit, transition, setActivePlanWrapped, askQuestion, bell,
     }, value);
-  }, [replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued,autoModeQueued,permissionMode,applyPermissionMode,setPersistentAutoMode,setActivePlanWrapped,outputBlocks,btwPanel,sendBtwMessage,pendingBellRef,awaitingPlanAnnouncedRef]);
+  }, [replState,dispatch,buildContext,mode,pendingImages,jobManager,commandRegistry,eventBus,planModeQueued,autoModeQueued,permissionMode,applyPermissionMode,setPersistentAutoMode,setActivePlanWrapped,outputBlocks,btwPanel,sendBtwMessage,pendingBellRef,awaitingPlanAnnouncedRef]);
 
   const handleReviewActionCb = useCallback((action:'apply'|'edit'|'reject'|'copy') => {
     if (!reviewEvent) {
@@ -1378,10 +1372,6 @@ export function App() {
       return changed ? next : prev;
     });
   }, [liveToolStreams]);
-
-  useEffect(() => {
-    loadExtensionsForWorkspace(workspacePath, commandRegistry, registry, eventBus, setExtensionSkills, setExtensionPromptFragments, setLoadedExtensions);
-  }, [workspacePath]);
 
   useEffect(() => {
     modeRef.current = mode;

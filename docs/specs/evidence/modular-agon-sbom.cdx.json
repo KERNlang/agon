@@ -1,0 +1,1932 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:00000000-0000-4000-8000-000000000109",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "type": "application",
+      "name": "@kernlang/agon-modular",
+      "version": "1.0.0"
+    },
+    "properties": [
+      {
+        "name": "agon:evidence-kind",
+        "value": "local-unpublished-release-candidate"
+      },
+      {
+        "name": "agon:npm-provenance",
+        "value": "externally-blocked-until-registry-publication"
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "application",
+      "bom-ref": "@kernlang/agon@1.0.0",
+      "group": "@kernlang",
+      "name": "agon",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "50fc2932eb06e2cf1c408e6b532106fb41f7392657e816446340f0ceaf15310c"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-vK9ROO/LPMKN9gsq+PJZNO9oTKrbKeU/5R1sZWb4odq+dOCxECruwvSnyodgJ//Wtegvmjc9Bin/SCzG7yz9TA=="
+        },
+        {
+          "name": "agon:class",
+          "value": "managed-launcher"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-kernel@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-kernel",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "4bea683e415fa0c995a9fa65aecc3c9c908fee738ec12a21893a91782b5306ab"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-nWjDku2QOTH3IoyZvA13rv+SQuth8K9FlG+F5MwQKyJ0EfyFpbGvuDCI91h6UtTTIi7b18Iwe5KySyav0/Ec8Q=="
+        },
+        {
+          "name": "agon:class",
+          "value": "minimal-kernel-machinery"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-api@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-api",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "94a74d231ebefa3c1379dd20794b594d6c0b76ec8660eca1c5b69c311ab9a1dc"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-TEIrnlljtl1HqK0SWm1LAWa7eULuW7P0gFOXz8/IWeQZgkXWG+idp6ciOSfPvVtDRhmu4V3TXneey5Dcy3VJOw=="
+        },
+        {
+          "name": "agon:class",
+          "value": "minimal-kernel-machinery"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-support-engine-runtime@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-support-engine-runtime",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "929569741b45a6b13c8e17d4e21e5605942c0a349743eb06541ef303468f18f6"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-Wp60ghwipjQqoc44gNToeXBXKbQMfOEv0E4Y3Wr4lL3RXG4028505SQ6JDSn2Vj3XdDS+aCCgbhxrS+y6XcDng=="
+        },
+        {
+          "name": "agon:class",
+          "value": "hidden-shared-support-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-support-engine-catalog@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-support-engine-catalog",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "38e65599c21b6795bf4769931a85c8a3476947feaa6716f243129db7326ab441"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-AO8b6myr3qyZRno5cZMfoiG/qewzu3+QBipSJRGM4zOamtBLsJinUlU4v15l2nIGFBstm1vhc133AjXx2eKqUw=="
+        },
+        {
+          "name": "agon:class",
+          "value": "hidden-shared-support-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-support-persistence@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-support-persistence",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "2fd1602c56d528abedafd9028551454686584d1dcaea3dfa0ddd992f2fbcc7f5"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-pQMCev8uBbqfmGOh+xHypST22qKlj2rZ7elu0JtOamuCj/a1v4YGFVeRk75Zzk+cqgrL3XAu6rlQjFYbL+yywQ=="
+        },
+        {
+          "name": "agon:class",
+          "value": "hidden-shared-support-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-support-verification@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-support-verification",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "e1dac0018b57ededbf741bc8e701c759493ae0ddd55f78229cf67f75464d6ef9"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-V7nhtcWdzd//K/oy6s59Qu4jzDeoALtJ9XEnA+asraLEpkuQ/r6HlKRw6/AovJ4emqExri9Yt/lCDiN+aBoA1w=="
+        },
+        {
+          "name": "agon:class",
+          "value": "hidden-shared-support-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-support-worktree@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-support-worktree",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "f0f1885aed148fcb01f2813075e4242de4c2e49d67de759c2623e05b084db6f3"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-aHfCLSRWaiCArb91tJIIzi8lCpnQYLeKzWJRmdSujInbuV3+fZhDlxxS+TPEyBMQg4zG/RZgIxhSVCGOcbhNpg=="
+        },
+        {
+          "name": "agon:class",
+          "value": "hidden-shared-support-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-support-panel@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-support-panel",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "2c9b5654a5424c9a2a3170b7726e4fbfcfa0308a9fc78decd0e290a3b9f32846"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-AS2zus0ieVwTAc/0w2M+y95ylOiJQRYBc5MIJsd+fSSvZJ5WdErpPM434SW3jpOkw6Dz51Uj0jgM/S9nh82JyA=="
+        },
+        {
+          "name": "agon:class",
+          "value": "hidden-shared-support-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-support-judge@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-support-judge",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "7e51de9d39426aba56dcf782852aed0b783d46bd7f9d36df89dd1cb86c36c00d"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-C2PFuy5Wf8WkZ+QANHGgjF0WHC/SzeFbSUlL7VojtoffGR9jtg6IidxDfQdrttqiuX/RhFNDB2QusQVs7fIj9w=="
+        },
+        {
+          "name": "agon:class",
+          "value": "hidden-shared-support-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-support-agent-runtime@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-support-agent-runtime",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "03c03dbdea6bcb85385f8d5d79a08e215e996d3faaef9eab1dda76a53cbcf289"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-fnY53e9CTHYQo6iJNHyIz7J0Gzxfac1qLK/69NfeIFWT281svnRQsAvtLhyXQ53Uz0EGhmyOlCbQy6WHugC96A=="
+        },
+        {
+          "name": "agon:class",
+          "value": "hidden-shared-support-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-support-dedup@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-support-dedup",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "b07a37ce59e778b3384eac035a79277f98bf66cf35d4e35c30b1e8879f30a822"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-v6eoAY9xh1Zhn8CkkbApvNYwoj3jdJWhdmzIsQu1FOQgWE2uH1Z9o6UR8q0r9HQe38JHMbs4EvJzsI0VKywS3A=="
+        },
+        {
+          "name": "agon:class",
+          "value": "hidden-shared-support-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-support-browser-bridge@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-support-browser-bridge",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "04f33141c4dbf27344100eaa85c4909ace49213105dd04dc0ac7619f698953d9"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-ImQxu/ng42UKthlivuLOnA3nfysf6yC4DK4wFrJfuqfO5y3ZE1F4N2biLqhJn7itD+Jx14ZsF73qQJ3ElWqtgg=="
+        },
+        {
+          "name": "agon:class",
+          "value": "hidden-shared-support-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-support-saas-api@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-support-saas-api",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "da053f3b4c2c5cff4758cfe7086e835a322c49353e3658e71f510b58fbb9cdba"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-7z++c800bhwtuOgmF2mzCQla7FJYR0Q7CbXFI7p59VJ1oaSGrURBn+tb/xKDunJuhIand0BLn+0J33qJsWbCFw=="
+        },
+        {
+          "name": "agon:class",
+          "value": "hidden-shared-support-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-ask@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-ask",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "85ab020b4340ba3ae80f671fc380677167d8e45c947dbb629e3cf3c4a5a7b445"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-p5PA4b360pIVgBRnNhMCXaME8gR/qNibcak4Z4qo/jA3k7vxSPf9Qy91Sh8w5OoaIFSE7fQrwK7KG2ytndMHXw=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-plan@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-plan",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "c23e71bfbdbb035105feec6561cbdb8e49e92e78b85911084b1121a6b700bdd9"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-VYrP0q+7/5bPW46gkETQvFcN1y5NukeQTke46XfLy5lukxeiQjaNM9Ap7pdTaN1E1kvL9fGKM4eDTEHPXPwQVw=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-think@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-think",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "8fcbffcab5d3ec026714c9bed68a2a88743ba7fa958e7d7591e2e03e2167f8f4"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-Sa8iQldsqPL6aDcXOZ2L5XzDKtnGA6UE4cQ4hAlErE1Dn8LDIbmzcDyQIFgFdjH5tgJw7llI2hQEH4D5ftRskw=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-brainstorm@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-brainstorm",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "8cdfefd6785977b62a3155f8dbd7605ad82d89a06b7f33f9d191032f2559c123"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-Kn9eAZ7RvKUmZLdfwjtt3fveAYTKGz7g+7r0GH4xrgjNXTIgnKyRtuk/yBgxImfbwqyjjU/bdjtwaen62+Z7Pw=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-team-brainstorm@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-team-brainstorm",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "3ef6e2041bc5b90b05b5695fea2729b8b144b21af6f00c9567ca24812b21996b"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-+RKnIwEm35sXX6herX6R8B0T5wSV0FnUJBT2LkGJ54JSehhWY5H1DnQaBs6dPYQlTqZCrJFYVxPj+fK46njMrQ=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-tribunal@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-tribunal",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "f136e67f45d989ac61eeb623db3d48d3a000ab41fd3ccdbea9257cbe5a64de1d"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-LlAPwKncl2AObGN6MXWyXa1/U3g5ffSmUnHlgY1Em/enFm6DYWXtOifidhCmBfRDcehbynpNT17/YZLGVyNp2g=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-team-tribunal@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-team-tribunal",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "5b914646b420c185e2dfb2937584b8ce0e554cfbd72d982cd5945e33b18a439f"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-AeKWKoe7VIJZvS2nMf4ULlHd56nw6Ehc+v5gKrxaIDrIScqaLNVGf1UtpmzKIwTTOVAeGQZI2JrI0x8SMflpYA=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-campfire@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-campfire",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "f441967c721616dcd29e66a3379bc5c5aaa4c395244c443d4f3ddec95213da8a"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-B8/Uz3qk+DzT39n0Odej+MoODgnQT72gkdsOfbXAufjnON6k+O3IchNL4FqC4MYH4cTdmUtXuDOhIkBXEWC/TQ=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-forge@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-forge",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "80dd9a39fec04c68c95f8fa01db9c3d894d9ac951e18eb37f1c45166121c4c71"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-a8WTn7mWA8r52r2IRZFoYmu3hh0XHEXfZOuvlpxxF/3BkLTy8YvhZqEjq9TkRQcef9mjvDGfFl3N9J+Kn/2/3Q=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-team-forge@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-team-forge",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "89cf7a6fee220fdb17b5891e0ed3ec9e5caf65d2a832b1569a2df7a4e85f2d3e"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-neYO3O4/yFydBunp9TUenJOiK9Hr0KJROJceNq1KTaBdFeJ4MDe2TgeTFwmAHxDdKzmnlts7orMsw4Cc93C89g=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-synthesis@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-synthesis",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "4f764059bc096a056ea7041cc07ebd4fe132d8b25aa5688c950b2855547bcd76"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-R0BCIPVeGDGlqUkq2pnQahy5alM7s9qwyohRmKqleDYO3R3eAP2eJ0mDNjpV2QkgfjCu1VeR3Mya82DGKtGubg=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-review@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-review",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "06775c1bf778e521a890cbd72ad8a21bcad0378156ad3d7bb5adc2b1fd401892"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-DxUkakvilQqR6t9zP1iZVUj/sZcT2DUb+sp5ZHWPm5MyZseLrWz0UFXr7AH0Z2JC0CiCSXD0G1Hk6/JBwpyx3g=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-pipeline-orchestration@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-pipeline-orchestration",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "abff38d21eb29641a1e0eb03a974870695c7d6646258fc60a25cd010055851c9"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-/JAFore6JQKVCC/ayYElpzYY7RcDEDTnslRPSMJoTTGnhGONAgkWHnk9N4zxRuV+sb7gNAv/EuUHJZBWUFNl3g=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-pipeline-delivery@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-pipeline-delivery",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "725c1b810a126b46459b8fd9629a0980b6c2a1382985ac96e992a593ca0d8f79"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-vDE4Lp7xWwRapZsa6/nTPRHLhTRJRkaSDU9v73EF49XH4TVv/nSPVc0lhCojqRYILqQwOJwzVtaPjCnbhYHmFw=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-agent@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-agent",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "c2b61e01cf1c92db3e1f1450810860dd28405f38bb01bfed2a368d9c75cd4c16"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-c0udso3txwjQ8nVnFXETn07UPEABOZTxRhNGq0o0zhUUC6cexrMrtPzf0lgLQjPN+pZtNkH8O4X2SZlgFffvzg=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-goal@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-goal",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "440eea381187ae7a0b064bb9349cb7f8b51cb1033b660d2a2ba3162c7932ec59"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-yxqSPgxBQDww3kOfDwex2sjqJuPia3yiTECAs+1t5osuZgJIFiZqZBIXnnTqERIfZ5EGXZR1RNEMSVxG2zQCzg=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-conquer@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-conquer",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "ce790f00740ca7aacac87e873aaef61ae8b839d40623313a6925f4e08b802920"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-qbPhL2rjRsG4wuYnvPydXLsnncP610aFg2ruKwS49ZMURHVworMC8iZAhQOMp2q1WDSBmE5EHzZN+Mm5pekdaw=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-nero@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-nero",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "5517b99850e7b80a333ceeee264859d9f606537b0074426997a5489f2994ca92"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-rAfcUgY1+OZOsxmb2jNl1IeD1Q7c+t0n1QjNlnPy2ebHAEzy4BtZ0AmpyXTzAqlFpCucMiz76rDQPR9QSFjycQ=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-council@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-council",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "7730f7f56cac47153ef4ea2a68e7745c6dd86432b9a66dc46f61bc56d784919e"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-L1MyqHV2DE26zjrUMGkp7swATegK12BdhTOgD963HYhBoHo1nZR7KrXnEX1lJDz/pUcXcbRaKV1F/yRlUV1xyQ=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-research@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-research",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "ac75ee4c45faddeeebb32724f810c8edd75d49cfae0f1b3c56f31b8b3c2992f3"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-dGw4Iv0iWpseXZRVl9+mgVNWQVG9WId7yVBeiLLBCUo6spMcWBDOPhcHbD2tz7pLwyuzbFCswVJeqL8Qwa7gXg=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-rag@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-rag",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "0d9c9bd5efa8073f2744d8376c618e37fdf3814017dd2d194b8d798b8bcd9c56"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-kQt/QshkjekMO1jlcO9d4qHvaLCWbX7R2/aWes2H59xLkWFK7CsM5Ap0J3Kim810om4vuiAR0MV/hEROzsKb6w=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-mutate@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-mutate",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "84850cb550279da63d8f723fc7c8eb76a259f913fde897c1cd185af3ae2552a7"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-q5XITMdLZyDkuUIcpj0YLIrx1lbKZXzKaTCoz5q/C/oIf3R8BFWglS/LjxnA6H6b4m0gGJbVPHHTiiCiPGJopA=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-naturalize@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-naturalize",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "959f1b55108b96d8a0f28d3e6f8687a68e805e9c31f1d6b19ad2657621547d79"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-0I/z15xPpoBKPLaWRs1iHPcP/1joRvOTiPYz149q1gD841ybwZkRq0NAUqPI/cRKOJbaELrUeHUlxVW1qkE6tw=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-sanitize@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-sanitize",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "9ddd97fce9fb604f75610ef2b1e319835d77592cbd7dd6152b06bf0400c5aae4"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-L9VvS3BkP1wl95sKl2+Okq6laDj/nNMYJZpSGrL0gwDjpLwgT9zX9RZ/dEVbokGR5DPVrTtXNFphW2AIVBc3dw=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-rooms@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-rooms",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "9913232c3ad988c92e01a2d5e04853700ef98d1d636f92dac014bce5be2fb586"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-+Ii6KZ8CDmwhqpANxahp5j1OBGNvMPzmCaf6/Pms8k0ZJ5UmIzrfGMhip7AOE8VK4H79n7kPg0Mr35M9qL1BFg=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-jobs@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-jobs",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "56655c2ccb782f8f000b2c9546ad10c9d0a4f73ddfc6022564c1264d7b316ba5"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-GrsuAQHb9KXbUfp4jrs3QR9K1BGE9/KNjbRrktoG3zKjcGD2wQqxy5TkrYzRRp1C/YOuyn/i20y9h74xb8sPJg=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-browser@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-browser",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "3fae583b41af45d06613f39f71fe7266608bbf9d39c2ab8a7fea5a120168a27b"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-pWE9NNyvBdJq9ZgvIJ3YYO2+9COlY5JQaoeSBldfp9WoDPwI3teeTqf6cC+QOYZJc8BxR1xfdd3nImgOB7DLFA=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-ratings@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-ratings",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "5c853e3b18fd36b4b55b1a041c1e36b61eda383a07a50acea87f87381a7b194a"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-9CycJjLEKiotBADXJpckmgFvUJK8UXOsfPELHLK0O6weMac/3pOPjmD0g0ZBs1xee3x/6lFjaHHurvAEJr5bDg=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-history@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-history",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "d561a51d019ff61075cc946e00fef33920a430f2b451a80abd3013c19d796f73"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-9v8nYBzRGGgBPxaNzQX6QedRU8WSDsxMdCtMHYJOmQ+8gMS6LT0Yiq+NNnR96naRaxA0TLj+t0eT5KywZKoIOA=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-provenance@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-provenance",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "c8ffd3871bf1f44a1fb41ce2d670bacd6de5124ac6363b05a59bbbf66e4a8a0a"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-dTaBIb1S2kqdaVU+LQmiN1+4QfozKnkxHnDpOsb6CaQFdVEvykgpF+j26G2CbcIqLq/uXMOHIhCjZ3CzTi8U6Q=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-flow@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-flow",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "6456c8b2647ddf133bf7881345b78ef955ed54df06fa05e21d5cef77b1f0d44d"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-1ziS+gyO2tu64gc9DKeLijmQqbF+L0af7iKj66WZQGGnI3FNHMmQP9F71sOFQXH+H2kr92pG8gYESpmhBJVHWQ=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-memory@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-memory",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "df65bbbb96adb22d1e711a35e7992c9cdcbf4fc49fcb2cae040525534de3f27e"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-Gvv1nul0Zv3UEI6U3dYVEZtd9B7Qx0k/f3BPOGOHcyOpP8BEBRJT5lFgDS217+e7YnLObIwbp6X7DApF5HJ5Xg=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-worktrees@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-worktrees",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "609da70d8acf760fd3b135928c11f10cd56dc363524733439062bfba0d321727"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-NXcHKbUYOYQU6BMbOl2qzef1GmbQDDNO1Vea+q2kbPsHDRZRI0rMNFoDzUU5tlZ/qMbl4c1Obken3ltqKn6U+g=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-skill-authoring@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-skill-authoring",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "87edafcdbfa0ad143ff679472c0be2ed670ada3cd8db3282d0cd35ddc05ea674"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-UK8Ar1aFQ09wVZeRyOpCLRZ1RvM5YzvyBOnt+IHQfS2X5GMEQwpRDKH4MeU0yXS5pxo1Q91D4dmB8O0CZMefZA=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-git-actions@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-git-actions",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "d93e169d63104c0663f9ac2f9394c368ba7f99702df1d91119fd9a78b81a9406"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-u1CeT+Ino44tQ4vNeBtqtjEVFy/2kraGxGnLkFZfAJAHe+wOvZatMd4YnowTp4gt7kxdLawXenJi5AXsFbFxTw=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-routing-docs@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-routing-docs",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "f84fe92a492b2efd5f100038adfc26a6beb9f08ebd4f594bb08e8d762946103e"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-I4x3DaM4U34OxOQC5lA8GkEfFV+WU+Y3al5cUQWX+O7ONavWWN3MX58UC6sgphH0Ww+MrmT6xjZ7tS0hgY/EWg=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "@kernlang/agon@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-support-browser-bridge@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-judge@1.0.0",
+        "@kernlang/agon-support-persistence@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-kernel@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-api@1.0.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "@kernlang/agon-support-engine-runtime@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-support-engine-catalog@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-support-engine-runtime@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-support-persistence@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-support-verification@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-support-persistence@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-support-worktree@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-support-verification@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-support-panel@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-support-engine-runtime@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-support-judge@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-support-panel@1.0.0",
+        "@kernlang/agon-support-verification@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-support-agent-runtime@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-persistence@1.0.0",
+        "@kernlang/agon-support-verification@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-support-dedup@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-support-browser-bridge@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-support-saas-api@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-ask@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-plan@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-persistence@1.0.0",
+        "@kernlang/agon-support-verification@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-think@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-brainstorm@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-panel@1.0.0",
+        "@kernlang/agon-support-dedup@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-team-brainstorm@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-mod-brainstorm@1.0.0",
+        "@kernlang/agon-support-panel@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-tribunal@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-panel@1.0.0",
+        "@kernlang/agon-support-judge@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-team-tribunal@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-mod-tribunal@1.0.0",
+        "@kernlang/agon-support-panel@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-campfire@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-panel@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-forge@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-panel@1.0.0",
+        "@kernlang/agon-support-judge@1.0.0",
+        "@kernlang/agon-support-worktree@1.0.0",
+        "@kernlang/agon-support-verification@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-team-forge@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-mod-forge@1.0.0",
+        "@kernlang/agon-support-panel@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-synthesis@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-panel@1.0.0",
+        "@kernlang/agon-support-judge@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-review@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-panel@1.0.0",
+        "@kernlang/agon-support-verification@1.0.0",
+        "@kernlang/agon-support-worktree@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-pipeline-orchestration@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-mod-brainstorm@1.0.0",
+        "@kernlang/agon-mod-forge@1.0.0",
+        "@kernlang/agon-mod-tribunal@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-pipeline-delivery@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-mod-agent@1.0.0",
+        "@kernlang/agon-mod-review@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-agent@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-agent-runtime@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-goal@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-mod-plan@1.0.0",
+        "@kernlang/agon-mod-agent@1.0.0",
+        "@kernlang/agon-mod-review@1.0.0",
+        "@kernlang/agon-mod-jobs@1.0.0",
+        "@kernlang/agon-mod-git-actions@1.0.0",
+        "@kernlang/agon-support-worktree@1.0.0",
+        "@kernlang/agon-support-verification@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-conquer@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-mod-agent@1.0.0",
+        "@kernlang/agon-mod-nero@1.0.0",
+        "@kernlang/agon-mod-tribunal@1.0.0",
+        "@kernlang/agon-mod-council@1.0.0",
+        "@kernlang/agon-support-worktree@1.0.0",
+        "@kernlang/agon-support-verification@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-nero@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-judge@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-council@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-panel@1.0.0",
+        "@kernlang/agon-support-judge@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-research@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-rag@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-persistence@1.0.0",
+        "@kernlang/agon-support-dedup@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-mutate@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-verification@1.0.0",
+        "@kernlang/agon-support-worktree@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-naturalize@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-mod-sanitize@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-sanitize@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-rooms@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-persistence@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-jobs@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-persistence@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-browser@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-browser-bridge@1.0.0",
+        "@kernlang/agon-support-agent-runtime@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-ratings@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-persistence@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-history@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-persistence@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-provenance@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-persistence@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-flow@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-persistence@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-memory@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-persistence@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-worktrees@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-worktree@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-skill-authoring@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-persistence@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-git-actions@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-verification@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-routing-docs@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-persistence@1.0.0"
+      ]
+    }
+  ]
+}

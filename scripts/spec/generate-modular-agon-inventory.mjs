@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
 import { extname, join, relative, resolve } from 'node:path';
+import { createHash } from 'node:crypto';
 import ts from 'typescript';
 
 const root = resolve(import.meta.dirname, '../..');
@@ -8,6 +9,68 @@ mkdirSync(evidenceDir, { recursive: true });
 
 const posix = (value) => value.split('\\').join('/');
 const rel = (value) => posix(relative(root, value));
+
+// The inventory is the migration input captured before physical extraction. It
+// is deliberately not a live inventory of the rewritten tree: scanning newly
+// extracted packages would count both the legacy owner and its destination and
+// silently move the acceptance target. Refreshing the baseline therefore needs
+// an explicit, reviewable flag. The default command is a frozen-baseline check.
+const frozenInventoryPath = join(evidenceDir, 'modular-agon-current-inventory.json');
+const canonicalFrozenInventoryPath = join(root, 'docs/specs/evidence/modular-agon-current-inventory.json');
+const canonicalFrozenInventoryMarkdownPath = join(root, 'docs/specs/evidence/modular-agon-current-inventory.md');
+const frozenCategoryHash = 'e19cc1b2d0686d9be2872999d3165196b2fc827683d8edca3bb746fd8d0c9772';
+const refreshFrozenBaseline = process.argv.includes('--refresh-frozen-baseline');
+const selfTest = process.argv.includes('--self-test');
+
+function categoryHash(categories) {
+  return createHash('sha256').update(JSON.stringify(categories)).digest('hex');
+}
+
+function validateFrozenInventory(value) {
+  if (!value || value.schemaVersion !== 1 || typeof value.categories !== 'object' || value.categories === null) {
+    throw new Error('frozen legacy inventory has an invalid schema');
+  }
+  const assignments = Object.values(value.categories).reduce((sum, entries) => {
+    if (!Array.isArray(entries)) throw new Error('frozen legacy inventory category is not an array');
+    return sum + entries.length;
+  }, 0);
+  if (assignments !== 872) throw new Error(`frozen legacy inventory must contain 872 assignments; got ${assignments}`);
+  const actualHash = categoryHash(value.categories);
+  if (actualHash !== frozenCategoryHash) {
+    throw new Error(`frozen legacy inventory category hash mismatch: ${actualHash}`);
+  }
+  return { assignments, categoryHash: actualHash };
+}
+
+if (!refreshFrozenBaseline) {
+  // Verification sandboxes receive an exact copy of the committed migration
+  // baseline. They must never reconstruct it from the post-extraction tree.
+  const canonicalBytes = readFileSync(canonicalFrozenInventoryPath, 'utf8');
+  const frozen = JSON.parse(canonicalBytes);
+  const result = validateFrozenInventory(frozen);
+  if (resolve(frozenInventoryPath) !== resolve(canonicalFrozenInventoryPath)) {
+    writeFileSync(frozenInventoryPath, canonicalBytes);
+    writeFileSync(
+      join(evidenceDir, 'modular-agon-current-inventory.md'),
+      readFileSync(canonicalFrozenInventoryMarkdownPath, 'utf8'),
+    );
+  }
+  if (selfTest) {
+    const tampered = structuredClone(frozen);
+    tampered.categories.cliCommands = tampered.categories.cliCommands.slice(1);
+    let rejected = false;
+    try { validateFrozenInventory(tampered); } catch { rejected = true; }
+    if (!rejected) throw new Error('negative control failed: a changed frozen baseline was accepted');
+  }
+  console.log(JSON.stringify({
+    mode: 'frozen-baseline-check',
+    ...result,
+    negativeControl: selfTest ? 'passed' : 'not-requested',
+    refreshCommand: 'node scripts/spec/generate-modular-agon-inventory.mjs --refresh-frozen-baseline',
+  }, null, 2));
+  process.exit(0);
+}
+
 const modularSourceRoots = readdirSync(join(root, 'packages'), { withFileTypes: true })
   .filter((entry) => entry.isDirectory() && entry.name.startsWith('mod-') && !['mod-api', 'mod-kernel'].includes(entry.name))
   .map((entry) => 'packages/' + entry.name + '/src');
@@ -219,9 +282,9 @@ const nativeComponents = ['packages', 'scripts'].flatMap((dir) => walk(join(root
 }));
 
 const generatedDocs = [
-  { id: 'docs/modes.md', generator: 'scripts/generate-mode-docs.mjs', source: 'package.json:12' },
-  { id: 'AGENTS.md routing block', generator: 'packages/cli/src/commands/agent-guide-text.ts', source: 'packages/cli/src/commands/agent-guide-text.ts:1' },
-  { id: 'installed agent prompts', generator: 'packages/cli/src/commands/install-agent-prompts.ts', source: 'packages/cli/src/commands/install-agent-prompts.ts:1' },
+  { id: 'docs/modes.md', generator: 'packages/mod-routing-docs/src/guide-content.ts', source: 'packages/mod-routing-docs/src/guide-content.ts:1' },
+  { id: 'AGENTS.md routing block', generator: 'packages/mod-routing-docs/src/guide-content.ts', source: 'packages/mod-routing-docs/src/guide-content.ts:1' },
+  { id: 'installed agent prompts', generator: 'packages/mod-routing-docs/src/guide-content.ts', source: 'packages/mod-routing-docs/src/guide-content.ts:1' },
 ];
 
 function unique(items) {

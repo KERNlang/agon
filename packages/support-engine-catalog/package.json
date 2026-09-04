@@ -1,7 +1,8 @@
 {
   "name": "@kernlang/agon-support-engine-catalog",
-  "version": "0.0.0-slice.4",
-  "private": true,
+  "version": "1.0.0",
+  "private": false,
+  "license": "MIT",
   "type": "module",
   "exports": {
     ".": {
@@ -12,7 +13,8 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "LICENSE"
   ],
   "sideEffects": false,
   "scripts": {
@@ -23,7 +25,7 @@
     "@kernlang/agon-kernel": ">=0.0.0-0 <2"
   },
   "dependencies": {
-    "@kernlang/agon-support-engine-runtime": "0.0.0-slice.4",
+    "@kernlang/agon-support-engine-runtime": "1.0.0",
     "@kernlang/agon-engines": "^0.1.2"
   }
 }

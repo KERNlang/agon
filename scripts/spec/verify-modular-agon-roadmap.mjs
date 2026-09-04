@@ -5,10 +5,13 @@ const json = (path) => JSON.parse(readFileSync(`${root}/${path}`, 'utf8'));
 const roadmap = json('docs/specs/evidence/modular-agon-implementation-roadmap.json');
 const packageMap = json('docs/specs/evidence/modular-agon-package-map.json');
 const ownership = json('docs/specs/evidence/modular-agon-ownership.json');
+const migrationLedger = json('docs/specs/evidence/modular-agon-slice5-migration-ledger.json');
 const errors = [];
 const check = (condition, message) => { if (!condition) errors.push(message); };
 const ids = new Set(packageMap.packages.map(({ id }) => id));
 const byId = new Map(roadmap.packages.map((pkg) => [pkg.id, pkg]));
+const migratedAssignment = new Map(migrationLedger.assignments.map((entry) => [`${entry.package}\0${entry.source}`, entry]));
+const migratedSource = new Map(migrationLedger.assignments.map((entry) => [entry.source, entry]));
 check(roadmap.packages.length === 49 && byId.size === 49, 'roadmap must contain 49 unique packages');
 for (const id of ids) check(byId.has(id), `roadmap misses ${id}`);
 const globalEdges = new Set();
@@ -25,7 +28,14 @@ for (const pkg of roadmap.packages) {
   }
   for (const source of pkg.extractionSources) {
     const path = source.replace(/:[0-9]+$/, '');
-    check(existsSync(`${root}/${path}`), `${pkg.id} source does not exist: ${source}`);
+    // Ownership can move between the planning snapshot and physical cutover
+    // (for example generated docs moved from agent to routing-docs). In that
+    // case the source-level migration record is authoritative.
+    const migration = migratedAssignment.get(`${pkg.id}\0${source}`) ?? migratedSource.get(source);
+    const removedWithEvidence = migration?.legacyPresent === false
+      && Boolean(migration.removalEvidence)
+      && migration.implementationPaths.every((destination) => existsSync(`${root}/${destination}`));
+    check(existsSync(`${root}/${path}`) || removedWithEvidence, `${pkg.id} source has neither live bytes nor proven migration: ${source}`);
   }
 }
 for (const assignment of ownership.assignments) check(byId.get(assignment.package)?.extractionSources.includes(assignment.source), `${assignment.package} misses source ${assignment.source}`);

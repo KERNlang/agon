@@ -1,11 +1,10 @@
 import { validateManifest } from '@kernlang/agon-mod-api';
-import type { AgonModFactory, AgonModV1, Awaitable, Dispose, InvocationContext, InvocationOutput, Json, ModServices, Registrar } from '@kernlang/agon-mod-api';
 
 export const MANIFEST = validateManifest({
   "schemaVersion": 2,
   "id": "agon.jobs",
   "name": "Jobs",
-  "version": "0.0.0-slice.5",
+  "version": "1.0.0",
   "apiRange": ">=1.0.0 <2",
   "execution": "executable",
   "compatibility": {
@@ -39,7 +38,18 @@ export const MANIFEST = validateManifest({
     "optional": [],
     "conflicts": []
   },
-  "permissions": [],
+  "permissions": [
+    {
+      "capability": "engine.dispatch",
+      "resources": [],
+      "required": true
+    },
+    {
+      "capability": "state.write",
+      "resources": [],
+      "required": true
+    }
+  ],
   "platforms": [
     "darwin-arm64",
     "darwin-x64",
@@ -188,9 +198,11 @@ export const MANIFEST = validateManifest({
   },
   "pack": {
     "include": [
+      "LICENSE",
       "agon.mod.json",
       "dist/index.js",
       "dist/index.d.ts",
+      "dist/implementation.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],
@@ -431,229 +443,7 @@ export const SOURCE_OCCURRENCES = Object.freeze([
     "rule": "exact-user-surface"
   }
 ]);
-export const COMPATIBILITY_CONTRIBUTIONS = Object.freeze([
-  {
-    "id": "cliCommands:0015",
-    "publicId": "daemon",
-    "registryKind": "cli-command",
-    "category": "cliCommands",
-    "source": "packages/cli/src/lazy-commands.ts:325"
-  },
-  {
-    "id": "cliCommands:0026",
-    "publicId": "job",
-    "registryKind": "cli-command",
-    "category": "cliCommands",
-    "source": "packages/cli/src/lazy-commands.ts:310"
-  },
-  {
-    "id": "cliCommands:0027",
-    "publicId": "job cancel",
-    "registryKind": "cli-command",
-    "category": "cliCommands",
-    "source": "packages/cli/src/commands/job.ts:313"
-  },
-  {
-    "id": "cliCommands:0028",
-    "publicId": "job events",
-    "registryKind": "cli-command",
-    "category": "cliCommands",
-    "source": "packages/cli/src/commands/job.ts:284"
-  },
-  {
-    "id": "cliCommands:0029",
-    "publicId": "job list",
-    "registryKind": "cli-command",
-    "category": "cliCommands",
-    "source": "packages/cli/src/commands/job.ts:258"
-  },
-  {
-    "id": "cliCommands:0030",
-    "publicId": "job result",
-    "registryKind": "cli-command",
-    "category": "cliCommands",
-    "source": "packages/cli/src/commands/job.ts:300"
-  },
-  {
-    "id": "cliCommands:0031",
-    "publicId": "job status",
-    "registryKind": "cli-command",
-    "category": "cliCommands",
-    "source": "packages/cli/src/commands/job.ts:271"
-  },
-  {
-    "id": "cliCommands:0032",
-    "publicId": "job submit",
-    "registryKind": "cli-command",
-    "category": "cliCommands",
-    "source": "packages/cli/src/commands/job.ts:229"
-  },
-  {
-    "id": "intentVariants:0031",
-    "publicId": "focus",
-    "registryKind": "intent",
-    "category": "intentVariants",
-    "source": "packages/cli/src/signals/intent-types.ts:49"
-  },
-  {
-    "id": "intentVariants:0038",
-    "publicId": "jobs",
-    "registryKind": "intent",
-    "category": "intentVariants",
-    "source": "packages/cli/src/signals/intent-types.ts:48"
-  },
-  {
-    "id": "mcpTools:0010",
-    "publicId": "JobCancel",
-    "registryKind": "mcp-tool",
-    "category": "mcpTools",
-    "source": "packages/mcp/src/job-tools.ts:13"
-  },
-  {
-    "id": "mcpTools:0011",
-    "publicId": "JobEvents",
-    "registryKind": "mcp-tool",
-    "category": "mcpTools",
-    "source": "packages/mcp/src/job-tools.ts:11"
-  },
-  {
-    "id": "mcpTools:0012",
-    "publicId": "JobList",
-    "registryKind": "mcp-tool",
-    "category": "mcpTools",
-    "source": "packages/mcp/src/job-tools.ts:9"
-  },
-  {
-    "id": "mcpTools:0013",
-    "publicId": "JobResult",
-    "registryKind": "mcp-tool",
-    "category": "mcpTools",
-    "source": "packages/mcp/src/job-tools.ts:12"
-  },
-  {
-    "id": "mcpTools:0014",
-    "publicId": "JobStatus",
-    "registryKind": "mcp-tool",
-    "category": "mcpTools",
-    "source": "packages/mcp/src/job-tools.ts:10"
-  },
-  {
-    "id": "mcpTools:0015",
-    "publicId": "JobSubmit",
-    "registryKind": "mcp-tool",
-    "category": "mcpTools",
-    "source": "packages/mcp/src/job-tools.ts:8"
-  },
-  {
-    "id": "resultAndEnvelopeTypes:0040",
-    "publicId": "DaemonWorkflowPlan",
-    "registryKind": "result-type",
-    "category": "resultAndEnvelopeTypes",
-    "source": "packages/cli/src/jobs/workflow-job.ts:17"
-  },
-  {
-    "id": "resultAndEnvelopeTypes:0071",
-    "publicId": "JobEvent",
-    "registryKind": "result-type",
-    "category": "resultAndEnvelopeTypes",
-    "source": "packages/core/src/jobs/job-service.ts:20"
-  },
-  {
-    "id": "resultAndEnvelopeTypes:0072",
-    "publicId": "JobRecord",
-    "registryKind": "result-type",
-    "category": "resultAndEnvelopeTypes",
-    "source": "packages/core/src/jobs/job-service.ts:57"
-  },
-  {
-    "id": "resultAndEnvelopeTypes:0073",
-    "publicId": "JobSnapshot",
-    "registryKind": "result-type",
-    "category": "resultAndEnvelopeTypes",
-    "source": "packages/core/src/jobs/job-service.ts:9"
-  },
-  {
-    "id": "builtinCommandMetadata:0024",
-    "publicId": "focus",
-    "registryKind": "tui-action",
-    "category": "builtinCommandMetadata",
-    "source": "packages/core/src/blocks/builtin-commands.ts:61"
-  },
-  {
-    "id": "builtinCommandMetadata:0029",
-    "publicId": "jobs",
-    "registryKind": "tui-action",
-    "category": "builtinCommandMetadata",
-    "source": "packages/core/src/blocks/builtin-commands.ts:60"
-  },
-  {
-    "id": "tuiSlashCommands:0032",
-    "publicId": "/focus",
-    "registryKind": "tui-action",
-    "category": "tuiSlashCommands",
-    "source": "packages/cli/src/signals/intent.ts:56"
-  },
-  {
-    "id": "tuiSlashCommands:0040",
-    "publicId": "/jobs",
-    "registryKind": "tui-action",
-    "category": "tuiSlashCommands",
-    "source": "packages/cli/src/signals/intent.ts:56"
-  }
-]);
-
-export interface FirstPartyCompatibilityRuntime {
-  command(kind: string, id: string, input: Json, context: InvocationContext): InvocationOutput;
-  tool(kind: string, id: string, input: Json, context: InvocationContext): Awaitable<Json>;
-  parseIntent(id: string, input: string): Awaitable<Json | undefined>;
-  lifecycle(id: string, payload: Json, context: InvocationContext): Awaitable<void>;
-  render(id: string, payload: Json): Awaitable<{ readonly text: string; readonly markdown?: string }>;
-}
-
-type FirstPartyServices = ModServices & { readonly firstPartyCompatibility?: FirstPartyCompatibilityRuntime };
-const inputSchema = Object.freeze({ type: 'object', additionalProperties: true }) as Readonly<Record<string, Json>>;
-const resultSchema = Object.freeze({ type: 'object', additionalProperties: true }) as Readonly<Record<string, Json>>;
-
-export function createFirstPartyCompatibilityMod(runtime: FirstPartyCompatibilityRuntime): AgonModV1 {
-  return Object.freeze({
-    apiVersion: '1' as const,
-    async activate(registrar: Registrar): Promise<Dispose> {
-      const disposers: Dispose[] = [];
-      disposers.push(registrar.command('cli', { id: "cliCommands:0015", description: "daemon compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "daemon", input, context) }));
-      disposers.push(registrar.command('cli', { id: "cliCommands:0026", description: "job compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "job", input, context) }));
-      disposers.push(registrar.command('cli', { id: "cliCommands:0027", description: "job cancel compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "job cancel", input, context) }));
-      disposers.push(registrar.command('cli', { id: "cliCommands:0028", description: "job events compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "job events", input, context) }));
-      disposers.push(registrar.command('cli', { id: "cliCommands:0029", description: "job list compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "job list", input, context) }));
-      disposers.push(registrar.command('cli', { id: "cliCommands:0030", description: "job result compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "job result", input, context) }));
-      disposers.push(registrar.command('cli', { id: "cliCommands:0031", description: "job status compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "job status", input, context) }));
-      disposers.push(registrar.command('cli', { id: "cliCommands:0032", description: "job submit compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "job submit", input, context) }));
-      disposers.push(registrar.intent({ id: "intentVariants:0031", description: "focus compatibility contribution", inputSchema, parse: (input) => runtime.parseIntent("focus", input), run: (input, context) => runtime.command('intent', "focus", input, context) }));
-      disposers.push(registrar.intent({ id: "intentVariants:0038", description: "jobs compatibility contribution", inputSchema, parse: (input) => runtime.parseIntent("jobs", input), run: (input, context) => runtime.command('intent', "jobs", input, context) }));
-      disposers.push(registrar.tool('mcp', { id: "mcpTools:0010", description: "JobCancel compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('mcp-tool', "JobCancel", input, context) }));
-      disposers.push(registrar.tool('mcp', { id: "mcpTools:0011", description: "JobEvents compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('mcp-tool', "JobEvents", input, context) }));
-      disposers.push(registrar.tool('mcp', { id: "mcpTools:0012", description: "JobList compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('mcp-tool', "JobList", input, context) }));
-      disposers.push(registrar.tool('mcp', { id: "mcpTools:0013", description: "JobResult compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('mcp-tool', "JobResult", input, context) }));
-      disposers.push(registrar.tool('mcp', { id: "mcpTools:0014", description: "JobStatus compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('mcp-tool', "JobStatus", input, context) }));
-      disposers.push(registrar.tool('mcp', { id: "mcpTools:0015", description: "JobSubmit compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('mcp-tool', "JobSubmit", input, context) }));
-      disposers.push(registrar.resultType({ id: "resultAndEnvelopeTypes:0040", schema: resultSchema, readableVersions: '>=0.2.0', render: (payload) => runtime.render("DaemonWorkflowPlan", payload) }));
-      disposers.push(registrar.resultType({ id: "resultAndEnvelopeTypes:0071", schema: resultSchema, readableVersions: '>=0.2.0', render: (payload) => runtime.render("JobEvent", payload) }));
-      disposers.push(registrar.resultType({ id: "resultAndEnvelopeTypes:0072", schema: resultSchema, readableVersions: '>=0.2.0', render: (payload) => runtime.render("JobRecord", payload) }));
-      disposers.push(registrar.resultType({ id: "resultAndEnvelopeTypes:0073", schema: resultSchema, readableVersions: '>=0.2.0', render: (payload) => runtime.render("JobSnapshot", payload) }));
-      disposers.push(registrar.command('tui', { id: "builtinCommandMetadata:0024", description: "focus compatibility contribution", inputSchema, run: (input, context) => runtime.command('tui-action', "focus", input, context) }));
-      disposers.push(registrar.command('tui', { id: "builtinCommandMetadata:0029", description: "jobs compatibility contribution", inputSchema, run: (input, context) => runtime.command('tui-action', "jobs", input, context) }));
-      disposers.push(registrar.command('tui', { id: "tuiSlashCommands:0032", description: "/focus compatibility contribution", inputSchema, run: (input, context) => runtime.command('tui-action', "/focus", input, context) }));
-      disposers.push(registrar.command('tui', { id: "tuiSlashCommands:0040", description: "/jobs compatibility contribution", inputSchema, run: (input, context) => runtime.command('tui-action', "/jobs", input, context) }));
-      return async () => { for (const dispose of [...disposers].reverse()) await dispose(); };
-    },
-  });
-}
-
-export const createMod: AgonModFactory = async (services: ModServices): Promise<AgonModV1> => {
-  const runtime = (services as FirstPartyServices).firstPartyCompatibility;
-  if (!runtime) {
-    throw Object.assign(new Error('@kernlang/agon-mod-jobs requires the S5 legacy compatibility bridge until generated surface cutover'), { code: 'MOD_RESTART_REQUIRED' });
-  }
-  return createFirstPartyCompatibilityMod(runtime);
-};
-
-export default createMod;
+export const IMPLEMENTATION_KIND = 'physical' as const;
+export { createMod } from './implementation.js';
+export { createMod as default } from './implementation.js';
+export { ModularJobService } from './implementation.js';

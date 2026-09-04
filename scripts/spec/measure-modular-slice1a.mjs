@@ -79,7 +79,7 @@ function makeManifest(index) {
     platforms: ['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'],
     assets: [],
     contributes: { cliCommands: [], tuiActions: [], mcpTools: [], cesarTools: [], lifecycleHooks: [], resultTypes: [], configKeys: [], generatedDocs: [] },
-    pack: { include: ['dist/index.js', 'dist/index.d.ts', 'agon.mod.json'], executable: [] },
+    pack: { include: ['dist/index.js', 'dist/index.d.ts', 'agon.mod.json', 'package.json'], executable: [] },
   };
 }
 
@@ -115,7 +115,7 @@ try {
     const start = performance.now();
     const projections = createLegacyCompatibilityRegistry().projections();
     projectionLatencies.push(performance.now() - start);
-    if (Object.values(projections).reduce((count, projection) => count + projection.entries.length, 0) !== 441) throw new Error('projection lost legacy entries');
+    if (Object.values(projections).reduce((count, projection) => count + projection.entries.length, 0) !== 449) throw new Error('projection lost generated entries');
   }
   const packageReports = [pack('packages/cli'), pack('packages/mod-api'), pack('packages/mod-kernel')];
   const packageAggregate = packageReports.reduce((total, report) => ({
@@ -147,7 +147,7 @@ try {
     isolation: { agonHome: 'temporary', home: 'temporary', npmCache: 'temporary' },
     coldStart,
     resolver: { candidates: 1000, runs: 15, p50Ms: percentile(resolverLatencies, 0.5), p95Ms: percentile(resolverLatencies, 0.95), maxMs: Math.max(...resolverLatencies), maxHeapDeltaBytes },
-    projections: { entries: 441, runs: 100, p50Ms: percentile(projectionLatencies, 0.5), p95Ms: percentile(projectionLatencies, 0.95), maxMs: Math.max(...projectionLatencies) },
+    projections: { entries: 449, runs: 100, p50Ms: percentile(projectionLatencies, 0.5), p95Ms: percentile(projectionLatencies, 0.95), maxMs: Math.max(...projectionLatencies) },
     packages: { reports: packageReports, aggregate: packageAggregate },
     tui: { exitCode: tui.status, p95Ms: tuiP95 },
     budgetLimits,
@@ -158,7 +158,7 @@ try {
       tuiGreen: tui.status === 0 && tuiP95 <= budgetLimits.tuiP95Ms,
     },
   };
-  writeFileSync(join(root, 'docs/specs/evidence/modular-agon-slice1a-performance.json'), `${JSON.stringify(evidence, null, 2)}\n`);
+  if (!process.argv.includes('--no-write')) writeFileSync(join(root, 'docs/specs/evidence/modular-agon-slice1a-performance.json'), `${JSON.stringify(evidence, null, 2)}\n`);
   console.log(JSON.stringify(evidence, null, 2));
   if (Object.values(evidence.budgets).some((green) => !green)) process.exitCode = 1;
 } finally {

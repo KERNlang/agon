@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "kind": "commit",
+    "hash": "sha256:68a4360a0edf274e17ab038c17acc37b07301e199d4aace79b730085eeaea4b8"
+  },
+  "disposition": "passed",
+  "runs": [
+    {
+      "engine": "ollama-direct-qwen4b",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice9/qwen4b-final-review.txt",
+          "hash": "sha256:475963579584f93dfbb3472a0ce3dd82268de346da1f6330594ce0abe16558be"
+        },
+        {
+          "path": "docs/specs/evidence/verification-logs/slice9/brainstorm.jsonl",
+          "hash": "sha256:3d68a4ae051f12a5c640b98d9b261342d9fac01741d885b3885efa3cbba30dfb"
+        }
+      ]
+    },
+    {
+      "engine": "ollama-direct-llama3b",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice9/llama3b-final-review.txt",
+          "hash": "sha256:6c86732191e8640043615f2fa8cfb249a907de149ee93d711917502913b6370d"
+        },
+        {
+          "path": "docs/specs/evidence/verification-logs/slice9/tribunal.jsonl",
+          "hash": "sha256:d8362f885f353b7605797d84ba3f3a9f5cbbb80d4aff48bc40706fcd8fb7ca19"
+        },
+        {
+          "path": "docs/specs/evidence/verification-logs/slice9/think-critic.txt",
+          "hash": "sha256:5cccf541ea92ecc478358fd2d3cb548115119fcf685ecce2465008d69616d39d"
+        }
+      ]
+    },
+    {
+      "engine": "primary-codex-source-adjudication",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice9/adjudication.md",
+          "hash": "sha256:b34e56a52e35303ce00095d9068dff042fe63dfa9a40d3c1759c45d8906f9394"
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "S9-REVIEW-001",
+      "status": "resolved",
+      "summary": "Clean regeneration exposed and corrected stale generated catalog and release artifacts."
+    },
+    {
+      "id": "S9-REVIEW-002",
+      "status": "resolved",
+      "summary": "Every slice qualifier now reads review metadata from staged or committed Git objects rather than ambient bytes."
+    },
+    {
+      "id": "S9-REVIEW-003",
+      "status": "resolved",
+      "summary": "S9 now requires three native platform passes and nine explicit external blocks; an all-blocked mutation is rejected."
+    },
+    {
+      "id": "S9-REVIEW-003B",
+      "status": "resolved",
+      "summary": "S9 now interprets both historical named-Green performance evidence and newer top-level passed evidence, with red/no-verdict negative controls."
+    },
+    {
+      "id": "S9-REVIEW-004",
+      "status": "refuted",
+      "summary": "Model suggestions about external services, manual global cutover, nonexistent state files, and generic sandboxing were unsupported by the staged source."
+    },
+    {
+      "id": "S9-REVIEW-005",
+      "status": "deferred",
+      "externalBlocker": true,
+      "summary": "Nine non-native OS/architecture/Node cells require native macOS x64 and Linux runners."
+    },
+    {
+      "id": "S9-REVIEW-006",
+      "status": "deferred",
+      "externalBlocker": true,
+      "summary": "npm publication provenance, signing, and registry promotion require external credentials and authorization."
+    }
+  ]
+}

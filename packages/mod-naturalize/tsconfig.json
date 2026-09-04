@@ -11,6 +11,9 @@
       ],
       "@kernlang/agon-support-engine-runtime": [
         "../support-engine-runtime/src/index.ts"
+      ],
+      "@kernlang/agon-mod-sanitize": [
+        "../mod-sanitize/src/index.ts"
       ]
     },
     "sourceMap": false,
@@ -23,9 +26,15 @@
     },
     {
       "path": "../support-engine-runtime"
+    },
+    {
+      "path": "../mod-sanitize"
     }
   ],
   "include": [
     "src"
+  ],
+  "exclude": [
+    "src/**/*.test.ts"
   ]
 }

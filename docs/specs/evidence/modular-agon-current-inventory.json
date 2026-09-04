@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedFrom": "working-tree source; regenerate with node scripts/spec/generate-modular-agon-inventory.mjs",
+  "generatedFrom": "frozen pre-extraction migration baseline; verify with node scripts/spec/generate-modular-agon-inventory.mjs; explicit replacement requires --refresh-frozen-baseline",
   "categories": {
     "cliCommands": [
       {

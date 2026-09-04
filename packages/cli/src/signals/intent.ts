@@ -1,725 +1,143 @@
 import { FIRST_PARTY_SURFACE_CATALOG, KERNEL_MANAGEMENT_SURFACE_CATALOG } from '@kernlang/agon-kernel';
-import { processSurfaceCatalog, processSurfaceNames } from '../surface-authority-runtime.js';
-import { hostRegexExec, hostRegexMatch, hostRegexObjectTest } from '../lib/kern-host.js';
+import { parseProcessFirstPartyIntent, processSurfaceCatalog, processSurfaceNames } from '../surface-authority-runtime.js';
+import { hostRegexMatch, hostRegexObjectTest } from '../lib/kern-host.js';
 
 const FALLBACK_TUI_CATALOG = Object.freeze([...FIRST_PARTY_SURFACE_CATALOG, ...KERNEL_MANAGEMENT_SURFACE_CATALOG]);
 
-// ── Module: IntentParsing ──
-
-export interface SlashCommand {
-  cmd: string;
-  desc: string;
-}
-
+export interface SlashCommand { cmd: string; desc: string }
 export interface Intent {
-  type: string;
-  task: string|undefined;
-  fitnessCmd: string|null|undefined;
-  question: string|undefined;
-  topic: string|undefined;
-  input: string|undefined;
-  id: string|undefined;
-  action: string|undefined;
-  key: string|undefined;
-  value: string|undefined;
-  path: string|undefined;
-  engineIds: string[]|undefined;
-  planId: string|undefined;
-  patchPath: string|undefined;
-  force: boolean|undefined;
-  sessionId: string|undefined;
-  index: number|undefined;
-  tribunalMode: string|undefined;
-  tribunalProtocol: string|undefined;
-  membersPerSide: number|undefined;
-  hardened: boolean|undefined;
-  jobId: string|undefined;
-  taskClass: 'code'|'question'|'ambiguous'|undefined;
-  args: string|undefined;
-  target: string|undefined;
-  engineId: string|undefined;
-  commandName: string|undefined;
-  turnId: string|undefined;
-  autoMode: boolean|undefined;
-  autoCredit: boolean|undefined;
-  strategy: string|undefined;
-  steps: number|undefined;
-  gate: string|undefined;
-  builder: string|undefined;
-  maxTurns: number|undefined;
-  gateTimeout: number|undefined;
-  maxHours: number|undefined;
-  turnTimeout: number|undefined;
-  swaps: number|undefined;
-  reasoning: string|undefined;
-  count: number|undefined;
-  last: boolean|undefined;
-  roles: string[]|undefined;
+  type: string; task?: string; fitnessCmd?: string|null; question?: string; topic?: string; input?: string; id?: string;
+  action?: string; key?: string; value?: string; path?: string; engineIds?: string[]; planId?: string; patchPath?: string;
+  force?: boolean; sessionId?: string; index?: number; tribunalMode?: string; tribunalProtocol?: string; membersPerSide?: number;
+  hardened?: boolean; jobId?: string; taskClass?: 'code'|'question'|'ambiguous'; args?: string; target?: string;
+  engineId?: string; commandName?: string; turnId?: string; autoMode?: boolean; autoCredit?: boolean; strategy?: string;
+  steps?: number; gate?: string; builder?: string; maxTurns?: number; gateTimeout?: number; maxHours?: number;
+  turnTimeout?: number; swaps?: number; reasoning?: string; count?: number; last?: boolean; roles?: string[]; scope?: string;
+  _modSurface?: { publicId: string; registryId: string; kind: string; value: unknown };
 }
 
 export function createTuiSurfaceIds(entries: readonly { category: string; publicId: string; aliases: readonly string[] }[] = FALLBACK_TUI_CATALOG): ReadonlySet<string> {
-  return new Set(entries.filter((entry) => entry.category === "tuiSlashCommands" || entry.category === "intentVariants" || entry.category === "builtinCommandMetadata" || entry.category === "kernelModManagement" || entry.category === "external:tuiActions").flatMap((entry) => [entry.publicId.startsWith("/") ? entry.publicId.slice(1) : entry.publicId, ...entry.aliases.map((alias) => alias.startsWith('/') ? alias.slice(1) : alias)]));
+  return new Set(entries.filter((entry) => ['tuiSlashCommands', 'intentVariants', 'builtinCommandMetadata', 'kernelModManagement', 'external:tuiActions'].includes(entry.category))
+    .flatMap((entry) => [entry.publicId, ...entry.aliases]).map((name) => name.startsWith('/') ? name.slice(1) : name));
 }
-
 export function createSlashCommands(available: ReadonlySet<string> = processSurfaceNames('tui')): SlashCommand[] {
-  return processSurfaceCatalog('tui')
-    .filter((entry) => (entry.category === 'tuiSlashCommands' || entry.category === 'kernelModManagement' || entry.category === 'external:tuiActions')
-      && entry.kind === 'tui-action' && (!available || available.has(entry.publicId)))
-    .map((entry) => ({ cmd: entry.publicId, desc: entry.description }));
+  return processSurfaceCatalog('tui').filter((entry) => ['tuiSlashCommands', 'kernelModManagement', 'external:tuiActions'].includes(entry.category)
+    && entry.kind === 'tui-action' && available.has(entry.publicId)).map((entry) => ({ cmd: entry.publicId, desc: entry.description }));
 }
 
-export const SLASH_COMMANDS: SlashCommand[] = createSlashCommands();
-
-export const FITNESS_PATTERN: RegExp = /\b(?:test with|test:|--test|fitness:)\s+(.+)/i;
-
-export const LEADERBOARD_KEYWORDS: RegExp = /\b(leaderboard|elo|rankings?)\b/i;
-
-export const HISTORY_KEYWORDS: RegExp = /\b(history|last runs?|recent)\b/i;
-
-export const ENGINES_KEYWORDS: RegExp = /\b(engines?|what engines)\b/i;
-
-export const CONFIG_KEYWORDS: RegExp = /\b(config|settings?)\b/i;
-
-export const HELP_KEYWORDS: RegExp = /^(help|\?)$/i;
-
-export const EXIT_KEYWORDS: RegExp = /^(exit|quit|bye)$/i;
-
-export const SENTENCE_PREFIX: RegExp = /^(do|does|did|is|are|was|were|have|has|had|can|could|would|should|will|shall|i\s)/i;
-
-export const QUESTION_PATTERN: RegExp = /^(what|how|why|where|when|who|which|explain|describe|tell|show|list|is there|does|can you explain|walk me through)\b/i;
-
-export const CODE_TASK_PATTERN: RegExp = /^(fix|add|implement|refactor|debug|create|build|write|update|change|remove|delete|rename|move|test|deploy|install|upgrade|migrate|convert|extract|inline|optimize|port)\b/i;
-
-export const CODE_ARTIFACT_PATTERN: RegExp = /(?:at \w+.*:\d+|\.[tj]sx?\b|\.[a-z]{2,4}:\d+|^[+-]{3}\s)/m;
-
-export const AGENT_TRIGGER_PATTERN: RegExp = /^(?:agent(?:\s+mode)?|autonomous(?:\s+agent)?|run\s+agent)\s+([\s\S]+)$/i;
-
-export const AUTOCREDIT_OFF_KEYWORDS: RegExp = /\b(?:schalt(?:e|)?\s+(?:das|es|autoCredit)\s+ab|mach(?:e|)?\s+(?:das|es|autoCredit)\s+(?:aus|weg)|das\s+nervt|(?:autoCredit|co[\s-]?authored?|contributor)\s+(?:aus|ab|weg|nervt))\b/i;
-
-export const AUTOCREDIT_ON_KEYWORDS: RegExp = /\b(?:schalt(?:e|)?\s+(?:das|es|autoCredit)\s+an|mach(?:e|)?\s+(?:das|es|autoCredit)\s+an|(?:autoCredit|co[\s-]?authored?|contributor)\s+an)\b/i;
+export const SLASH_COMMANDS = createSlashCommands();
+export const FITNESS_PATTERN = /\b(?:test with|test:|--test|fitness:)\s+(.+)/i;
+export const LEADERBOARD_KEYWORDS = /\b(leaderboard|elo|rankings?)\b/i;
+export const HISTORY_KEYWORDS = /\b(history|last runs?|recent)\b/i;
+export const ENGINES_KEYWORDS = /\b(engines?|what engines)\b/i;
+export const CONFIG_KEYWORDS = /\b(config|settings?)\b/i;
+export const HELP_KEYWORDS = /^(help|\?)$/i;
+export const EXIT_KEYWORDS = /^(exit|quit|bye)$/i;
+export const SENTENCE_PREFIX = /^(do|does|did|is|are|was|were|have|has|had|can|could|would|should|will|shall|i\s)/i;
+export const QUESTION_PATTERN = /^(what|how|why|where|when|who|which|explain|describe|tell|show|list|is there|does|can you explain|walk me through)\b/i;
+export const CODE_TASK_PATTERN = /^(fix|add|implement|refactor|debug|create|build|write|update|change|remove|delete|rename|move|test|deploy|install|upgrade|migrate|convert|extract|inline|optimize|port)\b/i;
+export const CODE_ARTIFACT_PATTERN = /(?:at \w+.*:\d+|\.[tj]sx?\b|\.[a-z]{2,4}:\d+|^[+-]{3}\s)/m;
+export const AGENT_TRIGGER_PATTERN = /^(?:agent(?:\s+mode)?|autonomous(?:\s+agent)?|run\s+agent)\s+([\s\S]+)$/i;
+export const AUTOCREDIT_OFF_KEYWORDS = /\b(?:schalt(?:e|)?\s+(?:das|es|autoCredit)\s+ab|mach(?:e|)?\s+(?:das|es|autoCredit)\s+(?:aus|weg)|das\s+nervt|(?:autoCredit|co[\s-]?authored?|contributor)\s+(?:aus|ab|weg|nervt))\b/i;
+export const AUTOCREDIT_ON_KEYWORDS = /\b(?:schalt(?:e|)?\s+(?:das|es|autoCredit)\s+an|mach(?:e|)?\s+(?:das|es|autoCredit)\s+an|(?:autoCredit|co[\s-]?authored?|contributor)\s+an)\b/i;
 
 export function classifyTask(input: string): 'code'|'question'|'ambiguous' {
-  if (hostRegexObjectTest(QUESTION_PATTERN, input)) {
-    return 'question';
-  }
-  if (hostRegexObjectTest(CODE_TASK_PATTERN, input)) {
-    return 'code';
-  }
-  if (hostRegexObjectTest(CODE_ARTIFACT_PATTERN, input)) {
-    return 'code';
-  }
+  if (hostRegexObjectTest(QUESTION_PATTERN, input)) return 'question';
+  if (hostRegexObjectTest(CODE_TASK_PATTERN, input) || hostRegexObjectTest(CODE_ARTIFACT_PATTERN, input)) return 'code';
   return 'ambiguous';
 }
-
-function parseForgeInput(input: string): Intent {
-  // Only match --hardened as a standalone flag (not inside task text or test args)
-  const hardenedMatch = ((__m) => __m === null ? null : { full: __m[0], groups: Array.from(__m).slice(1).map((g) => g === undefined ? null : g), index: __m.index, named: __m.groups ? Object.fromEntries(Object.entries(__m.groups).map(([__k, __v]) => [__k, __v === undefined ? null : __v])) : {} })(input.match(/^(--hardened)[ \t\n\r\f\v]+(.*)$/i)) || ((__m) => __m === null ? null : { full: __m[0], groups: Array.from(__m).slice(1).map((g) => g === undefined ? null : g), index: __m.index, named: __m.groups ? Object.fromEntries(Object.entries(__m.groups).map(([__k, __v]) => [__k, __v === undefined ? null : __v])) : {} })(input.match(/^(.*?)[ \t\n\r\f\v]+(--hardened)[ \t\n\r\f\v]*$/i));
-  const hardened = hardenedMatch !== null;
-  const cleaned = hardened ? ((hardenedMatch?.groups[0] === '--hardened') ? (hardenedMatch?.groups[1] ?? '') : (hardenedMatch?.groups[0] ?? '')).trim() : input;
-  const fitnessMatch = hostRegexExec(FITNESS_PATTERN, cleaned);
-  const fitnessCmd = fitnessMatch ? fitnessMatch[1].trim() : null;
-  const task = fitnessCmd ? cleaned.replace(FITNESS_PATTERN, '').trim() : cleaned;
-  return { type: 'forge', task: task, fitnessCmd: fitnessCmd, hardened: hardened } as Intent;
-}
-
 function parseAgentShortcut(input: string): Intent|null {
-  const match = hostRegexMatch(AGENT_TRIGGER_PATTERN, input);
-  if (!match) {
-    return null;
+  const match = hostRegexMatch(AGENT_TRIGGER_PATTERN, input), task = (match?.[1] ?? '').trim();
+  return task ? { type: 'agent', input: task } : null;
+}
+const oneOf = (value: string, names: readonly string[]) => names.includes(value);
+
+function parseKernelSlashCommand(cmd: string, rest: string, input: string, commandRegistry: any, available: ReadonlySet<string>): Intent {
+  if (oneOf(cmd, ['cesar-report', 'cesar-stats'])) return { type: 'cesar-report' };
+  if (oneOf(cmd, ['cesar-hints', 'cesar-debug'])) return { type: 'cesar-hints', input: rest };
+  if (cmd === 'engines') {
+    const parts = rest.trim().split(/\s+/).filter(Boolean), action = parts[0]?.toLowerCase();
+    if (oneOf(action ?? '', ['discover', 'scan', 'rescan', 'refresh'])) return { type: 'discover', action: 'scan' };
+    if (oneOf(action ?? '', ['hide', 'remove', 'delete', 'unhide', 'restore', 'show', 'list'])) return { type: 'engines', action, id: parts[1] };
+    return { type: 'engines' };
   }
-  const task = (match[1] ?? '').trim();
-  if (!task) {
-    return null;
+  if (cmd === 'discover') return { type: 'discover' };
+  if (cmd === 'provider') { const parts = rest.trim().split(/\s+/); return { type: 'provider', action: parts[0] || 'list', args: parts.slice(1).join(' ') }; }
+  if (cmd === 'models') return oneOf(rest.trim().toLowerCase(), ['cli', 'engine', 'engines']) ? { type: 'engines' } : { type: 'models' };
+  if (cmd === 'setup') return { type: 'models' };
+  if (oneOf(cmd, ['tokens', 'usage', 'cost'])) return { type: 'tokens' };
+  if (cmd === 'raw') { const index = Number.parseInt(rest.trim(), 10); return { type: 'raw', index: Number.isFinite(index) && index > 0 ? index : undefined }; }
+  if (cmd === 'doctor') return { type: 'doctor', scope: rest || 'engines' };
+  if (oneOf(cmd, ['harness-replay', 'replay-harness', 'tool-replay'])) return { type: 'harness-replay', turnId: rest || undefined };
+  if (cmd === 'cesar') return { type: 'cesar', engineIds: rest.split(/[,\s]+/).map((id) => id.trim().toLowerCase()).filter(Boolean) };
+  if (cmd === 'use') return { type: 'use', engineIds: rest.split(/[,\s]+/).map((id) => id.trim().toLowerCase()).filter(Boolean) };
+  if (cmd === 'config') { const parts = rest.split(/\s+/); return { type: 'config', action: parts[0] || undefined, key: parts[1] || undefined, value: parts.slice(2).join(' ') || undefined }; }
+  if (cmd === 'mod') return { type: 'mod', args: rest };
+  if (oneOf(cmd, ['img', 'image'])) return { type: 'img', path: rest };
+  if (oneOf(cmd, ['chat', 'ask'])) return { type: 'chat', input: rest };
+  if (oneOf(cmd, ['cp', 'copy'])) { const arg = rest.trim().toLowerCase(); if (oneOf(arg, ['last', 'msg', 'response'])) return { type: 'cp', last: true }; const index = rest ? Number.parseInt(rest, 10) : undefined; return { type: 'cp', index: Number.isNaN(index as number) ? undefined : index }; }
+  if (cmd === 'chats') { const parts = rest.split(/\s+/); return parts[0] === 'resume' && parts[1] ? { type: 'chats-resume', sessionId: parts[1] } : { type: 'chats', sessionId: rest || undefined }; }
+  if (oneOf(cmd, ['run', 'exec', 'shell'])) return { type: 'run', input: rest };
+  if (cmd === 'checkpoints') return { type: 'checkpoints' };
+  if (cmd === 'status') return { type: 'status' };
+  if (oneOf(cmd, ['explore', 'plan-mode', 'readonly'])) return { type: 'explore' };
+  if (oneOf(cmd, ['permissions', 'perms'])) {
+    const match = rest.match(/^(add)\s+(allow|deny)\s+(.+)$/i) ?? rest.match(/^(remove)\s+(.+)$/i);
+    if (match?.[1].toLowerCase() === 'add') return { type: 'permissions', action: 'add', key: match[2].toLowerCase(), value: match[3].trim() };
+    if (match?.[1].toLowerCase() === 'remove') return { type: 'permissions', action: 'remove', value: match[2].trim() };
+    return { type: 'permissions' };
   }
-  return { type: 'agent', input: task } as Intent;
+  if (oneOf(cmd, ['nogate', 'no-gate'])) return { type: 'nogate' };
+  if (cmd === 'init') return { type: 'init', scope: rest || undefined };
+  if (cmd === 'mcp') { const parts = rest.trim().split(/\s+/), action = parts[0]?.toLowerCase() || 'list', server = parts.slice(1).join(' ') || undefined; if (oneOf(action, ['connect', 'add'])) return { type: 'mcp', action: 'connect', value: server }; if (oneOf(action, ['disconnect', 'remove'])) return { type: 'mcp', action: 'disconnect', value: server }; return { type: 'mcp', action: 'list' }; }
+  if (cmd === 'compact') return { type: 'compact' };
+  if (oneOf(cmd, ['clear', 'clean'])) return { type: 'clear' };
+  if (cmd === 'help') return { type: 'help' };
+  if (cmd === 'extensions') return { type: 'extensions' };
+  if (oneOf(cmd, ['exit', 'quit'])) return { type: 'exit' };
+  if (available.has(cmd) || available.has('/' + cmd)) return { type: 'mod-surface-command', commandName: cmd, args: rest };
+  if (commandRegistry?.has(cmd)) return { type: 'extension-command', commandName: cmd, args: rest };
+  return { type: 'unknown', input };
 }
 
-
-
-
-
-/**
- * Plain text must not start orchestration. Brainstorm, tribunal, campfire, forge, and review are slash-only from chat input; mention words like 'tribunal' or 'forge' should reach Cesar as normal text unless the user uses /tribunal, /forge, etc.
- */
-function parseSemanticDelegationShortcut(_input: string): Intent|null {
-  return null;
-}
-
-function splitReviewArgs(input: string): string[] {
-  return input.split(/[ \t\n\r\f\v]+/).flatMap((part) => part.split(',')).map((part) => part.trim()).filter(Boolean);
-}
-
-function isReviewTargetArg(part: string): boolean {
-  const lower = part.toLowerCase();
-  return lower === 'uncommitted' || lower.startsWith('branch:') || lower.startsWith('commit:');
-}
-
-function isImplicitReviewSubjectArg(part: string): boolean {
-  const lower = part.toLowerCase();
-  return lower === 'it' || lower === 'this' || lower === 'that' || lower === 'them' || lower === 'changes' || lower === 'diff';
-}
-
-/**
- * Parse review args into target + engine list. When bareWordsAreEngines is true (the explicit /review slash path), any bare word that isn't a target (uncommitted/branch:/commit:) or a keyword is treated as an engine name — so `/review codex claude` reviews with BOTH, no `with` needed. The natural-language shortcut path leaves it false so prose like `review this code` doesn't mis-bind `code` as an engine.
- */
-function parseReviewInput(input: string, bareWordsAreEngines?: boolean): Intent {
-  const reviewParts = splitReviewArgs(input);
-  const engineIds: string[] = [];
-  let target: string | undefined;
-  let collectingEngines = false;
-
-  // `/review role …` — a leading `role`/`roles` keyword switches to the focused
-  // multi-role review. Any following bare words that match a known role id are
-  // collected as the explicit role roster (engine i → role i); the rest parse
-  // exactly like a normal /review (target + engines). With no role names, the
-  // handler assigns the fixed roster automatically.
-  let roleMode = false;
-  const roleIds: string[] = [];
-  const KNOWN_ROLES = new Set(['security', 'correctness', 'dryness', 'performance', 'overall']);
-  let startIdx = 0;
-  if (reviewParts.length > 0 && /^(role|roles)$/i.test(reviewParts[0])) {
-    roleMode = true;
-    startIdx = 1;
-    while (startIdx < reviewParts.length && KNOWN_ROLES.has(reviewParts[startIdx].toLowerCase())) {
-      roleIds.push(reviewParts[startIdx].toLowerCase());
-      startIdx += 1;
-    }
-  }
-
-  for (let i = startIdx; i < reviewParts.length; i += 1) {
-    const part = reviewParts[i];
-    const lower = part.toLowerCase();
-    if (lower === 'and' || lower === 'or' || lower === 'plus') {
-      continue;
-    }
-    if (isImplicitReviewSubjectArg(part)) {
-      continue;
-    }
-    if (lower === 'with') {
-      collectingEngines = true;
-      continue;
-    }
-    if (isReviewTargetArg(part)) {
-      if (!target) target = part;
-      continue;
-    }
-    if (collectingEngines || bareWordsAreEngines) {
-      if (!engineIds.includes(lower)) engineIds.push(lower);
-      continue;
-    }
-    if (!target) target = part;
-  }
-
-  const engineId = engineIds[0];
-  if (roleMode) {
-    return { type: 'review-role', engineId, engineIds: engineIds.length > 0 ? engineIds : undefined, target, roles: roleIds.length > 0 ? roleIds : undefined } as Intent;
-  }
-  return { type: 'review', engineId, engineIds: engineIds.length > 0 ? engineIds : undefined, target } as Intent;
-}
-
-
-function parseSlashCommand(input: string, commandRegistry?: any, available: ReadonlySet<string> = processSurfaceNames('tui')): Intent {
+function parseSlashCommand(input: string, commandRegistry: any, available: ReadonlySet<string>): Intent {
   const stripped = input.slice(1).trim();
-  if (!stripped) return { type: 'slash-list' } as Intent;
-
-  const parts = stripped.split(/\s+/);
-  const cmd = parts[0].toLowerCase();
-  const rest = parts.slice(1).join(' ');
-
-  if (!available.has(cmd) && !available.has('/' + cmd) && !(commandRegistry && commandRegistry.has(cmd))) {
-    return { type: 'unknown', input } as Intent;
+  if (!stripped) return { type: 'slash-list' };
+  const parts = stripped.split(/\s+/), cmd = parts[0].toLowerCase(), rest = parts.slice(1).join(' ');
+  if (!available.has(cmd) && !available.has('/' + cmd) && !commandRegistry?.has(cmd)) return { type: 'unknown', input };
+  const physical = parseProcessFirstPartyIntent(cmd, input);
+  if (physical.authoritative) {
+    if (!physical.value || typeof physical.value !== 'object' || Array.isArray(physical.value)) return { type: 'unknown', input };
+    return {
+      type: physical.publicId,
+      ...(physical.value as object),
+      _modSurface: {
+        publicId: physical.publicId,
+        registryId: physical.registryId,
+        kind: physical.kind,
+        value: physical.value,
+      },
+    } as Intent;
   }
-
-  switch (cmd) {
-    case 'forge':
-      return parseForgeInput(rest || '');
-    case 'brainstorm':
-      return { type: 'brainstorm', question: rest } as Intent;
-    case 'tribunal': {
-      const MODES = ['adversarial', 'socratic', 'red-team', 'steelman', 'synthesis', 'postmortem'];
-      const PROTOCOLS = ['auto', 'parallel', 'chained', 'hybrid'];
-      const tribunalParts = rest.split(/\s+/);
-      let tMode: string | undefined;
-      let tProtocol: string | undefined;
-      const questionParts: string[] = [];
-      for (let i = 0; i < tribunalParts.length; i += 1) {
-        const token = tribunalParts[i];
-        const lower = token.toLowerCase();
-        if (lower === '--mode' && tribunalParts[i + 1] && MODES.includes(tribunalParts[i + 1].toLowerCase())) {
-          tMode = tribunalParts[i + 1].toLowerCase();
-          i += 1;
-          continue;
-        }
-        if (lower === '--protocol' && tribunalParts[i + 1] && PROTOCOLS.includes(tribunalParts[i + 1].toLowerCase())) {
-          tProtocol = tribunalParts[i + 1].toLowerCase();
-          i += 1;
-          continue;
-        }
-        if (!tMode && questionParts.length === 0 && (MODES.includes(lower) || (lower.startsWith('--') && MODES.includes(lower.slice(2))))) {
-          tMode = lower.startsWith('--') ? lower.slice(2) : lower;
-          continue;
-        }
-        questionParts.push(token);
-      }
-      return { type: 'tribunal', question: questionParts.join(' '), tribunalMode: tMode, tribunalProtocol: tProtocol } as Intent;
-    }
-    case 'team-tribunal': {
-      const MODES = ['adversarial', 'socratic', 'red-team', 'steelman', 'synthesis', 'postmortem'];
-      const ttParts = rest.split(/\s+/);
-      let ttSize: number | undefined;
-      let ttMode: string | undefined;
-      let ttStart = 0;
-      // Parse optional NvN format
-      const sizeMatch = ttParts[0]?.match(/^(\d+)v(\d+)$/i);
-      if (sizeMatch) {
-        ttSize = parseInt(sizeMatch[1], 10);
-        ttStart = 1;
-      }
-      // Parse optional mode
-      const mw = ttParts[ttStart]?.toLowerCase();
-      if (mw && MODES.includes(mw)) {
-        ttMode = mw;
-        ttStart++;
-      } else if (mw && mw.startsWith('--')) {
-        const stripped = mw.slice(2);
-        if (MODES.includes(stripped)) { ttMode = stripped; ttStart++; }
-      }
-      const ttQuestion = ttParts.slice(ttStart).join(' ');
-      return { type: 'team-tribunal', question: ttQuestion, tribunalMode: ttMode, membersPerSide: ttSize } as Intent;
-    }
-    case 'team-forge': {
-      const tfParts = rest.split(/\s+/);
-      let tfSize: number | undefined;
-      let tfStart = 0;
-      const tfSizeMatch = tfParts[0]?.match(/^(\d+)v(\d+)$/i);
-      if (tfSizeMatch) { tfSize = parseInt(tfSizeMatch[1], 10); tfStart = 1; }
-      const tfRest = tfParts.slice(tfStart).join(' ');
-      const tfFitness = FITNESS_PATTERN.exec(tfRest);
-      const tfCmd = tfFitness ? tfFitness[1].trim() : null;
-      const tfTask = tfCmd ? tfRest.replace(FITNESS_PATTERN, '').trim() : tfRest;
-      return { type: 'team-forge', task: tfTask, fitnessCmd: tfCmd, membersPerSide: tfSize } as Intent;
-    }
-    case 'team-brainstorm': {
-      const tbParts = rest.split(/\s+/);
-      let tbSize: number | undefined;
-      let tbStart = 0;
-      const tbSizeMatch = tbParts[0]?.match(/^(\d+)v(\d+)$/i);
-      if (tbSizeMatch) { tbSize = parseInt(tbSizeMatch[1], 10); tbStart = 1; }
-      return { type: 'team-brainstorm', question: tbParts.slice(tbStart).join(' '), membersPerSide: tbSize } as Intent;
-    }
-    case 'leaderboard':
-    case 'elo':
-      return { type: 'leaderboard' } as Intent;
-    case 'cesar-report':
-    case 'cesar-stats':
-      return { type: 'cesar-report' } as Intent;
-    case 'cesar-hints':
-    case 'cesar-debug':
-      return { type: 'cesar-hints', input: rest } as Intent;
-    case 'history':
-      return { type: 'history', id: rest || undefined } as Intent;
-    case 'engines':
-      {
-        const engineParts = rest.trim().split(/\s+/).filter(Boolean);
-        const engineAction = engineParts[0]?.toLowerCase();
-        if (engineAction === 'discover' || engineAction === 'scan' || engineAction === 'rescan' || engineAction === 'refresh') return { type: 'discover', action: 'scan' } as Intent;
-        if (['hide', 'remove', 'delete', 'unhide', 'restore', 'show', 'list'].includes(engineAction ?? '')) {
-          return { type: 'engines', action: engineAction, id: engineParts[1] } as Intent;
-        }
-        return { type: 'engines' } as Intent;
-      }
-    case 'discover':
-      return { type: 'discover' } as Intent;
-    case 'provider': {
-      const provParts = rest.trim().split(/\s+/);
-      const provAction = provParts[0] || 'list';
-      const provArgs = provParts.slice(1).join(' ');
-      return { type: 'provider', action: provAction, args: provArgs } as Intent;
-    }
-    case 'campfire':
-    case 'talk':
-      return { type: 'campfire', topic: rest } as Intent;
-    case 'think': {
-      // Pull optional --strategy <x> and --steps <n> out; the remainder is the problem.
-      const thinkParts = rest.split(/\s+/);
-      let strategy: string | undefined;
-      let steps: number | undefined;
-      const problemParts: string[] = [];
-      for (let i = 0; i < thinkParts.length; i += 1) {
-        const tok = thinkParts[i];
-        if (tok === '--strategy' && thinkParts[i + 1]) { strategy = thinkParts[i + 1].toLowerCase(); i += 1; continue; }
-        if (tok === '--steps' && thinkParts[i + 1]) { const n = parseInt(thinkParts[i + 1], 10); if (!isNaN(n)) steps = n; i += 1; continue; }
-        problemParts.push(tok);
-      }
-      return { type: 'think', input: problemParts.join(' ').trim(), strategy, steps } as Intent;
-    }
-    case 'council':
-      return { type: 'council', question: rest } as Intent;
-    case 'chrome':
-      return { type: 'chrome', input: rest } as Intent;
-    case 'research': {
-      // /research <question> [--count N] [--engine X]
-      let rsCount: number | undefined;
-      let rsEngine: string | undefined;
-      let rsRest = rest;
-      const rsCountM = rsRest.match(/--count\s+(\d+)/);
-      if (rsCountM) { const n = parseInt(rsCountM[1], 10); if (!isNaN(n)) rsCount = n; rsRest = rsRest.replace(rsCountM[0], ' '); }
-      const rsEngineM = rsRest.match(/--engine\s+(\S+)/);
-      if (rsEngineM) { rsEngine = rsEngineM[1]; rsRest = rsRest.replace(rsEngineM[0], ' '); }
-      const rsQuestion = rsRest.replace(/\s+/g, ' ').trim();
-      return { type: 'research', question: rsQuestion, count: rsCount, engineId: rsEngine } as Intent;
-    }
-    case 'sanitize':
-      // Raw arg string; flag parsing (--detect/--metadata/--strip/--out/--in-place)
-      // lives in handleSanitize.
-      return { type: 'sanitize', input: rest } as Intent;
-    case 'naturalize':
-      // Raw arg string; flag parsing (--engine/--author/--min-change/…) lives in handleNaturalize.
-      return { type: 'naturalize', input: rest } as Intent;
-    case 'mutate':
-      // Raw arg string; flag parsing (path/--diff/--test/--semantic/--lens/--mechanical-only/…) lives in parseMutateArgs.
-      return { type: 'mutate', input: rest } as Intent;
-    case 'conquer': {
-      // /conquer <task> --gate "<cmd>" [--builder X] [-e a,b] [--max-turns N]
-      //          [--gate-timeout S] [--max-hours H] [--timeout S]   (CLI parity)
-      let cqGate: string | undefined;
-      let cqBuilder: string | undefined;
-      let cqEngineIds: string[] | undefined;
-      let cqMaxTurns: number | undefined;
-      let cqGateTimeout: number | undefined;
-      let cqMaxHours: number | undefined;
-      let cqTurnTimeout: number | undefined;
-      let cqRest = rest;
-      const gateM = cqRest.match(/--gate\s+(?:"([^"]*)"|'([^']*)'|(\S+(?:\s+(?!--|-[A-Za-z])\S+)*))/);
-      if (gateM) { cqGate = (gateM[1] ?? gateM[2] ?? gateM[3] ?? '').trim(); cqRest = cqRest.replace(gateM[0], ' '); }
-      const builderM = cqRest.match(/(?:--builder|-b)\s+(\S+)/);
-      if (builderM) { cqBuilder = builderM[1]; cqRest = cqRest.replace(builderM[0], ' '); }
-      const enginesM = cqRest.match(/(?:--engines|-e)\s+(\S+)/);
-      if (enginesM) { cqEngineIds = enginesM[1].split(',').map((x) => x.trim()).filter(Boolean); cqRest = cqRest.replace(enginesM[0], ' '); }
-      const turnsM = cqRest.match(/--max-turns\s+(\d+)/);
-      if (turnsM) { cqMaxTurns = parseInt(turnsM[1], 10); cqRest = cqRest.replace(turnsM[0], ' '); }
-      const gateToM = cqRest.match(/--gate-timeout\s+(\d+)/);
-      if (gateToM) { cqGateTimeout = parseInt(gateToM[1], 10); cqRest = cqRest.replace(gateToM[0], ' '); }
-      const hoursM = cqRest.match(/--max-hours\s+(\d+(?:\.\d+)?)/);
-      if (hoursM) { cqMaxHours = parseFloat(hoursM[1]); cqRest = cqRest.replace(hoursM[0], ' '); }
-      const turnToM = cqRest.match(/--timeout\s+(\d+)/);
-      if (turnToM) { cqTurnTimeout = parseInt(turnToM[1], 10); cqRest = cqRest.replace(turnToM[0], ' '); }
-      return { type: 'conquer', task: cqRest.replace(/\s+/g, ' ').trim(), gate: cqGate, builder: cqBuilder, engineIds: cqEngineIds, maxTurns: cqMaxTurns, gateTimeout: cqGateTimeout, maxHours: cqMaxHours, turnTimeout: cqTurnTimeout } as Intent;
-    }
-    case 'synthesis':
-    case 'synth': {
-      const synthParts = rest.split(/\s+/);
-      let swaps: number | undefined;
-      const promptParts: string[] = [];
-      for (let i = 0; i < synthParts.length; i += 1) {
-        const tok = synthParts[i];
-        if ((tok === '--swaps' || tok === '-s') && synthParts[i + 1]) { const n = parseInt(synthParts[i + 1], 10); if (!isNaN(n)) swaps = n; i += 1; continue; }
-        promptParts.push(tok);
-      }
-      return { type: 'synthesis', input: promptParts.join(' ').trim(), swaps } as Intent;
-    }
-    case 'workspace':
-    case 'ws': {
-      const wsParts = rest.split(/\s+/);
-      const action = wsParts[0] || 'list';
-      const wsPath = wsParts.slice(1).join(' ') || undefined;
-      return { type: 'workspace', action, path: wsPath } as Intent;
-    }
-    case 'models': {
-      const modelsArg = rest.trim().toLowerCase();
-      if (modelsArg === 'cli' || modelsArg === 'engine' || modelsArg === 'engines') {
-        return { type: 'engines' } as Intent;
-      }
-      return { type: 'models' } as Intent;
-    }
-    case 'setup':
-      return { type: 'models' } as Intent;
-    case 'tokens':
-    case 'usage':
-    case 'cost':
-      return { type: 'tokens' } as Intent;
-    case 'raw': {
-      const rawN = parseInt(rest.trim(), 10);
-      return { type: 'raw', index: Number.isFinite(rawN) && rawN > 0 ? rawN : undefined } as Intent;
-    }
-    case 'doctor':
-      return { type: 'doctor', scope: rest || 'engines' } as unknown as Intent;
-    case 'harness-replay':
-    case 'replay-harness':
-    case 'tool-replay':
-      return { type: 'harness-replay', turnId: rest || undefined } as unknown as Intent;
-    case 'cesar': {
-      const cesarIds = rest
-        .split(/[,\s]+/)
-        .map((s: string) => s.trim().toLowerCase())
-        .filter(Boolean);
-      return { type: 'cesar', engineIds: cesarIds } as Intent;
-    }
-    case 'use': {
-      const ids = rest
-        .split(/[,\s]+/)
-        .map((s: string) => s.trim().toLowerCase())
-        .filter(Boolean);
-      return { type: 'use', engineIds: ids } as Intent;
-    }
-    case 'config': {
-      const configParts = rest.split(/\s+/);
-      const action = configParts[0] || undefined;
-      const key = configParts[1] || undefined;
-      const value = configParts.slice(2).join(' ') || undefined;
-      return { type: 'config', action, key, value } as Intent;
-    }
-    case 'mod':
-      return { type: 'mod', args: rest } as Intent;
-    case 'plan': {
-        const text = rest.trim();
-        if (text.startsWith('resume')) {
-          const planArg = text.slice('resume'.length).trim();
-          return { type: 'plan-resume', planId: planArg || undefined } as Intent;
-        }
-        if (text) {
-          return { type: 'plan-task', task: text } as Intent;
-        }
-        return { type: 'plan', planId: undefined } as Intent;
-      }
-    case 'auto':
-    case 'autonomous': {
-      const autoTask = rest.trim();
-      return { type: 'auto', input: autoTask, taskClass: classifyTask(autoTask), autoMode: true } as Intent;
-    }
-    case 'plans':
-      return { type: 'plans' } as Intent;
-    case 'approve':
-      return { type: 'approve' } as Intent;
-    case 'retry':
-    case 'resume':
-      return { type: 'retry' } as Intent;
-    case 'cancel':
-    case 'abort':
-      return { type: 'cancel' } as Intent;
-    case 'img':
-    case 'image':
-      return { type: 'img', path: rest } as Intent;
-    case 'chat':
-    case 'ask':
-      return { type: 'chat', input: rest } as Intent;
-    case 'apply': {
-      const force = rest.includes('--force');
-      const path = rest.replace('--force', '').trim() || undefined;
-      return { type: 'apply', patchPath: path, force } as Intent;
-    }
-    case 'cp':
-    case 'copy': {
-      const cpArg = rest.trim().toLowerCase();
-      if (cpArg === 'last' || cpArg === 'msg' || cpArg === 'response') {
-        return { type: 'cp', last: true } as Intent;
-      }
-      const cpIndex = rest ? parseInt(rest, 10) : undefined;
-      return { type: 'cp', index: isNaN(cpIndex as number) ? undefined : cpIndex } as Intent;
-    }
-    case 'flow':
-      return { type: 'flow' } as Intent;
-    case 'flows':
-      return { type: 'flows' } as Intent;
-    case 'chats': {
-      const chatParts = rest.split(/\s+/);
-      if (chatParts[0] === 'resume' && chatParts[1]) {
-        return { type: 'chats-resume', sessionId: chatParts[1] } as Intent;
-      }
-      return { type: 'chats', sessionId: rest || undefined } as Intent;
-    }
-    case 'build':
-      return { type: 'build', input: rest } as Intent;
-    case 'goal':
-      return { type: 'goal', input: rest } as Intent;
-    case 'agent':
-      return { type: 'agent', input: rest } as Intent;
-    case 'agent-solo':
-      return { type: 'agent-solo', input: rest } as unknown as Intent;
-    case 'speculate': {
-      // /speculate [with engine1,engine2] <task>
-      // Optional: /speculate with claude,agy refactor auth module
-      const withMatch = rest.match(/^with\s+([\w,-]+)\s+([\s\S]+)$/i);
-      if (withMatch) {
-        const engines = withMatch[1].split(',').map((e: string) => e.trim()).filter(Boolean);
-        return { type: 'speculate', input: withMatch[2].trim(), engines } as unknown as Intent;
-      }
-      return { type: 'speculate', input: rest } as unknown as Intent;
-    }
-    case 'pipeline':
-    case 'pipe': {
-      const fitMatch = FITNESS_PATTERN.exec(rest);
-      const fitCmd = fitMatch ? fitMatch[1].trim() : null;
-      const pipeTask = fitCmd ? rest.replace(FITNESS_PATTERN, '').trim() : rest;
-      return { type: 'pipeline', task: pipeTask, fitnessCmd: fitCmd } as Intent;
-    }
-    case 'review':
-    case 'cr': {
-      return parseReviewInput(rest, true);
-    }
-    case 'run':
-    case 'exec':
-    case 'shell':
-      return { type: 'run', input: rest } as Intent;
-    case 'commit':
-      return { type: 'commit', input: rest || undefined } as Intent;
-    case 'undo': {
-      const parts = rest.split(/\s+/).filter(Boolean);
-      const snapshotId = parts[0] === 'checkpoint' ? parts[1] : parts[0];
-      return { type: 'undo', snapshotId: snapshotId || undefined } as unknown as Intent;
-    }
-    case 'checkpoints':
-      return { type: 'checkpoints' } as unknown as Intent;
-    case 'status':
-      return { type: 'status' } as Intent;
-    case 'jobs': {
-      const [action, jobId] = rest.split(/\s+/).filter(Boolean);
-      return {
-        type: 'jobs',
-        action: action === 'cancel' ? 'cancel' : 'list',
-        jobId: action === 'cancel' ? jobId : undefined,
-      } as Intent;
-    }
-    case 'focus':
-      return { type: 'focus', jobId: rest || undefined } as Intent;
-    case 'explore':
-    case 'plan-mode':
-    case 'readonly':
-      return { type: 'explore' } as Intent;
-    case 'permissions':
-    case 'perms': {
-      // /permissions — list; /permissions add allow|deny <rule> — persist a
-      // rule; /permissions remove <rule> — revoke from every bucket.
-      const permMatch = rest.match(/^(add)\s+(allow|deny)\s+(.+)$/i) ?? rest.match(/^(remove)\s+(.+)$/i);
-      if (permMatch && permMatch[1].toLowerCase() === 'add') {
-        return { type: 'permissions', action: 'add', key: permMatch[2].toLowerCase(), value: permMatch[3].trim() } as Intent;
-      }
-      if (permMatch && permMatch[1].toLowerCase() === 'remove') {
-        return { type: 'permissions', action: 'remove', value: permMatch[2].trim() } as Intent;
-      }
-      return { type: 'permissions' } as Intent;
-    }
-    case 'nogate':
-    case 'no-gate':
-      return { type: 'nogate' } as Intent;
-    case 'nero':
-    case 'devil':
-    case 'adversarial': {
-      // Bare `/nero` toggles in-session adversarial mode; `/nero <decision>`
-      // fires a one-shot standalone challenge from the top-rated critic.
-      const neroParts = rest.split(/\s+/);
-      let neroReasoning: string | undefined;
-      const decisionParts: string[] = [];
-      for (let i = 0; i < neroParts.length; i += 1) {
-        const tok = neroParts[i];
-        if (tok === '--reasoning' && neroParts[i + 1]) { neroReasoning = neroParts.slice(i + 1).join(' '); break; }
-        decisionParts.push(tok);
-      }
-      const decision = decisionParts.join(' ').trim();
-      if (decision) return { type: 'nero-challenge', input: decision, reasoning: neroReasoning } as Intent;
-      return { type: 'nero' } as Intent;
-    }
-    case 'init':
-      return { type: 'init' as const, scope: rest || undefined } as unknown as Intent;
-    case 'create-skill': {
-      const skillName = rest.trim() || 'my-skill';
-      return { type: 'create-skill' as const, skillName } as unknown as Intent;
-    }
-    case 'mcp': {
-      const mcpParts = rest.trim().split(/\s+/);
-      const mcpAction = mcpParts[0]?.toLowerCase() || 'list';
-      if (mcpAction === 'connect' || mcpAction === 'add') {
-        return { type: 'mcp' as const, action: 'connect' as const, server: mcpParts.slice(1).join(' ') || undefined } as unknown as Intent;
-      } else if (mcpAction === 'disconnect' || mcpAction === 'remove') {
-        return { type: 'mcp' as const, action: 'disconnect' as const, server: mcpParts.slice(1).join(' ') || undefined } as unknown as Intent;
-      }
-      return { type: 'mcp' as const, action: 'list' as const } as unknown as Intent;
-    }
-    case 'compact':
-      return { type: 'compact' } as Intent;
-    case 'clear':
-    case 'clean':
-      return { type: 'clear' } as Intent;
-    case 'help':
-      return { type: 'help' } as Intent;
-    case 'extensions':
-      return { type: 'extensions' } as Intent;
-    case 'exit':
-    case 'quit':
-      return { type: 'exit' } as Intent;
-    default:
-      if (available.has(cmd) || available.has('/' + cmd)) {
-        return { type: 'mod-surface-command', commandName: cmd, args: rest } as Intent;
-      }
-      // Check command registry for extension commands
-      if (commandRegistry && commandRegistry.has(cmd)) {
-        return { type: 'extension-command', commandName: cmd, args: rest } as Intent;
-      }
-      return { type: 'unknown', input } as Intent;
-  }
+  return parseKernelSlashCommand(cmd, rest, input, commandRegistry, available);
 }
 
-export function detectIntent(raw: string, commandRegistry?: any, available?: ReadonlySet<string>): Intent {
+export function detectIntent(raw: string, commandRegistry?: any, available: ReadonlySet<string> = processSurfaceNames('tui')): Intent {
   const input = raw.trim();
-  if (!input) {
-    return { type: 'unknown', input: '' } as Intent;
+  if (!input) return { type: 'unknown', input: '' };
+  if (input.startsWith('/')) return parseSlashCommand(input, commandRegistry, available);
+  if (input.startsWith('! ')) { const command = input.slice(2).trim(); if (command) return { type: 'run', input: command }; }
+  if (hostRegexObjectTest(EXIT_KEYWORDS, input)) return { type: 'exit' };
+  if (hostRegexObjectTest(HELP_KEYWORDS, input)) return { type: 'help' };
+  const agent = parseAgentShortcut(input); if (agent) return agent;
+  if (hostRegexObjectTest(AUTOCREDIT_OFF_KEYWORDS, input)) return { type: 'toggleAutoCredit', autoCredit: false, input };
+  if (hostRegexObjectTest(AUTOCREDIT_ON_KEYWORDS, input)) return { type: 'toggleAutoCredit', autoCredit: true, input };
+  const commandLike = input.split(/[ \t\n\r\f\v]+/).length <= 4 && !hostRegexObjectTest(SENTENCE_PREFIX, input);
+  if (commandLike) {
+    if (hostRegexObjectTest(LEADERBOARD_KEYWORDS, input)) return { type: 'leaderboard' };
+    if (hostRegexObjectTest(HISTORY_KEYWORDS, input)) return { type: 'history' };
+    if (hostRegexObjectTest(ENGINES_KEYWORDS, input)) return { type: 'engines' };
+    if (hostRegexObjectTest(CONFIG_KEYWORDS, input)) return { type: 'config' };
   }
-  if (input.startsWith('/')) {
-    return parseSlashCommand(input, commandRegistry, available);
-  }
-  // `! <cmd>` — Claude-Code-style inline bash prefix. The bang-SPACE
-  // trigger (mirrors `/`) routes to the shared /run executor + tool-block
-  // rendering, so the command runs in cwd and its output joins the
-  // conversation (handleRun appends it to chatSession). A bare `!`, `!!`,
-  // or `!important` (no space after the bang) is NOT a command — it falls
-  // through to normal text so prose/emphasis is never hijacked.
-  if (input.startsWith('! ')) {
-    const bangCmd = input.slice(2).trim();
-    if (bangCmd) {
-      return { type: 'run', input: bangCmd } as Intent;
-    }
-  }
-  if (hostRegexObjectTest(EXIT_KEYWORDS, input)) {
-    return { type: 'exit' } as Intent;
-  }
-  if (hostRegexObjectTest(HELP_KEYWORDS, input)) {
-    return { type: 'help' } as Intent;
-  }
-  const agentShortcut = parseAgentShortcut(input);
-  if (agentShortcut) {
-    return agentShortcut;
-  }
-  const delegationShortcut = parseSemanticDelegationShortcut(input);
-  if (delegationShortcut) {
-    return delegationShortcut;
-  }
-  // Review is slash-only from chat, like every other orchestration mode:
-  // "can you review with codex" is a CONVERSATION with Cesar, not a dispatch.
-  // Cesar answers (and may call its Review tool itself); only /review
-  // triggers deterministic direct review dispatch.
-  // Natural-language toggle for autoCredit (German + English)
-  if (hostRegexObjectTest(AUTOCREDIT_OFF_KEYWORDS, input)) {
-    return { type: 'toggleAutoCredit', autoCredit: false, input: input } as Intent;
-  }
-  if (hostRegexObjectTest(AUTOCREDIT_ON_KEYWORDS, input)) {
-    return { type: 'toggleAutoCredit', autoCredit: true, input: input } as Intent;
-  }
-  // Only match keyword shortcuts for short, command-like inputs.
-  // Skip if input looks like a natural language sentence (question words, pronouns, >4 words).
-  const isCommandLike = input.split(/[ \t\n\r\f\v]+/).length <= 4 && !hostRegexObjectTest(SENTENCE_PREFIX, input);
-  if (isCommandLike) {
-    if (hostRegexObjectTest(LEADERBOARD_KEYWORDS, input)) {
-      return { type: 'leaderboard' } as Intent;
-    }
-    if (hostRegexObjectTest(HISTORY_KEYWORDS, input)) {
-      return { type: 'history' } as Intent;
-    }
-    if (hostRegexObjectTest(ENGINES_KEYWORDS, input)) {
-      return { type: 'engines' } as Intent;
-    }
-    if (hostRegexObjectTest(CONFIG_KEYWORDS, input)) {
-      return { type: 'config' } as Intent;
-    }
-  }
-  return { type: 'auto', input: input, taskClass: classifyTask(input) } as Intent;
+  return { type: 'auto', input, taskClass: classifyTask(input) };
 }

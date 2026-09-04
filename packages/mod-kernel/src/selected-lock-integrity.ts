@@ -23,9 +23,9 @@ export function assertSelectedLockPackageClosure(
   lock: CanonicalModLock,
   effectivePackageIds: readonly string[],
 ): void {
-  const selected = lock.packages.map(({ sourceLocator }) => sourceLocator).sort();
+  const selected = lock.packages.map(({ id }) => id.startsWith('agon.') ? `@kernlang/agon-mod-${id.slice('agon.'.length)}` : id).sort();
   const effective = [...effectivePackageIds].sort();
-  if (new Set(selected).size !== selected.length) throw new Error('selected canonical lock contains duplicate source locators');
+  if (new Set(selected).size !== selected.length) throw new Error('selected canonical lock contains duplicate physical package identities');
   if (JSON.stringify(selected) !== JSON.stringify(effective)) {
     throw new Error('selected canonical lock does not match the resolved package closure');
   }

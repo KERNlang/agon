@@ -287,7 +287,7 @@ export class TrustGrantStore {
       if (totalBytes > AUTHORITY_LIMITS.maxTotalBytesPerKind) throw new RangeError('authority records exceed the configured aggregate limit');
       const bytes = await this.io.readFile(path);
       if (bytes.byteLength !== observed.size || bytes.byteLength > AUTHORITY_LIMITS.maxRecordBytes) throw new RangeError('authority record changed during bounded read');
-      records.push(parse(JSON.parse(bytes.toString('utf8'))));
+      records.push(parse(JSON.parse(new TextDecoder().decode(bytes))));
     }
     return Object.freeze(records);
   }

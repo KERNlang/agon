@@ -98,7 +98,7 @@ npm test
 ```
 
 `test:modular-slice1a` is clean-clone safe: it builds both new packages before
-checking generator drift, the 49-package/144-edge DAG, package contents,
+checking generator drift, the 49-package/151-edge DAG, package contents,
 external public-API compilation, the frozen contract suite, and all Slice 1A
 unit/property tests. The final qualification receipt is
 [`evidence/modular-agon-slice1a-verification-receipt.json`](./evidence/modular-agon-slice1a-verification-receipt.json);

@@ -1,7 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createCesarToolRegistry } from '../../packages/cli/src/cesar/tools.js';
+import { disposeProcessSurfaceAuthority, initializeProcessSurfaceAuthority } from '../../packages/cli/src/surface-authority-runtime.js';
 import { executeToolCall } from '@kernlang/agon-core';
 import { extractDelegation, shouldStopAfterXmlToolCall } from '../../packages/cli/src/cesar/brain-helpers.js';
+
+beforeAll(() => initializeProcessSurfaceAuthority('/tmp/agon-cesar-council-authority'));
+afterAll(() => disposeProcessSurfaceAuthority());
 
 describe('Cesar native Council tool', () => {
   it('is available to the native tool loop as an optional signal tool', () => {

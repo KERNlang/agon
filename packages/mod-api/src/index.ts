@@ -5,6 +5,11 @@ export {
 export type {
   AppliedProfileSnapshotDocument, DesiredStateDocument, ProfileDefinitionDocument,
 } from './state.js';
+export {
+  JobEnvelopeSchema, PersistedEnvelopeSchema, PlanEnvelopeSchema, ResultEnvelopeSchema,
+  SessionEnvelopeSchema, validatePersistedEnvelope,
+} from './envelopes.js';
+export type { JobEnvelope, PersistedEnvelope, PlanEnvelope, ResultEnvelope, SessionEnvelope } from './envelopes.js';
 
 export { AGON_MOD_API_VERSION } from './version.js';
 export {
@@ -70,6 +75,12 @@ export interface CommandContribution {
   readonly aliases?: readonly string[];
   readonly description: string;
   readonly inputSchema?: Readonly<Record<string, Json>>;
+  readonly cli?: {
+    readonly positionals?: readonly string[];
+    readonly descriptions?: Readonly<Record<string, string>>;
+    readonly aliases?: Readonly<Record<string, string>>;
+  };
+  parse?(input: string): Awaitable<Json | Readonly<Record<string, Json | undefined>> | undefined>;
   run(input: Json, context: InvocationContext): InvocationOutput;
 }
 
@@ -78,7 +89,7 @@ export interface IntentContribution {
   readonly aliases?: readonly string[];
   readonly description: string;
   readonly inputSchema: Readonly<Record<string, Json>>;
-  parse(input: string): Awaitable<Json | undefined>;
+  parse(input: string): Awaitable<Json | Readonly<Record<string, Json | undefined>> | undefined>;
   run(input: Json, context: InvocationContext): InvocationOutput;
 }
 
@@ -88,6 +99,7 @@ export interface ToolContribution {
   readonly description: string;
   readonly inputSchema: Readonly<Record<string, Json>>;
   readonly effect: 'read' | 'write' | 'network' | 'process';
+  readonly metadata?: Json;
   run(input: Json, context: InvocationContext): Awaitable<Json>;
 }
 
@@ -133,6 +145,68 @@ export interface Registrar {
   config(namespace: string, schema: Readonly<Record<string, Json>>, aliases?: readonly string[]): Dispose;
 }
 
+export interface EngineDispatchOptions {
+  readonly timeoutSeconds?: number;
+  readonly systemPrompt?: string;
+  readonly mode?: 'exec' | 'review' | 'agent';
+}
+
+/** Host-owned browser runtime. The browser mod owns the command surface while
+ * the host supplies the opened agent brain and ledger/job infrastructure. */
+export interface BrowserServeOptions {
+  readonly port?: number;
+  readonly engineId?: string;
+  readonly allowedOrigins: readonly string[];
+}
+
+export interface BrowserServeHandle {
+  readonly url: string;
+  readonly token: string;
+  readonly sessionId: string;
+  readonly engineId: string;
+  readonly allowedOrigins: readonly string[];
+  readonly connectionFile: string;
+  stop(): Awaitable<void>;
+}
+
+export interface BrowserHostServices {
+  startServe(options: BrowserServeOptions, context: InvocationContext): Awaitable<BrowserServeHandle>;
+  runCommand(
+    action: 'chrome' | 'drive' | 'extension-install' | 'extension-native-host' | 'host-install' | 'host-uninstall' | 'host-status' | 'host-stop',
+    input: Json,
+    context: InvocationContext,
+  ): Awaitable<CommandResult>;
+}
+
+/** Host-owned process grounding. The Workspaces contribution owns bookmark
+ * state and selection; the host applies the selected path to the current
+ * interactive process so subsequent tools and engines use the new cwd. */
+export interface WorkspaceHostServices {
+  setSessionRoot(path: string, context: InvocationContext): Awaitable<void>;
+}
+
+export interface RunRecordHandle {
+  readonly id: string;
+  readonly path: string;
+  readonly mode: string;
+  readonly startedAt: string;
+}
+
+/** Host-owned durable run directories. Workflow mods supply semantic status;
+ * the host owns filesystem layout and compatibility with historical readers. */
+export interface RunRecordHostServices {
+  start(mode: string, label: string | undefined, context: InvocationContext): Awaitable<RunRecordHandle>;
+  finish(handle: RunRecordHandle, status: Json, context: InvocationContext): Awaitable<void>;
+  writeArtifact(handle: RunRecordHandle, relativePath: string, content: string, context: InvocationContext): Awaitable<void>;
+}
+
+export type EngineRatingScope = 'forge' | 'brainstorm' | 'tribunal' | 'critique';
+export interface RankedEngine {
+  readonly engineId: string;
+  readonly reason: 'top-rated' | 'random' | 'none';
+  readonly scope: EngineRatingScope | 'global' | null;
+}
+
 export interface ModServices {
   readonly identity: ModIdentity;
   readonly source: ModSource;
@@ -147,7 +221,17 @@ export interface ModServices {
     read<T extends Json>(key: string): Awaitable<T | undefined>;
     write(key: string, value: Json): Awaitable<void>;
   };
-  readonly engines: { dispatch(engineId: string, prompt: string, context: InvocationContext): Awaitable<Json> };
+  readonly engines: {
+    dispatch(engineId: string, prompt: string, context: InvocationContext, options?: EngineDispatchOptions): Awaitable<Json>;
+    listActive?(context: InvocationContext): Awaitable<readonly string[]>;
+    rank?(engineIds: readonly string[], scopes: readonly EngineRatingScope[], context: InvocationContext): Awaitable<readonly RankedEngine[]>;
+  };
+  /** Present only for trusted bundled browser integration. Folder mods never receive it. */
+  readonly browser?: BrowserHostServices;
+  /** Present only for the bundled workspaces integration. Folder mods never receive it. */
+  readonly workspace?: WorkspaceHostServices;
+  /** Present only for bundled workflows that participate in the legacy run ledger. */
+  readonly runs?: RunRecordHostServices;
 }
 
 export interface AgonModV1 {

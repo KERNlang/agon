@@ -21,6 +21,7 @@ import { runGauntlet } from './gauntlet.js';
 import { addToCorpus } from './corpus.js';
 
 import { writeManifest } from './manifest.js';
+import { writeVersionedResultEnvelope } from './result-envelope.js';
 
 import type { WorktreeEntry } from './types.js';
 
@@ -180,6 +181,15 @@ export function writeForgeResultBundle(manifest: ForgeManifest, worktrees: Workt
   manifest.resultBundlePath = bundlePath;
   manifest.cleanupCommand = cleanupCommand;
   writeFileSync(bundlePath, JSON.stringify(bundle, null, 2));
+  const envelopePath = writeVersionedResultEnvelope({
+    resultPath: bundlePath,
+    payload: bundle,
+    status: bundle.status === 'failed' ? 'failed' : bundle.status === 'completed' || bundle.status === 'already-satisfied' ? 'succeeded' : 'partial',
+    idSeed: manifest.forgeId,
+    ownerModId: 'agon.forge',
+    contributionId: 'agon.forge.persisted-result',
+    createdAt: manifest.timestamp,
+  });
   writeFileSync(readmePath, [
     `# Forge Result ${manifest.forgeId}`,
     '',
@@ -189,6 +199,7 @@ export function writeForgeResultBundle(manifest: ForgeManifest, worktrees: Workt
     `Fitness: ${manifest.fitnessCmd}`,
     `Manifest: ${manifest.forgeDir}/manifest.json`,
     `Result bundle: ${bundlePath}`,
+    `Result envelope: ${envelopePath}`,
     `Sidechain log: ${sidechainPath}`,
     '',
     '## Failed Engines',

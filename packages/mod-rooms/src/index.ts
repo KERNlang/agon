@@ -1,11 +1,10 @@
 import { validateManifest } from '@kernlang/agon-mod-api';
-import type { AgonModFactory, AgonModV1, Awaitable, Dispose, InvocationContext, InvocationOutput, Json, ModServices, Registrar } from '@kernlang/agon-mod-api';
 
 export const MANIFEST = validateManifest({
   "schemaVersion": 2,
   "id": "agon.rooms",
   "name": "Rooms",
-  "version": "0.0.0-slice.5",
+  "version": "1.0.0",
   "apiRange": ">=1.0.0 <2",
   "execution": "executable",
   "compatibility": {
@@ -39,7 +38,18 @@ export const MANIFEST = validateManifest({
     "optional": [],
     "conflicts": []
   },
-  "permissions": [],
+  "permissions": [
+    {
+      "capability": "engine.dispatch",
+      "resources": [],
+      "required": true
+    },
+    {
+      "capability": "fs.write",
+      "resources": [],
+      "required": true
+    }
+  ],
   "platforms": [
     "darwin-arm64",
     "darwin-x64",
@@ -131,9 +141,22 @@ export const MANIFEST = validateManifest({
   },
   "pack": {
     "include": [
+      "LICENSE",
       "agon.mod.json",
       "dist/index.js",
       "dist/index.d.ts",
+      "dist/implementation.d.ts",
+      "dist/paths.d.ts",
+      "dist/runtime/index.d.ts",
+      "dist/runtime/store.d.ts",
+      "dist/runtime/presence.d.ts",
+      "dist/runtime/unread.d.ts",
+      "dist/runtime/locks.d.ts",
+      "dist/runtime/leases.d.ts",
+      "dist/runtime/auto-policy.d.ts",
+      "dist/runtime/tail.d.ts",
+      "dist/runtime/tasks.d.ts",
+      "dist/runtime/types.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],
@@ -254,117 +277,8 @@ export const SOURCE_OCCURRENCES = Object.freeze([
     "rule": "semantic-source-rule"
   }
 ]);
-export const COMPATIBILITY_CONTRIBUTIONS = Object.freeze([
-  {
-    "id": "cliCommands:0064",
-    "publicId": "room",
-    "registryKind": "cli-command",
-    "category": "cliCommands",
-    "source": "packages/cli/src/lazy-commands.ts:297"
-  },
-  {
-    "id": "mcpTools:0022",
-    "publicId": "RoomJoin",
-    "registryKind": "mcp-tool",
-    "category": "mcpTools",
-    "source": "packages/mcp/src/rooms.ts:8"
-  },
-  {
-    "id": "mcpTools:0023",
-    "publicId": "RoomLeave",
-    "registryKind": "mcp-tool",
-    "category": "mcpTools",
-    "source": "packages/mcp/src/rooms.ts:14"
-  },
-  {
-    "id": "mcpTools:0024",
-    "publicId": "RoomList",
-    "registryKind": "mcp-tool",
-    "category": "mcpTools",
-    "source": "packages/mcp/src/rooms.ts:15"
-  },
-  {
-    "id": "mcpTools:0025",
-    "publicId": "RoomLock",
-    "registryKind": "mcp-tool",
-    "category": "mcpTools",
-    "source": "packages/mcp/src/rooms.ts:12"
-  },
-  {
-    "id": "mcpTools:0026",
-    "publicId": "RoomPost",
-    "registryKind": "mcp-tool",
-    "category": "mcpTools",
-    "source": "packages/mcp/src/rooms.ts:9"
-  },
-  {
-    "id": "mcpTools:0027",
-    "publicId": "RoomRead",
-    "registryKind": "mcp-tool",
-    "category": "mcpTools",
-    "source": "packages/mcp/src/rooms.ts:10"
-  },
-  {
-    "id": "mcpTools:0028",
-    "publicId": "RoomRelease",
-    "registryKind": "mcp-tool",
-    "category": "mcpTools",
-    "source": "packages/mcp/src/rooms.ts:13"
-  },
-  {
-    "id": "mcpTools:0029",
-    "publicId": "RoomWho",
-    "registryKind": "mcp-tool",
-    "category": "mcpTools",
-    "source": "packages/mcp/src/rooms.ts:11"
-  },
-  {
-    "id": "resultAndEnvelopeTypes:0109",
-    "publicId": "RoomEvent",
-    "registryKind": "result-type",
-    "category": "resultAndEnvelopeTypes",
-    "source": "packages/core/src/rooms/types.ts:10"
-  }
-]);
-
-export interface FirstPartyCompatibilityRuntime {
-  command(kind: string, id: string, input: Json, context: InvocationContext): InvocationOutput;
-  tool(kind: string, id: string, input: Json, context: InvocationContext): Awaitable<Json>;
-  parseIntent(id: string, input: string): Awaitable<Json | undefined>;
-  lifecycle(id: string, payload: Json, context: InvocationContext): Awaitable<void>;
-  render(id: string, payload: Json): Awaitable<{ readonly text: string; readonly markdown?: string }>;
-}
-
-type FirstPartyServices = ModServices & { readonly firstPartyCompatibility?: FirstPartyCompatibilityRuntime };
-const inputSchema = Object.freeze({ type: 'object', additionalProperties: true }) as Readonly<Record<string, Json>>;
-const resultSchema = Object.freeze({ type: 'object', additionalProperties: true }) as Readonly<Record<string, Json>>;
-
-export function createFirstPartyCompatibilityMod(runtime: FirstPartyCompatibilityRuntime): AgonModV1 {
-  return Object.freeze({
-    apiVersion: '1' as const,
-    async activate(registrar: Registrar): Promise<Dispose> {
-      const disposers: Dispose[] = [];
-      disposers.push(registrar.command('cli', { id: "cliCommands:0064", description: "room compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "room", input, context) }));
-      disposers.push(registrar.tool('mcp', { id: "mcpTools:0022", description: "RoomJoin compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('mcp-tool', "RoomJoin", input, context) }));
-      disposers.push(registrar.tool('mcp', { id: "mcpTools:0023", description: "RoomLeave compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('mcp-tool', "RoomLeave", input, context) }));
-      disposers.push(registrar.tool('mcp', { id: "mcpTools:0024", description: "RoomList compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('mcp-tool', "RoomList", input, context) }));
-      disposers.push(registrar.tool('mcp', { id: "mcpTools:0025", description: "RoomLock compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('mcp-tool', "RoomLock", input, context) }));
-      disposers.push(registrar.tool('mcp', { id: "mcpTools:0026", description: "RoomPost compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('mcp-tool', "RoomPost", input, context) }));
-      disposers.push(registrar.tool('mcp', { id: "mcpTools:0027", description: "RoomRead compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('mcp-tool', "RoomRead", input, context) }));
-      disposers.push(registrar.tool('mcp', { id: "mcpTools:0028", description: "RoomRelease compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('mcp-tool', "RoomRelease", input, context) }));
-      disposers.push(registrar.tool('mcp', { id: "mcpTools:0029", description: "RoomWho compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('mcp-tool', "RoomWho", input, context) }));
-      disposers.push(registrar.resultType({ id: "resultAndEnvelopeTypes:0109", schema: resultSchema, readableVersions: '>=0.2.0', render: (payload) => runtime.render("RoomEvent", payload) }));
-      return async () => { for (const dispose of [...disposers].reverse()) await dispose(); };
-    },
-  });
-}
-
-export const createMod: AgonModFactory = async (services: ModServices): Promise<AgonModV1> => {
-  const runtime = (services as FirstPartyServices).firstPartyCompatibility;
-  if (!runtime) {
-    throw Object.assign(new Error('@kernlang/agon-mod-rooms requires the S5 legacy compatibility bridge until generated surface cutover'), { code: 'MOD_RESTART_REQUIRED' });
-  }
-  return createFirstPartyCompatibilityMod(runtime);
-};
-
-export default createMod;
+export const IMPLEMENTATION_KIND = 'physical' as const;
+export { createMod } from './implementation.js';
+export { createMod as default } from './implementation.js';
+export { roomAction } from './implementation.js';
+export * from './runtime/index.js';

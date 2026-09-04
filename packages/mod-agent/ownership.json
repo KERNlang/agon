@@ -147,14 +147,6 @@
       "rule": "semantic-source-rule"
     },
     {
-      "category": "generatedDocumentation",
-      "id": "AGENTS.md routing block",
-      "source": "packages/cli/src/commands/agent-guide-text.ts:1",
-      "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-agent",
-      "rule": "semantic-source-rule"
-    },
-    {
       "category": "intentVariants",
       "id": "agent",
       "source": "packages/cli/src/signals/intent-types.ts:37",

@@ -41,6 +41,14 @@
       "class": "user-toggleable-mod-package",
       "package": "@kernlang/agon-mod-pipeline-delivery",
       "rule": "pipeline-surface-split"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/pipeline",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-pipeline-delivery",
+      "rule": "pipeline-surface-split"
     }
   ]
 }

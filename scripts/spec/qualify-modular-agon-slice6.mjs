@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -7,7 +7,7 @@ import {
   hashGitSubject,
   isSourceBearingPath,
   validateDependencyGraph,
-  validateSubjectBoundReview,
+  validateStoredSubjectBoundReview,
 } from './slice1b-qualification-gates.mjs';
 
 const root = new URL('../..', import.meta.url).pathname.replace(/\/$/, '');
@@ -120,10 +120,8 @@ const graph = validateDependencyGraph(packageMap.packages);
 const indexHash = hashGitSubject(root, { kind: 'index', pathspecs: ['.'], excludedPaths: excludedReceiptPaths, excludedPathPrefixes: excludedReviewArtifactPrefixes });
 const commitHash = hashGitSubject(root, { kind: 'commit', revision: 'HEAD', pathspecs: ['.'], excludedPaths: excludedReceiptPaths, excludedPathPrefixes: excludedReviewArtifactPrefixes });
 const expectedHash = subjectKind === 'index' ? indexHash : commitHash;
-const reviewPath = join(root, 'docs/specs/evidence/modular-agon-slice6-review-evidence.json');
-const reviewEvidence = existsSync(reviewPath)
-  ? validateSubjectBoundReview(root, JSON.parse(readFileSync(reviewPath, 'utf8')), { kind: subjectKind, revision: 'HEAD', hash: expectedHash })
-  : { passed: false, reason: 'S6 review evidence is missing' };
+const reviewPath = 'docs/specs/evidence/modular-agon-slice6-review-evidence.json';
+const reviewEvidence = validateStoredSubjectBoundReview(root, reviewPath, { kind: subjectKind, revision: 'HEAD', hash: expectedHash });
 const performance = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-slice6-performance.json'), 'utf8'));
 const inventory = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-current-inventory.json'), 'utf8'));
 const inventoryAssignments = Object.values(inventory.categories).reduce((sum, entries) => sum + entries.length, 0);
@@ -135,7 +133,7 @@ const receipt = {
   contamination,
   graph: { packages: packageMap.packages.length, ...graph },
   firstPartyPackages: 36,
-  coverage: { inventoryAssignments, surfaceEntries: 440, physicalFirstPartyPackages: 36, temporaryAdapters: 5 },
+  coverage: { inventoryAssignments, surfaceEntries: 450, physicalFirstPartyPackages: 36, temporaryAdapters: 0 },
   performance,
   reviewEvidence,
   cleanCheckoutSteps: steps,
@@ -146,7 +144,7 @@ receipt.passed = noContamination
   && exactCommit
   && reviewEvidence.passed
   && graph.duplicateEdges.length === 0
-  && graph.uniqueEdges === 144
+  && graph.uniqueEdges === 151
   && performance.passed === true
   && inventoryAssignments === 863
   && steps.length > 0

@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "id": "agon.rag",
   "name": "Rag",
-  "version": "0.0.0-slice.5",
+  "version": "1.0.0",
   "apiRange": ">=1.0.0 <2",
   "execution": "executable",
   "compatibility": {
@@ -40,7 +40,13 @@
     "optional": [],
     "conflicts": []
   },
-  "permissions": [],
+  "permissions": [
+    {
+      "capability": "fs.write",
+      "resources": [],
+      "required": true
+    }
+  ],
   "platforms": [
     "darwin-arm64",
     "darwin-x64",
@@ -112,11 +118,14 @@
   },
   "pack": {
     "include": [
+      "LICENSE",
       "agon.mod.json",
       "dist/index.js",
       "dist/index.d.ts",
+      "dist/implementation.d.ts",
       "dist/store.d.ts",
       "dist/types.d.ts",
+      "dist/grounding.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

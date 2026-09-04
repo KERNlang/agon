@@ -40,7 +40,7 @@ frozen runtime or security architecture. Localization and jurisdiction-specific
 regulation are not silently claimed as v1 features. V1 preserves current product
 language behavior, while supply-chain compliance is an explicit release gate.
 
-After the fixes, the local structural verifier reports 49 packages, 144 unique
+After the fixes, the local structural verifier reports 49 packages, 150 unique
 edges, 852 legacy assignments, nine slices, ten classified claims, existing
 source paths, and dependency-respecting order. The slice assessor reports every
 current slice not ready because its clean receipt and future commands do not yet

@@ -9,7 +9,7 @@ const stateCategories = new Set(['configKeys', 'statePaths', 'stateStoreModules'
 const retained = ledger.assignments.filter(({ category }) => stateCategories.has(category));
 const sha256 = (value) => `sha256:${createHash('sha256').update(value).digest('hex')}`;
 
-if (ledger.counts.packages !== 36 || ledger.counts.assignments !== 341) throw new Error('S5 migration coverage drift');
+if (ledger.counts.packages !== 36 || ledger.counts.assignments !== 344) throw new Error('S5 migration coverage drift');
 for (const entry of retained) {
   const manifest = JSON.parse(readFileSync(resolve(root, entry.physicalPackage, 'agon.mod.json'), 'utf8'));
   const ownership = JSON.parse(readFileSync(resolve(root, entry.ownershipAsset), 'utf8'));

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -31,6 +31,14 @@ function compare(generated, checked) {
 }
 
 try {
+  // Physical-only contributions are deliberately separate from the frozen
+  // legacy inventory. They are still an authoritative generator input, so a
+  // clean-room replay must carry the exact checked-in ledger rather than
+  // silently depending on the ambient repository path.
+  copyFileSync(
+    join(root, 'docs/specs/evidence/modular-agon-physical-contributions.json'),
+    join(evidenceDir, 'modular-agon-physical-contributions.json'),
+  );
   run('scripts/spec/generate-modular-agon-inventory.mjs');
 
   if (process.argv.includes('--self-test')) {

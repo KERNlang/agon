@@ -10,6 +10,7 @@ import {
   canonicalJson,
 } from '@kernlang/agon-kernel';
 import type { FirstPartySurfaceBoot, GeneratedSurfaceRuntime } from '@kernlang/agon-kernel';
+import { decorateMcpFirstPartyServices } from './first-party-services.js';
 
 const compatibilityRuntime: GeneratedSurfaceRuntime = Object.freeze({
   command: () => { throw new Error('MCP host cannot execute CLI compatibility commands'); },
@@ -29,6 +30,7 @@ export async function initializeMcpSurfaceAuthority(): Promise<void> {
   boot = await bootstrapFirstPartySurfaceGeneration({
     hostRoot: hostRoot(), runtime: compatibilityRuntime,
     safeMode: process.env.AGON_MOD_SAFE_MODE === '1',
+    decorateFirstPartyServices: decorateMcpFirstPartyServices,
   });
 }
 
@@ -62,13 +64,17 @@ export interface ActiveMcpSurfaceTool {
   readonly name: string;
   readonly description: string;
   readonly inputSchema: Record<string, unknown>;
+  readonly ownerId: string;
 }
 
 export function activeMcpSurfaceTools(): readonly ActiveMcpSurfaceTool[] {
   assertMcpSurfaceSelectionCurrent();
-  return Object.freeze(boot!.activated.generation.project('mcp').entries.flatMap((record) => {
+  const generation = boot!.activated.generation;
+  return Object.freeze(generation.catalog('mcp').flatMap((entry) => {
+    const record = generation.registry.resolve(entry.kind, entry.registryId);
+    if (!record) return [];
     const payload = record.payload as { readonly description: string; readonly inputSchema?: Record<string, unknown> };
-    return [record.id, ...record.aliases].map((name) => Object.freeze({ name, description: payload.description, inputSchema: payload.inputSchema ?? { type: 'object' } }));
+    return [entry.publicId, ...entry.aliases].map((name) => Object.freeze({ name, description: payload.description, inputSchema: payload.inputSchema ?? { type: 'object' }, ownerId: record.owner.id }));
   }));
 }
 

@@ -17,6 +17,30 @@
       "class": "user-toggleable-mod-package",
       "package": "@kernlang/agon-mod-routing-docs",
       "rule": "exact-user-surface"
+    },
+    {
+      "category": "generatedDocumentation",
+      "id": "AGENTS.md routing block",
+      "source": "packages/cli/src/commands/agent-guide-text.ts:1",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-routing-docs",
+      "rule": "generated-docs-owner"
+    },
+    {
+      "category": "generatedDocumentation",
+      "id": "docs/modes.md",
+      "source": "package.json:12",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-routing-docs",
+      "rule": "generated-docs-owner"
+    },
+    {
+      "category": "generatedDocumentation",
+      "id": "installed agent prompts",
+      "source": "packages/cli/src/commands/install-agent-prompts.ts:1",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-routing-docs",
+      "rule": "generated-docs-owner"
     }
   ]
 }

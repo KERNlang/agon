@@ -1,79 +1,139 @@
-// Loose equality: null and undefined compare equal to each other; everything
-// else compares strictly.
-function looseEq(a: unknown, b: unknown): boolean {
-  if ((a === null || a === undefined) && (b === null || b === undefined)) return true;
-  return a === b;
+import {
+  writeFileSync,
+  readFileSync,
+  mkdirSync,
+  existsSync,
+  unlinkSync,
+} from "node:fs";
+
+import { join, dirname } from "node:path";
+
+import { createInterface } from "node:readline";
+
+import { execSync } from "node:child_process";
+
+import { FIRST_PARTY_SURFACE_CATALOG } from "@kernlang/agon-kernel";
+
+import {
+  appendMemoryLine,
+  todayPrefix,
+  canonicalMemorySection,
+  MEMORY_SECTIONS,
+} from "@kernlang/agon-core";
+
+export const KERNEL_MCP_TOOLS: readonly DynamicMcpTool[] = Object.freeze([
+  Object.freeze({
+    name: 'ReportConfidence',
+    description: 'Report confidence from 0 to 100 without ending the current turn.',
+    inputSchema: { type: 'object', properties: { value: { type: 'number' }, reasoning: { type: 'string' } }, required: ['value'], additionalProperties: false },
+    ownerId: 'agon.kernel',
+  }),
+  Object.freeze({
+    name: 'AgonBash',
+    description: 'Execute an approved shell command through the host permission boundary.',
+    inputSchema: { type: 'object', properties: { command: { type: 'string' }, timeout: { type: 'number' } }, required: ['command'], additionalProperties: false },
+    ownerId: 'agon.kernel',
+  }),
+  Object.freeze({
+    name: 'AgonEdit',
+    description: 'Apply an approved exact text replacement through the host permission boundary.',
+    inputSchema: { type: 'object', properties: { file_path: { type: 'string' }, old_string: { type: 'string' }, new_string: { type: 'string' } }, required: ['file_path', 'old_string', 'new_string'], additionalProperties: false },
+    ownerId: 'agon.kernel',
+  }),
+  Object.freeze({
+    name: 'AgonWrite',
+    description: 'Write an approved file through the host permission boundary.',
+    inputSchema: { type: 'object', properties: { file_path: { type: 'string' }, content: { type: 'string' } }, required: ['file_path', 'content'], additionalProperties: false },
+    ownerId: 'agon.kernel',
+  }),
+  Object.freeze({
+    name: 'DeliverAnswer',
+    description: 'Deliver the final answer over the host answer channel.',
+    inputSchema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'], additionalProperties: false },
+    ownerId: 'agon.kernel',
+  }),
+]);
+
+const MCP_SURFACE_METADATA = new Map(
+  FIRST_PARTY_SURFACE_CATALOG.filter(
+    (entry) => entry.category === "mcpTools",
+  ).map((entry) => [entry.publicId, entry]),
+);
+
+export interface DynamicMcpTool {
+  readonly name: string;
+  readonly description: string;
+  readonly inputSchema: Record<string, unknown>;
+  readonly ownerId?: string;
 }
 
-import { writeFileSync, readFileSync, mkdirSync, existsSync, unlinkSync } from 'node:fs';
-
-import { join, dirname } from 'node:path';
-
-import { createInterface } from 'node:readline';
-
-import { execSync, spawnSync } from 'node:child_process';
-
-import { FIRST_PARTY_SURFACE_CATALOG } from '@kernlang/agon-kernel';
-
-import { defaultFinalizeOnScoreForTask, appendMemoryLine, todayPrefix, canonicalMemorySection, MEMORY_SECTIONS } from '@kernlang/agon-core';
-
-import { ROOM_TOOLS, isRoomTool, handleRoomTool } from './rooms.js';
-
-import { PROJECT_CONTEXT_TOOLS, isProjectContextTool, handleProjectContextTool } from './project-context.js';
-
-import { JOB_TOOLS, isJobTool, handleJobToolCall } from './job-tools.js';
-
-export const ORCHESTRATION_TOOLS: Array<{name:string,description:string,inputSchema:Record<string,unknown>,annotations?:Record<string,unknown>}> = [ { name: 'Tribunal', description: 'Run or delegate an AI tribunal debate. Outside an active Agon session this executes agon tribunal/team-tribunal and returns JSON output; inside Agon it signals Cesar, then you STOP responding.', inputSchema: { type: 'object', properties: { question: { type: 'string', description: 'The question to debate' }, mode: { type: 'string', description: 'Debate mode: adversarial, synthesis, steelman, socratic, red-team, or postmortem', enum: ['adversarial', 'synthesis', 'steelman', 'socratic', 'red-team', 'postmortem'] }, team: { type: 'boolean', description: 'Solo (false) or team-tribunal (true). Defaults to false.' }, engines: { type: 'array', items: { type: 'string' }, description: 'Optional engine IDs, e.g. ["codex","claude","agy"].' }, rounds: { type: 'number', description: 'Optional number of debate rounds. Defaults to 2.' }, members: { type: 'number', description: 'Team members per side when team is true. Defaults to 2.' }, cwd: { type: 'string', description: 'Working directory for direct external calls. Defaults to current directory.' }, timeout: { type: 'number', description: 'Overall direct-call timeout in seconds. Defaults to 900.' }, engineTimeout: { type: 'number', description: 'Per-engine timeout in seconds.' }, }, required: ['question'], }, }, { name: 'Brainstorm', description: 'Run or delegate multi-AI brainstorm. Outside an active Agon session this executes agon brainstorm/team-brainstorm and returns JSON output; inside Agon it signals Cesar, then you STOP responding.', inputSchema: { type: 'object', properties: { question: { type: 'string', description: 'The question to brainstorm on' }, team: { type: 'boolean', description: 'Solo (false) or team-brainstorm (true). Defaults to false.' }, engines: { type: 'array', items: { type: 'string' }, description: 'Optional engine IDs, e.g. ["codex","claude","agy"].' }, members: { type: 'number', description: 'Team members per side when team is true. Defaults to 2.' }, cwd: { type: 'string', description: 'Working directory for direct external calls. Defaults to current directory.' }, timeout: { type: 'number', description: 'Overall direct-call timeout in seconds. Defaults to 900.' }, engineTimeout: { type: 'number', description: 'Per-engine timeout in seconds.' }, }, required: ['question'], }, }, { name: 'Campfire', description: 'Run or delegate campfire discussion. Outside an active Agon session this executes agon campfire and returns JSON output; inside Agon it signals Cesar, then you STOP responding.', inputSchema: { type: 'object', properties: { topic: { type: 'string', description: 'The topic for open discussion' }, engines: { type: 'array', items: { type: 'string' }, description: 'Optional engine IDs, e.g. ["codex","claude","agy"].' }, strategy: { type: 'string', description: 'Campfire strategy: lead-first or all-respond', enum: ['lead-first', 'all-respond'] }, lead: { type: 'string', description: 'Lead engine for lead-first strategy.' }, cwd: { type: 'string', description: 'Working directory for direct external calls. Defaults to current directory.' }, timeout: { type: 'number', description: 'Overall direct-call timeout in seconds. Defaults to 900.' }, engineTimeout: { type: 'number', description: 'Per-engine timeout in seconds.' }, }, required: ['topic'], }, }, { name: 'Forge', description: 'Run or delegate competitive forge. Outside an active Agon session this executes agon forge/team-forge and returns JSON output; inside Agon it signals Cesar, then you STOP responding.', inputSchema: { type: 'object', properties: { task: { type: 'string', description: 'The task to forge' }, fitnessCmd: { type: 'string', description: 'Test command for fitness evaluation' }, hardened: { type: 'boolean', description: 'Set true for gauntlet verification' }, team: { type: 'boolean', description: 'Solo (false) or team-forge (true). Defaults to false.' }, engines: { type: 'array', items: { type: 'string' }, description: 'Optional engine IDs, e.g. ["codex","claude","agy"].' }, members: { type: 'number', description: 'Team members per side when team is true. Defaults to 2.' }, cwd: { type: 'string', description: 'Working directory for direct external calls. Defaults to current directory.' }, timeout: { type: 'number', description: 'Overall direct-call timeout in seconds. Defaults to 900.' }, engineTimeout: { type: 'number', description: 'Per-engine timeout in seconds.' }, finalizeOnScore: { type: 'number', description: 'V1 caller-driven finalize: stop the forge as soon as any engine PASSES with score >= this threshold (0-100). Aborts in-flight stage-2 engines to save cost/time. Ignored for team-forge.' }, cesarSmart: { type: 'boolean', description: 'When true AND finalizeOnScore is not explicitly set, derive a recommended threshold from the task class (docs/test=75, bugfix/refactor=85, algorithm/feature/other=no early finalize). Lets Cesar pick a sensible cutoff when the external caller does not want to hardcode one.' }, }, required: ['task'], }, }, { name: 'Synthesis', description: 'Run or delegate competitive synthesis - engines draft, then swap and improve on the other drafts, and a judge picks the best evolved artifact. Outside an active Agon session this executes agon synthesis and returns JSON output; inside Agon it signals Cesar, then you STOP responding. Use when you want one polished artifact that blends the best ideas and no clean pass/fail test exists.', inputSchema: { type: 'object', properties: { prompt: { type: 'string', description: 'The task or prompt to synthesize' }, swaps: { type: 'number', description: 'Number of swap rounds where engines improve on the other drafts (0 = draft-only). Defaults to 1.' }, engines: { type: 'array', items: { type: 'string' }, description: 'Optional engine IDs, e.g. ["codex","claude","agy"].' }, cwd: { type: 'string', description: 'Working directory for direct external calls. Defaults to current directory.' }, timeout: { type: 'number', description: 'Overall direct-call timeout in seconds. Defaults to 900.' }, engineTimeout: { type: 'number', description: 'Per-engine timeout in seconds.' }, }, required: ['prompt'], }, }, { name: 'Pipeline', description: 'Run or delegate the full pipeline: brainstorm → forge → tribunal. Outside an active Agon session this executes the CLI stages and returns JSON output; inside Agon it signals Cesar, then you STOP responding.', inputSchema: { type: 'object', properties: { task: { type: 'string', description: 'The task description' }, fitnessCmd: { type: 'string', description: 'Test command for fitness evaluation' }, engines: { type: 'array', items: { type: 'string' }, description: 'Optional engine IDs, e.g. ["codex","claude","agy"].' }, mode: { type: 'string', description: 'Tribunal mode for the final pipeline review.', enum: ['adversarial', 'synthesis', 'steelman', 'socratic', 'red-team', 'postmortem'] }, cwd: { type: 'string', description: 'Working directory for direct external calls. Defaults to current directory.' }, timeout: { type: 'number', description: 'Overall direct-call timeout in seconds. Defaults to 900.' }, engineTimeout: { type: 'number', description: 'Per-engine timeout in seconds.' }, }, required: ['task'], }, annotations: { workflow: { id: 'agon.brainstorm-forge-tribunal', version: 'v1', alias: 'agon.brainstorm-forge-tribunal@v1', phases: ['brainstorm', 'forge', 'tribunal'], conformance: 'core-workflow-registry' } }, }, { name: 'Review', description: 'Run or delegate code review. Outside an active Agon session this executes agon review and returns JSON output; inside Agon it signals Cesar, then you STOP responding. Set engine/engines only when explicitly requested.', inputSchema: { type: 'object', properties: { target: { type: 'string', description: 'Review target: "uncommitted", "branch:NAME", or "commit:SHA"' }, engine: { type: 'string', description: 'Specific engine for review, only when explicitly requested by the user' }, engines: { type: 'array', items: { type: 'string' }, description: 'Multiple specific engines for review, only when explicitly requested by the user' }, cwd: { type: 'string', description: 'Working directory for direct external calls. Defaults to current directory.' }, timeout: { type: 'number', description: 'Overall direct-call timeout in seconds. Defaults to 900.' }, }, }, }, { name: 'Agent', description: 'Delegate to autonomous agent mode. Solo runs one engine through a multi-turn tool loop; team:true runs multiple API engines in isolated worktrees and synthesizes the best result. Always set taskKind to edit or investigate. After calling: STOP responding.', inputSchema: { type: 'object', properties: { task: { type: 'string', description: 'The concrete task for the agent to perform' }, team: { type: 'boolean', description: 'Set true for parallel team-agent mode' }, engines: { type: 'array', items: { type: 'string' }, description: 'Optional engine IDs for team mode' }, taskKind: { type: 'string', description: 'edit or investigate', enum: ['edit', 'investigate'] }, maxTurns: { type: 'number', description: 'Optional turn budget per engine' }, }, required: ['task'], }, }, { name: 'Delegate', description: 'Send a subtask to a specific engine and get the result back. After calling: STOP responding.', inputSchema: { type: 'object', properties: { engine: { type: 'string', description: 'Engine ID to delegate to' }, task: { type: 'string', description: 'The subtask prompt' }, mode: { type: 'string', description: 'Dispatch mode: exec, review, or agent', enum: ['exec', 'review', 'agent'] }, }, required: ['engine', 'task'], }, }, { name: 'ReportConfidence', description: 'Report your confidence level (0-100). Call this FIRST on every turn. Does NOT stop your turn — continue after calling.', inputSchema: { type: 'object', properties: { value: { type: 'number', description: 'Confidence 0-100' }, reasoning: { type: 'string', description: 'Brief reason for this confidence level' }, }, required: ['value'], }, }, { name: 'QuickNero', description: 'Request a structured self-challenge on your current response. Pokes at assumptions before you commit to staying local. Use when you are midway between sure and unsure and want a gut-check. The self-check runs after the tool loop. Does NOT stop your turn — continue after calling.', inputSchema: { type: 'object', properties: { reason: { type: 'string', description: 'Brief reason for requesting the self-check. Optional.' }, }, }, }, { name: 'ProposePlan', description: 'Submit a structured Cesar execution plan for user approval. Use in plan mode or when staged execution is genuinely useful. After calling: STOP responding.', inputSchema: { type: 'object', properties: { intent: { type: 'string', description: '1-3 sentences describing the user task and overall approach' }, autoApprove: { type: 'boolean', description: 'Set true only for clearly requested autonomous multi-stage workflows with high confidence' }, selfReview: { type: 'boolean', description: 'Whether to auto-append review after mutating steps. Defaults true.' }, steps: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, type: { type: 'string', enum: ['self', 'forge', 'teamforge', 'delegate', 'brainstorm', 'campfire', 'tribunal', 'pipeline', 'review', 'agent', 'team-agent'] }, description: { type: 'string' }, engines: { type: 'array', items: { type: 'string' } }, engine: { type: 'string' }, fitnessCmd: { type: 'string' }, tribunalMode: { type: 'string' }, parallel: { type: 'boolean' }, dependsOn: { type: 'array', items: { type: 'string' } }, exports: { type: 'array', items: { type: 'string' } }, imports: { type: 'array', items: { type: 'string' } }, estimatedTokens: { type: 'number' }, estimatedCostUsd: { type: 'number' }, rationale: { type: 'string' }, verifyCmd: { type: 'string' }, }, required: ['id', 'type', 'description', 'estimatedTokens', 'estimatedCostUsd'], }, }, }, required: ['intent', 'steps'], }, }, { name: 'ExitPlanMode', description: 'Leave plan mode and return to live work. Inside Agon it signals Cesar to archive the pending plan and clear plan state, then you CONTINUE responding and work live. Call when a plan is NOT the right approach: the task is simple enough to do live, the pending plan is wrong/too-broad, or planning is blocking progress. You are never trapped in plan mode — this is your escape hatch. Not for a RUNNING plan (use the cancel flow for that).', inputSchema: { type: 'object', properties: { reason: { type: 'string', description: 'REQUIRED. One sentence on why a plan is not the right approach here. Surfaced to the user.' }, }, required: ['reason'], }, }, { name: 'AgonBash', description: 'Execute a shell command. Agon manages permissions — the user will be asked to approve write commands (git commit, npm install, etc.). Read-only commands are auto-approved. Use this instead of your native Bash tool for all shell commands.', inputSchema: { type: 'object', properties: { command: { type: 'string', description: 'The shell command to execute' }, timeout: { type: 'number', description: 'Timeout in seconds (default 30)' }, }, required: ['command'], }, }, { name: 'AgonEdit', description: 'Edit a file by replacing text. Agon manages permissions — the user will be asked to approve. Use this instead of your native Edit tool.', inputSchema: { type: 'object', properties: { file_path: { type: 'string', description: 'Absolute path to the file' }, old_string: { type: 'string', description: 'Text to find and replace' }, new_string: { type: 'string', description: 'Replacement text' }, }, required: ['file_path', 'old_string', 'new_string'], }, }, { name: 'AgonWrite', description: 'Create or overwrite a file. Agon manages permissions — the user will be asked to approve. Use this instead of your native Write tool.', inputSchema: { type: 'object', properties: { file_path: { type: 'string', description: 'Absolute path to the file' }, content: { type: 'string', description: 'File content to write' }, }, required: ['file_path', 'content'], }, }, { name: 'SaveMemory', description: 'Save ONE durable, cross-session fact to project memory (.agon/project.md). Use ONLY for facts that should survive into FUTURE sessions: decisions, constraints, or conventions. NEVER for transient/session state, TODOs, or things obvious from the code. Appends one dated one-liner under the chosen section; near-duplicates are skipped; the user confirms each memory.', inputSchema: { type: 'object', properties: { memory: { type: 'string', description: 'The single durable fact, as one concise sentence. Do NOT add a date — it is prefixed automatically.' }, section: { type: 'string', description: 'Which section to file it under.', enum: ['Decisions', 'Constraints', 'Conventions', 'Session Notes'] }, }, required: ['memory', 'section'], }, }, { name: 'DeliverAnswer', description: 'Deliver your final response to the user. When the host runs you under a PTY answer-channel (AGON_ANSWER_CHANNEL=1) you MUST call this exactly once at the end of every turn with your complete answer as markdown — it is the ONLY reliable way the user sees your response; printed text is treated as a draft preview only. After calling, STOP responding. No approval is required and it does not dispatch anything.', inputSchema: { type: 'object', properties: { text: { type: 'string', description: 'Your complete final response to the user, as markdown.' }, }, required: ['text'], }, }, ];
-
-const MCP_SURFACE_METADATA = new Map(FIRST_PARTY_SURFACE_CATALOG.filter((entry) => entry.category === 'mcpTools').map((entry) => [entry.publicId, entry]));
-
-export function workflowToolMetadata(toolName: string): Record<string,unknown>|undefined {
-  return ORCHESTRATION_TOOLS.find((tool) => tool.name === toolName)?.annotations;
+export function dynamicMcpToolOwnsExecution(
+  tool: DynamicMcpTool | undefined,
+): boolean {
+  return Boolean(tool?.ownerId && tool.ownerId !== "agon.kernel");
 }
 
-export interface DynamicMcpTool { readonly name: string; readonly description: string; readonly inputSchema: Record<string, unknown> }
-
-export function listMcpTools(available: ReadonlySet<string> = new Set(MCP_SURFACE_METADATA.keys()), dynamic: readonly DynamicMcpTool[] = []): Array<{name:string,description:string,inputSchema:Record<string,unknown>,annotations?:Record<string,unknown>}> {
-  const builtins = [...ORCHESTRATION_TOOLS, ...ROOM_TOOLS, ...PROJECT_CONTEXT_TOOLS, ...JOB_TOOLS].filter((tool) => MCP_SURFACE_METADATA.has(tool.name) && available.has(tool.name)).map(t => {
-    const annotations = workflowToolMetadata(t.name);
-    return {
-      name: t.name,
-      description: t.description,
-      inputSchema: t.inputSchema,
-      ...(annotations !== undefined ? { annotations } : {}),
-    };
-  });
+export function listMcpTools(
+  available: ReadonlySet<string> = new Set(MCP_SURFACE_METADATA.keys()),
+  dynamic: readonly DynamicMcpTool[] = [],
+): Array<{
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  annotations?: Record<string, unknown>;
+}> {
+  const builtins = KERNEL_MCP_TOOLS
+    .filter(
+      (tool) =>
+        MCP_SURFACE_METADATA.has(tool.name) &&
+        available.has(tool.name) &&
+        tool.ownerId === 'agon.kernel',
+    )
+    .map((t) => {
+      return {
+        name: t.name,
+        description: t.description,
+        inputSchema: t.inputSchema,
+      };
+    });
   const builtinNames = new Set(builtins.map(({ name }) => name));
-  return [...builtins, ...dynamic.filter(({ name }) => available.has(name) && !builtinNames.has(name))];
+  return [
+    ...builtins,
+    ...dynamic
+      .filter(({ name }) => available.has(name) && !builtinNames.has(name))
+      .map(({ ownerId: _ownerId, ...tool }) => tool),
+  ];
 }
 
 // ── Module: OrchestrationServer ──
 
-function hostStringSet(values: string[]): Set<string> {
-  return new Set(values);
-}
-
 /**
  * Append a signal to the signal file (array). Supports ReportConfidence + orchestration in same turn.
  */
-export function writeSignal(tool: string, args: Record<string,unknown>) {
+export function writeSignal(tool: string, args: Record<string, unknown>) {
   const signalDir = process.env.AGON_SIGNAL_DIR;
   const sessionId = process.env.AGON_SESSION_ID;
   if (!signalDir || !sessionId) return;
   try {
     mkdirSync(signalDir, { recursive: true });
     const signalPath = join(signalDir, `${sessionId}.json`);
-    let signals: Array<{tool: string; args: Record<string, unknown>; timestamp: number}> = [];
+    let signals: Array<{
+      tool: string;
+      args: Record<string, unknown>;
+      timestamp: number;
+    }> = [];
     if (existsSync(signalPath)) {
-      try { signals = JSON.parse(readFileSync(signalPath, 'utf-8')); } catch { signals = []; }
+      try {
+        signals = JSON.parse(readFileSync(signalPath, "utf-8"));
+      } catch {
+        signals = [];
+      }
     }
     signals.push({ tool, args, timestamp: Date.now() });
     writeFileSync(signalPath, JSON.stringify(signals));
-  } catch { /* signal write failed — not critical */ }
-}
-
-function hasSignalTransport(): boolean {
-  return !!(process.env.AGON_SIGNAL_DIR && process.env.AGON_SESSION_ID);
+  } catch {
+    /* signal write failed — not critical */
+  }
 }
 
 /**
@@ -85,245 +145,134 @@ function writeAnswer(text: string): boolean {
   // (no one reads this file for them) — so a stray DeliverAnswer from them
   // must return false → the caller tells them to just print their answer,
   // never silently swallowing it.
-  if (process.env.AGON_ANSWER_CHANNEL !== '1') return false;
+  if (process.env.AGON_ANSWER_CHANNEL !== "1") return false;
   const signalDir = process.env.AGON_SIGNAL_DIR;
   const sessionId = process.env.AGON_SESSION_ID;
   if (!signalDir || !sessionId) return false;
   try {
     mkdirSync(signalDir, { recursive: true });
     const answerPath = join(signalDir, `${sessionId}-answer.json`);
-    writeFileSync(answerPath, JSON.stringify({ type: 'answer', text: String(text ?? ''), timestamp: Date.now() }));
+    writeFileSync(
+      answerPath,
+      JSON.stringify({
+        type: "answer",
+        text: String(text ?? ""),
+        timestamp: Date.now(),
+      }),
+    );
     return true;
-  } catch { return false; }
-}
-
-function parseOptionalStringList(value: unknown): string[] {
-  if (!value) {
-    return [];
-  }
-  if (Array.isArray(value)) {
-    return value.map((v) => String(v).trim()).filter(Boolean);
-  }
-  return String(value).split(',').map((v) => v.trim()).filter(Boolean);
-}
-
-function parseOptionalBoolean(value: unknown): boolean {
-  if (value === true) {
-    return true;
-  }
-  if (value === false || looseEq(value, null)) {
+  } catch {
     return false;
   }
-  return ['1', 'true', 'yes', 'team'].includes(String(value).trim().toLowerCase());
 }
 
-function optionalFlag(flag: string, value: unknown): string[] {
-  const text = (looseEq(value, null)) ? '' : String(value).trim();
-  return text ? [flag, text] : [];
-}
-
-/**
- * Translate an external MCP orchestration call into one or more Agon CLI invocations. Used only when the server is running outside an active Agon session.
- */
-export function buildDirectAgonCommand(tool: string, args: Record<string,unknown>): {commands:string[][],cwd:string,timeoutMs:number} {
-  const cwd = String((args as any).cwd ?? process.env.AGON_CWD ?? process.cwd());
-    const timeoutSec = Number((args as any).timeout ?? 900);
-    const timeoutMs = Math.max(1, timeoutSec) * 1000;
-    const engines = parseOptionalStringList((args as any).engines ?? (args as any).engine);
-    const engineArgs = engines.length > 0 ? ['--engines', engines.join(',')] : [];
-    const team = parseOptionalBoolean((args as any).team);
-    const membersArgs = optionalFlag('--members', (args as any).members ?? (args as any).membersPerSide);
-    const roundsArgs = optionalFlag('--rounds', (args as any).rounds);
-    const modeArgs = optionalFlag('--tribunalMode', (args as any).mode);
-    const engineTimeoutArgs = optionalFlag('--timeout', (args as any).engineTimeout ?? (args as any).timeoutPerEngine);
-    const cwdArgs = optionalFlag('--cwd', cwd);
-    const jsonlArgs = ['--jsonl'];
-    const commands: string[][] = [];
-
-    if (tool === 'Forge') {
-    const task = String((args as any).task ?? '').trim();
-    const fitness = String((args as any).fitnessCmd ?? (args as any).fitness ?? 'true').trim() || 'true';
-    // finalizeOnScore is forge-only (not team-forge) — V1 caller-driven
-    // finalize. Solo forge with the flag will abort in-flight engines
-    // once any passes at or above the threshold.
-    // cesarSmart opt-in: when caller wants Cesar to pick the threshold and
-    // hasn't passed one explicitly, derive from task class via the
-    // recommended-policy helper. Explicit finalizeOnScore always wins.
-    const explicitFinalize = (args as any).finalizeOnScore;
-    const cesarSmart = parseOptionalBoolean((args as any).cesarSmart);
-    const derivedFinalize = (cesarSmart && (explicitFinalize == null) && !team)
-      ? defaultFinalizeOnScoreForTask(task)
-      : undefined;
-    const finalizeValue = explicitFinalize ?? derivedFinalize;
-    const finalizeOnScoreArgs = team ? [] : optionalFlag('--finalize-on-score', finalizeValue);
-    commands.push(['call', team ? 'team-forge' : 'forge', task, '--test', fitness, ...cwdArgs, ...membersArgs, ...engineTimeoutArgs, ...engineArgs, ...finalizeOnScoreArgs, ...jsonlArgs]);
-  } else if (tool === 'Synthesis') {
-    const prompt = String((args as any).prompt ?? (args as any).task ?? '').trim();
-    const swapsArgs = optionalFlag('--swaps', (args as any).swaps);
-    commands.push(['call', 'synthesis', prompt, ...cwdArgs, ...swapsArgs, ...engineTimeoutArgs, ...engineArgs, ...jsonlArgs]);
-  } else if (tool === 'Brainstorm') {
-    const question = String((args as any).question ?? '').trim();
-    commands.push(['call', team ? 'team-brainstorm' : 'brainstorm', question, ...cwdArgs, ...membersArgs, ...engineTimeoutArgs, ...engineArgs, ...jsonlArgs]);
-  } else if (tool === 'Tribunal') {
-    const question = String((args as any).question ?? '').trim();
-    commands.push(['call', team ? 'team-tribunal' : 'tribunal', question, ...cwdArgs, ...roundsArgs, ...modeArgs, ...membersArgs, ...engineTimeoutArgs, ...engineArgs, ...jsonlArgs]);
-  } else if (tool === 'Campfire') {
-    const topic = String((args as any).topic ?? '').trim();
-    commands.push(['call', 'campfire', topic, ...cwdArgs, ...optionalFlag('--strategy', (args as any).strategy), ...optionalFlag('--lead', (args as any).lead), ...engineTimeoutArgs, ...engineArgs, ...jsonlArgs]);
-  } else if (tool === 'Pipeline') {
-    const task = String((args as any).task ?? '').trim();
-    const fitness = String((args as any).fitnessCmd ?? (args as any).fitness ?? 'true').trim() || 'true';
-    commands.push(['call', 'pipeline', task, '--test', fitness, ...cwdArgs, ...roundsArgs, ...modeArgs, ...engineTimeoutArgs, ...engineArgs, ...jsonlArgs]);
-  } else if (tool === 'Review') {
-    const target = String((args as any).target ?? 'uncommitted').trim();
-    commands.push(['call', 'review', target, ...cwdArgs, ...engineArgs, ...jsonlArgs]);
-  } else {
-    throw new Error(`Tool ${tool} cannot run directly outside Agon yet`);
-  }
-
-  return { commands, cwd, timeoutMs };
-}
-
-/**
- * Run Agon workflows directly for external Claude/Codex MCP plugin use. Refuses recursive calls when already inside an Agon-spawned engine.
- */
-export function runAgonCliDirect(tool: string, args: Record<string,unknown>): string {
-  const depth = Number(process.env.AGON_CALL_DEPTH ?? '0');
-  if (Number.isFinite(depth) && depth > 0) {
-    return JSON.stringify({
-      ok: false,
-      tool,
-      error: 'Refusing recursive Agon call: this MCP server is already running inside an Agon-dispatched engine.',
-    }, null, 2);
-  }
-
-  const direct = buildDirectAgonCommand(tool, args);
-  const nodeScript = process.env.AGON_CLI_NODE_SCRIPT;
-  const command = nodeScript ? process.execPath : (process.env.AGON_CLI_COMMAND || 'agon');
-  const prefixArgs = nodeScript ? [nodeScript] : [];
-  const results: any[] = [];
-
-  for (const cliArgs of direct.commands) {
-    const runArgs = [...prefixArgs, ...cliArgs];
-    const startedAt = Date.now();
-    const result = spawnSync(command, runArgs, {
-      cwd: direct.cwd,
-      timeout: direct.timeoutMs,
-      encoding: 'utf-8',
-      env: {
-        ...process.env,
-        AGON_CALL_DEPTH: String(depth + 1),
-        AGON_CWD: direct.cwd,
-      },
-      maxBuffer: 1024 * 1024 * 8,
-    });
-    const stdout = String(result.stdout ?? '');
-    const stderr = String(result.stderr ?? '');
-    results.push({
-      command: [command, ...runArgs].join(' '),
-      cwd: direct.cwd,
-      exitCode: result.status,
-      signal: result.signal,
-      timedOut: !!result.error && /timed out/i.test(String(result.error.message ?? result.error)),
-      durationMs: Date.now() - startedAt,
-      stdout: stdout.slice(-60000),
-      stderr: stderr.slice(-10000),
-      error: result.error ? String(result.error.message ?? result.error) : undefined,
-    });
-    if (result.status !== 0 || result.error) break;
-  }
-
-  return JSON.stringify({
-    ok: results.every((r) => r.exitCode === 0 && !r.error),
-    tool,
-    mode: 'direct-cli',
-    results,
-  }, null, 2);
-}
-
-/**
- * Handle an MCP tool call — write signal and return delegation message.
- */
-export function handleToolCall(name: string, args: Record<string,unknown>): string {
-  const NON_BREAKING = hostStringSet(['ReportConfidence', 'QuickNero']);
-  const BREAK_AND_RESUME = hostStringSet(['Delegate']);
-  const DIRECT_WORKFLOWS = hostStringSet(['Forge', 'Synthesis', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review']);
-  if (!hasSignalTransport() && DIRECT_WORKFLOWS.has(name)) {
-    return runAgonCliDirect(name, args);
-  }
-  writeSignal(name, args);
-  if (NON_BREAKING.has(name)) {
-    if (name === 'QuickNero') {
-      return 'Quick Nero self-check scheduled. Continue responding — the self-check runs after the tool loop.';
-    }
-    return `Confidence ${(args as any).value}% recorded. Continue responding.`;
-  }
-  if (name === 'ExitPlanMode') {
-    return 'Left plan mode — Agon is clearing the plan state now. STOP responding; you will continue live on your next turn (do not propose a plan again).';
-  }
-  if (BREAK_AND_RESUME.has(name)) {
-    return `Delegation to ${(args as any).engine} accepted. The orchestrator will execute the subtask and feed the result back to you. STOP responding now — you will receive the result in your next turn.`;
-  }
-  return 'Delegation accepted. The orchestrator will handle the rest. STOP responding now — do not continue after this tool call.';
-}
-
-function writePermissionRequest(id: string, tool: string, args: Record<string,unknown>): void {
+function writePermissionRequest(
+  id: string,
+  tool: string,
+  args: Record<string, unknown>,
+): void {
   const signalDir = process.env.AGON_SIGNAL_DIR;
   const sessionId = process.env.AGON_SESSION_ID;
   if (!signalDir || !sessionId) return;
   mkdirSync(signalDir, { recursive: true });
   const requestPath = join(signalDir, `${sessionId}-perm-${id}.json`);
-  writeFileSync(requestPath, JSON.stringify({ type: 'permission-request', id, tool, args, timestamp: Date.now() }));
+  writeFileSync(
+    requestPath,
+    JSON.stringify({
+      type: "permission-request",
+      id,
+      tool,
+      args,
+      timestamp: Date.now(),
+    }),
+  );
 }
 
-function writeToolCompletion(id: string, tool: string, args: Record<string,unknown>, status: string, output: string): void {
+function writeToolCompletion(
+  id: string,
+  tool: string,
+  args: Record<string, unknown>,
+  status: string,
+  output: string,
+): void {
   const signalDir = process.env.AGON_SIGNAL_DIR;
   const sessionId = process.env.AGON_SESSION_ID;
   if (!signalDir || !sessionId) return;
   try {
     mkdirSync(signalDir, { recursive: true });
     const completionPath = join(signalDir, `${sessionId}-tool-${id}.json`);
-    const cappedOutput = String(output ?? '').slice(0, 12000);
-    writeFileSync(completionPath, JSON.stringify({
-      type: 'tool-completion',
-      id,
-      tool,
-      args,
-      status: status === 'error' ? 'error' : 'done',
-      output: cappedOutput,
-      timestamp: Date.now(),
-    }));
-  } catch { /* completion signal is best-effort */ }
+    const cappedOutput = String(output ?? "").slice(0, 12000);
+    writeFileSync(
+      completionPath,
+      JSON.stringify({
+        type: "tool-completion",
+        id,
+        tool,
+        args,
+        status: status === "error" ? "error" : "done",
+        output: cappedOutput,
+        timestamp: Date.now(),
+      }),
+    );
+  } catch {
+    /* completion signal is best-effort */
+  }
 }
 
-async function pollPermissionResponse(id: string, timeoutMs: number): Promise<{approved:boolean,reason?:string}> {
+async function pollPermissionResponse(
+  id: string,
+  timeoutMs: number,
+): Promise<{ approved: boolean; reason?: string }> {
   const signalDir = process.env.AGON_SIGNAL_DIR;
   const sessionId = process.env.AGON_SESSION_ID;
-  if (!signalDir || !sessionId) return { approved: false, reason: 'No signal dir' };
+  if (!signalDir || !sessionId)
+    return { approved: false, reason: "No signal dir" };
   const requestPath = join(signalDir, `${sessionId}-perm-${id}.json`);
   const responsePath = join(signalDir, `${sessionId}-perm-${id}-response.json`);
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     if (existsSync(responsePath)) {
       try {
-        const data = JSON.parse(readFileSync(responsePath, 'utf-8'));
-        try { unlinkSync(responsePath); } catch { /* cleanup optional */ }
-        try { unlinkSync(requestPath); } catch { /* cleanup optional */ }
+        const data = JSON.parse(readFileSync(responsePath, "utf-8"));
+        try {
+          unlinkSync(responsePath);
+        } catch {
+          /* cleanup optional */
+        }
+        try {
+          unlinkSync(requestPath);
+        } catch {
+          /* cleanup optional */
+        }
         return { approved: !!data.approved, reason: data.reason };
-      } catch { /* parse error — keep polling */ }
+      } catch {
+        /* parse error — keep polling */
+      }
     }
-    await new Promise(r => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 100));
   }
-  try { unlinkSync(requestPath); } catch { /* cleanup optional */ }
-  return { approved: false, reason: 'Permission request timed out' };
+  try {
+    unlinkSync(requestPath);
+  } catch {
+    /* cleanup optional */
+  }
+  return { approved: false, reason: "Permission request timed out" };
 }
 
 /**
  * Handle write tool calls with permission — request approval, wait, execute.
  */
-export async function handleWriteToolCall(name: string, args: Record<string,unknown>): Promise<string> {
+export async function executeApprovedKernelWrite(
+  name: string,
+  args: Record<string, unknown>,
+): Promise<string> {
   const requestId = `pr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-  const toolMap: Record<string, string> = { AgonBash: 'Bash', AgonEdit: 'Edit', AgonWrite: 'Write', SaveMemory: 'SaveMemory' };
+  const toolMap: Record<string, string> = {
+    AgonBash: "Bash",
+    AgonEdit: "Edit",
+    AgonWrite: "Write",
+    SaveMemory: "SaveMemory",
+  };
   const kernTool = toolMap[name] ?? name;
 
   // Write permission request signal
@@ -333,79 +282,93 @@ export async function handleWriteToolCall(name: string, args: Record<string,unkn
   const response = await pollPermissionResponse(requestId, 60000);
 
   if (!response.approved) {
-    const denied = `Permission denied: ${response.reason ?? 'User declined'}. Do NOT retry this command — ask the user what they want instead.`;
-    writeToolCompletion(requestId, name, args, 'error', denied);
+    const denied = `Permission denied: ${response.reason ?? "User declined"}. Do NOT retry this command — ask the user what they want instead.`;
+    writeToolCompletion(requestId, name, args, "error", denied);
     return denied;
   }
 
   // Execute the approved tool
   try {
-    if (name === 'AgonBash') {
+    if (name === "AgonBash") {
       const cmd = (args as any).command as string;
       const timeout = ((args as any).timeout ?? 30) * 1000;
       const cwd = process.env.AGON_CWD || process.cwd();
-      const result = execSync(cmd, { cwd, timeout, encoding: 'utf-8', maxBuffer: 1024 * 1024, stdio: ['pipe', 'pipe', 'pipe'] });
-      const output = result || '(command completed with no output)';
-      writeToolCompletion(requestId, name, args, 'done', output);
+      const result = execSync(cmd, {
+        cwd,
+        timeout,
+        encoding: "utf-8",
+        maxBuffer: 1024 * 1024,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      const output = result || "(command completed with no output)";
+      writeToolCompletion(requestId, name, args, "done", output);
       return output;
     }
-    if (name === 'AgonEdit') {
+    if (name === "AgonEdit") {
       const filePath = (args as any).file_path as string;
       const oldStr = (args as any).old_string as string;
       const newStr = (args as any).new_string as string;
-      const content = readFileSync(filePath, 'utf-8');
+      const content = readFileSync(filePath, "utf-8");
       if (!content.includes(oldStr)) {
         const output = `Error: old_string not found in ${filePath}`;
-        writeToolCompletion(requestId, name, args, 'error', output);
+        writeToolCompletion(requestId, name, args, "error", output);
         return output;
       }
       const updated = content.replace(oldStr, newStr);
       writeFileSync(filePath, updated);
       const output = `File edited: ${filePath}`;
-      writeToolCompletion(requestId, name, args, 'done', output);
+      writeToolCompletion(requestId, name, args, "done", output);
       return output;
     }
-    if (name === 'AgonWrite') {
+    if (name === "AgonWrite") {
       const filePath = (args as any).file_path as string;
       const fileContent = (args as any).content as string;
       mkdirSync(dirname(filePath), { recursive: true });
       writeFileSync(filePath, fileContent);
       const output = `File written: ${filePath}`;
-      writeToolCompletion(requestId, name, args, 'done', output);
+      writeToolCompletion(requestId, name, args, "done", output);
       return output;
     }
-    if (name === 'SaveMemory') {
+    if (name === "SaveMemory") {
       // Canonicalize + validate the section against the SAME MEMORY_SECTIONS list
       // the core tool uses, so this external-CLI path produces identical headers
       // and rejects non-canonical sections instead of writing a divergent header.
       const section = canonicalMemorySection((args as any).section);
-      const memory = String((args as any).memory ?? '').trim();
+      const memory = String((args as any).memory ?? "").trim();
       if (!section) {
-        const output = `Invalid section "${String((args as any).section ?? '')}". Use one of: ${MEMORY_SECTIONS.join(', ')}`;
-        writeToolCompletion(requestId, name, args, 'error', output);
+        const output = `Invalid section "${String((args as any).section ?? "")}". Use one of: ${MEMORY_SECTIONS.join(", ")}`;
+        writeToolCompletion(requestId, name, args, "error", output);
         return output;
       }
       const cwd = process.env.AGON_CWD || process.cwd();
-      const memPath = join(cwd, '.agon', 'project.md');
-      const existing = existsSync(memPath) ? readFileSync(memPath, 'utf-8') : '';
+      const memPath = join(cwd, ".agon", "project.md");
+      const existing = existsSync(memPath)
+        ? readFileSync(memPath, "utf-8")
+        : "";
       const res = appendMemoryLine(existing, section, memory, todayPrefix());
       if (!res.changed) {
         const output = `Already in project memory [${section}] — skipped (near-duplicate).`;
-        writeToolCompletion(requestId, name, args, 'done', output);
+        writeToolCompletion(requestId, name, args, "done", output);
         return output;
       }
       mkdirSync(dirname(memPath), { recursive: true });
-      writeFileSync(memPath, res.content.endsWith('\n') ? res.content : res.content + '\n');
-      const note = res.status === 'evicted' ? ' (section was full — oldest entry dropped)' : '';
+      writeFileSync(
+        memPath,
+        res.content.endsWith("\n") ? res.content : res.content + "\n",
+      );
+      const note =
+        res.status === "evicted"
+          ? " (section was full — oldest entry dropped)"
+          : "";
       const output = `Saved to project memory [${section}]: ${memory}${note}`;
-      writeToolCompletion(requestId, name, args, 'done', output);
+      writeToolCompletion(requestId, name, args, "done", output);
       return output;
     }
-    writeToolCompletion(requestId, name, args, 'error', 'Unknown write tool');
-    return 'Unknown write tool';
+    writeToolCompletion(requestId, name, args, "error", "Unknown write tool");
+    return "Unknown write tool";
   } catch (err: any) {
     const output = `Error: ${err.message ?? String(err)}`;
-    writeToolCompletion(requestId, name, args, 'error', output);
+    writeToolCompletion(requestId, name, args, "error", output);
     return output;
   }
 }
@@ -417,92 +380,103 @@ export function startMcpServer(
   available: ReadonlySet<string> = new Set(MCP_SURFACE_METADATA.keys()),
   assertCurrent: () => void = () => undefined,
   dynamicTools: () => readonly DynamicMcpTool[] = () => [],
-  invokeDynamic: (name: string, input: Record<string, unknown>) => Promise<unknown> = async () => { throw new Error('dynamic MCP execution is unavailable'); },
+  invokeDynamic: (
+    name: string,
+    input: Record<string, unknown>,
+  ) => Promise<unknown> = async () => {
+    throw new Error("dynamic MCP execution is unavailable");
+  },
 ) {
   const rl = createInterface({ input: process.stdin, terminal: false });
 
   function respond(id: number | string | null, result: unknown): void {
     if (id === null) return; // notification — no response
-    process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, result }) + '\n');
+    process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id, result }) + "\n");
   }
 
-  function respondError(id: number | string | null, code: number, message: string): void {
+  function respondError(
+    id: number | string | null,
+    code: number,
+    message: string,
+  ): void {
     if (id === null) return;
-    process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, error: { code, message } }) + '\n');
+    process.stdout.write(
+      JSON.stringify({ jsonrpc: "2.0", id, error: { code, message } }) + "\n",
+    );
   }
 
-  rl.on('line', (line: string) => {
+  rl.on("line", (line: string) => {
     let msg: any;
-    try { msg = JSON.parse(line); } catch { return; }
+    try {
+      msg = JSON.parse(line);
+    } catch {
+      return;
+    }
 
     const { id, method, params } = msg;
 
-    if (method === 'initialize') {
+    if (method === "initialize") {
       respond(id, {
-        protocolVersion: '2024-11-05',
+        protocolVersion: "2024-11-05",
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: 'agon-orchestration', version: '1.0.0' },
+        serverInfo: { name: "agon-orchestration", version: "1.0.0" },
       });
       return;
     }
 
-    if (method === 'notifications/initialized' || method === 'initialized') {
+    if (method === "notifications/initialized" || method === "initialized") {
       // Client notification — no response needed
       return;
     }
 
-    if (method === 'tools/list' || method === 'tools/call') {
-      try { assertCurrent(); } catch (error) {
-        respondError(id, -32010, error instanceof Error ? error.message : String(error));
+    if (method === "tools/list" || method === "tools/call") {
+      try {
+        assertCurrent();
+      } catch (error) {
+        respondError(
+          id,
+          -32010,
+          error instanceof Error ? error.message : String(error),
+        );
         return;
       }
     }
 
-    if (method === 'tools/list') {
+    if (method === "tools/list") {
       respond(id, {
         tools: listMcpTools(available, dynamicTools()),
       });
       return;
     }
 
-    if (method === 'tools/call') {
+    if (method === "tools/call") {
       const toolName = params?.name as string;
       const toolArgs = (params?.arguments ?? {}) as Record<string, unknown>;
       const dynamic = dynamicTools().find(({ name }) => name === toolName);
-      if ((!MCP_SURFACE_METADATA.has(toolName) && !dynamic) || !available.has(toolName)) {
-        respondError(id, -32602, 'Unknown or disabled tool: ' + toolName);
+      if (
+        (!MCP_SURFACE_METADATA.has(toolName) && !dynamic) ||
+        !available.has(toolName)
+      ) {
+        respondError(id, -32602, "Unknown or disabled tool: " + toolName);
         return;
       }
-      if (dynamic && !MCP_SURFACE_METADATA.has(toolName)) {
-        invokeDynamic(toolName, toolArgs).then((result) => {
-          const text = typeof result === 'string' ? result : JSON.stringify(result);
-          respond(id, { content: [{ type: 'text', text }] });
-        }).catch((error) => {
-          respondError(id, -32603, `Dynamic MCP tool failed: ${error instanceof Error ? error.message : String(error)}`);
-        });
+      if (dynamicMcpToolOwnsExecution(dynamic)) {
+        invokeDynamic(toolName, toolArgs)
+          .then((result) => {
+            const text =
+              typeof result === "string" ? result : JSON.stringify(result);
+            respond(id, { content: [{ type: "text", text }] });
+          })
+          .catch((error) => {
+            respondError(
+              id,
+              -32603,
+              `Dynamic MCP tool failed: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          });
         return;
       }
-      // Room tools are direct ledger ops (no engine dispatch / Cesar signal).
-      if (isRoomTool(toolName)) {
-        const roomResult = handleRoomTool(toolName, toolArgs);
-        respond(id, { content: [{ type: 'text', text: roomResult }] });
-        return;
-      }
-      // Project-context retrieval is a direct local read (no dispatch).
-      if (isProjectContextTool(toolName)) {
-        const ragResult = handleProjectContextTool(toolName, toolArgs);
-        respond(id, { content: [{ type: 'text', text: ragResult }] });
-        return;
-      }
-      if (isJobTool(toolName)) {
-        handleJobToolCall(toolName, toolArgs).then((result: string) => {
-          respond(id, { content: [{ type: 'text', text: result }] });
-        }).catch((err: any) => {
-          respondError(id, -32603, `Job control failed: ${err.message ?? String(err)}`);
-        });
-        return;
-      }
-      const tool = ORCHESTRATION_TOOLS.find(t => t.name === toolName);
+      const tool = KERNEL_MCP_TOOLS.find((candidate) => candidate.name === toolName);
       if (!tool) {
         respondError(id, -32602, `Unknown tool: ${toolName}`);
         return;
@@ -510,25 +484,46 @@ export function startMcpServer(
       // DeliverAnswer: write the final answer to the answer-channel file
       // (no permission, no dispatch). The host PTY session reads it as the
       // authoritative response. Tell the engine to stop after.
-      if (toolName === 'DeliverAnswer') {
+      if (toolName === "DeliverAnswer") {
         const ok = writeAnswer((toolArgs as any).text as string);
-        respond(id, { content: [{ type: 'text', text: ok ? 'Answer delivered. STOP responding now.' : 'No answer-channel configured — just print your answer as text.' }] });
-        return;
-      }
-      // Write tools need async permission flow
-      const WRITE_TOOLS = new Set(['AgonBash', 'AgonEdit', 'AgonWrite', 'SaveMemory']);
-      if (WRITE_TOOLS.has(toolName)) {
-        handleWriteToolCall(toolName, toolArgs).then((result: string) => {
-          respond(id, { content: [{ type: 'text', text: result }] });
-        }).catch((err: any) => {
-          respondError(id, -32603, `Tool execution failed: ${err.message ?? String(err)}`);
+        respond(id, {
+          content: [
+            {
+              type: "text",
+              text: ok
+                ? "Answer delivered. STOP responding now."
+                : "No answer-channel configured — just print your answer as text.",
+            },
+          ],
         });
         return;
       }
-      const result = handleToolCall(toolName, toolArgs);
-      respond(id, {
-        content: [{ type: 'text', text: result }],
-      });
+      // Write tools need async permission flow
+      const WRITE_TOOLS = new Set([
+        "AgonBash",
+        "AgonEdit",
+        "AgonWrite",
+      ]);
+      if (WRITE_TOOLS.has(toolName)) {
+        executeApprovedKernelWrite(toolName, toolArgs)
+          .then((result: string) => {
+            respond(id, { content: [{ type: "text", text: result }] });
+          })
+          .catch((err: any) => {
+            respondError(
+              id,
+              -32603,
+              `Tool execution failed: ${err.message ?? String(err)}`,
+            );
+          });
+        return;
+      }
+      if (toolName === 'ReportConfidence') {
+        writeSignal(toolName, toolArgs);
+        respond(id, { content: [{ type: 'text', text: `Confidence ${String(toolArgs.value)}% recorded. Continue responding.` }] });
+        return;
+      }
+      respondError(id, -32602, `Unknown kernel tool: ${toolName}`);
       return;
     }
 
@@ -538,5 +533,5 @@ export function startMcpServer(
     }
   });
 
-  rl.on('close', () => process.exit(0));
+  rl.on("close", () => process.exit(0));
 }

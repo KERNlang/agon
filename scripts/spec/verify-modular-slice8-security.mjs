@@ -67,7 +67,7 @@ const requirements = Object.freeze([
   ['canonical-external-resolution', 'resolver', 'resolveCandidates'],
   ['mcp-safe-mode-propagation', 'mcp', "AGON_MOD_SAFE_MODE === '1'"],
   ['mcp-dynamic-invocation', 'mcp', 'invokeActiveMcpSurfaceTool'],
-  ['cesar-dynamic-invocation', 'cesar', "record.kind !== 'cesar-tool'"],
+  ['cesar-dynamic-invocation', 'cesar', "processSurfaceClient('cesar').assertAvailable(entry.publicId)"],
   ['external-registry-projection', 'externalCatalog', 'createExternalSurfaceCatalog'],
   ['exact-cli-plan-approval', 'cli', 'folder mod changed after authority preview'],
   ['separate-cli-activation', 'cli', 'enable: activationCommand(true)'],

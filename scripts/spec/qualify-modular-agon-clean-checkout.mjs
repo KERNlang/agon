@@ -1,8 +1,8 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { collectSubjectContamination, hashGitSubject, validateDependencyGraph, validateSubjectBoundReview, isSourceBearingPath } from './slice1b-qualification-gates.mjs';
+import { collectSubjectContamination, hashGitSubject, validateDependencyGraph, validateStoredSubjectBoundReview, isSourceBearingPath } from './slice1b-qualification-gates.mjs';
 
 const root = new URL('../..', import.meta.url).pathname.replace(/\/$/, '');
 const subjectPathspecs = ['.'];
@@ -65,10 +65,8 @@ const packageMap = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modul
 const graph = validateDependencyGraph(packageMap.packages);
 const indexHash = hashGitSubject(root, { kind: 'index', pathspecs: subjectPathspecs, excludedPaths: excludedReceiptPaths });
 const commitHash = hashGitSubject(root, { kind: 'commit', revision: 'HEAD', pathspecs: subjectPathspecs, excludedPaths: excludedReceiptPaths });
-const reviewEvidencePath = join(root, 'docs/specs/evidence/modular-agon-slice1b-review-evidence.json');
-const reviewEvidence = existsSync(reviewEvidencePath)
-  ? validateSubjectBoundReview(root, JSON.parse(readFileSync(reviewEvidencePath, 'utf8')), { kind: subjectKind, revision: 'HEAD', hash: subjectKind === 'index' ? indexHash : commitHash })
-  : { passed: false, reason: 'review evidence is missing' };
+const reviewEvidencePath = 'docs/specs/evidence/modular-agon-slice1b-review-evidence.json';
+const reviewEvidence = validateStoredSubjectBoundReview(root, reviewEvidencePath, { kind: subjectKind, revision: 'HEAD', hash: subjectKind === 'index' ? indexHash : commitHash });
 const steps = process.argv.includes('--run-clean') ? cleanSubjectSteps(subjectKind) : [];
 const receipt = {
   schemaVersion: 2,
@@ -87,6 +85,6 @@ const receipt = {
 };
 const noContamination = Object.values(contamination).every((paths) => paths.length === 0);
 const exactCommit = subjectKind === 'index' || indexHash === commitHash;
-receipt.passed = noContamination && exactCommit && reviewEvidence.passed && graph.duplicateEdges.length === 0 && graph.uniqueEdges === 144 && steps.length > 0 && steps.every(({ passed }) => passed);
+receipt.passed = noContamination && exactCommit && reviewEvidence.passed && graph.duplicateEdges.length === 0 && graph.uniqueEdges === 151 && steps.length > 0 && steps.every(({ passed }) => passed);
 console.log(JSON.stringify(receipt, null, 2));
 if (!receipt.passed) process.exitCode = 1;

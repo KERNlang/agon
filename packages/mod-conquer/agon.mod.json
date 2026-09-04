@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "id": "agon.conquer",
   "name": "Conquer",
-  "version": "0.0.0-slice.5",
+  "version": "1.0.0",
   "apiRange": ">=1.0.0 <2",
   "execution": "executable",
   "compatibility": {
@@ -43,12 +43,26 @@
       {
         "id": "agon.council",
         "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.worktree",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.verification",
+        "range": ">=0.0.0-0"
       }
     ],
     "optional": [],
     "conflicts": []
   },
-  "permissions": [],
+  "permissions": [
+    {
+      "capability": "engine.dispatch",
+      "resources": [],
+      "required": true
+    }
+  ],
   "platforms": [
     "darwin-arm64",
     "darwin-x64",
@@ -101,11 +115,11 @@
     "mcpTools": [],
     "cesarTools": [
       {
-        "id": "cesarRoutes:0016",
+        "id": "cesarTools:0004",
         "aliases": []
       },
       {
-        "id": "cesarTools:0004",
+        "id": "cesarRoutes:0016",
         "aliases": []
       }
     ],
@@ -116,9 +130,11 @@
   },
   "pack": {
     "include": [
+      "LICENSE",
       "agon.mod.json",
       "dist/index.js",
       "dist/index.d.ts",
+      "dist/implementation.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

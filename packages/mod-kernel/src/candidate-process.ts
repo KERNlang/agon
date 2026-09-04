@@ -22,7 +22,8 @@ export interface BoundedProcessRequest {
 
 export interface BoundedProcessResult {
   readonly exitCode: number;
-  readonly signal: NodeJS.Signals | null;
+  /** Portable signal name reported by the candidate subprocess, when any. */
+  readonly signal: string | null;
   readonly stdout: string;
   readonly stderr: string;
   readonly timedOut: boolean;
@@ -92,6 +93,7 @@ export interface NpmCandidateInstallerOptions {
   readonly timeoutMs?: number;
   readonly maxOutputBytes?: number;
   readonly activeInstallationPrefix?: string | null;
+  readonly omitOptional?: boolean;
 }
 
 export class NpmCandidateInstaller implements CandidateInstaller {
@@ -120,6 +122,7 @@ export class NpmCandidateInstaller implements CandidateInstaller {
       '--save=false',
       '--prefix',
       prefix,
+      ...(this.#options.omitOptional ? ['--omit=optional'] : []),
       ...(context.networkPolicy === 'frozen-offline' ? ['--offline'] : []),
       packagePlan.sourceLocator,
     ];

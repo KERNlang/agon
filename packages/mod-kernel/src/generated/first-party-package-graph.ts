@@ -235,7 +235,8 @@ export const FIRST_PARTY_PACKAGE_GRAPH = {
         "@kernlang/agon-mod-api",
         "@kernlang/agon-support-engine-runtime",
         "@kernlang/agon-support-panel",
-        "@kernlang/agon-support-verification"
+        "@kernlang/agon-support-verification",
+        "@kernlang/agon-support-worktree"
       ]
     },
     {
@@ -282,7 +283,9 @@ export const FIRST_PARTY_PACKAGE_GRAPH = {
         "@kernlang/agon-mod-agent",
         "@kernlang/agon-mod-review",
         "@kernlang/agon-mod-jobs",
-        "@kernlang/agon-mod-git-actions"
+        "@kernlang/agon-mod-git-actions",
+        "@kernlang/agon-support-worktree",
+        "@kernlang/agon-support-verification"
       ]
     },
     {
@@ -295,7 +298,9 @@ export const FIRST_PARTY_PACKAGE_GRAPH = {
         "@kernlang/agon-mod-agent",
         "@kernlang/agon-mod-nero",
         "@kernlang/agon-mod-tribunal",
-        "@kernlang/agon-mod-council"
+        "@kernlang/agon-mod-council",
+        "@kernlang/agon-support-worktree",
+        "@kernlang/agon-support-verification"
       ]
     },
     {
@@ -346,7 +351,8 @@ export const FIRST_PARTY_PACKAGE_GRAPH = {
       "dependencies": [
         "@kernlang/agon-mod-api",
         "@kernlang/agon-support-engine-runtime",
-        "@kernlang/agon-support-verification"
+        "@kernlang/agon-support-verification",
+        "@kernlang/agon-support-worktree"
       ]
     },
     {
@@ -355,7 +361,8 @@ export const FIRST_PARTY_PACKAGE_GRAPH = {
       "defaultEnabled": true,
       "dependencies": [
         "@kernlang/agon-mod-api",
-        "@kernlang/agon-support-engine-runtime"
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-mod-sanitize"
       ]
     },
     {
@@ -801,6 +808,11 @@ export const FIRST_PARTY_PACKAGE_GRAPH = {
       "kind": "hard"
     },
     {
+      "from": "@kernlang/agon-mod-review",
+      "to": "@kernlang/agon-support-worktree",
+      "kind": "hard"
+    },
+    {
       "from": "@kernlang/agon-mod-pipeline-orchestration",
       "to": "@kernlang/agon-mod-api",
       "kind": "hard"
@@ -896,6 +908,16 @@ export const FIRST_PARTY_PACKAGE_GRAPH = {
       "kind": "hard"
     },
     {
+      "from": "@kernlang/agon-mod-goal",
+      "to": "@kernlang/agon-support-worktree",
+      "kind": "hard"
+    },
+    {
+      "from": "@kernlang/agon-mod-goal",
+      "to": "@kernlang/agon-support-verification",
+      "kind": "hard"
+    },
+    {
       "from": "@kernlang/agon-mod-conquer",
       "to": "@kernlang/agon-mod-api",
       "kind": "hard"
@@ -923,6 +945,16 @@ export const FIRST_PARTY_PACKAGE_GRAPH = {
     {
       "from": "@kernlang/agon-mod-conquer",
       "to": "@kernlang/agon-mod-council",
+      "kind": "hard"
+    },
+    {
+      "from": "@kernlang/agon-mod-conquer",
+      "to": "@kernlang/agon-support-worktree",
+      "kind": "hard"
+    },
+    {
+      "from": "@kernlang/agon-mod-conquer",
+      "to": "@kernlang/agon-support-verification",
       "kind": "hard"
     },
     {
@@ -1006,6 +1038,11 @@ export const FIRST_PARTY_PACKAGE_GRAPH = {
       "kind": "hard"
     },
     {
+      "from": "@kernlang/agon-mod-mutate",
+      "to": "@kernlang/agon-support-worktree",
+      "kind": "hard"
+    },
+    {
       "from": "@kernlang/agon-mod-naturalize",
       "to": "@kernlang/agon-mod-api",
       "kind": "hard"
@@ -1013,6 +1050,11 @@ export const FIRST_PARTY_PACKAGE_GRAPH = {
     {
       "from": "@kernlang/agon-mod-naturalize",
       "to": "@kernlang/agon-support-engine-runtime",
+      "kind": "hard"
+    },
+    {
+      "from": "@kernlang/agon-mod-naturalize",
+      "to": "@kernlang/agon-mod-sanitize",
       "kind": "hard"
     },
     {

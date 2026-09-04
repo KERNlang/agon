@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { persistencePath } from './paths.js';
 
 import type { CompactionSummaryPart, ToolCacheEntry } from './context-types.js';
+import { createPersistenceEnvelope, unwrapPersistenceEnvelope } from './persisted-envelope.js';
 
 
 
@@ -114,7 +115,10 @@ export function saveSessionState(engineId: string, state: { messageHistory: Arra
   const trimmed = state.messageHistory.slice(-SESSION_MAX_MESSAGES);
   const data: SessionStateV2 = { schemaVersion: SESSION_SCHEMA_VERSION, messageHistory: trimmed, compactionSummary: state.compactionSummary ?? null, toolCacheManifest: state.toolCacheManifest ?? [], confidence: state.confidence, readPaths: state.readPaths, savedAt: Date.now() };
   const tmpPath = path + '.tmp';
-  writeFileSync(tmpPath, JSON.stringify(data), 'utf-8');
+  const payload = JSON.parse(JSON.stringify(data));
+  const envelope = createPersistenceEnvelope({ kind: 'session', status: 'active', payload, idSeed: `engine:${engineId}:${process.cwd()}`,
+    ownerModId: 'agon.persistence', contributionId: 'agon.persistence.engine-session', createdAt: new Date(data.savedAt).toISOString(), updatedAt: new Date(data.savedAt).toISOString() });
+  writeFileSync(tmpPath, JSON.stringify(envelope), 'utf-8');
   renameSync(tmpPath, path);
 }
 
@@ -128,7 +132,7 @@ export function loadSessionState(engineId: string): { messageHistory: Array<{rol
   }
   try {
     const raw = readFileSync(path, 'utf-8');
-    const data = JSON.parse(raw);
+    const data = unwrapPersistenceEnvelope<any>(JSON.parse(raw), 'session');
     // TTL: discard state older than SESSION_TTL_MS.
     if (data.savedAt && Date.now() - data.savedAt > SESSION_TTL_MS) {
       return null;
@@ -254,7 +258,10 @@ export function saveConversation(messages: Array<{role:string,content:any,tool_c
   // JSON shape as before this field existed.
   const data: ConversationState = { schemaVersion: CONVERSATION_SCHEMA_VERSION, messageHistory: clean, savedAt: Date.now(), sourceEngine: sourceEngineId, readPaths: readPaths };
   const tmpPath = path + '.tmp';
-  writeFileSync(tmpPath, JSON.stringify(data), 'utf-8');
+  const payload = JSON.parse(JSON.stringify(data));
+  const envelope = createPersistenceEnvelope({ kind: 'session', status: 'active', payload, idSeed: `conversation:${process.cwd()}`,
+    ownerModId: 'agon.persistence', contributionId: 'agon.persistence.conversation-session', createdAt: new Date(data.savedAt).toISOString(), updatedAt: new Date(data.savedAt).toISOString() });
+  writeFileSync(tmpPath, JSON.stringify(envelope), 'utf-8');
   renameSync(tmpPath, path);
 }
 
@@ -268,7 +275,7 @@ export function loadConversation(): { messageHistory: Array<{role:string,content
   }
   try {
     const raw = readFileSync(path, 'utf-8');
-    const data = JSON.parse(raw);
+    const data = unwrapPersistenceEnvelope<any>(JSON.parse(raw), 'session');
     // TTL: discard conversations older than SESSION_TTL_MS.
     if (data.savedAt && Date.now() - data.savedAt > SESSION_TTL_MS) {
       return null;

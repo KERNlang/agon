@@ -19,7 +19,8 @@
   },
   "dependencies": {
     "@kernlang/agon-core": "*",
-    "@kernlang/agon-support-panel": "0.0.0-slice.4",
+    "@kernlang/agon-support-panel": "1.0.0",
+    "@kernlang/agon-support-persistence": "1.0.0",
     "@kernlang/protocol": "~4.5.0"
   }
 }

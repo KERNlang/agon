@@ -6,7 +6,7 @@
 The machine source of truth is
 [`evidence/modular-agon-implementation-roadmap.json`](./evidence/modular-agon-implementation-roadmap.json).
 Run `node scripts/spec/verify-modular-agon-roadmap.mjs` to prove that it covers
-49 packages, 144 unique dependency edges, all 849 staged-subject legacy ownership assignments,
+49 packages, 151 unique dependency edges, all 872 frozen legacy ownership assignments,
 existing source paths, topological order, nine gated slices, and classified
 claims.
 
@@ -108,7 +108,7 @@ notarized macOS application or systemd service; shipped native helpers still nee
 architecture and integrity evidence. Signing/publishing credentials, registry
 rehearsal, and unavailable native runners are genuine external blockers.
 
-Release requires S1B–S9 clean receipts; 49 packages/144 edges/849 staged-subject assignments;
+Release requires S1B–S9 clean receipts; 49 packages/151 edges/872 frozen legacy assignments;
 all enable/disable/dependency/failure/rollback cases on five surfaces; complete
 kill-list removal; install/update/interruption/downgrade/offline/safe-mode tests;
 content-bound trust/grants; minimal pack contents; native performance budgets;

@@ -72,7 +72,7 @@ export class ModActivationService {
   async readDesiredState(): Promise<DesiredModState> {
     try {
       const bytes = await this.host.hostIo.readFile(this.host.paths.desiredState);
-      return parseDesiredState(JSON.parse(bytes.toString('utf8')));
+      return parseDesiredState(JSON.parse(new TextDecoder().decode(bytes)));
     } catch (error) {
       if (error instanceof DesiredStateConflictError) throw error;
       throw new DurableHostError('MOD_GENERATION_CORRUPT', 'selected desired-state snapshot is malformed or missing', {

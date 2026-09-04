@@ -1,34 +1,25 @@
-// Regenerate docs/modes.md from the canonical agent guide so the RAG docs
-// corpus answers mode questions with citations. Single source of truth:
-// packages/cli/src/commands/agent-guide-text.ts (modeDocsMarkdown),
-// reached through the built CLI (`agent-guide --docs`) because the cli dist
-// is bundled into chunks with no per-module entry points.
-// Run AFTER a build: npm run docs:modes. A unit test guards against drift.
-import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+// Render docs/modes.md from the selected owner-tagged registry generation.
+// The physical routing-docs package owns both the renderer and the named
+// handwritten prose region; this script is only a build entrypoint.
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const catalogPath = process.env.AGON_SURFACE_CATALOG_PATH || join(root, 'packages/mod-kernel/src/generated/first-party-surface-catalog.ts');
 const catalogSource = readFileSync(catalogPath, 'utf8');
-const prefix = "Object.freeze(";
-const suffix = ") as readonly GeneratedSurfaceCatalogEntry[];";
+const prefix = 'Object.freeze(';
+const suffix = ') as readonly GeneratedSurfaceCatalogEntry[];';
 const start = catalogSource.indexOf(prefix);
 const end = catalogSource.lastIndexOf(suffix);
-if (start < 0 || end < 0) throw new Error("generated surface catalog is unreadable");
-const docsProjection = JSON.parse(catalogSource.slice(start + prefix.length, end)).filter((entry) => entry.surface === "docs");
-if (!docsProjection.some((entry) => entry.publicId === 'docs/modes.md')) {
-  throw new Error('docs/modes.md is disabled or absent from the selected docs projection');
-}
+if (start < 0 || end < 0) throw new Error('generated surface catalog is unreadable');
+const catalog = JSON.parse(catalogSource.slice(start + prefix.length, end));
 
-const cli = process.env.AGON_DOCS_CLI_PATH || join(root, 'packages/cli/dist/index.js');
-const content = execFileSync(process.execPath, [cli, 'agent-guide', '--docs'], {
-  encoding: 'utf-8',
-  maxBuffer: 8 * 1024 * 1024,
-});
-
+const rendererPath = process.env.AGON_DOCS_RENDERER_PATH || join(root, 'packages/mod-routing-docs/dist/index.js');
+const { renderModeDocsProjection } = await import(pathToFileURL(rendererPath).href);
 const out = process.env.AGON_DOCS_OUTPUT_PATH || join(root, 'docs', 'modes.md');
+const existing = existsSync(out) ? readFileSync(out, 'utf8') : '';
+const content = renderModeDocsProjection(catalog, existing);
 mkdirSync(dirname(out), { recursive: true });
 writeFileSync(out, content);
 console.log(`wrote ${out}`);

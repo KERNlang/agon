@@ -9,6 +9,7 @@ import {
   isSourceBearingPath,
   validateDependencyGraph,
   validateSubjectBoundReview,
+  validateStoredSubjectBoundReview,
 } from './slice1b-qualification-gates.mjs';
 
 const git = (root, ...args) => {
@@ -76,6 +77,11 @@ try {
   assert.equal(validateSubjectBoundReview(temp, { ...review, runs: [{ ...review.runs[0], artifacts: [{ path: '/tmp/absolute.txt', hash: 'sha256:bad' }] }, review.runs[1]] }, { kind: 'index', hash: indexHash }).passed, false);
   assert.equal(validateSubjectBoundReview(temp, { ...review, subject: { kind: 'commit', hash: indexHash } }, { kind: 'index', hash: indexHash }).passed, false);
   assert.equal(validateSubjectBoundReview(temp, { ...review, runs: [{ ...review.runs[0], artifacts: [{ ...review.runs[0].artifacts[0], hash: 'sha256:bad' }] }, review.runs[1]] }, { kind: 'index', hash: indexHash }).passed, false);
+  writeFileSync(join(temp, 'evidence', 'review.json'), `${JSON.stringify(review)}\n`);
+  git(temp, 'add', 'evidence/review.json');
+  assert.equal(validateStoredSubjectBoundReview(temp, 'evidence/review.json', { kind: 'index', hash: indexHash }).passed, true);
+  writeFileSync(join(temp, 'evidence', 'review.json'), `${JSON.stringify({ ...review, disposition: 'failed' })}\n`);
+  assert.equal(validateStoredSubjectBoundReview(temp, 'evidence/review.json', { kind: 'index', hash: indexHash }).passed, true, 'ambient review bytes must not replace staged evidence');
   console.log('Slice 1B qualification negative controls passed');
 } finally {
   rmSync(temp, { recursive: true, force: true });

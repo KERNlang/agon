@@ -31,7 +31,7 @@ const result = {
 result.budgets.planGreen = result.plan.p95Ms <= result.budgets.planP95Ms;
 result.budgets.groupedViewGreen = result.groupedView.p95Ms <= result.budgets.groupedViewP95Ms;
 if (!process.argv.includes('--check')) {
-  writeFileSync(`${root}/docs/specs/evidence/modular-agon-slice3-performance.json`, `${JSON.stringify(result, null, 2)}\n`);
+  if (!process.argv.includes('--no-write')) writeFileSync(`${root}/docs/specs/evidence/modular-agon-slice3-performance.json`, `${JSON.stringify(result, null, 2)}\n`);
 }
 console.log(JSON.stringify(result, null, 2));
 if (!result.budgets.planGreen || !result.budgets.groupedViewGreen) process.exitCode = 1;

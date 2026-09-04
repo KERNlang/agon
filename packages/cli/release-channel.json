@@ -1,0 +1,889 @@
+{
+  "schemaVersion": 1,
+  "channel": "local-release-candidate",
+  "version": "1.0.0",
+  "packages": [
+    {
+      "id": "@kernlang/agon-kernel",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api"
+      ],
+      "sourceLocator": "@kernlang/agon-kernel@1.0.0",
+      "integrity": "sha512-nWjDku2QOTH3IoyZvA13rv+SQuth8K9FlG+F5MwQKyJ0EfyFpbGvuDCI91h6UtTTIi7b18Iwe5KySyav0/Ec8Q==",
+      "contentHash": "sha256:4bea683e415fa0c995a9fa65aecc3c9c908fee738ec12a21893a91782b5306ab",
+      "manifestHash": "sha256:583381b00786c2729a1e32eb2d42f6324cb58df263378f0d0ad57a1401970f17"
+    },
+    {
+      "id": "@kernlang/agon-mod-api",
+      "version": "1.0.0",
+      "dependencies": [],
+      "sourceLocator": "@kernlang/agon-mod-api@1.0.0",
+      "integrity": "sha512-TEIrnlljtl1HqK0SWm1LAWa7eULuW7P0gFOXz8/IWeQZgkXWG+idp6ciOSfPvVtDRhmu4V3TXneey5Dcy3VJOw==",
+      "contentHash": "sha256:94a74d231ebefa3c1379dd20794b594d6c0b76ec8660eca1c5b69c311ab9a1dc",
+      "manifestHash": "sha256:bd2313a9cf283860dfdd7713fa0a737b521944d2c819a5cca2d63e5ed40fdbb5"
+    },
+    {
+      "id": "@kernlang/agon-support-engine-runtime",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-kernel"
+      ],
+      "sourceLocator": "@kernlang/agon-support-engine-runtime@1.0.0",
+      "integrity": "sha512-Wp60ghwipjQqoc44gNToeXBXKbQMfOEv0E4Y3Wr4lL3RXG4028505SQ6JDSn2Vj3XdDS+aCCgbhxrS+y6XcDng==",
+      "contentHash": "sha256:929569741b45a6b13c8e17d4e21e5605942c0a349743eb06541ef303468f18f6",
+      "manifestHash": "sha256:ceb6dc581e02ccfabe5d4fd042fcbab72d2b0fc3b64a34feedb155c0d9fa4362"
+    },
+    {
+      "id": "@kernlang/agon-support-engine-catalog",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-support-engine-runtime"
+      ],
+      "sourceLocator": "@kernlang/agon-support-engine-catalog@1.0.0",
+      "integrity": "sha512-AO8b6myr3qyZRno5cZMfoiG/qewzu3+QBipSJRGM4zOamtBLsJinUlU4v15l2nIGFBstm1vhc133AjXx2eKqUw==",
+      "contentHash": "sha256:38e65599c21b6795bf4769931a85c8a3476947feaa6716f243129db7326ab441",
+      "manifestHash": "sha256:fb2b89832a8070f14e24d007abff47e00676f10e5c63b201302e7cc3f33d3c16"
+    },
+    {
+      "id": "@kernlang/agon-support-persistence",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-kernel"
+      ],
+      "sourceLocator": "@kernlang/agon-support-persistence@1.0.0",
+      "integrity": "sha512-pQMCev8uBbqfmGOh+xHypST22qKlj2rZ7elu0JtOamuCj/a1v4YGFVeRk75Zzk+cqgrL3XAu6rlQjFYbL+yywQ==",
+      "contentHash": "sha256:2fd1602c56d528abedafd9028551454686584d1dcaea3dfa0ddd992f2fbcc7f5",
+      "manifestHash": "sha256:71066bd8772d85ccf904c7023ba7a7ca236234f46733a882023b457174f87650"
+    },
+    {
+      "id": "@kernlang/agon-support-verification",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-kernel",
+        "@kernlang/agon-support-persistence"
+      ],
+      "sourceLocator": "@kernlang/agon-support-verification@1.0.0",
+      "integrity": "sha512-V7nhtcWdzd//K/oy6s59Qu4jzDeoALtJ9XEnA+asraLEpkuQ/r6HlKRw6/AovJ4emqExri9Yt/lCDiN+aBoA1w==",
+      "contentHash": "sha256:e1dac0018b57ededbf741bc8e701c759493ae0ddd55f78229cf67f75464d6ef9",
+      "manifestHash": "sha256:fddc045c7cb72931b618d59c846042389662f8e0dda776200c480cf099a53925"
+    },
+    {
+      "id": "@kernlang/agon-support-worktree",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-kernel",
+        "@kernlang/agon-support-verification"
+      ],
+      "sourceLocator": "@kernlang/agon-support-worktree@1.0.0",
+      "integrity": "sha512-aHfCLSRWaiCArb91tJIIzi8lCpnQYLeKzWJRmdSujInbuV3+fZhDlxxS+TPEyBMQg4zG/RZgIxhSVCGOcbhNpg==",
+      "contentHash": "sha256:f0f1885aed148fcb01f2813075e4242de4c2e49d67de759c2623e05b084db6f3",
+      "manifestHash": "sha256:63fc703f5f437db4ad438a6d09faa6b8e0cb3262460a51ff01c6ac49658bd434"
+    },
+    {
+      "id": "@kernlang/agon-support-panel",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-support-engine-runtime"
+      ],
+      "sourceLocator": "@kernlang/agon-support-panel@1.0.0",
+      "integrity": "sha512-AS2zus0ieVwTAc/0w2M+y95ylOiJQRYBc5MIJsd+fSSvZJ5WdErpPM434SW3jpOkw6Dz51Uj0jgM/S9nh82JyA==",
+      "contentHash": "sha256:2c9b5654a5424c9a2a3170b7726e4fbfcfa0308a9fc78decd0e290a3b9f32846",
+      "manifestHash": "sha256:560c4bb47db3017854ccf56909622b5377687e24dc3666f4a13e50ffb0c18fc5"
+    },
+    {
+      "id": "@kernlang/agon-support-judge",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-support-panel",
+        "@kernlang/agon-support-verification"
+      ],
+      "sourceLocator": "@kernlang/agon-support-judge@1.0.0",
+      "integrity": "sha512-C2PFuy5Wf8WkZ+QANHGgjF0WHC/SzeFbSUlL7VojtoffGR9jtg6IidxDfQdrttqiuX/RhFNDB2QusQVs7fIj9w==",
+      "contentHash": "sha256:7e51de9d39426aba56dcf782852aed0b783d46bd7f9d36df89dd1cb86c36c00d",
+      "manifestHash": "sha256:e7a7bccd299b21c997f1e5da5b5845ca11755d0638d1970f9788b23ec74d7e71"
+    },
+    {
+      "id": "@kernlang/agon-support-agent-runtime",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence",
+        "@kernlang/agon-support-verification"
+      ],
+      "sourceLocator": "@kernlang/agon-support-agent-runtime@1.0.0",
+      "integrity": "sha512-fnY53e9CTHYQo6iJNHyIz7J0Gzxfac1qLK/69NfeIFWT281svnRQsAvtLhyXQ53Uz0EGhmyOlCbQy6WHugC96A==",
+      "contentHash": "sha256:03c03dbdea6bcb85385f8d5d79a08e215e996d3faaef9eab1dda76a53cbcf289",
+      "manifestHash": "sha256:985e7bb221f4d57f2d8a861d6d557a5ba815261c33821e685cbe083590277eae"
+    },
+    {
+      "id": "@kernlang/agon-support-dedup",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-kernel"
+      ],
+      "sourceLocator": "@kernlang/agon-support-dedup@1.0.0",
+      "integrity": "sha512-v6eoAY9xh1Zhn8CkkbApvNYwoj3jdJWhdmzIsQu1FOQgWE2uH1Z9o6UR8q0r9HQe38JHMbs4EvJzsI0VKywS3A==",
+      "contentHash": "sha256:b07a37ce59e778b3384eac035a79277f98bf66cf35d4e35c30b1e8879f30a822",
+      "manifestHash": "sha256:dfef1431e13bdd263cd00c419c8125a27f504c5e786de52d4fbcfbcb258f5c8d"
+    },
+    {
+      "id": "@kernlang/agon-support-browser-bridge",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-kernel"
+      ],
+      "sourceLocator": "@kernlang/agon-support-browser-bridge@1.0.0",
+      "integrity": "sha512-ImQxu/ng42UKthlivuLOnA3nfysf6yC4DK4wFrJfuqfO5y3ZE1F4N2biLqhJn7itD+Jx14ZsF73qQJ3ElWqtgg==",
+      "contentHash": "sha256:04f33141c4dbf27344100eaa85c4909ace49213105dd04dc0ac7619f698953d9",
+      "manifestHash": "sha256:512fb49495978f7c5a83297b7dc42ca3680e0579a6cfd68b1fe03abced4f8f78"
+    },
+    {
+      "id": "@kernlang/agon-support-saas-api",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-kernel"
+      ],
+      "sourceLocator": "@kernlang/agon-support-saas-api@1.0.0",
+      "integrity": "sha512-7z++c800bhwtuOgmF2mzCQla7FJYR0Q7CbXFI7p59VJ1oaSGrURBn+tb/xKDunJuhIand0BLn+0J33qJsWbCFw==",
+      "contentHash": "sha256:da053f3b4c2c5cff4758cfe7086e835a322c49353e3658e71f510b58fbb9cdba",
+      "manifestHash": "sha256:6499061291aa65f3d35cf2a6a3bd390c14cd84ba6214012fafcb55faca36272e"
+    },
+    {
+      "id": "@kernlang/agon-mod-ask",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime"
+      ],
+      "modId": "agon.ask",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-ask@1.0.0",
+      "integrity": "sha512-p5PA4b360pIVgBRnNhMCXaME8gR/qNibcak4Z4qo/jA3k7vxSPf9Qy91Sh8w5OoaIFSE7fQrwK7KG2ytndMHXw==",
+      "contentHash": "sha256:85ab020b4340ba3ae80f671fc380677167d8e45c947dbb629e3cf3c4a5a7b445",
+      "manifestHash": "sha256:c540d9d571b3ad7ce39ec258525d24fd25e573e16743d92d342caa1b3ae69b39"
+    },
+    {
+      "id": "@kernlang/agon-mod-plan",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence",
+        "@kernlang/agon-support-verification"
+      ],
+      "modId": "agon.plan",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.persistence",
+        "agon.verification"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-plan@1.0.0",
+      "integrity": "sha512-VYrP0q+7/5bPW46gkETQvFcN1y5NukeQTke46XfLy5lukxeiQjaNM9Ap7pdTaN1E1kvL9fGKM4eDTEHPXPwQVw==",
+      "contentHash": "sha256:c23e71bfbdbb035105feec6561cbdb8e49e92e78b85911084b1121a6b700bdd9",
+      "manifestHash": "sha256:2b0e17e6e059ba718866905b57341aaf156520a3b613c75756226a7a732b731d"
+    },
+    {
+      "id": "@kernlang/agon-mod-think",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime"
+      ],
+      "modId": "agon.think",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-think@1.0.0",
+      "integrity": "sha512-Sa8iQldsqPL6aDcXOZ2L5XzDKtnGA6UE4cQ4hAlErE1Dn8LDIbmzcDyQIFgFdjH5tgJw7llI2hQEH4D5ftRskw==",
+      "contentHash": "sha256:8fcbffcab5d3ec026714c9bed68a2a88743ba7fa958e7d7591e2e03e2167f8f4",
+      "manifestHash": "sha256:5d82e8e2547ffd2f9137ee45d5c23204c3425432c079b86e783f718abaeb6fc4"
+    },
+    {
+      "id": "@kernlang/agon-mod-brainstorm",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-panel",
+        "@kernlang/agon-support-dedup"
+      ],
+      "modId": "agon.brainstorm",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.dedup",
+        "agon.engine-runtime",
+        "agon.panel"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-brainstorm@1.0.0",
+      "integrity": "sha512-Kn9eAZ7RvKUmZLdfwjtt3fveAYTKGz7g+7r0GH4xrgjNXTIgnKyRtuk/yBgxImfbwqyjjU/bdjtwaen62+Z7Pw==",
+      "contentHash": "sha256:8cdfefd6785977b62a3155f8dbd7605ad82d89a06b7f33f9d191032f2559c123",
+      "manifestHash": "sha256:e6ddd76523c79e1bdedcedf4b29bdaa18f94452df2c4933cf7cb2529cd1d8cb2"
+    },
+    {
+      "id": "@kernlang/agon-mod-team-brainstorm",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-mod-brainstorm",
+        "@kernlang/agon-support-panel"
+      ],
+      "modId": "agon.team-brainstorm",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.brainstorm",
+        "agon.engine-runtime",
+        "agon.panel"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-team-brainstorm@1.0.0",
+      "integrity": "sha512-+RKnIwEm35sXX6herX6R8B0T5wSV0FnUJBT2LkGJ54JSehhWY5H1DnQaBs6dPYQlTqZCrJFYVxPj+fK46njMrQ==",
+      "contentHash": "sha256:3ef6e2041bc5b90b05b5695fea2729b8b144b21af6f00c9567ca24812b21996b",
+      "manifestHash": "sha256:8a3a2880ef10bc5b2341504af121e6b957e5a4029f99526d094a7d9c311e2448"
+    },
+    {
+      "id": "@kernlang/agon-mod-tribunal",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-panel",
+        "@kernlang/agon-support-judge"
+      ],
+      "modId": "agon.tribunal",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.judge",
+        "agon.panel"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-tribunal@1.0.0",
+      "integrity": "sha512-LlAPwKncl2AObGN6MXWyXa1/U3g5ffSmUnHlgY1Em/enFm6DYWXtOifidhCmBfRDcehbynpNT17/YZLGVyNp2g==",
+      "contentHash": "sha256:f136e67f45d989ac61eeb623db3d48d3a000ab41fd3ccdbea9257cbe5a64de1d",
+      "manifestHash": "sha256:14766e688db041649d199e05f0b4b06622242fa22f46b5964e4a94cc63526c31"
+    },
+    {
+      "id": "@kernlang/agon-mod-team-tribunal",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-mod-tribunal",
+        "@kernlang/agon-support-panel"
+      ],
+      "modId": "agon.team-tribunal",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.panel",
+        "agon.tribunal"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-team-tribunal@1.0.0",
+      "integrity": "sha512-AeKWKoe7VIJZvS2nMf4ULlHd56nw6Ehc+v5gKrxaIDrIScqaLNVGf1UtpmzKIwTTOVAeGQZI2JrI0x8SMflpYA==",
+      "contentHash": "sha256:5b914646b420c185e2dfb2937584b8ce0e554cfbd72d982cd5945e33b18a439f",
+      "manifestHash": "sha256:81b7ee425cd89d4d1a327918ebc2036089da6ec09a29a653ec21b5a0315dac65"
+    },
+    {
+      "id": "@kernlang/agon-mod-campfire",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-panel"
+      ],
+      "modId": "agon.campfire",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.panel"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-campfire@1.0.0",
+      "integrity": "sha512-B8/Uz3qk+DzT39n0Odej+MoODgnQT72gkdsOfbXAufjnON6k+O3IchNL4FqC4MYH4cTdmUtXuDOhIkBXEWC/TQ==",
+      "contentHash": "sha256:f441967c721616dcd29e66a3379bc5c5aaa4c395244c443d4f3ddec95213da8a",
+      "manifestHash": "sha256:96899c11935dcbb42bb67f35f1a1d6f799f5e304c804a423a4671e1ca6903015"
+    },
+    {
+      "id": "@kernlang/agon-mod-forge",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-panel",
+        "@kernlang/agon-support-judge",
+        "@kernlang/agon-support-worktree",
+        "@kernlang/agon-support-verification"
+      ],
+      "modId": "agon.forge",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.judge",
+        "agon.panel",
+        "agon.verification",
+        "agon.worktree"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-forge@1.0.0",
+      "integrity": "sha512-a8WTn7mWA8r52r2IRZFoYmu3hh0XHEXfZOuvlpxxF/3BkLTy8YvhZqEjq9TkRQcef9mjvDGfFl3N9J+Kn/2/3Q==",
+      "contentHash": "sha256:80dd9a39fec04c68c95f8fa01db9c3d894d9ac951e18eb37f1c45166121c4c71",
+      "manifestHash": "sha256:f5385d196779b9561d5371f1aa64d0d378bb5296d2376a00c2a065098b8b7ae9"
+    },
+    {
+      "id": "@kernlang/agon-mod-team-forge",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-mod-forge",
+        "@kernlang/agon-support-panel"
+      ],
+      "modId": "agon.team-forge",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.forge",
+        "agon.panel"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-team-forge@1.0.0",
+      "integrity": "sha512-neYO3O4/yFydBunp9TUenJOiK9Hr0KJROJceNq1KTaBdFeJ4MDe2TgeTFwmAHxDdKzmnlts7orMsw4Cc93C89g==",
+      "contentHash": "sha256:89cf7a6fee220fdb17b5891e0ed3ec9e5caf65d2a832b1569a2df7a4e85f2d3e",
+      "manifestHash": "sha256:4f07d53e5796f3045a245e0b97d121a01a13da383d1c8693a1482c4781031a65"
+    },
+    {
+      "id": "@kernlang/agon-mod-synthesis",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-panel",
+        "@kernlang/agon-support-judge"
+      ],
+      "modId": "agon.synthesis",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.judge",
+        "agon.panel"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-synthesis@1.0.0",
+      "integrity": "sha512-R0BCIPVeGDGlqUkq2pnQahy5alM7s9qwyohRmKqleDYO3R3eAP2eJ0mDNjpV2QkgfjCu1VeR3Mya82DGKtGubg==",
+      "contentHash": "sha256:4f764059bc096a056ea7041cc07ebd4fe132d8b25aa5688c950b2855547bcd76",
+      "manifestHash": "sha256:388701758ab0410d797211e1c3b7a2675b9c3e63648a4868bc6a17d031f90df0"
+    },
+    {
+      "id": "@kernlang/agon-mod-review",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-panel",
+        "@kernlang/agon-support-verification",
+        "@kernlang/agon-support-worktree"
+      ],
+      "modId": "agon.review",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.panel",
+        "agon.verification",
+        "agon.worktree"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-review@1.0.0",
+      "integrity": "sha512-DxUkakvilQqR6t9zP1iZVUj/sZcT2DUb+sp5ZHWPm5MyZseLrWz0UFXr7AH0Z2JC0CiCSXD0G1Hk6/JBwpyx3g==",
+      "contentHash": "sha256:06775c1bf778e521a890cbd72ad8a21bcad0378156ad3d7bb5adc2b1fd401892",
+      "manifestHash": "sha256:aa5f44c7b6f2f24916123a05b363c7fe6bf0821500d787c6fc7e33bfaf1c37c3"
+    },
+    {
+      "id": "@kernlang/agon-mod-pipeline-orchestration",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-mod-brainstorm",
+        "@kernlang/agon-mod-forge",
+        "@kernlang/agon-mod-tribunal"
+      ],
+      "modId": "agon.pipeline-orchestration",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.brainstorm",
+        "agon.engine-runtime",
+        "agon.forge",
+        "agon.tribunal"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-pipeline-orchestration@1.0.0",
+      "integrity": "sha512-/JAFore6JQKVCC/ayYElpzYY7RcDEDTnslRPSMJoTTGnhGONAgkWHnk9N4zxRuV+sb7gNAv/EuUHJZBWUFNl3g==",
+      "contentHash": "sha256:abff38d21eb29641a1e0eb03a974870695c7d6646258fc60a25cd010055851c9",
+      "manifestHash": "sha256:54b368f3f561134360382f4a8712d3a09de40597fa66928900348ff50a3c1b6c"
+    },
+    {
+      "id": "@kernlang/agon-mod-pipeline-delivery",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-mod-agent",
+        "@kernlang/agon-mod-review"
+      ],
+      "modId": "agon.pipeline-delivery",
+      "manifestDependencies": [
+        "agon.agent",
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.review"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-pipeline-delivery@1.0.0",
+      "integrity": "sha512-vDE4Lp7xWwRapZsa6/nTPRHLhTRJRkaSDU9v73EF49XH4TVv/nSPVc0lhCojqRYILqQwOJwzVtaPjCnbhYHmFw==",
+      "contentHash": "sha256:725c1b810a126b46459b8fd9629a0980b6c2a1382985ac96e992a593ca0d8f79",
+      "manifestHash": "sha256:a9e2157b100f5ebb4d91b0aa6ce0ee91dbe4273c0f8bc32253c2e75dea86c37a"
+    },
+    {
+      "id": "@kernlang/agon-mod-agent",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-agent-runtime"
+      ],
+      "modId": "agon.agent",
+      "manifestDependencies": [
+        "agon.agent-runtime",
+        "agon.api",
+        "agon.engine-runtime"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-agent@1.0.0",
+      "integrity": "sha512-c0udso3txwjQ8nVnFXETn07UPEABOZTxRhNGq0o0zhUUC6cexrMrtPzf0lgLQjPN+pZtNkH8O4X2SZlgFffvzg==",
+      "contentHash": "sha256:c2b61e01cf1c92db3e1f1450810860dd28405f38bb01bfed2a368d9c75cd4c16",
+      "manifestHash": "sha256:968c2f47b7fbfb208ba657fe48103d1caccc73f47ac9c6817a201783aaf157b4"
+    },
+    {
+      "id": "@kernlang/agon-mod-goal",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-mod-plan",
+        "@kernlang/agon-mod-agent",
+        "@kernlang/agon-mod-review",
+        "@kernlang/agon-mod-jobs",
+        "@kernlang/agon-mod-git-actions",
+        "@kernlang/agon-support-worktree",
+        "@kernlang/agon-support-verification"
+      ],
+      "modId": "agon.goal",
+      "manifestDependencies": [
+        "agon.agent",
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.git-actions",
+        "agon.jobs",
+        "agon.plan",
+        "agon.review",
+        "agon.verification",
+        "agon.worktree"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-goal@1.0.0",
+      "integrity": "sha512-yxqSPgxBQDww3kOfDwex2sjqJuPia3yiTECAs+1t5osuZgJIFiZqZBIXnnTqERIfZ5EGXZR1RNEMSVxG2zQCzg==",
+      "contentHash": "sha256:440eea381187ae7a0b064bb9349cb7f8b51cb1033b660d2a2ba3162c7932ec59",
+      "manifestHash": "sha256:7fece84fe59449cd01c40812f63fb2ea8d374bcd12abc3d5f93fa9637a1c00a8"
+    },
+    {
+      "id": "@kernlang/agon-mod-conquer",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-mod-agent",
+        "@kernlang/agon-mod-nero",
+        "@kernlang/agon-mod-tribunal",
+        "@kernlang/agon-mod-council",
+        "@kernlang/agon-support-worktree",
+        "@kernlang/agon-support-verification"
+      ],
+      "modId": "agon.conquer",
+      "manifestDependencies": [
+        "agon.agent",
+        "agon.api",
+        "agon.council",
+        "agon.engine-runtime",
+        "agon.nero",
+        "agon.tribunal",
+        "agon.verification",
+        "agon.worktree"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-conquer@1.0.0",
+      "integrity": "sha512-qbPhL2rjRsG4wuYnvPydXLsnncP610aFg2ruKwS49ZMURHVworMC8iZAhQOMp2q1WDSBmE5EHzZN+Mm5pekdaw==",
+      "contentHash": "sha256:ce790f00740ca7aacac87e873aaef61ae8b839d40623313a6925f4e08b802920",
+      "manifestHash": "sha256:7957876a92107621c403901efeb68e7a56c12019ddc1a5617772ff8a7a85c54b"
+    },
+    {
+      "id": "@kernlang/agon-mod-nero",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-judge"
+      ],
+      "modId": "agon.nero",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.judge"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-nero@1.0.0",
+      "integrity": "sha512-rAfcUgY1+OZOsxmb2jNl1IeD1Q7c+t0n1QjNlnPy2ebHAEzy4BtZ0AmpyXTzAqlFpCucMiz76rDQPR9QSFjycQ==",
+      "contentHash": "sha256:5517b99850e7b80a333ceeee264859d9f606537b0074426997a5489f2994ca92",
+      "manifestHash": "sha256:8e0664e2602e63408dc992f0c95ef872b246e07b54c3a4d93e1169c0c988c602"
+    },
+    {
+      "id": "@kernlang/agon-mod-council",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-panel",
+        "@kernlang/agon-support-judge"
+      ],
+      "modId": "agon.council",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.judge",
+        "agon.panel"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-council@1.0.0",
+      "integrity": "sha512-L1MyqHV2DE26zjrUMGkp7swATegK12BdhTOgD963HYhBoHo1nZR7KrXnEX1lJDz/pUcXcbRaKV1F/yRlUV1xyQ==",
+      "contentHash": "sha256:7730f7f56cac47153ef4ea2a68e7745c6dd86432b9a66dc46f61bc56d784919e",
+      "manifestHash": "sha256:ea402ccd68cc40460470537e87d2f58f8fbe4877d64958ddb32d89a7345f0e73"
+    },
+    {
+      "id": "@kernlang/agon-mod-research",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime"
+      ],
+      "modId": "agon.research",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-research@1.0.0",
+      "integrity": "sha512-dGw4Iv0iWpseXZRVl9+mgVNWQVG9WId7yVBeiLLBCUo6spMcWBDOPhcHbD2tz7pLwyuzbFCswVJeqL8Qwa7gXg==",
+      "contentHash": "sha256:ac75ee4c45faddeeebb32724f810c8edd75d49cfae0f1b3c56f31b8b3c2992f3",
+      "manifestHash": "sha256:ead2be9763a864267a67cf417e564b30224a0c0f5c53ec2bf992243fd827cb32"
+    },
+    {
+      "id": "@kernlang/agon-mod-rag",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence",
+        "@kernlang/agon-support-dedup"
+      ],
+      "modId": "agon.rag",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.dedup",
+        "agon.engine-runtime",
+        "agon.persistence"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-rag@1.0.0",
+      "integrity": "sha512-kQt/QshkjekMO1jlcO9d4qHvaLCWbX7R2/aWes2H59xLkWFK7CsM5Ap0J3Kim810om4vuiAR0MV/hEROzsKb6w==",
+      "contentHash": "sha256:0d9c9bd5efa8073f2744d8376c618e37fdf3814017dd2d194b8d798b8bcd9c56",
+      "manifestHash": "sha256:13ae15fa2a0e5a5bfd593240663580f861f5688f79855aca904997cb4a3a01fb"
+    },
+    {
+      "id": "@kernlang/agon-mod-mutate",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-verification",
+        "@kernlang/agon-support-worktree"
+      ],
+      "modId": "agon.mutate",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.verification",
+        "agon.worktree"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-mutate@1.0.0",
+      "integrity": "sha512-q5XITMdLZyDkuUIcpj0YLIrx1lbKZXzKaTCoz5q/C/oIf3R8BFWglS/LjxnA6H6b4m0gGJbVPHHTiiCiPGJopA==",
+      "contentHash": "sha256:84850cb550279da63d8f723fc7c8eb76a259f913fde897c1cd185af3ae2552a7",
+      "manifestHash": "sha256:3a3357380037021765378a9b19f88bbb34ff6d286707ee8d319580627ec6981c"
+    },
+    {
+      "id": "@kernlang/agon-mod-naturalize",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-mod-sanitize"
+      ],
+      "modId": "agon.naturalize",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.sanitize"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-naturalize@1.0.0",
+      "integrity": "sha512-0I/z15xPpoBKPLaWRs1iHPcP/1joRvOTiPYz149q1gD841ybwZkRq0NAUqPI/cRKOJbaELrUeHUlxVW1qkE6tw==",
+      "contentHash": "sha256:959f1b55108b96d8a0f28d3e6f8687a68e805e9c31f1d6b19ad2657621547d79",
+      "manifestHash": "sha256:8b74a1012355d6745e2d171d72ae200cb9bfc87a8f79a0d1279f190782ce15c7"
+    },
+    {
+      "id": "@kernlang/agon-mod-sanitize",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime"
+      ],
+      "modId": "agon.sanitize",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-sanitize@1.0.0",
+      "integrity": "sha512-L9VvS3BkP1wl95sKl2+Okq6laDj/nNMYJZpSGrL0gwDjpLwgT9zX9RZ/dEVbokGR5DPVrTtXNFphW2AIVBc3dw==",
+      "contentHash": "sha256:9ddd97fce9fb604f75610ef2b1e319835d77592cbd7dd6152b06bf0400c5aae4",
+      "manifestHash": "sha256:6a7417a301b06d6fb4ab4c07e43eb77d22174445e5d0a399fe3b96052ffe67e4"
+    },
+    {
+      "id": "@kernlang/agon-mod-rooms",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence"
+      ],
+      "modId": "agon.rooms",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.persistence"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-rooms@1.0.0",
+      "integrity": "sha512-+Ii6KZ8CDmwhqpANxahp5j1OBGNvMPzmCaf6/Pms8k0ZJ5UmIzrfGMhip7AOE8VK4H79n7kPg0Mr35M9qL1BFg==",
+      "contentHash": "sha256:9913232c3ad988c92e01a2d5e04853700ef98d1d636f92dac014bce5be2fb586",
+      "manifestHash": "sha256:46a0023ba13b480dd0d94edcffc17405504a4560db4b2cf634a957b4b064cfed"
+    },
+    {
+      "id": "@kernlang/agon-mod-jobs",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence"
+      ],
+      "modId": "agon.jobs",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.persistence"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-jobs@1.0.0",
+      "integrity": "sha512-GrsuAQHb9KXbUfp4jrs3QR9K1BGE9/KNjbRrktoG3zKjcGD2wQqxy5TkrYzRRp1C/YOuyn/i20y9h74xb8sPJg==",
+      "contentHash": "sha256:56655c2ccb782f8f000b2c9546ad10c9d0a4f73ddfc6022564c1264d7b316ba5",
+      "manifestHash": "sha256:e33b952f1d8f657d282e9a6ca64ff164bc48140fd03c362f0f431a4354a53111"
+    },
+    {
+      "id": "@kernlang/agon-mod-browser",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-browser-bridge",
+        "@kernlang/agon-support-agent-runtime"
+      ],
+      "modId": "agon.browser",
+      "manifestDependencies": [
+        "agon.agent-runtime",
+        "agon.api",
+        "agon.browser-bridge",
+        "agon.engine-runtime"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-browser@1.0.0",
+      "integrity": "sha512-pWE9NNyvBdJq9ZgvIJ3YYO2+9COlY5JQaoeSBldfp9WoDPwI3teeTqf6cC+QOYZJc8BxR1xfdd3nImgOB7DLFA==",
+      "contentHash": "sha256:3fae583b41af45d06613f39f71fe7266608bbf9d39c2ab8a7fea5a120168a27b",
+      "manifestHash": "sha256:5211e1ebd8e777f0649a9b858c3ac7eb13bb1fa300332099d4f63221a83c0ecf"
+    },
+    {
+      "id": "@kernlang/agon-mod-ratings",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence"
+      ],
+      "modId": "agon.ratings",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.persistence"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-ratings@1.0.0",
+      "integrity": "sha512-9CycJjLEKiotBADXJpckmgFvUJK8UXOsfPELHLK0O6weMac/3pOPjmD0g0ZBs1xee3x/6lFjaHHurvAEJr5bDg==",
+      "contentHash": "sha256:5c853e3b18fd36b4b55b1a041c1e36b61eda383a07a50acea87f87381a7b194a",
+      "manifestHash": "sha256:7057fef1dd3609eee3626244ce3928983bc81d8afbb7b241c8ed3b08a889f8fe"
+    },
+    {
+      "id": "@kernlang/agon-mod-history",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence"
+      ],
+      "modId": "agon.history",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.persistence"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-history@1.0.0",
+      "integrity": "sha512-9v8nYBzRGGgBPxaNzQX6QedRU8WSDsxMdCtMHYJOmQ+8gMS6LT0Yiq+NNnR96naRaxA0TLj+t0eT5KywZKoIOA==",
+      "contentHash": "sha256:d561a51d019ff61075cc946e00fef33920a430f2b451a80abd3013c19d796f73",
+      "manifestHash": "sha256:31b601e355462563bf5f896a5cf1ce420c4c6d341ec377da0af5356d2ca6614d"
+    },
+    {
+      "id": "@kernlang/agon-mod-provenance",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence"
+      ],
+      "modId": "agon.provenance",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.persistence"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-provenance@1.0.0",
+      "integrity": "sha512-dTaBIb1S2kqdaVU+LQmiN1+4QfozKnkxHnDpOsb6CaQFdVEvykgpF+j26G2CbcIqLq/uXMOHIhCjZ3CzTi8U6Q==",
+      "contentHash": "sha256:c8ffd3871bf1f44a1fb41ce2d670bacd6de5124ac6363b05a59bbbf66e4a8a0a",
+      "manifestHash": "sha256:f1e2ffd7c9811ef7334138b4b5548d4e71a4d57791a7243d26f35ef2d4834cea"
+    },
+    {
+      "id": "@kernlang/agon-mod-flow",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence"
+      ],
+      "modId": "agon.flow",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.persistence"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-flow@1.0.0",
+      "integrity": "sha512-1ziS+gyO2tu64gc9DKeLijmQqbF+L0af7iKj66WZQGGnI3FNHMmQP9F71sOFQXH+H2kr92pG8gYESpmhBJVHWQ==",
+      "contentHash": "sha256:6456c8b2647ddf133bf7881345b78ef955ed54df06fa05e21d5cef77b1f0d44d",
+      "manifestHash": "sha256:5c30f8d79409bc8ea7133e7b227d9d92c015500b02a1639a39e2cfa276e434f7"
+    },
+    {
+      "id": "@kernlang/agon-mod-memory",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence"
+      ],
+      "modId": "agon.memory",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.persistence"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-memory@1.0.0",
+      "integrity": "sha512-Gvv1nul0Zv3UEI6U3dYVEZtd9B7Qx0k/f3BPOGOHcyOpP8BEBRJT5lFgDS217+e7YnLObIwbp6X7DApF5HJ5Xg==",
+      "contentHash": "sha256:df65bbbb96adb22d1e711a35e7992c9cdcbf4fc49fcb2cae040525534de3f27e",
+      "manifestHash": "sha256:db313f07924bf0be4c5663cc9fc99cd8dd840943b3e1b5fbb65af079bc866c51"
+    },
+    {
+      "id": "@kernlang/agon-mod-worktrees",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-worktree"
+      ],
+      "modId": "agon.worktrees",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.worktree"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-worktrees@1.0.0",
+      "integrity": "sha512-NXcHKbUYOYQU6BMbOl2qzef1GmbQDDNO1Vea+q2kbPsHDRZRI0rMNFoDzUU5tlZ/qMbl4c1Obken3ltqKn6U+g==",
+      "contentHash": "sha256:609da70d8acf760fd3b135928c11f10cd56dc363524733439062bfba0d321727",
+      "manifestHash": "sha256:a0785a7392c4ef0fae2ca1403ce756a293f44b6dd28c786d400e9cd8a1c60660"
+    },
+    {
+      "id": "@kernlang/agon-mod-skill-authoring",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence"
+      ],
+      "modId": "agon.skill-authoring",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.persistence"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-skill-authoring@1.0.0",
+      "integrity": "sha512-UK8Ar1aFQ09wVZeRyOpCLRZ1RvM5YzvyBOnt+IHQfS2X5GMEQwpRDKH4MeU0yXS5pxo1Q91D4dmB8O0CZMefZA==",
+      "contentHash": "sha256:87edafcdbfa0ad143ff679472c0be2ed670ada3cd8db3282d0cd35ddc05ea674",
+      "manifestHash": "sha256:2039534dea86be8614e0803e01a09f533bcdfaa0b2f40c5f2078340e0e3bc88f"
+    },
+    {
+      "id": "@kernlang/agon-mod-git-actions",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-verification"
+      ],
+      "modId": "agon.git-actions",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.verification"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-git-actions@1.0.0",
+      "integrity": "sha512-u1CeT+Ino44tQ4vNeBtqtjEVFy/2kraGxGnLkFZfAJAHe+wOvZatMd4YnowTp4gt7kxdLawXenJi5AXsFbFxTw==",
+      "contentHash": "sha256:d93e169d63104c0663f9ac2f9394c368ba7f99702df1d91119fd9a78b81a9406",
+      "manifestHash": "sha256:051d01490f326a5b1a946149550f4f798d2debbd7be6fb3149d939c43b48c66e"
+    },
+    {
+      "id": "@kernlang/agon-mod-routing-docs",
+      "version": "1.0.0",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence"
+      ],
+      "modId": "agon.routing-docs",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.persistence"
+      ],
+      "sourceLocator": "@kernlang/agon-mod-routing-docs@1.0.0",
+      "integrity": "sha512-I4x3DaM4U34OxOQC5lA8GkEfFV+WU+Y3al5cUQWX+O7ONavWWN3MX58UC6sgphH0Ww+MrmT6xjZ7tS0hgY/EWg==",
+      "contentHash": "sha256:f84fe92a492b2efd5f100038adfc26a6beb9f08ebd4f594bb08e8d762946103e",
+      "manifestHash": "sha256:2394786341508fa10e770bcdad612766b361965574cf1bb9ee68d7acdf399ca5"
+    }
+  ]
+}

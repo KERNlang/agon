@@ -13,9 +13,11 @@ import {
   eventsPath,
   closeRoom,
   isRoomClosed,
-} from '../../packages/core/src/rooms/store.js';
-import { recordPresence, removePresence, listPresence } from '../../packages/core/src/rooms/presence.js';
-import type { RoomActor } from '../../packages/core/src/rooms/types.js';
+  recordPresence,
+  removePresence,
+  listPresence,
+} from '@kernlang/agon-mod-rooms';
+import type { RoomActor } from '@kernlang/agon-mod-rooms';
 
 let home: string;
 

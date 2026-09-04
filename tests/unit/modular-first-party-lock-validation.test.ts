@@ -35,6 +35,7 @@ describe('selected first-party lock binding', () => {
   it('accepts the exact bundled identity and rejects absence, version drift, and duplicates', async () => {
     const { candidate, record, lock } = await fixture();
     expect(() => assertFirstPartyPackagesMatchLock([packageId], [candidate], lock([record]))).not.toThrow();
+    expect(() => assertFirstPartyPackagesMatchLock([packageId], [candidate], lock([{ ...record, source: 'registry', sourceLocator: '@kernlang/agon-mod-ask@1.0.0' }]))).not.toThrow();
     expect(() => assertFirstPartyPackagesMatchLock([packageId], [candidate], lock([]))).toThrow(/absent or disabled/);
     expect(() => assertFirstPartyPackagesMatchLock([packageId], [candidate], lock([{ ...record, version: '9.9.9' }]))).toThrow(/does not match/);
     expect(() => assertFirstPartyPackagesMatchLock([packageId], [candidate], lock([record, record]))).toThrow(/duplicate/);

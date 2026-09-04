@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../..');
-const version = '0.0.0-slice.4';
+const version = '1.0.0';
 const packages = [
   ['engine-runtime', []],
   ['persistence', []],
@@ -50,12 +50,13 @@ for (const [name, dependencies] of packages) {
   emit(join(directory, 'package.json'), canonical({
     name: packageName,
     version,
-    private: true,
+    private: false,
+    license: 'MIT',
     type: 'module',
     exports: { '.': { types: './dist/index.d.ts', import: './dist/index.js' } },
     main: './dist/index.js',
     types: './dist/index.d.ts',
-    files: ['dist', ...(name === 'engine-runtime' ? ['engines', 'python', 'patches'] : []), ...(name === 'dedup' ? ['python'] : []), ...(name === 'saas-api' ? ['python'] : []), ...(name === 'verification' ? ['python'] : []), ...(name === 'persistence' ? ['python'] : [])],
+    files: ['dist', 'LICENSE', ...(name === 'engine-runtime' ? ['engines', 'python', 'patches'] : []), ...(name === 'dedup' ? ['python'] : []), ...(name === 'saas-api' ? ['python'] : []), ...(name === 'verification' ? ['python'] : []), ...(name === 'persistence' ? ['python'] : [])],
     sideEffects: false,
     scripts: { build: 'tsup && tsc -b tsconfig.json --force', typecheck: 'tsc --noEmit' },
     peerDependencies: { '@kernlang/agon-kernel': '>=0.0.0-0 <2' },
@@ -66,6 +67,7 @@ for (const [name, dependencies] of packages) {
       ...(name === 'persistence' ? { '@kernlang/agon-engines': '^0.1.2' } : {}),
     },
   }));
+  emit(join(directory, 'LICENSE'), readFileSync(join(root, 'LICENSE'), 'utf8'));
   emit(join(directory, 'tsconfig.json'), canonical({
     extends: '../../tsconfig.base.json',
     compilerOptions: {

@@ -1,7 +1,8 @@
 {
   "name": "@kernlang/agon-support-browser-bridge",
-  "version": "0.0.0-slice.4",
-  "private": true,
+  "version": "1.0.0",
+  "private": false,
+  "license": "MIT",
   "type": "module",
   "exports": {
     ".": {
@@ -12,7 +13,8 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "LICENSE"
   ],
   "sideEffects": false,
   "scripts": {

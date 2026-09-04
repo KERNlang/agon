@@ -13,7 +13,9 @@ function secretForms(secret: string): readonly string[] {
   const forms = [secret, encodeURIComponent(secret), Buffer.from(secret).toString('base64'), Buffer.from(secret).toString('base64url')];
   return [...new Set(forms.filter((value) => value.length >= 4))].sort((left, right) => right.length - left.length);
 }
-export function collectProcessSecretValues(environment: NodeJS.ProcessEnv = process.env): readonly string[] {
+export function collectProcessSecretValues(
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): readonly string[] {
   return Object.freeze(Object.entries(environment).filter(([key, value]) => SENSITIVE.test(key) && typeof value === 'string' && value.length >= 4)
     .slice(0, 64).map(([, value]) => value!));
 }

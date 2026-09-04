@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { afterAll, beforeAll, describe, it, expect } from 'vitest';
 import {
   getModeConfig,
   buildModePrompt,
@@ -9,6 +9,10 @@ import {
   TRIBUNAL_PROTOCOLS,
 } from '@kernlang/agon-forge';
 import { detectIntent } from '../../packages/cli/src/signals/intent.js';
+import { disposeProcessSurfaceAuthority, initializeProcessSurfaceAuthority } from '../../packages/cli/src/surface-authority-runtime.js';
+
+beforeAll(() => initializeProcessSurfaceAuthority('/tmp/agon-tribunal-modes-authority'));
+afterAll(() => disposeProcessSurfaceAuthority());
 
 describe('tribunal-modes', () => {
   describe('TRIBUNAL_MODES', () => {

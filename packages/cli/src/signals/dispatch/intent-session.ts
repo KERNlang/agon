@@ -174,12 +174,13 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
           ? await contribution.parse(String(intent.args ?? ''))
           : ({ input: String(intent.args ?? '') } as Json);
         if (parsed === undefined) throw new TypeError(`mod command rejected its input: ${publicId}`);
-        assertContributionInput(contribution.inputSchema, parsed);
+        const normalized = JSON.parse(JSON.stringify(parsed)) as Json;
+        assertContributionInput(contribution.inputSchema, normalized);
         const platform = `${process.platform}-${process.arch === 'x64' ? 'x64' : process.arch}` as ModPlatform;
         if (!['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'].includes(platform)) {
           throw new TypeError(`unsupported mod platform: ${platform}`);
         }
-        const output = await contribution.run(parsed, {
+        const output = await contribution.run(normalized, {
           invocationId: `tui:${process.pid}:${Date.now()}`,
           cwd: resolveWorkingDir(),
           platform,
@@ -280,7 +281,7 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
       // Invalidate caches that depend on cwd — workspace just changed
       invalidateCwdCache();
       sessionContext.invalidate();
-      // Reload extensions from new workspace
+      // Refresh workspace-scoped UI state; executable mods remain user-global.
       if (cb.setWorkspacePath) cb.setWorkspacePath(resolveWorkingDir());
       break;
     }
@@ -371,4 +372,46 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
   // break-path cases land here — mirrors the original switch's shared _emitPost() tail
   emitPostDispatch(intent, input, cb);
   return { handled: true, ranAsJob: false };
+}
+
+export async function runPhysicalTuiContribution(
+  record: { readonly payload: unknown },
+  parsed: Json,
+  commandName: string,
+  cb: DispatchCallbacks,
+  signal: AbortSignal,
+): Promise<void> {
+  const contribution = record.payload as IntentContribution;
+  const normalized = JSON.parse(JSON.stringify(parsed)) as Json;
+  assertContributionInput(contribution.inputSchema, normalized);
+  const platform = `${process.platform}-${process.arch === 'x64' ? 'x64' : process.arch}` as ModPlatform;
+  if (!['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'].includes(platform)) {
+    throw new TypeError(`unsupported mod platform: ${platform}`);
+  }
+  const output = await contribution.run(normalized, {
+    invocationId: `tui:${process.pid}:${Date.now()}`,
+    cwd: resolveWorkingDir(),
+    platform,
+    signal,
+    config: cb.ctx.config as unknown as Readonly<Record<string, Json>>,
+  });
+  let result: CommandResult = { exitCode: 0 };
+  if (output && typeof output === 'object' && Symbol.asyncIterator in output) {
+    for await (const event of output) {
+      if (event.type === 'text') cb.dispatch({ type: 'info', message: event.text });
+      else if (event.type === 'progress') cb.dispatch({ type: 'info', message: event.message });
+      else if (event.type === 'result') result = event.result;
+    }
+  } else {
+    result = output as CommandResult;
+  }
+  if (result.stdout) cb.dispatch({ type: 'info', message: result.stdout });
+  if (result.stderr) cb.dispatch({ type: 'warning', message: result.stderr });
+  if (result.result !== undefined) cb.dispatch({
+    type: 'engine-block',
+    engineId: commandName,
+    color: ENGINE_COLORS.cesar ?? 124,
+    content: typeof result.result === 'string' ? result.result : JSON.stringify(result.result, null, 2),
+  });
+  if (result.failure) cb.dispatch({ type: 'error', message: `${result.failure.code}: ${result.failure.message}` });
 }

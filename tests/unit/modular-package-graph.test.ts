@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { FIRST_PARTY_PACKAGE_GRAPH } from '../../packages/mod-kernel/src/generated/first-party-package-graph.js';
 
 describe('frozen first-party package graph', () => {
-  it('contains the complete 49-package/144-edge target map without dangling dependencies', () => {
+  it('contains the complete 49-package/151-edge target map without dangling dependencies', () => {
     expect(FIRST_PARTY_PACKAGE_GRAPH.packages).toHaveLength(49);
-    expect(FIRST_PARTY_PACKAGE_GRAPH.dependencyEdges).toHaveLength(144);
+    expect(FIRST_PARTY_PACKAGE_GRAPH.dependencyEdges).toHaveLength(151);
     const ids = new Set(FIRST_PARTY_PACKAGE_GRAPH.packages.map(({ id }) => id));
     expect(ids.size).toBe(49);
     for (const entry of FIRST_PARTY_PACKAGE_GRAPH.packages) {

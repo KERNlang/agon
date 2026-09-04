@@ -94,7 +94,7 @@ try {
     limits,
     budgets: { coldGreen: percentile(cold, 0.95) <= limits.coldP95Ms, rssGreen: percentile(rss, 0.95) <= limits.peakRssP95Mb },
   };
-  writeFileSync(join(repository, 'docs/specs/evidence/modular-agon-slice2-performance.json'), `${JSON.stringify(evidence, null, 2)}\n`);
+  if (!process.argv.includes('--no-write')) writeFileSync(join(repository, 'docs/specs/evidence/modular-agon-slice2-performance.json'), `${JSON.stringify(evidence, null, 2)}\n`);
   console.log(JSON.stringify(evidence, null, 2));
   if (Object.values(evidence.budgets).some((green) => !green)) process.exitCode = 1;
 } finally {

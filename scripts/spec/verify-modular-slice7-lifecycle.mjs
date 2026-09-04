@@ -14,7 +14,8 @@ const candidate = read('packages/mod-kernel/src/candidate-process.ts');
 const recovery = read('packages/mod-kernel/src/lifecycle-recovery.ts');
 const setup = read('packages/mod-kernel/src/setup-actions.ts');
 const publicApi = read('packages/mod-kernel/src/index.ts');
-const legacyUpdater = read('packages/cli/src/commands/update.ts');
+const updater = read('packages/cli/src/commands/update.ts');
+const releaseSetup = read('packages/cli/src/commands/setup.ts');
 
 const requiredScripts = [
   'test:modular-installer',
@@ -47,16 +48,14 @@ const markers = [
   [publicApi, "from './candidate-process.js'", 'candidate process is not public'],
   [publicApi, "from './lifecycle-recovery.js'", 'lifecycle recovery is not public'],
   [publicApi, "from './setup-actions.js'", 'setup actions are not public'],
-  [legacyUpdater, 'assertLegacyUpdaterAllowed', 'legacy updater lacks managed-install guard'],
-  [legacyUpdater, 'AGON_MANAGED_INSTALLATION_ID', 'managed identity is not checked'],
+  [updater, 'runManagedSetup', 'update does not use managed lifecycle setup'],
+  [updater, 'preserveExistingState: true', 'update does not preserve the selected profile and desired state'],
+  [releaseSetup, 'ManagedLifecycleService', 'release setup does not use the transactional lifecycle'],
+  [releaseSetup, 'runBoundedCandidateProcess', 'release setup does not qualify a sacrificial candidate'],
 ];
 for (const [source, marker, message] of markers) if (!source.includes(marker)) fail(message);
 
-if (adapters.adapters.length !== 1 || adapters.adapters[0].killList !== 'KL-009' || adapters.adapters[0].status !== 'temporary') {
-  fail('legacy updater compatibility adapter is missing or dishonest');
-}
-read(adapters.adapters[0].path);
-read(adapters.adapters[0].unreachableProof);
+if (adapters.adapters.length !== 0) fail('legacy global updater compatibility adapter remains reachable');
 
 if (process.argv.includes('--self-test')) {
   const requireMarker = (source, marker) => {
@@ -76,6 +75,6 @@ console.log(JSON.stringify({
   status: 'passed',
   acceptanceCommands: requiredScripts.length,
   lifecycleMarkers: markers.length,
-  temporaryAdapters: adapters.adapters.length,
+  temporaryAdapters: 0,
   postinstallRemoved: true,
 }, null, 2));

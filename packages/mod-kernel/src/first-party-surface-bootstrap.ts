@@ -21,6 +21,7 @@ import { TrustGrantStore, evaluateThirdPartyAuthority, type TrustPublisher } fro
 import { activatePreparedThirdPartyMod, prepareTrustedFolderMod } from './third-party-activation.js';
 import { ExternalActivationStore } from './external-activation-state.js';
 import { resolveExternalFolderModsIsolated } from './external-resolution.js';
+import { ModStateStore } from './mod-state-store.js';
 import { createSafeExternalModServices } from './external-mod-services-safe.js';
 import { HOST_PROVIDED_DEPENDENCY_IDS } from './package-activation-order.js';
 import { AGON_RUNTIME_VERSION } from './runtime-version.js';
@@ -109,8 +110,8 @@ async function selectedDesiredState(hostRoot: string): Promise<{
   };
 }
 
-function createServices(manifest: ModManifest, runtime: GeneratedSurfaceRuntime, source: ModServices['source'] = 'bundled', contentHash = sha256Canonical(manifest)): ModServices {
-  const state = new Map<string, Json>();
+function createServices(hostRoot: string, manifest: ModManifest, runtime: GeneratedSurfaceRuntime, source: ModServices['source'] = 'bundled', contentHash = sha256Canonical(manifest)): ModServices {
+  const state = new ModStateStore(hostRoot, manifest.id);
   const compatibility = {
     command: (kind: string, id: string, input: Json, context: Parameters<GeneratedSurfaceRuntime['command']>[3]) => runtime.command(kind === 'cli-command' ? 'cli' : 'tui', id, input, context),
     tool: (kind: string, id: string, input: Json, context: Parameters<GeneratedSurfaceRuntime['tool']>[3]) => runtime.tool(kind === 'mcp-tool' ? 'mcp' : 'cesar', id, input, context),
@@ -125,21 +126,22 @@ function createServices(manifest: ModManifest, runtime: GeneratedSurfaceRuntime,
     receipts: Object.freeze({ record: async (kind: string, payload: Json) => sha256Canonical({ kind, payload }) }),
     permissions: Object.freeze({ check: async () => 'allow' as const }),
     state: Object.freeze({
-      read: async <T extends Json>(key: string) => state.get(key) as T | undefined,
-      write: async (key: string, value: Json) => { state.set(key, structuredClone(value)); },
+      read: async <T extends Json>(key: string) => state.read<T>(key),
+      write: async (key: string, value: Json) => state.write(key, value),
     }),
     engines: Object.freeze({ dispatch: async () => { throw new Error('engine dispatch is available only through the compatibility executor'); } }),
     firstPartyCompatibility: Object.freeze(compatibility),
   } as unknown as ModServices);
 }
 
-async function loadPackage(packageId: string, runtime: GeneratedSurfaceRuntime): Promise<FirstPartySurfacePackage> {
+async function loadPackage(hostRoot: string, packageId: string, runtime: GeneratedSurfaceRuntime, decorateServices?: (manifest: ModManifest, services: ModServices) => ModServices): Promise<FirstPartySurfacePackage> {
   const loaded = await import(packageId) as FirstPartyModule;
   if (!loaded.MANIFEST || typeof loaded.createMod !== 'function') throw new Error(`invalid bundled first-party package: ${packageId}`);
   if (loaded.MANIFEST.id !== packageId.replace('@kernlang/agon-mod-', 'agon.')) {
     throw new Error(`bundled package identity mismatch: ${packageId} != ${loaded.MANIFEST.id}`);
   }
-  const services = createServices(loaded.MANIFEST, runtime);
+  const baseServices = createServices(hostRoot, loaded.MANIFEST, runtime);
+  const services = decorateServices ? decorateServices(loaded.MANIFEST, baseServices) : baseServices;
   return Object.freeze({ manifest: loaded.MANIFEST, mod: await loaded.createMod(services), services });
 }
 
@@ -163,6 +165,7 @@ export async function bootstrapFirstPartySurfaceGeneration(options: {
   readonly modsRoot?: string;
   readonly safeMode?: boolean;
   readonly activationTimeoutMs?: number;
+  readonly decorateFirstPartyServices?: (manifest: ModManifest, services: ModServices) => ModServices;
 }): Promise<FirstPartySurfaceBoot> {
   if (options.safeMode) {
     const safeCatalog = createFirstPartyModCatalog();
@@ -200,7 +203,7 @@ export async function bootstrapFirstPartySurfaceGeneration(options: {
   const activePackageIds = catalog.mods.map(({ id }) => id).filter((id) => resolved.effectivePackages.includes(id)).sort();
   const activeOwners = new Set(catalog.mods.filter(({ id }) => activePackageIds.includes(id)).map(({ modId }) => modId));
   const disabledOwnerIds = catalog.mods.map(({ modId }) => modId).filter((id) => !activeOwners.has(id)).sort();
-  const firstPartyPackages = await Promise.all(activePackageIds.map((id) => loadPackage(id, options.runtime)));
+  const firstPartyPackages = await Promise.all(activePackageIds.map((id) => loadPackage(options.hostRoot, id, options.runtime, options.decorateFirstPartyServices)));
   if (selection.lock) assertFirstPartyPackagesMatchLock(activePackageIds, firstPartyPackages, selection.lock);
 
   const modsRoot = options.modsRoot ?? join(dirname(options.hostRoot), 'mods');

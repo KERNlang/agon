@@ -26,7 +26,7 @@ unchanged as historical evidence; they must not be used as release evidence.
    subject and the materialized clean subject have a different hash, so the
    review is not reproducibly bound to the candidate that a clean checkout
    receives.
-5. The package graph declares 148 dependency entries but only 144 unique
+5. The package graph declared 148 dependency entries but only 144 unique
    directed edges. `think`, `research`, `naturalize`, and `sanitize` each list
    `@kernlang/agon-support-engine-runtime` twice. The old invariant checked
    acyclicity and dangling IDs, not uniqueness.

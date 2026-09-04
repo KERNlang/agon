@@ -28,14 +28,14 @@ describe('selected canonical lock integrity', () => {
   it("binds the exact resolver package closure by source locator", () => {
     const base = lock({ selected: [] });
     const record = {
-      id: "agon.ask", version: "1.0.0", source: "bundled" as const, sourceLocator: "/agon-mod-ask",
+      id: "agon.ask", version: "1.0.0", source: "bundled" as const, sourceLocator: "@kernlang/agon-mod-ask@1.0.0",
       contentHash: sha256Canonical("content"), manifestHash: sha256Canonical("manifest"),
       platform: "darwin-arm64" as const, enabled: true, resolutionOrder: 0, dependencies: [],
       trustRecordId: "bundled:ask", grantRecordIds: [],
     };
     const selected = { ...base, packages: [record] };
-    expect(() => assertSelectedLockPackageClosure(selected, ["/agon-mod-ask"])).not.toThrow();
+    expect(() => assertSelectedLockPackageClosure(selected, ["@kernlang/agon-mod-ask"])).not.toThrow();
     expect(() => assertSelectedLockPackageClosure(selected, [])).toThrow(/package closure/);
-    expect(() => assertSelectedLockPackageClosure({ ...selected, packages: [record, { ...record, id: "agon.ask-copy", resolutionOrder: 1 }] }, ["/agon-mod-ask"])).toThrow(/duplicate source locators/);
+    expect(() => assertSelectedLockPackageClosure({ ...selected, packages: [record, { ...record, id: "agon.ask", sourceLocator: "other", resolutionOrder: 1 }] }, ["@kernlang/agon-mod-ask"])).toThrow(/duplicate physical package identities/);
   });
 });

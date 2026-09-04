@@ -14,6 +14,9 @@
       ],
       "@kernlang/agon-support-verification": [
         "../support-verification/src/index.ts"
+      ],
+      "@kernlang/agon-support-worktree": [
+        "../support-worktree/src/index.ts"
       ]
     },
     "sourceMap": false,
@@ -29,9 +32,15 @@
     },
     {
       "path": "../support-verification"
+    },
+    {
+      "path": "../support-worktree"
     }
   ],
   "include": [
     "src"
+  ],
+  "exclude": [
+    "src/**/*.test.ts"
   ]
 }

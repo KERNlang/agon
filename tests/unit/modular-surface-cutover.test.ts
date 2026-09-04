@@ -13,6 +13,12 @@ const runtime = Object.freeze({
   parseIntent: () => undefined,
   renderDocs: (publicId: string) => ({ text: publicId }),
 });
+const projectedMcpTools = FIRST_PARTY_SURFACE_CATALOG.filter(({ category }) => category === 'mcpTools').map((entry) => ({
+  name: entry.publicId,
+  description: entry.description,
+  inputSchema: {},
+  ownerId: entry.owner.id,
+}));
 
 describe('generated surface cutover', () => {
   it('keeps CLI top-level exposure equal to the generated catalog', () => {
@@ -29,7 +35,7 @@ describe('generated surface cutover', () => {
 
   it('keeps MCP listing equal to the generated catalog', () => {
     const expected = FIRST_PARTY_SURFACE_CATALOG.filter(({ category }) => category === 'mcpTools').map(({ publicId }) => publicId);
-    expect(names(listMcpTools().map(({ name }) => name))).toEqual(names(expected));
+    expect(names(listMcpTools(new Set(expected), projectedMcpTools).map(({ name }) => name))).toEqual(names(expected));
   });
 
   it('keeps Cesar tool registration equal to the generated catalog', () => {
@@ -50,14 +56,14 @@ describe('generated surface cutover', () => {
     expect(Object.keys(createGeneratedLazySubCommands(ids('cli')))).not.toContain('brainstorm');
     expect(createSlashCommands(ids('tui')).map(({ cmd }) => cmd)).not.toContain('/brainstorm');
     expect(detectIntent('/brainstorm ideas', undefined, createTuiSurfaceIds(generation.catalog('tui')))).toMatchObject({ type: 'unknown' });
-    expect(listMcpTools(ids('mcp')).map(({ name }) => name)).not.toContain('Brainstorm');
+    expect(listMcpTools(ids('mcp'), projectedMcpTools).map(({ name }) => name)).not.toContain('Brainstorm');
     expect(createCesarToolRegistry(undefined, ids('cesar')).names()).not.toContain('Brainstorm');
     expect(generation.catalog('docs').some(({ owner }) => owner.id === 'agon.brainstorm')).toBe(false);
   });
 
   it('negative control detects an implementation catalog entry missing from the generated authority', () => {
     const generated = new Set(FIRST_PARTY_SURFACE_CATALOG.filter(({ category }) => category === 'mcpTools').map(({ publicId }) => publicId));
-    const mutated = [...listMcpTools(), { name: '__legacy_bypass__', description: 'bypass', inputSchema: {} }];
+    const mutated = [...listMcpTools(generated, projectedMcpTools), { name: '__legacy_bypass__', description: 'bypass', inputSchema: {} }];
     expect(mutated.some(({ name }) => !generated.has(name))).toBe(true);
   });
 });

@@ -211,7 +211,8 @@ describe('CesarPlan state machine', () => {
       expect(existsSync(jsonPath)).toBe(true);
 
       const raw = JSON.parse(readFileSync(jsonPath, 'utf-8'));
-      expect(raw.planFilePath).toBe(markdownPath);
+      expect(raw).toMatchObject({ schemaVersion: 1, kind: 'plan', status: 'approved' });
+      expect(raw.payload.planFilePath).toBe(markdownPath);
       expect(loadCesarPlan(plan.id)?.planFilePath).toBe(markdownPath);
       expect(listCesarPlans().map(p => p.id)).toContain(plan.id);
     } finally {

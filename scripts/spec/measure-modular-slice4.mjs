@@ -64,7 +64,7 @@ try {
   };
   metrics.passed = metrics.coldImportMs.p95 <= metrics.coldImportMs.budgetP95
     && metrics.residentRssBytes.p95 <= metrics.residentRssBytes.budgetP95;
-  writeFileSync(join(root, 'docs/specs/evidence/modular-agon-slice4-performance.json'), `${JSON.stringify(metrics, null, 2)}\n`);
+  if (!process.argv.includes('--no-write')) writeFileSync(join(root, 'docs/specs/evidence/modular-agon-slice4-performance.json'), `${JSON.stringify(metrics, null, 2)}\n`);
   console.log(JSON.stringify(metrics, null, 2));
   if (!metrics.passed) process.exit(1);
 } finally {

@@ -21,6 +21,16 @@ describe('generated docs projection', () => {
       expect(positive.status, positive.stderr).toBe(0);
       expect(readFileSync(output, 'utf8')).toBe(readFileSync(resolve(root, 'docs/modes.md'), 'utf8'));
 
+      const edited = readFileSync(output, 'utf8').replace('# How to call Agon', '# Handwritten operator guide');
+      writeFileSync(output, edited);
+      const preserved = spawnSync(process.execPath, [generator], {
+        cwd: root,
+        encoding: 'utf8',
+        env: { ...process.env, AGON_DOCS_OUTPUT_PATH: output },
+      });
+      expect(preserved.status, preserved.stderr).toBe(0);
+      expect(readFileSync(output, 'utf8')).toContain('# Handwritten operator guide');
+
       const source = readFileSync(catalogPath, 'utf8');
       const prefix = 'Object.freeze(';
       const suffix = ') as readonly GeneratedSurfaceCatalogEntry[];';

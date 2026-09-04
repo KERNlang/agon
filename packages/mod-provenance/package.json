@@ -1,7 +1,8 @@
 {
   "name": "@kernlang/agon-mod-provenance",
-  "version": "0.0.0-slice.5",
-  "private": true,
+  "version": "1.0.0",
+  "private": false,
+  "license": "MIT",
   "type": "module",
   "exports": {
     ".": {
@@ -17,7 +18,8 @@
     "dist",
     "schemas",
     "agon.mod.json",
-    "ownership.json"
+    "ownership.json",
+    "LICENSE"
   ],
   "sideEffects": false,
   "scripts": {
@@ -29,7 +31,7 @@
   },
   "dependencies": {
     "@kernlang/agon-mod-api": "1.0.0",
-    "@kernlang/agon-support-engine-runtime": "0.0.0-slice.4",
-    "@kernlang/agon-support-persistence": "0.0.0-slice.4"
+    "@kernlang/agon-support-engine-runtime": "1.0.0",
+    "@kernlang/agon-support-persistence": "1.0.0"
   }
 }

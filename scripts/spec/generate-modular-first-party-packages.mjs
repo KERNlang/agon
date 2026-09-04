@@ -8,6 +8,7 @@ const packageMap = JSON.parse(readFileSync(resolve(root, 'docs/specs/evidence/mo
 const ownership = JSON.parse(readFileSync(resolve(root, 'docs/specs/evidence/modular-agon-ownership.json'), 'utf8'));
 const inventory = JSON.parse(readFileSync(resolve(root, 'docs/specs/evidence/modular-agon-current-inventory.json'), 'utf8'));
 const hierarchy = JSON.parse(readFileSync(resolve(root, 'docs/specs/evidence/modular-agon-ui-hierarchy.json'), 'utf8'));
+const physicalContributions = JSON.parse(readFileSync(resolve(root, 'docs/specs/evidence/modular-agon-physical-contributions.json'), 'utf8')).contributions;
 
 const platforms = ['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'];
 const surfaceCategories = new Map([
@@ -18,7 +19,7 @@ const surfaceCategories = new Map([
   ['intentVariants', { manifestKind: 'tuiActions', registryKind: 'intent' }],
   ['mcpTools', { manifestKind: 'mcpTools', registryKind: 'mcp-tool' }],
   ['cesarTools', { manifestKind: 'cesarTools', registryKind: 'cesar-tool' }],
-  ['cesarRoutes', { manifestKind: 'cesarTools', registryKind: 'cesar-tool' }],
+  ['cesarRoutes', { manifestKind: 'cesarTools', registryKind: 'plan-step' }],
   ['resultAndEnvelopeTypes', { manifestKind: 'resultTypes', registryKind: 'result-type' }],
   ['configKeys', { manifestKind: 'configKeys', registryKind: 'config' }],
   ['generatedDocumentation', { manifestKind: 'generatedDocs', registryKind: 'docs' }],
@@ -46,8 +47,8 @@ function packageDirectory(packageName) {
 
 function packageVersion(packageName) {
   if (packageName === '@kernlang/agon-mod-api') return '1.0.0';
-  if (packageName.includes('/agon-support-')) return '0.0.0-slice.4';
-  if (packageName.includes('/agon-mod-')) return '0.0.0-slice.5';
+  if (packageName.includes('/agon-support-')) return '1.0.0';
+  if (packageName.includes('/agon-mod-')) return '1.0.0';
   return '>=0.0.0-0';
 }
 
@@ -83,6 +84,17 @@ function contributionsFor(packageName) {
       });
     }
   }
+  for (const contribution of physicalContributions) {
+    if (contribution.package !== packageName) continue;
+    result.push({
+      id: contribution.registryId,
+      publicId: contribution.publicId,
+      category: contribution.category,
+      source: contribution.source,
+      manifestKind: contribution.manifestKind,
+      registryKind: contribution.kind,
+    });
+  }
   return result.sort((left, right) => compareAscii(left.registryKind, right.registryKind) || compareAscii(left.id, right.id));
 }
 
@@ -109,12 +121,29 @@ function expectedFiles(packageRecord) {
   const display = displays.get(short);
   if (!display) throw new Error(`missing UI hierarchy placement for ${packageName}`);
   const dependencies = packageRecord.dependencies.map((dependency) => ({ id: ownerId(dependency), range: '>=0.0.0-0' }));
-  const physicalPackFiles = short === 'rag' ? ['dist/store.d.ts', 'dist/types.d.ts'] : [];
+  const implementationPath = resolve(directory, 'src/implementation.ts');
+  const isPhysical = existsSync(implementationPath);
+  const implementationSource = isPhysical ? readFileSync(implementationPath, 'utf8') : '';
+  const inferredPermissions = new Set(
+    [...implementationSource.matchAll(/permissions\.check\(['"]([^'"]+)['"]/g)].map((match) => match[1]),
+  );
+  if (/services\.engines\.dispatch\b/.test(implementationSource)) inferredPermissions.add('engine.dispatch');
+  if (/services\.state\.read\b/.test(implementationSource)) inferredPermissions.add('state.read');
+  if (/services\.state\.write\b/.test(implementationSource)) inferredPermissions.add('state.write');
+  // Composite workflows invoke child mods with the caller's service boundary,
+  // so their transitive effects must remain visible in the parent manifest.
+  if (['conquer', 'goal', 'pipeline-delivery', 'pipeline-orchestration'].includes(short)) inferredPermissions.add('engine.dispatch');
+  const physicalPackFiles = isPhysical ? ['dist/implementation.d.ts', ...(short === 'rag' ? ['dist/store.d.ts', 'dist/types.d.ts', 'dist/grounding.d.ts']
+    : short === 'think' ? ['dist/thinking.d.ts']
+    : short === 'routing-docs' ? ['dist/guide-content.d.ts']
+    : short === 'worktrees' ? ['dist/runtime.d.ts', 'dist/workspaces.d.ts']
+    : short === 'rooms' ? ['dist/paths.d.ts', 'dist/runtime/index.d.ts', 'dist/runtime/store.d.ts', 'dist/runtime/presence.d.ts', 'dist/runtime/unread.d.ts', 'dist/runtime/locks.d.ts', 'dist/runtime/leases.d.ts', 'dist/runtime/auto-policy.d.ts', 'dist/runtime/tail.d.ts', 'dist/runtime/tasks.d.ts', 'dist/runtime/types.d.ts']
+    : [])] : [];
   const manifest = {
     schemaVersion: 2,
     id: ownerId(packageName),
     name: short.split('-').map((word) => word[0].toUpperCase() + word.slice(1)).join(' '),
-    version: '0.0.0-slice.5',
+    version: '1.0.0',
     apiRange: '>=1.0.0 <2',
     execution: 'executable',
     compatibility: { kernelRange: '>=0.0.0-0 <2', nodeRange: '>=22' },
@@ -122,26 +151,32 @@ function expectedFiles(packageRecord) {
     entrypoints: { runtime: 'dist/index.js', types: 'dist/index.d.ts' },
     display,
     dependencies: { required: dependencies, optional: [], conflicts: [] },
-    permissions: [],
+    permissions: [...inferredPermissions].sort(compareAscii).map((capability) => ({
+      capability,
+      resources: [],
+      required: !(short === 'worktrees' && capability === 'network'),
+    })),
     platforms,
     assets: [
       { path: 'ownership.json', kind: 'documentation', mediaType: 'application/json', contentHash: sha256(ownershipText), bytes: Buffer.byteLength(ownershipText), executable: false, platforms },
       { path: 'schemas/config.schema.json', kind: 'schema', mediaType: 'application/schema+json', contentHash: sha256(configSchema), bytes: Buffer.byteLength(configSchema), executable: false, platforms },
     ],
     contributes: byManifestKind,
-    pack: { include: ['agon.mod.json', 'dist/index.js', 'dist/index.d.ts', ...physicalPackFiles, 'ownership.json', 'schemas/config.schema.json'], executable: [] },
+    pack: { include: ['LICENSE', 'agon.mod.json', 'dist/index.js', 'dist/index.d.ts', ...physicalPackFiles, 'ownership.json', 'schemas/config.schema.json'], executable: [] },
   };
 
   const dependencyVersions = Object.fromEntries(packageRecord.dependencies.map((dependency) => [dependency, packageVersion(dependency)]));
+  if (short === 'research') dependencyVersions.undici = '^6.28.0';
   const packageJson = {
     name: packageName,
-    version: '0.0.0-slice.5',
-    private: true,
+    version: '1.0.0',
+    private: false,
+    license: 'MIT',
     type: 'module',
     exports: { '.': { types: './dist/index.d.ts', import: './dist/index.js' }, './manifest': './agon.mod.json', './ownership': './ownership.json' },
     main: './dist/index.js',
     types: './dist/index.d.ts',
-    files: ['dist', 'schemas', 'agon.mod.json', 'ownership.json'],
+    files: ['dist', 'schemas', 'agon.mod.json', 'ownership.json', 'LICENSE'],
     sideEffects: false,
     scripts: { build: 'tsup && tsc -b tsconfig.json --force', typecheck: 'tsc --noEmit' },
     peerDependencies: { '@kernlang/agon-kernel': '>=0.0.0-0 <2' },
@@ -163,13 +198,44 @@ function expectedFiles(packageRecord) {
     },
     references,
     include: ['src'],
+    exclude: ['src/**/*.test.ts'],
   };
   const runtimeRecords = contributions.map(({ id, publicId, registryKind, category, source }) => ({ id, publicId, registryKind, category, source }));
-  const physicalExports = short === 'rag' ? `export * from './store.js';
+  const physicalExports = short === 'browser' ? `export { driveBrowser, runServe, browserHost } from './implementation.js';
+` : short === 'worktrees' ? `export { runWorktree, runWorkspace } from './implementation.js';
+export * from './workspaces.js';
+` : short === 'skill-authoring' ? `export { createSkill } from './implementation.js';
+` : short === 'routing-docs' ? `export { runGuide } from './implementation.js';
+export { agentGuideMarkdown, modeDocsMarkdown, renderModeDocsProjection, agonShim, codexSkillMarkdown, codexSkillOpenAiYaml } from './guide-content.js';
+` : short === 'rooms' ? `export { roomAction } from './implementation.js';
+export * from './runtime/index.js';
+` : short === 'flow' ? `export { runFlow } from './implementation.js';
+` : short === 'memory' ? `export { saveMemory } from './implementation.js';
+` : short === 'ratings' ? `export { runRatings, loadRatings, computeUnknownEngineIds } from './implementation.js';
+` : short === 'provenance' ? `export { runProvenance, buildProvenance, renderMarkdown } from './implementation.js';
+` : short === 'rag' ? `export * from './store.js';
+export * from './grounding.js';
 export type * from './types.js';
+export { runRag, buildRagIndex, queryRag, collectCorpusFiles, chunkMarkdown } from './implementation.js';
+` : short === 'history' ? `export { runHistory } from './implementation.js';
+` : short === 'research' ? `export { runResearch, classifyQuery, validateUrl, formatResearchResult } from './implementation.js';
+` : short === 'mutate' ? `export { runMutate, generateMutants } from './implementation.js';
+` : short === 'naturalize' ? `export { runNaturalize } from './implementation.js';
+` : short === 'sanitize' ? `export { runSanitize, scanText, cleanText } from './implementation.js';
+` : short === 'goal' ? `export { runGoal } from './implementation.js';
+` : short === 'plan' ? `export { createPersistenceEnvelope, unwrapPersistenceEnvelope } from './implementation.js';
+` : short === 'jobs' ? `export { ModularJobService } from './implementation.js';
+` : short === 'git-actions' ? `export { runGitAction } from './implementation.js';
+` : short === 'forge' ? `export { runForgeCompetition } from './implementation.js';
+` : short === 'brainstorm' ? `export { runBrainstorm } from './implementation.js';
+` : short === 'tribunal' ? `export { runTribunal } from './implementation.js';
+` : short === 'review' ? `export { runReview } from './implementation.js';
+` : short === 'agent' ? `export { runAgentTask } from './implementation.js';
+` : short === 'nero' ? `export { runNero } from './implementation.js';
+` : short === 'council' ? `export { runCouncil } from './implementation.js';
 ` : '';
   const resultSchemaName = contributions.some(({ registryKind }) => registryKind === 'result-type') ? 'resultSchema' : '_resultSchema';
-  const indexSource = `import { validateManifest } from '@kernlang/agon-mod-api';\nimport type { AgonModFactory, AgonModV1, Awaitable, Dispose, InvocationContext, InvocationOutput, Json, ModServices, Registrar } from '@kernlang/agon-mod-api';\n\nexport const MANIFEST = validateManifest(${JSON.stringify(manifest, null, 2)});\nexport const SOURCE_OCCURRENCES = Object.freeze(${JSON.stringify(packageAssignments, null, 2)});\nexport const COMPATIBILITY_CONTRIBUTIONS = Object.freeze(${JSON.stringify(runtimeRecords, null, 2)});\n\nexport interface FirstPartyCompatibilityRuntime {\n  command(kind: string, id: string, input: Json, context: InvocationContext): InvocationOutput;\n  tool(kind: string, id: string, input: Json, context: InvocationContext): Awaitable<Json>;\n  parseIntent(id: string, input: string): Awaitable<Json | undefined>;\n  lifecycle(id: string, payload: Json, context: InvocationContext): Awaitable<void>;\n  render(id: string, payload: Json): Awaitable<{ readonly text: string; readonly markdown?: string }>;\n}\n\ntype FirstPartyServices = ModServices & { readonly firstPartyCompatibility?: FirstPartyCompatibilityRuntime };\nconst inputSchema = Object.freeze({ type: 'object', additionalProperties: true }) as Readonly<Record<string, Json>>;\nconst ${resultSchemaName} = Object.freeze({ type: 'object', additionalProperties: true }) as Readonly<Record<string, Json>>;\n\nexport function createFirstPartyCompatibilityMod(runtime: FirstPartyCompatibilityRuntime): AgonModV1 {\n  return Object.freeze({\n    apiVersion: '1' as const,\n    async activate(registrar: Registrar): Promise<Dispose> {\n      const disposers: Dispose[] = [];\n${contributions.map((entry) => {
+  const indexSource = existsSync(implementationPath) ? `import { validateManifest } from '@kernlang/agon-mod-api';\n\nexport const MANIFEST = validateManifest(${JSON.stringify(manifest, null, 2)});\nexport const SOURCE_OCCURRENCES = Object.freeze(${JSON.stringify(packageAssignments, null, 2)});\nexport const IMPLEMENTATION_KIND = 'physical' as const;\nexport { createMod } from './implementation.js';\nexport { createMod as default } from './implementation.js';\n${physicalExports}` : `import { validateManifest } from '@kernlang/agon-mod-api';\nimport type { AgonModFactory, AgonModV1, Awaitable, Dispose, InvocationContext, InvocationOutput, Json, ModServices, Registrar } from '@kernlang/agon-mod-api';\n\nexport const MANIFEST = validateManifest(${JSON.stringify(manifest, null, 2)});\nexport const SOURCE_OCCURRENCES = Object.freeze(${JSON.stringify(packageAssignments, null, 2)});\nexport const COMPATIBILITY_CONTRIBUTIONS = Object.freeze(${JSON.stringify(runtimeRecords, null, 2)});\n\nexport interface FirstPartyCompatibilityRuntime {\n  command(kind: string, id: string, input: Json, context: InvocationContext): InvocationOutput;\n  tool(kind: string, id: string, input: Json, context: InvocationContext): Awaitable<Json>;\n  parseIntent(id: string, input: string): Awaitable<Json | undefined>;\n  lifecycle(id: string, payload: Json, context: InvocationContext): Awaitable<void>;\n  render(id: string, payload: Json): Awaitable<{ readonly text: string; readonly markdown?: string }>;\n}\n\ntype FirstPartyServices = ModServices & { readonly firstPartyCompatibility?: FirstPartyCompatibilityRuntime };\nconst inputSchema = Object.freeze({ type: 'object', additionalProperties: true }) as Readonly<Record<string, Json>>;\nconst ${resultSchemaName} = Object.freeze({ type: 'object', additionalProperties: true }) as Readonly<Record<string, Json>>;\n\nexport function createFirstPartyCompatibilityMod(runtime: FirstPartyCompatibilityRuntime): AgonModV1 {\n  return Object.freeze({\n    apiVersion: '1' as const,\n    async activate(registrar: Registrar): Promise<Dispose> {\n      const disposers: Dispose[] = [];\n${contributions.map((entry) => {
   const label = JSON.stringify(`${entry.publicId} compatibility contribution`);
   const id = JSON.stringify(entry.id);
   const publicId = JSON.stringify(entry.publicId);
@@ -189,6 +255,7 @@ export type * from './types.js';
     [resolve(directory, 'ownership.json'), ownershipText],
     [resolve(directory, 'schemas/config.schema.json'), configSchema],
     [resolve(directory, 'src/index.ts'), indexSource],
+    [resolve(directory, 'LICENSE'), readFileSync(resolve(root, 'LICENSE'), 'utf8')],
     [resolve(directory, 'tsconfig.json'), json(tsconfig)],
     [resolve(directory, 'tsup.config.ts'), "import { defineConfig } from 'tsup';\n\nexport default defineConfig({ entry: ['src/index.ts'], format: ['esm'], dts: false, sourcemap: false, clean: true, target: 'es2022' });\n"],
   ]);

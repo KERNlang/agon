@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "id": "agon.rooms",
   "name": "Rooms",
-  "version": "0.0.0-slice.5",
+  "version": "1.0.0",
   "apiRange": ">=1.0.0 <2",
   "execution": "executable",
   "compatibility": {
@@ -36,7 +36,18 @@
     "optional": [],
     "conflicts": []
   },
-  "permissions": [],
+  "permissions": [
+    {
+      "capability": "engine.dispatch",
+      "resources": [],
+      "required": true
+    },
+    {
+      "capability": "fs.write",
+      "resources": [],
+      "required": true
+    }
+  ],
   "platforms": [
     "darwin-arm64",
     "darwin-x64",
@@ -128,9 +139,22 @@
   },
   "pack": {
     "include": [
+      "LICENSE",
       "agon.mod.json",
       "dist/index.js",
       "dist/index.d.ts",
+      "dist/implementation.d.ts",
+      "dist/paths.d.ts",
+      "dist/runtime/index.d.ts",
+      "dist/runtime/store.d.ts",
+      "dist/runtime/presence.d.ts",
+      "dist/runtime/unread.d.ts",
+      "dist/runtime/locks.d.ts",
+      "dist/runtime/leases.d.ts",
+      "dist/runtime/auto-policy.d.ts",
+      "dist/runtime/tail.d.ts",
+      "dist/runtime/tasks.d.ts",
+      "dist/runtime/types.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

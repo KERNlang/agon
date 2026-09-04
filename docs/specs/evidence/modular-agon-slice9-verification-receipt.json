@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "qualification": "modular-agon-slice9-release-candidate",
+  "verifiedAt": "2026-09-04T23:39:42Z",
+  "subject": {
+    "kind": "commit",
+    "hash": "sha256:68a4360a0edf274e17ab038c17acc37b07301e199d4aace79b730085eeaea4b8"
+  },
+  "command": "AGON_QUALIFICATION_NPM_CACHE=<preseeded-offline-cache> npm run spec:modular-slice9:qualify:commit",
+  "passed": true,
+  "contamination": {
+    "ignored": [],
+    "untracked": [],
+    "unstaged": []
+  },
+  "coverage": {
+    "packages": 49,
+    "firstPartyMods": 36,
+    "ownershipAssignments": 872,
+    "dependencyEdges": 151,
+    "releaseArtifacts": 50,
+    "physicalMods": 36,
+    "removedLegacyOwners": 15,
+    "representativeWorkflows": 160,
+    "repositoryTestsPassed": 5879,
+    "repositoryTestsSkipped": 3,
+    "platformPassed": 3,
+    "platformExternallyBlocked": 9,
+    "platformFailed": 0,
+    "performanceSlices": 8
+  },
+  "reviewEvidence": {
+    "passed": true,
+    "path": "docs/specs/evidence/modular-agon-slice9-review-evidence.json"
+  },
+  "steps": [
+    "npm-ci",
+    "clean-build",
+    "s9-negative-controls",
+    "generated-negative-controls",
+    "generated-artifacts",
+    "first-party-generation",
+    "release-set",
+    "supply-chain",
+    "npx-install",
+    "platform-matrix",
+    "state-migrations",
+    "physical-cutover",
+    "manifest-capabilities",
+    "legacy-kill-list",
+    "slice8-regression",
+    "representative-workflows",
+    "typecheck",
+    "lint",
+    "full-repository-suite",
+    "spec-consistency",
+    "roadmap-contract",
+    "performance-s1a",
+    "performance-s2",
+    "performance-s3",
+    "performance-s4",
+    "performance-s5",
+    "performance-s6",
+    "performance-s7",
+    "performance-s8",
+    "final-ignored-source-contamination",
+    "final-clean-worktree"
+  ],
+  "externalBlockers": [
+    "Native macOS x64 and Linux arm64/x64 runners for Node 22, 24, and 26 are unavailable in this environment.",
+    "npm provenance, signing, registry publication, and promotion require external credentials and authorization."
+  ]
+}

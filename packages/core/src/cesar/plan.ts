@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { runtimeAgonPath } from '../utils/paths.js';
 
 import { hostNowIso } from '../blocks/host-runtime.js';
+import { createPersistenceEnvelope, unwrapPersistenceEnvelope } from '@kernlang/agon-support-persistence';
 
 /**
  * Canonical directory for Cesar execution plans. Markdown and JSON live together so the user can inspect and edit the exact plan Cesar proposed.
@@ -263,7 +264,11 @@ export function saveCesarPlan(plan: CesarPlan): void {
   // sessions don't overwrite each other's tmp file before rename.
   const tmpPath = `${finalPath}.${process.pid}.${Date.now()}.tmp`;
   try {
-    writeFileSync(tmpPath, JSON.stringify(persistedPlan, null, 2));
+    const payload = JSON.parse(JSON.stringify(persistedPlan));
+    const status = plan.state === 'planning' ? 'draft' : plan.state === 'awaiting_approval' ? 'approved' : plan.state === 'done' ? 'completed' : plan.state;
+    const envelope = createPersistenceEnvelope({ kind: 'plan', status, payload, idSeed: plan.id, ownerModId: 'agon.plan',
+      contributionId: 'agon.plan.cesar-plan', createdAt: plan.createdAt, updatedAt: plan.updatedAt ?? plan.createdAt });
+    writeFileSync(tmpPath, JSON.stringify(envelope, null, 2));
     renameSync(tmpPath, finalPath);
   } catch (err) {
     try { unlinkSync(tmpPath); } catch { /* tmp may not exist */ }
@@ -284,7 +289,7 @@ export function loadCesarPlan(planId: string): CesarPlan|null {
   const paths = [{ filePath: cesarPlanJsonPath(safeId), canonical: true }, { filePath: runtimeAgonPath('runs', `${safeId}.json`), canonical: false }];
   for (const entry of paths) {
     try {
-      const plan = JSON.parse(readFileSync(entry.filePath, 'utf-8')) as CesarPlan;
+      const plan = unwrapPersistenceEnvelope<CesarPlan>(JSON.parse(readFileSync(entry.filePath, 'utf-8')), 'plan');
       const fallbackMarkdownPath = cesarPlanMarkdownPath(plan.id);
       const hasFallback = entry.canonical || existsSync(fallbackMarkdownPath);
       const fallbackPath = hasFallback ? fallbackMarkdownPath : undefined;
@@ -310,7 +315,7 @@ export function listCesarPlans(): CesarPlan[] {
     }
     for (const f of files) {
       try {
-        const plan = JSON.parse(readFileSync(join(dir, f), 'utf-8')) as CesarPlan;
+        const plan = unwrapPersistenceEnvelope<CesarPlan>(JSON.parse(readFileSync(join(dir, f), 'utf-8')), 'plan');
         if (!plan?.id || byId.has(plan.id)) continue;
         const fallbackMarkdownPath = cesarPlanMarkdownPath(plan.id);
         const planFilePath = plan.planFilePath ?? (canonical || existsSync(fallbackMarkdownPath) ? fallbackMarkdownPath : undefined);

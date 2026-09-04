@@ -8,6 +8,7 @@ const evidenceRoot = process.env.AGON_SPEC_EVIDENCE_DIR ?? resolve(root, 'docs/s
 const generatedRoot = process.env.AGON_SPEC_GENERATED_DIR ?? resolve(root, 'packages/mod-kernel/src/generated');
 const inventory = JSON.parse(readFileSync(resolve(evidenceRoot, 'modular-agon-current-inventory.json'), 'utf8'));
 const ownership = JSON.parse(readFileSync(resolve(evidenceRoot, 'modular-agon-ownership.json'), 'utf8'));
+const physicalContributions = JSON.parse(readFileSync(resolve(evidenceRoot, 'modular-agon-physical-contributions.json'), 'utf8')).contributions;
 const output = resolve(generatedRoot, 'first-party-surface-catalog.ts');
 
 const projection = new Map([
@@ -79,6 +80,27 @@ for (const [category, [surface, kind]] of projection) {
       },
     });
   }
+}
+for (const contribution of physicalContributions) {
+  entries.push({
+    surface: contribution.surface,
+    kind: contribution.kind,
+    registryId: contribution.registryId,
+    publicId: contribution.publicId,
+    category: contribution.category,
+    group: contribution.ownerClass,
+    source: contribution.source,
+    aliases: [],
+    owner: identity(contribution.package),
+    ownerClass: contribution.ownerClass,
+    description: contribution.description,
+    accessibility: {
+      label: contribution.description,
+      fallbackText: contribution.description,
+      keyboardAccessible: true,
+      colorIndependent: true,
+    },
+  });
 }
 
 entries.sort((left, right) => left.surface.localeCompare(right.surface) || left.kind.localeCompare(right.kind) || left.registryId.localeCompare(right.registryId));

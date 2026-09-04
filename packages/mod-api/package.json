@@ -1,7 +1,7 @@
 {
   "name": "@kernlang/agon-mod-api",
   "version": "1.0.0",
-  "private": true,
+  "private": false,
   "type": "module",
   "exports": {
     ".": {
@@ -21,7 +21,8 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
-    "schemas"
+    "schemas",
+    "LICENSE"
   ],
   "sideEffects": false,
   "scripts": {
@@ -31,5 +32,6 @@
   "dependencies": {
     "zod": "^4.3.6",
     "semver": "^7.7.4"
-  }
+  },
+  "license": "MIT"
 }

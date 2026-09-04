@@ -20,7 +20,7 @@ add their owners through the generated ledger before qualification can pass.
 
 - `@types/semver` is a declared root development dependency. Clean package
   compilation no longer depends on ignored declaration shims.
-- Package dependencies contain 144 declared and 144 unique directed edges.
+- The current physical package graph contains 151 declared and 151 unique directed edges.
 - Index and commit subjects have distinct Git-object hashes and distinct labels.
 - Ignored, untracked, and unstaged source-bearing files fail qualification.
 - Commit qualification additionally requires the index to equal the commit.

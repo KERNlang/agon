@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "id": "agon.routing-docs",
   "name": "Routing Docs",
-  "version": "0.0.0-slice.5",
+  "version": "1.0.0",
   "apiRange": ">=1.0.0 <2",
   "execution": "executable",
   "compatibility": {
@@ -36,7 +36,13 @@
     "optional": [],
     "conflicts": []
   },
-  "permissions": [],
+  "permissions": [
+    {
+      "capability": "fs.write",
+      "resources": [],
+      "required": true
+    }
+  ],
   "platforms": [
     "darwin-arm64",
     "darwin-x64",
@@ -48,8 +54,8 @@
       "path": "ownership.json",
       "kind": "documentation",
       "mediaType": "application/json",
-      "contentHash": "sha256:e556949536b941059b558944703ccc0a28a662d1354355843cddfd30740eeabd",
-      "bytes": 632,
+      "contentHash": "sha256:4fb46f55ceabfdcb84ed16f6ff2346145d7d3c231e45e707975f1ce1d0d80aac",
+      "bytes": 1489,
       "executable": false,
       "platforms": [
         "darwin-arm64",
@@ -90,13 +96,29 @@
     "lifecycleHooks": [],
     "resultTypes": [],
     "configKeys": [],
-    "generatedDocs": []
+    "generatedDocs": [
+      {
+        "id": "generatedDocumentation:0000",
+        "aliases": []
+      },
+      {
+        "id": "generatedDocumentation:0001",
+        "aliases": []
+      },
+      {
+        "id": "generatedDocumentation:0002",
+        "aliases": []
+      }
+    ]
   },
   "pack": {
     "include": [
+      "LICENSE",
       "agon.mod.json",
       "dist/index.js",
       "dist/index.d.ts",
+      "dist/implementation.d.ts",
+      "dist/guide-content.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

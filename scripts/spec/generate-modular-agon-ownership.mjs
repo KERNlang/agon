@@ -45,18 +45,18 @@ const mods = {
   forge: ['@kernlang/agon-support-panel', '@kernlang/agon-support-judge', '@kernlang/agon-support-worktree', '@kernlang/agon-support-verification'],
   'team-forge': ['@kernlang/agon-mod-forge', '@kernlang/agon-support-panel'],
   synthesis: ['@kernlang/agon-support-panel', '@kernlang/agon-support-judge'],
-  review: ['@kernlang/agon-support-panel', '@kernlang/agon-support-verification'],
+  review: ['@kernlang/agon-support-panel', '@kernlang/agon-support-verification', '@kernlang/agon-support-worktree'],
   'pipeline-orchestration': ['@kernlang/agon-mod-brainstorm', '@kernlang/agon-mod-forge', '@kernlang/agon-mod-tribunal'],
   'pipeline-delivery': ['@kernlang/agon-mod-agent', '@kernlang/agon-mod-review'],
   agent: ['@kernlang/agon-support-agent-runtime'],
-  goal: ['@kernlang/agon-mod-plan', '@kernlang/agon-mod-agent', '@kernlang/agon-mod-review', '@kernlang/agon-mod-jobs', '@kernlang/agon-mod-git-actions'],
-  conquer: ['@kernlang/agon-mod-agent', '@kernlang/agon-mod-nero', '@kernlang/agon-mod-tribunal', '@kernlang/agon-mod-council'],
+  goal: ['@kernlang/agon-mod-plan', '@kernlang/agon-mod-agent', '@kernlang/agon-mod-review', '@kernlang/agon-mod-jobs', '@kernlang/agon-mod-git-actions', '@kernlang/agon-support-worktree', '@kernlang/agon-support-verification'],
+  conquer: ['@kernlang/agon-mod-agent', '@kernlang/agon-mod-nero', '@kernlang/agon-mod-tribunal', '@kernlang/agon-mod-council', '@kernlang/agon-support-worktree', '@kernlang/agon-support-verification'],
   nero: ['@kernlang/agon-support-judge'],
   council: ['@kernlang/agon-support-panel', '@kernlang/agon-support-judge'],
   research: ['@kernlang/agon-support-engine-runtime'],
   rag: ['@kernlang/agon-support-persistence', '@kernlang/agon-support-dedup'],
-  mutate: ['@kernlang/agon-support-verification'],
-  naturalize: ['@kernlang/agon-support-engine-runtime'],
+  mutate: ['@kernlang/agon-support-verification', '@kernlang/agon-support-worktree'],
+  naturalize: ['@kernlang/agon-support-engine-runtime', '@kernlang/agon-mod-sanitize'],
   sanitize: ['@kernlang/agon-support-engine-runtime'],
   rooms: ['@kernlang/agon-support-persistence'],
   jobs: ['@kernlang/agon-support-persistence'],
@@ -114,12 +114,13 @@ function assignmentFor(category, item) {
   const raw = item.id;
   const normalized = normalizeSurfaceId(raw);
   const source = item.source ?? '';
+  if (category === 'generatedDocumentation') return { class: MOD, package: '@kernlang/agon-mod-routing-docs', rule: 'generated-docs-owner' };
   const physicalMod = source.match(new RegExp('^packages/mod-([^/]+)/'));
   if (physicalMod) return { class: MOD, package: '@kernlang/agon-mod-' + physicalMod[1], rule: 'physical-mod-owner' };
   const physicalSupport = source.match(/^packages\/support-([^/]+)\//);
   if (physicalSupport) return { class: SUPPORT, package: '@kernlang/agon-support-' + physicalSupport[1], rule: 'physical-support-owner' };
   if (raw === 'Pipeline' && category === 'mcpTools') return { class: MOD, package: '@kernlang/agon-mod-pipeline-orchestration', rule: 'pipeline-surface-split' };
-  if (raw === 'pipeline' || raw === 'Pipeline') return { class: MOD, package: '@kernlang/agon-mod-pipeline-delivery', rule: 'pipeline-surface-split' };
+  if (normalized === 'pipeline' || raw === 'Pipeline') return { class: MOD, package: '@kernlang/agon-mod-pipeline-delivery', rule: 'pipeline-surface-split' };
   if (supportTools.has(raw)) return { class: SUPPORT, package: supportTools.get(raw), rule: 'exact-shared-tool' };
   if (kernelSurface.has(raw) || kernelSurface.has(normalized)) return { class: KERNEL, package: '@kernlang/agon-kernel', rule: 'exact-kernel-surface' };
   const modName = directMod.get(raw) ?? directMod.get(normalized);

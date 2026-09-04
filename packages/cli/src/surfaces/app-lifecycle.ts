@@ -1,6 +1,6 @@
-import { initExtensions, appendMessage, loadCesarPlan, cesarPlanJsonPath, configSet } from '@kernlang/agon-core';
+import { appendMessage, loadCesarPlan, cesarPlanJsonPath, configSet } from '@kernlang/agon-core';
 
-import type { EngineRegistry, CommandRegistry, EventBus, ChatSession, PersistentSession, Skill, LoadedExtension, CesarPlan } from '@kernlang/agon-core';
+import type { ChatSession, PersistentSession, CesarPlan, EngineRegistry, EventBus } from '@kernlang/agon-core';
 
 import { checkForUpdate, loadDismissedVersion, isLinkedDevInstall } from '../services/update-check.js';
 
@@ -19,16 +19,6 @@ import { sessionResultStore } from '../models/session-results.js';
 import { statSync } from 'node:fs';
 
 // ── Module: AppLifecycle ──
-
-export function loadExtensionsForWorkspace(workspacePath: string, commandRegistry: CommandRegistry, registry: EngineRegistry, eventBus: EventBus, setExtensionSkills: (s:Skill[]) => void, setExtensionPromptFragments: (f:string[]) => void, setLoadedExtensions: (e:LoadedExtension[]) => void): void {
-  initExtensions(workspacePath, commandRegistry, registry, eventBus).then(({ extensions, skills: extSkills, systemPromptFragments }) => {
-    if (extSkills.length > 0) setExtensionSkills(extSkills);
-    if (systemPromptFragments.length > 0) setExtensionPromptFragments(systemPromptFragments);
-    if (extensions.length > 0) setLoadedExtensions(extensions);
-  }).catch((err: Error) => {
-    console.warn(`[agon] extension loading failed: ${err.message}`);
-  });
-}
 
 export function startPlanSyncWatcher(activePlan: CesarPlan | null, setActivePlanWrapped: (plan:CesarPlan) => void, planWatcherTimerRef: {current: ReturnType<typeof setInterval> | null}, planWatcherDebounceTimerRef: {current: ReturnType<typeof setTimeout> | null}, planWatcherStatMtimeRef: {current: number}, activePlanRef: {current: CesarPlan | null}): (() => void) | undefined {
   if (planWatcherTimerRef.current) { clearInterval(planWatcherTimerRef.current); planWatcherTimerRef.current = null; }

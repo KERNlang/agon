@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -7,7 +7,7 @@ import {
   hashGitSubject,
   isSourceBearingPath,
   validateDependencyGraph,
-  validateSubjectBoundReview,
+  validateStoredSubjectBoundReview,
 } from './slice1b-qualification-gates.mjs';
 
 const root = new URL('../..', import.meta.url).pathname.replace(/\/$/, '');
@@ -86,7 +86,9 @@ function cleanSubjectSteps(subject) {
       ['support-migration-ledger', 'node', ['scripts/spec/generate-modular-support-migration-ledger.mjs', '--check']],
       ['foundation-mutation', 'npm', ['run', 'test:modular-foundation-mutation']],
       ['first-party-generation', 'npm', ['run', 'spec:modular-first-party:check']],
+      ['manifest-capabilities', 'npm', ['run', 'test:modular-manifest-capabilities']],
       ['first-party-packages', 'npm', ['run', 'test:modular-first-party']],
+      ['first-party-cli-contract-parity', 'npx', ['vitest', 'run', 'tests/unit/modular-cli-contract-parity.test.ts']],
       ['first-party-disable-matrix', 'npm', ['run', 'test:modular-disable-matrix']],
       ['first-party-data-migrations', 'npm', ['run', 'test:modular-package-data-migrations']],
       ['first-party-rollback', 'npm', ['run', 'test:modular-first-party-rollback']],
@@ -123,12 +125,11 @@ const graph = validateDependencyGraph(packageMap.packages);
 const indexHash = hashGitSubject(root, { kind: 'index', pathspecs: ['.'], excludedPaths: excludedReceiptPaths, excludedPathPrefixes: excludedReviewArtifactPrefixes });
 const commitHash = hashGitSubject(root, { kind: 'commit', revision: 'HEAD', pathspecs: ['.'], excludedPaths: excludedReceiptPaths, excludedPathPrefixes: excludedReviewArtifactPrefixes });
 const expectedHash = subjectKind === 'index' ? indexHash : commitHash;
-const reviewPath = join(root, 'docs/specs/evidence/modular-agon-slice5-review-evidence.json');
-const reviewEvidence = existsSync(reviewPath)
-  ? validateSubjectBoundReview(root, JSON.parse(readFileSync(reviewPath, 'utf8')), { kind: subjectKind, revision: 'HEAD', hash: expectedHash })
-  : { passed: false, reason: 'S5 review evidence is missing' };
+const reviewPath = 'docs/specs/evidence/modular-agon-slice5-review-evidence.json';
+const reviewEvidence = validateStoredSubjectBoundReview(root, reviewPath, { kind: subjectKind, revision: 'HEAD', hash: expectedHash });
 const performance = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-slice5-performance.json'), 'utf8'));
 const migration = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-slice5-migration-ledger.json'), 'utf8'));
+const behaviorAudit = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-slice5-behavior-audit.json'), 'utf8'));
 const steps = process.argv.includes('--run-clean') ? cleanSubjectSteps(subjectKind) : [];
 const receipt = {
   schemaVersion: 1,
@@ -138,6 +139,7 @@ const receipt = {
   graph: { packages: packageMap.packages.length, ...graph },
   firstPartyPackages: 36,
   migration: { assignments: migration.counts.assignments, counts: migration.counts },
+  behaviorAudit,
   performance,
   reviewEvidence,
   cleanCheckoutSteps: steps,
@@ -148,9 +150,10 @@ receipt.passed = noContamination
   && exactCommit
   && reviewEvidence.passed
   && graph.duplicateEdges.length === 0
-  && graph.uniqueEdges === 144
+  && graph.uniqueEdges === 151
   && performance.passed === true
-  && migration.counts.packages === 36 && migration.counts.assignments === 341
+  && migration.counts.packages === 36 && migration.counts.assignments === 344
+  && behaviorAudit.status === 'green'
   && steps.length > 0
   && steps.every(({ passed }) => passed);
 console.log(JSON.stringify(receipt, null, 2));

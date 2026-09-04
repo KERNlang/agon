@@ -1,11 +1,10 @@
 import { validateManifest } from '@kernlang/agon-mod-api';
-import type { AgonModFactory, AgonModV1, Awaitable, Dispose, InvocationContext, InvocationOutput, Json, ModServices, Registrar } from '@kernlang/agon-mod-api';
 
 export const MANIFEST = validateManifest({
   "schemaVersion": 2,
   "id": "agon.routing-docs",
   "name": "Routing Docs",
-  "version": "0.0.0-slice.5",
+  "version": "1.0.0",
   "apiRange": ">=1.0.0 <2",
   "execution": "executable",
   "compatibility": {
@@ -39,7 +38,13 @@ export const MANIFEST = validateManifest({
     "optional": [],
     "conflicts": []
   },
-  "permissions": [],
+  "permissions": [
+    {
+      "capability": "fs.write",
+      "resources": [],
+      "required": true
+    }
+  ],
   "platforms": [
     "darwin-arm64",
     "darwin-x64",
@@ -51,8 +56,8 @@ export const MANIFEST = validateManifest({
       "path": "ownership.json",
       "kind": "documentation",
       "mediaType": "application/json",
-      "contentHash": "sha256:e556949536b941059b558944703ccc0a28a662d1354355843cddfd30740eeabd",
-      "bytes": 632,
+      "contentHash": "sha256:4fb46f55ceabfdcb84ed16f6ff2346145d7d3c231e45e707975f1ce1d0d80aac",
+      "bytes": 1489,
       "executable": false,
       "platforms": [
         "darwin-arm64",
@@ -93,13 +98,29 @@ export const MANIFEST = validateManifest({
     "lifecycleHooks": [],
     "resultTypes": [],
     "configKeys": [],
-    "generatedDocs": []
+    "generatedDocs": [
+      {
+        "id": "generatedDocumentation:0000",
+        "aliases": []
+      },
+      {
+        "id": "generatedDocumentation:0001",
+        "aliases": []
+      },
+      {
+        "id": "generatedDocumentation:0002",
+        "aliases": []
+      }
+    ]
   },
   "pack": {
     "include": [
+      "LICENSE",
       "agon.mod.json",
       "dist/index.js",
       "dist/index.d.ts",
+      "dist/implementation.d.ts",
+      "dist/guide-content.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],
@@ -122,55 +143,34 @@ export const SOURCE_OCCURRENCES = Object.freeze([
     "class": "user-toggleable-mod-package",
     "package": "@kernlang/agon-mod-routing-docs",
     "rule": "exact-user-surface"
-  }
-]);
-export const COMPATIBILITY_CONTRIBUTIONS = Object.freeze([
-  {
-    "id": "cliCommands:0000",
-    "publicId": "agent-guide",
-    "registryKind": "cli-command",
-    "category": "cliCommands",
-    "source": "packages/cli/src/lazy-commands.ts:311"
   },
   {
-    "id": "cliCommands:0025",
-    "publicId": "install-agent-prompts",
-    "registryKind": "cli-command",
-    "category": "cliCommands",
-    "source": "packages/cli/src/lazy-commands.ts:312"
+    "category": "generatedDocumentation",
+    "id": "AGENTS.md routing block",
+    "source": "packages/cli/src/commands/agent-guide-text.ts:1",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-routing-docs",
+    "rule": "generated-docs-owner"
+  },
+  {
+    "category": "generatedDocumentation",
+    "id": "docs/modes.md",
+    "source": "package.json:12",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-routing-docs",
+    "rule": "generated-docs-owner"
+  },
+  {
+    "category": "generatedDocumentation",
+    "id": "installed agent prompts",
+    "source": "packages/cli/src/commands/install-agent-prompts.ts:1",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-routing-docs",
+    "rule": "generated-docs-owner"
   }
 ]);
-
-export interface FirstPartyCompatibilityRuntime {
-  command(kind: string, id: string, input: Json, context: InvocationContext): InvocationOutput;
-  tool(kind: string, id: string, input: Json, context: InvocationContext): Awaitable<Json>;
-  parseIntent(id: string, input: string): Awaitable<Json | undefined>;
-  lifecycle(id: string, payload: Json, context: InvocationContext): Awaitable<void>;
-  render(id: string, payload: Json): Awaitable<{ readonly text: string; readonly markdown?: string }>;
-}
-
-type FirstPartyServices = ModServices & { readonly firstPartyCompatibility?: FirstPartyCompatibilityRuntime };
-const inputSchema = Object.freeze({ type: 'object', additionalProperties: true }) as Readonly<Record<string, Json>>;
-const _resultSchema = Object.freeze({ type: 'object', additionalProperties: true }) as Readonly<Record<string, Json>>;
-
-export function createFirstPartyCompatibilityMod(runtime: FirstPartyCompatibilityRuntime): AgonModV1 {
-  return Object.freeze({
-    apiVersion: '1' as const,
-    async activate(registrar: Registrar): Promise<Dispose> {
-      const disposers: Dispose[] = [];
-      disposers.push(registrar.command('cli', { id: "cliCommands:0000", description: "agent-guide compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "agent-guide", input, context) }));
-      disposers.push(registrar.command('cli', { id: "cliCommands:0025", description: "install-agent-prompts compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "install-agent-prompts", input, context) }));
-      return async () => { for (const dispose of [...disposers].reverse()) await dispose(); };
-    },
-  });
-}
-
-export const createMod: AgonModFactory = async (services: ModServices): Promise<AgonModV1> => {
-  const runtime = (services as FirstPartyServices).firstPartyCompatibility;
-  if (!runtime) {
-    throw Object.assign(new Error('@kernlang/agon-mod-routing-docs requires the S5 legacy compatibility bridge until generated surface cutover'), { code: 'MOD_RESTART_REQUIRED' });
-  }
-  return createFirstPartyCompatibilityMod(runtime);
-};
-
-export default createMod;
+export const IMPLEMENTATION_KIND = 'physical' as const;
+export { createMod } from './implementation.js';
+export { createMod as default } from './implementation.js';
+export { runGuide } from './implementation.js';
+export { agentGuideMarkdown, modeDocsMarkdown, renderModeDocsProjection, agonShim, codexSkillMarkdown, codexSkillOpenAiYaml } from './guide-content.js';

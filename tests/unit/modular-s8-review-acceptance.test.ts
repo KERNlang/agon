@@ -173,7 +173,7 @@ describe('S8 independent review acceptance controls', () => {
     for (const corruptPointer of [false, true]) {
       const root = await mkdtemp(join(tmpdir(), 'agon-s8-safe-pointer-'));
       const desired = createFullCompatDesiredState(createFirstPartyModCatalog(), '2026-09-04T00:00:00.000Z');
-      const host = new DurableModHost(root, { kernelVersion: '0.2.5' });
+      const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
       await host.commitGeneration({ operation: 'install', lock: await surfaceLockFor(desired), desiredState: desired, installedIndex: {} });
       if (corruptPointer) await writeFile(host.paths.current, '{malformed');
       const boot = await bootstrapFirstPartySurfaceGeneration({ hostRoot: root, safeMode: true, runtime });
@@ -205,6 +205,7 @@ describe('S8 independent review acceptance controls', () => {
     const shape = validManifest('example.logs');
     process.env.AGON_TEST_API_KEY = 'known-secret'; const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const external = createSafeExternalModServices({ hostRoot: root, manifest: shape, contentHash: hash('d'), source: 'user-folder' });
+    expect(external.browser).toBeUndefined(); expect(external.workspace).toBeUndefined(); expect(external.runs).toBeUndefined(); expect(external.mutation).toBeUndefined();
     await external.logger.warn('Bearer abc.def known-secret a25vd24tc2VjcmV0 postgres://admin:uri-password@localhost/db?token=query-secret', { apiKey: 'hidden', nested: { value: 'known-secret' } });
     const receiptRoot = join(root, 'external-mod-data', (await readdir(join(root, 'external-mod-data')))[0]!, 'receipts');
     for (let attempt = 0; attempt < 50; attempt += 1) {

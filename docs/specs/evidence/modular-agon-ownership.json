@@ -1021,9 +1021,9 @@
       "category": "tuiSlashCommands",
       "id": "/pipeline",
       "source": "packages/cli/src/signals/intent.ts:56",
-      "class": "minimal-kernel-machinery",
-      "package": "@kernlang/agon-kernel",
-      "rule": "kernel-contract-default"
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-pipeline-delivery",
+      "rule": "pipeline-surface-split"
     },
     {
       "category": "tuiSlashCommands",
@@ -6958,24 +6958,24 @@
       "id": "AGENTS.md routing block",
       "source": "packages/cli/src/commands/agent-guide-text.ts:1",
       "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-agent",
-      "rule": "semantic-source-rule"
+      "package": "@kernlang/agon-mod-routing-docs",
+      "rule": "generated-docs-owner"
     },
     {
       "category": "generatedDocumentation",
       "id": "docs/modes.md",
       "source": "package.json:12",
-      "class": "minimal-kernel-machinery",
-      "package": "@kernlang/agon-kernel",
-      "rule": "kernel-contract-default"
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-routing-docs",
+      "rule": "generated-docs-owner"
     },
     {
       "category": "generatedDocumentation",
       "id": "installed agent prompts",
       "source": "packages/cli/src/commands/install-agent-prompts.ts:1",
-      "class": "minimal-kernel-machinery",
-      "package": "@kernlang/agon-kernel",
-      "rule": "kernel-contract-default"
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-routing-docs",
+      "rule": "generated-docs-owner"
     }
   ]
 }

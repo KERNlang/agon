@@ -9,6 +9,7 @@
   "include": ["src"],
   "references": [
     { "path": "../mod-kernel" },
+    { "path": "../mod-routing-docs" },
     { "path": "../core" },
     { "path": "../forge" },
     { "path": "../adapter-cli" }

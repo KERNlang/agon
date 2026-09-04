@@ -291,7 +291,7 @@ export class DurableModHost {
       const declaredFiles = Object.keys(manifest.files).sort();
       if (canonicalJson(actualFiles) !== canonicalJson(declaredFiles)) throw new Error('generation contains undeclared or missing files');
       const lockBytes = await this.#io.readFile(join(root, 'mods.lock.json'));
-      const generationLock = JSON.parse(lockBytes.toString('utf8')) as CanonicalModLock;
+      const generationLock = JSON.parse(new TextDecoder().decode(lockBytes)) as CanonicalModLock;
       if (hashBytes(lockBytes) !== manifest.lockHash) throw new Error('generation lock hash mismatch');
       if (generationLock.graphHash !== manifest.graphHash) throw new Error('generation graph hash mismatch');
       for (const [path, expected] of Object.entries(manifest.files)) {

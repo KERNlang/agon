@@ -22,7 +22,7 @@ five projections, disposes the owner, and proves disabled owners cannot register
 
 ## Ownership and migration
 
-The S5 migration ledger maps all 341 mod-owned inventory assignments to one of
+The S5 migration ledger maps all 344 mod-owned inventory assignments to one of
 the 36 physical packages. It preserves the original source locator as the S5
 compatibility adapter, identifies the physical entrypoint and ownership asset,
 and records the S6 removal condition. Eighty-six assignments cover config,
@@ -52,6 +52,36 @@ migration verification, full repository tests, typecheck, lint, generated drift
 checks, and measured imports of all 36 packages. Negative controls accompany
 package dependency validation, disable reachability, data coverage, legacy
 oracle boundaries, and rollback-subject discovery.
+
+### Acceptance correction: a registered ID is not behavioral extraction
+
+The post-cutover audit found that the original gates could pass when a physical
+package registered the right owner and contribution IDs but exposed a reduced
+CLI contract or a reduced workflow. Examples included missing Review mutation
+options, a generic Goal input, one shared History/Last schema, and generic
+Routing Docs arguments. Those are false greens: package existence, generated
+reachability, and disablement do not prove that the package preserved the
+feature it replaced.
+
+S5 therefore also requires exact recursive CLI contract parity for every
+first-party command (argument names, positional/required shape, aliases,
+defaults, and nested commands) and behavior tests for every argument that
+changes execution. Schema-only repairs are insufficient. Full workflow bodies
+move into the owning mod or an appropriate hidden support package. Narrow typed
+host ports are permitted only for genuine host machinery such as browser
+session hosting, process supervision, or workspace I/O; they may not delegate
+an entire legacy feature under a generic command/service-locator API. Each
+temporary adapter retains an explicit removal condition and remains a red final
+release cell until removed.
+
+The immutable resolved registry in `@kernlang/agon-kernel` remains the sole
+owner of enablement and all five surface projections. CLI-only presentation
+helpers stay mod-local; a helper moves to a hidden support package only when it
+has a coherent cross-mod responsibility. Existing argv contracts remain
+compatible without a hard break. The parity and disablement gates run in normal
+CI as well as release qualification. Host ports are bounded by cohesive typed
+capabilities, cancellation/error/lifecycle contracts, and import-boundary
+checks rather than an arbitrary method count.
 
 Rollback selects the retained qualified S4 commit. That subject contains no S5
 mod package other than the already-qualified Mod API/kernel foundation and does

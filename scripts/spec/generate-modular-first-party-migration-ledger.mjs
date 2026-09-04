@@ -11,13 +11,23 @@ const sourcePath = (locator) => locator.replace(/:\d+(?::\d+)?$/, '');
 const shortName = (id) => id.replace('@kernlang/agon-mod-', '');
 const packages = packageMap.packages.filter(({ class: kind }) => kind === 'user-toggleable-mod-package');
 const packageIds = new Set(packages.map(({ id }) => id));
+const removedLegacyEvidence = new Map([
+  ['packages/cli/src/commands/agent-guide-text.ts', 'KL-015'],
+  ['packages/core/src/rooms/types.ts', 'tests/unit/modular-no-legacy-orchestration-owner.test.ts:physical-room-owner'],
+  ['packages/core/src/rooms/leases.ts', 'tests/unit/modular-no-legacy-orchestration-owner.test.ts:physical-room-owner'],
+  ['packages/core/src/rooms/presence.ts', 'tests/unit/modular-no-legacy-orchestration-owner.test.ts:physical-room-owner'],
+  ['packages/core/src/rooms/store.ts', 'tests/unit/modular-no-legacy-orchestration-owner.test.ts:physical-room-owner'],
+  ['packages/core/src/rooms/tail.ts', 'tests/unit/modular-no-legacy-orchestration-owner.test.ts:physical-room-owner'],
+]);
 
 const assignments = ownership.assignments
   .filter(({ package: owner }) => packageIds.has(owner))
   .map((assignment) => {
     const short = shortName(assignment.package);
     const legacyPath = sourcePath(assignment.source);
-    if (!existsSync(resolve(root, legacyPath))) throw new Error(`missing legacy assignment source ${assignment.source}`);
+    const legacyPresent = existsSync(resolve(root, legacyPath));
+    const removalEvidence = removedLegacyEvidence.get(legacyPath);
+    if (!legacyPresent && !removalEvidence) throw new Error(`missing legacy assignment source without removal evidence ${assignment.source}`);
     const packageRoot = `packages/mod-${short}`;
     const physicalEntrypoint = `${packageRoot}/src/index.ts`;
     const ownershipAsset = `${packageRoot}/ownership.json`;
@@ -36,8 +46,10 @@ const assignments = ownership.assignments
       physicalEntrypoint,
       implementationPaths,
       ownershipAsset,
-      compatibilityAdapter: legacyPath,
-      authority: 'legacy-runtime-until-s6',
+      compatibilityAdapter: legacyPresent ? legacyPath : null,
+      authority: legacyPresent ? 'legacy-runtime-until-s6' : 'physical-owner',
+      legacyPresent,
+      ...(!legacyPresent ? { removalEvidence } : {}),
       registrationBoundary: 'public-mod-api',
       removalCondition: 'S6 generated registry owns the contribution and its frozen oracle remains green',
     });

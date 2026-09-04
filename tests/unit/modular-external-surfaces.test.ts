@@ -22,7 +22,7 @@ async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'agon-s8-external-surfaces-'));
   const hostRoot = join(root, 'modular-host'); const packageRoot = join(root, 'mods', 'surface');
   await mkdir(join(packageRoot, 'dist'), { recursive: true });
-  const shape = manifest('example.surfaces', '1.0.0', { compatibility: { kernelRange: '>=0.2.0 <1', nodeRange: '>=22 <27' }, contributes: {
+  const shape = manifest('example.surfaces', '1.0.0', { compatibility: { kernelRange: '>=1 <2', nodeRange: '>=22 <27' }, contributes: {
     cliCommands: [], tuiActions: [], mcpTools: [{ id: 'ExternalMcp', aliases: ['external-mcp-alias'] }],
     cesarTools: [{ id: 'ExternalCesar', aliases: ['external-cesar-alias'] }], lifecycleHooks: [], resultTypes: [], configKeys: [], generatedDocs: [],
   } });

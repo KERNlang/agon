@@ -1,11 +1,10 @@
 import { validateManifest } from '@kernlang/agon-mod-api';
-import type { AgonModFactory, AgonModV1, Awaitable, Dispose, InvocationContext, InvocationOutput, Json, ModServices, Registrar } from '@kernlang/agon-mod-api';
 
 export const MANIFEST = validateManifest({
   "schemaVersion": 2,
   "id": "agon.brainstorm",
   "name": "Brainstorm",
-  "version": "0.0.0-slice.5",
+  "version": "1.0.0",
   "apiRange": ">=1.0.0 <2",
   "execution": "executable",
   "compatibility": {
@@ -43,7 +42,13 @@ export const MANIFEST = validateManifest({
     "optional": [],
     "conflicts": []
   },
-  "permissions": [],
+  "permissions": [
+    {
+      "capability": "engine.dispatch",
+      "resources": [],
+      "required": true
+    }
+  ],
   "platforms": [
     "darwin-arm64",
     "darwin-x64",
@@ -113,6 +118,10 @@ export const MANIFEST = validateManifest({
     ],
     "cesarTools": [
       {
+        "id": "cesarTools:0002",
+        "aliases": []
+      },
+      {
         "id": "cesarRoutes:0004",
         "aliases": []
       },
@@ -126,10 +135,6 @@ export const MANIFEST = validateManifest({
       },
       {
         "id": "cesarRoutes:0007",
-        "aliases": []
-      },
-      {
-        "id": "cesarTools:0002",
         "aliases": []
       }
     ],
@@ -145,9 +150,11 @@ export const MANIFEST = validateManifest({
   },
   "pack": {
     "include": [
+      "LICENSE",
       "agon.mod.json",
       "dist/index.js",
       "dist/index.d.ts",
+      "dist/implementation.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],
@@ -252,133 +259,7 @@ export const SOURCE_OCCURRENCES = Object.freeze([
     "rule": "exact-user-surface"
   }
 ]);
-export const COMPATIBILITY_CONTRIBUTIONS = Object.freeze([
-  {
-    "id": "cesarRoutes:0004",
-    "publicId": "brainstorm",
-    "registryKind": "cesar-tool",
-    "category": "cesarRoutes",
-    "source": "packages/cli/src/cesar/routing.ts:19"
-  },
-  {
-    "id": "cesarRoutes:0005",
-    "publicId": "brainstorm",
-    "registryKind": "cesar-tool",
-    "category": "cesarRoutes",
-    "source": "packages/cli/src/cesar/routing.ts:27"
-  },
-  {
-    "id": "cesarRoutes:0006",
-    "publicId": "brainstorm",
-    "registryKind": "cesar-tool",
-    "category": "cesarRoutes",
-    "source": "packages/cli/src/models/handler-types.ts:113"
-  },
-  {
-    "id": "cesarRoutes:0007",
-    "publicId": "brainstorm",
-    "registryKind": "cesar-tool",
-    "category": "cesarRoutes",
-    "source": "packages/core/src/cesar/plan.ts:52"
-  },
-  {
-    "id": "cesarTools:0002",
-    "publicId": "Brainstorm",
-    "registryKind": "cesar-tool",
-    "category": "cesarTools",
-    "source": "packages/cli/src/cesar/tools.ts:38"
-  },
-  {
-    "id": "cliCommands:0003",
-    "publicId": "brainstorm",
-    "registryKind": "cli-command",
-    "category": "cliCommands",
-    "source": "packages/cli/src/lazy-commands.ts:288"
-  },
-  {
-    "id": "intentVariants:0005",
-    "publicId": "brainstorm",
-    "registryKind": "intent",
-    "category": "intentVariants",
-    "source": "packages/cli/src/signals/intent-types.ts:3"
-  },
-  {
-    "id": "intentVariants:0055",
-    "publicId": "suggest-brainstorm",
-    "registryKind": "intent",
-    "category": "intentVariants",
-    "source": "packages/cli/src/signals/intent-types.ts:55"
-  },
-  {
-    "id": "mcpTools:0004",
-    "publicId": "Brainstorm",
-    "registryKind": "mcp-tool",
-    "category": "mcpTools",
-    "source": "packages/mcp/src/agon-orchestration.ts:24"
-  },
-  {
-    "id": "resultAndEnvelopeTypes:0019",
-    "publicId": "BrainstormResult",
-    "registryKind": "result-type",
-    "category": "resultAndEnvelopeTypes",
-    "source": "packages/core/src/models/types.ts:531"
-  },
-  {
-    "id": "builtinCommandMetadata:0005",
-    "publicId": "brainstorm",
-    "registryKind": "tui-action",
-    "category": "builtinCommandMetadata",
-    "source": "packages/core/src/blocks/builtin-commands.ts:15"
-  },
-  {
-    "id": "tuiSlashCommands:0005",
-    "publicId": "/brainstorm",
-    "registryKind": "tui-action",
-    "category": "tuiSlashCommands",
-    "source": "packages/cli/src/signals/intent.ts:56"
-  }
-]);
-
-export interface FirstPartyCompatibilityRuntime {
-  command(kind: string, id: string, input: Json, context: InvocationContext): InvocationOutput;
-  tool(kind: string, id: string, input: Json, context: InvocationContext): Awaitable<Json>;
-  parseIntent(id: string, input: string): Awaitable<Json | undefined>;
-  lifecycle(id: string, payload: Json, context: InvocationContext): Awaitable<void>;
-  render(id: string, payload: Json): Awaitable<{ readonly text: string; readonly markdown?: string }>;
-}
-
-type FirstPartyServices = ModServices & { readonly firstPartyCompatibility?: FirstPartyCompatibilityRuntime };
-const inputSchema = Object.freeze({ type: 'object', additionalProperties: true }) as Readonly<Record<string, Json>>;
-const resultSchema = Object.freeze({ type: 'object', additionalProperties: true }) as Readonly<Record<string, Json>>;
-
-export function createFirstPartyCompatibilityMod(runtime: FirstPartyCompatibilityRuntime): AgonModV1 {
-  return Object.freeze({
-    apiVersion: '1' as const,
-    async activate(registrar: Registrar): Promise<Dispose> {
-      const disposers: Dispose[] = [];
-      disposers.push(registrar.tool('cesar', { id: "cesarRoutes:0004", description: "brainstorm compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('cesar-tool', "brainstorm", input, context) }));
-      disposers.push(registrar.tool('cesar', { id: "cesarRoutes:0005", description: "brainstorm compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('cesar-tool', "brainstorm", input, context) }));
-      disposers.push(registrar.tool('cesar', { id: "cesarRoutes:0006", description: "brainstorm compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('cesar-tool', "brainstorm", input, context) }));
-      disposers.push(registrar.tool('cesar', { id: "cesarRoutes:0007", description: "brainstorm compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('cesar-tool', "brainstorm", input, context) }));
-      disposers.push(registrar.tool('cesar', { id: "cesarTools:0002", description: "Brainstorm compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('cesar-tool', "Brainstorm", input, context) }));
-      disposers.push(registrar.command('cli', { id: "cliCommands:0003", description: "brainstorm compatibility contribution", inputSchema, run: (input, context) => runtime.command('cli-command', "brainstorm", input, context) }));
-      disposers.push(registrar.intent({ id: "intentVariants:0005", description: "brainstorm compatibility contribution", inputSchema, parse: (input) => runtime.parseIntent("brainstorm", input), run: (input, context) => runtime.command('intent', "brainstorm", input, context) }));
-      disposers.push(registrar.intent({ id: "intentVariants:0055", description: "suggest-brainstorm compatibility contribution", inputSchema, parse: (input) => runtime.parseIntent("suggest-brainstorm", input), run: (input, context) => runtime.command('intent', "suggest-brainstorm", input, context) }));
-      disposers.push(registrar.tool('mcp', { id: "mcpTools:0004", description: "Brainstorm compatibility contribution", inputSchema, effect: 'process', run: (input, context) => runtime.tool('mcp-tool', "Brainstorm", input, context) }));
-      disposers.push(registrar.resultType({ id: "resultAndEnvelopeTypes:0019", schema: resultSchema, readableVersions: '>=0.2.0', render: (payload) => runtime.render("BrainstormResult", payload) }));
-      disposers.push(registrar.command('tui', { id: "builtinCommandMetadata:0005", description: "brainstorm compatibility contribution", inputSchema, run: (input, context) => runtime.command('tui-action', "brainstorm", input, context) }));
-      disposers.push(registrar.command('tui', { id: "tuiSlashCommands:0005", description: "/brainstorm compatibility contribution", inputSchema, run: (input, context) => runtime.command('tui-action', "/brainstorm", input, context) }));
-      return async () => { for (const dispose of [...disposers].reverse()) await dispose(); };
-    },
-  });
-}
-
-export const createMod: AgonModFactory = async (services: ModServices): Promise<AgonModV1> => {
-  const runtime = (services as FirstPartyServices).firstPartyCompatibility;
-  if (!runtime) {
-    throw Object.assign(new Error('@kernlang/agon-mod-brainstorm requires the S5 legacy compatibility bridge until generated surface cutover'), { code: 'MOD_RESTART_REQUIRED' });
-  }
-  return createFirstPartyCompatibilityMod(runtime);
-};
-
-export default createMod;
+export const IMPLEMENTATION_KIND = 'physical' as const;
+export { createMod } from './implementation.js';
+export { createMod as default } from './implementation.js';
+export { runBrainstorm } from './implementation.js';

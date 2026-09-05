@@ -212,6 +212,54 @@ explanation, not a verified root cause of the earlier no-pong observation.
 
 ## Remaining clean implementation order
 
+**A19 — Plan approval interprets refusal as consent (repaired at the legacy boundary).**
+While tracing A05, `handlePlanShow` was found to reject only literal `n`;
+`no`, `cancel`, and arbitrary text entered the approval branch. It now accepts
+only empty input (the displayed `[Y/n]` default), `y`, or `yes`, ignoring case
+and surrounding whitespace. Other replies cancel and persist the cancelled plan.
+`resumeCesarPlan` likewise treated every answer except its three cancellation
+aliases as permission to resume. It now requires `1`/`resume` or
+`2`/`r`/`restart`; blank and unknown responses leave the paused plan unchanged.
+The choice UI maps Enter to the selected choice key, not blank input.
+
+The actual keyboard path also resolved Ctrl+C and free-text Escape dismissal
+as `''`, accidentally selecting affirmative defaults. Both now return `n`,
+matching the existing choice-question refusal path. Two failing-before tests
+in `tests/unit/question-cancel-refusal.test.ts` cover the real keyboard handlers.
+This retains the legacy string-answer interface; it is not a universal typed
+cancellation contract for every free-text workflow.
+
+Development verification: 21 focused regressions pass; the full rebuilt suite
+passes 5,991 tests with five existing skips across 498 files. Full-run log
+SHA-256: `3c57c3adde26d60563aa83a36d50fe4eb3e21a0b0a11e12c09f057dfe07a1117`.
+All 49 modular packages plus the launcher pack successfully (1,820,402 bytes),
+69 isolated npx checks pass, and SBOM validation passes. The final post-build
+typecheck passes; an intermediate typecheck overlapped the build's declaration
+cleanup and reported missing built declarations, so it is not qualification
+evidence. Active/global Agon and personal state were not promoted or modified.
+
+`tests/unit/plan-approval-refusal.test.ts` exercises the actual handlers with
+fixture persistence/execution: ten refusal cases failed before the repair;
+all 19 cases pass afterward, including affirmative/default draft approval and
+explicit resume/restart. No model or live plan storage is needed by this test.
+This is a prerequisite safety repair, **not** closure of A05 or A11. Cancellation
+signal propagation, current-session selection, persistence-format compatibility,
+and physical Plan workflow extraction still need integrated qualification.
+
+The A05 source trace distinguishes three contracts that must not be collapsed:
+
+- New task: `/plan <task>` enters Cesar plan mode and proposes a new plan.
+- Resume: `/plan resume [id]` resumes only a live session plan without an ID;
+  an explicit ID/path permits loading a saved plan. It must not silently use
+  the newest persisted plan.
+- Control: approve/cancel must address the visible Cesar proposal or the legacy
+  session plan and execute/persist the corresponding state transition, not merely
+  change the state of an unrelated `cplan-*` record.
+
+The physical Plan mod currently routes these TUI inputs into its persisted-record
+controller. The repair must introduce an owned session/approval boundary and
+retain the existing execution and self-review gates before retiring that adapter.
+
 **A16 — Serve readiness/shutdown race (repaired; regression suite passing).**
 The latest combined run had 5,923 passing tests, five skips and one failure:
 `serve-command.test.ts` received a null process exit code after SIGINT rather

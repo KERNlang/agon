@@ -33,7 +33,7 @@ export async function handlePlanShow(dispatch: Dispatch, ctx: HandlerContext, pl
   // If draft, prompt for approval inline
   if (plan.state === 'draft') {
     const answer = await ctx.askQuestion('Approve plan? [Y/n]');
-    if (answer.trim().toLowerCase() === 'n') {
+    if (!['', 'y', 'yes'].includes(answer.trim().toLowerCase())) {
       const cancelled = cancelPlan(plan);
       ctx.setCurrentPlan(cancelled);
       savePlan(cancelled);

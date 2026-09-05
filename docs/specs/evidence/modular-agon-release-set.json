@@ -79,17 +79,17 @@
         "range": "^19.2.0"
       }
     ],
-    "packedBytes": 1235809,
-    "unpackedBytes": 5553294,
+    "packedBytes": 1235829,
+    "unpackedBytes": 5553373,
     "fileCount": 95,
     "files": [
       {
-        "path": "dist/app-6XRXEP2C.js",
-        "size": 733754
+        "path": "dist/app-JBRYAQ5W.js",
+        "size": 733773
       },
       {
-        "path": "dist/app-6XRXEP2C.js.map",
-        "size": 488544
+        "path": "dist/app-JBRYAQ5W.js.map",
+        "size": 488604
       },
       {
         "path": "dist/attach-AEOUZSOB.js",
@@ -464,9 +464,9 @@
         "size": 36190
       }
     ],
-    "integrity": "sha512-sWQzHkB04eBw6LapgKSFaqrEzIp7Jk661MGMpjObV+Kwph809jjz3myR73ljG/DMyOkR24/dBp9rd7L7bxmBZw==",
-    "shasum": "6ec8dfdd486ebb6c1a9ccf5b2d3d57590c0f3d3e",
-    "tarballHash": "sha256:b53d9dc87fdd29bae410cdbe1c8d5ec593f69e1f044d5582b74923857ea5a7d4",
+    "integrity": "sha512-KUcWldpjwahd1UPa5FaZ91i28tI2DQ/ByZUF9csl0AqE8WTx+TDUeqrXxBwqUOvfhqoKIC2y431wcyBpDopGLg==",
+    "shasum": "6381bf7c2a6b6f0da525d4e031025a9bba6445d2",
+    "tarballHash": "sha256:1c71675423d3c0356a4a74410e5d03d34d8b2e0d4c7c0e037e6ffba548d0cc6f",
     "packageJsonHash": "sha256:99322f3dba4b7480ebd55ec8dc39fc1fe95a7c2d4d2e5953d9712c34a83bf575"
   },
   "packages": [

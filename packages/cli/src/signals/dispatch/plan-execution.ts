@@ -45,7 +45,9 @@ export async function resumeCesarPlan(plan: CesarPlan, cb: DispatchCallbacks): P
   ], '1');
   const trimmed = answer.trim().toLowerCase();
   
-  if (trimmed === '3' || trimmed === 'c' || trimmed === 'cancel') {
+  // The choice UI resolves Enter to its selected key. An empty or unexpected
+  // response is not permission to resume (it can also come from dismissal).
+  if (!['1', 'resume', '2', 'r', 'restart'].includes(trimmed)) {
     cb.dispatch({ type: 'info', message: 'Plan resume cancelled.' });
     return;
   }

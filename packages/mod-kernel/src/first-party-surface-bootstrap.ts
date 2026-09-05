@@ -25,6 +25,7 @@ import { ModStateStore } from './mod-state-store.js';
 import { createSafeExternalModServices } from './external-mod-services-safe.js';
 import { HOST_PROVIDED_DEPENDENCY_IDS } from './package-activation-order.js';
 import { AGON_RUNTIME_VERSION } from './runtime-version.js';
+import { createModObservability } from './mod-observability.js';
 
 interface FirstPartyModule {
   readonly MANIFEST: ModManifest;
@@ -122,8 +123,7 @@ function createServices(hostRoot: string, manifest: ModManifest, runtime: Genera
   return Object.freeze({
     identity: Object.freeze({ id: manifest.id, version: manifest.version, contentHash }),
     source,
-    logger: Object.freeze({ debug: () => undefined, info: () => undefined, warn: () => undefined }),
-    receipts: Object.freeze({ record: async (kind: string, payload: Json) => sha256Canonical({ kind, payload }) }),
+    ...createModObservability({ receiptRoot: join(hostRoot, 'first-party-mod-data', manifest.id, 'receipts'), owner: manifest.id, contentHash }),
     permissions: Object.freeze({ check: async () => 'allow' as const }),
     state: Object.freeze({
       read: async <T extends Json>(key: string) => state.read<T>(key),
@@ -165,6 +165,8 @@ export async function bootstrapFirstPartySurfaceGeneration(options: {
   readonly modsRoot?: string;
   readonly safeMode?: boolean;
   readonly activationTimeoutMs?: number;
+  /** Host capability, exposed to folder mods only through authority wrappers. */
+  readonly dispatchEngine?: ModServices['engines']['dispatch'];
   readonly decorateFirstPartyServices?: (manifest: ModManifest, services: ModServices) => ModServices;
 }): Promise<FirstPartySurfaceBoot> {
   if (options.safeMode) {
@@ -262,8 +264,10 @@ export async function bootstrapFirstPartySurfaceGeneration(options: {
           grantRecords,
           readAuthority: async () => ({ trustRecords: await authority.readTrust(), grantRecords: await authority.readGrants() }),
           services,
-          capabilityRuntime: { dispatchEngine: async (engineId, prompt, context) =>
-            options.runtime.tool('cesar', 'engine.dispatch', { engineId, prompt }, context) },
+          capabilityRuntime: { dispatchEngine: async (engineId, prompt, context) => {
+            if (!options.dispatchEngine) throw new Error('this host does not provide engine dispatch');
+            return options.dispatchEngine(engineId, prompt, context);
+          } },
           safeMode: false,
           timeoutMs: options.activationTimeoutMs,
         });

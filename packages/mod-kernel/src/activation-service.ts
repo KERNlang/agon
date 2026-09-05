@@ -9,11 +9,13 @@ import {
   applyDesiredStatePlan,
   parseDesiredState,
   planDesiredStateChange,
+  resolveDesiredState,
   type DesiredModState,
   type DesiredStateAction,
   type DesiredStatePlan,
   type FirstPartyModCatalog,
 } from './desired-state.js';
+import { assertSelectedLockIntegrity, assertSelectedLockPackageClosure } from './selected-lock-integrity.js';
 
 export interface ActivationArtifacts {
   readonly lock: CanonicalModLock;
@@ -104,7 +106,8 @@ export class ModActivationService {
     }
     const current = await this.readDesiredState();
     const desired = applyDesiredStatePlan(current, plan.desired);
-    const artifacts = await this.buildArtifacts(desired, plan.desired.effective, plan.desired.effectivePackages);
+    const resolved = resolveDesiredState(this.catalog, desired);
+    const artifacts = await this.buildArtifacts(desired, resolved.effective, resolved.effectivePackages);
     const desiredStateHash = sha256Canonical(desired);
     if (artifacts.lock.desiredStateHash !== desiredStateHash) {
       throw new DurableHostError('MOD_TRANSACTION_FAILED', 'activation lock is not bound to the exact desired-state snapshot', {
@@ -112,6 +115,8 @@ export class ModActivationService {
         actual: artifacts.lock.desiredStateHash,
       });
     }
+    assertSelectedLockIntegrity(artifacts.lock, desired);
+    assertSelectedLockPackageClosure(artifacts.lock, resolved.effectivePackages);
     const result = await this.host.commitGeneration({
       operation: plan.desired.operation,
       expectedBaseGeneration: plan.baseGeneration,

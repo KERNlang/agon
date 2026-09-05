@@ -7,6 +7,18 @@ const inputSchema = Object.freeze({ type: 'object', additionalProperties: true, 
   timeout: { type: 'string', default: '120' }, ground: { type: 'boolean', default: true }, goal: { type: 'boolean' }, json: { type: 'boolean' }, quiet: { type: 'boolean' }, label: { type: 'string' },
 } }) as Readonly<Record<string, Json>>;
 const cli = Object.freeze({ positionals: ['problem'], descriptions: { problem: 'Task or problem to think through' } });
+const tuiInputSchema = Object.freeze({ ...inputSchema, properties: {
+  ...(inputSchema.properties as Record<string, Json>), input: { type: 'string' },
+  steps: { type: 'number' }, branches: { type: 'number' }, timeout: { type: 'number' },
+} });
+function tuiRequest(raw: Json): Json {
+  const input = raw as Record<string, Json>;
+  const request: Record<string, Json> = { ...input, problem: input.input ?? '' };
+  for (const key of ['steps', 'branches', 'timeout']) {
+    if (typeof input[key] === 'number') request[key] = String(input[key]);
+  }
+  return request;
+}
 const strings=(value:unknown):string[]=>Array.isArray(value)?value.map(String):[];
 const number=(value:Json|undefined,fallback:number,min:number,max:number)=>Math.max(min,Math.min(Number.parseInt(typeof value==='string'?value:String(fallback),10)||fallback,max));
 async function runThink(raw: Json, context: Parameters<ModServices['engines']['dispatch']>[2], services: ModServices): Promise<CommandResult> {
@@ -33,10 +45,36 @@ async function runThink(raw: Json, context: Parameters<ModServices['engines']['d
     return {exitCode:0,stdout:lines.filter((line,index)=>line!==''||lines[index-1]!=='').join('\n')+'\n'};
   } catch(error){return {exitCode:1,stderr:`${error instanceof Error?error.message:String(error)}\n`};}
 }
-function parseThink(value:string){const parts=value.replace(/^\/think\s*/i,'').split(/\s+/);let strategy:string|undefined,steps:number|undefined;const problem:string[]=[];for(let index=0;index<parts.length;index+=1){if(parts[index]==='--strategy'&&parts[index+1]){strategy=parts[++index].toLowerCase();continue;}if(parts[index]==='--steps'&&parts[index+1]){const parsed=Number.parseInt(parts[++index],10);if(!Number.isNaN(parsed))steps=parsed;continue;}problem.push(parts[index]);}return{input:problem.join(' ').trim(),strategy,steps};}
+function parseThink(value: string): Record<string, Json> | undefined {
+  if (!/^\/think(?:\s|$)/i.test(value)) return undefined;
+  const parts = value.replace(/^\/think\s*/i, '').split(/\s+/);
+  const input: Record<string, Json> = {};
+  const problem: string[] = [];
+  const stringFlags = new Set(['strategy', 'steps', 'branches', 'engine', 'critic', 'timeout', 'label']);
+  const booleanFlags = new Set(['ground', 'goal', 'json', 'quiet']);
+  for (let index = 0; index < parts.length; index++) {
+    const token = parts[index];
+    const flag = token.startsWith('--') ? token.slice(2) : '';
+    if (stringFlags.has(flag) && parts[index + 1]) {
+      const value = parts[++index];
+      if (['steps', 'branches', 'timeout'].includes(flag)) {
+        const parsed = Number.parseInt(value, 10);
+        if (!Number.isNaN(parsed)) input[flag] = parsed;
+      } else input[flag] = value;
+    } else if (booleanFlags.has(flag)) {
+      input[flag] = true;
+    } else if (flag.startsWith('no-') && booleanFlags.has(flag.slice(3))) {
+      input[flag.slice(3)] = false;
+    } else {
+      problem.push(token);
+    }
+  }
+  input.input = problem.join(' ').trim();
+  return input;
+}
 export const createMod:AgonModFactory=(services)=>Object.freeze({apiVersion:'1' as const,async activate(registrar:Registrar):Promise<Dispose>{
   const disposers=[registrar.command('cli',{id:'cliCommands:0071',description:'Sequential thinking with structured validation',inputSchema,cli,run:(input,context)=>runThink(input,context,services)}),
-    registrar.command('tui',{id:'tuiSlashCommands:0067',description:'Sequential thinking',inputSchema,parse:parseThink,run:(input,context)=>runThink(input,context,services)})];
+    registrar.command('tui',{id:'tuiSlashCommands:0067',description:'Sequential thinking',inputSchema:tuiInputSchema,parse:parseThink,run:(input,context)=>runThink(tuiRequest(input),context,services)})];
   return async()=>{for(const dispose of [...disposers].reverse())await dispose();};
 }});
 export default createMod;

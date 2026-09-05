@@ -82,7 +82,11 @@ export function decorateCliFirstPartyServices(manifest: ModManifest, base: ModSe
       }
     },
   }) : undefined;
-  return Object.freeze({ ...base, runs, ...(browser ? { browser } : {}), ...(workspace ? { workspace } : {}), engines: Object.freeze({
+  return Object.freeze({ ...base, runs, ...(browser ? { browser } : {}), ...(workspace ? { workspace } : {}), engines: createCliEngineServices() });
+}
+
+export function createCliEngineServices(): ModServices['engines'] {
+  return Object.freeze({
     async listActive(context: Parameters<ModServices['engines']['dispatch']>[2]): Promise<readonly string[]> { const registry = new EngineRegistry(); registry.load(resolveBuiltinEnginesDir()); return filterDefaultOrchestrationEngines(registry.activeIds(loadConfig(context.cwd) as never)); },
     async rank(engineIds: readonly string[], scopes: readonly ('forge'|'brainstorm'|'tribunal'|'critique')[]): Promise<readonly {engineId:string;reason:'top-rated'|'random'|'none';scope:'forge'|'brainstorm'|'tribunal'|'critique'|'global'|null}[]> { const remaining=[...engineIds]; const ranked=[]; const ratings=getRatings(); while(remaining.length){ const picked=pickTopRatedEngine(remaining,ratings,{modes:[...scopes],rng:()=>0}); if(!picked.engineId) break; ranked.push(picked); remaining.splice(remaining.indexOf(picked.engineId),1); } return ranked; },
     async dispatch(engineId: string, prompt: string, context: Parameters<ModServices['engines']['dispatch']>[2], options?: Parameters<ModServices['engines']['dispatch']>[3]): Promise<Json> {
@@ -94,5 +98,5 @@ export function decorateCliFirstPartyServices(manifest: ModManifest, base: ModSe
       const result = await createCliAdapter(registry).dispatch({ engine, prompt, cwd: context.cwd, mode: options?.mode ?? 'exec', timeout: Math.max(1, options?.timeoutSeconds ?? 120), outputDir, systemPrompt: options?.systemPrompt, signal: context.signal });
       return { engineId: engine.id, exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr, durationMs: result.durationMs, timedOut: result.timedOut, outputDir } as Json;
     },
-  }) });
+  });
 }

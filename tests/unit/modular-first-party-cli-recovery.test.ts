@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { modCommand } from '../../packages/cli/src/commands/mod.js';
-import { DurableModHost, createFirstPartyModCatalog, createFullCompatDesiredState, parseDesiredState } from '../../packages/mod-kernel/src/index.js';
+import { DurableModHost, createFirstPartyModCatalog, createFullCompatDesiredState, parseDesiredState, resolveDesiredState } from '../../packages/mod-kernel/src/index.js';
+import { assertSelectedLockPackageClosure, assertSelectedLockIntegrity } from '../../packages/mod-kernel/src/selected-lock-integrity.js';
 import { surfaceLockFor } from '../helpers/modular-surface-lock.js';
 
 afterEach(() => { delete process.env.AGON_MODULAR_HOST_ROOT; vi.restoreAllMocks(); });
@@ -12,7 +13,8 @@ async function hostFixture() {
   const root = await mkdtemp(join(tmpdir(), 'agon-s8-first-party-cli-')); const hostRoot = join(root, 'host');
   const desired = createFullCompatDesiredState(createFirstPartyModCatalog(), '2026-09-04T00:00:00.000Z');
   const host = new DurableModHost(hostRoot, { kernelVersion: '0.2.5' });
-  await host.commitGeneration({ operation: 'install', lock: await surfaceLockFor(desired), desiredState: desired, installedIndex: { packages: [] } });
+  await host.commitGeneration({ operation: 'install', lock: await surfaceLockFor(desired), desiredState: desired,
+    installedIndex: { packages: [], installationId: 'fixture-installation' }, files: { 'installation.json': '{"fixture":true}\n' } });
   process.env.AGON_MODULAR_HOST_ROOT = hostRoot; return { root, hostRoot, host, desired };
 }
 
@@ -23,6 +25,23 @@ async function previewAndApprove(command: any, target: string) {
 }
 
 describe('first-party safe-mode CLI recovery', () => {
+  it('retains a bootable closure and exact package identities across disable and re-enable', async () => {
+    const { host, desired } = await hostFixture();
+    const original = await surfaceLockFor(desired);
+    for (const verb of ['disable', 'enable'] as const) {
+      await previewAndApprove(modCommand.subCommands[verb], 'agon.think');
+      const pointer = (await host.readCurrentPointer())!;
+      const root = host.generationPath(pointer.generation);
+      const state = parseDesiredState(JSON.parse(await readFile(join(root, 'desired-state.json'), 'utf8')));
+      const lock = JSON.parse(await readFile(join(root, 'mods.lock.json'), 'utf8'));
+      expect(await readFile(join(root, 'installation.json'), 'utf8')).toBe('{"fixture":true}\n');
+      expect(() => assertSelectedLockIntegrity(lock, state)).not.toThrow();
+      expect(() => assertSelectedLockPackageClosure(lock, resolveDesiredState(createFirstPartyModCatalog(), state).effectivePackages)).not.toThrow();
+      expect(lock.packages.some((entry: { id: string }) => entry.id === 'agon.think')).toBe(verb === 'enable');
+      if (verb === 'enable') expect(lock.packages).toEqual(original.packages);
+    }
+  });
+
   it('disables a first-party mod through a preview-bound durable generation without importing it', async () => {
     const { host } = await hostFixture(); const result = await previewAndApprove(modCommand.subCommands.disable, 'agon.think');
     expect(result.applied).toMatchObject({ disabled: 'agon.think', generation: 2, restartRequired: true });

@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, resolve, sep } from 'node:path';
+import { resolveEngineDefinitionsDir } from '@kernlang/agon-support-engine-runtime';
 
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { EngineRegistry, createRunDir, getRatings, loadConfig, pickTopRatedEngine, writeRunStatus } from '@kernlang/agon-core';
@@ -16,20 +16,7 @@ function orchestrationEngines(ids: readonly string[]): string[] {
   });
 }
 
-function builtinEnginesDir(): string {
-  const here = dirname(fileURLToPath(import.meta.url));
-  for (const candidate of [join(here, 'engines'), join(here, '..', '..', '..', 'engines')]) {
-    if (existsSync(candidate)) return candidate;
-  }
-  return join(here, 'engines');
-}
-
 export function decorateMcpFirstPartyServices(manifest: ModManifest, base: ModServices): ModServices {
-  const registryFor = (cwd: string) => {
-    const registry = new EngineRegistry();
-    registry.load(builtinEnginesDir());
-    return { registry, config: loadConfig(cwd) };
-  };
   return Object.freeze({
     ...base,
     runs: Object.freeze({
@@ -41,7 +28,17 @@ export function decorateMcpFirstPartyServices(manifest: ModManifest, base: ModSe
         mkdirSync(dirname(target), { recursive: true }); writeFileSync(target, content, 'utf8');
       },
     }),
-    engines: Object.freeze({
+    engines: createMcpEngineServices(),
+  });
+}
+
+export function createMcpEngineServices(): ModServices['engines'] {
+  const registryFor = (cwd: string) => {
+    const registry = new EngineRegistry();
+    registry.load(resolveEngineDefinitionsDir());
+    return { registry, config: loadConfig(cwd) };
+  };
+  return Object.freeze({
       async listActive(context: Parameters<ModServices['engines']['dispatch']>[2]): Promise<readonly string[]> {
         const { registry, config } = registryFor(context.cwd);
         return orchestrationEngines(registry.activeIds(config as never));
@@ -69,6 +66,5 @@ export function decorateMcpFirstPartyServices(manifest: ModManifest, base: ModSe
         });
         return { engineId: engine.id, exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr, durationMs: result.durationMs, timedOut: result.timedOut, outputDir } as Json;
       },
-    }),
   });
 }

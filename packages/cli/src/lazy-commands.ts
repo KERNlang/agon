@@ -72,6 +72,9 @@ function lazyCommand(
       return resolved ?? {};
     },
     setup: async (ctx) => {
+      // citty executes parent run() after its child. Authorize at entry so
+      // lifecycle children may deliberately select a new generation.
+      assertProcessSurfaceAvailable('cli', String(meta.name));
       const cmd = await resolve();
       return cmd.setup?.(ctx);
     },
@@ -80,7 +83,6 @@ function lazyCommand(
       return cmd.cleanup?.(ctx);
     },
     run: async (ctx) => {
-      assertProcessSurfaceAvailable('cli', String(meta.name));
       const cmd = await resolve();
       return cmd.run?.(ctx);
     },

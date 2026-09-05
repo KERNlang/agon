@@ -11,36 +11,40 @@ import {
   createFullCompatDesiredState,
   parseDesiredState,
   sha256Canonical,
-  type CanonicalModLock,
-  type DesiredModState,
 } from '../../packages/mod-kernel/src/index.js';
+import { surfaceLockFor as lockFor } from '../helpers/modular-surface-lock.js';
 
 const NOW = '2026-08-23T20:00:00.000Z';
-const hash = (character: string): `sha256:${string}` => `sha256:${character.repeat(64)}`;
-
-function lockFor(state: DesiredModState, graphCharacter: string): CanonicalModLock {
-  return Object.freeze({
-    schemaVersion: 1,
-    kernelVersion: '1.0.0',
-    apiVersion: '1.0.0',
-    desiredStateHash: sha256Canonical(state),
-    graphHash: hash(graphCharacter),
-    packages: Object.freeze([]),
-  });
-}
 
 describe('transactional modular activation service', () => {
+  it('rejects a self-consistent but incomplete package closure before changing the pointer', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-activation-closure-'));
+    const catalog = createFirstPartyModCatalog();
+    const desired = createFullCompatDesiredState(catalog, NOW);
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    await host.commitGeneration({ operation: 'install', lock: await lockFor(desired), desiredState: desired, installedIndex: {} });
+    const service = new ModActivationService(host, catalog, async (state) => {
+      const valid = await lockFor(state);
+      const packages = valid.packages.slice(1).map((entry, resolutionOrder) => ({ ...entry, resolutionOrder }));
+      const graphHash = sha256Canonical({ kernelVersion: valid.kernelVersion, apiVersion: valid.apiVersion, desiredStateHash: valid.desiredStateHash, packages });
+      return { lock: { ...valid, graphHash, packages }, installedIndex: {} };
+    });
+    const before = await host.readCurrentPointer();
+    const plan = await service.preview({ kind: 'disable', id: 'agon.think' });
+    await expect(service.apply(plan)).rejects.toThrow('resolved package closure');
+    expect(await host.readCurrentPointer()).toEqual(before);
+  });
+
   it('binds preview to a generation, commits atomically, and makes pinned hosts restart', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agon-s3-activation-'));
     const catalog = createFirstPartyModCatalog();
     const initial = createFullCompatDesiredState(catalog, NOW);
     const host = new DurableModHost(root, { kernelVersion: '1.0.0', processIdentity: 's3-test' });
     await host.commitGeneration({
-      operation: 'install', lock: lockFor(initial, 'a'), desiredState: initial, installedIndex: { packages: [] },
+      operation: 'install', lock: await lockFor(initial), desiredState: initial, installedIndex: { packages: [] },
     });
-    let graphCharacter = 'b';
     const service = new ModActivationService(host, catalog, async (state) => ({
-      lock: lockFor(state, graphCharacter), installedIndex: { packages: [] },
+      lock: await lockFor(state), installedIndex: { packages: [] },
     }));
     const plan = await service.preview({ kind: 'disable', id: 'agon.think' }, '2026-08-23T20:00:01.000Z');
     expect(plan.baseGeneration).toBe(1);
@@ -55,7 +59,6 @@ describe('transactional modular activation service', () => {
     await expect(host.assertHostGeneration(1)).rejects.toMatchObject({ code: 'MOD_RESTART_REQUIRED' });
     expect((await host.boot()).pointer?.generation).toBe(2);
 
-    graphCharacter = 'c';
     const rollback = await service.rollback(1);
     expect(rollback.pointer.generation).toBe(1);
     expect(parseDesiredState(JSON.parse(await readFile(host.paths.desiredState, 'utf8')))).toEqual(initial);
@@ -66,18 +69,16 @@ describe('transactional modular activation service', () => {
     const catalog = createFirstPartyModCatalog();
     const initial = createFullCompatDesiredState(catalog, NOW);
     const host = new DurableModHost(root, { kernelVersion: '1.0.0', processIdentity: 's3-stale-test' });
-    await host.commitGeneration({ operation: 'install', lock: lockFor(initial, 'a'), desiredState: initial, installedIndex: {} });
-    let graph = 'b';
-    const service = new ModActivationService(host, catalog, async (state) => ({ lock: lockFor(state, graph), installedIndex: {} }));
+    await host.commitGeneration({ operation: 'install', lock: await lockFor(initial), desiredState: initial, installedIndex: {} });
+    const service = new ModActivationService(host, catalog, async (state) => ({ lock: await lockFor(state), installedIndex: {} }));
     const stale = await service.preview({ kind: 'disable', id: 'agon.think' }, '2026-08-23T20:00:01.000Z');
     const winner = await service.preview({ kind: 'disable', id: 'agon.review' }, '2026-08-23T20:00:02.000Z');
     await service.apply(winner);
     await expect(service.apply(stale)).rejects.toBeInstanceOf(DesiredStateConflictError);
     expect((await host.readCurrentPointer())?.generation).toBe(2);
 
-    graph = 'c';
     await expect(host.commitGeneration({
-      operation: 'enable', lock: lockFor(initial, graph), desiredState: initial, installedIndex: {}, expectedBaseGeneration: 1,
+      operation: 'enable', lock: await lockFor(initial), desiredState: initial, installedIndex: {}, expectedBaseGeneration: 1,
     })).rejects.toMatchObject({ code: 'MOD_TRANSACTION_CONFLICT' });
     expect((await host.readCurrentPointer())?.generation).toBe(2);
   });
@@ -87,8 +88,8 @@ describe('transactional modular activation service', () => {
     const catalog = createFirstPartyModCatalog();
     const initial = createFullCompatDesiredState(catalog, NOW);
     const host = new DurableModHost(root, { kernelVersion: '1.0.0', processIdentity: 's3-lock-test' });
-    await host.commitGeneration({ operation: 'install', lock: lockFor(initial, 'a'), desiredState: initial, installedIndex: {} });
-    const service = new ModActivationService(host, catalog, async () => ({ lock: lockFor(initial, 'b'), installedIndex: {} }));
+    await host.commitGeneration({ operation: 'install', lock: await lockFor(initial), desiredState: initial, installedIndex: {} });
+    const service = new ModActivationService(host, catalog, async () => ({ lock: await lockFor(initial), installedIndex: {} }));
     const plan = await service.preview({ kind: 'disable', id: 'agon.think' }, '2026-08-23T20:00:01.000Z');
     await expect(service.apply(plan)).rejects.toBeInstanceOf(DurableHostError);
     expect((await host.readCurrentPointer())?.generation).toBe(1);

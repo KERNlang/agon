@@ -4,7 +4,8 @@ import { defineCommand } from 'citty';
 import {
   DurableModHost,
   FolderModManager,
-  ModActivationService,
+  createFirstPartyActivationService,
+  type ModActivationService,
   createFirstPartyModCatalog,
   createFullCompatDesiredState,
   createModManagementView,
@@ -40,17 +41,7 @@ async function firstPartyActivationService(): Promise<ModActivationService> {
   const generationRoot = join(hostRoot, 'generations', String(pointer.generation).padStart(16, '0'));
   const generation = JSON.parse(await readFile(join(generationRoot, 'generation.json'), 'utf8')) as { kernelVersion?: unknown };
   if (typeof generation.kernelVersion !== 'string') throw new TypeError('selected generation manifest is malformed');
-  const host = new DurableModHost(hostRoot, { kernelVersion: generation.kernelVersion }); const catalog = createFirstPartyModCatalog();
-  return new ModActivationService(host, catalog, async (desired, _effectiveModIds, effectivePackageIds) => {
-    const current = await host.readCurrentPointer(); if (!current) throw new TypeError('selected generation disappeared');
-    const currentRoot = host.generationPath(current.generation);
-    const previous = JSON.parse(await readFile(join(currentRoot, 'mods.lock.json'), 'utf8')) as any;
-    const effectiveOwners = new Set(effectivePackageIds.map((id) => catalog.packagesById.get(id)).filter(Boolean).map((definition: any) => definition.modId ?? definition.id));
-    const packages = Object.freeze(previous.packages.filter((entry: any) => effectiveOwners.has(entry.id)).map((entry: any, resolutionOrder: number) => Object.freeze({ ...entry, resolutionOrder })));
-    const desiredStateHash = sha256Canonical(desired);
-    const graphHash = sha256Canonical({ kernelVersion: previous.kernelVersion, apiVersion: previous.apiVersion, desiredStateHash, packages });
-    return { lock: Object.freeze({ ...previous, desiredStateHash, graphHash, packages }), installedIndex: JSON.parse(await readFile(join(currentRoot, 'installed-index.json'), 'utf8')) };
-  });
+  return createFirstPartyActivationService(new DurableModHost(hostRoot, { kernelVersion: generation.kernelVersion }));
 }
 
 async function summary(selected: FolderModManager, candidate: FolderModCandidate) {

@@ -50,6 +50,7 @@ export async function initializeProcessSurfaceAuthority(
     runtime: compatibilityRuntime,
     safeMode: process.env.AGON_MOD_SAFE_MODE === '1',
     decorateFirstPartyServices: decorate,
+    dispatchEngine: (await import('./first-party-services.js')).createCliEngineServices().dispatch,
   });
   selector = new SurfaceGenerationSelector(candidate.activated.generation);
   boot = candidate;

@@ -10,6 +10,7 @@
     { "path": "../forge" },
     { "path": "../mod-kernel" },
     { "path": "../mod-rooms" },
+    { "path": "../support-engine-runtime" },
     { "path": "../core" },
     { "path": "../adapter-cli" }
   ]

@@ -27,7 +27,7 @@ const gates = [
     'tests/unit/modular-package-graph.test.ts',
     'tests/unit/modular-topology-invariant.test.ts',
     'tests/unit/modular-boundary.test.ts',
-  ], 'manifest/resolver/registry/graph behavioral mutants'],
+  ], 'manifest/resolver/registry/graph behavioral regression suite'],
 ];
 
 for (const [command, args, label] of gates) {
@@ -37,6 +37,6 @@ for (const [command, args, label] of gates) {
     console.error(result.stderr);
     throw new Error(`mutation gate failed: ${label}`);
   }
-  console.log(`killed: ${label}`);
+  console.log(`passed: ${label}`);
 }
-console.log(`all ${gates.length} targeted mutation classes were rejected`);
+console.log(`all ${gates.length} verification suites passed; behavioral implementation mutation score: not measured`);

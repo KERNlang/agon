@@ -54,6 +54,27 @@ try {
   if (secondJson.status !== 'already-qualified' || secondJson.generationUnchanged !== true) throw new Error('second setup was not idempotent');
   checks.push({ id: 'idempotence-result', passed: true, detail: 'generation unchanged' });
   requireOk('managed-mod-list', run(stable, ['mod', 'list'], { cwd: scratch, env: { AGON_HOME: home } }));
+  // Exercise the installed launcher, citty parent/child dispatch, durable lock
+  // selection, and a NEW process after each mutation. Calling modCommand.run
+  // directly cannot detect stale-parent or fresh-bootstrap failures.
+  for (const action of ['disable', 'enable']) {
+    const preview = JSON.parse(requireOk(`installed-${action}-preview`, run(stable, ['mod', action, 'agon.think'], { cwd: scratch, env: setupEnv })).stdout);
+    requireOk(`installed-${action}-apply`, run(stable, ['mod', action, preview.planPath, '--approve', preview.planHash], { cwd: scratch, env: setupEnv }));
+    requireOk(`installed-${action}-fresh-start`, run(stable, ['mod', 'list'], { cwd: scratch, env: setupEnv }));
+    // citty renders ROOT help successfully for an unknown command with --help.
+    // A no-argument invocation distinguishes absence from the enabled handler's
+    // missing-problem validation without ever dispatching a model.
+    const help = run(stable, action === 'enable' ? ['think', '--help'] : ['think'], { cwd: scratch, env: setupEnv });
+    if (action === 'enable') requireOk('re-enabled-think-help', help);
+    else {
+      const passed = help.status === 1 && /unknown command|unavailable/i.test(help.stderr + help.stdout);
+      checks.push({ id: 'disabled-think-unreachable', passed, detail: String(help.stderr + help.stdout).slice(0, 1200) });
+      if (!passed) throw new Error('disabled Think is still reachable or failed for an unrelated reason');
+    }
+  }
+  const afterActivation = JSON.parse(requireOk('setup-after-activation', run(stable,
+    ['setup', '--profile', 'minimal', '--with', 'think,review', '--offline', '--cache', npmCache, '--json'], { cwd: scratch, env: setupEnv })).stdout);
+  if (afterActivation.status !== 'already-qualified') throw new Error('activation lost its qualified installation lineage');
   const result = { schemaVersion: 1, slice: 'S9', passed: checks.every(({ passed }) => passed), platform: `${process.platform}-${process.arch}`, node: process.version,
     profile: 'minimal+think+review', installedPackageCount: firstJson.packageCount, cacheDeletionSurvived: true, idempotent: true, checks };
   if (!process.argv.includes('--no-write')) writeFileSync(output, `${JSON.stringify(result, null, 2)}\n`);

@@ -78,7 +78,7 @@
     "test": "npm run test:ts",
     "test:ts": "node scripts/run-node22.mjs vitest run",
     "test:watch": "node scripts/run-node22.mjs vitest",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "node scripts/lint-workspaces.mjs",
     "knip": "knip",
     "lint:dead": "npm run knip",
     "spec:modular-projections": "node scripts/spec/generate-modular-agon-compat-projections.mjs",

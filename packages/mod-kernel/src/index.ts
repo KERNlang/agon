@@ -23,6 +23,7 @@ export type { GeneratedSurfaceCatalogEntry, GeneratedSurfaceRuntime, SurfaceAcce
 export { activateFirstPartySurfaceGeneration } from './activated-surface-generation.js';
 export type { ActivatedSurfaceGeneration, FirstPartySurfacePackage } from './activated-surface-generation.js';
 export { bootstrapFirstPartySurfaceGeneration } from './first-party-surface-bootstrap.js';
+export { createFirstPartyActivationService } from './first-party-activation.js';
 export { ModStateStore, ModStateStoreError } from './mod-state-store.js';
 export type { FirstPartySurfaceBoot } from './first-party-surface-bootstrap.js';
 

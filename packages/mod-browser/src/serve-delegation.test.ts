@@ -35,6 +35,27 @@ function services(overrides: Partial<ModServices> = {}): ModServices {
 }
 
 describe('physical browser host delegation', () => {
+  it('arms shutdown before publishing readiness and disposes only once', async () => {
+    const controller = new AbortController();
+    const stop = vi.fn(async () => undefined);
+    let handledAtReady = false;
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk: any) => {
+      if (String(chunk).startsWith('__AGON_CONNECTION__')) {
+        handledAtReady = process.emit('SIGINT');
+        controller.abort();
+      }
+      return true;
+    });
+    const output = await runServe({ 'emit-connection': true }, context(controller.signal), services({
+      browser: { startServe: async () => ({ url: 'http://127.0.0.1:4123', token: 'fixture',
+        sessionId: 'serve-test', engineId: 'fixture', allowedOrigins: [],
+        connectionFile: '/tmp/fixture.json', stop }) },
+    }));
+    expect(handledAtReady).toBe(true);
+    expect(output.exitCode).toBe(0);
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
   it('delegates serve startup to the full host runtime and stops it on abort', async () => {
     const controller = new AbortController();
     const stop = vi.fn(async () => undefined);

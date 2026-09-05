@@ -10,7 +10,7 @@ import {
   canonicalJson,
 } from '@kernlang/agon-kernel';
 import type { FirstPartySurfaceBoot, GeneratedSurfaceRuntime } from '@kernlang/agon-kernel';
-import { decorateMcpFirstPartyServices } from './first-party-services.js';
+import { createMcpEngineServices, decorateMcpFirstPartyServices } from './first-party-services.js';
 
 const compatibilityRuntime: GeneratedSurfaceRuntime = Object.freeze({
   command: () => { throw new Error('MCP host cannot execute CLI compatibility commands'); },
@@ -31,6 +31,7 @@ export async function initializeMcpSurfaceAuthority(): Promise<void> {
     hostRoot: hostRoot(), runtime: compatibilityRuntime,
     safeMode: process.env.AGON_MOD_SAFE_MODE === '1',
     decorateFirstPartyServices: decorateMcpFirstPartyServices,
+    dispatchEngine: createMcpEngineServices().dispatch,
   });
 }
 

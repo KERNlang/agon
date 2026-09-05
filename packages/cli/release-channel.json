@@ -183,8 +183,8 @@
         "agon.verification"
       ],
       "sourceLocator": "@kernlang/agon-mod-plan@1.0.0",
-      "integrity": "sha512-Vg2xvleeqcL5qG5hrVxUMisVK3whTFoNdO+IRyfXgQ3a6/CThFdOUG1Et9XR/Cg63YwnBm92g5PglTjUD9DYpQ==",
-      "contentHash": "sha256:cc6ede595147cc7f097753075754d04b7b8569919a7285230205115b26aba3d4",
+      "integrity": "sha512-XAmNLbavPLYO6NVbrX0P0sFvgNREd59Awr2+/rMnl8YDXkfGd4e8KZENRb/5ZnOEdrDtK6U8rfHxJrWy0ysf8Q==",
+      "contentHash": "sha256:b4dc1492a260432dbde56418e0aedcdd7acaa1e7f3e630d83cd2f8e8c829fd94",
       "manifestHash": "sha256:2b0e17e6e059ba718866905b57341aaf156520a3b613c75756226a7a732b731d"
     },
     {

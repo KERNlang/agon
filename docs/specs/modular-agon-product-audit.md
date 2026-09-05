@@ -220,10 +220,11 @@ return state. `execution-model.ts` owns the existing public execution-plan types
 and step-type constants. Neither module imports private core or CLI code.
 
 The scheduler factory injects the step transition and cost-recording operations.
-Those operations still have legacy host implementations; this extraction does
-not claim to have moved the entire Plan state machine or persistence layer.
+The initial scheduler commit retained both host implementations; the subsequent
+state/store extraction below moves the transition implementation into Plan.
+Cost-history recording remains a host operation.
 The old core scheduler is replaced, not duplicated. Compatibility entry
-**A20-PLAN-SCHEDULER**, under **KL-011**, is the 13-line wrapper in
+**A20-PLAN-SCHEDULER**, under **KL-011**, is the narrow wrapper in
 `packages/core/src/cesar/plan-executor.ts`. Core's model module re-exports the
 Plan-owned types instead of defining a second model. Core's explicit dependency
 on the physical Plan package and TypeScript project reference preserve clean
@@ -256,6 +257,39 @@ build, post-build typecheck, lint, re-export guard, 49-package/launcher packing,
 `cbeeb570987556b22a07e0660de740d8c429916a6779a1e2b5ba6a7e21360c0a`.
 No active/global installation was promoted. These checks do not close the
 session-routing, persisted-model reconciliation or final native-release cells.
+
+Follow-up physical extraction: `execution-state.ts` owns creation, approval,
+step transitions/dependency release, cancellation and exit. `execution-store.ts`
+owns canonical JSON/Markdown paths, atomic save, canonical/legacy reads and
+listing. It uses the public support-persistence path/envelope helpers. The old
+core `plan.ts` is now only explicit compatibility exports, tagged
+**A20-PLAN-STATE/STORE** under KL-011. No state or filesystem implementation remains
+there. The scheduler adapter injects the Plan-owned transition directly.
+
+Frozen state/store fixtures and `modular-plan-state-owner.test.ts` /
+`modular-plan-store-owner.test.ts` compare full state payloads, persisted envelope
+bytes, readers and malformed-file isolation. The existing core-import Plan
+tests continue through the compatibility facade. The equivalent host-clock
+wrapper is replaced by `new Date().toISOString()`; timestamp call semantics are
+retained. Path resolution uses `persistencePath`, whose implementation matches
+the legacy `runtimeAgonPath`, including the dynamic AGON_HOME override.
+
+These facades must be deleted after owner-checked consumers migrate. They do
+not authorize disabled Plan workflows. The separate simplified persisted-plan
+controller in `implementation.ts` is **not yet reconciled** with the extracted
+execution model. A05/A11 remain open until session routing, approvals, execution,
+historical reads and disabled reachability use one verified path. Preservation
+of existing storage behavior is not proof against every concurrent-write or
+malformed-payload case; those remain qualification dimensions.
+
+State/store follow-up verification: 6,008 tests pass with five existing skips
+across 502 files; build, post-build typecheck and re-export guard pass. Full-run
+log SHA-256: `4d5caa8d1ba1f9dfff681be373f004316df9f1a89e582dd9ec7436396d0797a2`.
+The final full suite ran after build completion without concurrent build/lint
+work. This does not resolve the earlier intermittent telemetry observation.
+Lint, all 49 modular package packs plus launcher, 69 isolated npx checks and
+SBOM validation also pass for the follow-up. npm provenance remains external;
+no active/global installation was changed.
 
 **A21 — Telemetry fallback intermittently misses the expected successor (open observation).**
 The first full scheduler-extraction run passed 6,002 tests and failed

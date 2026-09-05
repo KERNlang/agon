@@ -1,3 +1,4 @@
+import { commandResultToToolResult } from '@kernlang/agon-mod-api';
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import type {
@@ -729,7 +730,7 @@ export const createMod: AgonModFactory = (services) =>
           inputSchema,
           effect: "process",
           run: async (input, context) =>
-            (await runForgeCompetition(input, context, services)).result ?? {},
+            commandResultToToolResult(await runForgeCompetition(input, context, services)),
         }),
       );
       for (const id of cesarRouteIds)

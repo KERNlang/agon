@@ -1,6 +1,7 @@
 const ALLOWED_KEYWORDS = new Set([
   '$schema', 'title', 'description', 'default', 'type', 'enum', 'const',
   'required', 'properties', 'additionalProperties', 'items',
+  'minItems', 'maxItems',
   'minLength', 'maxLength', 'pattern', 'minimum', 'maximum',
 ]);
 
@@ -40,6 +41,11 @@ function validate(schema: Record<string, unknown>, value: unknown, path: string,
   }
   if (type === 'array') {
     if (!Array.isArray(value)) return `${path}: expected array`;
+    for (const key of ['minItems', 'maxItems']) {
+      if (key in schema && (!Number.isSafeInteger(schema[key]) || Number(schema[key]) < 0)) return `${path}: invalid ${key}`;
+    }
+    if (typeof schema.minItems === 'number' && value.length < schema.minItems) return `${path}: array has too few items`;
+    if (typeof schema.maxItems === 'number' && value.length > schema.maxItems) return `${path}: array has too many items`;
     if (!plain(schema.items)) return `${path}: array schema requires object items`;
     for (let index = 0; index < value.length; index += 1) {
       const failure = validate(schema.items, value[index], `${path}[${index}]`, depth + 1);

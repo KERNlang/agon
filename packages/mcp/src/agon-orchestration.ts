@@ -13,6 +13,7 @@ import { createInterface } from "node:readline";
 import { execSync } from "node:child_process";
 
 import { FIRST_PARTY_SURFACE_CATALOG } from "@kernlang/agon-kernel";
+import { CommandExecutionError } from "@kernlang/agon-mod-api";
 
 import {
   appendMemoryLine,
@@ -383,11 +384,13 @@ export function startMcpServer(
   invokeDynamic: (
     name: string,
     input: Record<string, unknown>,
+    signal?: AbortSignal,
   ) => Promise<unknown> = async () => {
     throw new Error("dynamic MCP execution is unavailable");
   },
 ) {
   const rl = createInterface({ input: process.stdin, terminal: false });
+  const inFlight = new Map<string | number, AbortController>();
 
   function respond(id: number | string | null, result: unknown): void {
     if (id === null) return; // notification — no response
@@ -414,6 +417,13 @@ export function startMcpServer(
     }
 
     const { id, method, params } = msg;
+
+    if (method === 'notifications/cancelled') {
+      if (id === undefined && (typeof params?.requestId === 'string' || typeof params?.requestId === 'number')) {
+        inFlight.get(params.requestId)?.abort();
+      }
+      return;
+    }
 
     if (method === "initialize") {
       respond(id, {
@@ -461,19 +471,36 @@ export function startMcpServer(
         return;
       }
       if (dynamicMcpToolOwnsExecution(dynamic)) {
-        invokeDynamic(toolName, toolArgs)
+        if (typeof id !== 'string' && typeof id !== 'number') return;
+        if (inFlight.has(id)) {
+          respondError(id, -32600, 'Request ID is already in progress');
+          return;
+        }
+        const controller = new AbortController();
+        inFlight.set(id, controller);
+        Promise.resolve().then(() => {
+          controller.signal.throwIfAborted();
+          return invokeDynamic(toolName, toolArgs, controller.signal);
+        })
           .then((result) => {
+            if (controller.signal.aborted) return;
             const text =
               typeof result === "string" ? result : JSON.stringify(result);
             respond(id, { content: [{ type: "text", text }] });
           })
           .catch((error) => {
+            if (controller.signal.aborted) return;
+            if (error instanceof CommandExecutionError) {
+              respond(id, { isError: true, content: [{ type: 'text', text: error.message }] });
+              return;
+            }
             respondError(
               id,
               -32603,
               `Dynamic MCP tool failed: ${error instanceof Error ? error.message : String(error)}`,
             );
-          });
+          })
+          .finally(() => { inFlight.delete(id); });
         return;
       }
       const tool = KERNEL_MCP_TOOLS.find((candidate) => candidate.name === toolName);
@@ -533,5 +560,9 @@ export function startMcpServer(
     }
   });
 
-  rl.on("close", () => process.exit(0));
+  rl.on("close", () => {
+    for (const controller of inFlight.values()) controller.abort();
+    inFlight.clear();
+    process.exit(0);
+  });
 }

@@ -102,13 +102,60 @@ current-plan artifact selection, diff preview and human approval. Merely adding
 The census also rejects empty `/forge` and `/team-forge` inputs lacking a test
 command. Those are incomplete inputs, not by themselves proof of a regression.
 
-**A14 — MCP failure envelopes (open).** The guarded packaged Brainstorm probe
+**A14 — MCP command failure envelopes (repaired; workflow parity remains separate).** The guarded packaged Brainstorm probe
 reaches a deliberately blocked provider dispatch, but emits an ordinary MCP
 result containing failed seats instead of an error result. Command-to-tool
 adapters currently discard some nonzero exit codes. Establish one consistent
 failure projection and test all-failed, partially degraded, cancelled and
 successful panels across the generated MCP surface. Do not confuse this
 remaining failure-contract bug with the repaired engine asset discovery.
+
+Follow-up after repair commit `7095456a`: the public Mod API now supplies
+`commandResultToToolResult` and `CommandExecutionError`. Successful payloads
+retain their existing shape; nonzero exits throw a typed error preserving the
+exit code, typed failure metadata and diagnostic result. Brainstorm, Campfire,
+Tribunal, Nero, Synthesis, Forge, Review and RAG use this common conversion.
+Plan, Jobs, Agent and pipeline-orchestration adapters also use this conversion;
+pipeline coverage here stops at invalid-input validation and runs no stages.
+The generated MCP transport maps that error to `result.isError: true`, not a
+successful payload or an internal JSON-RPC error. Internal result diagnostics
+are not automatically copied into the wire response.
+
+Regression coverage includes every migrated adapter, an all-failed Brainstorm
+panel, a degraded successful panel, actual server wire serialization, successful
+falsy payloads, and failure/cancellation exit metadata. The npx qualification now
+launches the installed MCP server with provider subprocesses/fetch blocked and
+asserts successful RoomList, failed Brainstorm, missing JobStatus, cyclic
+ProposePlan, and unknown-tool protocol behavior. This checks the actual packed
+API/error-class boundary, not only source imports.
+
+**A17 — Array schema constraints rejected (repaired).** The packed ProposePlan
+probe exposed that the shared validator rejected the owner's `minItems` keyword
+before invoking the handler. It now enforces nonnegative safe-integer
+`minItems`/`maxItems`, inclusive limits and per-item validation. Seven negative
+and boundary tests pass. Unknown keywords remain rejected; the Plan constraint
+was not removed or weakened.
+
+**A18 — MCP cancellation signal disconnected (repaired at the generated
+transport boundary).** Dynamic calls now own per-request controllers, forward
+their signals to the generated invocation context, accept matching cancellation
+notifications and suppress cancelled replies. Numeric/string IDs stay distinct;
+unknown cancellation is ignored; duplicate in-flight IDs cannot overwrite the
+controller; transport close aborts active controllers. Tests cover cancellation
+before dispatch and cancellation of one concurrent request without cancelling
+the other. This follows the server's advertised
+[2024-11-05 MCP cancellation contract](https://modelcontextprotocol.io/specification/2024-11-05/basic/utilities/cancellation).
+This is cooperative cancellation, not a claim that every engine immediately
+terminates or that kernel write-tool cancellation has been implemented.
+
+Updated verification: full suite **5,958 passed, five existing skips**, 492 files;
+installed npx **69 checks**; build, kernel rebuild, typecheck, lint, re-export,
+pack-content and local SBOM checks pass. Full-run log SHA-256:
+`fa134847548762e02df861902f2cfbd8599f7e760d450380d2a95b2e4aaf6cbb`.
+Installed-run log SHA-256:
+`4dc4f3278ab9cb7329ca0b88eca6d32ce2f4677c5c23f3bac74c298883ca5095`.
+These development checks do not supersede release acceptance receipts or close
+the Plan/Apply/Brainstorm behavioral parity, extraction or mutation findings.
 
 **A15 — Intermittent daemon survival test (unresolved observation).** One
 unsandboxed full run returned no pong; the isolated three-test daemon suite and

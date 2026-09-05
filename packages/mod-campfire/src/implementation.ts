@@ -1,3 +1,4 @@
+import { commandResultToToolResult } from '@kernlang/agon-mod-api';
 import type { AgonModFactory, CommandResult, Dispose, Json, ModServices, Registrar } from '@kernlang/agon-mod-api';
 
 const schema = Object.freeze({
@@ -59,7 +60,7 @@ export const createMod: AgonModFactory = (services) => Object.freeze({
     disposers.push(registrar.command('cli', { id: 'cliCommands:0010', ...command }));
     disposers.push(registrar.intent({ id: 'intentVariants:0007', description: 'Parse campfire intent', inputSchema: schema, parse: (input) => input.startsWith('/campfire ') ? { topic: input.slice(10) } : undefined, run: (input, context) => run(input, context, services) }));
     for (const id of ['builtinCommandMetadata:0008', 'tuiSlashCommands:0008']) disposers.push(registrar.command('tui', { id, ...command }));
-    disposers.push(registrar.tool('mcp', { id: 'mcpTools:0005', description: 'Run an open multi-model discussion', inputSchema: schema, effect: 'process', run: async (input, context) => (await run(input, context, services)).result ?? {} }));
+    disposers.push(registrar.tool('mcp', { id: 'mcpTools:0005', description: 'Run an open multi-model discussion', inputSchema: schema, effect: 'process', run: async (input, context) => commandResultToToolResult(await run(input, context, services)) }));
     for (const id of ['cesarRoutes:0010', 'cesarRoutes:0011', 'cesarRoutes:0012', 'cesarRoutes:0013']) disposers.push(registrar.planStep({ id, inputSchema: schema, resultSchema: schema, risk: 'read', run: (input, context) => run(input, context, services) }));
     disposers.push(registrar.tool('cesar', { id: 'cesarTools:0003', description: 'Hand this topic to an open multi-model Campfire discussion', inputSchema: cesarSchema, effect: 'read', run: async () => 'Delegation accepted — end your turn now so the run can start.' }));
     return async () => { for (const dispose of [...disposers].reverse()) await dispose(); };

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { commandResultToToolResult } from '@kernlang/agon-mod-api';
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -328,8 +329,7 @@ export const createMod: AgonModFactory = (services) =>
               context,
               services,
             );
-            if (out.exitCode) throw new Error(out.stderr);
-            return out.result ?? {};
+            return commandResultToToolResult(out);
           },
         }),
       ];

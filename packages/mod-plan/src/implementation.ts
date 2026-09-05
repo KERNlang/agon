@@ -1,3 +1,4 @@
+import { commandResultToToolResult } from '@kernlang/agon-mod-api';
 import { randomUUID } from 'node:crypto';
 import type { AgonModFactory, CommandResult, Dispose, Json, ModServices, Registrar } from '@kernlang/agon-mod-api';
 import { listPersistedPlans, loadPersistedPlan, savePersistedPlan } from '@kernlang/agon-support-persistence';
@@ -63,7 +64,7 @@ const cesar: Record<string, string> = { 'cesarRoutes:0038':'plan','cesarRoutes:0
 
 export const createMod: AgonModFactory = (services) => Object.freeze({ apiVersion: '1' as const, async activate(registrar: Registrar): Promise<Dispose> {
   const disposers: Dispose[] = [];
-  const toolResult = async (operation: Promise<CommandResult>): Promise<Json> => { const output = await operation; if (output.exitCode !== 0) throw Object.assign(new Error(output.stderr?.trim() || output.failure?.message || 'Plan operation failed'), { code: output.failure?.code ?? 'PLAN_OPERATION_FAILED' }); return output.result ?? {}; };
+  const toolResult = async (operation: Promise<CommandResult>): Promise<Json> => { const output = await operation; return commandResultToToolResult(output); };
   for (const [id, action] of Object.entries(actions)) {
     const command = { id, description: `${action} a persisted execution plan`, inputSchema: controlSchema, run: (input: Json) => control(action, input, services) };
     if (id.startsWith('intentVariants:')) disposers.push(registrar.intent({ ...command, parse: (value) => { const match=value.match(/^\/(\S+)(?:\s+([\s\S]*))?$/);if(!match)return undefined;const commandName=match[1].toLowerCase();const rest=(match[2]??'').trim();const aliases:Record<string,string>={autonomous:'auto',abort:'cancel',resume:'retry'};if((aliases[commandName]??commandName)!==action)return undefined;if(action==='auto')return{input:rest,taskClass:/^(fix|add|implement|refactor|debug|create|build|write|update|change|remove|delete|rename|move|test|deploy|install|upgrade|migrate|convert|extract|inline|optimize|port)\b/i.test(rest)?'code':/^(what|how|why|where|when|who|which|explain|describe|tell|show|list|is there|does)\b/i.test(rest)?'question':'ambiguous',autoMode:true};if(action==='plan'){if(rest.startsWith('resume'))return{type:'plan-resume',planId:rest.slice(6).trim()||undefined};if(rest)return{type:'plan-task',task:rest};return{planId:undefined};}return action==='plans'?{}:{planId:rest.split(/\s+/)[0]||undefined}; } })); else disposers.push(registrar.command('tui', command));

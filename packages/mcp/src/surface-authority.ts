@@ -79,7 +79,8 @@ export function activeMcpSurfaceTools(): readonly ActiveMcpSurfaceTool[] {
   }));
 }
 
-export async function invokeActiveMcpSurfaceTool(name: string, input: Record<string, unknown>): Promise<unknown> {
+export async function invokeActiveMcpSurfaceTool(name: string, input: Record<string, unknown>, signal: AbortSignal = new AbortController().signal): Promise<unknown> {
+  signal.throwIfAborted();
   assertMcpSurfaceSelectionCurrent();
   const record = boot!.activated.generation.assertAvailable('mcp', name);
   const payload = record.payload as { inputSchema: Record<string, unknown>; run(input: Record<string, unknown>, context: Record<string, unknown>): Promise<unknown> | unknown };
@@ -88,6 +89,6 @@ export async function invokeActiveMcpSurfaceTool(name: string, input: Record<str
   if (!['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'].includes(platform)) throw new Error(`unsupported MCP platform: ${platform}`);
   return payload.run(input, {
     invocationId: randomUUID(), cwd: process.env.AGON_CWD ?? process.cwd(), platform,
-    signal: new AbortController().signal, config: Object.freeze({}),
+    signal, config: Object.freeze({}),
   });
 }

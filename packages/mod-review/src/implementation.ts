@@ -1,3 +1,4 @@
+import { commandResultToToolResult } from '@kernlang/agon-mod-api';
 import type {
   AgonModFactory,
   CommandResult,
@@ -434,7 +435,7 @@ export const createMod: AgonModFactory = (services) =>
           inputSchema: schema,
           effect: "process",
           run: async (input, context) =>
-            (await runReview(input, context, services)).result ?? {},
+            commandResultToToolResult(await runReview(input, context, services)),
         }),
       );
       for (const id of [

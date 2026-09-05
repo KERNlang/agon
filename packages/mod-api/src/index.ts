@@ -12,6 +12,7 @@ export {
 export type { JobEnvelope, PersistedEnvelope, PlanEnvelope, ResultEnvelope, SessionEnvelope } from './envelopes.js';
 
 export { AGON_MOD_API_VERSION } from './version.js';
+export { CommandExecutionError, commandResultToToolResult } from './command-tool-result.js';
 export {
   CONTENT_HASH_PATTERN,
   ManifestSchema,

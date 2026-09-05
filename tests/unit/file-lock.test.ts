@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync, utimesSyn
 import { tmpdir, hostname } from 'node:os';
 import { join, resolve } from 'node:path';
 import { execFile } from 'node:child_process';
+import { transpileModule, ModuleKind, ScriptTarget } from 'typescript';
 
 import { withFileLock } from '../../packages/core/src/blocks/file-lock.js';
 
@@ -173,28 +174,43 @@ describe('withFileLock', () => {
     expect(existsSync(deadFence)).toBe(false);
   });
 
-  it('publishes a fresh acquiredAt after out-waiting a live holder longer than staleMs', () => {
-    // Stale-at-birth guard: a contender that spins longer than staleMs before
-    // winning must re-stamp its payload, or the lock it publishes is instantly
-    // reclaimable while live. withFileLock spins SYNCHRONOUSLY, so the release
-    // must come from a child process — an in-process setTimeout would never run.
-    const staleMs = 250;
-    const holderAcquiredAt = new Date().toISOString();
-    writeFileSync(lockPath, JSON.stringify({
-      pid: process.pid, uuid: 'holder', hostname: hostname(), acquiredAt: holderAcquiredAt,
-    }), { flag: 'wx' });
-    const started = Date.now();
-    execFile(process.execPath, ['-e', `setTimeout(() => require('node:fs').unlinkSync(${JSON.stringify(lockPath)}), 300)`]);
-    let observedAcquiredAt = '';
-    withFileLock(lockPath, () => {
-      observedAcquiredAt = JSON.parse(readFileSync(lockPath, 'utf-8')).acquiredAt;
-    }, { timeoutMs: 5000, staleMs });
-    const waited = Date.now() - started;
-    const oldAge = Date.now() - new Date(holderAcquiredAt).getTime();
-    const age = Date.now() - new Date(observedAcquiredAt).getTime();
-    expect(oldAge).toBeGreaterThan(staleMs); // the actual holder timestamp passed the TTL
-    expect(waited).toBeGreaterThanOrEqual(staleMs); // scheduler timing may land exactly on the boundary
-    expect(age).toBeLessThan(staleMs); // pre-fix this was ≈waited: stale at birth
+  it('publishes a fresh acquiredAt after waiting past staleMs and detects a stale-payload mutant', async () => {
+    const source = readFileSync(new URL('../../packages/support-persistence/src/file-lock.ts', import.meta.url), 'utf8');
+    const mutationSite = '    freshenPayload();';
+    expect(source.split(mutationSite)).toHaveLength(2);
+    const { outputText } = transpileModule(source.replace(mutationSite, '    /* mutant: do not refresh payload */'), {
+      compilerOptions: { module: ModuleKind.ESNext, target: ScriptTarget.ES2022 },
+    });
+    const mutant = (await import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`)).withFileLock as typeof withFileLock;
+    function observe(lock: typeof withFileLock) {
+      const staleMs = 250;
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+      // The synchronous lock loop cannot advance fake timers itself. Advance
+      // its clock at each real sleep boundary, without waiting or spawning.
+      const sleep = vi.spyOn(Atomics, 'wait').mockImplementation(() => {
+        vi.setSystemTime(Date.now() + 12);
+        return 'timed-out';
+      });
+      try {
+        const started = Date.now();
+        writeFileSync(lockPath, JSON.stringify({
+          pid: process.pid, uuid: 'holder', hostname: hostname(), acquiredAt: new Date().toISOString(),
+        }), { flag: 'wx' });
+        let observedAcquiredAt = '';
+        lock(lockPath, () => {
+          observedAcquiredAt = JSON.parse(readFileSync(lockPath, 'utf-8')).acquiredAt;
+        }, { timeoutMs: 5000, staleMs });
+        const waited = Date.now() - started;
+        expect(waited).toBeGreaterThan(staleMs);
+        return Date.now() - new Date(observedAcquiredAt).getTime() < staleMs;
+      } finally {
+        sleep.mockRestore();
+        vi.useRealTimers();
+      }
+    }
+    expect(observe(withFileLock)).toBe(true);
+    expect(observe(mutant)).toBe(false);
   });
 
   it('release is owner-checked: never unlinks a lock it no longer owns', () => {

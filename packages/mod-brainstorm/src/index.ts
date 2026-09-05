@@ -264,4 +264,6 @@ export { createMod } from './implementation.js';
 export { createMod as default } from './implementation.js';
 export { runBrainstorm } from './implementation.js';
 export { createBrainstormWorkflow } from './workflow.js';
+export { createBrainstormScoring, structuralScore, scoutScore, assignStances, fallbackParse } from './policy.js';
+export type { BrainstormRatingHistory, ScoutScoreInput } from './policy.js';
 export type { BrainstormWorkflowOptions, BrainstormWorkflowServices, BrainstormDraft, BrainstormBid } from './workflow.js';

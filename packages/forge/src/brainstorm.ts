@@ -1,4 +1,6 @@
-import { createBrainstormWorkflow } from '@kernlang/agon-mod-brainstorm';
+import { createBrainstormWorkflow, createBrainstormScoring, scoutScore, assignStances, fallbackParse } from '@kernlang/agon-mod-brainstorm';
+// A06-BRAINSTORM-POLICY (KL-011): retain the legacy exports, not duplicate algorithms.
+export { structuralScore, scoutScore, assignStances, fallbackParse } from '@kernlang/agon-mod-brainstorm';
 
 import type { EngineAdapter, ScoutBid } from '@kernlang/agon-core';
 
@@ -16,73 +18,7 @@ import { dispatchSeatWithRetry } from './seat-dispatch.js';
 
 import type { SeatOutcome } from './seat-dispatch.js';
 
-export function calibrateConfidence(engineId: string, rawBid: number): number {
-  // Use Glicko-2 brainstorm ratings for calibration, fall back to global
-  const ratings = getRatings();
-  const history = ratings.byMode.brainstorm[engineId] ?? ratings.global[engineId];
-  if (!history || history.wins + history.losses < 3) {
-    return rawBid;
-  }
-  const winRate = history.wins / (history.wins + history.losses);
-  // Blend: 30% self-reported, 70% track record
-  return Math.round((rawBid * 0.3 + winRate * 100 * 0.7));
-}
-
-export function structuralScore(draft: KernDraft, style?: string): number {
-  let score = 0;
-  if (draft.approach.length > 10) {
-    score += 20;
-  }
-  if (draft.approach.length > 30) {
-    score += 10;
-  }
-  if (draft.reasoning.length > 10) {
-    score += 15;
-  }
-  score += Math.min(draft.steps.length, 7) * 5;
-  score += Math.min(draft.tradeoffs.length, 5) * 5;
-  // keyFiles reward only outside divergent style — reframing drafts rarely name
-  // files, so counting them systematically buries every non-anchor stance.
-  if (style !== 'divergent') {
-    score += Math.min(draft.keyFiles.length, 5) * 3;
-  }
-  return score;
-}
-
-export function qualityScore(engineId: string, draft: KernDraft, style?: string): number {
-  let score = structuralScore(draft, style);
-  // Use calibrated confidence, not raw self-report
-  score += calibrateConfidence(engineId, draft.confidence) * 0.05;
-  return score;
-}
-
-export function rankDrafts(drafts: {engineId:string, draft:KernDraft, raw:string, seat:SeatOutcome}[], style?: string): {engineId:string, draft:KernDraft, raw:string, seat:SeatOutcome}[] {
-  return [...drafts].sort((a, b) => {
-    const scoreA = qualityScore(a.engineId, a.draft, style);
-    const scoreB = qualityScore(b.engineId, b.draft, style);
-    return scoreB - scoreA;
-  });
-}
-
-export function assignStances(engines: string[]): Map<string,string> {
-  const stances = [
-    'ANCHOR: give your single best, most direct answer to the question as asked.',
-    'CONTRARIAN: assume the approach the question implies (or the most obvious one) is wrong — argue for a fundamentally different one.',
-    'FIRST-PRINCIPLES: ignore the structure the question implies; restate the underlying problem in one line and re-derive a solution from scratch.',
-    'OUTSIDER: answer as a strong expert from a different domain would — import a pattern this field does not normally use here.',
-    'EXPANSIONIST: propose the most ambitious defensible version — what does this look like solved properly at 10x the scope?',
-    'WILDCARD: propose something deliberately unconventional that you can still defend technically.',
-  ];
-  // Shuffle per run: a fixed seat→stance mapping would hand the same engine
-  // the lowest-scoring stance every time and deflate its Glicko rating.
-  const pool = stances
-    .map((v) => ({ v, k: Math.random() }))
-    .sort((a, b) => a.k - b.k)
-    .map((x) => x.v);
-  const map = new Map<string, string>();
-  engines.forEach((id, i) => map.set(id, pool[i % pool.length]));
-  return map;
-}
+export const { calibrateConfidence, qualityScore, rankDrafts } = createBrainstormScoring(getRatings);
 
 export async function collectRankedDrafts(opts: {question:string, context?:string, engines:string[], style?:string, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal, onEvent?:(event:{type:string,data?:Record<string,unknown>})=>void}): Promise<{ranked:{engineId:string, draft:KernDraft, raw:string, seat:SeatOutcome}[], outcomes:SeatOutcome[]}> {
   const draftPrompt = buildKernDraftPrompt({
@@ -144,19 +80,6 @@ export async function collectRankedDrafts(opts: {question:string, context?:strin
   return { ranked: rankDrafts(drafts, opts.style), outcomes: attempts.map((attempt) => attempt.seat) };
 }
 
-export function scoutScore(bid: ScoutBid): number {
-  let score = 0;
-  // Confidence: 40% weight (0-40 points)
-  score += Math.min(bid.confidence, 100) * 0.4;
-  // Key files: 20% weight (0-20 points)
-  score += Math.min(bid.keyFiles.length, 5) * 4;
-  // Steps detail: 20% weight (0-20 points)
-  score += Math.min(bid.steps.length, 5) * 4;
-  // Risk assessment: 20% weight (0-20 points)
-  score += (bid.risk === 'low') ? 20 : ((bid.risk === 'medium') ? 10 : 0);
-  return score;
-}
-
 function warnBrainstorm(message: string): void {
   console.warn(message);
 }
@@ -177,46 +100,6 @@ export async function runScout(opts: {question:string, context?:string, engines:
   const secondConfidence = (bids.length > 1) ? bids[1].confidence : 0;
   const disagreementSpread = Math.abs((topConfidence - secondConfidence));
   return { rankedBids: bids, leadEngine: (bids.length > 0) ? bids[0].engineId : scouts[0], topConfidence: topConfidence, disagreementSpread: disagreementSpread };
-}
-
-export function fallbackParse(output: string): KernDraft {
-  const stripped = output.replace(/\x60\x60\x60(?:json)?\s*/gi, '').replace(/\x60\x60\x60/g, '');
-  let depth = 0;
-  let start = -1;
-
-  for (let i = 0; i < stripped.length; i++) {
-    if (stripped[i] === '{') {
-      if (depth === 0) start = i;
-      depth++;
-    } else if (stripped[i] === '}') {
-      depth--;
-      if (depth === 0 && start !== -1) {
-        try {
-          const parsed = JSON.parse(stripped.slice(start, i + 1));
-          if (typeof parsed === 'object' && parsed !== null) {
-            return {
-              approach: String(parsed.approach ?? parsed.reasoning ?? ''),
-              reasoning: String(parsed.reasoning ?? ''),
-              tradeoffs: [],
-              confidence: Number(parsed.confidence) || 50,
-              keyFiles: [],
-              steps: parsed.approach ? [parsed.approach] : [],
-            };
-          }
-        } catch { /* keep looking */ }
-        start = -1;
-      }
-    }
-  }
-
-  return {
-    approach: output.slice(0, 200),
-    reasoning: '',
-    tradeoffs: [],
-    confidence: 50,
-    keyFiles: [],
-    steps: [],
-  };
 }
 
 // A06-BRAINSTORM-HOST (KL-011): temporary capability adapter, not a second workflow owner.

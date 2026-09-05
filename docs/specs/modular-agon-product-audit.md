@@ -222,8 +222,9 @@ CLI or forge implementation. Engine/storage/native effects are injected through
 
 **A06-BRAINSTORM-HOST (KL-011)** in `packages/forge/src/brainstorm.ts` is a
 temporary capability adapter. It delegates the workflow controller but still
-owns draft collection, confidence/scoring helpers and scout behavior. Its removal
-condition is physical extraction of those remaining helpers, connection of the
+owns draft collection and scout orchestration. Confidence/scoring helpers are
+now extracted as described below. Its removal condition is physical extraction
+of the remaining orchestration, connection of the
 generated surfaces to the same workflow, and installed raw-oracle parity. The
 simplified `mod-brainstorm/src/implementation.ts` surface implementation still
 exists and is **not** accepted as equivalent. A06/A11 remain open.
@@ -245,6 +246,31 @@ Build log SHA-256:
 The unrelated timing-oracle failure and its mutation-checked repair are recorded
 in [the lock-test repair receipt](evidence/modular-agon-file-lock-test-repair.md).
 This is not an independent clean-commit release qualification receipt.
+
+**A06-BRAINSTORM-POLICY (KL-011), subsequent extraction.**
+`packages/mod-brainstorm/src/policy.ts` owns structural/scout scoring, stance
+assignment, fallback parsing, confidence calibration, quality scoring and stable
+ranking. The legacy module retains exports and supplies the rating reader only;
+the policy reads history on each call rather than caching a stale snapshot.
+The injected history shape exposes wins/losses, not private registry or store
+implementations. The remaining collector and scout use these physical helpers.
+
+An ownership regression failed before the move. Eleven additional parity cases
+compare against the frozen source, including score thresholds/caps, grounded vs
+divergent scoring, cold-start history, mode/global precedence, live history
+changes, stable ties, entry identity, fallback parsing and stance pool overflow.
+The nine workflow-oracle comparisons remain green. This moves policy ownership;
+it does not yet replace the simplified generated-surface handler. A06 remains
+open until collection/scout extraction and installed-surface parity are complete.
+
+Policy-extraction development checks: independent package build, repository
+build, typecheck, lint and re-export guard pass; 6,045 tests pass with five
+existing skips across 509 files. Full-suite log SHA-256:
+`2eb0271415b8013bf8d43f61b4a87d424a152d441b80524550f778f5de247952`.
+Build log SHA-256:
+`bc34a0fd6d59b888454df3504689b10f330b9219499b3b0a82a096312e10722f`.
+The initial lint pass identified a leftover unused import; it was removed and
+the complete lint rerun passed. These checks do not close release qualification.
 
 **A20 — Plan scheduler physically extracted (partial A05/A11 progress).**
 `packages/mod-plan/src/executor.ts` now owns the scheduling loop: dependency-ready

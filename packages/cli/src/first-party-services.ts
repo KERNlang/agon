@@ -1,4 +1,5 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { patchApplicationHost } from './patch-application-host.js';
 import { dirname, resolve, sep } from 'node:path';
 import { EngineRegistry, createRunDir, eventLogFlush, getRatings, loadConfig, pickTopRatedEngine, setSessionRoot, writeRunStatus } from '@kernlang/agon-core';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
@@ -82,7 +83,8 @@ export function decorateCliFirstPartyServices(manifest: ModManifest, base: ModSe
       }
     },
   }) : undefined;
-  return Object.freeze({ ...base, runs, ...(browser ? { browser } : {}), ...(workspace ? { workspace } : {}), engines: createCliEngineServices() });
+  return Object.freeze({ ...base, runs, ...(browser ? { browser } : {}), ...(workspace ? { workspace } : {}),
+    ...(manifest.id === 'agon.forge' ? { patchApplication: patchApplicationHost } : {}), engines: createCliEngineServices() });
 }
 
 export function createCliEngineServices(): ModServices['engines'] {

@@ -1,4 +1,6 @@
 import { dirname, join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { withPatchApplication } from '../../patch-application-host.js';
 
 import { resolveWorkingDir, buildImageAttachment, sessionContext, visionSupportNote } from '@kernlang/agon-core';
 
@@ -388,13 +390,16 @@ export async function runPhysicalTuiContribution(
   if (!['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'].includes(platform)) {
     throw new TypeError(`unsupported mod platform: ${platform}`);
   }
-  const output = await contribution.run(normalized, {
-    invocationId: `tui:${process.pid}:${Date.now()}`,
+  const invocation = {
+    invocationId: `tui:${randomUUID()}`,
     cwd: resolveWorkingDir(),
     platform,
     signal,
     config: cb.ctx.config as unknown as Readonly<Record<string, Json>>,
-  });
+  };
+  const output = await withPatchApplication(invocation.invocationId,
+    (request, context) => handleApplyPatch(cb.dispatch, cb.ctx, request.patchPath, request.force, context),
+    async () => contribution.run(normalized, invocation));
   let result: CommandResult = { exitCode: 0 };
   if (output && typeof output === 'object' && Symbol.asyncIterator in output) {
     for await (const event of output) {

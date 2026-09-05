@@ -91,13 +91,51 @@ on Synthesis. Explicit TUI schemas and adapters now preserve legacy intent
 shape while delivering the correct domain request. Tests exercise the actual
 registered parser, schema and handler with fixture capabilities.
 
-**A13 — Apply-patch is routed as start-Forge (open, blocker).**
-`packages/mod-forge/src/implementation.ts`, `intentVariants:0002`, parses
-`patchPath`/`force` but registers the Forge task schema and competition handler.
-Even an explicit `/apply <patch-path>` is rejected for missing `task`. Fix by
-extracting the existing patch-application workflow, including preflight,
-current-plan artifact selection, diff preview and human approval. Merely adding
-`task` or dropping required validation would execute the wrong operation.
+**A13 — Apply-patch routing repaired; backend extraction remains open.**
+The registered Apply intent previously used the Forge task schema and competition
+handler: `/apply <patch-path>` failed for missing `task`. Apply now has its own
+schema, parser and handler in `packages/mod-forge/src/apply.ts`. It never starts
+a Forge competition. The existing preflight, current-plan artifact selection,
+preview and approval remain behind an explicitly temporary host adapter.
+
+Adapter ledger entry **A13-APPLY-HOST**, under **KL-011** surface cutover:
+
+- Contribution owner: `agon.forge`, IDs `intentVariants:0002`,
+  `builtinCommandMetadata:0002`, and `tuiSlashCommands:0002`.
+- Adapter owner: CLI interactive host, `packages/cli/src/patch-application-host.ts`;
+  legacy workflow: `packages/cli/src/handlers/plan.ts::handleApplyPatch`;
+  legacy backend: `packages/core/src/blocks/patch-apply.ts`.
+- Boundary: optional public `PatchApplicationHostServices`, injected only into
+  bundled `agon.forge`. UI context stays inside the host. Invocation-scoped
+  approval callbacks reject headless, mismatched and expired sessions and keep
+  concurrent sessions separate. Availability is not approval or sandboxing.
+- Removal condition: extract the patch workflow/backend into its physical
+  mod/support owner, leaving only preview/approval UI capabilities in the host;
+  prove parity and legacy-adapter unreachability before deleting this bridge.
+  This entry is **retained**, not a completed kill-list removal.
+- Evidence: `tests/unit/modular-apply-route.test.ts`,
+  `modular-apply-approval.test.ts`, `modular-apply-host-scope.test.ts`, and
+  `modular-apply-tui-integration.test.ts` in the same directory. Tests cover the
+  registered parser/schema/runner and actual TUI dispatch/approval bridge with
+  a fixture patch backend; they do not prove every real Git failure mode.
+
+The approval repair accepts only empty input (the existing `[Y/n]` default),
+`y`, or `yes`; previously only literal `n` cancelled. Cancellation after the
+prompt prevents the write. The workspace is pinned before preview, and relative
+patch/manifest paths resolve against that workspace. `--force` bypasses the
+dirty-tree refusal, not human approval. These checks do not supply a repository
+transaction lock or complete concurrent-writer recovery. Full artifact/backend
+parity and extraction remain part of A11/A13.
+
+Apply repair development verification (2026-09-05): 12 focused tests and the
+rebuilt full suite pass (5,970 passed, five existing skips, 496 files). Build,
+typecheck, lint, re-export guard, all 49 package packs plus launcher, 69 isolated
+npx checks, and SBOM validation pass. Packed total: 1,820,382 bytes. Full-run
+log SHA-256: `3bf16be4401b145fe2b1118e5dd2850510427b9fea2ae1bfad52d7f8080e61bb`;
+npx log: `4dc4f3278ab9cb7329ca0b88eca6d32ce2f4677c5c23f3bac74c298883ca5095`.
+These are local development results, not independent clean-commit release
+qualification or proof of complete workflow parity. npm provenance remains
+externally blocked. Active/global Agon was not installed, linked or promoted.
 
 The census also rejects empty `/forge` and `/team-forge` inputs lacking a test
 command. Those are incomplete inputs, not by themselves proof of a regression.
@@ -164,6 +202,14 @@ raised. Retain this observation for load/repetition tests; it is not evidence
 that the flake was fixed. Earlier EPERM socket/watch failures were environmental
 and were rerun with local permissions, without skips.
 
+Apply-repair verification also produced one daemon readiness failure (5,969
+passed, one failed, five skipped). That run overlapped a build rewriting the
+CLI distribution used by this test, so it is not a valid stable-artifact
+qualification run. Failed log SHA-256:
+`d7c45f26eb8a076a9f1e696a85cd3489f4bc4b96505b17e8190b5a23d5554a84`.
+Build completion must precede the rerun. This interference is a plausible
+explanation, not a verified root cause of the earlier no-pong observation.
+
 ## Remaining clean implementation order
 
 **A16 — Serve readiness/shutdown race (repaired; regression suite passing).**
@@ -201,8 +247,9 @@ services; no browser or provider authentication is needed by those tests.
    to that one implementation. Preserve raw result fields, event order, degraded
    panels, cancellation and synthesis fallback. Use deterministic fixture engines
    to compare old/new raw outputs and dispatch sequences before retiring the owner.
-3. **Apply and MCP effects (A13/A14):** separate patch application from competition
-   and standardize error projection without hiding failures or bypassing approval.
+3. **Apply extraction (A13/A11):** routing is separated from competition and
+   MCP failure projection is repaired. Retire A13-APPLY-HOST only after physical
+   backend extraction and artifact/approval parity pass; keep the approval gate.
 4. **Acceptance truth (A10/A11):** inject actual implementation mutants, reconcile
    remaining legacy owners, then run raw workflow parity through installed surfaces.
    Existing legacy-only tests cannot close these findings.

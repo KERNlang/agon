@@ -1,4 +1,5 @@
 import { commandResultToToolResult } from '@kernlang/agon-mod-api';
+import { applyInputSchema, parseApply, runApply } from './apply.js';
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import type {
@@ -677,9 +678,12 @@ export const createMod: AgonModFactory = (services) =>
         registrar.command("cli", { id: "cliCommands:0022", ...command }),
       );
       for (const id of tuiIds)
-        disposers.push(registrar.command("tui", { id, ...command }));
+        disposers.push(registrar.command("tui", id === 'builtinCommandMetadata:0002' || id === 'tuiSlashCommands:0002'
+          ? { id, description: 'Preview and apply a patch with confirmation', inputSchema: applyInputSchema, parse: parseApply, run: (input, context) => runApply(input, context, services) }
+          : { id, ...command }));
+      disposers.push(registrar.intent({ id: 'intentVariants:0002', description: 'Apply a patch with confirmation',
+        inputSchema: applyInputSchema, parse: parseApply, run: (input, context) => runApply(input, context, services) }));
       for (const [id, prefix] of [
-        ["intentVariants:0002", "apply"],
         ["intentVariants:0032", "forge"],
         ["intentVariants:0056", "suggest forge"],
       ] as const)
@@ -693,14 +697,6 @@ export const createMod: AgonModFactory = (services) =>
               if (!(lower.startsWith(prefix) || lower.startsWith(`/${prefix}`)))
                 return undefined;
               const rest = value.replace(/^\/?[^ ]+\s*/, "");
-              if (prefix === "apply") {
-                const force = rest.includes("--force");
-                return {
-                  type: "apply",
-                  patchPath: rest.replace("--force", "").trim() || undefined,
-                  force,
-                };
-              }
               if (prefix !== "forge") return undefined;
               const hardened =
                 /^(--hardened)\s+/i.test(rest) ||

@@ -186,6 +186,12 @@ export interface WorkspaceHostServices {
   setSessionRoot(path: string, context: InvocationContext): Awaitable<void>;
 }
 
+/** Interactive host bridge; availability does not grant approval. The host
+ * must preview and confirm within the calling invocation before writing. */
+export interface PatchApplicationHostServices {
+  apply(request: { readonly patchPath?: string; readonly force: boolean }, context: InvocationContext): Awaitable<CommandResult>;
+}
+
 export interface RunRecordHandle {
   readonly id: string;
   readonly path: string;
@@ -229,6 +235,7 @@ export interface ModServices {
   };
   /** Present only for trusted bundled browser integration. Folder mods never receive it. */
   readonly browser?: BrowserHostServices;
+  readonly patchApplication?: PatchApplicationHostServices;
   /** Present only for the bundled workspaces integration. Folder mods never receive it. */
   readonly workspace?: WorkspaceHostServices;
   /** Present only for bundled workflows that participate in the legacy run ledger. */

@@ -19,8 +19,8 @@
       "version": "1.0.0",
       "dependencies": [],
       "sourceLocator": "@kernlang/agon-mod-api@1.0.0",
-      "integrity": "sha512-alZvvNAbq7sLGpEerEfGtnDpWV4mOU7vlEkVobSMhbIePDFeX3xdUEnW3pdW1REfP4ktQ6HL4oVzC3WSOXs9Zw==",
-      "contentHash": "sha256:4e6aa12925ec4181c2c828200c4b04f0886fa8e32b5d4fb4190a016f353542ae",
+      "integrity": "sha512-YyM1mvGqO2EcMQvrLIqbzzBSupLO5ME9wBRcUqo/qzyzrjFmkX6LOtOWXM61WZo/vYedg59Eh1BJ62PvMo63UQ==",
+      "contentHash": "sha256:b6c7674d87a82385b4b479cedfdc74bba1cea49ef58e017c672c6e17409e7778",
       "manifestHash": "sha256:bd2313a9cf283860dfdd7713fa0a737b521944d2c819a5cca2d63e5ed40fdbb5"
     },
     {
@@ -328,8 +328,8 @@
         "agon.worktree"
       ],
       "sourceLocator": "@kernlang/agon-mod-forge@1.0.0",
-      "integrity": "sha512-2OKAjmdrOfoAphfwdPESRG0vDBQxsnTO5D/FX+0QvU5neEkErQic2nNh+jDL1MSe+Ec/bHUEZp7qsKdXljKHGw==",
-      "contentHash": "sha256:8a99176a7324e21ac44f815df3111cc5c76df74e82ba60aaa2b46ec536587df4",
+      "integrity": "sha512-B/WnsIsU5pm2S5VXKMdCPm9601zBZETSTlOiJSsja7p+HnCjO9UojIgsDuNUiyeZqee7iRVkQBnvc5PYsvlfVw==",
+      "contentHash": "sha256:d664899fc9ed43a37462edf01336b27510f8cb68cc379b9f0945a1e13fd7f4dd",
       "manifestHash": "sha256:f5385d196779b9561d5371f1aa64d0d378bb5296d2376a00c2a065098b8b7ae9"
     },
     {

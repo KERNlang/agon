@@ -79,16 +79,16 @@
         "range": "^19.2.0"
       }
     ],
-    "packedBytes": 1242692,
-    "unpackedBytes": 5581770,
+    "packedBytes": 1245002,
+    "unpackedBytes": 5594080,
     "fileCount": 101,
     "files": [
       {
-        "path": "dist/app-5NEZGTY4.js",
+        "path": "dist/app-7OQX6J7Z.js",
         "size": 408509
       },
       {
-        "path": "dist/app-5NEZGTY4.js.map",
+        "path": "dist/app-7OQX6J7Z.js.map",
         "size": 275732
       },
       {
@@ -164,14 +164,6 @@
         "size": 3129
       },
       {
-        "path": "dist/chunk-7XGNH377.js",
-        "size": 82832
-      },
-      {
-        "path": "dist/chunk-7XGNH377.js.map",
-        "size": 49447
-      },
-      {
         "path": "dist/chunk-AEM56VD6.js",
         "size": 99393
       },
@@ -220,6 +212,14 @@
         "size": 97692
       },
       {
+        "path": "dist/chunk-DRI2KTXU.js",
+        "size": 82832
+      },
+      {
+        "path": "dist/chunk-DRI2KTXU.js.map",
+        "size": 49447
+      },
+      {
         "path": "dist/chunk-FL4IL6ZC.js",
         "size": 13866
       },
@@ -228,20 +228,28 @@
         "size": 8449
       },
       {
+        "path": "dist/chunk-GLOEZOOK.js",
+        "size": 1007721
+      },
+      {
+        "path": "dist/chunk-GLOEZOOK.js.map",
+        "size": 607272
+      },
+      {
+        "path": "dist/chunk-ITJRNMCC.js",
+        "size": 44458
+      },
+      {
+        "path": "dist/chunk-ITJRNMCC.js.map",
+        "size": 27868
+      },
+      {
         "path": "dist/chunk-JP5L4TB2.js",
         "size": 1601
       },
       {
         "path": "dist/chunk-JP5L4TB2.js.map",
         "size": 1099
-      },
-      {
-        "path": "dist/chunk-KGZPVYSC.js",
-        "size": 999883
-      },
-      {
-        "path": "dist/chunk-KGZPVYSC.js.map",
-        "size": 602800
       },
       {
         "path": "dist/chunk-LTV5D653.js",
@@ -260,14 +268,6 @@
         "size": 4785
       },
       {
-        "path": "dist/chunk-MKX42ZNE.js",
-        "size": 44458
-      },
-      {
-        "path": "dist/chunk-MKX42ZNE.js.map",
-        "size": 27868
-      },
-      {
         "path": "dist/chunk-OWWPBFBH.js",
         "size": 24269
       },
@@ -276,20 +276,20 @@
         "size": 14454
       },
       {
+        "path": "dist/chunk-P5YI6IZ3.js",
+        "size": 329419
+      },
+      {
+        "path": "dist/chunk-P5YI6IZ3.js.map",
+        "size": 212980
+      },
+      {
         "path": "dist/chunk-TS7VTHT2.js",
         "size": 21838
       },
       {
         "path": "dist/chunk-TS7VTHT2.js.map",
         "size": 15054
-      },
-      {
-        "path": "dist/chunk-XXPLJV2X.js",
-        "size": 329419
-      },
-      {
-        "path": "dist/chunk-XXPLJV2X.js.map",
-        "size": 212980
       },
       {
         "path": "dist/chunk-YPQVRKQC.js",
@@ -348,11 +348,11 @@
         "size": 20383
       },
       {
-        "path": "dist/forge-UCBT4XLF.js",
+        "path": "dist/forge-4T54R53V.js",
         "size": 1177
       },
       {
-        "path": "dist/forge-UCBT4XLF.js.map",
+        "path": "dist/forge-4T54R53V.js.map",
         "size": 51
       },
       {
@@ -364,11 +364,11 @@
         "size": 9215
       },
       {
-        "path": "dist/intent-skills-7HA22THW.js",
+        "path": "dist/intent-skills-QHVOS4QC.js",
         "size": 681
       },
       {
-        "path": "dist/intent-skills-7HA22THW.js.map",
+        "path": "dist/intent-skills-QHVOS4QC.js.map",
         "size": 51
       },
       {
@@ -420,11 +420,11 @@
         "size": 3692
       },
       {
-        "path": "dist/plan-mode-6L224JRI.js",
+        "path": "dist/plan-mode-SKZSHSFK.js",
         "size": 545
       },
       {
-        "path": "dist/plan-mode-6L224JRI.js.map",
+        "path": "dist/plan-mode-SKZSHSFK.js.map",
         "size": 51
       },
       {
@@ -488,9 +488,9 @@
         "size": 36190
       }
     ],
-    "integrity": "sha512-us944XSvOfysN3C1IS2K4gRJqmZGAdyyLMsipK+MB48r75F/dpg8t06Tsa+mq37uHskWmytzw5DLccJsh9Y7iQ==",
-    "shasum": "91f08eb750390d76cdeea114556ddbc2ef959933",
-    "tarballHash": "sha256:0b86ba15ba61364316e1a147316f4112648722394e08b2ee3e6533ef80caa8f4",
+    "integrity": "sha512-/uDx8EFyf0/SWZVzIKzOq2hUFjIRQ0SsvDcCqXAt0zMHZ7Pu7aEZv21mSrv7sqqK8IuIJUxYOReetdDeBtYdcw==",
+    "shasum": "30f226911d4eb695a7738d9093fc8a22486e879f",
+    "tarballHash": "sha256:0e780870a408f3492f243c7e791e40f990a942ee961ec80ecf5c87344f7adf7e",
     "packageJsonHash": "sha256:99322f3dba4b7480ebd55ec8dc39fc1fe95a7c2d4d2e5953d9712c34a83bf575"
   },
   "packages": [
@@ -1915,9 +1915,9 @@
         "@kernlang/agon-support-panel",
         "@kernlang/agon-support-dedup"
       ],
-      "packedBytes": 5790,
-      "unpackedBytes": 25830,
-      "fileCount": 8,
+      "packedBytes": 8625,
+      "unpackedBytes": 36117,
+      "fileCount": 9,
       "files": [
         {
           "path": "agon.mod.json",
@@ -1929,11 +1929,15 @@
         },
         {
           "path": "dist/index.d.ts",
-          "size": 3393
+          "size": 3575
         },
         {
           "path": "dist/index.js",
-          "size": 13430
+          "size": 20240
+        },
+        {
+          "path": "dist/workflow.d.ts",
+          "size": 3295
         },
         {
           "path": "LICENSE",
@@ -1952,9 +1956,9 @@
           "size": 226
         }
       ],
-      "integrity": "sha512-91U0Ldsdfs1YNjdUvfNXl8pYR3uvGEN2kjNSyKuVK+whHIP/Y1+/w/TNibx2EvFDE+FyV9oyNPazTw71ciMR0A==",
-      "shasum": "fd7b7abfaf461c7e60e494c2a573a4203abed089",
-      "tarballHash": "sha256:0677fd179b86904f3003dbdaf8579dd3595b0bba86253a04917baaa835c0a482",
+      "integrity": "sha512-a84nGmQGKrc09sn8Ml0KRckoTyRfamI/YFebqozGvjv5+m0WMUuD4hoA9Fizy7Um1Ky7aE2fhqMZ3GbzV85mqA==",
+      "shasum": "3589d18f84fd9cc8c3158089bc7641c70ff33b47",
+      "tarballHash": "sha256:ed4c71652fa5d9b96f8ef70c0e3bd6bbb17a9dea4495bb7602e6a4f6e6757ec5",
       "packageJsonHash": "sha256:e8856b8275aa127aa0a26684306297971a5dc884cb4c88d33e2424b368366f6d",
       "manifestHash": "sha256:e6ddd76523c79e1bdedcedf4b29bdaa18f94452df2c4933cf7cb2529cd1d8cb2"
     },

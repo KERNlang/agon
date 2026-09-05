@@ -1,6 +1,7 @@
-import { createBrainstormWorkflow } from '@kernlang/agon-mod-brainstorm';
+// Frozen from f68d41e4, packages/forge/src/brainstorm.ts; only relative imports relocated.
+import { randomUUID } from 'node:crypto';
 
-import type { EngineAdapter, ScoutBid } from '@kernlang/agon-core';
+import type { EngineAdapter, BrainstormBid, BrainstormResult, ScoutBid } from '@kernlang/agon-core';
 
 import { EngineRegistry, getRatings, createSidechainLogger, updateGlickoRanked, classifyTask, seedNewEnginesFromRegistry } from '@kernlang/agon-core';
 
@@ -8,13 +9,13 @@ import { buildKernDraftPrompt, parseKernDraft } from '@kernlang/protocol';
 
 import type { KernDraft } from '@kernlang/protocol';
 
-import { dedupBrainstormDrafts } from './dedup-bridge.js';
+import { dedupBrainstormDrafts } from '../../packages/forge/src/dedup-bridge.js';
 
-import { preflightHealthFilter } from './health-check.js';
+import { preflightHealthFilter } from '../../packages/forge/src/health-check.js';
 
-import { dispatchSeatWithRetry } from './seat-dispatch.js';
+import { dispatchSeatWithRetry, buildPanelHealth } from '../../packages/forge/src/seat-dispatch.js';
 
-import type { SeatOutcome } from './seat-dispatch.js';
+import type { SeatOutcome } from '../../packages/forge/src/seat-dispatch.js';
 
 export function calibrateConfidence(engineId: string, rawBid: number): number {
   // Use Glicko-2 brainstorm ratings for calibration, fall back to global
@@ -219,28 +220,186 @@ export function fallbackParse(output: string): KernDraft {
   };
 }
 
-// A06-BRAINSTORM-HOST (KL-011): temporary capability adapter, not a second workflow owner.
-type LegacyBrainstormOptions = {question:string, context?:string, engines:string[], style?:string, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal, onEvent?:(event:{type:string,data?:Record<string,unknown>})=>void};
-export const runBrainstorm = createBrainstormWorkflow<LegacyBrainstormOptions>({
-  seed: opts => { seedNewEnginesFromRegistry(opts.registry); },
-  preflight: opts => preflightHealthFilter({ engineIds: opts.engines, registry: opts.registry, adapter: opts.adapter, signal: opts.signal }),
-  createLogger: createSidechainLogger,
-  collect: (opts, engines, style) => collectRankedDrafts({ ...opts, engines, style }),
-  qualityScore,
-  calibrateConfidence,
-  deduplicate: dedupBrainstormDrafts,
-  updateRatings: (bids, question) => {
-    const taskClass = classifyTask(question);
-    const ranked = bids.map(b => ({ engineId: b.engineId, score: b.score ?? 0 }));
-    updateGlickoRanked(ranked, taskClass, 'brainstorm');
-  },
-  selectWinner: (opts, engineId) => {
-    const engine = opts.registry.get(engineId);
-    return prompt => opts.adapter.dispatch({
-      engine, prompt,
+export async function runBrainstorm(opts: {question:string, context?:string, engines:string[], style?:string, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal, onEvent?:(event:{type:string,data?:Record<string,unknown>})=>void}): Promise<BrainstormResult> {
+  const brainstormId = randomUUID().slice(0, 8);
+  // 'divergent' is the default: brainstorm exists to spread the panel out.
+  // 'grounded' restores the pre-stance behavior (convergent, file-path-anchored).
+  const style = opts.style === 'grounded' ? 'grounded' : 'divergent';
+  // Cold-start: seed newly-dropped model versions from their predecessor before
+  // bidding, so a new engine competes at its family's strength, not 1500.
+  seedNewEnginesFromRegistry(opts.registry);
+  // Pre-flight: drop session-quarantined engines (Layer 1, pure zero-dispatch)
+  // so a dead engine doesn't burn a draft slot + a per-engine timeout. Probe opt-in.
+  const __hc = await preflightHealthFilter({ engineIds: opts.engines, registry: opts.registry, adapter: opts.adapter, signal: opts.signal });
+  for (const s of __hc.skipped) console.warn(`[agon] brainstorm: skipping ${s.engineId} — ${s.status} (${s.reason})`);
+  const __engines = __hc.healthy;
+  if (__engines.length === 0) {
+    throw new Error(`No healthy engines for brainstorm; all ${__hc.skipped.length} were quarantined this session (${__hc.skipped.map((s) => s.engineId).join(', ')}). Restore with 'agon engine add <id>'.`);
+  }
+  const sidechain = createSidechainLogger({
+    sessionId: brainstormId,
+    sessionType: 'brainstorm',
+    outputDir: opts.outputDir,
+  });
+  sidechain.log('brainstorm:init', undefined, { question: opts.question, engines: __engines, style });
+
+  const skippedOutcomes: SeatOutcome[] = __hc.skipped.map((s) => ({
+    engineId: s.engineId,
+    ok: false,
+    text: '',
+    attempts: 0,
+    failure: 'error',
+    note: `${s.engineId} skipped — ${s.status} (${s.reason})`,
+    detail: s.reason,
+  }));
+  for (const seat of skippedOutcomes) {
+    opts.onEvent?.({ type: 'brainstorm:seat-completed', data: { engineId: seat.engineId, ok: false, attempts: 0, failure: seat.failure, detail: seat.detail } });
+  }
+
+  const collected = await collectRankedDrafts({
+    question: opts.question,
+    context: opts.context,
+    engines: __engines,
+    style,
+    registry: opts.registry,
+    adapter: opts.adapter,
+    timeout: opts.timeout,
+    outputDir: opts.outputDir,
+    signal: opts.signal,
+    onEvent: opts.onEvent,
+  });
+  const ranked = collected.ranked;
+
+  // LOUD degradation: the run must never quietly complete as a smaller
+  // committee. The banner prints here AND rides on the result so every
+  // surface (CLI, REPL, call.ts) can show it.
+  const panelHealth = buildPanelHealth([...skippedOutcomes, ...collected.outcomes]);
+  if (panelHealth.banner) console.warn(`[agon] brainstorm ${panelHealth.banner}`);
+  sidechain.log('brainstorm:panel-health', undefined, panelHealth);
+
+  const bids: BrainstormBid[] = ranked.map((d) => {
+    const reasoning = d.draft.approach + (d.draft.reasoning ? ` — ${d.draft.reasoning}` : '');
+    const approach = d.draft.steps.map((s: string, j: number) => `${j + 1}. ${s}`).join('\n');
+    const score = qualityScore(d.engineId, d.draft, style);
+    return {
+      engineId: d.engineId,
+      confidence: calibrateConfidence(d.engineId, d.draft.confidence),
+      reasoning: reasoning || d.raw.slice(0, 300) || '[No response]',
+      approach: approach || '',
+      score,
+    };
+  });
+
+  const winner = ranked[0];
+  if (!winner) {
+    sidechain.log('brainstorm:failed', undefined, { reason: 'no-usable-drafts', panelHealth });
+    throw new Error(`Brainstorm failed: no engine produced a usable draft. ${panelHealth.banner ?? `${panelHealth.responded}/${panelHealth.requested} responded`}`);
+  }
+
+  // Cluster paraphrased drafts via Python embedding sidecar.
+  // Best-effort — null result means caller falls back to no-dedup display.
+  opts.onEvent?.({ type: 'brainstorm:dedup-started', data: { drafts: bids.length } });
+  const dedup = await dedupBrainstormDrafts(
+    ranked.map((d) => ({ engineId: d.engineId, text: d.raw || d.draft.approach || '' })),
+    { signal: opts.signal },
+  );
+  opts.onEvent?.({ type: 'brainstorm:dedup-completed', data: { status: dedup.status.status, detail: dedup.status.detail } });
+  if (dedup.status.status !== 'applied' && dedup.status.status !== 'not-needed') {
+    console.warn(`[agon] brainstorm dedup ${dedup.status.status}${dedup.status.detail ? `: ${dedup.status.detail}` : ''}`);
+  }
+  sidechain.log('brainstorm:dedup', undefined, { ...dedup.status });
+
+  // Update Glicko-2 ratings for all ranked engines
+  if (bids.length >= 2) {
+    const taskClass = classifyTask(opts.question);
+    const glickoRanked = bids.map(b => ({ engineId: b.engineId, score: b.score ?? 0 }));
+    updateGlickoRanked(glickoRanked, taskClass, 'brainstorm');
+  }
+
+  const winnerEngine = opts.registry.get(winner.engineId);
+
+  // Build synthesis prompt with ALL engines' drafts
+  const allDrafts = ranked.map((d) => {
+    const steps = d.draft.steps.map((s: string, j: number) => `  ${j + 1}. ${s}`).join('\n');
+    return `## ${d.engineId} (confidence: ${d.draft.confidence}%)\nApproach: ${d.draft.approach}${d.draft.reasoning ? `\nReasoning: ${d.draft.reasoning}` : ''}${d.draft.tradeoffs?.length ? `\nTradeoffs: ${d.draft.tradeoffs.join('; ')}` : ''}${steps ? `\nSteps:\n${steps}` : ''}`;
+  }).join('\n\n');
+
+  // Divergent synthesis must keep the spread visible: collapsing every draft
+  // into one merged answer would undo the stances one dispatch later. It still
+  // ends with a single recommendation so downstream automation has one
+  // decidable answer to act on.
+  const expandPrompt = style === 'divergent'
+    ? [
+        opts.question,
+        '',
+        `Multiple AI engines analyzed this from deliberately different stances. Here are ALL their drafts:`,
+        '',
+        allDrafts,
+        '',
+        'Present the 2-3 strongest DISTINCT directions from the drafts above — including at least one that challenges the framing of the original question. For each direction: the core idea, why it could win, and its main risk.',
+        'Then close with a single clear recommendation: which direction to take first and why.',
+      ].join('\n')
+    : [
+        opts.question,
+        '',
+        `Multiple AI engines analyzed this. Here are ALL their drafts — synthesize the best parts from each into one comprehensive answer:`,
+        '',
+        allDrafts,
+        '',
+        'Now write the best possible answer by combining the strongest ideas from ALL drafts above. Don\'t just pick one — take the best parts from each.',
+        'Be specific and actionable. Include file paths where relevant.',
+      ].join('\n');
+
+  let response: string;
+  let synthesis: {status:'completed' | 'fallback', detail?:string};
+  try {
+    opts.onEvent?.({ type: 'brainstorm:synthesis-started', data: { engineId: winner.engineId } });
+    const answerResult = await opts.adapter.dispatch({
+      engine: winnerEngine,
+      prompt: expandPrompt,
       systemPrompt: 'You are expanding on a winning brainstorm approach. Respond directly with your detailed analysis as plain text. Do NOT use tools, read files, or run commands.',
-      textOnly: true, cwd: process.cwd(), mode: 'exec', timeout: opts.timeout,
-      outputDir: opts.outputDir, signal: opts.signal,
+      textOnly: true,
+      cwd: process.cwd(),
+      mode: 'exec',
+      timeout: opts.timeout,
+      outputDir: opts.outputDir,
+      signal: opts.signal,
     });
-  },
-});
+    if (answerResult.exitCode !== 0 || !String(answerResult.stdout ?? '').trim()) {
+      const detail = answerResult.stderr?.trim()
+        ? answerResult.stderr.trim()
+        : (!String(answerResult.stdout ?? '').trim() ? 'empty response' : `exit ${answerResult.exitCode}`);
+      throw new Error(detail);
+    }
+    response = answerResult.stdout;
+    synthesis = { status: 'completed' };
+    opts.onEvent?.({ type: 'brainstorm:synthesis-completed', data: { engineId: winner.engineId, ok: true } });
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    console.warn(`[agon] brainstorm synthesis (${winner.engineId}) failed: ${error}`);
+    synthesis = { status: 'fallback', detail: error };
+    opts.onEvent?.({ type: 'brainstorm:synthesis-completed', data: { engineId: winner.engineId, ok: false, detail: error } });
+    response = [
+      `Brainstorm synthesis failed for ${winner.engineId}: ${error}`,
+      '',
+      'Raw ranked drafts:',
+      allDrafts || '(no draft text)',
+    ].join('\n');
+  }
+
+  sidechain.log('brainstorm:done', winner.engineId, {
+    bids: bids.map((b: BrainstormBid) => ({ engineId: b.engineId, confidence: b.confidence })),
+    responseLength: response.length,
+  });
+
+  return {
+    question: opts.question,
+    bids,
+    winner: winner.engineId,
+    response: response.replace(/<think>[\s\S]*?<\/think>\s*/gi, ''),
+    groups: dedup.groups ?? undefined,
+    dedup: dedup.status,
+    synthesis,
+    panelHealth,
+  };
+}

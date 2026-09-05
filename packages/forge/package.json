@@ -18,6 +18,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@kernlang/agon-mod-brainstorm": "1.0.0",
     "@kernlang/agon-core": "*",
     "@kernlang/agon-support-panel": "1.0.0",
     "@kernlang/agon-support-persistence": "1.0.0",

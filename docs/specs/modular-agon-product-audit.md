@@ -212,6 +212,40 @@ explanation, not a verified root cause of the earlier no-pong observation.
 
 ## Remaining clean implementation order
 
+**A06 — Brainstorm workflow controller physically extracted (partial progress).**
+`packages/mod-brainstorm/src/workflow.ts` now owns the existing preflight-to-result
+sequence: panel degradation reporting, bid assembly, deduplication coordination,
+rating-update ordering, synthesis prompt construction, synthesis failure fallback,
+events, sidechain records and final result assembly. It imports no private core,
+CLI or forge implementation. Engine/storage/native effects are injected through
+`BrainstormWorkflowServices`; the public package compiles independently.
+
+**A06-BRAINSTORM-HOST (KL-011)** in `packages/forge/src/brainstorm.ts` is a
+temporary capability adapter. It delegates the workflow controller but still
+owns draft collection, confidence/scoring helpers and scout behavior. Its removal
+condition is physical extraction of those remaining helpers, connection of the
+generated surfaces to the same workflow, and installed raw-oracle parity. The
+simplified `mod-brainstorm/src/implementation.ts` surface implementation still
+exists and is **not** accepted as equivalent. A06/A11 remain open.
+
+The independent frozen source fixture is from `f68d41e4`, with relative imports
+relocated only. Nine comparisons check raw results/errors, dispatch arguments,
+events, logger records, dedup inputs and rating writes: divergent, grounded,
+empty/nonzero/throwing synthesis, no usable drafts, full quarantine, partial
+quarantine and a dedup abort. No normalization hides missing fields or reorders
+events. The ownership guard failed before extraction and passes afterward.
+These fixture tests do not constitute live-provider or installed-surface parity.
+
+Development verification: independent mod build, repository build, typecheck,
+lint and re-export guard pass. Full suite: 6,033 passed, five skipped, 507 files.
+Full log SHA-256:
+`14974322ef355e2014f81b59338d50471a53086b0ab0a5c8b1a64f0bc505112b`.
+Build log SHA-256:
+`e4146c69028700f8896b11b5f00d0b41385c51e0c22e0e9cc8a9733dbb6d02fa`.
+The unrelated timing-oracle failure and its mutation-checked repair are recorded
+in [the lock-test repair receipt](evidence/modular-agon-file-lock-test-repair.md).
+This is not an independent clean-commit release qualification receipt.
+
 **A20 — Plan scheduler physically extracted (partial A05/A11 progress).**
 `packages/mod-plan/src/executor.ts` now owns the scheduling loop: dependency-ready
 selection, parallel/sequential execution, running-state publication, output

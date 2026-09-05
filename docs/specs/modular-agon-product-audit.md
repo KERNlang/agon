@@ -212,6 +212,62 @@ explanation, not a verified root cause of the earlier no-pong observation.
 
 ## Remaining clean implementation order
 
+**A20 — Plan scheduler physically extracted (partial A05/A11 progress).**
+`packages/mod-plan/src/executor.ts` now owns the scheduling loop: dependency-ready
+selection, parallel/sequential execution, running-state publication, output
+summarization fallback, context export, cost callbacks, budget warnings and abort
+return state. `execution-model.ts` owns the existing public execution-plan types
+and step-type constants. Neither module imports private core or CLI code.
+
+The scheduler factory injects the step transition and cost-recording operations.
+Those operations still have legacy host implementations; this extraction does
+not claim to have moved the entire Plan state machine or persistence layer.
+The old core scheduler is replaced, not duplicated. Compatibility entry
+**A20-PLAN-SCHEDULER**, under **KL-011**, is the 13-line wrapper in
+`packages/core/src/cesar/plan-executor.ts`. Core's model module re-exports the
+Plan-owned types instead of defining a second model. Core's explicit dependency
+on the physical Plan package and TypeScript project reference preserve clean
+build ordering. No new dependency is added within the 49-package release graph.
+
+Removal condition: migrate remaining runtime callers to Plan activation with
+injected transition/cost services and prove the wrapper unreachable, then delete
+the core dependency/export. Until then this adapter is retained and A11 is open.
+
+Oracle: `tests/fixtures/modular-plan-executor-legacy.ts`, frozen from `f6fc22f2`
+with import paths adjusted only. The ownership/parity test compares raw event
+order, context, results and cost records for sequential, parallel, failed,
+paused, thrown, missing-executor, aborted and summarizer-failure cases. The
+oracle shares the unchanged legacy transition function, so it qualifies the
+scheduler extraction, not independent state-machine correctness. The guard
+rejects a scheduler loop restored in core or a private-core import in the mod.
+
+Separate actual mutation evidence:
+`tests/unit/modular-plan-scheduler-mutations.test.ts` transforms the scheduler's
+own TypeScript source in memory, compiles and executes each candidate, proves
+the unmodified implementation satisfies the oracle, and proves three deliberate
+changes violate it: ignored cancellation, dropped ready steps and suppressed
+budget warnings. **3/3 targeted scheduler mutants detected**. This is not a
+whole-project mutation score and does not close A10's manifest/resolver/registry
+mutation requirements. No production file is mutated by the test.
+
+Development verification: 6,003 passed, five existing skips, 500 test files;
+build, post-build typecheck, lint, re-export guard, 49-package/launcher packing,
+69 isolated npx checks and SBOM checks pass. Full-run log SHA-256:
+`cbeeb570987556b22a07e0660de740d8c429916a6779a1e2b5ba6a7e21360c0a`.
+No active/global installation was promoted. These checks do not close the
+session-routing, persisted-model reconciliation or final native-release cells.
+
+**A21 — Telemetry fallback intermittently misses the expected successor (open observation).**
+The first full scheduler-extraction run passed 6,002 tests and failed
+`telemetry-fallback.test.ts:170` (expected a staller → backup fallback). Failed
+log SHA-256: `b5c9c61bc42fa8b92a6e424b5c56cf11544f96c1c512cf83e2e110d00ab01338`.
+An unchanged rerun without concurrent lint/package load passed. Inspection shows
+the test samples live time, PID/network heartbeat and fallback availability,
+and waits for fallback before starting its fixture Forge. This is a diagnostic
+lead, not a proven cause. No assertion, timeout or production behavior was
+changed to make it pass. Retain this for deterministic telemetry qualification;
+do not report the intermittency fixed.
+
 **A19 — Plan approval interprets refusal as consent (repaired at the legacy boundary).**
 While tracing A05, `handlePlanShow` was found to reject only literal `n`;
 `no`, `cancel`, and arbitrary text entered the approval branch. It now accepts

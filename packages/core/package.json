@@ -24,6 +24,7 @@
     "@kernlang/agon-engines": "^0.1.2",
     "@kernlang/agon-kernel": "1.0.0",
     "@kernlang/agon-mod-rag": "1.0.0",
+    "@kernlang/agon-mod-plan": "1.0.0",
     "@kernlang/agon-support-agent-runtime": "1.0.0",
     "@kernlang/agon-support-browser-bridge": "1.0.0",
     "@kernlang/agon-support-dedup": "1.0.0",

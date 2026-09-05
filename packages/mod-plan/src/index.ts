@@ -471,3 +471,7 @@ export const IMPLEMENTATION_KIND = 'physical' as const;
 export { createMod } from './implementation.js';
 export { createMod as default } from './implementation.js';
 export { createPersistenceEnvelope, unwrapPersistenceEnvelope } from './implementation.js';
+export { createPlanExecutor, getReadySteps } from './executor.js';
+export type { PlanExecutionServices, PlanExecutorCallbacks, StepExecutor } from './executor.js';
+export type { CesarPlan, CesarPlanStep, CesarPlanState, CesarStepState, CesarStepType, CesarStepResult } from './execution-model.js';
+export { CESAR_STEP_TYPES, CESAR_STEP_TYPE_TABLE } from './execution-model.js';

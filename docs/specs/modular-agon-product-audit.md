@@ -346,9 +346,43 @@ The A05 source trace distinguishes three contracts that must not be collapsed:
   session plan and execute/persist the corresponding state transition, not merely
   change the state of an unrelated `cplan-*` record.
 
-The physical Plan mod currently routes these TUI inputs into its persisted-record
-controller. The repair must introduce an owned session/approval boundary and
-retain the existing execution and self-review gates before retiring that adapter.
+The physical Plan mod now routes TUI controls through `PlanSessionHostServices`,
+an invocation-scoped public contract. Task, resume, inspect, approve, retry,
+cancel and autonomous task requests remain distinct. No interactive host means
+exit 2, never fallback to selecting or modifying the latest persisted record.
+`/plan resumeDatabase` is a task, not a resume command.
+
+**A05-PLAN-SESSION-HOST (KL-011)** is a temporary CLI-owned adapter in
+`packages/cli/src/plan-session-host.ts` and `signals/dispatch/intent-session.ts`.
+Only the bundled Plan mod receives it. It rejects missing, mismatched, expired
+and already-aborted invocations. UI callbacks do not cross the public API.
+The adapter preserves the existing session handlers, including proposal
+approval and explicit-ID resume, rather than duplicating their algorithms.
+
+Removal condition: migrate session coordination and approval/execution policy
+to the physical owner, prove raw event/state parity, then delete this adapter
+and assert no imports of the legacy Plan session handlers remain. That removal
+gate is not satisfied. Fifteen new route/scope/TUI tests cover this increment;
+they do not qualify live-provider execution, nested job cancellation, all
+installed surfaces, or MCP/Cesar's separate persisted-record controller.
+A05/A11 therefore remain open, not accepted as complete extraction.
+
+Regression evidence: all eleven new routing cases failed against the previous
+controller and passed after the session split. The first full run had 6,022
+passing tests, five skips and one obsolete expectation in the Plan package test:
+it required headless TUI approval to mutate a saved record. That assertion is
+replaced with exit-2 refusal **and exact persisted-record equality**; proposal,
+listing, exit and cycle-validation assertions remain. Existing interactive
+approval/refusal tests remain unchanged. Failed-run SHA-256:
+`884c476883f763f9b514773c7e5b6fa6c6293bad50eda0cf97f48e81326bbc3f`.
+
+Final development verification: build, typecheck, lint and re-export guard pass;
+6,023 tests pass, five remain skipped, across 505 files. Full-suite log SHA-256:
+`834e8da3ebf8cc06494f019c866c2e7605dc978d4358f1435247234b9c6c9ff9`.
+Build log SHA-256:
+`9253f472377af8dfd0c6f41b51f3c61df32894e8e3f13fe44c56082ce3a305a2`.
+This is a working-branch repair receipt, not independent clean-commit release
+qualification or closure of the outstanding architecture findings.
 
 **A16 — Serve readiness/shutdown race (repaired; regression suite passing).**
 The latest combined run had 5,923 passing tests, five skips and one failure:

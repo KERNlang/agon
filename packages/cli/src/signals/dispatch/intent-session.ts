@@ -1,6 +1,7 @@
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { withPatchApplication } from '../../patch-application-host.js';
+import { withPlanSession } from '../../plan-session-host.js';
 
 import { resolveWorkingDir, buildImageAttachment, sessionContext, visionSupportNote } from '@kernlang/agon-core';
 
@@ -399,7 +400,15 @@ export async function runPhysicalTuiContribution(
   };
   const output = await withPatchApplication(invocation.invocationId,
     (request, context) => handleApplyPatch(cb.dispatch, cb.ctx, request.patchPath, request.force, context),
-    async () => contribution.run(normalized, invocation));
+    async () => withPlanSession(invocation.invocationId, async (request, context) => {
+      context.signal.throwIfAborted();
+      // A05 adapter: preserve session selection and approval semantics; never
+      // recurse through the generated marker or substitute a disk-only controller.
+      const result = request.type === 'auto'
+        ? await (await import('./intent-skills.js')).dispatchSkillsUiIntent(request, '', cb)
+        : await dispatchSessionInfoIntent(request, '', cb);
+      return result?.handled ? { exitCode: 0 } : { exitCode: 2, stderr: 'Unsupported Plan session action.\n' };
+    }, async () => contribution.run(normalized, invocation)));
   let result: CommandResult = { exitCode: 0 };
   if (output && typeof output === 'object' && Symbol.asyncIterator in output) {
     for await (const event of output) {

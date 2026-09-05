@@ -186,6 +186,18 @@ export interface WorkspaceHostServices {
   setSessionRoot(path: string, context: InvocationContext): Awaitable<void>;
 }
 
+/** Typed interactive requests; the host retains session and approval policy. */
+export type PlanSessionRequest =
+  | { readonly type: 'plan-task'; readonly task: string }
+  | { readonly type: 'plan' | 'plan-resume'; readonly planId?: string }
+  | { readonly type: 'plans' | 'approve' | 'retry' | 'cancel' }
+  | { readonly type: 'auto'; readonly input: string; readonly autoMode: true };
+
+/** Invocation-scoped interactive coordination; never selects a persisted plan implicitly. */
+export interface PlanSessionHostServices {
+  run(request: PlanSessionRequest, context: InvocationContext): Awaitable<CommandResult>;
+}
+
 /** Interactive host bridge; availability does not grant approval. The host
  * must preview and confirm within the calling invocation before writing. */
 export interface PatchApplicationHostServices {
@@ -236,6 +248,7 @@ export interface ModServices {
   /** Present only for trusted bundled browser integration. Folder mods never receive it. */
   readonly browser?: BrowserHostServices;
   readonly patchApplication?: PatchApplicationHostServices;
+  readonly planSession?: PlanSessionHostServices;
   /** Present only for the bundled workspaces integration. Folder mods never receive it. */
   readonly workspace?: WorkspaceHostServices;
   /** Present only for bundled workflows that participate in the legacy run ledger. */

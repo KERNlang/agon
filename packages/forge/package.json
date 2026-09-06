@@ -21,6 +21,7 @@
     "@kernlang/agon-mod-brainstorm": "1.0.0",
     "@kernlang/agon-core": "*",
     "@kernlang/agon-support-panel": "1.0.0",
+    "@kernlang/agon-support-dedup": "1.0.0",
     "@kernlang/agon-support-persistence": "1.0.0",
     "@kernlang/protocol": "~4.5.0"
   }

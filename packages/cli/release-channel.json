@@ -123,8 +123,8 @@
         "@kernlang/agon-kernel"
       ],
       "sourceLocator": "@kernlang/agon-support-dedup@1.0.0",
-      "integrity": "sha512-v6eoAY9xh1Zhn8CkkbApvNYwoj3jdJWhdmzIsQu1FOQgWE2uH1Z9o6UR8q0r9HQe38JHMbs4EvJzsI0VKywS3A==",
-      "contentHash": "sha256:b07a37ce59e778b3384eac035a79277f98bf66cf35d4e35c30b1e8879f30a822",
+      "integrity": "sha512-scdciOq47ZVMdwQtsAffebPyPViz7HXdNtpWWNq93DiVUMmyS4CTSpksZmrvz1ymtARw9oslRoSmXegbGv/Ibg==",
+      "contentHash": "sha256:69f7b9ef9e5417db552e3cf5e9e24902430534bf3289e786ad4e53768198b851",
       "manifestHash": "sha256:dfef1431e13bdd263cd00c419c8125a27f504c5e786de52d4fbcfbcb258f5c8d"
     },
     {

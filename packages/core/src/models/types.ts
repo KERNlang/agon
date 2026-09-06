@@ -4,6 +4,8 @@ export type {
   EngineModelConfig, ImageAttachment, SessionBudget, TaskClass,
 } from '@kernlang/agon-support-engine-runtime';
 import type { TaskClass } from '@kernlang/agon-support-engine-runtime';
+import type { BrainstormGroup, BrainstormDedupStatus } from '@kernlang/agon-support-dedup';
+export type { BrainstormGroup, BrainstormDedupStatus } from '@kernlang/agon-support-dedup';
 
 
 export interface FitnessResult {
@@ -502,17 +504,6 @@ export interface BrainstormBid {
   reasoning: string;
   approach: string;
   score?: number;
-}
-
-export interface BrainstormGroup {
-  members: string[];
-  representative: string;
-  similarity: number;
-}
-
-export interface BrainstormDedupStatus {
-  status: 'not-needed' | 'applied' | 'unavailable' | 'failed' | 'timed-out';
-  detail?: string;
 }
 
 export interface BrainstormSynthesisStatus {

@@ -338,6 +338,40 @@ checks are not independent clean-commit release qualification. All 69 isolated
 packaged-install checks and supply-chain self-tests pass; npm provenance remains
 externally blocked. The active/global installation was not modified.
 
+**A06 dedup bridge extraction (2026-09-06).** Shared dedup support now physically
+owns `brainstorm-dedup.ts`: optional sidecar discovery, JSON-lines input/output,
+status conversion, timeout, cancellation and child termination. Its group/status
+types also have one owner; core retains type re-exports. The legacy forge bridge
+is only the **A06-DEDUP (KL-011)** compatibility export and declares its support
+dependency explicitly. Remove that export when the last legacy Brainstorm
+capability adapter is removed; the ownership test forbids restoring its controller.
+
+The test harness freezes the exact bridge body from `192ab0d3`, protected by
+SHA-256 `018cf770c252baf8a8b3b49dedc0d32bf7ca346de13b2e56d25221fb1577312e`.
+Sixteen scenarios compare raw results, errors, child-process arguments, stdin
+writes, termination signals and remaining timers. Cases cover zero/one drafts,
+missing sidecar, synchronous/asynchronous spawn failure, split output chunks,
+success, invalid JSON, malformed/missing groups, unavailable/failed exit,
+timeout, cancellation before/after spawn, late close and stdin failure. No
+Python process or provider runs in this simulated-process harness. The existing
+real-process timeout test remains part of the repository suite.
+
+Ownership tests failed before the controller/type move; the new comparisons and
+existing Brainstorm workflow oracle pass afterward. This is a behavior-preserving
+extraction, not a redesign of sidecar output validation. Generated Brainstorm
+surface integration, native dependency qualification and A06 closure remain open.
+
+Dedup extraction development verification: independent support-package build,
+repository build, typecheck, lint and re-export guard pass. Full isolated suite:
+6,081 passed, five existing skips, 513 files. Full log SHA-256:
+`9889d97365670d082394a197f921cf8caa4936a04821de4f1582596b5e274e15`.
+Build log SHA-256:
+`0a5818b54ff35b8b7d9791c0c647cb4f434834a67d150264a98a0f76daa2cb23`.
+All 69 isolated packaged-install checks and supply-chain self-tests pass. The
+release set contains 50 components including the launcher; npm provenance is
+still externally blocked. The active/global installation was not modified.
+This is development evidence, not independent clean-commit release qualification.
+
 **A20 — Plan scheduler physically extracted (partial A05/A11 progress).**
 `packages/mod-plan/src/executor.ts` now owns the scheduling loop: dependency-ready
 selection, parallel/sequential execution, running-state publication, output

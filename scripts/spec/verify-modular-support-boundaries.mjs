@@ -1,5 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import ts from 'typescript';
 
 const root = resolve(import.meta.dirname, '../..');
 const expected = new Map([
@@ -38,6 +40,53 @@ function walk(directory) {
   });
 }
 
+export function inspectSourceImports(text, source, directory) {
+  const errors = [];
+  const parsed = ts.createSourceFile(source, text, ts.ScriptTarget.Latest, true);
+  const location = node => `${source}:${parsed.getLineAndCharacterOfPosition(node.getStart(parsed)).line + 1}`;
+  for (const diagnostic of parsed.parseDiagnostics) {
+    errors.push(`${source}: parse error: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, ' ')}`);
+  }
+  function check(node) {
+    if (!node || !(ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node))) {
+      errors.push(`${source}: computed module target requires explicit boundary review`);
+      return;
+    }
+    const specifier = node.text;
+    if (/^@kernlang\/agon-(?:core|cli|forge|dedup)(?:\/|$)/.test(specifier)) {
+      errors.push(`${location(node)}: private legacy import ${specifier}`);
+    }
+    if (isAbsolute(specifier) || /^(?:file:|[A-Za-z]:[\\/])/.test(specifier)) {
+      errors.push(`${location(node)}: absolute module target bypasses package exports (${specifier})`);
+    }
+    if (specifier.startsWith('.')) {
+      const target = resolve(dirname(source), specifier);
+      if (!(target === directory || target.startsWith(directory + sep))) {
+        errors.push(`${location(node)}: relative import escapes package (${specifier})`);
+      }
+    }
+  }
+  function visit(node) {
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+      if (node.moduleSpecifier) check(node.moduleSpecifier);
+    } else if (ts.isImportTypeNode(node)) {
+      check(ts.isLiteralTypeNode(node.argument) ? node.argument.literal : node.argument);
+    } else if (ts.isExternalModuleReference(node)) {
+      check(node.expression);
+    } else if (ts.isCallExpression(node)) {
+      const callee = node.expression;
+      const requireCall = ts.isIdentifier(callee) && callee.text === 'require';
+      const requireResolve = ts.isPropertyAccessExpression(callee)
+        && ts.isIdentifier(callee.expression) && callee.expression.text === 'require'
+        && callee.name.text === 'resolve';
+      if (callee.kind === ts.SyntaxKind.ImportKeyword || requireCall || requireResolve) check(node.arguments[0]);
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(parsed);
+  return errors;
+}
+
 function inspect(definitions = expected) {
   const errors = [];
   for (const [name, dependencies] of definitions) {
@@ -63,23 +112,12 @@ function inspect(definitions = expected) {
     const metadata = readFileSync(join(directory, 'src/package-metadata.ts'), 'utf8');
     if (/capabilities:\s*Object\.freeze\(\[\]\)/.test(metadata)) errors.push(`${name}: capability descriptor is empty`);
 
-    for (const source of walk(join(directory, 'src')).filter((path) => path.endsWith('.ts'))) {
+    for (const source of walk(join(directory, 'src')).filter((path) => /\.[cm]?[jt]sx?$/.test(path))) {
       const text = readFileSync(source, 'utf8');
       if (/export\s+function\s+configure[A-Z][A-Za-z0-9]*Runtime\s*\(/.test(text)) {
         errors.push(relative(root, source) + ": process-global runtime configurator crosses the package boundary");
       }
-      for (const match of text.matchAll(/(?:from\s+|import\s*)['"]([^'"]+)['"]/g)) {
-        const specifier = match[1];
-        if (/^@kernlang\/agon-(?:core|cli|forge|dedup)$/.test(specifier)) {
-          errors.push(`${relative(root, source)}: private legacy import ${specifier}`);
-        }
-        if (specifier.startsWith('.')) {
-          const target = resolve(dirname(source), specifier);
-          if (!(target === directory || target.startsWith(directory + sep))) {
-            errors.push(`${relative(root, source)}: relative import escapes package (${specifier})`);
-          }
-        }
-      }
+      errors.push(...inspectSourceImports(text, source, directory));
     }
   }
 
@@ -107,20 +145,34 @@ function inspect(definitions = expected) {
   return errors;
 }
 
-const errors = inspect();
-if (process.argv.includes('--self-test')) {
-  const mutated = new Map(expected);
-  mutated.set('judge', ['panel']);
-  const mutationErrors = inspect(mutated);
-  if (!mutationErrors.some((error) => error.includes('judge: support dependencies'))) {
-    throw new Error('negative control failed: dependency mutation survived');
+function main() {
+  const errors = inspect();
+  if (process.argv.includes('--self-test')) {
+    const mutated = new Map(expected);
+    mutated.set('judge', ['panel']);
+    const mutationErrors = inspect(mutated);
+    if (!mutationErrors.some((error) => error.includes('judge: support dependencies'))) {
+      throw new Error('negative control failed: dependency mutation survived');
+    }
+    if (!/export\s+function\s+configure[A-Z][A-Za-z0-9]*Runtime\s*\(/.test("export function configureFakeRuntime(runtime: unknown): void {}")) {
+      throw new Error("negative control failed: mutable runtime configurator survived");
+    }
+    const fixtureRoot = join(root, 'packages/support-fixture');
+    const fixtureSource = join(fixtureRoot, 'src/test.mjs');
+    for (const text of ["import('@kernlang/agon-core/private.js')", "require('@kernlang/agon-forge')", "import('../../core/private.js')", 'import(target)']) {
+      if (inspectSourceImports(text, fixtureSource, fixtureRoot).length === 0) {
+        throw new Error(`negative control failed: forbidden source survived: ${text}`);
+      }
+    }
+    if (inspectSourceImports("// import '@kernlang/agon-core'\nimport 'node:fs';", fixtureSource, fixtureRoot).length !== 0) {
+      throw new Error('negative control failed: comments or public imports were rejected');
+    }
   }
-  if (!/export\s+function\s+configure[A-Z][A-Za-z0-9]*Runtime\s*\(/.test("export function configureFakeRuntime(runtime: unknown): void {}")) {
-    throw new Error("negative control failed: mutable runtime configurator survived");
+  if (errors.length) {
+    console.error(errors.join('\n'));
+    process.exit(1);
   }
+  console.log(`verified ${expected.size} support-package source boundaries, ${legacyAdapters.size} compatibility bindings, assets, and kernel peer declarations (not whole-product parity or runtime singleton proof)`);
 }
-if (errors.length) {
-  console.error(errors.join('\n'));
-  process.exit(1);
-}
-console.log(`verified ${expected.size} support-package boundaries, ${legacyAdapters.size} compatibility adapters, assets, and kernel uniqueness`);
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) main();

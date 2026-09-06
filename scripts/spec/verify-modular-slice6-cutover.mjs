@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import ts from 'typescript';
 
 const root = resolve(import.meta.dirname, '../..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
@@ -17,6 +18,27 @@ const assertCesarRouteKinds = (entries) => {
     }
   }
 };
+
+function assertMcpInvocation(text) {
+  const parsed = ts.createSourceFile('mcp.ts', text, ts.ScriptTarget.Latest, true);
+  if (parsed.parseDiagnostics.length) fail('MCP dispatch source has parse errors');
+  let calls = 0;
+  const identifier = (node, name) => node && ts.isIdentifier(node) && node.text === name;
+  function visit(node) {
+    if (ts.isCallExpression(node) && identifier(node.expression, 'invokeDynamic')) {
+      calls++;
+      const [name, input, signal] = node.arguments;
+      if (node.arguments.length !== 3 || !identifier(name, 'toolName') || !identifier(input, 'toolArgs')
+        || !signal || !ts.isPropertyAccessExpression(signal)
+        || !identifier(signal.expression, 'controller') || signal.name.text !== 'signal') {
+        fail('MCP dynamic dispatch must carry toolName, toolArgs and the request controller.signal');
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(parsed);
+  if (calls !== 1) fail(`expected one MCP dynamic dispatch call, got ${calls}`);
+}
 
 if (catalog.length !== 450) fail(`expected 450 generated entries, got ${catalog.length}`);
 assertCesarRouteKinds(catalog);
@@ -45,11 +67,11 @@ const requirements = [
   ['packages/cli/src/surface-authority-runtime.ts', 'bootstrapFirstPartySurfaceGeneration'],
   ['packages/mcp/src/index.ts', 'await initializeMcpSurfaceAuthority()'],
   ['packages/mcp/src/agon-orchestration.ts', '!available.has(toolName)'],
-  ['packages/mcp/src/agon-orchestration.ts', 'invokeDynamic(toolName, toolArgs)'],
   ['packages/cli/src/cesar/tools.ts', "processSurfaceNames('cesar')"],
   ['packages/cli/src/signals/intent.ts', "processSurfaceNames('tui')"],
 ];
 for (const [path, marker] of requirements) if (!read(path).includes(marker)) fail(`${path} lacks ${marker}`);
+assertMcpInvocation(read('packages/mcp/src/agon-orchestration.ts'));
 
 const fields = ['id', 'owner', 'path', 'killList', 'purpose', 'removalCondition', 'unreachableProof', 'status'];
 const expectedAdapters = [];
@@ -67,10 +89,19 @@ if (process.argv.includes('--self-test')) {
   let routeKindRejected = false;
   try { assertCesarRouteKinds(routeKindMutant); } catch { routeKindRejected = true; }
   const mcp = read('packages/mcp/src/agon-orchestration.ts');
+  const call = 'invokeDynamic(toolName, toolArgs, controller.signal)';
+  if (!mcp.includes(call)) fail('MCP negative-control target changed; update the mutation explicitly');
+  for (const replacement of ['invokeDynamic(toolName, toolArgs)', 'invokeDynamic(toolArgs, toolName, controller.signal)', 'undefined']) {
+    let refused = false;
+    try { assertMcpInvocation(mcp.replace(call, replacement)); } catch { refused = true; }
+    if (!refused) fail(`MCP invocation negative control survived: ${replacement}`);
+  }
   const cesar = read('packages/cli/src/cesar/tools.ts');
   if (!rejected || !routeKindRejected || catalog.filter((entry) => entry.owner.id !== 'agon.brainstorm').some((entry) => entry.owner.id === 'agon.brainstorm')
     || mcp.includes('ORCHESTRATION_TOOLS') || mcp.includes('handleToolCall(')
     || cesar.includes('CESAR_SURFACE_IDS') || cesar.includes('register(createBrainstormTool')) fail('negative controls failed');
 }
 
-console.log(JSON.stringify({ status: 'passed', entries: catalog.length, physicalUserPackages: userPackages.length, temporaryAdapters: adapters.adapters.length }, null, 2));
+console.log(JSON.stringify({ status: 'passed', scope: 'surface-declarations-and-dispatch-shape',
+  entries: catalog.length, physicalUserPackages: userPackages.length,
+  declaredSurfaceAdapters: adapters.adapters.length, legacyAdapterRemovalVerified: false }, null, 2));

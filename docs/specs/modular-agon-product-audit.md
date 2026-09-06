@@ -24,6 +24,49 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Architecture gate recheck (2026-09-06)
+
+The source-boundary gate previously inspected only `.ts` files with a regex for
+static imports. It missed dynamic imports, `require`, import types, private
+package subpaths and other source extensions, and could mistake comments for
+imports. Its extracted old scanner failed 19 of 21 focused cases. It now uses
+the TypeScript parser for canonical static/dynamic import, export, import-type,
+import-equals, `require` and `require.resolve` syntax; includes TS/TSX/JS/JSX/MJS/
+CJS/MTS/CTS files; rejects unparseable source and computed module targets; and
+retains executable positive and negative controls. All eleven shared-support
+packages pass that stronger source check.
+
+Scope is explicit: this is not alias/data-flow analysis, an evaluation sandbox,
+symlink qualification, whole-product behavior parity or runtime singleton proof.
+The success message no longer claims runtime kernel uniqueness from peer
+declarations alone. Aliased loaders and injected/native behavior still require
+their own evidence; this check must not be cited as proof of their absence.
+
+The S6 declaration/cutover verifier also failed because its old string marker
+expected a two-argument MCP invocation. The implementation already forwards
+`controller.signal` as its third argument. The verifier now inspects call syntax,
+requires the request-bound signal, and rejects source mutants that remove the
+signal, swap inputs or remove dispatch. Its output labels the empty *declared*
+surface-adapter list and explicitly does not claim legacy adapters were removed.
+The separate kill-list ownership check passes 15 assigned entries; assignment
+is not removal evidence. Hardcoded zero-adapter coverage claims in older slice
+qualification scripts remain superseded by this product audit, not accepted.
+
+The architecture is still **not release-ready**: A05, A06, A10 and A11 remain
+open, alongside the later product findings below. Source checks and catalog
+counts cannot close those behavioral, migration and independent-review gaps.
+
+Gate-repair development evidence: 21 focused source-boundary cases pass, as do
+the source/cutover CLI self-tests, full build, typecheck, lint and re-export guard.
+Full suite: 6,105 passed, five existing skips, 516 files. Full log SHA-256:
+`35632b736a4d4911f8c64f0b3ebebc3e0f805b302ff60fb223ca4fc6f23d4bf6`.
+Build log SHA-256:
+`9934bb65fa97343ef2afc38b362c664ed535ac23d8b72ed3809e4df3262ae44e`.
+All 69 isolated packaged-install checks, supply-chain self-tests and 27 canonical/
+compatibility asset-pair checks pass. npm provenance remains externally blocked.
+No runtime source or active/global Agon installation changed in this gate repair.
+These are development checks, not an independent release qualification receipt.
+
 The read-only audit packed all 49 target packages and the CLI, then installed
 offline in a temporary prefix. Initial CLI startup, engine listing, mod listing
 and full-compat setup worked. After approved Think disable, fresh commands

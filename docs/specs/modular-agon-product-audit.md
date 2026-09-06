@@ -222,9 +222,8 @@ CLI or forge implementation. Engine/storage/native effects are injected through
 
 **A06-BRAINSTORM-HOST (KL-011)** in `packages/forge/src/brainstorm.ts` is a
 temporary capability adapter. It delegates the workflow controller but still
-owns draft collection and scout orchestration. Confidence/scoring helpers are
-now extracted as described below. Its removal condition is physical extraction
-of the remaining orchestration, connection of the
+supplies host capabilities only. Collection, scout orchestration and policy are
+now extracted as described below. Its removal condition is connection of the
 generated surfaces to the same workflow, and installed raw-oracle parity. The
 simplified `mod-brainstorm/src/implementation.ts` surface implementation still
 exists and is **not** accepted as equivalent. A06/A11 remain open.
@@ -271,6 +270,37 @@ Build log SHA-256:
 `bc34a0fd6d59b888454df3504689b10f330b9219499b3b0a82a096312e10722f`.
 The initial lint pass identified a leftover unused import; it was removed and
 the complete lint rerun passed. These checks do not close release qualification.
+
+**A06 collector/scout extraction.** `collector.ts` and `scout.ts` in the physical
+Brainstorm package now own prompt/stance assembly, seat event ordering, parsing,
+collection, ranking, scout selection, timeout capping and scout result assembly.
+They import no private core, forge or CLI code. The compatibility module supplies
+protocol functions, rating reads/writes, engine dispatch, health and dedup effects;
+it no longer contains those workflow algorithms.
+
+The ownership guard failed before extraction. Six scout cases compare raw bids,
+engine lookups and dispatches against the frozen implementation, including zero,
+one/default/overflow counts, partial quarantine and failed seats. A positive
+retry case checks the full workflow's four seat attempts plus one synthesis.
+The workflow/scout oracle now covers sixteen cases. These are fixture results,
+not installed-surface or live-provider acceptance.
+
+Surface integration is still required: the generated handler must gain the real
+protocol, history, preflight, dedup and run-record capabilities and use these
+factories. Its simplified implementation must then be removed, with negative
+reachability and installed raw-oracle checks. A06 is not closed by this move.
+
+Collector/scout development verification (2026-09-06): independent mod build,
+repository build, typecheck, lint and re-export guard pass. The full isolated
+suite passes 6,053 tests, with five existing skips across 510 files. Full log
+SHA-256: `13efa6527e29c4c6eb7f74ca6af56a04a3c678ca7be3ae087064ce582fcb2441`.
+Build log SHA-256:
+`f0b092cd9c4fe851f373b62a6a2d5c40e002662bf8c4550ad983bb8577eac8d3`.
+All 69 packaged-install checks pass; the release set and SBOM agree on 50
+components including the launcher. Supply-chain negative controls pass; npm
+provenance remains externally blocked. No live-provider call or active/global
+installation was used. These are development checks, not an independent
+clean-commit release qualification or closure of the remaining product audit.
 
 **A20 — Plan scheduler physically extracted (partial A05/A11 progress).**
 `packages/mod-plan/src/executor.ts` now owns the scheduling loop: dependency-ready

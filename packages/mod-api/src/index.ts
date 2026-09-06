@@ -149,6 +149,8 @@ export interface Registrar {
 export interface EngineDispatchOptions {
   readonly timeoutSeconds?: number;
   readonly systemPrompt?: string;
+  /** Forward the adapter's text-only control. This is not a process sandbox. */
+  readonly textOnly?: boolean;
   readonly mode?: 'exec' | 'review' | 'agent';
 }
 

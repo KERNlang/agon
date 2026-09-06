@@ -53,7 +53,7 @@ globalThis.${marker} = (globalThis.${marker} ?? 0) + 1;
 export default function (services) {
   return { apiVersion: '1', async activate(registrar) {
     registrar.command('cli', { id: 'bootstrap-hello', aliases: [], description: 'hello',
-      inputSchema: { type: 'object' }, async run(_input, context) { return { exitCode: 0, result: ${engineDispatch ? "await services.engines.dispatch('test-engine', 'fixture prompt', context)" : '{ ok: true }'} }; } });
+      inputSchema: { type: 'object' }, async run(_input, context) { return { exitCode: 0, result: ${engineDispatch ? "await services.engines.dispatch('test-engine', 'fixture prompt', { ...context, cwd: '/spoofed-context' }, { textOnly: true, timeoutSeconds: 17, systemPrompt: 'fixture system', mode: 'review' })" : '{ ok: true }'} }; } });
     registrar.command('tui', { id: 'bootstrap-wave', aliases: ['bootstrap-hi'], description: 'wave',
       inputSchema: { type: 'object' }, async run() { return { exitCode: 0, result: { waved: true } }; } });
   } };
@@ -133,7 +133,14 @@ describe('S8 folder mod process bootstrap', () => {
     let calls = 0;
     const boot = await bootstrapFirstPartySurfaceGeneration({ ...paths,
       runtime: { ...runtime, tool: () => { throw new Error('compatibility stub must not dispatch engines'); } },
-      dispatchEngine: async (id, prompt) => { calls++; expect(id).toBe('test-engine'); expect(prompt).toBe('fixture prompt'); return { answer: 'fixture-ok' }; },
+      dispatchEngine: async (id, prompt, context, options) => {
+        calls++;
+        expect(id).toBe('test-engine');
+        expect(prompt).toBe('fixture prompt');
+        expect(context.cwd).toBe(paths.root);
+        expect(options).toEqual({ textOnly: true, timeoutSeconds: 17, systemPrompt: 'fixture system', mode: 'review' });
+        return { answer: 'fixture-ok' };
+      },
     });
     try {
       const command = boot.activated.generation.assertAvailable('cli', 'bootstrap-hello').payload as CommandContribution;

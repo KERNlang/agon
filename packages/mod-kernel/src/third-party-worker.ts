@@ -157,7 +157,7 @@ export async function createIsolatedThirdPartyMod(options: {
         if (message.service === 'engines' && message.method === 'dispatch') {
           const signal = invocationSignals.get(message.invocationRequestId);
           if (!signal) throw new Error('engine dispatch is not bound to an active invocation');
-          args = [args[0], args[1], { ...args[2], signal }];
+          args = [args[0], args[1], { ...args[2], signal }, args[3]];
         }
         worker.postMessage({ type: 'service-response', id: message.id, ok: true, value: await method(...args) });
       } catch (error) {

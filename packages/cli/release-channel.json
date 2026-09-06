@@ -10,8 +10,8 @@
         "@kernlang/agon-mod-api"
       ],
       "sourceLocator": "@kernlang/agon-kernel@1.0.0",
-      "integrity": "sha512-M6UfnB3Rg0snQhTarDxyCmRWBQLDm+y/5tEFfGaPQn0fTYOKjhB2Ka7hqxKHbCwIygiZBJiCHt8aNGLXe20e3Q==",
-      "contentHash": "sha256:9208b62abffe6ef962e293b53ce617fe05107a96dc21499326e8f48aa365fa62",
+      "integrity": "sha512-1VNW9SHBPYXizOddCYP33ZfITiVLNEsDjmR4YmN/vJpK7x7SMvtJNqJKTEHIkhUJWcIn3HI1eIFHk+kA+WLgnA==",
+      "contentHash": "sha256:59abad94f4ebf14d10c26eef044061e31e3f8e5c838558a47c9762a8dca96801",
       "manifestHash": "sha256:583381b00786c2729a1e32eb2d42f6324cb58df263378f0d0ad57a1401970f17"
     },
     {
@@ -19,8 +19,8 @@
       "version": "1.0.0",
       "dependencies": [],
       "sourceLocator": "@kernlang/agon-mod-api@1.0.0",
-      "integrity": "sha512-tVhPqC0kc8OhRHvusyTUrHstzAfFSgrYhXRvRBUJzOYJ9wIqKchS2HBtVEHDAHOzrfa1ffEupqq8GM10LmNp3A==",
-      "contentHash": "sha256:ba4d641302e3a1b24f2040ef27746a8a08064d6043bf830271c3201230ac7a35",
+      "integrity": "sha512-lWlnDjti9dKf/LLFvMrNEKx+APxNLUbG2PfwVGF50ZRoA1FqeVdq7ynEdzGYG1vPok5TgXInUvYls1Ke4OGVNg==",
+      "contentHash": "sha256:1aab6c536d0f4de95b0756a6c0ea45d365c76455d555ecd27c1c8fbb61c1af8b",
       "manifestHash": "sha256:bd2313a9cf283860dfdd7713fa0a737b521944d2c819a5cca2d63e5ed40fdbb5"
     },
     {
@@ -221,8 +221,8 @@
         "agon.panel"
       ],
       "sourceLocator": "@kernlang/agon-mod-brainstorm@1.0.0",
-      "integrity": "sha512-Z0zM0vmjH0KdBgYNxF/6HCZTH14Husl1ebYupKEWvAX6tniYaPjpowGb2tTY0gfovxlXSnwuU9ZVYLZEbcxBnA==",
-      "contentHash": "sha256:4d6e210cf8be13e3e7eb1d00f3cab3a201b02d7e4c3af782c407ca235758475b",
+      "integrity": "sha512-LTdWxTWa5aPz2SMxufMv4whryKxLxU/nT3Eru/Aaz1sA8XFq/r3rrjjkTVcOn0Pwf7YJJtqJVZ5VYvlbwmDRFQ==",
+      "contentHash": "sha256:45ed9f9fa652cc5fccfd3a95d277dc56a429decdb26d7cf31ddb1a5ca9253935",
       "manifestHash": "sha256:e6ddd76523c79e1bdedcedf4b29bdaa18f94452df2c4933cf7cb2529cd1d8cb2"
     },
     {

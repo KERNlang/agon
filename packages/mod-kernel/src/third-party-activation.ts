@@ -1,4 +1,4 @@
-import type { AgonModFactory, AgonModV1, Dispose, InvocationContext, Json, ModServices, PermissionDecision } from '@kernlang/agon-mod-api';
+import type { AgonModFactory, AgonModV1, Dispose, EngineDispatchOptions, InvocationContext, Json, ModServices, PermissionDecision } from '@kernlang/agon-mod-api';
 import { pathToFileURL } from 'node:url';
 import type { ModRegistry } from './registry.js';
 import type { FolderModCandidate } from './folder-mods.js';
@@ -25,7 +25,7 @@ export interface ThirdPartyActivationOptions {
   readonly timeoutMs?: number;
   readonly importModule?: (url: string) => Promise<unknown>;
   readonly capabilityRuntime?: {
-    dispatchEngine(engineId: string, prompt: string, context: InvocationContext): Promise<Json>;
+    dispatchEngine(engineId: string, prompt: string, context: InvocationContext, options?: EngineDispatchOptions): Promise<Json>;
   };
 }
 
@@ -91,10 +91,10 @@ function wrapServices(options: Omit<ThirdPartyActivationOptions, 'registry'>): M
       write: async (key: string, value: Json) => { await requireCapability('state.write', key); await options.services.state.write(key, value); },
     }),
     engines: Object.freeze({
-      dispatch: async (engineId: string, prompt: string, context: InvocationContext) => {
+      dispatch: async (engineId: string, prompt: string, context: InvocationContext, dispatchOptions?: EngineDispatchOptions) => {
         await requireCapability('engine.dispatch', engineId);
         if (!options.capabilityRuntime) throw new ThirdPartyActivationError('engine dispatch host capability is unavailable');
-        const result = await options.capabilityRuntime.dispatchEngine(engineId, prompt, context);
+        const result = await options.capabilityRuntime.dispatchEngine(engineId, prompt, context, dispatchOptions);
         await options.services.receipts.record('capability-action', { capability: 'engine.dispatch', resource: engineId, outcome: 'completed' });
         return result;
       },

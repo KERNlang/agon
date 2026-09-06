@@ -62,6 +62,7 @@ export function createMcpEngineServices(): ModServices['engines'] {
           timeout: Math.max(1, options?.timeoutSeconds ?? 120),
           outputDir,
           systemPrompt: options?.systemPrompt,
+          textOnly: options?.textOnly,
           signal: context.signal,
         });
         return { engineId: engine.id, exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr, durationMs: result.durationMs, timedOut: result.timedOut, outputDir } as Json;

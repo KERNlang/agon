@@ -60,13 +60,18 @@ describe('S8 trusted third-party activation', () => {
     const registry = new ModRegistry({ generation: 's8-live-authority', activeOwners: [{ id: candidate.manifest.id, version: candidate.manifest.version, contentHash: candidate.contentHash }] });
     let grants: readonly GrantRecord[] = [{ ...grant, sequence: 1 }];
     let injected: ModServices | undefined;
+    const dispatchEngine = vi.fn(async () => ({ ok: true }));
     const result = await activateTrustedFolderMod({ candidate, publisher, trustRecords: [{ ...trust, sequence: 1 }], grantRecords: grants,
       readAuthority: async () => ({ trustRecords: [{ ...trust, sequence: 1 }], grantRecords: grants }), registry, services: base,
-      capabilityRuntime: { dispatchEngine: async () => ({ ok: true }) },
+      capabilityRuntime: { dispatchEngine },
       importModule: async () => ({ default: async (value: ModServices) => { injected = value; return { apiVersion: '1', activate: (registrar: any) => registrar.command('cli', { id: 'hello', description: 'live authority test', run: async () => ({ exitCode: 0 }) }) }; } }) });
-    await expect(injected!.engines.dispatch('test-engine', 'before', {} as never)).resolves.toEqual({ ok: true });
+    const context = {} as never;
+    const dispatchOptions = { textOnly: true, timeoutSeconds: 17, systemPrompt: 'fixture system', mode: 'review' as const };
+    await expect(injected!.engines.dispatch('test-engine', 'before', context, dispatchOptions)).resolves.toEqual({ ok: true });
+    expect(dispatchEngine).toHaveBeenCalledExactlyOnceWith('test-engine', 'before', context, dispatchOptions);
     grants = [{ ...grant, sequence: 1 }, { ...grant, recordId: '33333333-3333-4333-8333-333333333333', sequence: 2, decision: 'deny', grantedAt: '2020-01-01T00:00:00Z', reason: 'revoked now' }];
     await expect(injected!.engines.dispatch('test-engine', 'after', {} as never)).rejects.toThrow(/not granted/);
+    expect(dispatchEngine).toHaveBeenCalledTimes(1);
     await result.dispose();
   });
 

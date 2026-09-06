@@ -264,9 +264,9 @@ export async function bootstrapFirstPartySurfaceGeneration(options: {
           grantRecords,
           readAuthority: async () => ({ trustRecords: await authority.readTrust(), grantRecords: await authority.readGrants() }),
           services,
-          capabilityRuntime: { dispatchEngine: async (engineId, prompt, context) => {
+          capabilityRuntime: { dispatchEngine: async (engineId, prompt, context, dispatchOptions) => {
             if (!options.dispatchEngine) throw new Error('this host does not provide engine dispatch');
-            return options.dispatchEngine(engineId, prompt, context);
+            return options.dispatchEngine(engineId, prompt, context, dispatchOptions);
           } },
           safeMode: false,
           timeoutMs: options.activationTimeoutMs,

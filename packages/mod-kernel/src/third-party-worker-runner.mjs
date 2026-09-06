@@ -24,10 +24,10 @@ const services = Object.freeze({
   receipts: Object.freeze({ record: (...args) => callService('receipts', 'record', args) }),
   permissions: Object.freeze({ check: (...args) => callService('permissions', 'check', args) }),
   state: Object.freeze({ read: (...args) => callService('state', 'read', args), write: (...args) => callService('state', 'write', args) }),
-  engines: Object.freeze({ dispatch: (engineId, prompt) => {
+  engines: Object.freeze({ dispatch: (engineId, prompt, _context, options) => {
     const active = invocationScope.getStore();
     if (!active) throw new Error('engine dispatch requires an active invocation');
-    return callService('engines', 'dispatch', [engineId, prompt, { ...active.context, signal: undefined }], active.requestId);
+    return callService('engines', 'dispatch', [engineId, prompt, { ...active.context, signal: undefined }, options], active.requestId);
   } }),
 });
 

@@ -99,7 +99,7 @@ export function createCliEngineServices(): ModServices['engines'] {
       const selected = engineId.trim() || active[0];
       if (!selected) throw Object.assign(new Error('No active engines. Run agon engine list or agon engine add <id>.'), { code: 'NO_ACTIVE_ENGINE' });
       const engine = registry.get(selected); const outputDir = createRunDir({ mode: 'mod-dispatch', announce: false }).path;
-      const result = await createCliAdapter(registry).dispatch({ engine, prompt, cwd: context.cwd, mode: options?.mode ?? 'exec', timeout: Math.max(1, options?.timeoutSeconds ?? 120), outputDir, systemPrompt: options?.systemPrompt, signal: context.signal });
+      const result = await createCliAdapter(registry).dispatch({ engine, prompt, cwd: context.cwd, mode: options?.mode ?? 'exec', timeout: Math.max(1, options?.timeoutSeconds ?? 120), outputDir, systemPrompt: options?.systemPrompt, textOnly: options?.textOnly, signal: context.signal });
       return { engineId: engine.id, exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr, durationMs: result.durationMs, timedOut: result.timedOut, outputDir } as Json;
     },
   });

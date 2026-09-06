@@ -52,6 +52,9 @@ describe('physical brainstorm mod', () => {
     const parsed = JSON.parse((result as { stdout: string }).stdout);
     expect(parsed).toMatchObject({ winner: 'beta', response: 'B', panelHealth: { requested: 2, responded: 2, degraded: false } });
     expect(h.dispatch).toHaveBeenCalledTimes(2);
+    for (const call of h.dispatch.mock.calls) {
+      expect(call).toEqual([expect.any(String), expect.any(String), context, expect.objectContaining({ textOnly: true })]);
+    }
     expect(h.record).toHaveBeenCalledWith('brainstorm', { winner: 'beta', requested: 2, responded: 2 });
   });
 

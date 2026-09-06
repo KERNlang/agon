@@ -302,6 +302,42 @@ provenance remains externally blocked. No live-provider call or active/global
 installation was used. These are development checks, not an independent
 clean-commit release qualification or closure of the remaining product audit.
 
+**A06 dispatch-contract prerequisite (2026-09-06).** The public engine-dispatch
+options now include the adapter's optional `textOnly` control. Both CLI and MCP
+hosts forward it; the generated Brainstorm handler requests it for every seat,
+as the legacy collector already does. No other mode's default is changed. This
+is adapter control, not a sandbox or a guarantee that every provider supports
+disabling tools.
+
+The same trace found that folder-mod dispatch discarded *all* options in the
+worker proxy, parent worker bridge, grant wrapper and bootstrap adapter. These
+layers now forward the options through to the host. Invocation context and
+cancellation remain host-bound, and live grants are still checked before calls.
+
+One parameterized contract harness exercises the actual CLI/MCP host functions
+against a recording adapter, covering true/false/omitted text-only controls,
+timeouts, modes, prompts, context, unchanged defaults, raw results and thrown
+failures. Tests failed before the forwarding repair. The physical folder-mod
+bootstrap test also failed with missing options; it now checks the complete
+worker path, rejects a caller-supplied working-directory substitution, and proves
+grant revocation prevents a second dispatch. Existing raw Brainstorm oracle
+comparisons remain in place. Tests use local fixtures, not live providers.
+
+This fixes dispatch-contract loss, not the still-open synthesis/calibration/
+dedup integration in A06. The simplified generated workflow is not accepted as
+equivalent to the physically extracted workflow.
+
+Dispatch repair development checks: build, typecheck, lint and re-export guard
+pass. Full suite: 6,063 passed, five existing skips, 511 files. Full log SHA-256:
+`8e2c1c73fad546c7f9d0a280721628fbf0eb041319db8860b3f5161e568bc674`.
+Build log SHA-256:
+`fed6456554eb8be888c9a6e68fce043debbaf0df7b6440efb2d740033267aff0`.
+The complete build was rerun after the worker changes, so source tests and
+packed runtime artifacts do not refer to different implementations. These
+checks are not independent clean-commit release qualification. All 69 isolated
+packaged-install checks and supply-chain self-tests pass; npm provenance remains
+externally blocked. The active/global installation was not modified.
+
 **A20 — Plan scheduler physically extracted (partial A05/A11 progress).**
 `packages/mod-plan/src/executor.ts` now owns the scheduling loop: dependency-ready
 selection, parallel/sequential execution, running-state publication, output

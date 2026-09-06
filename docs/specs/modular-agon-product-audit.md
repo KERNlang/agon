@@ -372,6 +372,36 @@ release set contains 50 components including the launcher; npm provenance is
 still externally blocked. The active/global installation was not modified.
 This is development evidence, not independent clean-commit release qualification.
 
+**A06 runtime composition (2026-09-06).** `mod-brainstorm/src/runtime.ts` now
+provides one `createBrainstormRuntime` factory assembling scoring, collection,
+scouting and the full workflow. Its public `BrainstormRuntimeServices` contract
+contains injected host effects, not private core/forge types. Construction is
+lazy: it does not read ratings, dispatch engines, create logs or touch state.
+The compatibility adapter now supplies effects to this factory rather than
+assembling the four components independently. Its options are a readable typed
+extension of `BrainstormWorkflowOptions`, not a duplicate inline shape.
+
+The ownership regression failed before the move. Existing ownership guards now
+check factory assembly in the physical runtime while retaining prohibitions on
+legacy algorithms and private imports. All sixteen workflow/scout and eleven
+policy oracle comparisons remain unchanged and pass. New runtime checks cover
+effect-free construction, immutable scout options, timeout capping, retained
+host state and omission of scout-inapplicable style/event/count controls.
+
+The generated surface handler still needs to consume this runtime with qualified
+host capabilities; it has not been silently redirected to the legacy entrypoint.
+A06 remains open until that integration and installed-surface parity are proven.
+
+Runtime composition development verification: independent mod build, full build,
+typecheck, lint and re-export guard pass. Full suite: 6,084 passed, five existing
+skips, 515 files. Full log SHA-256:
+`f2637d683445ef80dcbe2be8923d67b71e1cbf76822b551881d07ac3a9236e9d`.
+Build log SHA-256:
+`051a4dba2337aea7236d63e2592983994924eb04c7fa98e165611d2baf72ca73`.
+All 69 isolated packaged-install checks and supply-chain self-tests pass;
+npm provenance remains externally blocked. Active/global Agon was not modified.
+This is not independent clean-commit release qualification.
+
 **A20 — Plan scheduler physically extracted (partial A05/A11 progress).**
 `packages/mod-plan/src/executor.ts` now owns the scheduling loop: dependency-ready
 selection, parallel/sequential execution, running-state publication, output

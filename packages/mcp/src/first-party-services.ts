@@ -3,6 +3,7 @@ import { dirname, resolve, sep } from 'node:path';
 import { resolveEngineDefinitionsDir } from '@kernlang/agon-support-engine-runtime';
 
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
+import { createBrainstormHostServices } from '@kernlang/agon-core';
 import { EngineRegistry, createRunDir, getRatings, loadConfig, pickTopRatedEngine, writeRunStatus } from '@kernlang/agon-core';
 import type { Json, ModManifest, ModServices } from '@kernlang/agon-mod-api';
 
@@ -19,6 +20,9 @@ function orchestrationEngines(ids: readonly string[]): string[] {
 export function decorateMcpFirstPartyServices(manifest: ModManifest, base: ModServices): ModServices {
   return Object.freeze({
     ...base,
+    ...(manifest.id === 'agon.brainstorm' || manifest.id === 'agon.pipeline-orchestration' ? { brainstorm: createBrainstormHostServices(() => {
+      const registry = new EngineRegistry(); registry.load(resolveEngineDefinitionsDir()); return registry;
+    }, createCliAdapter) } : {}),
     runs: Object.freeze({
       start(mode: string, label: string | undefined) { const startedAt = new Date().toISOString(); const created = createRunDir({ mode, label, announce: false }); return Object.freeze({ id: created.id, path: created.path, mode, startedAt }); },
       finish(handle: { path: string }, status: Json): void { writeRunStatus(handle.path, status as never); },

@@ -24,6 +24,67 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Brainstorm generated-handler integration (2026-09-11)
+
+The generated handler now calls the extracted `createBrainstormRuntime`; its
+competing simplified parsing, scoring and seat loop have been removed. The
+mod-owned `BrainstormHostServices` contract supplies host effects, not a callback
+to a second workflow implementation. The common Mod API remains mode-neutral.
+CLI and MCP supply the capability to Brainstorm and its bundled orchestration
+consumer; unrelated mods do not receive it. Missing capabilities fail explicitly
+instead of silently selecting a reduced workflow.
+
+**A06-HOST-CAPABILITIES (KL-011)** is the temporary adapter owned by
+`packages/core/src/blocks/brainstorm-host.ts`. It wires registry/adapter access,
+ratings, protocol parsing, preflight, dedup and logs to the extracted runtime.
+It binds dispatch to invocation cwd and cancellation. Remove it when those host
+effects have final physical owners and both host decorators use those owners;
+retain the raw workflow/effect-order and host-wiring tests as removal gates.
+The existing forge compatibility exports are not retired by this change.
+
+Ten frozen-oracle scenarios now compare the generated handler plus actual host
+adapter with legacy raw results, dispatches, logger/rating/dedup effects: divergent,
+grounded, empty/failed/throwing synthesis, no drafts, quarantine, partial panels,
+dedup failure and retry-once. No successful-result normalization is used.
+UI callbacks are outside that comparison; six existing scout comparisons remain.
+MCP and physical Cesar route tests exercise the restored synthesis and degraded
+panel shape. Host-wiring negative controls caught the missing capability in the
+dependent orchestration mod before its CLI/MCP correction. These tests use fixture
+engines, not live model providers or the operator's build pipeline.
+
+Fresh development verification: **6,119 passed, five existing skips, 516 files**;
+build, subsequent CLI rebuild, typecheck, lint, re-export guard, support source
+boundaries, generated-dispatch self-tests and supply-chain metadata checks pass.
+Full-suite log SHA-256:
+`47cf25f9126e207df93ff1b6e14234acf3165de3ed4480aa071d959df4122f6d`.
+Lint log SHA-256:
+`4f0b5b843e2800efff7d6aa08a5b0a43ba8c083e0c5ddce3a968a419a9a6eeeb`.
+Logs are in `/tmp/agon-brainstorm-verify-7YFkOIQh`; these are temporary diagnostic
+artifacts, not repository-bound independent-review or clean-commit receipts.
+Homes/config/cache prefixes were isolated and inherited credentials stripped.
+A subprocess guard blocked live provider/browser commands; it is not a sandbox.
+
+The installed MCP failure probe retains `isError: true` and now also requires
+the real workflow's retry/drop diagnostic. Its restored run artifacts exposed
+a verifier cleanup defect: file-mode chmod followed a run-directory symlink and
+removed directory traversal permission. Cleanup now skips symlinks, retries
+bounded transient removals and finishes before publishing a success receipt.
+An injected final-cleanup `EACCES` exits nonzero with `FIXTURE_CLEANUP_DENIED` and
+no success output (negative-control log SHA-256:
+`2a130f1cf1c79d11f9353ccfd8152045a96a4fa7190f453c7226896cc0024ac3`).
+The corrected offline packaged-install run exits zero with all **69 checks**,
+15-package selected closure, cache-deletion survival and idempotence. Log SHA-256:
+`4dc4f3278ab9cb7329ca0b88eca6d32ce2f4677c5c23f3bac74c298883ca5095`.
+Its disposable cache was seeded from public dependency entries and the missing
+React/Zod tarballs fetched with lifecycle scripts disabled; this is not evidence
+that an arbitrary empty offline cache can install the product.
+
+**A06 remains open** for installed workflow execution/oracle coverage, complete
+UI event and persisted run-envelope parity, and independent qualification.
+Run status formatting is not claimed byte-equivalent to the legacy handler.
+The wider extraction, mutation, platform and release findings remain open.
+No active/global installation or personal configuration was changed.
+
 ### Architecture gate recheck (2026-09-06)
 
 The source-boundary gate previously inspected only `.ts` files with a regex for

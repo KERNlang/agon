@@ -5,6 +5,7 @@ import type { EngineDispatchOptions, InvocationContext } from '@kernlang/agon-mo
 // run directory is needed to test the actual CLI and MCP host implementations.
 const fixture = vi.hoisted(() => ({
   dispatch: vi.fn(),
+  brainstorm: { open: vi.fn() },
   loadConfig: vi.fn(() => ({})),
   engine: { id: 'fixture-engine' },
 }));
@@ -15,6 +16,7 @@ vi.mock('@kernlang/agon-core', () => ({
     get() { return fixture.engine; }
   },
   loadConfig: fixture.loadConfig,
+  createBrainstormHostServices: () => fixture.brainstorm,
   createRunDir: () => ({ id: 'fixture-run', path: '/fixture/output' }),
   getRatings: vi.fn(), pickTopRatedEngine: vi.fn(), writeRunStatus: vi.fn(),
   eventLogFlush: vi.fn(), setSessionRoot: vi.fn(),
@@ -31,11 +33,22 @@ vi.mock('../../packages/cli/src/commands/drive.js', () => ({}));
 vi.mock('../../packages/cli/src/commands/ext.js', () => ({}));
 vi.mock('../../packages/cli/src/commands/browser-host.js', () => ({}));
 
-import { createCliEngineServices } from '../../packages/cli/src/first-party-services.js';
-import { createMcpEngineServices } from '../../packages/mcp/src/first-party-services.js';
+import { createCliEngineServices, decorateCliFirstPartyServices } from '../../packages/cli/src/first-party-services.js';
+import { createMcpEngineServices, decorateMcpFirstPartyServices } from '../../packages/mcp/src/first-party-services.js';
 
 const result = { exitCode: 0, stdout: 'fixture answer', stderr: '', durationMs: 4, timedOut: false };
 beforeEach(() => { vi.clearAllMocks(); fixture.dispatch.mockResolvedValue(result); });
+
+describe.each([decorateCliFirstPartyServices, decorateMcpFirstPartyServices])('Brainstorm host wiring', decorate => {
+  it.each(['agon.brainstorm', 'agon.pipeline-orchestration'])('provides host effects to the bundled %s consumer', id => {
+    const services = decorate({ id } as never, {} as never);
+    expect(services).toHaveProperty('brainstorm', fixture.brainstorm);
+    expect(fixture.brainstorm.open).not.toHaveBeenCalled();
+  });
+  it('does not expose the capability to unrelated mods', () => {
+    expect(decorate({ id: 'custom.example' } as never, {} as never)).not.toHaveProperty('brainstorm');
+  });
+});
 
 describe.each([
   ['CLI', createCliEngineServices],

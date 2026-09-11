@@ -52,7 +52,8 @@ export async function verifyPackedMcp(prefix, scratch, env) {
     const failed = await call('Brainstorm', { question: 'Fixture only', engines: 'codex' });
     assert.equal(failed.error, undefined);
     assert.equal(failed.result.isError, true);
-    assert.match(failed.result.content[0].text, /no usable responses/);
+    assert.match(failed.result.content[0].text, /no engine produced a usable draft/);
+    assert.match(failed.result.content[0].text, /codex error → retry error, dropped/);
     assert.match(stderr, /PACKED_MCP_EFFECT_BLOCKED/);
     const missing = await call('JobStatus', { jobId: 'absent-fixture' });
     assert.equal(missing.result.isError, true);

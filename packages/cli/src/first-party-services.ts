@@ -4,6 +4,7 @@ import { planSessionHost } from './plan-session-host.js';
 import { dirname, resolve, sep } from 'node:path';
 import { EngineRegistry, createRunDir, eventLogFlush, getRatings, loadConfig, pickTopRatedEngine, setSessionRoot, writeRunStatus } from '@kernlang/agon-core';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
+import { createBrainstormHostServices } from '@kernlang/agon-core';
 import type { Json, ModManifest, ModServices } from '@kernlang/agon-mod-api';
 import { resolveBuiltinEnginesDir } from './lib/engines-dir.js';
 import { filterDefaultOrchestrationEngines } from './handlers/engine-filter.js';
@@ -85,6 +86,9 @@ export function decorateCliFirstPartyServices(manifest: ModManifest, base: ModSe
     },
   }) : undefined;
   return Object.freeze({ ...base, runs, ...(browser ? { browser } : {}), ...(workspace ? { workspace } : {}),
+    ...(manifest.id === 'agon.brainstorm' || manifest.id === 'agon.pipeline-orchestration' ? { brainstorm: createBrainstormHostServices(() => {
+      const registry = new EngineRegistry(); registry.load(resolveBuiltinEnginesDir()); return registry;
+    }, createCliAdapter) } : {}),
     ...(manifest.id === 'agon.forge' ? { patchApplication: patchApplicationHost } : {}),
     ...(manifest.id === 'agon.plan' ? { planSession: planSessionHost } : {}), engines: createCliEngineServices() });
 }

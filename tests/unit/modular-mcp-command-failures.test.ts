@@ -2,6 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { CommandExecutionError } from '@kernlang/agon-mod-api';
 import type { AgonModFactory, ModServices, Registrar, ToolContribution } from '@kernlang/agon-mod-api';
 import { createMod } from '../../packages/mod-brainstorm/src/implementation.js';
+import type { BrainstormModServices } from '../../packages/mod-brainstorm/src/host.js';
+import { dispatchSeatWithRetry } from '@kernlang/agon-support-panel';
+import { buildKernDraftPrompt, parseKernDraft } from '@kernlang/protocol';
 import { createMod as campfire } from '../../packages/mod-campfire/src/implementation.js';
 import { createMod as tribunal } from '../../packages/mod-tribunal/src/implementation.js';
 import { createMod as nero } from '../../packages/mod-nero/src/implementation.js';
@@ -23,7 +26,23 @@ async function brainstorm(dispatch: ModServices['engines']['dispatch']) {
     if (method === 'tool' && args[0] === 'mcp') tool = args[1] as ToolContribution;
     return () => {};
   } }) as Registrar;
-  await (await createMod({ engines: { dispatch }, receipts: { record: async () => 'fixture' } } as unknown as ModServices)).activate(registrar);
+  const services = {
+    engines: { dispatch }, receipts: { record: async () => 'fixture' },
+    runs: { start: async () => ({ path: '/fixture', startedAt: 'fixture' }), finish: async () => {} },
+    brainstorm: { open: () => ({
+      readRatings: () => ({ byMode: { brainstorm: {} }, global: {} }),
+      seed: () => {}, preflight: async (options: { engines: string[] }) => ({ healthy: options.engines, skipped: [] }),
+      createLogger: () => ({ log: () => {} }),
+      buildPrompt: buildKernDraftPrompt, parseDraft: parseKernDraft,
+      deduplicate: async () => ({ groups: null, status: { status: 'not-needed' } }),
+      updateRatings: () => {},
+      selectSeat: (_options: unknown, engineId: string) => (prompt: string, systemPrompt: string) =>
+        dispatchSeatWithRetry({ dispatch: () => dispatch(engineId, prompt, context) } as never,
+          { engineId, engine: { id: engineId }, prompt, systemPrompt } as never),
+      selectWinner: (_options: unknown, engineId: string) => (prompt: string) => dispatch(engineId, prompt, context),
+    }) },
+  } as unknown as BrainstormModServices;
+  await (await createMod(services)).activate(registrar);
   return tool;
 }
 
@@ -64,14 +83,15 @@ describe('MCP command failure preservation', () => {
     });
   it('rejects an all-failed panel instead of returning a successful tool payload', async () => {
     const tool = await brainstorm(vi.fn(async () => ({ exitCode: 1, stderr: 'fixture failed' })));
-    await expect(tool.run({ question: 'fixture', engines: 'a,b' }, context)).rejects.toThrow('Brainstorm produced no usable responses');
+    await expect(tool.run({ question: 'fixture', engines: 'a,b' }, context)).rejects.toThrow('no engine produced a usable draft');
   });
   it('retains a degraded successful panel and its failed seats', async () => {
     const tool = await brainstorm(vi.fn(async (engine) => engine === 'a'
       ? { exitCode: 0, stdout: 'fixture answer' } : { exitCode: 1, stderr: 'fixture failed' }));
     await expect(tool.run({ question: 'fixture', engines: 'a,b' }, context)).resolves.toMatchObject({
       winner: 'a', panelHealth: { requested: 2, responded: 1, degraded: true,
-        failures: [{ engineId: 'b', error: 'fixture failed' }] },
+        notes: [expect.stringContaining('b error → retry error, dropped')],
+        banner: expect.stringContaining('1/2 responded') },
     });
   });
 });

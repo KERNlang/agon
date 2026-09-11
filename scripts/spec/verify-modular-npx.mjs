@@ -21,7 +21,21 @@ const requireOk = (id, result) => {
   if (!passed) throw new Error(checks.at(-1).detail);
   return result;
 };
-const makeRemovable = (path) => { if (!existsSync(path)) return; try { chmodSync(path, 0o700); } catch {} for (const entry of readdirSync(path)) { const child = join(path, entry); try { if (lstatSync(child).isDirectory()) makeRemovable(child); else chmodSync(child, 0o600); } catch {} } };
+const makeRemovable = (path) => {
+  if (!existsSync(path)) return;
+  try { chmodSync(path, 0o700); } catch { /* rmSync reports unrecoverable permissions */ }
+  for (const entry of readdirSync(path)) {
+    const child = join(path, entry);
+    try {
+      const info = lstatSync(child);
+      // chmod follows symlinks: applying file permissions to a linked run
+      // directory removes traversal permission and makes cleanup fail.
+      if (info.isSymbolicLink()) continue;
+      if (info.isDirectory()) makeRemovable(child);
+      else chmodSync(child, 0o600);
+    } catch { /* rmSync reports unrecoverable permissions */ }
+  }
+};
 
 mkdirSync(packRoot, { recursive: true });
 try {
@@ -79,12 +93,14 @@ try {
   if (afterActivation.status !== 'already-qualified') throw new Error('activation lost its qualified installation lineage');
   const result = { schemaVersion: 1, slice: 'S9', passed: checks.every(({ passed }) => passed), platform: `${process.platform}-${process.arch}`, node: process.version,
     profile: 'minimal+think+review', installedPackageCount: firstJson.packageCount, cacheDeletionSurvived: true, idempotent: true, checks };
+  // Scratch cleanup is part of successful qualification. Retry transient
+  // ENOTEMPTY/EBUSY failures, but never publish a green receipt before it ends.
+  makeRemovable(scratch);
+  rmSync(scratch, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
   if (!process.argv.includes('--no-write')) writeFileSync(output, `${JSON.stringify(result, null, 2)}\n`);
   console.log(JSON.stringify({ status: 'passed', checks: checks.length, installedPackageCount: firstJson.packageCount, cacheDeletionSurvived: true, idempotent: true }, null, 2));
 } catch (error) {
   if (!process.argv.includes('--no-write')) writeFileSync(output, `${JSON.stringify({ schemaVersion: 1, slice: 'S9', passed: false, platform: `${process.platform}-${process.arch}`, node: process.version, error: String(error), checks }, null, 2)}\n`);
   console.error(error);
   process.exitCode = 1;
-} finally {
-  if (process.exitCode !== 1) { makeRemovable(scratch); rmSync(scratch, { recursive: true, force: true }); }
 }

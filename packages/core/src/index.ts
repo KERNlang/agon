@@ -345,6 +345,7 @@ export { rankByTaskClass, buildSpecializedPrompt, assignForgeRoles } from './blo
 export type { EngineRole } from './blocks/role-specialization.js';
 export type { Skill } from './blocks/skill-loader.js';
 export { createSidechainLogger } from './blocks/sidechain-logger.js';
+export { createBrainstormHostServices } from './blocks/brainstorm-host.js';
 export type { SidechainEvent, SidechainLogger } from './blocks/sidechain-logger.js';
 export {
   buildForgeProvenance,

@@ -78,15 +78,15 @@ describe('physical Cesar orchestration tool parity', () => {
   it('executes the post-handoff workflow through its physical owner-tagged route', async () => {
     await disposeProcessSurfaceAuthority();
     const dispatches: string[] = [];
-    await initializeProcessSurfaceAuthority(join(root, 'physical-route-host'), (_manifest, base): ModServices => Object.freeze({
+    await initializeProcessSurfaceAuthority(join(root, 'physical-route-host'), (_manifest, base): ModServices => withBrainstormFixtureHost({
       ...base,
       engines: Object.freeze({
         listActive: async () => ['fixture-engine', 'fixture-peer'],
         dispatch: async (engineId: string, prompt: string) => {
           dispatches.push(engineId);
-          const stdout = prompt.includes('Synthesize one accountable')
+          const stdout = prompt.includes('Multiple AI engines analyzed') ? 'physical route' : prompt.includes('Synthesize one accountable')
             ? 'RECOMMENDATION\nConfidence: 91%\nUse the physical route.'
-            : prompt.includes('Return one JSON object')
+            : prompt.includes('Return one JSON object') || prompt.includes('confidence')
               ? '{"approach":"physical route","confidence":91,"steps":[],"tradeoffs":[]}'
               : 'physical route evidence';
           return { engineId, exitCode: 0, stdout, stderr: '', timedOut: false };
@@ -98,7 +98,7 @@ describe('physical Cesar orchestration tool parity', () => {
       signal: new AbortController().signal,
     }) as any;
     expect(result).toMatchObject({ exitCode: 0, result: { winner: 'fixture-engine', response: 'physical route' } });
-    expect(dispatches).toEqual(['fixture-engine', 'fixture-peer']);
+    expect(dispatches).toEqual(['fixture-engine', 'fixture-peer', 'fixture-engine']);
 
     const rendered: unknown[] = [];
     const routed = await runPhysicalCesarWorkflow('brainstorm', { question: 'prove shipped-path ownership' }, {
@@ -128,3 +128,4 @@ describe('physical Cesar orchestration tool parity', () => {
     }
   });
 });
+import { withBrainstormFixtureHost } from '../fixtures/modular-brainstorm-host.js';

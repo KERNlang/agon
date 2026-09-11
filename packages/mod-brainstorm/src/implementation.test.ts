@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { CommandContribution, ModServices, Registrar } from '@kernlang/agon-mod-api';
-import { createMod } from './implementation.js';
+import type { CommandContribution, Registrar } from '@kernlang/agon-mod-api';
+import { createMod, runBrainstorm } from './implementation.js';
+import { dispatchSeatWithRetry } from '@kernlang/agon-support-panel';
+import type { BrainstormModServices } from './host.js';
 
 const context = {
   invocationId: 'brainstorm-test',
@@ -11,7 +13,9 @@ const context = {
 };
 
 function harness(outputs: Record<string, unknown>) {
-  const dispatch = vi.fn(async (engineId: string) => outputs[engineId] ?? {
+  const dispatch = vi.fn(async (engineId: string, prompt?: string, _context?: unknown, _options?: unknown) => prompt?.includes('Multiple AI engines analyzed')
+    ? { engineId, exitCode: 0, stdout: 'fixture synthesis', stderr: '', timedOut: false }
+    : outputs[engineId] ?? {
     engineId,
     exitCode: 1,
     stdout: '',
@@ -27,7 +31,24 @@ function harness(outputs: Record<string, unknown>) {
     permissions: { check: vi.fn(async () => 'allow') },
     state: { read: vi.fn(), write: vi.fn() },
     engines: { listActive: vi.fn(async () => ['alpha', 'beta']), dispatch },
-  } as unknown as ModServices;
+    runs: {
+      start: vi.fn(async () => ({ id: 'run', path: '/fixture/run', mode: 'brainstorm', startedAt: 'fixture' })),
+      finish: vi.fn(), writeArtifact: vi.fn(),
+    },
+    brainstorm: { open: () => ({
+      readRatings: () => ({ byMode: { brainstorm: {} }, global: {} }),
+      seed: () => {}, preflight: async (options: { engines: string[] }) => ({ healthy: options.engines, skipped: [] }),
+      createLogger: () => ({ log: () => {} }),
+      buildPrompt: () => 'fixture draft prompt',
+      parseDraft: (raw: string) => ({ reasoning: '', keyFiles: [], steps: [], tradeoffs: [], ...JSON.parse(raw) }),
+      deduplicate: async () => ({ groups: null, status: { status: 'not-needed' } }),
+      updateRatings: () => {},
+      selectSeat: (options: { timeout: number }, engineId: string) => (prompt: string, systemPrompt: string) =>
+        dispatchSeatWithRetry({ dispatch: () => dispatch(engineId, prompt, context, { timeoutSeconds: options.timeout, systemPrompt, textOnly: true }) } as never,
+          { engineId, engine: { id: engineId }, prompt, systemPrompt, timeout: options.timeout } as never),
+      selectWinner: (_options: unknown, engineId: string) => (prompt: string) => dispatch(engineId, prompt, context, { textOnly: true }),
+    }) },
+  } as unknown as BrainstormModServices;
   const registered: { surface: string; command: CommandContribution }[] = [];
   const registrar = {
     command: (surface: string, command: CommandContribution) => { registered.push({ surface, command }); return () => {}; },
@@ -40,6 +61,39 @@ function harness(outputs: Record<string, unknown>) {
 }
 
 describe('physical brainstorm mod', () => {
+  it.each(['brainstorm', 'runs'] as const)('refuses a host missing %s without dispatch or fallback', async missing => {
+    const h = harness({});
+    const services = { ...h.services, [missing]: undefined };
+    await expect(runBrainstorm({ question: 'Question' }, context, services)).resolves.toMatchObject({
+      exitCode: 1, stderr: expect.stringContaining('host capabilities are unavailable'),
+    });
+    expect(h.dispatch).not.toHaveBeenCalled();
+    expect(h.record).not.toHaveBeenCalled();
+  });
+
+  it.each([0, -1, 'NaN', 'Infinity'])('rejects invalid timeout %s before starting a run', async timeout => {
+    const h = harness({});
+    await expect(runBrainstorm({ question: 'Question', timeout }, context, h.services)).resolves.toMatchObject({ exitCode: 1 });
+    expect(h.services.runs!.start).not.toHaveBeenCalled();
+    expect(h.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('does not dispatch or start a run after cancellation', async () => {
+    const h = harness({});
+    const controller = new AbortController(); controller.abort(new Error('fixture cancelled'));
+    await expect(runBrainstorm({ question: 'Question' }, { ...context, signal: controller.signal }, h.services)).rejects.toThrow('fixture cancelled');
+    expect(h.services.runs!.start).not.toHaveBeenCalled();
+    expect(h.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('refuses an empty active roster without choosing an implicit engine', async () => {
+    const h = harness({});
+    vi.mocked(h.services.engines.listActive!).mockResolvedValue([]);
+    await expect(runBrainstorm({ question: 'Question' }, context, h.services)).resolves.toMatchObject({ exitCode: 1, stderr: expect.stringContaining('No active engines') });
+    expect(h.services.runs!.start).not.toHaveBeenCalled();
+    expect(h.dispatch).not.toHaveBeenCalled();
+  });
+
   it('discovers engines, runs seats concurrently, chooses a result, and records evidence', async () => {
     const h = harness({
       alpha: { engineId: 'alpha', exitCode: 0, stdout: JSON.stringify({ approach: 'A', confidence: 55, steps: ['one'], tradeoffs: [] }), stderr: '', timedOut: false },
@@ -50,8 +104,9 @@ describe('physical brainstorm mod', () => {
     const command = h.registered.find(({ surface }) => surface === 'cli')!.command;
     const result = await command.run({ question: 'What should we build?' }, context);
     const parsed = JSON.parse((result as { stdout: string }).stdout);
-    expect(parsed).toMatchObject({ winner: 'beta', response: 'B', panelHealth: { requested: 2, responded: 2, degraded: false } });
-    expect(h.dispatch).toHaveBeenCalledTimes(2);
+    expect(parsed).toMatchObject({ winner: 'beta', response: 'fixture synthesis', panelHealth: { requested: 2, responded: 2, degraded: false } });
+    expect(parsed.synthesis?.status).toBe('completed');
+    expect(h.dispatch).toHaveBeenCalledTimes(3);
     for (const call of h.dispatch.mock.calls) {
       expect(call).toEqual([expect.any(String), expect.any(String), context, expect.objectContaining({ textOnly: true })]);
     }
@@ -67,7 +122,8 @@ describe('physical brainstorm mod', () => {
     const result = await h.registered[0].command.run({ question: 'Question' }, context);
     const parsed = JSON.parse((result as { stdout: string }).stdout);
     expect(parsed.panelHealth).toMatchObject({ requested: 2, responded: 1, degraded: true });
-    expect(parsed.panelHealth.failures[0]).toMatchObject({ engineId: 'beta', error: 'failed' });
+    expect(h.dispatch.mock.calls.filter(([id]) => id === 'beta')).toHaveLength(2);
+    expect(h.services.runs!.finish).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ ok: false }), context);
   });
 
   it('fails closed when no seat returns usable output', async () => {
@@ -76,5 +132,8 @@ describe('physical brainstorm mod', () => {
     await mod.activate(h.registrar, h.services);
     await expect(h.registered[0].command.run({ question: 'Question' }, context)).resolves.toMatchObject({ exitCode: 1 });
     expect(h.record).not.toHaveBeenCalled();
+    expect(h.services.runs!.finish).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      ok: false, summary: expect.stringContaining('no engine produced a usable draft'),
+    }), context);
   });
 });

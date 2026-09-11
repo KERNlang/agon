@@ -24,6 +24,43 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Brainstorm session-effect repair (2026-09-11)
+
+The physical Cesar Brainstorm route now records legacy-shaped chat messages,
+tracker entries, in-memory session results, pre/post checkpoints and terminal
+telemetry through `blocks/brainstorm-session-record.ts`. This is temporary
+**A06-SESSION-EFFECTS (KL-011)**, owned by CLI presentation/session integration;
+it must be removed when these effects are injected through the public host
+boundary. The mod remains the only execution owner. The session-effect and
+route tests guard this adapter's contract for its eventual removal.
+
+The default roster comes from the current session, with the existing default
+orchestration filter. An explicit roster is retained. The same roster goes to
+the physical mod and the session recorder. Invocation checkpoint IDs now use
+UUIDs to avoid timestamp collisions. No new persistence format is introduced.
+Existing checkpoint writes remain best-effort, and the ordered history writes
+are **not** an atomic transaction. The session-result store remains in-memory.
+
+Twelve isolated-effect regressions cover exact legacy payloads, idempotent
+terminal recording, failure versus cancellation, late-result rejection, failed
+history writes, summary-format failure after recording, route wiring, explicit
+engine selection, invalid input, and unrelated-workflow isolation. Before the
+repair, four recording assertions and two route-wiring assertions failed.
+Execution failures retain their original error if failure telemetry also fails.
+
+**A06 remains open:** project-context enrichment, scoreboard behavior, CLI
+human/quiet formatting, installed positive terminal/visual behavior and
+independent qualification are still outstanding. This is development evidence,
+not a release receipt or a claim that all Brainstorm surfaces are complete.
+
+Development verification: 6,136 tests pass, five existing skips, 520 files;
+full build, typecheck, lint, re-export guard, release-set, 69 isolated npm/npx
+checks and SBOM self-check pass. Temporary diagnostic logs are under
+`/tmp/agon-brainstorm-verify-7YFkOIQh` (not independent immutable receipts).
+Full-suite SHA-256: `2067e76e2efe1c56705e010023f31aef21895ee21d5c87897896b305d6df9399`.
+Build SHA-256: `82ea050964408e554807ac20785eb6b959f3abdd0334513c2ca4ee4e743d4014`.
+No live provider, active/global installation or personal state was used.
+
 ### Brainstorm progress and run-record repair (2026-09-11)
 
 The physical Cesar route now carries an invocation-local, mod-owned event

@@ -1,6 +1,8 @@
 import { join } from 'node:path';
 import type { BrainstormResult } from '@kernlang/agon-core';
 import { createBrainstormPresentation } from '../../blocks/brainstorm-presentation.js';
+import { createBrainstormSessionRecord } from '../../blocks/brainstorm-session-record.js';
+import { filterDefaultOrchestrationEngines } from '../../handlers/engine-filter.js';
 
 import { mkdirSync, appendFileSync } from 'node:fs';
 
@@ -62,7 +64,21 @@ export async function runPhysicalCesarWorkflow(
   signal = new AbortController().signal,
 ): Promise<unknown> {
   const presentation = route === 'brainstorm' ? createBrainstormPresentation(cb.dispatch) : undefined;
+  let sessionRecord: ReturnType<typeof createBrainstormSessionRecord> | undefined;
   try {
+    signal.throwIfAborted();
+    if (route === 'brainstorm' && cb.ctx?.chatSession) {
+      const engines = input.engines === undefined
+        ? filterDefaultOrchestrationEngines(cb.ctx.activeEngines())
+        : typeof input.engines === 'string' ? input.engines.split(',').map(id => id.trim()).filter(Boolean)
+          : input.engines;
+      if (typeof input.question !== 'string' || !input.question.trim()) throw new Error('Brainstorm requires a question.');
+      if (!Array.isArray(engines) || !engines.length || !engines.every(id => typeof id === 'string' && id.trim())) {
+        throw new Error('Brainstorm requires at least one engine.');
+      }
+      input = { ...input, engines };
+      sessionRecord = createBrainstormSessionRecord({ question: input.question as string, engines, chatSession: cb.ctx.chatSession, signal });
+    }
     const output = await executeProcessCesarRoute(route, input, {
       cwd: resolveWorkingDir(),
       signal,
@@ -73,7 +89,10 @@ export async function runPhysicalCesarWorkflow(
     }
     const result = output.result ?? output;
     if (presentation) {
+      signal.throwIfAborted();
       presentation.complete(result as BrainstormResult);
+      const summary = sessionRecord?.complete(result as BrainstormResult);
+      if (summary && !process.env.AGON_NO_SUMMARY) cb.dispatch({ type: 'info', message: summary });
       return result;
     }
     const record = result && typeof result === 'object' && !Array.isArray(result)
@@ -86,6 +105,10 @@ export async function runPhysicalCesarWorkflow(
         : JSON.stringify(result, null, 2));
     if (summary) cb.dispatch({ type: 'engine-block', engineId: route, color: ENGINE_COLORS[route] ?? 124, content: summary });
     return result;
+  } catch (error) {
+    try { sessionRecord?.fail(); }
+    catch { cb.dispatch({ type: 'warning', message: 'Brainstorm failed and its failure receipt could not be recorded.' }); }
+    throw error;
   } finally {
     presentation?.dispose();
   }

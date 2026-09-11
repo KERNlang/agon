@@ -72,7 +72,7 @@ it.each(['divergent', 'grounded', 'empty-synthesis', 'failed-synthesis', 'throw-
     try {
       if (useGenerated) {
         const context = { invocationId: 'fixture', cwd: process.cwd(), platform: 'darwin-arm64' as const,
-          signal: new AbortController().signal, config: {} };
+          signal: new AbortController().signal, config: {}, onWorkflowEvent: (event: unknown) => events.push(event) };
         const services = {
           brainstorm: createBrainstormHostServices(() => ({ get: (id: string) => ({ id }) }) as any, () => adapter as any),
           runs: { start: async () => ({ path: '/fixture', startedAt: 'fixture' }), finish: async () => {} },
@@ -93,11 +93,7 @@ it.each(['divergent', 'grounded', 'empty-synthesis', 'failed-synthesis', 'throw-
   }
   const expected = await execute(legacy);
   expect(await execute(runBrainstorm)).toEqual(expected);
-  // UI callbacks are tested separately; raw results, dispatches and persisted
-  // logger/rating/dedup effects must match without result normalization.
-  const { events: _events, ...rawExpected } = expected;
-  const { events: _generatedEvents, ...rawGenerated } = await execute(legacy, true);
-  expect(rawGenerated).toEqual(rawExpected);
+  expect(await execute(legacy, true)).toEqual(expected);
   if (scenario === 'retry-once') expect(expected.calls).toHaveLength(5);
   if (scenario === 'quarantined') expect(expected.calls).toHaveLength(0);
   else if (scenario === 'no-drafts') expect(expected.error).toContain('no engine produced a usable draft');

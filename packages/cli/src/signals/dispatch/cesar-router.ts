@@ -1,4 +1,6 @@
 import { join } from 'node:path';
+import type { BrainstormResult } from '@kernlang/agon-core';
+import { createBrainstormPresentation } from '../../blocks/brainstorm-presentation.js';
 
 import { mkdirSync, appendFileSync } from 'node:fs';
 
@@ -59,24 +61,34 @@ export async function runPhysicalCesarWorkflow(
   cb: DispatchCallbacks,
   signal = new AbortController().signal,
 ): Promise<unknown> {
-  const output = await executeProcessCesarRoute(route, input, {
-    cwd: resolveWorkingDir(),
-    signal,
-  }) as PhysicalCesarCommandResult;
-  if ((output.exitCode ?? 0) !== 0) {
-    throw new Error(output.stderr?.trim() || output.failure?.message || `${route} failed`);
+  const presentation = route === 'brainstorm' ? createBrainstormPresentation(cb.dispatch) : undefined;
+  try {
+    const output = await executeProcessCesarRoute(route, input, {
+      cwd: resolveWorkingDir(),
+      signal,
+      onWorkflowEvent: presentation?.onEvent,
+    }) as PhysicalCesarCommandResult;
+    if ((output.exitCode ?? 0) !== 0) {
+      throw new Error(output.stderr?.trim() || output.failure?.message || `${route} failed`);
+    }
+    const result = output.result ?? output;
+    if (presentation) {
+      presentation.complete(result as BrainstormResult);
+      return result;
+    }
+    const record = result && typeof result === 'object' && !Array.isArray(result)
+      ? result as Record<string, unknown>
+      : undefined;
+    const summary = [record?.response, record?.verdict, record?.final, record?.finalOutput]
+      .find((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      ?? (typeof output.stdout === 'string' && output.stdout.trim()
+        ? output.stdout.trim()
+        : JSON.stringify(result, null, 2));
+    if (summary) cb.dispatch({ type: 'engine-block', engineId: route, color: ENGINE_COLORS[route] ?? 124, content: summary });
+    return result;
+  } finally {
+    presentation?.dispose();
   }
-  const result = output.result ?? output;
-  const record = result && typeof result === 'object' && !Array.isArray(result)
-    ? result as Record<string, unknown>
-    : undefined;
-  const summary = [record?.response, record?.verdict, record?.final, record?.finalOutput]
-    .find((value): value is string => typeof value === 'string' && value.trim().length > 0)
-    ?? (typeof output.stdout === 'string' && output.stdout.trim()
-      ? output.stdout.trim()
-      : JSON.stringify(result, null, 2));
-  if (summary) cb.dispatch({ type: 'engine-block', engineId: route, color: ENGINE_COLORS[route] ?? 124, content: summary });
-  return result;
 }
 
 /**
@@ -446,8 +458,9 @@ export async function handleDelegatedAction(result: any, input: string, cb: Disp
             case 'brainstorm': {
               cb.dispatch({ type: 'info', message: `Cesar → brainstorm${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
               const _cwdBs = resolveWorkingDir();
-              cb.runAsJob('brainstorm', label, withThreadOutcome(_cwdBs, 'brainstorm', label, () =>
-                runDelegatedJobThenContinue(cb, () => runPhysicalCesarWorkflow('brainstorm', { question: taskInput }, cb), ({ result, success, errorMsg }) => {
+              cb.runAsJob('brainstorm', label, withThreadOutcome(_cwdBs, 'brainstorm', label, (signal?: AbortSignal) =>
+                runDelegatedJobThenContinue(cb, () => runPhysicalCesarWorkflow('brainstorm', { question: taskInput }, cb, signal), ({ result, success, errorMsg }) => {
+                  if (signal?.aborted) return null;
                   if (!success) return `Brainstorm on: "${taskInput.slice(0, 200)}" failed: ${errorMsg}. Decide how to recover — retry with a different framing or continue the task directly.`;
                   if (!result) return `Brainstorm on: "${taskInput.slice(0, 200)}" produced no result. Continue the task directly or try a different approach.`;
                   cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
@@ -670,8 +683,8 @@ export async function handleRecoveredDelegation(crashDel: any, input: string, cb
         case 'brainstorm': {
           cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'brainstorm', 'recovered delegation') });
           const _cwdRecoverBs = resolveWorkingDir();
-          cb.runAsJob('brainstorm', label, withThreadOutcome(_cwdRecoverBs, 'brainstorm', label, async () => {
-            const bsResult = await runPhysicalCesarWorkflow('brainstorm', { question: recoveredTask }, cb);
+          cb.runAsJob('brainstorm', label, withThreadOutcome(_cwdRecoverBs, 'brainstorm', label, async (signal?: AbortSignal) => {
+            const bsResult = await runPhysicalCesarWorkflow('brainstorm', { question: recoveredTask }, cb, signal);
             if (bsResult) {
               cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
               await continueCesarAfterResult(buildBrainstormContinuationMessage('Recovered brainstorm complete', recoveredTask, bsResult), cb, continuationEpoch, continuationUserTurns);
@@ -859,8 +872,8 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
             case 'brainstorm': {
               cb.dispatch({ type: 'info', message: 'Cesar → brainstorm' });
               const _cwdFallbackBs = resolveWorkingDir();
-              cb.runAsJob('brainstorm', label, withThreadOutcome(_cwdFallbackBs, 'brainstorm', label, async () => {
-                const bsResult = await runPhysicalCesarWorkflow('brainstorm', { question: fallbackTask }, cb);
+              cb.runAsJob('brainstorm', label, withThreadOutcome(_cwdFallbackBs, 'brainstorm', label, async (signal?: AbortSignal) => {
+                const bsResult = await runPhysicalCesarWorkflow('brainstorm', { question: fallbackTask }, cb, signal);
                 if (bsResult) {
                   cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
                   await continueCesarAfterResult(buildBrainstormContinuationMessage('Fallback brainstorm complete', fallbackTask, bsResult), cb, continuationEpoch, continuationUserTurns);

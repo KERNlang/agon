@@ -267,6 +267,7 @@ export { createBrainstormWorkflow } from './workflow.js';
 export { createBrainstormRuntime } from './runtime.js';
 export type { BrainstormRuntimeServices } from './runtime.js';
 export type { BrainstormHostServices, BrainstormModServices } from './host.js';
+export type { BrainstormInvocationContext, BrainstormWorkflowEvent } from './host.js';
 export { createBrainstormCollector } from './collector.js';
 export type { BrainstormCollection, RankedBrainstormDraft, BrainstormCollectorServices } from './collector.js';
 export { createBrainstormScout } from './scout.js';

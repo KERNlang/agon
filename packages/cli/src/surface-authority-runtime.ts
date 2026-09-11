@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import type { BrainstormWorkflowEvent } from '@kernlang/agon-mod-brainstorm';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -114,7 +115,7 @@ export function processSurfaceCatalog(surface: Surface): readonly GeneratedSurfa
 export async function executeProcessCesarRoute(
   publicId: string,
   input: Record<string, unknown>,
-  context: { readonly cwd: string; readonly signal: AbortSignal },
+  context: { readonly cwd: string; readonly signal: AbortSignal; readonly onWorkflowEvent?: (event: BrainstormWorkflowEvent) => void },
 ): Promise<unknown> {
   assertCanonicalSurfaceSelectionCurrent();
   if (!boot) throw new SurfaceGenerationError('MOD_GENERATION_MISMATCH', 'modular surface authority is not initialized', true);
@@ -132,6 +133,7 @@ export async function executeProcessCesarRoute(
     throw new Error(`unsupported platform: ${platform}`);
   return payload.run(input, {
     invocationId: `cesar-route-${Date.now()}`,
+    onWorkflowEvent: context.onWorkflowEvent,
     cwd: context.cwd,
     platform,
     signal: context.signal,

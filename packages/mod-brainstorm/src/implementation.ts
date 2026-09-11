@@ -1,7 +1,7 @@
 import { commandResultToToolResult } from '@kernlang/agon-mod-api';
 import type { AgonModFactory, CommandResult, Dispose, InvocationContext, Json, Registrar } from '@kernlang/agon-mod-api';
 import { createBrainstormRuntime } from './runtime.js';
-import type { BrainstormModServices } from './host.js';
+import type { BrainstormInvocationContext, BrainstormModServices } from './host.js';
 
 const schema = Object.freeze({
   type: 'object', additionalProperties: true, required: ['question'],
@@ -21,7 +21,7 @@ const cli = Object.freeze({
 const text = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
 const failure = (message: string): CommandResult => ({ exitCode: 1, stderr: message + '\n' });
 
-export async function runBrainstorm(raw: Json, context: InvocationContext, services: BrainstormModServices): Promise<CommandResult> {
+export async function runBrainstorm(raw: Json, context: BrainstormInvocationContext, services: BrainstormModServices): Promise<CommandResult> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return failure('Provide a Brainstorm request object.');
   const input = raw as Record<string, Json>;
   const extra = Array.isArray(input._) ? input._.map(String).filter(value => value !== input.question) : [];
@@ -41,17 +41,29 @@ export async function runBrainstorm(raw: Json, context: InvocationContext, servi
   const runtime = createBrainstormRuntime(capabilities);
   const label = text(input.label) || undefined;
   const run = await services.runs.start('brainstorm', label, context);
+  const seatDetails = new Map<string, string>();
   let result: Awaited<ReturnType<typeof runtime.runBrainstorm>>;
   try {
     result = await runtime.runBrainstorm({
       question, context: text(input.context) || undefined, engines, timeout,
       style: text(input.style) || 'divergent', outputDir: run.path, signal: context.signal,
+      onEvent: event => {
+        const data = event.data;
+        if (event.type === 'brainstorm:seat-completed' && typeof data?.engineId === 'string') {
+          seatDetails.set(data.engineId, data.ok === true ? `${Number(data.attempts ?? 1)} attempt(s)`
+            : String(data.detail ?? data.failure ?? 'no usable response'));
+        }
+        context.onWorkflowEvent?.(event);
+      },
     });
+    // A usable draft is a fallback for synthesis failure, not permission to
+    // reinterpret an operator cancellation as successful completion.
+    context.signal.throwIfAborted();
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     await services.runs.finish(run, {
-      mode: 'brainstorm', label: label ?? null, startedAt: run.startedAt, endedAt: new Date().toISOString(),
-      engines: engines.map(id => ({ id, status: 'error', detail })), summary: detail, ok: false,
+      mode: 'brainstorm', ...(label ? { label } : {}), startedAt: run.startedAt, endedAt: new Date().toISOString(),
+      engines: engines.map(id => ({ id, status: 'error', detail: seatDetails.get(id) ?? detail })), summary: detail, ok: false,
     }, context);
     if (context.signal.aborted) throw error;
     return failure(detail);
@@ -64,10 +76,11 @@ export async function runBrainstorm(raw: Json, context: InvocationContext, servi
   });
   const responded = statuses.filter(engine => engine.status === 'ok').length;
   await services.runs.finish(run, {
-    mode: 'brainstorm', label: label ?? null, startedAt: run.startedAt, endedAt: new Date().toISOString(),
+    mode: 'brainstorm', ...(label ? { label } : {}), startedAt: run.startedAt, endedAt: new Date().toISOString(),
     engines: statuses, ok: responded === engines.length,
     summary: responded + '/' + engines.length + ' bid; winner=' + result.winner
-      + '; synthesis=' + result.synthesis.status + '; dedup=' + result.dedup.status,
+      + '; synthesis=' + result.synthesis.status + '; dedup=' + result.dedup.status
+      + (result.panelHealth.banner ? '; ' + result.panelHealth.banner : ''),
   }, context);
   await services.receipts.record('brainstorm', {
     winner: result.winner, requested: result.panelHealth.requested, responded: result.panelHealth.responded,

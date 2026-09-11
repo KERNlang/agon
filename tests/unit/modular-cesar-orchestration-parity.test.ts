@@ -105,7 +105,20 @@ describe('physical Cesar orchestration tool parity', () => {
       dispatch: (event: unknown) => rendered.push(event),
     } as any);
     expect(routed).toMatchObject({ winner: 'fixture-engine', response: 'physical route' });
-    expect(rendered).toContainEqual(expect.objectContaining({ type: 'engine-block', engineId: 'brainstorm', content: 'physical route' }));
+    expect(rendered).toContainEqual(expect.objectContaining({ type: 'engine-block', engineId: 'fixture-engine', content: 'physical route' }));
+    expect(rendered).toContainEqual(expect.objectContaining({ type: 'progress-update' }));
+    expect(rendered).toContainEqual(expect.objectContaining({ type: 'kern-draft', engineId: 'fixture-engine' }));
+    expect(rendered).toContainEqual(expect.objectContaining({ type: 'info', message: 'Dedup unavailable: fixture' }));
+    expect(rendered.at(-1)).toEqual({ type: 'progress-clear' });
+    const controller = new AbortController();
+    controller.abort(new Error('fixture cancelled'));
+    const cancelled: unknown[] = [];
+    const callsBefore = dispatches.length;
+    await expect(runPhysicalCesarWorkflow('brainstorm', { question: 'cancelled run' }, {
+      dispatch: (event: unknown) => cancelled.push(event),
+    } as any, controller.signal)).rejects.toThrow('fixture cancelled');
+    expect(dispatches).toHaveLength(callsBefore);
+    expect(cancelled).toEqual([{ type: 'progress-clear' }]);
 
     const council = await executeProcessCesarRoute('council', { question: 'prove physical-only route' }, {
       cwd: root,

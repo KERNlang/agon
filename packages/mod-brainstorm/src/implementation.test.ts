@@ -94,6 +94,21 @@ describe('physical brainstorm mod', () => {
     expect(h.dispatch).not.toHaveBeenCalled();
   });
 
+  it('does not turn cancellation during synthesis into a successful fallback run', async () => {
+    const h = harness({});
+    const controller = new AbortController();
+    h.dispatch.mockImplementation(async (engineId, prompt) => {
+      if (prompt?.includes('Multiple AI engines analyzed')) {
+        controller.abort(new Error('cancel synthesis'));
+        throw controller.signal.reason;
+      }
+      return { engineId, exitCode: 0, stdout: '{"approach":"usable draft","confidence":70}', stderr: '', timedOut: false };
+    });
+    await expect(runBrainstorm({ question: 'Question' }, { ...context, signal: controller.signal }, h.services)).rejects.toThrow('cancel synthesis');
+    expect(h.record).not.toHaveBeenCalled();
+    expect(h.services.runs!.finish).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ ok: false }), expect.anything());
+  });
+
   it('discovers engines, runs seats concurrently, chooses a result, and records evidence', async () => {
     const h = harness({
       alpha: { engineId: 'alpha', exitCode: 0, stdout: JSON.stringify({ approach: 'A', confidence: 55, steps: ['one'], tradeoffs: [] }), stderr: '', timedOut: false },
@@ -124,6 +139,9 @@ describe('physical brainstorm mod', () => {
     expect(parsed.panelHealth).toMatchObject({ requested: 2, responded: 1, degraded: true });
     expect(h.dispatch.mock.calls.filter(([id]) => id === 'beta')).toHaveLength(2);
     expect(h.services.runs!.finish).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ ok: false }), context);
+    const status = vi.mocked(h.services.runs!.finish).mock.calls[0][1] as Record<string, unknown>;
+    expect(status.summary).toContain(parsed.panelHealth.banner);
+    expect(status).not.toHaveProperty('label');
   });
 
   it('fails closed when no seat returns usable output', async () => {
@@ -134,6 +152,7 @@ describe('physical brainstorm mod', () => {
     expect(h.record).not.toHaveBeenCalled();
     expect(h.services.runs!.finish).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       ok: false, summary: expect.stringContaining('no engine produced a usable draft'),
+      engines: [{ id: 'alpha', status: 'error', detail: 'failed' }, { id: 'beta', status: 'error', detail: 'failed' }],
     }), context);
   });
 });

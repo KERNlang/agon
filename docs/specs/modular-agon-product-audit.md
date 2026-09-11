@@ -24,6 +24,55 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Brainstorm progress and run-record repair (2026-09-11)
+
+The physical Cesar route now carries an invocation-local, mod-owned event
+observer into the extracted workflow. The common Mod API is unchanged. The ten
+frozen workflow comparisons now include the **raw event sequence**, rather than
+omitting UI callbacks from the comparison. Failed run records preserve per-seat
+diagnostics; summaries preserve the degraded-panel banner; absent labels are
+omitted instead of written as null, matching serialized legacy status behavior.
+
+`packages/cli/src/blocks/brainstorm-presentation.ts` owns presentation only:
+seat progress, elapsed ticks, retry counts, draft quality scores, dedup/synthesis
+status, degraded/fallback warnings and the winning engine's response. State is
+invocation-local; finally-disposal clears the timer and progress, and late events
+are ignored. It does not execute the workflow or import the legacy handler.
+The existing no-legacy-handler guard remains unchanged.
+
+Normal, recovered and fallback job launches now pass their job-owned abort
+signal. A regression exposed cancellation during synthesis being converted
+into a successful fallback. The generated handler now rethrows cancellation
+and records a failed run; the normal continuation does not propose recovery
+after the operator cancelled. This is a deliberate correctness repair, not
+a claim of byte-equivalence to that legacy cancellation bug.
+
+Negative evidence before fixes: ten event/record assertions failed, the physical
+route lacked progress/draft/warning output, the job-signal gate failed, and the
+synthesis cancellation test resolved successfully instead of rejecting. Tests
+now cover those cases, renderer timer disposal and late events, isolated renderer
+state, fallback visibility and cancellation before dispatch through the physical
+route. The launch-site AST check is wiring evidence, not a live job-system test.
+
+**A06 is still open.** This restores the bounded progress/result presentation
+and status fields, not the entire legacy TUI lifecycle. Still reconcile project
+context enrichment, chat/tracker/session-result persistence, scoreboard and
+checkpoint/telemetry effects, CLI human/quiet formatting, and installed positive
+workflow/terminal rendering with independent qualification. In particular, the
+renderer tests do not prove visual layout or concurrent job-arena ownership.
+No active installation, personal configuration or provider login was used.
+
+Development verification: 6,124 tests pass with five existing skips across 518
+files; full build plus the final CLI rebuild, typecheck, typed lint, re-export
+guard and refreshed release/SBOM checks pass. Full-suite log SHA-256:
+`c4a54360fa8a2c6642d57904ee8615118a68e8d0f847d7dda941831b3a49bce7`.
+Lint log SHA-256:
+`e385583285cd174dfac4b953e9703e348d29541088cadb8e1072f6478d28227d`.
+These fixture-based development checks are not independent clean-commit release
+receipts, native cross-platform qualification or a live terminal visual review.
+The refreshed offline packaged-install run also passes all 69 checks, including
+the guarded MCP failure contract, lifecycle, cache deletion and idempotence.
+
 ### Brainstorm generated-handler integration (2026-09-11)
 
 The generated handler now calls the extracted `createBrainstormRuntime`; its

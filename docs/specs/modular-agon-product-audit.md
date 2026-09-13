@@ -24,6 +24,43 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Brainstorm project-context repair and clean-tree test correction (2026-09-13)
+
+The physical Cesar Brainstorm route now reuses `scanProjectContext` with the
+session's `projectContext` and `contextFormat` settings. Scanning and execution
+share one captured working directory. The scan happens after input validation
+and before session recording; cancellation prevents scanning. Explicit context,
+including an empty string, bypasses scanning. Non-string context is rejected.
+This restores the legacy context source without moving workflow logic into the
+CLI or introducing a second scanner. Scanner policy and truncation are unchanged.
+
+Six route cases cover enrichment, explicit/empty context, malformed context,
+cancellation and scanner failure. Three assertions failed before implementation.
+A separate physical-mod characterization verifies that supplied context reaches
+both real draft prompts. Existing scanner tests cover the filesystem behavior;
+the route tests inject scanning and execution, not live providers.
+
+The initial clean-worktree baseline at `34418eb6` was red: MCP Review's generic
+failure-conversion test used the ambient uncommitted diff. A clean checkout
+correctly returned no-diff success before reaching the expected error. The test
+now supplies a fixed nonempty review target, while a separate empty-target test
+requires successful empty results and no engine dispatch. No runtime behavior or
+rejection oracle was weakened. Earlier dirty-tree green runs do not establish
+clean-checkout qualification for that test.
+
+**A06 remains open:** scoreboard behavior, CLI human/quiet formatting, installed
+positive terminal/visual behavior and independent qualification remain. This
+repair covers the Cesar session path, not automatic scanning on every surface.
+
+Development verification: 6,144 tests pass, five existing skips, 520 files;
+full build, typecheck, lint and re-export guard pass. Build log SHA-256:
+`083a1b24b3d6a3d29df16bf380451c12c30a235294cf84cc17e2b0182482091c`.
+Full-suite log SHA-256:
+`a08d70dddabb92bb3c0548a3211f9b47acc99eb71ccbd548ffe478dc62651fb7`.
+Logs remain temporary development diagnostics under
+`/tmp/agon-brainstorm-verify-7YFkOIQh`, not independent immutable receipts.
+No active/global installation, personal state or live provider was used.
+
 ### Brainstorm session-effect repair (2026-09-11)
 
 The physical Cesar Brainstorm route now records legacy-shaped chat messages,

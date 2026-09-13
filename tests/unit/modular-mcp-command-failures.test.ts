@@ -1,4 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
+const reviewTarget = vi.hoisted(() => vi.fn(() => ({ label: 'fixture changes', diff: 'diff --git a/fixture.ts b/fixture.ts\n+export const value = 1;\n' })));
+// This suite checks command-result conversion, not Git target resolution.
+// A fixed diff keeps the rejection path reachable in a clean checkout too.
+vi.mock('@kernlang/agon-support-verification', async importOriginal => ({
+  ...await importOriginal<object>(), resolveReviewTarget: reviewTarget,
+}));
 import { CommandExecutionError } from '@kernlang/agon-mod-api';
 import type { AgonModFactory, ModServices, Registrar, ToolContribution } from '@kernlang/agon-mod-api';
 import { createMod } from '../../packages/mod-brainstorm/src/implementation.js';
@@ -84,6 +90,20 @@ describe('MCP command failure preservation', () => {
   it('rejects an all-failed panel instead of returning a successful tool payload', async () => {
     const tool = await brainstorm(vi.fn(async () => ({ exitCode: 1, stderr: 'fixture failed' })));
     await expect(tool.run({ question: 'fixture', engines: 'a,b' }, context)).rejects.toThrow('no engine produced a usable draft');
+  });
+  it('preserves review no-diff success without dispatching an engine', async () => {
+    let tool!: ToolContribution;
+    const registrar = new Proxy({}, { get: (_, method) => (...args: unknown[]) => {
+      if (method === 'tool' && args[0] === 'mcp') tool = args[1] as ToolContribution;
+      return () => {};
+    } }) as Registrar;
+    const dispatch = vi.fn(async () => { throw new Error('provider must not run'); });
+    const dispose = await (await review({ engines: { dispatch } } as unknown as ModServices)).activate(registrar);
+    try {
+      reviewTarget.mockReturnValueOnce({ label: 'fixture changes', diff: '' });
+      await expect(tool.run({}, context)).resolves.toEqual({ target: 'fixture changes', reviews: [], findings: [] });
+      expect(dispatch).not.toHaveBeenCalled();
+    } finally { await dispose(); }
   });
   it('retains a degraded successful panel and its failed seats', async () => {
     const tool = await brainstorm(vi.fn(async (engine) => engine === 'a'

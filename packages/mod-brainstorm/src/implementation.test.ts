@@ -3,6 +3,7 @@ import type { CommandContribution, Registrar } from '@kernlang/agon-mod-api';
 import { createMod, runBrainstorm } from './implementation.js';
 import { dispatchSeatWithRetry } from '@kernlang/agon-support-panel';
 import type { BrainstormModServices } from './host.js';
+import { buildKernDraftPrompt } from '@kernlang/protocol';
 
 const context = {
   invocationId: 'brainstorm-test',
@@ -61,6 +62,22 @@ function harness(outputs: Record<string, unknown>) {
 }
 
 describe('physical brainstorm mod', () => {
+  it('carries supplied project context into each real draft prompt', async () => {
+    const h = harness({
+      alpha: { exitCode: 0, stdout: '{"approach":"A","confidence":60}' },
+      beta: { exitCode: 0, stdout: '{"approach":"B","confidence":70}' },
+    });
+    const open = h.services.brainstorm!.open;
+    const services: BrainstormModServices = { ...h.services,
+      brainstorm: { open: async invocation => ({ ...await open(invocation), buildPrompt: buildKernDraftPrompt }) },
+    };
+    const result = await runBrainstorm({ question: 'Question', context: 'CONTEXT_FIXTURE: use the project adapter' }, context, services);
+    expect(result.exitCode).toBe(0);
+    expect(h.dispatch.mock.calls.slice(0, 2).map(([engine]) => engine)).toEqual(['alpha', 'beta']);
+    for (const [, prompt] of h.dispatch.mock.calls.slice(0, 2)) {
+      expect(prompt).toContain('CONTEXT_FIXTURE: use the project adapter');
+    }
+  });
   it.each(['brainstorm', 'runs'] as const)('refuses a host missing %s without dispatch or fallback', async missing => {
     const h = harness({});
     const services = { ...h.services, [missing]: undefined };

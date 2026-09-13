@@ -6,7 +6,7 @@ import { filterDefaultOrchestrationEngines } from '../../handlers/engine-filter.
 
 import { mkdirSync, appendFileSync } from 'node:fs';
 
-import { resolveWorkingDir, configSet, RUNS_DIR } from '@kernlang/agon-core';
+import { resolveWorkingDir, scanProjectContext, configSet, RUNS_DIR } from '@kernlang/agon-core';
 
 import type { ImageAttachment } from '@kernlang/agon-core';
 
@@ -67,6 +67,10 @@ export async function runPhysicalCesarWorkflow(
   let sessionRecord: ReturnType<typeof createBrainstormSessionRecord> | undefined;
   try {
     signal.throwIfAborted();
+    const cwd = resolveWorkingDir();
+    if (route === 'brainstorm' && input.context !== undefined && typeof input.context !== 'string') {
+      throw new Error('Brainstorm context must be a string.');
+    }
     if (route === 'brainstorm' && cb.ctx?.chatSession) {
       const engines = input.engines === undefined
         ? filterDefaultOrchestrationEngines(cb.ctx.activeEngines())
@@ -77,10 +81,15 @@ export async function runPhysicalCesarWorkflow(
         throw new Error('Brainstorm requires at least one engine.');
       }
       input = { ...input, engines };
+      if (input.context === undefined && cb.ctx.config) {
+        const context = scanProjectContext(cwd, cb.ctx.config.projectContext || undefined, cb.ctx.config.contextFormat);
+        input = { ...input, context };
+        if (context) cb.dispatch({ type: 'info', message: `Context: ${cwd}` });
+      }
       sessionRecord = createBrainstormSessionRecord({ question: input.question as string, engines, chatSession: cb.ctx.chatSession, signal });
     }
     const output = await executeProcessCesarRoute(route, input, {
-      cwd: resolveWorkingDir(),
+      cwd,
       signal,
       onWorkflowEvent: presentation?.onEvent,
     }) as PhysicalCesarCommandResult;

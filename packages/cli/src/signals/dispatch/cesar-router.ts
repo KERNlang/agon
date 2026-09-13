@@ -87,6 +87,7 @@ export async function runPhysicalCesarWorkflow(
         if (context) cb.dispatch({ type: 'info', message: `Context: ${cwd}` });
       }
       sessionRecord = createBrainstormSessionRecord({ question: input.question as string, engines, chatSession: cb.ctx.chatSession, signal });
+      presentation?.setEngines(engines);
     }
     const output = await executeProcessCesarRoute(route, input, {
       cwd,
@@ -115,6 +116,7 @@ export async function runPhysicalCesarWorkflow(
     if (summary) cb.dispatch({ type: 'engine-block', engineId: route, color: ENGINE_COLORS[route] ?? 124, content: summary });
     return result;
   } catch (error) {
+    presentation?.fail();
     try { sessionRecord?.fail(); }
     catch { cb.dispatch({ type: 'warning', message: 'Brainstorm failed and its failure receipt could not be recorded.' }); }
     throw error;

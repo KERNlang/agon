@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { createBrainstormPresentation } from '../../packages/cli/src/blocks/brainstorm-presentation.js';
+import { createScoreboard, scoreboardFinishEngine, scoreboardFailEngine, renderScoreboard } from '../../packages/cli/src/cesar/scoreboard.js';
 
 afterEach(() => { vi.useRealTimers(); });
 
@@ -47,4 +48,46 @@ it('renders quality scores and degraded outcomes without hiding a usable fallbac
     expect(dispatch).toHaveBeenCalledWith({ type: 'warning', message: 'Synthesis fallback: timeout' });
     expect(dispatch).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'engine-block', engineId: 'a', content: 'usable draft' }));
   } finally { view.dispose(); }
+});
+
+it('renders the legacy final scoreboard including engines without a draft, only once', () => {
+  vi.useFakeTimers();
+  const dispatch = vi.fn();
+  const view = createBrainstormPresentation(dispatch);
+  view.setEngines(['a', 'b', 'skipped']);
+  view.onEvent({ type: 'brainstorm:seat-started', data: { engineId: 'a' } });
+  view.onEvent({ type: 'brainstorm:seat-completed', data: { engineId: 'b', ok: false, detail: 'timeout' } });
+  const result = { winner: 'a', response: 'answer', bids: [{ engineId: 'a', reasoning: 'why', approach: 'how', score: 71 }] };
+  view.complete(result as never);
+  const expected = createScoreboard('fixture', 'brainstorm', ['a', 'b', 'skipped']);
+  scoreboardFinishEngine(expected, 'a', { score: 71, result: 'bid submitted' });
+  scoreboardFailEngine(expected, 'b', 'no response');
+  scoreboardFailEngine(expected, 'skipped', 'no response');
+  expect(dispatch).toHaveBeenCalledWith({ type: 'info', message: renderScoreboard(expected) });
+  const count = dispatch.mock.calls.length;
+  view.complete(result as never);
+  view.onEvent({ type: 'brainstorm:seat-started', data: { engineId: 'late' } });
+  vi.advanceTimersByTime(1000);
+  expect(dispatch).toHaveBeenCalledTimes(count);
+  expect(vi.getTimerCount()).toBe(0);
+  view.dispose();
+});
+
+it('preserves known seat failures and finalizes unfinished seats on workflow failure', () => {
+  vi.useFakeTimers();
+  const dispatch = vi.fn();
+  const view = createBrainstormPresentation(dispatch);
+  view.setEngines(['a', 'b']);
+  view.onEvent({ type: 'brainstorm:seat-completed', data: { engineId: 'a', ok: false, detail: 'timeout' } });
+  view.fail();
+  const expected = createScoreboard('fixture', 'brainstorm', ['a', 'b']);
+  scoreboardFailEngine(expected, 'a', 'timeout');
+  scoreboardFailEngine(expected, 'b', 'brainstorm aborted before a usable draft');
+  expect(dispatch).toHaveBeenCalledWith({ type: 'info', message: renderScoreboard(expected) });
+  const count = dispatch.mock.calls.length;
+  view.fail();
+  vi.advanceTimersByTime(1000);
+  expect(dispatch).toHaveBeenCalledTimes(count);
+  expect(vi.getTimerCount()).toBe(0);
+  view.dispose();
 });

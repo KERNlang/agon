@@ -1,9 +1,9 @@
 import { beforeEach, expect, it, vi } from 'vitest';
-const mocks = vi.hoisted(() => ({ execute: vi.fn(), complete: vi.fn(), fail: vi.fn(), create: vi.fn(), present: vi.fn(), dispose: vi.fn(), scan: vi.fn() }));
+const mocks = vi.hoisted(() => ({ execute: vi.fn(), complete: vi.fn(), fail: vi.fn(), create: vi.fn(), present: vi.fn(), dispose: vi.fn(), scan: vi.fn(), setEngines: vi.fn(), presentationFail: vi.fn() }));
 vi.mock('@kernlang/agon-core', async importOriginal => ({ ...await importOriginal<object>(), scanProjectContext: mocks.scan }));
 vi.mock('../../packages/cli/src/surface-authority-runtime.js', async importOriginal => ({ ...await importOriginal<object>(), executeProcessCesarRoute: mocks.execute }));
 vi.mock('../../packages/cli/src/blocks/brainstorm-session-record.js', () => ({ createBrainstormSessionRecord: mocks.create }));
-vi.mock('../../packages/cli/src/blocks/brainstorm-presentation.js', () => ({ createBrainstormPresentation: () => ({ complete: mocks.present, dispose: mocks.dispose }) }));
+vi.mock('../../packages/cli/src/blocks/brainstorm-presentation.js', () => ({ createBrainstormPresentation: () => ({ complete: mocks.present, dispose: mocks.dispose, setEngines: mocks.setEngines, fail: mocks.presentationFail }) }));
 import { runPhysicalCesarWorkflow } from '../../packages/cli/src/signals/dispatch/cesar-router.js';
 
 beforeEach(() => {
@@ -21,6 +21,7 @@ it('records the same session-selected roster passed to the physical mod', async 
   expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ engines: ['codex', 'claude'], chatSession: cb.ctx.chatSession }));
   expect(mocks.execute).toHaveBeenCalledWith('brainstorm', { question: 'question', engines: ['codex', 'claude'] }, expect.anything());
   expect(mocks.complete).toHaveBeenCalledWith(result);
+  expect(mocks.setEngines).toHaveBeenCalledExactlyOnceWith(['codex', 'claude']);
   expect(mocks.fail).not.toHaveBeenCalled();
   expect(mocks.dispose).toHaveBeenCalledOnce();
 });
@@ -30,6 +31,7 @@ it('preserves the execution error even if failure recording also fails', async (
   mocks.fail.mockImplementation(() => { throw new Error('ledger unavailable'); });
   await expect(runPhysicalCesarWorkflow('brainstorm', { question: 'question' }, callbacks() as never)).rejects.toThrow('workflow failure');
   expect(mocks.fail).toHaveBeenCalledOnce();
+  expect(mocks.presentationFail).toHaveBeenCalledOnce();
   expect(mocks.complete).not.toHaveBeenCalled();
   expect(mocks.dispose).toHaveBeenCalledOnce();
 });

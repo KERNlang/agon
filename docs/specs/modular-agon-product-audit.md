@@ -24,6 +24,48 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Brainstorm scoreboard repair (2026-09-13)
+
+The invocation-local presenter now reuses the existing scoreboard renderer.
+The Cesar route supplies its selected engine roster before execution, keeping
+preflight-skipped/nonresponding engines visible. Seat events update the board;
+successful completion finalizes bid scores and marks missing bids `no response`,
+matching the legacy finalization policy. Workflow failure preserves known seat
+errors and marks remaining entries `brainstorm aborted before a usable draft`.
+That inherited wording also covers cancellation; it is not a separate claim
+that no draft existed before a later synthesis failure.
+
+Completion/failure stops the polling timer and seals presentation against late
+events or repeated terminal rendering. Finally-disposal still clears progress.
+The board is local to the invocation and performs no persistence or execution.
+Two scoreboard assertions and two route-wiring assertions failed before the
+repair. Renderer comparisons cover successful/degraded and failed boards,
+including a requested engine with no events; existing tests cover retries,
+concurrent presenter state and disposal. This is output/event evidence, **not**
+installed terminal screenshot or concurrent arena-ownership qualification.
+
+**A06 remains open:** CLI human/quiet formatting, installed positive terminal/UI
+behavior and independent qualification remain. The shared renderer's ANSI and
+icon behavior is unchanged; this repair does not claim a new accessibility or
+non-color fallback qualification.
+
+The first full-suite attempt encountered the already tracked daemon-survival
+`pong` failure while package rebuilding was still running. The log is retained
+as `scoreboard-full-concurrent-build.log` under the temporary verification
+directory (SHA-256 `4681846d134074c4de72ade7b0092ed70a298c21233ed7a66a0799edb024ff90`).
+Concurrent build interference is plausible, not established; this attempt is
+not clean qualification and does not close the daemon finding.
+
+After the full build finished, the complete suite passed: 6,146 tests, five
+existing skips, 520 files. Full build, typecheck, lint, re-export guard,
+release-set and SBOM self-check also pass. Full-suite log SHA-256:
+`216e4bd40467a395923d1165b028c0b406d719dbd5345f93703e22e047e2cc81`.
+Build log SHA-256:
+`acb66fcbdc63ee60db62390f6b2243ffd4b3332ea33916b61dd9ff3da2bdc5e8`.
+Logs are temporary development diagnostics under
+`/tmp/agon-brainstorm-verify-7YFkOIQh`, not independent immutable receipts.
+No active/global installation, personal state or live provider was used.
+
 ### Brainstorm project-context repair and clean-tree test correction (2026-09-13)
 
 The physical Cesar Brainstorm route now reuses `scanProjectContext` with the

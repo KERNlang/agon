@@ -79,16 +79,16 @@
         "range": "^19.2.0"
       }
     ],
-    "packedBytes": 1248966,
-    "unpackedBytes": 5613112,
+    "packedBytes": 1249394,
+    "unpackedBytes": 5616069,
     "fileCount": 101,
     "files": [
       {
-        "path": "dist/app-V3YRLTXJ.js",
+        "path": "dist/app-3CHUKCKI.js",
         "size": 408509
       },
       {
-        "path": "dist/app-V3YRLTXJ.js.map",
+        "path": "dist/app-3CHUKCKI.js.map",
         "size": 275732
       },
       {
@@ -124,6 +124,14 @@
         "size": 15054
       },
       {
+        "path": "dist/chunk-3BXP3J3A.js",
+        "size": 339076
+      },
+      {
+        "path": "dist/chunk-3BXP3J3A.js.map",
+        "size": 219629
+      },
+      {
         "path": "dist/chunk-3G43QNFV.js",
         "size": 1317
       },
@@ -154,14 +162,6 @@
       {
         "path": "dist/chunk-7SUV6RHW.js.map",
         "size": 606
-      },
-      {
-        "path": "dist/chunk-AJTDIVF7.js",
-        "size": 337306
-      },
-      {
-        "path": "dist/chunk-AJTDIVF7.js.map",
-        "size": 218442
       },
       {
         "path": "dist/chunk-B6XZQ6Q3.js",
@@ -364,11 +364,11 @@
         "size": 9215
       },
       {
-        "path": "dist/intent-skills-LAZLRAYT.js",
+        "path": "dist/intent-skills-WUSKON6V.js",
         "size": 681
       },
       {
-        "path": "dist/intent-skills-LAZLRAYT.js.map",
+        "path": "dist/intent-skills-WUSKON6V.js.map",
         "size": 51
       },
       {
@@ -488,9 +488,9 @@
         "size": 36190
       }
     ],
-    "integrity": "sha512-OR1kjaD3ISEiuj4wDG9VnAH3LRsQj7Ig3559N+ReqYkMiVi4WDfu05dWmbGqs1GzdPA95wbKqpfXyfEaN+5JuQ==",
-    "shasum": "e14cd5b03f3f5cd6212c2be90b134cf8beec0ff0",
-    "tarballHash": "sha256:112865ccb44479a41034f5616dea0e85ada72130f38e6a9332f8250fb617a986",
+    "integrity": "sha512-qiWzpWiSNCqN/Cxhk3dh+lwhvBa01CUJj7huJlS2JvcJ0TR7EQ8s9KLhz/X9lAknZarY8rwkkhe/tcKvmqSXJw==",
+    "shasum": "d47688f26fa7870c0316f3050fef85d72afca7c2",
+    "tarballHash": "sha256:20f4073d4ea0e9073d270de8d56d2b5ca37edd1f5167a38068d8ab80737c01df",
     "packageJsonHash": "sha256:99322f3dba4b7480ebd55ec8dc39fc1fe95a7c2d4d2e5953d9712c34a83bf575"
   },
   "packages": [

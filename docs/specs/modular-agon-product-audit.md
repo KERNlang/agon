@@ -24,6 +24,49 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Installed Brainstorm command qualification (2026-09-15)
+
+`scripts/spec/verify-packed-brainstorm.mjs` now runs as part of the existing
+`verify-modular-npx.mjs` gate, after all release tarballs are installed offline
+into the disposable npm prefix. It invokes that prefix's real `.bin/agon` via
+Node, exercising argument parsing, the bundled modular registry, CLI host,
+engine registry, adapter subprocess dispatch, workflow and persisted status.
+No source-module replacement or mocked host is used. Only the engine is a
+deterministic local protocol fixture registered in a fresh temporary Agon home.
+
+Cases cover human output, `--quiet`, `AGON_QUIET=1`, failed-seat retry and a
+deliberately buffered-output negative control. The fixture cannot finish its
+draft until the parent observes the run path on stdout. Buffering stdout until
+exit causes both attempts to fail with the specific missing-stream diagnostic;
+normal output reaches synthesis and records a successful engine status. Checks
+also distinguish quality from confidence, prohibit duplicate run announcements,
+require exactly two quiet lines, and verify draft/expansion dispatch counts.
+
+A test-only preload refuses subprocesses except the exact local fixture via
+the running Node executable, and refuses fetch. Separate guard tests cover
+allowed dispatch and rejected arbitrary Node code, shell execution and fetch.
+This is an effect guard, not a security sandbox. Homes and modular-host roots
+are isolated; no provider, credential, browser login or active installation is
+used. The first negative-control harness run incorrectly assumed a separate
+stderr artifact existed; the assertion now reads the actual persisted engine
+detail in `status.json` instead. No production behavior was changed.
+
+This closes the positive **installed npm-bin/parser** gap for these cases,
+not every launcher variant. The durable minimal-profile launcher still has
+its existing separate lifecycle checks; enabling Brainstorm through that
+managed profile, live-provider behavior, cancellation/input edge cases, exact
+terminal styling, interactive UI and independent review remain unqualified
+here. **A06 remains open.** Temporary development logs are not independent,
+immutable release acceptance receipts.
+
+Development gates pass: full build, typecheck, lint, re-export guard, release-set
+packing, supply-chain check/self-test, and all 70 npx qualification checks.
+The full suite passes 6,161 tests with five existing skips across 522 files.
+Full-suite log SHA-256:
+`adf3befc3f38fd4a9cb177c74cd6c43b54d59d2cd233d57e4bec990d0ecf55eb`.
+The final packed-command run occurred after the build completed; no tarball
+or SBOM drift was introduced by this test-only change.
+
 ### Brainstorm CLI streaming repair (2026-09-15)
 
 The existing bundled Brainstorm host interface now accepts an optional

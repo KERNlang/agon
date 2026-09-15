@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { verifyPackedMcp } from './verify-packed-mcp.mjs';
+import { verifyPackedBrainstorm } from './verify-packed-brainstorm.mjs';
 
 const root = resolve(import.meta.dirname, '../..');
 const output = join(root, 'docs/specs/evidence/modular-agon-npx-qualification.json');
@@ -50,6 +51,7 @@ try {
   mkdirSync(ephemeral, { recursive: true });
   requireOk('ephemeral-npx-hydration', run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--save=false', '--omit=optional', '--offline', '--prefix', ephemeral, launcherTarball, ...Object.values(tarballs)], { cwd: ephemeral }));
   checks.push(await verifyPackedMcp(ephemeral, scratch, { ...process.env, npm_config_cache: npmCache }));
+  checks.push(await verifyPackedBrainstorm(ephemeral, scratch, { ...process.env, npm_config_cache: npmCache }));
   const overrideFile = join(scratch, 'package-specs.json');
   writeFileSync(overrideFile, JSON.stringify(tarballs, null, 2));
   const cli = join(ephemeral, 'node_modules', '@kernlang', 'agon', 'dist', 'index.js');

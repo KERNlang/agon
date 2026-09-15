@@ -35,6 +35,8 @@ export async function runBrainstorm(raw: Json, context: BrainstormInvocationCont
   const extra = Array.isArray(input._) ? input._.map(String).filter(value => value !== input.question) : [];
   const question = [text(input.question), ...extra].filter(Boolean).join(' ').trim();
   if (!question) return failure('Provide a question. Usage: agon brainstorm "question"');
+  const style = input.style === undefined ? 'divergent' : input.style;
+  if (style !== 'divergent' && style !== 'grounded') return failure("Unknown Brainstorm style; use 'divergent' or 'grounded'.");
   const timeout = Number(input.timeout ?? 120);
   if (!Number.isFinite(timeout) || timeout < 1) return failure('Brainstorm timeout must be a positive number of seconds.');
   if (!services.brainstorm || !services.runs) {
@@ -58,11 +60,11 @@ export async function runBrainstorm(raw: Json, context: BrainstormInvocationCont
     if (writeCliOutput) {
       writeCliOutput((quiet ? run.path : `AGON_RUN: ${run.path}`) + '\n');
       announced = true;
-      if (!quiet) writeCliOutput(`Brainstorm: ${question}\nEngines: ${engines.join(', ')}\nStyle: ${text(input.style) || 'divergent'}\n`);
+      if (!quiet) writeCliOutput(`Brainstorm: ${question}\nEngines: ${engines.join(', ')}\nStyle: ${style}\n`);
     }
     result = await runtime.runBrainstorm({
       question, context: text(input.context) || undefined, engines, timeout,
-      style: text(input.style) || 'divergent', outputDir: run.path, signal: context.signal,
+      style, outputDir: run.path, signal: context.signal,
       onEvent: event => {
         const data = event.data;
         if (event.type === 'brainstorm:seat-completed' && typeof data?.engineId === 'string') {
@@ -112,7 +114,7 @@ export async function runBrainstorm(raw: Json, context: BrainstormInvocationCont
     const [path, summary] = cliRunLines(run.path, statuses, quiet);
     const lines = announced ? [] : [path];
     if (!quiet) {
-      if (!announced) lines.push(`Brainstorm: ${question}`, `Engines: ${engines.join(', ')}`, `Style: ${text(input.style) || 'divergent'}`);
+      if (!announced) lines.push(`Brainstorm: ${question}`, `Engines: ${engines.join(', ')}`, `Style: ${style}`);
       if (result.panelHealth.banner) lines.push(`Warning: ${result.panelHealth.banner}`);
       if (!['applied', 'not-needed'].includes(result.dedup.status)) lines.push(`Dedup ${result.dedup.status}${result.dedup.detail ? ': ' + result.dedup.detail : ''}`);
       if (result.synthesis.status === 'fallback') lines.push(`Synthesis fallback: ${result.synthesis.detail ?? 'winner expansion failed; showing ranked drafts'}`);

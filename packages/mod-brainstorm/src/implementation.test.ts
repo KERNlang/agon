@@ -62,6 +62,24 @@ function harness(outputs: Record<string, unknown>) {
 }
 
 describe('physical brainstorm mod', () => {
+  it.each(['unknown', '', null, 42])('rejects invalid style %j before opening host capabilities or starting a run', async style => {
+    const h = harness({});
+    const open = vi.spyOn(h.services.brainstorm!, 'open');
+    const result = await runBrainstorm({ question: 'Question', style }, context, h.services);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("use 'divergent' or 'grounded'");
+    expect(open).not.toHaveBeenCalled();
+    expect(h.services.runs!.start).not.toHaveBeenCalled();
+    expect(h.dispatch).not.toHaveBeenCalled();
+  });
+
+  it.each(['divergent', 'grounded'])('accepts the supported %s style', async style => {
+    const h = harness({ alpha: { exitCode: 0, stdout: '{"approach":"fixture","confidence":80}', stderr: '', timedOut: false } });
+    const result = await runBrainstorm({ question: 'Question', engines: 'alpha', style }, context, h.services);
+    expect(result.exitCode).toBe(0);
+    expect(h.services.runs!.start).toHaveBeenCalledOnce();
+  });
+
   it('stops streaming late seat completions after a workflow rejection', async () => {
     const h = harness({});
     const chunks: string[] = [];

@@ -24,6 +24,45 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Brainstorm validation and interactive recovery (2026-09-15)
+
+The physical mod now rejects unsupported styles before opening host
+capabilities, selecting engines or creating a run. The accepted values remain
+`divergent` and `grounded`, with `divergent` as the omitted-value default,
+matching the legacy CLI's supported styles. Empty, null and non-string styles
+are rejected, not silently replaced. Rendering and execution use the same
+validated value. No schema, public API or dependency boundary was added.
+
+Four test-first cases reproduced engine work for malformed styles; all now
+stop before host/run effects. Both valid styles retain successful execution.
+The packed CLI fixture also checks that an unknown style emits the actionable
+validation error, no stdout and no run directory—even with an invalid engine
+ID, so an engine failure cannot masquerade as successful validation.
+
+`modular-brainstorm-interactive-recovery.test.ts` exercises the actual Cesar
+route and presenter together, replacing only registry execution and session
+recording effects. It verifies failure → cleared progress → successful next
+invocation, and cancellation → rejected late success → ignored old progress
+events → successful next invocation. Timers are drained and stale answers are
+not rendered or recorded as successes. These paths already worked; this adds
+behavioral coverage rather than changing cancellation machinery.
+
+**A06 remains open.** This does not qualify keyboard-driven cancellation,
+physical provider process termination, a full installed interactive session,
+managed-profile activation or independent review. Session recording is mocked
+in the recovery checks; no claim of new persistence qualification is made.
+Active/global Agon and personal state remain untouched.
+
+Development gates pass: 58 focused mod/oracle/MCP checks, 24 presenter/route
+checks, the full suite (6,174 passing tests, five existing skips, 523 files),
+build, typecheck, lint, re-export guard, release-set packing, supply-chain
+check/self-test and all 70 npx checks. Release-channel integrity, release-set
+contents and SBOM were refreshed for the changed package bytes. Full-suite
+log SHA-256:
+`a05d5cc9b1c54e8cc99d199bc80beddc1142127f4af11685938931267a5d498e`.
+Temporary logs are development diagnostics, not immutable independent release
+acceptance receipts.
+
 ### Brainstorm terminal draft metrics (2026-09-15)
 
 The modular terminal presenter now displays each bid's confidence separately

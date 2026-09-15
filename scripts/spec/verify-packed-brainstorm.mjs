@@ -1,12 +1,25 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /** Real installed npm bin + parser + registry + adapter; only the engine is fake. */
 export async function verifyPackedBrainstorm(prefix, scratch, env) {
   const fixture = join(import.meta.dirname, 'fixtures/brainstorm-engine.mjs');
   const guard = join(import.meta.dirname, 'fixtures/guard-brainstorm-effects.mjs');
+  // Invalid options must be rejected before run creation or engine dispatch.
+  const invalidHome = join(scratch, 'brainstorm-invalid-style');
+  mkdirSync(invalidHome, { recursive: true });
+  const invalid = spawnSync(process.execPath, ['--import', guard, join(prefix, 'node_modules/.bin/agon'),
+    'brainstorm', 'Installed fixture question', '-e', 'not-an-engine', '--style', 'unknown'], {
+    cwd: scratch, encoding: 'utf8', timeout: 30_000,
+    env: { ...env, HOME: invalidHome, AGON_HOME: invalidHome, AGON_MODULAR_HOST_ROOT: join(invalidHome, 'modular-host') },
+  });
+  assert.equal(invalid.error, undefined);
+  assert.equal(invalid.status, 1);
+  assert.match(invalid.stderr, /use 'divergent' or 'grounded'/);
+  assert.equal(invalid.stdout, '');
+  assert.equal(existsSync(join(invalidHome, 'runs')), false);
   for (const mode of ['human', 'quiet', 'env-quiet', 'failure', 'buffered-negative-control']) {
     const home = join(scratch, `brainstorm-${mode}`);
     const gate = join(home, 'stdout-observed');
@@ -73,5 +86,5 @@ export async function verifyPackedBrainstorm(prefix, scratch, env) {
     }
   }
   return { id: 'packed-brainstorm-cli', passed: true,
-    detail: 'installed npm bin: human, --quiet, environment quiet, failed seat/retry; early stdout handshake with buffered-output negative control and persisted status; fixture engine only' };
+    detail: 'installed npm bin: invalid style before run creation, human, --quiet, environment quiet, failed seat/retry; early stdout handshake with buffered-output negative control and persisted status; fixture engine only' };
 }

@@ -24,6 +24,38 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Installed Escape cancellation and recovery (2026-09-16)
+
+The installed Brainstorm PTY scenario now covers failure → running-engine
+cancellation → two successful commands → idle keyboard exit. Before pressing
+Escape, the driver waits for a readiness file written by the fixture engine
+after installing signal handlers. The engine otherwise waits thirty seconds
+and fails; its configured adapter timeout is sixty seconds. Cancellation must
+produce a signal receipt within three seconds, so ordinary completion or
+engine timeout cannot satisfy the gate.
+
+The verifier checks matching started/stopped PIDs, SIGTERM/SIGINT receipt,
+process absence, exactly seven draft/expansion invocations, four persisted
+run outcomes, and an explicit `aborted` summary on the cancelled run. The
+local installed probe received SIGTERM and passed subsequent command/exit
+checks. No production runtime change was needed for this path.
+
+Two test-first PTY-driver regressions prove that missing readiness fails and
+input is not sent before readiness. Both failed before `waitForFile` support.
+The previous four exit regressions remain in place. Public npm dependencies
+were rehydrated into temporary storage with lifecycle scripts disabled after
+the earlier temporary cache disappeared; no personal npm configuration or
+active/global Agon was used.
+
+This closes the narrow fixture-engine Escape path, not all A06 cancellation:
+live providers, descendant process trees, cancellation during other phases,
+shutdown during active work, session flush completeness, managed profiles,
+native platform coverage and independent review remain unqualified.
+
+Local development gates pass: build, typecheck, lint, re-export guard,
+6,185 repository tests (five existing skips), and all 71 freshly packed
+installation checks. This is not an independent release-readiness receipt.
+
 ### Installed idle keyboard exit (2026-09-15)
 
 The installed PTY check now sends two Ctrl+C key bytes after its three

@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync } from 'node:fs';
+import { appendFileSync, existsSync, writeFileSync } from 'node:fs';
 import { setTimeout } from 'node:timers/promises';
 
 // No model: deterministic protocol participant for installed CLI qualification.
@@ -17,6 +17,19 @@ for (let attempt = 0; !existsSync(gate); attempt++) {
   await setTimeout(20);
 }
 if (mode === 'failure' || prompt.includes('FAIL_UI_FIXTURE')) process.exit(1);
+if (prompt.includes('CANCEL_UI_FIXTURE')) {
+  for (const signal of ['SIGTERM', 'SIGINT']) {
+    process.once(signal, () => {
+      writeFileSync(`${log}.stopped`, JSON.stringify({ pid: process.pid, signal }));
+      process.exit(0);
+    });
+  }
+  writeFileSync(`${log}.started`, JSON.stringify({ pid: process.pid }));
+  // A broken cancellation path stays distinguishable from normal completion.
+  await setTimeout(30_000);
+  process.stderr.write('Cancellation fixture reached its safety timeout\n');
+  process.exit(3);
+}
 console.log(phase === 'draft' ? `draft {
   approach: "Exercise the installed command with deterministic local engines"
   reasoning: "The real parser, dispatch and persistence remain under test"

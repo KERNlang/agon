@@ -1,5 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 
 function drive(source: string, steps: unknown[]) {
@@ -11,6 +13,35 @@ function drive(source: string, steps: unknown[]) {
 }
 
 describe('PTY graceful-exit qualification', () => {
+  it('does not continue past a missing readiness file', () => {
+    const scratch = mkdtempSync(resolve(tmpdir(), 'pty-handshake-'));
+    try {
+      const result = drive('import time; time.sleep(60)', [
+        { waitForFile: resolve(scratch, 'ready'), timeout: 100 }, { exit: true },
+      ]);
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe(124);
+      expect(result.stderr).toContain('Readiness file timeout');
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  });
+
+  it('waits for readiness before sending input', () => {
+    const scratch = mkdtempSync(resolve(tmpdir(), 'pty-handshake-'));
+    const ready = resolve(scratch, 'ready');
+    try {
+      // Flush early terminal input before announcing readiness. A driver that
+      // ignores the handshake loses the input and cannot observe a clean exit.
+      const result = drive(`import time,termios; time.sleep(.1); termios.tcflush(0, termios.TCIFLUSH); open(${JSON.stringify(ready)}, 'w').close(); assert input() == 'continue'`, [
+        { waitForFile: ready, timeout: 1000 }, { send: 'continue\n' }, { waitForExit: 1000 },
+      ]);
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe(0);
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  });
   it('observes a normal child exit without sending cleanup signals', () => {
     const result = drive('raise SystemExit(0)', [{ waitForExit: 1000 }]);
     expect(result.error).toBeUndefined();

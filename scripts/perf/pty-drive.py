@@ -12,6 +12,7 @@ Control script is read as JSON lines on stdin:
     {"send": "abc"}        write literal text to the pty
     {"sendHex": "1b5b41"}  write raw bytes (escape sequences)
     {"sleep": 250}         wait N ms
+    {"waitForFile": "path", "timeout": 5000}  await a fixture readiness file
     {"exit": true}         stop draining, SIGINT the child, wait, exit
     {"waitForExit": 5000}  require spontaneous child exit within N ms;
                           report JSON, preserve exit status, timeout = 124
@@ -71,6 +72,17 @@ def main() -> int:
         if not line:
             continue
         step = json.loads(line)
+        if "waitForFile" in step:
+            deadline = time.monotonic() + step.get("timeout", 5000) / 1000.0
+            while not os.path.exists(step["waitForFile"]):
+                if time.monotonic() >= deadline:
+                    os.kill(pid, signal.SIGKILL)
+                    os.waitpid(pid, 0)
+                    print("Readiness file timeout", file=sys.stderr)
+                    return 124
+                drain(min(deadline, time.monotonic() + 0.02))
+                time.sleep(0.005)
+            continue
         if "waitForExit" in step:
             deadline = time.monotonic() + step["waitForExit"] / 1000.0
             while True:

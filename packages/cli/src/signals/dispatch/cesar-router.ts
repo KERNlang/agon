@@ -1,12 +1,9 @@
 import { join } from 'node:path';
-import type { BrainstormResult } from '@kernlang/agon-core';
-import { createBrainstormPresentation } from '../../blocks/brainstorm-presentation.js';
-import { createBrainstormSessionRecord } from '../../blocks/brainstorm-session-record.js';
-import { filterDefaultOrchestrationEngines } from '../../handlers/engine-filter.js';
+import { runBrainstormSession } from '../../blocks/brainstorm-session.js';
 
 import { mkdirSync, appendFileSync } from 'node:fs';
 
-import { resolveWorkingDir, scanProjectContext, configSet, RUNS_DIR } from '@kernlang/agon-core';
+import { resolveWorkingDir, configSet, RUNS_DIR } from '@kernlang/agon-core';
 
 import type { ImageAttachment } from '@kernlang/agon-core';
 
@@ -63,66 +60,27 @@ export async function runPhysicalCesarWorkflow(
   cb: DispatchCallbacks,
   signal = new AbortController().signal,
 ): Promise<unknown> {
-  const presentation = route === 'brainstorm' ? createBrainstormPresentation(cb.dispatch) : undefined;
-  let sessionRecord: ReturnType<typeof createBrainstormSessionRecord> | undefined;
-  try {
-    signal.throwIfAborted();
-    const cwd = resolveWorkingDir();
-    if (route === 'brainstorm' && input.context !== undefined && typeof input.context !== 'string') {
-      throw new Error('Brainstorm context must be a string.');
-    }
-    if (route === 'brainstorm' && cb.ctx?.chatSession) {
-      const engines = input.engines === undefined
-        ? filterDefaultOrchestrationEngines(cb.ctx.activeEngines())
-        : typeof input.engines === 'string' ? input.engines.split(',').map(id => id.trim()).filter(Boolean)
-          : input.engines;
-      if (typeof input.question !== 'string' || !input.question.trim()) throw new Error('Brainstorm requires a question.');
-      if (!Array.isArray(engines) || !engines.length || !engines.every(id => typeof id === 'string' && id.trim())) {
-        throw new Error('Brainstorm requires at least one engine.');
-      }
-      input = { ...input, engines };
-      if (input.context === undefined && cb.ctx.config) {
-        const context = scanProjectContext(cwd, cb.ctx.config.projectContext || undefined, cb.ctx.config.contextFormat);
-        input = { ...input, context };
-        if (context) cb.dispatch({ type: 'info', message: `Context: ${cwd}` });
-      }
-      sessionRecord = createBrainstormSessionRecord({ question: input.question as string, engines, chatSession: cb.ctx.chatSession, signal });
-      presentation?.setEngines(engines);
-    }
-    const output = await executeProcessCesarRoute(route, input, {
-      cwd,
-      signal,
-      onWorkflowEvent: presentation?.onEvent,
-    }) as PhysicalCesarCommandResult;
-    if ((output.exitCode ?? 0) !== 0) {
-      throw new Error(output.stderr?.trim() || output.failure?.message || `${route} failed`);
-    }
-    const result = output.result ?? output;
-    if (presentation) {
-      signal.throwIfAborted();
-      presentation.complete(result as BrainstormResult);
-      const summary = sessionRecord?.complete(result as BrainstormResult);
-      if (summary && !process.env.AGON_NO_SUMMARY) cb.dispatch({ type: 'info', message: summary });
-      return result;
-    }
-    const record = result && typeof result === 'object' && !Array.isArray(result)
-      ? result as Record<string, unknown>
-      : undefined;
-    const summary = [record?.response, record?.verdict, record?.final, record?.finalOutput]
-      .find((value): value is string => typeof value === 'string' && value.trim().length > 0)
-      ?? (typeof output.stdout === 'string' && output.stdout.trim()
-        ? output.stdout.trim()
-        : JSON.stringify(result, null, 2));
-    if (summary) cb.dispatch({ type: 'engine-block', engineId: route, color: ENGINE_COLORS[route] ?? 124, content: summary });
-    return result;
-  } catch (error) {
-    presentation?.fail();
-    try { sessionRecord?.fail(); }
-    catch { cb.dispatch({ type: 'warning', message: 'Brainstorm failed and its failure receipt could not be recorded.' }); }
-    throw error;
-  } finally {
-    presentation?.dispose();
+  if (route === 'brainstorm') {
+    return runBrainstormSession(input, cb, signal, async (prepared, context) =>
+      await executeProcessCesarRoute(route, prepared, context) as PhysicalCesarCommandResult);
   }
+  signal.throwIfAborted();
+  const cwd = resolveWorkingDir();
+  const output = await executeProcessCesarRoute(route, input, { cwd, signal }) as PhysicalCesarCommandResult;
+  if ((output.exitCode ?? 0) !== 0) {
+    throw new Error(output.stderr?.trim() || output.failure?.message || `${route} failed`);
+  }
+  const result = output.result ?? output;
+  const record = result && typeof result === 'object' && !Array.isArray(result)
+    ? result as Record<string, unknown>
+    : undefined;
+  const summary = [record?.response, record?.verdict, record?.final, record?.finalOutput]
+    .find((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    ?? (typeof output.stdout === 'string' && output.stdout.trim()
+      ? output.stdout.trim()
+      : JSON.stringify(result, null, 2));
+  if (summary) cb.dispatch({ type: 'engine-block', engineId: route, color: ENGINE_COLORS[route] ?? 124, content: summary });
+  return result;
 }
 
 /**

@@ -4,7 +4,7 @@ import { syncBuiltinESMExports } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 // Test-only effect guard, not a security sandbox. Only the known Node fixture
-// may be spawned; provider commands, shells, browsers and fetch are blocked.
+// may be spawned; provider commands, shells, browsers and network fetch are blocked.
 const fixture = fileURLToPath(new URL('./brainstorm-engine.mjs', import.meta.url));
 const spawn = cp.spawn;
 const block = () => { throw new Error('PACKED_BRAINSTORM_EFFECT_BLOCKED'); };
@@ -18,7 +18,18 @@ cp.spawn = function (command, args, options) {
 };
 for (const name of ['spawnSync', 'exec', 'execSync', 'execFile', 'execFileSync', 'fork']) cp[name] = block;
 syncBuiltinESMExports();
-globalThis.fetch = block;
+globalThis.fetch = input => {
+  // Ink/Yoga fetches its bundled layout WASM through an inline data URL.
+  // Decode locally: never delegate even this allowed case to network fetch.
+  const prefix = 'data:application/octet-stream;base64,';
+  if (typeof input === 'string' && input.length < 2_000_000 && input.startsWith(prefix + 'AGFzbQ')) {
+    const encoded = input.slice(prefix.length);
+    if (/^[A-Za-z0-9+/]*={0,2}$/.test(encoded)) {
+      return Promise.resolve(new Response(Buffer.from(encoded, 'base64'), { headers: { 'Content-Type': 'application/wasm' } }));
+    }
+  }
+  return block();
+};
 
 // Negative control: emulate the old buffered CLI. The engine's handshake must
 // fail; otherwise the qualification does not actually discriminate streaming.

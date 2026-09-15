@@ -24,6 +24,59 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Real slash-command entry point and installed PTY coverage (2026-09-15)
+
+A real terminal probe exposed a gap missed by the component and Cesar-route
+checks: `/brainstorm` executed its physical TUI contribution through the
+generic renderer, printing raw result JSON rather than Brainstorm progress,
+drafts and the winner response. The existing presenter was not wired into this
+entry point. This supersedes any inference that the earlier component checks
+qualified normal slash-command rendering.
+
+`blocks/brainstorm-session.ts` now owns the shared session effects, context
+enrichment, presentation and cleanup previously embedded in the Cesar route.
+Cesar still executes its Cesar contribution; the TUI still executes its
+selected TUI contribution. The TUI bridge selects this behavior using the
+registry owner's `agon.brainstorm` identity, not a command-name match. No
+second workflow executor or cross-surface availability bypass was introduced.
+Test-first cases cover readable results, session-selected engines/context,
+cancellation of a late success, and an external command with the same name
+remaining on the generic path. Existing Cesar/session recovery checks pass.
+
+The new `verify-packed-brainstorm-tui.mjs` runs the installed npm bin on a real
+120x40 PTY, sends a failing slash command followed by two successful commands,
+and requires draft rendering, winner expansion, exactly six fixture-engine
+calls and corresponding failed/successful persisted run statuses. Driver exit
+alone is not accepted. The existing Python PTY driver
+forcibly stops its child during cleanup, so this is **not** graceful-exit or
+keyboard-cancellation qualification. Python 3 with POSIX PTY support is required.
+
+The effect guard initially prevented UI startup by refusing Yoga's embedded
+WASM `data:` fetch. It now decodes bounded inline WASM bytes locally, without
+delegating to network fetch. Network requests, other data types, arbitrary
+Node commands, shells and provider launches remain blocked. This remains a
+diagnostic guard, not a security sandbox. All homes and engine definitions are
+temporary fixtures; no active/global installation or personal state is used.
+
+**A06 remains open:** actual provider termination, keyboard cancellation,
+graceful shutdown, managed-profile interactive activation, broader terminal
+matrix and independent review are not closed by this positive PTY case.
+
+Development verification passes: the pre-refactor full/type/lint baseline,
+17 focused slash/Cesar/recovery checks after extraction, full build, typecheck,
+lint, re-export guard, 6,179 tests with five existing skips across 524 files,
+release-set/SBOM checks and 71 npx checks including the installed PTY case.
+An initial installed probe retained an empty `CI` key and captured only part
+of the terminal output; the interactive child now removes that key, as the
+successful diagnostic probe did. The output assertion was retained unchanged.
+Full-suite log SHA-256:
+`027d7d9fd63c136384f79214b6196a316ad149ad9fe3223c5ee2107c986748d9`.
+Packed qualification log SHA-256:
+`726d41d170314ff908fd186e1b9d7d621ea2460075bad3e8837725d7647a2332`.
+Temporary logs are development diagnostics, not immutable independent release
+receipts. The new shared session helper remains CLI-owned A06 session machinery;
+this does not close the KL-011 migration boundary.
+
 ### Brainstorm validation and interactive recovery (2026-09-15)
 
 The physical mod now rejects unsupported styles before opening host

@@ -2,6 +2,7 @@ import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { withPatchApplication } from '../../patch-application-host.js';
 import { withPlanSession } from '../../plan-session-host.js';
+import { runBrainstormSession } from '../../blocks/brainstorm-session.js';
 
 import { resolveWorkingDir, buildImageAttachment, sessionContext, visionSupportNote } from '@kernlang/agon-core';
 
@@ -378,7 +379,7 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
 }
 
 export async function runPhysicalTuiContribution(
-  record: { readonly payload: unknown },
+  record: { readonly payload: unknown; readonly owner?: { readonly id: string } },
   parsed: Json,
   commandName: string,
   cb: DispatchCallbacks,
@@ -398,6 +399,16 @@ export async function runPhysicalTuiContribution(
     signal,
     config: cb.ctx.config as unknown as Readonly<Record<string, Json>>,
   };
+  if (record.owner?.id === 'agon.brainstorm') {
+    await runBrainstormSession(normalized as Record<string, unknown>, cb, signal, async (prepared, context) => {
+      const output = await contribution.run(prepared as Json, { ...invocation, ...context });
+      if (output && typeof output === 'object' && Symbol.asyncIterator in output) {
+        throw new TypeError('Brainstorm returned an unexpected streaming command result.');
+      }
+      return output as CommandResult;
+    });
+    return;
+  }
   const output = await withPatchApplication(invocation.invocationId,
     (request, context) => handleApplyPatch(cb.dispatch, cb.ctx, request.patchPath, request.force, context),
     async () => withPlanSession(invocation.invocationId, async (request, context) => {

@@ -16,7 +16,7 @@ for (let attempt = 0; !existsSync(gate); attempt++) {
   }
   await setTimeout(20);
 }
-if (mode === 'failure') process.exit(1);
+if (mode === 'failure' || prompt.includes('FAIL_UI_FIXTURE')) process.exit(1);
 console.log(phase === 'draft' ? `draft {
   approach: "Exercise the installed command with deterministic local engines"
   reasoning: "The real parser, dispatch and persistence remain under test"

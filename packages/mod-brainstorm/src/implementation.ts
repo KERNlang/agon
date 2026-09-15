@@ -21,9 +21,17 @@ const cli = Object.freeze({
 const text = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
 const failure = (message: string): CommandResult => ({ exitCode: 1, stderr: message + '\n' });
 
-export async function runBrainstorm(raw: Json, context: BrainstormInvocationContext, services: BrainstormModServices): Promise<CommandResult> {
+function cliRunLines(path: string, statuses: readonly { id: string; status: string }[], quiet: boolean): [string, string] {
+  const succeeded = statuses.filter(seat => seat.status === 'ok').length;
+  const failures = statuses.filter(seat => seat.status !== 'ok').map(seat => `${seat.id}: ${seat.status}`);
+  return [quiet ? path : `AGON_RUN: ${path}`,
+    `AGON_SUMMARY: ${succeeded}/${statuses.length} succeeded${failures.length ? '; ' + failures.join(', ') : ''}`];
+}
+
+export async function runBrainstorm(raw: Json, context: BrainstormInvocationContext, services: BrainstormModServices, cliOutput = false): Promise<CommandResult> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return failure('Provide a Brainstorm request object.');
   const input = raw as Record<string, Json>;
+  const quiet = input.quiet === true || (cliOutput && process.env.AGON_QUIET === '1');
   const extra = Array.isArray(input._) ? input._.map(String).filter(value => value !== input.question) : [];
   const question = [text(input.question), ...extra].filter(Boolean).join(' ').trim();
   if (!question) return failure('Provide a question. Usage: agon brainstorm "question"');
@@ -66,7 +74,9 @@ export async function runBrainstorm(raw: Json, context: BrainstormInvocationCont
       engines: engines.map(id => ({ id, status: 'error', detail: seatDetails.get(id) ?? detail })), summary: detail, ok: false,
     }, context);
     if (context.signal.aborted) throw error;
-    return failure(detail);
+    return { ...failure(detail), ...(cliOutput ? {
+      stdout: cliRunLines(run.path, engines.map(id => ({ id, status: 'error' })), quiet).join('\n') + '\n',
+    } : {}) };
   }
   const bids = new Map(result.bids.map(bid => [bid.engineId, bid]));
   const statuses = engines.map(id => {
@@ -85,9 +95,28 @@ export async function runBrainstorm(raw: Json, context: BrainstormInvocationCont
   await services.receipts.record('brainstorm', {
     winner: result.winner, requested: result.panelHealth.requested, responded: result.panelHealth.responded,
   });
+  let stdout = input.quiet === true ? result.response + '\n' : JSON.stringify(result, null, 2) + '\n';
+  if (cliOutput) {
+    const [path, summary] = cliRunLines(run.path, statuses, quiet);
+    const lines = [path];
+    if (!quiet) {
+      lines.push(`Brainstorm: ${question}`, `Engines: ${engines.join(', ')}`, `Style: ${text(input.style) || 'divergent'}`);
+      if (result.panelHealth.banner) lines.push(`Warning: ${result.panelHealth.banner}`);
+      if (!['applied', 'not-needed'].includes(result.dedup.status)) lines.push(`Dedup ${result.dedup.status}${result.dedup.detail ? ': ' + result.dedup.detail : ''}`);
+      if (result.synthesis.status === 'fallback') lines.push(`Synthesis fallback: ${result.synthesis.detail ?? 'winner expansion failed; showing ranked drafts'}`);
+      lines.push('', 'Bids', 'Engine\tQuality\tConfidence\tReasoning');
+      for (const bid of result.bids) lines.push([
+        (bid.engineId === result.winner ? '* ' : '') + bid.engineId,
+        bid.score == null ? '—' : String(Math.round(bid.score)), String(bid.confidence), bid.reasoning.slice(0, 60),
+      ].join('\t'));
+      lines.push('', `Response from ${result.winner}`, result.response);
+    }
+    lines.push(summary);
+    stdout = lines.join('\n') + '\n';
+  }
   return {
     exitCode: 0, result: result as unknown as Json,
-    stdout: input.quiet === true ? result.response + '\n' : JSON.stringify(result, null, 2) + '\n',
+    stdout,
   };
 }
 
@@ -97,7 +126,9 @@ export const createMod: AgonModFactory = services => ({
     const disposers: Dispose[] = [];
     const run = (input: Json, context: InvocationContext) => runBrainstorm(input, context, services);
     const command = { description: 'Multi-model confidence brainstorm', inputSchema: schema, cli, run };
-    disposers.push(registrar.command('cli', { id: 'cliCommands:0003', ...command }));
+    disposers.push(registrar.command('cli', { id: 'cliCommands:0003', ...command,
+      run: (input, context) => runBrainstorm(input, context, services, true),
+    }));
     disposers.push(registrar.intent({
       id: 'intentVariants:0005', description: 'Parse brainstorm intent', inputSchema: schema,
       parse: input => /^\/brainstorm(?:\s|$)/i.test(input) ? { question: input.replace(/^\/brainstorm\s*/i, '') } : undefined,

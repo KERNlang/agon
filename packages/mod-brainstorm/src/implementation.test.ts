@@ -62,6 +62,42 @@ function harness(outputs: Record<string, unknown>) {
 }
 
 describe('physical brainstorm mod', () => {
+  it('keeps failed quiet runs discoverable without reporting success', async () => {
+    const h = harness({});
+    const result = await runBrainstorm({ question: 'Question', quiet: true }, context, h.services, true);
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toBe('/fixture/run\nAGON_SUMMARY: 0/2 succeeded; alpha: error, beta: error\n');
+  });
+  it('honors AGON_QUIET for CLI output without changing machine output or mutating the environment', async () => {
+    vi.stubEnv('AGON_QUIET', '1');
+    try {
+      const h = harness({ alpha: { exitCode: 0, stdout: '{"approach":"A","confidence":60}' } });
+      const cli = await runBrainstorm({ question: 'Question' }, context, h.services, true);
+      expect(cli.stdout).toBe('/fixture/run\nAGON_SUMMARY: 1/2 succeeded; beta: error\n');
+      const machine = await runBrainstorm({ question: 'Question' }, context, h.services);
+      expect(JSON.parse(machine.stdout!)).toEqual(machine.result);
+      expect(process.env.AGON_QUIET).toBe('1');
+    } finally { vi.unstubAllEnvs(); }
+  });
+  it('keeps quiet CLI output to a run path and outcome summary', async () => {
+    const h = harness({ alpha: { exitCode: 0, stdout: '{"approach":"A","confidence":60}' } });
+    await (await createMod(h.services)).activate(h.registrar);
+    const cli = h.registered.find(entry => entry.surface === 'cli')!.command;
+    const result = await cli.run({ question: 'Question', quiet: true }, context);
+    expect(result.stdout).toBe('/fixture/run\nAGON_SUMMARY: 1/2 succeeded; beta: error\n');
+    expect(result.result).toMatchObject({ winner: 'alpha', response: 'fixture synthesis' });
+  });
+
+  it('renders human CLI quality and confidence separately without changing structured results', async () => {
+    const h = harness({ alpha: { exitCode: 0, stdout: '{"approach":"A","confidence":60}' } });
+    await (await createMod(h.services)).activate(h.registrar);
+    const cli = h.registered.find(entry => entry.surface === 'cli')!.command;
+    const result = await cli.run({ question: 'Question' }, context);
+    expect(result.stdout).toContain('AGON_RUN: /fixture/run');
+    expect(result.stdout).toContain('Engine\tQuality\tConfidence\tReasoning');
+    expect(result.stdout).toContain('Response from alpha\nfixture synthesis');
+    expect(result.stdout).toContain('AGON_SUMMARY: 1/2 succeeded; beta: error');
+  });
   it('carries supplied project context into each real draft prompt', async () => {
     const h = harness({
       alpha: { exitCode: 0, stdout: '{"approach":"A","confidence":60}' },
@@ -135,7 +171,7 @@ describe('physical brainstorm mod', () => {
     await mod.activate(h.registrar, h.services);
     const command = h.registered.find(({ surface }) => surface === 'cli')!.command;
     const result = await command.run({ question: 'What should we build?' }, context);
-    const parsed = JSON.parse((result as { stdout: string }).stdout);
+    const parsed = result.result as any;
     expect(parsed).toMatchObject({ winner: 'beta', response: 'fixture synthesis', panelHealth: { requested: 2, responded: 2, degraded: false } });
     expect(parsed.synthesis?.status).toBe('completed');
     expect(h.dispatch).toHaveBeenCalledTimes(3);
@@ -152,7 +188,7 @@ describe('physical brainstorm mod', () => {
     const mod = await createMod(h.services);
     await mod.activate(h.registrar, h.services);
     const result = await h.registered[0].command.run({ question: 'Question' }, context);
-    const parsed = JSON.parse((result as { stdout: string }).stdout);
+    const parsed = result.result as any;
     expect(parsed.panelHealth).toMatchObject({ requested: 2, responded: 1, degraded: true });
     expect(h.dispatch.mock.calls.filter(([id]) => id === 'beta')).toHaveLength(2);
     expect(h.services.runs!.finish).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ ok: false }), context);

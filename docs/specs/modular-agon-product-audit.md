@@ -24,6 +24,42 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Brainstorm CLI final-output repair (2026-09-15)
+
+The CLI contribution now renders human-readable final bids (quality and
+confidence separately), winner response, degraded-panel/dedup/synthesis warnings,
+`AGON_RUN` and `AGON_SUMMARY`. Quiet CLI output is the plain run directory plus
+the summary, including failed runs. `AGON_QUIET=1` applies to CLI rendering only;
+the mod does not mutate the environment. Machine/TUI/Cesar/MCP invocation paths
+retain their previous structured result and stdout behavior.
+
+Tests first exposed JSON as human output, answer text as quiet output, and a
+missing failure summary. Fixtures now assert exact quiet lines, human headings,
+structured-result preservation and environment isolation. Existing outcome tests
+read the structured `result` instead of parsing human CLI stdout.
+
+`scripts/spec/fixtures/brainstorm-cli-output.mjs` accepts a public built/installed
+package entrypoint URL and checks human/quiet output with injected fixture seats.
+It passed against `packages/mod-brainstorm/dist/index.js` with the provider/login
+guard enabled. This is a built public-entrypoint check, not a complete installed
+launcher/parser test. Reproduce with `node scripts/spec/fixtures/brainstorm-cli-output.mjs`
+followed by the absolute `file:` URL of the candidate package's `dist/index.js`.
+
+**A06 remains open.** This is final-output parity, not byte-identical legacy
+color/table layout. Run-path announcements and seat streaming still arrive only
+at completion on this generated path, not at legacy timing. Installed positive
+terminal/UI verification and independent qualification remain outstanding. Quiet
+mode does not promise silent stderr: workflow warnings retain their existing
+diagnostic behavior. No active/global installation or personal state is changed.
+
+Development verification: full build, typecheck, lint and re-export guard pass;
+6,150 tests pass with five existing skips across 520 files. Full-suite log SHA-256:
+`80a9907c4b40936f8cf43d91533f37b0ab2ee8c864323428b7da1599aaf7ce1d`.
+Build log SHA-256:
+`e07525d95bd5f1d0c88d6c0958299957519099753e340ebad5c7931269b37b98`.
+Logs under `/tmp/agon-brainstorm-verify-7YFkOIQh` are temporary development
+diagnostics, not independent immutable acceptance receipts.
+
 ### Brainstorm scoreboard repair (2026-09-13)
 
 The invocation-local presenter now reuses the existing scoreboard renderer.

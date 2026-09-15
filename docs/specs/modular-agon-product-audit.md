@@ -24,6 +24,39 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Cancelled process-group survivor repair (2026-09-16)
+
+The next shutdown audit found a lower-level leak in both buffered and streaming
+process runners. A group leader could exit on SIGTERM while its child ignored
+SIGTERM and had independent stdio. The leader's `close` handler cleared the
+SIGKILL escalation timer, leaving that child alive. Two real-process tests
+reproduced the leak before the repair; test cleanup explicitly killed the
+fixture group.
+
+The shared engine-runtime package now finishes process-group termination when
+the cancelled/timed-out leader closes, before discarding escalation timers.
+Normal exits do not take this path. Unexpected termination errors are logged;
+an already absent group is expected. Four regressions cover buffered/streaming
+dispatch × cancellation/timeout with a SIGTERM-resistant descendant and require
+ESRCH for its recorded PID after cleanup. These fixtures use temporary paths,
+bounded lifetimes and no provider code.
+
+The same fixture revealed a second defect: a parent's SIGTERM handler exiting
+0 overrode the runner's cancellation/timeout result. Four additional result
+assertions failed before correcting the precedence. Both runners now return
+130 for cancellation and 124 for timeout even when the parent exits cleanly;
+ordinary exits still preserve the child's status.
+
+This proves teardown of descendants that remain in the runner's POSIX process
+group on this Mac. It does not claim containment of children that create a new
+session/process group, nor qualify quitting the entire TUI during active work.
+That broader shutdown check remains open; this leak was repaired first.
+
+Local gates after both fixes: build, typecheck, lint, re-export guard, 6,189
+tests (five existing skips), regenerated package/SBOM checks and all 71
+installed-candidate checks pass. These are development checks, not independent
+native-platform release qualification.
+
 ### Installed Escape cancellation and recovery (2026-09-16)
 
 The installed Brainstorm PTY scenario now covers failure → running-engine

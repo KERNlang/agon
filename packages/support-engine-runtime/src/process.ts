@@ -2,6 +2,20 @@ import { spawn } from 'node:child_process';
 
 import type { DispatchResult } from './types.js';
 
+function terminateRemainingGroup(pid: number | undefined): void {
+  if (!pid) return;
+  // The leader has closed after cancellation. Descendants may have ignored
+  // SIGTERM and detached their stdio; closing the leader's pipes does not
+  // prove that its process group is gone. Finish teardown before dropping
+  // the escalation timer. Normal successful exits do not take this path.
+  try { process.kill(-pid, 'SIGKILL'); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') {
+      console.warn(`[agon] failed to terminate remaining process group ${pid}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+}
+
 export interface SpawnOptions {
   command: string;
   args: string[];
@@ -103,8 +117,9 @@ export async function spawnWithTimeout(opts: SpawnOptions): Promise<DispatchResu
     child.stderr?.on('data', (data) => { stderr += String(data); });
 
     child.on('close', (code: number | null) => {
+      if (aborted || timedOut) terminateRemainingGroup(child.pid);
       finish({
-        exitCode: code ?? (aborted ? 130 : timedOut ? 124 : 1),
+        exitCode: aborted ? 130 : timedOut ? 124 : code ?? 1,
         stdout, stderr,
         durationMs: Date.now() - startTime,
         timedOut,
@@ -225,13 +240,14 @@ export async function* spawnStream(opts: SpawnOptions): AsyncGenerator<string, D
   });
 
   child.on('close', (code: number | null) => {
+    if (aborted || timedOut) terminateRemainingGroup(child.pid);
     clearTimeout(timer);
     if (forceKillTimer) clearTimeout(forceKillTimer);
     if (forceFinishTimer) clearTimeout(forceFinishTimer);
     if (opts.signal) opts.signal.removeEventListener('abort', onAbort);
     done = true;
     closeResult = {
-      exitCode: code ?? (aborted ? 130 : timedOut ? 124 : 1),
+      exitCode: aborted ? 130 : timedOut ? 124 : code ?? 1,
       stdout, stderr,
       durationMs: Date.now() - startTime,
       timedOut,

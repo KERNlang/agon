@@ -26,7 +26,7 @@ export function verifyPackedBrainstormTui(prefix, scratch, env) {
   for (const question of ['Installed fixture question FAIL_UI_FIXTURE', 'Installed fixture question', 'Installed fixture question again']) {
     steps.push({ send: `/brainstorm ${question}`, settle: 100 }, { sendHex: '0d' }, { sleep: 5000 });
   }
-  steps.push({ exit: true });
+  steps.push({ sendHex: '03', settle: 100 }, { sendHex: '03' }, { waitForExit: 5000 });
   const tuiEnv = { ...env, HOME: home, AGON_HOME: home, AGON_MODULAR_HOST_ROOT: join(home, 'modular-host'),
     XDG_CONFIG_HOME: join(home, 'config'), XDG_DATA_HOME: join(home, 'data'), XDG_CACHE_HOME: join(home, 'cache'),
     AGON_NO_UPDATE_CHECK: '1', TERM: 'xterm-256color', PTY_LOG: terminal };
@@ -42,8 +42,9 @@ export function verifyPackedBrainstormTui(prefix, scratch, env) {
   });
   assert.equal(result.error, undefined, String(result.error));
   assert.equal(result.status, 0, result.stderr);
-  // The driver always stops its child at cleanup: its exit code alone proves
-  // nothing. Require actual UI rendering, dispatch and persisted outcomes.
+  assert.deepEqual(JSON.parse(result.stdout), { forced: false, exitCode: 0 });
+  // A clean exit is necessary but not sufficient: require actual dispatch,
+  // rendering and persisted outcomes as well.
   const transcript = readFileSync(terminal, 'utf8').replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '');
   assert.match(transcript, /best draft \(score: \d+, confidence: 80%\)/);
   assert.match(transcript, /PACKED_BRAINSTORM_EXPANSION/);
@@ -58,5 +59,5 @@ export function verifyPackedBrainstormTui(prefix, scratch, env) {
     assert.equal(status.engines[0].id, 'fixture-brainstorm');
   }
   return { id: 'packed-brainstorm-tui', passed: true,
-    detail: 'installed npm bin on real 120x40 PTY: failed slash command then two successful commands, draft presentation, expansion and persisted outcomes; fixture engines; cleanup forced, not graceful-exit qualification' };
+    detail: 'installed npm bin on real 120x40 PTY: failed slash command then two successful commands, draft presentation, expansion, persisted outcomes and idle double-Ctrl+C exit without forced cleanup; fixture engines' };
 }

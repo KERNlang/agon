@@ -13,6 +13,8 @@ Control script is read as JSON lines on stdin:
     {"sendHex": "1b5b41"}  write raw bytes (escape sequences)
     {"sleep": 250}         wait N ms
     {"exit": true}         stop draining, SIGINT the child, wait, exit
+    {"waitForExit": 5000}  require spontaneous child exit within N ms;
+                          report JSON, preserve exit status, timeout = 124
 
 Child output is drained continuously (so the child never blocks on a full pty
 buffer) and discarded; the probe reads its measurements from files instead.
@@ -69,6 +71,23 @@ def main() -> int:
         if not line:
             continue
         step = json.loads(line)
+        if "waitForExit" in step:
+            deadline = time.monotonic() + step["waitForExit"] / 1000.0
+            while True:
+                exited, status = os.waitpid(pid, os.WNOHANG)
+                if exited:
+                    drain(time.monotonic() + 0.05)
+                    code = os.waitstatus_to_exitcode(status)
+                    print(json.dumps({"forced": False, "exitCode": code}))
+                    return code if code >= 0 else 128 - code
+                if time.monotonic() >= deadline:
+                    # Cleanup must never turn a hung application into a pass.
+                    os.kill(pid, signal.SIGKILL)
+                    os.waitpid(pid, 0)
+                    print(json.dumps({"forced": True, "exitCode": None}))
+                    return 124
+                drain(min(deadline, time.monotonic() + 0.02))
+                time.sleep(0.005)
         if step.get("exit"):
             break
         if "sleep" in step:

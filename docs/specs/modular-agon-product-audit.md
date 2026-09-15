@@ -24,6 +24,29 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Installed idle keyboard exit (2026-09-15)
+
+The installed PTY check now sends two Ctrl+C key bytes after its three
+completed Brainstorm runs and requires the app to exit with status 0 within
+five seconds, without any driver cleanup signal. `pty-drive.py` exposes an
+explicit `waitForExit` step: nonzero child exits and signal termination remain
+failures; exceeding the deadline returns 124 even if forced cleanup could
+otherwise exit successfully. Existing performance-probe cleanup is unchanged.
+
+Four subprocess regression tests cover normal exit, exit 7, SIGTERM, and a
+hung child whose SIGINT handler would exit 0. The original driver failed all
+three initial normal/crash/timeout assertions before implementation. The
+installed 71-check qualification passes with the stronger exit requirement.
+
+This supersedes the forced-cleanup limitation of the PTY case below **only
+for idle keyboard exit**. It does not establish shutdown during active work,
+provider-process termination, descendant cleanup, session flush completeness,
+or cross-platform terminal parity. A06 remains open on those dimensions.
+
+Development gates: full build, typecheck, lint, re-export guard, four PTY
+driver tests, full repository suite and the 71 installed checks pass. These
+are local development observations, not independent release qualification.
+
 ### Real slash-command entry point and installed PTY coverage (2026-09-15)
 
 A real terminal probe exposed a gap missed by the component and Cesar-route

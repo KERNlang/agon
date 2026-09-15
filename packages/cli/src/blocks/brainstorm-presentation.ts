@@ -81,10 +81,14 @@ export function createBrainstormPresentation(dispatch: Dispatch) {
       dispatch({ type: 'separator' });
       for (const bid of result.bids) {
         const winner = bid.engineId === result.winner;
-        const score = bid.score != null ? ` (score: ${bid.score})` : '';
+        const metrics = [
+          ...(bid.score != null ? [`score: ${bid.score}`] : []),
+          ...(Number.isFinite(bid.confidence) ? [`confidence: ${bid.confidence}%`] : []),
+        ];
         dispatch({ type: 'kern-draft', engineId: bid.engineId,
           content: bid.reasoning + (bid.approach ? '\n' + bid.approach : ''),
-          critique: (winner ? `${icons().winner} best draft` : `${icons().success} done`) + score });
+          critique: (winner ? `${icons().winner} best draft` : `${icons().success} done`)
+            + (metrics.length ? ` (${metrics.join(', ')})` : '') });
       }
       if (result.panelHealth?.banner) dispatch({ type: 'info', message: `⚠ ${result.panelHealth.banner}` });
       if (result.dedup && !['applied', 'not-needed'].includes(result.dedup.status)) {

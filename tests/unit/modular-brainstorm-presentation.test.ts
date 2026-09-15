@@ -1,8 +1,68 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { createBrainstormPresentation } from '../../packages/cli/src/blocks/brainstorm-presentation.js';
 import { createScoreboard, scoreboardFinishEngine, scoreboardFailEngine, renderScoreboard } from '../../packages/cli/src/cesar/scoreboard.js';
+import { renderBlockOwnRows } from '../../packages/cli/src/surfaces/app-rendering.js';
+import { TranscriptRowView } from '../../packages/cli/src/surfaces/app-views.js';
+import { captureSurfaceFrame } from '../../packages/cli/src/blocks/frame-capture.js';
+import React from 'react';
+import { Box } from 'ink';
 
 afterEach(() => { vi.useRealTimers(); });
+
+it.each([40, 100])('keeps both metrics visible in a %s-column Ink frame', async width => {
+  const dispatch = vi.fn();
+  const view = createBrainstormPresentation(dispatch);
+  try {
+    view.complete({ winner: 'fixture-alpha', response: 'answer', bids: [
+      { engineId: 'fixture-alpha', reasoning: 'First rationale', approach: 'First approach', score: 71, confidence: 0 },
+      { engineId: 'fixture-beta', reasoning: 'Second rationale', approach: 'Second approach', score: 60, confidence: 80 },
+    ] } as never);
+    const events = dispatch.mock.calls.map(([event]) => event).filter(event => event.type === 'kern-draft');
+    const rows = events.flatMap((event, id) => renderBlockOwnRows({ id, event }, 'chat', false, true, width - 4, width - 2, width - 8));
+    const Surface = () => React.createElement(Box, { flexDirection: 'column' },
+      ...rows.map(row => React.createElement(TranscriptRowView, { key: row.key, row })));
+    const frame = await captureSurfaceFrame(Surface, {}, width, 30);
+    // Wraps may split words at small widths. Assert content survives Ink,
+    // not merely that an event object happened to contain the values.
+    const compact = frame.replace(/\s/g, '');
+    expect(compact).toContain('fixture-alpha');
+    expect(compact).toContain('score:71,confidence:0%');
+    expect(compact).toContain('fixture-beta');
+    expect(compact).toContain('score:60,confidence:80%');
+    expect(compact).toContain('Firstrationale');
+    expect(compact).toContain('Secondrationale');
+    expect(compact).not.toContain('undefined');
+  } finally { view.dispose(); }
+});
+
+it.each([0, 80])('renders confidence %s separately from quality in the terminal draft header', confidence => {
+  const dispatch = vi.fn();
+  const view = createBrainstormPresentation(dispatch);
+  try {
+    view.complete({ winner: 'a', response: 'answer', bids: [
+      { engineId: 'a', reasoning: 'why', approach: 'how', score: 71, confidence },
+    ] } as never);
+    const event = dispatch.mock.calls.map(([event]) => event).find(event => event.type === 'kern-draft');
+    const rows = renderBlockOwnRows({ id: 1, event }, 'chat', false, true, 96, 98, 92);
+    const header = rows.find(row => row.key.endsWith('-draft-head'));
+    const text = header.segments.map((segment: { text: string }) => segment.text).join('');
+    expect(text).toContain('score: 71');
+    expect(text).toContain(`confidence: ${confidence}%`);
+    expect(text).not.toContain('71%');
+  } finally { view.dispose(); }
+});
+
+it('does not invent confidence for historical results without it', () => {
+  const dispatch = vi.fn();
+  const view = createBrainstormPresentation(dispatch);
+  try {
+    view.complete({ winner: 'a', response: 'answer', bids: [
+      { engineId: 'a', reasoning: 'why', approach: 'how', score: 71 },
+    ] } as never);
+    const event = dispatch.mock.calls.map(([event]) => event).find(event => event.type === 'kern-draft');
+    expect(event.critique).not.toContain('confidence');
+  } finally { view.dispose(); }
+});
 
 it('shows live seat progress and retries, then stops timers and ignores late events', () => {
   vi.useFakeTimers();

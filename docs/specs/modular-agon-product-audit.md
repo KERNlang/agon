@@ -24,6 +24,38 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Brainstorm terminal draft metrics (2026-09-15)
+
+The modular terminal presenter now displays each bid's confidence separately
+from its quality score. Previously its draft header retained only the score,
+even though the workflow result includes calibrated confidence. The confidence
+label is a model-derived, history-adjusted value, not a measured probability of
+correctness. This changes presentation only; ranking and calibration are not
+recomputed by the UI. Historical results without a finite confidence omit that
+label instead of inventing a value, and zero remains visible.
+
+Two test-first cases reproduced missing confidence in the actual transcript-row
+projection. Additional tests pass the presenter's winner and non-winner draft
+events through `renderBlockOwnRows`, `TranscriptRowView` and Ink's existing
+pseudo-TTY frame capture at 40 and 100 columns. Both metrics and rationale text
+survive terminal wrapping. Existing progress, retry, finalization, fallback and
+session-route cases remain in the focused gate. The unused legacy `BidGroup`
+export is not the active transcript renderer and was not modified.
+
+This is a bounded component-render qualification, not a full interactive
+session or keyboard/resize/cancellation acceptance receipt. **A06 remains
+open**, including installed managed-profile activation, full interactive
+session qualification and independent review. No live engine, login, active
+installation or personal state is used.
+
+Development verification: the 22 focused presenter/session-route checks pass;
+the full suite passes 6,166 tests with five existing skips across 522 files.
+Build, typecheck, lint and re-export checks pass. The release-set and SBOM
+were regenerated for the changed CLI bundle. Full-suite log SHA-256:
+`e7f438616f0ef3d45916ad1b6da1a8d7b8beac957cfaf4f98db2d441153d22dc`.
+Logs in `/tmp/agon-brainstorm-verify-7YFkOIQh` remain development diagnostics,
+not independent immutable release acceptance receipts.
+
 ### Installed Brainstorm command qualification (2026-09-15)
 
 `scripts/spec/verify-packed-brainstorm.mjs` now runs as part of the existing

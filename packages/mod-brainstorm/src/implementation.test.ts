@@ -62,6 +62,64 @@ function harness(outputs: Record<string, unknown>) {
 }
 
 describe('physical brainstorm mod', () => {
+  it('stops streaming late seat completions after a workflow rejection', async () => {
+    const h = harness({});
+    const chunks: string[] = [];
+    let release!: (value: any) => void;
+    const late = new Promise<any>(resolve => { release = resolve; });
+    const open = h.services.brainstorm!.open;
+    const services: BrainstormModServices = { ...h.services, brainstorm: {
+      writeCliOutput: chunk => { chunks.push(chunk); },
+      open: async invocation => ({ ...await open(invocation), selectSeat: (_options, engineId) => async () => {
+        if (engineId === 'alpha') throw new Error('fixture rejected');
+        return late;
+      } }),
+    } };
+    const result = await runBrainstorm({ question: 'Question' }, context, services, true);
+    expect(result.exitCode).toBe(1);
+    const count = chunks.length;
+    release({ engineId: 'beta', ok: true, text: '{"approach":"late","confidence":70}', attempts: 1 });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(chunks).toHaveLength(count);
+  });
+  it.each([false, true])('announces the run before preflight and streams seats only outside quiet mode (%s)', async quiet => {
+    const h = harness({ alpha: { exitCode: 0, stdout: '{"approach":"A","confidence":60}' } });
+    const chunks: string[] = [];
+    const open = h.services.brainstorm!.open;
+    const services: BrainstormModServices = { ...h.services, brainstorm: {
+      writeCliOutput: (chunk: string) => { chunks.push(chunk); },
+      open: async invocation => ({ ...await open(invocation), preflight: async options => {
+        expect(chunks.join('')).toContain(quiet ? '/fixture/run\n' : 'AGON_RUN: /fixture/run\n');
+        return { healthy: options.engines, skipped: [] };
+      } }),
+    } };
+    const result = await runBrainstorm({ question: 'Question', quiet }, context, services, true);
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).not.toContain('/fixture/run');
+    expect(chunks.join('')).toContain(quiet ? '/fixture/run\n' : 'alpha: 1 attempt(s)');
+    if (quiet) expect(chunks).toEqual(['/fixture/run\n']);
+    else expect(chunks.join('')).toContain('beta: failed');
+    expect(result.stdout).toContain('AGON_SUMMARY: 1/2 succeeded; beta: error');
+  });
+
+  it('never uses the CLI writer for machine invocations', async () => {
+    const h = harness({ alpha: { exitCode: 0, stdout: '{"approach":"A","confidence":60}' } });
+    const writeCliOutput = vi.fn();
+    const services = { ...h.services, brainstorm: { ...h.services.brainstorm!, writeCliOutput } };
+    const result = await runBrainstorm({ question: 'Question' }, context, services);
+    expect(JSON.parse(result.stdout!)).toEqual(result.result);
+    expect(writeCliOutput).not.toHaveBeenCalled();
+  });
+
+  it('does not repeat the streamed run path when the workflow fails', async () => {
+    const h = harness({});
+    const writeCliOutput = vi.fn();
+    const services = { ...h.services, brainstorm: { ...h.services.brainstorm!, writeCliOutput } };
+    const result = await runBrainstorm({ question: 'Question', quiet: true }, context, services, true);
+    expect(writeCliOutput).toHaveBeenCalledExactlyOnceWith('/fixture/run\n');
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toBe('AGON_SUMMARY: 0/2 succeeded; alpha: error, beta: error\n');
+  });
   it('keeps failed quiet runs discoverable without reporting success', async () => {
     const h = harness({});
     const result = await runBrainstorm({ question: 'Question', quiet: true }, context, h.services, true);

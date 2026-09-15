@@ -42,7 +42,10 @@ beforeEach(() => { vi.clearAllMocks(); fixture.dispatch.mockResolvedValue(result
 describe.each([decorateCliFirstPartyServices, decorateMcpFirstPartyServices])('Brainstorm host wiring', decorate => {
   it.each(['agon.brainstorm', 'agon.pipeline-orchestration'])('provides host effects to the bundled %s consumer', id => {
     const services = decorate({ id } as never, {} as never);
-    expect(services).toHaveProperty('brainstorm', fixture.brainstorm);
+    const expected = decorate === decorateCliFirstPartyServices && id === 'agon.brainstorm'
+      ? { ...fixture.brainstorm, writeCliOutput: expect.any(Function) }
+      : fixture.brainstorm;
+    expect(services).toHaveProperty('brainstorm', expected);
     expect(fixture.brainstorm.open).not.toHaveBeenCalled();
   });
   it('does not expose the capability to unrelated mods', () => {

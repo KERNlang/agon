@@ -10,6 +10,8 @@ export interface BrainstormInvocationContext extends InvocationContext {
 /** Bundled host integration only; no workflow implementation is supplied here. */
 export interface BrainstormHostServices {
   open(context: InvocationContext): Awaitable<BrainstormRuntimeServices<BrainstormWorkflowOptions>>;
+  /** Optional terminal sink. Used only by the CLI contribution, never MCP/TUI. */
+  writeCliOutput?(text: string): void;
 }
 
 export interface BrainstormModServices extends ModServices {

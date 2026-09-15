@@ -221,8 +221,8 @@
         "agon.panel"
       ],
       "sourceLocator": "@kernlang/agon-mod-brainstorm@1.0.0",
-      "integrity": "sha512-PmC8ef5GUFP+b24NhoS3XZq9fLx4VEbZcrNX5IK9qchDeWrf6ZfBlXkk0G3fLGtwDE5vMZStkw1xtAhLV4ZDJA==",
-      "contentHash": "sha256:30c305f7ec13bf7e36c87c93d3abf120a5cce3c139ba313b6d14608ac306516e",
+      "integrity": "sha512-jAMCMM/w5Hk+8vrCfgjD+I4F5rpWv5hGrSjXICqO/JxPDyEH5GGjITAceOiaKY9eFxOQJN7tq1AMiCjZnxMZaA==",
+      "contentHash": "sha256:82fd7f05886124dd9874e31860347ee6dfa651707b1a9e4c28cc96d93609f0e1",
       "manifestHash": "sha256:e6ddd76523c79e1bdedcedf4b29bdaa18f94452df2c4933cf7cb2529cd1d8cb2"
     },
     {

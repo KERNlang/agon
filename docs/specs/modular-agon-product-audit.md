@@ -24,6 +24,45 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Brainstorm CLI streaming repair (2026-09-15)
+
+The existing bundled Brainstorm host interface now accepts an optional
+`writeCliOutput` sink. Only the CLI host for `agon.brainstorm` supplies stdout;
+the pipeline host does not gain it, and the common Mod API is unchanged.
+Only the CLI contribution consumes the sink. A host without it retains buffered
+final output, preserving the prior embedded invocation behavior.
+
+The run path is emitted after run creation and before workflow preflight.
+Human mode emits the question/roster/style header and each completed seat's
+attempt count or failure detail. Quiet mode emits the bare path without those
+lines. Final success/failure output emits the summary without repeating the
+already announced path. Streaming is disabled as soon as workflow rejection is
+observed and on normal completion, preventing late seat callbacks from printing
+after the command ends. Raw workflow observer semantics remain unchanged.
+
+Test-first evidence covers early ordering, human/quiet behavior, failure-path
+deduplication, machine-output isolation, late completions, and CLI host wiring.
+The late-callback regression initially observed a third output chunk after a
+failed run had already returned; it now remains at two. The reusable public
+entrypoint fixture also covers buffered and streaming human/quiet output.
+
+**A06 remains open:** actual installed launcher/parser and terminal/UI visual
+qualification, exact legacy styling, and independent review remain outstanding.
+The sink uses the CLI's existing synchronous stdout-write convention; this is
+not a new generic backpressure or asynchronous streaming API. No active/global
+installation, personal state or provider login is used by these checks.
+
+Development checks: full package build followed by a CLI rebuild after the
+host-construction cleanup; typecheck, lint and re-export guard pass. The complete
+suite passes 6,156 tests with five existing skips across 521 files. Full-suite
+log SHA-256: `84528d289fb8dd3ab16436d6a73ad14456e6519bd3552bc5b3fbf626704f498b`.
+Final CLI build log SHA-256:
+`a4a732f110225051d76193c8a3d837a32c32b3a4100e1884ff0fb1a7b6c86375`.
+Temporary logs under `/tmp/agon-brainstorm-verify-7YFkOIQh` are development
+diagnostics, not independent immutable acceptance receipts. The initial suite
+caught an outdated exact host-shape assertion; it now explicitly allows the
+writer on CLI Brainstorm only, retaining exact shapes for MCP and pipeline.
+
 ### Brainstorm CLI final-output repair (2026-09-15)
 
 The CLI contribution now renders human-readable final bids (quality and

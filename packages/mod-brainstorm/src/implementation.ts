@@ -49,9 +49,17 @@ export async function runBrainstorm(raw: Json, context: BrainstormInvocationCont
   const runtime = createBrainstormRuntime(capabilities);
   const label = text(input.label) || undefined;
   const run = await services.runs.start('brainstorm', label, context);
+  const writeCliOutput = cliOutput ? services.brainstorm.writeCliOutput : undefined;
+  let announced = false;
+  let streaming = true;
   const seatDetails = new Map<string, string>();
   let result: Awaited<ReturnType<typeof runtime.runBrainstorm>>;
   try {
+    if (writeCliOutput) {
+      writeCliOutput((quiet ? run.path : `AGON_RUN: ${run.path}`) + '\n');
+      announced = true;
+      if (!quiet) writeCliOutput(`Brainstorm: ${question}\nEngines: ${engines.join(', ')}\nStyle: ${text(input.style) || 'divergent'}\n`);
+    }
     result = await runtime.runBrainstorm({
       question, context: text(input.context) || undefined, engines, timeout,
       style: text(input.style) || 'divergent', outputDir: run.path, signal: context.signal,
@@ -60,6 +68,7 @@ export async function runBrainstorm(raw: Json, context: BrainstormInvocationCont
         if (event.type === 'brainstorm:seat-completed' && typeof data?.engineId === 'string') {
           seatDetails.set(data.engineId, data.ok === true ? `${Number(data.attempts ?? 1)} attempt(s)`
             : String(data.detail ?? data.failure ?? 'no usable response'));
+          if (streaming && writeCliOutput && !quiet) writeCliOutput(`${data.ok === true ? 'OK' : 'FAIL'} ${data.engineId}: ${seatDetails.get(data.engineId)}\n`);
         }
         context.onWorkflowEvent?.(event);
       },
@@ -68,6 +77,7 @@ export async function runBrainstorm(raw: Json, context: BrainstormInvocationCont
     // reinterpret an operator cancellation as successful completion.
     context.signal.throwIfAborted();
   } catch (error) {
+    streaming = false;
     const detail = error instanceof Error ? error.message : String(error);
     await services.runs.finish(run, {
       mode: 'brainstorm', ...(label ? { label } : {}), startedAt: run.startedAt, endedAt: new Date().toISOString(),
@@ -75,8 +85,10 @@ export async function runBrainstorm(raw: Json, context: BrainstormInvocationCont
     }, context);
     if (context.signal.aborted) throw error;
     return { ...failure(detail), ...(cliOutput ? {
-      stdout: cliRunLines(run.path, engines.map(id => ({ id, status: 'error' })), quiet).join('\n') + '\n',
+      stdout: cliRunLines(run.path, engines.map(id => ({ id, status: 'error' })), quiet).slice(announced ? 1 : 0).join('\n') + '\n',
     } : {}) };
+  } finally {
+    streaming = false;
   }
   const bids = new Map(result.bids.map(bid => [bid.engineId, bid]));
   const statuses = engines.map(id => {
@@ -98,9 +110,9 @@ export async function runBrainstorm(raw: Json, context: BrainstormInvocationCont
   let stdout = input.quiet === true ? result.response + '\n' : JSON.stringify(result, null, 2) + '\n';
   if (cliOutput) {
     const [path, summary] = cliRunLines(run.path, statuses, quiet);
-    const lines = [path];
+    const lines = announced ? [] : [path];
     if (!quiet) {
-      lines.push(`Brainstorm: ${question}`, `Engines: ${engines.join(', ')}`, `Style: ${text(input.style) || 'divergent'}`);
+      if (!announced) lines.push(`Brainstorm: ${question}`, `Engines: ${engines.join(', ')}`, `Style: ${text(input.style) || 'divergent'}`);
       if (result.panelHealth.banner) lines.push(`Warning: ${result.panelHealth.banner}`);
       if (!['applied', 'not-needed'].includes(result.dedup.status)) lines.push(`Dedup ${result.dedup.status}${result.dedup.detail ? ': ' + result.dedup.detail : ''}`);
       if (result.synthesis.status === 'fallback') lines.push(`Synthesis fallback: ${result.synthesis.detail ?? 'winner expansion failed; showing ranked drafts'}`);

@@ -85,10 +85,17 @@ export function decorateCliFirstPartyServices(manifest: ModManifest, base: ModSe
       }
     },
   }) : undefined;
-  return Object.freeze({ ...base, runs, ...(browser ? { browser } : {}), ...(workspace ? { workspace } : {}),
-    ...(manifest.id === 'agon.brainstorm' || manifest.id === 'agon.pipeline-orchestration' ? { brainstorm: createBrainstormHostServices(() => {
+  const usesBrainstorm = manifest.id === 'agon.brainstorm' || manifest.id === 'agon.pipeline-orchestration';
+  const brainstorm = usesBrainstorm ? {
+    ...createBrainstormHostServices(() => {
       const registry = new EngineRegistry(); registry.load(resolveBuiltinEnginesDir()); return registry;
-    }, createCliAdapter) } : {}),
+    }, createCliAdapter),
+    ...(manifest.id === 'agon.brainstorm' ? {
+      writeCliOutput(text: string): void { process.stdout.write(text); },
+    } : {}),
+  } : undefined;
+  return Object.freeze({ ...base, runs, ...(browser ? { browser } : {}), ...(workspace ? { workspace } : {}),
+    ...(brainstorm ? { brainstorm } : {}),
     ...(manifest.id === 'agon.forge' ? { patchApplication: patchApplicationHost } : {}),
     ...(manifest.id === 'agon.plan' ? { planSession: planSessionHost } : {}), engines: createCliEngineServices() });
 }

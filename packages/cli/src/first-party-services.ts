@@ -1,8 +1,7 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { cliRunRecordHost } from './run-record-host.js';
 import { patchApplicationHost } from './patch-application-host.js';
 import { planSessionHost } from './plan-session-host.js';
-import { dirname, resolve, sep } from 'node:path';
-import { EngineRegistry, createRunDir, eventLogFlush, getRatings, loadConfig, pickTopRatedEngine, setSessionRoot, writeRunStatus } from '@kernlang/agon-core';
+import { EngineRegistry, createRunDir, eventLogFlush, getRatings, loadConfig, pickTopRatedEngine, setSessionRoot } from '@kernlang/agon-core';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { createBrainstormHostServices } from '@kernlang/agon-core';
 import type { Json, ModManifest, ModServices } from '@kernlang/agon-mod-api';
@@ -15,19 +14,7 @@ import { runExtInstall, runExtNativeHost } from './commands/ext.js';
 import { runBrowserHostInstall, runBrowserHostStatus, runBrowserHostStop, runBrowserHostUninstall } from './commands/browser-host.js';
 
 export function decorateCliFirstPartyServices(manifest: ModManifest, base: ModServices): ModServices {
-  const runs = Object.freeze({
-    start(mode: string, label: string | undefined) {
-      const startedAt = new Date().toISOString();
-      const created = createRunDir({ mode, label, announce: false });
-      return Object.freeze({ id: created.id, path: created.path, mode, startedAt });
-    },
-    finish(handle: { path: string }, status: Json): void { writeRunStatus(handle.path, status as never); },
-    writeArtifact(handle: { path: string }, relativePath: string, content: string): void {
-      const root = resolve(handle.path); const target = resolve(root, relativePath);
-      if (target === root || !target.startsWith(root + sep)) throw new Error(`Run artifact escapes its run directory: ${relativePath}`);
-      mkdirSync(dirname(target), { recursive: true }); writeFileSync(target, content, 'utf8');
-    },
-  });
+  const runs = cliRunRecordHost;
   const workspace = manifest.id === 'agon.worktrees' ? Object.freeze({
     setSessionRoot(path: string): void { setSessionRoot(path); },
   }) : undefined;

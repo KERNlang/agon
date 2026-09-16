@@ -24,6 +24,37 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Durable explanation after active host exit (2026-09-16)
+
+The restart check demonstrated that active TUI exit stopped the fixture engine
+but left no `status.json`: a fresh installed `agon last --status` returned 1
+with the existing missing-status warning. That warning was honest, not a false
+success, but did not explain the host-controlled interruption.
+
+`run-record-host.ts` now owns the CLI's existing first-party run service. It
+tracks only handles started through that service and uses one lazy exit
+handler to write an unsuccessful record for unfinished runs. The record says
+the host exited before finalization, retains partial artifacts, and explicitly
+does not claim automatic resumption. Engine outcomes are left empty rather
+than fabricated. Existing status files are never replaced by exit cleanup;
+normal finish preserves workflow-supplied status bytes and releases tracking.
+No public API or persisted status schema changed.
+
+Tests cover interrupted records, retained artifacts, unowned runs left alone,
+completed/already-written outcomes unchanged, concurrent handler cleanup, and
+artifact traversal rejection. The installed exit case additionally launches a
+fresh process to read `last --status`; its missing-status assertion failed
+before implementation. This is limited final-outcome persistence on a normal
+host exit, not transactionally complete session/telemetry/checkpoint flushing.
+SIGKILL/power loss, disk-write failure, cross-process stale-run recovery and
+actual resumable workflow reconstruction remain open. Writes retain the
+existing persistence service's logged best-effort error behavior.
+
+Local gates pass: build, typecheck, lint, re-export guard, 6,197 tests (five
+existing skips), package/SBOM checks and 72 installed checks including the
+fresh-process interrupted-status read. This does not close whole-product
+release qualification or automatic recovery/resumption.
+
 ### Active TUI exit: owned-process safeguard (2026-09-16)
 
 A real PTY probe started a long-running fixture engine and pressed Ctrl+C

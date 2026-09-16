@@ -67,8 +67,17 @@ export async function verifyPackedBrainstormTui(prefix, scratch, env, { activeEx
     }
     assert.ok(gone, 'Exiting TUI must not orphan its running fixture engine');
     assert.deepEqual(readFileSync(log, 'utf8').trim().split('\n'), ['draft']);
+    const last = spawnSync(process.execPath, ['--import', join(import.meta.dirname, 'fixtures/guard-brainstorm-effects.mjs'),
+      join(prefix, 'node_modules/.bin/agon'), 'last', '--status'], {
+      cwd: scratch, encoding: 'utf8', timeout: 10_000, env: tuiEnv,
+    });
+    assert.equal(last.status, 0, last.stderr);
+    const interrupted = JSON.parse(last.stdout);
+    assert.equal(interrupted.ok, false);
+    assert.equal(interrupted.mode, 'brainstorm');
+    assert.match(interrupted.summary, /host exited before finalization/i);
     return { id: 'packed-brainstorm-active-exit', passed: true,
-      detail: 'double-Ctrl+C while fixture engine is running: app exits 0 without driver force and owned engine PID disappears; emergency process cleanup, not graceful persistence qualification' };
+      detail: 'double-Ctrl+C during fixture work: unforced app exit, owned engine disappears, fresh last --status reads unsuccessful host-exit record; no automatic resume or full session-finalization claim' };
   }
   // A clean exit is necessary but not sufficient: require actual dispatch,
   // rendering and persisted outcomes as well.

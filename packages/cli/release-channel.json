@@ -748,8 +748,8 @@
         "agon.persistence"
       ],
       "sourceLocator": "@kernlang/agon-mod-history@1.0.0",
-      "integrity": "sha512-9v8nYBzRGGgBPxaNzQX6QedRU8WSDsxMdCtMHYJOmQ+8gMS6LT0Yiq+NNnR96naRaxA0TLj+t0eT5KywZKoIOA==",
-      "contentHash": "sha256:d561a51d019ff61075cc946e00fef33920a430f2b451a80abd3013c19d796f73",
+      "integrity": "sha512-35O0plNu3nlE3WtZqz1e1Ge+WIMuySoPkdAIZjbvx+vPb/e3QtrtS9ggJhq/vYYTnPx8mJzv7aRVarA4PqVURQ==",
+      "contentHash": "sha256:bd275efbb2be31dc87fa56accb5d09e7ec31f5cb0b49fafb5c9fb8e15b6da815",
       "manifestHash": "sha256:31b601e355462563bf5f896a5cf1ce420c4c6d341ec377da0af5356d2ca6614d"
     },
     {

@@ -47,7 +47,7 @@ export const lastCommand: any = defineCommand({
     if (args.status) {
       const statusPath = join(dir, 'status.json');
       if (!existsSync(statusPath)) {
-        process.stderr.write(`agon last: ${dir}/status.json is missing — run may have crashed before finalizing\n`);
+        process.stderr.write(`agon last: ${dir}/status.json is missing — run may still be running or may have been interrupted; inspect partial artifacts before retrying. No final outcome is available\n`);
         process.exit(1);
         return;
       }

@@ -24,6 +24,42 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Abrupt host death and unresolved ownership (2026-09-16)
+
+The run-record exit handler cannot execute after SIGKILL or an unhandled
+SIGTERM. Run directories currently contain no durable host identity suitable
+for deciding whether an unfinished run is still owned by a live process.
+Missing `status.json` therefore cannot establish either success or a crash.
+
+`modular-run-abrupt-exit.test.ts` starts an isolated host using transpiled
+current run-service source and the built persistence package. It writes a
+partial artifact, then launches separate reader processes before and after
+real SIGKILL/SIGTERM termination. Both reads must return an unsuccessful
+missing-result diagnostic without fabricating `status.json`, changing the
+partial artifact, or retrying the workflow. The signal assertion verifies
+actual termination rather than treating fixture cleanup as the test result.
+The new diagnostic assertion failed against the old crash-only warning
+before the warning was updated in both modular and compatibility commands.
+
+The warning now says the run may still be running or may have been
+interrupted and asks the operator to inspect partial artifacts before
+retrying. This is a diagnostic correction, not a liveness detector or crash
+recovery implementation. Tests use no providers or personal configuration.
+They do not establish power-loss durability, descendant cleanup following
+SIGKILL, installed-binary signal handling, or workflow resumption.
+
+Remaining recovery design must bind ownership to a host incarnation (not
+just a reusable PID), distinguish unknown from confirmed-dead ownership,
+preserve finalized outcomes, and prevent concurrent recovery from replaying
+effects twice. A06 remains open; no recovery or release acceptance is claimed.
+
+Development verification: full build, typecheck, lint, re-export guard,
+6,199 tests (five existing skips), release-set packs, supply-chain self-test,
+and all 72 isolated npx checks passed. The latter retains the installed normal
+exit regression; the new abrupt-death checks are source-level subprocess
+tests, not an expansion of installed recovery coverage. These development
+checks are not an independent release-acceptance receipt.
+
 ### Durable explanation after active host exit (2026-09-16)
 
 The restart check demonstrated that active TUI exit stopped the fixture engine

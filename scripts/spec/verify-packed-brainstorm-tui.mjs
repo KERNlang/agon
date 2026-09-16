@@ -2,10 +2,11 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 
 /** Real PTY and installed npm bin. The engine alone is a local protocol fixture. */
-export function verifyPackedBrainstormTui(prefix, scratch, env) {
-  const home = join(scratch, 'brainstorm-tui');
+export async function verifyPackedBrainstormTui(prefix, scratch, env, { activeExit = false } = {}) {
+  const home = join(scratch, activeExit ? 'brainstorm-active-exit' : 'brainstorm-tui');
   const gate = join(home, 'gate');
   const log = join(home, 'engine-calls');
   const terminal = join(home, 'terminal.log');
@@ -23,7 +24,10 @@ export function verifyPackedBrainstormTui(prefix, scratch, env) {
     cesarAutoModePrompted: true, isolationMigrationNotified: true, resumePausedPlanOnStartup: false,
   }));
   const steps = [{ sleep: 2500 }];
-  for (const question of ['Installed fixture question FAIL_UI_FIXTURE', 'Installed fixture question', 'Installed fixture question again']) {
+  if (activeExit) {
+    steps.push({ send: '/brainstorm Installed fixture question CANCEL_UI_FIXTURE', settle: 100 },
+      { sendHex: '0d' }, { waitForFile: `${log}.started`, timeout: 5000 });
+  } else for (const question of ['Installed fixture question FAIL_UI_FIXTURE', 'Installed fixture question', 'Installed fixture question again']) {
     steps.push({ send: `/brainstorm ${question}`, settle: 100 }, { sendHex: '0d' }, { sleep: 5000 });
     if (question.includes('FAIL_UI_FIXTURE')) {
       steps.push({ send: '/brainstorm Installed fixture question CANCEL_UI_FIXTURE', settle: 100 },
@@ -48,6 +52,24 @@ export function verifyPackedBrainstormTui(prefix, scratch, env) {
   assert.equal(result.error, undefined, String(result.error));
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), { forced: false, exitCode: 0 });
+  if (activeExit) {
+    const { pid } = JSON.parse(readFileSync(`${log}.started`, 'utf8'));
+    assert.ok(Number.isSafeInteger(pid) && pid > 0, 'Fixture must publish a positive PID');
+    let gone = false;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      try { process.kill(pid, 0); }
+      catch (error) {
+        if (error.code !== 'ESRCH') throw error;
+        gone = true;
+        break;
+      }
+      await delay(10);
+    }
+    assert.ok(gone, 'Exiting TUI must not orphan its running fixture engine');
+    assert.deepEqual(readFileSync(log, 'utf8').trim().split('\n'), ['draft']);
+    return { id: 'packed-brainstorm-active-exit', passed: true,
+      detail: 'double-Ctrl+C while fixture engine is running: app exits 0 without driver force and owned engine PID disappears; emergency process cleanup, not graceful persistence qualification' };
+  }
   // A clean exit is necessary but not sufficient: require actual dispatch,
   // rendering and persisted outcomes as well.
   const transcript = readFileSync(terminal, 'utf8').replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '');
@@ -57,6 +79,7 @@ export function verifyPackedBrainstormTui(prefix, scratch, env) {
   assert.match(transcript, /no engine produced a usable draft/);
   assert.deepEqual(readFileSync(log, 'utf8').trim().split('\n'), ['draft', 'draft', 'draft', 'draft', 'expansion', 'draft', 'expansion']);
   const started = JSON.parse(readFileSync(`${log}.started`, 'utf8'));
+  assert.ok(Number.isSafeInteger(started.pid) && started.pid > 0, 'Fixture must publish a positive PID');
   const stopped = JSON.parse(readFileSync(`${log}.stopped`, 'utf8'));
   assert.equal(stopped.pid, started.pid);
   assert.ok(['SIGTERM', 'SIGINT'].includes(stopped.signal));

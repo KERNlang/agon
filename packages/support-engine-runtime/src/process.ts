@@ -2,6 +2,25 @@ import { spawn } from 'node:child_process';
 
 import type { DispatchResult } from './types.js';
 
+const ownedProcessGroups = new Set<number>();
+
+function terminateOwnedProcessesOnExit(): void {
+  // `exit` handlers cannot await graceful cancellation. This is the final
+  // synchronous safeguard for owned groups, not a persistence flush.
+  for (const pid of ownedProcessGroups) terminateRemainingGroup(pid);
+  ownedProcessGroups.clear();
+}
+
+function trackOwnedProcess(pid: number | undefined): () => void {
+  if (!pid) return () => {};
+  if (ownedProcessGroups.size === 0) process.on('exit', terminateOwnedProcessesOnExit);
+  ownedProcessGroups.add(pid);
+  return () => {
+    ownedProcessGroups.delete(pid);
+    if (ownedProcessGroups.size === 0) process.removeListener('exit', terminateOwnedProcessesOnExit);
+  };
+}
+
 function terminateRemainingGroup(pid: number | undefined): void {
   if (!pid) return;
   // The leader has closed after cancellation. Descendants may have ignored
@@ -58,6 +77,7 @@ export async function spawnWithTimeout(opts: SpawnOptions): Promise<DispatchResu
       stdio: [opts.useStdin ? 'pipe' : 'ignore', 'pipe', 'pipe'],
       detached: true,
     });
+    const releaseOwnership = trackOwnedProcess(child.pid);
     if (child.pid && opts.onSpawn) opts.onSpawn(child.pid);
 
     const timer = setTimeout(() => {
@@ -118,6 +138,7 @@ export async function spawnWithTimeout(opts: SpawnOptions): Promise<DispatchResu
 
     child.on('close', (code: number | null) => {
       if (aborted || timedOut) terminateRemainingGroup(child.pid);
+      releaseOwnership();
       finish({
         exitCode: aborted ? 130 : timedOut ? 124 : code ?? 1,
         stdout, stderr,
@@ -159,6 +180,7 @@ export async function* spawnStream(opts: SpawnOptions): AsyncGenerator<string, D
     stdio: [opts.useStdin ? 'pipe' : 'ignore', 'pipe', 'pipe'],
     detached: true,
   });
+  const releaseOwnership = trackOwnedProcess(child.pid);
   if (child.pid && opts.onSpawn) opts.onSpawn(child.pid);
 
   const timer = setTimeout(() => {
@@ -241,6 +263,7 @@ export async function* spawnStream(opts: SpawnOptions): AsyncGenerator<string, D
 
   child.on('close', (code: number | null) => {
     if (aborted || timedOut) terminateRemainingGroup(child.pid);
+    releaseOwnership();
     clearTimeout(timer);
     if (forceKillTimer) clearTimeout(forceKillTimer);
     if (forceFinishTimer) clearTimeout(forceFinishTimer);

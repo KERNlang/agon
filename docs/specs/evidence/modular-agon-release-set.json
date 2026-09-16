@@ -79,7 +79,7 @@
         "range": "^19.2.0"
       }
     ],
-    "packedBytes": 1249822,
+    "packedBytes": 1249818,
     "unpackedBytes": 5618253,
     "fileCount": 101,
     "files": [
@@ -488,9 +488,9 @@
         "size": 36190
       }
     ],
-    "integrity": "sha512-GSQGbWGhWbkTjAKchoFxz56ROEP42RumKZT6EdGXGm6wFEKk8m+cx9xxt7YVd/S026aZpdecPYWv+18Z/+1ibw==",
-    "shasum": "30e7aac41a2e0571c686667bfde5babc41118844",
-    "tarballHash": "sha256:65c1aac97c13e8b5aa05c685db349fa3589d92643f9e38742f3d4bf3dc3583a1",
+    "integrity": "sha512-6elZIkLyk2WtpagSkjAdPQDJnClzU4iynMl8Zgs8/npxa2ddm4kRv0Y6StcySThJ8XqfplMu1IYJBzr5bfpd7g==",
+    "shasum": "b563d961bd08f2f66fbdd1b78ab64221183971ee",
+    "tarballHash": "sha256:68ea38f92c30c9370dc1edc4113c1635b321d41dbd057e1172e8be8e67cb0b1d",
     "packageJsonHash": "sha256:99322f3dba4b7480ebd55ec8dc39fc1fe95a7c2d4d2e5953d9712c34a83bf575"
   },
   "packages": [
@@ -920,8 +920,8 @@
       "dependencies": [
         "@kernlang/agon-kernel"
       ],
-      "packedBytes": 23131,
-      "unpackedBytes": 84557,
+      "packedBytes": 23262,
+      "unpackedBytes": 85267,
       "fileCount": 28,
       "files": [
         {
@@ -954,7 +954,7 @@
         },
         {
           "path": "dist/index.js",
-          "size": 37319
+          "size": 38029
         },
         {
           "path": "dist/isolation.d.ts",
@@ -1037,9 +1037,9 @@
           "size": 3181
         }
       ],
-      "integrity": "sha512-iVmoTc+dhti6TsBhy/7wHn5bnH1i2MUxH/5JWjL51v5Y6NkjETM8vZAgw50qHBnJJz+9yp/xVxhSC4TIEDnPnQ==",
-      "shasum": "bcfc5922f641104c11fb790cbd191c3b6fc77794",
-      "tarballHash": "sha256:cce0041f1ef500d16c5987183aa44e2581f4b8e2bb5b93c90a52e479fc02db94",
+      "integrity": "sha512-tB5arW346Le01xrE2OiCOlT3qBtOnYk9Ic4HApTGecUJQiiIN3J6ucgiR2vXKyuueZAHeArG8Nml4EyQnSx9ww==",
+      "shasum": "4f8ff5d41b32ff10707c2409d500e65a1c452020",
+      "tarballHash": "sha256:993c3bea2d3ced953406c49c78924cf36311959578bfbb58b698d8fa20ee206b",
       "packageJsonHash": "sha256:ceb6dc581e02ccfabe5d4fd042fcbab72d2b0fc3b64a34feedb155c0d9fa4362",
       "manifestHash": "sha256:ceb6dc581e02ccfabe5d4fd042fcbab72d2b0fc3b64a34feedb155c0d9fa4362"
     },

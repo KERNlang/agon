@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, writeFileSync, renameSync } from 'node:fs';
 import { setTimeout } from 'node:timers/promises';
 
 // No model: deterministic protocol participant for installed CLI qualification.
@@ -18,13 +18,18 @@ for (let attempt = 0; !existsSync(gate); attempt++) {
 }
 if (mode === 'failure' || prompt.includes('FAIL_UI_FIXTURE')) process.exit(1);
 if (prompt.includes('CANCEL_UI_FIXTURE')) {
+  const publish = (suffix, value) => {
+    const path = `${log}.${suffix}`;
+    writeFileSync(`${path}.tmp`, JSON.stringify(value));
+    renameSync(`${path}.tmp`, path);
+  };
   for (const signal of ['SIGTERM', 'SIGINT']) {
     process.once(signal, () => {
-      writeFileSync(`${log}.stopped`, JSON.stringify({ pid: process.pid, signal }));
+      publish('stopped', { pid: process.pid, signal });
       process.exit(0);
     });
   }
-  writeFileSync(`${log}.started`, JSON.stringify({ pid: process.pid }));
+  publish('started', { pid: process.pid });
   // A broken cancellation path stays distinguishable from normal completion.
   await setTimeout(30_000);
   process.stderr.write('Cancellation fixture reached its safety timeout\n');

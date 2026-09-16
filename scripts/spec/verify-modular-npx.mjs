@@ -53,7 +53,8 @@ try {
   requireOk('ephemeral-npx-hydration', run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--save=false', '--omit=optional', '--offline', '--prefix', ephemeral, launcherTarball, ...Object.values(tarballs)], { cwd: ephemeral }));
   checks.push(await verifyPackedMcp(ephemeral, scratch, { ...process.env, npm_config_cache: npmCache }));
   checks.push(await verifyPackedBrainstorm(ephemeral, scratch, { ...process.env, npm_config_cache: npmCache }));
-  checks.push(verifyPackedBrainstormTui(ephemeral, scratch, { ...process.env, npm_config_cache: npmCache }));
+  checks.push(await verifyPackedBrainstormTui(ephemeral, scratch, { ...process.env, npm_config_cache: npmCache }));
+  checks.push(await verifyPackedBrainstormTui(ephemeral, scratch, { ...process.env, npm_config_cache: npmCache }, { activeExit: true }));
   const overrideFile = join(scratch, 'package-specs.json');
   writeFileSync(overrideFile, JSON.stringify(tarballs, null, 2));
   const cli = join(ephemeral, 'node_modules', '@kernlang', 'agon', 'dist', 'index.js');

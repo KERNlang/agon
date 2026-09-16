@@ -24,6 +24,41 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Active TUI exit: owned-process safeguard (2026-09-16)
+
+A real PTY probe started a long-running fixture engine and pressed Ctrl+C
+twice. The TUI exited 0 without driver intervention, but its engine remained
+alive with no stop receipt. The probe cleaned up that exact fixture PID.
+Separate buffered/streaming host-exit regressions reproduced this before repair.
+
+The shared process runners now register their spawned process groups in one
+private ownership set. One lazy synchronous `exit` handler terminates groups
+still owned when the host exits. Normal child closure removes ownership; when
+the set empties, the handler is removed. Concurrent-run tests verify that twelve
+runs share one handler and leave no handler afterward. No public Mod API or
+personal/global state is added.
+
+The packed PTY verifier now has a separate active-exit case: wait for engine
+readiness, double-Ctrl+C, require an unforced app exit 0 and disappearance of
+the recorded engine PID. This is emergency SIGKILL cleanup, **not graceful
+shutdown or durable run/session finalization**. A host killed by SIGKILL cannot
+run this handler; OS-signal termination paths, providers outside these runners,
+escaped process groups, persisted interrupted-run recovery and native platform
+coverage remain open. No live provider was used.
+
+Full-suite verification exposed a fixture publication race: `existsSync`
+could observe a newly opened, still-empty readiness file; converting its empty
+contents to a number yielded PID 0. Positive-PID assertions reproduced this
+before correction. Descendant and host-exit fixtures now publish readiness by
+atomic rename; the installed engine fixture publishes both start/stop receipts
+the same way. The process-disappearance oracle is retained, and PID 0 is
+explicitly rejected. No timeout was widened to hide this failure.
+
+Local verification after repair: build, typecheck, lint, re-export guard,
+6,193 tests (five existing skips), package/SBOM checks and all 72 installed
+checks pass. Active/global Agon and personal provider state remain untouched.
+This is development evidence, not independent release qualification.
+
 ### Cancelled process-group survivor repair (2026-09-16)
 
 The next shutdown audit found a lower-level leak in both buffered and streaming

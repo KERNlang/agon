@@ -24,6 +24,37 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Read-only inspection of unpublished results (2026-09-17)
+
+When `status.json` is missing, both modular and compatibility `agon last
+--status` now append a staged-candidate diagnostic alongside the owner
+observation. Exit status remains 1 and stdout does not contain a substitute
+result. Existing finalized results keep their original read behavior.
+
+The persistence package's `describeStagedRunStatus` opens only a regular file,
+refuses a final-component symlink, uses nonblocking open and a bounded 1 MiB
+read, and rejects malformed UTF-8/JSON. It checks basic required result fields,
+ordered parseable timestamps, and recognized engine outcome names. A candidate
+passing this limited shape check is still labelled **unpublished, not verified
+or authorized for recovery**. Size and SHA-256 identify the observed bytes;
+no model-generated summary, engine text, or arbitrary file content is printed.
+Optional-field semantics, provenance and correspondence to actual workflow
+effects are deliberately not claimed by this basic shape diagnostic.
+
+Tests first demonstrated the missing helper and missing reader diagnostic.
+They cover absent, malformed, partial, invalid-shape, oversized and symlink
+candidates, retained bytes, absent final output, and suppressed result text.
+Separate reader processes after real SIGKILL/SIGTERM also inspect an unpublished
+candidate without promoting or changing it. This operation has no write,
+cleanup, takeover or replay path. Its hash describes an observation, not an
+immutable snapshot or authorization token. Explicit recovery remains open.
+
+Development verification passed: full build, typecheck, lint, re-export guard,
+6,217 tests (five existing skips), release-set packs, supply-chain self-test,
+and 72 isolated installed-product checks. The full suite passed on its first
+run; the previously observed A21 telemetry intermittency is not thereby fixed.
+These are development checks, not independent release-acceptance receipts.
+
 ### Exclusive, flushed result staging and crash boundaries (2026-09-17)
 
 The result writer previously opened the shared `.status.json.tmp` path with

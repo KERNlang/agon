@@ -43,7 +43,7 @@ it.each(['SIGKILL', 'SIGTERM'] as const)('does not mistake an unfinished run for
     const handle = JSON.parse(output);
     const owner = JSON.parse(readFileSync(join(handle.path, 'owner.json'), 'utf8'));
     if (process.env.AGON_TEST_REQUIRE_OWNER_PROBE === '1') expect(owner.bootId).not.toBeNull();
-    const assertUnfinished = (afterDeath: boolean) => {
+    const assertUnfinished = (afterDeath: boolean, staged = false) => {
       const reader = spawnSync(process.execPath, ['--input-type=module', '-e', `
         import {runLast} from ${JSON.stringify(pathToFileURL(readerPath).href)};
         console.log(JSON.stringify(await runLast({status: true}, {}, {})));
@@ -57,6 +57,8 @@ it.each(['SIGKILL', 'SIGTERM'] as const)('does not mistake an unfinished run for
       expect(result.stderr).toContain('may still be running or may have been interrupted');
       expect(result.stderr).toContain('inspect partial artifacts before retrying');
       expect(result.stderr).toContain('Owner observation:');
+      expect(result.stderr).toContain(staged ? 'unpublished candidate' : 'no staged candidate');
+      if (staged) expect(result.stderr).toContain('not verified or authorized for recovery');
       if (process.env.AGON_TEST_REQUIRE_OWNER_PROBE === '1') {
         expect(result.stderr).toContain(afterDeath ? 'process-absent' : 'pid-present-ownership-unverified');
       }
@@ -71,6 +73,10 @@ it.each(['SIGKILL', 'SIGTERM'] as const)('does not mistake an unfinished run for
     expect(await closed).toEqual([null, signal]);
     // A fresh reader must not fabricate a final outcome after abrupt death either.
     assertUnfinished(true);
+    const candidate = JSON.stringify({ mode: 'brainstorm', startedAt: handle.startedAt, endedAt: new Date().toISOString(), engines: [], ok: true, summary: 'candidate' });
+    writeFileSync(join(handle.path, '.status.json.tmp'), candidate);
+    assertUnfinished(true, true);
+    expect(readFileSync(join(handle.path, '.status.json.tmp'), 'utf8')).toBe(candidate);
   } finally {
     if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
     await closed;

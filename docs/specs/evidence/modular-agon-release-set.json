@@ -79,7 +79,7 @@
         "range": "^19.2.0"
       }
     ],
-    "packedBytes": 1250457,
+    "packedBytes": 1250455,
     "unpackedBytes": 5620328,
     "fileCount": 101,
     "files": [
@@ -488,9 +488,9 @@
         "size": 36190
       }
     ],
-    "integrity": "sha512-Sax7++NNq2OL7U9k7lLVfrYBk4pDpA82wA+Ed4zoCWQEfITy+6daMZnq17aQ7AnhDy7A8PzfC7KBwDAMLAga0w==",
-    "shasum": "6ae5de3f32648e6f2d2937df0e4d791e61d4ee21",
-    "tarballHash": "sha256:22ffe1580bf3b78003c62e4e870a2dce8c4f61969a8ef1fdcebdab4fb274016c",
+    "integrity": "sha512-XEuCxi1jx6dA3Ee34ztk6iWFOn+wu2ogR3X9UCfuFzanM2fytqiNdtQvSjLzYWq6O8831hsiFclHFQlqZ157tQ==",
+    "shasum": "e137f9c71226d3056eb6bd08ee9f7328176b12eb",
+    "tarballHash": "sha256:ce71cf036d4e6f29dd02435e86fdd63168bceb4d0d6352aa4907b99839e2fb64",
     "packageJsonHash": "sha256:99322f3dba4b7480ebd55ec8dc39fc1fe95a7c2d4d2e5953d9712c34a83bf575"
   },
   "packages": [
@@ -1106,8 +1106,8 @@
       "dependencies": [
         "@kernlang/agon-kernel"
       ],
-      "packedBytes": 47113,
-      "unpackedBytes": 166588,
+      "packedBytes": 47274,
+      "unpackedBytes": 167085,
       "fileCount": 26,
       "files": [
         {
@@ -1152,7 +1152,7 @@
         },
         {
           "path": "dist/index.js",
-          "size": 94258
+          "size": 94668
         },
         {
           "path": "dist/package-metadata.d.ts",
@@ -1176,7 +1176,7 @@
         },
         {
           "path": "dist/run-dir.d.ts",
-          "size": 4583
+          "size": 4670
         },
         {
           "path": "dist/run-owner.d.ts",
@@ -1215,9 +1215,9 @@
           "size": 5246
         }
       ],
-      "integrity": "sha512-yhtjEUg/9Q/+H5cOlM/TZfNS2xQtg7fYRu8qtKvcZApWrBd8ZG1B/DrrhJNA/oaBDH2ZibXK0m6Sym5T3caW0w==",
-      "shasum": "53156869fed48305084631d5cdef2ebda76acc6e",
-      "tarballHash": "sha256:7b04600dd32356d7a2f9e41859a6638c8fac0ab9fedac91d35644f035c0371a6",
+      "integrity": "sha512-N+oKIZSCNBqkARnM7P6hzu22Wh4EuXyRJmD8fUgWP0sXrDnvNE3tBHD19DUUkwBiT2gurFm2SnW3UUuK90gcDg==",
+      "shasum": "a5bfe08f7102429c2c977551b6d105bea4f33da8",
+      "tarballHash": "sha256:a8ce7e8ff08f11829258285229e43e8d06d0b4cc8baf444fb48b3df2357a68d9",
       "packageJsonHash": "sha256:71066bd8772d85ccf904c7023ba7a7ca236234f46733a882023b457174f87650",
       "manifestHash": "sha256:71066bd8772d85ccf904c7023ba7a7ca236234f46733a882023b457174f87650"
     },

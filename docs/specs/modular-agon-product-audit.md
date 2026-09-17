@@ -24,6 +24,51 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Exclusive, flushed result staging and crash boundaries (2026-09-17)
+
+The result writer previously opened the shared `.status.json.tmp` path with
+truncation and removed it after any error. Failing tests demonstrated that it
+could overwrite another writer's candidate, follow a pre-existing symlink,
+and delete a complete candidate when publication failed. It also omitted
+file/directory flushes; instrumented kill tests confirmed those boundaries
+were absent before the repair.
+
+`writeRunStatus` now serializes before opening storage, creates staging
+exclusively with mode 0600, writes and flushes the file, flushes the containing
+directory, atomically renames to `status.json`, then flushes the directory
+again. It returns true only after that sequence succeeds. Existing staging
+is not overwritten or removed. On failure it retains whatever staging remains
+and warns with its path. A failure after rename can leave the new final result
+visible but its durability uncertain; the return value remains false.
+
+Seven real SIGKILL tests stop the source writer during a partial stage write,
+before/after file sync, after staging-directory sync, before/after rename,
+and after final-directory sync. Each asserts the process actually died at
+the requested boundary and the final result is whole old or whole new data.
+Before publication the candidate remains separate, including a deliberately
+invalid partial JSON candidate. Tests also cover pre-existing staging files,
+pre-existing symlinks, and failed publication preserving both the existing
+target and the candidate. All fixtures live in temporary directories.
+
+**Retained staging is not an accepted result or permission to replay.** A stale
+candidate intentionally blocks another write until inspected; there is no
+automatic promotion, deletion, owner takeover, or workflow rerun. Exclusive
+creation coordinates cooperating writers, not arbitrary hostile same-user
+filesystem mutation. These macOS process-kill checks are not power-loss,
+hardware-cache, network-filesystem, native Linux, or whole-run-directory
+durability qualification. Validated explicit recovery remains open under A06.
+
+Development gates: build, typecheck, lint, re-export guard, release packs,
+supply-chain self-test and 72 isolated installed checks passed. The first full
+suite hit the previously tracked A21 assertion at `telemetry-fallback.test.ts:170`
+(6,215 passed, one failed, five existing skips). Its preserved local log is
+`/tmp/agon-status-staging-full-first.log`, SHA-256
+`3d45f0abce2446cd6da4e4c8c7f12e0ba14717e16c1011b4a03b6eae8eeb6798`.
+The isolated telemetry check and unchanged full-suite rerun passed; the latter
+had 6,216 passing tests and five existing skips. No test, timeout or oracle was
+weakened. A21 remains open, not waived or declared fixed. These are development
+checks, not independent release-acceptance receipts.
+
 ### Failed final-result writes retain the actual outcome (2026-09-17)
 
 An injected filesystem failure exposed a loss of host bookkeeping:

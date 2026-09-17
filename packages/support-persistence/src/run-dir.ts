@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync, renameSync, unlinkSync, existsSync, symlinkSync, readlinkSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { mkdirSync, writeFileSync, renameSync, unlinkSync, existsSync, symlinkSync, readlinkSync, readdirSync, readFileSync, statSync, openSync, closeSync, fsyncSync } from 'node:fs';
 
 import { join } from 'node:path';
 
@@ -143,24 +143,39 @@ export function createRunDir(opts: CreateRunDirOptions): RunDirHandle {
 }
 
 /**
- * Atomically write status.json into a run directory. Returns whether the write
- * succeeded; failures remain warning-only for existing callers.
+ * Exclusively stage and flush a result before atomic publication. Success includes
+ * the final directory flush. Unpublished staging is retained for inspection,
+ * never interpreted as a finalized result or automatically replayed.
  */
 export function writeRunStatus(runPath: string, status: RunStatus): boolean {
   const finalPath = join(runPath, 'status.json');
   const tempPath = join(runPath, '.status.json.tmp');
   try {
+    const bytes = JSON.stringify(status, null, 2) + '\n';
     mkdirSync(runPath, { recursive: true });
-    writeFileSync(tempPath, JSON.stringify(status, null, 2) + '\n');
+    // Exclusive creation also refuses a pre-existing symlink or another writer's
+    // candidate. Never truncate or clean up staging whose ownership is unknown.
+    const fd = openSync(tempPath, 'wx', 0o600);
+    try {
+      writeFileSync(fd, bytes);
+      fsyncSync(fd);
+    } finally { closeSync(fd); }
+    syncRunDirectory(runPath);
     renameSync(tempPath, finalPath);
+    syncRunDirectory(runPath);
     return true;
   } catch (err) {
     // Surface the failure on stderr but never crash the caller — a
     // failed status write should not kill an otherwise-successful run.
-    console.error(`[agon] warning: failed to write status.json at ${finalPath}: ${err instanceof Error ? err.message : String(err)}`);
-    try { unlinkSync(tempPath); } catch { /* best effort */ }
+    console.error(`[agon] warning: failed to write status.json at ${finalPath}: ${err instanceof Error ? err.message : String(err)}. Inspect any remaining staging at ${tempPath} before retrying.`);
     return false;
   }
+}
+
+function syncRunDirectory(runPath: string): void {
+  const fd = openSync(runPath, 'r');
+  try { fsyncSync(fd); }
+  finally { closeSync(fd); }
 }
 
 /**

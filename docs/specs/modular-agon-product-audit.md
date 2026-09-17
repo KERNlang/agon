@@ -24,6 +24,50 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Read-only run-owner observations (2026-09-17)
+
+New CLI run-service handles now write an exclusive `owner.json` before they
+are returned. Schema version 1 contains the run ID, PID, per-process UUID,
+OS boot-session UUID (nullable), and PID namespace identity (nullable).
+The hidden persistence package owns the writer, bounded reader, and diagnostic
+probe; no Mod API, finalized-result schema, registry ownership, or dependency
+edge changed. Existing records are never replaced. Failure to create the
+owner record propagates before workflow work begins.
+
+`agon last --status` still returns 1 when the final result is missing, but now
+appends an owner observation. A matching boot UUID and PID namespace plus
+an OS `ESRCH` response permits **process-absent**, at the instant observed.
+PID presence is explicitly **ownership unverified** because PIDs are reused.
+Different/missing boot or namespace evidence, permissions errors, unsupported
+platforms, old runs, malformed/oversized records and symlink records stay
+unknown. Linux namespace identity prevents treating another container's PID
+as a local owner. macOS uses the native boot-session UUID; Linux uses procfs.
+No shell is used; the macOS identity subprocess is bounded and cached once.
+
+The process UUID is diagnostic attribution, not a live challenge-response
+proof. These user-controlled records are **not leases, authenticated trust,
+or recovery authorization**. No scan, termination, result rewrite, takeover, or
+effect replay follows an observation. Status files remain authoritative when
+present. Power-loss durability, network-home provenance, and safe replay
+remain outside this change; A06 is still open.
+
+Test-first evidence: missing owner records, mismatched namespace acceptance,
+and the absent CLI diagnostic were each observed failing before their repair.
+Regression coverage includes immutable records, run-ID mismatch, invalid PID
+ranges, format/version errors, oversized/symlink files, unavailable probes,
+boot/namespace mismatch, present/reused-PID uncertainty and absent PID. Real
+isolated host processes are terminated with SIGKILL and SIGTERM; separate
+reader processes preserve partial artifacts and never fabricate a result.
+The native macOS run with `AGON_TEST_REQUIRE_OWNER_PROBE=1` explicitly requires
+boot evidence and observes live-unknown → process-absent. The restricted run
+verifies fallback behavior. Linux native qualification remains unperformed.
+
+Development gates passed: full build, typecheck, lint, re-export guard,
+6,202 tests (five existing skips), release-set packs, supply-chain self-test,
+and 72 isolated installed-product checks. Native owner-probe reproduction:
+`AGON_TEST_REQUIRE_OWNER_PROBE=1 ./node_modules/.bin/vitest run tests/unit/modular-run-abrupt-exit.test.ts`.
+These are development results, not independent release-acceptance receipts.
+
 ### Abrupt host death and unresolved ownership (2026-09-16)
 
 The run-record exit handler cannot execute after SIGKILL or an unhandled

@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, resolve, sep, join } from 'node:path';
-import { createRunDir, writeRunStatus } from '@kernlang/agon-support-persistence';
+import { createRunDir, writeRunStatus, writeRunOwner } from '@kernlang/agon-support-persistence';
 import type { RunRecordHandle, RunRecordHostServices } from '@kernlang/agon-mod-api';
 
 const pending = new Map<string, { handle: RunRecordHandle; label?: string }>();
@@ -26,6 +26,7 @@ export const cliRunRecordHost = Object.freeze<RunRecordHostServices>({
   start(mode, label) {
     const startedAt = new Date().toISOString();
     const created = createRunDir({ mode, label, announce: false });
+    writeRunOwner(created.path);
     const handle = Object.freeze({ id: created.id, path: created.path, mode, startedAt });
     if (pending.size === 0) process.on('exit', finalizeInterruptedRuns);
     pending.set(handle.path, { handle, label });

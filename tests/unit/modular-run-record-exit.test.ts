@@ -67,3 +67,20 @@ it('retains run artifact traversal rejection', async () => {
     expect(() => runs.writeArtifact(handle, '../outside', 'bad', {} as never)).toThrow(/escapes/);
   });
 });
+
+it('records an immutable host incarnation before returning a run handle', async () => {
+  await isolated(async () => {
+    const first = await runs.start('brainstorm', undefined, {} as never);
+    const second = await runs.start('review', undefined, {} as never);
+    expect(existsSync(join(first.path, 'owner.json'))).toBe(true);
+    const owner = JSON.parse(readFileSync(join(first.path, 'owner.json'), 'utf8'));
+    const other = JSON.parse(readFileSync(join(second.path, 'owner.json'), 'utf8'));
+    expect(owner).toMatchObject({ schemaVersion: 1, runId: first.id, pid: process.pid });
+    expect(owner.hostInstance).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(other.hostInstance).toBe(owner.hostInstance);
+    expect(other.runId).not.toBe(owner.runId);
+    const bytes = readFileSync(join(first.path, 'owner.json'), 'utf8');
+    await runs.finish(first, { ok: true, summary: 'finished' }, {} as never);
+    expect(readFileSync(join(first.path, 'owner.json'), 'utf8')).toBe(bytes);
+  });
+});

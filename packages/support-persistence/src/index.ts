@@ -16,5 +16,6 @@ export * from './brain-client.js';
 export * from './session-result-types.js';
 export * from './flow.js';
 export * from './run-dir.js';
+export * from './run-owner.js';
 export * from './team-elo-types.js';
 export * from './persisted-envelope.js';

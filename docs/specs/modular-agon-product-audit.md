@@ -24,6 +24,46 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### A21 deterministic telemetry boundaries (2026-09-18)
+
+Source inspection confirmed that the intermittent fixture awaited fallback
+before starting Forge, supplied no active assignment, and sampled real OS PID
+and network health. Its delayed mock adapter had not yet run. Consequently it
+was not a controlled test of that adapter stalling. Forge later dispatched both
+configured engines independently; a backup result did not prove telemetry had
+activated a successor.
+
+New failing tests separately demonstrated two code defects: the shared
+`markEngineStalled` classified old idle/offline heartbeats as work stalls, and
+TelemetryService substituted the host PID for unknown engine PIDs. The helper
+now leaves idle/offline states alone. The service does not sample PID usage
+without an explicit positive engine PID and gives a newly assigned engine its
+own heartbeat window. Explicit engine PID sampling remains covered.
+
+The fallback fixture now supplies a busy assignment, controls only the external
+PID/network probes, and advances a fake clock across the exact threshold. It
+requires zero early events, exactly staller → backup at the boundary, an idle
+backup, no duplicate event on another sample, and the original scoreboard,
+notification and fixture Forge-result assertions. Registry selection, state
+transitions, event delivery and Forge execution are not stubbed. Cleanup and
+environment restoration run even on assertion failure. No real network probe
+or host PID happens to determine the oracle anymore.
+
+This replaces the flawed A21 fixture with deterministic coverage and repairs
+the demonstrated state defects, rather than accepting another unchanged rerun.
+The shared helper also serves TelemetryPoller. The current source search finds
+TelemetryService construction only in tests; these changes are not evidence
+of a newly wired live automatic-handoff feature. Poller auto-fallback tests
+remain separate. PID/network health is still not proof of model progress;
+full live watchdog, lifecycle and handoff qualification remains separate.
+
+Development gates passed: full build, typecheck, lint, re-export guard,
+6,221 tests (five existing skips), release-set packs, supply-chain self-test,
+and 72 isolated installed-product checks. The full suite passed on the first
+run while lint and packaging ran concurrently; log SHA-256
+`a3c521c1e7a12b908e9da7c932eafa21c935054fe4d38f72a063c52b37d3247b`.
+These are development checks, not independent release-acceptance receipts.
+
 ### Read-only inspection of unpublished results (2026-09-17)
 
 When `status.json` is missing, both modular and compatibility `agon last
@@ -1337,7 +1377,7 @@ Lint, all 49 modular package packs plus launcher, 69 isolated npx checks and
 SBOM validation also pass for the follow-up. npm provenance remains external;
 no active/global installation was changed.
 
-**A21 — Telemetry fallback intermittently misses the expected successor (open observation).**
+**A21 — Telemetry fallback intermittently misses the expected successor (historical observation; deterministic repair above).**
 The first full scheduler-extraction run passed 6,002 tests and failed
 `telemetry-fallback.test.ts:170` (expected a staller → backup fallback). Failed
 log SHA-256: `b5c9c61bc42fa8b92a6e424b5c56cf11544f96c1c512cf83e2e110d00ab01338`.
@@ -1346,7 +1386,9 @@ the test samples live time, PID/network heartbeat and fallback availability,
 and waits for fallback before starting its fixture Forge. This is a diagnostic
 lead, not a proven cause. No assertion, timeout or production behavior was
 changed to make it pass. Retain this for deterministic telemetry qualification;
-do not report the intermittency fixed.
+do not report the intermittency fixed on that evidence alone. Superseded by
+the 2026-09-18 deterministic boundary tests and fixture repair documented above;
+this historical failed-run evidence is retained.
 
 **A19 — Plan approval interprets refusal as consent (repaired at the legacy boundary).**
 While tracing A05, `handlePlanShow` was found to reject only literal `n`;

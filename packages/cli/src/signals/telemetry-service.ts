@@ -230,7 +230,8 @@ export class TelemetryService {
         ? (assignment ? assignment : hasBinary ? 'cli ready' : hasApiKey ? 'api reachable' : 'ready')
         : (quarantined ? `${healthRecord!.status} this session` : 'missing binary/API key'),
       taskDetail: detailParts.length > 0 ? detailParts.join(' - ') : undefined,
-      lastHeartbeatAt: heartbeatOk ? now : prior.lastHeartbeatAt,
+      lastHeartbeatAt: heartbeatOk || (assignment && (prior.state === 'idle' || prior.state === 'offline'))
+        ? now : prior.lastHeartbeatAt,
     };
 
     let merged = updateEngineVitals(prior, partial);
@@ -314,10 +315,11 @@ export class TelemetryService {
     const pidMap = this.opts.getActiveEnginePids ? this.opts.getActiveEnginePids() : undefined;
     const mapped = Number(pidMap?.get(engineId) ?? 0);
     if (Number.isFinite(mapped) && mapped > 0) return mapped;
-    return process.pid;
+    return 0; // Unknown engine PID is not evidence about the Agon host process.
   }
 
   private async readPidusage(pid: number): Promise<{ok:boolean,cpuPercent?:number,rssBytes?:number}> {
+    if (!Number.isSafeInteger(pid) || pid <= 0) return { ok: false };
     try {
       const pidusage = await this.loadPidusage();
       if (!pidusage) {

@@ -51,11 +51,16 @@ function createRepo(label: string): string {
 }
 
 describe('Telemetry fallback during forge', () => {
+  let cleanup = () => {};
   afterEach(() => {
+    cleanup();
+    cleanup = () => {};
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
     vi.useRealTimers();
   });
 
-  it('detects stall, logs to scoreboard, dispatches toast, and activates successor', async () => {
+  it('reports an assigned stall, updates the scoreboard, and preserves fixture Forge results', async () => {
     const registry = makeRegistry();
     const eventBus = new EventBus();
     const repoDir = createRepo('telemetry-fallback');
@@ -63,18 +68,30 @@ describe('Telemetry fallback during forge', () => {
     mkdirSync(forgeDir, { recursive: true });
 
     // Ensure API key is set so engines appear available
-    process.env.FAKE_API_KEY = 'test';
+    vi.stubEnv('FAKE_API_KEY', 'test');
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-18T00:00:00Z'));
 
-    // Telemetry service with test overrides so thresholds are not clamped.
-    // Use an unreachable probe URL so network health doesn't mask the stall.
+    // Deterministic sampling: no dependency on the machine's own process,
+    // external network health, or a background polling race.
     const telemetry = createTelemetryService({
       registry,
       eventBus,
       stallThresholdMs: 50,
       sampleIntervalMs: 25,
       networkProbeUrl: 'http://localhost:59999',
+      getProgressEngines: () => [{ id: 'staller', status: 'running' }],
       __test: true,
     });
+    cleanup = () => {
+      telemetry.stop();
+      rmSync(repoDir, { recursive: true, force: true });
+      rmSync(forgeDir, { recursive: true, force: true });
+    };
+    // Control only the OS/network boundary. Registry selection, watchdog state,
+    // event delivery, scoreboard effects and Forge execution remain real.
+    vi.spyOn(telemetry as any, 'readPidusage').mockResolvedValue({ ok: false });
+    vi.spyOn(telemetry as any, 'sampleNetwork').mockResolvedValue({ network: 'unreachable', latencyMs: 1 });
 
     const fallbackEvents: Array<{ from: string; to: string; reason: string }> = [];
     const toastEvents: Array<string> = [];
@@ -126,15 +143,18 @@ describe('Telemetry fallback during forge', () => {
     // Scoreboard to track engine states
     const scoreboard = createScoreboard('fallback-run', 'forge', ['staller', 'backup']);
 
-    telemetry.start();
-
-    // Poll until telemetry detects the stall or timeout
-    const maxWait = 5000;
-    const pollInterval = 50;
-    const startWait = Date.now();
-    while (fallbackEvents.length === 0 && Date.now() - startWait < maxWait) {
-      await new Promise((resolve) => setTimeout(resolve, pollInterval));
-    }
+    await telemetry.probeNow();
+    expect(fallbackEvents).toEqual([]);
+    await vi.advanceTimersByTimeAsync(49);
+    await telemetry.probeNow();
+    expect(fallbackEvents).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    const stalled = await telemetry.probeNow();
+    expect(fallbackEvents).toEqual([{ from: 'staller', to: 'backup', reason: 'stall>50ms' }]);
+    expect(stalled.engines.find(engine => engine.engineId === 'backup')?.state).toBe('idle');
+    await telemetry.probeNow();
+    expect(fallbackEvents).toHaveLength(1);
+    vi.useRealTimers();
 
     const events: any[] = [];
     const manifest = await runForge(
@@ -177,7 +197,8 @@ describe('Telemetry fallback during forge', () => {
     // 3. Toast event dispatched (engine:stall-detected fired)
     expect(toastEvents.some((t) => t.includes('staller'))).toBe(true);
 
-    // 4. Successor engine activated: backup should have produced a result
+    // 4. Forge independently dispatches its configured roster. A telemetry
+    // notification alone does not prove automatic successor activation.
     expect(manifest.results['backup']).toBeDefined();
     expect(manifest.results['backup']?.pass).toBe(true);
 
@@ -185,8 +206,5 @@ describe('Telemetry fallback during forge', () => {
     //    the key assertion is that telemetry detected it and triggered fallback
     expect(manifest.results['staller']).toBeDefined();
 
-    // Cleanup
-    try { rmSync(repoDir, { recursive: true, force: true }); } catch { /* ignore */ }
-    try { rmSync(forgeDir, { recursive: true, force: true }); } catch { /* ignore */ }
   });
 });

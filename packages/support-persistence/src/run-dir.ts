@@ -143,20 +143,23 @@ export function createRunDir(opts: CreateRunDirOptions): RunDirHandle {
 }
 
 /**
- * Atomically write status.json into a run directory. Authoritative outcome record — orchestrators read this instead of parsing stream output for keywords.
+ * Atomically write status.json into a run directory. Returns whether the write
+ * succeeded; failures remain warning-only for existing callers.
  */
-export function writeRunStatus(runPath: string, status: RunStatus): void {
+export function writeRunStatus(runPath: string, status: RunStatus): boolean {
   const finalPath = join(runPath, 'status.json');
   const tempPath = join(runPath, '.status.json.tmp');
   try {
     mkdirSync(runPath, { recursive: true });
     writeFileSync(tempPath, JSON.stringify(status, null, 2) + '\n');
     renameSync(tempPath, finalPath);
+    return true;
   } catch (err) {
     // Surface the failure on stderr but never crash the caller — a
     // failed status write should not kill an otherwise-successful run.
     console.error(`[agon] warning: failed to write status.json at ${finalPath}: ${err instanceof Error ? err.message : String(err)}`);
     try { unlinkSync(tempPath); } catch { /* best effort */ }
+    return false;
   }
 }
 

@@ -1,15 +1,16 @@
 import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, resolve, sep, join } from 'node:path';
 import { createRunDir, writeRunStatus, writeRunOwner } from '@kernlang/agon-support-persistence';
+import type { RunStatus } from '@kernlang/agon-support-persistence';
 import type { RunRecordHandle, RunRecordHostServices } from '@kernlang/agon-mod-api';
 
-const pending = new Map<string, { handle: RunRecordHandle; label?: string }>();
+const pending = new Map<string, { handle: RunRecordHandle; label?: string; finalStatus?: RunStatus }>();
 
 function finalizeInterruptedRuns(): void {
-  for (const { handle, label } of pending.values()) {
+  for (const { handle, label, finalStatus } of pending.values()) {
     // Do not replace an outcome already persisted by the workflow.
     if (existsSync(join(handle.path, 'status.json'))) continue;
-    writeRunStatus(handle.path, {
+    writeRunStatus(handle.path, finalStatus ?? {
       mode: handle.mode, ...(label ? { label } : {}), startedAt: handle.startedAt,
       endedAt: new Date().toISOString(), engines: [], ok: false,
       summary: 'Interrupted: host exited before finalization. Partial artifacts are retained; inspect them before retrying. This run was not automatically resumed.',
@@ -33,7 +34,11 @@ export const cliRunRecordHost = Object.freeze<RunRecordHostServices>({
     return handle;
   },
   finish(handle, status) {
-    writeRunStatus(handle.path, status as never);
+    // Keep the actual outcome, not an invented interruption, if persistence fails.
+    const snapshot = structuredClone(status) as unknown as RunStatus;
+    const entry = pending.get(handle.path);
+    if (entry) entry.finalStatus = snapshot;
+    if (!writeRunStatus(handle.path, snapshot)) return;
     pending.delete(handle.path);
     if (pending.size === 0) process.removeListener('exit', finalizeInterruptedRuns);
   },

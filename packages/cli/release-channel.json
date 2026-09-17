@@ -52,8 +52,8 @@
         "@kernlang/agon-kernel"
       ],
       "sourceLocator": "@kernlang/agon-support-persistence@1.0.0",
-      "integrity": "sha512-UdnupgbZzRwwaL902OpVB20wXilbj/LaseLcjR0b+bzdxB7mT9DTIytb/vC2JSVOTqoI+z8mMw6ytODUg+vAEA==",
-      "contentHash": "sha256:73e0161edab22e19f7c41e619e1d886e31b89b22dfd61a2893ebc34a9bd4e5ad",
+      "integrity": "sha512-yhtjEUg/9Q/+H5cOlM/TZfNS2xQtg7fYRu8qtKvcZApWrBd8ZG1B/DrrhJNA/oaBDH2ZibXK0m6Sym5T3caW0w==",
+      "contentHash": "sha256:7b04600dd32356d7a2f9e41859a6638c8fac0ab9fedac91d35644f035c0371a6",
       "manifestHash": "sha256:71066bd8772d85ccf904c7023ba7a7ca236234f46733a882023b457174f87650"
     },
     {

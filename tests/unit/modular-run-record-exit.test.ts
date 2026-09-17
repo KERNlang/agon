@@ -1,7 +1,7 @@
-import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { cliRunRecordHost as runs } from '../../packages/cli/src/run-record-host.js';
 import { createRunDir } from '@kernlang/agon-support-persistence';
 
@@ -82,5 +82,69 @@ it('records an immutable host incarnation before returning a run handle', async 
     const bytes = readFileSync(join(first.path, 'owner.json'), 'utf8');
     await runs.finish(first, { ok: true, summary: 'finished' }, {} as never);
     expect(readFileSync(join(first.path, 'owner.json'), 'utf8')).toBe(bytes);
+  });
+});
+
+it.each([true, false])('retains the actual final outcome after a failed status write (ok=%s)', async ok => {
+  await isolated(async exit => {
+    const handle = await runs.start('brainstorm', 'write-failure', {} as never);
+    const obstruction = join(handle.path, '.status.json.tmp');
+    mkdirSync(obstruction);
+    const status = { ok, summary: 'actual engine outcome', engines: [{ id: 'fixture', status: ok ? 'ok' : 'error' }] };
+    const expected = JSON.parse(JSON.stringify(status));
+    const warning = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await runs.finish(handle, status, {} as never);
+      expect(warning).toHaveBeenCalledWith(expect.stringContaining('failed to write status.json'));
+      expect(existsSync(join(handle.path, 'status.json'))).toBe(false);
+      // Recovery must not retain a mutable reference to a caller's result.
+      status.summary = 'mutated later';
+      status.engines[0]!.id = 'changed';
+      rmSync(obstruction, { recursive: true });
+      exit();
+      expect(existsSync(join(handle.path, 'status.json'))).toBe(true);
+      expect(JSON.parse(readFileSync(join(handle.path, 'status.json'), 'utf8'))).toEqual(expected);
+    } finally { warning.mockRestore(); }
+  });
+});
+
+it('bounds exit retries and still finalizes other runs when storage remains unavailable', async () => {
+  await isolated(async exit => {
+    const before = process.listenerCount('exit');
+    const blocked = await runs.start('brainstorm', undefined, {} as never);
+    const other = await runs.start('review', undefined, {} as never);
+    mkdirSync(join(blocked.path, '.status.json.tmp'));
+    const warning = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await runs.finish(blocked, { ok: true, summary: 'real result' }, {} as never);
+      exit();
+      expect(warning).toHaveBeenCalledTimes(2); // Initial write and one exit retry.
+      expect(existsSync(join(blocked.path, 'status.json'))).toBe(false);
+      expect(JSON.parse(readFileSync(join(other.path, 'status.json'), 'utf8')).ok).toBe(false);
+      expect(process.listenerCount('exit')).toBe(before);
+      exit();
+      expect(warning).toHaveBeenCalledTimes(2);
+    } finally { warning.mockRestore(); }
+  });
+});
+
+it('releases tracking after an explicit successful persistence retry', async () => {
+  await isolated(async exit => {
+    const before = process.listenerCount('exit');
+    const handle = await runs.start('review', undefined, {} as never);
+    const obstruction = join(handle.path, '.status.json.tmp');
+    mkdirSync(obstruction);
+    const warning = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const status = { ok: false, summary: 'actual failure' };
+      await runs.finish(handle, status, {} as never);
+      expect(process.listenerCount('exit')).toBe(before + 1);
+      rmSync(obstruction, { recursive: true });
+      await runs.finish(handle, status, {} as never);
+      expect(process.listenerCount('exit')).toBe(before);
+      const bytes = readFileSync(join(handle.path, 'status.json'), 'utf8');
+      exit();
+      expect(readFileSync(join(handle.path, 'status.json'), 'utf8')).toBe(bytes);
+    } finally { warning.mockRestore(); }
   });
 });

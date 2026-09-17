@@ -24,6 +24,41 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Failed final-result writes retain the actual outcome (2026-09-17)
+
+An injected filesystem failure exposed a loss of host bookkeeping:
+`writeRunStatus` warned and returned normally after a failed write, while the
+CLI host unconditionally removed the run from its pending set. Even if storage
+recovered before normal host exit, the real outcome was no longer available
+for persistence. Successful and unsuccessful result fixtures both reproduced
+this failure before the repair.
+
+The persistence helper now reports write success as a boolean while retaining
+warning-only failure behavior for legacy callers. The CLI run service removes
+tracking only after a successful write. Before attempting it, the service
+clones the supplied JSON outcome so later caller mutations cannot change it.
+Normal exit makes one final persistence attempt with that actual outcome;
+only runs that never supplied an outcome receive the interruption record.
+Already-persisted outcomes remain untouched by exit cleanup.
+
+Tests use a real filesystem obstruction, not a mocked successful writer. They
+cover successful/unsuccessful outcomes, nested caller mutation, recovery before
+exit, continued storage failure, independent-run finalization, bounded retries,
+and explicit retry releasing the shared exit handler. Continued failure leaves
+no fabricated status and emits another warning. No workflow is rerun.
+
+This is in-memory retention until normal exit, not a durable write-ahead queue.
+SIGKILL/power loss can still lose an unpersisted outcome. Persistent storage
+failure still requires operator attention; no cross-process recovery, disk-full
+simulation, or recovery acceptance is claimed. The public Mod API and final
+status shape are unchanged; the shared helper's return value is additive for
+existing callers that ignore it. A06 remains open.
+
+Development gates passed: full build, typecheck, lint, re-export guard,
+6,206 tests (five existing skips), release-set packs, supply-chain self-test,
+and 72 isolated installed-product checks. The new storage-failure cases are
+local source-level regressions; this is not an independent release receipt.
+
 ### Read-only run-owner observations (2026-09-17)
 
 New CLI run-service handles now write an exclusive `owner.json` before they

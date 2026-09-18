@@ -24,6 +24,34 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### TelemetryService stop/restart fencing (2026-09-18)
+
+Controlled deferred-probe tests reproduced two lifecycle defects: a background
+probe emitted a heartbeat after `stop()`, and a retired sampler overwrote its
+replacement's snapshot after a stop/start sequence. The former shared boolean
+also allowed both loops to continue after restart.
+
+Each background run now owns an AbortController. Cancellation is checked after
+PID and network awaits, before state/event processing and before publication.
+Stopping wakes and clears the interval sleep; retiring one run cannot clear the
+replacement's running state. Explicit `probeNow()` remains usable while stopped
+and is deliberately independent of background cancellation. Tests cover late
+completion, restart ordering, PID-boundary cancellation, timer cleanup, repeated
+start and one-shot sampling. OS/network probes already in flight are not forcibly
+terminated by this change; their late results are discarded.
+
+Scope remains the TelemetryService implementation, currently constructed only
+by tests in this checkout. This does not qualify TelemetryPoller lifecycle or
+live provider handoff, nor does it complete A06 or the release acceptance gates.
+
+Development gates passed: full build, typecheck, lint, re-export guard,
+6,226 tests (five existing skips), release-set pack checks, supply-chain
+self-test and 72 isolated installed-product checks. Full-suite log SHA-256:
+`7581da686a44cb57a8bfe223d1cb1bf88c9419589bfd655792b264124a2562ff`.
+These are local development checks, not independent release receipts. Packed
+release-set and SBOM outputs were unchanged; the unused service is not newly
+wired into the bundled runtime.
+
 ### A21 deterministic telemetry boundaries (2026-09-18)
 
 Source inspection confirmed that the intermittent fixture awaited fallback

@@ -181,7 +181,6 @@ export interface TelemetryPollerDeps {
 export function startTelemetryPoller(opts: TelemetryPollerDeps): (() => void) | undefined {
   const {
     registry,
-    cesarSession,
     activeEngines,
     dispatch,
     cesarSessionHolder,
@@ -210,11 +209,10 @@ export function startTelemetryPoller(opts: TelemetryPollerDeps): (() => void) | 
     activeEngineIds: activeEngines,
     autoFallback: 'auto',
     onAutoFallback: async (from: string, to: string, reason: string) => {
+      // Cancellation is an operator boundary, not permission to replay work.
+      if (activeAbortRef.current?.signal.aborted) return false;
       const activeTurn = activeTurnRef.current;
       const retryActiveTurn = !!(activeTurn && !activeTurn.retried && activeTurn.engineId === from && activeTurn.input);
-      if (retryActiveTurn && activeTurn) {
-        activeTurn.retried = true;
-      }
       const plan = activePlanRef.current;
       const runningStep = plan?.state === 'running' && Array.isArray(plan?.steps)
         ? plan.steps.find((step: any) => String(step?.state ?? '') === 'running')
@@ -231,14 +229,16 @@ export function startTelemetryPoller(opts: TelemetryPollerDeps): (() => void) | 
 
       configSet('cesarEngine' as any, to as any);
       setConfigVersion((v: number) => v + 1);
-      if (cesarSession) {
-        cesarSession.close();
+      const currentSession = cesarSessionHolder.session;
+      if (currentSession) {
+        currentSession.close();
         setCesarSessionWrapped(null);
       }
       if (retryActivePlan) {
         if (activeAbortRef.current) activeAbortRef.current.abort();
         dispatch({ type: 'warning', message: `Telemetry: ${from} stalled during plan step — switched to ${to} and retrying that step (${reason})` } as any);
       } else if (retryActiveTurn && activeTurn) {
+        activeTurn.retried = true;
         if (activeAbortRef.current) activeAbortRef.current.abort();
         setInputQueue((prev: string[]) => [...prev, activeTurn.input]);
         dispatch({ type: 'warning', message: `Telemetry: ${from} stalled — switched to ${to} and retrying this prompt (${reason})` } as any);
@@ -267,6 +267,6 @@ export function startTelemetryPoller(opts: TelemetryPollerDeps): (() => void) | 
   return () => {
     unsub();
     poller.stop();
-    telemetryPollerRef.current = null;
+    if (telemetryPollerRef.current === poller) telemetryPollerRef.current = null;
   };
 }

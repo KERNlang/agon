@@ -24,6 +24,38 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### App telemetry handoff boundaries (2026-09-18)
+
+The real `startTelemetryPoller` effect and real poller now have an eleven-case
+callback harness. Only the OS/network probe and configuration-write boundary
+are replaced; registry selection, polling, callback dispatch and queue updates
+execute locally. No personal configuration or provider session is used.
+
+Five failing tests demonstrated: closing the captured rather than current
+session; replaying an already-aborted turn; consuming its retry before a failed
+config write; consuming a prompt retry when the plan branch was selected; and
+old effect cleanup clearing the replacement's ref. The callback now consults
+the live session holder, declines already-aborted work, marks only a prompt retry
+after setup succeeds, and clears the poller ref only if it still owns it.
+Additional refusal tests cover no active work, unrelated engines, spent prompt
+and plan retries, and an empty current session holder.
+
+This proves callback/queue boundaries, not completion of a retried model task.
+Remaining handoff dimensions include config-write/session-close failure
+atomicity, retry identity across queue resubmission (`app-submit.ts` currently
+constructs a fresh `retried: false` turn), and plan retry authority:
+`executeApprovedPlan` currently derives retryability from failure text and the
+configured engine, rather than an explicit telemetry request. User cancellation
+must be distinguished from authorized fallback before claiming full plan
+recovery qualification. A06 and whole-product release acceptance remain open.
+
+Development gates passed: full build, typecheck, lint, re-export guard,
+6,248 tests (five existing skips), release-set packs, supply-chain self-test and
+72 isolated installed-product checks. Full-suite log SHA-256:
+`c0c0b424d44ab338ab8a096416caec0d51453d1451f5679b80249b70dd3d77b4`.
+Release-set and SBOM hashes were regenerated. These are development checks,
+not an independently reproduced clean-commit release receipt.
+
 ### Live TelemetryPoller lifecycle and approval fencing (2026-09-18)
 
 Unlike TelemetryService, this poller is constructed by

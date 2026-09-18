@@ -79,17 +79,17 @@
         "range": "^19.2.0"
       }
     ],
-    "packedBytes": 1250478,
-    "unpackedBytes": 5620435,
+    "packedBytes": 1250617,
+    "unpackedBytes": 5620555,
     "fileCount": 101,
     "files": [
       {
-        "path": "dist/app-RNFE4XIF.js",
-        "size": 409048
+        "path": "dist/app-VQM6LBQB.js",
+        "size": 409123
       },
       {
-        "path": "dist/app-RNFE4XIF.js.map",
-        "size": 276068
+        "path": "dist/app-VQM6LBQB.js.map",
+        "size": 276113
       },
       {
         "path": "dist/attach-LJ5VM3YO.js",
@@ -488,9 +488,9 @@
         "size": 36190
       }
     ],
-    "integrity": "sha512-9CvnGMUAP5TC6yVISAwq9qi7Wts88CJNl+jputx6fdnu7gDpano9Q2arX6IWdDmLmzJm2w0kn82fyt9zt/Oizw==",
-    "shasum": "bb14c3d54f4fb6362ed36e2d395785c08d138c0f",
-    "tarballHash": "sha256:fd4b3d1b17dda33d50c2395860255e35f40b230d95c805c13e6ca53a4722bee9",
+    "integrity": "sha512-CLqZgrTgwejf99+NlgJTFrB4711CGpgkgxCgVa+SAIVG1RQ0t/4yRRmKCnS2CbWiMSbK1sJU+L/UnhirtAutyg==",
+    "shasum": "c748a0233264786558da4d80e2f7123afb40cab9",
+    "tarballHash": "sha256:b06889d13ff22a3e1f80016301ed23139d631c559597538eceb1cce99e28258e",
     "packageJsonHash": "sha256:99322f3dba4b7480ebd55ec8dc39fc1fe95a7c2d4d2e5953d9712c34a83bf575"
   },
   "packages": [

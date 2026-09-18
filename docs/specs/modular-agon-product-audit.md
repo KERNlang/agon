@@ -24,6 +24,40 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Live TelemetryPoller lifecycle and approval fencing (2026-09-18)
+
+Unlike TelemetryService, this poller is constructed by
+`packages/cli/src/surfaces/app-lifecycle.ts`. Deferred injected probes reproduced
+post-stop fallback callbacks and snapshot writes, restart blocked by an old
+in-flight tick, and surviving probe-timeout timers. Deferred approvals reproduced
+both auto/ask completion after stop and fallback after a healthy observation.
+
+Stop now invalidates the lifecycle signal, releases timeout waits and frees the
+new generation to probe immediately. Retired ticks cannot mutate state, notify,
+clear a replacement's in-flight guard or schedule catch-up work. Stall episodes
+have distinct tokens: repeated observations preserve pending approval; recovery,
+removal and stop invalidate it. Restart permits fresh approval. Auto/ask paths
+share the same completion fence and contain callback rejection without marking
+handoff successful. One-shot stopped polling and the existing timeout/fallback
+tests remain supported.
+
+Eleven new deterministic tests cover these boundaries, including recovery then
+a second stall, repeated observations, and rejection in both fallback modes.
+Tests use the real registry and poller with injected local probes/callbacks;
+no live provider or personal configuration is involved. Cancellation cannot undo
+effects already performed by a caller's callback and does not terminate the
+underlying injected probe. The app's actual retry/config/session-changing
+callback still needs separate end-to-end handoff qualification. This is not a
+claim that A06 or the overall release acceptance is complete.
+
+Development gates passed: build, typecheck, lint, re-export guard, 6,237 tests
+(five existing skips), release-set packs, supply-chain self-test and 72 isolated
+installed-product checks. Full-suite log SHA-256:
+`0cb5bcb6e98a90b406f2d21896e058a1c30ac3f5b7566f5fdd4e7203f09b3142`.
+The app bundle contains the new lifecycle/episode implementation; release-set
+and SBOM hashes were regenerated. These are local development checks, not an
+independently reproduced clean-commit release receipt.
+
 ### TelemetryService stop/restart fencing (2026-09-18)
 
 Controlled deferred-probe tests reproduced two lifecycle defects: a background

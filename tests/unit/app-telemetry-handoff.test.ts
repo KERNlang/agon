@@ -79,6 +79,46 @@ it('does not consume a retry when writing the engine selection fails', async () 
   expect(currentClose).not.toHaveBeenCalled();
   expect(oldClose).not.toHaveBeenCalled();
   expect(queue).toEqual([]);
+  expect(opts.dispatch).toHaveBeenCalledWith(expect.objectContaining({
+    type: 'warning', message: expect.stringContaining('engine selection could not be saved'),
+  }));
+});
+
+it.each(['close', 'detach', 'plan close', 'plan detach'])('stops automatic replay and reports partial handoff when session %s fails', async phase => {
+  const { opts, start, queue, turn, currentClose } = fixture();
+  const fail = () => { throw new Error('fixture session failure'); };
+  if (phase.startsWith('plan')) {
+    opts.activePlanRef.current = { id: 'failed-handoff-plan', state: 'running', steps: [{ id: 's', state: 'running', engine: 'a' }] } as any;
+  }
+  if (phase.endsWith('close')) currentClose.mockImplementation(fail);
+  else vi.mocked(opts.setCesarSessionWrapped).mockImplementation(fail);
+  start();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(configSet).toHaveBeenCalledExactlyOnceWith('cesarEngine', 'b');
+  expect(opts.activeAbortRef.current?.signal.aborted).toBe(true);
+  expect(turn.retried).toBe(false);
+  expect(queue).toEqual([]);
+  expect(takePlanFallback(opts.activeAbortRef.current!.signal, 'failed-handoff-plan')).toBeUndefined();
+  expect(opts.dispatch).toHaveBeenCalledWith(expect.objectContaining({
+    type: 'warning', message: expect.stringContaining('Automatic retry was cancelled'),
+  }));
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(configSet).toHaveBeenCalledOnce();
+  expect(queue).toEqual([]);
+  // An effect restart and a fresh controller must not rehabilitate the same
+  // session whose cleanup failed.
+  opts.activeAbortRef.current = new AbortController();
+  start();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(configSet).toHaveBeenCalledOnce();
+  // A new session can recover; the failure fence is not a global kill switch.
+  opts.activePlanRef.current = null;
+  opts.cesarSessionHolder.session = { close: vi.fn() } as any;
+  vi.mocked(opts.setCesarSessionWrapped).mockReset();
+  start();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(configSet).toHaveBeenCalledTimes(2);
+  expect(queue).toEqual([{ kind: 'telemetry-retry', input: 'fixture prompt' }]);
 });
 
 it('plan fallback does not consume or enqueue the foreground prompt retry', async () => {

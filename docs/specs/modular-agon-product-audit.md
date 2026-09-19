@@ -24,6 +24,38 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Visible, fail-closed telemetry handoff failures (2026-09-19)
+
+Config-write, session-close and session-detachment exceptions previously escaped
+into the poller's silent callback catch. Tests reproduced missing diagnostics and
+uncancelled work after a partial session transition. Config-write failure now
+reports that selection could not be saved and starts no retry. Once selection
+has been saved, a cleanup failure aborts the affected work, creates no prompt or
+plan retry, and reports that the selected engine changed but the old session may
+not have stopped. It advises restarting before retrying. Raw exception text is
+not copied into the UI.
+
+A weak, session-identity-bound failure fence prevents another automatic handoff
+against that session, including after an effect restart with a new controller.
+Replacing the failed session permits recovery. Regression tests exercise both
+prompt and plan paths, close and detach failures, repeated ticks, effect restart,
+absence of plan fallback authority, and recovery with a new session. Config
+persistence and provider cleanup are replaced by deterministic test boundaries;
+these are not live-provider termination or filesystem rollback receipts.
+
+This is explicit partial-failure handling, **not transactional rollback**. It
+cannot reconstruct a partially closed provider session or prove its process
+exited. Durable handoff recovery, verified provider cleanup, manual reuse guards,
+and config/session-switch atomicity remain open. The existing broad release
+disposition is unchanged.
+
+Development gates passed: build, typecheck, lint, re-export guard, 6,275 tests
+(five existing skips across 540 files), release-set packs, supply-chain self-test
+and 72 isolated installed-product checks. Full-suite log SHA-256:
+`13a289d83647d9a4f940964b7919f06867ecf27c053ec003843eaaa9ce83c660`.
+Release-set and SBOM hashes were refreshed. These are development checks, not
+an independent clean-commit release acceptance receipt.
+
 ### Queue handoff without detached timers (2026-09-19)
 
 The idle drain removed an entry and created an unowned 50 ms timeout. Before

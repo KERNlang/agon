@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { EngineRegistry, configSet } from '@kernlang/agon-core';
 import { startTelemetryPoller } from '../../packages/cli/src/surfaces/app-lifecycle.js';
 import type { TelemetryPollerDeps } from '../../packages/cli/src/surfaces/app-lifecycle.js';
+import { takePlanFallback } from '../../packages/cli/src/signals/plan-fallback.js';
 
 vi.mock('@kernlang/agon-core', async importOriginal => ({
   ...await importOriginal<typeof import('@kernlang/agon-core')>(),
@@ -81,13 +82,16 @@ it('does not consume a retry when writing the engine selection fails', async () 
 
 it('plan fallback does not consume or enqueue the foreground prompt retry', async () => {
   const { opts, start, queue, turn } = fixture();
-  opts.activePlanRef.current = { state: 'running', steps: [{ id: 'step-1', state: 'running', engine: 'a' }] } as any;
+  opts.activePlanRef.current = { id: 'fixture-plan', state: 'running', steps: [{ id: 'step-1', state: 'running', engine: 'a' }] } as any;
   start();
   await vi.advanceTimersByTimeAsync(0);
   expect(configSet).toHaveBeenCalledWith('cesarEngine', 'b');
   expect(opts.activeAbortRef.current?.signal.aborted).toBe(true);
   expect(queue).toEqual([]);
   expect(turn.retried).toBe(false);
+  expect(takePlanFallback(opts.activeAbortRef.current!.signal, 'fixture-plan')).toEqual({
+    planId: 'fixture-plan', stepId: 'step-1', engine: 'b',
+  });
 });
 
 it('old effect cleanup cannot clear the replacement poller reference', () => {

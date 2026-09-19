@@ -17,6 +17,7 @@ import { probeEngineVitals } from './app-telemetry.js';
 import { sessionResultStore } from '../models/session-results.js';
 
 import { statSync } from 'node:fs';
+import { requestPlanFallback } from '../signals/plan-fallback.js';
 
 // ── Module: AppLifecycle ──
 
@@ -221,6 +222,7 @@ export function startTelemetryPoller(opts: TelemetryPollerDeps): (() => void) | 
         ? [runningStep.engine, ...(Array.isArray(runningStep.engines) ? runningStep.engines : [])].filter((id: any) => typeof id === 'string' && id.trim())
         : [];
       const retryActivePlan = !!(runningStep && !((plan as any).fallbackRetriesUsed?.[runningStep.id]) && (stepEngines.length === 0 || stepEngines.includes(from)));
+      if (retryActivePlan && (!activeAbortRef.current || !plan?.id || !runningStep?.id)) return false;
       setRecentFallbacks((prev: any[]) => [...prev.slice(-7), { from, to, reason, at: Date.now() }]);
       if (!retryActivePlan && !retryActiveTurn) {
         dispatch({ type: 'warning', message: `Telemetry: ${from} stalled (${reason}); keeping Cesar unchanged.` } as any);
@@ -235,7 +237,8 @@ export function startTelemetryPoller(opts: TelemetryPollerDeps): (() => void) | 
         setCesarSessionWrapped(null);
       }
       if (retryActivePlan) {
-        if (activeAbortRef.current) activeAbortRef.current.abort();
+        const controller = activeAbortRef.current;
+        if (!controller || !requestPlanFallback(controller, plan!.id, runningStep!.id, to)) return false;
         dispatch({ type: 'warning', message: `Telemetry: ${from} stalled during plan step — switched to ${to} and retrying that step (${reason})` } as any);
       } else if (retryActiveTurn && activeTurn) {
         activeTurn.retried = true;

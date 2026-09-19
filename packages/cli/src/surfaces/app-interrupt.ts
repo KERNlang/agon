@@ -1,4 +1,5 @@
 import { saveCesarPlan, cancelCesarPlan } from '@kernlang/agon-core';
+import { revokePlanFallback } from '../signals/plan-fallback.js';
 
 import type { PersistentSession } from '@kernlang/agon-core';
 
@@ -93,6 +94,7 @@ export function runInterruptActiveRun(opts: InterruptRunDeps, message: string, c
     transitionCesarTurn(opts.cesarRuntimeHost, activeRuntime.envelope, 'cancelling');
   }
   if (abort) {
+    revokePlanFallback(abort.signal);
     abort.abort();
   } else if (opts.replState === 'idle') {
     interruptedJob = cancelLatestRunningJob(opts.jobManager, 'Interrupted by user');
@@ -220,7 +222,8 @@ export function buildCancelCallback(opts: CancelCallbackDeps): () => void {
     if (activeRuntime && activeRuntime.state === 'running') {
       transitionCesarTurn(opts.cesarRuntimeHost, activeRuntime.envelope, 'cancelling');
     }
-    for (const abort of _activeAborts) abort.abort();
+    for (const abort of _activeAborts) { revokePlanFallback(abort.signal); abort.abort(); }
+    if (opts.activeAbortRef.current) revokePlanFallback(opts.activeAbortRef.current.signal);
     _activeAborts.clear();
     // Hard cancel also drops any mid-turn steering (no carryover).
     clearSteering();
@@ -267,7 +270,7 @@ export function handleSigint(cesarSessionHolder: {session: PersistentSession | n
   if (_pauseState.value?.active) {
     // Second Ctrl+C during pause — hard cancel
     _pauseState.value = dismissPauseState();
-    for (const abort of _activeAborts) abort.abort();
+    for (const abort of _activeAborts) { revokePlanFallback(abort.signal); abort.abort(); }
     _activeAborts.clear();
     _lastSigintAt.value = now;
     if (_cancelCallback.fn) _cancelCallback.fn();

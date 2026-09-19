@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { requestPlanFallback, takePlanFallback } from '../../packages/cli/src/signals/plan-fallback.js';
 
 import {
   buildCancelCallback,
@@ -106,6 +107,13 @@ beforeEach(() => {
 });
 
 describe('Esc / steer stay quiet (Claude Code parity)', () => {
+  it('Esc revokes an already requested fallback before the plan unwinds', () => {
+    const controller = new AbortController();
+    requestPlanFallback(controller, 'p', 's', 'b');
+    runInterruptActiveRun(interruptDeps({ activeAbortRef: { current: controller },
+      interruptedTurnRef: { current: null }, replState: 'streaming' }), 'Interrupted.', false);
+    expect(takePlanFallback(controller.signal, 'p')).toBeUndefined();
+  });
   it('C1: steer-then-Esc queues the RAW steer text, never the redirect wrapper', async () => {
     markSteeringTurn('turn-1');
     expect(pushSteering('drop the batching, just fix Esc')).toBe(true);
@@ -206,8 +214,10 @@ describe('Esc / steer stay quiet (Claude Code parity)', () => {
 
   it('C5: the hard-cancel callback says so, once', () => {
     const dispatch = vi.fn();
+    const controller = new AbortController();
+    requestPlanFallback(controller, 'p', 's', 'b');
     const cancel = buildCancelCallback({
-      activeAbortRef: { current: null },
+      activeAbortRef: { current: controller },
       activePlanRef: { current: null },
       cesarRuntimeHost: { active: null },
       setActiveAbort: vi.fn(),
@@ -232,6 +242,7 @@ describe('Esc / steer stay quiet (Claude Code parity)', () => {
 
     cancel();
 
+    expect(takePlanFallback(controller.signal, 'p')).toBeUndefined();
     expect(dispatch).toHaveBeenCalledTimes(1);
     expect(dispatch).toHaveBeenCalledWith({ type: 'warning', message: 'Cancelled.' });
   });

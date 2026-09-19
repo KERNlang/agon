@@ -1,7 +1,7 @@
 
 import { writeFileSync } from 'node:fs';
 
-import { resolveWorkingDir, loadConfig, gitChangedFiles } from '@kernlang/agon-core';
+import { resolveWorkingDir, gitChangedFiles } from '@kernlang/agon-core';
 
 import { approveCesarPlan, cancelCesarPlan, saveCesarPlan, executePlan, formatCesarPlanMarkdown, planCostEstimator, appendMessage } from '@kernlang/agon-core';
 
@@ -20,6 +20,7 @@ import type { DispatchCallbacks } from '../dispatch.js';
 import { findPendingCesarPlan, buildResumePromptContext, skipCompletedSteps, askChoiceQuestion } from './plan-queries.js';
 
 import { hostConsoleWarn } from '../../lib/kern-host.js';
+import { takePlanFallback } from '../plan-fallback.js';
 
 /**
  * Resume a paused or stale-running Cesar plan through the shared executor path. Shows a resume prompt with context before executing.
@@ -354,10 +355,10 @@ export function failedPlanStepIsFallbackRetryable(step: any): boolean {
 /**
  * Reset one retryable failed plan step and bind it to the fallback engine. The caller runs executePlan again with a fresh abort controller.
  */
-export function preparePlanFallbackRetry(plan: CesarPlan, fallbackEngine: string): CesarPlan|null {
+export function preparePlanFallbackRetry(plan: CesarPlan, fallbackEngine: string, stepId?: string): CesarPlan|null {
   const engine = String(fallbackEngine ?? '').trim();
   if (!engine || !Array.isArray(plan.steps)) return null;
-  const failedIndex = plan.steps.findIndex((step: any) => failedPlanStepIsFallbackRetryable(step));
+  const failedIndex = plan.steps.findIndex((step: any) => (!stepId || step.id === stepId) && failedPlanStepIsFallbackRetryable(step));
   if (failedIndex < 0) return null;
   const failedStep = plan.steps[failedIndex] as any;
   const retriesUsed = (plan as any).fallbackRetriesUsed ?? {};
@@ -408,8 +409,10 @@ export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallb
         writeFileSync(finalPlan.planFilePath, formatCesarPlanMarkdown(finalPlan));
       } catch (err) { console.warn('[plan] failed to write plan file:', (err as Error).message ?? err); }
     }
-    const fallbackEngine = String((loadConfig() as any).cesarEngine ?? cb.ctx.config?.cesarEngine ?? cb.ctx.config?.forgeFixedStarter ?? '').trim();
-    const retryPlan = preparePlanFallbackRetry(finalPlan, fallbackEngine);
+    const fallback = takePlanFallback(abortController.signal, finalPlan.id);
+    const fallbackEngine = fallback?.engine ?? '';
+    const retryPlan = fallback && finalPlan.state === 'paused'
+      ? preparePlanFallbackRetry(finalPlan, fallbackEngine, fallback.stepId) : null;
     if (retryPlan) {
       const retryStep = retryPlan.steps.find((step: any) => step.state === 'pending' && (retryPlan.fallbackRetriesUsed?.[step.id] ?? 0) > 0);
       cb.dispatch({

@@ -24,6 +24,40 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Explicit plan fallback authority (2026-09-19)
+
+Three executor-level negative controls reproduced automatic second executions
+after user cancellation, timeout text alone and a cancelled plan. The executor
+previously took the target from global config and treated retry-looking text as
+authority. That automatic path now requires a one-use, in-memory request bound
+to the execution's AbortSignal, plan ID and exact step ID. The telemetry callback
+creates the request before aborting; the executor consumes it and uses its
+captured target only for a paused, eligible failed step with retry budget left.
+The existing pure `preparePlanFallbackRetry` transformation remains compatible;
+it is not itself an execution authorization API.
+
+Esc, hard cancel and the tracked Ctrl+C hard-cancel path revoke pending requests.
+Requests are never persisted, cannot be imported from plan JSON or error text,
+and cannot be reused on restart or a different execution. Tests cover authorized
+retry, wrong plan/step/run, revocation, spent budget, semantic failure, cancelled
+plan, single consumption and already-aborted controllers. The app callback test
+now checks the actual request identity. Interrupt tests exercise real Esc and
+hard-cancel handlers. Executor tests replace the engine execution/persistence
+boundaries: they prove dispatch authority, not successful live model work.
+
+This resolves the inference-based automatic retry boundary noted below. Still
+open: queued prompt retry identity, config/session-close failure atomicity,
+parallel-step recovery policy and full installed/live handoff qualification.
+This host-side compatibility repair does not complete A06 or release acceptance.
+
+Development gates passed: full build, typecheck, lint, re-export guard, 6,261
+tests (five existing skips), release-set packs, supply-chain self-test and 72
+isolated installed-product checks. Full-suite log SHA-256:
+`53319140fcc7f441546a3b1a84e89c3649443502dfdc89693cc9db2140caeb8c`.
+Release-set and SBOM hashes were regenerated. Built CLI inspection found one
+shared request/consume/revoke implementation. These are development checks,
+not an independently reproduced clean-commit release acceptance receipt.
+
 ### App telemetry handoff boundaries (2026-09-18)
 
 The real `startTelemetryPoller` effect and real poller now have an eleven-case
@@ -45,7 +79,8 @@ Remaining handoff dimensions include config-write/session-close failure
 atomicity, retry identity across queue resubmission (`app-submit.ts` currently
 constructs a fresh `retried: false` turn), and plan retry authority:
 `executeApprovedPlan` currently derives retryability from failure text and the
-configured engine, rather than an explicit telemetry request. User cancellation
+configured engine, rather than an explicit telemetry request (superseded by the
+2026-09-19 authority repair above). User cancellation
 must be distinguished from authorized fallback before claiming full plan
 recovery qualification. A06 and whole-product release acceptance remain open.
 

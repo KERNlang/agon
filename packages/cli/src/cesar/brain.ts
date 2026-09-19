@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { sessionCleanupFailed, SESSION_CLEANUP_FAILURE_MESSAGE } from './session-health.js';
 
 import { mkdirSync, appendFileSync, existsSync, readFileSync, unlinkSync, readdirSync, writeFileSync } from 'node:fs';
 
@@ -141,6 +142,10 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
 }
 
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<CesarTurnOutcome> {
+  if (sessionCleanupFailed(ctx.cesarSession)) {
+    dispatch({ type: 'warning', message: SESSION_CLEANUP_FAILURE_MESSAGE });
+    return { terminalState: 'failed', decisionReason: 'session-cleanup-failed', delegated: false, responded: false };
+  }
   const abort = new AbortController();
       const _turnStart = Date.now();
       const _turnId = createCesarTurnId();

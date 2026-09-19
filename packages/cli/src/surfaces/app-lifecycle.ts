@@ -18,6 +18,7 @@ import { sessionResultStore } from '../models/session-results.js';
 
 import { statSync } from 'node:fs';
 import { requestPlanFallback } from '../signals/plan-fallback.js';
+import { markSessionCleanupFailed, sessionCleanupFailed } from '../cesar/session-health.js';
 import type { QueuedInput } from '../signals/queued-input.js';
 
 // ── Module: AppLifecycle ──
@@ -180,10 +181,6 @@ export interface TelemetryPollerDeps {
   statusDashboardOpenRef: {current: boolean};
 }
 
-// A failed close is not healed by restarting a React effect. Weak ownership
-// retains no discarded sessions and allows a genuinely new session to recover.
-const failedHandoffSessions = new WeakSet<object>();
-
 export function startTelemetryPoller(opts: TelemetryPollerDeps): (() => void) | undefined {
   const {
     registry,
@@ -216,8 +213,7 @@ export function startTelemetryPoller(opts: TelemetryPollerDeps): (() => void) | 
     autoFallback: 'auto',
     onAutoFallback: async (from: string, to: string, reason: string) => {
       // Cancellation is an operator boundary, not permission to replay work.
-      if (activeAbortRef.current?.signal.aborted ||
-          (cesarSessionHolder.session && failedHandoffSessions.has(cesarSessionHolder.session))) return false;
+      if (activeAbortRef.current?.signal.aborted || sessionCleanupFailed(cesarSessionHolder.session)) return false;
       const activeTurn = activeTurnRef.current;
       const retryActiveTurn = !!(activeTurn && !activeTurn.retried && activeTurn.engineId === from && activeTurn.input);
       const plan = activePlanRef.current;
@@ -250,7 +246,7 @@ export function startTelemetryPoller(opts: TelemetryPollerDeps): (() => void) | 
         } catch {
           // Closing a provider session is irreversible and can partially fail.
           // Do not claim rollback or replay work against an uncertain session.
-          failedHandoffSessions.add(currentSession);
+          markSessionCleanupFailed(currentSession);
           activeAbortRef.current?.abort();
           dispatch({ type: 'warning', message: `Telemetry: engine selection was saved as ${to}, but session cleanup failed. Automatic retry was cancelled and automatic handoffs are paused. Restart Agon before retrying; the previous session may not have stopped.` } as any);
           return false;

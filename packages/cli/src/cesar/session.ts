@@ -25,6 +25,7 @@ import type { GuardMode } from '@kernlang/agon-core';
 import type { HandlerContext } from '../handlers/types.js';
 
 import { createCesarToolRegistry } from './tools.js';
+import { sessionCleanupFailed, SESSION_CLEANUP_FAILURE_MESSAGE } from './session-health.js';
 
 import { getSessionAllowList } from '../signals/output.js';
 
@@ -1489,6 +1490,9 @@ export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { b
 }
 
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
+  if (sessionCleanupFailed(ctx.cesarSession)) {
+    throw new Error(SESSION_CLEANUP_FAILURE_MESSAGE);
+  }
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
   const cwd = resolveWorkingDir();

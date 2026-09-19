@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { sessionCleanupFailed, SESSION_CLEANUP_FAILURE_MESSAGE } from '../../cesar/session-health.js';
 import { runBrainstormSession } from '../../blocks/brainstorm-session.js';
 
 import { mkdirSync, appendFileSync } from 'node:fs';
@@ -1053,6 +1054,12 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
  * Unified Cesar brain routing. Returns true if a background job was dispatched.
  */
 export async function routeWithCesar(input: string, images: ImageAttachment[], cb: DispatchCallbacks): Promise<boolean> {
+  // Refuse before the recovery ladder can turn a cleanup failure into a fresh
+  // adapter dispatch. Leave pending input attachments untouched for recovery.
+  if (sessionCleanupFailed(cb.ctx.cesarSession)) {
+    cb.dispatch({ type: 'warning', message: SESSION_CLEANUP_FAILURE_MESSAGE });
+    return false;
+  }
   cb.setPendingImages(() => []);
   const turnStartedAt = Date.now();
   // Hoisted out of the try so the fallback ladder below can see whether the

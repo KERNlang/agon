@@ -24,6 +24,37 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Manual entry guards for failed session cleanup (2026-09-19)
+
+Positive-then-negative tests reproduced manual session acquisition returning the
+same session after a telemetry close or detach failure. The session-health record
+is now shared by telemetry, session acquisition, the brain entry point and the
+router. Acquisition refuses reuse, dead-session restart and changed-engine
+cleanup for that failed object. Router and brain entry guards refuse before
+normal turn setup or the router's generic recovery ladder can dispatch work.
+The warning asks for restart and explicitly does not claim the provider stopped.
+The router leaves pending attachments untouched.
+
+Tests first acquire a healthy session, induce failure through the real telemetry
+callback, then check refusal with alive/dead and changed-engine state. Deliberately
+unavailable downstream configuration proves brain/router rejection happens before
+turn setup. A new healthy session remains usable, and the existing poller restart
+and replacement-session tests still pass. Provider cleanup and config persistence
+remain mocked; no live provider or active installation was exercised.
+
+This closes these entry-time manual reuse paths, not every in-flight race. A
+session becoming unhealthy after entry, verified provider termination, and durable
+transactional recovery remain open. The shared weak identity record is CLI-local
+compatibility machinery, not a new persisted or public Mod API contract.
+
+Development gates passed: build, typecheck, lint, re-export guard, 6,277 tests
+(five existing skips across 540 files), release-set packs, supply-chain self-test
+and 72 isolated installed-product checks. Full-suite log SHA-256:
+`e47adc0906c572af99924e34deefca51d30a718546d66eaa58beb1565633166c`.
+The built CLI contains one shared `failedCleanupSessions` definition. Release-set
+and SBOM hashes were refreshed. These are development checks, not independent
+clean-commit release qualification.
+
 ### Visible, fail-closed telemetry handoff failures (2026-09-19)
 
 Config-write, session-close and session-detachment exceptions previously escaped

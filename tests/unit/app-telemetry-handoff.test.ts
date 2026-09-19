@@ -4,6 +4,9 @@ import { startTelemetryPoller } from '../../packages/cli/src/surfaces/app-lifecy
 import type { TelemetryPollerDeps } from '../../packages/cli/src/surfaces/app-lifecycle.js';
 import { takePlanFallback } from '../../packages/cli/src/signals/plan-fallback.js';
 import type { QueuedInput } from '../../packages/cli/src/signals/queued-input.js';
+import { ensureCesarSession, mcpConfigFingerprint } from '../../packages/cli/src/cesar/session.js';
+import { handleCesarBrain } from '../../packages/cli/src/cesar/brain.js';
+import { routeWithCesar } from '../../packages/cli/src/signals/dispatch/cesar-router.js';
 
 vi.mock('@kernlang/agon-core', async importOriginal => ({
   ...await importOriginal<typeof import('@kernlang/agon-core')>(),
@@ -119,6 +122,45 @@ it.each(['close', 'detach', 'plan close', 'plan detach'])('stops automatic repla
   await vi.advanceTimersByTimeAsync(0);
   expect(configSet).toHaveBeenCalledTimes(2);
   expect(queue).toEqual([{ kind: 'telemetry-retry', input: 'fixture prompt' }]);
+});
+
+it.each(['close', 'detach'])('manual submission refuses a session after handoff %s failure', async phase => {
+  const { opts, start, currentClose } = fixture();
+  const session = Object.assign(opts.cesarSessionHolder.session!, { alive: true, engineId: 'a', start: vi.fn() });
+  const config = { cesarEngine: 'a' };
+  const ctx = { config, cesarSession: session, setCesarSession: vi.fn(),
+    cesar: { mcpFingerprint: mcpConfigFingerprint(config), harnessProfile: 'legacy' } } as any;
+  // Positive control: this is a valid reusable session before the failure.
+  await expect(ensureCesarSession(ctx)).resolves.toBe(session);
+  const fail = () => { throw new Error('fixture cleanup failure'); };
+  if (phase === 'close') currentClose.mockImplementation(fail);
+  else vi.mocked(opts.setCesarSessionWrapped).mockImplementation(fail);
+  start();
+  await vi.advanceTimersByTimeAsync(0);
+  await expect(ensureCesarSession(ctx)).rejects.toThrow('Session cleanup previously failed');
+  const dispatch = vi.fn();
+  const downstream = vi.fn(() => { throw new Error('blocked session reached downstream setup'); });
+  const blockedContext = { cesarSession: session, get config() { return downstream(); } } as any;
+  await expect(handleCesarBrain('manual', dispatch, blockedContext)).resolves.toMatchObject({
+    terminalState: 'failed', decisionReason: 'session-cleanup-failed', responded: false,
+  });
+  await expect(routeWithCesar('manual', [], { ctx: blockedContext, dispatch } as any)).resolves.toBe(false);
+  expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
+    type: 'warning', message: expect.stringContaining('Session cleanup previously failed'),
+  }));
+  expect(downstream).not.toHaveBeenCalled();
+  // A dead flag must not trigger restart, nor a changed engine another close.
+  session.alive = false;
+  await expect(ensureCesarSession(ctx)).rejects.toThrow('Session cleanup previously failed');
+  config.cesarEngine = 'b';
+  await expect(ensureCesarSession(ctx)).rejects.toThrow('Session cleanup previously failed');
+  expect(session.start).not.toHaveBeenCalled();
+  expect(ctx.setCesarSession).not.toHaveBeenCalled();
+  expect(currentClose).toHaveBeenCalledOnce();
+  const replacement = { alive: true, engineId: 'a' };
+  config.cesarEngine = 'a';
+  ctx.cesarSession = replacement;
+  await expect(ensureCesarSession(ctx)).resolves.toBe(replacement);
 });
 
 it('plan fallback does not consume or enqueue the foreground prompt retry', async () => {

@@ -84,6 +84,7 @@ export function cancelLatestRunningJob(jobManager: JobManager, reason?: string):
 }
 
 export function runInterruptActiveRun(opts: InterruptRunDeps, message: string, clearChat: boolean): void {
+  opts.setInputQueue(prev => prev.filter(entry => typeof entry === 'string'));
   const abort = opts.activeAbortRef.current;
   const foregroundTurn = opts.activeTurnRef.current;
   let interruptedInput = String(foregroundTurn?.input ?? '').trim();
@@ -194,6 +195,7 @@ export function runInterruptActiveRun(opts: InterruptRunDeps, message: string, c
  * Explicit dependencies for buildCancelCallback — the refs and setState fns the SIGINT hard-cancel callback resets. Distinct from InterruptRunDeps: also clears agent-progress + tool-detail and FINISHES the repl (vs cancel).
  */
 export interface CancelCallbackDeps {
+  setInputQueue: (updater:(prev:QueuedInput[]) => QueuedInput[]) => void;
   activeAbortRef: {current: AbortController | null};
   activePlanRef: {current: any};
   cesarRuntimeHost: any;
@@ -219,6 +221,7 @@ export interface CancelCallbackDeps {
 
 export function buildCancelCallback(opts: CancelCallbackDeps): () => void {
   return () => {
+    opts.setInputQueue(prev => prev.filter(entry => typeof entry === 'string'));
     const activeRuntime = opts.cesarRuntimeHost?.active;
     if (activeRuntime && activeRuntime.state === 'running') {
       transitionCesarTurn(opts.cesarRuntimeHost, activeRuntime.envelope, 'cancelling');

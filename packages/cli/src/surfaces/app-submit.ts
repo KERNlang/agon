@@ -160,7 +160,10 @@ export function runProcessInputQueue(replState: ReplStateState, inputQueue: Queu
   if (inputQueue.length > 0) {
     const next = inputQueue[0];
     setInputQueue((prev: QueuedInput[]) => prev.slice(1));
-    setTimeout(() => handleSubmit(next), 50);
+    // Submit synchronously so its busy transition is batched with the pop.
+    // A detached timer lets later idle renders drain more work and survives
+    // cancellation/unmount without an owner to revoke it.
+    handleSubmit(next);
   }
 }
 

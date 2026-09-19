@@ -24,6 +24,37 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Queue handoff without detached timers (2026-09-19)
+
+The idle drain removed an entry and created an unowned 50 ms timeout. Before
+submit could transition busy, another idle queue render could remove another
+entry; the detached callbacks could also outlive cancellation or UI disposal.
+There was no required delay contract in this path. The drain now calls submit
+directly, so the normal submit busy transition and queue pop occur in the same
+effect execution. No replacement scheduler or timer ownership layer was added.
+
+Failing tests required immediate tagged-entry delivery, zero queue timers, no
+later submission after time advances, and FIFO draining gated by the consumer's
+busy transition. Separate real interrupt-handler tests demonstrated that queued
+automatic retries survived both Esc and hard cancel; those handlers now discard
+tagged retries while preserving independent plain-text user messages. The app
+wires its queue setter into the hard-cancel callback. A pre-existing interrupt
+fixture was completed with the already-required queue setter; its assertions
+were retained.
+
+This closes the detached queue timer and queued automatic-retry cancellation
+paths. The FIFO test models successive effect calls, not a mounted React renderer;
+it is not evidence that every UI lifecycle or provider handoff is qualified.
+Config/session-switch failure atomicity and full live recovery remain open.
+
+Development gates passed: full build, typecheck, lint, re-export guard, 6,271
+tests (five existing skips across 540 test files), release-set packs,
+supply-chain self-test and 72 isolated installed-product checks. Full-suite
+log SHA-256:
+`00cf9c6e4961a8c55024e4571d14adcf676c3edaa678f2ee77c4889158b8903f`.
+Release-set and SBOM hashes were regenerated. These are development checks,
+not an independently reproduced clean-commit release acceptance receipt.
+
 ### Queued prompt retry identity (2026-09-19)
 
 Telemetry retries previously became ordinary queue strings, then acquired
@@ -45,7 +76,7 @@ or model instruction.
 
 This resolves allowance loss through the existing queue path. It does not prove
 live model recovery or transactional config/session switching. Queued callback
-timer disposal/cancellation still needs separate qualification; A06 and the
+timer disposal/cancellation was subsequently repaired above; A06 and the
 whole-product release remain open.
 
 Development gates passed: full build, typecheck, lint, re-export guard, 6,268

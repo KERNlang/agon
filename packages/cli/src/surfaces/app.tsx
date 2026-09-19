@@ -1659,6 +1659,7 @@ export function App() {
 
   useEffect(() => {
     _cancelCallback.fn = buildCancelCallback({
+      setInputQueue,
       activeAbortRef, activePlanRef, cesarRuntimeHost: cesarRuntimeHostRef.current, setActiveAbort, setActivePlan,
       setLiveSpinner, setLiveProgress, outputActions,
       agentProgressRef, setAgentProgress,

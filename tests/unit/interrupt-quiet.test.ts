@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { requestPlanFallback, takePlanFallback } from '../../packages/cli/src/signals/plan-fallback.js';
+import type { QueuedInput } from '../../packages/cli/src/signals/queued-input.js';
 
 import {
   buildCancelCallback,
@@ -107,6 +108,12 @@ beforeEach(() => {
 });
 
 describe('Esc / steer stay quiet (Claude Code parity)', () => {
+  it('Esc drops automatic queued retries but preserves independently queued user input', () => {
+    let queue: QueuedInput[] = ['manual', { kind: 'telemetry-retry', input: 'old' }, 'later'];
+    runInterruptActiveRun(interruptDeps({ interruptedTurnRef: { current: null },
+      setInputQueue: (fn: (prev: QueuedInput[]) => QueuedInput[]) => { queue = fn(queue); } }), 'Interrupted.', false);
+    expect(queue).toEqual(['manual', 'later']);
+  });
   it('Esc revokes an already requested fallback before the plan unwinds', () => {
     const controller = new AbortController();
     requestPlanFallback(controller, 'p', 's', 'b');
@@ -214,6 +221,7 @@ describe('Esc / steer stay quiet (Claude Code parity)', () => {
 
   it('C5: the hard-cancel callback says so, once', () => {
     const dispatch = vi.fn();
+    let queue: QueuedInput[] = ['manual', { kind: 'telemetry-retry', input: 'old' }];
     const controller = new AbortController();
     requestPlanFallback(controller, 'p', 's', 'b');
     const cancel = buildCancelCallback({
@@ -238,11 +246,13 @@ describe('Esc / steer stay quiet (Claude Code parity)', () => {
       setToolDetailEvent: vi.fn(),
       setReplState: vi.fn(),
       dispatch,
+      setInputQueue: (fn: (prev: QueuedInput[]) => QueuedInput[]) => { queue = fn(queue); },
     } as any);
 
     cancel();
 
     expect(takePlanFallback(controller.signal, 'p')).toBeUndefined();
+    expect(queue).toEqual(['manual']);
     expect(dispatch).toHaveBeenCalledTimes(1);
     expect(dispatch).toHaveBeenCalledWith({ type: 'warning', message: 'Cancelled.' });
   });

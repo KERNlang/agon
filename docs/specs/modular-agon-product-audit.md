@@ -24,6 +24,37 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Queued prompt retry identity (2026-09-19)
+
+Telemetry retries previously became ordinary queue strings, then acquired
+`retried: false` on submission. The queue now supports an internal tagged retry
+entry alongside normal strings. The actual drain passes that entry intact;
+submission unwraps only its text for parsing, history, transcript and dispatch,
+and carries the spent allowance into the new active turn. Busy requeueing keeps
+the tag and cannot turn an automatic retry into mid-turn steering. The displayed
+queue is a memoized text projection, preserving existing visible labels.
+
+Tests execute the real queue drain and submit path with the engine dispatcher
+replaced: a retry arrives with `retried: true`, whereas a manually submitted
+identical string arrives with `retried: false`. Producer tests require tagged
+entries. Further failing tests demonstrated replay into changed mode, side chat,
+plan mode, approval or redirect contexts; these now refuse automatic replay with
+a warning and leave explicit resubmission available. Existing steering/interrupt
+tests remain green. This is run-local control metadata, not a persisted format
+or model instruction.
+
+This resolves allowance loss through the existing queue path. It does not prove
+live model recovery or transactional config/session switching. Queued callback
+timer disposal/cancellation still needs separate qualification; A06 and the
+whole-product release remain open.
+
+Development gates passed: full build, typecheck, lint, re-export guard, 6,268
+tests (five existing skips), release-set packs, supply-chain self-test and 72
+isolated installed-product checks. Full-suite log SHA-256:
+`5f76ba7358a052911ed27b11c2e6cdd186acd472f5af1c1595942f92bd929360`.
+Release-set and SBOM hashes were regenerated. These are development checks,
+not an independently reproduced clean-commit release acceptance receipt.
+
 ### Explicit plan fallback authority (2026-09-19)
 
 Three executor-level negative controls reproduced automatic second executions
@@ -46,7 +77,7 @@ hard-cancel handlers. Executor tests replace the engine execution/persistence
 boundaries: they prove dispatch authority, not successful live model work.
 
 This resolves the inference-based automatic retry boundary noted below. Still
-open: queued prompt retry identity, config/session-close failure atomicity,
+open: queued prompt retry identity (subsequently repaired above), config/session-close failure atomicity,
 parallel-step recovery policy and full installed/live handoff qualification.
 This host-side compatibility repair does not complete A06 or release acceptance.
 

@@ -18,6 +18,7 @@ import { sessionResultStore } from '../models/session-results.js';
 
 import { statSync } from 'node:fs';
 import { requestPlanFallback } from '../signals/plan-fallback.js';
+import type { QueuedInput } from '../signals/queued-input.js';
 
 // ── Module: AppLifecycle ──
 
@@ -174,7 +175,7 @@ export interface TelemetryPollerDeps {
   setRecentFallbacks: (fn:any) => void;
   setConfigVersion: (fn:any) => void;
   setCesarSessionWrapped: (session:any) => void;
-  setInputQueue: (fn:any) => void;
+  setInputQueue: (fn:(prev:QueuedInput[]) => QueuedInput[]) => void;
   setTelemetryVitals: (map:any) => void;
   statusDashboardOpenRef: {current: boolean};
 }
@@ -243,7 +244,7 @@ export function startTelemetryPoller(opts: TelemetryPollerDeps): (() => void) | 
       } else if (retryActiveTurn && activeTurn) {
         activeTurn.retried = true;
         if (activeAbortRef.current) activeAbortRef.current.abort();
-        setInputQueue((prev: string[]) => [...prev, activeTurn.input]);
+        setInputQueue((prev: QueuedInput[]) => [...prev, { kind: 'telemetry-retry', input: activeTurn.input }]);
         dispatch({ type: 'warning', message: `Telemetry: ${from} stalled — switched to ${to} and retrying this prompt (${reason})` } as any);
       } else {
         dispatch({ type: 'warning', message: `Telemetry: ${from} stalled — auto-fallback to ${to} (${reason})` } as any);

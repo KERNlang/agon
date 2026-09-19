@@ -3,6 +3,7 @@ import { EngineRegistry, configSet } from '@kernlang/agon-core';
 import { startTelemetryPoller } from '../../packages/cli/src/surfaces/app-lifecycle.js';
 import type { TelemetryPollerDeps } from '../../packages/cli/src/surfaces/app-lifecycle.js';
 import { takePlanFallback } from '../../packages/cli/src/signals/plan-fallback.js';
+import type { QueuedInput } from '../../packages/cli/src/signals/queued-input.js';
 
 vi.mock('@kernlang/agon-core', async importOriginal => ({
   ...await importOriginal<typeof import('@kernlang/agon-core')>(),
@@ -23,7 +24,7 @@ function fixture() {
   for (const id of ['a', 'b']) registry.register({ id, displayName: id, binary: 'node', timeout: 1, tier: 'user' } as any);
   const oldClose = vi.fn();
   const currentClose = vi.fn();
-  const queue: string[] = [];
+  const queue: QueuedInput[] = [];
   const turn = { input: 'fixture prompt', engineId: 'a', retried: false };
   const opts: TelemetryPollerDeps = {
     registry, cesarSession: { close: oldClose } as any,
@@ -48,10 +49,10 @@ it('closes the current session and queues a foreground retry exactly once', asyn
   expect(oldClose).not.toHaveBeenCalled();
   expect(configSet).toHaveBeenCalledWith('cesarEngine', 'b');
   expect(opts.activeAbortRef.current?.signal.aborted).toBe(true);
-  expect(queue).toEqual(['fixture prompt']);
+  expect(queue).toEqual([{ kind: 'telemetry-retry', input: 'fixture prompt' }]);
   expect(turn.retried).toBe(true);
   await vi.advanceTimersByTimeAsync(5000);
-  expect(queue).toEqual(['fixture prompt']);
+  expect(queue).toEqual([{ kind: 'telemetry-retry', input: 'fixture prompt' }]);
   expect(configSet).toHaveBeenCalledOnce();
 });
 
@@ -131,5 +132,5 @@ it('does not close an obsolete captured session when the current holder is empty
   start();
   await vi.advanceTimersByTimeAsync(0);
   expect(oldClose).not.toHaveBeenCalled();
-  expect(queue).toEqual(['fixture prompt']);
+  expect(queue).toEqual([{ kind: 'telemetry-retry', input: 'fixture prompt' }]);
 });

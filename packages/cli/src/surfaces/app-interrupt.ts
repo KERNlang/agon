@@ -1,5 +1,6 @@
 import { saveCesarPlan, cancelCesarPlan } from '@kernlang/agon-core';
 import { revokePlanFallback } from '../signals/plan-fallback.js';
+import type { QueuedInput } from '../signals/queued-input.js';
 
 import type { PersistentSession } from '@kernlang/agon-core';
 
@@ -72,7 +73,7 @@ export interface InterruptRunDeps {
   pendingBellRef: {current: boolean};
   bell: () => void;
   setWindowTitle: (title:string) => void;
-  setInputQueue: (updater:(prev:string[]) => string[]) => void;
+  setInputQueue: (updater:(prev:QueuedInput[]) => QueuedInput[]) => void;
 }
 
 export function cancelLatestRunningJob(jobManager: JobManager, reason?: string): Job|null {
@@ -138,7 +139,7 @@ export function runInterruptActiveRun(opts: InterruptRunDeps, message: string, c
     const raw = leftover
       .map((msg) => String(msg.input ?? ''))
       .filter((text) => !!text.trim());
-    if (raw.length > 0) opts.setInputQueue((prev: string[]) => [...prev, ...raw]);
+    if (raw.length > 0) opts.setInputQueue((prev: QueuedInput[]) => [...prev, ...raw]);
   }
   // Drop any remaining unconsumed steering state (count mirror zeroes → the
   // "Queued (N)" hint clears). Drafts are untouched — a half-typed draft is

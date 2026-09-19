@@ -144,6 +144,8 @@ import { onSteeringChange } from '../cesar/steering.js';
 import { runHandleCancelOrExit, runHandleComposerCtrlShortcut, runHandleKeyboardInput } from './app-keyboard.js';
 
 import { runProcessInputQueue, runSendBtwMessage, runHandleSubmit } from './app-submit.js';
+import { queuedInputText } from '../signals/queued-input.js';
+import type { QueuedInput } from '../signals/queued-input.js';
 
 // ── Module: AppHelperExports ──
 
@@ -172,7 +174,8 @@ export function App() {
   const [uiInteractionActive, setUiInteractionActive] = useState<boolean>(false);
   const [inputHistory, _setInputHistoryRaw] = useState<string[]>(loadComposerInputHistory());
   const setInputHistory = useMemo(() => __inkSafe(_setInputHistoryRaw), [_setInputHistoryRaw]);
-  const [inputQueue, _setInputQueueRaw] = useState<string[]>([]);
+  const [inputQueue, _setInputQueueRaw] = useState<QueuedInput[]>([]);
+  const visibleInputQueue = useMemo(() => inputQueue.map(queuedInputText), [inputQueue]);
   const setInputQueue = useMemo(() => __inkSafe(_setInputQueueRaw), [_setInputQueueRaw]);
   const [steeringCount, _setSteeringCountRaw] = useState<number>(0);
   const setSteeringCount = useMemo(() => __inkSafe(_setSteeringCountRaw), [_setSteeringCountRaw]);
@@ -1047,7 +1050,7 @@ export function App() {
     }, question);
   }, [buildContext,dispatch,mode,replState,outputBlocks,jobManager,btwPanel]);
 
-  const handleSubmit = useCallback(async (value:string) => {
+  const handleSubmit = useCallback(async (value:QueuedInput) => {
     runHandleSubmit({
       inputEpochRef, pendingBellRef, awaitingPlanAnnouncedRef, pasteHashesRef, pendingPasteTransformRef, inputValueRef, activePlanRef, activeTurnRef, interruptedTurnRef, chatStartTimeRef,
       replState, mode, planModeQueued, autoModeQueued, permissionMode, btwPanel, pendingImages, outputBlocks, allSlashCommands, dynamicSkills, extensionSkills: [], lastUndoToken, sessionStartTime, explorationMode, neroMode,
@@ -1948,7 +1951,7 @@ export function App() {
         questionState={questionState}
         pendingImages={pendingImages}
         imageVisionNote={imageVisionNote}
-        inputQueue={inputQueue}
+        inputQueue={visibleInputQueue}
         steeringCount={steeringCount}
         liveSpinner={liveSpinner}
         mode={mode}

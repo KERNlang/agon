@@ -1,0 +1,37 @@
+{
+  "name": "@kernlang/agon-mod-api",
+  "version": "1.0.0",
+  "private": false,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./manifest": {
+      "types": "./dist/manifest.d.ts",
+      "import": "./dist/manifest.js"
+    },
+    "./state": {
+      "types": "./dist/state.d.ts",
+      "import": "./dist/state.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "schemas",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup && tsc -b tsconfig.json --force",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.3.6",
+    "semver": "^7.7.4"
+  },
+  "license": "MIT"
+}

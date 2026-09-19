@@ -462,7 +462,7 @@ export function shouldStopAfterXmlToolCall(toolName: string): boolean {
 }
 
 /**
- * Strip the 'Agon' orchestration alias prefix from a tool name. The default companion/MCP path surfaces write/bash tools as AgonBash/AgonEdit/AgonWrite (the MCP completion's done.tool is the ORIGINAL alias, not the mapped kern tool — see agon-orchestration.kern handleWriteToolCall), while the native/XML loop uses the bare names. Case-insensitive prefix match; returns the un-prefixed remainder so both paths classify identically.
+ * Strip the 'Agon' orchestration alias prefix from a tool name. The default companion/MCP path surfaces write/bash tools as AgonBash/AgonEdit/AgonWrite (the MCP completion's done.tool is the ORIGINAL alias, not the mapped kern tool — see executeApprovedKernelWrite), while the native/XML loop uses the bare names. Case-insensitive prefix match; returns the un-prefixed remainder so both paths classify identically.
  */
 export function stripAgonToolPrefix(name: string): string {
   const n = String(name ?? '');

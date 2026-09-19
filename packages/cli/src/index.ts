@@ -1,5 +1,8 @@
 import { defineCommand, runMain } from 'citty';
-import { lazySubCommands } from './lazy-commands.js';
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { createGeneratedLazySubCommands } from './lazy-commands.js';
+import { initializeProcessSurfaceAuthority, modularHostRoot, processSurfacePublicIds } from './surface-authority-runtime.js';
 import { loadConfig, loadAllAuthKeys } from '@kernlang/agon-core';
 
 // `surfaces/app.js` (the whole interactive Cesar/Ink surface — ~2k lines
@@ -144,19 +147,32 @@ consumeGroundFlag();
 consumeContinueFlag();
 guardAgainstRecursiveDispatch();
 
+const topLevelMetadataOnly = process.argv.length === 3
+  && ['--help', '-h', '--version', '-v'].includes(process.argv[2] ?? '');
+const hostRoot = modularHostRoot();
+// A pristine installation has the frozen all-enabled generation already in
+// memory. Top-level metadata does not need to import and activate 36 physical
+// packages. Once any durable host or folder-mod state exists, help performs
+// the full authoritative bootstrap so disabled and external commands cannot
+// be misrepresented. Version output is state-independent.
+const mayUsePristineCatalog = !existsSync(hostRoot) && !existsSync(join(dirname(hostRoot), 'mods'));
+if (!topLevelMetadataOnly || (!process.argv.includes('--version') && !process.argv.includes('-v') && !mayUsePristineCatalog)) {
+  await initializeProcessSurfaceAuthority();
+}
+
 const main = defineCommand({
   meta: {
     name: 'agon',
-    version: '0.2.5',
+    version: '1.0.0',
     description: 'Any AI can join. They compete. You ship.',
   },
-  subCommands: lazySubCommands,
+  subCommands: createGeneratedLazySubCommands(processSurfacePublicIds('cli')),
 });
 
 // Interactive REPL only when: no args at all AND stdin is a TTY
 const noArgs = process.argv.length <= 2;
 const isTty = process.stdin.isTTY === true;
-const isSetup = process.argv[2] === 'setup';
+const isInteractiveSetup = process.argv[2] === 'setup' && process.argv.length === 3;
 
 // Both interactive modules are loaded UP FRONT (before running either), so a
 // module-load failure hits the loud reporting catch while runtime rejections
@@ -172,7 +188,7 @@ function runOnboardingThenRepl(): void {
   );
 }
 
-if (isSetup && isTty) {
+if (isInteractiveSetup && isTty) {
   runOnboardingThenRepl();
 } else if (noArgs && isTty) {
   const config = loadConfig();

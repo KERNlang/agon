@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-23T00:00:00Z",
+  "subject": {
+    "kind": "staged-index",
+    "indexHash": "sha256:defb73bc8a95a320b25fa8c928092159fab72ae862e9f0832a51afe7c69b4183",
+    "headHash": "sha256:93b8f03e2b3e9d6fd2381a72ab58c3147fad77d21aea202e6ca8cbacd058bf32",
+    "indexEqualsHead": false,
+    "cleanWorktree": false
+  },
+  "supersedes": "docs/specs/evidence/modular-agon-slice1a-verification-receipt.json",
+  "disposition": "failed",
+  "verifiedFailures": [
+    {
+      "id": "S1A-AUDIT-001",
+      "gate": "clean-index-mod-api-build",
+      "result": "TS7016: no declaration for semver",
+      "contaminatingFiles": [
+        "packages/mod-api/src/semver.d.ts",
+        "packages/mod-kernel/src/semver.d.ts"
+      ]
+    },
+    {
+      "id": "S1A-AUDIT-002",
+      "gate": "dependency-edge-uniqueness",
+      "declaredEdges": 148,
+      "uniqueEdges": 144,
+      "duplicateOwners": [
+        "@kernlang/agon-mod-think",
+        "@kernlang/agon-mod-research",
+        "@kernlang/agon-mod-naturalize",
+        "@kernlang/agon-mod-sanitize"
+      ]
+    },
+    {
+      "id": "S1A-AUDIT-003",
+      "gate": "review-subject-binding",
+      "result": "prior review hash does not identify the staged clean-checkout subject"
+    }
+  ],
+  "cleanCheckoutSteps": [
+    { "id": "npm-ci", "status": "passed" },
+    { "id": "mod-api-build", "status": "failed" },
+    { "id": "mod-kernel-build", "status": "not-run" },
+    { "id": "qualification-negative-controls", "status": "not-run" },
+    { "id": "contract-tests", "status": "not-run" }
+  ],
+  "roadmapEvidence": {
+    "packages": 49,
+    "uniqueDependencies": 144,
+    "legacyAssignments": 852,
+    "implementationSlices": 9,
+    "verificationCommand": "node scripts/spec/verify-modular-agon-roadmap.mjs"
+  }
+}

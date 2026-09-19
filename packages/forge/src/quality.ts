@@ -9,10 +9,12 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
 export async function runLint(cwd: string): Promise<number> {
+  const eslintBinary = join(cwd, 'node_modules', '.bin', 'eslint');
+  if (!existsSync(eslintBinary)) return 0;
   try {
     const result = await spawnWithTimeout({
-      command: 'npx',
-      args: ['eslint', '.', '--format', 'json', '--quiet'],
+      command: eslintBinary,
+      args: [ '.', '--format', 'json', '--quiet'],
       cwd,
       timeout: 30_000,
     });
@@ -33,8 +35,10 @@ export async function runLint(cwd: string): Promise<number> {
 }
 
 export async function runStyleCheck(cwd: string): Promise<number> {
+  const prettierBinary = join(cwd, 'node_modules', '.bin', 'prettier');
+  if (!existsSync(prettierBinary)) return 100;
   try {
-    const result = await spawnWithTimeout({ command: 'npx', args: ['prettier', '--check', '.'], cwd: cwd, timeout: 30000 });
+    const result = await spawnWithTimeout({ command: prettierBinary, args: [ '--check', '.'], cwd: cwd, timeout: 30000 });
     return (result.exitCode === 0) ? 100 : 80;
   } catch (_prettierErr) {
     // Prettier not installed — assume style is fine

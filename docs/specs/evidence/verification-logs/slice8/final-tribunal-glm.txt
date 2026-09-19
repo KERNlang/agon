@@ -1,0 +1,44 @@
+# Defender's Case — Final Acceptance Review, Modular Agon S8 (sha256:ba8c411f…, tree c16dd344)
+
+## Verdict up front
+
+**Accept. Zero locally actionable blockers.** The subject delivers every capability named in the acceptance question, each tied to source-grounded behavior and a green test surface. Below I (1) defend the proposal claim-by-claim, (2) enumerate what is *explicitly out of scope* as accepted trust-model limitations, (3) list non-blocking suggestions, and (4) state the evidentiary bar any blocker must clear to count.
+
+## The defense, claim by claim
+
+**Artifact trust is exact and verifiable at every boundary.** Trust, grants, and activation are anchored to artifact hashes, not names or versions. `validateGeneration` hashes **every** generation file — not a sample, not a manifest checksum alone — so partial tampering with the generated registry fails closed at load. A mod that renames itself, or a stale registry, cannot activate.
+
+**Snapshots close the copy-time integrity window.** The snapshot flow is a two-sided comparison: source is compared to the approved candidate *before* copy (you only snapshot what was approved), and snapshot is compared to source *after* copy (the copy is proven faithful). Snapshots are immutable because they are rehashed on use. This is the correct shape: any TOCTOU argument must now name a concurrent writer that can mutate between two hash verifications — an actor with that power is already inside the trust boundary (see Limitation 3).
+
+**One generated owner registry for five surfaces.** A single generated registry feeds all five surfaces, and 47 structural controls pin that wiring. This eliminates the classic modularization failure where the CLI, MCP, runtime, and API surfaces drift to different owner mappings. The public-API-only external example (`docs/examples/hello-folder-mod`) compiles and imports against public surfaces only — proof the registry-backed surface is real, not internal-path leakage.
+
+**Host service exposure is bounded and fail-closed.** Mods get at most 64 host service calls; overflow emits an error and *terminates*. That is fail-closed, deterministic, and locally tunable. No green-path test (76 trust/runtime, 31-step E2E) approaches the cap.
+
+**Abort is exact, not approximate.** Host `AbortSignal` propagation is asserted by **original object identity** in a regression test. This is stronger than behavioral equivalence: it catches wrapper substitution, re-created signals, and dropped `reason` in one assertion. Cooperative abort gives the mod a window; fail-stop ends it. Bounded.
+
+**Streaming fidelity is preserved.** The bounded AsyncIterable forwarding keeps text, progress, artifact, and result events distinct — no collapsing — with a bounded queue so a fast producer cannot grow RSS unboundedly. Green P95/RSS budgets plus full S7 regressions confirm no drift from the monolith's event contract.
+
+**Identity hygiene.** ASCII-only manifest IDs exclude Unicode confusables by construction; the 34 adversarial tests exercise malformed inputs, overflow, and tamper cases. Transactional state (commit 46546bd8) means safe mode and recovery restore from last-good state, never a half-commit.
+
+## Blockers
+
+**None.** For a blocker to be valid here it must satisfy all three: (a) locally actionable in this branch; (b) an *exact code behavior* — a named path, not a hypothetical; (c) a **negative test that fails on the current subject**, demonstrating divergence from the stated spec. I have seen no candidate that survives (c). Every objection raised so far resolves to either the documented trust model or a suggestion.
+
+## Accepted trust-model limitations (not blockers, by stated scope)
+
+1. **Full-code trust is consent, not sandboxing.** A trusted mod runs with full Node filesystem/process/network authority. The spec claims this explicitly; consent is captured on the exact hash. "A mod can read ~/.ssh" is inside the model, not a defect.
+2. **Subprocess cleanup is hygiene, not containment.** Teardown cleanup is best-effort; a mod can daemonize past it. The subject does not claim containment, so it cannot fail a containment claim.
+3. **Concurrent local writers to the mod tree** (post-hash mutation by a same-privileged process) are outside the threat model — that actor already has code execution.
+4. **Redaction applies to receipts/logs**, not to what a fully-trusted mod process can itself read.
+5. **CPU within the cooperative-abort window** is unpreempted; fail-stop bounds duration, not instantaneous scheduling.
+
+## Suggestions (non-blocking)
+
+- Document the 64-call budget and its error code for mod authors.
+- Surface the fail-stop deadline in receipts for debuggability.
+- Add a publish-time fuzz over manifest ID charset (defense-in-depth beyond the ASCII gate).
+- Emit a structured reason code when safe mode engages.
+
+## Closing challenge to the attackers
+
+To overturn this verdict, do not bring the trust model — it is consent-based by design and I will not defend claims the subject never makes. Bring an exact code behavior on tree `c16dd344` and a negative test that fails **today**: a tampered file that activates, a dropped event class, a replaced signal object, a 65th call that doesn't terminate, a snapshot that copies unapproved bytes. Every one of those has a hash, an identity assertion, an overflow path, or a regression already standing against it. The evidence set — 76 trust/runtime, 12 folder, 34 adversarial, full S7 regressions, 47 structural controls, 31-step CLI E2E, public-API external example, full workspace build/typecheck/lint/pack, green P95/RSS — covers each named capability end to end. The subject is fit for final acceptance.

@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "package": "@kernlang/agon-mod-provenance",
+  "assignments": [
+    {
+      "category": "builtinCommandMetadata",
+      "id": "provenance",
+      "source": "packages/core/src/blocks/builtin-commands.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-provenance",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "provenance",
+      "source": "packages/cli/src/lazy-commands.ts:298",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-provenance",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "stateStoreModules",
+      "id": "packages/cli/src/commands/provenance.ts",
+      "source": "packages/cli/src/commands/provenance.ts",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-provenance",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "stateStoreModules",
+      "id": "packages/core/src/blocks/provenance.ts",
+      "source": "packages/core/src/blocks/provenance.ts",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-provenance",
+      "rule": "semantic-source-rule"
+    }
+  ]
+}

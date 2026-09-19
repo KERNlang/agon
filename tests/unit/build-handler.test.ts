@@ -1,6 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { afterAll, beforeAll, describe, it, expect } from 'vitest';
 import { detectIntent } from '../../packages/cli/src/intent.js';
+import { disposeProcessSurfaceAuthority, initializeProcessSurfaceAuthority } from '../../packages/cli/src/surface-authority-runtime.js';
 import { buildForgePrompt } from '../../packages/core/src/blocks/prompt-builder.js';
+
+beforeAll(() => initializeProcessSurfaceAuthority('/tmp/agon-build-handler-authority'));
+afterAll(() => disposeProcessSurfaceAuthority());
 
 describe('Build Handler', () => {
   describe('Intent Detection — /build', () => {

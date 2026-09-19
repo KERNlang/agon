@@ -1,0 +1,45 @@
+**Strongest Distinct Directions**
+
+---
+
+### **Direction A (ollama-direct-qwen): Event-Sourced Integrity Ledger Anchored to Git-Object SHA-1s With Transform-Stage Signatures**
+- **Core idea**: Replace brittle ad hoc patches with a declarative *event log* where each event is cryptographically signed (via deterministic hash of transform-stage I/O trees), anchored to a canonical Git-object root (SHA-1), and includes injected diagnostic entropy for traceable failure attribution.
+- **Why it could win**:  
+  - Leverages Git’s native immutability as the *only* source of truth—no “approximate” trust.  
+  - Transform-stage signatures make reproducibility *measurable*, not assumed (e.g., two clean checkouts must produce identical `LedgerRootSHA`).  
+  - Negative-control assertions are first-class (e.g., *“commit with injected contaminant shall be rejected”*), directly catching false-green diagnostics.  
+  - Integrates with modern modular architecture: `mod-kernel` can host event consumers, `mod-api` can serve ledger queries, `cli` can replay.
+- **Main risk**: Human triage latency during incident review without tooling to surface collapsed timelines—not fatal if diagnostics are prioritized as structured JSON payloads, but amplifies complexity during early rollout.
+
+---
+
+### **Direction B (qwopus): Zero-Trust Bootstrap Layer with Git-Object Root Enforcement**
+- **Core idea**: Introduce a strict *bootstrap gate* that validates *all* Git-object roots *before* any source or legacy workflow is touched, forcing invariant propagation from the first byte read.
+- **Why it could win**:  
+  - Solves the “false-green” root cause: hidden environmental drift or index corruption that bypasses post-hoc checks.  
+  - Elegant minimalism: a single, composable middleware layer that can be added incrementally (e.g., `--strict-roots` mode), avoiding large rewrites.  
+  - Directly satisfies *clean-index* and *Git-object hashing* requirements while isolating contamination sources.
+- **Main risk**: Orphaning legacy workflows that were never designed for Git-anchored bootstrapping (e.g., manually patched files, IDE-driven edits), potentially causing CI breakage unless migration path or bypass flags are designed upfront.
+
+---
+
+### **Direction C — (Challenges Framing)**: **“Relinquish Acceptance-Truth Repair Entirely in Favor of Provable, Idempotent Source Reconstruction”**
+- **Core idea**: Treat “acceptance-truth repair” as a symptom of unverifiable source states; instead, design every module to accept *only* provably reconstructible source trees (via `mod-kernel`’s declarative source contracts + SHA-1-anchored reproducibility traces) and reject ambiguity *at API boundaries*.
+- **Why it could win**:  
+  - Eliminates the entire class of “repair drift” by making repair *optional*: if the source tree cannot be *reconstructed* to a known-good hash, the system fails cleanly (e.g., `501 Not Acceptable: Unverifiable Source`).  
+  - Aligns with *reproducible review evidence* and *negative controls* implicitly—each module’s contract is a mini-replay-verifier.  
+  - Reduces surface for contamination (source-contamination = rejection at first API call), not mitigation after the fact.
+- **Main risk**: Appears overly rigid to teams accustomed to “imperfect” local workflows (e.g., work-in-progress branches, partial checkouts); requires cultural and architectural buy-in beyond technical tradeoffs.
+
+---
+
+### **Recommendation**
+**Start with Direction A (Event-Sourced Integrity Ledger)**.
+
+**Why**:  
+- It directly addresses *all* explicitly requested dimensions (Git hashing, transform-stage separation, negative controls, diagnostics, etc.) while preserving compatibility with existing modular modules (`mod-kernel`, `mod-api`) as natural integration points.  
+- Avoids the “all-or-nothing” risk of Direction B (no bootstrap overhaul needed on day one) and the systemic redesign of Direction C (which delays measurable progress).  
+- Enables near-term validation: you can ship the ledger + replay-verifier CLI *before* full gate orchestration, gaining trust through reproducible, auditable evidence—exactly what the acceptance-truth repair slice is meant to provide.  
+- Its event-sourced nature future-proofs against future dimensions (e.g., add audit logs, time-bounded dependency invariants, or cross-repo ledger reconciliation with minimal new code).
+
+Direction B is strongly recommended as the *second* phase—once the ledger proves robust, bolt on the bootstrap layer.Direction C should be studied as a policy/philosophy for next-gen modular hosts, not as an immediate implementation strategy.

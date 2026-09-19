@@ -1,9 +1,18 @@
+import { dirname, join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { withPatchApplication } from '../../patch-application-host.js';
+import { withPlanSession } from '../../plan-session-host.js';
+import { runBrainstormSession } from '../../blocks/brainstorm-session.js';
 
 import { resolveWorkingDir, buildImageAttachment, sessionContext, visionSupportNote } from '@kernlang/agon-core';
 
 import { invalidateCwdCache } from '../../handlers/chat.js';
 
 import type { ImageAttachment } from '@kernlang/agon-core';
+import type { CommandResult, IntentContribution, Json, ModPlatform } from '@kernlang/agon-mod-api';
+
+import { assertContributionInput } from '@kernlang/agon-kernel';
+import { modularHostRoot, processSurfaceClient } from '../../surface-authority-runtime.js';
 
 import { loadCesarPlan } from '@kernlang/agon-core';
 
@@ -15,7 +24,7 @@ import { handleLeaderboard, handleCesarReport, handleCesarHints, handleHistory, 
 
 import { handleProvider } from '../../handlers/provider.js';
 
-import { diagnoseEngineDoctorEntry, checkDoctorWorktree, buildHarnessDoctorReport } from '../../commands/doctor.js';
+import { diagnoseEngineDoctorEntry, checkDoctorWorktree, buildHarnessDoctorReport, buildModularDoctorReport } from '../../commands/doctor.js';
 
 import { replayCesarHarnessLogs } from '../../cesar/tool-observability.js';
 
@@ -75,9 +84,17 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
         cb.dispatch({ type: report.ok ? 'success' : 'warning', message: `Summary: ${report.summary}` });
         break;
       }
+      if (scope === 'mods') {
+        const hostRoot = modularHostRoot();
+        const report = await buildModularDoctorReport(hostRoot, process.env.AGON_MODS_ROOT ?? join(dirname(hostRoot), 'mods'));
+        cb.dispatch({ type: 'header', title: 'Modular Agon Doctor' });
+        cb.dispatch({ type: 'table', headers: report.headers, rows: report.rows });
+        cb.dispatch({ type: report.ok ? 'success' : 'warning', message: `Summary: ${report.summary}` });
+        break;
+      }
       if (scope !== 'engines') {
         cb.dispatch({ type: 'error', message: `Unknown doctor scope: ${scope}` });
-        cb.dispatch({ type: 'info', message: 'Available: engines, harness' });
+        cb.dispatch({ type: 'info', message: 'Available: engines, harness, mods' });
         break;
       }
       const enabledIds = cb.ctx.config.forgeEnabledEngines ?? [];
@@ -140,6 +157,64 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
     case 'discover': await handleDiscover(cb.dispatch, cb.ctx); break;
     case 'provider': await handleProvider(intent.action, intent.args, cb.dispatch, cb.ctx); break;
     case 'config': handleConfig(intent, cb.dispatch, cb.ctx); break;
+    case 'mod': {
+      try {
+        const { loadModManagementView, runTuiModAction } = await import('../../commands/mod.js');
+        if (cb.setModPickerOpen && cb.setModPickerView && !String(intent.args ?? '').trim()) {
+          cb.setModPickerView(await loadModManagementView()); cb.setModPickerOpen(true);
+        } else cb.dispatch({ type: 'engine-block', engineId: 'mod-manager', color: ENGINE_COLORS.cesar ?? 124,
+          content: await runTuiModAction(String(intent.args ?? 'list')) });
+      } catch (error) {
+        cb.dispatch({ type: 'error', message: error instanceof Error ? error.message : String(error) });
+      }
+      break;
+    }
+    case 'mod-surface-command': {
+      try {
+        const publicId = `/${String(intent.commandName)}`;
+        const record = processSurfaceClient('tui').assertAvailable(publicId);
+        const contribution = record.payload as IntentContribution;
+        const parsed = typeof contribution.parse === 'function'
+          ? await contribution.parse(String(intent.args ?? ''))
+          : ({ input: String(intent.args ?? '') } as Json);
+        if (parsed === undefined) throw new TypeError(`mod command rejected its input: ${publicId}`);
+        const normalized = JSON.parse(JSON.stringify(parsed)) as Json;
+        assertContributionInput(contribution.inputSchema, normalized);
+        const platform = `${process.platform}-${process.arch === 'x64' ? 'x64' : process.arch}` as ModPlatform;
+        if (!['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'].includes(platform)) {
+          throw new TypeError(`unsupported mod platform: ${platform}`);
+        }
+        const output = await contribution.run(normalized, {
+          invocationId: `tui:${process.pid}:${Date.now()}`,
+          cwd: resolveWorkingDir(),
+          platform,
+          signal: new AbortController().signal,
+          config: cb.ctx.config as unknown as Readonly<Record<string, Json>>,
+        });
+        let result: CommandResult = { exitCode: 0 };
+        if (output && typeof output === 'object' && Symbol.asyncIterator in output) {
+          for await (const event of output) {
+            if (event.type === 'text') cb.dispatch({ type: 'info', message: event.text });
+            else if (event.type === 'progress') cb.dispatch({ type: 'info', message: event.message });
+            else if (event.type === 'result') result = event.result;
+          }
+        } else {
+          result = output as CommandResult;
+        }
+        if (result.stdout) cb.dispatch({ type: 'info', message: result.stdout });
+        if (result.stderr) cb.dispatch({ type: 'warning', message: result.stderr });
+        if (result.result !== undefined) cb.dispatch({
+          type: 'engine-block',
+          engineId: intent.commandName,
+          color: ENGINE_COLORS.cesar ?? 124,
+          content: typeof result.result === 'string' ? result.result : JSON.stringify(result.result, null, 2),
+        });
+        if (result.failure) cb.dispatch({ type: 'error', message: `${result.failure.code}: ${result.failure.message}` });
+      } catch (error) {
+        cb.dispatch({ type: 'error', message: error instanceof Error ? error.message : String(error) });
+      }
+      break;
+    }
     case 'permissions': handlePermissions(cb.dispatch, intent); break;
     case 'use': handleUse(intent.engineIds, cb.dispatch, cb.ctx, cb.setSessionEngines); break;
     case 'cesar': {
@@ -210,7 +285,7 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
       // Invalidate caches that depend on cwd — workspace just changed
       invalidateCwdCache();
       sessionContext.invalidate();
-      // Reload extensions from new workspace
+      // Refresh workspace-scoped UI state; executable mods remain user-global.
       if (cb.setWorkspacePath) cb.setWorkspacePath(resolveWorkingDir());
       break;
     }
@@ -301,4 +376,67 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
   // break-path cases land here — mirrors the original switch's shared _emitPost() tail
   emitPostDispatch(intent, input, cb);
   return { handled: true, ranAsJob: false };
+}
+
+export async function runPhysicalTuiContribution(
+  record: { readonly payload: unknown; readonly owner?: { readonly id: string } },
+  parsed: Json,
+  commandName: string,
+  cb: DispatchCallbacks,
+  signal: AbortSignal,
+): Promise<void> {
+  const contribution = record.payload as IntentContribution;
+  const normalized = JSON.parse(JSON.stringify(parsed)) as Json;
+  assertContributionInput(contribution.inputSchema, normalized);
+  const platform = `${process.platform}-${process.arch === 'x64' ? 'x64' : process.arch}` as ModPlatform;
+  if (!['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'].includes(platform)) {
+    throw new TypeError(`unsupported mod platform: ${platform}`);
+  }
+  const invocation = {
+    invocationId: `tui:${randomUUID()}`,
+    cwd: resolveWorkingDir(),
+    platform,
+    signal,
+    config: cb.ctx.config as unknown as Readonly<Record<string, Json>>,
+  };
+  if (record.owner?.id === 'agon.brainstorm') {
+    await runBrainstormSession(normalized as Record<string, unknown>, cb, signal, async (prepared, context) => {
+      const output = await contribution.run(prepared as Json, { ...invocation, ...context });
+      if (output && typeof output === 'object' && Symbol.asyncIterator in output) {
+        throw new TypeError('Brainstorm returned an unexpected streaming command result.');
+      }
+      return output as CommandResult;
+    });
+    return;
+  }
+  const output = await withPatchApplication(invocation.invocationId,
+    (request, context) => handleApplyPatch(cb.dispatch, cb.ctx, request.patchPath, request.force, context),
+    async () => withPlanSession(invocation.invocationId, async (request, context) => {
+      context.signal.throwIfAborted();
+      // A05 adapter: preserve session selection and approval semantics; never
+      // recurse through the generated marker or substitute a disk-only controller.
+      const result = request.type === 'auto'
+        ? await (await import('./intent-skills.js')).dispatchSkillsUiIntent(request, '', cb)
+        : await dispatchSessionInfoIntent(request, '', cb);
+      return result?.handled ? { exitCode: 0 } : { exitCode: 2, stderr: 'Unsupported Plan session action.\n' };
+    }, async () => contribution.run(normalized, invocation)));
+  let result: CommandResult = { exitCode: 0 };
+  if (output && typeof output === 'object' && Symbol.asyncIterator in output) {
+    for await (const event of output) {
+      if (event.type === 'text') cb.dispatch({ type: 'info', message: event.text });
+      else if (event.type === 'progress') cb.dispatch({ type: 'info', message: event.message });
+      else if (event.type === 'result') result = event.result;
+    }
+  } else {
+    result = output as CommandResult;
+  }
+  if (result.stdout) cb.dispatch({ type: 'info', message: result.stdout });
+  if (result.stderr) cb.dispatch({ type: 'warning', message: result.stderr });
+  if (result.result !== undefined) cb.dispatch({
+    type: 'engine-block',
+    engineId: commandName,
+    color: ENGINE_COLORS.cesar ?? 124,
+    content: typeof result.result === 'string' ? result.result : JSON.stringify(result.result, null, 2),
+  });
+  if (result.failure) cb.dispatch({ type: 'error', message: `${result.failure.code}: ${result.failure.message}` });
 }

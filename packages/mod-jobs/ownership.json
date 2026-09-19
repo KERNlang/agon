@@ -1,0 +1,238 @@
+{
+  "schemaVersion": 1,
+  "package": "@kernlang/agon-mod-jobs",
+  "assignments": [
+    {
+      "category": "builtinCommandMetadata",
+      "id": "focus",
+      "source": "packages/core/src/blocks/builtin-commands.ts:61",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-jobs",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "builtinCommandMetadata",
+      "id": "jobs",
+      "source": "packages/core/src/blocks/builtin-commands.ts:60",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-jobs",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "daemon",
+      "source": "packages/cli/src/lazy-commands.ts:325",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-jobs",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "job",
+      "source": "packages/cli/src/lazy-commands.ts:310",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-jobs",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "job cancel",
+      "source": "packages/cli/src/commands/job.ts:313",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-jobs",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "job events",
+      "source": "packages/cli/src/commands/job.ts:284",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-jobs",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "job list",
+      "source": "packages/cli/src/commands/job.ts:258",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-jobs",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "job result",
+      "source": "packages/cli/src/commands/job.ts:300",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-jobs",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "job status",
+      "source": "packages/cli/src/commands/job.ts:271",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-jobs",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "job submit",
+      "source": "packages/cli/src/commands/job.ts:229",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-jobs",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "emittedEvents",
+      "id": "command-finished",
+      "source": "packages/cli/src/jobs/workflow-job.ts:151",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-jobs",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "emittedEvents",
+      "id": "command-started",
+      "source": "packages/cli/src/jobs/workflow-job.ts:168",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-jobs",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "emittedEvents",
+      "id": "stdout",
+      "source": "packages/cli/src/jobs/workflow-job.ts:205",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-jobs",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "emittedEvents",
+      "id": "submitted",
+      "source": "packages/cli/src/jobs/daemon-job-router.ts:26",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-jobs",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "intentVariants",
+      "id": "focus",
+      "source": "packages/cli/src/signals/intent-types.ts:49",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-jobs",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "intentVariants",
+      "id": "jobs",
+      "source": "packages/cli/src/signals/intent-types.ts:48",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-jobs",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "mcpTools",
+      "id": "JobCancel",
+      "source": "packages/mcp/src/job-tools.ts:13",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-jobs",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "mcpTools",
+      "id": "JobEvents",
+      "source": "packages/mcp/src/job-tools.ts:11",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-jobs",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "mcpTools",
+      "id": "JobList",
+      "source": "packages/mcp/src/job-tools.ts:9",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-jobs",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "mcpTools",
+      "id": "JobResult",
+      "source": "packages/mcp/src/job-tools.ts:12",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-jobs",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "mcpTools",
+      "id": "JobStatus",
+      "source": "packages/mcp/src/job-tools.ts:10",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-jobs",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "mcpTools",
+      "id": "JobSubmit",
+      "source": "packages/mcp/src/job-tools.ts:8",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-jobs",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "DaemonWorkflowPlan",
+      "source": "packages/cli/src/jobs/workflow-job.ts:17",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-jobs",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "JobEvent",
+      "source": "packages/core/src/jobs/job-service.ts:20",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-jobs",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "JobRecord",
+      "source": "packages/core/src/jobs/job-service.ts:57",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-jobs",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "JobSnapshot",
+      "source": "packages/core/src/jobs/job-service.ts:9",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-jobs",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "statePaths",
+      "id": "daemon",
+      "source": "packages/cli/src/commands/daemon.ts:33",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-jobs",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/focus",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-jobs",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/jobs",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-jobs",
+      "rule": "exact-user-surface"
+    }
+  ]
+}

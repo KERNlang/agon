@@ -84,7 +84,8 @@ describe('transcript frame commit batcher', () => {
     const buildContext = source.slice(start, end);
     expect(start).toBeGreaterThan(-1);
     expect(buildContext).toContain('autoModeQueued,');
-    expect(buildContext).toContain('}, [registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,extensionPromptFragments,sessionMcpServers,autoModeQueued,');
+    expect(buildContext).toContain('extensionPromptFragments: [],');
+    expect(buildContext).toContain('}, [registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,sessionMcpServers,autoModeQueued,');
   });
 
   it('keeps plan approval controls visible before long plan bodies', () => {

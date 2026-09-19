@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "qualification": "modular-agon-slice7-clean-checkout",
+  "slice": "S7",
+  "subject": {
+    "kind": "commit",
+    "hash": "sha256:ee3c676a41accb052015680def6a707c4ef4be893d247dd0462a0825be54d5d5"
+  },
+  "status": "passed",
+  "completedAt": "2026-09-03T20:42:45+02:00",
+  "artifacts": [
+    {
+      "path": "docs/specs/evidence/verification-logs/slice7/final-native-qualification.log",
+      "hash": "sha256:b0b2d829d94e79034a3e7846b9e075e532ff8f3bca3f41bacec89510d593126e"
+    }
+  ],
+  "coverage": {
+    "inventoryAssignments": 863,
+    "packages": 49,
+    "uniqueDependencyEdges": 144,
+    "physicalFirstPartyPackages": 36,
+    "lifecycleTests": 44,
+    "faultPoints": 8,
+    "temporaryCompatibilityAdapters": 1,
+    "legacyWorkflows": 160,
+    "rawEnvelopes": 7,
+    "transformStages": 4
+  },
+  "performance": {
+    "sampleCount": 15,
+    "planP95Ms": 2.2014580000000024,
+    "applyP95Ms": 236.17624999999998,
+    "totalP95Ms": 238.37770799999998,
+    "residentRssP95Bytes": 80134144,
+    "passed": true
+  },
+  "cleanCheckoutSteps": [
+    "npm-ci",
+    "clean-build",
+    "managed-lifecycle",
+    "support-packages",
+    "first-party-packages",
+    "first-party-disable-matrix",
+    "managed-lifecycle-contract",
+    "surface-cutover-regression",
+    "typecheck",
+    "lint",
+    "full-repository-suite",
+    "generated-artifacts",
+    "spec-consistency",
+    "roadmap-contract",
+    "legacy-oracle",
+    "legacy-oracle-negative-controls",
+    "slice7-performance"
+  ],
+  "reviewEvidence": {
+    "path": "docs/specs/evidence/modular-agon-slice7-review-evidence.json",
+    "passed": true
+  },
+  "contamination": {
+    "ignored": [],
+    "untracked": [],
+    "unstaged": []
+  },
+  "activeGlobalAgonModified": false,
+  "pushed": false
+}

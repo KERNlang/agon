@@ -175,7 +175,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       // uses bare names ('Bash'/'Edit'/'Write'/...), while the default companion/MCP
       // path surfaces the orchestration aliases ('AgonBash'/'AgonEdit'/'AgonWrite')
       // — done.tool on the MCP completion is the ORIGINAL alias, not the mapped kern
-      // tool (see agon-orchestration.kern handleWriteToolCall: writeToolCompletion is
+      // tool (see executeApprovedKernelWrite: writeToolCompletion is
       // called with `name`, not `kernTool`). A strict bare-name check silently missed
       // every MCP write/bash, so the verify-before-done gate never armed on the default
       // path. isBashToolName/isWriteToolName (brain-helpers, unit-tested) strip the

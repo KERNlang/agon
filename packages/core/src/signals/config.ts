@@ -1,8 +1,12 @@
 import { readFileSync, writeFileSync, mkdirSync, renameSync, readdirSync, statSync, rmSync } from 'node:fs';
 
-import { join, dirname, resolve } from 'node:path';
+import { join, dirname } from 'node:path';
 
-import { homedir } from 'node:os';
+import {
+  AGON_HOME, CORPUS_PATH, GLOBAL_CONFIG_PATH, RATINGS_PATH, RUNS_DIR, SKILLS_DIR, TEAM_ELO_PATH,
+  persistenceHome as getAgonHome, persistencePath as agonPath,
+} from '@kernlang/agon-support-persistence';
+export { AGON_HOME, CORPUS_PATH, GLOBAL_CONFIG_PATH, RATINGS_PATH, RUNS_DIR, SKILLS_DIR, TEAM_ELO_PATH, getAgonHome, agonPath };
 
 import type { AgonConfig } from '../models/types.js';
 
@@ -11,36 +15,6 @@ import { DEFAULT_AGON_CONFIG } from '../models/types.js';
 import { ConfigError } from '../models/errors.js';
 
 import { withFileLock } from '../blocks/file-lock.js';
-
-/**
- * Resolve Agon's storage root at runtime. AGON_HOME overrides ~/.agon and is primarily used for test isolation and sandbox-safe runs.
- */
-export function getAgonHome(): string {
-  const override = process.env.AGON_HOME?.trim();
-  return override ? resolve(override) : join(homedir(), '.agon');
-}
-
-/**
- * Build a path inside the active Agon storage root.
- */
-export function agonPath(...parts: string[]): string {
-  return join(getAgonHome(), ...parts);
-}
-
-export const AGON_HOME: string = getAgonHome();
-
-export const GLOBAL_CONFIG_PATH: string = join(AGON_HOME, 'config.json');
-
-
-export const RUNS_DIR: string = join(AGON_HOME, 'runs');
-
-export const RATINGS_PATH: string = join(AGON_HOME, 'ratings.json');
-
-export const TEAM_ELO_PATH: string = join(AGON_HOME, 'team-elo.json');
-
-export const CORPUS_PATH: string = join(AGON_HOME, 'corpus.json');
-
-export const SKILLS_DIR: string = join(AGON_HOME, 'skills');
 
 export const RUN_PRUNE_KEEP_COUNT: number = 100;
 

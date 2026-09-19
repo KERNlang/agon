@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "package": "@kernlang/agon-mod-think",
+  "assignments": [
+    {
+      "category": "cliCommands",
+      "id": "think",
+      "source": "packages/cli/src/lazy-commands.ts:316",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-think",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/think",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-think",
+      "rule": "exact-user-surface"
+    }
+  ]
+}

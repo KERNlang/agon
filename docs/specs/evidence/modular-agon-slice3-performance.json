@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "platform": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "node": "v26.3.0"
+  },
+  "iterations": 2000,
+  "plan": {
+    "p50Ms": 0.11287500000003092,
+    "p95Ms": 0.13449999999998852
+  },
+  "groupedView": {
+    "p50Ms": 0.07279199999999264,
+    "p95Ms": 0.08620899999999665
+  },
+  "budgets": {
+    "planP95Ms": 5,
+    "groupedViewP95Ms": 5,
+    "planGreen": true,
+    "groupedViewGreen": true
+  }
+}

@@ -12,28 +12,8 @@ import { withFileLock } from '../blocks/file-lock.js';
 
 import { hostNowIso, hostPrettyJson } from '../blocks/host-runtime.js';
 
-export interface TeamCompositionRating {
-  lineupKey: string;
-  rating: number;
-  wins: number;
-  losses: number;
-  draws: number;
-  matches: number;
-}
-
-export interface TeamRoleRating {
-  engineId: string;
-  role: TeamRole;
-  rating: number;
-  wins: number;
-  losses: number;
-  matches: number;
-}
-
-export interface TeamEloRecord {
-  byFormat: Record<string, { compositions: Record<string, TeamCompositionRating>, roles: Record<string, TeamRoleRating> }>;
-  lastUpdated: string;
-}
+import type { TeamCompositionRating, TeamEloRecord, TeamRoleRating } from '@kernlang/agon-support-persistence';
+export type { TeamCompositionRating, TeamEloRecord, TeamRoleRating } from '@kernlang/agon-support-persistence';
 
 export function defaultCompositionRating(lineupKey: string): TeamCompositionRating {
   return { lineupKey, rating: 1500, wins: 0, losses: 0, draws: 0, matches: 0 };

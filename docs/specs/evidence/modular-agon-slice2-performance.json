@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "measuredAt": "2026-09-04T20:55:42.624Z",
+  "platform": "darwin-arm64",
+  "node": "v26.3.0",
+  "fixture": {
+    "packages": 49,
+    "generationFiles": 53
+  },
+  "transaction": {
+    "firstCommitMs": 433.74850000000004,
+    "informational": true
+  },
+  "coldBoot": {
+    "runs": 15,
+    "p50Ms": 112.99441699999988,
+    "p95Ms": 132.89016599999997,
+    "maxMs": 132.89016599999997
+  },
+  "warmBoot": {
+    "runs": 100,
+    "p50Ms": 16.744083000000046,
+    "p95Ms": 17.688958000000184,
+    "maxMs": 22.693207999999686
+  },
+  "peakRssMb": {
+    "runs": 5,
+    "p50": 73.71875,
+    "p95": 73.921875,
+    "max": 73.921875
+  },
+  "package": {
+    "packedBytes": 150532,
+    "unpackedBytes": 1388353,
+    "files": 64
+  },
+  "limits": {
+    "coldP95Ms": 160,
+    "peakRssP95Mb": 124
+  },
+  "budgets": {
+    "coldGreen": true,
+    "rssGreen": true
+  }
+}

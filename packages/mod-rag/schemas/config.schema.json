@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kernlang.dev/schemas/rag/config.schema.json",
+  "title": "rag configuration",
+  "type": "object",
+  "additionalProperties": true
+}

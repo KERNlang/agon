@@ -1,0 +1,34 @@
+**Critical: TOCTOU in Transactional Preview/Apply**  
+What breaks: In-fence expected-generation checks may fail if the fence is not atomic or if race conditions exist between preview/apply and external state changes (e.g., concurrent updates).  
+Conditions: When multiple actors modify the same resource without serialized access.  
+Severity: Critical (could allow unauthorized state changes).  
+
+**High: Dependency Closure Reverse Cascades**  
+What breaks: Removing a package may leave orphaned dependencies unresolved, causing drift or failed rollbacks.  
+Conditions: When a mod’s dependency graph includes untracked indirect dependencies.  
+Severity: High (leads to inconsistent state and potential system instability).  
+
+**High: Schema Mismatch in Generated UI**  
+What breaks: The dependency-aware UI may misrepresent blocked/disabled states if schema validation is not enforced during UI generation.  
+Conditions: When input schemas lack constraints on mod interactions or version ranges.  
+Severity: High (user errors due to misleading UI states).  
+
+**Medium: Unverified S3 Requirements**  
+What breaks: Claims about S3 compatibility (e.g., "rollback semantics") may be untested, leading to undefined behavior.  
+Conditions: When S3-specific edge cases (e.g., partial writes, version conflicts) are not explicitly tested.  
+Severity: Medium (unproven assumptions risk deployment failures).  
+
+**Medium: Profile Drift from Incomplete Snapshots**  
+What breaks: Desired-state snapshots may not capture transient or non-versioned configuration data (e.g., runtime-generated files).  
+Conditions: When mods rely on external state not tracked by the system.  
+Severity: Medium (drift leads to undetected configuration divergence).  
+
+**Low: Scalability Bottlenecks in 5ms p95 Budgets**  
+What breaks: High-concurrency operations may exceed 5ms latency if transactional locks or dependency resolution become contention points.  
+Conditions: Under 1000+ parallel apply operations with overlapping dependencies.  
+Severity: Low (unlikely to impact most use cases but may limit extreme-scale adoption).  
+
+**Low: Accessibility Gaps in Generated Hierarchy**  
+What breaks: Users with screen readers may not navigate disabled/block states correctly if UI hierarchy drifts from schema definitions.  
+Conditions: When UI generation does not strictly align with schema accessibility markers.  
+Severity: Low (compliance risk, not immediate functional failure).

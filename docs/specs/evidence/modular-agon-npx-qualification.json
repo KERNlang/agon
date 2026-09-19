@@ -1,0 +1,308 @@
+{
+  "schemaVersion": 1,
+  "slice": "S9",
+  "passed": true,
+  "platform": "darwin-arm64",
+  "node": "v26.3.0",
+  "profile": "minimal+think+review",
+  "installedPackageCount": 15,
+  "cacheDeletionSurvived": true,
+  "idempotent": true,
+  "checks": [
+    {
+      "id": "pack:@kernlang/agon-kernel",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-api",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-support-engine-runtime",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-support-engine-catalog",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-support-persistence",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-support-verification",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-support-worktree",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-support-panel",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-support-judge",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-support-agent-runtime",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-support-dedup",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-support-browser-bridge",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-support-saas-api",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-ask",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-plan",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-think",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-brainstorm",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-team-brainstorm",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-tribunal",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-team-tribunal",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-campfire",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-forge",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-team-forge",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-synthesis",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-review",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-pipeline-orchestration",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-pipeline-delivery",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-agent",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-goal",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-conquer",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-nero",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-council",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-research",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-rag",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-mutate",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-naturalize",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-sanitize",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-rooms",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-jobs",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-browser",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-ratings",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-history",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-provenance",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-flow",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-memory",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-worktrees",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-skill-authoring",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-git-actions",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon-mod-routing-docs",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:@kernlang/agon",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "ephemeral-npx-hydration",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "npx-setup-first-run",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "first-run-result",
+      "passed": true,
+      "detail": "installed generation 1 with 15-package closure"
+    },
+    {
+      "id": "persistent-launcher-before-cache-delete",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "ephemeral-cache-deleted",
+      "passed": true,
+      "detail": "ephemeral npx hydration removed"
+    },
+    {
+      "id": "persistent-launcher-after-cache-delete",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "idempotent-second-setup",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "idempotence-result",
+      "passed": true,
+      "detail": "generation unchanged"
+    },
+    {
+      "id": "managed-mod-list",
+      "passed": true,
+      "detail": "exit=0"
+    }
+  ]
+}

@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "package": "@kernlang/agon-mod-brainstorm",
+  "assignments": [
+    {
+      "category": "builtinCommandMetadata",
+      "id": "brainstorm",
+      "source": "packages/core/src/blocks/builtin-commands.ts:15",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-brainstorm",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "brainstorm",
+      "source": "packages/cli/src/cesar/routing.ts:19",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-brainstorm",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "brainstorm",
+      "source": "packages/cli/src/cesar/routing.ts:27",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-brainstorm",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "brainstorm",
+      "source": "packages/cli/src/models/handler-types.ts:113",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-brainstorm",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "brainstorm",
+      "source": "packages/core/src/cesar/plan.ts:52",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-brainstorm",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarTools",
+      "id": "Brainstorm",
+      "source": "packages/cli/src/cesar/tools.ts:38",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-brainstorm",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "cliCommands",
+      "id": "brainstorm",
+      "source": "packages/cli/src/lazy-commands.ts:288",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-brainstorm",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "intentVariants",
+      "id": "brainstorm",
+      "source": "packages/cli/src/signals/intent-types.ts:3",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-brainstorm",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "intentVariants",
+      "id": "suggest-brainstorm",
+      "source": "packages/cli/src/signals/intent-types.ts:55",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-brainstorm",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "mcpTools",
+      "id": "Brainstorm",
+      "source": "packages/mcp/src/agon-orchestration.ts:24",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-brainstorm",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "BrainstormResult",
+      "source": "packages/core/src/models/types.ts:531",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-brainstorm",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/brainstorm",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-brainstorm",
+      "rule": "exact-user-surface"
+    }
+  ]
+}

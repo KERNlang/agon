@@ -1,0 +1,11 @@
+• There is no attempt to verify that any of the given "verified facts" have a basis in reality, only that they are stated as true.
+
+• No attempt is made to mitigate local risks associated with the untrusted input (subject sha256:56938b8e6606ea13dfa728c74f8655b87ac7f4093bcc22a272dfc3cadc6a8cd3).
+
+• The use of "clean offline 29-gate run" is a vague and unsupported claim that should be supplemented with evidence to ensure the platform was in a known good state.
+
+• No consideration is given for potential vulnerabilities in the native runners or registry provenance, ignoring the warning not to request global installation or unavailable native runners.
+
+• The absence of any probabilistic reasoning or confidence intervals in the conclusion makes it inherently questionable and lacks rigor.
+
+• This analysis would benefit from explicitly stating that it relies on the input being trusted and properly sanitized before drawing conclusions.

@@ -1,0 +1,197 @@
+import { validateManifest } from '@kernlang/agon-mod-api';
+
+export const MANIFEST = validateManifest({
+  "schemaVersion": 2,
+  "id": "agon.goal",
+  "name": "Goal",
+  "version": "1.0.0",
+  "apiRange": ">=1.0.0 <2",
+  "execution": "executable",
+  "compatibility": {
+    "kernelRange": ">=0.0.0-0 <2",
+    "nodeRange": ">=22"
+  },
+  "packageClass": "user-toggleable-mod-package",
+  "entrypoints": {
+    "runtime": "dist/index.js",
+    "types": "dist/index.d.ts"
+  },
+  "display": {
+    "group": "Work",
+    "order": 4
+  },
+  "dependencies": {
+    "required": [
+      {
+        "id": "agon.api",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.engine-runtime",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.plan",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.agent",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.review",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.jobs",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.git-actions",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.worktree",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.verification",
+        "range": ">=0.0.0-0"
+      }
+    ],
+    "optional": [],
+    "conflicts": []
+  },
+  "permissions": [
+    {
+      "capability": "engine.dispatch",
+      "resources": [],
+      "required": true
+    },
+    {
+      "capability": "state.read",
+      "resources": [],
+      "required": true
+    },
+    {
+      "capability": "state.write",
+      "resources": [],
+      "required": true
+    }
+  ],
+  "platforms": [
+    "darwin-arm64",
+    "darwin-x64",
+    "linux-arm64",
+    "linux-x64"
+  ],
+  "assets": [
+    {
+      "path": "ownership.json",
+      "kind": "documentation",
+      "mediaType": "application/json",
+      "contentHash": "sha256:c917af40ede2b5e1490ea3104d11ba96fc8fcb722fe277e97ce923f4b0e5f603",
+      "bytes": 1091,
+      "executable": false,
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-arm64",
+        "linux-x64"
+      ]
+    },
+    {
+      "path": "schemas/config.schema.json",
+      "kind": "schema",
+      "mediaType": "application/schema+json",
+      "contentHash": "sha256:470094919664d45d91ea4ba5788fabf7e9a37cf367d5a79ca1b1181a7d8d0392",
+      "bytes": 214,
+      "executable": false,
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-arm64",
+        "linux-x64"
+      ]
+    }
+  ],
+  "contributes": {
+    "cliCommands": [
+      {
+        "id": "cliCommands:0023",
+        "aliases": []
+      }
+    ],
+    "tuiActions": [
+      {
+        "id": "tuiSlashCommands:0034",
+        "aliases": []
+      }
+    ],
+    "mcpTools": [],
+    "cesarTools": [
+      {
+        "id": "cesarTools:0012",
+        "aliases": []
+      },
+      {
+        "id": "cesarRoutes:0031",
+        "aliases": []
+      }
+    ],
+    "lifecycleHooks": [],
+    "resultTypes": [],
+    "configKeys": [],
+    "generatedDocs": []
+  },
+  "pack": {
+    "include": [
+      "LICENSE",
+      "agon.mod.json",
+      "dist/index.js",
+      "dist/index.d.ts",
+      "dist/implementation.d.ts",
+      "ownership.json",
+      "schemas/config.schema.json"
+    ],
+    "executable": []
+  }
+});
+export const SOURCE_OCCURRENCES = Object.freeze([
+  {
+    "category": "cesarRoutes",
+    "id": "goal",
+    "source": "packages/cli/src/models/handler-types.ts:113",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-goal",
+    "rule": "exact-user-surface"
+  },
+  {
+    "category": "cesarTools",
+    "id": "Goal",
+    "source": "packages/cli/src/cesar/tools.ts:43",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-goal",
+    "rule": "semantic-source-rule"
+  },
+  {
+    "category": "cliCommands",
+    "id": "goal",
+    "source": "packages/cli/src/lazy-commands.ts:313",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-goal",
+    "rule": "exact-user-surface"
+  },
+  {
+    "category": "tuiSlashCommands",
+    "id": "/goal",
+    "source": "packages/cli/src/signals/intent.ts:56",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-goal",
+    "rule": "exact-user-surface"
+  }
+]);
+export const IMPLEMENTATION_KIND = 'physical' as const;
+export { createMod } from './implementation.js';
+export { createMod as default } from './implementation.js';
+export { runGoal } from './implementation.js';

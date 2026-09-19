@@ -3,8 +3,6 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { lazySubCommands } from './lazy-commands.js';
-import { historyCommand } from './commands/history.js';
-import { forgeCommand } from './commands/forge.js';
 import { modelsCommand } from './commands/models.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -98,16 +96,6 @@ describe('lazySubCommands', () => {
     }
   });
 
-  it('lazily resolves args to match the real command module (history)', async () => {
-    const lazyArgs = await (lazySubCommands.history as { args: () => Promise<unknown> }).args();
-    expect(lazyArgs).toEqual(historyCommand.args);
-  });
-
-  it('lazily resolves args to match the real command module (forge)', async () => {
-    const lazyArgs = await (lazySubCommands.forge as { args: () => Promise<unknown> }).args();
-    expect(lazyArgs).toEqual(forgeCommand.args);
-  });
-
   it('lazily resolves subCommands for a nested command (models) to match the real module', async () => {
     const lazySub = await (lazySubCommands.models as { subCommands: () => Promise<unknown> }).subCommands();
     expect(lazySub).toEqual(modelsCommand.subCommands);
@@ -142,60 +130,29 @@ describe('lazySubCommands — full parity with the real command modules', () => 
   // above guarantees this table can't silently miss a command: the
   // completeness check below fails if a lazy key has no table row.
   const REAL_COMMAND_LOADERS: Record<string, [() => Promise<Record<string, unknown>>, string]> = {
-    forge: [() => import('./commands/forge.js'), 'forgeCommand'],
-    brainstorm: [() => import('./commands/brainstorm.js'), 'brainstormCommand'],
-    tribunal: [() => import('./commands/tribunal.js'), 'tribunalCommand'],
-    campfire: [() => import('./commands/campfire.js'), 'campfireCommand'],
-    'team-forge': [() => import('./commands/team-forge.js'), 'teamForgeCommand'],
-    'team-brainstorm': [() => import('./commands/team-brainstorm.js'), 'teamBrainstormCommand'],
-    'team-tribunal': [() => import('./commands/team-tribunal.js'), 'teamTribunalCommand'],
-    leaderboard: [() => import('./commands/leaderboard.js'), 'leaderboardCommand'],
-    history: [() => import('./commands/history.js'), 'historyCommand'],
-    ratings: [() => import('./commands/ratings.js'), 'ratingsCommand'],
-    room: [() => import('./commands/room.js'), 'roomCommand'],
-    provenance: [() => import('./commands/provenance.js'), 'provenanceCommand'],
     engine: [() => import('./commands/engine.js'), 'engineCommand'],
     doctor: [() => import('./commands/doctor.js'), 'doctorCommand'],
-    last: [() => import('./commands/last.js'), 'lastCommand'],
     models: [() => import('./commands/models.js'), 'modelsCommand'],
     provider: [() => import('./commands/provider.js'), 'providerCommand'],
     config: [() => import('./commands/config.js'), 'configCommand'],
-    review: [() => import('./commands/review.js'), 'reviewCommand'],
     call: [() => import('./commands/call.js'), 'callCommand'],
-    sanitize: [() => import('./commands/sanitize.js'), 'sanitizeCommand'],
-    naturalize: [() => import('./commands/naturalize.js'), 'naturalizeCommand'],
-    mutate: [() => import('./commands/mutate.js'), 'mutateCommand'],
     job: [() => import('./commands/job.js'), 'jobCommand'],
-    'agent-guide': [() => import('./commands/agent-guide.js'), 'agentGuideCommand'],
-    'install-agent-prompts': [() => import('./commands/install-agent-prompts.js'), 'installAgentPromptsCommand'],
-    goal: [() => import('./commands/goal.js'), 'goalCommand'],
-    synthesis: [() => import('./commands/synthesis.js'), 'synthesisCommand'],
-    ask: [() => import('./commands/ask.js'), 'askCommand'],
-    think: [() => import('./commands/think.js'), 'thinkCommand'],
-    rag: [() => import('./commands/rag.js'), 'ragCommand'],
-    nero: [() => import('./commands/nero.js'), 'neroCommand'],
-    council: [() => import('./commands/council.js'), 'councilCommand'],
-    research: [() => import('./commands/research.js'), 'researchCommand'],
-    conquer: [() => import('./commands/conquer.js'), 'conquerCommand'],
-    worktree: [() => import('./commands/worktree.js'), 'worktreeCommand'],
     attach: [() => import('./commands/attach.js'), 'attachCommand'],
     daemon: [() => import('./commands/daemon.js'), 'daemonCommand'],
-    serve: [() => import('./commands/serve.js'), 'serveCommand'],
-    drive: [() => import('./commands/drive.js'), 'driveCommand'],
-    chrome: [() => import('./commands/chrome.js'), 'chromeCommand'],
-    ext: [() => import('./commands/ext.js'), 'extCommand'],
-    'browser-host': [() => import('./commands/browser-host.js'), 'browserHostCommand'],
     login: [() => import('./commands/login.js'), 'loginCommand'],
     update: [() => import('./commands/update.js'), 'updateCommand'],
   };
   const canonicalKeys = Object.keys(lazySubCommands).filter((k) => k !== 'wt' && k !== 'upgrade');
+  const physicalKeys = new Set(['ask', 'think', 'brainstorm', 'team-brainstorm', 'campfire', 'tribunal', 'team-tribunal', 'review', 'nero', 'council', 'synthesis', 'forge', 'team-forge', 'conquer', 'goal', 'sanitize', 'naturalize', 'mutate', 'rag', 'research', 'history', 'last', 'leaderboard', 'ratings', 'provenance', 'room', 'agent-guide', 'install-agent-prompts', 'worktree', 'serve', 'drive', 'chrome', 'ext', 'browser-host']);
+  const legacyKeys = canonicalKeys.filter((key) => !physicalKeys.has(key));
 
   it('the loader table covers every canonical lazy key (completeness guard for the parity tests)', () => {
-    expect(Object.keys(REAL_COMMAND_LOADERS).sort()).toEqual([...canonicalKeys].sort());
+    expect(Object.keys(REAL_COMMAND_LOADERS).sort()).toEqual([...legacyKeys].sort());
+    expect([...physicalKeys].every((key) => canonicalKeys.includes(key))).toBe(true);
   });
 
   it('meta.name and meta.description are identical to each real command module\'s meta', async () => {
-    for (const key of canonicalKeys) {
+    for (const key of legacyKeys) {
       const [load, exportName] = REAL_COMMAND_LOADERS[key];
       const real = (await load())[exportName] as { meta?: { name?: string; description?: string } };
       expect(real, `real command export ${exportName} for ${key}`).toBeTruthy();
@@ -205,8 +162,47 @@ describe('lazySubCommands — full parity with the real command modules', () => 
     }
   });
 
+  it('physical commands do not retain a legacy dynamic import', () => {
+    const sourceText = readFileSync(join(__dirname, 'lazy-commands.ts'), 'utf-8');
+    expect(sourceText).not.toContain("import('./commands/ask.js')");
+    expect(sourceText).not.toContain("import('./commands/think.js')");
+    expect(sourceText).not.toContain("import('./commands/brainstorm.js')");
+    expect(sourceText).not.toContain("import('./commands/campfire.js')");
+    expect(sourceText).not.toContain("import('./commands/tribunal.js')");
+    expect(sourceText).not.toContain("import('./commands/nero.js')");
+    expect(sourceText).not.toContain("import('./commands/council.js')");
+    expect(sourceText).not.toContain("import('./commands/synthesis.js')");
+    expect(sourceText).not.toContain("import('./commands/team-brainstorm.js')");
+    expect(sourceText).not.toContain("import('./commands/team-tribunal.js')");
+    expect(sourceText).not.toContain("import('./commands/review.js')");
+    expect(sourceText).not.toContain("import('./commands/forge.js')");
+    expect(sourceText).not.toContain("import('./commands/team-forge.js')");
+    expect(sourceText).not.toContain("import('./commands/conquer.js')");
+    expect(sourceText).not.toContain("import('./commands/goal.js')");
+    expect(sourceText).not.toContain("import('./commands/sanitize.js')");
+    expect(sourceText).not.toContain("import('./commands/naturalize.js')");
+    expect(sourceText).not.toContain("import('./commands/mutate.js')");
+    expect(sourceText).not.toContain("import('./commands/rag.js')");
+    expect(sourceText).not.toContain("import('./commands/research.js')");
+    expect(sourceText).not.toContain("import('./commands/history.js')");
+    expect(sourceText).not.toContain("import('./commands/last.js')");
+    expect(sourceText).not.toContain("import('./commands/leaderboard.js')");
+    expect(sourceText).not.toContain("import('./commands/ratings.js')");
+    expect(sourceText).not.toContain("import('./commands/provenance.js')");
+    expect(sourceText).not.toContain("import('./commands/room.js')");
+    expect(sourceText).not.toContain("import('./commands/agent-guide.js')");
+    expect(sourceText).not.toContain("import('./commands/install-agent-prompts.js')");
+    expect(sourceText).not.toContain("import('./commands/worktree.js')");
+    expect(sourceText).not.toContain("import('./commands/serve.js')");
+    expect(sourceText).not.toContain("import('./commands/drive.js')");
+    expect(sourceText).not.toContain("import('./commands/chrome.js')");
+    expect(sourceText).not.toContain("import('./commands/ext.js')");
+    expect(sourceText).not.toContain("import('./commands/browser-host.js')");
+    expect((lazySubCommands.ask as { meta: { name?: string } }).meta.name).toBe('ask');
+  });
+
   it('a lazy entry exposes subCommands exactly when the real command defines subCommands', async () => {
-    for (const key of canonicalKeys) {
+    for (const key of legacyKeys) {
       const [load, exportName] = REAL_COMMAND_LOADERS[key];
       const real = (await load())[exportName] as { subCommands?: unknown };
       const realHas = real.subCommands !== undefined;

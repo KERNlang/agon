@@ -1,0 +1,307 @@
+import { validateManifest } from '@kernlang/agon-mod-api';
+
+export const MANIFEST = validateManifest({
+  "schemaVersion": 2,
+  "id": "agon.browser",
+  "name": "Browser",
+  "version": "1.0.0",
+  "apiRange": ">=1.0.0 <2",
+  "execution": "executable",
+  "compatibility": {
+    "kernelRange": ">=0.0.0-0 <2",
+    "nodeRange": ">=22"
+  },
+  "packageClass": "user-toggleable-mod-package",
+  "entrypoints": {
+    "runtime": "dist/index.js",
+    "types": "dist/index.d.ts"
+  },
+  "display": {
+    "group": "Interfaces",
+    "order": 600
+  },
+  "dependencies": {
+    "required": [
+      {
+        "id": "agon.api",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.engine-runtime",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.browser-bridge",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.agent-runtime",
+        "range": ">=0.0.0-0"
+      }
+    ],
+    "optional": [],
+    "conflicts": []
+  },
+  "permissions": [
+    {
+      "capability": "fs.write",
+      "resources": [],
+      "required": true
+    },
+    {
+      "capability": "network",
+      "resources": [],
+      "required": true
+    }
+  ],
+  "platforms": [
+    "darwin-arm64",
+    "darwin-x64",
+    "linux-arm64",
+    "linux-x64"
+  ],
+  "assets": [
+    {
+      "path": "ownership.json",
+      "kind": "documentation",
+      "mediaType": "application/json",
+      "contentHash": "sha256:650ee61f69d6f46f66d43fae7c7d0a5f82fc176116f9f4f15ce89b397121b7b1",
+      "bytes": 4520,
+      "executable": false,
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-arm64",
+        "linux-x64"
+      ]
+    },
+    {
+      "path": "schemas/config.schema.json",
+      "kind": "schema",
+      "mediaType": "application/schema+json",
+      "contentHash": "sha256:af47aec834d77f2465d3f4be734fab57b1428e70b0b40dc518d37e9533c00d1b",
+      "bytes": 220,
+      "executable": false,
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-arm64",
+        "linux-x64"
+      ]
+    }
+  ],
+  "contributes": {
+    "cliCommands": [
+      {
+        "id": "cliCommands:0004",
+        "aliases": []
+      },
+      {
+        "id": "cliCommands:0005",
+        "aliases": []
+      },
+      {
+        "id": "cliCommands:0006",
+        "aliases": []
+      },
+      {
+        "id": "cliCommands:0007",
+        "aliases": []
+      },
+      {
+        "id": "cliCommands:0008",
+        "aliases": []
+      },
+      {
+        "id": "cliCommands:0011",
+        "aliases": []
+      },
+      {
+        "id": "cliCommands:0017",
+        "aliases": []
+      },
+      {
+        "id": "cliCommands:0019",
+        "aliases": []
+      },
+      {
+        "id": "cliCommands:0020",
+        "aliases": []
+      },
+      {
+        "id": "cliCommands:0021",
+        "aliases": []
+      },
+      {
+        "id": "cliCommands:0066",
+        "aliases": []
+      }
+    ],
+    "tuiActions": [
+      {
+        "id": "tuiSlashCommands:0015",
+        "aliases": []
+      }
+    ],
+    "mcpTools": [],
+    "cesarTools": [],
+    "lifecycleHooks": [],
+    "resultTypes": [],
+    "configKeys": [],
+    "generatedDocs": []
+  },
+  "pack": {
+    "include": [
+      "LICENSE",
+      "agon.mod.json",
+      "dist/index.js",
+      "dist/index.d.ts",
+      "dist/implementation.d.ts",
+      "ownership.json",
+      "schemas/config.schema.json"
+    ],
+    "executable": []
+  }
+});
+export const SOURCE_OCCURRENCES = Object.freeze([
+  {
+    "category": "cliCommands",
+    "id": "browser-host",
+    "source": "packages/cli/src/lazy-commands.ts:330",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-browser",
+    "rule": "exact-user-surface"
+  },
+  {
+    "category": "cliCommands",
+    "id": "browser-host install",
+    "source": "packages/cli/src/commands/browser-host.ts:546",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-browser",
+    "rule": "exact-user-surface"
+  },
+  {
+    "category": "cliCommands",
+    "id": "browser-host status",
+    "source": "packages/cli/src/commands/browser-host.ts:548",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-browser",
+    "rule": "exact-user-surface"
+  },
+  {
+    "category": "cliCommands",
+    "id": "browser-host stop",
+    "source": "packages/cli/src/commands/browser-host.ts:549",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-browser",
+    "rule": "exact-user-surface"
+  },
+  {
+    "category": "cliCommands",
+    "id": "browser-host uninstall",
+    "source": "packages/cli/src/commands/browser-host.ts:547",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-browser",
+    "rule": "exact-user-surface"
+  },
+  {
+    "category": "cliCommands",
+    "id": "chrome",
+    "source": "packages/cli/src/lazy-commands.ts:328",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-browser",
+    "rule": "exact-user-surface"
+  },
+  {
+    "category": "cliCommands",
+    "id": "drive",
+    "source": "packages/cli/src/lazy-commands.ts:327",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-browser",
+    "rule": "exact-user-surface"
+  },
+  {
+    "category": "cliCommands",
+    "id": "ext",
+    "source": "packages/cli/src/lazy-commands.ts:329",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-browser",
+    "rule": "exact-user-surface"
+  },
+  {
+    "category": "cliCommands",
+    "id": "ext install",
+    "source": "packages/cli/src/commands/ext.ts:321",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-browser",
+    "rule": "exact-user-surface"
+  },
+  {
+    "category": "cliCommands",
+    "id": "ext native-host",
+    "source": "packages/cli/src/commands/ext.ts:322",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-browser",
+    "rule": "exact-user-surface"
+  },
+  {
+    "category": "cliCommands",
+    "id": "serve",
+    "source": "packages/cli/src/lazy-commands.ts:326",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-browser",
+    "rule": "exact-user-surface"
+  },
+  {
+    "category": "statePaths",
+    "id": "browser-host",
+    "source": "packages/cli/src/commands/browser-host.ts:27",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-browser",
+    "rule": "exact-user-surface"
+  },
+  {
+    "category": "statePaths",
+    "id": "serve",
+    "source": "packages/cli/src/bridge/chrome-bridge.ts:27",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-browser",
+    "rule": "exact-user-surface"
+  },
+  {
+    "category": "statePaths",
+    "id": "serve",
+    "source": "packages/cli/src/bridge/serve-runtime.ts:86",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-browser",
+    "rule": "exact-user-surface"
+  },
+  {
+    "category": "statePaths",
+    "id": "serve",
+    "source": "packages/cli/src/commands/browser-host.ts:41",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-browser",
+    "rule": "exact-user-surface"
+  },
+  {
+    "category": "statePaths",
+    "id": "serve",
+    "source": "packages/cli/src/commands/drive.ts:98",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-browser",
+    "rule": "exact-user-surface"
+  },
+  {
+    "category": "tuiSlashCommands",
+    "id": "/chrome",
+    "source": "packages/cli/src/signals/intent.ts:56",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-browser",
+    "rule": "exact-user-surface"
+  }
+]);
+export const IMPLEMENTATION_KIND = 'physical' as const;
+export { createMod } from './implementation.js';
+export { createMod as default } from './implementation.js';
+export { driveBrowser, runServe, browserHost } from './implementation.js';

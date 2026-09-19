@@ -294,7 +294,8 @@ describe('session-store v2.1: conversation continuity store', () => {
     const cwdHash = createHash('md5').update(process.cwd()).digest('hex').slice(0, 8);
     const raw = readFileSync(join(testHome, 'sessions', `conversation-${cwdHash}.json`), 'utf-8');
     const parsed = JSON.parse(raw);
-    expect('readPaths' in parsed).toBe(false);
+    expect(parsed).toMatchObject({ schemaVersion: 1, kind: 'session', status: 'active', contributionId: 'agon.persistence.conversation-session' });
+    expect('readPaths' in parsed.payload).toBe(false);
     // And it still loads, normalizing to [].
     const loaded = loadConversation();
     expect(loaded!.readPaths).toEqual([]);

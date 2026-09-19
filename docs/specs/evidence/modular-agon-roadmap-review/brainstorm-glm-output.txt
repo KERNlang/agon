@@ -1,0 +1,39 @@
+**Note on the draft pool:** Only one of the two drafts contains auditable substance. The minimax-api draft is a truncated reasoning preamble — it restates the task ("analyze the roadmap, identify what's missing") and stops; its 50% confidence is self-fulfilling. All substantive material therefore comes from the zai draft, which itself decomposes into three genuinely distinct strands. I present those three, since they are independently adoptable and compete on different merits.
+
+---
+
+**Direction 1 — The roadmap validates snapshots; nothing validates transitions (this is the framing challenge)**
+
+*Core idea:* The audit request — "list missing dimensions or ordering hazards" — inherits the roadmap's own defect: it assumes the plan fails by omission or sequence, when the structural problem is that every listed gate (clean checkouts, Git-object hashes, parity, private-import checks, disabled unreachability) asserts a *state*, and no gate asserts a *transition*. Cutover-before-rollback, parity-against-an-oracle-that-cutover-deletes, extraction-without-inverse, persisted-profiles-without-migration are all one failure class: irreversible state changes. The fix is not a longer list but a second track — every phase ships its inverse (rollback, downgrade, uninstall, migration) gated in the same phase — with transition-typed checks: flag-flip parity re-routing mid-suite, SIGKILL-at-finalize leaving the prior generation bootable, frozen input→output corpus replayed post-cutover with canonical-JSON diffing.
+
+*Why it could win:* It subsumes the two most concrete hazards under one principle and *predicts* others without enumerating them — the race on the immutable-generation store and schema aging fall out of it naturally. It's also the only direction that produces new gate *types* rather than more gates, which matters because the roadmap's gate list is already long and CI budget is finite.
+
+*Main risk:* Schedule and oracle quality. Shipping inverses with every phase pushes user-visible cutover later, and the frozen oracle corpus can enshrine legacy bugs as golden truth. The draft's mitigations (reviewable corpus-diff artifacts, corpus changes landing in the same commit) cost review bandwidth, and "inverse per phase" applied to cheap phases becomes ceremony.
+
+---
+
+**Direction 2 — Extracted shapes ossify: the compat contract must precede extraction, not follow it**
+
+*Core idea:* Steps 4–5 (shared- and feature-package extraction) run before any versioning/ABI policy exists. The moment an external plugin compiles against an extracted seam, that shape is de-facto public API. Existing gates police *boundaries* (private-import checks, manifest validation) but not the *stability* of what's public. Fix: a committed type-baseline report that fails CI on breaking changes without a major bump, plus a matrix job loading plugins built against N−1 and N−2 headers into the current host.
+
+*Why it could win:* Cheapest of the three (off-the-shelf tooling, one CI job, no reordering) and it insures against the one truly irreversible mistake in steps 4–5 — un-breaking an ossified API costs a major version and a migration that the roadmap never schedules. It also directly serves step 9: an npm release implies semver discipline the plan never establishes anywhere.
+
+*Main risk:* Premature freezing. Extracting before the right seams are discovered, then locking types, yields either constant major bumps or a frozen wrong API. The draft doesn't scope this — a serious adoption would need stability tiers ("provisionally stable" vs. frozen), which is an extension beyond what's written.
+
+---
+
+**Direction 3 — The release is the hazard, not the phases: trust, races, and migration are unsequenced against step 9**
+
+*Core idea:* The roadmap ends at npm/npx + platform release but leaves release-blocking robustness unsequenced: trust/grants (step 8) land *after* the installer (step 7), so unsigned folder plugins load under fresh installs before any trust model exists; the crash-injection gate covers process death but plausibly not concurrent writers or mid-write faults (ENOSPC/EACCES, torn generations, single-writer lock); persisted profiles from step 3 have no migration story. Fix by defining a minimum robustness bar step 9 must clear and backfilling: unsigned-plugin denial events with zero activation, hostile-manifest fixture corpus (path traversal, `__proto__`, symlink escape) with stable error codes, K-concurrent stress with hash-tree audits of the generation store, golden migration corpus of historical schemas.
+
+*Why it could win:* These are the failures users actually hit at GA — a torn generation store or unsigned plugin code executing on fresh install is release-killing or security-class, whereas most listed gates protect developer workflow. Several checks *extend* the already-planned crash-injection gate rather than replacing it.
+
+*Main risk:* Kitchen-sink. This is a cluster, not a lever; adopting it wholesale lengthens CI and duplicates existing gates (crash injection and the native matrix are already listed). It only wins if triaged to the release-blocking subset — trust-before-install, torn-write/race, migration — while perf budgets and timezone-identical builds stay deferred.
+
+---
+
+**Recommendation: start Direction 1, and specifically the frozen oracle corpus, immediately.**
+
+Three reasons. First, it is the only hazard whose mitigation window closes by itself: the corpus can only be recorded faithfully while the legacy runtime is authoritative and unperturbed — every extraction phase that lands first makes the recorded "oracle" partially the thing you're trying to verify, and after cutover it cannot be reconstructed at all. Delay converts a cheap fix into an impossible one. Second, largest blast radius: cutover is the most user-visible transition in the plan and currently ships four phases ahead of its safety net; Direction 1's reorder (rollback/safe mode before cutover, per-surface behind kill flags) is the single highest-stakes sequencing change on the table. Third, it partially subsumes the others — the race/torn-write check is a transition hazard, and the corpus's canonical-JSON semantics feed the migration tests in Direction 3.
+
+Fold in Direction 2's type-baseline job in parallel (near-zero cost, insurance against the one irreversible extraction mistake), and gate step 9 on Direction 3's three release-blocking checks — but do not let the cluster crowd out the reorder.

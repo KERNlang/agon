@@ -1,0 +1,24 @@
+command: ["node","scripts/spec/generate-modular-agon-inventory.mjs"]
+exitCode: 0
+signal:
+error:
+
+{
+  "cliCommands": 69,
+  "tuiSlashCommands": 73,
+  "tuiKeyboardActions": 43,
+  "builtinCommandMetadata": 53,
+  "intentVariants": 68,
+  "mcpTools": 33,
+  "cesarTools": 29,
+  "cesarRoutes": 70,
+  "lifecycleHooks": 12,
+  "emittedEvents": 29,
+  "resultAndEnvelopeTypes": 142,
+  "configKeys": 122,
+  "statePaths": 43,
+  "stateStoreModules": 30,
+  "staticAssets": 18,
+  "pythonAndNativeComponents": 15,
+  "generatedDocumentation": 3
+}

@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "package": "@kernlang/agon-mod-memory",
+  "assignments": [
+    {
+      "category": "cesarTools",
+      "id": "SaveMemory",
+      "source": "packages/cli/src/cesar/tools.ts:51",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-memory",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "mcpTools",
+      "id": "SaveMemory",
+      "source": "packages/mcp/src/agon-orchestration.ts:24",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-memory",
+      "rule": "exact-user-surface"
+    }
+  ]
+}

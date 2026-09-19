@@ -1,0 +1,179 @@
+import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
+
+import { join, resolve } from 'node:path';
+
+import { homedir } from 'node:os';
+
+import { createHash } from 'node:crypto';
+
+const hostPrettyJson = (value: unknown): string => JSON.stringify(value, null, 2);
+
+function getFlowsDir(): string {
+  const override = process.env.AGON_HOME?.trim();
+  const home = override ? resolve(override) : join(homedir(), '.agon');
+  return join(home, 'flows');
+}
+
+export const FLOWS_DIR: string = getFlowsDir();
+
+export const FRICTION_TAGS: readonly string[] = ['slow', 'wrong-mode', 'engine-error', 'unclear-output', 'timeout', 'context-lost', 'other'] as const;
+
+export interface FlowTelemetry {
+  engines: string[];
+  durationMs: number;
+  tokensByEngine: Record<string, {prompt:number, response:number}>;
+  touchedFileCount?: number;
+}
+
+export interface FlowFeedback {
+  satisfactionRating: number;
+  goalMet: 'yes'|'no'|'partly';
+  needsFollowup: boolean;
+  frictionTags: string[];
+  notes?: string;
+}
+
+export interface FlowModeMeta {
+  forgeId?: string;
+  winnerEngine?: string;
+  brainstormWinner?: string;
+  tribunalVerdict?: string;
+  taskType?: string;
+  orchestrationPath?: string;
+  leadEngine?: string;
+  observerEngines?: string[];
+  scoutCount?: number;
+  cesarConfidence?: number;
+}
+
+export interface FlowWorkflowIdentity {
+  workflowId?: string;
+  runId?: string;
+  runStatus?: string;
+}
+
+export interface FlowRecord {
+  id: string;
+  schemaVersion: 1;
+  mode: 'forge'|'brainstorm'|'tribunal'|'campfire'|'chat'|'build'|'cesar'|'pipeline';
+  startedAt: string;
+  endedAt: string;
+  completionState: 'completed'|'aborted'|'crashed';
+  captureMethod: 'auto'|'manual';
+  telemetry: FlowTelemetry;
+  feedback?: FlowFeedback;
+  modeMeta?: FlowModeMeta;
+  workflowRun?: FlowWorkflowIdentity;
+}
+
+function ensureFlowsDir(): void {
+  mkdirSync(getFlowsDir(), { recursive: true });
+}
+
+export function logFlow(record: FlowRecord): string {
+  ensureFlowsDir();
+  const rawId = String(record.id);
+  const safeId = rawId.replace(/[^A-Za-z0-9._-]/g, '_').replace(/\.\.+/g, '_').slice(0, 80) || 'flow';
+  const idHash = createHash('sha256').update(rawId).digest('hex').slice(0, 16);
+  const filename = `flow-${safeId}-${idHash}.json`;
+  const filepath = join(getFlowsDir(), filename);
+  writeFileSync(filepath, hostPrettyJson(record));
+  return filepath;
+}
+
+export function readFlows(limit?: number): FlowRecord[] {
+  ensureFlowsDir();
+  let files: string[];
+  try {
+    files = readdirSync(getFlowsDir())
+      .filter((f: string) => f.startsWith('flow-') && f.endsWith('.json'))
+      .sort()
+      .reverse();
+  } catch (err) {
+    console.warn(`[agon] failed to read flows directory: ${err instanceof Error ? err.message : String(err)}`);
+    return [];
+  }
+
+  if (limit) files = files.slice(0, limit);
+
+  const records: FlowRecord[] = [];
+  for (const file of files) {
+    try {
+      const data = JSON.parse(readFileSync(join(getFlowsDir(), file), 'utf-8')) as FlowRecord;
+      records.push(data);
+    } catch (err) {
+      console.warn(`[agon] skipping malformed flow record ${file}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  return records;
+}
+
+export interface ModeStats {
+  mode: string;
+  count: number;
+  avgSatisfaction: number|null;
+  completedRate: number;
+  avgDurationMs: number;
+  avgTokens: number;
+  followupRate: number;
+}
+
+export interface FlowAnalysis {
+  totalFlows: number;
+  byMode: ModeStats[];
+  topFriction: {tag:string, count:number}[];
+  periodDays: number;
+}
+
+export function analyzeFlows(days?: number): FlowAnalysis {
+  const periodDays = days ?? 30;
+  const cutoff = new Date(Date.now() - periodDays * 86400_000).toISOString();
+  const all = readFlows();
+  const recent = all.filter((r) => r.startedAt >= cutoff);
+
+  const modeMap = new Map<string, FlowRecord[]>();
+  for (const r of recent) {
+    const list = modeMap.get(r.mode) ?? [];
+    list.push(r);
+    modeMap.set(r.mode, list);
+  }
+
+  const byMode: ModeStats[] = [];
+  for (const [mode, records] of modeMap) {
+    const withFeedback = records.filter((r) => r.feedback);
+    const ratings = withFeedback.map((r) => r.feedback!.satisfactionRating);
+    const avgSatisfaction = ratings.length > 0 ? ratings.reduce((a, b) => a + b, 0) / ratings.length : null;
+    const completed = records.filter((r) => r.completionState === 'completed').length;
+    const totalDuration = records.reduce((sum, r) => sum + r.telemetry.durationMs, 0);
+    const totalTokens = records.reduce((sum, r) => {
+      return sum + Object.values(r.telemetry.tokensByEngine).reduce((s, e) => s + e.prompt + e.response, 0);
+    }, 0);
+    const followups = withFeedback.filter((r) => r.feedback!.needsFollowup).length;
+
+    byMode.push({
+      mode,
+      count: records.length,
+      avgSatisfaction: avgSatisfaction !== null ? Math.round(avgSatisfaction * 10) / 10 : null,
+      completedRate: Math.round((completed / records.length) * 100),
+      avgDurationMs: Math.round(totalDuration / records.length),
+      avgTokens: Math.round(totalTokens / records.length),
+      followupRate: withFeedback.length > 0 ? Math.round((followups / withFeedback.length) * 100) : 0,
+    });
+  }
+  byMode.sort((a, b) => b.count - a.count);
+
+  const frictionCounts = new Map<string, number>();
+  for (const r of recent) {
+    if (r.feedback?.frictionTags) {
+      for (const tag of r.feedback.frictionTags) {
+        frictionCounts.set(tag, (frictionCounts.get(tag) ?? 0) + 1);
+      }
+    }
+  }
+  const topFriction = [...frictionCounts.entries()]
+    .map(([tag, count]) => ({ tag, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
+  return { totalFlows: recent.length, byMode, topFriction, periodDays };
+}

@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 2,
+  "id": "example.hello-folder-mod",
+  "name": "Hello Folder Mod",
+  "version": "1.0.0",
+  "apiRange": ">=1.0.0 <2.0.0",
+  "execution": "executable",
+  "compatibility": {
+    "kernelRange": ">=0.0.0-0 <2",
+    "nodeRange": ">=22"
+  },
+  "packageClass": "user-toggleable-mod-package",
+  "entrypoints": {
+    "runtime": "dist/index.js",
+    "types": "dist/index.d.ts"
+  },
+  "display": {
+    "group": "Community examples",
+    "order": 1000
+  },
+  "dependencies": {
+    "required": [],
+    "optional": [],
+    "conflicts": []
+  },
+  "permissions": [
+    {
+      "capability": "state.read",
+      "resources": [
+        "example.greeting"
+      ],
+      "required": false
+    }
+  ],
+  "platforms": [
+    "darwin-arm64",
+    "darwin-x64",
+    "linux-arm64",
+    "linux-x64"
+  ],
+  "assets": [],
+  "contributes": {
+    "cliCommands": [
+      {
+        "id": "hello-folder",
+        "aliases": []
+      }
+    ],
+    "tuiActions": [],
+    "mcpTools": [],
+    "cesarTools": [],
+    "lifecycleHooks": [],
+    "resultTypes": [],
+    "configKeys": [],
+    "generatedDocs": []
+  },
+  "pack": {
+    "include": [
+      "agon.mod.json",
+      "package.json",
+      "dist/index.js",
+      "dist/index.d.ts",
+      "src/index.ts",
+      "tsconfig.json"
+    ],
+    "executable": []
+  }
+}

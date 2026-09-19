@@ -1,0 +1,581 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 2
+    },
+    "id": {
+      "type": "string",
+      "maxLength": 256,
+      "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+    },
+    "apiRange": {
+      "type": "string",
+      "minLength": 1
+    },
+    "execution": {
+      "type": "string",
+      "enum": [
+        "executable",
+        "declarative"
+      ]
+    },
+    "compatibility": {
+      "type": "object",
+      "properties": {
+        "kernelRange": {
+          "type": "string",
+          "minLength": 1
+        },
+        "nodeRange": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "kernelRange",
+        "nodeRange"
+      ],
+      "additionalProperties": false
+    },
+    "packageClass": {
+      "type": "string",
+      "enum": [
+        "minimal-kernel-machinery",
+        "hidden-shared-support-package",
+        "user-toggleable-mod-package"
+      ]
+    },
+    "entrypoints": {
+      "type": "object",
+      "properties": {
+        "runtime": {
+          "type": "string",
+          "pattern": "^(?!\\/)(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[A-Za-z0-9._/-]+$"
+        },
+        "types": {
+          "type": "string",
+          "pattern": "^(?!\\/)(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[A-Za-z0-9._/-]+$"
+        }
+      },
+      "required": [
+        "runtime",
+        "types"
+      ],
+      "additionalProperties": false
+    },
+    "display": {
+      "type": "object",
+      "properties": {
+        "group": {
+          "type": "string",
+          "minLength": 1
+        },
+        "order": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "parent": {
+          "type": "string",
+          "maxLength": 256,
+          "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$"
+        }
+      },
+      "required": [
+        "group",
+        "order"
+      ],
+      "additionalProperties": false
+    },
+    "dependencies": {
+      "type": "object",
+      "properties": {
+        "required": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "maxLength": 256,
+                "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$"
+              },
+              "range": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "id",
+              "range"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "optional": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "maxLength": 256,
+                "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$"
+              },
+              "range": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "id",
+              "range"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "conflicts": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 256,
+            "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$"
+          }
+        }
+      },
+      "required": [
+        "required",
+        "optional",
+        "conflicts"
+      ],
+      "additionalProperties": false
+    },
+    "permissions": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "capability": {
+            "type": "string",
+            "minLength": 1
+          },
+          "resources": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "required": {
+            "default": true,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "capability",
+          "resources",
+          "required"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "platforms": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "darwin-arm64",
+          "darwin-x64",
+          "linux-arm64",
+          "linux-x64"
+        ]
+      }
+    },
+    "assets": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "pattern": "^(?!\\/)(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[A-Za-z0-9._/-]+$"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "static",
+              "native",
+              "schema",
+              "documentation"
+            ]
+          },
+          "mediaType": {
+            "type": "string",
+            "minLength": 1
+          },
+          "contentHash": {
+            "type": "string",
+            "pattern": "^sha256:[a-f0-9]{64}$"
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "executable": {
+            "default": false,
+            "type": "boolean"
+          },
+          "platforms": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "darwin-arm64",
+                "darwin-x64",
+                "linux-arm64",
+                "linux-x64"
+              ]
+            }
+          },
+          "consumerContributionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$"
+          }
+        },
+        "required": [
+          "path",
+          "kind",
+          "mediaType",
+          "contentHash",
+          "bytes",
+          "executable",
+          "platforms"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "contributes": {
+      "type": "object",
+      "properties": {
+        "cliCommands": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$"
+              },
+              "aliases": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "aliases"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "tuiActions": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$"
+              },
+              "aliases": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "aliases"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "mcpTools": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$"
+              },
+              "aliases": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "aliases"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "cesarTools": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$"
+              },
+              "aliases": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "aliases"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "lifecycleHooks": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$"
+              },
+              "aliases": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "aliases"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "resultTypes": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$"
+              },
+              "aliases": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "aliases"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "configKeys": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$"
+              },
+              "aliases": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "aliases"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "generatedDocs": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$"
+              },
+              "aliases": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "aliases"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "cliCommands",
+        "tuiActions",
+        "mcpTools",
+        "cesarTools",
+        "lifecycleHooks",
+        "resultTypes",
+        "configKeys",
+        "generatedDocs"
+      ],
+      "additionalProperties": false
+    },
+    "pack": {
+      "type": "object",
+      "properties": {
+        "include": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(?!\\/)(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[A-Za-z0-9._/-]+$"
+          }
+        },
+        "executable": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(?!\\/)(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[A-Za-z0-9._/-]+$"
+          }
+        }
+      },
+      "required": [
+        "include",
+        "executable"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "id",
+    "name",
+    "version",
+    "apiRange",
+    "execution",
+    "compatibility",
+    "packageClass",
+    "display",
+    "dependencies",
+    "permissions",
+    "platforms",
+    "assets",
+    "contributes",
+    "pack"
+  ],
+  "additionalProperties": false,
+  "$id": "https://kernlang.dev/schemas/agon/modular/v1/manifest.schema.json",
+  "title": "Modular Agon v1 manifest"
+}

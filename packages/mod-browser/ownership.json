@@ -1,0 +1,142 @@
+{
+  "schemaVersion": 1,
+  "package": "@kernlang/agon-mod-browser",
+  "assignments": [
+    {
+      "category": "cliCommands",
+      "id": "browser-host",
+      "source": "packages/cli/src/lazy-commands.ts:330",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-browser",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "browser-host install",
+      "source": "packages/cli/src/commands/browser-host.ts:546",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-browser",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "browser-host status",
+      "source": "packages/cli/src/commands/browser-host.ts:548",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-browser",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "browser-host stop",
+      "source": "packages/cli/src/commands/browser-host.ts:549",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-browser",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "browser-host uninstall",
+      "source": "packages/cli/src/commands/browser-host.ts:547",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-browser",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "chrome",
+      "source": "packages/cli/src/lazy-commands.ts:328",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-browser",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "drive",
+      "source": "packages/cli/src/lazy-commands.ts:327",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-browser",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "ext",
+      "source": "packages/cli/src/lazy-commands.ts:329",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-browser",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "ext install",
+      "source": "packages/cli/src/commands/ext.ts:321",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-browser",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "ext native-host",
+      "source": "packages/cli/src/commands/ext.ts:322",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-browser",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "serve",
+      "source": "packages/cli/src/lazy-commands.ts:326",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-browser",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "statePaths",
+      "id": "browser-host",
+      "source": "packages/cli/src/commands/browser-host.ts:27",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-browser",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "statePaths",
+      "id": "serve",
+      "source": "packages/cli/src/bridge/chrome-bridge.ts:27",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-browser",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "statePaths",
+      "id": "serve",
+      "source": "packages/cli/src/bridge/serve-runtime.ts:86",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-browser",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "statePaths",
+      "id": "serve",
+      "source": "packages/cli/src/commands/browser-host.ts:41",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-browser",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "statePaths",
+      "id": "serve",
+      "source": "packages/cli/src/commands/drive.ts:98",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-browser",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/chrome",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-browser",
+      "rule": "exact-user-surface"
+    }
+  ]
+}

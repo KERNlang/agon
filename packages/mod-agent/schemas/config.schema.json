@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kernlang.dev/schemas/agent/config.schema.json",
+  "title": "agent configuration",
+  "type": "object",
+  "additionalProperties": true
+}

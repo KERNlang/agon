@@ -3,9 +3,66 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { shouldUseCompanionForAgent, buildCommand, resolveArgs, computeEngineIsolation, resolveClaudePtyExtraArgs, answerChannelMode, fileChannelInstruction, readAnswerChannelFile, setupFileAnswerChannel, createStringSet } from '../../packages/adapter-cli/src/adapter-helpers.js';
+import { engineHealth } from '@kernlang/agon-core';
+import { shouldUseCompanionForAgent, buildCommand, resolveArgs, computeEngineIsolation, resolveClaudePtyExtraArgs, answerChannelMode, fileChannelInstruction, readAnswerChannelFile, setupFileAnswerChannel, createStringSet, rewriteFalseSuccessAuthInPlace, recordDispatchHealth } from '../../packages/adapter-cli/src/adapter-helpers.js';
 
 describe('adapter helper routing', () => {
+  it('turns a CLI-auth message printed on stdout with exit 0 into a failed dispatch', () => {
+    const result = {
+      exitCode: 0,
+      stdout: 'Failed to authenticate: OAuth session expired and could not be refreshed',
+      stderr: '',
+      timedOut: false,
+    };
+    rewriteFalseSuccessAuthInPlace('claude', result);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain('OAuth session expired');
+  });
+
+  it('handles an ANSI-prefixed auth banner after a short prelude', () => {
+    const result = {
+      exitCode: 0,
+      stdout: 'Claude Code\n\u001b[31mFailed to authenticate: OAuth session expired\u001b[0m',
+      stderr: '',
+      timedOut: false,
+    };
+    rewriteFalseSuccessAuthInPlace('claude', result);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain('OAuth session expired');
+  });
+
+  it('does not reinterpret another engine or an ordinary model answer that discusses OAuth', () => {
+    const result = {
+      exitCode: 0,
+      stdout: 'OAuth sessions can expire; handle that error by refreshing the token.',
+      stderr: '',
+      timedOut: false,
+    };
+    rewriteFalseSuccessAuthInPlace('claude', result);
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe('');
+    result.stdout = 'Failed to authenticate: quoted application error';
+    rewriteFalseSuccessAuthInPlace('kimi', result);
+    expect(result.exitCode).toBe(0);
+  });
+
+  it('records a Claude stdout auth false-green as an auth-failed health result', () => {
+    const result = {
+      exitCode: 0,
+      stdout: 'Failed to authenticate: OAuth session expired',
+      stderr: '',
+      timedOut: false,
+    };
+    engineHealth.clear('claude');
+    try {
+      recordDispatchHealth('claude', result);
+      expect(result.exitCode).toBe(1);
+      expect(engineHealth.get('claude')?.status).toBe('auth-failed');
+    } finally {
+      engineHealth.clear('claude');
+    }
+  });
+
   it('creates a real string Set for repeated baseline-diff membership checks', () => {
     const values = createStringSet(['diff --git a/a.ts b/a.ts', 'diff --git a/a.ts b/a.ts']);
     expect(values).toBeInstanceOf(Set);

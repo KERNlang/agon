@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 2,
+  "qualification": "modular-agon-clean-checkout",
+  "subject": {
+    "kind": "commit",
+    "hash": "sha256:b23001a6f297701c2569ee8d271ca2b6986a1f8ab2a768761efe42d4410eeb0a",
+    "indexHash": "sha256:b23001a6f297701c2569ee8d271ca2b6986a1f8ab2a768761efe42d4410eeb0a",
+    "commitHash": "sha256:b23001a6f297701c2569ee8d271ca2b6986a1f8ab2a768761efe42d4410eeb0a",
+    "indexEqualsCommit": true
+  },
+  "contamination": {
+    "ignored": [],
+    "untracked": [],
+    "unstaged": []
+  },
+  "graph": {
+    "packages": 49,
+    "declaredEdges": 144,
+    "uniqueEdges": 144,
+    "duplicateEdges": []
+  },
+  "reviewEvidence": {
+    "passed": true
+  },
+  "cleanCheckoutSteps": [
+    {
+      "id": "npm-ci",
+      "command": [
+        "npm",
+        "ci",
+        "--ignore-scripts"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\nadded 382 packages in 1s\n\n112 packages are looking for funding\n  run `npm fund` for details\nnpm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me\n"
+    },
+    {
+      "id": "mod-api-build",
+      "command": [
+        "npm",
+        "run",
+        "build",
+        "-w",
+        "packages/mod-api"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\n> @kernlang/agon-mod-api@1.0.0 build\n> tsup && tsc -b tsconfig.json --force\n\nCLI Building entry: src/index.ts, src/manifest.ts\nCLI Using tsconfig: tsconfig.json\nCLI tsup v8.5.1\nCLI Using tsup config: /private/var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-modular-clean-commit-nlaxjf/packages/mod-api/tsup.config.ts\nCLI Target: es2022\nCLI Cleaning output folder\nESM Build start\nESM dist/index.js          408.00 B\nESM dist/manifest.js       329.00 B\nESM dist/chunk-X6FFHM6D.js 7.15 KB\nESM ⚡️ Build success in 17ms\n"
+    },
+    {
+      "id": "mod-kernel-build",
+      "command": [
+        "npm",
+        "run",
+        "build",
+        "-w",
+        "packages/mod-kernel"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\n> @kernlang/agon-kernel@0.0.0-slice.1a build\n> tsup && tsc -b tsconfig.json --force\n\nCLI Building entry: src/index.ts\nCLI Using tsconfig: tsconfig.json\nCLI tsup v8.5.1\nCLI Using tsup config: /private/var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-modular-clean-commit-nlaxjf/packages/mod-kernel/tsup.config.ts\nCLI Target: es2022\nCLI Cleaning output folder\nESM Build start\nESM dist/index.js 317.84 KB\nESM ⚡️ Build success in 24ms\n"
+    },
+    {
+      "id": "slice1a-negative-controls",
+      "command": [
+        "node",
+        "scripts/spec/verify-modular-slice1a-gates.mjs"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "qualification gate negative controls passed\n"
+    },
+    {
+      "id": "slice1b-negative-controls",
+      "command": [
+        "node",
+        "scripts/spec/verify-modular-slice1b-gates.mjs"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "Slice 1B qualification negative controls passed\n"
+    },
+    {
+      "id": "legacy-oracle",
+      "command": [
+        "node",
+        "scripts/spec/verify-modular-legacy-oracle.mjs"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "{\n  \"workflows\": 160,\n  \"rawEnvelopes\": 7,\n  \"transformStages\": 4,\n  \"status\": \"passed\"\n}\n"
+    },
+    {
+      "id": "legacy-oracle-negative-controls",
+      "command": [
+        "node",
+        "scripts/spec/verify-modular-legacy-oracle-negative-controls.mjs"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "Legacy oracle negative controls passed\n"
+    },
+    {
+      "id": "roadmap-contract",
+      "command": [
+        "node",
+        "scripts/spec/verify-modular-agon-roadmap.mjs"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "{\n  \"packages\": 49,\n  \"uniqueEdges\": 144,\n  \"legacyAssignments\": 849,\n  \"slices\": 9,\n  \"claims\": 10,\n  \"status\": \"passed\"\n}\n"
+    },
+    {
+      "id": "contract-tests",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-slice1a"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\n> pretest:modular-slice1a\n> npm run spec:modular-generated:self-test && npm run spec:modular-qualification:self-test && npm run spec:modular-generated:check && npm run build -w packages/mod-api && npm run build -w packages/mod-kernel\n\n\n> spec:modular-generated:self-test\n> node scripts/spec/verify-modular-generated-artifacts.mjs --self-test\n\ngenerated-artifact negative controls passed\n\n> spec:modular-qualification:self-test\n> node scripts/spec/verify-modular-slice1a-gates.mjs\n\nqualification gate negative controls passed\n\n> spec:modular-generated:check\n> node scripts/spec/verify-modular-generated-artifacts.mjs\n\nall modular generated artifacts are current\n\n> @kernlang/agon-mod-api@1.0.0 build\n> tsup && tsc -b tsconfig.json --force\n\nCLI Building entry: src/index.ts, src/manifest.ts\nCLI Using tsconfig: tsconfig.json\nCLI tsup v8.5.1\nCLI Using tsup config: /private/var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-modular-clean-commit-nlaxjf/packages/mod-api/tsup.config.ts\nCLI Target: es2022\nCLI Cleaning output folder\nESM Build start\nESM dist/chunk-X6FFHM6D.js 7.15 KB\nESM dist/index.js          408.00 B\nESM dist/manifest.js       329.00 B\nESM ⚡️ Build success in 19ms\n\n> @kernlang/agon-kernel@0.0.0-slice.1a build\n> tsup && tsc -b tsconfig.json --force\n\nCLI Building entry: src/index.ts\nCLI Using tsconfig: tsconfig.json\nCLI tsup v8.5.1\nCLI Using tsup config: /private/var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-modular-clean-commit-nlaxjf/packages/mod-kernel/tsup.config.ts\nCLI Target: es2022\nCLI Cleaning output folder\nESM Build start\nESM dist/index.js 317.84 KB\nESM ⚡️ Build success in 24ms\n\n> test:modular-slice1a\n> npm run spec:modular-projections:check && npm run spec:modular-package-graph:check && npm run spec:modular-pack && node scripts/run-node22.mjs vitest run tests/unit/modular-*.test.ts tests/spec/modular-agon-contracts.test.ts\n\n\n> spec:modular-projections:check\n> node scripts/spec/generate-modular-agon-compat-projections.mjs --check\n\n\n> spec:modular-package-graph:check\n> node scripts/spec/generate-modular-agon-package-graph.mjs --check\n\n\n> spec:modular-pack\n> node scripts/spec/verify-modular-slice1a-pack.mjs\n\n@kernlang/agon-mod-api: 19 files, 9010 packed bytes, 70370 unpacked bytes\n@kernlang/agon-kernel: 11 files, 44244 packed bytes, 679542 unpacked bytes\npackaged schemas match frozen authoritative schemas\nexternal compile-only Mod API fixture: passed\n\n RUN  v3.2.7 /private/var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-modular-clean-commit-nlaxjf\n\n ✓ tests/unit/modular-boundary.test.ts (3 tests) 3ms\n ✓ tests/unit/modular-package-graph.test.ts (2 tests) 3ms\n ✓ tests/unit/modular-manifest.test.ts (15 tests) 11ms\n ✓ tests/unit/modular-static-discovery.test.ts (7 tests) 20ms\n ✓ tests/spec/modular-agon-contracts.test.ts (13 tests) 41ms\n ✓ tests/unit/modular-registry.test.ts (9 tests) 5ms\n ✓ tests/unit/modular-topology-invariant.test.ts (1 test) 8ms\n ✓ tests/unit/modular-projection-parity.test.ts (4 tests) 8ms\n ✓ tests/unit/modular-lock.test.ts (3 tests) 9ms\n ✓ tests/unit/modular-review-regressions.test.ts (5 tests) 16ms\n ✓ tests/unit/modular-resolver.test.ts (15 tests) 633ms\n   ✓ Modular Agon deterministic resolver > bounds hostile unsatisfiable search with a typed error  412ms\n\n Test Files  11 passed (11)\n      Tests  77 passed (77)\n   Start at  21:28:42\n   Duration  1.05s (transform 315ms, setup 110ms, collect 1.28s, tests 758ms, environment 1ms, prepare 370ms)\n\n"
+    }
+  ],
+  "passed": true
+}

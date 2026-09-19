@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kernlang.dev/schemas/campfire/config.schema.json",
+  "title": "campfire configuration",
+  "type": "object",
+  "additionalProperties": true
+}

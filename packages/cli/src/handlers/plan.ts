@@ -2,6 +2,8 @@
 import { loadPlan, listPlans, approvePlan, startPlan, cancelPlan, resetStepForRetry, savePlan, preflightApply, applyPatchToTree, resolveWorkingDir } from '@kernlang/agon-core';
 
 import type { Plan } from '@kernlang/agon-core';
+import type { CommandResult } from '@kernlang/agon-mod-api';
+import { resolve } from 'node:path';
 
 import type { Dispatch, HandlerContext } from './types.js';
 
@@ -31,7 +33,7 @@ export async function handlePlanShow(dispatch: Dispatch, ctx: HandlerContext, pl
   // If draft, prompt for approval inline
   if (plan.state === 'draft') {
     const answer = await ctx.askQuestion('Approve plan? [Y/n]');
-    if (answer.trim().toLowerCase() === 'n') {
+    if (!['', 'y', 'yes'].includes(answer.trim().toLowerCase())) {
       const cancelled = cancelPlan(plan);
       ctx.setCurrentPlan(cancelled);
       savePlan(cancelled);
@@ -127,7 +129,10 @@ export function handleCancel(dispatch: Dispatch, ctx: HandlerContext): void {
   dispatch({ type: 'success', message: 'Plan cancelled.' });
 }
 
-export async function handleApplyPatch(dispatch: Dispatch, ctx: HandlerContext, patchPath?: string, force?: boolean): Promise<void> {
+export async function handleApplyPatch(dispatch: Dispatch, ctx: HandlerContext, patchPath?: string, force?: boolean,
+  invocation: { cwd?: string; signal?: AbortSignal } = {}): Promise<CommandResult> {
+  invocation.signal?.throwIfAborted();
+  const cwd = invocation.cwd ?? resolveWorkingDir();
   let resolvedPatchPath = patchPath;
   let manifestPath: string | null = null;
   if (!resolvedPatchPath && ctx.currentPlan) {
@@ -143,16 +148,17 @@ export async function handleApplyPatch(dispatch: Dispatch, ctx: HandlerContext, 
       }
     }
   }
-  const preflight = preflightApply(resolveWorkingDir(), resolvedPatchPath ?? null, manifestPath);
+  const preflight = preflightApply(cwd, resolvedPatchPath ? resolve(cwd, resolvedPatchPath) : null,
+    manifestPath ? resolve(cwd, manifestPath) : null);
   if (!preflight.ok && preflight.dirtyTree && force) {
     if (!preflight.patch) {
       dispatch({ type: 'error', message: preflight.error ?? 'No patch found.' });
-      return;
+      return { exitCode: 1 };
     }
     dispatch({ type: 'warning', message: 'Working tree is dirty — applying anyway (--force).' });
   } else if (!preflight.ok) {
     dispatch({ type: 'error', message: preflight.error ?? 'Preflight failed.' });
-    return;
+    return { exitCode: 1 };
   }
   const patch = preflight.patch!;
   dispatch({ type: 'info', message: `Patch: ${patch.path}` });
@@ -170,15 +176,18 @@ export async function handleApplyPatch(dispatch: Dispatch, ctx: HandlerContext, 
     }
   }
   dispatch({ type: 'info', message: `Total: ~${patch.lineCount} lines changed` });
-  const answer = await ctx.askQuestion(`Apply to ${resolveWorkingDir()}? [Y/n]`);
-  if (answer.trim().toLowerCase() === 'n') {
+  const answer = await ctx.askQuestion(`Apply to ${cwd}? [Y/n]`);
+  invocation.signal?.throwIfAborted();
+  if (!['', 'y', 'yes'].includes(answer.trim().toLowerCase())) {
     dispatch({ type: 'info', message: 'Cancelled.' });
-    return;
+    return { exitCode: 0, result: { applied: false } };
   }
-  const result = applyPatchToTree(resolveWorkingDir(), patch.content);
+  const result = applyPatchToTree(cwd, patch.content);
   if (result.ok) {
     dispatch({ type: 'success', message: 'Patch applied. Review changes with git diff.' });
+    return { exitCode: 0, result: { applied: true } };
   } else {
     dispatch({ type: 'error', message: `Apply failed: ${result.error}` });
+    return { exitCode: 1, result: { applied: false } };
   }
 }

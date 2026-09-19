@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "package": "@kernlang/agon-mod-sanitize",
+  "assignments": [
+    {
+      "category": "cliCommands",
+      "id": "sanitize",
+      "source": "packages/cli/src/lazy-commands.ts:307",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-sanitize",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/sanitize",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-sanitize",
+      "rule": "exact-user-surface"
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "qualification": "modular-agon-slice6-clean-checkout",
+  "slice": "S6",
+  "subject": {
+    "kind": "index",
+    "hash": "sha256:7581221503f5450dc5330b5e92b7f07a0eb49c7a8ca391207811e32d8b5cc9e1"
+  },
+  "status": "passed",
+  "completedAt": "2026-08-27T12:23:23.718879+00:00",
+  "durationSeconds": 465.22,
+  "artifacts": [
+    {
+      "path": "docs/specs/evidence/verification-logs/slice6/final-clean-qualification.log",
+      "hash": "sha256:39dfa2d1219dcdacbefb3647c9f0f0e88bb40bb00c91df67ead0a5507b5972ef"
+    },
+    {
+      "path": "docs/specs/evidence/verification-logs/slice6/final-clean-qualification-manifest.json",
+      "hash": "sha256:0900e598c32024c85834865b259de490bcb28b87f03aee841e7021383aab2d33"
+    },
+    {
+      "path": "docs/specs/evidence/verification-logs/slice6/host-network-suite.log",
+      "hash": "sha256:f2819e7e56c7d4b370d9fa640a22a5abbdd4859010ce57df4131fb0965ede9f3"
+    }
+  ],
+  "coverage": {
+    "inventoryAssignments": 863,
+    "packages": 49,
+    "uniqueDependencyEdges": 144,
+    "physicalFirstPartyPackages": 36,
+    "surfaceEntries": 440,
+    "legacyWorkflows": 160,
+    "rawEnvelopes": 7,
+    "transformStages": 4,
+    "temporaryCompatibilityAdapters": 5,
+    "hostOnlyTestFiles": 7,
+    "hostOnlyTests": 72
+  },
+  "performance": {
+    "sampleCount": 15,
+    "physicalImportP95Ms": 20.379582999999997,
+    "activationP95Ms": 5.988833,
+    "totalReadyP95Ms": 25.090333,
+    "residentRssP95Bytes": 87801856,
+    "passed": true
+  },
+  "cleanCheckoutSteps": [
+    "npm-ci",
+    "clean-build",
+    "surface-cutover",
+    "support-packages",
+    "first-party-packages",
+    "first-party-disable-matrix",
+    "surface-cutover-contract",
+    "typecheck",
+    "lint",
+    "full-repository-suite",
+    "generated-artifacts",
+    "spec-consistency",
+    "roadmap-contract",
+    "legacy-oracle",
+    "legacy-oracle-negative-controls",
+    "slice6-performance"
+  ],
+  "reviewEvidence": {
+    "path": "docs/specs/evidence/modular-agon-slice6-review-evidence.json",
+    "passed": true
+  },
+  "contamination": {
+    "ignored": [],
+    "untracked": [],
+    "unstaged": []
+  },
+  "activeGlobalAgonModified": false,
+  "pushed": false
+}

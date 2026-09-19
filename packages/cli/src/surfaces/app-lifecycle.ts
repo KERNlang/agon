@@ -1,6 +1,6 @@
-import { initExtensions, appendMessage, loadCesarPlan, cesarPlanJsonPath, configSet } from '@kernlang/agon-core';
+import { appendMessage, loadCesarPlan, cesarPlanJsonPath, configSet } from '@kernlang/agon-core';
 
-import type { EngineRegistry, CommandRegistry, EventBus, ChatSession, PersistentSession, Skill, LoadedExtension, CesarPlan } from '@kernlang/agon-core';
+import type { ChatSession, PersistentSession, CesarPlan, EngineRegistry, EventBus } from '@kernlang/agon-core';
 
 import { checkForUpdate, loadDismissedVersion, isLinkedDevInstall } from '../services/update-check.js';
 
@@ -17,18 +17,10 @@ import { probeEngineVitals } from './app-telemetry.js';
 import { sessionResultStore } from '../models/session-results.js';
 
 import { statSync } from 'node:fs';
+import { requestPlanFallback } from '../signals/plan-fallback.js';
+import type { QueuedInput } from '../signals/queued-input.js';
 
 // ── Module: AppLifecycle ──
-
-export function loadExtensionsForWorkspace(workspacePath: string, commandRegistry: CommandRegistry, registry: EngineRegistry, eventBus: EventBus, setExtensionSkills: (s:Skill[]) => void, setExtensionPromptFragments: (f:string[]) => void, setLoadedExtensions: (e:LoadedExtension[]) => void): void {
-  initExtensions(workspacePath, commandRegistry, registry, eventBus).then(({ extensions, skills: extSkills, systemPromptFragments }) => {
-    if (extSkills.length > 0) setExtensionSkills(extSkills);
-    if (systemPromptFragments.length > 0) setExtensionPromptFragments(systemPromptFragments);
-    if (extensions.length > 0) setLoadedExtensions(extensions);
-  }).catch((err: Error) => {
-    console.warn(`[agon] extension loading failed: ${err.message}`);
-  });
-}
 
 export function startPlanSyncWatcher(activePlan: CesarPlan | null, setActivePlanWrapped: (plan:CesarPlan) => void, planWatcherTimerRef: {current: ReturnType<typeof setInterval> | null}, planWatcherDebounceTimerRef: {current: ReturnType<typeof setTimeout> | null}, planWatcherStatMtimeRef: {current: number}, activePlanRef: {current: CesarPlan | null}): (() => void) | undefined {
   if (planWatcherTimerRef.current) { clearInterval(planWatcherTimerRef.current); planWatcherTimerRef.current = null; }
@@ -183,15 +175,18 @@ export interface TelemetryPollerDeps {
   setRecentFallbacks: (fn:any) => void;
   setConfigVersion: (fn:any) => void;
   setCesarSessionWrapped: (session:any) => void;
-  setInputQueue: (fn:any) => void;
+  setInputQueue: (fn:(prev:QueuedInput[]) => QueuedInput[]) => void;
   setTelemetryVitals: (map:any) => void;
   statusDashboardOpenRef: {current: boolean};
 }
 
+// A failed close is not healed by restarting a React effect. Weak ownership
+// retains no discarded sessions and allows a genuinely new session to recover.
+const failedHandoffSessions = new WeakSet<object>();
+
 export function startTelemetryPoller(opts: TelemetryPollerDeps): (() => void) | undefined {
   const {
     registry,
-    cesarSession,
     activeEngines,
     dispatch,
     cesarSessionHolder,
@@ -220,11 +215,11 @@ export function startTelemetryPoller(opts: TelemetryPollerDeps): (() => void) | 
     activeEngineIds: activeEngines,
     autoFallback: 'auto',
     onAutoFallback: async (from: string, to: string, reason: string) => {
+      // Cancellation is an operator boundary, not permission to replay work.
+      if (activeAbortRef.current?.signal.aborted ||
+          (cesarSessionHolder.session && failedHandoffSessions.has(cesarSessionHolder.session))) return false;
       const activeTurn = activeTurnRef.current;
       const retryActiveTurn = !!(activeTurn && !activeTurn.retried && activeTurn.engineId === from && activeTurn.input);
-      if (retryActiveTurn && activeTurn) {
-        activeTurn.retried = true;
-      }
       const plan = activePlanRef.current;
       const runningStep = plan?.state === 'running' && Array.isArray(plan?.steps)
         ? plan.steps.find((step: any) => String(step?.state ?? '') === 'running')
@@ -233,24 +228,42 @@ export function startTelemetryPoller(opts: TelemetryPollerDeps): (() => void) | 
         ? [runningStep.engine, ...(Array.isArray(runningStep.engines) ? runningStep.engines : [])].filter((id: any) => typeof id === 'string' && id.trim())
         : [];
       const retryActivePlan = !!(runningStep && !((plan as any).fallbackRetriesUsed?.[runningStep.id]) && (stepEngines.length === 0 || stepEngines.includes(from)));
+      if (retryActivePlan && (!activeAbortRef.current || !plan?.id || !runningStep?.id)) return false;
       setRecentFallbacks((prev: any[]) => [...prev.slice(-7), { from, to, reason, at: Date.now() }]);
       if (!retryActivePlan && !retryActiveTurn) {
         dispatch({ type: 'warning', message: `Telemetry: ${from} stalled (${reason}); keeping Cesar unchanged.` } as any);
         return false;
       }
 
-      configSet('cesarEngine' as any, to as any);
+      try {
+        configSet('cesarEngine' as any, to as any);
+      } catch {
+        dispatch({ type: 'warning', message: 'Telemetry: engine selection could not be saved. No retry was started; check configuration storage before retrying.' } as any);
+        return false;
+      }
       setConfigVersion((v: number) => v + 1);
-      if (cesarSession) {
-        cesarSession.close();
-        setCesarSessionWrapped(null);
+      const currentSession = cesarSessionHolder.session;
+      if (currentSession) {
+        try {
+          currentSession.close();
+          setCesarSessionWrapped(null);
+        } catch {
+          // Closing a provider session is irreversible and can partially fail.
+          // Do not claim rollback or replay work against an uncertain session.
+          failedHandoffSessions.add(currentSession);
+          activeAbortRef.current?.abort();
+          dispatch({ type: 'warning', message: `Telemetry: engine selection was saved as ${to}, but session cleanup failed. Automatic retry was cancelled and automatic handoffs are paused. Restart Agon before retrying; the previous session may not have stopped.` } as any);
+          return false;
+        }
       }
       if (retryActivePlan) {
-        if (activeAbortRef.current) activeAbortRef.current.abort();
+        const controller = activeAbortRef.current;
+        if (!controller || !requestPlanFallback(controller, plan!.id, runningStep!.id, to)) return false;
         dispatch({ type: 'warning', message: `Telemetry: ${from} stalled during plan step — switched to ${to} and retrying that step (${reason})` } as any);
       } else if (retryActiveTurn && activeTurn) {
+        activeTurn.retried = true;
         if (activeAbortRef.current) activeAbortRef.current.abort();
-        setInputQueue((prev: string[]) => [...prev, activeTurn.input]);
+        setInputQueue((prev: QueuedInput[]) => [...prev, { kind: 'telemetry-retry', input: activeTurn.input }]);
         dispatch({ type: 'warning', message: `Telemetry: ${from} stalled — switched to ${to} and retrying this prompt (${reason})` } as any);
       } else {
         dispatch({ type: 'warning', message: `Telemetry: ${from} stalled — auto-fallback to ${to} (${reason})` } as any);
@@ -277,6 +290,6 @@ export function startTelemetryPoller(opts: TelemetryPollerDeps): (() => void) | 
   return () => {
     unsub();
     poller.stop();
-    telemetryPollerRef.current = null;
+    if (telemetryPollerRef.current === poller) telemetryPollerRef.current = null;
   };
 }

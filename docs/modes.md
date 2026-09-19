@@ -1,7 +1,86 @@
-<!-- GENERATED — do not edit directly. Source: packages/cli/src/commands/agent-guide-text.ts (agentGuideMarkdown) · Regenerate: npm run docs:modes -->
+<!-- GENERATED from the selected owner-tagged registry by @kernlang/agon-mod-routing-docs. Edit only the named handwritten region. Regenerate: npm run docs:modes -->
 
 # Agon modes — what exists and when to use what
 
+## Selected CLI projection
+
+- `agent-guide` — agon.routing-docs
+- `ask` — agon.ask
+- `attach` — agon.kernel
+- `brainstorm` — agon.brainstorm
+- `browser-host` — agon.browser
+- `browser-host install` — agon.browser
+- `browser-host status` — agon.browser
+- `browser-host stop` — agon.browser
+- `browser-host uninstall` — agon.browser
+- `call` — agon.kernel
+- `campfire` — agon.campfire
+- `chrome` — agon.browser
+- `config` — agon.kernel
+- `conquer` — agon.conquer
+- `council` — agon.council
+- `daemon` — agon.jobs
+- `doctor` — agon.kernel
+- `drive` — agon.browser
+- `engine` — agon.kernel
+- `ext` — agon.browser
+- `ext install` — agon.browser
+- `ext native-host` — agon.browser
+- `forge` — agon.forge
+- `goal` — agon.goal
+- `history` — agon.history
+- `install-agent-prompts` — agon.routing-docs
+- `job` — agon.jobs
+- `job cancel` — agon.jobs
+- `job events` — agon.jobs
+- `job list` — agon.jobs
+- `job result` — agon.jobs
+- `job status` — agon.jobs
+- `job submit` — agon.jobs
+- `last` — agon.history
+- `leaderboard` — agon.ratings
+- `login` — agon.kernel
+- `mod approve` — agon.kernel
+- `mod disable` — agon.kernel
+- `mod enable` — agon.kernel
+- `mod inspect` — agon.kernel
+- `mod list` — agon.kernel
+- `mod recover` — agon.kernel
+- `mod revoke` — agon.kernel
+- `mod trust` — agon.kernel
+- `mod untrust` — agon.kernel
+- `models` — agon.kernel
+- `models add` — agon.kernel
+- `models auto` — agon.kernel
+- `models disable` — agon.kernel
+- `models enable` — agon.kernel
+- `models hide` — agon.kernel
+- `models list` — agon.kernel
+- `models remove` — agon.kernel
+- `models set` — agon.kernel
+- `mutate` — agon.mutate
+- `naturalize` — agon.naturalize
+- `nero` — agon.nero
+- `provenance` — agon.provenance
+- `provider` — agon.kernel
+- `rag` — agon.rag
+- `ratings` — agon.ratings
+- `ratings purge-unknown` — agon.ratings
+- `research` — agon.research
+- `review` — agon.review
+- `room` — agon.rooms
+- `sanitize` — agon.sanitize
+- `serve` — agon.browser
+- `synthesis` — agon.synthesis
+- `team-brainstorm` — agon.team-brainstorm
+- `team-forge` — agon.team-forge
+- `team-tribunal` — agon.team-tribunal
+- `think` — agon.think
+- `tribunal` — agon.tribunal
+- `update` — agon.kernel
+- `worktree` — agon.worktrees
+
+<!-- BEGIN HANDWRITTEN: mode-guide -->
 # How to call Agon
 
 Agon orchestrates multiple AI engines. Call it from your shell with your normal Bash/exec tool — there is no MCP and nothing to load.
@@ -74,3 +153,4 @@ The direct `agon <mode>` commands stream human output. For JSONL lifecycle + out
 Escalation ladder for decisions — pick the CHEAPEST rung that fits the stakes: `nero` (one adversary attacks your decision) -> `tribunal` (two-sided debate) -> `council` (whole panel in roles + a chair) -> `conquer` (a whole supervised build, not one decision).
 
 Run `agon <mode> --help` for the full flag list.
+<!-- END HANDWRITTEN: mode-guide -->

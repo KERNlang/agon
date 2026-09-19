@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "package": "@kernlang/agon-mod-conquer",
+  "assignments": [
+    {
+      "category": "cesarRoutes",
+      "id": "conquer",
+      "source": "packages/cli/src/models/handler-types.ts:113",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-conquer",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarTools",
+      "id": "Conquer",
+      "source": "packages/cli/src/cesar/tools.ts:44",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-conquer",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "cliCommands",
+      "id": "conquer",
+      "source": "packages/cli/src/lazy-commands.ts:321",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-conquer",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/conquer",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-conquer",
+      "rule": "exact-user-surface"
+    }
+  ]
+}

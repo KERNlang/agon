@@ -1,0 +1,2913 @@
+{
+  "schemaVersion": 1,
+  "status": "acceptance-roadmap",
+  "authoritativeInputs": [
+    "docs/specs/evidence/modular-agon-package-map.json",
+    "docs/specs/evidence/modular-agon-ownership.json",
+    "docs/specs/evidence/modular-agon-migration-kill-list.json"
+  ],
+  "packages": [
+    {
+      "id": "@kernlang/agon-mod-api",
+      "class": "minimal-kernel-machinery",
+      "owner": "@kernlang/agon-mod-api",
+      "dependencies": [],
+      "publicBoundary": "versioned author-facing types, schemas, and validation only",
+      "privateBoundary": "must not import kernel, host state, CLI, TUI, MCP, Cesar, or private source paths",
+      "extractionSources": [
+        "packages/mod-api/src/index.ts",
+        "packages/mod-api/src/manifest.ts"
+      ],
+      "migrationOrder": 1,
+      "migrationSlice": "S2",
+      "compatibilityAdapter": "legacy runtime remains authoritative behind a parity adapter until atomic host cutover",
+      "killList": [
+        "KL-006",
+        "KL-010"
+      ],
+      "acceptanceEvidence": [
+        "PKG-02-BOUNDARY",
+        "PKG-02-PARITY",
+        "PKG-02-PACK",
+        "PKG-02-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-kernel",
+      "class": "minimal-kernel-machinery",
+      "owner": "@kernlang/agon-kernel",
+      "dependencies": [
+        "@kernlang/agon-mod-api"
+      ],
+      "publicBoundary": "host lifecycle, resolver, registry, and immutable generation interfaces",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "docs/modes.md",
+        "package.json:12",
+        "packages/cli/package.json",
+        "packages/cli/src/blocks/narration-fold.ts:4",
+        "packages/cli/src/cesar/ask-marker.ts:24",
+        "packages/cli/src/cesar/brain.ts:1451",
+        "packages/cli/src/cesar/brain.ts:1478",
+        "packages/cli/src/cesar/brain.ts:1574",
+        "packages/cli/src/cesar/brain.ts:3875",
+        "packages/cli/src/cesar/brain.ts:620",
+        "packages/cli/src/cesar/checkpoint.ts",
+        "packages/cli/src/cesar/confirmation-follow-up.ts:3",
+        "packages/cli/src/cesar/context-budget.ts:9",
+        "packages/cli/src/cesar/escalation.ts:106",
+        "packages/cli/src/cesar/gate-runner.ts:7",
+        "packages/cli/src/cesar/plan-control-signals.ts:1",
+        "packages/cli/src/cesar/routing.ts:17",
+        "packages/cli/src/cesar/routing.ts:19",
+        "packages/cli/src/cesar/routing.ts:21",
+        "packages/cli/src/cesar/routing.ts:23",
+        "packages/cli/src/cesar/routing.ts:25",
+        "packages/cli/src/cesar/routing.ts:27",
+        "packages/cli/src/cesar/suggestion.ts:1",
+        "packages/cli/src/cesar/todos-marker.ts:10",
+        "packages/cli/src/cesar/todos-marker.ts:80",
+        "packages/cli/src/cesar/tool-observability.ts:264",
+        "packages/cli/src/cesar/tool-observability.ts:39",
+        "packages/cli/src/cesar/tools.ts:30",
+        "packages/cli/src/cesar/tools.ts:31",
+        "packages/cli/src/cesar/tools.ts:32",
+        "packages/cli/src/cesar/tools.ts:33",
+        "packages/cli/src/cesar/tools.ts:34",
+        "packages/cli/src/cesar/tools.ts:35",
+        "packages/cli/src/cesar/tools.ts:36",
+        "packages/cli/src/cesar/tools.ts:48",
+        "packages/cli/src/cesar/tools.ts:50",
+        "packages/cli/src/cesar/tools.ts:55",
+        "packages/cli/src/cesar/turn-state.ts:93",
+        "packages/cli/src/commands/doctor.ts:172",
+        "packages/cli/src/commands/doctor.ts:211",
+        "packages/cli/src/commands/install-agent-prompts.ts:1",
+        "packages/cli/src/commands/mod.ts:312",
+        "packages/cli/src/commands/mod.ts:313",
+        "packages/cli/src/commands/models.ts:128",
+        "packages/cli/src/commands/models.ts:150",
+        "packages/cli/src/commands/models.ts:17",
+        "packages/cli/src/commands/models.ts:172",
+        "packages/cli/src/commands/models.ts:179",
+        "packages/cli/src/commands/models.ts:194",
+        "packages/cli/src/commands/models.ts:62",
+        "packages/cli/src/commands/models.ts:95",
+        "packages/cli/src/handlers/info.ts:589",
+        "packages/cli/src/handlers/info.ts:590",
+        "packages/cli/src/input-utils.ts:27",
+        "packages/cli/src/input-utils.ts:33",
+        "packages/cli/src/input-utils.ts:40",
+        "packages/cli/src/lazy-commands.ts:299",
+        "packages/cli/src/lazy-commands.ts:300",
+        "packages/cli/src/lazy-commands.ts:302",
+        "packages/cli/src/lazy-commands.ts:303",
+        "packages/cli/src/lazy-commands.ts:304",
+        "packages/cli/src/lazy-commands.ts:306",
+        "packages/cli/src/lazy-commands.ts:324",
+        "packages/cli/src/lazy-commands.ts:331",
+        "packages/cli/src/lazy-commands.ts:332",
+        "packages/cli/src/lazy-commands.ts:333",
+        "packages/cli/src/lib/extension-origins.ts:33",
+        "packages/cli/src/models/handler-types.ts:113",
+        "packages/cli/src/models/handler-types.ts:17",
+        "packages/cli/src/services/update-check.ts:15",
+        "packages/cli/src/signals/intent-types.ts:10",
+        "packages/cli/src/signals/intent-types.ts:12",
+        "packages/cli/src/signals/intent-types.ts:13",
+        "packages/cli/src/signals/intent-types.ts:16",
+        "packages/cli/src/signals/intent-types.ts:17",
+        "packages/cli/src/signals/intent-types.ts:18",
+        "packages/cli/src/signals/intent-types.ts:19",
+        "packages/cli/src/signals/intent-types.ts:20",
+        "packages/cli/src/signals/intent-types.ts:21",
+        "packages/cli/src/signals/intent-types.ts:27",
+        "packages/cli/src/signals/intent-types.ts:28",
+        "packages/cli/src/signals/intent-types.ts:29",
+        "packages/cli/src/signals/intent-types.ts:30",
+        "packages/cli/src/signals/intent-types.ts:32",
+        "packages/cli/src/signals/intent-types.ts:35",
+        "packages/cli/src/signals/intent-types.ts:43",
+        "packages/cli/src/signals/intent-types.ts:44",
+        "packages/cli/src/signals/intent-types.ts:47",
+        "packages/cli/src/signals/intent-types.ts:50",
+        "packages/cli/src/signals/intent-types.ts:51",
+        "packages/cli/src/signals/intent-types.ts:52",
+        "packages/cli/src/signals/intent-types.ts:54",
+        "packages/cli/src/signals/intent-types.ts:58",
+        "packages/cli/src/signals/intent-types.ts:59",
+        "packages/cli/src/signals/intent-types.ts:60",
+        "packages/cli/src/signals/intent-types.ts:61",
+        "packages/cli/src/signals/intent-types.ts:62",
+        "packages/cli/src/signals/intent-types.ts:64",
+        "packages/cli/src/signals/intent-types.ts:65",
+        "packages/cli/src/signals/intent-types.ts:67",
+        "packages/cli/src/signals/intent-types.ts:68",
+        "packages/cli/src/signals/intent-types.ts:69",
+        "packages/cli/src/signals/intent-types.ts:9",
+        "packages/cli/src/signals/intent.ts:56",
+        "packages/cli/src/signals/keyboard.ts:37",
+        "packages/cli/src/signals/keyboard.ts:38",
+        "packages/cli/src/signals/keyboard.ts:39",
+        "packages/cli/src/signals/keyboard.ts:40",
+        "packages/cli/src/signals/keyboard.ts:41",
+        "packages/cli/src/signals/keyboard.ts:42",
+        "packages/cli/src/signals/keyboard.ts:43",
+        "packages/cli/src/signals/keyboard.ts:44",
+        "packages/cli/src/signals/keyboard.ts:45",
+        "packages/cli/src/signals/keyboard.ts:47",
+        "packages/cli/src/signals/keyboard.ts:48",
+        "packages/cli/src/signals/keyboard.ts:49",
+        "packages/cli/src/signals/keyboard.ts:50",
+        "packages/cli/src/signals/keyboard.ts:51",
+        "packages/cli/src/signals/keyboard.ts:52",
+        "packages/cli/src/signals/keyboard.ts:53",
+        "packages/cli/src/signals/keyboard.ts:54",
+        "packages/cli/src/signals/keyboard.ts:55",
+        "packages/cli/src/signals/keyboard.ts:56",
+        "packages/cli/src/signals/keyboard.ts:57",
+        "packages/cli/src/signals/keyboard.ts:58",
+        "packages/cli/src/signals/keyboard.ts:59",
+        "packages/cli/src/signals/keyboard.ts:60",
+        "packages/cli/src/signals/keyboard.ts:61",
+        "packages/cli/src/signals/keyboard.ts:62",
+        "packages/cli/src/signals/keyboard.ts:64",
+        "packages/cli/src/signals/keyboard.ts:65",
+        "packages/cli/src/signals/keyboard.ts:66",
+        "packages/cli/src/signals/keyboard.ts:68",
+        "packages/cli/src/signals/keyboard.ts:69",
+        "packages/cli/src/signals/keyboard.ts:71",
+        "packages/cli/src/signals/keyboard.ts:72",
+        "packages/cli/src/signals/keyboard.ts:73",
+        "packages/cli/src/signals/keyboard.ts:74",
+        "packages/cli/src/signals/keyboard.ts:75",
+        "packages/cli/src/signals/keyboard.ts:76",
+        "packages/cli/src/signals/keyboard.ts:79",
+        "packages/cli/src/signals/paste-handler.ts:4",
+        "packages/cli/src/telemetry/index.ts",
+        "packages/cli/src/telemetry/index.ts:27",
+        "packages/cli/tsup.config.ts",
+        "packages/core/src/blocks/builtin-commands.ts:30",
+        "packages/core/src/blocks/builtin-commands.ts:45",
+        "packages/core/src/blocks/builtin-commands.ts:46",
+        "packages/core/src/blocks/builtin-commands.ts:47",
+        "packages/core/src/blocks/builtin-commands.ts:48",
+        "packages/core/src/blocks/builtin-commands.ts:49",
+        "packages/core/src/blocks/builtin-commands.ts:52",
+        "packages/core/src/blocks/builtin-commands.ts:53",
+        "packages/core/src/blocks/builtin-commands.ts:59",
+        "packages/core/src/blocks/builtin-commands.ts:62",
+        "packages/core/src/blocks/builtin-commands.ts:65",
+        "packages/core/src/blocks/builtin-commands.ts:66",
+        "packages/core/src/blocks/builtin-commands.ts:68",
+        "packages/core/src/blocks/builtin-commands.ts:69",
+        "packages/core/src/blocks/builtin-commands.ts:70",
+        "packages/core/src/blocks/builtin-commands.ts:75",
+        "packages/core/src/blocks/builtin-commands.ts:76",
+        "packages/core/src/blocks/builtin-commands.ts:77",
+        "packages/core/src/blocks/builtin-commands.ts:78",
+        "packages/core/src/blocks/codebase-map.ts:109",
+        "packages/core/src/blocks/context-scanner.ts:22",
+        "packages/core/src/blocks/file-state-cache.ts",
+        "packages/core/src/blocks/git.ts:421",
+        "packages/core/src/blocks/git.ts:422",
+        "packages/core/src/blocks/hooks.ts:13",
+        "packages/core/src/blocks/hooks.ts:5",
+        "packages/core/src/blocks/image.ts:117",
+        "packages/core/src/blocks/plan.ts:36",
+        "packages/core/src/blocks/plan.ts:63",
+        "packages/core/src/blocks/sidechain-logger.ts:8",
+        "packages/core/src/cesar/memory.ts",
+        "packages/core/src/cesar/memory.ts:10",
+        "packages/core/src/cesar/plan.ts:52",
+        "packages/core/src/cesar/plan.ts:58",
+        "packages/core/src/cesar/plan.ts:94",
+        "packages/core/src/cesar/speculator.ts:53",
+        "packages/core/src/models/tool-types.ts:4",
+        "packages/core/src/models/tool-types.ts:96",
+        "packages/core/src/models/types.ts:100",
+        "packages/core/src/models/types.ts:101",
+        "packages/core/src/models/types.ts:102",
+        "packages/core/src/models/types.ts:103",
+        "packages/core/src/models/types.ts:104",
+        "packages/core/src/models/types.ts:105",
+        "packages/core/src/models/types.ts:106",
+        "packages/core/src/models/types.ts:107",
+        "packages/core/src/models/types.ts:108",
+        "packages/core/src/models/types.ts:109",
+        "packages/core/src/models/types.ts:110",
+        "packages/core/src/models/types.ts:111",
+        "packages/core/src/models/types.ts:113",
+        "packages/core/src/models/types.ts:114",
+        "packages/core/src/models/types.ts:115",
+        "packages/core/src/models/types.ts:117",
+        "packages/core/src/models/types.ts:119",
+        "packages/core/src/models/types.ts:120",
+        "packages/core/src/models/types.ts:122",
+        "packages/core/src/models/types.ts:123",
+        "packages/core/src/models/types.ts:124",
+        "packages/core/src/models/types.ts:125",
+        "packages/core/src/models/types.ts:127",
+        "packages/core/src/models/types.ts:128",
+        "packages/core/src/models/types.ts:129",
+        "packages/core/src/models/types.ts:130",
+        "packages/core/src/models/types.ts:132",
+        "packages/core/src/models/types.ts:133",
+        "packages/core/src/models/types.ts:134",
+        "packages/core/src/models/types.ts:136",
+        "packages/core/src/models/types.ts:137",
+        "packages/core/src/models/types.ts:138",
+        "packages/core/src/models/types.ts:139",
+        "packages/core/src/models/types.ts:141",
+        "packages/core/src/models/types.ts:142",
+        "packages/core/src/models/types.ts:143",
+        "packages/core/src/models/types.ts:144",
+        "packages/core/src/models/types.ts:145",
+        "packages/core/src/models/types.ts:146",
+        "packages/core/src/models/types.ts:147",
+        "packages/core/src/models/types.ts:148",
+        "packages/core/src/models/types.ts:150",
+        "packages/core/src/models/types.ts:151",
+        "packages/core/src/models/types.ts:152",
+        "packages/core/src/models/types.ts:153",
+        "packages/core/src/models/types.ts:154",
+        "packages/core/src/models/types.ts:155",
+        "packages/core/src/models/types.ts:156",
+        "packages/core/src/models/types.ts:157",
+        "packages/core/src/models/types.ts:158",
+        "packages/core/src/models/types.ts:159",
+        "packages/core/src/models/types.ts:160",
+        "packages/core/src/models/types.ts:161",
+        "packages/core/src/models/types.ts:162",
+        "packages/core/src/models/types.ts:163",
+        "packages/core/src/models/types.ts:164",
+        "packages/core/src/models/types.ts:170",
+        "packages/core/src/models/types.ts:171",
+        "packages/core/src/models/types.ts:172",
+        "packages/core/src/models/types.ts:173",
+        "packages/core/src/models/types.ts:174",
+        "packages/core/src/models/types.ts:177",
+        "packages/core/src/models/types.ts:178",
+        "packages/core/src/models/types.ts:179",
+        "packages/core/src/models/types.ts:180",
+        "packages/core/src/models/types.ts:182",
+        "packages/core/src/models/types.ts:230",
+        "packages/core/src/models/types.ts:231",
+        "packages/core/src/models/types.ts:232",
+        "packages/core/src/models/types.ts:234",
+        "packages/core/src/models/types.ts:235",
+        "packages/core/src/models/types.ts:237",
+        "packages/core/src/models/types.ts:238",
+        "packages/core/src/models/types.ts:239",
+        "packages/core/src/models/types.ts:242",
+        "packages/core/src/models/types.ts:247",
+        "packages/core/src/models/types.ts:248",
+        "packages/core/src/models/types.ts:249",
+        "packages/core/src/models/types.ts:250",
+        "packages/core/src/models/types.ts:251",
+        "packages/core/src/models/types.ts:252",
+        "packages/core/src/models/types.ts:253",
+        "packages/core/src/models/types.ts:255",
+        "packages/core/src/models/types.ts:256",
+        "packages/core/src/models/types.ts:257",
+        "packages/core/src/models/types.ts:258",
+        "packages/core/src/models/types.ts:260",
+        "packages/core/src/models/types.ts:261",
+        "packages/core/src/models/types.ts:262",
+        "packages/core/src/models/types.ts:263",
+        "packages/core/src/models/types.ts:264",
+        "packages/core/src/models/types.ts:265",
+        "packages/core/src/models/types.ts:266",
+        "packages/core/src/models/types.ts:267",
+        "packages/core/src/models/types.ts:268",
+        "packages/core/src/models/types.ts:269",
+        "packages/core/src/models/types.ts:270",
+        "packages/core/src/models/types.ts:271",
+        "packages/core/src/models/types.ts:272",
+        "packages/core/src/models/types.ts:273",
+        "packages/core/src/models/types.ts:274",
+        "packages/core/src/models/types.ts:275",
+        "packages/core/src/models/types.ts:276",
+        "packages/core/src/models/types.ts:277",
+        "packages/core/src/models/types.ts:279",
+        "packages/core/src/models/types.ts:280",
+        "packages/core/src/models/types.ts:281",
+        "packages/core/src/models/types.ts:283",
+        "packages/core/src/models/types.ts:285",
+        "packages/core/src/models/types.ts:286",
+        "packages/core/src/models/types.ts:288",
+        "packages/core/src/models/types.ts:289",
+        "packages/core/src/models/types.ts:290",
+        "packages/core/src/models/types.ts:291",
+        "packages/core/src/models/types.ts:293",
+        "packages/core/src/models/types.ts:294",
+        "packages/core/src/models/types.ts:295",
+        "packages/core/src/models/types.ts:296",
+        "packages/core/src/models/types.ts:298",
+        "packages/core/src/models/types.ts:299",
+        "packages/core/src/models/types.ts:300",
+        "packages/core/src/models/types.ts:302",
+        "packages/core/src/models/types.ts:303",
+        "packages/core/src/models/types.ts:304",
+        "packages/core/src/models/types.ts:305",
+        "packages/core/src/models/types.ts:307",
+        "packages/core/src/models/types.ts:308",
+        "packages/core/src/models/types.ts:309",
+        "packages/core/src/models/types.ts:310",
+        "packages/core/src/models/types.ts:311",
+        "packages/core/src/models/types.ts:312",
+        "packages/core/src/models/types.ts:313",
+        "packages/core/src/models/types.ts:314",
+        "packages/core/src/models/types.ts:316",
+        "packages/core/src/models/types.ts:317",
+        "packages/core/src/models/types.ts:318",
+        "packages/core/src/models/types.ts:319",
+        "packages/core/src/models/types.ts:320",
+        "packages/core/src/models/types.ts:321",
+        "packages/core/src/models/types.ts:322",
+        "packages/core/src/models/types.ts:323",
+        "packages/core/src/models/types.ts:324",
+        "packages/core/src/models/types.ts:325",
+        "packages/core/src/models/types.ts:326",
+        "packages/core/src/models/types.ts:327",
+        "packages/core/src/models/types.ts:328",
+        "packages/core/src/models/types.ts:329",
+        "packages/core/src/models/types.ts:330",
+        "packages/core/src/models/types.ts:336",
+        "packages/core/src/models/types.ts:337",
+        "packages/core/src/models/types.ts:338",
+        "packages/core/src/models/types.ts:339",
+        "packages/core/src/models/types.ts:340",
+        "packages/core/src/models/types.ts:343",
+        "packages/core/src/models/types.ts:344",
+        "packages/core/src/models/types.ts:345",
+        "packages/core/src/models/types.ts:346",
+        "packages/core/src/models/types.ts:348",
+        "packages/core/src/models/types.ts:64",
+        "packages/core/src/models/types.ts:65",
+        "packages/core/src/models/types.ts:66",
+        "packages/core/src/models/types.ts:68",
+        "packages/core/src/models/types.ts:69",
+        "packages/core/src/models/types.ts:71",
+        "packages/core/src/models/types.ts:72",
+        "packages/core/src/models/types.ts:73",
+        "packages/core/src/models/types.ts:76",
+        "packages/core/src/models/types.ts:81",
+        "packages/core/src/models/types.ts:82",
+        "packages/core/src/models/types.ts:83",
+        "packages/core/src/models/types.ts:84",
+        "packages/core/src/models/types.ts:85",
+        "packages/core/src/models/types.ts:86",
+        "packages/core/src/models/types.ts:87",
+        "packages/core/src/models/types.ts:89",
+        "packages/core/src/models/types.ts:90",
+        "packages/core/src/models/types.ts:91",
+        "packages/core/src/models/types.ts:92",
+        "packages/core/src/models/types.ts:94",
+        "packages/core/src/models/types.ts:95",
+        "packages/core/src/models/types.ts:96",
+        "packages/core/src/models/types.ts:97",
+        "packages/core/src/models/types.ts:98",
+        "packages/core/src/models/types.ts:99",
+        "packages/core/src/signals/config.ts:177",
+        "packages/core/src/signals/config.ts:203",
+        "packages/core/src/signals/config.ts:23",
+        "packages/core/src/signals/config.ts:25",
+        "packages/core/src/signals/config.ts:49",
+        "packages/core/src/signals/config.ts:51",
+        "packages/core/src/signals/config.ts:53",
+        "packages/core/src/signals/config.ts:79",
+        "packages/core/src/signals/delegate-ledger.ts:122",
+        "packages/core/src/signals/flow.ts",
+        "packages/core/src/teams/team.ts:59",
+        "packages/core/src/teams/team.ts:74",
+        "packages/core/src/text/forensics.ts:17",
+        "packages/core/src/text/metadata-forensics.ts:17",
+        "packages/core/src/tools/mcp-discovery.ts:95",
+        "packages/core/src/tools/tool-hooks.ts:62",
+        "packages/core/src/tools/tool-loop.ts:21",
+        "packages/core/src/tools/tool-parser.ts:12",
+        "packages/core/src/tools/tool-save-memory.ts",
+        "packages/core/src/tools/tool-save-memory.ts:10",
+        "packages/core/src/tools/tool-save-memory.ts:50",
+        "packages/core/src/tools/tool-web-search.ts:9",
+        "packages/core/src/workflows/specs.ts:120",
+        "packages/core/src/workflows/specs.ts:66",
+        "packages/core/src/workflows/specs.ts:75",
+        "packages/mcp/src/agon-orchestration.ts:24",
+        "scripts/agon-init.sh",
+        "scripts/generate-mode-docs.mjs",
+        "scripts/install-test.sh",
+        "scripts/perf/pty-drive.py"
+      ],
+      "migrationOrder": 2,
+      "migrationSlice": "S2",
+      "compatibilityAdapter": "legacy runtime remains authoritative behind a parity adapter until atomic host cutover",
+      "killList": [
+        "KL-006",
+        "KL-008",
+        "KL-009",
+        "KL-010",
+        "KL-014"
+      ],
+      "acceptanceEvidence": [
+        "PKG-01-BOUNDARY",
+        "PKG-01-PARITY",
+        "PKG-01-PACK",
+        "PKG-01-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-support-browser-bridge",
+      "class": "hidden-shared-support-package",
+      "owner": "@kernlang/agon-support-browser-bridge",
+      "dependencies": [
+        "@kernlang/agon-kernel"
+      ],
+      "publicBoundary": "kernel-injected capability interface; no direct third-party import",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/commands/ext.ts:142",
+        "packages/core/src/blocks/syntax-validator-bridge.ts:19",
+        "packages/core/src/models/types.ts:184",
+        "packages/core/src/models/types.ts:350",
+        "packages/support-browser-bridge/src/browser-host.ts:145",
+        "packages/support-browser-bridge/src/browser-host.ts:148",
+        "packages/support-browser-bridge/src/syntax-validator-bridge.ts:19"
+      ],
+      "migrationOrder": 3,
+      "migrationSlice": "S4",
+      "compatibilityAdapter": "legacy callers receive the same capability through a kernel-owned adapter until all dependants move",
+      "killList": [
+        "KL-004",
+        "KL-007"
+      ],
+      "acceptanceEvidence": [
+        "PKG-12-BOUNDARY",
+        "PKG-12-PARITY",
+        "PKG-12-PACK",
+        "PKG-12-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-support-dedup",
+      "class": "hidden-shared-support-package",
+      "owner": "@kernlang/agon-support-dedup",
+      "dependencies": [
+        "@kernlang/agon-kernel"
+      ],
+      "publicBoundary": "kernel-injected capability interface; no direct third-party import",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/core/src/blocks/dedup-resolver.ts:17",
+        "packages/core/src/blocks/dedup-resolver.ts:18",
+        "packages/dedup/classifier.py",
+        "packages/dedup/embedder.py",
+        "packages/dedup/sidecar.py",
+        "packages/dedup/syntax-validator.py",
+        "packages/support-dedup/python/classifier.py",
+        "packages/support-dedup/python/embedder.py",
+        "packages/support-dedup/python/sidecar.py",
+        "packages/support-dedup/python/syntax-validator.py"
+      ],
+      "migrationOrder": 4,
+      "migrationSlice": "S4",
+      "compatibilityAdapter": "legacy callers receive the same capability through a kernel-owned adapter until all dependants move",
+      "killList": [
+        "KL-004",
+        "KL-007"
+      ],
+      "acceptanceEvidence": [
+        "PKG-11-BOUNDARY",
+        "PKG-11-PARITY",
+        "PKG-11-PACK",
+        "PKG-11-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-support-engine-runtime",
+      "class": "hidden-shared-support-package",
+      "owner": "@kernlang/agon-support-engine-runtime",
+      "dependencies": [
+        "@kernlang/agon-kernel"
+      ],
+      "publicBoundary": "kernel-injected capability interface; no direct third-party import",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "engines/agy.json",
+        "engines/aider.json",
+        "engines/claude.json",
+        "engines/codex.json",
+        "engines/kimi-code.json",
+        "engines/minimax-coding-plan-minimax-m3.json",
+        "engines/mistral.json",
+        "engines/ollama.json",
+        "engines/opencode.json",
+        "engines/openrouter.json",
+        "engines/qwen.json",
+        "packages/adapter-cli/src/execution-plan.ts:71",
+        "packages/adapter-cli/src/execution-plan.ts:76",
+        "packages/adapter-cli/src/execution-plan.ts:9",
+        "packages/cli/py/agon-model-probe-wrapper.py",
+        "packages/cli/src/cesar/tools.ts:56",
+        "packages/cli/src/commands/login.ts:20",
+        "packages/cli/src/signals/dispatch.ts:50",
+        "packages/cli/src/signals/dispatch.ts:52",
+        "packages/cli/src/signals/dispatch/intent-orchestration.ts:425",
+        "packages/cli/src/signals/dispatch/intent-orchestration.ts:43",
+        "packages/cli/src/signals/dispatch/intent-orchestration.ts:431",
+        "packages/cli/src/signals/dispatch/intent-orchestration.ts:45",
+        "packages/cli/src/signals/dispatch/intent-orchestration.ts:55",
+        "packages/cli/src/signals/dispatch/intent-orchestration.ts:57",
+        "packages/cli/src/signals/dispatch/intent-orchestration.ts:72",
+        "packages/cli/src/signals/dispatch/intent-orchestration.ts:74",
+        "packages/cli/src/signals/dispatch/intent-orchestration.ts:86",
+        "packages/cli/src/signals/dispatch/intent-orchestration.ts:88",
+        "packages/cli/src/signals/dispatch/intent-router.ts:27",
+        "packages/cli/src/signals/dispatch/utils.ts:11",
+        "packages/cli/src/signals/keyboard.ts:63",
+        "packages/core/src/blocks/engine-discover.ts:5",
+        "packages/core/src/blocks/engine-memory.ts",
+        "packages/core/src/blocks/engine-memory.ts:32",
+        "packages/core/src/blocks/hooks.ts:5",
+        "packages/core/src/models/types.ts:121",
+        "packages/core/src/models/types.ts:147",
+        "packages/core/src/models/types.ts:165",
+        "packages/core/src/models/types.ts:166",
+        "packages/core/src/models/types.ts:167",
+        "packages/core/src/models/types.ts:168",
+        "packages/core/src/models/types.ts:169",
+        "packages/core/src/models/types.ts:181",
+        "packages/core/src/models/types.ts:183",
+        "packages/core/src/models/types.ts:233",
+        "packages/core/src/models/types.ts:240",
+        "packages/core/src/models/types.ts:243",
+        "packages/core/src/models/types.ts:244",
+        "packages/core/src/models/types.ts:254",
+        "packages/core/src/models/types.ts:287",
+        "packages/core/src/models/types.ts:331",
+        "packages/core/src/models/types.ts:332",
+        "packages/core/src/models/types.ts:333",
+        "packages/core/src/models/types.ts:334",
+        "packages/core/src/models/types.ts:335",
+        "packages/core/src/models/types.ts:347",
+        "packages/core/src/models/types.ts:349",
+        "packages/core/src/models/types.ts:363",
+        "packages/core/src/models/types.ts:529",
+        "packages/core/src/models/types.ts:67",
+        "packages/core/src/models/types.ts:74",
+        "packages/core/src/models/types.ts:77",
+        "packages/core/src/models/types.ts:78",
+        "packages/core/src/models/types.ts:88",
+        "packages/core/src/sessions/companion-dispatch.ts:16",
+        "packages/core/src/signals/auth-store.ts",
+        "packages/core/src/signals/engine-health.ts:5",
+        "packages/core/src/signals/isolation.ts:11",
+        "packages/support-engine-runtime/python/agon-model-probe-wrapper.py",
+        "packages/support-engine-runtime/src/auth-store.ts",
+        "packages/support-engine-runtime/src/engine-discover.ts:8",
+        "packages/support-engine-runtime/src/engine-health.ts:3",
+        "packages/support-engine-runtime/src/engine-memory.ts",
+        "packages/support-engine-runtime/src/engine-memory.ts:30",
+        "packages/support-engine-runtime/src/isolation.ts:11",
+        "packages/support-engine-runtime/src/types.ts:105",
+        "packages/support-engine-runtime/src/types.ts:93",
+        "patches/@kernlang+agon-engines+0.1.3.patch"
+      ],
+      "migrationOrder": 5,
+      "migrationSlice": "S4",
+      "compatibilityAdapter": "legacy callers receive the same capability through a kernel-owned adapter until all dependants move",
+      "killList": [
+        "KL-004",
+        "KL-007"
+      ],
+      "acceptanceEvidence": [
+        "PKG-03-BOUNDARY",
+        "PKG-03-PARITY",
+        "PKG-03-PACK",
+        "PKG-03-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-support-persistence",
+      "class": "hidden-shared-support-package",
+      "owner": "@kernlang/agon-support-persistence",
+      "dependencies": [
+        "@kernlang/agon-kernel"
+      ],
+      "publicBoundary": "kernel-injected capability interface; no direct third-party import",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/bridge/browser-host.ts:145",
+        "packages/cli/src/cesar/gate-runner.ts:15",
+        "packages/cli/src/cesar/session.ts",
+        "packages/cli/src/cesar/telemetry.ts:30",
+        "packages/cli/src/cesar/tool-observability.ts:11",
+        "packages/cli/src/cesar/tool-observability.ts:24",
+        "packages/cli/src/cesar/tool-observability.ts:48",
+        "packages/cli/src/cesar/turn-state.ts:109",
+        "packages/cli/src/commands/history.ts",
+        "packages/cli/src/signals/input-perf.ts:19",
+        "packages/cli/src/signals/keyboard.ts:70",
+        "packages/cli/src/signals/runs-store.ts",
+        "packages/cli/src/signals/runs-store.ts:44",
+        "packages/cli/src/signals/runs-store.ts:49",
+        "packages/cli/src/signals/runs-store.ts:61",
+        "packages/cli/src/telemetry/index.ts:39",
+        "packages/core/src/blocks/file-history.ts",
+        "packages/core/src/blocks/file-history.ts:19",
+        "packages/core/src/blocks/hooks.ts:5",
+        "packages/core/src/cesar/context-thread.ts:183",
+        "packages/core/src/models/session-result-types.ts:83",
+        "packages/core/src/models/types.ts:116",
+        "packages/core/src/models/types.ts:118",
+        "packages/core/src/models/types.ts:126",
+        "packages/core/src/models/types.ts:135",
+        "packages/core/src/models/types.ts:140",
+        "packages/core/src/models/types.ts:259",
+        "packages/core/src/models/types.ts:282",
+        "packages/core/src/models/types.ts:284",
+        "packages/core/src/models/types.ts:292",
+        "packages/core/src/models/types.ts:301",
+        "packages/core/src/models/types.ts:306",
+        "packages/core/src/models/types.ts:93",
+        "packages/core/src/sessions/brain-client.ts:112",
+        "packages/core/src/sessions/brain-client.ts:191",
+        "packages/core/src/sessions/brain-client.ts:83",
+        "packages/core/src/sessions/event-log.ts",
+        "packages/core/src/sessions/event-log.ts:10",
+        "packages/core/src/sessions/event-log.ts:35",
+        "packages/core/src/sessions/persistent-session.ts:58",
+        "packages/core/src/sessions/session-pty.ts",
+        "packages/core/src/signals/chat-store.ts",
+        "packages/core/src/signals/chat-store.ts:20",
+        "packages/core/src/signals/config.ts:30",
+        "packages/core/src/signals/config.ts:32",
+        "packages/core/src/signals/config.ts:35",
+        "packages/core/src/signals/config.ts:37",
+        "packages/core/src/signals/config.ts:39",
+        "packages/core/src/signals/config.ts:41",
+        "packages/core/src/signals/config.ts:43",
+        "packages/core/src/signals/delegate-ledger.ts",
+        "packages/core/src/signals/delegate-ledger.ts:49",
+        "packages/core/src/signals/flow.ts:17",
+        "packages/core/src/signals/flow.ts:55",
+        "packages/core/src/signals/paste-store.ts",
+        "packages/core/src/signals/paste-store.ts:22",
+        "packages/core/src/signals/plan-store.ts",
+        "packages/core/src/signals/run-dir.ts:89",
+        "packages/core/src/signals/session-store.ts",
+        "packages/core/src/teams/team-elo.ts:33",
+        "packages/dedup/history-search.py",
+        "packages/support-persistence/python/history-search.py",
+        "packages/support-persistence/src/brain-client.ts:112",
+        "packages/support-persistence/src/brain-client.ts:191",
+        "packages/support-persistence/src/brain-client.ts:83",
+        "packages/support-persistence/src/chat-store.ts",
+        "packages/support-persistence/src/chat-store.ts:22",
+        "packages/support-persistence/src/delegate-ledger.ts",
+        "packages/support-persistence/src/delegate-ledger.ts:49",
+        "packages/support-persistence/src/event-log.ts:10",
+        "packages/support-persistence/src/event-log.ts:35",
+        "packages/support-persistence/src/file-history.ts",
+        "packages/support-persistence/src/file-history.ts:19",
+        "packages/support-persistence/src/flow.ts",
+        "packages/support-persistence/src/flow.ts:17",
+        "packages/support-persistence/src/flow.ts:55",
+        "packages/support-persistence/src/paste-store.ts",
+        "packages/support-persistence/src/paste-store.ts:22",
+        "packages/support-persistence/src/paths.ts:13",
+        "packages/support-persistence/src/paths.ts:14",
+        "packages/support-persistence/src/paths.ts:15",
+        "packages/support-persistence/src/paths.ts:16",
+        "packages/support-persistence/src/paths.ts:17",
+        "packages/support-persistence/src/paths.ts:18",
+        "packages/support-persistence/src/paths.ts:19",
+        "packages/support-persistence/src/plan-store.ts",
+        "packages/support-persistence/src/plan-store.ts:33",
+        "packages/support-persistence/src/run-dir.ts:41",
+        "packages/support-persistence/src/run-dir.ts:90",
+        "packages/support-persistence/src/runs-store.ts",
+        "packages/support-persistence/src/runs-store.ts:45",
+        "packages/support-persistence/src/runs-store.ts:50",
+        "packages/support-persistence/src/session-pty.ts",
+        "packages/support-persistence/src/session-pty.ts:28",
+        "packages/support-persistence/src/session-result-types.ts:83",
+        "packages/support-persistence/src/session-store.ts",
+        "packages/support-persistence/src/team-elo-types.ts:19"
+      ],
+      "migrationOrder": 6,
+      "migrationSlice": "S4",
+      "compatibilityAdapter": "legacy callers receive the same capability through a kernel-owned adapter until all dependants move",
+      "killList": [
+        "KL-004",
+        "KL-007",
+        "KL-013"
+      ],
+      "acceptanceEvidence": [
+        "PKG-05-BOUNDARY",
+        "PKG-05-PARITY",
+        "PKG-05-PACK",
+        "PKG-05-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-support-saas-api",
+      "class": "hidden-shared-support-package",
+      "owner": "@kernlang/agon-support-saas-api",
+      "dependencies": [
+        "@kernlang/agon-kernel"
+      ],
+      "publicBoundary": "kernel-injected capability interface; no direct third-party import",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/saas-api/src/__init__.py",
+        "packages/saas-api/src/health.py",
+        "packages/saas-api/src/routes/__init__.py",
+        "packages/saas-api/src/routes/get_health.py",
+        "packages/support-saas-api/python/__init__.py",
+        "packages/support-saas-api/python/health.py",
+        "packages/support-saas-api/python/routes/__init__.py",
+        "packages/support-saas-api/python/routes/get_health.py"
+      ],
+      "migrationOrder": 7,
+      "migrationSlice": "S4",
+      "compatibilityAdapter": "legacy callers receive the same capability through a kernel-owned adapter until all dependants move",
+      "killList": [
+        "KL-004",
+        "KL-007"
+      ],
+      "acceptanceEvidence": [
+        "PKG-13-BOUNDARY",
+        "PKG-13-PARITY",
+        "PKG-13-PACK",
+        "PKG-13-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-ask",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-ask",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/lazy-commands.ts:315"
+      ],
+      "migrationOrder": 8,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-14-BOUNDARY",
+        "PKG-14-PARITY",
+        "PKG-14-PACK",
+        "PKG-14-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-flow",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-flow",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/signals/intent-types.ts:33",
+        "packages/cli/src/signals/intent-types.ts:34",
+        "packages/cli/src/signals/intent.ts:56",
+        "packages/core/src/blocks/builtin-commands.ts:57",
+        "packages/core/src/blocks/builtin-commands.ts:58"
+      ],
+      "migrationOrder": 9,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-44-BOUNDARY",
+        "PKG-44-PARITY",
+        "PKG-44-PACK",
+        "PKG-44-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-history",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-history",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/lazy-commands.ts:295",
+        "packages/cli/src/lazy-commands.ts:301",
+        "packages/cli/src/signals/intent-types.ts:11",
+        "packages/cli/src/signals/intent.ts:56",
+        "packages/core/src/blocks/builtin-commands.ts:55"
+      ],
+      "migrationOrder": 10,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-42-BOUNDARY",
+        "PKG-42-PARITY",
+        "PKG-42-PACK",
+        "PKG-42-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-jobs",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-jobs",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/commands/daemon.ts:33",
+        "packages/cli/src/commands/job.ts:229",
+        "packages/cli/src/commands/job.ts:258",
+        "packages/cli/src/commands/job.ts:271",
+        "packages/cli/src/commands/job.ts:284",
+        "packages/cli/src/commands/job.ts:300",
+        "packages/cli/src/commands/job.ts:313",
+        "packages/cli/src/jobs/daemon-job-router.ts:26",
+        "packages/cli/src/jobs/workflow-job.ts:151",
+        "packages/cli/src/jobs/workflow-job.ts:168",
+        "packages/cli/src/jobs/workflow-job.ts:17",
+        "packages/cli/src/jobs/workflow-job.ts:205",
+        "packages/cli/src/lazy-commands.ts:310",
+        "packages/cli/src/lazy-commands.ts:325",
+        "packages/cli/src/signals/intent-types.ts:48",
+        "packages/cli/src/signals/intent-types.ts:49",
+        "packages/cli/src/signals/intent.ts:56",
+        "packages/core/src/blocks/builtin-commands.ts:60",
+        "packages/core/src/blocks/builtin-commands.ts:61",
+        "packages/core/src/jobs/job-service.ts:20",
+        "packages/core/src/jobs/job-service.ts:57",
+        "packages/core/src/jobs/job-service.ts:9",
+        "packages/mcp/src/job-tools.ts:10",
+        "packages/mcp/src/job-tools.ts:11",
+        "packages/mcp/src/job-tools.ts:12",
+        "packages/mcp/src/job-tools.ts:13",
+        "packages/mcp/src/job-tools.ts:8",
+        "packages/mcp/src/job-tools.ts:9"
+      ],
+      "migrationOrder": 11,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-39-BOUNDARY",
+        "PKG-39-PARITY",
+        "PKG-39-PACK",
+        "PKG-39-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-memory",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-memory",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/cesar/tools.ts:51",
+        "packages/mcp/src/agon-orchestration.ts:24"
+      ],
+      "migrationOrder": 12,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-45-BOUNDARY",
+        "PKG-45-PARITY",
+        "PKG-45-PACK",
+        "PKG-45-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-provenance",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-provenance",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/commands/provenance.ts",
+        "packages/cli/src/lazy-commands.ts:298",
+        "packages/core/src/blocks/builtin-commands.ts:56",
+        "packages/core/src/blocks/provenance.ts"
+      ],
+      "migrationOrder": 13,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-43-BOUNDARY",
+        "PKG-43-PARITY",
+        "PKG-43-PACK",
+        "PKG-43-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-rag",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-rag",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence",
+        "@kernlang/agon-support-dedup"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/lazy-commands.ts:317",
+        "packages/core/src/rag/embed.ts:15",
+        "packages/mcp/src/project-context.ts:4",
+        "packages/mod-rag/src/store.ts",
+        "packages/mod-rag/src/types.ts:36",
+        "packages/mod-rag/src/types.ts:44"
+      ],
+      "migrationOrder": 14,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-34-BOUNDARY",
+        "PKG-34-PARITY",
+        "PKG-34-PACK",
+        "PKG-34-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-ratings",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-ratings",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/commands/ratings.ts:18",
+        "packages/cli/src/lazy-commands.ts:294",
+        "packages/cli/src/lazy-commands.ts:296",
+        "packages/cli/src/signals/intent-types.ts:8",
+        "packages/cli/src/signals/intent.ts:56",
+        "packages/core/src/blocks/builtin-commands.ts:54",
+        "packages/core/src/models/types.ts:221",
+        "packages/core/src/models/types.ts:55",
+        "packages/core/src/signals/ratings-maintenance.ts",
+        "packages/core/src/signals/ratings-maintenance.ts:121",
+        "packages/core/src/signals/ratings-maintenance.ts:93"
+      ],
+      "migrationOrder": 15,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-41-BOUNDARY",
+        "PKG-41-PARITY",
+        "PKG-41-PACK",
+        "PKG-41-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-research",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-research",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/lazy-commands.ts:320",
+        "packages/cli/src/signals/intent.ts:56",
+        "packages/core/src/tools/research-verifier.ts:15"
+      ],
+      "migrationOrder": 16,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-33-BOUNDARY",
+        "PKG-33-PARITY",
+        "PKG-33-PACK",
+        "PKG-33-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-rooms",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-rooms",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/lazy-commands.ts:297",
+        "packages/core/src/rooms/leases.ts",
+        "packages/core/src/rooms/presence.ts",
+        "packages/core/src/rooms/store.ts",
+        "packages/core/src/rooms/tail.ts",
+        "packages/core/src/rooms/types.ts:10",
+        "packages/mcp/src/rooms.ts:10",
+        "packages/mcp/src/rooms.ts:11",
+        "packages/mcp/src/rooms.ts:12",
+        "packages/mcp/src/rooms.ts:13",
+        "packages/mcp/src/rooms.ts:14",
+        "packages/mcp/src/rooms.ts:15",
+        "packages/mcp/src/rooms.ts:8",
+        "packages/mcp/src/rooms.ts:9"
+      ],
+      "migrationOrder": 17,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-38-BOUNDARY",
+        "PKG-38-PARITY",
+        "PKG-38-PACK",
+        "PKG-38-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-routing-docs",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-routing-docs",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "package.json:12",
+        "packages/cli/src/commands/agent-guide-text.ts:1",
+        "packages/cli/src/commands/install-agent-prompts.ts:1",
+        "packages/cli/src/lazy-commands.ts:311",
+        "packages/cli/src/lazy-commands.ts:312"
+      ],
+      "migrationOrder": 18,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011",
+        "KL-015"
+      ],
+      "acceptanceEvidence": [
+        "PKG-49-BOUNDARY",
+        "PKG-49-PARITY",
+        "PKG-49-PACK",
+        "PKG-49-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-sanitize",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-sanitize",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/lazy-commands.ts:307",
+        "packages/cli/src/signals/intent.ts:56"
+      ],
+      "migrationOrder": 19,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-37-BOUNDARY",
+        "PKG-37-PARITY",
+        "PKG-37-PACK",
+        "PKG-37-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-skill-authoring",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-skill-authoring",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/signals/intent-types.ts:66",
+        "packages/cli/src/signals/intent.ts:56",
+        "packages/core/src/blocks/builtin-commands.ts:74"
+      ],
+      "migrationOrder": 20,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-47-BOUNDARY",
+        "PKG-47-PARITY",
+        "PKG-47-PACK",
+        "PKG-47-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-think",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-think",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/lazy-commands.ts:316",
+        "packages/cli/src/signals/intent.ts:56"
+      ],
+      "migrationOrder": 21,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-16-BOUNDARY",
+        "PKG-16-PARITY",
+        "PKG-16-PACK",
+        "PKG-16-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-support-engine-catalog",
+      "class": "hidden-shared-support-package",
+      "owner": "@kernlang/agon-support-engine-catalog",
+      "dependencies": [
+        "@kernlang/agon-support-engine-runtime"
+      ],
+      "publicBoundary": "kernel-injected capability interface; no direct third-party import",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/core/src/cli-models-registry.ts",
+        "packages/core/src/signals/engine-registry.ts"
+      ],
+      "migrationOrder": 22,
+      "migrationSlice": "S4",
+      "compatibilityAdapter": "legacy callers receive the same capability through a kernel-owned adapter until all dependants move",
+      "killList": [
+        "KL-004",
+        "KL-007"
+      ],
+      "acceptanceEvidence": [
+        "PKG-04-BOUNDARY",
+        "PKG-04-PARITY",
+        "PKG-04-PACK",
+        "PKG-04-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-support-panel",
+      "class": "hidden-shared-support-package",
+      "owner": "@kernlang/agon-support-panel",
+      "dependencies": [
+        "@kernlang/agon-support-engine-runtime"
+      ],
+      "publicBoundary": "kernel-injected capability interface; no direct third-party import",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/forge/src/health-check.ts",
+        "packages/forge/src/seat-dispatch.ts",
+        "packages/support-panel/src/health-check.ts:201",
+        "packages/support-panel/src/health-check.ts:207",
+        "packages/support-panel/src/health-check.ts:24",
+        "packages/support-panel/src/health-check.ts:30"
+      ],
+      "migrationOrder": 23,
+      "migrationSlice": "S4",
+      "compatibilityAdapter": "legacy callers receive the same capability through a kernel-owned adapter until all dependants move",
+      "killList": [
+        "KL-004",
+        "KL-007"
+      ],
+      "acceptanceEvidence": [
+        "PKG-08-BOUNDARY",
+        "PKG-08-PARITY",
+        "PKG-08-PACK",
+        "PKG-08-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-support-verification",
+      "class": "hidden-shared-support-package",
+      "owner": "@kernlang/agon-support-verification",
+      "dependencies": [
+        "@kernlang/agon-kernel",
+        "@kernlang/agon-support-persistence"
+      ],
+      "publicBoundary": "kernel-injected capability interface; no direct third-party import",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/py/agon-tui-probe.py",
+        "packages/cli/src/cesar/tools.ts:57",
+        "packages/cli/src/cesar/tools.ts:58",
+        "packages/cli/src/signals/input-perf.ts:53",
+        "packages/core/src/diagnostics/checker-discovery.ts:12",
+        "packages/core/src/guards/guard-pipeline.ts:10",
+        "packages/core/src/guards/guard-pipeline.ts:42",
+        "packages/core/src/guards/guard-types.ts:36",
+        "packages/core/src/guards/guard-types.ts:59",
+        "packages/core/src/guards/information-gain.ts:99",
+        "packages/core/src/signals/run-dir.ts:40",
+        "packages/core/src/telemetry/guard-telemetry-store.ts",
+        "packages/core/src/telemetry/guard-telemetry.ts:31",
+        "packages/core/src/telemetry/guard-telemetry.ts:46",
+        "packages/support-verification/python/agon-tui-probe.py",
+        "packages/support-verification/python/claude-tui-probe.py",
+        "packages/support-verification/src/checker-discovery.ts:12",
+        "packages/support-verification/src/guard-telemetry-store.ts",
+        "packages/support-verification/src/guard-telemetry.ts:31",
+        "packages/support-verification/src/guard-telemetry.ts:46",
+        "packages/support-verification/src/guard-types.ts:36",
+        "packages/support-verification/src/guard-types.ts:59",
+        "packages/support-verification/src/information-gain.ts:99",
+        "packages/support-verification/src/pipeline-types.ts:3",
+        "packages/support-verification/src/pipeline-types.ts:8",
+        "scripts/claude-tui-probe.py"
+      ],
+      "migrationOrder": 24,
+      "migrationSlice": "S4",
+      "compatibilityAdapter": "legacy callers receive the same capability through a kernel-owned adapter until all dependants move",
+      "killList": [
+        "KL-004",
+        "KL-007"
+      ],
+      "acceptanceEvidence": [
+        "PKG-06-BOUNDARY",
+        "PKG-06-PARITY",
+        "PKG-06-PACK",
+        "PKG-06-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-brainstorm",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-brainstorm",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-panel",
+        "@kernlang/agon-support-dedup"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/cesar/routing.ts:19",
+        "packages/cli/src/cesar/routing.ts:27",
+        "packages/cli/src/cesar/tools.ts:38",
+        "packages/cli/src/lazy-commands.ts:288",
+        "packages/cli/src/models/handler-types.ts:113",
+        "packages/cli/src/signals/intent-types.ts:3",
+        "packages/cli/src/signals/intent-types.ts:55",
+        "packages/cli/src/signals/intent.ts:56",
+        "packages/core/src/blocks/builtin-commands.ts:15",
+        "packages/core/src/cesar/plan.ts:52",
+        "packages/core/src/models/types.ts:531",
+        "packages/core/src/models/types.ts:697",
+        "packages/mcp/src/agon-orchestration.ts:24"
+      ],
+      "migrationOrder": 25,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-17-BOUNDARY",
+        "PKG-17-PARITY",
+        "PKG-17-PACK",
+        "PKG-17-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-campfire",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-campfire",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-panel"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/cesar/routing.ts:19",
+        "packages/cli/src/cesar/routing.ts:27",
+        "packages/cli/src/cesar/tools.ts:40",
+        "packages/cli/src/lazy-commands.ts:290",
+        "packages/cli/src/models/handler-types.ts:113",
+        "packages/cli/src/signals/intent-types.ts:14",
+        "packages/cli/src/signals/intent.ts:56",
+        "packages/core/src/blocks/builtin-commands.ts:17",
+        "packages/core/src/cesar/plan.ts:52",
+        "packages/mcp/src/agon-orchestration.ts:24"
+      ],
+      "migrationOrder": 26,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-21-BOUNDARY",
+        "PKG-21-PARITY",
+        "PKG-21-PACK",
+        "PKG-21-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-git-actions",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-git-actions",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-verification"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/signals/intent-types.ts:45",
+        "packages/cli/src/signals/intent-types.ts:46",
+        "packages/cli/src/signals/intent.ts:56",
+        "packages/core/src/blocks/builtin-commands.ts:31",
+        "packages/core/src/blocks/builtin-commands.ts:33"
+      ],
+      "migrationOrder": 27,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-48-BOUNDARY",
+        "PKG-48-PARITY",
+        "PKG-48-PACK",
+        "PKG-48-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-naturalize",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-naturalize",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-mod-sanitize"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/lazy-commands.ts:308",
+        "packages/cli/src/signals/intent.ts:56"
+      ],
+      "migrationOrder": 28,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-36-BOUNDARY",
+        "PKG-36-PARITY",
+        "PKG-36-PACK",
+        "PKG-36-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-plan",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-plan",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence",
+        "@kernlang/agon-support-verification"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/cesar/routing.ts:27",
+        "packages/cli/src/cesar/tools.ts:52",
+        "packages/cli/src/cesar/tools.ts:53",
+        "packages/cli/src/cesar/tools.ts:54",
+        "packages/cli/src/models/handler-types.ts:113",
+        "packages/cli/src/signals/intent-types.ts:22",
+        "packages/cli/src/signals/intent-types.ts:23",
+        "packages/cli/src/signals/intent-types.ts:24",
+        "packages/cli/src/signals/intent-types.ts:25",
+        "packages/cli/src/signals/intent-types.ts:26",
+        "packages/cli/src/signals/intent-types.ts:63",
+        "packages/cli/src/signals/intent.ts:56",
+        "packages/cli/src/signals/keyboard.ts:46",
+        "packages/cli/src/signals/keyboard.ts:67",
+        "packages/cli/src/signals/keyboard.ts:77",
+        "packages/cli/src/signals/keyboard.ts:78",
+        "packages/core/src/blocks/builtin-commands.ts:36",
+        "packages/core/src/blocks/builtin-commands.ts:37",
+        "packages/core/src/blocks/builtin-commands.ts:38",
+        "packages/core/src/blocks/builtin-commands.ts:39",
+        "packages/core/src/blocks/builtin-commands.ts:40",
+        "packages/core/src/blocks/builtin-commands.ts:41",
+        "packages/mcp/src/agon-orchestration.ts:24"
+      ],
+      "migrationOrder": 29,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-15-BOUNDARY",
+        "PKG-15-PARITY",
+        "PKG-15-PACK",
+        "PKG-15-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-support-agent-runtime",
+      "class": "hidden-shared-support-package",
+      "owner": "@kernlang/agon-support-agent-runtime",
+      "dependencies": [
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence",
+        "@kernlang/agon-support-verification"
+      ],
+      "publicBoundary": "kernel-injected capability interface; no direct third-party import",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/core/src/api/agent-loop.ts",
+        "packages/core/src/cesar/agent-session.ts",
+        "packages/support-agent-runtime/src/agent-loop.ts:72",
+        "packages/support-agent-runtime/src/agent-loop.ts:83",
+        "packages/support-agent-runtime/src/agent-session.ts:30",
+        "packages/support-agent-runtime/src/agent-session.ts:41",
+        "packages/support-agent-runtime/src/agent-session.ts:6",
+        "packages/support-agent-runtime/src/agent-session.ts:83",
+        "packages/support-agent-runtime/src/agent-session.ts:94"
+      ],
+      "migrationOrder": 30,
+      "migrationSlice": "S4",
+      "compatibilityAdapter": "legacy callers receive the same capability through a kernel-owned adapter until all dependants move",
+      "killList": [
+        "KL-004",
+        "KL-007"
+      ],
+      "acceptanceEvidence": [
+        "PKG-10-BOUNDARY",
+        "PKG-10-PARITY",
+        "PKG-10-PACK",
+        "PKG-10-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-support-judge",
+      "class": "hidden-shared-support-package",
+      "owner": "@kernlang/agon-support-judge",
+      "dependencies": [
+        "@kernlang/agon-support-panel",
+        "@kernlang/agon-support-verification"
+      ],
+      "publicBoundary": "kernel-injected capability interface; no direct third-party import",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/cesar/judge.ts",
+        "packages/support-judge/src/contracts.ts:25",
+        "packages/support-judge/src/contracts.ts:38",
+        "packages/support-judge/src/contracts.ts:43"
+      ],
+      "migrationOrder": 31,
+      "migrationSlice": "S4",
+      "compatibilityAdapter": "legacy callers receive the same capability through a kernel-owned adapter until all dependants move",
+      "killList": [
+        "KL-004",
+        "KL-007"
+      ],
+      "acceptanceEvidence": [
+        "PKG-09-BOUNDARY",
+        "PKG-09-PARITY",
+        "PKG-09-PACK",
+        "PKG-09-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-support-worktree",
+      "class": "hidden-shared-support-package",
+      "owner": "@kernlang/agon-support-worktree",
+      "dependencies": [
+        "@kernlang/agon-kernel",
+        "@kernlang/agon-support-verification"
+      ],
+      "publicBoundary": "kernel-injected capability interface; no direct third-party import",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/core/src/blocks/git.ts:420",
+        "packages/core/src/blocks/plan.ts:21",
+        "packages/core/src/blocks/workspace.ts:37",
+        "packages/core/src/blocks/worktree-lock.ts:21",
+        "packages/core/src/blocks/worktree-session.ts",
+        "packages/support-worktree/src/plan.ts:26",
+        "packages/support-worktree/src/plan.ts:32",
+        "packages/support-worktree/src/plan.ts:41",
+        "packages/support-worktree/src/plan.ts:47",
+        "packages/support-worktree/src/plan.ts:68",
+        "packages/support-worktree/src/plan.ts:74",
+        "packages/support-worktree/src/worktree-lock.ts:25",
+        "packages/support-worktree/src/worktree-lock.ts:31",
+        "packages/support-worktree/src/worktree-session.ts"
+      ],
+      "migrationOrder": 32,
+      "migrationSlice": "S4",
+      "compatibilityAdapter": "legacy callers receive the same capability through a kernel-owned adapter until all dependants move",
+      "killList": [
+        "KL-004",
+        "KL-007"
+      ],
+      "acceptanceEvidence": [
+        "PKG-07-BOUNDARY",
+        "PKG-07-PARITY",
+        "PKG-07-PACK",
+        "PKG-07-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-agent",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-agent",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-agent-runtime"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/cesar/routing.ts:19",
+        "packages/cli/src/cesar/routing.ts:25",
+        "packages/cli/src/cesar/routing.ts:27",
+        "packages/cli/src/cesar/task-controller.ts:11",
+        "packages/cli/src/cesar/tools.ts:46",
+        "packages/cli/src/cesar/tools.ts:47",
+        "packages/cli/src/commands/agent-guide-text.ts:1",
+        "packages/cli/src/handlers/agent.ts:26",
+        "packages/cli/src/models/handler-types.ts:113",
+        "packages/cli/src/signals/intent-types.ts:36",
+        "packages/cli/src/signals/intent-types.ts:37",
+        "packages/cli/src/signals/intent-types.ts:38",
+        "packages/cli/src/signals/intent-types.ts:39",
+        "packages/cli/src/signals/intent-types.ts:40",
+        "packages/cli/src/signals/intent.ts:56",
+        "packages/cli/src/signals/output.ts:20",
+        "packages/core/src/api/agent-loop.ts:74",
+        "packages/core/src/blocks/builtin-commands.ts:23",
+        "packages/core/src/blocks/builtin-commands.ts:24",
+        "packages/core/src/blocks/builtin-commands.ts:25",
+        "packages/core/src/blocks/builtin-commands.ts:26",
+        "packages/core/src/blocks/builtin-commands.ts:27",
+        "packages/core/src/blocks/git.ts:419",
+        "packages/core/src/cesar/agent-session.ts:11",
+        "packages/core/src/cesar/agent-session.ts:27",
+        "packages/core/src/cesar/agent-session.ts:80",
+        "packages/core/src/cesar/agent-team.ts:80",
+        "packages/core/src/cesar/agent-team.ts:90",
+        "packages/core/src/cesar/plan.ts:52",
+        "packages/core/src/models/agent-event.ts:8",
+        "packages/core/src/models/types.ts:131",
+        "packages/core/src/models/types.ts:160",
+        "packages/core/src/models/types.ts:297",
+        "packages/mcp/src/agon-orchestration.ts:24"
+      ],
+      "migrationOrder": 33,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-28-BOUNDARY",
+        "PKG-28-PARITY",
+        "PKG-28-PACK",
+        "PKG-28-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-browser",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-browser",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-browser-bridge",
+        "@kernlang/agon-support-agent-runtime"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/bridge/chrome-bridge.ts:27",
+        "packages/cli/src/bridge/serve-runtime.ts:86",
+        "packages/cli/src/commands/browser-host.ts:27",
+        "packages/cli/src/commands/browser-host.ts:41",
+        "packages/cli/src/commands/browser-host.ts:546",
+        "packages/cli/src/commands/browser-host.ts:547",
+        "packages/cli/src/commands/browser-host.ts:548",
+        "packages/cli/src/commands/browser-host.ts:549",
+        "packages/cli/src/commands/drive.ts:98",
+        "packages/cli/src/commands/ext.ts:321",
+        "packages/cli/src/commands/ext.ts:322",
+        "packages/cli/src/lazy-commands.ts:326",
+        "packages/cli/src/lazy-commands.ts:327",
+        "packages/cli/src/lazy-commands.ts:328",
+        "packages/cli/src/lazy-commands.ts:329",
+        "packages/cli/src/lazy-commands.ts:330",
+        "packages/cli/src/signals/intent.ts:56"
+      ],
+      "migrationOrder": 34,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-40-BOUNDARY",
+        "PKG-40-PARITY",
+        "PKG-40-PACK",
+        "PKG-40-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-council",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-council",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-panel",
+        "@kernlang/agon-support-judge"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/cesar/tools.ts:41",
+        "packages/cli/src/lazy-commands.ts:319",
+        "packages/cli/src/signals/intent.ts:56"
+      ],
+      "migrationOrder": 35,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-32-BOUNDARY",
+        "PKG-32-PARITY",
+        "PKG-32-PACK",
+        "PKG-32-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-forge",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-forge",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-panel",
+        "@kernlang/agon-support-judge",
+        "@kernlang/agon-support-worktree",
+        "@kernlang/agon-support-verification"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/cesar/routing.ts:19",
+        "packages/cli/src/cesar/routing.ts:27",
+        "packages/cli/src/cesar/tools.ts:37",
+        "packages/cli/src/lazy-commands.ts:287",
+        "packages/cli/src/models/handler-types.ts:113",
+        "packages/cli/src/signals/intent-types.ts:2",
+        "packages/cli/src/signals/intent-types.ts:31",
+        "packages/cli/src/signals/intent-types.ts:57",
+        "packages/cli/src/signals/intent.ts:56",
+        "packages/core/src/blocks/builtin-commands.ts:14",
+        "packages/core/src/blocks/builtin-commands.ts:32",
+        "packages/core/src/cesar/agent-synthesis.ts:486",
+        "packages/core/src/cesar/plan.ts:52",
+        "packages/core/src/forge/virtual-fs.ts:32",
+        "packages/core/src/models/types.ts:175",
+        "packages/core/src/models/types.ts:245",
+        "packages/core/src/models/types.ts:341",
+        "packages/core/src/models/types.ts:451",
+        "packages/core/src/models/types.ts:551",
+        "packages/core/src/models/types.ts:617",
+        "packages/core/src/models/types.ts:717",
+        "packages/core/src/models/types.ts:79",
+        "packages/core/src/models/types.ts:9",
+        "packages/forge/src/campfire.ts:7",
+        "packages/forge/src/conquer.ts:146",
+        "packages/forge/src/conquer.ts:314",
+        "packages/forge/src/corpus.ts:9",
+        "packages/forge/src/council.ts:36",
+        "packages/forge/src/delegate.ts:5",
+        "packages/forge/src/goal/journal.ts",
+        "packages/forge/src/goal/oracle-probe.ts:19",
+        "packages/forge/src/goal/oracle-probe.ts:54",
+        "packages/forge/src/goal/oracle-probe.ts:62",
+        "packages/forge/src/goal/oracle-probe.ts:64",
+        "packages/forge/src/goal/oracle-probe.ts:70",
+        "packages/forge/src/goal/oracle.ts:24",
+        "packages/forge/src/goal/oracle.ts:87",
+        "packages/forge/src/goal/types.ts:20",
+        "packages/forge/src/goal/types.ts:48",
+        "packages/forge/src/health-check.ts:16",
+        "packages/forge/src/health-check.ts:193",
+        "packages/forge/src/mutate-semantic.ts:25",
+        "packages/forge/src/mutate.ts:48",
+        "packages/forge/src/naturalize.ts:18",
+        "packages/forge/src/nero.ts:28",
+        "packages/forge/src/pr-text.ts:21",
+        "packages/forge/src/quality.ts:49",
+        "packages/forge/src/research.ts:27",
+        "packages/forge/src/synth-plan.ts:16",
+        "packages/forge/src/synthesis-modus.ts:30",
+        "packages/forge/src/thinking.ts:88",
+        "packages/forge/src/types-impl.ts:10",
+        "packages/forge/src/types-impl.ts:3",
+        "packages/mcp/src/agon-orchestration.ts:24"
+      ],
+      "migrationOrder": 36,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-22-BOUNDARY",
+        "PKG-22-PARITY",
+        "PKG-22-PACK",
+        "PKG-22-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-mutate",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-mutate",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-verification",
+        "@kernlang/agon-support-worktree"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/lazy-commands.ts:309",
+        "packages/cli/src/signals/intent.ts:56",
+        "packages/core/src/models/types.ts:149",
+        "packages/core/src/models/types.ts:315"
+      ],
+      "migrationOrder": 37,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-35-BOUNDARY",
+        "PKG-35-PARITY",
+        "PKG-35-PACK",
+        "PKG-35-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-nero",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-nero",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-judge"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/cesar/tools.ts:49",
+        "packages/cli/src/lazy-commands.ts:318",
+        "packages/cli/src/signals/intent-types.ts:53",
+        "packages/cli/src/signals/intent.ts:56",
+        "packages/core/src/blocks/builtin-commands.ts:67",
+        "packages/mcp/src/agon-orchestration.ts:24"
+      ],
+      "migrationOrder": 38,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-31-BOUNDARY",
+        "PKG-31-PARITY",
+        "PKG-31-PACK",
+        "PKG-31-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-review",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-review",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-panel",
+        "@kernlang/agon-support-verification",
+        "@kernlang/agon-support-worktree"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/blocks/controls.tsx:20",
+        "packages/cli/src/blocks/controls.tsx:36",
+        "packages/cli/src/cesar/routing.ts:17",
+        "packages/cli/src/cesar/routing.ts:19",
+        "packages/cli/src/cesar/routing.ts:25",
+        "packages/cli/src/cesar/routing.ts:27",
+        "packages/cli/src/cesar/tools.ts:45",
+        "packages/cli/src/handlers/review.ts:332",
+        "packages/cli/src/lazy-commands.ts:305",
+        "packages/cli/src/models/handler-types.ts:113",
+        "packages/cli/src/signals/intent-types.ts:42",
+        "packages/cli/src/signals/intent.ts:56",
+        "packages/core/src/blocks/builtin-commands.ts:28",
+        "packages/core/src/cesar/plan.ts:52",
+        "packages/core/src/models/types.ts:176",
+        "packages/core/src/models/types.ts:241",
+        "packages/core/src/models/types.ts:342",
+        "packages/core/src/models/types.ts:75",
+        "packages/mcp/src/agon-orchestration.ts:24"
+      ],
+      "migrationOrder": 39,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-25-BOUNDARY",
+        "PKG-25-PARITY",
+        "PKG-25-PACK",
+        "PKG-25-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-synthesis",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-synthesis",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-panel",
+        "@kernlang/agon-support-judge"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/lazy-commands.ts:314",
+        "packages/cli/src/signals/intent.ts:56",
+        "packages/core/src/cesar/agent-synthesis.ts:401",
+        "packages/core/src/cesar/agent-synthesis.ts:68",
+        "packages/core/src/models/types.ts:112",
+        "packages/core/src/models/types.ts:236",
+        "packages/core/src/models/types.ts:246",
+        "packages/core/src/models/types.ts:278",
+        "packages/core/src/models/types.ts:70",
+        "packages/core/src/models/types.ts:80",
+        "packages/mcp/src/agon-orchestration.ts:24"
+      ],
+      "migrationOrder": 40,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-24-BOUNDARY",
+        "PKG-24-PARITY",
+        "PKG-24-PACK",
+        "PKG-24-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-team-brainstorm",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-team-brainstorm",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-mod-brainstorm",
+        "@kernlang/agon-support-panel"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/lazy-commands.ts:292",
+        "packages/cli/src/models/handler-types.ts:113",
+        "packages/cli/src/signals/intent-types.ts:7",
+        "packages/cli/src/signals/intent.ts:56",
+        "packages/core/src/blocks/builtin-commands.ts:20"
+      ],
+      "migrationOrder": 41,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-18-BOUNDARY",
+        "PKG-18-PARITY",
+        "PKG-18-PACK",
+        "PKG-18-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-tribunal",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-tribunal",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-panel",
+        "@kernlang/agon-support-judge"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/cesar/routing.ts:19",
+        "packages/cli/src/cesar/routing.ts:27",
+        "packages/cli/src/cesar/tools.ts:39",
+        "packages/cli/src/lazy-commands.ts:289",
+        "packages/cli/src/models/handler-types.ts:113",
+        "packages/cli/src/signals/intent-types.ts:4",
+        "packages/cli/src/signals/intent-types.ts:56",
+        "packages/cli/src/signals/intent.ts:56",
+        "packages/core/src/blocks/builtin-commands.ts:16",
+        "packages/core/src/cesar/plan.ts:52",
+        "packages/forge/src/tribunal.ts:28",
+        "packages/mcp/src/agon-orchestration.ts:24"
+      ],
+      "migrationOrder": 42,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-19-BOUNDARY",
+        "PKG-19-PARITY",
+        "PKG-19-PACK",
+        "PKG-19-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-worktrees",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-worktrees",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-worktree"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/lazy-commands.ts:322",
+        "packages/cli/src/lazy-commands.ts:323",
+        "packages/cli/src/signals/intent-types.ts:15",
+        "packages/cli/src/signals/intent.ts:56",
+        "packages/core/src/blocks/builtin-commands.ts:44",
+        "packages/core/src/blocks/builtin-commands.ts:73"
+      ],
+      "migrationOrder": 43,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-46-BOUNDARY",
+        "PKG-46-PARITY",
+        "PKG-46-PACK",
+        "PKG-46-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-conquer",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-conquer",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-mod-agent",
+        "@kernlang/agon-mod-nero",
+        "@kernlang/agon-mod-tribunal",
+        "@kernlang/agon-mod-council",
+        "@kernlang/agon-support-worktree",
+        "@kernlang/agon-support-verification"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/cesar/tools.ts:44",
+        "packages/cli/src/lazy-commands.ts:321",
+        "packages/cli/src/models/handler-types.ts:113",
+        "packages/cli/src/signals/intent.ts:56"
+      ],
+      "migrationOrder": 44,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-30-BOUNDARY",
+        "PKG-30-PARITY",
+        "PKG-30-PACK",
+        "PKG-30-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-goal",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-goal",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-mod-plan",
+        "@kernlang/agon-mod-agent",
+        "@kernlang/agon-mod-review",
+        "@kernlang/agon-mod-jobs",
+        "@kernlang/agon-mod-git-actions",
+        "@kernlang/agon-support-worktree",
+        "@kernlang/agon-support-verification"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/cesar/tools.ts:43",
+        "packages/cli/src/lazy-commands.ts:313",
+        "packages/cli/src/models/handler-types.ts:113",
+        "packages/cli/src/signals/intent.ts:56"
+      ],
+      "migrationOrder": 45,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-29-BOUNDARY",
+        "PKG-29-PARITY",
+        "PKG-29-PACK",
+        "PKG-29-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-pipeline-delivery",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-pipeline-delivery",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-mod-agent",
+        "@kernlang/agon-mod-review"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/cesar/tools.ts:42",
+        "packages/cli/src/models/handler-types.ts:113",
+        "packages/cli/src/signals/intent-types.ts:41",
+        "packages/cli/src/signals/intent.ts:56",
+        "packages/core/src/blocks/builtin-commands.ts:29",
+        "packages/core/src/cesar/plan.ts:52"
+      ],
+      "migrationOrder": 46,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011",
+        "KL-012"
+      ],
+      "acceptanceEvidence": [
+        "PKG-27-BOUNDARY",
+        "PKG-27-PARITY",
+        "PKG-27-PACK",
+        "PKG-27-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-pipeline-orchestration",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-pipeline-orchestration",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-mod-brainstorm",
+        "@kernlang/agon-mod-forge",
+        "@kernlang/agon-mod-tribunal"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/mcp/src/agon-orchestration.ts:24"
+      ],
+      "migrationOrder": 47,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011",
+        "KL-012"
+      ],
+      "acceptanceEvidence": [
+        "PKG-26-BOUNDARY",
+        "PKG-26-PARITY",
+        "PKG-26-PACK",
+        "PKG-26-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-team-forge",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-team-forge",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-mod-forge",
+        "@kernlang/agon-support-panel"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/lazy-commands.ts:291",
+        "packages/cli/src/models/handler-types.ts:113",
+        "packages/cli/src/signals/intent-types.ts:6",
+        "packages/cli/src/signals/intent.ts:56",
+        "packages/core/src/blocks/builtin-commands.ts:18",
+        "packages/core/src/cesar/plan.ts:52"
+      ],
+      "migrationOrder": 48,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-23-BOUNDARY",
+        "PKG-23-PARITY",
+        "PKG-23-PACK",
+        "PKG-23-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-team-tribunal",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-team-tribunal",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-mod-tribunal",
+        "@kernlang/agon-support-panel"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/lazy-commands.ts:293",
+        "packages/cli/src/models/handler-types.ts:113",
+        "packages/cli/src/signals/intent-types.ts:5",
+        "packages/cli/src/signals/intent.ts:56",
+        "packages/core/src/blocks/builtin-commands.ts:19"
+      ],
+      "migrationOrder": 49,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-20-BOUNDARY",
+        "PKG-20-PARITY",
+        "PKG-20-PACK",
+        "PKG-20-DISABLED"
+      ]
+    }
+  ],
+  "slices": [
+    {
+      "id": "S1B",
+      "name": "Acceptance truth repair",
+      "dependsOn": [],
+      "entryCriteria": [
+        "Slice 1A staged candidate and audit receipt available"
+      ],
+      "exitCriteria": [
+        "clean index compiles independently",
+        "ignored contamination is rejected",
+        "index and commit hashes are reproducible",
+        "dependency edges are unique",
+        "review artifacts are repository-relative and hash-bound",
+        "legacy-authoritative workflow corpus is frozen before extraction and hash-bound",
+        "oracle capture occurs at the raw persisted result/event boundary; normalization and renderers are tested separately"
+      ],
+      "acceptanceCommands": [
+        "node scripts/spec/qualify-modular-agon-clean-checkout.mjs --run-clean",
+        "node scripts/spec/verify-modular-agon-roadmap.mjs",
+        "npm run test:modular-legacy-oracle",
+        "npm run test:modular-oracle-boundary"
+      ],
+      "rollback": [
+        "remove only S1B verifier/spec artifacts; legacy runtime remains authoritative"
+      ],
+      "evidence": [
+        "S1B-clean-checkout",
+        "S1B-contract",
+        "S1B-negative-control",
+        "S1B-rollback"
+      ]
+    },
+    {
+      "id": "S2",
+      "name": "Durable modular host",
+      "dependsOn": [
+        "S1B"
+      ],
+      "entryCriteria": [
+        "S1B green from a clean commit"
+      ],
+      "exitCriteria": [
+        "host creates immutable generations",
+        "journaled pointer promotion survives interruption",
+        "stale hosts refuse mismatched generations",
+        "safe mode loads kernel-only generation",
+        "versioned config/data migrations run only on staged copies and journal rollback restores the prior schema and bytes",
+        "Doctor, logs and receipts expose generation, journal recovery, blocked reasons and owner-attributed failures with secret redaction"
+      ],
+      "acceptanceCommands": [
+        "npm run test:modular-host",
+        "npm run test:modular-crash-recovery",
+        "npm run test:modular-migration-engine",
+        "npm run test:modular-observability"
+      ],
+      "rollback": [
+        "select previous canonical generation without uninstalling packages"
+      ],
+      "evidence": [
+        "S2-clean-checkout",
+        "S2-contract",
+        "S2-negative-control",
+        "S2-rollback"
+      ]
+    },
+    {
+      "id": "S3",
+      "name": "Desired state, profiles, activation and grouped UI",
+      "dependsOn": [
+        "S2"
+      ],
+      "entryCriteria": [
+        "durable host generation contract green"
+      ],
+      "exitCriteria": [
+        "global desired state and profiles resolve deterministically",
+        "parent/child enablement rules enforced",
+        "disabled entries remain visible and unreachable",
+        "restart semantics explicit",
+        "grouped UI preserves keyboard operation, semantic labels and non-color-only blocked/disabled status"
+      ],
+      "acceptanceCommands": [
+        "npm run test:modular-state",
+        "npm run test:modular-ui",
+        "npm run test:modular-ui-accessibility"
+      ],
+      "rollback": [
+        "restore prior desired-state revision and generation pointer"
+      ],
+      "evidence": [
+        "S3-clean-checkout",
+        "S3-contract",
+        "S3-negative-control",
+        "S3-rollback"
+      ]
+    },
+    {
+      "id": "S4",
+      "name": "Physical shared-support extraction",
+      "dependsOn": [
+        "S3"
+      ],
+      "entryCriteria": [
+        "all support interfaces frozen and consumer inventory complete"
+      ],
+      "exitCriteria": [
+        "eleven support packages compile/pack independently",
+        "no private imports or duplicate kernel instances",
+        "legacy support adapters retain parity",
+        "public type baseline enforces semver and N-1/N-2 compile/load compatibility",
+        "resolver, registry, manifest and dependency graph gates survive targeted mutation testing"
+      ],
+      "acceptanceCommands": [
+        "npm run test:modular-support-packages",
+        "npm run test:modular-boundaries",
+        "npm run test:modular-api-compat",
+        "npm run test:modular-foundation-mutation"
+      ],
+      "rollback": [
+        "restore the retained qualified S3 subject; S4 never becomes runtime-authoritative, so legacy operation remains available before and after rollback"
+      ],
+      "evidence": [
+        "S4-clean-checkout",
+        "S4-contract",
+        "S4-negative-control",
+        "S4-rollback"
+      ]
+    },
+    {
+      "id": "S5",
+      "name": "Physical first-party mod extraction",
+      "dependsOn": [
+        "S4"
+      ],
+      "entryCriteria": [
+        "support packages and grouped dependency rules green"
+      ],
+      "exitCriteria": [
+        "all 36 mod packages compile and pack",
+        "all 872 frozen legacy assignments have a destination",
+        "each mod can be disabled without surface reachability",
+        "dependent mods degrade or block as specified",
+        "each package migrates and verifies its config, state, static assets, history and persisted envelopes before legacy removal"
+      ],
+      "acceptanceCommands": [
+        "npm run test:modular-first-party",
+        "npm run test:modular-disable-matrix",
+        "npm run test:representative-workflows",
+        "npm run test:modular-package-data-migrations"
+      ],
+      "rollback": [
+        "enable legacy adapter per mod; never mix two owners for one contribution"
+      ],
+      "evidence": [
+        "S5-clean-checkout",
+        "S5-contract",
+        "S5-negative-control",
+        "S5-rollback"
+      ]
+    },
+    {
+      "id": "S6",
+      "name": "Generated surface cutover",
+      "dependsOn": [
+        "S5"
+      ],
+      "entryCriteria": [
+        "every first-party package has parity receipts"
+      ],
+      "exitCriteria": [
+        "CLI/TUI/MCP/Cesar/docs derive from one active registry generation",
+        "legacy handwritten dispatch is unreachable",
+        "all kill-list surface entries removed",
+        "generated TUI and documentation projections preserve accessibility metadata and readable fallback text"
+      ],
+      "acceptanceCommands": [
+        "npm run test:modular-surface-parity",
+        "npm run test:modular-disabled-surfaces"
+      ],
+      "rollback": [
+        "atomically select last legacy-authoritative generation"
+      ],
+      "evidence": [
+        "S6-clean-checkout",
+        "S6-contract",
+        "S6-negative-control",
+        "S6-rollback"
+      ]
+    },
+    {
+      "id": "S7",
+      "name": "Installer, updater, rollback and safe mode",
+      "dependsOn": [
+        "S6"
+      ],
+      "entryCriteria": [
+        "runtime cutover green in isolated prefixes"
+      ],
+      "exitCriteria": [
+        "install/update are journaled candidate-prefix transactions",
+        "crash and disk-full recovery proven",
+        "rollback and safe mode work offline",
+        "no active process self-overwrites",
+        "concurrent writers, ENOSPC, EACCES and torn-write recovery are proven",
+        "third-party activation remains fail-closed until S8 trust is green"
+      ],
+      "acceptanceCommands": [
+        "npm run test:modular-installer",
+        "npm run test:modular-updater",
+        "npm run test:modular-fault-injection",
+        "npm run test:modular-lifecycle-concurrency"
+      ],
+      "rollback": [
+        "atomic pointer restoration to retained qualified prefix"
+      ],
+      "evidence": [
+        "S7-clean-checkout",
+        "S7-contract",
+        "S7-negative-control",
+        "S7-rollback"
+      ]
+    },
+    {
+      "id": "S8",
+      "name": "Trust, grants and third-party folder mods",
+      "dependsOn": [
+        "S7"
+      ],
+      "entryCriteria": [
+        "transactional lifecycle and safe mode green"
+      ],
+      "exitCriteria": [
+        "static discovery executes no code",
+        "publisher trust and grants are explicit and revocable",
+        "edited content invalidates grants",
+        "load order and collisions deterministic",
+        "third-party failure cannot prevent safe mode"
+      ],
+      "acceptanceCommands": [
+        "npm run test:modular-trust",
+        "npm run test:modular-folder-mods",
+        "npm run test:modular-adversarial"
+      ],
+      "rollback": [
+        "disable third-party source class and select first-party-only generation"
+      ],
+      "evidence": [
+        "S8-clean-checkout",
+        "S8-contract",
+        "S8-negative-control",
+        "S8-rollback"
+      ]
+    },
+    {
+      "id": "S9",
+      "name": "npm/npx distribution and release qualification",
+      "dependsOn": [
+        "S8"
+      ],
+      "entryCriteria": [
+        "all runtime, lifecycle and security slices green"
+      ],
+      "exitCriteria": [
+        "fresh macOS arm64/x64 and Linux arm64/x64 installs pass",
+        "npm pack contents and provenance pass",
+        "npx wizard is idempotent",
+        "upgrade/downgrade compatibility matrix passes",
+        "release checklist has no local red",
+        "historical persisted-state migration corpus passes upgrade and downgrade policy",
+        "native startup, memory, resolver, TUI, package-size, sustained-host and concurrent-workflow load budgets remain green",
+        "operational diagnostics and receipt schemas remain compatible across supported upgrades",
+        "license policy, SBOM, package provenance and integrity evidence match the release BOM"
+      ],
+      "acceptanceCommands": [
+        "npm run test:modular-release",
+        "npm run test:modular-platform-matrix",
+        "npm run test:modular-npx",
+        "npm run test:modular-state-migrations",
+        "npm run perf:modular-release",
+        "npm run test:modular-load",
+        "npm run test:modular-supply-chain"
+      ],
+      "rollback": [
+        "unpublish is not a rollback; promote a corrected version and retain last-known-good install"
+      ],
+      "evidence": [
+        "S9-clean-checkout",
+        "S9-contract",
+        "S9-negative-control",
+        "S9-rollback"
+      ]
+    }
+  ],
+  "claims": [
+    {
+      "id": "C01",
+      "claim": "Public Mod API, manifest validator, resolver, registry and compatibility projections exist.",
+      "state": "implemented",
+      "evidence": [
+        "packages/mod-api",
+        "packages/mod-kernel",
+        "tests/unit/modular-*.test.ts"
+      ]
+    },
+    {
+      "id": "C02",
+      "claim": "Slice 1A is acceptance green.",
+      "state": "partially-implemented",
+      "evidence": [
+        "clean-index build fails TS7016",
+        "ignored semver.d.ts files contaminate dirty success",
+        "docs/specs/evidence/modular-agon-slice1a-audit-supersession.md"
+      ]
+    },
+    {
+      "id": "C03",
+      "claim": "The 49-package DAG is frozen.",
+      "state": "partially-implemented",
+      "evidence": [
+        "49 IDs exist",
+        "148 declared edges include four duplicates; corrected roadmap has 144 unique edges"
+      ]
+    },
+    {
+      "id": "C04",
+      "claim": "Durable desired state, host generation, journal, profiles and activation exist.",
+      "state": "implemented",
+      "evidence": [
+        "docs/specs/modular-agon-slice2-implementation.md",
+        "docs/specs/modular-agon-slice3-implementation.md",
+        "packages/mod-kernel/src/desired-state.ts",
+        "packages/mod-kernel/src/activation-service.ts"
+      ]
+    },
+    {
+      "id": "C05",
+      "claim": "First-party code is physically extracted into 49 packages.",
+      "state": "specified-only",
+      "evidence": [
+        "only packages/mod-api and packages/mod-kernel exist as target packages",
+        "roadmap package records map all legacy sources"
+      ]
+    },
+    {
+      "id": "C06",
+      "claim": "Generated surfaces are runtime-authoritative.",
+      "state": "specified-only",
+      "evidence": [
+        "Slice 1A compatibility projections are metadata-only",
+        "legacy dispatch remains authoritative"
+      ]
+    },
+    {
+      "id": "C07",
+      "claim": "Installer, updater, rollback and safe mode are implemented.",
+      "state": "specified-only",
+      "evidence": [
+        "docs/specs/modular-agon-security-and-distribution.md"
+      ]
+    },
+    {
+      "id": "C08",
+      "claim": "Trust, grants and third-party folder mods execute safely.",
+      "state": "specified-only",
+      "evidence": [
+        "schemas exist; no third-party execution is authorized in Slice 1A"
+      ]
+    },
+    {
+      "id": "C09",
+      "claim": "Linux native release qualification is complete.",
+      "state": "externally-blocked",
+      "evidence": [
+        "native Linux x64/arm64 release runners and signing environment are unavailable locally"
+      ]
+    },
+    {
+      "id": "C10",
+      "claim": "Future profile preset composition and eventual default-leaning policy are frozen.",
+      "state": "future-product-decision",
+      "evidence": [
+        "architecture supports profile lists; preset composition and future defaults intentionally defer until usage evidence exists",
+        "Node support is not part of this deferral: package engines >=22 makes tested Node 22/24/26 release gates"
+      ]
+    }
+  ]
+}

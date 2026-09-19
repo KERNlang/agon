@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kernlang.dev/schemas/mutate/config.schema.json",
+  "title": "mutate configuration",
+  "type": "object",
+  "additionalProperties": true
+}

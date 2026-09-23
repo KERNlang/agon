@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { sessionCleanupFailed, SESSION_CLEANUP_FAILURE_MESSAGE } from '../../cesar/session-health.js';
+import { markSessionCleanupFailed, sessionCleanupFailed, SESSION_CLEANUP_FAILURE_MESSAGE } from '../../cesar/session-health.js';
 import { runBrainstormSession } from '../../blocks/brainstorm-session.js';
 
 import { mkdirSync, appendFileSync } from 'node:fs';
@@ -755,6 +755,13 @@ export async function handleRecoveredDelegation(crashDel: any, input: string, cb
  * Last-resort Cesar recovery when the brain returned no usable response: api-backend silent same-engine retry, non-api session rebuild + retry, fresh one-shot dispatch (with suggestion parsing), then cross-engine acting-Cesar. Extracted from routeWithCesar; kept SAME-FILE to avoid the ESM cycle. crashDel is passed ONLY to preserve the pre-existing coupling where a pending delegation s engines seed a fresh fallback pipeline suggestion (behavior preserved verbatim; latent coupling flagged for a follow-up, per nero Ch.3).
  */
 export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks, crashDel: any, priorDeterministic: boolean): Promise<boolean> {
+  const recoverySession = cb.ctx.cesarSession;
+  const cleanupFailed = () => {
+    if (!sessionCleanupFailed(recoverySession) && !sessionCleanupFailed(cb.ctx.cesarSession)) return false;
+    cb.dispatch({ type: 'warning', message: SESSION_CLEANUP_FAILURE_MESSAGE });
+    return true;
+  };
+  if (cleanupFailed()) return false;
   // Cesar truly didn't respond — try fresh CLI dispatch
   const cesarConfig = cb.ctx.config;
   const cesarId = (cesarConfig as any).cesarEngine ?? 'claude';
@@ -778,6 +785,7 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
   if (usingApiBackend && !priorDeterministic) {
     try {
       const retried = await handleCesarBrain(input, cb.dispatch, cb.ctx, []);
+      if (cleanupFailed()) return false;
       const retriedPlan: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
       if (retriedPlan && retriedPlan.state === 'awaiting_approval') {
         cb.setActivePlan(retriedPlan);
@@ -793,11 +801,19 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
   if (!usingApiBackend) {
     try {
       if (cb.ctx.cesarSession) {
-        try { cb.ctx.cesarSession.close(); } catch {}
-        cb.ctx.setCesarSession(null);
+        const previousSession = cb.ctx.cesarSession;
+        try {
+          previousSession.close();
+          cb.ctx.setCesarSession(null);
+        } catch {
+          markSessionCleanupFailed(previousSession);
+          cb.dispatch({ type: 'warning', message: SESSION_CLEANUP_FAILURE_MESSAGE });
+          return false;
+        }
       }
       if (!_silentMode) cb.dispatch({ type: 'warning', message: formatCesarRecoveryStatus('rebuild', cesarId) });
       const retried = await handleCesarBrain(input, cb.dispatch, cb.ctx, []);
+      if (cleanupFailed()) return false;
       const retriedPlan: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
       if (retriedPlan && retriedPlan.state === 'awaiting_approval') {
         cb.setActivePlan(retriedPlan);
@@ -815,6 +831,7 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
     }
   }
   
+  if (cleanupFailed()) return false;
   // Cesar truly didn't respond — last fallback is plain one-shot dispatch.
   // Skip this for API backends: brain.kern's fallback path already ran the
   // same history-primed adapter.dispatch against the same engine, and

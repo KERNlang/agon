@@ -24,6 +24,35 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Recovery-ladder cleanup refusal (2026-09-23)
+
+Regression tests showed that the non-API recovery ladder swallowed session-close
+errors and started another brain attempt. Detachment errors fell through to
+replacement dispatch. Recovery now refuses a previously failed session and marks
+close/detach failures before returning a restart-required warning, without starting
+replacement work. Successful cleanup still permits the existing retry.
+
+Deferred retry tests for both CLI and API paths mark cleanup failed while the
+retry awaits completion. The ladder now rechecks both its captured session and
+the current session before interpreting the result or escalating further. The
+captured reference prevents detachment from hiding that failure. There is also a
+check before one-shot escalation after retry exceptions.
+
+These tests execute the real recovery ladder with brain/backend/provider seams
+replaced; they are not live-provider shutdown evidence. Initial-brain recovery,
+pending-delegation recovery, failure during one-shot dispatch, provider termination
+and durable transactional recovery still require separate qualification. This
+does not change the whole-product release disposition.
+
+Development gates passed: build, typecheck, lint, re-export guard, 6,283 tests
+(five existing skips across 541 files), release-set packs, supply-chain self-test
+and 72 isolated installed-product checks. The installation check initially lacked
+an offline npm dependency; a scripts-disabled install hydrated only the temporary
+cache/prefix, then the offline check passed. Full-suite log SHA-256:
+`a130da20097910ca1fb61ce62c488c8e5f46dc89a60d94886473798f9e272421`.
+Release-set and SBOM hashes were refreshed. These are development checks, not
+independent clean-commit release qualification.
+
 ### Manual entry guards for failed session cleanup (2026-09-19)
 
 Positive-then-negative tests reproduced manual session acquisition returning the

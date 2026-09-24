@@ -1,0 +1,246 @@
+{
+  "schemaVersion": 1,
+  "package": "@kernlang/agon-mod-plan",
+  "assignments": [
+    {
+      "category": "builtinCommandMetadata",
+      "id": "approve",
+      "source": "packages/core/src/blocks/builtin-commands.ts:39",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-plan",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "builtinCommandMetadata",
+      "id": "auto",
+      "source": "packages/core/src/blocks/builtin-commands.ts:37",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-plan",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "builtinCommandMetadata",
+      "id": "cancel",
+      "source": "packages/core/src/blocks/builtin-commands.ts:41",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-plan",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "builtinCommandMetadata",
+      "id": "plan",
+      "source": "packages/core/src/blocks/builtin-commands.ts:36",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-plan",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "builtinCommandMetadata",
+      "id": "plans",
+      "source": "packages/core/src/blocks/builtin-commands.ts:38",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-plan",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "builtinCommandMetadata",
+      "id": "retry",
+      "source": "packages/core/src/blocks/builtin-commands.ts:40",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-plan",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "plan",
+      "source": "packages/cli/src/models/handler-types.ts:113",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-plan",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "plan-first",
+      "source": "packages/cli/src/cesar/routing.ts:27",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-plan",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "spec-first",
+      "source": "packages/cli/src/cesar/routing.ts:27",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-plan",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarTools",
+      "id": "ExitPlanMode",
+      "source": "packages/cli/src/cesar/tools.ts:53",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-plan",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarTools",
+      "id": "ListPlans",
+      "source": "packages/cli/src/cesar/tools.ts:54",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-plan",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarTools",
+      "id": "ProposePlan",
+      "source": "packages/cli/src/cesar/tools.ts:52",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-plan",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "intentVariants",
+      "id": "approve",
+      "source": "packages/cli/src/signals/intent-types.ts:24",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-plan",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "intentVariants",
+      "id": "auto",
+      "source": "packages/cli/src/signals/intent-types.ts:63",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-plan",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "intentVariants",
+      "id": "cancel",
+      "source": "packages/cli/src/signals/intent-types.ts:26",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-plan",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "intentVariants",
+      "id": "plan",
+      "source": "packages/cli/src/signals/intent-types.ts:22",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-plan",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "intentVariants",
+      "id": "plans",
+      "source": "packages/cli/src/signals/intent-types.ts:23",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-plan",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "intentVariants",
+      "id": "retry",
+      "source": "packages/cli/src/signals/intent-types.ts:25",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-plan",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "mcpTools",
+      "id": "ExitPlanMode",
+      "source": "packages/mcp/src/agon-orchestration.ts:24",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-plan",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "mcpTools",
+      "id": "ProposePlan",
+      "source": "packages/mcp/src/agon-orchestration.ts:24",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-plan",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiKeyboardActions",
+      "id": "movePlanApproval",
+      "source": "packages/cli/src/signals/keyboard.ts:78",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-plan",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiKeyboardActions",
+      "id": "planControl",
+      "source": "packages/cli/src/signals/keyboard.ts:77",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-plan",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiKeyboardActions",
+      "id": "togglePlanQueued",
+      "source": "packages/cli/src/signals/keyboard.ts:46",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-plan",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiKeyboardActions",
+      "id": "unqueuePlan",
+      "source": "packages/cli/src/signals/keyboard.ts:67",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-plan",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/approve",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-plan",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/auto",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-plan",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/cancel",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-plan",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/plan",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-plan",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/plans",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-plan",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/retry",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-plan",
+      "rule": "exact-user-surface"
+    }
+  ]
+}

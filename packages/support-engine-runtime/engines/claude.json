@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 3,
+  "id": "claude",
+  "displayName": "Claude (Anthropic)",
+  "binary": "claude",
+  "searchPaths": [
+    "${HOME}/.local/bin",
+    "${HOME}/.npm-global/bin",
+    "/usr/local/bin"
+  ],
+  "versionCmd": ["--version"],
+  "isLocal": false,
+  "tier": "builtin",
+  "installHint": "npm install -g @anthropic-ai/claude-code",
+  "timeout": 360,
+
+  "exec": {
+    "args": ["--print", "--verbose", "--output-format", "stream-json", "--max-turns", "10", "{prompt}"]
+  },
+  "review": {
+    "args": ["--print", "--verbose", "--output-format", "stream-json", "--max-turns", "50", "{prompt}"]
+  },
+  "agent": {
+    "args": ["--print", "--dangerously-skip-permissions", "--verbose", "--max-turns", "100", "{prompt}"]
+  },
+
+  "model": {
+    "configKey": "claude_model",
+    "flag": "--model"
+  },
+
+  "effort": {
+    "flag": "--effort",
+    "levels": ["low", "medium", "high", "xhigh", "max"]
+  },
+
+  "api": {
+    "baseUrl": "https://api.anthropic.com",
+    "apiKeyEnv": "ANTHROPIC_API_KEY",
+    "model": "claude-sonnet-4-6",
+    "maxTokens": 8192,
+    "format": "anthropic"
+  },
+
+  "sessionBudget": {
+    "contextWindow": 200000
+  },
+
+  "env": {
+    "ANTHROPIC_API_KEY": { "required": false }
+  },
+
+  "companion": {
+    "protocol": "stream-json",
+    "serverCmd": ["--print", "--verbose", "--input-format", "stream-json", "--output-format", "stream-json", "--max-turns", "1"],
+    "systemPromptFlag": "--system-prompt",
+    "textOnlyArgs": ["--tools", ""],
+    "features": {
+      "threadResume": false,
+      "nativeReview": false,
+      "structuredOutput": false
+    }
+  },
+
+  "test": { "args": ["--version"] },
+
+  "cliModels": {
+    "dynamicListCmd": ["__pty:/model"]
+  },
+
+  "capabilities": ["vision"],
+  "imageFlag": "--image",
+  "systemPromptFlag": "--system-prompt",
+  "nonAgenticFraming": "review",
+
+  "isolationHints": {
+    "configEnv": "CLAUDE_CONFIG_DIR",
+    "strictMcpArgs": ["--strict-mcp-config"],
+    "personalPaths": ["~/.claude"],
+    "authFiles": [],
+    "authMarker": ".claude.json",
+    "loginArgs": ["auth", "login"],
+    "setupHint": "Clean claude dispatch needs a one-time login: run `agon login claude`. Until then claude dispatches use your normal config.",
+    "supportsProjectMcp": true
+  }
+}

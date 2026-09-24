@@ -1,0 +1,161 @@
+{
+  "schemaVersion": 2,
+  "id": "agon.brainstorm",
+  "name": "Brainstorm",
+  "version": "1.0.0",
+  "apiRange": ">=1.0.0 <2",
+  "execution": "executable",
+  "compatibility": {
+    "kernelRange": ">=0.0.0-0 <2",
+    "nodeRange": ">=22"
+  },
+  "packageClass": "user-toggleable-mod-package",
+  "entrypoints": {
+    "runtime": "dist/index.js",
+    "types": "dist/index.d.ts"
+  },
+  "display": {
+    "group": "Create and compete",
+    "order": 100
+  },
+  "dependencies": {
+    "required": [
+      {
+        "id": "agon.api",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.engine-runtime",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.panel",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.dedup",
+        "range": ">=0.0.0-0"
+      }
+    ],
+    "optional": [],
+    "conflicts": []
+  },
+  "permissions": [
+    {
+      "capability": "engine.dispatch",
+      "resources": [],
+      "required": true
+    }
+  ],
+  "platforms": [
+    "darwin-arm64",
+    "darwin-x64",
+    "linux-arm64",
+    "linux-x64"
+  ],
+  "assets": [
+    {
+      "path": "ownership.json",
+      "kind": "documentation",
+      "mediaType": "application/json",
+      "contentHash": "sha256:d3e81afaba7529c84d91023068f20a4fd1b80f4ff0c68403e353344df410b15d",
+      "bytes": 3288,
+      "executable": false,
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-arm64",
+        "linux-x64"
+      ]
+    },
+    {
+      "path": "schemas/config.schema.json",
+      "kind": "schema",
+      "mediaType": "application/schema+json",
+      "contentHash": "sha256:9b320d8b5bee1302d0a6c17a761025f8bd80173267ec0ef68d31e4c17199d059",
+      "bytes": 226,
+      "executable": false,
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-arm64",
+        "linux-x64"
+      ]
+    }
+  ],
+  "contributes": {
+    "cliCommands": [
+      {
+        "id": "cliCommands:0003",
+        "aliases": []
+      }
+    ],
+    "tuiActions": [
+      {
+        "id": "intentVariants:0005",
+        "aliases": []
+      },
+      {
+        "id": "intentVariants:0055",
+        "aliases": []
+      },
+      {
+        "id": "builtinCommandMetadata:0005",
+        "aliases": []
+      },
+      {
+        "id": "tuiSlashCommands:0005",
+        "aliases": []
+      }
+    ],
+    "mcpTools": [
+      {
+        "id": "mcpTools:0004",
+        "aliases": []
+      }
+    ],
+    "cesarTools": [
+      {
+        "id": "cesarTools:0002",
+        "aliases": []
+      },
+      {
+        "id": "cesarRoutes:0004",
+        "aliases": []
+      },
+      {
+        "id": "cesarRoutes:0005",
+        "aliases": []
+      },
+      {
+        "id": "cesarRoutes:0006",
+        "aliases": []
+      },
+      {
+        "id": "cesarRoutes:0007",
+        "aliases": []
+      }
+    ],
+    "lifecycleHooks": [],
+    "resultTypes": [
+      {
+        "id": "resultAndEnvelopeTypes:0019",
+        "aliases": []
+      }
+    ],
+    "configKeys": [],
+    "generatedDocs": []
+  },
+  "pack": {
+    "include": [
+      "LICENSE",
+      "agon.mod.json",
+      "dist/index.js",
+      "dist/index.d.ts",
+      "dist/implementation.d.ts",
+      "ownership.json",
+      "schemas/config.schema.json"
+    ],
+    "executable": []
+  }
+}

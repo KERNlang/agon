@@ -1,8 +1,10 @@
 import { join } from 'node:path';
+import { markSessionCleanupFailed, sessionCleanupFailed, SESSION_CLEANUP_FAILURE_MESSAGE } from '../../cesar/session-health.js';
+import { runBrainstormSession } from '../../blocks/brainstorm-session.js';
 
 import { mkdirSync, appendFileSync } from 'node:fs';
 
-import { resolveWorkingDir, configSet, RUNS_DIR, spawnWithTimeout } from '@kernlang/agon-core';
+import { resolveWorkingDir, configSet, RUNS_DIR } from '@kernlang/agon-core';
 
 import type { ImageAttachment } from '@kernlang/agon-core';
 
@@ -12,25 +14,13 @@ import type { HandlerContext } from '../../handlers/types.js';
 
 import { ENGINE_COLORS } from '../../blocks/output-format.js';
 
-import { handleForge, handleBrainstorm, handleCampfire, handleTribunal, handleBuild, handleReviewMany, runAgentMode, runAgentTeam } from '../../handlers/index.js';
-
 import type { AgentContinuationResult } from '../../handlers/agent.js';
 
 import { prepareForgeFitnessCommand, inferProjectFitnessCommand } from '../../handlers/forge.js';
 
-import { handleTeamTribunal } from '../../handlers/team-tribunal.js';
-
-import { handleTeamForge } from '../../handlers/team-forge.js';
-
-import { handleTeamBrainstorm } from '../../handlers/team-brainstorm.js';
-
-import { handleCouncil } from '../../handlers/council.js';
-
 import { handleCesarBrain, parseSuggestion } from '../../handlers/cesar-brain.js';
 
 import { appendUserTurnIfAbsent, buildHistoryPrimedPrompt, formatChatContextForPrompt } from '@kernlang/agon-core';
-
-import { handlePipeline } from '../../handlers/pipeline.js';
 
 import { deriveRoutingHints, executionActionForPlan } from '../../cesar/routing.js';
 
@@ -44,11 +34,55 @@ import type { DispatchCallbacks, DelegatedContinuationInfo } from '../dispatch.j
 
 import { formatCesarRecoveryStatus, normalizeCesarActingFallbackMode, countTrackedUserTurns } from './utils.js';
 
-import { announceCesarAutoOrchestration, withThreadOutcome, buildDelegatedContinuationPrompt, buildBrainstormContinuationMessage, collectRecentEngineContext, shouldAutoContinueDelegatedResult, extractExecutionSpec } from './delegation.js';
+import { announceCesarAutoOrchestration, withThreadOutcome, buildDelegatedContinuationPrompt, buildBrainstormContinuationMessage, shouldAutoContinueDelegatedResult, extractExecutionSpec } from './delegation.js';
 
 import { askChoiceQuestion } from './plan-queries.js';
 
 import { handleProposedCesarPlan } from './plan-execution.js';
+
+import { executeProcessCesarRoute } from '../../surface-authority-runtime.js';
+
+type PhysicalCesarCommandResult = {
+  readonly exitCode?: number;
+  readonly stdout?: string;
+  readonly stderr?: string;
+  readonly result?: unknown;
+  readonly failure?: { readonly message?: string };
+};
+
+/**
+ * Execute a delegated workflow through the immutable, owner-tagged modular
+ * generation. The legacy handlers around this function may still format TUI
+ * progress and continuation messages, but they are no longer execution owners.
+ */
+export async function runPhysicalCesarWorkflow(
+  route: string,
+  input: Record<string, unknown>,
+  cb: DispatchCallbacks,
+  signal = new AbortController().signal,
+): Promise<unknown> {
+  if (route === 'brainstorm') {
+    return runBrainstormSession(input, cb, signal, async (prepared, context) =>
+      await executeProcessCesarRoute(route, prepared, context) as PhysicalCesarCommandResult);
+  }
+  signal.throwIfAborted();
+  const cwd = resolveWorkingDir();
+  const output = await executeProcessCesarRoute(route, input, { cwd, signal }) as PhysicalCesarCommandResult;
+  if ((output.exitCode ?? 0) !== 0) {
+    throw new Error(output.stderr?.trim() || output.failure?.message || `${route} failed`);
+  }
+  const result = output.result ?? output;
+  const record = result && typeof result === 'object' && !Array.isArray(result)
+    ? result as Record<string, unknown>
+    : undefined;
+  const summary = [record?.response, record?.verdict, record?.final, record?.finalOutput]
+    .find((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    ?? (typeof output.stdout === 'string' && output.stdout.trim()
+      ? output.stdout.trim()
+      : JSON.stringify(result, null, 2));
+  if (summary) cb.dispatch({ type: 'engine-block', engineId: route, color: ENGINE_COLORS[route] ?? 124, content: summary });
+  return result;
+}
 
 /**
  * After /review or Review() finishes, feed ctx.lastReviewResult back into Cesar so the orchestrator can reason about findings and the fix plan.
@@ -350,16 +384,20 @@ export async function handleDelegatedAction(result: any, input: string, cb: Disp
           switch (routeAction) {
             case 'build':
               cb.dispatch({ type: 'info', message: `Cesar → build${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
-              cb.runAsJob('build', label, () => handleBuild(taskInput, cb.dispatch, cb.ctx, undefined, true));
+              cb.runAsJob('build', label, async (signal) => { await runPhysicalCesarWorkflow('agent', { task: taskInput, mode: 'agent' }, cb, signal); });
               return true;
             case 'forge': {
               const displayMode = result.mode ?? routeAction;
               cb.dispatch({ type: 'info', message: `Cesar → ${displayMode}${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
               const _cwdForge = resolveWorkingDir();
-              cb.runAsJob('forge', label, withThreadOutcome(_cwdForge, isForgeSlice ? 'forge-slice' : 'forge', label, async () => {
+              cb.runAsJob('forge', label, withThreadOutcome(_cwdForge, isForgeSlice ? 'forge-slice' : 'forge', label, async (signal?: AbortSignal) => {
                 let forgeResult;
                 try {
-                  forgeResult = await handleForge(taskInput, fitnessCmd, cb.dispatch, cb.ctx, undefined, hardened, true);
+                  forgeResult = await runPhysicalCesarWorkflow('forge', {
+                    task: taskInput,
+                    test: fitnessCmd ?? '',
+                    hardened,
+                  }, cb, signal) as Record<string, any>;
                 } catch (forgeErr: any) {
                   // Never dead-end on a forge crash — hand the failure to Cesar so
                   // it can recover, then re-throw so the job is still marked failed.
@@ -384,8 +422,7 @@ export async function handleDelegatedAction(result: any, input: string, cb: Disp
   
   ## Forge Result
   Winner: ${forgeResult.winner ?? 'none'}
-  Patch: ${forgeResult.patchPath ?? 'none'}
-  Manifest: ${forgeResult.manifestPath}
+  Patch: ${forgeResult.winningPatch ?? 'none'}
   
   You still own the overall task. Integrate the forged slice with the rest of the work, keep the scope tight, and use your local tools directly if more edits or verification are needed. Avoid sending the same slice to forge again unless integration reveals a genuinely new hard subproblem.`, [], cb);
                 } else {
@@ -393,7 +430,7 @@ export async function handleDelegatedAction(result: any, input: string, cb: Disp
                   // empty/failed outcome (codex review) — so the flow never dead-ends,
                   // like Claude auto mode instead of stopping after the arena.
                   const outcome = forgeResult
-                    ? `Winner: ${forgeResult.winner ?? 'none'}\nPatch (NOT yet applied to the main workspace): ${forgeResult.patchPath ?? 'none'}\nManifest: ${forgeResult.manifestPath ?? 'none'}`
+                    ? `Winner: ${forgeResult.winner ?? 'none'}\nPatch (NOT yet applied to the main workspace): ${forgeResult.winningPatch ?? 'none'}`
                     : 'Forge produced no winning candidate (it may have failed or found no patch that passes the fitness gate).';
                   await continueCesarAfterResult(`Forge completed for: "${taskInput.slice(0, 200)}"\n\n${outcome}\n\nSummarize what forge produced and take the next concrete step — inspect or apply the winner patch, or continue/repair the task. Do not blindly re-run forge on the same task.`, cb, continuationEpoch, continuationUserTurns);
                 }
@@ -408,14 +445,15 @@ export async function handleDelegatedAction(result: any, input: string, cb: Disp
               const displayMode = result.mode ?? routeAction;
               cb.dispatch({ type: 'info', message: `Cesar → ${displayMode}${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
               const _cwdTForge = resolveWorkingDir();
-              cb.runAsJob('team-forge', label, withThreadOutcome(_cwdTForge, 'team-forge', label, () => handleTeamForge(taskInput, tfFitness, cb.dispatch, cb.ctx, undefined), cb.ctx));
+              cb.runAsJob('team-forge', label, withThreadOutcome(_cwdTForge, 'team-forge', label, (signal?: AbortSignal) => runPhysicalCesarWorkflow('team-forge', { task: taskInput, test: tfFitness }, cb, signal), cb.ctx));
               return true;
             }
             case 'brainstorm': {
               cb.dispatch({ type: 'info', message: `Cesar → brainstorm${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
               const _cwdBs = resolveWorkingDir();
-              cb.runAsJob('brainstorm', label, withThreadOutcome(_cwdBs, 'brainstorm', label, () =>
-                runDelegatedJobThenContinue(cb, () => handleBrainstorm(taskInput, cb.dispatch, cb.ctx), ({ result, success, errorMsg }) => {
+              cb.runAsJob('brainstorm', label, withThreadOutcome(_cwdBs, 'brainstorm', label, (signal?: AbortSignal) =>
+                runDelegatedJobThenContinue(cb, () => runPhysicalCesarWorkflow('brainstorm', { question: taskInput }, cb, signal), ({ result, success, errorMsg }) => {
+                  if (signal?.aborted) return null;
                   if (!success) return `Brainstorm on: "${taskInput.slice(0, 200)}" failed: ${errorMsg}. Decide how to recover — retry with a different framing or continue the task directly.`;
                   if (!result) return `Brainstorm on: "${taskInput.slice(0, 200)}" produced no result. Continue the task directly or try a different approach.`;
                   cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
@@ -427,10 +465,10 @@ export async function handleDelegatedAction(result: any, input: string, cb: Disp
               cb.dispatch({ type: 'info', message: `Cesar → team-brainstorm${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
               const _cwdTBs = resolveWorkingDir();
               cb.runAsJob('team-brainstorm', label, withThreadOutcome(_cwdTBs, 'team-brainstorm', label, () =>
-                runDelegatedJobThenContinue(cb, () => handleTeamBrainstorm(taskInput, cb.dispatch, cb.ctx), ({ chatContext, success, errorMsg }) => {
+                runDelegatedJobThenContinue(cb, () => runPhysicalCesarWorkflow('team-brainstorm', { question: taskInput }, cb), ({ chatContext, result, success, errorMsg }) => {
                   if (!success) return `Team brainstorm on: "${taskInput.slice(0, 200)}" failed: ${errorMsg}. ${chatContext ? `Partial responses:\n\n${chatContext}\n\n` : ''}Decide how to recover or continue the task directly.`;
-                  if (chatContext) cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
-                  return `Team brainstorm completed on: "${taskInput.slice(0, 200)}"\n\n${chatContext || '(no engine responses captured — check output above)'}\n\nSynthesize the winning approach into a concrete plan.`;
+                  cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
+                  return `Team brainstorm completed on: "${taskInput.slice(0, 200)}"\n\n${chatContext || JSON.stringify(result, null, 2)}\n\nSynthesize the winning approach into a concrete plan.`;
                 }, continuationEpoch, continuationUserTurns, 1500), cb.ctx));
               return true;
             }
@@ -438,10 +476,10 @@ export async function handleDelegatedAction(result: any, input: string, cb: Disp
               cb.dispatch({ type: 'info', message: `Cesar → tribunal${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
               const _cwdTrib = resolveWorkingDir();
               cb.runAsJob('tribunal', label, withThreadOutcome(_cwdTrib, 'tribunal', label, () =>
-                runDelegatedJobThenContinue(cb, () => handleTribunal(taskInput, cb.dispatch, cb.ctx, tMode), ({ chatContext, success, errorMsg }) =>
+                runDelegatedJobThenContinue(cb, () => runPhysicalCesarWorkflow('tribunal', { question: taskInput, mode: tMode ?? 'adversarial' }, cb), ({ chatContext, result, success, errorMsg }) =>
                   !success
                     ? `Tribunal${tMode ? ` (${tMode})` : ''} on: "${taskInput.slice(0, 200)}" failed: ${errorMsg}. ${chatContext ? `Partial transcript:\n\n${chatContext}\n\n` : ''}Decide how to recover or continue the task with what you have.`
-                    : `Tribunal${tMode ? ` (${tMode})` : ''} concluded on: "${taskInput.slice(0, 200)}"\n\n${chatContext || '(no transcript captured — check output above)'}\n\nSummarize the verdict and key takeaways.`,
+                    : `Tribunal${tMode ? ` (${tMode})` : ''} concluded on: "${taskInput.slice(0, 200)}"\n\n${chatContext || JSON.stringify(result, null, 2)}\n\nSummarize the verdict and key takeaways.`,
                   continuationEpoch, continuationUserTurns), cb.ctx));
               return true;
             }
@@ -449,10 +487,10 @@ export async function handleDelegatedAction(result: any, input: string, cb: Disp
               cb.dispatch({ type: 'info', message: `Cesar → team-tribunal${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
               const _cwdTTrib = resolveWorkingDir();
               cb.runAsJob('team-tribunal', label, withThreadOutcome(_cwdTTrib, 'team-tribunal', label, () =>
-                runDelegatedJobThenContinue(cb, () => handleTeamTribunal(taskInput, cb.dispatch, cb.ctx, tMode), ({ chatContext, success, errorMsg }) =>
+                runDelegatedJobThenContinue(cb, () => runPhysicalCesarWorkflow('team-tribunal', { question: taskInput, mode: tMode ?? 'adversarial' }, cb), ({ chatContext, result, success, errorMsg }) =>
                   !success
                     ? `Team tribunal${tMode ? ` (${tMode})` : ''} on: "${taskInput.slice(0, 200)}" failed: ${errorMsg}. ${chatContext ? `Partial transcript:\n\n${chatContext}\n\n` : ''}Decide how to recover or continue the task with what you have.`
-                    : `Team tribunal${tMode ? ` (${tMode})` : ''} concluded on: "${taskInput.slice(0, 200)}"\n\n${chatContext || '(no transcript captured — check output above)'}\n\nSummarize the verdict and key takeaways.`,
+                    : `Team tribunal${tMode ? ` (${tMode})` : ''} concluded on: "${taskInput.slice(0, 200)}"\n\n${chatContext || JSON.stringify(result, null, 2)}\n\nSummarize the verdict and key takeaways.`,
                   continuationEpoch, continuationUserTurns), cb.ctx));
               return true;
             }
@@ -460,10 +498,10 @@ export async function handleDelegatedAction(result: any, input: string, cb: Disp
               cb.dispatch({ type: 'info', message: `Cesar → campfire${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
               const _cwdCamp = resolveWorkingDir();
               cb.runAsJob('campfire', label, withThreadOutcome(_cwdCamp, 'campfire', label, () =>
-                runDelegatedJobThenContinue(cb, () => handleCampfire(taskInput, cb.dispatch, cb.ctx), ({ chatContext, success, errorMsg }) =>
+                runDelegatedJobThenContinue(cb, () => runPhysicalCesarWorkflow('campfire', { topic: taskInput }, cb), ({ chatContext, result, success, errorMsg }) =>
                   !success
                     ? `Campfire on: "${taskInput.slice(0, 200)}" failed: ${errorMsg}. ${chatContext ? `Partial discussion:\n\n${chatContext}\n\n` : ''}Decide how to recover or continue the task directly.`
-                    : `Campfire discussion on: "${taskInput.slice(0, 200)}"\n\n${chatContext || '(no discussion captured — check output above)'}\n\nSummarize the key insights and any consensus reached.`,
+                    : `Campfire discussion on: "${taskInput.slice(0, 200)}"\n\n${chatContext || JSON.stringify(result, null, 2)}\n\nSummarize the key insights and any consensus reached.`,
                   continuationEpoch, continuationUserTurns), cb.ctx));
               return true;
             }
@@ -471,10 +509,10 @@ export async function handleDelegatedAction(result: any, input: string, cb: Disp
               cb.dispatch({ type: 'info', message: 'Cesar → council' });
               const _cwdCouncil = resolveWorkingDir();
               cb.runAsJob('council', label, withThreadOutcome(_cwdCouncil, 'council', label, () =>
-                runDelegatedJobThenContinue(cb, () => handleCouncil(taskInput, cb.dispatch, cb.ctx), ({ chatContext, success, errorMsg }) =>
+                runDelegatedJobThenContinue(cb, () => runPhysicalCesarWorkflow('council', { question: taskInput }, cb), ({ chatContext, result, success, errorMsg }) =>
                   !success
                     ? `Council on: "${taskInput.slice(0, 200)}" failed: ${errorMsg}. ${chatContext ? `Partial deliberation:\n\n${chatContext}\n\n` : ''}Continue with the strongest available evidence.`
-                    : `Council concluded on: "${taskInput.slice(0, 200)}"\n\n${chatContext || '(no transcript captured — check output above)'}\n\nSynthesize the chairman verdict, strongest dissent, and next concrete step.`,
+                    : `Council concluded on: "${taskInput.slice(0, 200)}"\n\n${chatContext || JSON.stringify(result, null, 2)}\n\nSynthesize the chairman verdict, strongest dissent, and next concrete step.`,
                   continuationEpoch, continuationUserTurns, 2500), cb.ctx));
               return true;
             }
@@ -483,18 +521,19 @@ export async function handleDelegatedAction(result: any, input: string, cb: Disp
               const _cwdPipe = resolveWorkingDir();
               // ALWAYS continue Cesar after pipeline, on success OR exception
               // (codex review: thrown errors and empty transcripts both used to
-              // dead-end). handlePipeline returns void, so the job-scoped engine
-              // transcript is the only result signal — fall back to a status
-              // message when it's empty.
+              // dead-end). The physical owner returns a structured receipt that
+              // is fed back to Cesar even when no engine transcript was emitted.
               cb.runAsJob('pipeline', label, withThreadOutcome(_cwdPipe, 'pipeline', label, () =>
-                runDelegatedJobThenContinue(cb, () => handlePipeline(taskInput, cb.dispatch, cb.ctx, fitnessCmd ?? undefined, {
-                  reviewEngines: Array.isArray(result.engines) ? result.engines as string[] : undefined,
-                }), ({ chatContext, success, errorMsg }) =>
+                runDelegatedJobThenContinue(cb, () => runPhysicalCesarWorkflow('pipeline', {
+                  task: taskInput,
+                  fitnessCmd: fitnessCmd ?? '',
+                  reviewEngines: Array.isArray(result.engines) ? (result.engines as string[]).join(',') : '',
+                }, cb), ({ chatContext, result: pipelineResult, success, errorMsg }) =>
                   !success
                     ? `Pipeline on: "${taskInput.slice(0, 200)}" failed: ${errorMsg}. ${chatContext ? `Partial output:\n\n${chatContext}\n\n` : ''}Decide how to recover, or continue the task directly with local tools.`
                     : (chatContext
                         ? `Pipeline completed on: "${taskInput.slice(0, 200)}"\n\n${chatContext}\n\nSummarize what the pipeline produced and take the next concrete step.`
-                        : `Pipeline completed on: "${taskInput.slice(0, 200)}" — no engine transcript was captured (early exit or non-engine output); check the workspace diff/output above. Summarize the outcome and take the next concrete step.`),
+                        : `Pipeline completed on: "${taskInput.slice(0, 200)}"\n\n${JSON.stringify(pipelineResult, null, 2)}\n\nSummarize the outcome and take the next concrete step.`),
                   continuationEpoch, continuationUserTurns), cb.ctx));
               return true;
             }
@@ -503,24 +542,19 @@ export async function handleDelegatedAction(result: any, input: string, cb: Disp
               if (!_gIntent) { cb.dispatch({ type: 'warning', message: 'Goal: missing intent — nothing to run.' }); return false; }
               const _gQueue = typeof result.queue === 'string' ? result.queue.trim() : '';
               const _gGate = typeof result.gate === 'string' ? result.gate.trim() : '';
-              const _gArgs: string[] = ['goal', _gIntent];
-              if (_gQueue) _gArgs.push('--queue', _gQueue);
-              if (_gGate) _gArgs.push('--gate', _gGate);
-              if (result.push) _gArgs.push('--push');
-              if (result.pr) _gArgs.push('--pr');
-              if (typeof result.maxHours === 'number' && result.maxHours > 0) _gArgs.push('--max-hours', String(result.maxHours));
-              if (typeof result.budget === 'number' && result.budget > 0) _gArgs.push('--budget', String(result.budget));
-              if (Array.isArray(result.engines) && result.engines.length > 0) _gArgs.push('-e', (result.engines as string[]).join(','));
-              const _gCmd = `agon ${_gArgs.map((part) => JSON.stringify(part)).join(' ')}`;
               const _gCwd = resolveWorkingDir();
               cb.dispatch({ type: 'info', message: 'Cesar → goal' });
-              cb.runAsJob('goal', label, withThreadOutcome(_gCwd, 'goal', label, async () => {
-                cb.dispatch({ type: 'info', message: `goal: launched in the background — \`${_gCmd}\`. Track with /jobs, /focus, or \`agon goal --status\`.` });
-                const res = await spawnWithTimeout({ command: 'agon', args: _gArgs, cwd: _gCwd, timeout: 24 * 60 * 60 * 1000 });
-                const tail = (res.stdout || '').slice(-4000);
-                if (tail.trim()) cb.dispatch({ type: 'text', content: tail });
-                if (res.exitCode !== 0) throw new Error((res.stderr || `agon goal exited ${res.exitCode}`).slice(-1000));
-              }, cb.ctx));
+              cb.runAsJob('goal', label, withThreadOutcome(_gCwd, 'goal', label, (signal?: AbortSignal) =>
+                runPhysicalCesarWorkflow('goal', {
+                  intent: _gIntent,
+                  queue: _gQueue,
+                  gate: _gGate,
+                  push: result.push === true,
+                  pr: result.pr === true,
+                  maxHours: result.maxHours,
+                  budget: result.budget,
+                  engines: Array.isArray(result.engines) ? result.engines.join(',') : '',
+                }, cb, signal), cb.ctx));
               return true;
             }
             case 'conquer': {
@@ -529,54 +563,53 @@ export async function handleDelegatedAction(result: any, input: string, cb: Disp
               const _cqGate = typeof result.gate === 'string' ? result.gate.trim() : '';
               if (!_cqGate) { cb.dispatch({ type: 'warning', message: 'Conquer: missing --gate (the done-spec). Tell Cesar the test/verify command that proves the build is done.' }); return false; }
               const _cqBuilder = typeof result.builder === 'string' ? result.builder.trim() : '';
-              const _cqArgs: string[] = ['conquer', _cqTask, '--gate', _cqGate];
-              if (_cqBuilder) _cqArgs.push('--builder', _cqBuilder);
-              if (Array.isArray(result.engines) && result.engines.length > 0) _cqArgs.push('-e', (result.engines as string[]).join(','));
-              if (typeof result.maxTurns === 'number' && result.maxTurns > 0) _cqArgs.push('--max-turns', String(result.maxTurns));
-              const _cqCmd = `agon ${_cqArgs.map((part) => JSON.stringify(part)).join(' ')}`;
               const _cqCwd = resolveWorkingDir();
               cb.dispatch({ type: 'info', message: 'Cesar → conquer' });
-              cb.runAsJob('conquer', label, withThreadOutcome(_cqCwd, 'conquer', label, async () => {
-                cb.dispatch({ type: 'info', message: `conquer: launched in the background — \`${_cqCmd}\`. Track with /jobs or /focus. Stops at a human merge gate — nothing auto-merges.` });
-                const res = await spawnWithTimeout({ command: 'agon', args: _cqArgs, cwd: _cqCwd, timeout: 24 * 60 * 60 * 1000 });
-                const tail = (res.stdout || '').slice(-4000);
-                if (tail.trim()) cb.dispatch({ type: 'text', content: tail });
-                if (res.exitCode !== 0) throw new Error((res.stderr || `agon conquer exited ${res.exitCode}`).slice(-1000));
-              }, cb.ctx));
+              cb.runAsJob('conquer', label, withThreadOutcome(_cqCwd, 'conquer', label, (signal?: AbortSignal) =>
+                runPhysicalCesarWorkflow('conquer', {
+                  task: _cqTask,
+                  gate: _cqGate,
+                  builder: _cqBuilder,
+                  engines: Array.isArray(result.engines) ? result.engines.join(',') : '',
+                  maxTurns: result.maxTurns,
+                }, cb, signal), cb.ctx));
               return true;
             }
             case 'review':
               cb.dispatch({ type: 'info', message: `Cesar → review${hardened ? ' (hardened)' : ''}` });
               {
                 const _cwdReview = resolveWorkingDir();
-                cb.runAsJob('review', label, withThreadOutcome(_cwdReview, 'review', label, async () => {
+                cb.runAsJob('review', label, withThreadOutcome(_cwdReview, 'review', label, async (signal?: AbortSignal) => {
                   const reviewEngines = Array.isArray(result.engines) && result.engines.length > 0
                     ? result.engines
                     : result.engineId ? [result.engineId as string] : undefined;
-                  await handleReviewMany(cb.dispatch, cb.ctx, result.target as string | undefined, reviewEngines as string[] | undefined);
-                  await absorbReviewResultIntoCesar(taskInput, cb, continuationEpoch, continuationUserTurns);
+                  const review = await runPhysicalCesarWorkflow('review', {
+                    target: result.target ?? 'uncommitted',
+                    engines: reviewEngines?.join(',') ?? '',
+                  }, cb, signal);
+                  await continueCesarAfterResult(`Review completed for "${taskInput.slice(0, 200)}".\n\n${JSON.stringify(review, null, 2)}\n\nAssess the findings and take the next concrete step.`, cb, continuationEpoch, continuationUserTurns);
                 }, cb.ctx));
               }
               return true;
             case 'agent':
               cb.dispatch({ type: 'info', message: `Cesar → agent${hardened ? ' (hardened)' : ''}` });
               // Cesar called the Agent tool with team:false (or omitted). Solo agent.
-              cb.runAsJob('agent', label, (signal) => runAgentJobWithAutoResume(taskInput, cb, () => runAgentMode(taskInput, cb.dispatch, cb.ctx, {
-                maxTurns: result.maxTurns as number | undefined,
-                systemPrompt: undefined,
-                parentSignal: signal,
-              })));
+              cb.runAsJob('agent', label, (signal) => runAgentJobWithAutoResume(taskInput, cb, () => runPhysicalCesarWorkflow('agent', {
+                task: taskInput,
+                maxTurns: result.maxTurns,
+              }, cb, signal) as Promise<any>));
               return true;
             case 'team-agent':
               cb.dispatch({ type: 'info', message: `Cesar → team-agent${hardened ? ' (hardened)' : ''}` });
               // Cesar called the Agent tool with team:true. Spawn AgentTeam with the
               // engines list (or auto-pick) and the taskKind discriminator.
-              cb.runAsJob('team-agent', label, (signal) => runAgentJobWithAutoResume(taskInput, cb, () => runAgentTeam(taskInput, cb.dispatch, cb.ctx, {
-                engines: result.engines as string[] | undefined,
-                taskKind: result.taskKind as 'edit' | 'investigate' | undefined,
-                maxTurns: result.maxTurns as number | undefined,
-                parentSignal: signal,
-              })));
+              cb.runAsJob('team-agent', label, (signal) => runAgentJobWithAutoResume(taskInput, cb, () => runPhysicalCesarWorkflow('agent', {
+                task: taskInput,
+                mode: 'team-agent',
+                engines: Array.isArray(result.engines) ? result.engines.join(',') : '',
+                taskKind: result.taskKind,
+                maxTurns: result.maxTurns,
+              }, cb, signal) as Promise<any>));
               return true;
             case 'delegate': {
               // Delegate: execute subtask on target engine, feed result back to Cesar
@@ -621,6 +654,8 @@ export async function handleDelegatedAction(result: any, input: string, cb: Disp
  */
 export async function handleRecoveredDelegation(crashDel: any, input: string, cb: DispatchCallbacks): Promise<boolean> {
   if (!crashDel) return false;
+  const cleanupFailed = captureCleanupGuard(cb);
+  if (cleanupFailed()) return false;
     // TTL: discard stale delegations older than 60 seconds
     if (crashDel.createdAt && Date.now() - crashDel.createdAt > 60000) {
       cb.dispatch({ type: 'warning', message: 'Stale delegation discarded (>60s old)' });
@@ -629,6 +664,7 @@ export async function handleRecoveredDelegation(crashDel: any, input: string, cb
       let action = crashDel.team ? `team-${crashDel.action}` : crashDel.action;
       const confirmLabel = crashDel.hardened ? `${action} (hardened)` : action;
     const answer = await cb.askQuestion(`Recovered delegation: ${confirmLabel}${crashDel.tribunalMode ? ` [${crashDel.tribunalMode}]` : ''} — run it?`);
+    if (cleanupFailed()) return false;
     if (answer === 'y' || answer === '1') {
       const label = input.slice(0, 40);
       const executionSpec = extractExecutionSpec(input);
@@ -639,12 +675,12 @@ export async function handleRecoveredDelegation(crashDel: any, input: string, cb
       const continuationEpoch = cb.ctx.inputEpoch ?? 0;
       const continuationUserTurns = countTrackedUserTurns(cb.ctx);
       switch (action) {
-        case 'forge': cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'forge', 'recovered delegation') }); cb.runAsJob('forge', label, async () => { await handleForge(recoveredTask, recoveredFitness, cb.dispatch, cb.ctx, undefined, crashDel.hardened ?? false, true); }); return true;
+        case 'forge': cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'forge', 'recovered delegation') }); cb.runAsJob('forge', label, async (signal) => { await runPhysicalCesarWorkflow('forge', { task: recoveredTask, test: recoveredFitness ?? '', hardened: crashDel.hardened === true }, cb, signal); }); return true;
         case 'brainstorm': {
           cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'brainstorm', 'recovered delegation') });
           const _cwdRecoverBs = resolveWorkingDir();
-          cb.runAsJob('brainstorm', label, withThreadOutcome(_cwdRecoverBs, 'brainstorm', label, async () => {
-            const bsResult = await handleBrainstorm(recoveredTask, cb.dispatch, cb.ctx);
+          cb.runAsJob('brainstorm', label, withThreadOutcome(_cwdRecoverBs, 'brainstorm', label, async (signal?: AbortSignal) => {
+            const bsResult = await runPhysicalCesarWorkflow('brainstorm', { question: recoveredTask }, cb, signal);
             if (bsResult) {
               cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
               await continueCesarAfterResult(buildBrainstormContinuationMessage('Recovered brainstorm complete', recoveredTask, bsResult), cb, continuationEpoch, continuationUserTurns);
@@ -657,9 +693,8 @@ export async function handleRecoveredDelegation(crashDel: any, input: string, cb
           cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'tribunal', crashDel.tribunalMode ? `recovered delegation [${crashDel.tribunalMode}]` : 'recovered delegation') });
           const _cwdRecoverTrib = resolveWorkingDir();
           cb.runAsJob('tribunal', label, withThreadOutcome(_cwdRecoverTrib, 'tribunal', label, async () => {
-            await handleTribunal(recoveredTask, cb.dispatch, cb.ctx, crashDel.tribunalMode);
-            const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
-            if (chatContext) await continueCesarAfterResult(`Recovered tribunal${crashDel.tribunalMode ? ` (${crashDel.tribunalMode})` : ''} concluded on: "${recoveredTask.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
+            const tribunal = await runPhysicalCesarWorkflow('tribunal', { question: recoveredTask, mode: crashDel.tribunalMode ?? 'adversarial' }, cb);
+            await continueCesarAfterResult(`Recovered tribunal${crashDel.tribunalMode ? ` (${crashDel.tribunalMode})` : ''} concluded on: "${recoveredTask.slice(0, 200)}"\n\n${JSON.stringify(tribunal, null, 2)}\n\nSummarize the verdict and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
           }, cb.ctx));
           return true;
         }
@@ -667,9 +702,8 @@ export async function handleRecoveredDelegation(crashDel: any, input: string, cb
           cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'campfire', 'recovered delegation') });
           const _cwdRecoverCamp = resolveWorkingDir();
           cb.runAsJob('campfire', label, withThreadOutcome(_cwdRecoverCamp, 'campfire', label, async () => {
-            await handleCampfire(recoveredTask, cb.dispatch, cb.ctx);
-            const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
-            if (chatContext) await continueCesarAfterResult(`Recovered campfire discussion on: "${recoveredTask.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the key insights and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
+            const campfire = await runPhysicalCesarWorkflow('campfire', { topic: recoveredTask }, cb);
+            await continueCesarAfterResult(`Recovered campfire discussion on: "${recoveredTask.slice(0, 200)}"\n\n${JSON.stringify(campfire, null, 2)}\n\nSummarize the key insights and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
           }, cb.ctx));
           return true;
         }
@@ -677,13 +711,12 @@ export async function handleRecoveredDelegation(crashDel: any, input: string, cb
           cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'council', 'recovered delegation') });
           const _cwdRecoverCouncil = resolveWorkingDir();
           cb.runAsJob('council', label, withThreadOutcome(_cwdRecoverCouncil, 'council', label, async () => {
-            await handleCouncil(recoveredTask, cb.dispatch, cb.ctx);
-            const chatContext = collectRecentEngineContext(cb.ctx, 16, 2500);
-            if (chatContext) await continueCesarAfterResult(`Recovered council concluded on: "${recoveredTask.slice(0, 200)}"\n\n${chatContext}\n\nSynthesize the verdict and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
+            const council = await runPhysicalCesarWorkflow('council', { question: recoveredTask }, cb);
+            await continueCesarAfterResult(`Recovered council concluded on: "${recoveredTask.slice(0, 200)}"\n\n${JSON.stringify(council, null, 2)}\n\nSynthesize the verdict and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
           }, cb.ctx));
           return true;
         }
-        case 'pipeline': cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'pipeline', 'recovered delegation') }); cb.runAsJob('pipeline', label, () => handlePipeline(recoveredTask, cb.dispatch, cb.ctx, recoveredFitness ?? undefined, { reviewEngines: crashDel.engines })); return true;
+        case 'pipeline': cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'pipeline', 'recovered delegation') }); cb.runAsJob('pipeline', label, async (signal) => { await runPhysicalCesarWorkflow('pipeline', { task: recoveredTask, fitnessCmd: recoveredFitness ?? '', reviewEngines: Array.isArray(crashDel.engines) ? crashDel.engines.join(',') : '' }, cb, signal); }); return true;
         case 'review': {
           cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'review', 'recovered delegation') });
           const _cwdReview = resolveWorkingDir();
@@ -691,19 +724,18 @@ export async function handleRecoveredDelegation(crashDel: any, input: string, cb
             const reviewEngines = Array.isArray(crashDel.engines) && crashDel.engines.length > 0
               ? crashDel.engines
               : crashDel.engineId ? [crashDel.engineId] : undefined;
-            await handleReviewMany(cb.dispatch, cb.ctx, crashDel.target, reviewEngines);
-            await absorbReviewResultIntoCesar(recoveredTask, cb, continuationEpoch, continuationUserTurns);
+            const review = await runPhysicalCesarWorkflow('review', { target: crashDel.target ?? 'uncommitted', engines: reviewEngines?.join(',') ?? '' }, cb);
+            await continueCesarAfterResult(`Recovered review completed.\n\n${JSON.stringify(review, null, 2)}\n\nAssess the findings and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
           }, cb.ctx));
           return true;
         }
-        case 'team-forge': { const preparedTf = recoveredFitness ?? await prepareForgeFitnessCommand(recoveredTask, cb.dispatch, cb.ctx); const tf = (preparedTf ?? inferProjectFitnessCommand(resolveWorkingDir())).trim(); cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'team-forge', 'recovered delegation') }); if (!preparedTf) cb.dispatch({ type: 'warning', message: `Cesar did not provide a fitness check; falling back to: ${tf}` }); cb.runAsJob('team-forge', label, () => handleTeamForge(recoveredTask, tf, cb.dispatch, cb.ctx, undefined)); return true; }
+        case 'team-forge': { const preparedTf = recoveredFitness ?? await prepareForgeFitnessCommand(recoveredTask, cb.dispatch, cb.ctx); const tf = (preparedTf ?? inferProjectFitnessCommand(resolveWorkingDir())).trim(); cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'team-forge', 'recovered delegation') }); if (!preparedTf) cb.dispatch({ type: 'warning', message: `Cesar did not provide a fitness check; falling back to: ${tf}` }); cb.runAsJob('team-forge', label, async (signal) => { await runPhysicalCesarWorkflow('team-forge', { task: recoveredTask, test: tf }, cb, signal); }); return true; }
         case 'team-brainstorm': {
           cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'team-brainstorm', 'recovered delegation') });
           const _cwdRecoverTBs = resolveWorkingDir();
           cb.runAsJob('team-brainstorm', label, withThreadOutcome(_cwdRecoverTBs, 'team-brainstorm', label, async () => {
-            await handleTeamBrainstorm(recoveredTask, cb.dispatch, cb.ctx);
-            const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
-            if (chatContext) await continueCesarAfterResult(`Recovered team brainstorm completed on: "${recoveredTask.slice(0, 200)}"\n\n${chatContext}\n\nSynthesize the winning approach and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
+            const brainstorm = await runPhysicalCesarWorkflow('team-brainstorm', { question: recoveredTask }, cb);
+            await continueCesarAfterResult(`Recovered team brainstorm completed on: "${recoveredTask.slice(0, 200)}"\n\n${JSON.stringify(brainstorm, null, 2)}\n\nSynthesize the winning approach and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
           }, cb.ctx));
           return true;
         }
@@ -711,9 +743,8 @@ export async function handleRecoveredDelegation(crashDel: any, input: string, cb
           cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'team-tribunal', crashDel.tribunalMode ? `recovered delegation [${crashDel.tribunalMode}]` : 'recovered delegation') });
           const _cwdRecoverTTrib = resolveWorkingDir();
           cb.runAsJob('team-tribunal', label, withThreadOutcome(_cwdRecoverTTrib, 'team-tribunal', label, async () => {
-            await handleTeamTribunal(recoveredTask, cb.dispatch, cb.ctx, crashDel.tribunalMode);
-            const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
-            if (chatContext) await continueCesarAfterResult(`Recovered team tribunal${crashDel.tribunalMode ? ` (${crashDel.tribunalMode})` : ''} concluded on: "${recoveredTask.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
+            const tribunal = await runPhysicalCesarWorkflow('team-tribunal', { question: recoveredTask, mode: crashDel.tribunalMode ?? 'adversarial' }, cb);
+            await continueCesarAfterResult(`Recovered team tribunal${crashDel.tribunalMode ? ` (${crashDel.tribunalMode})` : ''} concluded on: "${recoveredTask.slice(0, 200)}"\n\n${JSON.stringify(tribunal, null, 2)}\n\nSummarize the verdict and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
           }, cb.ctx));
           return true;
         }
@@ -723,10 +754,23 @@ export async function handleRecoveredDelegation(crashDel: any, input: string, cb
   return false;
 }
 
+// Retain the entry session across awaits: detachment does not erase a failure.
+function captureCleanupGuard(cb: DispatchCallbacks): () => boolean {
+  const originalSession = cb.ctx.cesarSession;
+  return () => {
+    if (!sessionCleanupFailed(originalSession) && !sessionCleanupFailed(cb.ctx.cesarSession)) return false;
+    cb.dispatch({ type: 'warning', message: SESSION_CLEANUP_FAILURE_MESSAGE });
+    return true;
+  };
+}
+
 /**
- * Last-resort Cesar recovery when the brain returned no usable response: api-backend silent same-engine retry, non-api session rebuild + retry, fresh one-shot dispatch (with suggestion parsing), then cross-engine acting-Cesar. Extracted from routeWithCesar; kept SAME-FILE to avoid the ESM cycle. crashDel is passed ONLY to preserve the pre-existing coupling where a pending delegation s engines seed a fresh fallback pipeline suggestion (behavior preserved verbatim; latent coupling flagged for a follow-up, per nero Ch.3).
+ * Last-resort recovery: same-engine retry, fresh dispatch, then acting Cesar.
+ * crashDel preserves legacy fallback-suggestion engine selection.
  */
 export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks, crashDel: any, priorDeterministic: boolean): Promise<boolean> {
+  const cleanupFailed = captureCleanupGuard(cb);
+  if (cleanupFailed()) return false;
   // Cesar truly didn't respond — try fresh CLI dispatch
   const cesarConfig = cb.ctx.config;
   const cesarId = (cesarConfig as any).cesarEngine ?? 'claude';
@@ -750,6 +794,7 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
   if (usingApiBackend && !priorDeterministic) {
     try {
       const retried = await handleCesarBrain(input, cb.dispatch, cb.ctx, []);
+      if (cleanupFailed()) return false;
       const retriedPlan: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
       if (retriedPlan && retriedPlan.state === 'awaiting_approval') {
         cb.setActivePlan(retriedPlan);
@@ -765,11 +810,19 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
   if (!usingApiBackend) {
     try {
       if (cb.ctx.cesarSession) {
-        try { cb.ctx.cesarSession.close(); } catch {}
-        cb.ctx.setCesarSession(null);
+        const previousSession = cb.ctx.cesarSession;
+        try {
+          previousSession.close();
+          cb.ctx.setCesarSession(null);
+        } catch {
+          markSessionCleanupFailed(previousSession);
+          cb.dispatch({ type: 'warning', message: SESSION_CLEANUP_FAILURE_MESSAGE });
+          return false;
+        }
       }
       if (!_silentMode) cb.dispatch({ type: 'warning', message: formatCesarRecoveryStatus('rebuild', cesarId) });
       const retried = await handleCesarBrain(input, cb.dispatch, cb.ctx, []);
+      if (cleanupFailed()) return false;
       const retriedPlan: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
       if (retriedPlan && retriedPlan.state === 'awaiting_approval') {
         cb.setActivePlan(retriedPlan);
@@ -787,6 +840,7 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
     }
   }
   
+  if (cleanupFailed()) return false;
   // Cesar truly didn't respond — last fallback is plain one-shot dispatch.
   // Skip this for API backends: brain.kern's fallback path already ran the
   // same history-primed adapter.dispatch against the same engine, and
@@ -833,12 +887,12 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
           const continuationEpoch = cb.ctx.inputEpoch ?? 0;
           const continuationUserTurns = countTrackedUserTurns(cb.ctx);
           switch (action) {
-              case 'forge': cb.dispatch({ type: 'info', message: 'Cesar → forge' }); cb.runAsJob('forge', label, async () => { await handleForge(fallbackTask, fallbackFitness, cb.dispatch, cb.ctx, undefined, fallbackSuggestion.hardened ?? false, true); }); return true;
+              case 'forge': cb.dispatch({ type: 'info', message: 'Cesar → forge' }); cb.runAsJob('forge', label, async (signal) => { await runPhysicalCesarWorkflow('forge', { task: fallbackTask, test: fallbackFitness ?? '', hardened: fallbackSuggestion.hardened === true }, cb, signal); }); return true;
             case 'brainstorm': {
               cb.dispatch({ type: 'info', message: 'Cesar → brainstorm' });
               const _cwdFallbackBs = resolveWorkingDir();
-              cb.runAsJob('brainstorm', label, withThreadOutcome(_cwdFallbackBs, 'brainstorm', label, async () => {
-                const bsResult = await handleBrainstorm(fallbackTask, cb.dispatch, cb.ctx);
+              cb.runAsJob('brainstorm', label, withThreadOutcome(_cwdFallbackBs, 'brainstorm', label, async (signal?: AbortSignal) => {
+                const bsResult = await runPhysicalCesarWorkflow('brainstorm', { question: fallbackTask }, cb, signal);
                 if (bsResult) {
                   cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
                   await continueCesarAfterResult(buildBrainstormContinuationMessage('Fallback brainstorm complete', fallbackTask, bsResult), cb, continuationEpoch, continuationUserTurns);
@@ -851,9 +905,8 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
               cb.dispatch({ type: 'info', message: `Cesar → tribunal${fallbackSuggestion.tribunalMode ? ` [${fallbackSuggestion.tribunalMode}]` : ''}` });
               const _cwdFallbackTrib = resolveWorkingDir();
               cb.runAsJob('tribunal', label, withThreadOutcome(_cwdFallbackTrib, 'tribunal', label, async () => {
-                await handleTribunal(fallbackTask, cb.dispatch, cb.ctx, fallbackSuggestion.tribunalMode);
-                const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
-                if (chatContext) await continueCesarAfterResult(`Fallback tribunal${fallbackSuggestion.tribunalMode ? ` (${fallbackSuggestion.tribunalMode})` : ''} concluded on: "${fallbackTask.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
+                const tribunal = await runPhysicalCesarWorkflow('tribunal', { question: fallbackTask, mode: fallbackSuggestion.tribunalMode ?? 'adversarial' }, cb);
+                await continueCesarAfterResult(`Fallback tribunal${fallbackSuggestion.tribunalMode ? ` (${fallbackSuggestion.tribunalMode})` : ''} concluded on: "${fallbackTask.slice(0, 200)}"\n\n${JSON.stringify(tribunal, null, 2)}\n\nSummarize the verdict and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
               }, cb.ctx));
               return true;
             }
@@ -861,9 +914,8 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
               cb.dispatch({ type: 'info', message: 'Cesar → campfire' });
               const _cwdFallbackCamp = resolveWorkingDir();
               cb.runAsJob('campfire', label, withThreadOutcome(_cwdFallbackCamp, 'campfire', label, async () => {
-                await handleCampfire(fallbackTask, cb.dispatch, cb.ctx);
-                const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
-                if (chatContext) await continueCesarAfterResult(`Fallback campfire discussion on: "${fallbackTask.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the key insights and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
+                const campfire = await runPhysicalCesarWorkflow('campfire', { topic: fallbackTask }, cb);
+                await continueCesarAfterResult(`Fallback campfire discussion on: "${fallbackTask.slice(0, 200)}"\n\n${JSON.stringify(campfire, null, 2)}\n\nSummarize the key insights and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
               }, cb.ctx));
               return true;
             }
@@ -871,30 +923,28 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
               cb.dispatch({ type: 'info', message: 'Cesar → council' });
               const _cwdFallbackCouncil = resolveWorkingDir();
               cb.runAsJob('council', label, withThreadOutcome(_cwdFallbackCouncil, 'council', label, async () => {
-                await handleCouncil(fallbackTask, cb.dispatch, cb.ctx);
-                const chatContext = collectRecentEngineContext(cb.ctx, 16, 2500);
-                if (chatContext) await continueCesarAfterResult(`Fallback council concluded on: "${fallbackTask.slice(0, 200)}"\n\n${chatContext}\n\nSynthesize the verdict and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
+                const council = await runPhysicalCesarWorkflow('council', { question: fallbackTask }, cb);
+                await continueCesarAfterResult(`Fallback council concluded on: "${fallbackTask.slice(0, 200)}"\n\n${JSON.stringify(council, null, 2)}\n\nSynthesize the verdict and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
               }, cb.ctx));
               return true;
             }
-            case 'pipeline': cb.dispatch({ type: 'info', message: 'Cesar → pipeline' }); cb.runAsJob('pipeline', label, () => handlePipeline(fallbackTask, cb.dispatch, cb.ctx, fallbackFitness ?? undefined, { reviewEngines: Array.isArray(crashDel?.engines) ? crashDel.engines : undefined })); return true;
+            case 'pipeline': cb.dispatch({ type: 'info', message: 'Cesar → pipeline' }); cb.runAsJob('pipeline', label, async (signal) => { await runPhysicalCesarWorkflow('pipeline', { task: fallbackTask, fitnessCmd: fallbackFitness ?? '', reviewEngines: Array.isArray(crashDel?.engines) ? crashDel.engines.join(',') : '' }, cb, signal); }); return true;
             case 'review': {
               cb.dispatch({ type: 'info', message: 'Cesar → review' });
               const _cwdReview = resolveWorkingDir();
               cb.runAsJob('review', label, withThreadOutcome(_cwdReview, 'review', label, async () => {
-                await handleReviewMany(cb.dispatch, cb.ctx);
-                await absorbReviewResultIntoCesar(input, cb, continuationEpoch, continuationUserTurns);
+                const review = await runPhysicalCesarWorkflow('review', { target: 'uncommitted' }, cb);
+                await continueCesarAfterResult(`Fallback review completed.\n\n${JSON.stringify(review, null, 2)}\n\nAssess the findings and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
               }, cb.ctx));
               return true;
             }
-            case 'team-forge': { const preparedTf = fallbackFitness ?? await prepareForgeFitnessCommand(fallbackTask, cb.dispatch, cb.ctx); const tf = (preparedTf ?? inferProjectFitnessCommand(resolveWorkingDir())).trim(); cb.dispatch({ type: 'info', message: 'Cesar → team-forge' }); if (!preparedTf) cb.dispatch({ type: 'warning', message: `Cesar did not provide a fitness check; falling back to: ${tf}` }); cb.runAsJob('team-forge', label, () => handleTeamForge(fallbackTask, tf, cb.dispatch, cb.ctx, undefined)); return true; }
+            case 'team-forge': { const preparedTf = fallbackFitness ?? await prepareForgeFitnessCommand(fallbackTask, cb.dispatch, cb.ctx); const tf = (preparedTf ?? inferProjectFitnessCommand(resolveWorkingDir())).trim(); cb.dispatch({ type: 'info', message: 'Cesar → team-forge' }); if (!preparedTf) cb.dispatch({ type: 'warning', message: `Cesar did not provide a fitness check; falling back to: ${tf}` }); cb.runAsJob('team-forge', label, async (signal) => { await runPhysicalCesarWorkflow('team-forge', { task: fallbackTask, test: tf }, cb, signal); }); return true; }
             case 'team-brainstorm': {
               cb.dispatch({ type: 'info', message: 'Cesar → team-brainstorm' });
               const _cwdFallbackTBs = resolveWorkingDir();
               cb.runAsJob('team-brainstorm', label, withThreadOutcome(_cwdFallbackTBs, 'team-brainstorm', label, async () => {
-                await handleTeamBrainstorm(fallbackTask, cb.dispatch, cb.ctx);
-                const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
-                if (chatContext) await continueCesarAfterResult(`Fallback team brainstorm completed on: "${fallbackTask.slice(0, 200)}"\n\n${chatContext}\n\nSynthesize the winning approach and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
+                const brainstorm = await runPhysicalCesarWorkflow('team-brainstorm', { question: fallbackTask }, cb);
+                await continueCesarAfterResult(`Fallback team brainstorm completed on: "${fallbackTask.slice(0, 200)}"\n\n${JSON.stringify(brainstorm, null, 2)}\n\nSynthesize the winning approach and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
               }, cb.ctx));
               return true;
             }
@@ -902,9 +952,8 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
               cb.dispatch({ type: 'info', message: `Cesar → team-tribunal${fallbackSuggestion.tribunalMode ? ` [${fallbackSuggestion.tribunalMode}]` : ''}` });
               const _cwdFallbackTTrib = resolveWorkingDir();
               cb.runAsJob('team-tribunal', label, withThreadOutcome(_cwdFallbackTTrib, 'team-tribunal', label, async () => {
-                await handleTeamTribunal(fallbackTask, cb.dispatch, cb.ctx, fallbackSuggestion.tribunalMode);
-                const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
-                if (chatContext) await continueCesarAfterResult(`Fallback team tribunal${fallbackSuggestion.tribunalMode ? ` (${fallbackSuggestion.tribunalMode})` : ''} concluded on: "${fallbackTask.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
+                const tribunal = await runPhysicalCesarWorkflow('team-tribunal', { question: fallbackTask, mode: fallbackSuggestion.tribunalMode ?? 'adversarial' }, cb);
+                await continueCesarAfterResult(`Fallback team tribunal${fallbackSuggestion.tribunalMode ? ` (${fallbackSuggestion.tribunalMode})` : ''} concluded on: "${fallbackTask.slice(0, 200)}"\n\n${JSON.stringify(tribunal, null, 2)}\n\nSummarize the verdict and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
               }, cb.ctx));
               return true;
             }
@@ -1031,6 +1080,10 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
  * Unified Cesar brain routing. Returns true if a background job was dispatched.
  */
 export async function routeWithCesar(input: string, images: ImageAttachment[], cb: DispatchCallbacks): Promise<boolean> {
+  // Refuse before the recovery ladder can turn a cleanup failure into a fresh
+  // adapter dispatch. Leave pending input attachments untouched for recovery.
+  const cleanupFailed = captureCleanupGuard(cb);
+  if (cleanupFailed()) return false;
   cb.setPendingImages(() => []);
   const turnStartedAt = Date.now();
   // Hoisted out of the try so the fallback ladder below can see whether the
@@ -1046,6 +1099,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
       cb.dispatch(event);
     };
     const result = await handleCesarBrain(input, cesarDispatch as any, cb.ctx, images);
+    if (cleanupFailed()) return false;
     priorDeterministic = result.deterministicFailure === true;
     const emitRecap = () => {
       const latestTerminal = cb.ctx.cesarRuntimeHost?.latestTerminal;
@@ -1135,6 +1189,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
     if (result.responded) return false;
   } catch (e) { console.warn(`[agon] dispatch: Cesar brain threw: ${e instanceof Error ? e.message : String(e)}`); }
   
+  if (cleanupFailed()) return false;
   // If brain handler queued the message (responded=true), don't fall back
   // The queue auto-drains when the current turn finishes
   
@@ -1144,5 +1199,6 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
     if (cb.ctx.cesar) cb.ctx.cesar.pendingDelegation = null;
     if (await handleRecoveredDelegation(crashDel, input, cb)) return true;
   }
+  if (cleanupFailed()) return false;
   return runCesarBrainFallback(input, cb, crashDel, priorDeterministic);
 }

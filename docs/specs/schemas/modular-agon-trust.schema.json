@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "recordId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "modId": {
+      "type": "string",
+      "maxLength": 256,
+      "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+    },
+    "source": {
+      "type": "string",
+      "enum": [
+        "bundled",
+        "registry",
+        "user-folder",
+        "explicit-dev"
+      ]
+    },
+    "sourceLocator": {
+      "type": "string",
+      "minLength": 1
+    },
+    "contentHash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "manifestHash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "decision": {
+      "type": "string",
+      "enum": [
+        "trusted",
+        "rejected",
+        "revoked"
+      ]
+    },
+    "decidedAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+    },
+    "scope": {
+      "type": "string",
+      "enum": [
+        "exact-artifact",
+        "explicit-dev-path"
+      ]
+    },
+    "publisher": {
+      "type": "object",
+      "properties": {
+        "registryOrigin": {
+          "type": "string",
+          "minLength": 1
+        },
+        "packageName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provenanceIdentity": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provenanceStatus": {
+          "type": "string",
+          "enum": [
+            "verified",
+            "absent",
+            "invalid",
+            "not-applicable"
+          ]
+        }
+      },
+      "required": [
+        "registryOrigin",
+        "packageName",
+        "provenanceIdentity",
+        "provenanceStatus"
+      ],
+      "additionalProperties": false
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "recordId",
+    "modId",
+    "version",
+    "source",
+    "sourceLocator",
+    "contentHash",
+    "manifestHash",
+    "decision",
+    "decidedAt",
+    "scope",
+    "publisher",
+    "reason"
+  ],
+  "additionalProperties": false,
+  "$id": "https://kernlang.dev/schemas/agon/modular/v1/trust.schema.json",
+  "title": "Modular Agon v1 trust"
+}

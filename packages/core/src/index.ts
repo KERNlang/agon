@@ -162,7 +162,7 @@ export { FileStateCache, fileStateCache, getProjectFileStateCache, clearProjectF
 export { ToolRegistry, executeToolCall, executeToolCalls, PERMISSION_DENIED_MESSAGE } from './signals/tool-registry.js';
 export { isDangerousCommand, isReadOnlyCommand, isPathUnderCwd } from './tools/tool-permissions.js';
 export { parsePermissionRule, parsePermissionRuleSet, ruleMatches, evaluatePermissionRules, evaluateToolRules, evaluateBashRules, evaluateFilePathRules, hasShellControl, hasRedirection, hasSubstitution, splitShellSegments, resolveRulePath, pathRuleMatches } from './tools/tool-permissions.js';
-export { createReadTool, createEditTool, createMultiEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createReportConfidenceTool, createDelegateTool, createPipelineTool, createGoalTool, createConquerTool, createReviewTool, createAgentTool, createProposePlanTool, createExitPlanModeTool, createListPlansTool, createRetrieveResultTool, createWebFetchTool, parseAndValidateUrl, htmlToText, createTodoWriteTool, normalizeTodos, createSaveMemoryTool, appendMemoryLine, normalizeMemoryLine, todayPrefix, canonicalMemorySection, MEMORY_SECTIONS, createWebSearchTool, buildSearchRequest, parseSearchResults, formatSearchResults, createQuickNeroTool, classifyQuery, cleanQuery, buildAuthoritativeRequest, parseAuthoritativeResults, extractCitations, judgeProbe, formatCitationReport, probeCitation, verifyCitations } from './tools.js';
+export { createReadTool, createEditTool, createMultiEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createReportConfidenceTool, createProposePlanTool, createExitPlanModeTool, createListPlansTool, createRetrieveResultTool, createWebFetchTool, parseAndValidateUrl, htmlToText, createTodoWriteTool, normalizeTodos, createSaveMemoryTool, appendMemoryLine, normalizeMemoryLine, todayPrefix, canonicalMemorySection, MEMORY_SECTIONS, createWebSearchTool, buildSearchRequest, parseSearchResults, formatSearchResults, classifyQuery, cleanQuery, buildAuthoritativeRequest, parseAuthoritativeResults, extractCitations, judgeProbe, formatCitationReport, probeCitation, verifyCitations } from './tools.js';
 export type { SearchResult, SearchRequest, ResearchIntent, CitationStatus, CitationProbe, CitationVerdict, CitationReport } from './tools.js';
 export { formatCesarPlanMarkdown } from './cesar/plan-formatter.js';
 export { generateToolPrompt, toolsToOpenAIFormat } from './tools/tool-prompt.js';
@@ -187,19 +187,6 @@ export {
   decodeDataUrlToImageFile, parseImageDimensions, sniffImageMime, MAX_DISPATCH_IMAGES, MAX_DISPATCH_IMAGE_BYTES,
 } from './blocks/image.js';
 export type { DataUrlImageResult, ImageDimensions } from './blocks/image.js';
-// ── Agon Rooms — multi-party room ledger (file-first; CLI/MCP/daemon are adapters) ──
-export {
-  roomsDir, roomDir, createRoom, listRooms, roomExists, closeRoom, isRoomClosed,
-  appendEvent, readEvents, parseMentions, slugifyRoomId,
-} from './rooms/store.js';
-export { recordPresence, removePresence, listPresence, advanceReadCursor, getReadCursor, PRESENCE_TTL_MS } from './rooms/presence.js';
-export { getUnreadState, listUnreadStates, isUnreadKind } from './rooms/unread.js';
-export { foldLocks, listRoomLocks, claimRoomLock, releaseRoomLock, expiredLocksHeldBy } from './rooms/locks.js';
-export { acquireTurnLease, releaseTurnLease, readActiveLease } from './rooms/leases.js';
-export { detectTrigger, detectPingPong, evaluateStop } from './rooms/auto-policy.js';
-export { drainNdjson, drainRoom, readTailOffset, writeTailOffset, createRoomWaker } from './rooms/tail.js';
-export { foldTasks, pickNextTask, postTask, claimTask, postTaskResult, postTaskStop, shouldStopWork } from './rooms/tasks.js';
-export type { RoomActor, RoomEvent, RoomMeta, PresenceEntry, RoomLockState, RoomUnreadState, TurnLease, AutoConfig, AutoState, StopDecision, TriggerDecision, TailCursor, TailDrain, RoomTaskState, WorkConfig, WorkState } from './rooms/types.js';
 // ── EventLog — append-only per-session event ledger (client/server split M1) ──
 export {
   append as eventLogAppend, flush as eventLogFlush, replay as eventLogReplay,
@@ -358,6 +345,7 @@ export { rankByTaskClass, buildSpecializedPrompt, assignForgeRoles } from './blo
 export type { EngineRole } from './blocks/role-specialization.js';
 export type { Skill } from './blocks/skill-loader.js';
 export { createSidechainLogger } from './blocks/sidechain-logger.js';
+export { createBrainstormHostServices } from './blocks/brainstorm-host.js';
 export type { SidechainEvent, SidechainLogger } from './blocks/sidechain-logger.js';
 export {
   buildForgeProvenance,
@@ -372,7 +360,6 @@ export { validateManifest } from './models/extension-manifest.js';
 export type { ExtensionManifest, ExtensionContributions, CommandContribution, LoadedExtension } from './models/extension-manifest.js';
 export { CommandRegistry } from './signals/command-registry.js';
 export type { CommandDefinition, CommandHandler } from './signals/command-registry.js';
-export { initExtensions, loadExtensions, discoverExtensionDirs, buildExtensionContext } from './blocks/extension-loader.js';
 export { registerBuiltinCommands } from './blocks/builtin-commands.js';
 export { EventBus, bridgeShellHooks } from './signals/event-bus.js';
 export type { EventPayload, EventListener } from './signals/event-bus.js';

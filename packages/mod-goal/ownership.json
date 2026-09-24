@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "package": "@kernlang/agon-mod-goal",
+  "assignments": [
+    {
+      "category": "cesarRoutes",
+      "id": "goal",
+      "source": "packages/cli/src/models/handler-types.ts:113",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-goal",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarTools",
+      "id": "Goal",
+      "source": "packages/cli/src/cesar/tools.ts:43",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-goal",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "cliCommands",
+      "id": "goal",
+      "source": "packages/cli/src/lazy-commands.ts:313",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-goal",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/goal",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-goal",
+      "rule": "exact-user-surface"
+    }
+  ]
+}

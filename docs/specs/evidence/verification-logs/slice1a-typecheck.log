@@ -1,0 +1,11 @@
+command: ["npm","run","typecheck"]
+exitCode: 0
+signal: none
+error: none
+outputBytes: 21
+outputHash: sha256:c982b4edc389f398cc0e8e76419b7e4bf9cf7d409f8817f5dbbc3d3d4ce838da
+outputTruncated: false
+
+
+> typecheck
+> tsc -b

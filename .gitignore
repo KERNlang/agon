@@ -12,6 +12,26 @@ docs/*
 # doc. It must be tracked: the mode-docs-sync unit test reads it and the
 # docs corpus indexes it on every clone.
 !docs/modes.md
+!docs/upgrade-pressure-test.md
+# Narrow exception for the Modular Agon specification set. Other local design
+# notes under docs/ remain ignored.
+!docs/specs/
+docs/specs/*
+!docs/specs/modular-agon-*.md
+!docs/specs/evidence/
+docs/specs/evidence/*
+!docs/specs/evidence/modular-agon-*
+!docs/specs/evidence/verification-logs/
+docs/specs/evidence/verification-logs/*
+!docs/specs/evidence/verification-logs/*.log
+!docs/specs/schemas/
+docs/specs/schemas/*
+!docs/specs/schemas/modular-agon-*
+!docs/specs/fixtures/
+docs/specs/fixtures/*
+!docs/specs/fixtures/modular-agon-*
+!docs/specs/fixtures/modular-agon-contracts/
+!docs/specs/fixtures/modular-agon-contracts/**
 .design-docs-local/
 # Local-only design/agent docs — kept on disk, never tracked (purged from history 2026-06-02)
 CLAUDE.md

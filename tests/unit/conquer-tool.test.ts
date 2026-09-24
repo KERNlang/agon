@@ -1,10 +1,22 @@
-import { describe, it, expect } from 'vitest';
-import { createConquerTool } from '../../packages/core/src/blocks/tool-orchestration.js';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, beforeAll, describe, it, expect } from 'vitest';
+import { createCesarToolRegistry } from '../../packages/cli/src/cesar/tools.js';
 import { extractDelegation } from '../../packages/cli/src/cesar/brain-helpers.js';
+import { disposeProcessSurfaceAuthority, initializeProcessSurfaceAuthority } from '../../packages/cli/src/surface-authority-runtime.js';
+
+const root = mkdtempSync(join(tmpdir(), 'agon-conquer-tool-'));
+
+beforeAll(() => initializeProcessSurfaceAuthority(join(root, 'host')));
+afterAll(async () => {
+  await disposeProcessSurfaceAuthority();
+  rmSync(root, { recursive: true, force: true });
+});
 
 describe('Conquer tool', () => {
   it('defines a Conquer signal tool requiring task + gate', () => {
-    const t = createConquerTool();
+    const t = createCesarToolRegistry('codex').get('Conquer')!;
     expect(t.definition.name).toBe('Conquer');
     expect(t.definition.isReadOnly).toBe(false);
     expect(t.definition.inputSchema.required).toEqual(expect.arrayContaining(['task', 'gate']));

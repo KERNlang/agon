@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "groups": [
+    {
+      "id": "work",
+      "label": "Work",
+      "children": [
+        "ask",
+        "think",
+        "plan",
+        "agent",
+        "goal",
+        "conquer"
+      ]
+    },
+    {
+      "id": "create",
+      "label": "Create and compete",
+      "children": [
+        "brainstorm",
+        {
+          "id": "team-brainstorm",
+          "parent": "brainstorm"
+        },
+        "campfire",
+        "forge",
+        {
+          "id": "team-forge",
+          "parent": "forge"
+        },
+        "synthesis",
+        "pipeline-orchestration",
+        "pipeline-delivery"
+      ]
+    },
+    {
+      "id": "judge",
+      "label": "Review and decide",
+      "children": [
+        "review",
+        "tribunal",
+        {
+          "id": "team-tribunal",
+          "parent": "tribunal"
+        },
+        "council",
+        "nero"
+      ]
+    },
+    {
+      "id": "knowledge",
+      "label": "Knowledge",
+      "children": [
+        "research",
+        "rag",
+        "memory",
+        "history",
+        "provenance",
+        "flow"
+      ]
+    },
+    {
+      "id": "transform",
+      "label": "Transform",
+      "children": [
+        "mutate",
+        "naturalize",
+        "sanitize"
+      ]
+    },
+    {
+      "id": "collaborate",
+      "label": "Collaborate and automate",
+      "children": [
+        "rooms",
+        "jobs",
+        "worktrees",
+        "git-actions"
+      ]
+    },
+    {
+      "id": "interfaces",
+      "label": "Interfaces",
+      "children": [
+        "browser",
+        "ratings",
+        "skill-authoring",
+        "routing-docs"
+      ]
+    },
+    {
+      "id": "manage",
+      "label": "Kernel management",
+      "children": [
+        "engines",
+        "providers",
+        "configuration",
+        "permissions",
+        "diagnostics",
+        "updates"
+      ],
+      "nonToggleable": true
+    }
+  ],
+  "disabledPresentation": {
+    "visible": true,
+    "style": "greyed",
+    "reasonAndDependencyActionRequired": true
+  }
+}

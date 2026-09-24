@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 2,
+  "id": "example.hello",
+  "name": "External hello example",
+  "version": "1.0.0",
+  "apiRange": "^1.0.0",
+  "execution": "executable",
+  "compatibility": { "kernelRange": "^1.0.0", "nodeRange": ">=22 <27" },
+  "packageClass": "user-toggleable-mod-package",
+  "entrypoints": { "runtime": "dist/index.js", "types": "dist/index.d.ts" },
+  "display": { "group": "examples", "order": 10 },
+  "dependencies": { "required": [], "optional": [], "conflicts": [] },
+  "permissions": [],
+  "platforms": ["darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64"],
+  "assets": [],
+  "contributes": {
+    "cliCommands": [{ "id": "hello", "aliases": [] }],
+    "tuiActions": [], "mcpTools": [], "cesarTools": [], "lifecycleHooks": [], "resultTypes": [], "configKeys": [], "generatedDocs": []
+  },
+  "pack": { "include": ["dist/index.js", "dist/index.d.ts", "agon.mod.json"], "executable": [] }
+}

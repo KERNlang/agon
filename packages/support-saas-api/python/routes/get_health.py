@@ -1,0 +1,7 @@
+from fastapi import APIRouter
+
+router = APIRouter()
+
+@router.get("/health")
+async def get_health():
+    return { "ok": True, "version": '0.1.0', "service": 'agon-saas-api' }

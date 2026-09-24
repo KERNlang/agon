@@ -1,0 +1,19 @@
+{
+  "mode": "tribunal",
+  "startedAt": "2026-08-24T01:00:51.098Z",
+  "endedAt": "2026-08-24T01:01:59.045Z",
+  "engines": [
+    {
+      "id": "ollama-direct-gpt-oss",
+      "status": "ok",
+      "detail": "1 arguments"
+    },
+    {
+      "id": "ollama-local-qwen14",
+      "status": "ok",
+      "detail": "1 arguments"
+    }
+  ],
+  "summary": "2/2 engines argued across 1 round(s) (mode=adversarial, protocol=hybrid)",
+  "ok": true
+}

@@ -7,6 +7,7 @@ function interruptDeps(overrides: Record<string, unknown> = {}) {
   return {
     activeAbortRef: { current: null },
     activePlanRef: { current: null },
+    setInputQueue: vi.fn(),
     activeTurnRef: { current: null },
     interruptedTurnRef: { current: null },
     cesarRuntimeHost: { active: null },

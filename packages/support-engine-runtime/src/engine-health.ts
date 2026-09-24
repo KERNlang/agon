@@ -1,0 +1,110 @@
+import type { EngineDefinition } from './types.js';
+
+export interface EngineHealthRecord {
+  engineId: string;
+  status: 'ok'|'auth-failed'|'unreachable'|'binary-missing'|'timeout'|'failed';
+  reason: string;
+  lastFailureAt: number;
+  failureCount: number;
+}
+
+export class EngineHealth {
+  records: Map<string, EngineHealthRecord>;
+
+  readonly now: () => number;
+
+  constructor(now: () => number = Date.now) {
+    this.records = new Map();
+    this.now = now;
+  }
+
+  mark(engineId: string, status: 'ok'|'auth-failed'|'unreachable'|'binary-missing'|'timeout'|'failed', reason: string): void {
+    if (status === 'ok') {
+      this.records.delete(engineId);
+      return;
+    }
+    const existing = this.records.get(engineId);
+    const trimmedReason = (reason.length > 200) ? (reason.slice(0, 200) + '…') : reason;
+    this.records.set(engineId, { engineId: engineId, status: status, reason: trimmedReason, lastFailureAt: this.now(), failureCount: (existing?.failureCount ?? 0) + 1 });
+  }
+
+  clear(engineId: string): void {
+    this.records.delete(engineId);
+  }
+
+  clearAll(): void {
+    this.records.clear();
+  }
+
+  isHealthy(engineId: string): boolean {
+    return !this.records.has(engineId);
+  }
+
+  get(engineId: string): EngineHealthRecord | undefined {
+    return this.records.get(engineId);
+  }
+
+  listUnhealthy(): EngineHealthRecord[] {
+    return [...this.records.values()];
+  }
+
+  count(): number {
+    return this.records.size;
+  }
+}
+
+export const engineHealth = new EngineHealth();
+
+/**
+ * Heuristic classifier — maps a dispatch failure signal to a health status. Order matters: timeout > auth > binary-missing > unreachable > failed. binary-missing sits ABOVE unreachable so a declared CLI absent from PATH (spawn ENOENT / EngineNotFoundError 'binary … not found on PATH') is reported as a missing install, not a network problem or a missing key.
+ */
+export function classifyDispatchFailure(signal: {stderr?:string, exitCode?:number, errorMessage?:string, timedOut?:boolean}): 'auth-failed'|'unreachable'|'binary-missing'|'timeout'|'failed' {
+  if (signal.timedOut === true) {
+    return 'timeout';
+  }
+  const haystack = [signal.stderr ?? '', signal.errorMessage ?? ''].join('\n').toLowerCase();
+  if (!haystack.trim()) {
+    return 'failed';
+  }
+  // Auth: 401, "invalid api key", "token expired", "unauthorized", "authentication failed", OAuth plan/auth failures
+  if (/\b401\b|invalid api key|invalid access token|token (expired|invalid)|oauth|free tier was discontinued|coding plan|unauthori[sz]ed|authentication (failed|error)|authorized_error|authentication required/.test(haystack)) {
+    return 'auth-failed';
+  }
+  // Binary-missing: a declared CLI binary absent from PATH. Matches the EngineNotFoundError message ("binary \"x\" not found on path"), "is not installed", and `spawn <bin> enoent` — a Node process-spawn ENOENT IS the canonical missing-binary signal (distinct from a network ENOTFOUND). Above unreachable so it never mis-reports as a network failure. spawn.*enoent matches paths after "spawn" (e.g. "spawn /usr/bin/aider enoent").
+  // Deliberately NOT matching "command not found" (shell-127 text) or "no such file or directory": both over-match a HEALTHY engine's stderr that mentions an inner-shell tool failure ("bash: jq: command not found") or a missing data/config file ("cannot open ~/.foo/config: No such file or directory"), which would hard-quarantine the engine for the whole session. After Finding 1 a declared-but-absent binary throws EngineNotFoundError ("not found on path") BEFORE any spawn, and a binary deleted mid-session surfaces as `spawn <bin> ENOENT` — both still matched here — so dropping the two broad patterns loses no real binary-missing signal.
+  if (/not found on path|is not installed|spawn.*enoent/.test(haystack)) {
+    return 'binary-missing';
+  }
+  // Unreachable: ENOTFOUND DNS, ECONNREFUSED, ECONNRESET, network unreachable (spawn ENOENT is handled above as binary-missing).
+  if (/enotfound|econnrefused|econnreset|getaddrinfo|network (is )?unreachable|fetch failed|connect (etimedout|timeout)/.test(haystack)) {
+    return 'unreachable';
+  }
+  return 'failed';
+}
+
+/**
+ * The actionable recovery instruction for an engine that failed to authenticate, derived from its OWN metadata so it is generic across CLI + API engines (no per-engine special-casing). A CLI engine with an isolated config dir + a login subcommand (claude/codex — has isolationHints.configEnv + loginArgs) → `agon login <id> --force`. The --force matters: a 401 AFTER a present authMarker means the marker is STALE, so plain `agon login` (which short-circuits when the marker exists) would skip the re-login the user actually needs. An API-only engine (no isolated dir, just an api block — kimi/minimax/zai) → set its apiKeyEnv (or `agon provider`). Anything else → `agon doctor`.
+ */
+export function authLoginHint(engine: EngineDefinition): string {
+  // CLI isolation takes precedence: a hybrid engine declaring BOTH an isolated config dir and an
+  // api block authenticates via its CLI login (`agon login`), not a raw API key. `engine` is
+  // optional-chained throughout so an undefined engine (e.g. seat-dispatch's `any`-typed opts.engine)
+  // degrades to the generic `agon doctor` hint instead of throwing inside auth-error handling.
+  const hints = engine?.isolationHints;
+  if (engine && hints?.configEnv && hints.loginArgs && hints.loginArgs.length > 0) {
+    return `run \`agon login ${engine.id} --force\` to re-authenticate its isolated config dir`;
+  }
+  const keyEnv = engine?.api?.apiKeyEnv;
+  if (keyEnv) {
+    return `set a valid \`${keyEnv}\` (or run \`agon provider\`) — its API key looks missing or invalid`;
+  }
+  return `run \`agon doctor\` to diagnose its credentials`;
+}
+
+/**
+ * If a dispatch-failure signal is an AUTH failure (per classifyDispatchFailure — 401 / invalid key / token expired / unauthorized), return the engine-specific recovery instruction (authLoginHint); otherwise null. The single generic hook EVERY dispatch surface (browser panel, panel seat, REPL Cesar) calls so a 401 never reaches the user as a bare 'no answer' / 'exit 1' / raw stderr — it always carries the exact next command. Returns null on timeouts/network/other failures so the caller keeps its own detail.
+ */
+export function authFailureHint(engine: EngineDefinition, signal: {stderr?:string, exitCode?:number, errorMessage?:string, timedOut?:boolean}): string | null {
+  if (classifyDispatchFailure(signal) !== 'auth-failed') return null;
+  return authLoginHint(engine);
+}

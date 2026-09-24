@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "kind": "commit",
+    "hash": "sha256:b23001a6f297701c2569ee8d271ca2b6986a1f8ab2a768761efe42d4410eeb0a"
+  },
+  "disposition": "passed",
+  "runs": [
+    {
+      "engine": "ollama-direct-gpt-oss",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/modular-agon-slice1b-review/review-gpt-oss-output.txt",
+          "hash": "sha256:44ccba9a31a5fe0b856c2cd17f5929d4ed61b408aa49589a3ce279310ae0e8e3"
+        }
+      ]
+    },
+    {
+      "engine": "ollama-direct-qwen",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/modular-agon-slice1b-review/review-qwen-output.txt",
+          "hash": "sha256:7ff333ef7f27a7fe30e08cd5d5feb44825d15ef0c5ff961ccfd32a781cea7614"
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "S1B-REVIEW-001",
+      "status": "resolved",
+      "summary": "Over-broad suffix exclusions could omit source-bearing files from the subject hash."
+    },
+    {
+      "id": "S1B-REVIEW-002",
+      "status": "refuted",
+      "summary": "Qwen findings cited five paths absent from the staged subject."
+    },
+    {
+      "id": "S1B-REVIEW-003",
+      "status": "refuted",
+      "summary": "GPT-OSS findings duplicated existing executable gates or later-slice platform gates."
+    },
+    {
+      "id": "S1B-REVIEW-004",
+      "status": "refuted",
+      "summary": "Tribunal platform and native-package concerns are already owned by executable S7/S9 cells and are not S1B claims."
+    },
+    {
+      "id": "S1B-REVIEW-005",
+      "status": "resolved",
+      "summary": "Suffix-wide contamination exemptions could hide receipt-like source files."
+    }
+  ]
+}

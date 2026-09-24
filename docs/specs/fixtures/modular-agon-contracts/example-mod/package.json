@@ -1,0 +1,10 @@
+{
+  "name": "external-example-agon-mod",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "files": ["dist", "agon.mod.json"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  }
+}

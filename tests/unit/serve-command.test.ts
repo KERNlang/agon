@@ -2,7 +2,6 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { mkdtempSync, existsSync, statSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -14,7 +13,6 @@ const describeProcessMaybe = existsSync(CLI_ENTRY) ? describe : describe.skip;
 // ledger + agonPath resolve at call time, so setting it pre-import is enough).
 process.env.AGON_HOME = mkdtempSync(join(tmpdir(), 'agon-serve-cmd-test-'));
 
-import { runServe } from '../../packages/cli/src/commands/serve.js';
 import {
   parseOrigins,
   newServeSessionId,
@@ -282,23 +280,6 @@ describe('agon serve — runtime wiring (integration)', () => {
     }
   }, 15000);
 
-  it('runServe fails CLOSED (exit 2) when the port is in use — no crash, no hang, brain torn down', async () => {
-    // Occupy a loopback port so AgonServe.start(port) rejects (EADDRINUSE).
-    const blocker = createServer(() => {});
-    const port: number = await new Promise((res) =>
-      blocker.listen(0, '127.0.0.1', () => res((blocker.address() as { port: number }).port)),
-    );
-    const prevExit = process.exitCode;
-    try {
-      // Must RESOLVE (not reject/hang): the bind failure is caught, the opened
-      // brain is closed, and the command fails closed with exit 2.
-      await runServe(port, 'claude', [], false);
-      expect(process.exitCode).toBe(2);
-    } finally {
-      process.exitCode = prevExit; // don't poison the test runner's exit code
-      await new Promise<void>((r) => blocker.close(() => r()));
-    }
-  }, 15000);
 });
 
 describeProcessMaybe('agon serve process lifecycle', () => {

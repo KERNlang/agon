@@ -23,6 +23,7 @@ import { parseChangedLines, newFilesInDiff, isTestFile } from './diff.js';
 import { gateFailureSignature, taskParkDecision, globalBreaker, budgetExceeded, timeExceeded, pushRecentOutcome, mutationGateDecision, foldMutationVerdicts } from './policy.js';
 
 import type { JournalState, GoalSpec, GoalTask } from './types.js';
+import { writeVersionedResultEnvelope } from '../result-envelope.js';
 
 /**
  * Persist the EXACT gate stdout/stderr to <goalDir>/<taskId>-gate.log so a parked task's failure is inspectable without re-running the gate by hand. The taskId goes through the SAME safePathSegment the worktree paths use: runGoalController is an exported entry point, so a queue-authored id like `../../../../tmp/pwn` would otherwise author a writeFileSync path outside the goal dir. Returns the path, or '' if it couldn't be written.
@@ -100,6 +101,15 @@ export function writeGoalArtifacts(state: JournalState): {resultPath:string, sum
   };
   writeFileSync(resultPath, JSON.stringify(result, null, 2));
   writeFileSync(summaryPath, summarizeGoal(state));
+  writeVersionedResultEnvelope({
+    resultPath,
+    payload: result,
+    status: result.done ? 'succeeded' : 'partial',
+    idSeed: state.spec.goalId,
+    ownerModId: 'agon.goal',
+    contributionId: 'agon.goal.persisted-result',
+    createdAt: state.startedAt ? new Date(state.startedAt).toISOString() : undefined,
+  });
   return { resultPath, summaryPath };
 }
 

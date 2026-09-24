@@ -1,0 +1,252 @@
+
+> spec:modular-slice7:qualify:commit
+> node scripts/spec/qualify-modular-agon-slice7.mjs --subject=commit --run-clean
+
+{
+  "schemaVersion": 1,
+  "qualification": "modular-agon-slice7-clean-checkout",
+  "subject": {
+    "kind": "commit",
+    "hash": "sha256:ee3c676a41accb052015680def6a707c4ef4be893d247dd0462a0825be54d5d5",
+    "indexHash": "sha256:ee3c676a41accb052015680def6a707c4ef4be893d247dd0462a0825be54d5d5",
+    "commitHash": "sha256:ee3c676a41accb052015680def6a707c4ef4be893d247dd0462a0825be54d5d5",
+    "indexEqualsCommit": true
+  },
+  "contamination": {
+    "ignored": [],
+    "untracked": [],
+    "unstaged": []
+  },
+  "graph": {
+    "packages": 49,
+    "declaredEdges": 144,
+    "uniqueEdges": 144,
+    "duplicateEdges": []
+  },
+  "firstPartyPackages": 36,
+  "coverage": {
+    "inventoryAssignments": 863,
+    "lifecycleTests": 44,
+    "faultPoints": 8,
+    "temporaryAdapters": 1,
+    "postinstallRemoved": true
+  },
+  "performance": {
+    "schemaVersion": 1,
+    "slice": "S7",
+    "sampleCount": 15,
+    "planMs": {
+      "median": 0.25225000000000364,
+      "p95": 2.2014580000000024,
+      "budgetP95": 25
+    },
+    "applyMs": {
+      "median": 207.20225000000028,
+      "p95": 236.17624999999998,
+      "budgetP95": 1000
+    },
+    "totalMs": {
+      "median": 207.4513750000001,
+      "p95": 238.37770799999998,
+      "budgetP95": 1025
+    },
+    "residentRssBytes": {
+      "median": 79740928,
+      "p95": 80134144,
+      "budgetP95": 201326592
+    },
+    "passed": true
+  },
+  "reviewEvidence": {
+    "passed": true
+  },
+  "cleanCheckoutSteps": [
+    {
+      "id": "npm-ci",
+      "command": [
+        "npm",
+        "ci",
+        "--ignore-scripts",
+        "--offline"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\nadded 429 packages, and audited 486 packages in 2s\n\n112 packages are looking for funding\n  run `npm fund` for details\n\nfound 0 vulnerabilities\nnpm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me\n"
+    },
+    {
+      "id": "clean-build",
+      "command": [
+        "npm",
+        "run",
+        "build:cli:workspaces"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "RPTG6V5Y.js.map                4.42 KB\nESM dist/chunk-FCXYFH6X.js.map                 1.58 KB\nESM dist/chunk-NDTWK5TX.js.map                 8.02 KB\nESM dist/ext-VVSED6X7.js.map                   6.43 KB\nESM dist/chunk-R5CSK6VE.js.map                 49.76 KB\nESM dist/synthesis-4WJ35JHA.js.map             3.59 KB\nESM dist/login-D3D4KYFX.js.map                 2.78 KB\nESM dist/rag-DSQHX4XU.js.map                   2.13 KB\nESM dist/ask-HYKVI4ZI.js.map                   3.23 KB\nESM dist/browser-host-TNT6NPNB.js.map          51.00 B\nESM dist/think-SJICF6DO.js.map                 5.00 KB\nESM dist/research-PNKM5Y45.js.map              3.71 KB\nESM dist/council-YNH47PNS.js.map               5.14 KB\nESM dist/nero-I2CL2GPF.js.map                  4.38 KB\nESM dist/conquer-7VAWTOJ5.js.map               7.26 KB\nESM dist/sanitize-YQLTQFKL.js.map              4.46 KB\nESM dist/naturalize-5H37GJYK.js.map            4.28 KB\nESM dist/chunk-NFSPPSCU.js.map                 331.00 B\nESM dist/mutate-HADOTILV.js.map                5.75 KB\nESM dist/chunk-Y74PMIW3.js.map                 7.62 KB\nESM dist/job-AFGGFN3I.js.map                   10.63 KB\nESM dist/daemon-GWCLGRZ7.js.map                51.00 B\nESM dist/chunk-JAGSH7OK.js.map                 14.70 KB\nESM dist/goal-SD4NJMJT.js.map                  21.87 KB\nESM dist/install-agent-prompts-55WHN4UX.js.map 2.71 KB\nESM dist/chunk-XLH2EWRY.js.map                 5.39 KB\nESM dist/doctor-ZYMJ6Z42.js.map                51.00 B\nESM dist/agent-guide-DRI3EQDO.js.map           1.63 KB\nESM dist/chunk-TTYLDS4I.js.map                 1.94 KB\nESM dist/chunk-ETDKJQHT.js.map                 10.06 KB\nESM dist/chunk-N4JA2E6T.js.map                 9.34 KB\nESM dist/chunk-JJ3KTC7T.js.map                 12.76 KB\nESM dist/engine-4GVTSLRW.js.map                4.15 KB\nESM dist/models-EEBYIA46.js.map                5.95 KB\nESM dist/provider-W472UM55.js.map              9.14 KB\nESM dist/config-UURRKIXI.js.map                1.96 KB\nESM dist/last-23B4H7ED.js.map                  1.19 KB\nESM dist/call-KARGISWK.js.map                  51.00 B\nESM dist/chunk-4LLOADGC.js.map                 4.87 KB\nESM dist/team-forge-SIG2I2J2.js.map            2.89 KB\nESM dist/review-ZLWE6J4Y.js.map                13.05 KB\nESM dist/chunk-XNJVWCUC.js.map                 3.26 KB\nESM dist/team-brainstorm-CCWSFAII.js.map       1.79 KB\nESM dist/ratings-CPWYNZWI.js.map               2.06 KB\nESM dist/leaderboard-B55GBEWX.js.map           2.12 KB\nESM dist/chunk-UG7OOEJZ.js.map                 14.12 KB\nESM dist/team-tribunal-SFOVGCQP.js.map         2.20 KB\nESM dist/room-O3RPTUEE.js.map                  19.42 KB\nESM dist/chunk-LPYEFZJD.js.map                 1.68 KB\nESM dist/provenance-Z2YBE67Z.js.map            2.26 KB\nESM dist/history-6LFL5ACT.js.map               4.71 KB\nESM dist/chunk-LRWH5JEI.js.map                 921.00 B\nESM dist/chunk-BDMZRPEE.js.map                 12.49 KB\nESM dist/src-WH3GOMIX.js.map                   51.00 B\nESM dist/index.js.map                          8.70 KB\nESM dist/forge-CFG6A5PW.js.map                 9.82 KB\nESM dist/chunk-PE7LS225.js.map                 32.09 KB\nESM dist/chunk-IUXC7V6V.js.map                 475.00 B\nESM dist/browser-host.js.map                   108.00 B\nESM dist/brainstorm-VCB6BNZF.js.map            3.71 KB\nESM dist/tribunal-32FC44ED.js.map              5.02 KB\nESM dist/campfire-OOWBNHLL.js.map              2.38 KB\nESM dist/chunk-7SUV6RHW.js.map                 606.00 B\nESM dist/chunk-L5B5AEPB.js.map                 31.70 KB\nESM dist/chunk-WVSC4TRD.js.map                 381.00 B\nESM dist/chunk-F73V43HJ.js.map                 3.06 KB\nESM dist/chunk-OT67KTOH.js.map                 6.04 KB\nESM dist/chunk-3G43QNFV.js.map                 51.00 B\nESM dist/chunk-ZASN6CWI.js.map                 395.87 KB\nESM dist/chunk-OBSUBI57.js.map                 230.20 KB\nESM dist/app-CF2WA2UZ.js.map                   462.60 KB\nESM dist/chunk-HSU2G3GF.js.map                 940.30 KB\nESM ⚡️ Build success in 126ms\n"
+    },
+    {
+      "id": "managed-lifecycle",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-slice7"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "ts/unit/modular-installer.test.ts tests/unit/modular-candidate-process.test.ts tests/unit/modular-setup-actions.test.ts tests/unit/modular-lifecycle-secret-redaction.test.ts tests/unit/modular-lifecycle-approval.test.ts tests/unit/modular-third-party-s7-deny.test.ts\n\n\n RUN  v3.2.7 /private/var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-modular-s7-commit-8aPFSr\n\n ✓ tests/unit/modular-setup-actions.test.ts (3 tests) 39ms\n ✓ tests/unit/modular-third-party-s7-deny.test.ts (1 test) 3ms\n ✓ tests/unit/modular-lifecycle-secret-redaction.test.ts (3 tests) 4ms\n ✓ tests/unit/modular-candidate-process.test.ts (6 tests) 103ms\n ✓ tests/unit/modular-lifecycle-approval.test.ts (1 test) 324ms\n   ✓ managed lifecycle approval binding > requires exact plan approval when provenance or source changes need a decision  323ms\n ✓ tests/unit/modular-installer.test.ts (5 tests) 379ms\n   ✓ managed installer > installs the complete closure into an immutable prefix and selects it once  334ms\n\n Test Files  6 passed (6)\n      Tests  19 passed (19)\n   Start at  20:37:06\n   Duration  721ms (transform 140ms, setup 78ms, collect 472ms, tests 851ms, environment 0ms, prepare 172ms)\n\n\n> test:modular-updater\n> node scripts/run-node22.mjs node_modules/.bin/vitest run tests/unit/modular-updater.test.ts tests/unit/modular-lifecycle-recovery.test.ts tests/unit/modular-purge-retention.test.ts tests/unit/modular-legacy-update-guard.test.ts\n\n\n RUN  v3.2.7 /private/var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-modular-s7-commit-8aPFSr\n\n ✓ tests/unit/modular-purge-retention.test.ts (1 test) 944ms\n   ✓ managed purge generation retention > cannot purge a non-selected installation while any retained generation references it  944ms\n ✓ tests/unit/modular-lifecycle-recovery.test.ts (6 tests) 1275ms\n   ✓ managed lifecycle crash recovery > repairs a lifecycle journal when host generation promotion already committed  617ms\n   ✓ managed purge preview and apply > requires an exact preview hash and never targets the selected installation  386ms\n ✓ tests/unit/modular-updater.test.ts (3 tests) 1747ms\n   ✓ managed updater and rollback > retains the previous qualified prefix and rolls back package, lock and state together  1052ms\n   ✓ managed updater and rollback > fails closed when retained rollback bytes are missing or corrupt  501ms\n ✓ tests/unit/modular-legacy-update-guard.test.ts (2 tests) 1ms\n\n Test Files  4 passed (4)\n      Tests  12 passed (12)\n   Start at  20:37:07\n   Duration  2.23s (transform 613ms, setup 74ms, collect 2.26s, tests 3.97s, environment 0ms, prepare 120ms)\n\n\n> test:modular-fault-injection\n> node scripts/run-node22.mjs node_modules/.bin/vitest run tests/unit/modular-lifecycle-fault-injection.test.ts\n\n\n RUN  v3.2.7 /private/var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-modular-s7-commit-8aPFSr\n\n ✓ tests/unit/modular-lifecycle-fault-injection.test.ts (11 tests) 3385ms\n   ✓ managed lifecycle fault injection > keeps the previous generation bootable when failure occurs at after-prefix-promoted  303ms\n   ✓ managed lifecycle fault injection > marks restart-required but leaves the new selected generation valid at after-generation-selected  453ms\n   ✓ managed lifecycle fault injection > marks restart-required but leaves the new selected generation valid at after-lifecycle-receipt  488ms\n\n Test Files  1 passed (1)\n      Tests  11 passed (11)\n   Start at  20:37:10\n   Duration  3.74s (transform 68ms, setup 19ms, collect 69ms, tests 3.38s, environment 0ms, prepare 30ms)\n\n\n> test:modular-lifecycle-concurrency\n> node scripts/run-node22.mjs node_modules/.bin/vitest run tests/unit/modular-lifecycle-concurrency.test.ts\n\n\n RUN  v3.2.7 /private/var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-modular-s7-commit-8aPFSr\n\n ✓ tests/unit/modular-lifecycle-concurrency.test.ts (2 tests) 372ms\n\n Test Files  1 passed (1)\n      Tests  2 passed (2)\n   Start at  20:37:14\n   Duration  706ms (transform 71ms, setup 22ms, collect 69ms, tests 372ms, environment 0ms, prepare 34ms)\n\n"
+    },
+    {
+      "id": "support-packages",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-support-packages"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "gon-support-persistence\",\n      \"filename\": \"kernlang-agon-support-persistence-0.0.0-slice.4.tgz\",\n      \"integrity\": \"sha512-7QBcs2/I0AR91HjZGCt0YiHNHfblAvUNt/cv1dCIvaBkEjlqUuj1IJqay5GA134qRQ6CWjdK9pLAdns/er09XQ==\",\n      \"shasum\": \"e8150a46f80578d05af5ebf7ba0a19391e6c794f\",\n      \"fileCount\": 23,\n      \"unpackedSize\": 154670\n    },\n    {\n      \"id\": \"@kernlang/agon-support-dedup\",\n      \"filename\": \"kernlang-agon-support-dedup-0.0.0-slice.4.tgz\",\n      \"integrity\": \"sha512-Vb4lZte56zTOnDboxlZg/wH+eMGWYehM9CZAki9hdaMAUcbMqwni/NaYYownE0D6K1UAFDkcIdZzFi4bl4iBhQ==\",\n      \"shasum\": \"bbbe339b9afc3ee1383bed49b631925f8f730d13\",\n      \"fileCount\": 11,\n      \"unpackedSize\": 30076\n    },\n    {\n      \"id\": \"@kernlang/agon-support-browser-bridge\",\n      \"filename\": \"kernlang-agon-support-browser-bridge-0.0.0-slice.4.tgz\",\n      \"integrity\": \"sha512-5+Fav/M+t2RZLHMWARo3+axfnSPVV1b7NttfOpAYypnZlNO8eXO/NttlEZdaEJMje9gnUh0aJ4JcAgR3DmilxQ==\",\n      \"shasum\": \"2256016f8845ba42af37736955897730bc84c29a\",\n      \"fileCount\": 6,\n      \"unpackedSize\": 18944\n    },\n    {\n      \"id\": \"@kernlang/agon-support-saas-api\",\n      \"filename\": \"kernlang-agon-support-saas-api-0.0.0-slice.4.tgz\",\n      \"integrity\": \"sha512-PWopRHyWiqapNpdBRZyofbFUmvEzH6Z8aqLqTaH5i6C8o4U72RA/eFkl1k6PQl6XUyKNDx3+LyU3B1/6U7rosw==\",\n      \"shasum\": \"eac79aa2ccd8011680a634c320e59e547397a35a\",\n      \"fileCount\": 9,\n      \"unpackedSize\": 2612\n    },\n    {\n      \"id\": \"@kernlang/agon-support-engine-catalog\",\n      \"filename\": \"kernlang-agon-support-engine-catalog-0.0.0-slice.4.tgz\",\n      \"integrity\": \"sha512-jero95P0zY2GrlWsqiActXKaMBH99rGwsXC9iK4A7omhLx700Nps6kxIPZCxhDY1aBkanLfjc5C4NvFvu9k+2w==\",\n      \"shasum\": \"8cef7962e24566743237dabf06a4e5665269c233\",\n      \"fileCount\": 7,\n      \"unpackedSize\": 39084\n    },\n    {\n      \"id\": \"@kernlang/agon-support-verification\",\n      \"filename\": \"kernlang-agon-support-verification-0.0.0-slice.4.tgz\",\n      \"integrity\": \"sha512-57SuvARsTqLS+hGsqnfUim8YiCSczg7kKRc4Vc8y9IAdHo3kjThcI1evtXNpkC7UlS0Kd05SbPScdMJIhvfXQw==\",\n      \"shasum\": \"eb82e02e2b174e4cd85b01f82c83f952f46ae536\",\n      \"fileCount\": 12,\n      \"unpackedSize\": 82157\n    },\n    {\n      \"id\": \"@kernlang/agon-support-panel\",\n      \"filename\": \"kernlang-agon-support-panel-0.0.0-slice.4.tgz\",\n      \"integrity\": \"sha512-UdxDMhC6WEQWrhsFmuNwKmzla8Zqy1k9ncY3wC9cvr0XaWXgQpYk9BwSRRKQNFspPsrGGbxV26kZCkmG37cBzQ==\",\n      \"shasum\": \"3389ac24c0db171e8e927a35d7b7791c088a6055\",\n      \"fileCount\": 6,\n      \"unpackedSize\": 17620\n    },\n    {\n      \"id\": \"@kernlang/agon-support-worktree\",\n      \"filename\": \"kernlang-agon-support-worktree-0.0.0-slice.4.tgz\",\n      \"integrity\": \"sha512-GdvXHjil2WEG7e9JPsyxjo2cR/2tWApkMkN4Z3de9HaaqCCZzqpA75SVjH3t8fHkORUs3thd6GkBh2ycW8hAzg==\",\n      \"shasum\": \"9eb75ade92ba380bc62b96ef05bc66c4140f7620\",\n      \"fileCount\": 7,\n      \"unpackedSize\": 24130\n    },\n    {\n      \"id\": \"@kernlang/agon-support-agent-runtime\",\n      \"filename\": \"kernlang-agon-support-agent-runtime-0.0.0-slice.4.tgz\",\n      \"integrity\": \"sha512-gf30DinsWoyQKY2105T791O3ZtCwHjZYvsVbhvxOJngEJRszomtnw9U7oLnFkAHQolB0dqfG1Gz1oFjc9QZmBg==\",\n      \"shasum\": \"663c526866c048983bc8621e549e7c2478f2e67b\",\n      \"fileCount\": 6,\n      \"unpackedSize\": 37563\n    },\n    {\n      \"id\": \"@kernlang/agon-support-judge\",\n      \"filename\": \"kernlang-agon-support-judge-0.0.0-slice.4.tgz\",\n      \"integrity\": \"sha512-Tq1OdsQZnYPVXAVaPuIE1ZPRY3jjofKVRTRj10vTzZKbTUUW2eEIdzlKLPz79h/d7GtTpjjSmcuEFwFI8QjIrw==\",\n      \"shasum\": \"0d91b0bb668ef9d3c1cd831a73b60c56e98def67\",\n      \"fileCount\": 6,\n      \"unpackedSize\": 20372\n    }\n  ]\n}\n\n RUN  v3.2.7 /private/var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-modular-s7-commit-8aPFSr\n\n ✓ tests/unit/modular-support-runtime-isolation.test.ts (3 tests) 2ms\n ✓ tests/unit/modular-support-parity.test.ts (3 tests) 1ms\n\n Test Files  2 passed (2)\n      Tests  6 passed (6)\n   Start at  20:37:43\n   Duration  360ms (transform 95ms, setup 29ms, collect 174ms, tests 4ms, environment 0ms, prepare 59ms)\n\n"
+    },
+    {
+      "id": "first-party-packages",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-first-party"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\n> test:modular-first-party\n> node scripts/spec/verify-modular-first-party-packages.mjs --self-test\n\nfirst-party package negative control passed\n{\n  \"packages\": 36,\n  \"occurrences\": 341,\n  \"contributions\": 313,\n  \"status\": \"passed\"\n}\n"
+    },
+    {
+      "id": "first-party-disable-matrix",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-disable-matrix"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\n> test:modular-disable-matrix\n> node scripts/spec/verify-modular-disable-matrix.mjs --self-test\n\nS5 disable-matrix negative control passed\n{\n  \"mods\": 36,\n  \"cases\": 36,\n  \"status\": \"passed\"\n}\n"
+    },
+    {
+      "id": "managed-lifecycle-contract",
+      "command": [
+        "node",
+        "scripts/spec/verify-modular-slice7-lifecycle.mjs",
+        "--self-test"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "{\n  \"status\": \"passed\",\n  \"acceptanceCommands\": 4,\n  \"lifecycleMarkers\": 19,\n  \"temporaryAdapters\": 1,\n  \"postinstallRemoved\": true\n}\n"
+    },
+    {
+      "id": "surface-cutover-regression",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-slice6"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "26 KB\nESM ⚡️ Build success in 8ms\n\n> @kernlang/agon-mod-goal@0.0.0-slice.5 build\n> tsup && tsc -b tsconfig.json --force\n\nCLI Building entry: src/index.ts\nCLI Using tsconfig: tsconfig.json\nCLI tsup v8.5.1\nCLI Using tsup config: /private/var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-modular-s7-commit-8aPFSr/packages/mod-goal/tsup.config.ts\nCLI Target: es2022\nCLI Cleaning output folder\nESM Build start\nESM dist/index.js 6.26 KB\nESM ⚡️ Build success in 7ms\n\n> @kernlang/agon-mod-pipeline-delivery@0.0.0-slice.5 build\n> tsup && tsc -b tsconfig.json --force\n\nCLI Building entry: src/index.ts\nCLI Using tsconfig: tsconfig.json\nCLI tsup v8.5.1\nCLI Using tsup config: /private/var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-modular-s7-commit-8aPFSr/packages/mod-pipeline-delivery/tsup.config.ts\nCLI Target: es2022\nCLI Cleaning output folder\nESM Build start\nESM dist/index.js 7.06 KB\nESM ⚡️ Build success in 9ms\n\n> @kernlang/agon-mod-pipeline-orchestration@0.0.0-slice.5 build\n> tsup && tsc -b tsconfig.json --force\n\nCLI Building entry: src/index.ts\nCLI Using tsconfig: tsconfig.json\nCLI tsup v8.5.1\nCLI Using tsup config: /private/var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-modular-s7-commit-8aPFSr/packages/mod-pipeline-orchestration/tsup.config.ts\nCLI Target: es2022\nCLI Cleaning output folder\nESM Build start\nESM dist/index.js 4.09 KB\nESM ⚡️ Build success in 8ms\n\n> @kernlang/agon-mod-team-forge@0.0.0-slice.5 build\n> tsup && tsc -b tsconfig.json --force\n\nCLI Building entry: src/index.ts\nCLI Using tsconfig: tsconfig.json\nCLI tsup v8.5.1\nCLI Using tsup config: /private/var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-modular-s7-commit-8aPFSr/packages/mod-team-forge/tsup.config.ts\nCLI Target: es2022\nCLI Cleaning output folder\nESM Build start\nESM dist/index.js 7.79 KB\nESM ⚡️ Build success in 8ms\n\n> @kernlang/agon-mod-team-tribunal@0.0.0-slice.5 build\n> tsup && tsc -b tsconfig.json --force\n\nCLI Building entry: src/index.ts\nCLI Using tsconfig: tsconfig.json\nCLI tsup v8.5.1\nCLI Using tsup config: /private/var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-modular-s7-commit-8aPFSr/packages/mod-team-tribunal/tsup.config.ts\nCLI Target: es2022\nCLI Cleaning output folder\nESM Build start\nESM dist/index.js 7.16 KB\nESM ⚡️ Build success in 8ms\nbuilt 47 modular support and first-party packages\n\n RUN  v3.2.7 /private/var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-modular-s7-commit-8aPFSr\n\n ✓ tests/unit/modular-physical-activation-order.test.ts (2 tests) 2ms\n ✓ tests/unit/modular-docs-projection.test.ts (1 test) 341ms\n   ✓ generated docs projection > renders the selected docs entry and refuses a catalog where it is disabled  341ms\n ✓ tests/unit/modular-selected-lock-integrity.test.ts (2 tests) 2ms\n ✓ tests/unit/modular-surface-collision.test.ts (1 test) 2ms\n ✓ tests/unit/modular-surface-generation.test.ts (7 tests) 19ms\n ✓ tests/unit/modular-first-party-lock-validation.test.ts (1 test) 46ms\n ✓ tests/unit/modular-physical-surface-activation.test.ts (3 tests) 93ms\n ✓ tests/unit/modular-production-surface-bootstrap.test.ts (2 tests) 203ms\n ✓ tests/unit/modular-mcp-production-authority.test.ts (1 test) 30ms\n ✓ tests/unit/modular-surface-cutover.test.ts (7 tests) 10ms\n\n Test Files  10 passed (10)\n      Tests  27 passed (27)\n   Start at  20:41:18\n   Duration  1.57s (transform 1.78s, setup 129ms, collect 4.83s, tests 748ms, environment 1ms, prepare 299ms)\n\n\n> test:modular-disabled-surfaces\n> node scripts/run-node22.mjs vitest run tests/unit/modular-surface-cutover.test.ts -t disabled\n\n\n RUN  v3.2.7 /private/var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-modular-s7-commit-8aPFSr\n\n ✓ tests/unit/modular-surface-cutover.test.ts (7 tests | 6 skipped) 7ms\n\n Test Files  1 passed (1)\n      Tests  1 passed | 6 skipped (7)\n   Start at  20:41:20\n   Duration  1.43s (transform 736ms, setup 22ms, collect 1.18s, tests 7ms, environment 0ms, prepare 35ms)\n\n{\n  \"status\": \"passed\",\n  \"entries\": 440,\n  \"physicalUserPackages\": 36,\n  \"temporaryAdapters\": 5\n}\n"
+    },
+    {
+      "id": "typecheck",
+      "command": [
+        "npm",
+        "run",
+        "typecheck"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\n> typecheck\n> tsc -b\n\n"
+    },
+    {
+      "id": "lint",
+      "command": [
+        "npm",
+        "run",
+        "lint"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\n> lint\n> eslint . --max-warnings 0\n\n"
+    },
+    {
+      "id": "full-repository-suite",
+      "command": [
+        "npm",
+        "run",
+        "test:ts"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "efaultBranch <name>\nhint:\nhint: Names commonly chosen instead of 'master' are 'main', 'trunk' and\nhint: 'development'. The just-created branch can be renamed via this command:\nhint:\nhint: \tgit branch -m <name>\nhint:\nhint: Disable this message with \"git config set advice.defaultBranchName false\"\nhint: Using 'master' as the name for the initial branch. This default branch name\nhint: will change to \"main\" in Git 3.0. To configure the initial branch name\nhint: to use in all of your new repositories, which will suppress this warning,\nhint: call:\nhint:\nhint: \tgit config --global init.defaultBranch <name>\nhint:\nhint: Names commonly chosen instead of 'master' are 'main', 'trunk' and\nhint: 'development'. The just-created branch can be renamed via this command:\nhint:\nhint: \tgit branch -m <name>\nhint:\nhint: Disable this message with \"git config set advice.defaultBranchName false\"\nhint: Using 'master' as the name for the initial branch. This default branch name\nhint: will change to \"main\" in Git 3.0. To configure the initial branch name\nhint: to use in all of your new repositories, which will suppress this warning,\nhint: call:\nhint:\nhint: \tgit config --global init.defaultBranch <name>\nhint:\nhint: Names commonly chosen instead of 'master' are 'main', 'trunk' and\nhint: 'development'. The just-created branch can be renamed via this command:\nhint:\nhint: \tgit branch -m <name>\nhint:\nhint: Disable this message with \"git config set advice.defaultBranchName false\"\nhint: Using 'master' as the name for the initial branch. This default branch name\nhint: will change to \"main\" in Git 3.0. To configure the initial branch name\nhint: to use in all of your new repositories, which will suppress this warning,\nhint: call:\nhint:\nhint: \tgit config --global init.defaultBranch <name>\nhint:\nhint: Names commonly chosen instead of 'master' are 'main', 'trunk' and\nhint: 'development'. The just-created branch can be renamed via this command:\nhint:\nhint: \tgit branch -m <name>\nhint:\nhint: Disable this message with \"git config set advice.defaultBranchName false\"\nstderr | tests/integration/forge-e2e.test.ts > Forge E2E > returns brainstorm drafts when final synthesis dispatch fails\n[agon] brainstorm synthesis (thinker) failed: synthesis failed\n\nstderr | tests/integration/forge-e2e.test.ts > Forge E2E > does not rank empty brainstorm replies as usable drafts\n[agon] brainstorm dispatch (empty) failed after 2 attempt(s): empty\n\nstderr | tests/integration/forge-e2e.test.ts > Forge E2E > does not rank empty brainstorm replies as usable drafts\n[agon] brainstorm panel degraded: empty empty → retry empty, dropped (1/2 responded)\n\nstderr | tests/integration/forge-e2e.test.ts > Forge E2E > fails honestly when every brainstorm seat is unusable\n[agon] brainstorm dispatch (empty-a) failed after 2 attempt(s): empty\n[agon] brainstorm dispatch (empty-b) failed after 2 attempt(s): empty\n\nstderr | tests/integration/forge-e2e.test.ts > Forge E2E > fails honestly when every brainstorm seat is unusable\n[agon] brainstorm panel degraded: empty-a empty → retry empty, dropped; empty-b empty → retry empty, dropped (0/2 responded)\n\nstderr | tests/integration/forge-e2e.test.ts > Forge E2E > falls back to debate text when tribunal summary engine returns empty output\n[agon] tribunal summary failed: tribunal summary returned empty response\n\nhint: Using 'master' as the name for the initial branch. This default branch name\nhint: will change to \"main\" in Git 3.0. To configure the initial branch name\nhint: to use in all of your new repositories, which will suppress this warning,\nhint: call:\nhint:\nhint: \tgit config --global init.defaultBranch <name>\nhint:\nhint: Names commonly chosen instead of 'master' are 'main', 'trunk' and\nhint: 'development'. The just-created branch can be renamed via this command:\nhint:\nhint: \tgit branch -m <name>\nhint:\nhint: Disable this message with \"git config set advice.defaultBranchName false\"\n\n[agon] Cleaning up active git worktrees...\n\n[agon] Cleaning up active git worktrees...\n"
+    },
+    {
+      "id": "generated-artifacts",
+      "command": [
+        "npm",
+        "run",
+        "spec:modular-generated:check"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\n> spec:modular-generated:check\n> node scripts/spec/verify-modular-generated-artifacts.mjs\n\nall modular generated artifacts are current\n"
+    },
+    {
+      "id": "spec-consistency",
+      "command": [
+        "node",
+        "scripts/spec/check-modular-agon-consistency.mjs"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "{\n  \"inventoryAssignments\": 863,\n  \"packages\": 49,\n  \"mods\": 36,\n  \"coverageCells\": 1480,\n  \"markdownFiles\": 15,\n  \"status\": \"passed\"\n}\n"
+    },
+    {
+      "id": "roadmap-contract",
+      "command": [
+        "node",
+        "scripts/spec/verify-modular-agon-roadmap.mjs"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "{\n  \"packages\": 49,\n  \"uniqueEdges\": 144,\n  \"legacyAssignments\": 863,\n  \"slices\": 9,\n  \"claims\": 10,\n  \"status\": \"passed\"\n}\n"
+    },
+    {
+      "id": "legacy-oracle",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-legacy-oracle"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\n> test:modular-legacy-oracle\n> node scripts/spec/verify-modular-legacy-oracle.mjs\n\n{\n  \"workflows\": 160,\n  \"rawEnvelopes\": 7,\n  \"transformStages\": 4,\n  \"status\": \"passed\"\n}\n"
+    },
+    {
+      "id": "legacy-oracle-negative-controls",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-oracle-boundary"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\n> test:modular-oracle-boundary\n> node scripts/spec/verify-modular-legacy-oracle-negative-controls.mjs\n\nLegacy oracle negative controls passed\n"
+    },
+    {
+      "id": "slice7-performance",
+      "command": [
+        "npm",
+        "run",
+        "perf:modular-slice7"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\n> perf:modular-slice7\n> npm run build -w packages/mod-kernel && node --expose-gc scripts/spec/measure-modular-slice7.mjs\n\n\n> @kernlang/agon-kernel@0.0.0-slice.2 build\n> tsup && tsc -b tsconfig.json --force\n\nCLI Building entry: src/index.ts\nCLI Using tsconfig: tsconfig.json\nCLI tsup v8.5.1\nCLI Using tsup config: /private/var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-modular-s7-commit-8aPFSr/packages/mod-kernel/tsup.config.ts\nCLI Target: es2022\nCLI Cleaning output folder\nESM Build start\nESM dist/index.js 784.12 KB\nESM ⚡️ Build success in 24ms\n{\n  \"schemaVersion\": 1,\n  \"slice\": \"S7\",\n  \"sampleCount\": 15,\n  \"planMs\": {\n    \"median\": 0.2547910000000684,\n    \"p95\": 1.7992500000000007,\n    \"budgetP95\": 25\n  },\n  \"applyMs\": {\n    \"median\": 204.96783400000004,\n    \"p95\": 238.6937499999999,\n    \"budgetP95\": 1000\n  },\n  \"totalMs\": {\n    \"median\": 205.25191700000005,\n    \"p95\": 238.94854099999998,\n    \"budgetP95\": 1025\n  },\n  \"residentRssBytes\": {\n    \"median\": 79331328,\n    \"p95\": 79740928,\n    \"budgetP95\": 201326592\n  },\n  \"passed\": true\n}\n"
+    }
+  ],
+  "passed": true
+}

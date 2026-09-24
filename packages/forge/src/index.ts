@@ -18,6 +18,7 @@ export { runBaseline, runStage1, runStage2, determineWinner } from './stages.js'
 export { runFitness } from './fitness.js';
 export { runLint, runStyleCheck } from './quality.js';
 export { writeManifest, readManifest, updateManifest } from './manifest.js';
+export { writeVersionedResultEnvelope } from './result-envelope.js';
 export type { StageResult, SynthesisResult, ForgeEventCallback, WorktreeEntry } from './types.js';
 export type { TribunalResult, TribunalRound, TribunalPosition } from './tribunal.js';
 export { getModeConfig, buildModePrompt, buildModeSummaryPrompt, isTribunalMode, isTribunalProtocol, TRIBUNAL_MODES, TRIBUNAL_PROTOCOLS } from './tribunal-modes.js';

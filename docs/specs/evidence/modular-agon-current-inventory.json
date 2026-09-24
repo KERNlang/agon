@@ -1,0 +1,4504 @@
+{
+  "schemaVersion": 1,
+  "generatedFrom": "frozen pre-extraction migration baseline; verify with node scripts/spec/generate-modular-agon-inventory.mjs; explicit replacement requires --refresh-frozen-baseline",
+  "categories": {
+    "cliCommands": [
+      {
+        "id": "agent-guide",
+        "source": "packages/cli/src/lazy-commands.ts:311",
+        "category": "user-toggleable-mod-package",
+        "description": "agent-guide"
+      },
+      {
+        "id": "ask",
+        "source": "packages/cli/src/lazy-commands.ts:315",
+        "category": "user-toggleable-mod-package",
+        "description": "ask"
+      },
+      {
+        "id": "attach",
+        "source": "packages/cli/src/lazy-commands.ts:324",
+        "category": "minimal-kernel-machinery",
+        "description": "attach"
+      },
+      {
+        "id": "brainstorm",
+        "source": "packages/cli/src/lazy-commands.ts:288",
+        "category": "competition",
+        "description": "brainstorm"
+      },
+      {
+        "id": "browser-host",
+        "source": "packages/cli/src/lazy-commands.ts:330",
+        "category": "user-toggleable-mod-package",
+        "description": "browser-host"
+      },
+      {
+        "id": "browser-host install",
+        "source": "packages/cli/src/commands/browser-host.ts:546",
+        "category": "user-toggleable-mod-package",
+        "description": "browser-host install"
+      },
+      {
+        "id": "browser-host status",
+        "source": "packages/cli/src/commands/browser-host.ts:548",
+        "category": "user-toggleable-mod-package",
+        "description": "browser-host status"
+      },
+      {
+        "id": "browser-host stop",
+        "source": "packages/cli/src/commands/browser-host.ts:549",
+        "category": "user-toggleable-mod-package",
+        "description": "browser-host stop"
+      },
+      {
+        "id": "browser-host uninstall",
+        "source": "packages/cli/src/commands/browser-host.ts:547",
+        "category": "user-toggleable-mod-package",
+        "description": "browser-host uninstall"
+      },
+      {
+        "id": "call",
+        "source": "packages/cli/src/lazy-commands.ts:306",
+        "category": "minimal-kernel-machinery",
+        "description": "call"
+      },
+      {
+        "id": "campfire",
+        "source": "packages/cli/src/lazy-commands.ts:290",
+        "category": "competition",
+        "description": "campfire"
+      },
+      {
+        "id": "chrome",
+        "source": "packages/cli/src/lazy-commands.ts:328",
+        "category": "user-toggleable-mod-package",
+        "description": "chrome"
+      },
+      {
+        "id": "config",
+        "source": "packages/cli/src/lazy-commands.ts:304",
+        "category": "config",
+        "description": "config"
+      },
+      {
+        "id": "conquer",
+        "source": "packages/cli/src/lazy-commands.ts:321",
+        "category": "user-toggleable-mod-package",
+        "description": "conquer"
+      },
+      {
+        "id": "council",
+        "source": "packages/cli/src/lazy-commands.ts:319",
+        "category": "user-toggleable-mod-package",
+        "description": "council"
+      },
+      {
+        "id": "daemon",
+        "source": "packages/cli/src/lazy-commands.ts:325",
+        "category": "user-toggleable-mod-package",
+        "description": "daemon"
+      },
+      {
+        "id": "doctor",
+        "source": "packages/cli/src/lazy-commands.ts:300",
+        "category": "info",
+        "description": "doctor"
+      },
+      {
+        "id": "drive",
+        "source": "packages/cli/src/lazy-commands.ts:327",
+        "category": "user-toggleable-mod-package",
+        "description": "drive"
+      },
+      {
+        "id": "engine",
+        "source": "packages/cli/src/lazy-commands.ts:299",
+        "category": "minimal-kernel-machinery",
+        "description": "engine"
+      },
+      {
+        "id": "ext",
+        "source": "packages/cli/src/lazy-commands.ts:329",
+        "category": "user-toggleable-mod-package",
+        "description": "ext"
+      },
+      {
+        "id": "ext install",
+        "source": "packages/cli/src/commands/ext.ts:321",
+        "category": "user-toggleable-mod-package",
+        "description": "ext install"
+      },
+      {
+        "id": "ext native-host",
+        "source": "packages/cli/src/commands/ext.ts:322",
+        "category": "user-toggleable-mod-package",
+        "description": "ext native-host"
+      },
+      {
+        "id": "forge",
+        "source": "packages/cli/src/lazy-commands.ts:287",
+        "category": "competition",
+        "description": "forge"
+      },
+      {
+        "id": "goal",
+        "source": "packages/cli/src/lazy-commands.ts:313",
+        "category": "user-toggleable-mod-package",
+        "description": "goal"
+      },
+      {
+        "id": "history",
+        "source": "packages/cli/src/lazy-commands.ts:295",
+        "category": "info",
+        "description": "history"
+      },
+      {
+        "id": "install-agent-prompts",
+        "source": "packages/cli/src/lazy-commands.ts:312",
+        "category": "user-toggleable-mod-package",
+        "description": "install-agent-prompts"
+      },
+      {
+        "id": "job",
+        "source": "packages/cli/src/lazy-commands.ts:310",
+        "category": "user-toggleable-mod-package",
+        "description": "job"
+      },
+      {
+        "id": "job cancel",
+        "source": "packages/cli/src/commands/job.ts:313",
+        "category": "user-toggleable-mod-package",
+        "description": "job cancel"
+      },
+      {
+        "id": "job events",
+        "source": "packages/cli/src/commands/job.ts:284",
+        "category": "user-toggleable-mod-package",
+        "description": "job events"
+      },
+      {
+        "id": "job list",
+        "source": "packages/cli/src/commands/job.ts:258",
+        "category": "user-toggleable-mod-package",
+        "description": "job list"
+      },
+      {
+        "id": "job result",
+        "source": "packages/cli/src/commands/job.ts:300",
+        "category": "user-toggleable-mod-package",
+        "description": "job result"
+      },
+      {
+        "id": "job status",
+        "source": "packages/cli/src/commands/job.ts:271",
+        "category": "user-toggleable-mod-package",
+        "description": "job status"
+      },
+      {
+        "id": "job submit",
+        "source": "packages/cli/src/commands/job.ts:229",
+        "category": "user-toggleable-mod-package",
+        "description": "job submit"
+      },
+      {
+        "id": "last",
+        "source": "packages/cli/src/lazy-commands.ts:301",
+        "category": "user-toggleable-mod-package",
+        "description": "last"
+      },
+      {
+        "id": "leaderboard",
+        "source": "packages/cli/src/lazy-commands.ts:294",
+        "category": "info",
+        "description": "leaderboard"
+      },
+      {
+        "id": "login",
+        "source": "packages/cli/src/lazy-commands.ts:331",
+        "category": "minimal-kernel-machinery",
+        "description": "login"
+      },
+      {
+        "id": "mod approve",
+        "source": "packages/cli/src/commands/mod.ts:312",
+        "category": "minimal-kernel-machinery",
+        "description": "mod approve"
+      },
+      {
+        "id": "mod disable",
+        "source": "packages/cli/src/commands/mod.ts:313",
+        "category": "minimal-kernel-machinery",
+        "description": "mod disable"
+      },
+      {
+        "id": "mod enable",
+        "source": "packages/cli/src/commands/mod.ts:313",
+        "category": "minimal-kernel-machinery",
+        "description": "mod enable"
+      },
+      {
+        "id": "mod inspect",
+        "source": "packages/cli/src/commands/mod.ts:312",
+        "category": "minimal-kernel-machinery",
+        "description": "mod inspect"
+      },
+      {
+        "id": "mod list",
+        "source": "packages/cli/src/commands/mod.ts:312",
+        "category": "minimal-kernel-machinery",
+        "description": "mod list"
+      },
+      {
+        "id": "mod recover",
+        "source": "packages/cli/src/commands/mod.ts:313",
+        "category": "minimal-kernel-machinery",
+        "description": "mod recover"
+      },
+      {
+        "id": "mod revoke",
+        "source": "packages/cli/src/commands/mod.ts:312",
+        "category": "minimal-kernel-machinery",
+        "description": "mod revoke"
+      },
+      {
+        "id": "mod trust",
+        "source": "packages/cli/src/commands/mod.ts:312",
+        "category": "minimal-kernel-machinery",
+        "description": "mod trust"
+      },
+      {
+        "id": "mod untrust",
+        "source": "packages/cli/src/commands/mod.ts:312",
+        "category": "minimal-kernel-machinery",
+        "description": "mod untrust"
+      },
+      {
+        "id": "models",
+        "source": "packages/cli/src/lazy-commands.ts:302",
+        "category": "config",
+        "description": "models"
+      },
+      {
+        "id": "models add",
+        "source": "packages/cli/src/commands/models.ts:95",
+        "category": "minimal-kernel-machinery",
+        "description": "models add"
+      },
+      {
+        "id": "models auto",
+        "source": "packages/cli/src/commands/models.ts:172",
+        "category": "minimal-kernel-machinery",
+        "description": "models auto"
+      },
+      {
+        "id": "models disable",
+        "source": "packages/cli/src/commands/models.ts:128",
+        "category": "minimal-kernel-machinery",
+        "description": "models disable"
+      },
+      {
+        "id": "models enable",
+        "source": "packages/cli/src/commands/models.ts:62",
+        "category": "minimal-kernel-machinery",
+        "description": "models enable"
+      },
+      {
+        "id": "models hide",
+        "source": "packages/cli/src/commands/models.ts:150",
+        "category": "minimal-kernel-machinery",
+        "description": "models hide"
+      },
+      {
+        "id": "models list",
+        "source": "packages/cli/src/commands/models.ts:17",
+        "category": "minimal-kernel-machinery",
+        "description": "models list"
+      },
+      {
+        "id": "models remove",
+        "source": "packages/cli/src/commands/models.ts:194",
+        "category": "minimal-kernel-machinery",
+        "description": "models remove"
+      },
+      {
+        "id": "models set",
+        "source": "packages/cli/src/commands/models.ts:179",
+        "category": "minimal-kernel-machinery",
+        "description": "models set"
+      },
+      {
+        "id": "mutate",
+        "source": "packages/cli/src/lazy-commands.ts:309",
+        "category": "user-toggleable-mod-package",
+        "description": "mutate"
+      },
+      {
+        "id": "naturalize",
+        "source": "packages/cli/src/lazy-commands.ts:308",
+        "category": "user-toggleable-mod-package",
+        "description": "naturalize"
+      },
+      {
+        "id": "nero",
+        "source": "packages/cli/src/lazy-commands.ts:318",
+        "category": "session",
+        "description": "nero"
+      },
+      {
+        "id": "provenance",
+        "source": "packages/cli/src/lazy-commands.ts:298",
+        "category": "info",
+        "description": "provenance"
+      },
+      {
+        "id": "provider",
+        "source": "packages/cli/src/lazy-commands.ts:303",
+        "category": "config",
+        "description": "provider"
+      },
+      {
+        "id": "rag",
+        "source": "packages/cli/src/lazy-commands.ts:317",
+        "category": "user-toggleable-mod-package",
+        "description": "rag"
+      },
+      {
+        "id": "ratings",
+        "source": "packages/cli/src/lazy-commands.ts:296",
+        "category": "user-toggleable-mod-package",
+        "description": "ratings"
+      },
+      {
+        "id": "ratings purge-unknown",
+        "source": "packages/cli/src/commands/ratings.ts:18",
+        "category": "user-toggleable-mod-package",
+        "description": "ratings purge-unknown"
+      },
+      {
+        "id": "research",
+        "source": "packages/cli/src/lazy-commands.ts:320",
+        "category": "user-toggleable-mod-package",
+        "description": "research"
+      },
+      {
+        "id": "review",
+        "source": "packages/cli/src/lazy-commands.ts:305",
+        "category": "execution",
+        "description": "review"
+      },
+      {
+        "id": "room",
+        "source": "packages/cli/src/lazy-commands.ts:297",
+        "category": "user-toggleable-mod-package",
+        "description": "room"
+      },
+      {
+        "id": "sanitize",
+        "source": "packages/cli/src/lazy-commands.ts:307",
+        "category": "user-toggleable-mod-package",
+        "description": "sanitize"
+      },
+      {
+        "id": "serve",
+        "source": "packages/cli/src/lazy-commands.ts:326",
+        "category": "user-toggleable-mod-package",
+        "description": "serve"
+      },
+      {
+        "id": "synthesis",
+        "source": "packages/cli/src/lazy-commands.ts:314",
+        "category": "user-toggleable-mod-package",
+        "description": "synthesis"
+      },
+      {
+        "id": "team-brainstorm",
+        "source": "packages/cli/src/lazy-commands.ts:292",
+        "category": "competition",
+        "description": "team-brainstorm"
+      },
+      {
+        "id": "team-forge",
+        "source": "packages/cli/src/lazy-commands.ts:291",
+        "category": "competition",
+        "description": "team-forge"
+      },
+      {
+        "id": "team-tribunal",
+        "source": "packages/cli/src/lazy-commands.ts:293",
+        "category": "competition",
+        "description": "team-tribunal"
+      },
+      {
+        "id": "think",
+        "source": "packages/cli/src/lazy-commands.ts:316",
+        "category": "user-toggleable-mod-package",
+        "description": "think"
+      },
+      {
+        "id": "tribunal",
+        "source": "packages/cli/src/lazy-commands.ts:289",
+        "category": "competition",
+        "description": "tribunal"
+      },
+      {
+        "id": "update",
+        "source": "packages/cli/src/lazy-commands.ts:332",
+        "category": "info",
+        "description": "update"
+      },
+      {
+        "id": "upgrade",
+        "source": "packages/cli/src/lazy-commands.ts:333",
+        "category": "minimal-kernel-machinery",
+        "description": "upgrade",
+        "aliasOf": "update"
+      },
+      {
+        "id": "worktree",
+        "source": "packages/cli/src/lazy-commands.ts:322",
+        "category": "utility",
+        "description": "worktree"
+      },
+      {
+        "id": "wt",
+        "source": "packages/cli/src/lazy-commands.ts:323",
+        "category": "user-toggleable-mod-package",
+        "description": "wt",
+        "aliasOf": "worktree"
+      }
+    ],
+    "tuiSlashCommands": [
+      {
+        "id": "/agent",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "execution",
+        "description": "<task>                   — autonomous agent loop (solo or shadow, auto-routed)"
+      },
+      {
+        "id": "/agent-solo",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "execution",
+        "description": "<task>                   — force solo agent mode, no shadow worker"
+      },
+      {
+        "id": "/apply",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "execution",
+        "description": "[path] [--force]       — apply winning forge patch"
+      },
+      {
+        "id": "/approve",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "planning",
+        "description": "                        — approve current plan"
+      },
+      {
+        "id": "/auto",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "planning",
+        "description": "[on|off|toggle|status] or <task> — autonomous mode control"
+      },
+      {
+        "id": "/brainstorm",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "competition",
+        "description": "<question>              — confidence-bidding answers"
+      },
+      {
+        "id": "/btw",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "session",
+        "description": "<question>               — ask something while engines work (side-channel)"
+      },
+      {
+        "id": "/build",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "execution",
+        "description": "<task>                   — agent builds in cwd (reads/edits/tests)"
+      },
+      {
+        "id": "/campfire",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "competition",
+        "description": "<topic>                  — think together, no competition"
+      },
+      {
+        "id": "/cancel",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "planning",
+        "description": "                        — cancel current plan"
+      },
+      {
+        "id": "/cesar",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "config",
+        "description": "<engine>                — set Cesar brain engine (e.g. /cesar codex)"
+      },
+      {
+        "id": "/cesar-hints",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "minimal-kernel-machinery",
+        "description": "<task>                 — inspect Cesar routing hints for a prompt"
+      },
+      {
+        "id": "/cesar-report",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "minimal-kernel-machinery",
+        "description": "                      — Cesar routing calibration report"
+      },
+      {
+        "id": "/chats",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "info",
+        "description": "[id|resume <id>]        — chat history or resume session"
+      },
+      {
+        "id": "/checkpoints",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "minimal-kernel-machinery",
+        "description": "                 — list recent file checkpoints"
+      },
+      {
+        "id": "/chrome",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "user-toggleable-mod-package",
+        "description": "<task>                   — drive your browser (read/navigate/screenshot/click), result feeds Cesar"
+      },
+      {
+        "id": "/clean",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "minimal-kernel-machinery",
+        "description": "                        — alias for /clear"
+      },
+      {
+        "id": "/clear",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "session",
+        "description": "                        — reset session (saves chat, clears brain)"
+      },
+      {
+        "id": "/commit",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "execution",
+        "description": "[message]                — stage & commit with auto-generated message"
+      },
+      {
+        "id": "/compact",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "session",
+        "description": "                        — shrink Cesar context without clearing transcript"
+      },
+      {
+        "id": "/config",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "config",
+        "description": "[list|get|set]          — settings"
+      },
+      {
+        "id": "/conquer",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "user-toggleable-mod-package",
+        "description": "<task> --gate \"<cmd>\" [--builder X] [-e a,b] [--max-turns N] [--gate-timeout s] [--max-hours h] [--timeout s] — supervised-autonomous build: Cesar drives a builder CLI, convenes nero/tribunal/council on forks, stops at a human merge gate (background job)"
+      },
+      {
+        "id": "/council",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "user-toggleable-mod-package",
+        "description": "<decision>               — roundtable: every engine a role, top-rated chairs"
+      },
+      {
+        "id": "/cp",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "utility",
+        "description": "[N|last]                — copy code block N, or last response, to clipboard"
+      },
+      {
+        "id": "/create-skill",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "utility",
+        "description": "<name>                  — scaffold a new skill (.agon/skills/)"
+      },
+      {
+        "id": "/doctor",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "info",
+        "description": "[engines|harness]        — diagnose engines, worktree, or Cesar harness"
+      },
+      {
+        "id": "/engines",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "config",
+        "description": "                        — select active engines"
+      },
+      {
+        "id": "/exit",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "utility",
+        "description": "                        — quit"
+      },
+      {
+        "id": "/explore",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "session",
+        "description": "                        — toggle exploration mode (read-only)"
+      },
+      {
+        "id": "/extensions",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "minimal-kernel-machinery",
+        "description": "                        — list installed extensions"
+      },
+      {
+        "id": "/flow",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "info",
+        "description": "                        — log this session"
+      },
+      {
+        "id": "/flows",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "info",
+        "description": "                        — flow analytics dashboard"
+      },
+      {
+        "id": "/focus",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "info",
+        "description": "<id>                    — switch to background job output"
+      },
+      {
+        "id": "/forge",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "competition",
+        "description": "<task> test with <cmd> [--hardened] — competitive code generation"
+      },
+      {
+        "id": "/goal",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "user-toggleable-mod-package",
+        "description": "<intent> --queue <dir> --gate \"<cmd>\" [--push] — autonomous queue: build→review(all)→judge→fix→commit→push per task (background job)"
+      },
+      {
+        "id": "/harness-replay",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "minimal-kernel-machinery",
+        "description": "[turnId]              — replay Cesar tool timeline + approval ledger"
+      },
+      {
+        "id": "/help",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "utility",
+        "description": "                        — show this help"
+      },
+      {
+        "id": "/history",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "info",
+        "description": "[id]                    — past forge runs"
+      },
+      {
+        "id": "/img",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "utility",
+        "description": "<path>                   — attach image to next prompt"
+      },
+      {
+        "id": "/init",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "minimal-kernel-machinery",
+        "description": "                        — create AGENTS.md config wizard"
+      },
+      {
+        "id": "/jobs",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "info",
+        "description": "                        — list running/completed jobs"
+      },
+      {
+        "id": "/leaderboard",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "info",
+        "description": "                        — Glicko rankings"
+      },
+      {
+        "id": "/mcp",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "session",
+        "description": "connect <name|url> | disconnect <name> | list — manage session MCP servers"
+      },
+      {
+        "id": "/mode",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "minimal-kernel-machinery",
+        "description": "[ask|auto-edit|auto|status]  — permission mode (Shift+Tab cycles)"
+      },
+      {
+        "id": "/models",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "config",
+        "description": "                        — browse & add provider models + CLI models"
+      },
+      {
+        "id": "/mutate",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "user-toggleable-mod-package",
+        "description": "[path] [--diff <base>] [--test \"<cmd>\"] [--semantic] [--lens security|privacy|perf|ratelimit|concurrency|<text>] — mutation testing: which of your tests are fake?"
+      },
+      {
+        "id": "/naturalize",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "user-toggleable-mod-package",
+        "description": "<file> [--author X] [--engine Y] [--min-change N] — sanitize → non-author rewrite → re-scan"
+      },
+      {
+        "id": "/nero",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "session",
+        "description": "[<decision>]             — toggle Nero mode, or challenge a decision (top-rated critic)"
+      },
+      {
+        "id": "/nogate",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "minimal-kernel-machinery",
+        "description": "                        — toggle the verify-before-done gate nudge for this session"
+      },
+      {
+        "id": "/permissions",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "minimal-kernel-machinery",
+        "description": "[add allow|deny <rule>|remove <rule>] — list/edit permission rules"
+      },
+      {
+        "id": "/pipeline",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "execution",
+        "description": "<task> [test with <cmd>]  — build→review→fix loop"
+      },
+      {
+        "id": "/plan",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "planning",
+        "description": "<task> or no args    — plan mode or show plan"
+      },
+      {
+        "id": "/plans",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "planning",
+        "description": "                        — list recent plans"
+      },
+      {
+        "id": "/provider",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "config",
+        "description": "add|remove|list|key      — providers & keys (key set/clear/list)"
+      },
+      {
+        "id": "/raw",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "minimal-kernel-machinery",
+        "description": "                          — reprint last folded engine output (unfolded)"
+      },
+      {
+        "id": "/research",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "user-toggleable-mod-package",
+        "description": "<question> [--count N] [--engine X] — keyless web-grounded cited research (npm/GitHub/MDN/IETF/SO/Wikipedia)"
+      },
+      {
+        "id": "/retry",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "planning",
+        "description": "                        — retry failed plan step"
+      },
+      {
+        "id": "/review",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "execution",
+        "description": "[with <engine>] [<target>] — code review (uncommitted|branch:NAME|commit:SHA)"
+      },
+      {
+        "id": "/review role",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "user-toggleable-mod-package",
+        "description": "[security|correctness|dryness|performance] [<target>] — multi-role review: each engine a focused lens + overall backstop"
+      },
+      {
+        "id": "/run",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "execution",
+        "description": "<cmd>                    — run shell command inline"
+      },
+      {
+        "id": "/sanitize",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "user-toggleable-mod-package",
+        "description": "<file> [--detect] [--metadata] [--strip] [--out f] — invisible-watermark forensics, deterministic"
+      },
+      {
+        "id": "/speculate",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "execution",
+        "description": "<task>                   — parallel speculation: N engines race in worktrees, winner applied"
+      },
+      {
+        "id": "/status",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "minimal-kernel-machinery",
+        "description": "                        — live engine telemetry snapshot"
+      },
+      {
+        "id": "/synthesis",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "user-toggleable-mod-package",
+        "description": "<task> [--swaps 2]       — engines draft, swap, improve; judge picks winner"
+      },
+      {
+        "id": "/team-brainstorm",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "competition",
+        "description": "[2v2|3v3] <question>            — team ideation"
+      },
+      {
+        "id": "/team-forge",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "competition",
+        "description": "[2v2|3v3] <task> test with <cmd> — team code competition"
+      },
+      {
+        "id": "/team-tribunal",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "competition",
+        "description": "[2v2|3v3] [mode] <question>    — team debate"
+      },
+      {
+        "id": "/think",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "user-toggleable-mod-package",
+        "description": "<problem> [--strategy reflexion] [--steps 8] — sequential thinking, one engine"
+      },
+      {
+        "id": "/tokens",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "info",
+        "description": "                        — show token usage & costs"
+      },
+      {
+        "id": "/tribunal",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "competition",
+        "description": "[mode] <question>        — debate (adversarial|socratic|red-team|steelman|synthesis|postmortem)"
+      },
+      {
+        "id": "/undo",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "execution",
+        "description": "                        — revert last patch or Cesar checkpoint"
+      },
+      {
+        "id": "/workspace",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "config",
+        "description": "add|remove|list|switch   — manage project repos"
+      },
+      {
+        "id": "/ws",
+        "source": "packages/cli/src/signals/intent.ts:56",
+        "category": "user-toggleable-mod-package",
+        "description": "                          — list workspaces (shortcut)"
+      }
+    ],
+    "tuiKeyboardActions": [
+      {
+        "id": "cancelChoice",
+        "source": "packages/cli/src/signals/keyboard.ts:40"
+      },
+      {
+        "id": "cancelOrExit",
+        "source": "packages/cli/src/signals/keyboard.ts:73"
+      },
+      {
+        "id": "cancelQuestion",
+        "source": "packages/cli/src/signals/keyboard.ts:64"
+      },
+      {
+        "id": "clearInput",
+        "source": "packages/cli/src/signals/keyboard.ts:66"
+      },
+      {
+        "id": "closeEnginePicker",
+        "source": "packages/cli/src/signals/keyboard.ts:63"
+      },
+      {
+        "id": "closeSlash",
+        "source": "packages/cli/src/signals/keyboard.ts:62"
+      },
+      {
+        "id": "cyclePermissionMode",
+        "source": "packages/cli/src/signals/keyboard.ts:48"
+      },
+      {
+        "id": "enterOther",
+        "source": "packages/cli/src/signals/keyboard.ts:42"
+      },
+      {
+        "id": "executionRailClose",
+        "source": "packages/cli/src/signals/keyboard.ts:61"
+      },
+      {
+        "id": "exit",
+        "source": "packages/cli/src/signals/keyboard.ts:38"
+      },
+      {
+        "id": "exitOther",
+        "source": "packages/cli/src/signals/keyboard.ts:43"
+      },
+      {
+        "id": "fileRailClose",
+        "source": "packages/cli/src/signals/keyboard.ts:60"
+      },
+      {
+        "id": "fileRailSelectNext",
+        "source": "packages/cli/src/signals/keyboard.ts:58"
+      },
+      {
+        "id": "fileRailSelectPrev",
+        "source": "packages/cli/src/signals/keyboard.ts:57"
+      },
+      {
+        "id": "fileRailToggleExpand",
+        "source": "packages/cli/src/signals/keyboard.ts:59"
+      },
+      {
+        "id": "ghostComplete",
+        "source": "packages/cli/src/signals/keyboard.ts:45"
+      },
+      {
+        "id": "historySet",
+        "source": "packages/cli/src/signals/keyboard.ts:70"
+      },
+      {
+        "id": "insertNewline",
+        "source": "packages/cli/src/signals/keyboard.ts:69"
+      },
+      {
+        "id": "interrupt",
+        "source": "packages/cli/src/signals/keyboard.ts:65"
+      },
+      {
+        "id": "interruptSubmit",
+        "source": "packages/cli/src/signals/keyboard.ts:72"
+      },
+      {
+        "id": "moveChoice",
+        "source": "packages/cli/src/signals/keyboard.ts:41"
+      },
+      {
+        "id": "movePauseCursor",
+        "source": "packages/cli/src/signals/keyboard.ts:75"
+      },
+      {
+        "id": "movePlanApproval",
+        "source": "packages/cli/src/signals/keyboard.ts:78"
+      },
+      {
+        "id": "none",
+        "source": "packages/cli/src/signals/keyboard.ts:37"
+      },
+      {
+        "id": "openResults",
+        "source": "packages/cli/src/signals/keyboard.ts:53"
+      },
+      {
+        "id": "openToolDetail",
+        "source": "packages/cli/src/signals/keyboard.ts:51"
+      },
+      {
+        "id": "planControl",
+        "source": "packages/cli/src/signals/keyboard.ts:77"
+      },
+      {
+        "id": "popSteering",
+        "source": "packages/cli/src/signals/keyboard.ts:71"
+      },
+      {
+        "id": "resolveChoice",
+        "source": "packages/cli/src/signals/keyboard.ts:39"
+      },
+      {
+        "id": "retryFailedTool",
+        "source": "packages/cli/src/signals/keyboard.ts:52"
+      },
+      {
+        "id": "selectPauseAction",
+        "source": "packages/cli/src/signals/keyboard.ts:76"
+      },
+      {
+        "id": "submit",
+        "source": "packages/cli/src/signals/keyboard.ts:49"
+      },
+      {
+        "id": "swallow",
+        "source": "packages/cli/src/signals/keyboard.ts:44"
+      },
+      {
+        "id": "toggleAutoQueued",
+        "source": "packages/cli/src/signals/keyboard.ts:47"
+      },
+      {
+        "id": "toggleExecutionRail",
+        "source": "packages/cli/src/signals/keyboard.ts:55"
+      },
+      {
+        "id": "toggleFileRail",
+        "source": "packages/cli/src/signals/keyboard.ts:54"
+      },
+      {
+        "id": "toggleLiveToolTail",
+        "source": "packages/cli/src/signals/keyboard.ts:56"
+      },
+      {
+        "id": "togglePauseMenu",
+        "source": "packages/cli/src/signals/keyboard.ts:74"
+      },
+      {
+        "id": "togglePlanQueued",
+        "source": "packages/cli/src/signals/keyboard.ts:46"
+      },
+      {
+        "id": "toggleToolExpand",
+        "source": "packages/cli/src/signals/keyboard.ts:50"
+      },
+      {
+        "id": "unqueueAuto",
+        "source": "packages/cli/src/signals/keyboard.ts:68"
+      },
+      {
+        "id": "unqueuePlan",
+        "source": "packages/cli/src/signals/keyboard.ts:67"
+      },
+      {
+        "id": "updateBanner",
+        "source": "packages/cli/src/signals/keyboard.ts:79"
+      }
+    ],
+    "builtinCommandMetadata": [
+      {
+        "id": "agent",
+        "source": "packages/core/src/blocks/builtin-commands.ts:24",
+        "category": "execution",
+        "description": "<task>                   — autonomous agent loop (solo/shadow/team auto-routed)"
+      },
+      {
+        "id": "agent-solo",
+        "source": "packages/core/src/blocks/builtin-commands.ts:25",
+        "category": "execution",
+        "description": "<task>                   — force solo agent mode, no shadow worker"
+      },
+      {
+        "id": "apply",
+        "source": "packages/core/src/blocks/builtin-commands.ts:32",
+        "category": "execution",
+        "description": "[path] [--force]       — apply winning forge patch"
+      },
+      {
+        "id": "approve",
+        "source": "packages/core/src/blocks/builtin-commands.ts:39",
+        "category": "planning",
+        "description": "                        — approve current plan"
+      },
+      {
+        "id": "auto",
+        "source": "packages/core/src/blocks/builtin-commands.ts:37",
+        "category": "planning",
+        "description": "[on|off|toggle|status] or <task> — autonomous mode control"
+      },
+      {
+        "id": "brainstorm",
+        "source": "packages/core/src/blocks/builtin-commands.ts:15",
+        "category": "competition",
+        "description": "<question>              — confidence-bidding answers"
+      },
+      {
+        "id": "btw",
+        "source": "packages/core/src/blocks/builtin-commands.ts:68",
+        "category": "session",
+        "description": "<question>               — ask something while engines work"
+      },
+      {
+        "id": "build",
+        "source": "packages/core/src/blocks/builtin-commands.ts:23",
+        "category": "execution",
+        "description": "<task>                   — agent builds in cwd (reads/edits/tests)"
+      },
+      {
+        "id": "campfire",
+        "source": "packages/core/src/blocks/builtin-commands.ts:17",
+        "category": "competition",
+        "description": "<topic>                  — think together, no competition"
+      },
+      {
+        "id": "cancel",
+        "source": "packages/core/src/blocks/builtin-commands.ts:41",
+        "category": "planning",
+        "description": "                        — cancel current plan"
+      },
+      {
+        "id": "cesar",
+        "source": "packages/core/src/blocks/builtin-commands.ts:45",
+        "category": "config",
+        "description": "<engine>                — set Cesar brain engine"
+      },
+      {
+        "id": "chats",
+        "source": "packages/core/src/blocks/builtin-commands.ts:59",
+        "category": "info",
+        "description": "[id|resume <id>]        — chat history or resume session"
+      },
+      {
+        "id": "clear",
+        "source": "packages/core/src/blocks/builtin-commands.ts:70",
+        "category": "session",
+        "description": "                        — reset session (saves chat, clears brain)"
+      },
+      {
+        "id": "commit",
+        "source": "packages/core/src/blocks/builtin-commands.ts:31",
+        "category": "execution",
+        "description": "[message]                — stage & commit with auto-generated message"
+      },
+      {
+        "id": "compact",
+        "source": "packages/core/src/blocks/builtin-commands.ts:69",
+        "category": "session",
+        "description": "                        — shrink Cesar context without clearing transcript"
+      },
+      {
+        "id": "config",
+        "source": "packages/core/src/blocks/builtin-commands.ts:48",
+        "category": "config",
+        "description": "[list|get|set]          — settings"
+      },
+      {
+        "id": "cp",
+        "source": "packages/core/src/blocks/builtin-commands.ts:76",
+        "category": "utility",
+        "description": "[N]                     — copy code block N to clipboard"
+      },
+      {
+        "id": "create-skill",
+        "source": "packages/core/src/blocks/builtin-commands.ts:74",
+        "category": "utility",
+        "description": "<name>                  — scaffold a new skill (.agon/skills/)"
+      },
+      {
+        "id": "doctor",
+        "source": "packages/core/src/blocks/builtin-commands.ts:53",
+        "category": "info",
+        "description": "[engines|harness]        — diagnose engines, worktree, or Cesar harness"
+      },
+      {
+        "id": "engines",
+        "source": "packages/core/src/blocks/builtin-commands.ts:47",
+        "category": "config",
+        "description": "                        — select active engines"
+      },
+      {
+        "id": "exit",
+        "source": "packages/core/src/blocks/builtin-commands.ts:78",
+        "category": "utility",
+        "description": "                        — quit"
+      },
+      {
+        "id": "explore",
+        "source": "packages/core/src/blocks/builtin-commands.ts:66",
+        "category": "session",
+        "description": "                        — toggle exploration mode (read-only)"
+      },
+      {
+        "id": "flow",
+        "source": "packages/core/src/blocks/builtin-commands.ts:57",
+        "category": "info",
+        "description": "                        — log this session"
+      },
+      {
+        "id": "flows",
+        "source": "packages/core/src/blocks/builtin-commands.ts:58",
+        "category": "info",
+        "description": "                        — flow analytics dashboard"
+      },
+      {
+        "id": "focus",
+        "source": "packages/core/src/blocks/builtin-commands.ts:61",
+        "category": "info",
+        "description": "<id>                    — switch to background job output"
+      },
+      {
+        "id": "forge",
+        "source": "packages/core/src/blocks/builtin-commands.ts:14",
+        "category": "competition",
+        "description": "<task> test with <cmd> [--hardened] — competitive code generation"
+      },
+      {
+        "id": "help",
+        "source": "packages/core/src/blocks/builtin-commands.ts:77",
+        "category": "utility",
+        "description": "                        — show this help"
+      },
+      {
+        "id": "history",
+        "source": "packages/core/src/blocks/builtin-commands.ts:55",
+        "category": "info",
+        "description": "[id]                    — past forge runs"
+      },
+      {
+        "id": "img",
+        "source": "packages/core/src/blocks/builtin-commands.ts:75",
+        "category": "utility",
+        "description": "<path>                   — attach image to next prompt"
+      },
+      {
+        "id": "jobs",
+        "source": "packages/core/src/blocks/builtin-commands.ts:60",
+        "category": "info",
+        "description": "                        — list running/completed jobs"
+      },
+      {
+        "id": "leaderboard",
+        "source": "packages/core/src/blocks/builtin-commands.ts:54",
+        "category": "info",
+        "description": "                        — Glicko rankings"
+      },
+      {
+        "id": "mcp",
+        "source": "packages/core/src/blocks/builtin-commands.ts:65",
+        "category": "session",
+        "description": "connect <name|url> | disconnect | list — manage session MCP servers"
+      },
+      {
+        "id": "models",
+        "source": "packages/core/src/blocks/builtin-commands.ts:46",
+        "category": "config",
+        "description": "                        — browse & add provider models + CLI models"
+      },
+      {
+        "id": "nero",
+        "source": "packages/core/src/blocks/builtin-commands.ts:67",
+        "category": "session",
+        "description": "                        — toggle Nero mode (adversarial)"
+      },
+      {
+        "id": "pipeline",
+        "source": "packages/core/src/blocks/builtin-commands.ts:29",
+        "category": "execution",
+        "description": "<task> [test with <cmd>]  — build→review→fix loop"
+      },
+      {
+        "id": "plan",
+        "source": "packages/core/src/blocks/builtin-commands.ts:36",
+        "category": "planning",
+        "description": "<task> or no args    — plan mode or show plan"
+      },
+      {
+        "id": "plans",
+        "source": "packages/core/src/blocks/builtin-commands.ts:38",
+        "category": "planning",
+        "description": "                        — list recent plans"
+      },
+      {
+        "id": "provenance",
+        "source": "packages/core/src/blocks/builtin-commands.ts:56",
+        "category": "info",
+        "description": "[id] [-f md|json|both] [-o file] — AI-contribution / transparency report"
+      },
+      {
+        "id": "provider",
+        "source": "packages/core/src/blocks/builtin-commands.ts:49",
+        "category": "config",
+        "description": "add|remove|list          — manage API providers"
+      },
+      {
+        "id": "retry",
+        "source": "packages/core/src/blocks/builtin-commands.ts:40",
+        "category": "planning",
+        "description": "                        — retry failed plan step"
+      },
+      {
+        "id": "review",
+        "source": "packages/core/src/blocks/builtin-commands.ts:28",
+        "category": "execution",
+        "description": "[with <engine>] [<target>] — code review (uncommitted|branch:NAME|commit:SHA)"
+      },
+      {
+        "id": "run",
+        "source": "packages/core/src/blocks/builtin-commands.ts:30",
+        "category": "execution",
+        "description": "<cmd>                    — run shell command inline"
+      },
+      {
+        "id": "speculate",
+        "source": "packages/core/src/blocks/builtin-commands.ts:27",
+        "category": "execution",
+        "description": "<task>                   — parallel speculative agents in worktrees"
+      },
+      {
+        "id": "team-agent",
+        "source": "packages/core/src/blocks/builtin-commands.ts:26",
+        "category": "execution",
+        "description": "<task>                   — autonomous team agent loop"
+      },
+      {
+        "id": "team-brainstorm",
+        "source": "packages/core/src/blocks/builtin-commands.ts:20",
+        "category": "competition",
+        "description": "[2v2|3v3] <question>            — team ideation"
+      },
+      {
+        "id": "team-forge",
+        "source": "packages/core/src/blocks/builtin-commands.ts:18",
+        "category": "competition",
+        "description": "[2v2|3v3] <task> test with <cmd> — team code competition"
+      },
+      {
+        "id": "team-tribunal",
+        "source": "packages/core/src/blocks/builtin-commands.ts:19",
+        "category": "competition",
+        "description": "[2v2|3v3] [mode] <question>    — team debate"
+      },
+      {
+        "id": "tokens",
+        "source": "packages/core/src/blocks/builtin-commands.ts:52",
+        "category": "info",
+        "description": "                        — show token usage & costs"
+      },
+      {
+        "id": "tribunal",
+        "source": "packages/core/src/blocks/builtin-commands.ts:16",
+        "category": "competition",
+        "description": "[mode] <question>        — debate (adversarial|socratic|red-team|steelman|synthesis|postmortem)"
+      },
+      {
+        "id": "undo",
+        "source": "packages/core/src/blocks/builtin-commands.ts:33",
+        "category": "execution",
+        "description": "                        — revert last applied forge patch"
+      },
+      {
+        "id": "update",
+        "source": "packages/core/src/blocks/builtin-commands.ts:62",
+        "category": "info",
+        "description": "[version] [--check]     — self-update from npm (also runs from the in-app banner)"
+      },
+      {
+        "id": "workspace",
+        "source": "packages/core/src/blocks/builtin-commands.ts:44",
+        "category": "config",
+        "description": "add|remove|list|switch   — manage project repos"
+      },
+      {
+        "id": "worktree",
+        "source": "packages/core/src/blocks/builtin-commands.ts:73",
+        "category": "utility",
+        "description": "new|list|rm|prune|rehydrate <branch> — isolated per-session git worktrees"
+      }
+    ],
+    "intentVariants": [
+      {
+        "id": "agent",
+        "source": "packages/cli/src/signals/intent-types.ts:37"
+      },
+      {
+        "id": "agent-solo",
+        "source": "packages/cli/src/signals/intent-types.ts:38"
+      },
+      {
+        "id": "apply",
+        "source": "packages/cli/src/signals/intent-types.ts:31"
+      },
+      {
+        "id": "approve",
+        "source": "packages/cli/src/signals/intent-types.ts:24"
+      },
+      {
+        "id": "auto",
+        "source": "packages/cli/src/signals/intent-types.ts:63"
+      },
+      {
+        "id": "brainstorm",
+        "source": "packages/cli/src/signals/intent-types.ts:3"
+      },
+      {
+        "id": "build",
+        "source": "packages/cli/src/signals/intent-types.ts:36"
+      },
+      {
+        "id": "campfire",
+        "source": "packages/cli/src/signals/intent-types.ts:14"
+      },
+      {
+        "id": "cancel",
+        "source": "packages/cli/src/signals/intent-types.ts:26"
+      },
+      {
+        "id": "cesar",
+        "source": "packages/cli/src/signals/intent-types.ts:44"
+      },
+      {
+        "id": "cesar-hints",
+        "source": "packages/cli/src/signals/intent-types.ts:10"
+      },
+      {
+        "id": "cesar-report",
+        "source": "packages/cli/src/signals/intent-types.ts:9"
+      },
+      {
+        "id": "chat",
+        "source": "packages/cli/src/signals/intent-types.ts:28"
+      },
+      {
+        "id": "chats",
+        "source": "packages/cli/src/signals/intent-types.ts:35"
+      },
+      {
+        "id": "chats-resume",
+        "source": "packages/cli/src/signals/intent-types.ts:54"
+      },
+      {
+        "id": "checkpoints",
+        "source": "packages/cli/src/signals/intent-types.ts:47"
+      },
+      {
+        "id": "clear",
+        "source": "packages/cli/src/signals/intent-types.ts:59"
+      },
+      {
+        "id": "commit",
+        "source": "packages/cli/src/signals/intent-types.ts:45"
+      },
+      {
+        "id": "compact",
+        "source": "packages/cli/src/signals/intent-types.ts:58"
+      },
+      {
+        "id": "config",
+        "source": "packages/cli/src/signals/intent-types.ts:13"
+      },
+      {
+        "id": "cp",
+        "source": "packages/cli/src/signals/intent-types.ts:32"
+      },
+      {
+        "id": "create-skill",
+        "source": "packages/cli/src/signals/intent-types.ts:66"
+      },
+      {
+        "id": "discover",
+        "source": "packages/cli/src/signals/intent-types.ts:30"
+      },
+      {
+        "id": "doctor",
+        "source": "packages/cli/src/signals/intent-types.ts:20"
+      },
+      {
+        "id": "engines",
+        "source": "packages/cli/src/signals/intent-types.ts:12"
+      },
+      {
+        "id": "exit",
+        "source": "packages/cli/src/signals/intent-types.ts:62"
+      },
+      {
+        "id": "explore",
+        "source": "packages/cli/src/signals/intent-types.ts:50"
+      },
+      {
+        "id": "extension-command",
+        "source": "packages/cli/src/signals/intent-types.ts:68"
+      },
+      {
+        "id": "extensions",
+        "source": "packages/cli/src/signals/intent-types.ts:67"
+      },
+      {
+        "id": "flow",
+        "source": "packages/cli/src/signals/intent-types.ts:33"
+      },
+      {
+        "id": "flows",
+        "source": "packages/cli/src/signals/intent-types.ts:34"
+      },
+      {
+        "id": "focus",
+        "source": "packages/cli/src/signals/intent-types.ts:49"
+      },
+      {
+        "id": "forge",
+        "source": "packages/cli/src/signals/intent-types.ts:2"
+      },
+      {
+        "id": "harness-replay",
+        "source": "packages/cli/src/signals/intent-types.ts:21"
+      },
+      {
+        "id": "help",
+        "source": "packages/cli/src/signals/intent-types.ts:61"
+      },
+      {
+        "id": "history",
+        "source": "packages/cli/src/signals/intent-types.ts:11"
+      },
+      {
+        "id": "img",
+        "source": "packages/cli/src/signals/intent-types.ts:27"
+      },
+      {
+        "id": "init",
+        "source": "packages/cli/src/signals/intent-types.ts:65"
+      },
+      {
+        "id": "jobs",
+        "source": "packages/cli/src/signals/intent-types.ts:48"
+      },
+      {
+        "id": "leaderboard",
+        "source": "packages/cli/src/signals/intent-types.ts:8"
+      },
+      {
+        "id": "mcp",
+        "source": "packages/cli/src/signals/intent-types.ts:64"
+      },
+      {
+        "id": "models",
+        "source": "packages/cli/src/signals/intent-types.ts:17"
+      },
+      {
+        "id": "nero",
+        "source": "packages/cli/src/signals/intent-types.ts:53"
+      },
+      {
+        "id": "nogate",
+        "source": "packages/cli/src/signals/intent-types.ts:52"
+      },
+      {
+        "id": "permissions",
+        "source": "packages/cli/src/signals/intent-types.ts:51"
+      },
+      {
+        "id": "pipeline",
+        "source": "packages/cli/src/signals/intent-types.ts:41"
+      },
+      {
+        "id": "plan",
+        "source": "packages/cli/src/signals/intent-types.ts:22"
+      },
+      {
+        "id": "plans",
+        "source": "packages/cli/src/signals/intent-types.ts:23"
+      },
+      {
+        "id": "provider",
+        "source": "packages/cli/src/signals/intent-types.ts:29"
+      },
+      {
+        "id": "raw",
+        "source": "packages/cli/src/signals/intent-types.ts:19"
+      },
+      {
+        "id": "retry",
+        "source": "packages/cli/src/signals/intent-types.ts:25"
+      },
+      {
+        "id": "review",
+        "source": "packages/cli/src/signals/intent-types.ts:42"
+      },
+      {
+        "id": "run",
+        "source": "packages/cli/src/signals/intent-types.ts:43"
+      },
+      {
+        "id": "slash-list",
+        "source": "packages/cli/src/signals/intent-types.ts:60"
+      },
+      {
+        "id": "speculate",
+        "source": "packages/cli/src/signals/intent-types.ts:39"
+      },
+      {
+        "id": "suggest-brainstorm",
+        "source": "packages/cli/src/signals/intent-types.ts:55"
+      },
+      {
+        "id": "suggest-forge",
+        "source": "packages/cli/src/signals/intent-types.ts:57"
+      },
+      {
+        "id": "suggest-tribunal",
+        "source": "packages/cli/src/signals/intent-types.ts:56"
+      },
+      {
+        "id": "team-agent",
+        "source": "packages/cli/src/signals/intent-types.ts:40"
+      },
+      {
+        "id": "team-brainstorm",
+        "source": "packages/cli/src/signals/intent-types.ts:7"
+      },
+      {
+        "id": "team-forge",
+        "source": "packages/cli/src/signals/intent-types.ts:6"
+      },
+      {
+        "id": "team-tribunal",
+        "source": "packages/cli/src/signals/intent-types.ts:5"
+      },
+      {
+        "id": "tokens",
+        "source": "packages/cli/src/signals/intent-types.ts:18"
+      },
+      {
+        "id": "tribunal",
+        "source": "packages/cli/src/signals/intent-types.ts:4"
+      },
+      {
+        "id": "undo",
+        "source": "packages/cli/src/signals/intent-types.ts:46"
+      },
+      {
+        "id": "unknown",
+        "source": "packages/cli/src/signals/intent-types.ts:69"
+      },
+      {
+        "id": "use",
+        "source": "packages/cli/src/signals/intent-types.ts:16"
+      },
+      {
+        "id": "workspace",
+        "source": "packages/cli/src/signals/intent-types.ts:15"
+      }
+    ],
+    "mcpTools": [
+      {
+        "id": "Agent",
+        "source": "packages/mcp/src/agon-orchestration.ts:24",
+        "category": "user-toggleable-mod-package",
+        "description": "Agent"
+      },
+      {
+        "id": "AgonBash",
+        "source": "packages/mcp/src/agon-orchestration.ts:24",
+        "category": "minimal-kernel-machinery",
+        "description": "AgonBash"
+      },
+      {
+        "id": "AgonEdit",
+        "source": "packages/mcp/src/agon-orchestration.ts:24",
+        "category": "minimal-kernel-machinery",
+        "description": "AgonEdit"
+      },
+      {
+        "id": "AgonWrite",
+        "source": "packages/mcp/src/agon-orchestration.ts:24",
+        "category": "minimal-kernel-machinery",
+        "description": "AgonWrite"
+      },
+      {
+        "id": "Brainstorm",
+        "source": "packages/mcp/src/agon-orchestration.ts:24",
+        "category": "user-toggleable-mod-package",
+        "description": "Brainstorm"
+      },
+      {
+        "id": "Campfire",
+        "source": "packages/mcp/src/agon-orchestration.ts:24",
+        "category": "user-toggleable-mod-package",
+        "description": "Campfire"
+      },
+      {
+        "id": "Delegate",
+        "source": "packages/mcp/src/agon-orchestration.ts:24",
+        "category": "user-toggleable-mod-package",
+        "description": "Delegate"
+      },
+      {
+        "id": "DeliverAnswer",
+        "source": "packages/mcp/src/agon-orchestration.ts:24",
+        "category": "minimal-kernel-machinery",
+        "description": "DeliverAnswer"
+      },
+      {
+        "id": "ExitPlanMode",
+        "source": "packages/mcp/src/agon-orchestration.ts:24",
+        "category": "user-toggleable-mod-package",
+        "description": "ExitPlanMode"
+      },
+      {
+        "id": "Forge",
+        "source": "packages/mcp/src/agon-orchestration.ts:24",
+        "category": "user-toggleable-mod-package",
+        "description": "Forge"
+      },
+      {
+        "id": "JobCancel",
+        "source": "packages/mcp/src/job-tools.ts:13",
+        "category": "user-toggleable-mod-package",
+        "description": "JobCancel"
+      },
+      {
+        "id": "JobEvents",
+        "source": "packages/mcp/src/job-tools.ts:11",
+        "category": "user-toggleable-mod-package",
+        "description": "JobEvents"
+      },
+      {
+        "id": "JobList",
+        "source": "packages/mcp/src/job-tools.ts:9",
+        "category": "user-toggleable-mod-package",
+        "description": "JobList"
+      },
+      {
+        "id": "JobResult",
+        "source": "packages/mcp/src/job-tools.ts:12",
+        "category": "user-toggleable-mod-package",
+        "description": "JobResult"
+      },
+      {
+        "id": "JobStatus",
+        "source": "packages/mcp/src/job-tools.ts:10",
+        "category": "user-toggleable-mod-package",
+        "description": "JobStatus"
+      },
+      {
+        "id": "JobSubmit",
+        "source": "packages/mcp/src/job-tools.ts:8",
+        "category": "user-toggleable-mod-package",
+        "description": "JobSubmit"
+      },
+      {
+        "id": "Pipeline",
+        "source": "packages/mcp/src/agon-orchestration.ts:24",
+        "category": "user-toggleable-mod-package",
+        "description": "Pipeline"
+      },
+      {
+        "id": "ProjectContext",
+        "source": "packages/mcp/src/project-context.ts:4",
+        "category": "user-toggleable-mod-package",
+        "description": "ProjectContext"
+      },
+      {
+        "id": "ProposePlan",
+        "source": "packages/mcp/src/agon-orchestration.ts:24",
+        "category": "user-toggleable-mod-package",
+        "description": "ProposePlan"
+      },
+      {
+        "id": "QuickNero",
+        "source": "packages/mcp/src/agon-orchestration.ts:24",
+        "category": "user-toggleable-mod-package",
+        "description": "QuickNero"
+      },
+      {
+        "id": "ReportConfidence",
+        "source": "packages/mcp/src/agon-orchestration.ts:24",
+        "category": "minimal-kernel-machinery",
+        "description": "ReportConfidence"
+      },
+      {
+        "id": "Review",
+        "source": "packages/mcp/src/agon-orchestration.ts:24",
+        "category": "user-toggleable-mod-package",
+        "description": "Review"
+      },
+      {
+        "id": "RoomJoin",
+        "source": "packages/mcp/src/rooms.ts:8",
+        "category": "user-toggleable-mod-package",
+        "description": "RoomJoin"
+      },
+      {
+        "id": "RoomLeave",
+        "source": "packages/mcp/src/rooms.ts:14",
+        "category": "user-toggleable-mod-package",
+        "description": "RoomLeave"
+      },
+      {
+        "id": "RoomList",
+        "source": "packages/mcp/src/rooms.ts:15",
+        "category": "user-toggleable-mod-package",
+        "description": "RoomList"
+      },
+      {
+        "id": "RoomLock",
+        "source": "packages/mcp/src/rooms.ts:12",
+        "category": "user-toggleable-mod-package",
+        "description": "RoomLock"
+      },
+      {
+        "id": "RoomPost",
+        "source": "packages/mcp/src/rooms.ts:9",
+        "category": "user-toggleable-mod-package",
+        "description": "RoomPost"
+      },
+      {
+        "id": "RoomRead",
+        "source": "packages/mcp/src/rooms.ts:10",
+        "category": "user-toggleable-mod-package",
+        "description": "RoomRead"
+      },
+      {
+        "id": "RoomRelease",
+        "source": "packages/mcp/src/rooms.ts:13",
+        "category": "user-toggleable-mod-package",
+        "description": "RoomRelease"
+      },
+      {
+        "id": "RoomWho",
+        "source": "packages/mcp/src/rooms.ts:11",
+        "category": "user-toggleable-mod-package",
+        "description": "RoomWho"
+      },
+      {
+        "id": "SaveMemory",
+        "source": "packages/mcp/src/agon-orchestration.ts:24",
+        "category": "user-toggleable-mod-package",
+        "description": "SaveMemory"
+      },
+      {
+        "id": "Synthesis",
+        "source": "packages/mcp/src/agon-orchestration.ts:24",
+        "category": "user-toggleable-mod-package",
+        "description": "Synthesis"
+      },
+      {
+        "id": "Tribunal",
+        "source": "packages/mcp/src/agon-orchestration.ts:24",
+        "category": "user-toggleable-mod-package",
+        "description": "Tribunal"
+      }
+    ],
+    "cesarTools": [
+      {
+        "id": "Agent",
+        "source": "packages/cli/src/cesar/tools.ts:47",
+        "category": "user-toggleable-mod-package",
+        "description": "Agent"
+      },
+      {
+        "id": "Bash",
+        "source": "packages/cli/src/cesar/tools.ts:34",
+        "category": "minimal-kernel-machinery",
+        "description": "Bash"
+      },
+      {
+        "id": "Brainstorm",
+        "source": "packages/cli/src/cesar/tools.ts:38",
+        "category": "user-toggleable-mod-package",
+        "description": "Brainstorm"
+      },
+      {
+        "id": "Campfire",
+        "source": "packages/cli/src/cesar/tools.ts:40",
+        "category": "user-toggleable-mod-package",
+        "description": "Campfire"
+      },
+      {
+        "id": "Conquer",
+        "source": "packages/cli/src/cesar/tools.ts:44",
+        "category": "user-toggleable-mod-package",
+        "description": "Conquer"
+      },
+      {
+        "id": "Council",
+        "source": "packages/cli/src/cesar/tools.ts:41",
+        "category": "user-toggleable-mod-package",
+        "description": "Council"
+      },
+      {
+        "id": "Delegate",
+        "source": "packages/cli/src/cesar/tools.ts:46",
+        "category": "user-toggleable-mod-package",
+        "description": "Delegate"
+      },
+      {
+        "id": "Edit",
+        "source": "packages/cli/src/cesar/tools.ts:31",
+        "category": "minimal-kernel-machinery",
+        "description": "Edit"
+      },
+      {
+        "id": "EngineReliability",
+        "source": "packages/cli/src/cesar/tools.ts:56",
+        "category": "hidden-shared-support-package",
+        "description": "EngineReliability"
+      },
+      {
+        "id": "ExitPlanMode",
+        "source": "packages/cli/src/cesar/tools.ts:53",
+        "category": "user-toggleable-mod-package",
+        "description": "ExitPlanMode"
+      },
+      {
+        "id": "Forge",
+        "source": "packages/cli/src/cesar/tools.ts:37",
+        "category": "user-toggleable-mod-package",
+        "description": "Forge"
+      },
+      {
+        "id": "Glob",
+        "source": "packages/cli/src/cesar/tools.ts:36",
+        "category": "minimal-kernel-machinery",
+        "description": "Glob"
+      },
+      {
+        "id": "Goal",
+        "source": "packages/cli/src/cesar/tools.ts:43",
+        "category": "user-toggleable-mod-package",
+        "description": "Goal"
+      },
+      {
+        "id": "Grep",
+        "source": "packages/cli/src/cesar/tools.ts:35",
+        "category": "minimal-kernel-machinery",
+        "description": "Grep"
+      },
+      {
+        "id": "ListPlans",
+        "source": "packages/cli/src/cesar/tools.ts:54",
+        "category": "user-toggleable-mod-package",
+        "description": "ListPlans"
+      },
+      {
+        "id": "MultiEdit",
+        "source": "packages/cli/src/cesar/tools.ts:32",
+        "category": "minimal-kernel-machinery",
+        "description": "MultiEdit"
+      },
+      {
+        "id": "Pipeline",
+        "source": "packages/cli/src/cesar/tools.ts:42",
+        "category": "user-toggleable-mod-package",
+        "description": "Pipeline"
+      },
+      {
+        "id": "ProposePlan",
+        "source": "packages/cli/src/cesar/tools.ts:52",
+        "category": "user-toggleable-mod-package",
+        "description": "ProposePlan"
+      },
+      {
+        "id": "QuickNero",
+        "source": "packages/cli/src/cesar/tools.ts:49",
+        "category": "user-toggleable-mod-package",
+        "description": "QuickNero"
+      },
+      {
+        "id": "Read",
+        "source": "packages/cli/src/cesar/tools.ts:30",
+        "category": "minimal-kernel-machinery",
+        "description": "Read"
+      },
+      {
+        "id": "RenderProbe",
+        "source": "packages/cli/src/cesar/tools.ts:57",
+        "category": "hidden-shared-support-package",
+        "description": "RenderProbe"
+      },
+      {
+        "id": "ReportConfidence",
+        "source": "packages/cli/src/cesar/tools.ts:48",
+        "category": "minimal-kernel-machinery",
+        "description": "ReportConfidence"
+      },
+      {
+        "id": "RetrieveResult",
+        "source": "packages/cli/src/cesar/tools.ts:55",
+        "category": "minimal-kernel-machinery",
+        "description": "RetrieveResult"
+      },
+      {
+        "id": "Review",
+        "source": "packages/cli/src/cesar/tools.ts:45",
+        "category": "user-toggleable-mod-package",
+        "description": "Review"
+      },
+      {
+        "id": "SaveMemory",
+        "source": "packages/cli/src/cesar/tools.ts:51",
+        "category": "user-toggleable-mod-package",
+        "description": "SaveMemory"
+      },
+      {
+        "id": "TodoWrite",
+        "source": "packages/cli/src/cesar/tools.ts:50",
+        "category": "minimal-kernel-machinery",
+        "description": "TodoWrite"
+      },
+      {
+        "id": "Tribunal",
+        "source": "packages/cli/src/cesar/tools.ts:39",
+        "category": "user-toggleable-mod-package",
+        "description": "Tribunal"
+      },
+      {
+        "id": "TuiProbe",
+        "source": "packages/cli/src/cesar/tools.ts:58",
+        "category": "hidden-shared-support-package",
+        "description": "TuiProbe"
+      },
+      {
+        "id": "Write",
+        "source": "packages/cli/src/cesar/tools.ts:33",
+        "category": "minimal-kernel-machinery",
+        "description": "Write"
+      }
+    ],
+    "cesarRoutes": [
+      {
+        "id": "agent",
+        "source": "packages/cli/src/models/handler-types.ts:113",
+        "routeType": "CesarLiveMode"
+      },
+      {
+        "id": "agent",
+        "source": "packages/core/src/cesar/plan.ts:52",
+        "routeType": "CesarStepType"
+      },
+      {
+        "id": "answer",
+        "source": "packages/cli/src/cesar/routing.ts:27",
+        "routeType": "CesarFlowHint"
+      },
+      {
+        "id": "big-feature",
+        "source": "packages/cli/src/cesar/routing.ts:25",
+        "routeType": "CesarIntakeKind"
+      },
+      {
+        "id": "brainstorm",
+        "source": "packages/cli/src/cesar/routing.ts:19",
+        "routeType": "CesarEscalationHint"
+      },
+      {
+        "id": "brainstorm",
+        "source": "packages/cli/src/cesar/routing.ts:27",
+        "routeType": "CesarFlowHint"
+      },
+      {
+        "id": "brainstorm",
+        "source": "packages/cli/src/models/handler-types.ts:113",
+        "routeType": "CesarLiveMode"
+      },
+      {
+        "id": "brainstorm",
+        "source": "packages/core/src/cesar/plan.ts:52",
+        "routeType": "CesarStepType"
+      },
+      {
+        "id": "bug",
+        "source": "packages/cli/src/cesar/routing.ts:25",
+        "routeType": "CesarIntakeKind"
+      },
+      {
+        "id": "bug-fix",
+        "source": "packages/cli/src/cesar/routing.ts:27",
+        "routeType": "CesarFlowHint"
+      },
+      {
+        "id": "campfire",
+        "source": "packages/cli/src/cesar/routing.ts:19",
+        "routeType": "CesarEscalationHint"
+      },
+      {
+        "id": "campfire",
+        "source": "packages/cli/src/cesar/routing.ts:27",
+        "routeType": "CesarFlowHint"
+      },
+      {
+        "id": "campfire",
+        "source": "packages/cli/src/models/handler-types.ts:113",
+        "routeType": "CesarLiveMode"
+      },
+      {
+        "id": "campfire",
+        "source": "packages/core/src/cesar/plan.ts:52",
+        "routeType": "CesarStepType"
+      },
+      {
+        "id": "challenge",
+        "source": "packages/cli/src/cesar/routing.ts:17",
+        "routeType": "CesarUncertaintyFamily"
+      },
+      {
+        "id": "chat",
+        "source": "packages/cli/src/cesar/routing.ts:25",
+        "routeType": "CesarIntakeKind"
+      },
+      {
+        "id": "conquer",
+        "source": "packages/cli/src/models/handler-types.ts:113",
+        "routeType": "CesarLiveMode"
+      },
+      {
+        "id": "decision",
+        "source": "packages/cli/src/cesar/routing.ts:25",
+        "routeType": "CesarIntakeKind"
+      },
+      {
+        "id": "delegate",
+        "source": "packages/cli/src/cesar/routing.ts:19",
+        "routeType": "CesarEscalationHint"
+      },
+      {
+        "id": "delegate",
+        "source": "packages/cli/src/models/handler-types.ts:113",
+        "routeType": "CesarLiveMode"
+      },
+      {
+        "id": "delegate",
+        "source": "packages/core/src/cesar/plan.ts:52",
+        "routeType": "CesarStepType"
+      },
+      {
+        "id": "exploration",
+        "source": "packages/cli/src/cesar/routing.ts:25",
+        "routeType": "CesarIntakeKind"
+      },
+      {
+        "id": "feature",
+        "source": "packages/cli/src/cesar/routing.ts:25",
+        "routeType": "CesarIntakeKind"
+      },
+      {
+        "id": "forge",
+        "source": "packages/cli/src/cesar/routing.ts:19",
+        "routeType": "CesarEscalationHint"
+      },
+      {
+        "id": "forge",
+        "source": "packages/cli/src/models/handler-types.ts:113",
+        "routeType": "CesarLiveMode"
+      },
+      {
+        "id": "forge",
+        "source": "packages/core/src/cesar/plan.ts:52",
+        "routeType": "CesarStepType"
+      },
+      {
+        "id": "forge-full",
+        "source": "packages/cli/src/cesar/routing.ts:27",
+        "routeType": "CesarFlowHint"
+      },
+      {
+        "id": "forge-slice",
+        "source": "packages/cli/src/cesar/routing.ts:27",
+        "routeType": "CesarFlowHint"
+      },
+      {
+        "id": "forge-slice",
+        "source": "packages/cli/src/models/handler-types.ts:113",
+        "routeType": "CesarLiveMode"
+      },
+      {
+        "id": "full",
+        "source": "packages/cli/src/cesar/routing.ts:23",
+        "routeType": "CesarForgeScopeHint"
+      },
+      {
+        "id": "fuzzy",
+        "source": "packages/cli/src/cesar/routing.ts:17",
+        "routeType": "CesarUncertaintyFamily"
+      },
+      {
+        "id": "goal",
+        "source": "packages/cli/src/models/handler-types.ts:113",
+        "routeType": "CesarLiveMode"
+      },
+      {
+        "id": "implementation",
+        "source": "packages/cli/src/cesar/routing.ts:17",
+        "routeType": "CesarUncertaintyFamily"
+      },
+      {
+        "id": "none",
+        "source": "packages/cli/src/cesar/routing.ts:17",
+        "routeType": "CesarUncertaintyFamily"
+      },
+      {
+        "id": "none",
+        "source": "packages/cli/src/cesar/routing.ts:23",
+        "routeType": "CesarForgeScopeHint"
+      },
+      {
+        "id": "open",
+        "source": "packages/cli/src/cesar/routing.ts:17",
+        "routeType": "CesarUncertaintyFamily"
+      },
+      {
+        "id": "pipeline",
+        "source": "packages/cli/src/models/handler-types.ts:113",
+        "routeType": "CesarLiveMode"
+      },
+      {
+        "id": "pipeline",
+        "source": "packages/core/src/cesar/plan.ts:52",
+        "routeType": "CesarStepType"
+      },
+      {
+        "id": "plan",
+        "source": "packages/cli/src/models/handler-types.ts:113",
+        "routeType": "CesarLiveMode"
+      },
+      {
+        "id": "plan-first",
+        "source": "packages/cli/src/cesar/routing.ts:27",
+        "routeType": "CesarFlowHint"
+      },
+      {
+        "id": "quick-fix",
+        "source": "packages/cli/src/cesar/routing.ts:25",
+        "routeType": "CesarIntakeKind"
+      },
+      {
+        "id": "quick-fix",
+        "source": "packages/cli/src/cesar/routing.ts:27",
+        "routeType": "CesarFlowHint"
+      },
+      {
+        "id": "review",
+        "source": "packages/cli/src/cesar/routing.ts:17",
+        "routeType": "CesarUncertaintyFamily"
+      },
+      {
+        "id": "review",
+        "source": "packages/cli/src/cesar/routing.ts:19",
+        "routeType": "CesarEscalationHint"
+      },
+      {
+        "id": "review",
+        "source": "packages/cli/src/cesar/routing.ts:25",
+        "routeType": "CesarIntakeKind"
+      },
+      {
+        "id": "review",
+        "source": "packages/cli/src/cesar/routing.ts:27",
+        "routeType": "CesarFlowHint"
+      },
+      {
+        "id": "review",
+        "source": "packages/cli/src/models/handler-types.ts:113",
+        "routeType": "CesarLiveMode"
+      },
+      {
+        "id": "review",
+        "source": "packages/core/src/cesar/plan.ts:52",
+        "routeType": "CesarStepType"
+      },
+      {
+        "id": "self",
+        "source": "packages/cli/src/cesar/routing.ts:19",
+        "routeType": "CesarEscalationHint"
+      },
+      {
+        "id": "self",
+        "source": "packages/cli/src/models/handler-types.ts:113",
+        "routeType": "CesarLiveMode"
+      },
+      {
+        "id": "self",
+        "source": "packages/core/src/cesar/plan.ts:52",
+        "routeType": "CesarStepType"
+      },
+      {
+        "id": "self-nero",
+        "source": "packages/cli/src/cesar/routing.ts:19",
+        "routeType": "CesarEscalationHint"
+      },
+      {
+        "id": "self-nero",
+        "source": "packages/cli/src/models/handler-types.ts:113",
+        "routeType": "CesarLiveMode"
+      },
+      {
+        "id": "slice",
+        "source": "packages/cli/src/cesar/routing.ts:23",
+        "routeType": "CesarForgeScopeHint"
+      },
+      {
+        "id": "solo",
+        "source": "packages/cli/src/cesar/routing.ts:21",
+        "routeType": "CesarBreadthHint"
+      },
+      {
+        "id": "spec",
+        "source": "packages/cli/src/cesar/routing.ts:25",
+        "routeType": "CesarIntakeKind"
+      },
+      {
+        "id": "spec-first",
+        "source": "packages/cli/src/cesar/routing.ts:27",
+        "routeType": "CesarFlowHint"
+      },
+      {
+        "id": "specialist",
+        "source": "packages/cli/src/cesar/routing.ts:17",
+        "routeType": "CesarUncertaintyFamily"
+      },
+      {
+        "id": "team",
+        "source": "packages/cli/src/cesar/routing.ts:21",
+        "routeType": "CesarBreadthHint"
+      },
+      {
+        "id": "team-agent",
+        "source": "packages/cli/src/models/handler-types.ts:113",
+        "routeType": "CesarLiveMode"
+      },
+      {
+        "id": "team-agent",
+        "source": "packages/core/src/cesar/plan.ts:52",
+        "routeType": "CesarStepType"
+      },
+      {
+        "id": "team-brainstorm",
+        "source": "packages/cli/src/models/handler-types.ts:113",
+        "routeType": "CesarLiveMode"
+      },
+      {
+        "id": "team-forge",
+        "source": "packages/cli/src/models/handler-types.ts:113",
+        "routeType": "CesarLiveMode"
+      },
+      {
+        "id": "team-tribunal",
+        "source": "packages/cli/src/models/handler-types.ts:113",
+        "routeType": "CesarLiveMode"
+      },
+      {
+        "id": "teamforge",
+        "source": "packages/core/src/cesar/plan.ts:52",
+        "routeType": "CesarStepType"
+      },
+      {
+        "id": "tradeoff",
+        "source": "packages/cli/src/cesar/routing.ts:17",
+        "routeType": "CesarUncertaintyFamily"
+      },
+      {
+        "id": "tribunal",
+        "source": "packages/cli/src/cesar/routing.ts:19",
+        "routeType": "CesarEscalationHint"
+      },
+      {
+        "id": "tribunal",
+        "source": "packages/cli/src/cesar/routing.ts:27",
+        "routeType": "CesarFlowHint"
+      },
+      {
+        "id": "tribunal",
+        "source": "packages/cli/src/models/handler-types.ts:113",
+        "routeType": "CesarLiveMode"
+      },
+      {
+        "id": "tribunal",
+        "source": "packages/core/src/cesar/plan.ts:52",
+        "routeType": "CesarStepType"
+      }
+    ],
+    "lifecycleHooks": [
+      {
+        "id": "post_brainstorm",
+        "source": "packages/core/src/blocks/hooks.ts:5"
+      },
+      {
+        "id": "post_dispatch",
+        "source": "packages/core/src/blocks/hooks.ts:5"
+      },
+      {
+        "id": "post_forge",
+        "source": "packages/core/src/blocks/hooks.ts:5"
+      },
+      {
+        "id": "post_tribunal",
+        "source": "packages/core/src/blocks/hooks.ts:5"
+      },
+      {
+        "id": "postToolUse",
+        "source": "packages/core/src/tools/tool-hooks.ts:62"
+      },
+      {
+        "id": "pre_brainstorm",
+        "source": "packages/core/src/blocks/hooks.ts:5"
+      },
+      {
+        "id": "pre_dispatch",
+        "source": "packages/core/src/blocks/hooks.ts:5"
+      },
+      {
+        "id": "pre_forge",
+        "source": "packages/core/src/blocks/hooks.ts:5"
+      },
+      {
+        "id": "pre_tribunal",
+        "source": "packages/core/src/blocks/hooks.ts:5"
+      },
+      {
+        "id": "preToolUse",
+        "source": "packages/core/src/tools/tool-hooks.ts:62"
+      },
+      {
+        "id": "session_end",
+        "source": "packages/core/src/blocks/hooks.ts:5"
+      },
+      {
+        "id": "session_start",
+        "source": "packages/core/src/blocks/hooks.ts:5"
+      }
+    ],
+    "emittedEvents": [
+      {
+        "id": "cesar:confidence",
+        "source": "packages/cli/src/cesar/brain.ts:1574"
+      },
+      {
+        "id": "cesar:delegation",
+        "source": "packages/cli/src/cesar/brain.ts:1451"
+      },
+      {
+        "id": "cesar:delegation",
+        "source": "packages/cli/src/cesar/brain.ts:1478"
+      },
+      {
+        "id": "cesar:nero",
+        "source": "packages/cli/src/cesar/escalation.ts:106"
+      },
+      {
+        "id": "command-finished",
+        "source": "packages/cli/src/jobs/workflow-job.ts:151"
+      },
+      {
+        "id": "command-started",
+        "source": "packages/cli/src/jobs/workflow-job.ts:168"
+      },
+      {
+        "id": "oracle-gameable",
+        "source": "packages/forge/src/goal/oracle-probe.ts:62"
+      },
+      {
+        "id": "oracle-gate-error",
+        "source": "packages/forge/src/goal/oracle-probe.ts:54"
+      },
+      {
+        "id": "oracle-gate-holes",
+        "source": "packages/forge/src/goal/oracle-probe.ts:64"
+      },
+      {
+        "id": "oracle-gate-ok",
+        "source": "packages/forge/src/goal/oracle-probe.ts:70"
+      },
+      {
+        "id": "oracle-gate-start",
+        "source": "packages/forge/src/goal/oracle-probe.ts:19"
+      },
+      {
+        "id": "post:brainstorm",
+        "source": "packages/cli/src/signals/dispatch/intent-orchestration.ts:57"
+      },
+      {
+        "id": "post:campfire",
+        "source": "packages/cli/src/signals/dispatch/intent-orchestration.ts:88"
+      },
+      {
+        "id": "post:cesar-brain",
+        "source": "packages/cli/src/cesar/brain.ts:3875"
+      },
+      {
+        "id": "post:dispatch",
+        "source": "packages/cli/src/signals/dispatch/utils.ts:11"
+      },
+      {
+        "id": "post:forge",
+        "source": "packages/cli/src/signals/dispatch/intent-orchestration.ts:45"
+      },
+      {
+        "id": "post:review",
+        "source": "packages/cli/src/signals/dispatch/intent-orchestration.ts:431"
+      },
+      {
+        "id": "post:tribunal",
+        "source": "packages/cli/src/signals/dispatch/intent-orchestration.ts:74"
+      },
+      {
+        "id": "pre:brainstorm",
+        "source": "packages/cli/src/signals/dispatch/intent-orchestration.ts:55"
+      },
+      {
+        "id": "pre:campfire",
+        "source": "packages/cli/src/signals/dispatch/intent-orchestration.ts:86"
+      },
+      {
+        "id": "pre:cesar-brain",
+        "source": "packages/cli/src/cesar/brain.ts:620"
+      },
+      {
+        "id": "pre:dispatch",
+        "source": "packages/cli/src/signals/dispatch/intent-router.ts:27"
+      },
+      {
+        "id": "pre:forge",
+        "source": "packages/cli/src/signals/dispatch/intent-orchestration.ts:43"
+      },
+      {
+        "id": "pre:review",
+        "source": "packages/cli/src/signals/dispatch/intent-orchestration.ts:425"
+      },
+      {
+        "id": "pre:tribunal",
+        "source": "packages/cli/src/signals/dispatch/intent-orchestration.ts:72"
+      },
+      {
+        "id": "ready",
+        "source": "packages/adapter-cli/src/execution-plan.ts:71"
+      },
+      {
+        "id": "ready",
+        "source": "packages/adapter-cli/src/execution-plan.ts:76"
+      },
+      {
+        "id": "stdout",
+        "source": "packages/cli/src/jobs/workflow-job.ts:205"
+      },
+      {
+        "id": "submitted",
+        "source": "packages/cli/src/jobs/daemon-job-router.ts:26"
+      }
+    ],
+    "resultAndEnvelopeTypes": [
+      {
+        "id": "AgentContinuationResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/cli/src/handlers/agent.ts:26"
+      },
+      {
+        "id": "AgentDispatchResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-engine-runtime/src/types.ts:105"
+      },
+      {
+        "id": "AgentEvent",
+        "declaration": "TypeAliasDeclaration",
+        "source": "packages/core/src/models/agent-event.ts:8"
+      },
+      {
+        "id": "AgentEvent",
+        "declaration": "TypeAliasDeclaration",
+        "source": "packages/support-agent-runtime/src/agent-session.ts:6"
+      },
+      {
+        "id": "AgenticTaskSnapshot",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/cli/src/cesar/task-controller.ts:11"
+      },
+      {
+        "id": "AgentInvestigateSynthesisResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/cesar/agent-synthesis.ts:401"
+      },
+      {
+        "id": "AgentProgressSnapshot",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/cli/src/signals/output.ts:20"
+      },
+      {
+        "id": "AgentSession",
+        "declaration": "ClassDeclaration",
+        "source": "packages/core/src/cesar/agent-session.ts:11"
+      },
+      {
+        "id": "AgentSession",
+        "declaration": "ClassDeclaration",
+        "source": "packages/support-agent-runtime/src/agent-session.ts:83"
+      },
+      {
+        "id": "AgentStepResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-agent-runtime/src/agent-session.ts:30"
+      },
+      {
+        "id": "AgentSynthesisResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/cesar/agent-synthesis.ts:68"
+      },
+      {
+        "id": "AgentTeamMemberResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/cesar/agent-team.ts:80"
+      },
+      {
+        "id": "AgentTeamResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/cesar/agent-team.ts:90"
+      },
+      {
+        "id": "ApiAgentResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-agent-runtime/src/agent-loop.ts:72"
+      },
+      {
+        "id": "ApplyLockResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-worktree/src/worktree-lock.ts:25"
+      },
+      {
+        "id": "AskMarkerResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/cli/src/cesar/ask-marker.ts:24"
+      },
+      {
+        "id": "AttemptRecord",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/forge/src/goal/types.ts:20"
+      },
+      {
+        "id": "BatchVerdict",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-verification/src/pipeline-types.ts:8"
+      },
+      {
+        "id": "BrainEvent",
+        "declaration": "TypeAliasDeclaration",
+        "source": "packages/support-persistence/src/brain-client.ts:83"
+      },
+      {
+        "id": "BrainstormResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/models/types.ts:531"
+      },
+      {
+        "id": "BrainTurnResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-persistence/src/brain-client.ts:112"
+      },
+      {
+        "id": "BudgetGateResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/cli/src/cesar/context-budget.ts:9"
+      },
+      {
+        "id": "CampfireResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/forge/src/campfire.ts:7"
+      },
+      {
+        "id": "CapabilityResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-persistence/src/brain-client.ts:191"
+      },
+      {
+        "id": "CesarApprovalLedgerRecord",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/cli/src/cesar/tool-observability.ts:11"
+      },
+      {
+        "id": "CesarConfidenceRecord",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/cli/src/cesar/tool-observability.ts:48"
+      },
+      {
+        "id": "CesarConfirmationFollowUpResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/cli/src/cesar/confirmation-follow-up.ts:3"
+      },
+      {
+        "id": "CesarHarnessReplayResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/cli/src/cesar/tool-observability.ts:39"
+      },
+      {
+        "id": "CesarPlan",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/cesar/plan.ts:94"
+      },
+      {
+        "id": "CesarPlanControlSignalResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/cli/src/cesar/plan-control-signals.ts:1"
+      },
+      {
+        "id": "CesarStepResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/cesar/plan.ts:58"
+      },
+      {
+        "id": "CesarToolTimelineRecord",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/cli/src/cesar/tool-observability.ts:24"
+      },
+      {
+        "id": "ChatSession",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-persistence/src/chat-store.ts:22"
+      },
+      {
+        "id": "CheckerPlan",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-verification/src/checker-discovery.ts:12"
+      },
+      {
+        "id": "CitationVerdict",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/tools/research-verifier.ts:15"
+      },
+      {
+        "id": "CleanResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/text/forensics.ts:17"
+      },
+      {
+        "id": "CompanionResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/sessions/companion-dispatch.ts:16"
+      },
+      {
+        "id": "ConquerResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/forge/src/conquer.ts:146"
+      },
+      {
+        "id": "CorpusRecord",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/forge/src/corpus.ts:9"
+      },
+      {
+        "id": "CouncilResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/forge/src/council.ts:36"
+      },
+      {
+        "id": "DaemonWorkflowPlan",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/cli/src/jobs/workflow-job.ts:17"
+      },
+      {
+        "id": "DataUrlImageResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/blocks/image.ts:117"
+      },
+      {
+        "id": "DelegateLedgerRecord",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-persistence/src/delegate-ledger.ts:49"
+      },
+      {
+        "id": "DelegateResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/forge/src/delegate.ts:5"
+      },
+      {
+        "id": "DiscoveryResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-engine-runtime/src/engine-discover.ts:8"
+      },
+      {
+        "id": "DispatchResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/cli/src/signals/dispatch.ts:52"
+      },
+      {
+        "id": "DispatchResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-engine-runtime/src/types.ts:93"
+      },
+      {
+        "id": "DurableAppendResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-persistence/src/event-log.ts:35"
+      },
+      {
+        "id": "EngineHealthRecord",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-engine-runtime/src/engine-health.ts:3"
+      },
+      {
+        "id": "EngineIsolationPlan",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-engine-runtime/src/isolation.ts:11"
+      },
+      {
+        "id": "EngineLoginPlan",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/cli/src/commands/login.ts:20"
+      },
+      {
+        "id": "EngineMemoryRecord",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-engine-runtime/src/engine-memory.ts:30"
+      },
+      {
+        "id": "EngineResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/models/types.ts:363"
+      },
+      {
+        "id": "ExecutionPlan",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/adapter-cli/src/execution-plan.ts:9"
+      },
+      {
+        "id": "ExtensionOriginsResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/cli/src/lib/extension-origins.ts:33"
+      },
+      {
+        "id": "FalsifierResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/forge/src/conquer.ts:314"
+      },
+      {
+        "id": "FileSnapshot",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/forge/virtual-fs.ts:32"
+      },
+      {
+        "id": "FileSnapshot",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-persistence/src/file-history.ts:19"
+      },
+      {
+        "id": "FitnessResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/models/types.ts:9"
+      },
+      {
+        "id": "FlowRecord",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-persistence/src/flow.ts:55"
+      },
+      {
+        "id": "ForgeEvent",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/models/types.ts:451"
+      },
+      {
+        "id": "GateAutoRunSnapshot",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/cli/src/cesar/gate-runner.ts:15"
+      },
+      {
+        "id": "GateRunResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/cli/src/cesar/gate-runner.ts:7"
+      },
+      {
+        "id": "GauntletResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/models/types.ts:551"
+      },
+      {
+        "id": "GoalEvent",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/forge/src/goal/types.ts:48"
+      },
+      {
+        "id": "GuardFireEvent",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-verification/src/guard-telemetry.ts:31"
+      },
+      {
+        "id": "GuardSnapshot",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-verification/src/guard-types.ts:36"
+      },
+      {
+        "id": "GuardVerdict",
+        "declaration": "TypeAliasDeclaration",
+        "source": "packages/support-verification/src/guard-types.ts:59"
+      },
+      {
+        "id": "HealthCheckResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-panel/src/health-check.ts:24"
+      },
+      {
+        "id": "HookEvent",
+        "declaration": "TypeAliasDeclaration",
+        "source": "packages/core/src/blocks/hooks.ts:5"
+      },
+      {
+        "id": "HookResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/blocks/hooks.ts:13"
+      },
+      {
+        "id": "JobEvent",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/jobs/job-service.ts:20"
+      },
+      {
+        "id": "JobRecord",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/jobs/job-service.ts:57"
+      },
+      {
+        "id": "JobSnapshot",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/jobs/job-service.ts:9"
+      },
+      {
+        "id": "JudgeOutputEvent",
+        "declaration": "TypeAliasDeclaration",
+        "source": "packages/support-judge/src/contracts.ts:43"
+      },
+      {
+        "id": "JudgeSession",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-judge/src/contracts.ts:38"
+      },
+      {
+        "id": "JudgeVerdict",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-judge/src/contracts.ts:25"
+      },
+      {
+        "id": "LoggedEvent",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-persistence/src/event-log.ts:10"
+      },
+      {
+        "id": "MemoryAppendResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/tools/tool-save-memory.ts:50"
+      },
+      {
+        "id": "MetadataStripResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/text/metadata-forensics.ts:17"
+      },
+      {
+        "id": "MouseParseResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/cli/src/input-utils.ts:40"
+      },
+      {
+        "id": "MousePointerEvent",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/cli/src/input-utils.ts:33"
+      },
+      {
+        "id": "MouseScrollParseResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/cli/src/input-utils.ts:27"
+      },
+      {
+        "id": "MutateResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/forge/src/mutate.ts:48"
+      },
+      {
+        "id": "NarrationFoldResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/cli/src/blocks/narration-fold.ts:4"
+      },
+      {
+        "id": "NaturalizeResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/forge/src/naturalize.ts:18"
+      },
+      {
+        "id": "NeroResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/forge/src/nero.ts:28"
+      },
+      {
+        "id": "OrchestrationResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/cli/src/telemetry/index.ts:27"
+      },
+      {
+        "id": "OutputEvent",
+        "declaration": "TypeAliasDeclaration",
+        "source": "packages/cli/src/models/handler-types.ts:17"
+      },
+      {
+        "id": "ParseResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/tools/tool-parser.ts:12"
+      },
+      {
+        "id": "PasteResult",
+        "declaration": "TypeAliasDeclaration",
+        "source": "packages/cli/src/signals/paste-handler.ts:4"
+      },
+      {
+        "id": "PasteStoreResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-persistence/src/paste-store.ts:22"
+      },
+      {
+        "id": "PersistedPlan",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-persistence/src/plan-store.ts:33"
+      },
+      {
+        "id": "PersistentSession",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/sessions/persistent-session.ts:58"
+      },
+      {
+        "id": "Plan",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-worktree/src/plan.ts:68"
+      },
+      {
+        "id": "PostSynthesisFitnessResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/cesar/agent-synthesis.ts:486"
+      },
+      {
+        "id": "PreambleMarkerResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/cli/src/cesar/todos-marker.ts:80"
+      },
+      {
+        "id": "PreflightHealthResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-panel/src/health-check.ts:201"
+      },
+      {
+        "id": "PrTextResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/forge/src/pr-text.ts:21"
+      },
+      {
+        "id": "PruneResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-persistence/src/runs-store.ts:50"
+      },
+      {
+        "id": "PtyPersistentSession",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-persistence/src/session-pty.ts:28"
+      },
+      {
+        "id": "PythonDoctorResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/cli/src/commands/doctor.ts:211"
+      },
+      {
+        "id": "RagEmbedResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/rag/embed.ts:15"
+      },
+      {
+        "id": "RagIndexResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/mod-rag/src/types.ts:36"
+      },
+      {
+        "id": "RagQueryResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/mod-rag/src/types.ts:44"
+      },
+      {
+        "id": "RatingRecord",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/models/types.ts:55"
+      },
+      {
+        "id": "ResearchResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/forge/src/research.ts:27"
+      },
+      {
+        "id": "ReviewCoreResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/cli/src/handlers/review.ts:332"
+      },
+      {
+        "id": "ReviewEvent",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/cli/src/blocks/controls.tsx:36"
+      },
+      {
+        "id": "RoomEvent",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/rooms/types.ts:10"
+      },
+      {
+        "id": "RunJudgeVerdict",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-persistence/src/run-dir.ts:41"
+      },
+      {
+        "id": "RunRecord",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/cli/src/telemetry/index.ts:39"
+      },
+      {
+        "id": "RunsSnapshot",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-persistence/src/runs-store.ts:45"
+      },
+      {
+        "id": "SearchResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/tools/tool-web-search.ts:9"
+      },
+      {
+        "id": "SemanticMutantsResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/forge/src/mutate-semantic.ts:25"
+      },
+      {
+        "id": "ServeConnRecord",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-browser-bridge/src/browser-host.ts:148"
+      },
+      {
+        "id": "SessionResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-persistence/src/session-result-types.ts:83"
+      },
+      {
+        "id": "ShadowableVerdict",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-verification/src/pipeline-types.ts:3"
+      },
+      {
+        "id": "SidechainEvent",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/blocks/sidechain-logger.ts:8"
+      },
+      {
+        "id": "SpeculatorResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/cesar/speculator.ts:53"
+      },
+      {
+        "id": "StageResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/forge/src/types-impl.ts:3"
+      },
+      {
+        "id": "StallResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-verification/src/information-gain.ts:99"
+      },
+      {
+        "id": "StepResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-worktree/src/plan.ts:41"
+      },
+      {
+        "id": "SuggestionResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/cli/src/cesar/suggestion.ts:1"
+      },
+      {
+        "id": "SyntaxCheckResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/forge/src/quality.ts:49"
+      },
+      {
+        "id": "SyntaxValidatorResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-browser-bridge/src/syntax-validator-bridge.ts:19"
+      },
+      {
+        "id": "SynthesisResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/forge/src/synthesis-modus.ts:30"
+      },
+      {
+        "id": "SynthesisResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/forge/src/types-impl.ts:10"
+      },
+      {
+        "id": "SynthPlan",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/forge/src/synth-plan.ts:16"
+      },
+      {
+        "id": "TeamEloRecord",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-persistence/src/team-elo-types.ts:19"
+      },
+      {
+        "id": "TeamEvent",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/teams/team.ts:74"
+      },
+      {
+        "id": "TeamMatchResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/teams/team.ts:59"
+      },
+      {
+        "id": "TelemetrySnapshot",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/cli/src/cesar/telemetry.ts:30"
+      },
+      {
+        "id": "ThinkResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/forge/src/thinking.ts:88"
+      },
+      {
+        "id": "ThreadSnapshot",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/cesar/context-thread.ts:183"
+      },
+      {
+        "id": "TodosMarkerResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/cli/src/cesar/todos-marker.ts:10"
+      },
+      {
+        "id": "ToolCallResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/models/tool-types.ts:96"
+      },
+      {
+        "id": "ToolLoopResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/tools/tool-loop.ts:21"
+      },
+      {
+        "id": "ToolResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/models/tool-types.ts:4"
+      },
+      {
+        "id": "TribunalResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/forge/src/tribunal.ts:28"
+      },
+      {
+        "id": "TurnEvent",
+        "declaration": "TypeAliasDeclaration",
+        "source": "packages/cli/src/cesar/turn-state.ts:93"
+      },
+      {
+        "id": "TurnSnapshot",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/cli/src/cesar/turn-state.ts:109"
+      },
+      {
+        "id": "TurnTelemetryRecord",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-verification/src/guard-telemetry.ts:46"
+      },
+      {
+        "id": "UpdateCheckResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/cli/src/services/update-check.ts:15"
+      },
+      {
+        "id": "WitnessResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/forge/src/goal/oracle.ts:24"
+      },
+      {
+        "id": "WorkflowExecutionPlan",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/workflows/specs.ts:66"
+      },
+      {
+        "id": "WorkflowPhaseEvent",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/workflows/specs.ts:75"
+      },
+      {
+        "id": "WorkflowPluginAdmissionResult",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/core/src/workflows/specs.ts:120"
+      },
+      {
+        "id": "WorkspaceSnapshot",
+        "declaration": "InterfaceDeclaration",
+        "source": "packages/support-worktree/src/plan.ts:26"
+      }
+    ],
+    "configKeys": [
+      {
+        "id": "agentPermissionLevel",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:99"
+      },
+      {
+        "id": "agentTimeout",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:98"
+      },
+      {
+        "id": "agonPermissionMode",
+        "optional": false,
+        "source": "packages/core/src/models/types.ts:161"
+      },
+      {
+        "id": "allowedCommands",
+        "optional": false,
+        "source": "packages/core/src/models/types.ts:162"
+      },
+      {
+        "id": "approvalLevel",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:97"
+      },
+      {
+        "id": "autoCredit",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:182"
+      },
+      {
+        "id": "autoReviewAfterForge",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:175"
+      },
+      {
+        "id": "autoReviewAfterImpl",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:176"
+      },
+      {
+        "id": "browserExtensionIds",
+        "optional": false,
+        "source": "packages/core/src/models/types.ts:184"
+      },
+      {
+        "id": "buddyTimeout",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:177"
+      },
+      {
+        "id": "campfireObserverStrategy",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:158"
+      },
+      {
+        "id": "cesarActingFallback",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:124"
+      },
+      {
+        "id": "cesarAgenticContinuationLimit",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:131"
+      },
+      {
+        "id": "cesarApprovalLedger",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:140"
+      },
+      {
+        "id": "cesarAutoApproveMaxCostUsd",
+        "optional": false,
+        "source": "packages/core/src/models/types.ts:128"
+      },
+      {
+        "id": "cesarAutoApproveMode",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:127"
+      },
+      {
+        "id": "cesarAutoHarnessProfile",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:130"
+      },
+      {
+        "id": "cesarAutoMode",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:129"
+      },
+      {
+        "id": "cesarAutoModePrompted",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:136"
+      },
+      {
+        "id": "cesarAutoPipeline",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:119"
+      },
+      {
+        "id": "cesarBackend",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:122"
+      },
+      {
+        "id": "cesarCodeFastPathChars",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:118"
+      },
+      {
+        "id": "cesarDangerousTaskPattern",
+        "optional": false,
+        "source": "packages/core/src/models/types.ts:133"
+      },
+      {
+        "id": "cesarDelegationReflex",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:148"
+      },
+      {
+        "id": "cesarDestructiveActionPattern",
+        "optional": false,
+        "source": "packages/core/src/models/types.ts:134"
+      },
+      {
+        "id": "cesarDirectThreshold",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:116"
+      },
+      {
+        "id": "cesarDisagreementSpread",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:117"
+      },
+      {
+        "id": "cesarEnabled",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:113"
+      },
+      {
+        "id": "cesarEngine",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:121"
+      },
+      {
+        "id": "cesarExperience",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:143"
+      },
+      {
+        "id": "cesarExperienceMinEpisodes",
+        "optional": false,
+        "source": "packages/core/src/models/types.ts:145"
+      },
+      {
+        "id": "cesarExperienceMinSimilarity",
+        "optional": false,
+        "source": "packages/core/src/models/types.ts:144"
+      },
+      {
+        "id": "cesarExperienceTopK",
+        "optional": false,
+        "source": "packages/core/src/models/types.ts:146"
+      },
+      {
+        "id": "cesarExperienceWindow",
+        "optional": false,
+        "source": "packages/core/src/models/types.ts:147"
+      },
+      {
+        "id": "cesarGateAutoRun",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:150"
+      },
+      {
+        "id": "cesarGateAutoRunLimit",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:151"
+      },
+      {
+        "id": "cesarGateOutputTailChars",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:153"
+      },
+      {
+        "id": "cesarGateTimeoutSec",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:152"
+      },
+      {
+        "id": "cesarImportantTaskPattern",
+        "optional": false,
+        "source": "packages/core/src/models/types.ts:132"
+      },
+      {
+        "id": "cesarMcpConfigPath",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:126"
+      },
+      {
+        "id": "cesarMcpEnabled",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:125"
+      },
+      {
+        "id": "cesarMutateReflex",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:149"
+      },
+      {
+        "id": "cesarPipelineThreshold",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:120"
+      },
+      {
+        "id": "cesarReadRepeatThreshold",
+        "optional": false,
+        "source": "packages/core/src/models/types.ts:156"
+      },
+      {
+        "id": "cesarReadSpiralThreshold",
+        "optional": false,
+        "source": "packages/core/src/models/types.ts:155"
+      },
+      {
+        "id": "cesarScoutCount",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:114"
+      },
+      {
+        "id": "cesarScoutTimeout",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:115"
+      },
+      {
+        "id": "cesarSearchNudgeThreshold",
+        "optional": false,
+        "source": "packages/core/src/models/types.ts:154"
+      },
+      {
+        "id": "cesarSelfTurnAutoApprove",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:138"
+      },
+      {
+        "id": "cesarSelfTurnAutoApproveMaxDiffTokens",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:139"
+      },
+      {
+        "id": "cesarSensitivePathPatterns",
+        "optional": false,
+        "source": "packages/core/src/models/types.ts:135"
+      },
+      {
+        "id": "cesarStreamingXmlTools",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:157"
+      },
+      {
+        "id": "cesarToolTimeline",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:141"
+      },
+      {
+        "id": "claudeBackend",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:123"
+      },
+      {
+        "id": "commitCoAuthor",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:183"
+      },
+      {
+        "id": "contextFormat",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:96"
+      },
+      {
+        "id": "contextSummary",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:92"
+      },
+      {
+        "id": "corpusReplayLimit",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:111"
+      },
+      {
+        "id": "daemonFrameMaxBytes",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:107"
+      },
+      {
+        "id": "debug",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:64"
+      },
+      {
+        "id": "engineActivationMode",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:77"
+      },
+      {
+        "id": "engineEfforts",
+        "optional": false,
+        "source": "packages/core/src/models/types.ts:168"
+      },
+      {
+        "id": "engineIsolation",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:169"
+      },
+      {
+        "id": "engineModels",
+        "optional": false,
+        "source": "packages/core/src/models/types.ts:167"
+      },
+      {
+        "id": "forgeAutoAcceptScore",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:68"
+      },
+      {
+        "id": "forgeClearWinnerSpread",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:69"
+      },
+      {
+        "id": "forgeDispatchTimeout",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:67"
+      },
+      {
+        "id": "forgeEarlyFinalizeEnabled",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:81"
+      },
+      {
+        "id": "forgeEarlyFinalizeMinScore",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:83"
+      },
+      {
+        "id": "forgeEarlyFinalizePassingCount",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:82"
+      },
+      {
+        "id": "forgeEnabledEngines",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:78"
+      },
+      {
+        "id": "forgeEnableSynthesis",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:70"
+      },
+      {
+        "id": "forgeFitnessTimeout",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:79"
+      },
+      {
+        "id": "forgeFixedStarter",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:73"
+      },
+      {
+        "id": "forgeHealthCheckApiTimeoutSec",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:86"
+      },
+      {
+        "id": "forgeHealthCheckEnabled",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:84"
+      },
+      {
+        "id": "forgeHealthCheckTimeoutSec",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:85"
+      },
+      {
+        "id": "forgeJudgeEngine",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:88"
+      },
+      {
+        "id": "forgeMaxCritiques",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:71"
+      },
+      {
+        "id": "forgeMaxParallelApi",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:87"
+      },
+      {
+        "id": "forgeRequireBaselineCheck",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:76"
+      },
+      {
+        "id": "forgeStarterStrategy",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:72"
+      },
+      {
+        "id": "forgeSynthesisTimeout",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:80"
+      },
+      {
+        "id": "forgeTimeout",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:66"
+      },
+      {
+        "id": "gauntletEnabled",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:108"
+      },
+      {
+        "id": "gauntletMaxBreakers",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:109"
+      },
+      {
+        "id": "gauntletRepairTimeout",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:110"
+      },
+      {
+        "id": "goalReviewEngines",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:75"
+      },
+      {
+        "id": "hiddenEngines",
+        "optional": false,
+        "source": "packages/core/src/models/types.ts:165"
+      },
+      {
+        "id": "hooks",
+        "optional": false,
+        "source": "packages/core/src/models/types.ts:159"
+      },
+      {
+        "id": "iconTheme",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:173"
+      },
+      {
+        "id": "jobCancelGraceMs",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:105"
+      },
+      {
+        "id": "jobEventLimit",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:100"
+      },
+      {
+        "id": "jobLabelMaxChars",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:103"
+      },
+      {
+        "id": "jobMaxConcurrency",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:102"
+      },
+      {
+        "id": "jobOutputChunkChars",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:104"
+      },
+      {
+        "id": "jobRetentionLimit",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:101"
+      },
+      {
+        "id": "jobShutdownTimeoutMs",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:106"
+      },
+      {
+        "id": "narrationFold",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:174"
+      },
+      {
+        "id": "neroExplorationRate",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:180"
+      },
+      {
+        "id": "onboarded",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:94"
+      },
+      {
+        "id": "permissionMode",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:160"
+      },
+      {
+        "id": "permissions",
+        "optional": false,
+        "source": "packages/core/src/models/types.ts:164"
+      },
+      {
+        "id": "projectContext",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:95"
+      },
+      {
+        "id": "protectedPushBranches",
+        "optional": false,
+        "source": "packages/core/src/models/types.ts:142"
+      },
+      {
+        "id": "ratingsEnabled",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:91"
+      },
+      {
+        "id": "ratingsPurgeKeepEngines",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:181"
+      },
+      {
+        "id": "removedEngines",
+        "optional": false,
+        "source": "packages/core/src/models/types.ts:166"
+      },
+      {
+        "id": "resumePausedPlanOnStartup",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:137"
+      },
+      {
+        "id": "reviewDefaultEngine",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:74"
+      },
+      {
+        "id": "reviewFileContext",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:90"
+      },
+      {
+        "id": "reviewMaxTokens",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:89"
+      },
+      {
+        "id": "sessionContinuity",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:93"
+      },
+      {
+        "id": "skillSynthesisThreshold",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:112"
+      },
+      {
+        "id": "speculativeEloSpreadThreshold",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:179"
+      },
+      {
+        "id": "speculativeThresholdUsd",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:178"
+      },
+      {
+        "id": "statusLine",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:172"
+      },
+      {
+        "id": "terminalMode",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:170"
+      },
+      {
+        "id": "timeout",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:65"
+      },
+      {
+        "id": "toolPermissions",
+        "optional": false,
+        "source": "packages/core/src/models/types.ts:163"
+      },
+      {
+        "id": "uiMotion",
+        "optional": true,
+        "source": "packages/core/src/models/types.ts:171"
+      }
+    ],
+    "statePaths": [
+      {
+        "id": ".agon.json",
+        "kind": "project-relative",
+        "source": "packages/cli/src/handlers/info.ts:589"
+      },
+      {
+        "id": ".agon.json",
+        "kind": "project-relative",
+        "source": "packages/core/src/signals/config.ts:23"
+      },
+      {
+        "id": ".agon.json",
+        "kind": "project-relative",
+        "source": "packages/core/src/tools/mcp-discovery.ts:95"
+      },
+      {
+        "id": ".agon.local.json",
+        "kind": "project-relative",
+        "source": "packages/cli/src/handlers/info.ts:590"
+      },
+      {
+        "id": ".agon.local.json",
+        "kind": "project-relative",
+        "source": "packages/core/src/signals/config.ts:25"
+      },
+      {
+        "id": ".agon/agent-worktrees",
+        "kind": "project-relative",
+        "source": "packages/core/src/blocks/git.ts:419"
+      },
+      {
+        "id": ".agon/goals",
+        "kind": "project-relative",
+        "source": "packages/core/src/blocks/git.ts:422"
+      },
+      {
+        "id": ".agon/project.md",
+        "kind": "project-relative",
+        "source": "packages/core/src/blocks/context-scanner.ts:22"
+      },
+      {
+        "id": ".agon/project.md",
+        "kind": "project-relative",
+        "source": "packages/core/src/cesar/memory.ts:10"
+      },
+      {
+        "id": ".agon/project.md",
+        "kind": "project-relative",
+        "source": "packages/core/src/tools/tool-save-memory.ts:10"
+      },
+      {
+        "id": ".agon/runs",
+        "kind": "project-relative",
+        "source": "packages/core/src/blocks/git.ts:421"
+      },
+      {
+        "id": ".agon/speculate-worktrees",
+        "kind": "project-relative",
+        "source": "packages/core/src/blocks/git.ts:420"
+      },
+      {
+        "id": "AGON_HOME",
+        "kind": "exported-path-symbol",
+        "source": "packages/support-persistence/src/paths.ts:13"
+      },
+      {
+        "id": "browser-host",
+        "kind": "agon-home-relative",
+        "source": "packages/cli/src/commands/browser-host.ts:27"
+      },
+      {
+        "id": "cache/codebase-map",
+        "kind": "agon-home-relative",
+        "source": "packages/core/src/blocks/codebase-map.ts:109"
+      },
+      {
+        "id": "calibration",
+        "kind": "agon-home-relative",
+        "source": "packages/cli/src/cesar/tool-observability.ts:264"
+      },
+      {
+        "id": "config.json",
+        "kind": "agon-home-relative",
+        "source": "packages/core/src/signals/config.ts:53"
+      },
+      {
+        "id": "CORPUS_PATH",
+        "kind": "exported-path-symbol",
+        "source": "packages/support-persistence/src/paths.ts:18"
+      },
+      {
+        "id": "daemon",
+        "kind": "agon-home-relative",
+        "source": "packages/cli/src/commands/daemon.ts:33"
+      },
+      {
+        "id": "FLOWS_DIR",
+        "kind": "exported-path-symbol",
+        "source": "packages/support-persistence/src/flow.ts:17"
+      },
+      {
+        "id": "GLOBAL_CONFIG_PATH",
+        "kind": "exported-path-symbol",
+        "source": "packages/support-persistence/src/paths.ts:14"
+      },
+      {
+        "id": "goals/tmp",
+        "kind": "agon-home-relative",
+        "source": "packages/forge/src/goal/oracle.ts:87"
+      },
+      {
+        "id": "native-host",
+        "kind": "agon-home-relative",
+        "source": "packages/cli/src/commands/ext.ts:142"
+      },
+      {
+        "id": "PERF_PATH",
+        "kind": "exported-path-symbol",
+        "source": "packages/cli/src/signals/input-perf.ts:19"
+      },
+      {
+        "id": "RATINGS_PATH",
+        "kind": "exported-path-symbol",
+        "source": "packages/support-persistence/src/paths.ts:16"
+      },
+      {
+        "id": "ratings.json",
+        "kind": "agon-home-relative",
+        "source": "packages/core/src/signals/ratings-maintenance.ts:121"
+      },
+      {
+        "id": "RENDER_PROBE_PATH",
+        "kind": "exported-path-symbol",
+        "source": "packages/cli/src/signals/input-perf.ts:53"
+      },
+      {
+        "id": "runs",
+        "kind": "agon-home-relative",
+        "source": "packages/core/src/signals/config.ts:177"
+      },
+      {
+        "id": "runs",
+        "kind": "agon-home-relative",
+        "source": "packages/core/src/signals/ratings-maintenance.ts:93"
+      },
+      {
+        "id": "runs",
+        "kind": "agon-home-relative",
+        "source": "packages/support-persistence/src/run-dir.ts:90"
+      },
+      {
+        "id": "RUNS_DIR",
+        "kind": "exported-path-symbol",
+        "source": "packages/support-persistence/src/paths.ts:15"
+      },
+      {
+        "id": "serve",
+        "kind": "agon-home-relative",
+        "source": "packages/cli/src/bridge/chrome-bridge.ts:27"
+      },
+      {
+        "id": "serve",
+        "kind": "agon-home-relative",
+        "source": "packages/cli/src/bridge/serve-runtime.ts:86"
+      },
+      {
+        "id": "serve",
+        "kind": "agon-home-relative",
+        "source": "packages/cli/src/commands/browser-host.ts:41"
+      },
+      {
+        "id": "serve",
+        "kind": "agon-home-relative",
+        "source": "packages/cli/src/commands/drive.ts:98"
+      },
+      {
+        "id": "SKILLS_DIR",
+        "kind": "exported-path-symbol",
+        "source": "packages/support-persistence/src/paths.ts:19"
+      },
+      {
+        "id": "TEAM_ELO_PATH",
+        "kind": "exported-path-symbol",
+        "source": "packages/support-persistence/src/paths.ts:17"
+      },
+      {
+        "id": "WORKSPACES_PATH",
+        "kind": "exported-path-symbol",
+        "source": "packages/core/src/blocks/workspace.ts:37"
+      }
+    ],
+    "stateStoreModules": [
+      {
+        "id": "packages/cli/src/cesar/checkpoint.ts",
+        "source": "packages/cli/src/cesar/checkpoint.ts"
+      },
+      {
+        "id": "packages/cli/src/cesar/session.ts",
+        "source": "packages/cli/src/cesar/session.ts"
+      },
+      {
+        "id": "packages/cli/src/commands/history.ts",
+        "source": "packages/cli/src/commands/history.ts"
+      },
+      {
+        "id": "packages/cli/src/commands/provenance.ts",
+        "source": "packages/cli/src/commands/provenance.ts"
+      },
+      {
+        "id": "packages/cli/src/telemetry/index.ts",
+        "source": "packages/cli/src/telemetry/index.ts"
+      },
+      {
+        "id": "packages/core/src/blocks/file-state-cache.ts",
+        "source": "packages/core/src/blocks/file-state-cache.ts"
+      },
+      {
+        "id": "packages/core/src/blocks/provenance.ts",
+        "source": "packages/core/src/blocks/provenance.ts"
+      },
+      {
+        "id": "packages/core/src/cesar/memory.ts",
+        "source": "packages/core/src/cesar/memory.ts"
+      },
+      {
+        "id": "packages/core/src/rooms/leases.ts",
+        "source": "packages/core/src/rooms/leases.ts"
+      },
+      {
+        "id": "packages/core/src/rooms/presence.ts",
+        "source": "packages/core/src/rooms/presence.ts"
+      },
+      {
+        "id": "packages/core/src/rooms/store.ts",
+        "source": "packages/core/src/rooms/store.ts"
+      },
+      {
+        "id": "packages/core/src/rooms/tail.ts",
+        "source": "packages/core/src/rooms/tail.ts"
+      },
+      {
+        "id": "packages/core/src/signals/ratings-maintenance.ts",
+        "source": "packages/core/src/signals/ratings-maintenance.ts"
+      },
+      {
+        "id": "packages/core/src/tools/tool-save-memory.ts",
+        "source": "packages/core/src/tools/tool-save-memory.ts"
+      },
+      {
+        "id": "packages/forge/src/goal/journal.ts",
+        "source": "packages/forge/src/goal/journal.ts"
+      },
+      {
+        "id": "packages/mod-rag/src/store.ts",
+        "source": "packages/mod-rag/src/store.ts"
+      },
+      {
+        "id": "packages/support-engine-runtime/src/auth-store.ts",
+        "source": "packages/support-engine-runtime/src/auth-store.ts"
+      },
+      {
+        "id": "packages/support-engine-runtime/src/engine-memory.ts",
+        "source": "packages/support-engine-runtime/src/engine-memory.ts"
+      },
+      {
+        "id": "packages/support-persistence/src/chat-store.ts",
+        "source": "packages/support-persistence/src/chat-store.ts"
+      },
+      {
+        "id": "packages/support-persistence/src/delegate-ledger.ts",
+        "source": "packages/support-persistence/src/delegate-ledger.ts"
+      },
+      {
+        "id": "packages/support-persistence/src/file-history.ts",
+        "source": "packages/support-persistence/src/file-history.ts"
+      },
+      {
+        "id": "packages/support-persistence/src/flow.ts",
+        "source": "packages/support-persistence/src/flow.ts"
+      },
+      {
+        "id": "packages/support-persistence/src/paste-store.ts",
+        "source": "packages/support-persistence/src/paste-store.ts"
+      },
+      {
+        "id": "packages/support-persistence/src/plan-store.ts",
+        "source": "packages/support-persistence/src/plan-store.ts"
+      },
+      {
+        "id": "packages/support-persistence/src/runs-store.ts",
+        "source": "packages/support-persistence/src/runs-store.ts"
+      },
+      {
+        "id": "packages/support-persistence/src/session-pty.ts",
+        "source": "packages/support-persistence/src/session-pty.ts"
+      },
+      {
+        "id": "packages/support-persistence/src/session-store.ts",
+        "source": "packages/support-persistence/src/session-store.ts"
+      },
+      {
+        "id": "packages/support-verification/src/guard-telemetry-store.ts",
+        "source": "packages/support-verification/src/guard-telemetry-store.ts"
+      },
+      {
+        "id": "packages/support-worktree/src/worktree-session.ts",
+        "source": "packages/support-worktree/src/worktree-session.ts"
+      }
+    ],
+    "staticAssets": [
+      {
+        "id": "docs/modes.md",
+        "bytes": 13267,
+        "extension": ".md",
+        "source": "docs/modes.md"
+      },
+      {
+        "id": "engines/agy.json",
+        "bytes": 1951,
+        "extension": ".json",
+        "source": "engines/agy.json"
+      },
+      {
+        "id": "engines/aider.json",
+        "bytes": 952,
+        "extension": ".json",
+        "source": "engines/aider.json"
+      },
+      {
+        "id": "engines/claude.json",
+        "bytes": 2223,
+        "extension": ".json",
+        "source": "engines/claude.json"
+      },
+      {
+        "id": "engines/codex.json",
+        "bytes": 2136,
+        "extension": ".json",
+        "source": "engines/codex.json"
+      },
+      {
+        "id": "engines/kimi-code.json",
+        "bytes": 829,
+        "extension": ".json",
+        "source": "engines/kimi-code.json"
+      },
+      {
+        "id": "engines/minimax-coding-plan-minimax-m3.json",
+        "bytes": 578,
+        "extension": ".json",
+        "source": "engines/minimax-coding-plan-minimax-m3.json"
+      },
+      {
+        "id": "engines/mistral.json",
+        "bytes": 930,
+        "extension": ".json",
+        "source": "engines/mistral.json"
+      },
+      {
+        "id": "engines/ollama.json",
+        "bytes": 670,
+        "extension": ".json",
+        "source": "engines/ollama.json"
+      },
+      {
+        "id": "engines/opencode.json",
+        "bytes": 1137,
+        "extension": ".json",
+        "source": "engines/opencode.json"
+      },
+      {
+        "id": "engines/openrouter.json",
+        "bytes": 1354,
+        "extension": ".json",
+        "source": "engines/openrouter.json"
+      },
+      {
+        "id": "engines/qwen.json",
+        "bytes": 820,
+        "extension": ".json",
+        "source": "engines/qwen.json"
+      },
+      {
+        "id": "packages/cli/package.json",
+        "bytes": 3818,
+        "extension": ".json",
+        "source": "packages/cli/package.json"
+      },
+      {
+        "id": "packages/cli/py/agon-model-probe-wrapper.py",
+        "bytes": 3181,
+        "extension": ".py",
+        "source": "packages/cli/py/agon-model-probe-wrapper.py"
+      },
+      {
+        "id": "packages/cli/py/agon-tui-probe.py",
+        "bytes": 21308,
+        "extension": ".py",
+        "source": "packages/cli/py/agon-tui-probe.py"
+      },
+      {
+        "id": "packages/cli/tsup.config.ts",
+        "bytes": 3139,
+        "extension": ".ts",
+        "source": "packages/cli/tsup.config.ts"
+      },
+      {
+        "id": "patches/@kernlang+agon-engines+0.1.3.patch",
+        "bytes": 1136,
+        "extension": ".patch",
+        "source": "patches/@kernlang+agon-engines+0.1.3.patch"
+      },
+      {
+        "id": "scripts/generate-mode-docs.mjs",
+        "bytes": 1876,
+        "extension": ".mjs",
+        "source": "scripts/generate-mode-docs.mjs"
+      }
+    ],
+    "pythonAndNativeComponents": [
+      {
+        "id": "packages/cli/py/agon-model-probe-wrapper.py",
+        "kind": "py",
+        "source": "packages/cli/py/agon-model-probe-wrapper.py"
+      },
+      {
+        "id": "packages/cli/py/agon-tui-probe.py",
+        "kind": "py",
+        "source": "packages/cli/py/agon-tui-probe.py"
+      },
+      {
+        "id": "packages/dedup/classifier.py",
+        "kind": "py",
+        "source": "packages/dedup/classifier.py"
+      },
+      {
+        "id": "packages/dedup/embedder.py",
+        "kind": "py",
+        "source": "packages/dedup/embedder.py"
+      },
+      {
+        "id": "packages/dedup/history-search.py",
+        "kind": "py",
+        "source": "packages/dedup/history-search.py"
+      },
+      {
+        "id": "packages/dedup/sidecar.py",
+        "kind": "py",
+        "source": "packages/dedup/sidecar.py"
+      },
+      {
+        "id": "packages/dedup/syntax-validator.py",
+        "kind": "py",
+        "source": "packages/dedup/syntax-validator.py"
+      },
+      {
+        "id": "packages/saas-api/src/__init__.py",
+        "kind": "py",
+        "source": "packages/saas-api/src/__init__.py"
+      },
+      {
+        "id": "packages/saas-api/src/health.py",
+        "kind": "py",
+        "source": "packages/saas-api/src/health.py"
+      },
+      {
+        "id": "packages/saas-api/src/routes/__init__.py",
+        "kind": "py",
+        "source": "packages/saas-api/src/routes/__init__.py"
+      },
+      {
+        "id": "packages/saas-api/src/routes/get_health.py",
+        "kind": "py",
+        "source": "packages/saas-api/src/routes/get_health.py"
+      },
+      {
+        "id": "packages/support-dedup/python/classifier.py",
+        "kind": "py",
+        "source": "packages/support-dedup/python/classifier.py"
+      },
+      {
+        "id": "packages/support-dedup/python/embedder.py",
+        "kind": "py",
+        "source": "packages/support-dedup/python/embedder.py"
+      },
+      {
+        "id": "packages/support-dedup/python/sidecar.py",
+        "kind": "py",
+        "source": "packages/support-dedup/python/sidecar.py"
+      },
+      {
+        "id": "packages/support-dedup/python/syntax-validator.py",
+        "kind": "py",
+        "source": "packages/support-dedup/python/syntax-validator.py"
+      },
+      {
+        "id": "packages/support-engine-runtime/python/agon-model-probe-wrapper.py",
+        "kind": "py",
+        "source": "packages/support-engine-runtime/python/agon-model-probe-wrapper.py"
+      },
+      {
+        "id": "packages/support-persistence/python/history-search.py",
+        "kind": "py",
+        "source": "packages/support-persistence/python/history-search.py"
+      },
+      {
+        "id": "packages/support-saas-api/python/__init__.py",
+        "kind": "py",
+        "source": "packages/support-saas-api/python/__init__.py"
+      },
+      {
+        "id": "packages/support-saas-api/python/health.py",
+        "kind": "py",
+        "source": "packages/support-saas-api/python/health.py"
+      },
+      {
+        "id": "packages/support-saas-api/python/routes/__init__.py",
+        "kind": "py",
+        "source": "packages/support-saas-api/python/routes/__init__.py"
+      },
+      {
+        "id": "packages/support-saas-api/python/routes/get_health.py",
+        "kind": "py",
+        "source": "packages/support-saas-api/python/routes/get_health.py"
+      },
+      {
+        "id": "packages/support-verification/python/agon-tui-probe.py",
+        "kind": "py",
+        "source": "packages/support-verification/python/agon-tui-probe.py"
+      },
+      {
+        "id": "packages/support-verification/python/claude-tui-probe.py",
+        "kind": "py",
+        "source": "packages/support-verification/python/claude-tui-probe.py"
+      },
+      {
+        "id": "scripts/agon-init.sh",
+        "kind": "sh",
+        "source": "scripts/agon-init.sh"
+      },
+      {
+        "id": "scripts/claude-tui-probe.py",
+        "kind": "py",
+        "source": "scripts/claude-tui-probe.py"
+      },
+      {
+        "id": "scripts/install-test.sh",
+        "kind": "sh",
+        "source": "scripts/install-test.sh"
+      },
+      {
+        "id": "scripts/perf/pty-drive.py",
+        "kind": "py",
+        "source": "scripts/perf/pty-drive.py"
+      }
+    ],
+    "generatedDocumentation": [
+      {
+        "id": "AGENTS.md routing block",
+        "generator": "packages/cli/src/commands/agent-guide-text.ts",
+        "source": "packages/cli/src/commands/agent-guide-text.ts:1"
+      },
+      {
+        "id": "docs/modes.md",
+        "generator": "scripts/generate-mode-docs.mjs",
+        "source": "package.json:12"
+      },
+      {
+        "id": "installed agent prompts",
+        "generator": "packages/cli/src/commands/install-agent-prompts.ts",
+        "source": "packages/cli/src/commands/install-agent-prompts.ts:1"
+      }
+    ]
+  }
+}

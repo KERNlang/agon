@@ -18,12 +18,25 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@kernlang/agon-dedup": "^0.2.5",
-    "@kernlang/agon-engines": "^0.1.2",
-    "@kernlang/context": "~4.5.0",
     "@ai-sdk/anthropic": "^3.0.67",
     "@ai-sdk/openai-compatible": "^2.0.40",
+    "@kernlang/agon-dedup": "^0.2.5",
+    "@kernlang/agon-engines": "^0.1.2",
+    "@kernlang/agon-kernel": "1.0.0",
+    "@kernlang/agon-mod-rag": "1.0.0",
+    "@kernlang/agon-mod-plan": "1.0.0",
+    "@kernlang/agon-mod-brainstorm": "1.0.0",
+    "@kernlang/agon-support-panel": "1.0.0",
+    "@kernlang/protocol": "~4.5.0",
+    "@kernlang/agon-support-agent-runtime": "1.0.0",
+    "@kernlang/agon-support-browser-bridge": "1.0.0",
+    "@kernlang/agon-support-dedup": "1.0.0",
+    "@kernlang/agon-support-engine-catalog": "1.0.0",
+    "@kernlang/agon-support-engine-runtime": "1.0.0",
+    "@kernlang/agon-support-persistence": "1.0.0",
+    "@kernlang/agon-support-verification": "1.0.0",
+    "@kernlang/agon-support-worktree": "1.0.0",
+    "@kernlang/context": "~4.5.0",
     "ai": "^6.0.149"
-  },
-  "optionalDependencies": {}
+  }
 }

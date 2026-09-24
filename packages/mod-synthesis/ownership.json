@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "package": "@kernlang/agon-mod-synthesis",
+  "assignments": [
+    {
+      "category": "cliCommands",
+      "id": "synthesis",
+      "source": "packages/cli/src/lazy-commands.ts:314",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-synthesis",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "configKeys",
+      "id": "forgeEnableSynthesis",
+      "source": "packages/core/src/models/types.ts:70",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-synthesis",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "configKeys",
+      "id": "forgeSynthesisTimeout",
+      "source": "packages/core/src/models/types.ts:80",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-synthesis",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "configKeys",
+      "id": "skillSynthesisThreshold",
+      "source": "packages/core/src/models/types.ts:112",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-synthesis",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "mcpTools",
+      "id": "Synthesis",
+      "source": "packages/mcp/src/agon-orchestration.ts:24",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-synthesis",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "AgentInvestigateSynthesisResult",
+      "source": "packages/core/src/cesar/agent-synthesis.ts:401",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-synthesis",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "AgentSynthesisResult",
+      "source": "packages/core/src/cesar/agent-synthesis.ts:68",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-synthesis",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/synthesis",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-synthesis",
+      "rule": "exact-user-surface"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+**S1B False-Green / Reproducibility Defects (NEW, Concrete):**
+
+1. **`mod-kernel/src/oracle/submit.ts`**: Oracle submission uses `process.cwd()` instead of the canonical staged Git-object subject hash for envelope identification, causing envelope collisions when workflows are triggered from different working directories during parallel runs.
+
+2. **`mod-api/src/guards/consensus.ts`**: Consensus guard tolerates *any* stderr output from fitness commands (e.g., lint warnings, deprecation notices), treating them as pass. Should only accept zero exit code *and* empty stderr to avoid masking non-deterministic failures in forge/tribunal fitness checks.
+
+3. **`cli/src/runner.ts`**: Workflow runner does not enforce deterministic `PATH` ordering for engine CLIs; relies on shell resolution order, leading to non-reproducible engine selection when multiple Ollama/Qwen instances are present.
+
+4. **`mod-kernel/src/pipeline/subject.ts`**: Git-object hashing incorrectly normalizes Windows-style line endings (`CRLF`) in staged `package.json` files before hashing, producing different digests across OSes despite identical content.
+
+5. **`mod-api/src/monitor/exit-code.ts`**: Exit code monitor captures *any* non-zero signal (e.g., SIGINT, SIGTERM) as `1`, conflating user interruption with actual process failure; breaks reproducibility in test runs that expect explicit failure codes.
+
+*All five defects introduce subtle, non-deterministic behavior under otherwise identical inputs and violate the frozen-envelope oracle’s reproducibility guarantee.*

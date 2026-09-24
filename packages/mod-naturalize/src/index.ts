@@ -1,0 +1,143 @@
+import { validateManifest } from '@kernlang/agon-mod-api';
+
+export const MANIFEST = validateManifest({
+  "schemaVersion": 2,
+  "id": "agon.naturalize",
+  "name": "Naturalize",
+  "version": "1.0.0",
+  "apiRange": ">=1.0.0 <2",
+  "execution": "executable",
+  "compatibility": {
+    "kernelRange": ">=0.0.0-0 <2",
+    "nodeRange": ">=22"
+  },
+  "packageClass": "user-toggleable-mod-package",
+  "entrypoints": {
+    "runtime": "dist/index.js",
+    "types": "dist/index.d.ts"
+  },
+  "display": {
+    "group": "Transform",
+    "order": 401
+  },
+  "dependencies": {
+    "required": [
+      {
+        "id": "agon.api",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.engine-runtime",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.sanitize",
+        "range": ">=0.0.0-0"
+      }
+    ],
+    "optional": [],
+    "conflicts": []
+  },
+  "permissions": [
+    {
+      "capability": "engine.dispatch",
+      "resources": [],
+      "required": true
+    },
+    {
+      "capability": "fs.write",
+      "resources": [],
+      "required": true
+    }
+  ],
+  "platforms": [
+    "darwin-arm64",
+    "darwin-x64",
+    "linux-arm64",
+    "linux-x64"
+  ],
+  "assets": [
+    {
+      "path": "ownership.json",
+      "kind": "documentation",
+      "mediaType": "application/json",
+      "contentHash": "sha256:f978c20690ff96c7be1ade903f9260c5602213a69b8686994a060dd6c32285bd",
+      "bytes": 620,
+      "executable": false,
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-arm64",
+        "linux-x64"
+      ]
+    },
+    {
+      "path": "schemas/config.schema.json",
+      "kind": "schema",
+      "mediaType": "application/schema+json",
+      "contentHash": "sha256:3920b9e94d0db58e88490ee02a8e92dcbed852175f556915df6159024f59d0d4",
+      "bytes": 226,
+      "executable": false,
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-arm64",
+        "linux-x64"
+      ]
+    }
+  ],
+  "contributes": {
+    "cliCommands": [
+      {
+        "id": "cliCommands:0055",
+        "aliases": []
+      }
+    ],
+    "tuiActions": [
+      {
+        "id": "tuiSlashCommands:0046",
+        "aliases": []
+      }
+    ],
+    "mcpTools": [],
+    "cesarTools": [],
+    "lifecycleHooks": [],
+    "resultTypes": [],
+    "configKeys": [],
+    "generatedDocs": []
+  },
+  "pack": {
+    "include": [
+      "LICENSE",
+      "agon.mod.json",
+      "dist/index.js",
+      "dist/index.d.ts",
+      "dist/implementation.d.ts",
+      "ownership.json",
+      "schemas/config.schema.json"
+    ],
+    "executable": []
+  }
+});
+export const SOURCE_OCCURRENCES = Object.freeze([
+  {
+    "category": "cliCommands",
+    "id": "naturalize",
+    "source": "packages/cli/src/lazy-commands.ts:308",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-naturalize",
+    "rule": "exact-user-surface"
+  },
+  {
+    "category": "tuiSlashCommands",
+    "id": "/naturalize",
+    "source": "packages/cli/src/signals/intent.ts:56",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-naturalize",
+    "rule": "exact-user-surface"
+  }
+]);
+export const IMPLEMENTATION_KIND = 'physical' as const;
+export { createMod } from './implementation.js';
+export { createMod as default } from './implementation.js';
+export { runNaturalize } from './implementation.js';

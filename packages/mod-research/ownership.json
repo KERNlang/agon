@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "package": "@kernlang/agon-mod-research",
+  "assignments": [
+    {
+      "category": "cliCommands",
+      "id": "research",
+      "source": "packages/cli/src/lazy-commands.ts:320",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-research",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "CitationVerdict",
+      "source": "packages/core/src/tools/research-verifier.ts:15",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-research",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/research",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-research",
+      "rule": "exact-user-surface"
+    }
+  ]
+}

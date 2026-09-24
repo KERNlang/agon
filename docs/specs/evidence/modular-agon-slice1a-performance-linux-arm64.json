@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "measuredAt": "2026-08-23T12:06:50.955Z",
+  "platform": "linux-arm64",
+  "node": "v22.23.2",
+  "isolation": {
+    "agonHome": "temporary",
+    "home": "temporary",
+    "npmCache": "temporary"
+  },
+  "coldStart": [
+    {
+      "args": [
+        "--version"
+      ],
+      "runs": 15,
+      "latencyMs": {
+        "p50": 135.696375,
+        "p95": 148.46125,
+        "max": 148.46125
+      },
+      "peakRssMb": {
+        "p50": 88.76953125,
+        "p95": 88.95703125,
+        "max": 88.95703125
+      }
+    },
+    {
+      "args": [
+        "--help"
+      ],
+      "runs": 15,
+      "latencyMs": {
+        "p50": 138.35720800000036,
+        "p95": 143.43920900000012,
+        "max": 143.43920900000012
+      },
+      "peakRssMb": {
+        "p50": 88.88671875,
+        "p95": 89.125,
+        "max": 89.125
+      }
+    }
+  ],
+  "resolver": {
+    "candidates": 1000,
+    "runs": 15,
+    "p50Ms": 35.71424999999999,
+    "p95Ms": 44.45762500000001,
+    "maxMs": 44.45762500000001,
+    "maxHeapDeltaBytes": 454624
+  },
+  "projections": {
+    "entries": 441,
+    "runs": 100,
+    "p50Ms": 0.2907920000006925,
+    "p95Ms": 0.6326250000001892,
+    "maxMs": 1.4466659999998228
+  },
+  "packages": {
+    "reports": [
+      {
+        "workspace": "packages/cli",
+        "packedBytes": 1587078,
+        "unpackedBytes": 7418418,
+        "files": 197
+      },
+      {
+        "workspace": "packages/mod-api",
+        "packedBytes": 8968,
+        "unpackedBytes": 70009,
+        "files": 19
+      },
+      {
+        "workspace": "packages/mod-kernel",
+        "packedBytes": 44050,
+        "unpackedBytes": 682318,
+        "files": 11
+      }
+    ],
+    "aggregate": {
+      "packedBytes": 1640096,
+      "unpackedBytes": 8170745,
+      "files": 227
+    }
+  },
+  "tui": {
+    "exitCode": 0,
+    "p95Ms": 11.58
+  },
+  "budgetLimits": {
+    "coldStartP95Ms": 200,
+    "peakRssP95Mb": 128,
+    "resolverP95Ms": 100,
+    "resolverHeapBytes": 16777216,
+    "packedBytes": 1980000,
+    "unpackedBytes": 9280000,
+    "files": 250,
+    "tuiP95Ms": 12
+  },
+  "budgets": {
+    "coldStartGreen": true,
+    "resolverGreen": true,
+    "packageGreen": true,
+    "tuiGreen": true
+  }
+}

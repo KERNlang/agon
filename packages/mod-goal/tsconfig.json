@@ -1,0 +1,76 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "baseUrl": ".",
+    "paths": {
+      "@kernlang/agon-mod-api": [
+        "../mod-api/src/index.ts"
+      ],
+      "@kernlang/agon-support-engine-runtime": [
+        "../support-engine-runtime/src/index.ts"
+      ],
+      "@kernlang/agon-mod-plan": [
+        "../mod-plan/src/index.ts"
+      ],
+      "@kernlang/agon-mod-agent": [
+        "../mod-agent/src/index.ts"
+      ],
+      "@kernlang/agon-mod-review": [
+        "../mod-review/src/index.ts"
+      ],
+      "@kernlang/agon-mod-jobs": [
+        "../mod-jobs/src/index.ts"
+      ],
+      "@kernlang/agon-mod-git-actions": [
+        "../mod-git-actions/src/index.ts"
+      ],
+      "@kernlang/agon-support-worktree": [
+        "../support-worktree/src/index.ts"
+      ],
+      "@kernlang/agon-support-verification": [
+        "../support-verification/src/index.ts"
+      ]
+    },
+    "sourceMap": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": true
+  },
+  "references": [
+    {
+      "path": "../mod-api"
+    },
+    {
+      "path": "../support-engine-runtime"
+    },
+    {
+      "path": "../mod-plan"
+    },
+    {
+      "path": "../mod-agent"
+    },
+    {
+      "path": "../mod-review"
+    },
+    {
+      "path": "../mod-jobs"
+    },
+    {
+      "path": "../mod-git-actions"
+    },
+    {
+      "path": "../support-worktree"
+    },
+    {
+      "path": "../support-verification"
+    }
+  ],
+  "include": [
+    "src"
+  ],
+  "exclude": [
+    "src/**/*.test.ts"
+  ]
+}

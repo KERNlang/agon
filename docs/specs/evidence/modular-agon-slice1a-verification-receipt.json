@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "deb484af-31a7-44c3-9b8a-94f7916bd277",
+  "kind": "modular-agon-slice1a-qualification",
+  "branch": "feat/modular-agon-slice-1a",
+  "platform": "darwin-arm64",
+  "node": "v26.3.0",
+  "startedAt": "2026-08-23T13:22:40.835Z",
+  "finishedAt": "2026-08-23T13:24:19.343Z",
+  "subjectHash": "sha256:cef6b1de783a173f6278e8e43b2501c8657d7731074a72c9c19a27d7bd81c631",
+  "isolation": {
+    "agonHome": "temporary",
+    "home": "temporary",
+    "npmCache": "temporary",
+    "activeAgonMutated": false
+  },
+  "status": "passed",
+  "checks": [
+    {
+      "id": "build",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 15677.490625,
+      "evidence": "docs/specs/evidence/verification-logs/slice1a-build.log",
+      "evidenceHash": "sha256:fd532ee4848f983d621e1479295052665ed61860abe60cc74d55f7b032ce836f"
+    },
+    {
+      "id": "typecheck",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 219.2273750000004,
+      "evidence": "docs/specs/evidence/verification-logs/slice1a-typecheck.log",
+      "evidenceHash": "sha256:e042b226bc838e5d7c8a25f4ce13d2e080ef91dbc172669bd71a4906a4cbaeb1"
+    },
+    {
+      "id": "lint",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 7715.108583999998,
+      "evidence": "docs/specs/evidence/verification-logs/slice1a-lint.log",
+      "evidenceHash": "sha256:d566c3583807e91b0c80cd5d9d571474b8fed7c08f698608e4397aa3308e8dae"
+    },
+    {
+      "id": "reexport-guard",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 237.5871249999982,
+      "evidence": "docs/specs/evidence/verification-logs/slice1a-reexport-guard.log",
+      "evidenceHash": "sha256:30a64105ea0d5f82bfb6c75f8319c7f29fdd18e05ca64bd278b61e38735ede19"
+    },
+    {
+      "id": "slice1a-contracts",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 3427.4487499999996,
+      "evidence": "docs/specs/evidence/verification-logs/slice1a-slice1a-contracts.log",
+      "evidenceHash": "sha256:8c551a7a397b4e120f95f2748561ea86e060e98226023687f848c2ed63d8107b"
+    },
+    {
+      "id": "slice1a-performance",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 15247.646541999999,
+      "evidence": "docs/specs/evidence/verification-logs/slice1a-slice1a-performance.log",
+      "evidenceHash": "sha256:edfc9cd225fec7c30184e6fd09ad6433aea785d58697788e416f483639781f0b"
+    },
+    {
+      "id": "full-repository-suite",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 31423.452124999996,
+      "evidence": "docs/specs/evidence/verification-logs/slice1a-full-repository-suite.log",
+      "evidenceHash": "sha256:56c66d595a05d6a6b57652661d7353d3f6b9cdd04814481efd8fc2453a193870"
+    },
+    {
+      "id": "representative-workflows",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 24504.770458,
+      "evidence": "docs/specs/evidence/verification-logs/slice1a-representative-workflows.log",
+      "evidenceHash": "sha256:2a74241d7d3fd586f6a72bdf3d4b82c7b60864fa82ee21d99885f24cc4ede7b2"
+    },
+    {
+      "id": "diff-check",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 16.644249999997555,
+      "evidence": "docs/specs/evidence/verification-logs/slice1a-diff-check.log",
+      "evidenceHash": "sha256:7f2b6a3514eb23f1b35139464ef768400984756dc3ff961a8df9f35aac8d5263"
+    },
+    {
+      "id": "cached-diff-check",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 17.134500000000116,
+      "evidence": "docs/specs/evidence/verification-logs/slice1a-cached-diff-check.log",
+      "evidenceHash": "sha256:e71250f0b2b6a5e075bdf30c41fb24debe762fb4c9bf416b129501ae2021feae"
+    },
+    {
+      "id": "subject-untracked-check",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 0,
+      "evidence": [],
+      "evidenceHash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "id": "independent-review-evidence",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 0,
+      "evidence": "docs/specs/evidence/modular-agon-slice1a-review-evidence.json",
+      "evidenceHash": "sha256:84aa83af9f26442a9c97ccf0ae3ffb938e648bf1cf364c3b78338595639de1a6"
+    }
+  ]
+}

@@ -1,0 +1,211 @@
+import { validateManifest } from '@kernlang/agon-mod-api';
+
+export const MANIFEST = validateManifest({
+  "schemaVersion": 2,
+  "id": "agon.worktrees",
+  "name": "Worktrees",
+  "version": "1.0.0",
+  "apiRange": ">=1.0.0 <2",
+  "execution": "executable",
+  "compatibility": {
+    "kernelRange": ">=0.0.0-0 <2",
+    "nodeRange": ">=22"
+  },
+  "packageClass": "user-toggleable-mod-package",
+  "entrypoints": {
+    "runtime": "dist/index.js",
+    "types": "dist/index.d.ts"
+  },
+  "display": {
+    "group": "Collaborate and automate",
+    "order": 502
+  },
+  "dependencies": {
+    "required": [
+      {
+        "id": "agon.api",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.engine-runtime",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.worktree",
+        "range": ">=0.0.0-0"
+      }
+    ],
+    "optional": [],
+    "conflicts": []
+  },
+  "permissions": [
+    {
+      "capability": "fs.write",
+      "resources": [],
+      "required": true
+    },
+    {
+      "capability": "network",
+      "resources": [],
+      "required": false
+    },
+    {
+      "capability": "process.spawn",
+      "resources": [],
+      "required": true
+    }
+  ],
+  "platforms": [
+    "darwin-arm64",
+    "darwin-x64",
+    "linux-arm64",
+    "linux-x64"
+  ],
+  "assets": [
+    {
+      "path": "ownership.json",
+      "kind": "documentation",
+      "mediaType": "application/json",
+      "contentHash": "sha256:86c75c54c62df69d5681fc42777ac02a51bfc5a8bcd8af0944cb59b12cfde115",
+      "bytes": 1946,
+      "executable": false,
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-arm64",
+        "linux-x64"
+      ]
+    },
+    {
+      "path": "schemas/config.schema.json",
+      "kind": "schema",
+      "mediaType": "application/schema+json",
+      "contentHash": "sha256:df8c3f21885db020d733b1379483da9d87fec292739fbe00c231f65425089060",
+      "bytes": 224,
+      "executable": false,
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-arm64",
+        "linux-x64"
+      ]
+    }
+  ],
+  "contributes": {
+    "cliCommands": [
+      {
+        "id": "cliCommands:0075",
+        "aliases": []
+      },
+      {
+        "id": "cliCommands:0076",
+        "aliases": []
+      }
+    ],
+    "tuiActions": [
+      {
+        "id": "intentVariants:0067",
+        "aliases": []
+      },
+      {
+        "id": "builtinCommandMetadata:0051",
+        "aliases": []
+      },
+      {
+        "id": "builtinCommandMetadata:0052",
+        "aliases": []
+      },
+      {
+        "id": "tuiSlashCommands:0071",
+        "aliases": []
+      },
+      {
+        "id": "tuiSlashCommands:0072",
+        "aliases": []
+      }
+    ],
+    "mcpTools": [],
+    "cesarTools": [],
+    "lifecycleHooks": [],
+    "resultTypes": [],
+    "configKeys": [],
+    "generatedDocs": []
+  },
+  "pack": {
+    "include": [
+      "LICENSE",
+      "agon.mod.json",
+      "dist/index.js",
+      "dist/index.d.ts",
+      "dist/implementation.d.ts",
+      "dist/runtime.d.ts",
+      "dist/workspaces.d.ts",
+      "ownership.json",
+      "schemas/config.schema.json"
+    ],
+    "executable": []
+  }
+});
+export const SOURCE_OCCURRENCES = Object.freeze([
+  {
+    "category": "builtinCommandMetadata",
+    "id": "workspace",
+    "source": "packages/core/src/blocks/builtin-commands.ts:44",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-worktrees",
+    "rule": "exact-user-surface"
+  },
+  {
+    "category": "builtinCommandMetadata",
+    "id": "worktree",
+    "source": "packages/core/src/blocks/builtin-commands.ts:73",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-worktrees",
+    "rule": "exact-user-surface"
+  },
+  {
+    "category": "cliCommands",
+    "id": "worktree",
+    "source": "packages/cli/src/lazy-commands.ts:322",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-worktrees",
+    "rule": "exact-user-surface"
+  },
+  {
+    "category": "cliCommands",
+    "id": "wt",
+    "source": "packages/cli/src/lazy-commands.ts:323",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-worktrees",
+    "rule": "exact-user-surface"
+  },
+  {
+    "category": "intentVariants",
+    "id": "workspace",
+    "source": "packages/cli/src/signals/intent-types.ts:15",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-worktrees",
+    "rule": "exact-user-surface"
+  },
+  {
+    "category": "tuiSlashCommands",
+    "id": "/workspace",
+    "source": "packages/cli/src/signals/intent.ts:56",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-worktrees",
+    "rule": "exact-user-surface"
+  },
+  {
+    "category": "tuiSlashCommands",
+    "id": "/ws",
+    "source": "packages/cli/src/signals/intent.ts:56",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-worktrees",
+    "rule": "exact-user-surface"
+  }
+]);
+export const IMPLEMENTATION_KIND = 'physical' as const;
+export { createMod } from './implementation.js';
+export { createMod as default } from './implementation.js';
+export { runWorktree, runWorkspace } from './implementation.js';
+export * from './workspaces.js';

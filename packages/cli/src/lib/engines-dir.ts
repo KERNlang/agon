@@ -1,21 +1,8 @@
-import { join, dirname } from 'node:path';
-
-import { fileURLToPath } from 'node:url';
-
-import { existsSync } from 'node:fs';
+import { resolveEngineDefinitionsDir } from '@kernlang/agon-support-engine-runtime';
 
 /**
- * Resolve the built-in engines directory. Checks for the bundled dist/engines/ first (npm-published layout), then walks up to the repo root engines/ for source mode. Last resort returns the bundled path so callers see a clean 'not found' instead of a misleading dev path.
+ * Compatibility name for the engine-runtime package's owned asset directory.
  */
 export function resolveBuiltinEnginesDir(): string {
-  const here = dirname(fileURLToPath(import.meta.url));
-  const bundled = join(here, 'engines');
-  if (existsSync(bundled)) {
-    return bundled;
-  }
-  const dev = join(here, '..', '..', '..', 'engines');
-  if (existsSync(dev)) {
-    return dev;
-  }
-  return bundled;
+  return resolveEngineDefinitionsDir();
 }

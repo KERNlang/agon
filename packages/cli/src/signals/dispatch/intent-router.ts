@@ -1,4 +1,4 @@
-import { resolveWorkingDir, buildExtensionContext } from '@kernlang/agon-core';
+import { resolveWorkingDir } from '@kernlang/agon-core';
 
 import type { DispatchCallbacks, DispatchResult } from '../dispatch.js';
 
@@ -10,7 +10,9 @@ import { emitPostDispatch } from './utils.js';
 
 import { dispatchOrchestrationIntent } from './intent-orchestration.js';
 
-import { dispatchSessionInfoIntent } from './intent-session.js';
+import { dispatchSessionInfoIntent, runPhysicalTuiContribution } from './intent-session.js';
+
+import { processSurfaceClient } from '../../surface-authority-runtime.js';
 
 import { dispatchMetaIntent } from './intent-meta.js';
 
@@ -44,22 +46,26 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
     emitPostDispatch(intent, input, cb);
     return { handled: true, ranAsJob: false };
   }
-  
-  // ── Registry-first dispatch — extensions and real handlers get priority ──
-  if (cb.commandRegistry) {
-    const cmdName = intent.type === 'extension-command' ? intent.commandName : intent.type;
-    const registryHandler = cb.commandRegistry.get(cmdName);
-    if (registryHandler && registryHandler.definition.source !== 'builtin') {
-      // Real handler (not a builtin shim) — always use parseArgs for consistent contract
-      const rawArgs = intent.type === 'extension-command'
-        ? (intent.args ?? '')
-        : (intent.input ?? intent.task ?? intent.question ?? intent.topic ?? '');
-      const args = registryHandler.parseArgs(rawArgs);
-      // Build sandboxed context for extension handlers
-      const extCtx = buildExtensionContext(cb, registryHandler.definition.source ?? 'unknown');
-      const result = await registryHandler.execute(args, extCtx);
-      if (result.handled) return result;
+
+  if (intent._modSurface) {
+    const marker = intent._modSurface as { publicId: string; registryId: string; kind: string; value: unknown };
+    const record = processSurfaceClient('tui').project().entries.find((candidate) =>
+      candidate.id === marker.registryId && candidate.kind === marker.kind);
+    if (!record) {
+      cb.dispatch({ type: 'error', message: `generated TUI contribution is unavailable: ${marker.publicId}/${marker.registryId}` });
+      emitPostDispatch(intent, input, cb);
+      return { handled: true, ranAsJob: false };
     }
+    const label = marker.publicId.slice(0, 40);
+    cb.runAsJob(marker.publicId, label, async (signal) => {
+      try {
+        await runPhysicalTuiContribution(record, marker.value as any, marker.publicId, cb, signal);
+      } catch (error) {
+        cb.dispatch({ type: 'error', message: error instanceof Error ? error.message : String(error) });
+      }
+    });
+    emitPostDispatch(intent, input, cb);
+    return { handled: true, ranAsJob: true };
   }
   
   const _r = (await dispatchOrchestrationIntent(intent, input, cb))

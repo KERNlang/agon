@@ -13,6 +13,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@kernlang/agon-core": "*"
+    "@kernlang/agon-adapter-cli": "*",
+    "@kernlang/agon-core": "*",
+    "@kernlang/agon-kernel": "1.0.0",
+    "@kernlang/agon-mod-api": "1.0.0",
+    "@kernlang/agon-mod-rooms": "1.0.0",
+    "@kernlang/agon-support-engine-runtime": "1.0.0"
   }
 }

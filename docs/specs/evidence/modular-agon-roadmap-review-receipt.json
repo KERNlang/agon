@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "disposition": "passed-after-adjudication",
+  "subjectArtifacts": [
+    {
+      "path": "docs/specs/evidence/modular-agon-implementation-roadmap.json",
+      "sha256": "9be854ffb930b7f6842fc2747a5986e7d2f2fcf845fabb6f9ced0400738d1c51"
+    },
+    {
+      "path": "docs/specs/modular-agon-acceptance-roadmap.md",
+      "sha256": "d72327e7d3a1978b140955edb794ba3143dac998178140f40d652b3bf04a144f"
+    },
+    {
+      "path": "scripts/spec/qualify-modular-agon-clean-checkout.mjs",
+      "sha256": "016c4d7a1867830331327f6a1f45bfa5a52bff329cdbe671d87dc50942686090"
+    },
+    {
+      "path": "scripts/spec/verify-modular-agon-roadmap.mjs",
+      "sha256": "6a2f75aff587dff9dc0cffe77bf54a7ee53b6b72d5061228e4140514c832ba63"
+    },
+    {
+      "path": "scripts/spec/assess-modular-agon-slices.mjs",
+      "sha256": "d70084c2f52fce04c19e8860751ee1fb23ec407aa8f341214b7ccffc4b78c36c"
+    },
+    {
+      "path": "scripts/spec/verify-modular-agon-kill-list-ownership.mjs",
+      "sha256": "a3eb78eb62181f352598c7793af37d9ab03d0ad7528f21cf11c57539d36a113b"
+    }
+  ],
+  "runs": [
+    {
+      "kind": "think",
+      "engine": "qwopus",
+      "status": "completed",
+      "result": "acceptance repair precedes dependency-ordered slices"
+    },
+    {
+      "kind": "brainstorm",
+      "engines": [
+        "zai-coding-plan-glm-5.2",
+        "minimax-api"
+      ],
+      "status": "completed",
+      "artifacts": [
+        "modular-agon-roadmap-review/brainstorm-status.json",
+        "modular-agon-roadmap-review/brainstorm-glm-output.txt"
+      ]
+    },
+    {
+      "kind": "tribunal",
+      "engines": [
+        "zai-coding-plan-glm-5.2",
+        "minimax-api"
+      ],
+      "status": "completed",
+      "artifacts": [
+        "modular-agon-roadmap-review/tribunal-status.json",
+        "modular-agon-roadmap-review/tribunal-glm-output.txt",
+        "modular-agon-roadmap-review/tribunal-minimax-output.txt"
+      ]
+    },
+    {
+      "kind": "independent-diff-review",
+      "engine": "qwopus",
+      "status": "timeout-failed-closed",
+      "artifacts": [
+        "modular-agon-roadmap-review/final-diff-review-timeout-status.json"
+      ]
+    },
+    {
+      "kind": "independent-category-review",
+      "engine": "qwopus",
+      "status": "completed-and-adjudicated",
+      "artifacts": [
+        "modular-agon-roadmap-review/final-data-migration-finding.txt",
+        "modular-agon-roadmap-review/final-performance-finding.txt",
+        "modular-agon-roadmap-review/final-observability-review.txt",
+        "modular-agon-roadmap-review/final-accessibility-review.txt"
+      ]
+    }
+  ],
+  "resolvedFindings": [
+    "data-migration-verification",
+    "performance-load",
+    "observability-diagnostics",
+    "accessibility-supply-chain-compliance"
+  ],
+  "unresolvedLocallyFixableFindings": []
+}

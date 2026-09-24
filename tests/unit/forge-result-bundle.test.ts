@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -82,6 +82,15 @@ describe('forge result bundle helpers', () => {
     expect(bundle.worktrees[0]).toMatchObject({ cleanupPlanned: true, cleanupMode: 'best-effort-after-bundle' });
     expect(bundle.worktrees[0]).not.toHaveProperty('removedAfterRun');
     expect(manifest.resultBundlePath).toBe(bundlePath);
+    const envelopePath = join(tempDir, 'result-envelope.json');
+    expect(existsSync(envelopePath)).toBe(true);
+    expect(JSON.parse(readFileSync(envelopePath, 'utf-8'))).toMatchObject({
+      schemaVersion: 1,
+      kind: 'result',
+      status: 'succeeded',
+      ownerModId: 'agon.forge',
+      payload: { forgeId: 'forge-test', winner: 'claude' },
+    });
   });
 
   it('marks selected engines without output as terminal failed results', () => {

@@ -18,6 +18,8 @@ export interface DispatchCallbacks {
   setModelPickerTitle?: (title:string) => void;
   setModelPickerCliGroups?: (groups:any[]) => void;
   setCesarPickerOpen: (open:boolean) => void;
+  setModPickerOpen?: (open:boolean) => void;
+  setModPickerView?: (view:any) => void;
   setChatSession: (session:ChatSession) => void;
   setLastUndoToken: (token:string|null) => void;
   askQuestion: (prompt:string) => Promise<string>;

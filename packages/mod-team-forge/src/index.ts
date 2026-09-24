@@ -1,0 +1,191 @@
+import { validateManifest } from '@kernlang/agon-mod-api';
+
+export const MANIFEST = validateManifest({
+  "schemaVersion": 2,
+  "id": "agon.team-forge",
+  "name": "Team Forge",
+  "version": "1.0.0",
+  "apiRange": ">=1.0.0 <2",
+  "execution": "executable",
+  "compatibility": {
+    "kernelRange": ">=0.0.0-0 <2",
+    "nodeRange": ">=22"
+  },
+  "packageClass": "user-toggleable-mod-package",
+  "entrypoints": {
+    "runtime": "dist/index.js",
+    "types": "dist/index.d.ts"
+  },
+  "display": {
+    "group": "Create and compete",
+    "order": 104,
+    "parent": "agon.forge"
+  },
+  "dependencies": {
+    "required": [
+      {
+        "id": "agon.api",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.engine-runtime",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.forge",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.panel",
+        "range": ">=0.0.0-0"
+      }
+    ],
+    "optional": [],
+    "conflicts": []
+  },
+  "permissions": [
+    {
+      "capability": "engine.dispatch",
+      "resources": [],
+      "required": true
+    }
+  ],
+  "platforms": [
+    "darwin-arm64",
+    "darwin-x64",
+    "linux-arm64",
+    "linux-x64"
+  ],
+  "assets": [
+    {
+      "path": "ownership.json",
+      "kind": "documentation",
+      "mediaType": "application/json",
+      "contentHash": "sha256:4157f329576093cb7672f0c72a109af1edf10ab6e46e6da134f8224eb7a5fb7c",
+      "bytes": 1692,
+      "executable": false,
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-arm64",
+        "linux-x64"
+      ]
+    },
+    {
+      "path": "schemas/config.schema.json",
+      "kind": "schema",
+      "mediaType": "application/schema+json",
+      "contentHash": "sha256:c16df13158b703d63e40c363db8d7aebd242ccb8d8ae14166a7c34b8cd5530d5",
+      "bytes": 226,
+      "executable": false,
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-arm64",
+        "linux-x64"
+      ]
+    }
+  ],
+  "contributes": {
+    "cliCommands": [
+      {
+        "id": "cliCommands:0069",
+        "aliases": []
+      }
+    ],
+    "tuiActions": [
+      {
+        "id": "intentVariants:0060",
+        "aliases": []
+      },
+      {
+        "id": "builtinCommandMetadata:0045",
+        "aliases": []
+      },
+      {
+        "id": "tuiSlashCommands:0065",
+        "aliases": []
+      }
+    ],
+    "mcpTools": [],
+    "cesarTools": [
+      {
+        "id": "cesarRoutes:0062",
+        "aliases": []
+      },
+      {
+        "id": "cesarRoutes:0064",
+        "aliases": []
+      }
+    ],
+    "lifecycleHooks": [],
+    "resultTypes": [],
+    "configKeys": [],
+    "generatedDocs": []
+  },
+  "pack": {
+    "include": [
+      "LICENSE",
+      "agon.mod.json",
+      "dist/index.js",
+      "dist/index.d.ts",
+      "dist/implementation.d.ts",
+      "ownership.json",
+      "schemas/config.schema.json"
+    ],
+    "executable": []
+  }
+});
+export const SOURCE_OCCURRENCES = Object.freeze([
+  {
+    "category": "builtinCommandMetadata",
+    "id": "team-forge",
+    "source": "packages/core/src/blocks/builtin-commands.ts:18",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-team-forge",
+    "rule": "exact-user-surface"
+  },
+  {
+    "category": "cesarRoutes",
+    "id": "team-forge",
+    "source": "packages/cli/src/models/handler-types.ts:113",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-team-forge",
+    "rule": "exact-user-surface"
+  },
+  {
+    "category": "cesarRoutes",
+    "id": "teamforge",
+    "source": "packages/core/src/cesar/plan.ts:52",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-team-forge",
+    "rule": "exact-user-surface"
+  },
+  {
+    "category": "cliCommands",
+    "id": "team-forge",
+    "source": "packages/cli/src/lazy-commands.ts:291",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-team-forge",
+    "rule": "exact-user-surface"
+  },
+  {
+    "category": "intentVariants",
+    "id": "team-forge",
+    "source": "packages/cli/src/signals/intent-types.ts:6",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-team-forge",
+    "rule": "exact-user-surface"
+  },
+  {
+    "category": "tuiSlashCommands",
+    "id": "/team-forge",
+    "source": "packages/cli/src/signals/intent.ts:56",
+    "class": "user-toggleable-mod-package",
+    "package": "@kernlang/agon-mod-team-forge",
+    "rule": "exact-user-surface"
+  }
+]);
+export const IMPLEMENTATION_KIND = 'physical' as const;
+export { createMod } from './implementation.js';
+export { createMod as default } from './implementation.js';

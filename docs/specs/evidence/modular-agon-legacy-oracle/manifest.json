@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "authority": "legacy-runtime-before-physical-extraction",
+  "capture": {
+    "command": [
+      "node",
+      "scripts/run-node22.mjs",
+      "node_modules/vitest/vitest.mjs",
+      "run",
+      "tests/integration/workflow-pipeline-call.test.ts",
+      "tests/integration/workflow-pipeline-slash.test.ts",
+      "tests/integration/forge-e2e.test.ts",
+      "tests/unit/thinking.test.ts",
+      "tests/unit/tribunal-modes.test.ts",
+      "tests/unit/brainstorm-dedup.test.ts",
+      "tests/unit/review-roles.test.ts",
+      "tests/unit/rag-core.test.ts",
+      "tests/unit/rooms.test.ts",
+      "tests/unit/daemon-workflow-job.test.ts",
+      "--reporter=json"
+    ],
+    "expectedTests": 160,
+    "attempts": 3,
+    "stabilityFinding": "The first two 159/160 captures exposed a Forge quality-probe npx network fallback. The production probe now invokes only an existing local binary; the third capture is 160/160."
+  },
+  "artifacts": [
+    {
+      "path": "docs/specs/evidence/modular-agon-legacy-oracle/representative-workflows.raw.json",
+      "sha256": "sha256:b6fe7a5c14e2a36475d38745432bed530d510f07943f69ad055851313036392d"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-legacy-oracle/persisted-envelopes.raw.ndjson",
+      "sha256": "sha256:a0bd6956e72ca7c1348914e414398d1f7d47947811cfa042ece23bea9061b74b"
+    },
+    {
+      "path": "tests/unit/normalize-base-url.test.ts",
+      "sha256": "sha256:17049d4bc6b2fad51043dd0e6db24aeb740aa0c225a7d1446d2317f36ad2e7a5"
+    },
+    {
+      "path": "tests/unit/context-thread.test.ts",
+      "sha256": "sha256:7945b42e7e0e1095143e5489888c9b605b13376a3df846aabc1d9ede58296da9"
+    },
+    {
+      "path": "tests/unit/chat-store.test.ts",
+      "sha256": "sha256:d609f948835f62e92643cec89a367aee93a16877ca21d1854300989fc09ff049"
+    },
+    {
+      "path": "tests/unit/tool-parser.test.ts",
+      "sha256": "sha256:6818c20c99ab608fdc7e125ab904797fb608fa0a9e56f0b959ece2626dddef5a"
+    },
+    {
+      "path": "tests/unit/banner-branding.test.ts",
+      "sha256": "sha256:6ee1002b4e0679decf98331347932d5eddb3be941646df8a9f88a0504bde16de"
+    }
+  ],
+  "transformStageTests": {
+    "normalization": ["tests/unit/normalize-base-url.test.ts"],
+    "redaction": ["tests/unit/context-thread.test.ts"],
+    "formatting": ["tests/unit/chat-store.test.ts", "tests/unit/tool-parser.test.ts"],
+    "rendering": ["tests/unit/banner-branding.test.ts"]
+  }
+}

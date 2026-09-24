@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "purpose": "New physical registry contributions required by the modular host that have no legacy ownership occurrence. These do not change the frozen 872-item migration baseline.",
+  "contributions": [
+    {
+      "surface": "cesar",
+      "kind": "plan-step",
+      "manifestKind": "cesarTools",
+      "registryId": "physicalCesarRoutes:council",
+      "publicId": "council",
+      "category": "physicalCesarRoutes",
+      "package": "@kernlang/agon-mod-council",
+      "ownerClass": "user-toggleable-mod-package",
+      "description": "Execute Council through its physical owner",
+      "source": "packages/mod-council/src/implementation.ts"
+    }
+  ]
+}

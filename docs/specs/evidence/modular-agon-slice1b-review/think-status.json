@@ -1,0 +1,18 @@
+{
+  "mode": "think",
+  "startedAt": "2026-08-23T17:47:26.174Z",
+  "endedAt": "2026-08-23T17:47:53.966Z",
+  "engines": [
+    {
+      "id": "qwopus",
+      "status": "ok",
+      "detail": "1 thoughts (linear)"
+    }
+  ],
+  "summary": "qwopus: 1 thoughts (linear)",
+  "ok": true,
+  "requested": [
+    "qwopus"
+  ],
+  "timeoutSec": 900
+}

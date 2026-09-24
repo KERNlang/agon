@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "package": "@kernlang/agon-mod-mutate",
+  "assignments": [
+    {
+      "category": "cliCommands",
+      "id": "mutate",
+      "source": "packages/cli/src/lazy-commands.ts:309",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-mutate",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "configKeys",
+      "id": "cesarMutateReflex",
+      "source": "packages/core/src/models/types.ts:149",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-mutate",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/mutate",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-mutate",
+      "rule": "exact-user-surface"
+    }
+  ]
+}

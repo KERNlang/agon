@@ -1,6 +1,6 @@
 {
   "name": "@kernlang/agon",
-  "version": "0.2.5",
+  "version": "1.0.0",
   "type": "module",
   "description": "The competitive multi-AI orchestration CLI. Engines compete in isolated git worktrees on the same task, the best test-passing solution is applied, and Glicko-2 ratings track each model over time. Modes: forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, goal, conquer.",
   "keywords": [
@@ -43,7 +43,8 @@
     "dist",
     "py",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "release-channel.json"
   ],
   "publishConfig": {
     "access": "public"
@@ -53,10 +54,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@kernlang/agon-engines": "^0.1.2",
-    "@kernlang/agon-dedup": "^0.2.5",
     "@ai-sdk/anthropic": "^3.0.67",
     "@ai-sdk/openai-compatible": "^2.0.40",
+    "@kernlang/agon-dedup": "^0.2.5",
+    "@kernlang/agon-engines": "^0.1.2",
+    "@kernlang/agon-kernel": "1.0.0",
+    "@kernlang/agon-support-browser-bridge": "1.0.0",
+    "@kernlang/agon-support-engine-runtime": "1.0.0",
+    "@kernlang/agon-support-judge": "1.0.0",
+    "@kernlang/agon-support-persistence": "1.0.0",
     "@kernlang/protocol": "~4.5.0",
     "ai": "^6.0.149",
     "citty": "^0.1.6",
@@ -69,5 +75,43 @@
   "devDependencies": {
     "@types/pidusage": "^2.0.5",
     "@types/react": "^19.2.0"
+  },
+  "optionalDependencies": {
+    "@kernlang/agon-mod-agent": "1.0.0",
+    "@kernlang/agon-mod-ask": "1.0.0",
+    "@kernlang/agon-mod-brainstorm": "1.0.0",
+    "@kernlang/agon-mod-browser": "1.0.0",
+    "@kernlang/agon-mod-campfire": "1.0.0",
+    "@kernlang/agon-mod-conquer": "1.0.0",
+    "@kernlang/agon-mod-council": "1.0.0",
+    "@kernlang/agon-mod-flow": "1.0.0",
+    "@kernlang/agon-mod-forge": "1.0.0",
+    "@kernlang/agon-mod-git-actions": "1.0.0",
+    "@kernlang/agon-mod-goal": "1.0.0",
+    "@kernlang/agon-mod-history": "1.0.0",
+    "@kernlang/agon-mod-jobs": "1.0.0",
+    "@kernlang/agon-mod-memory": "1.0.0",
+    "@kernlang/agon-mod-mutate": "1.0.0",
+    "@kernlang/agon-mod-naturalize": "1.0.0",
+    "@kernlang/agon-mod-nero": "1.0.0",
+    "@kernlang/agon-mod-pipeline-delivery": "1.0.0",
+    "@kernlang/agon-mod-pipeline-orchestration": "1.0.0",
+    "@kernlang/agon-mod-plan": "1.0.0",
+    "@kernlang/agon-mod-provenance": "1.0.0",
+    "@kernlang/agon-mod-rag": "1.0.0",
+    "@kernlang/agon-mod-ratings": "1.0.0",
+    "@kernlang/agon-mod-research": "1.0.0",
+    "@kernlang/agon-mod-review": "1.0.0",
+    "@kernlang/agon-mod-rooms": "1.0.0",
+    "@kernlang/agon-mod-routing-docs": "1.0.0",
+    "@kernlang/agon-mod-sanitize": "1.0.0",
+    "@kernlang/agon-mod-skill-authoring": "1.0.0",
+    "@kernlang/agon-mod-synthesis": "1.0.0",
+    "@kernlang/agon-mod-team-brainstorm": "1.0.0",
+    "@kernlang/agon-mod-team-forge": "1.0.0",
+    "@kernlang/agon-mod-team-tribunal": "1.0.0",
+    "@kernlang/agon-mod-think": "1.0.0",
+    "@kernlang/agon-mod-tribunal": "1.0.0",
+    "@kernlang/agon-mod-worktrees": "1.0.0"
   }
 }

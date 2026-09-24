@@ -29,25 +29,8 @@ export interface ReasoningPart {
 /**
  * Situational continuity carried forward through a compaction so post-compaction turns keep a live working-set picture. filesInPlay = files the session is actively touching (modified-first, recency-biased, cap 10); pendingVerifier = the last DiagnosticDigest status (e.g. '<pkg>: N introduced errors unresolved' or '<pkg>: clean'), null when none; openHypotheses = the most-recent few folded decisions/discoveries (no new extraction). Compaction-only — there is NO per-turn injection of this (deferred, P3).
  */
-export interface WorkingSet {
-  filesInPlay: string[];
-  pendingVerifier: string|null;
-  openHypotheses: string[];
-}
-
-export interface CompactionSummaryPart {
-  kind: 'compaction';
-  goal: string;
-  discoveries: string[];
-  filesModified: string[];
-  filesRead: string[];
-  toolsSummary: string[];
-  decisions: string[];
-  progress: string;
-  compactedAt: number;
-  messagesCompacted: number;
-  workingSet?: WorkingSet|null;
-}
+export type { WorkingSet, CompactionSummaryPart, ToolCacheEntry } from '@kernlang/agon-support-persistence';
+import type { CompactionSummaryPart } from '@kernlang/agon-support-persistence';
 
 export type MessagePart =
   | TextPart
@@ -55,14 +38,6 @@ export type MessagePart =
   | ToolResultPart
   | ReasoningPart
   | CompactionSummaryPart;
-
-export interface ToolCacheEntry {
-  toolCallId: string;
-  toolName: string;
-  filePath: string;
-  savedAt: number;
-  byteSize: number;
-}
 
 export interface StageDecision {
   choice: string;

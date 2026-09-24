@@ -1,0 +1,29 @@
+{
+  "mode": "review",
+  "label": "modular-s5-exact-1c5f",
+  "startedAt": "2026-08-24T01:02:12.490Z",
+  "endedAt": "2026-08-24T01:06:22.884Z",
+  "engines": [
+    {
+      "id": "ollama-direct-gpt-oss",
+      "status": "ok",
+      "durationMs": 250392,
+      "detail": "ok, no findings (error on first attempt → retried OK)",
+      "outputPath": "/private/tmp/modular-agon-s5-agon/runs/review-1787533332491-9fgimr-modular-s5-exact-1c5f/ollama-direct-gpt-oss-output.txt"
+    },
+    {
+      "id": "ollama-local-qwen14",
+      "status": "ok",
+      "durationMs": 130600,
+      "detail": "ok, 8 important",
+      "outputPath": "/private/tmp/modular-agon-s5-agon/runs/review-1787533332491-9fgimr-modular-s5-exact-1c5f/ollama-local-qwen14-output.txt"
+    }
+  ],
+  "requested": [
+    "ollama-direct-gpt-oss",
+    "ollama-local-qwen14"
+  ],
+  "timeoutSec": 600,
+  "summary": "2/2 reviewed cleanly",
+  "ok": true
+}

@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "package": "@kernlang/agon-mod-naturalize",
+  "assignments": [
+    {
+      "category": "cliCommands",
+      "id": "naturalize",
+      "source": "packages/cli/src/lazy-commands.ts:308",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-naturalize",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/naturalize",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-naturalize",
+      "rule": "exact-user-surface"
+    }
+  ]
+}

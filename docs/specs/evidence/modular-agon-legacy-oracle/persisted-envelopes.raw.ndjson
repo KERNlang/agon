@@ -1,0 +1,7 @@
+{"_type":"header","id":"chat-oracle-1","startedAt":"2026-08-23T00:00:00.000Z","cwd":"/fixture/project","branch":"fixture","engineIds":["fixture-engine"]}
+{"id":"message-oracle-1","role":"user","content":"keep raw bytes before transforms","timestamp":"2026-08-23T00:00:01.000Z"}
+{"id":"message-oracle-2","role":"engine","engineId":"fixture-engine","content":"token=oracle-secret-value","timestamp":"2026-08-23T00:00:02.000Z"}
+{"type":"result","subtype":"success","is_error":false,"result":{"status":"passed","answer":"raw result payload"},"duration_ms":17}
+{"type":"result","subtype":"error_max_turns","is_error":true,"error":"turn budget exhausted","duration_ms":23}
+{"seq":1,"id":"evt_oracle_1","roomId":"oracle-room","kind":"post","createdAt":"2026-08-23T00:00:03.000Z","actor":{"callsign":"fixture","kind":"agent"},"repoHint":"fixture/repo","body":"raw room event","mentions":[],"replyTo":null,"auto":false}
+{"id":"block-oracle-1","event":{"type":"tool-call","engineId":"fixture-engine","tool":"Read","input":"{\"file_path\":\"fixture.txt\"}","status":"done","output":"raw tool output"}}

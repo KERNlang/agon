@@ -7,6 +7,11 @@
   },
   "include": ["src"],
   "references": [
-    { "path": "../core" }
+    { "path": "../forge" },
+    { "path": "../mod-kernel" },
+    { "path": "../mod-rooms" },
+    { "path": "../support-engine-runtime" },
+    { "path": "../core" },
+    { "path": "../adapter-cli" }
   ]
 }

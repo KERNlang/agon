@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "kind": "commit",
+    "hash": "sha256:01e5b16e510051c8e773740fa2014240434b6bfc51e00bfb66b05d1c6e67df24"
+  },
+  "disposition": "passed",
+  "runs": [
+    {
+      "engine": "ollama-direct-gpt-oss",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice2/review-gpt-oss.txt",
+          "hash": "sha256:60f3b864d5d82c936316c50e2e428640fcc1ee443cb150ad9412158fd1aec418"
+        },
+        {
+          "path": "docs/specs/evidence/verification-logs/slice2/review-probe-focused-gpt-oss.txt",
+          "hash": "sha256:5347c353a13f3f68a5af5d1a4313a74e9d513fe0ccbcc793bc3df5f9a39a4c52"
+        }
+      ]
+    },
+    {
+      "engine": "ollama-direct-qwen",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice2/review-qwen.txt",
+          "hash": "sha256:8c73995e450a69c784a2cbf8362ed253d5bbfe6442e51826d269bbfd770a499a"
+        },
+        {
+          "path": "docs/specs/evidence/verification-logs/slice2/review-probe-focused-qwen.txt",
+          "hash": "sha256:c32769c716eea7709855ce047ebdc73b3a72578e476ee9c3c4639b7c19991f52"
+        },
+        {
+          "path": "docs/specs/evidence/verification-logs/slice2/review-probe-focused-status.json",
+          "hash": "sha256:7024afcf55918730f2bdf4978d50557129904d27762f1e39d2eccd7267336205"
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "S2-REVIEW-001",
+      "status": "resolved",
+      "summary": "Recovered terminal transactions now reconcile missing or malformed immutable receipts after the final-journal crash boundary."
+    },
+    {
+      "id": "S2-REVIEW-002",
+      "status": "resolved",
+      "summary": "Generation lease files now have strict persisted-contract parsing and typed corruption containment."
+    },
+    {
+      "id": "S2-REVIEW-003",
+      "status": "resolved",
+      "summary": "Only ESRCH proves process death; unexpected liveness errors fail closed."
+    },
+    {
+      "id": "S2-REVIEW-004",
+      "status": "refuted",
+      "summary": "Remaining Tribunal and review claims contradicted the source authority model or cited behavior already covered by strict parsers and crash tests."
+    },
+    {
+      "id": "S2-REVIEW-005",
+      "status": "resolved",
+      "summary": "Binary discovery and synchronous version lookup now use argument-array execution with injection negative controls."
+    },
+    {
+      "id": "S2-REVIEW-006",
+      "status": "resolved",
+      "summary": "A nonzero PTY probe exit cannot cache plausible JSON output."
+    },
+    {
+      "id": "S2-REVIEW-007",
+      "status": "refuted",
+      "summary": "Remaining focused-review claims were contradicted by source, passing facade imports, deterministic candidate precedence, or synthetic installed-layout evidence."
+    }
+  ]
+}

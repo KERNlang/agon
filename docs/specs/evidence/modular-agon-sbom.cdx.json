@@ -30,7 +30,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "ea868a8216bea9cccecd3c535d5ffbb39d3e47d66667ad83fb8f8aee7f106f27"
+          "content": "ebdcbb35b6137b6845995d41ef88d108ff1edc366a409bc28190f6fef613a502"
         }
       ],
       "licenses": [
@@ -43,7 +43,7 @@
       "properties": [
         {
           "name": "npm:integrity",
-          "value": "sha512-OlvXJj1bjXzpg+pLRVx4nvjUeY0ypAiU/7oHhzf0HzHGIrg6O1pF1CNL89D0SLb+R4XF18ceBgyjPHQxWZlPrg=="
+          "value": "sha512-AL2AH29r8LuC7FbyUwdWLvuSJMSwKDQInQiuO9rY3KOaU/j2BoZj/55nwC6kzHs73tgIxqUYGpqCDvJDcku/NQ=="
         },
         {
           "name": "agon:class",

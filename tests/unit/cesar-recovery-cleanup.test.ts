@@ -1,5 +1,5 @@
-import { beforeEach, expect, it, vi } from 'vitest';
-import { runCesarBrainFallback } from '../../packages/cli/src/signals/dispatch/cesar-router.js';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { handleRecoveredDelegation, routeWithCesar, runCesarBrainFallback } from '../../packages/cli/src/signals/dispatch/cesar-router.js';
 import { markSessionCleanupFailed, sessionCleanupFailed } from '../../packages/cli/src/cesar/session-health.js';
 
 const { brain, backend } = vi.hoisted(() => ({ brain: vi.fn(), backend: vi.fn() }));
@@ -9,6 +9,10 @@ vi.mock('../../packages/cli/src/handlers/cesar-brain.js', async original => ({
 vi.mock('../../packages/cli/src/cesar/session.js', async original => ({
   ...await original<object>(), resolveCesarBackend: backend,
 }));
+vi.mock('../../packages/cli/src/cesar/routing.js', async original => ({
+  ...await original<object>(), deriveRoutingHints: () => ({}),
+}));
+afterEach(() => vi.restoreAllMocks());
 beforeEach(() => {
   brain.mockReset().mockResolvedValue({ responded: true, delegated: false });
   backend.mockReset().mockReturnValue({ backend: 'cli', engine: { id: 'fixture' } });
@@ -61,4 +65,60 @@ it.each(['cli', 'api'])('stops the %s ladder when cleanup fails while its retry 
   expect(adapter.dispatch).not.toHaveBeenCalled();
   expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'warning',
     message: expect.stringContaining('Session cleanup previously failed') }));
+});
+
+it.each(['resolved original', 'rejected original', 'resolved current', 'rejected current'])(
+  'stops initial-brain recovery after cleanup failure: %s', async scenario => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const original = { close: vi.fn() } as any;
+    const replacement = { close: vi.fn() } as any;
+    let finish!: (value: unknown) => void;
+    let reject!: (error: Error) => void;
+    brain.mockImplementationOnce(() => new Promise((resolve, fail) => { finish = resolve; reject = fail; }));
+    const delegation = { action: 'fixture-unused', timestamp: 0 };
+    const ctx = { config: {}, cesarSession: original, setCesarSession: vi.fn(),
+      cesar: { pendingDelegation: delegation }, activeEngines: () => [], chatSession: { messages: [] } } as any;
+    const dispatch = vi.fn();
+    const askQuestion = vi.fn().mockResolvedValue('cancel');
+    const pending = routeWithCesar('prompt', [], { ctx, dispatch, setPendingImages: vi.fn(), askQuestion } as any);
+    expect(brain).toHaveBeenCalledOnce();
+    ctx.cesarSession = replacement;
+    markSessionCleanupFailed(scenario.endsWith('original') ? original : replacement);
+    if (scenario.startsWith('rejected')) reject(new Error('fixture turn failed'));
+    else finish({ responded: false, delegated: false });
+    await expect(pending).resolves.toBe(false);
+    expect(ctx.cesar.pendingDelegation).toBe(delegation);
+    expect(askQuestion).not.toHaveBeenCalled();
+    expect(brain).toHaveBeenCalledOnce();
+    expect(backend).not.toHaveBeenCalled();
+    expect(replacement.close).not.toHaveBeenCalled();
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'warning',
+      message: expect.stringContaining('Session cleanup previously failed') }));
+  });
+
+it('does not launch recovered delegation when cleanup fails during approval', async () => {
+  const session = { close: vi.fn() } as any;
+  let approve!: (value: string) => void;
+  const askQuestion = vi.fn(() => new Promise<string>(resolve => { approve = resolve; }));
+  const runAsJob = vi.fn();
+  const dispatch = vi.fn();
+  const ctx = { config: {}, cesarSession: session, chatSession: { messages: [] } } as any;
+  const pending = handleRecoveredDelegation({ action: 'campfire', task: 'fixture', createdAt: Date.now() },
+    'prompt', { ctx, dispatch, askQuestion, runAsJob } as any);
+  expect(askQuestion).toHaveBeenCalledOnce();
+  markSessionCleanupFailed(session);
+  ctx.cesarSession = null;
+  approve('y');
+  await expect(pending).resolves.toBe(false);
+  expect(runAsJob).not.toHaveBeenCalled();
+  expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'warning',
+    message: expect.stringContaining('Session cleanup previously failed') }));
+});
+
+it('still launches an approved recovered delegation for a healthy session', async () => {
+  const runAsJob = vi.fn();
+  const cb = { dispatch: vi.fn(), askQuestion: vi.fn().mockResolvedValue('y'), runAsJob,
+    ctx: { config: {}, cesarSession: { close: vi.fn() }, chatSession: { messages: [] } } } as any;
+  await expect(handleRecoveredDelegation({ action: 'campfire', createdAt: Date.now() }, 'prompt', cb)).resolves.toBe(true);
+  expect(runAsJob).toHaveBeenCalledExactlyOnceWith('campfire', 'prompt', expect.any(Function));
 });

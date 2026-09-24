@@ -654,6 +654,8 @@ export async function handleDelegatedAction(result: any, input: string, cb: Disp
  */
 export async function handleRecoveredDelegation(crashDel: any, input: string, cb: DispatchCallbacks): Promise<boolean> {
   if (!crashDel) return false;
+  const cleanupFailed = captureCleanupGuard(cb);
+  if (cleanupFailed()) return false;
     // TTL: discard stale delegations older than 60 seconds
     if (crashDel.createdAt && Date.now() - crashDel.createdAt > 60000) {
       cb.dispatch({ type: 'warning', message: 'Stale delegation discarded (>60s old)' });
@@ -662,6 +664,7 @@ export async function handleRecoveredDelegation(crashDel: any, input: string, cb
       let action = crashDel.team ? `team-${crashDel.action}` : crashDel.action;
       const confirmLabel = crashDel.hardened ? `${action} (hardened)` : action;
     const answer = await cb.askQuestion(`Recovered delegation: ${confirmLabel}${crashDel.tribunalMode ? ` [${crashDel.tribunalMode}]` : ''} — run it?`);
+    if (cleanupFailed()) return false;
     if (answer === 'y' || answer === '1') {
       const label = input.slice(0, 40);
       const executionSpec = extractExecutionSpec(input);
@@ -751,16 +754,22 @@ export async function handleRecoveredDelegation(crashDel: any, input: string, cb
   return false;
 }
 
-/**
- * Last-resort Cesar recovery when the brain returned no usable response: api-backend silent same-engine retry, non-api session rebuild + retry, fresh one-shot dispatch (with suggestion parsing), then cross-engine acting-Cesar. Extracted from routeWithCesar; kept SAME-FILE to avoid the ESM cycle. crashDel is passed ONLY to preserve the pre-existing coupling where a pending delegation s engines seed a fresh fallback pipeline suggestion (behavior preserved verbatim; latent coupling flagged for a follow-up, per nero Ch.3).
- */
-export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks, crashDel: any, priorDeterministic: boolean): Promise<boolean> {
-  const recoverySession = cb.ctx.cesarSession;
-  const cleanupFailed = () => {
-    if (!sessionCleanupFailed(recoverySession) && !sessionCleanupFailed(cb.ctx.cesarSession)) return false;
+// Retain the entry session across awaits: detachment does not erase a failure.
+function captureCleanupGuard(cb: DispatchCallbacks): () => boolean {
+  const originalSession = cb.ctx.cesarSession;
+  return () => {
+    if (!sessionCleanupFailed(originalSession) && !sessionCleanupFailed(cb.ctx.cesarSession)) return false;
     cb.dispatch({ type: 'warning', message: SESSION_CLEANUP_FAILURE_MESSAGE });
     return true;
   };
+}
+
+/**
+ * Last-resort recovery: same-engine retry, fresh dispatch, then acting Cesar.
+ * crashDel preserves legacy fallback-suggestion engine selection.
+ */
+export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks, crashDel: any, priorDeterministic: boolean): Promise<boolean> {
+  const cleanupFailed = captureCleanupGuard(cb);
   if (cleanupFailed()) return false;
   // Cesar truly didn't respond — try fresh CLI dispatch
   const cesarConfig = cb.ctx.config;
@@ -1073,10 +1082,8 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
 export async function routeWithCesar(input: string, images: ImageAttachment[], cb: DispatchCallbacks): Promise<boolean> {
   // Refuse before the recovery ladder can turn a cleanup failure into a fresh
   // adapter dispatch. Leave pending input attachments untouched for recovery.
-  if (sessionCleanupFailed(cb.ctx.cesarSession)) {
-    cb.dispatch({ type: 'warning', message: SESSION_CLEANUP_FAILURE_MESSAGE });
-    return false;
-  }
+  const cleanupFailed = captureCleanupGuard(cb);
+  if (cleanupFailed()) return false;
   cb.setPendingImages(() => []);
   const turnStartedAt = Date.now();
   // Hoisted out of the try so the fallback ladder below can see whether the
@@ -1092,6 +1099,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
       cb.dispatch(event);
     };
     const result = await handleCesarBrain(input, cesarDispatch as any, cb.ctx, images);
+    if (cleanupFailed()) return false;
     priorDeterministic = result.deterministicFailure === true;
     const emitRecap = () => {
       const latestTerminal = cb.ctx.cesarRuntimeHost?.latestTerminal;
@@ -1181,6 +1189,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
     if (result.responded) return false;
   } catch (e) { console.warn(`[agon] dispatch: Cesar brain threw: ${e instanceof Error ? e.message : String(e)}`); }
   
+  if (cleanupFailed()) return false;
   // If brain handler queued the message (responded=true), don't fall back
   // The queue auto-drains when the current turn finishes
   
@@ -1190,5 +1199,6 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
     if (cb.ctx.cesar) cb.ctx.cesar.pendingDelegation = null;
     if (await handleRecoveredDelegation(crashDel, input, cb)) return true;
   }
+  if (cleanupFailed()) return false;
   return runCesarBrainFallback(input, cb, crashDel, priorDeterministic);
 }

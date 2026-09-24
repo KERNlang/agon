@@ -24,6 +24,36 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Initial-turn and recovered-approval cleanup guards (2026-09-24)
+
+Deferred initial-brain tests reproduced the router consuming a pending delegation
+after cleanup failed, on both resolved and rejected turns. The router now checks
+its captured entry session and current session immediately after the brain await
+and before exception recovery. It leaves the pending delegation untouched and
+does not enter the fallback ladder on that failure. Both references matter when
+the current session is replaced while the turn is pending.
+
+A second regression reproduced an approved recovered delegation launching after
+cleanup failed while its approval prompt was open. The recovered-delegation entry
+and post-approval boundary now use the same captured cleanup guard, and the router
+rechecks before subsequent fallback. A healthy-session positive control still
+launches the approved job. The guard is shared with the existing fallback ladder
+instead of duplicating the identity/warning policy.
+
+Tests run the real router and recovered-delegation code with a deferred brain,
+fixture routing hints and non-executing job dispatcher. They prove these boundary
+decisions, not live-provider termination or job completion. Failures inside the
+brain's own fallback path, during one-shot dispatch, and after recovered-job launch
+remain separate verification work, as do transactional recovery and the broader
+release blockers.
+
+Development gates passed: build, typecheck, lint, re-export guard, 6,289 tests
+(five existing skips across 541 files), release-set packs, supply-chain self-test
+and 72 isolated installed-product checks. Full-suite log SHA-256:
+`094d67b32c39fb5ca30828aa9c24b197ba153f8dc6e3642a4d3dcf3e2eeab765`.
+Release-set and SBOM hashes were refreshed. These are development checks, not
+independent clean-commit release qualification.
+
 ### Recovery-ladder cleanup refusal (2026-09-23)
 
 Regression tests showed that the non-API recovery ladder swallowed session-close

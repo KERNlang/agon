@@ -123,7 +123,7 @@ export function buildApiDispatchConfig(engine: EngineDefinition, resolvedModel: 
  */
 export function buildApiAgentContext(options: DispatchOptions): ApiAgentContext {
   const cwd = options.cwd || resolveWorkingDir();
-  const projectCtx = sessionContext.get(cwd);
+  const projectCtx = options.includeProjectContext === false ? '' : sessionContext.get(cwd);
   const systemPrompt = [
     options.systemPrompt ?? 'You are an AI coding assistant. Be direct and concise.',
     projectCtx ? `## PROJECT CONTEXT\n${projectCtx}` : '',

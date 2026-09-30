@@ -503,3 +503,52 @@ describe('seedEnginesFromLineage', () => {
     expect(seedEnginesFromLineage(r, { 'opus-4.8': 'opus-4.7', 'kimi-3': 'kimi-2-missing' })).toEqual([]);
   });
 });
+
+describe('rankEnginesByRating — a changed model identity reopens the rating', () => {
+  const critics = () => ratings({
+    byMode: { forge: {}, brainstorm: {}, tribunal: {}, critique: { top: rating(1900, 60), next: rating(1700, 60) } },
+    engineMeta: {
+      top: { firstSeen: '', lastActive: '', matchCount: 90, derivedFrom: null, versions: [], identity: 'model-A' },
+      next: { firstSeen: '', lastActive: '', matchCount: 90, derivedFrom: null, versions: [], identity: 'model-N' },
+    } as unknown as RatingRecord['engineMeta'],
+  });
+
+  it('AC-8 the #1 critic whose stored identity differs from the current one ranks with the maximum phi and loses #1', () => {
+    const r = critics();
+    expect(rankNeroCritics(['top', 'next'], r).map((p) => p.engineId)).toEqual(['top', 'next']);
+    expect(rankNeroCritics(['top', 'next'], r, { identities: { top: 'model-B', next: 'model-N' } } as any).map((p) => p.engineId)).toEqual(['next', 'top']);
+    expect(rankEnginesByRating(['top', 'next'], r, 'critique', { identities: { top: 'model-B' } } as any)).toEqual(['next', 'top']);
+    expect(r.byMode.critique.top.phi).toBe(60);
+  });
+
+  it('AC-8 an unchanged, unknown or unresolvable current identity keeps the stored phi', () => {
+    const r = critics();
+    expect(rankEnginesByRating(['top', 'next'], r, 'critique', { identities: { top: 'model-A' } } as any)).toEqual(['top', 'next']);
+    expect(rankEnginesByRating(['top', 'next'], r, 'critique', { identities: { top: null } } as any)).toEqual(['top', 'next']);
+    const legacy = ratings({ byMode: { forge: {}, brainstorm: {}, tribunal: {}, critique: { top: rating(1900, 60), next: rating(1700, 60) } } });
+    expect(rankEnginesByRating(['top', 'next'], legacy, 'critique', { identities: { top: 'model-B' } } as any)).toEqual(['top', 'next']);
+  });
+});
+
+describe('runNero — current identities from the adapter', () => {
+  it('AC-8 ranks critics with the identity the adapter reports now, so a changed #1 critic is not picked first', async () => {
+    const r = ratings({
+      byMode: { forge: {}, brainstorm: {}, tribunal: {}, critique: { top: rating(1900, 60), next: rating(1700, 60) } },
+      engineMeta: {
+        top: { firstSeen: '', lastActive: '', matchCount: 90, derivedFrom: null, versions: [], identity: 'model-A' },
+      } as unknown as RatingRecord['engineMeta'],
+    });
+    const picked: string[] = [];
+    const adapter = {
+      identify: async (engine: { id: string }) => (engine.id === 'top' ? 'model-B' : null),
+      dispatch: async (o: { engine: { id: string } }) => {
+        picked.push(o.engine.id);
+        return { exitCode: 0, stdout: 'Confidence: 50%\nVERDICT: SOUND', stderr: '', durationMs: 1, timedOut: false };
+      },
+    } as any;
+    const registry = { get: (id: string) => ({ id }), list: () => [] } as any;
+    const res = await runNero({ decision: 'x', engines: ['top', 'next'], ratings: r, explorationRate: 0, registry, adapter, timeout: 30, outputDir: '/tmp/nero-test', cwd: '/tmp', retryBackoffMs: 0 });
+    expect(res.engineId).toBe('next');
+    expect(picked).toEqual(['next']);
+  });
+});

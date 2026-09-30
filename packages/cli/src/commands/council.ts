@@ -21,6 +21,7 @@ export function chairmanPickLabel(reason: string): string {
   if (reason === 'forced') return 'forced';
   if (reason === 'cesar') return 'cesar-chaired (2-engine council)';
   if (reason === 'random') return 'random — no rating yet';
+  if (reason === 'exploration') return 'exploration pick — the rating leader sits as an advisor';
   if (reason === 'top-rated') return 'top-rated';
   return reason;
 }

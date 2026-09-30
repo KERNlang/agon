@@ -130,6 +130,8 @@ export interface DispatchOptions {
   images?: ImageAttachment[];
   systemPrompt?: string;
   textOnly?: boolean;
+  // false: an API backend appends no PROJECT CONTEXT (repo metadata, instructions, diff excerpt) to the system prompt. Absent means true.
+  includeProjectContext?: boolean;
   tools?: Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>;
   messages?: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>;
   onApproval?: (tool:string, command:string, reason?:string) => Promise<boolean|string>;
@@ -344,6 +346,13 @@ export interface AgonConfig {
   speculativeThresholdUsd?: number;
   speculativeEloSpreadThreshold?: number;
   neroExplorationRate?: number;
+  chairExplorationRate?: number;
+  ratingStaleHorizonDays?: number;
+  ratingJudging?: 'off'|'shadow'|'on';
+  ratingMinBallots?: number;
+  ratingJudgeTimeoutSec?: number;
+  ratingBallotMaxChars?: number;
+  ratingIdentityConfirmRuns?: number;
   ratingsPurgeKeepEngines?: string[];
   autoCredit?: boolean;
   commitCoAuthor?: string;
@@ -468,6 +477,13 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   speculativeThresholdUsd: 0.50,
   speculativeEloSpreadThreshold: 15,
   neroExplorationRate: 0.2,
+  chairExplorationRate: 0.2,
+  ratingStaleHorizonDays: 90,
+  ratingJudging: 'shadow',
+  ratingMinBallots: 2,
+  ratingJudgeTimeoutSec: 180,
+  ratingBallotMaxChars: 60000,
+  ratingIdentityConfirmRuns: 2,
   ratingsPurgeKeepEngines: [],
   autoCredit: true,
   commitCoAuthor: 'agon (KERN) <292465531+KERN-Agon@users.noreply.github.com>',

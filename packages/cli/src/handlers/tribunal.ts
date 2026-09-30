@@ -100,6 +100,7 @@ export async function handleTribunal(question: string, dispatch: Dispatch, ctx: 
       result = await runTribunal({
         question: enrichedQuestion,
         engines,
+        judgePool: active,
         rounds: 2,
         mode,
         protocol,

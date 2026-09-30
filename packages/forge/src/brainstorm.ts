@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { EngineAdapter, BrainstormBid, BrainstormResult, ScoutBid } from '@kernlang/agon-core';
 
-import { EngineRegistry, getRatings, createSidechainLogger, updateGlickoRanked, classifyTask, seedNewEnginesFromRegistry } from '@kernlang/agon-core';
+import { EngineRegistry, getRatings, createSidechainLogger, updateGlickoRanked, classifyTask, seedNewEnginesFromRegistry, tapDispatchIdentities } from '@kernlang/agon-core';
 
 import { buildKernDraftPrompt, parseKernDraft } from '@kernlang/protocol';
 
@@ -221,6 +221,8 @@ export function fallbackParse(output: string): KernDraft {
 
 export async function runBrainstorm(opts: {question:string, context?:string, engines:string[], style?:string, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal, onEvent?:(event:{type:string,data?:Record<string,unknown>})=>void}): Promise<BrainstormResult> {
   const brainstormId = randomUUID().slice(0, 8);
+  const identityTap = tapDispatchIdentities(opts.adapter);
+  opts = { ...opts, adapter: identityTap.adapter };
   // 'divergent' is the default: brainstorm exists to spread the panel out.
   // 'grounded' restores the pre-stance behavior (convergent, file-path-anchored).
   const style = opts.style === 'grounded' ? 'grounded' : 'divergent';
@@ -312,7 +314,7 @@ export async function runBrainstorm(opts: {question:string, context?:string, eng
   if (bids.length >= 2) {
     const taskClass = classifyTask(opts.question);
     const glickoRanked = bids.map(b => ({ engineId: b.engineId, score: b.score ?? 0 }));
-    updateGlickoRanked(glickoRanked, taskClass, 'brainstorm');
+    updateGlickoRanked(glickoRanked, taskClass, 'brainstorm', identityTap.identities());
   }
 
   const winnerEngine = opts.registry.get(winner.engineId);

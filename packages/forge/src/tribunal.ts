@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { EngineAdapter, ForgeEvent, DispatchResult } from '@kernlang/agon-core';
 
-import { EngineRegistry, createSidechainLogger, updateGlickoRanked, classifyTask, loadConfig, seedNewEnginesFromRegistry } from '@kernlang/agon-core';
+import { EngineRegistry, createSidechainLogger, updateGlickoRanked, classifyTask, loadConfig, seedNewEnginesFromRegistry, tapDispatchIdentities } from '@kernlang/agon-core';
 
 import type { TribunalMode, TribunalProtocol } from './tribunal-modes.js';
 
@@ -13,6 +13,8 @@ import { preflightHealthFilter } from './health-check.js';
 import { dispatchSeatWithRetry, buildPanelHealth } from './seat-dispatch.js';
 
 import type { SeatOutcome } from './seat-dispatch.js';
+
+import { judgeTribunal, ratingJudgingMode } from './rating-judge.js';
 
 export interface TribunalPosition {
   engineId: string;
@@ -73,8 +75,10 @@ export function requireNonEmptyDispatchText(result: DispatchResult, phase: strin
   });
 }
 
-export async function runTribunal(opts: {question:string, engines:string[], rounds:number, mode?:TribunalMode, protocol?:TribunalProtocol, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, onEvent?:(event:ForgeEvent)=>void, signal?: AbortSignal}): Promise<TribunalResult> {
-  const { question, rounds, registry, adapter, timeout, outputDir } = opts;
+export async function runTribunal(opts: {question:string, engines:string[], rounds:number, mode?:TribunalMode, protocol?:TribunalProtocol, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, onEvent?:(event:ForgeEvent)=>void, signal?: AbortSignal, rng?: () => number, judgePool?: string[]}): Promise<TribunalResult> {
+  const { question, rounds, registry, timeout, outputDir } = opts;
+  const identityTap = tapDispatchIdentities(opts.adapter);
+  const adapter = identityTap.adapter;
   const signal = opts.signal;
   const mode = opts.mode ?? 'adversarial';
   // Pre-flight: drop engines quarantined this session (auth-failed/unreachable)
@@ -125,6 +129,7 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
   // One SeatOutcome per engine-round; folded into panelHealth at the end so a
   // seat that flaked (or was rescued by the auto-retry) is reported loudly.
   const seatOutcomes: SeatOutcome[] = [];
+  const failedEngines = new Set<string>();
 
   for (let round = 1; round <= effectiveRounds; round++) {
     // Doppelganger fix: respect cancellation between rounds. Without
@@ -185,6 +190,7 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
         const errDetail = seat.detail ? `${seat.failure}: ${seat.detail}` : (seat.failure ?? 'failed');
         console.warn(`[agon] tribunal dispatch (${pos.engineId}) round ${round} failed after ${seat.attempts} attempt(s): ${errDetail}`);
         opts.onEvent?.({ type: 'engine:failed' as any, engineId: pos.engineId, data: { engineId: pos.engineId, phase: `tribunal-round-${round}`, error: errDetail } });
+        failedEngines.add(pos.engineId);
         return { engineId: pos.engineId, argument: '(failed to respond)' };
       }
       return { engineId: pos.engineId, argument: seat.text };
@@ -224,10 +230,16 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
     });
   }
 
+  const config = loadConfig(process.cwd());
+  const judging = ratingJudgingMode(config.ratingJudging);
+  const judged = judging === 'off'
+    ? Promise.resolve([])
+    : judgeTribunal({ judging, question, positions, failed: [...failedEngines], judgePool: opts.judgePool, registry, adapter, config, outputDir, cwd: process.cwd(), signal, rng: opts.rng ?? Math.random });
+
   // Summary using the configured Cesar engine when available, else first engine
   let summaryEngine;
   try {
-    const cesarId = loadConfig(process.cwd()).cesarEngine ?? 'claude';
+    const cesarId = config.cesarEngine ?? 'claude';
     summaryEngine = registry.get(cesarId);
   } catch { summaryEngine = registry.get(engines[0]); }
   const summaryPrompt = buildModeSummaryPrompt({ mode, question, positions });
@@ -276,24 +288,14 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
     data: { rounds: allRounds.length, engines: engines.length, mode, protocol },
   });
 
-  // Update Glicko-2 ratings — score by per-round substantive credit (not raw length)
-  if (positions.length >= 2) {
+  const scores = await judged;
+  if (judging === 'on' && scores.length >= 2) {
     const taskClass = classifyTask(question);
-    const tribunalRanked = positions
-      .map((p: any) => {
-        const substantive = p.arguments.filter((a: string) => a.length > 20 && a !== '(failed to respond)');
-        const roundCredit = substantive.length;
-        const cappedAvg = roundCredit > 0
-          ? substantive.reduce((sum: number, a: string) => sum + Math.min(a.length, 2000), 0) / roundCredit
-          : 0;
-        return { engineId: p.engineId, score: roundCredit * 1000 + Math.min(cappedAvg, 2000) };
-      })
-      .sort((a: any, b: any) => b.score - a.score);
-    updateGlickoRanked(tribunalRanked, taskClass, 'tribunal');
+    updateGlickoRanked(scores, taskClass, 'tribunal', identityTap.identities());
     // Adversarial / red-team tribunals ARE critique competitions (attack + refute),
     // so feed the same ranking into the 'critique' discipline that Nero selects on.
     if (mode === 'adversarial' || mode === 'red-team') {
-      updateGlickoRanked(tribunalRanked, taskClass, 'critique');
+      updateGlickoRanked(scores, taskClass, 'critique');
     }
   }
 

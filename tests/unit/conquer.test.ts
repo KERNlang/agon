@@ -448,6 +448,18 @@ describe('runDoneFalsifier — evidence-based, mechanically verified', () => {
     expect(res.note).toMatch(/clone/i);
   });
 
+  it('ranks falsifier critics with the adapter\'s current identities, so a model-changed #1 critic is not picked', async () => {
+    const r = emptyRatings();
+    r.byMode.critique = { top: { mu: 1900, phi: 60, sigma: 0.06, wins: 9, losses: 1, lastActive: new Date().toISOString() }, next: { mu: 1700, phi: 60, sigma: 0.06, wins: 9, losses: 1, lastActive: new Date().toISOString() } };
+    (r.engineMeta as Record<string, unknown>).top = { firstSeen: '', lastActive: '', matchCount: 10, derivedFrom: null, versions: [], identity: 'model-A' };
+    const res = await runDoneFalsifier(base({
+      engines: ['top', 'next'], ratings: r,
+      adapter: { ...agentReply('VERDICT: SOUND'), identify: async (engine: { id: string }) => (engine.id === 'top' ? 'model-B' : null) },
+      sandbox: mkSandbox(),
+    }));
+    expect(res.critic).toBe('next');
+  });
+
   it('tears the sandbox down after a run (success path)', async () => {
     let removed = '';
     await runDoneFalsifier(base({

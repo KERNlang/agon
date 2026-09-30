@@ -1,6 +1,6 @@
 import type { EngineAdapter, EngineRegistry, RatingRecord } from '@kernlang/agon-core';
 
-import { resolveWorkingDir, getRatings, seedNewEnginesFromRegistry, spawnWithTimeout, buildKernContextSpine, repoRoot, createSessionWorktree } from '@kernlang/agon-core';
+import { resolveWorkingDir, getRatings, resolveCurrentIdentities, seedNewEnginesFromRegistry, spawnWithTimeout, buildKernContextSpine, repoRoot, createSessionWorktree } from '@kernlang/agon-core';
 
 import { runNero, rankNeroCritics, parseNeroVerdict } from './nero.js';
 
@@ -401,7 +401,7 @@ export async function runDoneFalsifier(opts: { claim:string; gate?:string; cwd:s
   // lineage only for the real on-disk store (NOT when ratings are injected in a test).
   if (!opts.ratings) seedNewEnginesFromRegistry(opts.registry);
   const ratings = opts.ratings ?? getRatings();
-  const ranked = rankNeroCritics(opts.engines, ratings);
+  const ranked = rankNeroCritics(opts.engines, ratings, { identities: await resolveCurrentIdentities(opts.adapter, opts.registry, opts.engines, opts.cwd) });
   let critic = '';
   let criticEngine: any = null;
   for (const r of ranked) {

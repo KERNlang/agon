@@ -6,9 +6,17 @@ import { homedir } from 'node:os';
 
 import type { GlickoRating, RatingRecord, EngineMeta, TaskClass, EngineDefinition } from '../models/types.js';
 
+import { DEFAULT_AGON_CONFIG } from '../models/types.js';
+
 import type { EngineRegistry } from './engine-registry.js';
 
 import { withFileLock } from '../blocks/file-lock.js';
+
+import { loadConfig } from './config.js';
+
+import { identityChanged, noteEngineIdentities } from './rating-identity.js';
+
+import type { EngineIdentities } from './rating-identity.js';
 
 import { hostEpochFrom, hostNowIso, hostNowMs, hostPrettyJson, hostSqrt } from '../blocks/host-runtime.js';
 
@@ -253,12 +261,16 @@ export function computeNewSigma(sigma: number, phi: number, v: number, delta: nu
 }
 
 /**
- * Pairwise Glicko-2 updates for all ranked positions. Higher score beats lower score. The WHOLE batch runs under one ratings lock with a single load and save — previously each pair did its own unlocked load→save (up to 15 RMW cycles for a 6-engine run), which is what let two concurrent run completions clobber each other.
+ * Pairwise Glicko-2 updates for all ranked positions. Higher score beats lower score. The WHOLE batch runs under one ratings lock with a single load and save — previously each pair did its own unlocked load→save (up to 15 RMW cycles for a 6-engine run), which is what let two concurrent run completions clobber each other. identities are the model identities the ranked engines ran under in this run; they are noted (see noteEngineIdentities) before any pair is applied, so a confirmed model change reopens the rating first. Pass them on one write per run only, or a single run counts as several confirmations.
  */
-export function updateGlickoRanked(ranked: Array<{engineId:string,score:number}>, taskClass: TaskClass, mode: 'forge'|'brainstorm'|'tribunal'|'critique'): void {
+export function updateGlickoRanked(ranked: Array<{engineId:string,score:number}>, taskClass: TaskClass, mode: 'forge'|'brainstorm'|'tribunal'|'critique', identities?: EngineIdentities): void {
   if (ranked.length < 2) return;
+  const observed: EngineIdentities = {};
+  for (const { engineId } of ranked) if (identities?.[engineId]) observed[engineId] = identities[engineId];
+  const confirmRuns = Object.keys(observed).length > 0 ? identityConfirmRuns() : 0;
   withFileLock(ratingsLockPath(), () => {
     const record = loadRatings();
+    noteEngineIdentities(record, observed, { confirmRuns, phiMax: DEFAULT_PHI, newMeta: defaultEngineMeta });
     for (let i = 0; i < ranked.length; i++) {
       for (let j = i + 1; j < ranked.length; j++) {
         if (ranked[i].score === ranked[j].score) continue;
@@ -284,17 +296,42 @@ export function advisorScore(engineId: string, mode: 'forge'|'brainstorm'|'tribu
   return Math.round((rating.mu - 2 * phi));
 }
 
+function identityConfirmRuns(): number {
+  const configured = Math.floor(Number(loadConfig(process.cwd()).ratingIdentityConfirmRuns));
+  return configured >= 1 ? configured : DEFAULT_AGON_CONFIG.ratingIdentityConfirmRuns;
+}
+
+export interface RatingRankOptions {
+  now?: number;
+  staleHorizonDays?: number;
+  identities?: EngineIdentities;
+}
+
 /**
- * Rank engines by Glicko-2 confidence floor (mu - 2*phi), highest first, WITHIN a scope. When `mode` is given, ranking uses that discipline's byMode ratings (e.g. mode='tribunal' = adversarial/critique skill — the right proxy for a Nero-style critic, since the best BUILDER is not the best CRITIC); otherwise the global pool. Only engines that already hold a rating record IN THAT SCOPE are returned; the rest are omitted so callers can fall back. Ties break on mu, then engine id for determinism.
+ * Rating deviation used for ranking: the stored phi widened linearly toward DEFAULT_PHI by how long the rating has gone without an update, reaching DEFAULT_PHI at horizonDays. Stored phi only shrinks when a match is played, so without this a rating that stopped updating stays confident forever. horizonDays <= 0 or a missing/unparseable lastActive returns the stored phi. nowMs is epoch milliseconds.
  */
-export function rankEnginesByRating(engineIds: string[], ratings: RatingRecord, mode?: 'forge'|'brainstorm'|'tribunal'|'critique'): string[] {
+export function effectivePhi(rating: GlickoRating, nowMs: number, horizonDays: number): number {
+  const lastActiveMs = Date.parse(rating.lastActive ?? '');
+  if (!(horizonDays > 0) || !Number.isFinite(lastActiveMs)) return rating.phi;
+  const daysInactive = Math.max(0, (nowMs - lastActiveMs) / 86400000);
+  return rating.phi + (DEFAULT_PHI - rating.phi) * Math.min(1, daysInactive / horizonDays);
+}
+
+/**
+ * Rank engines by Glicko-2 confidence floor (mu - 2*phi), highest first, WITHIN a scope, where phi is effectivePhi (stale ratings lose confidence; rank.now defaults to the current clock, rank.staleHorizonDays to the ratingStaleHorizonDays config default), or DEFAULT_PHI for an engine whose current identity in rank.identities differs from its stored one (read-only; nothing is written). When `mode` is given, ranking uses that discipline's byMode ratings (e.g. mode='tribunal' = adversarial/critique skill — the right proxy for a Nero-style critic, since the best BUILDER is not the best CRITIC); otherwise the global pool. Only engines that already hold a rating record IN THAT SCOPE are returned; the rest are omitted so callers can fall back. Ties break on mu, then engine id for determinism.
+ */
+export function rankEnginesByRating(engineIds: string[], ratings: RatingRecord, mode?: 'forge'|'brainstorm'|'tribunal'|'critique', rank?: RatingRankOptions): string[] {
   const scope = mode ? (ratings.byMode[mode] ?? {}) : ratings.global;
   const rated = engineIds.filter((id) => scope[id] !== undefined);
+  const nowMs = rank?.now ?? Date.now();
+  const horizonDays = rank?.staleHorizonDays ?? DEFAULT_AGON_CONFIG.ratingStaleHorizonDays;
+  const phiOf = (id: string) => identityChanged(ratings.engineMeta?.[id], rank?.identities?.[id]) ? DEFAULT_PHI : effectivePhi(scope[id], nowMs, horizonDays);
+  const floors = new Map(rated.map((id) => [id, scope[id].mu - 2 * phiOf(id)]));
   return rated.sort((a, b) => {
     const ra = scope[a];
     const rb = scope[b];
-    const floorA = ra.mu - 2 * ra.phi;
-    const floorB = rb.mu - 2 * rb.phi;
+    const floorA = floors.get(a)!;
+    const floorB = floors.get(b)!;
     if (floorB !== floorA) return floorB - floorA;
     if (rb.mu !== ra.mu) return rb.mu - ra.mu;
     return a.localeCompare(b);
@@ -304,18 +341,19 @@ export function rankEnginesByRating(engineIds: string[], ratings: RatingRecord, 
 /**
  * Pick the single best engine for a role. Tries each discipline in opts.modes IN ORDER (e.g. ['critique','tribunal'] for Nero — prefer a proven critic, fall back to adversarial-debate skill), then the GLOBAL ranking, then a random engine when NO engine has any rating yet. opts.mode is shorthand for a single-element modes list. opts.exclude drops engines from the pool (e.g. the author being challenged, to avoid grading-own-homework) but is ignored if it would empty the pool. rng is injectable for deterministic tests. scope reports WHICH rating decided the pick.
  */
-export function pickTopRatedEngine(engineIds: string[], ratings: RatingRecord, opts?: { mode?:'forge'|'brainstorm'|'tribunal'|'critique'; modes?:Array<'forge'|'brainstorm'|'tribunal'|'critique'>; exclude?:string[]; rng?:() => number }): { engineId: string; reason: 'top-rated' | 'random' | 'none'; scope: 'forge' | 'brainstorm' | 'tribunal' | 'critique' | 'global' | null } {
+export function pickTopRatedEngine(engineIds: string[], ratings: RatingRecord, opts?: { mode?:'forge'|'brainstorm'|'tribunal'|'critique'; modes?:Array<'forge'|'brainstorm'|'tribunal'|'critique'>; exclude?:string[]; rng?:() => number } & RatingRankOptions): { engineId: string; reason: 'top-rated' | 'random' | 'none'; scope: 'forge' | 'brainstorm' | 'tribunal' | 'critique' | 'global' | null } {
   const exclude = new Set(opts?.exclude ?? []);
   let pool = engineIds.filter((id) => !exclude.has(id));
   if (pool.length === 0) pool = engineIds.slice();
   if (pool.length === 0) return { engineId: '', reason: 'none' as const, scope: null };
 
   const tiers = opts?.modes ?? (opts?.mode ? [opts.mode] : []);
+  const rank: RatingRankOptions = { now: opts?.now, staleHorizonDays: opts?.staleHorizonDays, identities: opts?.identities };
   for (const m of tiers) {
-    const ranked = rankEnginesByRating(pool, ratings, m);
+    const ranked = rankEnginesByRating(pool, ratings, m, rank);
     if (ranked.length > 0) return { engineId: ranked[0], reason: 'top-rated' as const, scope: m };
   }
-  const global = rankEnginesByRating(pool, ratings);
+  const global = rankEnginesByRating(pool, ratings, undefined, rank);
   if (global.length > 0) return { engineId: global[0], reason: 'top-rated' as const, scope: 'global' as const };
 
   const r = opts?.rng ? opts.rng() : Math.random();

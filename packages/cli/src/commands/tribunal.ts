@@ -122,6 +122,7 @@ export const tribunalCommand = defineCommand({
     const result = await runTribunal({
       question: args.question,
       engines,
+      judgePool: available,
       rounds,
       mode: mode as TribunalMode,
       protocol,

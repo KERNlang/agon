@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 
 import type { ForgeOptions, ForgeManifest, EngineAdapter, ForgeEvent, AgonConfig, DispatchMetric, EngineResult } from '@kernlang/agon-core';
 
-import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, stashSnapshot, worktreeRemoveBestEffort, worktreePruneOrphaned, updateGlickoRanked, classifyTask, createSidechainLogger, assignForgeRoles, buildSpecializedPrompt, recordForgeOutcome, extractPatchFilePatterns, tracker, engineHealth, seedNewEnginesFromRegistry, buildKernContextSpine } from '@kernlang/agon-core';
+import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, stashSnapshot, worktreeRemoveBestEffort, worktreePruneOrphaned, updateGlickoRanked, tapDispatchIdentities, classifyTask, createSidechainLogger, assignForgeRoles, buildSpecializedPrompt, recordForgeOutcome, extractPatchFilePatterns, tracker, engineHealth, seedNewEnginesFromRegistry, buildKernContextSpine } from '@kernlang/agon-core';
 
 import { healthCheckEngines, HEALTH_CHECK_DEFAULT_PROMPT } from './health-check.js';
 
@@ -206,7 +206,9 @@ export function writeForgeResultBundle(manifest: ForgeManifest, worktrees: Workt
   return bundlePath;
 }
 
-export async function runForge(options: ForgeOptions & { onResult?: (engineId:string,result:EngineResult,metric:DispatchMetric)=>'continue'|'finalize'|void }, registry: EngineRegistry, adapter: EngineAdapter, onEvent?: (event:ForgeEvent)=>void): Promise<ForgeManifest> {
+export async function runForge(options: ForgeOptions & { onResult?: (engineId:string,result:EngineResult,metric:DispatchMetric)=>'continue'|'finalize'|void }, registry: EngineRegistry, untappedAdapter: EngineAdapter, onEvent?: (event:ForgeEvent)=>void): Promise<ForgeManifest> {
+  const identityTap = tapDispatchIdentities(untappedAdapter);
+  const adapter = identityTap.adapter;
   const loadedConfig = loadConfig(options.cwd);
   // Cold-start: seed newly-dropped model versions from their predecessor before
   // starter selection / competition, so a new engine is rated at its family's
@@ -865,7 +867,7 @@ export async function runForge(options: ForgeOptions & { onResult?: (engineId:st
         .sort((a, b) => b.score - a.score);
 
       if (ranked.length >= 2) {
-        updateGlickoRanked(ranked, taskClass, 'forge');
+        updateGlickoRanked(ranked, taskClass, 'forge', identityTap.identities());
         for (const entry of ranked) {
           onEvent?.({ type: 'elo:update', data: { engineId: entry.engineId, score: entry.score, rank: ranked.indexOf(entry) + 1, taskClass } });
         }

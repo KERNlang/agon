@@ -851,6 +851,7 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
     const { join } = await import('node:path');
     const { mkdirSync } = await import('node:fs');
     const { resolveWorkingDir, RUNS_DIR, appendMessage } = await import('@kernlang/agon-core');
+    if (cleanupFailed()) return false;
     const outDir = join(RUNS_DIR, `cesar-fallback-${Date.now()}`);
     mkdirSync(outDir, { recursive: true });
     if (!_silentMode) cb.dispatch({ type: 'warning', message: formatCesarRecoveryStatus('retry', cesarId, `log: ${outDir}`) });
@@ -864,6 +865,7 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
       outputDir: outDir,
       systemPrompt: buildCesarSystemPrompt(cb.ctx),
     });
+    if (cleanupFailed()) return false;
     if (freshResult.stdout.trim()) {
       const freshText = freshResult.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
       appendMessage(cb.ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
@@ -981,6 +983,7 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
     appendUserTurnIfAbsent(cb.ctx.chatSession, input);
   } catch (e) { console.warn(`[agon] dispatch: Cesar fallback failed: ${e instanceof Error ? e.message : String(e)}`); }
   
+  if (cleanupFailed()) return false;
   // Cesar completely unavailable — only switch to an acting Cesar when
   // policy allows it. Default is ask: silently swapping Kimi→Claude after
   // an empty turn feels like the CLI lost the user's chosen lead engine.

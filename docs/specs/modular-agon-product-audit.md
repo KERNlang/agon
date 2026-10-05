@@ -24,6 +24,33 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### One-shot result and escalation cleanup guards (2026-10-05)
+
+Deferred adapter tests reproduced recovery reaching alternate-engine selection
+after cleanup failed during one-shot dispatch. The router now rechecks its
+captured/current session after asynchronous imports, after adapter completion,
+and before alternate-engine escalation following errors. A failed cleanup stops
+result processing and further recovery with the existing restart-required warning.
+
+Tests cover an empty result, nonempty result, rejected dispatch and a healthy
+empty-result control. Failed cleanup leaves transcript messages unchanged and
+does not inspect alternate engines; healthy empty output still reaches alternate
+selection. The adapter and brain are fixtures, while the recovery ladder is real.
+This cannot retract effects already performed by the in-flight adapter.
+
+The brain's internal fallback, approval and dispatch boundaries in alternate-engine
+recovery, verified provider termination and durable recovery remain open. These
+checks do not qualify the whole release or prove a running provider has stopped.
+
+Development gates passed: build, typecheck, lint, re-export guard, 6,293 tests
+(five existing skips across 541 files), release-set packs, supply-chain self-test
+and 72 isolated installed-product checks. Missing offline dependencies required
+scripts-disabled hydration of the temporary npm cache/prefix before the offline
+installation check passed. Full-suite log SHA-256:
+`dddec24aaf5bb0015639f6ff47da064e75a614072256cfd75ce6b4fefcb659f4`.
+Release-set and SBOM hashes were refreshed. These are development checks, not
+independent clean-commit release qualification.
+
 ### Initial-turn and recovered-approval cleanup guards (2026-09-24)
 
 Deferred initial-brain tests reproduced the router consuming a pending delegation

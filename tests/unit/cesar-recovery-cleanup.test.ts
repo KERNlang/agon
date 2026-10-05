@@ -7,7 +7,7 @@ vi.mock('../../packages/cli/src/handlers/cesar-brain.js', async original => ({
   ...await original<object>(), handleCesarBrain: brain,
 }));
 vi.mock('../../packages/cli/src/cesar/session.js', async original => ({
-  ...await original<object>(), resolveCesarBackend: backend,
+  ...await original<object>(), resolveCesarBackend: backend, buildCesarSystemPrompt: () => 'fixture system prompt',
 }));
 vi.mock('../../packages/cli/src/cesar/routing.js', async original => ({
   ...await original<object>(), deriveRoutingHints: () => ({}),
@@ -121,4 +121,34 @@ it('still launches an approved recovered delegation for a healthy session', asyn
     ctx: { config: {}, cesarSession: { close: vi.fn() }, chatSession: { messages: [] } } } as any;
   await expect(handleRecoveredDelegation({ action: 'campfire', createdAt: Date.now() }, 'prompt', cb)).resolves.toBe(true);
   expect(runAsJob).toHaveBeenCalledExactlyOnceWith('campfire', 'prompt', expect.any(Function));
+});
+
+it.each(['empty', 'response', 'rejection', 'healthy empty'])('checks cleanup state after one-shot %s', async outcome => {
+  vi.spyOn(console, 'warn').mockImplementation(() => {});
+  brain.mockResolvedValue({ responded: false, delegated: false });
+  const session = { close: vi.fn() } as any;
+  let finish!: (value: unknown) => void;
+  let reject!: (error: Error) => void;
+  const adapter = { dispatch: vi.fn(() => new Promise((resolve, fail) => { finish = resolve; reject = fail; })) };
+  const activeEngines = vi.fn(() => []);
+  const dispatch = vi.fn();
+  const ctx = { config: {}, cesarSession: session, setCesarSession: vi.fn(), adapter,
+    activeEngines, chatSession: { messages: [] } } as any;
+  ctx.setCesarSession.mockImplementation((value: unknown) => { ctx.cesarSession = value; });
+  const pending = runCesarBrainFallback('prompt', { ctx, dispatch } as any, null, false);
+  await vi.waitFor(() => expect(adapter.dispatch).toHaveBeenCalledOnce());
+  if (outcome !== 'healthy empty') markSessionCleanupFailed(session);
+  if (outcome === 'rejection') reject(new Error('fixture dispatch failed'));
+  else finish({ stdout: outcome === 'response' ? 'fixture answer' : '' });
+  await expect(pending).resolves.toBe(false);
+  if (outcome === 'healthy empty') {
+    expect(activeEngines).toHaveBeenCalledOnce();
+    expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining('Session cleanup previously failed') }));
+    return;
+  }
+  expect(activeEngines).not.toHaveBeenCalled();
+  expect(ctx.chatSession.messages).toEqual([]);
+  expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'warning',
+    message: expect.stringContaining('Session cleanup previously failed') }));
 });

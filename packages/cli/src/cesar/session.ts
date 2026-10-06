@@ -25,7 +25,7 @@ import type { GuardMode } from '@kernlang/agon-core';
 import type { HandlerContext } from '../handlers/types.js';
 
 import { createCesarToolRegistry } from './tools.js';
-import { sessionCleanupFailed, SESSION_CLEANUP_FAILURE_MESSAGE } from './session-health.js';
+import { closeSessionOrMarkCleanupFailed, sessionCleanupFailed, SESSION_CLEANUP_FAILURE_MESSAGE } from './session-health.js';
 
 import { getSessionAllowList } from '../signals/output.js';
 
@@ -1522,13 +1522,13 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
       return ctx.cesarSession;
     }
     // MCP config or harness profile changed — close and recreate.
-    ctx.cesarSession.close();
+    closeSessionOrMarkCleanupFailed(ctx.cesarSession);
     ctx.setCesarSession(null);
   }
 
   // Wrong engine or dead session — close old one
   if (ctx.cesarSession && ctx.cesarSession.engineId !== cesarEngineId) {
-    ctx.cesarSession.close();
+    closeSessionOrMarkCleanupFailed(ctx.cesarSession);
     ctx.setCesarSession(null);
   }
 

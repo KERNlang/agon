@@ -14,3 +14,14 @@ export function markSessionCleanupFailed(session: PersistentSession): void {
 export function sessionCleanupFailed(session: PersistentSession | null | undefined): boolean {
   return !!session && failedCleanupSessions.has(session);
 }
+
+// A close that throws leaves the provider in an unknown state. Keep the session
+// attached and marked so every captured or current-session guard refuses it.
+export function closeSessionOrMarkCleanupFailed(session: PersistentSession): void {
+  try {
+    session.close();
+  } catch {
+    markSessionCleanupFailed(session);
+    throw new Error(SESSION_CLEANUP_FAILURE_MESSAGE);
+  }
+}

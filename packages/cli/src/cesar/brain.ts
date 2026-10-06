@@ -146,6 +146,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     dispatch({ type: 'warning', message: SESSION_CLEANUP_FAILURE_MESSAGE });
     return { terminalState: 'failed', decisionReason: 'session-cleanup-failed', delegated: false, responded: false };
   }
+  // Retain the entry session across awaits: detachment does not erase a failure.
+  const _entrySession = ctx.cesarSession;
   const abort = new AbortController();
       const _turnStart = Date.now();
       const _turnId = createCesarTurnId();
@@ -750,11 +752,25 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           }
         } catch { /* budget gate must never break a turn */ }
 
+        // Cleanup can fail while the gate or acquisition awaits (telemetry
+        // handoff, compaction). Refuse before any replacement session send or
+        // adapter fallback; the router's outer guard cannot retract a launch.
+        const refuseAfterCleanupFailure = (candidate?: PersistentSession): CesarTurnOutcome | null => {
+          if (![_entrySession, ctx.cesarSession, candidate].some(sessionCleanupFailed)) return null;
+          dispatch({ type: 'warning', message: SESSION_CLEANUP_FAILURE_MESSAGE });
+          _turnTerminalState = 'failed';
+          return { turnId: _turnId, terminalState: 'failed', decisionReason: 'session-cleanup-failed', delegated: false, responded: false };
+        };
+        const _refusedAfterGate = refuseAfterCleanupFailure();
+        if (_refusedAfterGate) return _refusedAfterGate;
+
         // ── Boot or reuse persistent session ──
         let session: PersistentSession;
         try {
           session = await ensureCesarSession(ctx);
         } catch (err) {
+          const _refusedAcquisition = refuseAfterCleanupFailure();
+          if (_refusedAcquisition) return _refusedAcquisition;
           const errMsg = err instanceof Error ? err.message : String(err);
           // Gate the spinner error on the backend we're actually using.
           // Engines on the API path (no CLI binary chosen) don't need a noisy
@@ -831,6 +847,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           _turnTerminalState = 'failed';
           return { turnId: _turnId, terminalState: 'failed', delegated: false, responded: false };
         }
+        const _refusedSession = refuseAfterCleanupFailure(session);
+        if (_refusedSession) return _refusedSession;
 
         // Per-response lease binding: every model round-trip (session.send) must
         // carry a FRESH responseSeq so a mutation tool dispatched by a superseded

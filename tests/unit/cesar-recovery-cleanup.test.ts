@@ -3,7 +3,10 @@ import { startChatSession } from '@kernlang/agon-core';
 import { handleRecoveredDelegation, routeWithCesar, runCesarBrainFallback } from '../../packages/cli/src/signals/dispatch/cesar-router.js';
 import { markSessionCleanupFailed, sessionCleanupFailed } from '../../packages/cli/src/cesar/session-health.js';
 
-const { brain, backend } = vi.hoisted(() => ({ brain: vi.fn(), backend: vi.fn() }));
+const { brain, backend, writeConfig } = vi.hoisted(() => ({ brain: vi.fn(), backend: vi.fn(), writeConfig: vi.fn() }));
+vi.mock('@kernlang/agon-core', async original => ({
+  ...await original<object>(), configSet: writeConfig,
+}));
 vi.mock('../../packages/cli/src/handlers/cesar-brain.js', async original => ({
   ...await original<object>(), handleCesarBrain: brain,
 }));
@@ -15,9 +18,74 @@ vi.mock('../../packages/cli/src/cesar/routing.js', async original => ({
 }));
 afterEach(() => vi.restoreAllMocks());
 beforeEach(() => {
+  writeConfig.mockReset();
   brain.mockReset().mockResolvedValue({ responded: true, delegated: false });
   backend.mockReset().mockReturnValue({ backend: 'cli', engine: { id: 'fixture' } });
 });
+
+it.each(['2', '3'])('rejects acting-Cesar approval %s after cleanup failure', async choice => {
+  backend.mockReturnValue({ backend: 'api', engine: { id: 'fixture' } });
+  const session = { close: vi.fn() } as any;
+  const adapter = { dispatch: vi.fn().mockResolvedValue({ stdout: 'alternate answer' }) };
+  const dispatch = vi.fn();
+  const ctx = { config: { cesarEngine: 'fixture', cesarActingFallback: 'ask' }, cesarSession: session,
+    adapter, registry: { get: () => ({ id: 'alternate' }) }, activeEngines: () => ['alternate'],
+    chatSession: startChatSession() } as any;
+  const pending = runCesarBrainFallback('prompt', { ctx, dispatch } as any, null, true);
+  const question = dispatch.mock.calls.map(([event]) => event).find(event => event.type === 'question');
+  expect(question).toBeDefined();
+  ctx.cesarSession = null;
+  markSessionCleanupFailed(session);
+  question.resolve(choice);
+  await pending;
+  expect(writeConfig).not.toHaveBeenCalled();
+  expect(adapter.dispatch).not.toHaveBeenCalled();
+  expect(ctx.chatSession.messages).toEqual([]);
+  expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'warning',
+    message: expect.stringContaining('Session cleanup previously failed') }));
+});
+
+it.each(['before dispatch', 'response', 'empty', 'rejection', 'healthy'])(
+  'guards acting-Cesar asynchronous boundary: %s', async outcome => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    backend.mockReturnValue({ backend: 'api', engine: { id: 'fixture' } });
+    const session = { close: vi.fn() } as any;
+    let finish!: (value: unknown) => void;
+    let reject!: (error: Error) => void;
+    const adapter = { dispatch: vi.fn(() => new Promise((resolve, fail) => { finish = resolve; reject = fail; })) };
+    const dispatch = vi.fn();
+    const ctx = { config: { cesarEngine: 'fixture', cesarActingFallback: 'ask' }, cesarSession: session,
+      adapter, registry: { get: () => ({ id: 'alternate' }) }, activeEngines: () => ['alternate'],
+      chatSession: startChatSession() } as any;
+    const pending = runCesarBrainFallback('prompt', { ctx, dispatch } as any, null, true);
+    const question = dispatch.mock.calls.map(([event]) => event).find(event => event.type === 'question');
+    expect(question).toBeDefined();
+    question.resolve('2');
+    if (outcome === 'before dispatch') {
+      queueMicrotask(() => markSessionCleanupFailed(session));
+      // Resolve an unexpected dispatch as well, so a regression cannot hang the test.
+      adapter.dispatch.mockResolvedValue({ stdout: 'unexpected answer' });
+    } else {
+      await vi.waitFor(() => expect(adapter.dispatch).toHaveBeenCalledOnce());
+      if (outcome !== 'healthy') markSessionCleanupFailed(session);
+      if (outcome === 'rejection') reject(new Error('fixture adapter failure'));
+      else finish({ stdout: outcome === 'empty' ? '' : 'alternate answer' });
+    }
+    await pending;
+    if (outcome === 'healthy') {
+      expect(ctx.chatSession.messages).toEqual(expect.arrayContaining([
+        expect.objectContaining({ role: 'engine', content: '[acting-cesar] alternate answer' }),
+      ]));
+      expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
+    } else {
+      if (outcome === 'before dispatch') expect(adapter.dispatch).not.toHaveBeenCalled();
+      expect(ctx.chatSession.messages).toEqual([]);
+      expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'engine-block' }));
+      expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
+      expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'warning',
+        message: expect.stringContaining('Session cleanup previously failed') }));
+    }
+  });
 
 it.each(['close', 'detach', 'previous failure'])('recovery refuses replacement work after %s', async phase => {
   const session = { close: vi.fn() } as any;

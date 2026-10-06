@@ -24,6 +24,40 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Acting-Cesar asynchronous cleanup guards (2026-10-06)
+
+Six failing regression cases reproduced unsafe alternate-engine recovery after
+cleanup failure: approval of a one-time switch, approval of persistent automatic
+fallback, failure during asynchronous imports, and a pending adapter returning
+text, empty output, or rejection. A healthy alternate answer passed before the fix.
+
+The router now rechecks its captured/current session guard after approval, before
+dispatch following imports, after adapter completion, and after the error catch.
+It does not save automatic fallback configuration or start a new adapter after
+failed cleanup. It does not persist/render late results or misreport cleanup
+failure as all engines being unavailable. The existing restart warning remains.
+
+Tests run the real recovery ladder, question callback and isolated chat store.
+The configuration writer and providers are fixtures. A microtask places cleanup
+failure after approval but before asynchronous imports complete; deferred adapter
+promises cover completion/error boundaries without live engines. These checks
+cannot cancel or undo effects already performed by an in-flight provider.
+
+The brain-internal fallback, team-forge preparation await, actual provider
+termination, durable config/session recovery and whole-product extraction remain
+open. Claude's separate brain task is unchanged.
+
+Development gates passed: build, typecheck, lint, re-export guard, 6,302 tests
+(five existing skips across 541 files), release-set packs, supply-chain self-test
+and 72 offline isolated installed-product checks. Full-suite log SHA-256:
+`ae21890baa3c7b02a7bcb741b45bbde1c0d220aa1b03d55713a7b3dd8ef8aa29`.
+The pre-fix focused run had six expected assertion failures and 36 passes;
+its log SHA-256 was
+`f36e5b1384e73738734b93bddb90542953cf26b1f9dcc69ba509e6fb2eb79efc`.
+Temporary development logs are not immutable clean-commit release receipts.
+Release-set and SBOM hashes were refreshed. The active installation was not
+updated, and no provider or browser was needed.
+
 ### One-shot suggestion approval cleanup guard (2026-10-06)
 
 A deferred approval regression reproduced a campfire job being scheduled after

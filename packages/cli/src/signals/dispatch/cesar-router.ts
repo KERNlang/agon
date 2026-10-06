@@ -1008,6 +1008,7 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
       { key: '2', label: `Yes - use ${actingCesar} once` },
       { key: '3', label: 'Always auto fallback' },
     ], '1');
+    if (cleanupFailed()) return false;
     const trimmedChoice = choice.trim().toLowerCase();
     if (trimmedChoice === '3') {
       configSet('cesarActingFallback' as any, 'auto' as any);
@@ -1033,6 +1034,7 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
     const { resolveWorkingDir, RUNS_DIR, appendMessage } = await import('@kernlang/agon-core');
     const { join } = await import('node:path');
     const { mkdirSync } = await import('node:fs');
+    if (cleanupFailed()) return false;
     const actingEngine = cb.ctx.registry.get(actingCesar);
     const outDir = join(RUNS_DIR, `acting-cesar-${Date.now()}`);
     mkdirSync(outDir, { recursive: true });
@@ -1052,6 +1054,7 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
       outputDir: outDir,
       systemPrompt: buildCesarSystemPrompt(cb.ctx),
     });
+    if (cleanupFailed()) return false;
     if (actingResult.stdout.trim()) {
       const actingText = actingResult.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
       // In silent/auto mode the user perceives a single Cesar persona, so
@@ -1076,6 +1079,7 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
     }
   } catch (e) { console.warn(`[agon] dispatch: acting Cesar failed: ${e instanceof Error ? e.message : String(e)}`); }
   
+  if (cleanupFailed()) return false;
   cb.dispatch({ type: 'error', message: formatCesarRecoveryStatus('failed', 'all engines unavailable', 'run agon doctor engines') });
   return false;
 }

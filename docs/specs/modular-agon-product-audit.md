@@ -24,6 +24,35 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### One-shot suggestion approval cleanup guard (2026-10-06)
+
+A deferred approval regression reproduced a campfire job being scheduled after
+the captured session was marked cleanup-failed while the prompt was open. The
+failure assertion returned `true` instead of the required `false`; the healthy
+control passed before the fix. The router now rechecks the existing captured/current
+cleanup guard immediately after approval and before interpreting the answer.
+
+Both cases pass after the fix. Tests use real recovery routing and isolated chat
+persistence, a fixture brain/adapter, and a non-executing job callback. They prove
+refusal to schedule new work, not cancellation of prior provider effects. Messages
+persisted before the approval remain valid history; this is not transcript rollback.
+
+Acting-Cesar approval/dispatch, team-forge's preparation await, the brain's internal
+fallback, provider termination and durable recovery remain separate work. The
+[Claude handover](modular-agon-claude-handover.md) records the architecture, safety
+constraints, evidence limits, remaining work and a non-overlapping brain task.
+
+Development gates passed: build, typecheck, lint, re-export guard, 6,295 tests
+(five existing skips across 541 files), release-set packs, supply-chain self-test
+and 72 isolated installed-product checks. The installed check passed offline
+using the existing temporary dependency cache. Full-suite log SHA-256:
+`300fd2541b1ceda07ac1fc509a17537643aa64170bf4e5db5bf56c40c7c3832d`.
+Installed-check log SHA-256:
+`2114e82e9f54af521abe145d88146966910f788cf1a8e9099c82d3d465fa96d0`.
+Release-set and SBOM hashes were refreshed. These are development checks, not
+independent clean-commit release qualification. The active installation was not
+updated; no provider or browser was needed for this fix.
+
 ### One-shot result and escalation cleanup guards (2026-10-05)
 
 Deferred adapter tests reproduced recovery reaching alternate-engine selection

@@ -877,6 +877,7 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
         if (fallbackSuggestion.rest) cb.dispatch({ type: 'engine-block', engineId: cesarId, color: 81, content: fallbackSuggestion.rest });
         const confirmLabel = fallbackSuggestion.hardened ? `${fallbackSuggestion.action} (hardened)` : fallbackSuggestion.action;
         const answer = await cb.askQuestion(`Cesar suggests: ${confirmLabel}${fallbackSuggestion.tribunalMode ? ` [${fallbackSuggestion.tribunalMode}]` : ''}`);
+        if (cleanupFailed()) return false;
         // askQuestion returns the answer as a string; check for 'y' or the key value
         if (answer === 'y' || answer === '1') {
           const label = input.slice(0, 40);

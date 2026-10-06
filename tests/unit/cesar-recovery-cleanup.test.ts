@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { startChatSession } from '@kernlang/agon-core';
 import { handleRecoveredDelegation, routeWithCesar, runCesarBrainFallback } from '../../packages/cli/src/signals/dispatch/cesar-router.js';
 import { markSessionCleanupFailed, sessionCleanupFailed } from '../../packages/cli/src/cesar/session-health.js';
 
@@ -121,6 +122,31 @@ it('still launches an approved recovered delegation for a healthy session', asyn
     ctx: { config: {}, cesarSession: { close: vi.fn() }, chatSession: { messages: [] } } } as any;
   await expect(handleRecoveredDelegation({ action: 'campfire', createdAt: Date.now() }, 'prompt', cb)).resolves.toBe(true);
   expect(runAsJob).toHaveBeenCalledExactlyOnceWith('campfire', 'prompt', expect.any(Function));
+});
+
+it.each(['failed', 'healthy'])('checks cleanup after one-shot delegation approval: %s', async state => {
+  brain.mockResolvedValue({ responded: false, delegated: false });
+  const session = { close: vi.fn() } as any;
+  let approve!: (value: string) => void;
+  const askQuestion = vi.fn(() => new Promise<string>(resolve => { approve = resolve; }));
+  const adapter = { dispatch: vi.fn().mockResolvedValue({ stdout: '[SUGGEST:campfire] Discuss this.' }) };
+  const dispatch = vi.fn();
+  const runAsJob = vi.fn();
+  const ctx = { config: {}, cesarSession: session, setCesarSession: vi.fn(), adapter,
+    activeEngines: () => [], chatSession: startChatSession() } as any;
+  ctx.setCesarSession.mockImplementation((value: unknown) => { ctx.cesarSession = value; });
+  const pending = runCesarBrainFallback('prompt', { ctx, dispatch, askQuestion, runAsJob } as any, null, false);
+  await vi.waitFor(() => expect(askQuestion).toHaveBeenCalledOnce());
+  if (state === 'failed') markSessionCleanupFailed(session);
+  approve('y');
+  await expect(pending).resolves.toBe(state === 'healthy');
+  if (state === 'healthy') {
+    expect(runAsJob).toHaveBeenCalledExactlyOnceWith('campfire', 'prompt', expect.any(Function));
+  } else {
+    expect(runAsJob).not.toHaveBeenCalled();
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'warning',
+      message: expect.stringContaining('Session cleanup previously failed') }));
+  }
 });
 
 it.each(['empty', 'response', 'rejection', 'healthy empty'])('checks cleanup state after one-shot %s', async outcome => {

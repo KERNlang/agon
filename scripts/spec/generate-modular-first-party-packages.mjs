@@ -133,6 +133,9 @@ function expectedFiles(packageRecord) {
   // Composite workflows invoke child mods with the caller's service boundary,
   // so their transitive effects must remain visible in the parent manifest.
   if (['conquer', 'goal', 'pipeline-delivery', 'pipeline-orchestration'].includes(short)) inferredPermissions.add('engine.dispatch');
+  // Brainstorm seats dispatch through host-supplied services, so the source
+  // pattern above cannot see an effect the mod still performs.
+  if (short === 'brainstorm') inferredPermissions.add('engine.dispatch');
   const physicalPackFiles = isPhysical ? ['dist/implementation.d.ts', ...(short === 'rag' ? ['dist/store.d.ts', 'dist/types.d.ts', 'dist/grounding.d.ts']
     : short === 'think' ? ['dist/thinking.d.ts']
     : short === 'routing-docs' ? ['dist/guide-content.d.ts']
@@ -224,10 +227,28 @@ export { runRag, buildRagIndex, queryRag, collectCorpusFiles, chunkMarkdown } fr
 ` : short === 'sanitize' ? `export { runSanitize, scanText, cleanText } from './implementation.js';
 ` : short === 'goal' ? `export { runGoal } from './implementation.js';
 ` : short === 'plan' ? `export { createPersistenceEnvelope, unwrapPersistenceEnvelope } from './implementation.js';
+export { createPlanExecutor, getReadySteps } from './executor.js';
+export type { PlanExecutionServices, PlanExecutorCallbacks, StepExecutor } from './executor.js';
+export type { CesarPlan, CesarPlanStep, CesarPlanState, CesarStepState, CesarStepType, CesarStepResult } from './execution-model.js';
+export { CESAR_STEP_TYPES, CESAR_STEP_TYPE_TABLE } from './execution-model.js';
+export { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan, exitCesarPlan } from './execution-state.js';
+export { getCesarPlansDir, cesarPlanJsonPath, cesarPlanMarkdownPath, saveCesarPlan, loadCesarPlan, listCesarPlans } from './execution-store.js';
 ` : short === 'jobs' ? `export { ModularJobService } from './implementation.js';
 ` : short === 'git-actions' ? `export { runGitAction } from './implementation.js';
 ` : short === 'forge' ? `export { runForgeCompetition } from './implementation.js';
 ` : short === 'brainstorm' ? `export { runBrainstorm } from './implementation.js';
+export { createBrainstormWorkflow } from './workflow.js';
+export { createBrainstormRuntime } from './runtime.js';
+export type { BrainstormRuntimeServices } from './runtime.js';
+export type { BrainstormHostServices, BrainstormModServices } from './host.js';
+export type { BrainstormInvocationContext, BrainstormWorkflowEvent } from './host.js';
+export { createBrainstormCollector } from './collector.js';
+export type { BrainstormCollection, RankedBrainstormDraft, BrainstormCollectorServices } from './collector.js';
+export { createBrainstormScout } from './scout.js';
+export type { BrainstormScoutOptions, BrainstormScoutBid, BrainstormScoutServices } from './scout.js';
+export { createBrainstormScoring, structuralScore, scoutScore, assignStances, fallbackParse } from './policy.js';
+export type { BrainstormRatingHistory, ScoutScoreInput } from './policy.js';
+export type { BrainstormWorkflowOptions, BrainstormWorkflowServices, BrainstormDraft, BrainstormBid } from './workflow.js';
 ` : short === 'tribunal' ? `export { runTribunal } from './implementation.js';
 ` : short === 'review' ? `export { runReview } from './implementation.js';
 ` : short === 'agent' ? `export { runAgentTask } from './implementation.js';

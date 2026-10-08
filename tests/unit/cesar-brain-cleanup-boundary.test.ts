@@ -289,6 +289,54 @@ describe('initial persistent stream cleanup boundary', () => {
   });
 });
 
+describe('interactive continuation cleanup boundary', () => {
+  const questions = {
+    ask: 'Pick a review scope. [ASK]{"question":"Which scope?","options":[{"label":"Local"},{"label":"Full"}]}[/ASK]',
+    fork: 'A) Local review\nB) Full review\nWhich scope?',
+    confirm: 'The review scope is ready. Shall I proceed?',
+  };
+  it.each((['ask', 'fork', 'confirm'] as const).flatMap(kind =>
+    ['original', 'current', 'acquired', 'healthy'].map(target => [kind, target] as const),
+  ))('checks cleanup after %s approval (%s)', async (kind, target) => {
+    const original = createFixtureSession();
+    const acquired = createFixtureSession();
+    const replacement = createFixtureSession();
+    const ctx = createFixtureContext(original);
+    acquired.send.mockImplementationOnce(async function* () {
+      yield { type: 'text', content: questions[kind] };
+      yield { type: 'done', content: 'end_turn' };
+    }).mockImplementation(async function* () {
+      yield { type: 'text', content: 'Fixture follow-up completed.' };
+      yield { type: 'done', content: 'end_turn' };
+    });
+    ensure.mockResolvedValue(acquired);
+    const dispatch = vi.fn();
+    const pending = handleCesarBrain('review this implementation', dispatch, ctx);
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'question' })));
+    const question = dispatch.mock.calls.find(([event]) => event.type === 'question')![0];
+    const savedMessages = [...ctx.chatSession.messages];
+    ctx.cesarSession = replacement;
+    if (target !== 'healthy') {
+      markSessionCleanupFailed(target === 'original' ? original : target === 'current' ? replacement : acquired);
+    }
+    question.resolve(kind === 'ask' ? '1' : kind === 'fork' ? 'a' : 'y');
+    const outcome = await pending;
+    if (target === 'healthy') {
+      expect(acquired.send).toHaveBeenCalledTimes(2);
+      expect(outcome.responded).toBe(true);
+      expect(dispatch).not.toHaveBeenCalledWith(CLEANUP_WARNING);
+    } else {
+      expect(acquired.send).toHaveBeenCalledOnce();
+      expect(outcome).toMatchObject({ terminalState: 'failed', decisionReason: 'session-cleanup-failed', delegated: false });
+      expect(dispatch).toHaveBeenCalledWith(CLEANUP_WARNING);
+      expect(ctx.chatSession.messages).toEqual(savedMessages);
+    }
+    expect(ctx.adapter.dispatch).not.toHaveBeenCalled();
+    expect(ctx.cesar.busy).toBe(false);
+    expect(ctx.setActiveAbort).toHaveBeenLastCalledWith(null);
+  });
+});
+
 describe('auto-compaction close', () => {
   const realBudget = async () => (await vi.importActual<typeof import('../../packages/cli/src/cesar/context-budget.js')>('../../packages/cli/src/cesar/context-budget.js')).enforceContextBudget;
   const tinyBudgetEngine = { id: 'fixture', sessionBudget: { contextWindow: 64 } };

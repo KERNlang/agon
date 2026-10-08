@@ -3774,6 +3774,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             const picked = String(await hostWaitForInteractiveChoice(abort.signal, (resolve) => {
               dispatch({ type: 'question', prompt: `${cesarEngineId} asks: ${_ask.question}`, choices: _askChoices, resolve } as any);
             })).toLowerCase();
+            const refusedChoice = refuseAfterCleanupFailure(session);
+            if (refusedChoice) return refusedChoice;
             // '__other:<text>' routes the typed answer as a fresh user turn via
             // handleSubmit (app.kern); Esc resolves 'n'/'' — both leave chosen null.
             const _chosenIdx = _askChoices.findIndex((c) => c.key === picked);
@@ -3815,6 +3817,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             const picked = String(await hostWaitForInteractiveChoice(abort.signal, (resolve) => {
               dispatch({ type: 'question', prompt: `${cesarEngineId} — pick one (Esc to decide later):`, choices: _choices, resolve } as any);
             })).toLowerCase();
+            const refusedChoice = refuseAfterCleanupFailure(session);
+            if (refusedChoice) return refusedChoice;
             const chosen = _forkOptions.find((o) => o.key === picked);
             if (!chosen && !picked.startsWith('__other:') && !abort.signal.aborted) {
               // Esc / decide-later: same never-lose fallback the [ASK] branch has —
@@ -3852,6 +3856,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               ], resolve } as any);
             });
             const _confirmAnswer = String(answer ?? '');
+            const refusedChoice = refuseAfterCleanupFailure(session);
+            if (refusedChoice) return refusedChoice;
             if (_confirmAnswer !== 'y' && !_confirmAnswer.startsWith('__other:') && !abort.signal.aborted) {
               // No / Esc: keep the question findable instead of dropping it — the
               // same never-lose fallback the [ASK] branch has.

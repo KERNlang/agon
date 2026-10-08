@@ -20,6 +20,10 @@ broken behavior. Verify findings against source and give a minimal reproduction.
 Separate initial-stream findings from remaining continuation, tool-loop and MCP
 side-channel gaps. Do not launch live providers or modify personal state.
 
+The subsequent interactive-choice fix adds guards after all three choice waits
+(`[ASK]`, fork, yes/no). Include those launch boundaries in review. Distinguish
+them from cleanup failure during an already-running follow-up; that remains open.
+
 ## Start here
 
 Help finish Modular Agon without replacing the operator's working installation.
@@ -190,7 +194,7 @@ controls in the audit. These repairs do not close all Brainstorm extraction work
 
 | Area | What still needs evidence or implementation |
 | --- | --- |
-| Brain internal recovery | Budget/acquisition, fallback results and initial persistent-stream consumption guarded; tool loops, MCP side-channel authorization and continuation sends remain open |
+| Brain internal recovery | Budget/acquisition, fallback results, initial stream and post-choice continuation launch guarded; in-flight follow-ups, other continuations, tool loops and MCP authorization remain open |
 | Router alternate recovery | Acting-Cesar guards added 2026-10-06; recovered/one-shot team-forge preparation guards added 2026-10-08. Later in-turn continuation boundaries remain separate work |
 | Provider/session lifecycle | Actual termination, manual cleanup failures, durable config/session recovery, parallel plan recovery |
 | A05/A11 plan | Explicit plan session/execution boundary and removal evidence; preserve task/resume/approval semantics |

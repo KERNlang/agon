@@ -24,6 +24,39 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Interactive-choice continuation launch refusal (2026-10-08)
+
+Real-brain tests reproduced a second provider send after cleanup failed while
+the user-choice overlay was pending. Nine failing cases crossed the structured
+`[ASK]`, inferred option fork and yes/no confirmation with failure of the entry,
+current replacement or acquired session. Three healthy controls still sent the
+selected follow-up. The tests resolve the actual dispatched question callback;
+they do not stub the choice-wait helper or the confirmation follow-up workflow.
+Pre-fix focused log SHA-256:
+`280eed81a5b62b4024c6d32ee4d48495ff0e5837c775936816df65cc7d0f1209`.
+
+Each choice boundary now reuses the existing captured/current/acquired cleanup
+guard before selecting or sending the follow-up. Refusal returns the specific
+`session-cleanup-failed` outcome and restart warning, launches no second send or
+adapter fallback, and leaves the messages saved before the question unchanged.
+The outer turn cleanup still releases busy and abort handles. All 110 focused
+tests pass, including the three healthy follow-up controls.
+
+This qualifies follow-up launch after user approval, not the lifetime of that
+follow-up. Cleanup failure during the follow-up stream, its tool execution,
+other continuation paths, MCP side-channel authorization, provider termination
+and durable recovery remain separate work. The original question may already
+be visible and persisted before the failure; this guard does not retract it.
+
+Development gates passed: build, typecheck, lint, re-export guard, first-party
+generation check, release-set packs, supply-chain self-test, 6,370 tests (six
+skips across 543 files), and 72 offline isolated installed-product checks.
+Full-suite log SHA-256:
+`3aa493feaa50eb50e51a8c0ebcc31ecbb50b6315e8743682675482d7437861ee`.
+Release-set and SBOM hashes were regenerated. These are development checks,
+not independent clean-commit release qualification. No active installation was
+updated, and no live provider was needed.
+
 ### Initial persistent stream cleanup refusal (2026-10-08)
 
 Deferred-stream tests reproduced late text acceptance and ordinary empty/error

@@ -3,7 +3,12 @@ import { startChatSession } from '@kernlang/agon-core';
 import { handleRecoveredDelegation, routeWithCesar, runCesarBrainFallback } from '../../packages/cli/src/signals/dispatch/cesar-router.js';
 import { markSessionCleanupFailed, sessionCleanupFailed } from '../../packages/cli/src/cesar/session-health.js';
 
-const { brain, backend, writeConfig } = vi.hoisted(() => ({ brain: vi.fn(), backend: vi.fn(), writeConfig: vi.fn() }));
+const { brain, backend, writeConfig, prepareFitness } = vi.hoisted(() => ({
+  brain: vi.fn(), backend: vi.fn(), writeConfig: vi.fn(), prepareFitness: vi.fn(),
+}));
+vi.mock('../../packages/cli/src/handlers/forge.js', async original => ({
+  ...await original<object>(), prepareForgeFitnessCommand: prepareFitness,
+}));
 vi.mock('@kernlang/agon-core', async original => ({
   ...await original<object>(), configSet: writeConfig,
 }));
@@ -19,8 +24,43 @@ vi.mock('../../packages/cli/src/cesar/routing.js', async original => ({
 afterEach(() => vi.restoreAllMocks());
 beforeEach(() => {
   writeConfig.mockReset();
+  prepareFitness.mockReset();
   brain.mockReset().mockResolvedValue({ responded: true, delegated: false });
   backend.mockReset().mockReturnValue({ backend: 'cli', engine: { id: 'fixture' } });
+});
+
+it.each([
+  ['recovered', 'original'], ['recovered', 'current'], ['recovered', 'healthy'],
+  ['one-shot', 'original'], ['one-shot', 'current'], ['one-shot', 'healthy'],
+])('guards %s team-forge preparation with %s session state', async (route, state) => {
+  brain.mockResolvedValue({ responded: false, delegated: false });
+  const original = { close: vi.fn() } as any;
+  const replacement = { close: vi.fn() } as any;
+  let finish!: (value: string) => void;
+  prepareFitness.mockReturnValue(new Promise<string>(resolve => { finish = resolve; }));
+  const adapter = { dispatch: vi.fn().mockResolvedValue({ stdout: '[SUGGEST:team-forge] Compare implementations.' }) };
+  const runAsJob = vi.fn();
+  const dispatch = vi.fn();
+  const ctx = { config: {}, cesarSession: original, adapter, chatSession: startChatSession(),
+    activeEngines: vi.fn(() => []), setCesarSession: vi.fn() } as any;
+  ctx.setCesarSession.mockImplementation((value: unknown) => { ctx.cesarSession = value; });
+  const cb = { ctx, dispatch, runAsJob, askQuestion: vi.fn().mockResolvedValue('y') } as any;
+  const pending = route === 'recovered'
+    ? handleRecoveredDelegation({ action: 'team-forge', createdAt: Date.now() }, 'prompt', cb)
+    : runCesarBrainFallback('prompt', cb, null, false);
+  await vi.waitFor(() => expect(prepareFitness).toHaveBeenCalledOnce());
+  ctx.cesarSession = replacement;
+  if (state !== 'healthy') markSessionCleanupFailed(state === 'original' ? original : replacement);
+  finish('npm test');
+  await expect(pending).resolves.toBe(state === 'healthy');
+  if (state === 'healthy') {
+    expect(runAsJob).toHaveBeenCalledExactlyOnceWith('team-forge', 'prompt', expect.any(Function));
+  } else {
+    expect(runAsJob).not.toHaveBeenCalled();
+    expect(ctx.activeEngines).not.toHaveBeenCalled();
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'warning',
+      message: expect.stringContaining('Session cleanup previously failed') }));
+  }
 });
 
 it.each(['2', '3'])('rejects acting-Cesar approval %s after cleanup failure', async choice => {

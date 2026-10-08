@@ -181,7 +181,7 @@ controls in the audit. These repairs do not close all Brainstorm extraction work
 | Area | What still needs evidence or implementation |
 | --- | --- |
 | Brain internal recovery | First Claude task above; cross-await cleanup refusal |
-| Router alternate recovery | Acting-Cesar approval/config-write, import and result guards added in the subsequent 2026-10-06 batch; team-forge preparation await remains open |
+| Router alternate recovery | Acting-Cesar guards added 2026-10-06; recovered/one-shot team-forge preparation guards added 2026-10-08. Later in-turn continuation boundaries remain separate work |
 | Provider/session lifecycle | Actual termination, manual cleanup failures, durable config/session recovery, parallel plan recovery |
 | A05/A11 plan | Explicit plan session/execution boundary and removal evidence; preserve task/resume/approval semantics |
 | A06/A11 Brainstorm | Audit remaining host/session adapter, raw behavior parity, checkpoint/session consistency, UI recovery and extraction |

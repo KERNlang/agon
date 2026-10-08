@@ -729,7 +729,17 @@ export async function handleRecoveredDelegation(crashDel: any, input: string, cb
           }, cb.ctx));
           return true;
         }
-        case 'team-forge': { const preparedTf = recoveredFitness ?? await prepareForgeFitnessCommand(recoveredTask, cb.dispatch, cb.ctx); const tf = (preparedTf ?? inferProjectFitnessCommand(resolveWorkingDir())).trim(); cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'team-forge', 'recovered delegation') }); if (!preparedTf) cb.dispatch({ type: 'warning', message: `Cesar did not provide a fitness check; falling back to: ${tf}` }); cb.runAsJob('team-forge', label, async (signal) => { await runPhysicalCesarWorkflow('team-forge', { task: recoveredTask, test: tf }, cb, signal); }); return true; }
+        case 'team-forge': {
+          const preparedFitness = recoveredFitness ?? await prepareForgeFitnessCommand(recoveredTask, cb.dispatch, cb.ctx);
+          if (cleanupFailed()) return false;
+          const fitness = (preparedFitness ?? inferProjectFitnessCommand(resolveWorkingDir())).trim();
+          cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'team-forge', 'recovered delegation') });
+          if (!preparedFitness) cb.dispatch({ type: 'warning', message: `Cesar did not provide a fitness check; falling back to: ${fitness}` });
+          cb.runAsJob('team-forge', label, async (signal) => {
+            await runPhysicalCesarWorkflow('team-forge', { task: recoveredTask, test: fitness }, cb, signal);
+          });
+          return true;
+        }
         case 'team-brainstorm': {
           cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'team-brainstorm', 'recovered delegation') });
           const _cwdRecoverTBs = resolveWorkingDir();
@@ -941,7 +951,17 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
               }, cb.ctx));
               return true;
             }
-            case 'team-forge': { const preparedTf = fallbackFitness ?? await prepareForgeFitnessCommand(fallbackTask, cb.dispatch, cb.ctx); const tf = (preparedTf ?? inferProjectFitnessCommand(resolveWorkingDir())).trim(); cb.dispatch({ type: 'info', message: 'Cesar → team-forge' }); if (!preparedTf) cb.dispatch({ type: 'warning', message: `Cesar did not provide a fitness check; falling back to: ${tf}` }); cb.runAsJob('team-forge', label, async (signal) => { await runPhysicalCesarWorkflow('team-forge', { task: fallbackTask, test: tf }, cb, signal); }); return true; }
+            case 'team-forge': {
+              const preparedFitness = fallbackFitness ?? await prepareForgeFitnessCommand(fallbackTask, cb.dispatch, cb.ctx);
+              if (cleanupFailed()) return false;
+              const fitness = (preparedFitness ?? inferProjectFitnessCommand(resolveWorkingDir())).trim();
+              cb.dispatch({ type: 'info', message: 'Cesar → team-forge' });
+              if (!preparedFitness) cb.dispatch({ type: 'warning', message: `Cesar did not provide a fitness check; falling back to: ${fitness}` });
+              cb.runAsJob('team-forge', label, async (signal) => {
+                await runPhysicalCesarWorkflow('team-forge', { task: fallbackTask, test: fitness }, cb, signal);
+              });
+              return true;
+            }
             case 'team-brainstorm': {
               cb.dispatch({ type: 'info', message: 'Cesar → team-brainstorm' });
               const _cwdFallbackTBs = resolveWorkingDir();

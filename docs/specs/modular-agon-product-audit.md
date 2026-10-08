@@ -24,6 +24,37 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Team-forge recovery preparation guards (2026-10-08)
+
+Deferred fitness-preparation tests reproduced job scheduling after cleanup failed
+in both recovered-delegation and one-shot suggestion paths. Four red cases covered
+failure of the captured original session or the replacement current session in
+each path. Two healthy controls still scheduled the approved team-forge job.
+
+Both paths now recheck the existing captured/current cleanup guard after fitness
+preparation and before choosing a fallback command or scheduling work. The dense
+one-line branches were expanded for readability without changing command selection,
+approval, task arguments, or healthy dispatch behavior. A failed cleanup emits
+the restart warning and does not schedule a job or inspect alternate engines.
+
+The tests exercise the real router with deferred preparation, fixture providers,
+and a non-executing job dispatcher. They verify scheduling decisions, not a live
+team-forge run or cancellation of effects already performed by preparation.
+Pre-fix focused run: four failures, 67 passes; SHA-256:
+`78c666de312b9c43a8351fce64d392e3d6622ee4d3c84ed2a5ac9f58a02b4521`.
+
+Later in-turn awaits, concurrent acquisition ownership, provider termination,
+durable recovery and the broader extraction/release findings remain open.
+
+Development gates passed: build, typecheck, lint, re-export guard, first-party
+generation check, release-set packs, supply-chain self-test, 6,331 tests (six
+skips across 543 files), and 72 offline isolated installed-product checks.
+Full-suite log SHA-256:
+`115f404fdbb837a30d54c53d727d95713a051c5fd3f513f2c900c409bd395cd8`.
+Release-set and SBOM hashes were regenerated. These are development checks,
+not independent clean-commit release qualification. No active installation was
+updated, and no live provider was needed.
+
 ### Claude integration and acquisition cleanup gaps (2026-10-08)
 
 Integrated Claude's branch through `31a23825` into the existing router repair

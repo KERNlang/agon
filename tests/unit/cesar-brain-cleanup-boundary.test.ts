@@ -178,6 +178,45 @@ describe('healthy fallback controls', () => {
   });
 });
 
+describe('in-flight adapter fallback', () => {
+  it.each([
+    ['original', 'response'], ['original', 'empty'], ['original', 'rejection'],
+    ['current', 'response'], ['current', 'empty'], ['current', 'rejection'],
+    ['healthy', 'response'], ['healthy', 'empty'], ['healthy', 'rejection'],
+  ])('checks %s cleanup state after %s', async (target, result) => {
+    const original = createFixtureSession();
+    const replacement = createFixtureSession();
+    const ctx = createFixtureContext(original);
+    const fallback = createDeferred<{ stdout: string; stderr: string }>();
+    ctx.adapter.dispatch.mockReturnValue(fallback.promise);
+    const dispatch = vi.fn();
+    const pending = handleCesarBrain('prompt', dispatch, ctx);
+    await vi.waitFor(() => expect(ctx.adapter.dispatch).toHaveBeenCalledOnce());
+    ctx.cesarSession = replacement;
+    if (target !== 'healthy') markSessionCleanupFailed(target === 'original' ? original : replacement);
+    if (result === 'rejection') fallback.reject(new Error('fixture fallback rejected'));
+    else fallback.resolve({ stdout: result === 'response' ? 'late fixture answer' : '', stderr: '' });
+    const outcome = await pending;
+    if (target === 'healthy') {
+      expect(outcome.responded).toBe(result === 'response');
+      expect(dispatch).not.toHaveBeenCalledWith(CLEANUP_WARNING);
+      expect(ctx.chatSession.messages.map((message: any) => message.role))
+        .toEqual(result === 'response' ? ['user', 'engine'] : ['user']);
+    } else {
+      expect(outcome).toMatchObject({ terminalState: 'failed', decisionReason: 'session-cleanup-failed', responded: false, delegated: false });
+      expect(ctx.chatSession.messages.map((message: any) => message.role)).toEqual(['user']);
+      expect(dispatch).toHaveBeenCalledWith(CLEANUP_WARNING);
+      expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'engine-block' }));
+      expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
+    }
+    expect(ctx.adapter.dispatch).toHaveBeenCalledOnce();
+    expect(dispatch).toHaveBeenLastCalledWith({ type: 'spinner-stop' });
+    expect(ctx.cesar.busy).toBe(false);
+    expect(ctx.cesar.abortSignal).toBeNull();
+    expect(ctx.setActiveAbort).toHaveBeenLastCalledWith(null);
+  });
+});
+
 describe('auto-compaction close', () => {
   const realBudget = async () => (await vi.importActual<typeof import('../../packages/cli/src/cesar/context-budget.js')>('../../packages/cli/src/cesar/context-budget.js')).enforceContextBudget;
   const tinyBudgetEngine = { id: 'fixture', sessionBudget: { contextWindow: 64 } };

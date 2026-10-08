@@ -24,6 +24,38 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Brain in-flight fallback result refusal (2026-10-08)
+
+Deferred adapter tests reproduced the brain accepting a fallback answer after
+cleanup failed during dispatch. Empty and rejected dispatches also lost the
+specific cleanup-failure outcome. The brain now reuses its captured/current
+health guard after adapter completion and after the fallback catch, before
+rendering/persisting a reply or returning an ordinary fallback failure.
+
+Nine cases cover original/current cleanup failure crossed with response, empty
+output and rejection, plus three healthy controls. Six failed before the fix;
+the healthy controls passed. Failed cleanup retains the already-persisted user
+turn without adding an engine answer, returns `session-cleanup-failed`, stops
+the spinner, and clears busy/abort handles. Only one adapter dispatch occurs.
+The pre-fix log SHA-256 was
+`d4c5aec2bd6a4a725420410acc5a566c8693021547c1bcdbb9ba61da94b1b0af`.
+
+This checks the real brain with a deferred fixture adapter. It cannot retract
+provider effects already performed. Persistent-session streaming, tool loops,
+continuation sends, concurrent acquisition ownership, provider termination and
+durable recovery remain separate work; this is not whole-turn safety qualification.
+
+Development gates passed: build, typecheck, lint, re-export guard, first-party
+generation check, release-set packs, supply-chain self-test, 6,340 tests (six
+skips across 543 files), and 72 offline isolated installed-product checks.
+Full-suite log SHA-256:
+`5f64aa6378a3d281cbec92f77a28534851aede04a26fe4017ccae476c536a214`.
+Installed-product log SHA-256:
+`2114e82e9f54af521abe145d88146966910f788cf1a8e9099c82d3d465fa96d0`.
+Release-set and SBOM hashes were regenerated. These are development checks,
+not independent clean-commit release qualification. No active installation was
+updated, and no live provider was needed.
+
 ### Team-forge recovery preparation guards (2026-10-08)
 
 Deferred fitness-preparation tests reproduced job scheduling after cleanup failed

@@ -804,6 +804,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               engine, prompt: primedPrompt, cwd: resolveWorkingDir(), mode: fallbackMode,
               timeout: config.timeout ?? 120, outputDir, signal: abort.signal, systemPrompt: buildCesarSystemPrompt(ctx),
             });
+            const refusedResult = refuseAfterCleanupFailure();
+            if (refusedResult) return refusedResult;
             dispatch({ type: 'spinner-stop' });
             if (freshResult.stdout.trim()) {
               dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: freshResult.stdout.trim() });
@@ -843,6 +845,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             _turnTerminalState = 'failed';
             return { turnId: _turnId, terminalState: 'failed', delegated: false, responded: false };
           } catch { /* truly failed */ }
+          const refusedFallback = refuseAfterCleanupFailure();
+          if (refusedFallback) return refusedFallback;
           dispatch({ type: 'spinner-stop' });
           _turnTerminalState = 'failed';
           return { turnId: _turnId, terminalState: 'failed', delegated: false, responded: false };

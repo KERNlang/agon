@@ -1,6 +1,10 @@
 # Modular Agon: Claude collaboration handover
 
 Status date: 2026-10-06. Repository: `KERNlang/agon`.
+Integration update: 2026-10-08. Claude's work through `31a23825` is integrated
+with the router fixes. See the dated product-audit entry for verification. The
+original brain task below is historical, not a request to implement it again.
+Codex also repaired acquisition's internal await and detachment gaps found in review.
 Integration worktree: `/Users/ra/dev/agon-modular-implementation`.
 Integration branch: `feat/modular-agon-full`.
 Review PR: <https://github.com/KERNlang/agon/pull/311>.

@@ -1,5 +1,6 @@
-import { describe, it, expect, afterEach } from 'vitest';
-import { chmodSync, existsSync, mkdirSync, writeFileSync, utimesSync, readFileSync } from 'node:fs';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, utimesSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { setupTestAgonHome, cleanupTestAgonHome } from '../helpers/agon-home.js';
@@ -11,6 +12,7 @@ import {
   refreshProbedCliModels,
   findBinary,
   getBinaryVersion,
+  ENGINE_PROVIDER_MAP,
 } from '../../packages/core/src/cli-models-registry.js';
 import { resolveAgonModelProbeWrapper } from '../../packages/core/src/signals/cli-models-registry.js';
 
@@ -28,11 +30,41 @@ const AGY_PROBE = [
   { id: 'gpt-oss-120b-medium', name: 'GPT-OSS 120B (Medium)', current: false },
 ];
 
+// buildCliModelGroups runs `<engine> --version` through PATH. Resolve every
+// provider binary to a recording stub so a test run never launches a real
+// provider CLI (login prompts, browser tabs, auto-updates).
+let stubDir = '';
+let originalPath: string | undefined;
+beforeEach(() => {
+  stubDir = mkdtempSync(join(tmpdir(), 'agon-provider-stubs-'));
+  for (const { engineBinary } of Object.values(ENGINE_PROVIDER_MAP)) {
+    const stub = join(stubDir, engineBinary);
+    writeFileSync(stub, `#!/bin/sh\necho "${engineBinary} $*" >> "${join(stubDir, 'calls.log')}"\nexit 97\n`);
+    chmodSync(stub, 0o755);
+  }
+  originalPath = process.env.PATH;
+  process.env.PATH = `${stubDir}:${originalPath ?? ''}`;
+});
+afterEach(() => {
+  process.env.PATH = originalPath;
+  rmSync(stubDir, { recursive: true, force: true });
+});
+
 describe('CLI live-model probe cache', () => {
   let home: string | undefined;
   afterEach(() => {
     cleanupTestAgonHome(home);
     home = undefined;
+  });
+
+  it('probes provider versions only through PATH stubs, never a real provider binary', () => {
+    home = setupTestAgonHome('probe-stubbed-providers');
+    buildCliModelGroups();
+    const calls = readFileSync(join(stubDir, 'calls.log'), 'utf8').trim().split('\n');
+    const expected = Object.values(ENGINE_PROVIDER_MAP)
+      .filter(({ versionCmd }) => versionCmd.length > 0)
+      .map(({ engineBinary, versionCmd }) => `${engineBinary} ${versionCmd.join(' ')}`);
+    expect(calls).toEqual(expected);
   });
 
   it('readProbedCliModels returns the fresh cached probe with the current flag', () => {

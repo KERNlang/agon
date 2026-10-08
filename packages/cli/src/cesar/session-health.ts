@@ -14,3 +14,15 @@ export function markSessionCleanupFailed(session: PersistentSession): void {
 export function sessionCleanupFailed(session: PersistentSession | null | undefined): boolean {
   return !!session && failedCleanupSessions.has(session);
 }
+
+// Closing and clearing the host reference form one cleanup boundary. Either
+// failure marks the captured session; detachment may already have changed state.
+export function closeAndDetachSession(session: PersistentSession, detach: () => void): void {
+  try {
+    session.close();
+    detach();
+  } catch {
+    markSessionCleanupFailed(session);
+    throw new Error(SESSION_CLEANUP_FAILURE_MESSAGE);
+  }
+}

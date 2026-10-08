@@ -25,7 +25,7 @@ import type { GuardMode } from '@kernlang/agon-core';
 import type { HandlerContext } from '../handlers/types.js';
 
 import { createCesarToolRegistry } from './tools.js';
-import { sessionCleanupFailed, SESSION_CLEANUP_FAILURE_MESSAGE } from './session-health.js';
+import { closeAndDetachSession, sessionCleanupFailed, SESSION_CLEANUP_FAILURE_MESSAGE } from './session-health.js';
 
 import { getSessionAllowList } from '../signals/output.js';
 
@@ -1490,9 +1490,13 @@ export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { b
 }
 
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
-  if (sessionCleanupFailed(ctx.cesarSession)) {
-    throw new Error(SESSION_CLEANUP_FAILURE_MESSAGE);
-  }
+  const entrySession = ctx.cesarSession;
+  const assertCleanupHealthy = (): void => {
+    if (sessionCleanupFailed(entrySession) || sessionCleanupFailed(ctx.cesarSession)) {
+      throw new Error(SESSION_CLEANUP_FAILURE_MESSAGE);
+    }
+  };
+  assertCleanupHealthy();
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
   const cwd = resolveWorkingDir();
@@ -1522,24 +1526,24 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
       return ctx.cesarSession;
     }
     // MCP config or harness profile changed — close and recreate.
-    ctx.cesarSession.close();
-    ctx.setCesarSession(null);
+    closeAndDetachSession(ctx.cesarSession, () => ctx.setCesarSession(null));
   }
 
   // Wrong engine or dead session — close old one
   if (ctx.cesarSession && ctx.cesarSession.engineId !== cesarEngineId) {
-    ctx.cesarSession.close();
-    ctx.setCesarSession(null);
+    closeAndDetachSession(ctx.cesarSession, () => ctx.setCesarSession(null));
   }
 
   // Session exists but died — try restarting it before creating a new one
   if (ctx.cesarSession && !ctx.cesarSession.alive) {
+    const restartingSession = ctx.cesarSession;
     try {
-      await ctx.cesarSession.start();
-      if (ctx.cesarSession.alive) return ctx.cesarSession;
+      await restartingSession.start();
     } catch {
       // Restart failed — fall through to create fresh session
     }
+    assertCleanupHealthy();
+    if (restartingSession.alive && ctx.cesarSession === restartingSession) return restartingSession;
   }
 
   const resolved = resolveCesarBackend(ctx, cesarEngineId);
@@ -1620,6 +1624,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
 
   // Build system prompt and tool registry
   const systemPrompt = await prepareCesarSystemPrompt(ctx, cwd);
+  assertCleanupHealthy();
   const toolRegistry = createCesarToolRegistry(cesarEngineId);
 
   // Store registry on context for tool execution during responses

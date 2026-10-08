@@ -24,6 +24,52 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Claude integration and acquisition cleanup gaps (2026-10-08)
+
+Integrated Claude's branch through `31a23825` into the existing router repair
+branch based on `68453724`. Claude contributed brain budget/acquisition checks,
+close-failure marking, a first-party generator drift repair, and explicit opt-in
+for live-provider probes. His historical evidence note remains preserved; its
+33-step committed receipt covers `ab98be8f`, not this combined implementation.
+
+Independent fixture review reproduced two incomplete boundaries in that work:
+`ensureCesarSession` could start a new provider after cleanup failed while prompt
+preparation awaited, and detachment exceptions did not mark the old session.
+The combined implementation now retains the entry session inside acquisition,
+checks entry/current health after dead-session restart and prompt preparation,
+and treats close plus detachment as one guarded operation. This also covers
+compaction and fingerprint-change cleanup. A partial detachment does not erase
+the captured failure or imply a rollback.
+
+Nine acquisition regressions cover original/current failure during prompt
+preparation, resolved/rejected restart, engine/fingerprint/compaction detachment
+failure, and two healthy replacement controls. Before the fix, seven failed and
+the healthy controls passed; afterward all 65 focused recovery tests passed.
+Providers and context-spine construction are fixtures; acquisition, compaction,
+and cleanup health are real. The test-first red-run SHA-256 was
+`8976177eefa7eab0febe05052fe0f35f638800bfac351762d6b3218c17ed37bf`.
+
+Remaining scope includes cleanup failure during a replacement's own in-flight
+start, concurrent healthy acquisition ownership, later brain/tool-loop awaits,
+team-forge preparation, actual provider termination, durable recovery, and the
+broader ownership/extraction and release findings. These checks do not make a
+WeakSet durable, prove process death, or qualify the full release.
+
+Combined development gates passed: build, typecheck, lint, re-export guard,
+first-party generation check (36 packages/290 files), release-set packs,
+supply-chain self-test, 6,325 tests (six skips across 543 files), and 72 offline
+isolated installed-product checks. The increased skip count reflects explicit
+live-provider opt-in, not removed coverage claimed as passing. Full-suite log
+SHA-256: `0dac593cf41888fd7eb8f4386c4efcb5fdd9f438535db71809b4271e4ecee45a`.
+
+The first full run failed the new provider-stub assertion because the temporary
+diagnostic preload rejected bare fixture executable names. The preload now allows
+only exact script contents resolved inside the owned fixture directory; four
+non-fixture refusal controls passed. No test oracle was changed. Both generated
+metadata merge conflicts were resolved by regeneration, not by selecting stale
+hashes. These are working-tree development checks, not a clean committed-source
+release receipt. No active/global Agon installation or personal state was updated.
+
 ### Acting-Cesar asynchronous cleanup guards (2026-10-06)
 
 Six failing regression cases reproduced unsafe alternate-engine recovery after

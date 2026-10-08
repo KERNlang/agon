@@ -129,3 +129,59 @@ This commit merges independently of Codex's router batch. The only shared surfac
   credentials, rooms, goals, or caches touched. No provider CLI, login, or browser launched.
 - Dependencies were installed only in this worktree, with scripts disabled and empty npm configs.
 - No push, no merge, no co-author trailer.
+
+## Addendum (2026-10-08): follow-up commits and committed-source receipt
+
+### `ab98be8f`: first-party generator drift (verified, pre-existing)
+
+`spec:modular-first-party:check` failed identically on base `ddaf5577`
+(`mod-plan/src/index.ts`, `mod-brainstorm/agon.mod.json`, `mod-brainstorm/src/index.ts`).
+The checked-in packages had gained extracted workflow exports and kept
+`engine.dispatch`. The generator still emitted the pre-extraction shape, so
+regenerating would have deleted real exports. The generator now emits the
+current exports. It also declares `engine.dispatch` for Brainstorm, whose seats
+dispatch through host-supplied services that its source regex cannot see. The
+historical Slice 5 receipt is left unchanged.
+
+### `74026d2a`: tests launched real provider CLIs (verified)
+
+A PATH shim recorded 21 real provider launches during the full suite:
+
+- `tests/unit/cli-model-probe.test.ts`: `buildCliModelGroups()` ran
+  `claude|codex|agy|opencode --version` through PATH 5 times
+  (`packages/support-engine-catalog/src/cli-models-registry.ts` `getBinaryVersion`).
+- `tests/integration/agy-probe-e2e.test.ts`: the codex live `/model` probe started
+  the real codex TUI (`model_probe.py` `execvp`). Its guard checked the absolute
+  `/opt/homebrew/bin/codex`. With a real HOME, the agy, claude and opencode probes can run too.
+
+Fix: the unit test resolves every `ENGINE_PROVIDER_MAP` binary to a recording stub.
+A new test asserts that only the stubs ran, and removing the PATH stub makes it fail.
+Live probes now require `AGON_LIVE_PROVIDER_PROBES=1`. Suite behind blocking shims: 541 files passed, 1 skipped;
+6,309 tests passed, 6 skipped; **0 provider launches**. Log
+`sha256:d8421a8c9700a1e17369a51a84ca9ffcfac3918444300bd3baa5fff81ab186b6` (session scratchpad; not preserved).
+
+Recommendation (product choice for Codex): `isolated_environment` inherits PATH.
+Prepending a blocking provider-shim directory there would let every receipt prove
+that no provider ran.
+
+### Disclosure: provider launches by this session (verified)
+
+Before the shims existed, this session ran three full suites (`HOME` isolated,
+`PATH` inherited) and one mutant (real `HOME` and `PATH`). Each launched the real
+provider `--version` probes. The three suites also each started the codex live probe once.
+The codex install was unchanged afterwards (files dated 2026-09-13). The
+Homebrew installs seen on 2026-10-06 were traced to two other Claude sessions
+(`git-crypt`; `clamav`/`sevenzip`/`unar`/`xdelta`), not to this work.
+
+### Committed-source pressure receipt (verified)
+
+`python3 scripts/spec/pressure_modular.py --profile full --repeat 3` on
+`ab98be8f` (tree `050bee6f`), run with blocking provider shims first in PATH:
+**33/33 steps passed**. Receipt `/tmp/agon-pressure-qp7q6lgm/receipt.json`
+(SHA-256 `a61f8199076934c8345c53f09a013029353a6bee9e159bbda396410fdd3f290b`). Archive
+`sha256:559899048c1ba1a83be014ae93e0644c82e9f5528ddfaf490f44b5e39bb6d0d3`, runner
+`sha256:0e1b1ca186b37a1b7281272c58237bbf4de6de49ca6755688b771122bbd41a28`, macOS 26.1
+arm64. That run predates `74026d2a`, and its shim log recorded the 21 launches above,
+all blocked. `74026d2a` changes tests only. A fresh receipt on the final commit is
+still needed. Global-install snapshots (agon link, linked `dist`, `~/.agon`)
+were identical before and after every run.

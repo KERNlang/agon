@@ -98,12 +98,12 @@ describe('A3 — the follow-up streams, and renders exactly once', () => {
     const send = CODE.slice(CODE.indexOf('send: async (nextMessage: string) => {'));
     expect(send).toMatch(/if \(chunk\.type === 'text'\) \{\s*text \+= chunk\.content;\s*_fuEmit\(chunk\.content\);/);
     // …and closes the stream (flush held tail + streaming-end) when it ends.
-    expect(send).toMatch(/\}\s*_fuEndStream\(\);\s*_fuStreamedText = text;/);
+    expect(send).toMatch(/\}\s*assertFollowUpHealthy\(\);\s*_fuEndStream\(\);\s*_fuStreamedText = text;/);
   });
 
   it('dispatches streaming-chunk / streaming-end, not a single end-of-turn block', () => {
     expect(CODE).toMatch(/_fuStreaming = true;\s*dispatch\(\{ type: 'streaming-chunk', engineId: cesarEngineId, chunk: visible \}\);/);
-    expect(CODE).toMatch(/const _fuEndStream = \(\) => \{\s*_fuEmit\('', true\);\s*if \(_fuStreaming\) \{\s*dispatch\(\{ type: 'streaming-end', engineId: cesarEngineId \}\);/);
+    expect(CODE).toMatch(/const _fuEndStream = \(\) => \{\s*if \(!hasCleanupFailure\(session\)\) _fuEmit\('', true\);\s*if \(_fuStreaming\) \{\s*dispatch\(\{ type: 'streaming-end', engineId: cesarEngineId \}\);/);
   });
 
   it('keeps the marker pipeline on the streamed sink (capture + strip)', () => {

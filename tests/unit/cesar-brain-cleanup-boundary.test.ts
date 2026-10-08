@@ -296,6 +296,61 @@ describe('interactive continuation cleanup boundary', () => {
     confirm: 'The review scope is ready. Shall I proceed?',
   };
   it.each((['ask', 'fork', 'confirm'] as const).flatMap(kind =>
+    ['original', 'current', 'acquired', 'healthy'].flatMap(target =>
+      ['text', 'empty', 'rejection'].map(result => [kind, target, result] as const),
+    ),
+  ))('checks %s running follow-up for %s cleanup (%s)', async (kind, target, result) => {
+    const original = createFixtureSession();
+    const acquired = createFixtureSession();
+    const replacement = createFixtureSession();
+    const ctx = createFixtureContext(original);
+    const ready = createDeferred<void>();
+    const closed = vi.fn();
+    acquired.send.mockImplementationOnce(async function* () {
+      yield { type: 'text', content: questions[kind] };
+    }).mockImplementation(async function* () {
+      try {
+        await ready.promise;
+        if (result === 'text') yield { type: 'text', content: 'Late follow-up answer.' };
+      } finally { closed(); }
+    });
+    ensure.mockResolvedValue(acquired);
+    const dispatch = vi.fn();
+    const pending = handleCesarBrain('review this implementation', dispatch, ctx);
+    // Observe errors immediately; a rejected provider must not create an
+    // unhandled-rejection race while the fixture waits for its send boundary.
+    const settled = pending.then(value => ({ value }), error => ({ error }));
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'question' })));
+    dispatch.mock.calls.find(([event]) => event.type === 'question')![0].resolve(kind === 'ask' ? '1' : kind === 'fork' ? 'a' : 'y');
+    await vi.waitFor(() => expect(acquired.send).toHaveBeenCalledTimes(2));
+    const savedMessages = [...ctx.chatSession.messages];
+    const eventCount = dispatch.mock.calls.length;
+    ctx.cesarSession = replacement;
+    if (target !== 'healthy') markSessionCleanupFailed(target === 'original' ? original : target === 'current' ? replacement : acquired);
+    if (result === 'rejection') ready.reject(new Error('fixture follow-up rejected'));
+    else ready.resolve();
+    const outcome = await settled;
+    if (target === 'healthy') {
+      expect(dispatch).not.toHaveBeenCalledWith(CLEANUP_WARNING);
+      if (result === 'rejection') expect(outcome).toMatchObject({ error: expect.objectContaining({ message: 'fixture follow-up rejected' }) });
+      else if (result === 'text') {
+        expect(outcome).toMatchObject({ value: { responded: true } });
+        expect(ctx.chatSession.messages.at(-1)).toMatchObject({ role: 'engine', content: 'Late follow-up answer.' });
+      } else expect(outcome).toMatchObject({ value: { decisionReason: 'interactive-follow-up-incomplete' } });
+    } else {
+      expect(outcome).toMatchObject({ value: { terminalState: 'failed', decisionReason: 'session-cleanup-failed', delegated: false } });
+      expect(dispatch).toHaveBeenCalledWith(CLEANUP_WARNING);
+      expect(ctx.chatSession.messages).toEqual(savedMessages);
+      expect(dispatch.mock.calls.slice(eventCount).map(([event]) => event.type)).not.toContain('streaming-chunk');
+    }
+    expect(closed).toHaveBeenCalledOnce();
+    expect(acquired.send).toHaveBeenCalledTimes(2);
+    expect(ctx.adapter.dispatch).not.toHaveBeenCalled();
+    expect(ctx.cesar.busy).toBe(false);
+    expect(ctx.cesar.abortSignal).toBeNull();
+    expect(ctx.setActiveAbort).toHaveBeenLastCalledWith(null);
+  });
+  it.each((['ask', 'fork', 'confirm'] as const).flatMap(kind =>
     ['original', 'current', 'acquired', 'healthy'].map(target => [kind, target] as const),
   ))('checks cleanup after %s approval (%s)', async (kind, target) => {
     const original = createFixtureSession();

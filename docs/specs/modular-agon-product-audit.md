@@ -24,6 +24,46 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Running interactive follow-up result refusal (2026-10-08)
+
+Deferred follow-up tests reproduced late answer persistence and ordinary
+empty/error outcomes after cleanup failed during the second send. Nine red
+cases covered entry/current/acquired session failure crossed with text,
+completion without text and rejected iteration. Three healthy controls passed.
+Pre-fix focused log SHA-256:
+`c63af59aa360b3ed2ee0e633977604772a5214dd43c95d3c3db56dd4fbc6c0df`.
+
+The shared interactive follow-up now checks cleanup health before consuming each
+chunk and before completing its send callback. Its catch translates known cleanup
+failure into the existing typed refusal; unrelated exceptions still propagate.
+All three choice callers propagate that refusal instead of treating it as a
+completed follow-up. Final display cleanup does not flush buffered text after
+cleanup failure, but still closes a live pane containing already-visible text.
+
+The expanded 36-case matrix covers `[ASK]`, option forks and yes/no, each crossed
+with entry/current/acquired failure or healthy control and text/empty/rejection.
+It exercises real question callbacks, the brain and confirmation workflow using
+deferred fixture streams. Failure preserves pre-follow-up messages, closes the
+iterator, emits the cleanup warning and releases turn handles without another
+provider send. The source-wiring checks now require the health check before
+stream completion and condition buffer flushing on healthy state; they retain
+their stream-end assertions.
+
+This covers the direct interactive follow-up stream, not all continuations or
+tool execution. A provider may already have performed effects before yielding.
+Tool-loop callbacks, asynchronous tool completion, MCP authorization, provider
+termination and durable recovery remain separately open. Already-visible text
+is not retracted, and original pre-choice messages remain persisted.
+
+Development gates passed: build, typecheck, lint, re-export guard, first-party
+generation check, release-set packs, supply-chain self-test, 6,406 tests (six
+skips across 543 files), and 72 offline isolated installed-product checks.
+Full-suite log SHA-256:
+`4b38539c04c3e669e089834be84fa59675a41e77cb78ac2dd8b9735b22cf59e2`.
+Release-set and SBOM hashes were regenerated. These are development checks,
+not independent clean-commit release qualification. No active installation was
+updated, and no live provider was needed.
+
 ### Interactive-choice continuation launch refusal (2026-10-08)
 
 Real-brain tests reproduced a second provider send after cleanup failed while

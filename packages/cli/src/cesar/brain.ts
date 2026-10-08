@@ -755,8 +755,10 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         // Cleanup can fail while the gate or acquisition awaits (telemetry
         // handoff, compaction). Refuse before any replacement session send or
         // adapter fallback; the router's outer guard cannot retract a launch.
+        const hasCleanupFailure = (candidate?: PersistentSession): boolean =>
+          [_entrySession, ctx.cesarSession, candidate].some(sessionCleanupFailed);
         const refuseAfterCleanupFailure = (candidate?: PersistentSession): CesarTurnOutcome | null => {
-          if (![_entrySession, ctx.cesarSession, candidate].some(sessionCleanupFailed)) return null;
+          if (!hasCleanupFailure(candidate)) return null;
           dispatch({ type: 'warning', message: SESSION_CLEANUP_FAILURE_MESSAGE });
           _turnTerminalState = 'failed';
           return { turnId: _turnId, terminalState: 'failed', decisionReason: 'session-cleanup-failed', delegated: false, responded: false };
@@ -3604,11 +3606,14 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: visible });
             };
             const _fuEndStream = () => {
-              _fuEmit('', true);
+              if (!hasCleanupFailure(session)) _fuEmit('', true);
               if (_fuStreaming) {
                 dispatch({ type: 'streaming-end', engineId: cesarEngineId });
                 _fuStreaming = false;
               }
+            };
+            const assertFollowUpHealthy = () => {
+              if (hasCleanupFailure(session)) throw new Error(SESSION_CLEANUP_FAILURE_MESSAGE);
             };
             try {
               const followUp = await runCesarConfirmationFollowUp({
@@ -3619,6 +3624,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   let streamError = '';
                   const gen = _cesarSend({ message: nextMessage, signal: abort.signal });
                   for await (const chunk of gen) {
+                    assertFollowUpHealthy();
                     if (abort.signal.aborted) break;
                     if (forwardContinuationStatus(chunk, dispatch)) continue;
                     if (_forwardContinuationToolCall(chunk)) continue;
@@ -3630,6 +3636,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                     if (chunk.type === 'error') streamError = String(chunk.content ?? 'Cesar follow-up stream failed.');
                     if (chunk.type === 'done' || chunk.type === 'error') break;
                   }
+                  assertFollowUpHealthy();
                   _fuEndStream();
                   _fuStreamedText = text;
                   return streamError ? { text, error: streamError } : text;
@@ -3709,7 +3716,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                     ? 'Cesar executed the follow-up tools but produced no final result; the turn is incomplete.'
                     : 'Cesar accepted the choice but produced no follow-up result; the turn is incomplete.' });
               }
-              return followUp;
+              return null;
+            } catch (err) {
+              const refused = refuseAfterCleanupFailure(session);
+              if (refused) return refused;
+              throw err;
             } finally {
               // End-of-stream is guaranteed on EVERY exit, not just the happy path:
               // when _cesarSend rejects mid-iteration (adapter error, an AbortError
@@ -3793,7 +3804,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               _noteChoiceNotContinued(chosen.label);
             }
             if (chosen && session.alive && !abort.signal.aborted) {
-              await _runInteractiveChoice(picked, `Answer to your question "${_ask.question}": ${chosen.label}${chosen.description ? ` (${chosen.description})` : ''}. Continue with this choice.`, chosen.label);
+              const refusedFollowUp = await _runInteractiveChoice(picked, `Answer to your question "${_ask.question}": ${chosen.label}${chosen.description ? ` (${chosen.description})` : ''}. Continue with this choice.`, chosen.label);
+              if (refusedFollowUp) return refusedFollowUp;
               if (interactivePlanControl?.error) console.warn(`[agon] Interactive plan control failed: ${interactivePlanControl.error}`);
               if (interactivePlanControl?.planProposed) {
                 return { mode: 'self', delegated: false, responded: true, decisionReason: 'plan-proposed', ...buildToolTelemetry() };
@@ -3830,7 +3842,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               _noteChoiceNotContinued(`${chosen.key.toUpperCase()}) ${chosen.label}`);
             }
             if (chosen && session.alive && !abort.signal.aborted) {
-              await _runInteractiveChoice(picked, `Go with option ${chosen.key.toUpperCase()}: ${chosen.full}. Proceed and finish it.`, `${chosen.key.toUpperCase()}) ${chosen.label}`);
+              const refusedFollowUp = await _runInteractiveChoice(picked, `Go with option ${chosen.key.toUpperCase()}: ${chosen.full}. Proceed and finish it.`, `${chosen.key.toUpperCase()}) ${chosen.label}`);
+              if (refusedFollowUp) return refusedFollowUp;
               if (interactivePlanControl?.error) console.warn(`[agon] Interactive plan control failed: ${interactivePlanControl.error}`);
               if (interactivePlanControl?.planProposed) {
                 return { mode: 'self', delegated: false, responded: true, decisionReason: 'plan-proposed', ...buildToolTelemetry() };
@@ -3867,7 +3880,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               _noteChoiceNotContinued('Yes');
             }
             if (answer === 'y' && session.alive && !abort.signal.aborted) {
-              await _runInteractiveChoice(answer, undefined, 'Yes');
+              const refusedFollowUp = await _runInteractiveChoice(answer, undefined, 'Yes');
+              if (refusedFollowUp) return refusedFollowUp;
               if (interactivePlanControl?.error) console.warn(`[agon] Interactive plan control failed: ${interactivePlanControl.error}`);
               if (interactivePlanControl?.planProposed) {
                 return { mode: 'self', delegated: false, responded: true, decisionReason: 'plan-proposed', ...buildToolTelemetry() };

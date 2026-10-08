@@ -18,7 +18,8 @@ The main implementation and Claude worktrees are not changed by this integration
 - [x] Run full build, tests, types, lint and re-export checks on the combined subject.
 - [x] Regenerate and check the combined release set and SBOM.
 - [x] Commit only the reviewed candidate changes after gates pass (`72fe2411`).
-- [ ] Independently qualify the resulting committed subject.
+- [x] Reproduce fixture qualification from a clean archive of `9fc8e2af`.
+- [ ] Obtain independent model review of the combined changes.
 
 The cherry-pick sequence was ended without a commit. The original commits remain
 unchanged on Claude's branch. New test assertions and production guards were kept,
@@ -91,3 +92,46 @@ needed to prove this routing defect.
 | Updated release-set check and negative controls | `93cabdff194f85fdc4675c6fbb34de05b2b739a6c3f95ba3f81baf27b8d5bdc5` |
 
 This closes the demonstrated alias bypass, not all A05/A11 ownership work.
+
+## Clean committed-subject qualification
+
+The full pressure harness passed **29/29 gates** on
+`9fc8e2af00d34dd3adb79fc1c7cd10bcb2c6d7c8`, tree
+`3bc13fe581716a9fecde42f9a9510fe94cd7d703`.
+The source was clean at capture (`workingChangesExcluded: false`).
+The harness archived committed Git objects, installed from an offline cache,
+and rebuilt in `/tmp/agon-pressure-je51o2ph/checkout` with isolated state.
+
+Retained receipt:
+[`evidence/modular-agon-combined-pressure-9fc8e2af.json`](./evidence/modular-agon-combined-pressure-9fc8e2af.json).
+SHA-256: `beaf0bed71617f2b0f951d1c8794bc9795a77c26746d6c978c35bdf7be0ad361`.
+The later documentation-only commit retaining this receipt is not the tested
+subject; the receipt identifies the tested code commit explicitly.
+
+Verified in that checkout:
+
+- Full suite: 6,456 passing tests; six existing skips.
+- Shuffled modular suite: 632 passing tests across 124 files.
+- Fresh historical workflow test files: all 160 tests passed.
+- Real process-death recovery, generated-surface checks, disable matrix and
+  foundation mutation checks passed.
+- Types, lint, re-export guard, release-set and supply-chain checks passed.
+- Third-party fixture E2E, isolated npx installation, persisted-state migration
+  and physical-cutover checks passed.
+- All eight existing slice performance-budget gates passed.
+- Provider shim launches: zero.
+- Platform: native macOS arm64, as recorded in the receipt.
+
+This is a separate clean-checkout reproduction by the same agent, not an
+independent model review. Live-provider authentication/model behavior, other
+native platform/Node combinations, and signing/publication are not qualified.
+A15 did not recur here; a passing run does not resolve its unknown cause.
+
+### Focus for Claude's independent review
+
+Review `406921fd..9fc8e2af`, especially the test-merge resolution and the Plan
+alias check. Confirm disabled and stale generations fail before execution,
+historical status stays readable, and public Plan resume exports have one owner.
+Do not reapply the old tool-loop snapshot or diagnostic daemon commit. The
+provider and mid-turn guards are already included. Remaining physical Plan,
+Brainstorm and Apply ownership work is still tracked separately.

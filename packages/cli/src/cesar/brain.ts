@@ -3645,6 +3645,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   const _followUpOpts = _buildContToolLoopOpts();
                   const toolResult = await runToolLoop(
                     async (nextMessage: string) => {
+                      assertFollowUpHealthy();
                       if (ctx.cesar!.pendingDelegation || !session.alive || abort.signal.aborted) return '';
                       let next = '';
                       const gen = _cesarSend({
@@ -3686,6 +3687,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   if (visible) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: visible });
                 },
                 onExchange: (nextMessage: string, exchange: any) => {
+                  assertFollowUpHealthy();
                   appendMessage(ctx.chatSession, { role: 'user', content: nextMessage, timestamp: hostNowIso() });
                   if (exchange.content) {
                     appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: exchange.content, timestamp: hostNowIso() });

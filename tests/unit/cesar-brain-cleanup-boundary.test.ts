@@ -4,7 +4,7 @@
 // so the brain itself must re-check the entry and current sessions at each of
 // those boundaries and refuse replacement work.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { startChatSession } from '@kernlang/agon-core';
+import { startChatSession, ToolRegistry } from '@kernlang/agon-core';
 import { handleCesarBrain } from '../../packages/cli/src/cesar/brain.js';
 import { markSessionCleanupFailed, sessionCleanupFailed } from '../../packages/cli/src/cesar/session-health.js';
 
@@ -290,6 +290,57 @@ describe('initial persistent stream cleanup boundary', () => {
 });
 
 describe('interactive continuation cleanup boundary', () => {
+  it.each(['original', 'current', 'acquired', 'healthy'].flatMap(target =>
+    ['resolved', 'rejected'].map(result => [target, result]),
+  ))('checks %s cleanup after a pending follow-up tool (%s)', async (target, result) => {
+    const original = createFixtureSession();
+    const acquired = createFixtureSession();
+    const replacement = createFixtureSession();
+    const ctx = createFixtureContext(original);
+    const ready = createDeferred<{ ok: boolean; content: string }>();
+    const execute = vi.fn(() => ready.promise);
+    const registry = new ToolRegistry();
+    registry.register({
+      definition: { name: 'FixtureProbe', description: 'In-memory fixture only', inputSchema: {}, maxResultSizeChars: 1000, isReadOnly: true, isConcurrencySafe: false },
+      validate: () => null,
+      checkPermission: () => ({ behavior: 'allow' }),
+      execute,
+    });
+    acquired.send.mockImplementationOnce(async function* () {
+      yield { type: 'text', content: 'Review scope ready. Shall I proceed?' };
+    }).mockImplementationOnce(async function* () {
+      yield { type: 'text', content: '<tool name="FixtureProbe">{}</tool>' };
+    }).mockImplementation(async function* () {
+      yield { type: 'text', content: 'Fixture tool result received.' };
+    });
+    ensure.mockImplementation(async () => { ctx.cesar.toolRegistry = registry; return acquired; });
+    const dispatch = vi.fn();
+    const pending = handleCesarBrain('review this implementation', dispatch, ctx);
+    const settled = pending.then(value => ({ value }), error => ({ error }));
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'question' })));
+    dispatch.mock.calls.find(([event]) => event.type === 'question')![0].resolve('y');
+    await vi.waitFor(() => expect(execute).toHaveBeenCalledOnce());
+    const savedMessages = [...ctx.chatSession.messages];
+    ctx.cesarSession = replacement;
+    if (target !== 'healthy') markSessionCleanupFailed(target === 'original' ? original : target === 'current' ? replacement : acquired);
+    if (result === 'rejected') ready.reject(new Error('fixture tool rejected'));
+    else ready.resolve({ ok: true, content: 'fixture result' });
+    const outcome = await settled;
+    if (target === 'healthy') {
+      expect(acquired.send).toHaveBeenCalledTimes(3);
+      expect(outcome).toMatchObject({ value: { responded: true } });
+      expect(dispatch).not.toHaveBeenCalledWith(CLEANUP_WARNING);
+    } else {
+      expect(acquired.send).toHaveBeenCalledTimes(2);
+      expect(outcome).toMatchObject({ value: { terminalState: 'failed', decisionReason: 'session-cleanup-failed' } });
+      expect(dispatch).toHaveBeenCalledWith(CLEANUP_WARNING);
+      expect(ctx.chatSession.messages).toEqual(savedMessages);
+    }
+    expect(execute).toHaveBeenCalledOnce();
+    expect(ctx.cesar.busy).toBe(false);
+    expect(ctx.setActiveAbort).toHaveBeenLastCalledWith(null);
+  });
+
   const questions = {
     ask: 'Pick a review scope. [ASK]{"question":"Which scope?","options":[{"label":"Local"},{"label":"Full"}]}[/ASK]',
     fork: 'A) Local review\nB) Full review\nWhich scope?',

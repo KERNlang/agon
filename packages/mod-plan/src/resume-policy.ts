@@ -1,0 +1,50 @@
+import type { CesarPlan, CesarPlanStep } from './execution-model.js';
+
+export interface ResumePromptContext {
+  doneCount: number;
+  failedCount: number;
+  remainingCount: number;
+  failedStep: CesarPlanStep | null;
+  remainingCostUsd: number;
+  remainingTokens: number;
+}
+
+/** Summarize the existing plan without selecting, loading or changing it. */
+export function buildResumePromptContext(plan: CesarPlan): ResumePromptContext {
+  const steps = plan.steps ?? [];
+  const doneCount = steps.filter(s => s.state === 'done').length;
+  const failedSteps = steps.filter(s => s.state === 'failed');
+  const remainingSteps = steps.filter(s => s.state !== 'done' && s.state !== 'skipped');
+  return {
+    doneCount,
+    failedCount: failedSteps.length,
+    remainingCount: remainingSteps.length,
+    failedStep: failedSteps[0] ?? null,
+    remainingCostUsd: remainingSteps.reduce((sum, s) => sum + (s.estimatedCostUsd ?? 0), 0),
+    remainingTokens: remainingSteps.reduce((sum, s) => sum + (s.estimatedTokens ?? 0), 0),
+  };
+}
+
+/** Preserve completed work, dependency blocks and exhausted review failures. */
+export function skipCompletedSteps(plan: CesarPlan): CesarPlan {
+  const cyclesUsedAtResume = plan.reviewCyclesUsed ?? 0;
+  const steps = plan.steps.map((step): CesarPlanStep => {
+    if (step.state === 'done' || step.state === 'skipped') return { ...step, state: 'skipped' };
+    if (step.state === 'failed' && step.type === 'review' && cyclesUsedAtResume >= 2) return step;
+    if (step.state === 'failed') return { ...step, state: 'pending', result: undefined };
+    if (step.state === 'blocked') return step;
+    return { ...step, state: 'pending' };
+  });
+  return { ...plan, steps };
+}
+
+/** Prepare an already-approved choice. The host still owns approval and effects. */
+export function prepareCesarPlanResume(plan: CesarPlan, mode: 'resume' | 'restart'): CesarPlan {
+  if (mode === 'resume') return { ...skipCompletedSteps(plan), state: 'running' };
+  const steps = plan.steps.map((step): CesarPlanStep => ({
+    ...step,
+    state: step.dependsOn && step.dependsOn.length > 0 ? 'blocked' : 'pending',
+    result: undefined,
+  }));
+  return { ...plan, steps, state: 'running', totalActualTokens: 0, totalActualCostUsd: 0 };
+}

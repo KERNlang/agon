@@ -52,6 +52,11 @@ The supplied npm cache's content-addressed data is **copied**, never used in
 place. Cache logs and npm configuration are not copied. Allow disk space for
 the cache, clean dependencies, generated packs and retained test fixtures.
 
+`PATH` starts with a provider guard. `agon`, provider CLIs and macOS `open`
+resolve to blockers that exit 97 and record each launch. The receipt lists
+them as `providerLaunches`, and any launch fails the run. A binary called by
+absolute path bypasses the guard, so the guard is evidence, not a sandbox.
+
 This is configuration isolation, **not an OS sandbox**. Trusted repository
 tests can still execute code and access host resources; do not run an untrusted
 branch with this tool. It does not prove live authentication, model quality or

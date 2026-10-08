@@ -887,7 +887,22 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         // a consumer that `break`s still closes the inner generator via the normal
         // for-await return path. A source-level test asserts session.send is called
         // in exactly one place so a new raw send site cannot bypass this.
+        // Every provider send funnels through here, so this is the one mid-turn
+        // cleanup boundary: a judge or handoff can fail a session while the turn
+        // streams. Abort first so each send site unwinds as a cancellation.
+        let _cleanupRefusalWarned = false;
+        const _refuseSendAfterCleanupFailure = (): void => {
+          if (![_entrySession, ctx.cesarSession, session].some(sessionCleanupFailed)) return;
+          if (!_cleanupRefusalWarned) {
+            _cleanupRefusalWarned = true;
+            dispatch({ type: 'warning', message: SESSION_CLEANUP_FAILURE_MESSAGE });
+          }
+          _turnTerminalState = 'failed';
+          abort.abort();
+          throw new Error(SESSION_CLEANUP_FAILURE_MESSAGE);
+        };
         const _cesarSend = (opts: any) => {
+          _refuseSendAfterCleanupFailure();
           const _inner = session.send({
             gateMatchers: _gate.matchers,
             shouldYield: () => hasPendingSteering(_turnId),

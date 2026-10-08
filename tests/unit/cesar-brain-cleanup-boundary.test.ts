@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { startChatSession, ToolRegistry } from '@kernlang/agon-core';
 import { handleCesarBrain } from '../../packages/cli/src/cesar/brain.js';
 import { markSessionCleanupFailed, sessionCleanupFailed } from '../../packages/cli/src/cesar/session-health.js';
+import { pushSteering } from '../../packages/cli/src/cesar/steering.js';
 
 const { budget, ensure, backend } = vi.hoisted(() => ({ budget: vi.fn(), ensure: vi.fn(), backend: vi.fn() }));
 vi.mock('../../packages/cli/src/cesar/context-budget.js', async original => {
@@ -529,5 +530,53 @@ describe('direct follow-up chunk cleanup boundary', () => {
     dispatch.mock.calls.find(([event]) => event.type === 'question')![0].resolve('y');
     expect(await pending).toMatchObject({ decisionReason: 'session-cleanup-failed' });
     expect(dispatch.mock.calls.some(([event]) => JSON.stringify(event ?? {}).includes('Must not appear.'))).toBe(false);
+  });
+});
+
+// A forge judge (or any other caller) can close the brain's session while a
+// turn is mid-stream. The next provider send must refuse, not reuse it.
+describe('mid-turn send boundary', () => {
+  // A task-shaped input: chat-shaped prompts take the answer fast path, which
+  // never auto-continues.
+  const TASK = 'Investigate why the parser in src/app.ts drops trailing tokens and fix it.';
+  function createSteeringSession(onFirstSend: () => void) {
+    const session = createFixtureSession();
+    session.send = vi.fn(async function* () {
+      if (session.send.mock.calls.length === 1) {
+        onFirstSend();
+        pushSteering('fixture steering');
+        yield { type: 'text', content: 'Working on it.' };
+        yield { type: 'done', content: 'steering-yield' };
+        return;
+      }
+      yield { type: 'text', content: 'Continued.' };
+      yield { type: 'done', content: 'end_turn' };
+    });
+    return session;
+  }
+
+  it.each(['acquired', 'entry'])('refuses the continuation send after the %s session fails mid-turn', async target => {
+    const entry = createFixtureSession();
+    let acquired: any;
+    acquired = createSteeringSession(() => markSessionCleanupFailed(target === 'entry' ? entry : acquired));
+    const ctx = createFixtureContext(entry);
+    ensure.mockImplementation(async () => { ctx.cesarSession = acquired; return acquired; });
+    const dispatch = vi.fn();
+    await handleCesarBrain(TASK, dispatch, ctx);
+    expect(acquired.send).toHaveBeenCalledOnce();
+    expect(ctx.adapter.dispatch).not.toHaveBeenCalled();
+    expect(dispatch.mock.calls.filter(([event]) => event?.type === 'warning' && String(event.message).includes('Session cleanup previously failed'))).toHaveLength(1);
+    expect(ctx.cesar.busy).toBe(false);
+    expect(ctx.setActiveAbort).toHaveBeenLastCalledWith(null);
+  });
+
+  it('still delivers the continuation send for a healthy session', async () => {
+    const acquired = createSteeringSession(() => {});
+    const ctx = createFixtureContext(createFixtureSession());
+    ensure.mockImplementation(async () => { ctx.cesarSession = acquired; return acquired; });
+    const dispatch = vi.fn();
+    await handleCesarBrain(TASK, dispatch, ctx);
+    expect(acquired.send.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(dispatch).not.toHaveBeenCalledWith(CLEANUP_WARNING);
   });
 });

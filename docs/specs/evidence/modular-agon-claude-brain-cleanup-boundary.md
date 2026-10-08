@@ -185,3 +185,25 @@ arm64. That run predates `74026d2a`, and its shim log recorded the 21 launches a
 all blocked. `74026d2a` changes tests only. A fresh receipt on the final commit is
 still needed. Global-install snapshots (agon link, linked `dist`, `~/.agon`)
 were identical before and after every run.
+
+## Addendum: mid-turn send boundary (verified)
+
+`handleCesarBrain` checked cleanup health only before the first send. A forge
+judge (`packages/cli/src/cesar/judge.ts` → `ensureCesarSession`) can run while a
+brain turn streams. If its close fails, the session is marked without aborting
+the turn. Red: after a mid-turn mark, the brain sent 4 more continuations on
+that session.
+
+Fix: `_cesarSend`, the single wrapper for all 17 send sites, calls
+`_refuseSendAfterCleanupFailure`. It checks the entry, current and acquired
+sessions, warns once, aborts the turn, and throws. Send sites then classify the
+error as an abort. A mid-turn refusal therefore ends as a cancelled turn, not as
+`session-cleanup-failed`.
+
+Tests: steering-yield continuation for an acquired or entry failure (1 send, 1
+warning, busy cleared). The healthy control still sends ≥ 2 times. Both mutants
+(guard call removed; entry session dropped) were killed. Every run used provider shims.
+
+Still open: local tool effects between sends, and delegation results returned to
+the router (guarded there by Codex's work). Provider termination and durable
+recovery remain unproved.

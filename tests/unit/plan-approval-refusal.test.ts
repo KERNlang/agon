@@ -55,4 +55,36 @@ describe('plan approval refuses unrecognized answers', () => {
     await resumeCesarPlan(plan, { dispatch, setActivePlan: vi.fn(), ctx: { config: {} } } as unknown as DispatchCallbacks);
     expect(effects.execute).toHaveBeenCalledOnce();
   });
+
+  it.each(['resume', 'restart'])('preserves the raw %s plan passed to execution', async answer => {
+    const plan: CesarPlan = {
+      id: 'fixture', intent: 'fixture', state: 'paused',
+      steps: [
+        { id: 'done', description: 'done', type: 'self', state: 'done', estimatedTokens: 10, estimatedCostUsd: 1 },
+        { id: 'review', description: 'review', type: 'review', state: 'failed', estimatedTokens: 20, estimatedCostUsd: 2 },
+        { id: 'blocked', description: 'blocked', type: 'self', state: 'blocked', dependsOn: ['review'], estimatedTokens: 30, estimatedCostUsd: 3 },
+      ],
+      totalEstimatedTokens: 60, totalEstimatedCostUsd: 6,
+      totalActualTokens: 17, totalActualCostUsd: 4, reviewCyclesUsed: 2,
+      stepContext: { done: 'retained context' }, createdAt: '2026-01-01T00:00:00.000Z',
+    };
+    const snapshot = structuredClone(plan);
+    const dispatch = vi.fn(event => { if (event.type === 'question') event.resolve(answer); });
+    await resumeCesarPlan(plan, { dispatch, setActivePlan: vi.fn(), ctx: { config: {} } } as unknown as DispatchCallbacks);
+    const expected: CesarPlan = answer === 'restart' ? {
+      ...snapshot, state: 'running', totalActualTokens: 0, totalActualCostUsd: 0,
+      steps: [
+        { ...snapshot.steps[0], state: 'pending', result: undefined },
+        { ...snapshot.steps[1], state: 'pending', result: undefined },
+        { ...snapshot.steps[2], state: 'blocked', result: undefined },
+      ],
+    } : {
+      ...snapshot, state: 'running', steps: [
+        { ...snapshot.steps[0], state: 'skipped' }, snapshot.steps[1], snapshot.steps[2],
+      ],
+    };
+    expect(effects.saveCesar.mock.calls[0][0]).toStrictEqual(expected);
+    expect(effects.execute.mock.calls[0][0]).toStrictEqual(expected);
+    expect(plan).toStrictEqual(snapshot);
+  });
 });

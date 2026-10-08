@@ -24,9 +24,31 @@ def new_run_directory():
     return Path(tempfile.mkdtemp(prefix="agon-pressure-", dir="/tmp"))
 
 
+# Real provider CLIs open logins, browser tabs and auto-updates. Fixtures must
+# never reach them, so they resolve to blockers that record each launch.
+PROVIDER_EXECUTABLES = ("agon", "claude", "codex", "kimi", "agy", "gemini", "opencode",
+                        "ollama", "mistral", "minimax", "cursor-agent", "qwen", "open")
+
+
+def provider_guard(root):
+    return root / "provider-guard"
+
+
+def provider_launches(root):
+    log = provider_guard(root) / "launches.log"
+    return log.read_text().splitlines() if log.exists() else []
+
+
 def isolated_environment(root, inherited):
     # Deliberate allowlist: no provider credentials, user npmrc or Agon overrides.
     env = {key: inherited[key] for key in ("PATH", "SystemRoot") if key in inherited}
+    guard = provider_guard(root)
+    guard.mkdir(parents=True, exist_ok=True)
+    for executable in PROVIDER_EXECUTABLES:
+        blocker = guard / executable
+        blocker.write_text(f'#!/bin/sh\necho "{executable} $*" >> "{guard / "launches.log"}"\nexit 97\n')
+        blocker.chmod(0o755)
+    env["PATH"] = os.pathsep.join(filter(None, [str(guard), env.get("PATH")]))
     locations = {"HOME": "home", "AGON_HOME": "agon", "XDG_CONFIG_HOME": "config",
                  "XDG_CACHE_HOME": "cache", "XDG_DATA_HOME": "data", "XDG_STATE_HOME": "state",
                  "TMPDIR": "tmp", "npm_config_cache": "npm-cache", "npm_config_prefix": "prefix",
@@ -88,8 +110,8 @@ def run_step(name, command, cwd, env, output, timeout):
     return result
 
 
-def complete_pass(steps, expected):
-    return expected > 0 and len(steps) == expected and all(step["passed"] for step in steps)
+def complete_pass(steps, expected, launches):
+    return expected > 0 and len(steps) == expected and all(step["passed"] for step in steps) and not launches
 
 
 def write_receipt(output, receipt):
@@ -179,7 +201,8 @@ def main():
             write_receipt(output, receipt)
             if not result["passed"]:
                 break
-        receipt["passed"] = complete_pass(receipt["steps"], len(commands))
+        receipt["providerLaunches"] = provider_launches(output / "runtime")
+        receipt["passed"] = complete_pass(receipt["steps"], len(commands), receipt["providerLaunches"])
         receipt["status"] = "passed" if receipt["passed"] else "failed"
     except KeyboardInterrupt:
         receipt["status"] = "interrupted"

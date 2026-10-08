@@ -232,6 +232,8 @@ export type { PlanExecutionServices, PlanExecutorCallbacks, StepExecutor } from 
 export type { CesarPlan, CesarPlanStep, CesarPlanState, CesarStepState, CesarStepType, CesarStepResult } from './execution-model.js';
 export { CESAR_STEP_TYPES, CESAR_STEP_TYPE_TABLE } from './execution-model.js';
 export { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan, exitCesarPlan } from './execution-state.js';
+export { buildResumePromptContext, skipCompletedSteps, prepareCesarPlanResume } from './resume-policy.js';
+export type { ResumePromptContext } from './resume-policy.js';
 export { getCesarPlansDir, cesarPlanJsonPath, cesarPlanMarkdownPath, saveCesarPlan, loadCesarPlan, listCesarPlans } from './execution-store.js';
 ` : short === 'jobs' ? `export { ModularJobService } from './implementation.js';
 ` : short === 'git-actions' ? `export { runGitAction } from './implementation.js';

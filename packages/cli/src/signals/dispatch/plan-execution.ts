@@ -17,7 +17,8 @@ import { todosFromPlanSteps } from '../todos.js';
 
 import type { DispatchCallbacks } from '../dispatch.js';
 
-import { findPendingCesarPlan, buildResumePromptContext, skipCompletedSteps, askChoiceQuestion } from './plan-queries.js';
+import { findPendingCesarPlan, askChoiceQuestion } from './plan-queries.js';
+import { buildResumePromptContext, prepareCesarPlanResume } from '@kernlang/agon-mod-plan';
 
 import { hostConsoleWarn } from '../../lib/kern-host.js';
 import { takePlanFallback } from '../plan-fallback.js';
@@ -54,17 +55,10 @@ export async function resumeCesarPlan(plan: CesarPlan, cb: DispatchCallbacks): P
   }
   
   const restart = trimmed === '2' || trimmed === 'r' || trimmed === 'restart';
-  let runningPlan: CesarPlan;
+  const runningPlan = prepareCesarPlanResume(plan, restart ? 'restart' : 'resume');
   if (restart) {
-    const freshSteps = plan.steps.map((s: any) => ({
-      ...s,
-      state: (s.dependsOn && s.dependsOn.length > 0 ? 'blocked' : 'pending') as any,
-      result: undefined,
-    }));
-    runningPlan = { ...plan, steps: freshSteps, state: 'running' as any, totalActualTokens: 0, totalActualCostUsd: 0 };
     cb.dispatch({ type: 'info', message: `Restarting plan from step 1: ${plan.intent}` });
   } else {
-    runningPlan = { ...skipCompletedSteps(plan), state: 'running' as any };
     cb.dispatch({ type: 'info', message: `Resuming plan: ${plan.intent} (${plan.id})` });
   }
   

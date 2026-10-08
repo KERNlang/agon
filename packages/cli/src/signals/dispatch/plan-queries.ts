@@ -101,36 +101,9 @@ export function formatCesarPlanRuntimeStatus(plan: CesarPlan): string {
   return lines.join('\n');
 }
 
-/**
- * Compute resume prompt context: how many steps done/failed/remain, which step failed, and estimated cost to finish.
- */
-export function buildResumePromptContext(plan: CesarPlan): { doneCount:number; failedCount:number; remainingCount:number; failedStep:any|null; remainingCostUsd:number; remainingTokens:number } {
-  const steps = plan.steps ?? [];
-  const doneCount = steps.filter((s: any) => s.state === 'done').length;
-  const failedSteps = steps.filter((s: any) => s.state === 'failed');
-  const failedCount = failedSteps.length;
-  const failedStep = failedSteps[0] ?? null;
-  const remainingSteps = steps.filter((s: any) => s.state !== 'done' && s.state !== 'skipped');
-  const remainingCount = remainingSteps.length;
-  const remainingCostUsd = remainingSteps.reduce((sum: number, s: any) => sum + (s.estimatedCostUsd ?? 0), 0);
-  const remainingTokens = remainingSteps.reduce((sum: number, s: any) => sum + (s.estimatedTokens ?? 0), 0);
-  return { doneCount: doneCount, failedCount: failedCount, remainingCount: remainingCount, failedStep: failedStep, remainingCostUsd: remainingCostUsd, remainingTokens: remainingTokens };
-}
-
-/**
- * Mark done steps as skipped so executePlan skips them on resume. Keeps failed steps as pending (unless review-exhausted).
- */
-export function skipCompletedSteps(plan: CesarPlan): CesarPlan {
-  const cyclesUsedAtResume = (plan as any).reviewCyclesUsed ?? 0;
-  const newSteps = plan.steps.map((s: any) => {
-    if (s.state === 'done' || s.state === 'skipped') return { ...s, state: 'skipped' as any };
-    if (s.state === 'failed' && s.type === 'review' && cyclesUsedAtResume >= 2) return s;
-    if (s.state === 'failed') return { ...s, state: 'pending' as any, result: undefined };
-    if (s.state === 'blocked') return s;
-    return { ...s, state: 'pending' as any };
-  });
-  return { ...plan, steps: newSteps };
-}
+// A05-RESUME-POLICY compatibility exports: the Plan package owns the only
+// implementation. Remove this seam when dispatch.ts callers use its public API.
+export { buildResumePromptContext, skipCompletedSteps } from '@kernlang/agon-mod-plan';
 
 /**
  * Ask a keyboard-choice question in the composer instead of falling back to a blank free-text field.

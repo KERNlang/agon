@@ -472,3 +472,62 @@ describe('auto-compaction close', () => {
     expect(sessionCleanupFailed(session)).toBe(false);
   });
 });
+
+describe('tool-loop continuation stream cleanup boundary', () => {
+  it('does not execute tools from a continuation that streamed after cleanup failed', async () => {
+    const acquired = createFixtureSession();
+    const ctx = createFixtureContext(createFixtureSession());
+    const execute = vi.fn(async () => ({ ok: true, content: 'fixture result' }));
+    const registry = new ToolRegistry();
+    registry.register({
+      definition: { name: 'FixtureProbe', description: 'In-memory fixture only', inputSchema: {}, maxResultSizeChars: 1000, isReadOnly: true, isConcurrencySafe: false },
+      validate: () => null,
+      checkPermission: () => ({ behavior: 'allow' }),
+      execute,
+    } as any);
+    acquired.send.mockImplementationOnce(async function* () {
+      yield { type: 'text', content: 'Review scope ready. Shall I proceed?' };
+    }).mockImplementationOnce(async function* () {
+      yield { type: 'text', content: '<tool name="FixtureProbe">{}</tool>' };
+    }).mockImplementationOnce(async function* () {
+      markSessionCleanupFailed(acquired);
+      yield { type: 'text', content: 'Late output. <tool name="FixtureProbe">{"again":true}</tool>' };
+    }).mockImplementation(async function* () {
+      yield { type: 'text', content: 'Must not be requested.' };
+    });
+    ensure.mockImplementation(async () => { ctx.cesar.toolRegistry = registry; return acquired; });
+    const dispatch = vi.fn();
+    const pending = handleCesarBrain('review this implementation', dispatch, ctx);
+    const settled = pending.then(value => ({ value }), error => ({ error }));
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'question' })));
+    dispatch.mock.calls.find(([event]) => event.type === 'question')![0].resolve('y');
+    const outcome = await settled;
+    expect(outcome).toMatchObject({ value: { decisionReason: 'session-cleanup-failed' } });
+    expect(acquired.send).toHaveBeenCalledTimes(3);
+    const lateText = dispatch.mock.calls.some(([event]) => JSON.stringify(event ?? {}).includes('Late output.'));
+    expect({ toolRuns: execute.mock.calls.length, lateTextRendered: lateText }).toEqual({ toolRuns: 1, lateTextRendered: false });
+  });
+});
+
+describe('direct follow-up chunk cleanup boundary', () => {
+  it('never renders follow-up chunks that arrive after cleanup failed', async () => {
+    const acquired = createFixtureSession();
+    const ctx = createFixtureContext(createFixtureSession());
+    acquired.send.mockImplementationOnce(async function* () {
+      yield { type: 'text', content: 'The review scope is ready. Shall I proceed?' };
+      yield { type: 'done', content: 'end_turn' };
+    }).mockImplementationOnce(async function* () {
+      yield { type: 'text', content: 'Visible follow-up start.\n' };
+      markSessionCleanupFailed(acquired);
+      yield { type: 'text', content: `Must not appear. ${'late filler '.repeat(80)}` };
+      yield { type: 'done', content: 'end_turn' };
+    });
+    ensure.mockResolvedValue(acquired);
+    const dispatch = vi.fn();
+    const pending = handleCesarBrain('review this implementation', dispatch, ctx);
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'question' })));
+    dispatch.mock.calls.find(([event]) => event.type === 'question')![0].resolve('y');
+    expect(await pending).toMatchObject({ decisionReason: 'session-cleanup-failed' });
+    expect(dispatch.mock.calls.some(([event]) => JSON.stringify(event ?? {}).includes('Must not appear.'))).toBe(false);
+  });
+});

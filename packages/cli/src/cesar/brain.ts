@@ -3584,6 +3584,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                         toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined,
                       });
                       for await (const chunk of gen) {
+                        assertFollowUpHealthy();
                         if (forwardContinuationStatus(chunk, dispatch)) continue;
                         if (_forwardContinuationToolCall(chunk)) continue;
                         const chunkType = String((chunk as any).type);
@@ -3593,6 +3594,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                         }
                         if (chunkType === 'done' || chunkType === 'error') break;
                       }
+                      assertFollowUpHealthy();
                       return next.trim();
                     },
                     toolResponse,

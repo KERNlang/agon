@@ -79,17 +79,17 @@
         "range": "^19.2.0"
       }
     ],
-    "packedBytes": 1253605,
-    "unpackedBytes": 5635794,
+    "packedBytes": 1253767,
+    "unpackedBytes": 5636595,
     "fileCount": 101,
     "files": [
       {
-        "path": "dist/app-O6QDD5TQ.js",
-        "size": 411426
+        "path": "dist/app-IMZ6472K.js",
+        "size": 411926
       },
       {
-        "path": "dist/app-O6QDD5TQ.js.map",
-        "size": 277239
+        "path": "dist/app-IMZ6472K.js.map",
+        "size": 277540
       },
       {
         "path": "dist/attach-RB2G556P.js",
@@ -488,9 +488,9 @@
         "size": 36190
       }
     ],
-    "integrity": "sha512-OcfGU0u/kVgSsLI9N4/EP0bzYpGmSpFqpmNHpjD6tdnp4E7D38e5L5ls/QBwJgDEl7iPBzC3aTKJH4qGyejMug==",
-    "shasum": "58e669fe832f7646ecce265e0d3e15f95ecc4413",
-    "tarballHash": "sha256:366cd448866321dc1fda3626450a4dbae2d6ef1eb8aa1c70bc9753873df08676",
+    "integrity": "sha512-ZfPtg8tbmhJl0pFBaKzv74j6jgb1Od745mQ/uTBAwofWSB9DdeF+n0EeOV72Vx7RQeUeAL0/3RqWtuCJ/PDIQQ==",
+    "shasum": "518f796d604f9554a51ba6d431ae4c11f1abd238",
+    "tarballHash": "sha256:90ecd5a00e33350ee65c027d79e12cafab82d90d7504f21324cc55fd6fa56611",
     "packageJsonHash": "sha256:99322f3dba4b7480ebd55ec8dc39fc1fe95a7c2d4d2e5953d9712c34a83bf575"
   },
   "packages": [

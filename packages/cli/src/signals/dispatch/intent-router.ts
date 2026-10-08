@@ -12,7 +12,7 @@ import { dispatchOrchestrationIntent } from './intent-orchestration.js';
 
 import { dispatchSessionInfoIntent, runPhysicalTuiContribution } from './intent-session.js';
 
-import { processSurfaceClient } from '../../surface-authority-runtime.js';
+import { assertProcessSurfaceAvailable, processSurfaceClient } from '../../surface-authority-runtime.js';
 
 import { dispatchMetaIntent } from './intent-meta.js';
 
@@ -29,14 +29,27 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
     await cb.eventBus.emit('pre:dispatch', { input, intentType: intent.type, cwd: resolveWorkingDir() });
   }
   
-  if (shouldApprovePendingCesarPlanInput(input, cb.ctx)) {
+  const approvePending = shouldApprovePendingCesarPlanInput(input, cb.ctx);
+  const resumablePlan = findResumableCesarPlan(cb.ctx);
+  const resumePending = resumablePlan !== null && isCesarPlanResumeInput(input);
+  // Natural aliases bypass the slash parser. Apply the same active-generation
+  // check before they reach compatibility execution or show a resume prompt.
+  if (approvePending || resumePending) {
+    try {
+      assertProcessSurfaceAvailable('tui', approvePending ? '/approve' : '/plan');
+    } catch (error) {
+      cb.dispatch({ type: 'error', message: error instanceof Error ? error.message : String(error) });
+      emitPostDispatch(intent, input, cb);
+      return { handled: true, ranAsJob: false };
+    }
+  }
+  if (approvePending) {
     if (await approvePendingCesarPlan(cb)) {
       emitPostDispatch(intent, input, cb);
       return { handled: true, ranAsJob: false };
     }
   }
-  const resumablePlan = findResumableCesarPlan(cb.ctx);
-  if (resumablePlan && isCesarPlanResumeInput(input)) {
+  if (resumablePlan && resumePending) {
     await resumeCesarPlan(resumablePlan, cb);
     emitPostDispatch(intent, input, cb);
     return { handled: true, ranAsJob: false };

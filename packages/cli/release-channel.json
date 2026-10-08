@@ -76,8 +76,8 @@
         "@kernlang/agon-support-verification"
       ],
       "sourceLocator": "@kernlang/agon-support-worktree@1.0.0",
-      "integrity": "sha512-aHfCLSRWaiCArb91tJIIzi8lCpnQYLeKzWJRmdSujInbuV3+fZhDlxxS+TPEyBMQg4zG/RZgIxhSVCGOcbhNpg==",
-      "contentHash": "sha256:f0f1885aed148fcb01f2813075e4242de4c2e49d67de759c2623e05b084db6f3",
+      "integrity": "sha512-TtjRwowoosoTMSEnPMvwu+lrrWfzWFdMpffu2ewM8wjVb5ZolSQBxyg3Zq5KuFOGxfdkfmybSoGPp8e4DW7ZQQ==",
+      "contentHash": "sha256:a7839958bcc16e02222057340631a0eb92ac333ed962712430e5ada22aa1e246",
       "manifestHash": "sha256:63fc703f5f437db4ad438a6d09faa6b8e0cb3262460a51ff01c6ac49658bd434"
     },
     {

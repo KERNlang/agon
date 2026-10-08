@@ -5,3 +5,6 @@ export * from './worktree-session.js';
 export * from './forge-arena.js';
 export * from './workspace-bookmarks.js';
 export * from './mutation-runner.js';
+export * from './patch-apply.js';
+export * from './patch-parser.js';
+export * from './patch-content.js';

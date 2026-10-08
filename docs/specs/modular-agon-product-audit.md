@@ -24,6 +24,44 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Initial persistent stream cleanup refusal (2026-10-08)
+
+Deferred-stream tests reproduced late text acceptance and ordinary empty/error
+outcomes after cleanup failed. Nine failures covered the captured entry session,
+the current replacement, and the acquired session, crossed with text, empty
+completion and rejection. Three healthy controls retained existing behavior.
+Pre-fix focused log SHA-256:
+`764417188b9880b8ec93210d15adf0628ac1ce89c6d3b4738518dd27f9e4a11e`.
+
+The initial stream now checks those three identities before consuming each
+chunk, before flushing buffered display text at stream end, and before classifying
+a stream exception. Refusal returns `session-cleanup-failed` without a completed
+engine answer or an ordinary recovery outcome. The iterator closes normally.
+
+Six additional regressions reproduced a stranded live pane after refusal, using
+an already-visible preview or text prefix followed by text, completion or
+rejection. The text fixture must exceed the existing 40-character display buffer;
+after correcting that fixture, all six failed on the missing `streaming-end`.
+That red log SHA-256:
+`f531af92c435901b854dbef2565a789907518641d604fb5206d0b61e9805b68b`.
+Refusal now closes the pane: existing output handling discards a preview-only
+draft or finishes text already visible before failure. It does not retract that
+earlier text or persist it as a completed engine answer. All 98 focused tests pass.
+
+Scope is the initial stream's consumption boundary, not the entire turn. This
+does not stop effects performed inside a provider before it yields a chunk.
+MCP side-channel authorization, pending tools, continuation sends, concurrent
+acquisition ownership and durable recovery still require separate qualification.
+
+Development gates passed: build, typecheck, lint, re-export guard, first-party
+generation check, release-set packs, supply-chain self-test, 6,358 tests (six
+skips across 543 files), and 72 offline isolated installed-product checks.
+Full-suite log SHA-256:
+`c99e8185ceea3335924b671f0fec1bc2089be4c079e25cf15b22db87d6575694`.
+Release-set and SBOM hashes were regenerated. These are development checks,
+not independent clean-commit release qualification. No active installation was
+updated, and no live provider was needed.
+
 ### Brain in-flight fallback result refusal (2026-10-08)
 
 Deferred adapter tests reproduced the brain accepting a fallback answer after

@@ -217,6 +217,78 @@ describe('in-flight adapter fallback', () => {
   });
 });
 
+describe('initial persistent stream cleanup boundary', () => {
+  it.each(['preview', 'text'].flatMap(prefix =>
+    ['text', 'empty', 'rejection'].map(result => [prefix, result]),
+  ))('finishes an existing %s pane after cleanup failure (%s)', async (prefix, result) => {
+    const session = createFixtureSession();
+    const ctx = createFixtureContext(session);
+    const ready = createDeferred<void>();
+    session.send.mockImplementation(async function* () {
+      yield { type: prefix, content: 'This fixture text was visible before cleanup failed.\n' };
+      await ready.promise;
+      if (result === 'text') yield { type: 'text', content: 'Must not appear.' };
+    });
+    ensure.mockImplementation(async () => { ctx.cesar.hasNativeTools = true; return session; });
+    const dispatch = vi.fn();
+    const pending = handleCesarBrain('hello', dispatch, ctx);
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      type: prefix === 'preview' ? 'streaming-preview' : 'streaming-chunk',
+    })));
+    markSessionCleanupFailed(session);
+    if (result === 'rejection') ready.reject(new Error('fixture stream rejected'));
+    else ready.resolve();
+    expect(await pending).toMatchObject({ decisionReason: 'session-cleanup-failed', responded: false });
+    expect(dispatch).toHaveBeenCalledWith({ type: 'streaming-end', engineId: 'fixture' });
+    expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ chunk: 'Must not appear.' }));
+    expect(ctx.chatSession.messages.filter((message: any) => message.role === 'engine')).toEqual([]);
+    expect(session.send).toHaveBeenCalledOnce();
+  });
+
+  it.each(['original', 'current', 'acquired', 'healthy'].flatMap(target =>
+    ['text', 'empty', 'rejection'].map(result => [target, result]),
+  ))('checks %s cleanup after pending stream %s', async (target, result) => {
+    const original = createFixtureSession();
+    const acquired = createFixtureSession();
+    const replacement = createFixtureSession();
+    const ctx = createFixtureContext(original);
+    const ready = createDeferred<void>();
+    const closed = vi.fn();
+    acquired.send.mockImplementation(async function* () {
+      try {
+        await ready.promise;
+        if (result === 'text') yield { type: 'text', content: 'A fixture answer.' };
+      } finally { closed(); }
+    });
+    ensure.mockResolvedValue(acquired);
+    const dispatch = vi.fn();
+    const pending = handleCesarBrain('hello', dispatch, ctx);
+    await vi.waitFor(() => expect(acquired.send).toHaveBeenCalledOnce());
+    ctx.cesarSession = replacement;
+    if (target !== 'healthy') {
+      const failedSession = target === 'original' ? original : target === 'current' ? replacement : acquired;
+      markSessionCleanupFailed(failedSession);
+    }
+    if (result === 'rejection') ready.reject(new Error('fixture stream rejected'));
+    else ready.resolve();
+    const outcome = await pending;
+    if (target === 'healthy') {
+      expect(dispatch).not.toHaveBeenCalledWith(CLEANUP_WARNING);
+      expect(outcome.responded).toBe(result === 'text');
+    } else {
+      expect(outcome).toMatchObject({ terminalState: 'failed', decisionReason: 'session-cleanup-failed', responded: false, delegated: false });
+      expect(dispatch).toHaveBeenCalledWith(CLEANUP_WARNING);
+      expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'streaming-chunk' }));
+      expect(ctx.chatSession.messages.filter((message: any) => message.role === 'engine')).toEqual([]);
+    }
+    expect(closed).toHaveBeenCalledOnce();
+    expect(acquired.send).toHaveBeenCalledOnce();
+    expect(ctx.adapter.dispatch).not.toHaveBeenCalled();
+    expect(ctx.cesar.busy).toBe(false);
+    expect(ctx.setActiveAbort).toHaveBeenLastCalledWith(null);
+  });
+});
+
 describe('auto-compaction close', () => {
   const realBudget = async () => (await vi.importActual<typeof import('../../packages/cli/src/cesar/context-budget.js')>('../../packages/cli/src/cesar/context-budget.js')).enforceContextBudget;
   const tinyBudgetEngine = { id: 'fixture', sessionBudget: { contextWindow: 64 } };

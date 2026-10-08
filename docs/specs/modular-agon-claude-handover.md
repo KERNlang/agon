@@ -10,6 +10,16 @@ Integration branch: `feat/modular-agon-full`.
 Review PR: <https://github.com/KERNlang/agon/pull/311>.
 Last committed base at handover preparation: `de98059f`.
 
+## Current Claude review task (2026-10-08)
+
+Review only; do not edit the integration worktree. Review `be54bc95` and the
+following initial persistent-stream cleanup fix when committed. Check captured,
+current and acquired session identities; iterator completion and rejection;
+preview/text pane cleanup; persistence; and whether the tests distinguish the
+broken behavior. Verify findings against source and give a minimal reproduction.
+Separate initial-stream findings from remaining continuation, tool-loop and MCP
+side-channel gaps. Do not launch live providers or modify personal state.
+
 ## Start here
 
 Help finish Modular Agon without replacing the operator's working installation.
@@ -180,7 +190,7 @@ controls in the audit. These repairs do not close all Brainstorm extraction work
 
 | Area | What still needs evidence or implementation |
 | --- | --- |
-| Brain internal recovery | Budget/acquisition and in-flight fallback result guards integrated; persistent-session streams, tool loops and continuation sends remain open |
+| Brain internal recovery | Budget/acquisition, fallback results and initial persistent-stream consumption guarded; tool loops, MCP side-channel authorization and continuation sends remain open |
 | Router alternate recovery | Acting-Cesar guards added 2026-10-06; recovered/one-shot team-forge preparation guards added 2026-10-08. Later in-turn continuation boundaries remain separate work |
 | Provider/session lifecycle | Actual termination, manual cleanup failures, durable config/session recovery, parallel plan recovery |
 | A05/A11 plan | Explicit plan session/execution boundary and removal evidence; preserve task/resume/approval semantics |

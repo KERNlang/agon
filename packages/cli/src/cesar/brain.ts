@@ -1402,6 +1402,17 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         }, 2_000);
 
         // ── Stream response ──
+        const refuseStreamAfterCleanupFailure = (): CesarTurnOutcome | null => {
+          const refused = refuseAfterCleanupFailure(session);
+          if (refused && (streaming || previewShown)) {
+            // Finish already-visible text or discard a preview-only pane. Never
+            // render the failed chunk or persist a completed engine answer.
+            dispatch({ type: 'streaming-end', engineId: cesarEngineId });
+            streaming = false;
+            previewShown = false;
+          }
+          return refused;
+        };
         try {
           const sendOptions: any = { message: enrichedInput, signal: abort.signal, images: images?.map(img => img.path) };
           if (cesarFastPath) {
@@ -1411,6 +1422,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           const gen = _cesarSend(sendOptions);
 
           for await (const chunk of gen) {
+            const refusedChunk = refuseStreamAfterCleanupFailure();
+            if (refusedChunk) return refusedChunk;
             if (abort.signal.aborted) break;
 
             if (chunk.type === 'preview') {
@@ -1713,6 +1726,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               }
             }
           }
+          const refusedStreamEnd = refuseStreamAfterCleanupFailure();
+          if (refusedStreamEnd) return refusedStreamEnd;
           // Flush any leading text the preamble stripper is still holding (a marker
           // that never saw its terminating newline before stream end). Route the
           // flushed remainder through the same downstream stripper the live path
@@ -1745,6 +1760,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             }
           }
           } catch (err) {
+            const refusedStreamError = refuseStreamAfterCleanupFailure();
+            if (refusedStreamError) return refusedStreamError;
             dispatch({ type: 'spinner-stop' });
             console.error(`[cesar:claude] send error: ${(err as Error).message ?? err}`);
             // Some adapters reject their stream with an AbortError instead of

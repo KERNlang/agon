@@ -5,10 +5,8 @@
 // nothing appeared on screen — no echo of the choice, no streamed text. The
 // user concluded Cesar had stopped.
 //
-// Four invariants come out of that, all inside handleCesarBrain — one ~3600-line
-// turn machine with no injection seam, so (as with cesar-steering-yield-wiring)
-// the guards below read brain.ts as text and assert the wiring, plus
-// behavioural tests on the follow-up module itself.
+// Wiring assertions cover the caller's three question paths. Display tests
+// exercise the actual extracted helper, not a copy of its implementation.
 //
 //   A1  a real pick is ECHOED into the transcript before the follow-up starts.
 //   A2  a real pick is NEVER dropped silently (dead session / interrupted turn),
@@ -31,12 +29,8 @@ import { dirname, resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import { runCesarConfirmationFollowUp } from '../../packages/cli/src/cesar/confirmation-follow-up.js';
-import {
-  chunkMayCompleteToolCall,
-  splitBeforeToolMarkup,
-  textHasToolCalls,
-  XML_TOOL_MARKUP_HOLD_CHARS,
-} from '../../packages/cli/src/cesar/brain-helpers.js';
+import { textHasToolCalls } from '../../packages/cli/src/cesar/brain-helpers.js';
+import { createFollowUpDisplay } from '../../packages/cli/src/cesar/follow-up-display.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const CODE = readFileSync(resolve(here, '../../packages/cli/src/cesar/brain.ts'), 'utf8')
@@ -96,20 +90,20 @@ describe('A2 — a real pick is never dropped', () => {
 describe('A3 — the follow-up streams, and renders exactly once', () => {
   it('forwards each text chunk to the live stream inside the send loop', () => {
     const send = CODE.slice(CODE.indexOf('send: async (nextMessage: string) => {'));
-    expect(send).toMatch(/if \(chunk\.type === 'text'\) \{\s*text \+= chunk\.content;\s*_fuEmit\(chunk\.content\);/);
+    expect(send).toMatch(/if \(chunk\.type === 'text'\) \{\s*text \+= chunk\.content;\s*followUpDisplay.push\(chunk\.content\);/);
     // …and closes the stream (flush held tail + streaming-end) when it ends.
     expect(send).toMatch(/\}\s*assertFollowUpHealthy\(\);\s*_fuEndStream\(\);\s*_fuStreamedText = text;/);
   });
 
   it('dispatches streaming-chunk / streaming-end, not a single end-of-turn block', () => {
-    expect(CODE).toMatch(/_fuStreaming = true;\s*dispatch\(\{ type: 'streaming-chunk', engineId: cesarEngineId, chunk: visible \}\);/);
-    expect(CODE).toMatch(/const _fuEndStream = \(\) => \{\s*if \(!hasCleanupFailure\(session\)\) _fuEmit\('', true\);\s*if \(_fuStreaming\) \{\s*dispatch\(\{ type: 'streaming-end', engineId: cesarEngineId \}\);/);
+    expect(INTERACTIVE).toContain("onChunk: (chunk) => dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk })");
+    expect(INTERACTIVE).toContain("onEnd: () => dispatch({ type: 'streaming-end', engineId: cesarEngineId })");
+    expect(INTERACTIVE).toContain('followUpDisplay.end({ flush: !hasCleanupFailure(session) })');
   });
 
   it('keeps the marker pipeline on the streamed sink (capture + strip)', () => {
-    // Display strippers run per chunk BEFORE the tool-markup gate, so a
-    // [TODOS]/[ASK] block never silences the prose around it.
-    expect(CODE).toMatch(/const _fuEmit = \(raw: string, force = false\) => \{[\s\S]{0,400}?const stripped = stripFollowUpAsk\(stripFollowUpTodos\(raw, force\), force\);\s*if \(!stripped\) return;\s*const visible = _fuDisplayChunk\(stripped, force\);/);
+    expect(INTERACTIVE).toContain('followUpDisplay.stripMarkers(captured)');
+    expect(INTERACTIVE).toContain("followUpDisplay.stripMarkers('', true).trim()");
     // Capture (extractAsk/emitLiveTodos) still runs on the completion callback
     // even when the text was already displayed — a mid-follow-up [ASK] is never
     // lost just because the prose was streamed.
@@ -162,26 +156,26 @@ describe('A4 — an intentional interrupt is not reported as an engine failure',
 
 describe('A5 — follow-up tool markup never streams raw, on any session', () => {
   it('does not gate the follow-up display on hasNativeTools', () => {
-    const fu = CODE.slice(CODE.indexOf('const _fuDisplayChunk ='), CODE.indexOf('const _fuEndStream ='));
+    const fu = CODE.slice(CODE.indexOf('const followUpDisplay ='), CODE.indexOf('const _fuEndStream ='));
     // The main stream deliberately skips XML suppression for native sessions
     // (takeXmlSafeDisplayChunk does `if (ctx.cesar!.hasNativeTools) return chunkText;`);
     // the follow-up must NOT, since runCesarConfirmationFollowUp parses textual
     // tool calls on native sessions too.
-    expect(CODE).toContain('const takeXmlSafeDisplayChunk = (chunkText: string, force = false) => {');
+    expect(fu).toContain('createFollowUpDisplay({');
     expect(fu).not.toContain('hasNativeTools');
   });
 
   it('latches suppression from the SAME predicate the executor uses', () => {
-    // parseToolCalls (via the shared textHasToolCalls helper), behind the same
-    // cheap per-chunk gate the main stream uses — not a second marker list.
-    const emit = CODE.slice(CODE.indexOf('const _fuEmit ='), CODE.indexOf('const _fuEndStream ='));
-    expect(emit).toContain('chunkMayCompleteToolCall(_fuToolTail, raw)');
-    expect(emit).toContain('if (toolGate.scan) _fuScanPending = true;');
-    const fu = CODE.slice(CODE.indexOf('const _fuDisplayChunk ='), CODE.indexOf('const _fuEmit ='));
-    expect(fu).toMatch(/if \(_fuScanPending\) \{\s*_fuScanPending = false;\s*if \(textHasToolCalls\(_fuRaw\)\) \{ _fuSuppressXml = true; _fuHold = ''; return ''; \}/);
-    // …and only AFTER the marker split, so a plain XML call still releases the
-    // prose that preceded it instead of losing the held tail.
-    expect(fu.indexOf('splitBeforeToolMarkup(combined)')).toBeLessThan(fu.indexOf('_fuScanPending'));
+    // Cohere has no XML marker for splitBeforeToolMarkup to detect. This must
+    // use the executor's full-text parser and retain suppression afterward.
+    const tool = 'Action: ```json\n[{"tool_name":"Read","parameters":{"file_path":"a.ts"}}]\n```';
+    expect(textHasToolCalls(tool)).toBe(true);
+    const onChunk = vi.fn();
+    const display = createFollowUpDisplay({ onChunk, onEnd: vi.fn() });
+    display.push(tool);
+    display.push('Do not render after a tool call.');
+    display.end({ flush: true });
+    expect(onChunk).not.toHaveBeenCalled();
   });
 
   it('textHasToolCalls answers for every textual format, and never throws', () => {
@@ -192,30 +186,25 @@ describe('A5 — follow-up tool markup never streams raw, on any session', () =>
   });
 
   it('suppresses display from the first chunk when the follow-up is a tool call', () => {
-    // Replay the gate: a follow-up whose whole answer is XML markup
-    // must produce no visible text at all, so streaming-end never commits it.
+    // Exercise the production display: pure XML must never open a stream.
     const parts = ['<tool name=', '"Read">{"file_path"', ':"a.ts"}</tool>'];
-    let acc = '';
-    let visible = '';
-    const gate = makeFollowUpGate();
-    for (const part of parts) {
-      acc += part;
-      visible += gate(part, acc);
-    }
-    visible += gate('', acc, true);
-    expect(visible).toBe('');
+    const onChunk = vi.fn();
+    const onEnd = vi.fn();
+    const display = createFollowUpDisplay({ onChunk, onEnd });
+    for (const part of parts) display.push(part);
+    display.end({ flush: true });
+    expect(onChunk).not.toHaveBeenCalled();
+    expect(onEnd).not.toHaveBeenCalled();
   });
 
   it('streams the prose that precedes tool markup, then stops', () => {
-    const gate = makeFollowUpGate();
-    let acc = '';
-    let visible = '';
+    const onChunk = vi.fn();
+    const display = createFollowUpDisplay({ onChunk, onEnd: vi.fn() });
     for (const part of ['Reading the file for you.\n', '<tool name="Read">{"file_path":"a.ts"}</tool>', ' and done.']) {
-      acc += part;
-      visible += gate(part, acc);
+      display.push(part);
     }
-    visible += gate('', acc, true);
-    expect(visible).toBe('Reading the file for you.\n');
+    display.end({ flush: true });
+    expect(onChunk.mock.calls.map(([chunk]) => chunk).join('')).toBe('Reading the file for you.\n');
   });
 });
 
@@ -230,65 +219,32 @@ describe('A6 — the live follow-up entry is always ended', () => {
   });
 
   it('_fuEndStream is idempotent — a second call commits nothing', () => {
-    const events: string[] = [];
-    const endStream = makeFollowUpEndStream(events);
-    endStream();
-    endStream();
-    expect(events).toEqual([]);
+    const onEnd = vi.fn();
+    const display = createFollowUpDisplay({ onChunk: vi.fn(), onEnd });
+    display.end({ flush: true });
+    display.end({ flush: true });
+    expect(onEnd).not.toHaveBeenCalled();
   });
 
   it('a send that throws mid-iteration still reaches the end-of-stream call', async () => {
-    // Behavioural proxy for the wiring above: try/finally around the awaited
-    // follow-up guarantees the cleanup runs when the send rejects.
-    const events: string[] = [];
-    const endStream = makeFollowUpEndStream(events, true);
+    const onChunk = vi.fn();
+    const onEnd = vi.fn();
+    const display = createFollowUpDisplay({ onChunk, onEnd });
+    const answer = 'The answer starts streaming before the adapter rejects.';
     await expect((async () => {
       try {
         await runCesarConfirmationFollowUp({
           answer: 'y',
-          send: async () => { throw new Error('adapter died mid-stream'); },
+          send: async () => {
+            display.push(answer);
+            throw new Error('adapter died mid-stream');
+          },
         });
       } finally {
-        endStream();
+        display.end({ flush: true });
       }
     })()).rejects.toThrow('adapter died mid-stream');
-    expect(events).toEqual(['streaming-end']);
+    expect(onChunk.mock.calls.map(([chunk]) => chunk).join('')).toBe(answer);
+    expect(onEnd).toHaveBeenCalledOnce();
   });
 });
-
-// ── Replicas of the follow-up gate/teardown ────────────────────────────
-// handleCesarBrain has no injection seam, so the structural guards above pin the
-// wiring and these tiny replicas exercise the behaviour the wiring produces.
-function makeFollowUpGate() {
-  let suppress = false;
-  let hold = '';
-  let tail = '';
-  let scanPending = false;
-  let raw = '';
-  return (chunkText: string, _accumulated: string, force = false): string => {
-    raw += chunkText;
-    const gate = chunkMayCompleteToolCall(tail, chunkText);
-    tail = gate.tail;
-    if (gate.scan) scanPending = true;
-    if (suppress) { hold = ''; return ''; }
-    const combined = hold + chunkText;
-    const split = splitBeforeToolMarkup(combined);
-    if (split.hasToolMarkup) { suppress = true; hold = ''; return split.visible; }
-    if (scanPending) {
-      scanPending = false;
-      if (textHasToolCalls(raw)) { suppress = true; hold = ''; return ''; }
-    }
-    if (force) { hold = ''; return combined; }
-    const held = Math.min(XML_TOOL_MARKUP_HOLD_CHARS, combined.length);
-    const visible = combined.slice(0, combined.length - held);
-    hold = combined.slice(combined.length - held);
-    return visible;
-  };
-}
-
-function makeFollowUpEndStream(events: string[], streamingNow = false) {
-  let streaming = streamingNow;
-  return () => {
-    if (streaming) { events.push('streaming-end'); streaming = false; }
-  };
-}

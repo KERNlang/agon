@@ -71,9 +71,10 @@ import { resolveCesarHarnessProfile, evaluateAgenticTaskState, buildAgenticProgr
 
 import { canonicalStepSignature, normalizeStepSignature } from '@kernlang/agon-core';
 
-import { yieldToInk, recordCesarTurn, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, chunkMayCompleteToolCall, textHasToolCalls, classifyPreambleHead, createTodosDisplayStripper, createAskDisplayStripper, createPreambleStripper, findTrailingUserQuestion, detectAwaitingUserInput, detectNarratedToolStall, detectMutationIntentStall, detectFabricatedDelegation, shouldDeescalateGuard, withEagerToolCallId, claimEagerToolExecution, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation, isBashToolName, isWriteToolName, forwardContinuationStatus } from './brain-helpers.js';
+import { yieldToInk, recordCesarTurn, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, chunkMayCompleteToolCall, classifyPreambleHead, createTodosDisplayStripper, createAskDisplayStripper, createPreambleStripper, findTrailingUserQuestion, detectAwaitingUserInput, detectNarratedToolStall, detectMutationIntentStall, detectFabricatedDelegation, shouldDeescalateGuard, withEagerToolCallId, claimEagerToolExecution, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation, isBashToolName, isWriteToolName, forwardContinuationStatus } from './brain-helpers.js';
 
 import { runCesarConfirmationFollowUp } from './confirmation-follow-up.js';
+import { createFollowUpDisplay } from './follow-up-display.js';
 
 import { consumeCesarPlanControlSignals } from './plan-control-signals.js';
 
@@ -3532,86 +3533,14 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           const _runInteractiveChoice = async (answer: string, message?: string, echoLabel?: string) => {
             if (echoLabel) _echoChoice(echoLabel);
             dispatch({ type: 'spinner-start', message: `${cesarEngineId} continuing…`, color });
-            // The follow-up is a fresh stream — it needs its own display strippers
-            // so a [TODOS]/[ASK] block emitted mid-follow-up never leaks raw into
-            // the transcript (the bug: a pretty-printed [ASK] JSON wall on screen).
-            const stripFollowUpTodos = createTodosDisplayStripper();
-            const stripFollowUpAsk = createAskDisplayStripper();
-            // ── Live follow-up streaming ──
-            // The follow-up used to render only after the whole send completed, so a
-            // long continuation looked frozen. Forward text chunks the way the main
-            // stream does (streaming-chunk → streaming-end commits the block), with
-            // the same XML-markup gate so a follow-up that answers with tool markup
-            // never leaks raw <tool …> into the pane. `_fuStreamedText` records what
-            // was streamed so the completion callback renders it exactly once.
-            let _fuSuppressXml = false;
-            let _fuHold = '';
-            let _fuStreaming = false;
+            // Display state is shared by live chunks and the completion sink.
+            // Capture and de-duplication stay here; display never executes tools.
             let _fuStreamedText = '';
-            // Tool-markup detection runs on the follow-up stream REGARDLESS of
-            // ctx.cesar.hasNativeTools — deliberately unlike the main turn stream.
-            // runCesarConfirmationFollowUp exists precisely because "a Yes or option
-            // follow-up can return XML tool calls even when the original turn used
-            // native tools": it re-parses the follow-up text with parseToolCalls on
-            // every session and routes a hit into the tool loop. Gating the DISPLAY
-            // on hasNativeTools would therefore stream (and, via streaming-end,
-            // COMMIT) as prose exactly the text the executor is about to treat as a
-            // tool call. Same predicate on both sides, one rule.
-            let _fuToolTail = '';
-            let _fuScanPending = false;
-            let _fuRaw = '';
-            const _fuDisplayChunk = (chunkText: string, force = false): string => {
-              if (_fuSuppressXml) { _fuHold = ''; return ''; }
-              const combined = _fuHold + chunkText;
-              const split = splitBeforeToolMarkup(combined);
-              if (split.hasToolMarkup) { _fuSuppressXml = true; _fuHold = ''; return split.visible; }
-              // The marker split above covers the XML forms and [TOOL_CALLS], and it
-              // releases the prose that precedes them — so it must be consulted
-              // FIRST. What it does not cover (Gemini print(default_api…), Functionary
-              // >>>name, Cohere Action fences) is caught here by the executor's own
-              // predicate over the accumulated RAW text. A hit is unsplittable (the
-              // formats carry no leading open marker to slice on), so the held tail
-              // goes with it: at most XML_TOOL_MARKUP_HOLD_CHARS of prose is lost,
-              // against streaming and committing a whole tool call as an answer.
-              if (_fuScanPending) {
-                _fuScanPending = false;
-                if (textHasToolCalls(_fuRaw)) { _fuSuppressXml = true; _fuHold = ''; return ''; }
-              }
-              if (force) { _fuHold = ''; return combined; }
-              const hold = Math.min(XML_TOOL_MARKUP_HOLD_CHARS, combined.length);
-              const visible = combined.slice(0, combined.length - hold);
-              _fuHold = combined.slice(combined.length - hold);
-              return visible;
-            };
-            // Strip the block markers FIRST (they are chunk-stateful and hold back a
-            // partial marker), then apply the tool-markup gate to what is left — so
-            // a [TODOS]/[ASK] block never trips XML suppression and silences the
-            // prose around it, while real <tool …> markup still suppresses display.
-            const _fuEmit = (raw: string, force = false) => {
-              _fuRaw += raw;
-              // Cheap per-chunk gate before the full-buffer parse, exactly as the main
-              // stream does it (chunkMayCompleteToolCall): a tool call can only have
-              // COMPLETED when the arriving text carries a close-marker terminator, so
-              // a long follow-up never pays an O(n) scan per chunk. Latched here — not
-              // inside the display gate — so a chunk swallowed whole by the [TODOS]/[ASK]
-              // stripper still advances the carry-over tail and still arms the scan.
-              const toolGate = chunkMayCompleteToolCall(_fuToolTail, raw);
-              _fuToolTail = toolGate.tail;
-              if (toolGate.scan) _fuScanPending = true;
-              const stripped = stripFollowUpAsk(stripFollowUpTodos(raw, force), force);
-              if (!stripped) return;
-              const visible = _fuDisplayChunk(stripped, force);
-              if (!visible) return;
-              _fuStreaming = true;
-              dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: visible });
-            };
-            const _fuEndStream = () => {
-              if (!hasCleanupFailure(session)) _fuEmit('', true);
-              if (_fuStreaming) {
-                dispatch({ type: 'streaming-end', engineId: cesarEngineId });
-                _fuStreaming = false;
-              }
-            };
+            const followUpDisplay = createFollowUpDisplay({
+              onChunk: (chunk) => dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk }),
+              onEnd: () => dispatch({ type: 'streaming-end', engineId: cesarEngineId }),
+            });
+            const _fuEndStream = () => followUpDisplay.end({ flush: !hasCleanupFailure(session) });
             const assertFollowUpHealthy = () => {
               if (hasCleanupFailure(session)) throw new Error(SESSION_CLEANUP_FAILURE_MESSAGE);
             };
@@ -3631,7 +3560,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                     if (chunk.type === 'text') {
                       text += chunk.content;
                       // Render as it arrives instead of after the whole send.
-                      _fuEmit(chunk.content);
+                      followUpDisplay.push(chunk.content);
                     }
                     if (chunk.type === 'error') streamError = String(chunk.content ?? 'Cesar follow-up stream failed.');
                     if (chunk.type === 'done' || chunk.type === 'error') break;
@@ -3683,7 +3612,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   // already render — otherwise the follow-up appears twice.
                   const captured = extractAsk(emitLiveTodos(text));
                   if (_fuStreamedText && String(text ?? '').trim() === _fuStreamedText.trim()) return;
-                  const visible = stripFollowUpAsk(stripFollowUpTodos(captured));
+                  const visible = followUpDisplay.stripMarkers(captured);
                   if (visible) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: visible });
                 },
                 onExchange: (nextMessage: string, exchange: any) => {
@@ -3697,7 +3626,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               });
               // Stream-end flush: release any held partial-marker tail so display
               // text is never silently dropped (mirrors the main path's force flush).
-              const heldTail = stripFollowUpAsk(stripFollowUpTodos('', true), true).trim();
+              const heldTail = followUpDisplay.stripMarkers('', true).trim();
               if (heldTail) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: heldTail });
               _toolCallTurns += Number.isFinite(followUp.turns) ? followUp.turns : 0;
               if (followUp.content) {
@@ -3731,7 +3660,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               // never committed, spinner-less ghost block never cleared. This is the
               // same "hoist cleanup into the exit path that always runs" shape the
               // main stream uses (its catch/stream-cleanup block). Idempotent: after
-              // a normal end the strippers are flushed and _fuStreaming is false, so
+              // a normal end the strippers are flushed and the stream is closed, so
               // the second call dispatches nothing.
               _fuEndStream();
               dispatch({ type: 'spinner-stop' });

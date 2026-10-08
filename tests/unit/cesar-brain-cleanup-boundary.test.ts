@@ -387,6 +387,10 @@ describe('interactive continuation cleanup boundary', () => {
       else if (result === 'text') {
         expect(outcome).toMatchObject({ value: { responded: true } });
         expect(ctx.chatSession.messages.at(-1)).toMatchObject({ role: 'engine', content: 'Late follow-up answer.' });
+        const visible = dispatch.mock.calls.slice(eventCount)
+          .filter(([event]) => event.type === 'streaming-chunk')
+          .map(([event]) => event.chunk).join('');
+        expect(visible).toBe('Late follow-up answer.');
       } else expect(outcome).toMatchObject({ value: { decisionReason: 'interactive-follow-up-incomplete' } });
     } else {
       expect(outcome).toMatchObject({ value: { terminalState: 'failed', decisionReason: 'session-cleanup-failed', delegated: false } });

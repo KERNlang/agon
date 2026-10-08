@@ -3,8 +3,9 @@
 ## Subject and ownership
 
 Working candidate: `refactor/modular-plan-resume` in the isolated
-`agon-plan-resume` worktree. Its committed base is `406921fd`.
-The main implementation and Claude worktrees are not changed by this integration.
+`agon-plan-resume` worktree, developed on `406921fd`.
+After qualification, `feat/modular-agon-full` was fast-forwarded to the verified
+code and its evidence. Claude's worktree remains unchanged.
 
 ## Integration checklist
 
@@ -135,3 +136,20 @@ historical status stays readable, and public Plan resume exports have one owner.
 Do not reapply the old tool-loop snapshot or diagnostic daemon commit. The
 provider and mid-turn guards are already included. Remaining physical Plan,
 Brainstorm and Apply ownership work is still tracked separately.
+
+## Shared integration preservation
+
+The six original dirty files in `agon-modular-implementation` were retained in
+Git stash object `c8ce10b189f373156cf21e91b9643b7bc8ce57f2` before fast-forward.
+The original tool-loop source/test delta was already included by `dd1a3e62`;
+the candidate's regenerated release set replaces its old generated metadata.
+Both unrelated note files were restored byte-for-byte and remain uncommitted:
+
+- `modular-agon-claude-handover.md`: Git blob `973feba4748e8ebb503e7b0fa2d87d79f15015cb`.
+- `modular-agon-product-audit.md`: Git blob `65ced90be637d5244196d1d58435edc9a64aa85c`.
+
+These hashes matched before and after integration. Do not blindly apply the
+whole preservation stash: its source/generated files are superseded by the
+integrated commits. It is retained for recovery, not as pending implementation.
+The global launcher still points to `/Users/ra/dev/agon/packages/cli`, not either
+candidate worktree. No global installation was updated or invoked.

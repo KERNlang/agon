@@ -1935,10 +1935,11 @@ summarization fallback, context export, cost callbacks, budget warnings and abor
 return state. `execution-model.ts` owns the existing public execution-plan types
 and step-type constants. Neither module imports private core or CLI code.
 
-The scheduler factory injects the step transition and cost-recording operations.
-The initial scheduler commit retained both host implementations; the subsequent
-state/store extraction below moves the transition implementation into Plan.
-Cost-history recording remains a host operation.
+The initial scheduler factory injected the step transition and cost-recording
+operations. State/store extraction moved the transition implementation into
+Plan. The execution-coordinator increment now removes the host transition hook:
+the scheduler calls its canonical, package-owned transition directly. Cost-history
+recording remains a best-effort host operation, with an error-reporting hook.
 The old core scheduler is replaced, not duplicated. Compatibility entry
 **A20-PLAN-SCHEDULER**, under **KL-011**, is the narrow wrapper in
 `packages/core/src/cesar/plan-executor.ts`. Core's model module re-exports the
@@ -1947,7 +1948,7 @@ on the physical Plan package and TypeScript project reference preserve clean
 build ordering. No new dependency is added within the 49-package release graph.
 
 Removal condition: migrate remaining runtime callers to Plan activation with
-injected transition/cost services and prove the wrapper unreachable, then delete
+injected estimation services and prove the wrapper unreachable, then delete
 the core dependency/export. Until then this adapter is retained and A11 is open.
 
 Oracle: `tests/fixtures/modular-plan-executor-legacy.ts`, frozen from `f6fc22f2`

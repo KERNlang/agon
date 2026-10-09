@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import * as planMod from '../../packages/mod-plan/src/index.js';
-import { createCesarPlan, approveCesarPlan, advanceCesarStep } from '../../packages/core/src/cesar/plan.js';
+import { createCesarPlan, approveCesarPlan } from '../../packages/core/src/cesar/plan.js';
 import { executePlan as legacy } from '../fixtures/modular-plan-executor-legacy.js';
 import { planCostEstimator } from '../../packages/core/src/cesar/plan-cost-estimator.js';
 import type { CesarPlanStep } from '../../packages/core/src/cesar/plan.js';
@@ -10,6 +10,61 @@ import type { PlanExecutorCallbacks, StepExecutor } from '../../packages/core/sr
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe('physical Plan scheduler ownership', () => {
+  it.each([false, true])('checks cancellation again after start notification (parallel=%s)', async parallel => {
+    const controller = new AbortController();
+    const initial = approveCesarPlan(createCesarPlan('cancel fixture', [{ id: 'a', type: 'self', description: 'a',
+      estimatedTokens: 1, estimatedCostUsd: 1, parallel }]));
+    const execute = vi.fn(async () => ({ result: { status: 'success' as const, output: '', actualTokens: 1, actualCostUsd: 1, durationMs: 1 } }));
+    const result = await planMod.createPlanExecutor({ recordStepCompletion: vi.fn() })(initial, { self: { execute } },
+      { onStepStart: () => controller.abort(), onStepDone: () => {}, onPlanUpdate: () => {}, onBudgetWarning: () => {} }, controller.signal);
+    expect(execute).not.toHaveBeenCalled();
+    expect(result.state).toBe('paused');
+  });
+  it('does not start a sequential step after cancellation during a parallel batch', async () => {
+    const controller = new AbortController();
+    const initial = approveCesarPlan(createCesarPlan('cancel fixture', ['a', 'b', 'c'].map(id => ({
+      id, type: 'self', description: id, estimatedTokens: 1, estimatedCostUsd: 1, parallel: id !== 'c',
+    }))));
+    const executed: string[] = [];
+    const result = await planMod.createPlanExecutor({ recordStepCompletion: vi.fn() })(initial,
+      { self: { execute: async step => {
+        executed.push(step.id);
+        await Promise.resolve();
+        controller.abort();
+        return { result: { status: 'success', output: step.id, actualTokens: 1, actualCostUsd: 1, durationMs: 1 } };
+      } } }, { onStepStart: () => {}, onStepDone: () => {}, onPlanUpdate: () => {}, onBudgetWarning: () => {} }, controller.signal);
+    expect(executed).toEqual(['a', 'b']);
+    expect(result).toMatchObject({ state: 'paused', steps: [{ state: 'done' }, { state: 'done' }, { state: 'pending' }] });
+  });
+  it.each(['throw', 'missing', 'cancel before start'])('does not train estimates on synthetic parallel failures: %s', async fault => {
+    const controller = new AbortController();
+    const initial = approveCesarPlan(createCesarPlan('history fixture', [{ id: 'a', type: 'self', description: 'a',
+      estimatedTokens: 1, estimatedCostUsd: 1, parallel: true }]));
+    const recordStepCompletion = vi.fn();
+    const executors = fault === 'missing' ? {} : { self: { execute: async () => { throw new Error('transport failed'); } } };
+    await planMod.createPlanExecutor({ recordStepCompletion })(initial, executors,
+      { onStepStart: () => {}, onStepDone: () => {}, onBudgetWarning: () => {}, onPlanUpdate: () => {
+        if (fault === 'cancel before start') controller.abort();
+      } }, controller.signal);
+    expect(recordStepCompletion).not.toHaveBeenCalled();
+  });
+  it.each([false, true])('checkpoints actual results when a completion observer fails (parallel=%s)', async parallel => {
+    const initial = approveCesarPlan(createCesarPlan('fixture', ['a', 'b'].map(id => ({
+      id, type: 'self', description: id, estimatedTokens: 1, estimatedCostUsd: 1, parallel, exports: [id],
+    }))));
+    const snapshots: typeof initial[] = [];
+    const run = planMod.createPlanExecutor({ recordStepCompletion: vi.fn() });
+    await expect(run(initial, { self: { execute: async step => ({ result: {
+      status: 'success', output: step.id, actualTokens: 1, actualCostUsd: 1, durationMs: 1 }, contextExport: step.id }) } }, {
+      onStepStart: () => {}, onStepDone: () => { throw new Error('observer failed'); },
+      onPlanUpdate: snapshot => { snapshots.push(snapshot); }, onBudgetWarning: () => {},
+    })).rejects.toThrow('observer failed');
+    const saved = snapshots.at(-1)!;
+    expect(saved.steps[0]).toMatchObject({ state: 'done', result: { status: 'success', output: 'a' } });
+    expect(saved.steps[1].state).toBe(parallel ? 'done' : 'pending');
+    expect(saved.stepContext.a).toBe('a');
+    if (parallel) expect(saved.stepContext.b).toBe('b');
+  });
   it('exports the scheduler from Plan and leaves no scheduler loop in core', () => {
     expect(planMod).toHaveProperty('createPlanExecutor');
     const adapter = readFileSync(new URL('../../packages/core/src/cesar/plan-executor.ts', import.meta.url), 'utf8');
@@ -17,6 +72,7 @@ describe('physical Plan scheduler ownership', () => {
     expect(adapter).toContain('@kernlang/agon-mod-plan');
     const scheduler = readFileSync(new URL('../../packages/mod-plan/src/executor.ts', import.meta.url), 'utf8');
     expect(scheduler).not.toMatch(/@kernlang\/agon-core|packages\/core|node:fs|planCostEstimator/);
+    expect(scheduler).not.toContain('services.advance');
     const legacyModel = readFileSync(new URL('../../packages/core/src/cesar/plan.ts', import.meta.url), 'utf8');
     expect(legacyModel).not.toMatch(/export interface CesarPlan(?:Step)?\s*\{/);
   });
@@ -54,8 +110,7 @@ describe('physical Plan scheduler ownership', () => {
     const expectedCosts: unknown[] = [];
     const expected = await replay(legacy, (...args) => { expectedCosts.push(args); });
     const actualCosts: unknown[] = [];
-    const factory = (planMod as unknown as { createPlanExecutor: (services: { advance: typeof advanceCesarStep; recordStepCompletion: (type: string, tokens: number, cost: number) => void }) => typeof legacy }).createPlanExecutor;
-    const actual = await replay(factory({ advance: advanceCesarStep, recordStepCompletion: (...args) => { actualCosts.push(args); } }), () => { throw new Error('new scheduler used legacy cost singleton'); });
+    const actual = await replay(planMod.createPlanExecutor({ recordStepCompletion: (...args) => { actualCosts.push(args); } }), () => { throw new Error('new scheduler used legacy cost singleton'); });
     expect(actual).toEqual(expected);
     expect(actualCosts).toEqual(expectedCosts);
     expect(initial.steps.every(item => item.state !== 'done')).toBe(true);

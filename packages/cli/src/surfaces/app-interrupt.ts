@@ -32,7 +32,8 @@ export const _lastSigintAt: { value: number } = { value: 0 };
 
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-export function runTrackAbort(abort: AbortController | null, activeAbortRef: {current: AbortController | null}, setActiveAbort: (abort:AbortController | null) => void): void {
+export function runTrackAbort(abort: AbortController | null, activeAbortRef: {current: AbortController | null}, setActiveAbort: (abort:AbortController | null) => void, expectedOwner?: AbortController): void {
+  if (expectedOwner && activeAbortRef.current !== expectedOwner) return;
   if (activeAbortRef.current) {
     _activeAborts.delete(activeAbortRef.current);
   }

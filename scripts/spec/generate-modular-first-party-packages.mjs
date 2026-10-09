@@ -234,6 +234,8 @@ export { CESAR_STEP_TYPES, CESAR_STEP_TYPE_TABLE } from './execution-model.js';
 export { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan, exitCesarPlan } from './execution-state.js';
 export { buildResumePromptContext, skipCompletedSteps, prepareCesarPlanResume } from './resume-policy.js';
 export type { ResumePromptContext } from './resume-policy.js';
+export { createPlanCoordinator, failedPlanStepIsFallbackRetryable, preparePlanFallbackRetry } from './execution-coordinator.js';
+export type { PlanCoordinatorHost } from './execution-coordinator.js';
 export { getCesarPlansDir, cesarPlanJsonPath, cesarPlanMarkdownPath, saveCesarPlan, loadCesarPlan, listCesarPlans } from './execution-store.js';
 ` : short === 'jobs' ? `export { ModularJobService } from './implementation.js';
 ` : short === 'git-actions' ? `export { runGitAction } from './implementation.js';

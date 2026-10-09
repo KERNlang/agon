@@ -3,13 +3,13 @@ const effects = vi.hoisted(() => ({ execute: vi.fn(), save: vi.fn() }));
 vi.mock('@kernlang/agon-core', async original => ({
   ...await original<Record<string, unknown>>(), executePlan: effects.execute, saveCesarPlan: effects.save,
   loadConfig: () => ({ cesarEngine: 'unrelated-config-engine' }),
-  resolveWorkingDir: () => '/fixture', gitChangedFiles: () => [],
+  resolveWorkingDir: () => '/fixture',
 }));
 vi.mock('../../packages/cli/src/handlers/plan-mode.js', () => ({ buildStepExecutors: () => ({}) }));
 import { executeApprovedPlan } from '../../packages/cli/src/signals/dispatch/plan-execution.js';
 import { requestPlanFallback, revokePlanFallback, takePlanFallback } from '../../packages/cli/src/signals/plan-fallback.js';
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => vi.resetAllMocks());
 
 function plan() {
   return { id: 'fixture-plan', intent: 'fixture', state: 'running', selfReview: false,
@@ -59,4 +59,19 @@ it('consumes a request once and refuses an already aborted controller', () => {
   expect(requestPlanFallback(controller, 'p', 's', 'c')).toBe(false);
   expect(takePlanFallback(controller.signal, 'p')).toEqual({ planId: 'p', stepId: 's', engine: 'b' });
   expect(takePlanFallback(controller.signal, 'p')).toBeUndefined();
+});
+
+it('retains a real fallback grant when its interrupted executor throws', async () => {
+  let controller!: AbortController;
+  effects.execute.mockImplementationOnce(async (value, _executors, callbacks) => {
+    callbacks.onStepStart('s1');
+    expect(requestPlanFallback(controller, value.id, 's1', 'replacement')).toBe(true);
+    throw new Error('cancelled transport');
+  }).mockImplementationOnce(async value => ({ ...value, state: 'paused' }));
+  await executeApprovedPlan(plan(), { dispatch: vi.fn(), setActivePlan: vi.fn(),
+    ctx: { config: {}, setActiveAbort: (value: AbortController) => { if (value) controller = value; } } } as any);
+  expect(effects.execute).toHaveBeenCalledTimes(2);
+  expect(effects.execute.mock.calls[1]![0]).toMatchObject({ fallbackRetriesUsed: { s1: 1 },
+    steps: [{ id: 's1', engine: 'replacement', state: 'pending' }] });
+  expect(effects.execute.mock.calls[1]![3].aborted).toBe(false);
 });

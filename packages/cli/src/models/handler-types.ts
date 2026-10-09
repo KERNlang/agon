@@ -209,7 +209,7 @@ export interface HandlerContext {
   chatSession: ChatSession;
   currentPlan: Plan | null;
   setCurrentPlan: (plan: Plan | null) => void;
-  setActiveAbort: (abort: AbortController | null) => void;
+  setActiveAbort: (abort: AbortController | null, expectedOwner?: AbortController) => void;
   askQuestion: (prompt: string) => Promise<string>;
   cesarSession: PersistentSession | null;
   setCesarSession: (session: PersistentSession | null) => void;

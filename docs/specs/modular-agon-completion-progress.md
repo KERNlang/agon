@@ -365,3 +365,259 @@ loss, duplicate-preview suppression, and render-cache aliasing. The authority
 mutation control removed the post-approval lease check and made tests fail.
 Component evidence is not whole-release acceptance. Plan, Brainstorm, backend
 hardening, adapter retirement, and clean-checkout release qualification remain.
+
+### Committed Apply qualification — `400a087d`
+
+[Clean-checkout pressure receipt](evidence/modular-agon-apply-pressure-400a087d.json)
+retains the failed run, not only its passing cells. Exact committed archive,
+offline install, build, process-death negative controls, generated drift,
+disabled matrix, mutation controls, representative workflows, shuffled tests,
+full suite, typecheck, lint, packs, supply-chain, folder-mod e2e, isolated npx,
+state migrations and physical-cutover checks passed. Startup qualification
+failed: `--version` p95 246.14 ms against the unchanged 185 ms budget.
+
+The Plan development build overlapped this performance measurement. That is a
+possible confounder, not proof that the failure is invalid. The original receipt
+remains red. A separate unchanged-checkout measurement without that concurrent
+build is diagnostic; it cannot rewrite the original result. Later performance
+cells were not reached. A15 did not recur, but its cause remains unresolved.
+
+The [no-build diagnostic recheck](evidence/modular-agon-apply-startup-recheck-400a087d.json)
+passed the same limits: version p95 168.01 ms, help p95 166.87 ms. No source,
+budget, warm-up rule or sample count changed. This supports build contention as
+a confounder, not a whole-run acceptance claim. Final qualification must serialize
+performance measurement against development builds.
+
+## Plan execution coordination — development increment
+
+`mod-plan/src/execution-coordinator.ts` owns execution ordering, bounded fallback
+preparation, review eligibility and budget, phase disposal, and terminal results.
+The CLI now binds a typed host port rather than keeping these algorithms. The
+port injects execution, persistence, Git inspection, cost estimation, presentation
+callbacks and run-local fallback authority. It imports no CLI or core internals.
+Core Plan models and executor types already reexport the same physical package;
+this change does not introduce another model implementation or dependency edge.
+
+Temporary adapter **A05-PLAN-COORDINATOR**, under **KL-011**:
+
+- Physical owner: `agon.plan`; host binding: CLI `plan-execution.ts`.
+- Compatibility exports retain existing internal callers while delegating to the
+  single physical coordinator. Fallback policy exports are identity reexports.
+- Removal condition: Plan session activation supplies these effects directly;
+  the remaining selection, approval and callback lifecycle moves out of CLI.
+- Guards: package export identity, absence of the old CLI algorithms, generated
+  export drift, existing fallback authority tests, and real callback persistence.
+
+### Reviewed defects and repairs
+
+[Initial review](evidence/modular-agon-claude-plan-coordinator-review.json),
+[follow-up](evidence/modular-agon-claude-plan-coordinator-followup.json), and
+[closure review](evidence/modular-agon-claude-plan-coordinator-closure.json) retain
+the supplied source and findings. Each has an adjacent `-input.json` artifact.
+Claude found no movement regression, but identified inherited lifecycle defects.
+Source checks and failing tests established the following repairs:
+
+- A stale main-phase callback could overwrite a reviewed or Forge-paused plan.
+  Each phase now drains before its returned state is persisted or the next phase
+  starts. Tests use the real CLI callbacks, inspect saved JSON and actual Markdown,
+  and exhaust fake timers to detect any late overwrite.
+- Review failure no longer discards observed progress. Main and review execution
+  share one error-recovery path. It keeps observed cost/state, pauses the plan,
+  records interrupted steps, settles their UI callbacks, and drains persistence.
+  Already completed steps remain completed. Markdown agrees with the final JSON.
+- The [phase lifecycle review](evidence/modular-agon-claude-plan-phase-review.json)
+  exposed gaps beyond a one-time drain. Phase callbacks now seal on settlement;
+  late callbacks cannot reopen a writer. Each phase has a child signal linked to
+  its parent; unexpected errors abort that child without creating fallback
+  authorization. Observed completion uses the existing Plan transition, not a
+  second cost/state algorithm. Cancelled and completed terminal states survive
+  later exceptions. A pre-aborted review gate pauses without spending review
+  budget or starting an executor. Four tests failed before these repairs.
+- Callback construction and abort registration now have cleanup coverage.
+  Every registration attempt is released in reverse order, including setters that
+  throw after mutation. Terminal and job slots compare the expected owner, so an
+  older Plan cannot clear a newer controller or detach its cancellation forwarder.
+- Overlapping singular/plural engine fields cannot authorize a same-engine retry.
+- A Forge pause clears completion metadata. An interrupted review is not described
+  as proven blocking findings. Existing review budgets remain unchanged.
+- The [sealed-phase review](evidence/modular-agon-claude-plan-phase-sealed-review.json)
+  found setup failures that left a running record, cancellation overwritten by
+  stale executor returns, duplicate starts, review ID collisions and malformed
+  retry budgets. Eleven regression cases failed before those repairs. Required
+  saves precede final state publication. Setup failures persist a paused snapshot
+  when storage remains available. Cancellation also settles the real UI spinner
+  and todos. Repeated starts cannot regress a completed step.
+- The [recovery review](evidence/modular-agon-claude-plan-phase-recovery-review.json)
+  found reporting failures that could lose completed progress, wrong attribution
+  when several steps had retry history, and unnormalized returned cancellation.
+  Reporting and its warning sink are now best effort, separately from required
+  persistence and verification. Retry attribution uses the newly reset step.
+  Both observed and returned cancellation use the canonical Plan transition.
+  A direct review-gate call also recovers its latest snapshot on setup failure.
+  Tests include a real run-local fallback grant followed by an executor throw.
+- The [reporting review](evidence/modular-agon-claude-plan-reporting-review.json)
+  found unguarded UI callback forwarding. Four tests with the real parallel
+  executor failed before wrapping those callbacks. UI faults can no longer
+  discard the second completed result or turn a successful step into a retry.
+  Cleanup tests assert controller identity, not structural equality. A real
+  non-terminal callback followed by an unreported return detects late writes.
+- The [callback review](evidence/modular-agon-claude-plan-callback-reporting-review.json)
+  found an additional scheduler defect: estimation-history errors could discard
+  results or exported context. Source inspection verified that the injected
+  `recordStepCompletion` updates only the in-memory estimator history. It is
+  now explicitly best effort, with an error-reporting hook. Required result
+  persistence is unchanged. Sequential and parallel failure-injection tests
+  preserve all completed results and exports. Paused/cancelled plans no longer
+  probe Git for a review gate that cannot run.
+- The [estimation review](evidence/modular-agon-claude-plan-estimation-review.json)
+  exposed a real resume dead-end behind its recommendation to skip failed review
+  probes. Skipping required verification was rejected. Instead, the scheduler now
+  settles a no-ready plan: non-empty all-done/skipped plans become done, otherwise
+  paused. Review recognizes successfully completed mutation results retained on
+  skipped steps. An end-to-end scheduler test fails Git, pauses, resumes, and
+  completes review without rerunning the workspace mutation. An unexpected
+  transition error publishes the full scheduler checkpoint before propagating,
+  preserving exports as well as result/cost state. Normal raw legacy replay
+  remains unchanged. An additional source mutant removes the estimation reporter
+  guard; the test kills that mutant rather than merely executing the error path.
+- The [resume-gate review](evidence/modular-agon-claude-plan-resume-gate-review.json)
+  showed why merely checkpointing a host-defined transition was insufficient.
+  The final scheduler calls the canonical transition in its own physical package;
+  `PlanExecutionServices` no longer accepts a replacement `advance` function.
+  The core adapter supplies only estimation effects. A negative control tries to
+  replace advancement and proves that successful mutations cannot be discarded.
+  All parallel results enter the checkpoint before completion observers run.
+  Sequential execution catches no longer turn observer errors into step failures.
+  Direct observer-failure tests cover both paths without weakening raw replay.
+- Appended verification steps carry optional `selfReviewCycle`. A successful gate
+  from the current execution does not trigger another gate on resume. The field
+  is coordinator-owned; the model proposal sanitizer does not accept it. Existing
+  records without the field retain conservative review behavior and the same cap.
+  The field is additive; historical readers and persisted envelope versions remain
+  unchanged. This is not proof that an arbitrary past review covers new changes.
+- Required verification now has a resumable checkpoint before any probe: callbacks
+  and coordinator saves project intermediate `done` to `paused` until verification
+  completes. A probe failure never writes `done`; a crash leaves resumable work.
+  Read-only and review-disabled/exhausted non-Forge plans do not require Git.
+  Forge inspection and eligible self-review remain fail-closed. Resume counts
+  retained successful skipped steps as completed work.
+
+Review adjudications:
+
+- Required save failures remain fail-closed. Catching EACCES and continuing would
+  authorize more work without its required persistence. A test asserts no next
+  execution, fallback or success message after this failure. Markdown remains a
+  separately reported projection, as before.
+- Fallback authorization remains host-owned and run-local. Requests use a WeakMap
+  keyed by AbortSignal. The coordinator owns retry preparation and ordering, not
+  the operator's grant. The loop still permits only one fallback attempt.
+- Plan step adapters explicitly avoid replacing the parent abort controller:
+  review calls its core runtime; agent passes `parentSignal`. The interrupt path
+  calls `runTrackAbort(null, ...)`, clearing both its ref and active-controller set.
+- CLI-specific recovery wording remains recognizable for compatibility. The
+  coordinator's warning sink now uses `hostConsoleWarn`, not raw terminal output.
+- Public source and built-package identity are different module instances. The
+  ownership test now compares the actual public package and its CLI reexport,
+  then checks that the old CLI algorithms are absent. No test oracle was removed.
+- An unavailable `changedFiles` or review estimator is not a mere display fault:
+  the required review gate has not completed. These failures still stop and pause
+  the run. A broken notification or active-view publication cannot demote a
+  completed durable result. No save-failure waiver was introduced.
+- The scheduler publishes `running` before its start callback. This valid order
+  is tested explicitly. Starting a still-blocked step remains invalid; accepting
+  it would bypass dependency readiness. The pending-step failure marker applies
+  to the explicitly selected retry/review after an executor startup failure.
+- Infinity was already rejected by the old retry limit. It is retained as a
+  boundary test, not claimed as a newly discriminating negative control.
+- If recovery storage fails, the coordinator reports that failure rather than
+  publishing a supposedly durable paused snapshot. The disk may retain its prior
+  state; this is not hidden or called a successful save. No further execution is
+  authorized. The suggestion to publish despite failure was not adopted.
+- `CesarStepState` explicitly includes `running` and `blocked`; the review's
+  possible typing concern is refuted by the source and independent package build.
+
+This is not completion of A05 or the modular release. Session selection, approval,
+generation checks at awaited effect boundaries, and callback ownership remain
+implementation work. Brainstorm, backend hardening, remaining adapter retirement,
+A15 diagnosis and final serialized clean-checkout qualification also remain open.
+
+### Plan coordinator review follow-up: storage and execution boundaries
+
+- Claude's `plan-owned-state-review` and `plan-final-boundaries-review` inputs and
+  raw results are retained in content-hashed evidence files. They are component
+  reviews, not release approval.
+- A retained successful tagged review survives real JSON save/load and a fresh
+  coordinator. Resume can reuse it only when no new mutation ran. A new mutation
+  still requires the next review. Both cases have regression tests.
+- Cancellation after a parallel batch or a start notification prevents a new
+  executor call. Synthetic parallel failures no longer train cost estimates.
+- Successful no-change verification publishes a final `done` transcript row.
+  The authoritative JSON checkpoint remains separate from display effects.
+- Source inspection proved that legacy `gitChangedFiles` ignores untracked files
+  and swallows Git errors. Plan now uses the public support-worktree status probe.
+  Real temporary repositories cover clean, staged and untracked states. Probe
+  failure remains fail-closed. The launcher declares its support dependency.
+- Claude correctly found a synchronous infinite loop in the cancellation mutant,
+  not the production scheduler. The affected focused run was stopped. Mutants now
+  run in disposable workers with a parent-controlled timeout. Baselines must pass;
+  hangs, incorrect results and rejected execution kill mutants. Four mutants pass.
+  `plan-final-boundaries-green` was not a passing run and must never be cited as one.
+- Approval storage failure reproduced publication of a false running state before
+  a thrown save. The coordinator now owns the initial required save before any
+  executor creation or publication. Duplicate manual/automatic/resume entry writes
+  are removed. The original post-execution save-failure test still fails storage
+  after a successful initial save; it was not replaced by the startup case.
+- Dirty status remains an inherited proxy for unapplied Forge output. It cannot
+  prove which patch was applied. Explicit applied-artifact evidence belongs in
+  the remaining backend/session work; this limitation is not release acceptance.
+- Remaining follow-ups include partial-engine fallback policy, resume summary
+  handling for deliberately skipped work, callback logging, and pre-execution
+  session authority checks. These remain requirements, not waived findings.
+
+`plan-storage-boundary-review` follow-up:
+
+- Verified and repaired: terminal cost formatting could demote a verified result
+  if historical malformed input contained a null cost. The whole success-message
+  expression now runs inside the guarded reporting effect. A failing-before test
+  proves that the durable `done` result stays done.
+- Verified and repaired: an initial save failure consumed the proposal in memory.
+  Proposal clearing now follows successful running-state storage. Manual approval,
+  automatic approval and resume each have refusal and single-initial-save tests.
+- Strengthened the real storage round-trip test: the mutating step has a success
+  result, and the test asserts the exact temporary JSON path before saving. This
+  makes the no-extra-review assertion depend on the retained review marker.
+- Source-refuted signal concern: `handlers/plan-mode.ts` passes the executor's
+  `signal` argument as `parentSignal` to agent adapters. It does not capture the
+  controller registered in the app. The phase-abort test deliberately checks this
+  execution signal; owner-guarded controller release has separate tests.
+- Source-refuted interrupt concern: `surfaces/app-interrupt.ts` revokes fallback
+  before aborting registered controllers, including the active controller ref.
+- One fallback attempt per run is existing behavior, not a promise to retry every
+  failed step. Per-step counters prevent reusing that attempt across resumes.
+- The inherited second-review cap and interruption-versus-verdict taxonomy remain
+  session-policy work. No extra retry budget was introduced to hide exhaustion.
+- Storage loss after an external mutation cannot be made atomic by publishing an
+  unsaved UI snapshot. Recovery-save failure stays visible and blocks execution.
+  Improving the recovery message and durable intent/outcome reconciliation remains
+  part of session ownership; a failed recovery is not reported as successful.
+
+Final component review (`plan-increment-exit-review`) confirmed the last three
+repairs and found one further reproducible initial-save edge case. A transient
+refusal could be followed by a successful recovery save, creating a paused record
+beside a retained approval. The coordinator now tracks successful initial storage
+and skips recovery when execution never started. The regression fails before this
+guard. The refusal message explicitly says no work started and how to retry.
+
+Test-quality findings were applied: pre-execution save observations are asserted
+outside mocks, the null-cost warning has an exact assertion, and real Git fixtures
+remove inherited `GIT_*` overrides and set a discovery ceiling. The obsolete Git
+mock was removed. The review-marker compatibility fallback remains conservative;
+historical untagged reviews are not retrospectively declared to satisfy a new gate.
+The hypothetical malformed-step-list catch failure has no well-typed reproducer;
+persisted-input validation remains tracked under session/model reconciliation.
+
+The post-execution publication-failure fixture now permits the initial required
+save, then refuses all later writes. It asserts that only the saved running state
+was published and that the unsaved final state was not. Initial refusal has its
+own tests. This preserves both fault locations rather than letting the new initial
+save accidentally prevent the older post-execution fault from being exercised.

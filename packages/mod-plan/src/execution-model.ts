@@ -39,6 +39,8 @@ export interface CesarPlanStep {
   startedAt?: string;
   completedAt?: string;
   runDir?: string;
+  /** Assigned by the coordinator to its appended verification step. */
+  selfReviewCycle?: number;
 }
 
 /**

@@ -779,11 +779,11 @@ export function App() {
     });
   }, [bell,setWindowTitle,pendingBellRef]);
 
-  const trackAbort = useCallback((abort:AbortController|null) => {
-    if (trackJobAbortController(abort)) {
+  const trackAbort = useCallback((abort:AbortController|null, expectedOwner?: AbortController) => {
+    if (trackJobAbortController(abort, expectedOwner)) {
       return;
     }
-    runTrackAbort(abort, activeAbortRef, setActiveAbort);
+    runTrackAbort(abort, activeAbortRef, setActiveAbort, expectedOwner);
   }, []);
 
   const setCesarSessionWrapped = useCallback((session:PersistentSession|null) => {

@@ -12,7 +12,7 @@ export interface ResumePromptContext {
 /** Summarize the existing plan without selecting, loading or changing it. */
 export function buildResumePromptContext(plan: CesarPlan): ResumePromptContext {
   const steps = plan.steps ?? [];
-  const doneCount = steps.filter(s => s.state === 'done').length;
+  const doneCount = steps.filter(s => s.state === 'done' || (s.state === 'skipped' && s.result?.status === 'success')).length;
   const failedSteps = steps.filter(s => s.state === 'failed');
   const remainingSteps = steps.filter(s => s.state !== 'done' && s.state !== 'skipped');
   return {

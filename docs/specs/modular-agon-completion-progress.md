@@ -4,9 +4,9 @@ This ledger continues the existing acceptance model. It does not replace the
 roadmap, ownership ledger, product audit, or release criteria.
 
 Baseline: `99d141845a779df0786e3a84860b00fb9aeaa1d9` on the isolated
-`refactor/modular-plan-resume` worktree. The latest qualified code subject is
-`9fc8e2af00d34dd3adb79fc1c7cd10bcb2c6d7c8`; the later commits contain evidence
-and handover documentation. The combined handover remains
+`refactor/modular-plan-resume` worktree. The latest clean fixture-qualified code
+subject is `9c868c63a59993d39193c5b3076118d7f4a2bf35`; this is not whole-release
+acceptance. The combined handover remains
 [modular-agon-combined-followup-plan.md](modular-agon-combined-followup-plan.md).
 
 ## Fixed acceptance scope
@@ -621,3 +621,19 @@ save, then refuses all later writes. It asserts that only the saved running stat
 was published and that the unsaved final state was not. Initial refusal has its
 own tests. This preserves both fault locations rather than letting the new initial
 save accidentally prevent the older post-execution fault from being exercised.
+
+### Clean committed qualification: 9c868c63
+
+[Retained receipt](evidence/modular-agon-plan-pressure-9c868c63.json): all 29 gates
+passed from an exact Git archive with a fresh offline installation. The subject
+was clean when captured (`workingChangesExcluded: false`). Provider shims recorded
+zero launches. The run covers build, process-death recovery, generated surfaces,
+disabled-mod fixtures, foundation mutants, representative workflows, shuffled
+workflow tests, full tests, typecheck, lint, packing, supply chain, installer,
+state migration, cutover, and all eight performance-budget gates.
+
+The earlier `400a087d` startup failure remains recorded. This new complete run
+passes the unchanged budgets; it does not relabel that older run as passing.
+No development build overlapped the performance measurements. Fixture parity
+does not establish live-provider behavior, missing native platform combinations,
+or complete Plan/Brainstorm ownership. Those requirements remain open.

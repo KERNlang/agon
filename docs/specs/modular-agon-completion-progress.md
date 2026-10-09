@@ -637,3 +637,37 @@ passes the unchanged budgets; it does not relabel that older run as passing.
 No development build overlapped the performance measurements. Fixture parity
 does not establish live-provider behavior, missing native platform combinations,
 or complete Plan/Brainstorm ownership. Those requirements remain open.
+
+## Brainstorm session-record ownership (development)
+
+The physical Brainstorm package now owns recording order, timestamps, result
+projection and settlement through `createBrainstormSessionRecord`. It receives
+narrow checkpoint/history/tracker/result/receipt effects, not a `ChatSession`,
+`Dispatch`, or a host workflow callback. The CLI file binds existing host services.
+The public barrel and its generator export the same factory and effect types.
+No package or dependency edge was added.
+
+Temporary adapter **A06-SESSION-EFFECTS**, under **KL-011**, remains at
+`packages/cli/src/blocks/brainstorm-session-record.ts`. Remove it once physical
+session activation supplies these bindings directly. The adapter no longer owns
+the recording algorithm. Session orchestration and presentation are not claimed
+as extracted by this change.
+
+Claude reviewed the old authoritative body, new owner, adapter, caller and tests
+through isolated candidate Agon. The raw input/result are retained in
+`modular-agon-claude-brainstorm-record-review*.json`. It found no moved-body
+regression, but correctly identified an effects-spread binding risk. New tests
+failed on inherited effects and changing clock bindings. Explicit forwarding
+closures now preserve both, including each method's receiver.
+
+Typecheck exposed a readonly-output mismatch before acceptance. The owner takes
+readonly bids but emits a new mutable projection, matching the existing result
+store. This is expressed in the public type without a cast. Mod compilation and
+repository typecheck pass. A typed direct consumer test has no host session or
+`as never`; legacy payload tests continue to exercise the compatibility binding.
+
+Tests now discriminate cross-effect order, advancing timestamps, projected bid
+fields, late-result cancellation, failure-before-completion, and private-import
+boundaries. Existing partial-write behavior is preserved, not called atomic:
+receipt idempotency after partial storage failure and session-level cancellation
+during recording remain part of the outstanding host-effect work.

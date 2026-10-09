@@ -253,6 +253,8 @@ export type { BrainstormScoutOptions, BrainstormScoutBid, BrainstormScoutService
 export { createBrainstormScoring, structuralScore, scoutScore, assignStances, fallbackParse } from './policy.js';
 export type { BrainstormRatingHistory, ScoutScoreInput } from './policy.js';
 export type { BrainstormWorkflowOptions, BrainstormWorkflowServices, BrainstormDraft, BrainstormBid } from './workflow.js';
+export { createBrainstormSessionRecord } from './session-record.js';
+export type { BrainstormSessionEffects, BrainstormSessionResult } from './session-record.js';
 ` : short === 'tribunal' ? `export { runTribunal } from './implementation.js';
 ` : short === 'review' ? `export { runReview } from './implementation.js';
 ` : short === 'agent' ? `export { runAgentTask } from './implementation.js';

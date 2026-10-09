@@ -30,7 +30,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "4c595e4eb1ec7ea2eae96f93634bf60ef3e6b8498a47c0d5aaa4b39ee6f7449d"
+          "content": "83bdedd871d0e68b52094f4d72ea49f1aef2b7bb20233954b41237950afb393d"
         }
       ],
       "licenses": [
@@ -43,7 +43,7 @@
       "properties": [
         {
           "name": "npm:integrity",
-          "value": "sha512-E+1TtDXrYc8VYG11T2BRam9Q/sAmnnInNU85rJJyW6hv1V+mu1vLFqTEbhHLsfB/tSBgWMWzx1uTUxhkWhLywQ=="
+          "value": "sha512-PKjRnHX0cXJ4z20S68I1/3Yonh2g/cMoguKjO/CwYIm8d8fxjjUjZE0/IlZvR2wY0ydY4K4nFTmPaIO4OKP++w=="
         },
         {
           "name": "agon:class",
@@ -540,7 +540,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "9247377ea6b12bc507ff2de9841dcb34344c7f2b4136b575b5403267e8f0200c"
+          "content": "d2869365013635923ddc3464af91fba39b476ed47c6e3f940cf6754675d14e10"
         }
       ],
       "licenses": [
@@ -553,7 +553,7 @@
       "properties": [
         {
           "name": "npm:integrity",
-          "value": "sha512-Gxaq2uhwpoY/Zz5yT+YD4BaUFMazcmTN/3gHV6jrx9hXaJb378YId1tNkv0qOtXAmvxA55TlbQzpSQUIaplOAQ=="
+          "value": "sha512-dnspfnYBmwBFP1hT7JOrNzdJL5Uuh0SpNAOEg78Ghqdt5pdSXYCHIuK856wGn/j5V5/gbCb5q1LGQKvAYQmzKg=="
         },
         {
           "name": "agon:class",

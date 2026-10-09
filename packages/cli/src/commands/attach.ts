@@ -1,4 +1,5 @@
 import { defineCommand } from 'citty';
+import { escapeLiteralText } from '../blocks/literal-text.js';
 
 import { ensureAgonHome, getSessionHost } from '@kernlang/agon-core';
 
@@ -49,6 +50,10 @@ export function renderLoggedEvent(entry: LoggedEvent): string | null {
     case 'text':
       return oneLine((ev as { content?: unknown }).content) || null;
     case 'engine-block': {
+      if (ev.format === 'diff') {
+        const eid = oneLine(escapeLiteralText(str(ev.engineId))) || 'patch';
+        return `${bold(cyan(`◆ ${eid}`))} ${oneLine(escapeLiteralText(str(ev.content)))}`;
+      }
       const eid = oneLine((ev as { engineId?: unknown }).engineId) || 'engine';
       return `${bold(cyan(`◆ ${eid}`))} ${oneLine((ev as { content?: unknown }).content)}`;
     }

@@ -5,6 +5,7 @@ import { icons } from '../signals/icons.js';
 import { cleanEngineOutput, parseMarkdownBlocks, truncateCodeLine } from '../blocks/markdown.js';
 
 import { parsePatchPreview } from '../blocks/engine-helpers.js';
+import { literalPatchRows, patchPreviewRows, PATCH_PREVIEW_LABEL } from '../blocks/literal-patch.js';
 
 import { contentWidth, color256toHex, engineColor, CODE_RAIL, CODE_RAIL_COLOR, MAX_CODE_LINES } from '../blocks/rendering.js';
 
@@ -733,7 +734,7 @@ export function blockRowFingerprint(event: any, mode: string, toolOutputExpanded
   // reads `color` (accent), kern-draft reads `critique`, debate-round reads
   // `position`. Adding a type to the allowlist? Add EVERY field its renderer
   // reads here first (e.g. tool output would need `output`).
-  const extra = `${String(event?.color ?? '')}|${String(event?.critique ?? '')}|${String(event?.position ?? '')}`;
+  const extra = `${String(event?.color ?? '')}|${String(event?.critique ?? '')}|${String(event?.position ?? '')}|${String(event?.format ?? '')}`;
   const widths = `${proseWidth}.${chatWidth}.${engineWidth}`;
   const flags = `${mode}|${toolOutputExpanded ? 1 : 0}|${thinkingExpanded ? 1 : 0}`;
   // Head AND tail slices: same-prefix same-length bodies (padded logs, JSON
@@ -826,6 +827,15 @@ export function renderBlockOwnRows(block: OutputBlock, mode: string, toolOutputE
         ]);
         return;
       case 'engine-block': {
+        if (event.format === 'diff') {
+          literalPatchRows(PATCH_PREVIEW_LABEL, proseWidth).forEach((text, index) => {
+            pushSegmentsRow(`${baseKey}-patch-head-${index}`, 1, [{ text, bold: true }]);
+          });
+          patchPreviewRows(event.content, proseWidth).forEach((text, index) => {
+            pushSegmentsRow(`${baseKey}-patch-${index}`, 1, [{ text }]);
+          });
+          return;
+        }
         const cleaned = cleanEngineOutput(event.content);
         if (!cleaned.trim()) return;
         const accentColor = color256toHex(event.color ?? (ENGINE_COLORS[event.engineId] ?? 124));

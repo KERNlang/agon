@@ -1,6 +1,7 @@
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { withPatchApplication } from '../../patch-application-host.js';
+import { createPatchApplicationUi, withPatchApplication } from '../../patch-application-host.js';
+import { escapeLiteralText } from '../../blocks/literal-text.js';
 import { withPlanSession } from '../../plan-session-host.js';
 import { runBrainstormSession } from '../../blocks/brainstorm-session.js';
 
@@ -12,7 +13,7 @@ import type { ImageAttachment } from '@kernlang/agon-core';
 import type { CommandResult, IntentContribution, Json, ModPlatform } from '@kernlang/agon-mod-api';
 
 import { assertContributionInput } from '@kernlang/agon-kernel';
-import { modularHostRoot, processSurfaceClient } from '../../surface-authority-runtime.js';
+import { assertProcessSurfaceAvailable, modularHostRoot, processSurfaceCatalog, processSurfaceClient } from '../../surface-authority-runtime.js';
 
 import { loadCesarPlan } from '@kernlang/agon-core';
 
@@ -20,7 +21,7 @@ import type { CesarPlan } from '@kernlang/agon-core';
 
 import { ENGINE_COLORS } from '../../blocks/output-format.js';
 
-import { handleLeaderboard, handleCesarReport, handleCesarHints, handleHistory, handleEngines, handleDiscover, handleConfig, handlePermissions, handleUse, handleCesar, handleTokens, handleRaw, handleWorkspace, handleChats, handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel, handleApplyPatch, handleCp, handleCpLast, handleCommit, handleFlowReport, handleFlowAnalysis, handleRun } from '../../handlers/index.js';
+import { handleLeaderboard, handleCesarReport, handleCesarHints, handleHistory, handleEngines, handleDiscover, handleConfig, handlePermissions, handleUse, handleCesar, handleTokens, handleRaw, handleWorkspace, handleChats, handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel, handleCp, handleCpLast, handleCommit, handleFlowReport, handleFlowAnalysis, handleRun } from '../../handlers/index.js';
 
 import { handleProvider } from '../../handlers/provider.js';
 
@@ -363,7 +364,31 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
       handleCancel(cb.dispatch, cb.ctx);
       break;
     }
-    case 'apply': await handleApplyPatch(cb.dispatch, cb.ctx, intent.patchPath, intent.force); break;
+    case 'apply': {
+      // Legacy-shaped intents still execute the selected physical owner. There
+      // is no second Apply workflow and no fallback around mod enablement.
+      try {
+        assertProcessSurfaceAvailable('tui', '/apply');
+        const entry = processSurfaceCatalog('tui').find(candidate => candidate.kind === 'intent'
+          && candidate.owner.id === 'agon.forge' && candidate.publicId === 'apply');
+        const record = entry && processSurfaceClient('tui').project().entries.find(candidate =>
+          candidate.owner.id === entry.owner.id && candidate.kind === entry.kind && candidate.id === entry.registryId);
+        if (!record) throw new Error('The selected Forge generation has no Apply contribution. Restart Agon.');
+        cb.runAsJob('apply', 'apply', async signal => {
+          try {
+            await runPhysicalTuiContribution(record, { type: 'apply', force: intent.force === true,
+              ...(typeof intent.patchPath === 'string' ? { patchPath: intent.patchPath } : {}) }, 'apply', cb, signal);
+          } catch (error) {
+            cb.dispatch({ type: 'error', message: error instanceof Error ? error.message : String(error) });
+          }
+        });
+        emitPostDispatch(intent, input, cb);
+        return { handled: true, ranAsJob: true };
+      } catch (error) {
+        cb.dispatch({ type: 'error', message: error instanceof Error ? error.message : String(error) });
+        break;
+      }
+    }
     case 'cp': {
       if (intent.last) handleCpLast(cb.ctx.chatSession, cb.dispatch);
       else handleCp(intent.index, cb.dispatch);
@@ -409,9 +434,7 @@ export async function runPhysicalTuiContribution(
     });
     return;
   }
-  const output = await withPatchApplication(invocation.invocationId,
-    (request, context) => handleApplyPatch(cb.dispatch, cb.ctx, request.patchPath, request.force, context),
-    async () => withPlanSession(invocation.invocationId, async (request, context) => {
+  const run = () => withPlanSession(invocation.invocationId, async (request, context) => {
       context.signal.throwIfAborted();
       // A05 adapter: preserve session selection and approval semantics; never
       // recurse through the generated marker or substitute a disk-only controller.
@@ -419,7 +442,10 @@ export async function runPhysicalTuiContribution(
         ? await (await import('./intent-skills.js')).dispatchSkillsUiIntent(request, '', cb)
         : await dispatchSessionInfoIntent(request, '', cb);
       return result?.handled ? { exitCode: 0 } : { exitCode: 2, stderr: 'Unsupported Plan session action.\n' };
-    }, async () => contribution.run(normalized, invocation)));
+    }, async () => contribution.run(normalized, invocation));
+  const output = record.owner?.id === 'agon.forge' && commandName === 'apply'
+    ? await withPatchApplication(invocation.invocationId, createPatchApplicationUi(cb.dispatch, cb.ctx), run)
+    : await run();
   let result: CommandResult = { exitCode: 0 };
   if (output && typeof output === 'object' && Symbol.asyncIterator in output) {
     for await (const event of output) {
@@ -431,7 +457,7 @@ export async function runPhysicalTuiContribution(
     result = output as CommandResult;
   }
   if (result.stdout) cb.dispatch({ type: 'info', message: result.stdout });
-  if (result.stderr) cb.dispatch({ type: 'warning', message: result.stderr });
+  if (result.stderr) cb.dispatch({ type: 'warning', message: escapeLiteralText(result.stderr) });
   if (result.result !== undefined) cb.dispatch({
     type: 'engine-block',
     engineId: commandName,

@@ -291,7 +291,7 @@ export function nativeArchiveBlockCount(blocks: OutputBlock[], mode: string, row
  * Detect same-turn duplicate completed engine output. A new user-message resets the guard so an intentional repeat request can still show identical text.
  */
 export function isDuplicateEngineBlock(blocks: OutputBlock[], event: any): boolean {
-  if (!event || event.type !== 'engine-block') return false;
+  if (!event || event.type !== 'engine-block' || event.format === 'diff') return false;
   const content = cleanEngineOutput(String(event.content ?? '')).trim();
   if (!content) return false;
   const engineId = String(event.engineId ?? '');
@@ -299,7 +299,7 @@ export function isDuplicateEngineBlock(blocks: OutputBlock[], event: any): boole
     const prev = blocks[index]?.event as any;
     if (!prev) continue;
     if (prev.type === 'user-message') return false;
-    if (prev.type !== 'engine-block') continue;
+    if (prev.type !== 'engine-block' || prev.format === 'diff') continue;
     const prevContent = cleanEngineOutput(String(prev.content ?? '')).trim();
     if (String(prev.engineId ?? '') === engineId && prevContent === content) {
       return true;

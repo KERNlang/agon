@@ -40,23 +40,40 @@ async function waitFor(pred: () => boolean, timeoutMs = 8000, stepMs = 100): Pro
 }
 
 // Minimal socket client: send ONE request, resolve the FIRST reply frame.
+interface RequestTrace {
+  request: DaemonRequest['type'];
+  reason: string;
+  connected: boolean;
+  bytes: number;
+  elapsedMs: number;
+  partialFrame: string;
+}
+let lastRequestTrace: RequestTrace | undefined;
 function sendRequest(sockPath: string, req: DaemonRequest, timeoutMs = 3000): Promise<DaemonResponse | null> {
   return new Promise((resolve) => {
     let settled = false;
     let buffer = '';
-    const finish = (v: DaemonResponse | null): void => {
+    const startedAt = Date.now();
+    let connected = false;
+    let bytes = 0;
+    const finish = (v: DaemonResponse | null, reason = 'reply'): void => {
       if (settled) return;
+      lastRequestTrace = { request: req.type, reason, connected, bytes,
+        elapsedMs: Date.now() - startedAt, partialFrame: buffer.slice(0, 200) };
       settled = true;
       clearTimeout(timer);
       try { sock.destroy(); } catch { /* best-effort */ }
       resolve(v);
     };
-    const timer = setTimeout(() => finish(null), timeoutMs);
+    const timer = setTimeout(() => finish(null, 'timeout'), timeoutMs);
     const sock = connect(sockPath, () => {
-      try { sock.write(encodeDaemonRequest(req)); } catch { finish(null); }
+      connected = true;
+      try { sock.write(encodeDaemonRequest(req)); }
+      catch (error) { finish(null, `write: ${String(error)}`); }
     });
     sock.setEncoding('utf-8');
     sock.on('data', (chunk: string) => {
+      bytes += Buffer.byteLength(chunk, 'utf8');
       buffer += chunk;
       const { lines, rest } = splitFrames(buffer);
       buffer = rest;
@@ -65,8 +82,8 @@ function sendRequest(sockPath: string, req: DaemonRequest, timeoutMs = 3000): Pr
         if (parsed) { finish(parsed); return; }
       }
     });
-    sock.on('error', () => finish(null));
-    sock.on('close', () => finish(null));
+    sock.on('error', (error: NodeJS.ErrnoException) => finish(null, `socket: ${error.code ?? ''} ${error.message}`));
+    sock.on('close', hadError => finish(null, `close: hadError=${hadError}`));
   });
 }
 
@@ -75,6 +92,7 @@ let pidPath: string;
 let sockPath: string;
 
 beforeEach(() => {
+  lastRequestTrace = undefined;
   home = mkdtempSync(join(tmpdir(), 'agon-daemon-survival-'));
   // Point THIS process's AGON_HOME at the same temp home so the test's own
   // replay() reads the ledger the (separately-spawned, env-passed) daemon wrote.
@@ -100,6 +118,11 @@ afterEach(async () => {
 });
 
 describeMaybe('agond survival — the daemon outlives its launcher', () => {
+  it('reports the failing transport layer without retrying a refused request', async () => {
+    expect(await sendRequest(sockPath, { type: 'ping' })).toBeNull();
+    expect(lastRequestTrace).toMatchObject({ request: 'ping', connected: false, bytes: 0 });
+    expect(lastRequestTrace?.reason).toContain('ENOENT');
+  });
   it('submits the first job while starting an absent daemon', async () => {
     const child = spawn(
       process.execPath,
@@ -162,7 +185,7 @@ describeMaybe('agond survival — the daemon outlives its launcher', () => {
 
     // 4) Ping over the socket — the daemon answers though its launcher is dead.
     const pong = await sendRequest(sockPath, { type: 'ping' });
-    expect(pong?.type).toBe('pong');
+    expect(pong?.type, JSON.stringify(lastRequestTrace)).toBe('pong');
     if (pong?.type === 'pong') {
       expect(pong.sessionId).toBe(sessionId);
       expect(pong.uptime).toBeGreaterThanOrEqual(0);

@@ -200,10 +200,20 @@ export interface PlanSessionHostServices {
   run(request: PlanSessionRequest, context: InvocationContext): Awaitable<CommandResult>;
 }
 
-/** Interactive host bridge; availability does not grant approval. The host
- * must preview and confirm within the calling invocation before writing. */
+export interface PatchApplicationInteraction {
+  /** Ordered per-step snapshots, not a mutable Plan or UI context. */
+  readonly artifacts: readonly (readonly { readonly type: string; readonly path: string }[])[];
+  notify(level: 'info' | 'warning' | 'error' | 'success', message: string): void;
+  preview(patch: { readonly engineId: string; readonly content: string }): void;
+  confirm(cwd: string): Awaitable<string>;
+  /** Recheck cancellation, session lifetime, and generation before effects. */
+  assertActive(): void;
+}
+
+/** UI capabilities only. The Forge mod owns selection, preflight and Git apply.
+ * Opening an interaction does not grant approval or permission to write. */
 export interface PatchApplicationHostServices {
-  apply(request: { readonly patchPath?: string; readonly force: boolean }, context: InvocationContext): Awaitable<CommandResult>;
+  open(context: InvocationContext): Awaitable<PatchApplicationInteraction | undefined>;
 }
 
 export interface RunRecordHandle {

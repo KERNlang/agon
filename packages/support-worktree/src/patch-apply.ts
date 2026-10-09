@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 
 import { join } from 'node:path';
 
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 
 import { normalizePatchContent } from './patch-content.js';
 
@@ -20,6 +20,8 @@ export interface ApplyPreflight {
   error?: string;
   patch?: PatchInfo;
   dirtyTree: boolean;
+  /** Git patches use repository-relative paths even when invoked below root. */
+  workspace?: string;
 }
 
 export function readPatchFromManifest(manifestPath: string): PatchInfo|null {
@@ -30,6 +32,7 @@ export function readPatchFromManifest(manifestPath: string): PatchInfo|null {
     const patchPath = manifest.patches[manifest.winner];
     if (!patchPath) return null;
     const content = normalizePatchContent(readFileSync(patchPath, 'utf-8'));
+    if (!content.trim()) return null;
     const lineCount = content.split('\n').filter(
       (l: string) => (l.startsWith('+') && !l.startsWith('+++')) || (l.startsWith('-') && !l.startsWith('---'))
     ).length;
@@ -54,14 +57,20 @@ export function readPatchFromPath(patchPath: string): PatchInfo|null {
   }
 }
 
-export function isTreeDirty(cwd: string): boolean {
+/** A failed probe is unknown, never permission to treat the tree as clean. */
+export function inspectWorkingTree(cwd: string): { ok: true; dirtyTree: boolean } | { ok: false; error: string } {
   try {
-    const result = execSync('git status --porcelain', { cwd, encoding: 'utf-8' });
-    return result.trim().length > 0;
+    const result = execSync('git status --porcelain', { cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+    return { ok: true, dirtyTree: result.trim().length > 0 };
   } catch (err) {
-    console.warn(`[agon] failed to check tree dirty state: ${err instanceof Error ? err.message : String(err)}`);
-    return false;
+    return { ok: false, error: `Cannot check working tree: ${err instanceof Error ? err.message : String(err)}` };
   }
+}
+
+export function isTreeDirty(cwd: string): boolean {
+  const state = inspectWorkingTree(cwd);
+  if (!state.ok) console.warn(`[agon] ${state.error}`);
+  return state.ok ? state.dirtyTree : true;
 }
 
 export function dryRunApply(cwd: string, patchContent: string): { ok:boolean, error?:string } {
@@ -84,8 +93,19 @@ export function applyPatchToTree(cwd: string, patchContent: string): { ok:boolea
   }
 }
 
-export function preflightApply(cwd: string, patchPath: string|null, manifestPath: string|null): ApplyPreflight {
-  const dirtyTree = isTreeDirty(cwd);
+export function preflightApply(cwd: string, patchPath: string|null, manifestPath: string|null,
+  options: { allowDirty?: boolean } = {}): ApplyPreflight {
+  const state = inspectWorkingTree(cwd);
+  if (!state.ok) return { ok: false, error: state.error, dirtyTree: false };
+  const dirtyTree = state.dirtyTree;
+  let workspace: string;
+  try {
+    workspace = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+      cwd, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
+    }).replace(/\r?\n$/, '');
+  } catch (error) {
+    return { ok: false, dirtyTree, error: `Cannot resolve patch target: ${error instanceof Error ? error.message : String(error)}` };
+  }
   let patch: PatchInfo | null = null;
   if (patchPath) {
     patch = readPatchFromPath(patchPath);
@@ -95,14 +115,14 @@ export function preflightApply(cwd: string, patchPath: string|null, manifestPath
   if (!patch) {
     return { ok: false, error: 'No patch found. Run /forge first or provide a path.', dirtyTree: dirtyTree };
   }
-  if (dirtyTree) {
+  if (dirtyTree && options.allowDirty !== true) {
     return { ok: false, error: 'Working tree has uncommitted changes. Commit or stash first, or use /apply --force.', patch: patch, dirtyTree: dirtyTree };
   }
-  const dryRun = dryRunApply(cwd, patch.content);
+  const dryRun = dryRunApply(workspace, patch.content);
   if (!dryRun.ok) {
     return { ok: false, error: `Patch would not apply cleanly: ${dryRun.error}`, patch: patch, dirtyTree: dirtyTree };
   }
-  return { ok: true, patch: patch, dirtyTree: dirtyTree };
+  return { ok: true, patch, dirtyTree, workspace };
 }
 
 /**

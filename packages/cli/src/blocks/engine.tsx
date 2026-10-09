@@ -5,6 +5,7 @@ import { Box, Text } from 'ink';
 import { parseMarkdownBlocks, cleanEngineOutput } from './markdown.js';
 
 import { parseProseToRichLines } from './rich-text.js';
+import { literalPatchRows, patchPreviewRows, PATCH_PREVIEW_LABEL } from './literal-patch.js';
 
 import type { RichLine } from './rich-text.js';
 
@@ -365,7 +366,12 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
         <Text bold>{event.content}</Text>
       </Box>
     );
-    case 'engine-block': return mode === 'chat'
+    case 'engine-block': return event.format === 'diff'
+      ? <Box flexDirection="column" paddingLeft={1}>
+          {literalPatchRows(PATCH_PREVIEW_LABEL, contentWidth(4)).map((line, index) => <Text bold key={`head-${index}`}>{line}</Text>)}
+          {patchPreviewRows(event.content, contentWidth(4)).map((line, index) => <Text key={index}>{line}</Text>)}
+        </Box>
+      : mode === 'chat'
       ? <ConversationalResponse engineId={event.engineId} content={event.content} actingNote={event.actingNote} foldedSteps={event.foldedSteps} />
       : <EngineBlock engineId={event.engineId} color={event.color} content={event.content} actingNote={event.actingNote} foldedSteps={event.foldedSteps} />;
     case 'separator': return <Text>{' '}</Text>;

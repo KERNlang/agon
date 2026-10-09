@@ -27,7 +27,6 @@ export {
   handleApprove,
   handleRetry,
   handleCancel,
-  handleApplyPatch,
 } from './plan.js';
 export { handleCp, handleCpLast } from './cp.js';
 export { handleBuild } from './build.js';

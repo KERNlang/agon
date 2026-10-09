@@ -1619,6 +1619,13 @@ preview and approval remain behind an explicitly temporary host adapter.
 
 Adapter ledger entry **A13-APPLY-HOST**, under **KL-011** surface cutover:
 
+**Follow-up status:** the backend moved in `34e094d3`. The subsequent workflow
+increment removes `handleApplyPatch` and the whole-workflow host callback.
+See [completion ledger](modular-agon-completion-progress.md#apply-workflow-extraction--development-qualification)
+for current ownership, review adjudications, and the stricter explicit-yes
+approval repair. The bullets below record the earlier adapter state, not a
+claim that the old body remains. Final release qualification is still open.
+
 - Contribution owner: `agon.forge`, IDs `intentVariants:0002`,
   `builtinCommandMetadata:0002`, and `tuiSlashCommands:0002`.
 - Adapter owner: CLI interactive host, `packages/cli/src/patch-application-host.ts`;

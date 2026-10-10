@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync, readFileSync, readdirSync, renameSync, unlinkSync, existsSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, readdirSync, renameSync, unlinkSync, existsSync, lstatSync } from 'node:fs';
 
 import { join, resolve } from 'node:path';
 
@@ -13,11 +13,10 @@ export function getCesarPlansDir(): string {
 }
 
 function safeCesarPlanId(planId: string): string {
-  const sanitized = String(planId ?? '').replace(/[^a-zA-Z0-9_-]/g, '');
-  if (!sanitized) {
+  if (typeof planId !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(planId)) {
     throw new Error(`Invalid plan ID: ${planId}`);
   }
-  return sanitized;
+  return planId;
 }
 
 /**
@@ -48,9 +47,9 @@ export function cesarPlanMarkdownPath(planId: string): string {
  * Persist a CesarPlan to ~/.agon/plans/<id>.json atomically. Markdown lives beside it as <id>.md so the plan is discoverable and editable. FU-8: write to a .tmp file then renameSync, so concurrent Agon sessions reading the same path observe either the old complete file or the new complete file — never a partial. POSIX rename within the same directory is atomic.
  */
 export function saveCesarPlan(plan: CesarPlan): void {
+  const finalPath = cesarPlanJsonPath(plan.id);
   const dir = getCesarPlansDir();
   mkdirSync(dir, { recursive: true });
-  const finalPath = cesarPlanJsonPath(plan.id);
   const persistedPlan = {
     ...plan,
     planFilePath: plan.planFilePath ?? cesarPlanMarkdownPath(plan.id),
@@ -71,6 +70,27 @@ export function saveCesarPlan(plan: CesarPlan): void {
   }
 }
 
+function readPlan(filePath: string, expectedId: string, canonical: boolean): CesarPlan {
+  const plan = unwrapPersistenceEnvelope<CesarPlan>(JSON.parse(readFileSync(filePath, 'utf-8')), 'plan');
+  if (!plan || typeof plan !== 'object' || Array.isArray(plan) || plan.id !== safeCesarPlanId(expectedId)) {
+    throw Object.assign(new Error('Plan record identity does not match its filename.'), { code: 'INVALID_RECORD' });
+  }
+  const markdownPath = cesarPlanMarkdownPath(plan.id);
+  const planFilePath = plan.planFilePath ?? (canonical || existsSync(markdownPath) ? markdownPath : undefined);
+  return planFilePath ? { ...plan, planFilePath } : plan;
+}
+
+function reportReadFailure(canonical: boolean, error: unknown, count = 1): void {
+  const code = (error as NodeJS.ErrnoException)?.code ?? 'INVALID_RECORD';
+  console.warn(`[plan] Cannot read ${count} ${canonical ? 'canonical' : 'legacy'} plan record(s) (${code}). Saved records remain unchanged.`);
+}
+
+/** A dangling symlink is an existing record, not permission to load an old copy. */
+function isAbsent(path: string): boolean {
+  try { lstatSync(path); return false; }
+  catch (error) { return (error as NodeJS.ErrnoException).code === 'ENOENT'; }
+}
+
 /**
  * Load a persisted CesarPlan from ~/.agon/plans/<id>.json. Falls back to the legacy ~/.agon/runs path for old sessions.
  */
@@ -84,13 +104,12 @@ export function loadCesarPlan(planId: string): CesarPlan|null {
   const paths = [{ filePath: cesarPlanJsonPath(safeId), canonical: true }, { filePath: runtimeAgonPath('runs', `${safeId}.json`), canonical: false }];
   for (const entry of paths) {
     try {
-      const plan = unwrapPersistenceEnvelope<CesarPlan>(JSON.parse(readFileSync(entry.filePath, 'utf-8')), 'plan');
-      const fallbackMarkdownPath = cesarPlanMarkdownPath(plan.id);
-      const hasFallback = entry.canonical || existsSync(fallbackMarkdownPath);
-      const fallbackPath = hasFallback ? fallbackMarkdownPath : undefined;
-      const planFilePath = plan.planFilePath ?? fallbackPath;
-      return planFilePath ? { ...plan, planFilePath: planFilePath } : plan;
+      return readPlan(entry.filePath, safeId, entry.canonical);
     } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT' && isAbsent(entry.filePath)
+        && (!entry.canonical || existsSync(getCesarPlansDir()) || isAbsent(getCesarPlansDir()))) continue;
+      reportReadFailure(entry.canonical, e);
+      return null;
     }
   }
   return null;
@@ -101,24 +120,35 @@ export function loadCesarPlan(planId: string): CesarPlan|null {
  */
 export function listCesarPlans(): CesarPlan[] {
   const byId = new Map<string, CesarPlan>();
-  const readFromDir = (dir: string, canonical: boolean) => {
+  const canonicalIds = new Set<string>();
+  const readFromDir = (dir: string, canonical: boolean): boolean => {
     let files: string[] = [];
     try {
       files = readdirSync(dir).filter((f: string) => f.startsWith('cplan-') && f.endsWith('.json'));
-    } catch {
-      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT' && isAbsent(dir)) return true;
+      reportReadFailure(canonical, error);
+      return false;
     }
+    let failures = 0;
+    let firstError: unknown;
     for (const f of files) {
+      const expectedId = f.slice(0, -'.json'.length);
+      if (canonical) canonicalIds.add(expectedId);
+      else if (canonicalIds.has(expectedId)) continue;
       try {
-        const plan = unwrapPersistenceEnvelope<CesarPlan>(JSON.parse(readFileSync(join(dir, f), 'utf-8')), 'plan');
-        if (!plan?.id || byId.has(plan.id)) continue;
-        const fallbackMarkdownPath = cesarPlanMarkdownPath(plan.id);
-        const planFilePath = plan.planFilePath ?? (canonical || existsSync(fallbackMarkdownPath) ? fallbackMarkdownPath : undefined);
-        byId.set(plan.id, planFilePath ? { ...plan, planFilePath } : plan);
-      } catch { /* skip malformed plan */ }
+        const plan = readPlan(join(dir, f), expectedId, canonical);
+        if (!byId.has(plan.id)) byId.set(plan.id, plan);
+      } catch (error) {
+        failures++;
+        firstError ??= error;
+      }
     }
+    if (failures) reportReadFailure(canonical, firstError, failures);
+    return true;
   };
-  readFromDir(getCesarPlansDir(), true);
+  // An unreadable current index cannot prove which legacy copies are stale.
+  if (!readFromDir(getCesarPlansDir(), true)) return [];
   readFromDir(runtimeAgonPath('runs'), false);
   return Array.from(byId.values()).sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')));
 }

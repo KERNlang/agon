@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import * as planMod from '../../packages/mod-plan/src/index.js';
-import { createCesarPlan, approveCesarPlan } from '../../packages/core/src/cesar/plan.js';
+import { createCesarPlan, approveCesarPlan } from '@kernlang/agon-mod-plan';
 import { executePlan as legacy } from '../fixtures/modular-plan-executor-legacy.js';
 import { planCostEstimator } from '../../packages/core/src/cesar/plan-cost-estimator.js';
-import type { CesarPlanStep } from '../../packages/core/src/cesar/plan.js';
+import type { CesarPlanStep } from '@kernlang/agon-mod-plan';
 import type { PlanExecutorCallbacks, StepExecutor } from '@kernlang/agon-mod-plan';
 
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
@@ -74,8 +74,7 @@ describe('physical Plan scheduler ownership', () => {
     const scheduler = readFileSync(new URL('../../packages/mod-plan/src/executor.ts', import.meta.url), 'utf8');
     expect(scheduler).not.toMatch(/@kernlang\/agon-core|packages\/core|node:fs|planCostEstimator/);
     expect(scheduler).not.toContain('services.advance');
-    const legacyModel = readFileSync(new URL('../../packages/core/src/cesar/plan.ts', import.meta.url), 'utf8');
-    expect(legacyModel).not.toMatch(/export interface CesarPlan(?:Step)?\s*\{/);
+    expect(existsSync(new URL('../../packages/core/src/cesar/plan.ts', import.meta.url))).toBe(false);
   });
 
   it.each(['sequential', 'parallel', 'failure', 'paused', 'throw', 'missing', 'abort', 'summary-failure'])('matches frozen raw events and result: %s', async scenario => {

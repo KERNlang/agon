@@ -1,8 +1,8 @@
 // Frozen scheduler oracle from f6fc22f2, before physical extraction.
 // Only import locations are adjusted; do not update this to match the new implementation.
-import type { CesarPlan, CesarPlanStep, CesarStepResult } from '../../packages/core/src/cesar/plan.js';
+import type { CesarPlan, CesarPlanStep, CesarStepResult } from '@kernlang/agon-mod-plan';
 
-import { advanceCesarStep } from '../../packages/core/src/cesar/plan.js';
+import { advanceCesarStep } from './modular-plan-state-legacy.js';
 
 import { planCostEstimator } from '../../packages/core/src/cesar/plan-cost-estimator.js';
 

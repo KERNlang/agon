@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { Worker } from 'node:worker_threads';
 import { transpileModule, ModuleKind, ScriptTarget } from 'typescript';
-import { createCesarPlan, approveCesarPlan } from '../../packages/core/src/cesar/plan.js';
+import { createCesarPlan, approveCesarPlan } from '@kernlang/agon-mod-plan';
 
 const source = readFileSync(new URL('../../packages/mod-plan/src/executor.ts', import.meta.url), 'utf8');
 function compile(candidate: string): string {

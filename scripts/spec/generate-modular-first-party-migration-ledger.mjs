@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { collectPlanSourceRelocations } from './modular-plan-source-relocations.mjs';
 
 const root = resolve(import.meta.dirname, '../..');
 const ownership = JSON.parse(readFileSync(resolve(root, 'docs/specs/evidence/modular-agon-ownership.json'), 'utf8'));
@@ -11,6 +12,9 @@ const sourcePath = (locator) => locator.replace(/:\d+(?::\d+)?$/, '');
 const shortName = (id) => id.replace('@kernlang/agon-mod-', '');
 const packages = packageMap.packages.filter(({ class: kind }) => kind === 'user-toggleable-mod-package');
 const packageIds = new Set(packages.map(({ id }) => id));
+const sourceRelocations = collectPlanSourceRelocations(root, ownership.assignments);
+const relocationKey = ({ category, id, source, package: owner }) => JSON.stringify([owner, category, id, source]);
+const relocations = new Map(sourceRelocations.map(row => [relocationKey(row), row]));
 const removedLegacyEvidence = new Map([
   ['packages/cli/src/jobs/daemon-job-router.ts', 'tests/unit/daemon-job-router.test.ts'],
   ['packages/core/src/jobs/job-service.ts', 'tests/unit/job-service.test.ts'],
@@ -28,7 +32,8 @@ const assignments = ownership.assignments
     const short = shortName(assignment.package);
     const legacyPath = sourcePath(assignment.source);
     const legacyPresent = existsSync(resolve(root, legacyPath));
-    const removalEvidence = removedLegacyEvidence.get(legacyPath);
+    const relocation = relocations.get(relocationKey(assignment));
+    const removalEvidence = relocation?.removalEvidence ?? removedLegacyEvidence.get(legacyPath);
     if (!legacyPresent && !removalEvidence) throw new Error(`missing legacy assignment source without removal evidence ${assignment.source}`);
     const packageRoot = `packages/mod-${short}`;
     const physicalEntrypoint = `${packageRoot}/src/index.ts`;
@@ -56,12 +61,20 @@ const assignments = ownership.assignments
       legacyPath,
       physicalPackage: packageRoot,
       physicalEntrypoint,
-      implementationPaths,
+      implementationPaths: relocation?.implementationPaths ?? implementationPaths,
       ownershipAsset,
       compatibilityAdapter: legacyPresent ? legacyPath : null,
-      authority: legacyPresent ? 'legacy-runtime-until-s6' : 'physical-owner',
+      authority: legacyPresent || relocation?.remainingRuntimeBindings.length ? 'legacy-runtime-until-s6' : 'physical-owner',
       legacyPresent,
       ...(!legacyPresent ? { removalEvidence } : {}),
+      ...(relocation ? {
+        definitionOwner: relocation.definitionOwner,
+        definitionHash: relocation.definitionHash,
+        removalEvidenceHash: relocation.removalEvidenceHash,
+        evidenceScope: relocation.evidenceScope,
+        remainingRuntimeBindings: relocation.remainingRuntimeBindings,
+        runtimeBindingHashes: relocation.runtimeBindingHashes,
+      } : {}),
       registrationBoundary: 'public-mod-api',
       removalCondition: 'S6 generated registry owns the contribution and its frozen oracle remains green',
     });
@@ -90,6 +103,7 @@ const document = {
   authority: 'legacy-runtime-until-s6',
   packages: packageRecords,
   assignments,
+  sourceRelocations,
   counts: { packages: packages.length, assignments: assignments.length, categories: categoryCounts },
 };
 const text = `${JSON.stringify(document, null, 2)}\n`;

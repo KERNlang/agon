@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as physical from '../../packages/mod-plan/src/index.js';
@@ -7,8 +7,7 @@ import * as frozen from '../fixtures/modular-plan-store-legacy.js';
 
 it('Plan owns storage and preserves saved bytes, readers and malformed-file isolation', () => {
   expect(physical).toHaveProperty('saveCesarPlan');
-  const source = readFileSync(new URL('../../packages/core/src/cesar/plan.ts', import.meta.url), 'utf8');
-  expect(source).not.toContain('node:fs');
+  expect(existsSync(new URL('../../packages/core/src/cesar/plan.ts', import.meta.url))).toBe(false);
   const home = mkdtempSync(join(tmpdir(), 'agon-plan-store-owner-'));
   vi.stubEnv('AGON_HOME', home);
   try {

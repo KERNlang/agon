@@ -1,5 +1,5 @@
 // Frozen state-transition oracle from ced1c014; imports adjusted for the fixture.
-import type { CesarPlan, CesarPlanStep, CesarPlanState, CesarStepState, CesarStepResult } from '../../packages/core/src/cesar/plan.js';
+import type { CesarPlan, CesarPlanStep, CesarPlanState, CesarStepState, CesarStepResult } from '@kernlang/agon-mod-plan';
 import { hostNowIso } from '../../packages/core/src/blocks/host-runtime.js';
 
 /**

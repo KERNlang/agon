@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
+import { collectPlanSourceRelocations } from './modular-plan-source-relocations.mjs';
 
 const root = new URL('../..', import.meta.url).pathname.replace(/\/$/, '');
 const json = (path) => JSON.parse(readFileSync(`${root}/${path}`, 'utf8'));
@@ -6,12 +7,23 @@ const roadmap = json('docs/specs/evidence/modular-agon-implementation-roadmap.js
 const packageMap = json('docs/specs/evidence/modular-agon-package-map.json');
 const ownership = json('docs/specs/evidence/modular-agon-ownership.json');
 const migrationLedger = json('docs/specs/evidence/modular-agon-slice5-migration-ledger.json');
+// Declaration relocation permits tracing a deleted source. It is not a runtime
+// cutover receipt. Recompute it from source, including evidence content hashes.
+const sourceRelocations = collectPlanSourceRelocations(root, ownership.assignments);
 const errors = [];
 const check = (condition, message) => { if (!condition) errors.push(message); };
+check(JSON.stringify(migrationLedger.sourceRelocations) === JSON.stringify(sourceRelocations), 'source relocation evidence is stale');
 const ids = new Set(packageMap.packages.map(({ id }) => id));
 const byId = new Map(roadmap.packages.map((pkg) => [pkg.id, pkg]));
 const migratedAssignment = new Map(migrationLedger.assignments.map((entry) => [`${entry.package}\0${entry.source}`, entry]));
 const migratedSource = new Map(migrationLedger.assignments.map((entry) => [entry.source, entry]));
+// Kernel extraction is outside the first-party-mod ledger. Keep its evidence explicit.
+const kernelRelocations = [{
+  package: '@kernlang/agon-kernel', source: 'packages/core/src/blocks/sidechain-logger.ts:8',
+  legacyPresent: false, removalEvidence: 'tests/unit/sidechain-logger.test.ts',
+  implementationPaths: ['packages/mod-kernel/src/sidechain-logger.ts'],
+}];
+for (const relocation of kernelRelocations) check(existsSync(`${root}/${relocation.removalEvidence}`), `missing kernel relocation evidence: ${relocation.source}`);
 check(roadmap.packages.length === 49 && byId.size === 49, 'roadmap must contain 49 unique packages');
 for (const id of ids) check(byId.has(id), `roadmap misses ${id}`);
 const globalEdges = new Set();
@@ -31,7 +43,9 @@ for (const pkg of roadmap.packages) {
     // Ownership can move between the planning snapshot and physical cutover
     // (for example generated docs moved from agent to routing-docs). In that
     // case the source-level migration record is authoritative.
-    const migration = migratedAssignment.get(`${pkg.id}\0${source}`) ?? migratedSource.get(source);
+    const migration = migratedAssignment.get(`${pkg.id}\0${source}`) ?? migratedSource.get(source)
+      ?? sourceRelocations.find(row => row.package === pkg.id && row.source === source)
+      ?? kernelRelocations.find(row => row.package === pkg.id && row.source === source);
     const removedWithEvidence = migration?.legacyPresent === false
       && Boolean(migration.removalEvidence)
       && migration.implementationPaths.every((destination) => existsSync(`${root}/${destination}`));

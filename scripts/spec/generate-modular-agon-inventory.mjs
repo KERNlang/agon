@@ -190,7 +190,7 @@ const cesarTools = generatedSurfaceCatalog("cesarTools");
 
 const cesarRouteDeclarations = [
   ['packages/cli/src/models/handler-types.ts', 'CesarLiveMode'],
-  ['packages/core/src/cesar/plan.ts', 'CesarStepType'],
+  ['packages/mod-plan/src/execution-model.ts', 'CesarStepType'],
   ['packages/cli/src/cesar/routing.ts', 'CesarUncertaintyFamily'],
   ['packages/cli/src/cesar/routing.ts', 'CesarEscalationHint'],
   ['packages/cli/src/cesar/routing.ts', 'CesarBreadthHint'],

@@ -28,6 +28,12 @@ export function createCesarPlan(intent: string, steps: CesarPlanStep[]): CesarPl
   };
 }
 
+/** A proposal records an approval request; only the approval flow starts it. */
+export function createPlanProposal(intent: string, steps: CesarPlanStep[], options: Pick<CesarPlan, 'autoApprove' | 'selfReview'> = {}): CesarPlan {
+  return { ...createCesarPlan(intent, steps), state: 'awaiting_approval',
+    autoApprove: options.autoApprove, selfReview: options.selfReview };
+}
+
 /**
  * Transition plan from 'awaiting_approval' to 'running', set approvedAt.
  */

@@ -226,6 +226,7 @@ export const MANIFEST = validateManifest({
       "dist/execution-store.d.ts",
       "dist/executor.d.ts",
       "dist/formatter.d.ts",
+      "dist/proposal-workflow.d.ts",
       "dist/resume-policy.d.ts",
       "dist/runtime.d.ts",
       "dist/session-scope.d.ts",
@@ -492,6 +493,8 @@ export { selectPendingPlan, selectResumablePlan, shouldApprovePendingCesarPlanIn
 export type { PlanSessionSnapshot } from './session-selection.js';
 export { startPlanTaskSession, resumePlanSession, exitPlanSession } from './session-workflow.js';
 export type { PlanTaskSessionEffects, PlanResumeSessionEffects, PlanExitSessionEffects } from './session-workflow.js';
+export { publishPlanProposal } from './proposal-workflow.js';
+export type { PlanProposalPublicationEffects } from './proposal-workflow.js';
 export type { CostEstimate, PlanCostPricing } from './cost-estimator.js';
 export { createPlanStepSanitizer, VALID_STEP_TYPES } from './step-validation.js';
 export type { PlanStepEstimator } from './step-validation.js';
@@ -500,7 +503,7 @@ export { createPlanExecutor, getReadySteps } from './executor.js';
 export type { PlanExecutionServices, PlanExecutorCallbacks, StepExecutor } from './executor.js';
 export type { CesarPlan, CesarPlanStep, CesarPlanState, CesarStepState, CesarStepType, CesarStepResult } from './execution-model.js';
 export { CESAR_STEP_TYPES, CESAR_STEP_TYPE_TABLE } from './execution-model.js';
-export { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan, exitCesarPlan } from './execution-state.js';
+export { createCesarPlan, createPlanProposal, approveCesarPlan, advanceCesarStep, cancelCesarPlan, exitCesarPlan } from './execution-state.js';
 export { buildResumePromptContext, skipCompletedSteps, prepareCesarPlanResume } from './resume-policy.js';
 export type { ResumePromptContext } from './resume-policy.js';
 export { createPlanCoordinator, failedPlanStepIsFallbackRetryable, preparePlanFallbackRetry } from './execution-coordinator.js';

@@ -141,7 +141,7 @@ function expectedFiles(packageRecord) {
   const physicalPackFiles = isPhysical ? ['dist/implementation.d.ts', ...(short === 'rag' ? ['dist/store.d.ts', 'dist/types.d.ts', 'dist/grounding.d.ts']
     : short === 'think' ? ['dist/thinking.d.ts']
     : short === 'forge' ? ['dist/apply.d.ts']
-    : short === 'plan' ? ['dist/cost-estimator.d.ts', 'dist/execution-coordinator.d.ts', 'dist/execution-model.d.ts', 'dist/execution-state.d.ts', 'dist/execution-store.d.ts', 'dist/executor.d.ts', 'dist/formatter.d.ts', 'dist/resume-policy.d.ts', 'dist/runtime.d.ts', 'dist/session-scope.d.ts', 'dist/session-selection.d.ts', 'dist/session.d.ts', 'dist/step-validation.d.ts']
+    : short === 'plan' ? ['dist/cost-estimator.d.ts', 'dist/execution-coordinator.d.ts', 'dist/execution-model.d.ts', 'dist/execution-state.d.ts', 'dist/execution-store.d.ts', 'dist/executor.d.ts', 'dist/formatter.d.ts', 'dist/resume-policy.d.ts', 'dist/runtime.d.ts', 'dist/session-scope.d.ts', 'dist/session-selection.d.ts', 'dist/session-workflow.d.ts', 'dist/session.d.ts', 'dist/step-validation.d.ts']
     : short === 'brainstorm' ? ['dist/collector.d.ts', 'dist/host.d.ts', 'dist/policy.d.ts', 'dist/presentation.d.ts', 'dist/result.d.ts', 'dist/runtime.d.ts', 'dist/scout.d.ts', 'dist/session-record.d.ts', 'dist/session-workflow.d.ts', 'dist/workflow.d.ts']
     : short === 'jobs' ? ['dist/daemon-controller.d.ts', 'dist/cli-projection.d.ts', 'dist/cli-invocation.d.ts', 'dist/cli-client.d.ts', 'dist/cli-contract.d.ts', 'dist/daemon-contract.d.ts', 'dist/daemon-job-router.d.ts', 'dist/daemon-workflow.d.ts', 'dist/job-service.d.ts', 'dist/mcp-contract.d.ts', 'dist/persisted-job-service.d.ts', 'dist/session-jobs.d.ts', 'dist/workflow-process.d.ts']
     : short === 'routing-docs' ? ['dist/guide-content.d.ts']
@@ -238,6 +238,8 @@ export { createPlanRuntime } from './runtime.js';
 export { planSessionHost, withPlanSession } from './session-scope.js';
 export { selectPendingPlan, selectResumablePlan, shouldApprovePendingCesarPlanInput, isCesarPlanApprovalInput, isStrongCesarPlanApprovalInput, isCesarPlanResumeInput, isCesarPlanStatusInput, formatCesarPlanRuntimeStatus } from './session-selection.js';
 export type { PlanSessionSnapshot } from './session-selection.js';
+export { startPlanTaskSession, resumePlanSession, exitPlanSession } from './session-workflow.js';
+export type { PlanTaskSessionEffects, PlanResumeSessionEffects, PlanExitSessionEffects } from './session-workflow.js';
 export type { CostEstimate, PlanCostPricing } from './cost-estimator.js';
 export { createPlanStepSanitizer, VALID_STEP_TYPES } from './step-validation.js';
 export type { PlanStepEstimator } from './step-validation.js';

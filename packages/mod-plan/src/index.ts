@@ -230,6 +230,7 @@ export const MANIFEST = validateManifest({
       "dist/runtime.d.ts",
       "dist/session-scope.d.ts",
       "dist/session-selection.d.ts",
+      "dist/session-workflow.d.ts",
       "dist/session.d.ts",
       "dist/step-validation.d.ts",
       "ownership.json",
@@ -489,6 +490,8 @@ export { createPlanRuntime } from './runtime.js';
 export { planSessionHost, withPlanSession } from './session-scope.js';
 export { selectPendingPlan, selectResumablePlan, shouldApprovePendingCesarPlanInput, isCesarPlanApprovalInput, isStrongCesarPlanApprovalInput, isCesarPlanResumeInput, isCesarPlanStatusInput, formatCesarPlanRuntimeStatus } from './session-selection.js';
 export type { PlanSessionSnapshot } from './session-selection.js';
+export { startPlanTaskSession, resumePlanSession, exitPlanSession } from './session-workflow.js';
+export type { PlanTaskSessionEffects, PlanResumeSessionEffects, PlanExitSessionEffects } from './session-workflow.js';
 export type { CostEstimate, PlanCostPricing } from './cost-estimator.js';
 export { createPlanStepSanitizer, VALID_STEP_TYPES } from './step-validation.js';
 export type { PlanStepEstimator } from './step-validation.js';

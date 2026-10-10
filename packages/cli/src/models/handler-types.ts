@@ -189,6 +189,7 @@ export interface CesarState {
   mcpSignalPath?: string | undefined;
   planDispatch: ((event: any) => void) | null;
   proposedPlan: any | undefined;
+  justExitedPlanMode?: boolean;
   lastEscalation: string | null;
   turnId?: string | undefined;
   sessionMcpServers: Array<{name:string, type?:string, url?:string, command?:string, args?:string[]}>;

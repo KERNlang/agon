@@ -2,7 +2,7 @@ import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createPatchApplicationUi, withPatchApplication } from '../../patch-application-host.js';
 import { escapeLiteralText } from '../../blocks/literal-text.js';
-import { withPlanSession } from '@kernlang/agon-mod-plan';
+import { withPlanSession, startPlanTaskSession, resumePlanSession, loadCesarPlan } from '@kernlang/agon-mod-plan';
 import type { SessionJobsInvocationContext } from '@kernlang/agon-mod-jobs';
 import { runBrainstormSession } from '../../blocks/brainstorm-session.js';
 
@@ -15,10 +15,6 @@ import type { CommandResult, IntentContribution, Json, ModPlatform } from '@kern
 
 import { assertContributionInput } from '@kernlang/agon-kernel';
 import { assertProcessSurfaceAvailable, modularHostRoot, processSurfaceCatalog, processSurfaceClient } from '../../surface-authority-runtime.js';
-
-import { loadCesarPlan } from '@kernlang/agon-core';
-
-import type { CesarPlan } from '@kernlang/agon-core';
 
 import { ENGINE_COLORS } from '../../blocks/output-format.js';
 
@@ -298,56 +294,32 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
     // ── Plan commands ──
     case 'plan': await handlePlanShow(cb.dispatch, cb.ctx, intent.planId); break;
     case 'plan-task': {
-      // Enter plan mode — Cesar thinks and proposes a plan
-      const { createCesarPlan } = await import('@kernlang/agon-core');
-      const cesarPlan = createCesarPlan(intent.task, []);
-      cb.setActivePlan(cesarPlan);
-      if (!cb.ctx.cesar) {
-        cb.ctx.cesar = {
-          busy: false, busySince: null, queue: null,
-          toolRegistry: null, hasNativeTools: false, lastDispatch: null,
-          pendingDelegation: null, reportedConfidence: undefined, reportedConfidenceReasoning: undefined, confidenceSatisfied: false, blockedOnConfidence: null,
-          autoNero: false, advisorPending: false, lastEscalation: null,
-          mcpFingerprint: undefined, mcpSignalPath: undefined, planDispatch: null, proposedPlan: undefined, sessionMcpServers: [],
-        };
-      }
-      cb.ctx.cesar.planDispatch = cb.dispatch;
-      const cesarInput = `[PLAN MODE] ${intent.task}`;
-      const wasJob = await routeWithCesar(cesarInput, [], cb);
-  
-      // After routeWithCesar, check if Cesar proposed a plan
-      const proposed: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
-      if (proposed && proposed.state === 'awaiting_approval') {
-        await handleProposedCesarPlan(proposed, cb);
-      } else if (wasJob) {
-        return { handled: true, ranAsJob: true };
-      } else {
-        cb.setActivePlan(null);
-      }
+      const result = await startPlanTaskSession(intent.task, {
+        setActive: plan => cb.setActivePlan(plan),
+        prepare: () => {
+          if (!cb.ctx.cesar) cb.ctx.cesar = {
+            busy: false, busySince: null, queue: null,
+            toolRegistry: null, hasNativeTools: false, lastDispatch: null,
+            pendingDelegation: null, reportedConfidence: undefined, reportedConfidenceReasoning: undefined, confidenceSatisfied: false, blockedOnConfidence: null,
+            autoNero: false, advisorPending: false, lastEscalation: null,
+            mcpFingerprint: undefined, mcpSignalPath: undefined, planDispatch: null, proposedPlan: undefined, sessionMcpServers: [],
+          };
+          cb.ctx.cesar.planDispatch = cb.dispatch;
+        },
+        route: input => routeWithCesar(input, [], cb),
+        proposed: () => cb.ctx.cesar?.proposedPlan,
+        acceptProposal: plan => handleProposedCesarPlan(plan, cb),
+      });
+      if (result.ranAsJob) return { handled: true, ranAsJob: true };
       break;
     }
     case 'plan-resume': {
-      // Explicit planId/path: load from disk. No arg: only resume the in-session active plan.
-      // Disk discovery is intentionally OFF so innocuous words like "go" cannot resurrect stale persisted plans.
-      const explicitArg = (intent.planId ?? '').trim();
-      let resumePlan: CesarPlan | null = null;
-      if (explicitArg) {
-        // Allow either a bare plan ID (cplan-…) or a full path. Strip dir + .json if a path was pasted.
-        const tail = explicitArg.split(/[\\/]/).pop() ?? explicitArg;
-        const planId = tail.endsWith('.json') ? tail.slice(0, -5) : tail;
-        resumePlan = loadCesarPlan(planId);
-        if (!resumePlan) {
-          cb.dispatch({ type: 'warning', message: `No plan found for id "${planId}". Tip: \`ls ~/.agon/plans\` to list saved plan IDs.` });
-          break;
-        }
-      } else {
-        resumePlan = findResumableCesarPlan(cb.ctx);
-        if (!resumePlan) {
-          cb.dispatch({ type: 'info', message: 'No active plan in this session. Pass an ID to resume a saved plan: `/plan resume <plan-id>`.' });
-          break;
-        }
-      }
-      await resumeCesarPlan(resumePlan, cb);
+      await resumePlanSession(intent.planId, {
+        load: loadCesarPlan,
+        current: () => findResumableCesarPlan(cb.ctx),
+        resume: plan => resumeCesarPlan(plan, cb),
+        notify: (type, message) => cb.dispatch({ type, message }),
+      });
       break;
     }
     case 'plans': handlePlansList(cb.dispatch); break;

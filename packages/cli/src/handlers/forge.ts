@@ -625,7 +625,12 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
     
       const approvalLevel = (config.approvalLevel ?? 'plan') as ApprovalLevel;
       if (!skipPlanApproval && approvalLevel !== 'auto') {
+        const pendingPlan = ctx.currentPlan;
         const answer = await ctx.askQuestion('Approve plan? Type y or yes to approve.');
+        if (ctx.currentPlan !== pendingPlan || plan.state !== 'draft' || forgeAbort.signal.aborted) {
+          dispatch({ type: 'info', message: 'Forge plan changed while approval was pending. No forge started.' });
+          return null;
+        }
         if (!answer.trim()) {
           savePlan(plan);
           dispatch({ type: 'info', message: 'Plan remains draft. Use /approve to approve it explicitly.' });

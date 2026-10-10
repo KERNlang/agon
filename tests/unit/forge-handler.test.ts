@@ -156,6 +156,40 @@ describe('handleForge', () => {
     expect(runForgeMock).toHaveBeenCalledOnce();
   });
 
+  it.each(['build', 'forge'].flatMap(kind => ['', 'y', 'n'].flatMap(answer =>
+    ['cancel', 'replace', 'mutate'].map(change => [kind, answer, change]))))(
+    'does not revive a stale %s draft after answer %j and %s', async (kind, answer, change) => {
+    const { handleBuild } = await import('../../packages/cli/src/handlers/build.js');
+    const { handleForge } = await import('../../packages/cli/src/handlers/forge.js');
+    let showQuestion!: () => void;
+    let answerQuestion!: (value: string) => void;
+    const shown = new Promise<void>(resolve => { showQuestion = resolve; });
+    const pendingAnswer = new Promise<string>(resolve => { answerQuestion = resolve; });
+    askQuestionMock.mockImplementation(() => { showQuestion(); return pendingAnswer; });
+    const ctx: any = {
+      askQuestion: askQuestionMock, activeEngines: () => ['codex'],
+      config: { approvalLevel: 'plan', forgeEnableSynthesis: false, forgeFixedStarter: 'codex' },
+      registry: { get: vi.fn(() => ({ timeout: 60 })), agentCapableIds: () => ['codex'] },
+      adapter: { dispatchAgent: dispatchAgentMock }, currentPlan: null,
+      setCurrentPlan: (plan: unknown) => { ctx.currentPlan = plan; },
+      setActiveAbort: setActiveAbortMock, chatSession: { messages: [] }, cesarSession: null,
+    };
+    const pending = kind === 'build'
+      ? handleBuild('fixture', dispatchMock, ctx)
+      : handleForge('fixture', 'npm test', dispatchMock, ctx);
+    await shown;
+    const changed = change === 'mutate' ? ctx.currentPlan : { ...ctx.currentPlan };
+    if (change === 'replace') changed.id = 'replacement-draft';
+    else changed.state = 'cancelled';
+    ctx.currentPlan = changed;
+    answerQuestion(answer);
+    await pending;
+    expect(ctx.currentPlan).toBe(changed);
+    expect(savePlanMock).not.toHaveBeenCalled();
+    expect(dispatchAgentMock).not.toHaveBeenCalled();
+    expect(runForgeMock).not.toHaveBeenCalled();
+  });
+
   it.each(['auto', 'upstream', 'existing'])('preserves the %s approval route', async route => {
     const { handleForge } = await import('../../packages/cli/src/handlers/forge.js');
     const { handleBuild } = await import('../../packages/cli/src/handlers/build.js');

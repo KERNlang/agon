@@ -219,6 +219,7 @@ export const MANIFEST = validateManifest({
       "dist/index.js",
       "dist/index.d.ts",
       "dist/implementation.d.ts",
+      "dist/approval-policy.d.ts",
       "dist/cost-estimator.d.ts",
       "dist/execution-coordinator.d.ts",
       "dist/execution-model.d.ts",
@@ -495,6 +496,8 @@ export { startPlanTaskSession, resumePlanSession, exitPlanSession } from './sess
 export type { PlanTaskSessionEffects, PlanResumeSessionEffects, PlanExitSessionEffects } from './session-workflow.js';
 export { publishPlanProposal } from './proposal-workflow.js';
 export type { PlanProposalPublicationEffects } from './proposal-workflow.js';
+export { evaluatePlanAutoApproval, evaluateAgenticPlanAutoApproval, MUTATING_STEP_TYPES } from './approval-policy.js';
+export type { PlanApprovalConfig, PlanApprovalEffects, PlanActionEvaluator, AutoApproveDecision } from './approval-policy.js';
 export type { CostEstimate, PlanCostPricing } from './cost-estimator.js';
 export { createPlanStepSanitizer, VALID_STEP_TYPES } from './step-validation.js';
 export type { PlanStepEstimator } from './step-validation.js';

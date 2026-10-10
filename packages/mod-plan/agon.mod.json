@@ -217,6 +217,7 @@
       "dist/index.js",
       "dist/index.d.ts",
       "dist/implementation.d.ts",
+      "dist/approval-policy.d.ts",
       "dist/cost-estimator.d.ts",
       "dist/execution-coordinator.d.ts",
       "dist/execution-model.d.ts",

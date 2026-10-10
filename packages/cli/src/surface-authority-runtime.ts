@@ -155,6 +155,16 @@ export function processSurfaceCatalog(surface: Surface): readonly GeneratedSurfa
   return selector.active.catalog(surface);
 }
 
+/** Resolve a step by its executor key, not by caller-supplied step data. */
+export function assertProcessPlanStepAvailable(publicId: string): void {
+  const entries = processSurfaceCatalog('cesar').filter(entry => entry.kind === 'plan-step'
+    && (entry.publicId === publicId || entry.aliases.includes(publicId)));
+  if (!entries.length) throw new SurfaceGenerationError('MOD_SURFACE_UNAVAILABLE', `Plan step '${publicId}' is unavailable`);
+  if (new Set(entries.map(entry => entry.owner.id)).size !== 1) {
+    throw new SurfaceGenerationError('MOD_SURFACE_AMBIGUOUS', `Plan step '${publicId}' has ambiguous owners`);
+  }
+}
+
 /** Execute the exact owner-tagged physical Cesar route selected by the active
  * generation. This is the only bridge the TUI orchestration router may use;
  * it deliberately selects the registry record rather than importing a legacy

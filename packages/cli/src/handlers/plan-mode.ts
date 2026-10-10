@@ -18,6 +18,7 @@ import { runAgentMode, runAgentTeam } from './agent.js';
 import { handleCesarBrain } from '../cesar/brain.js';
 
 import { isAgenticAutoMode } from '../cesar/task-controller.js';
+import { assertProcessPlanStepAvailable, assertProcessSurfaceAvailable, captureProcessSurfaceAuthority } from '../surface-authority-runtime.js';
 
 export async function handleProposePlan(args: Record<string, unknown>, dispatch: Dispatch, ctx: HandlerContext): Promise<CesarPlan> {
   return publishPlanProposal(args, {
@@ -58,12 +59,21 @@ export function handleExitPlanMode(reason: string, dispatch: Dispatch|null, ctx:
 }
 
 export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch): Record<string,StepExecutor> {
+  assertProcessSurfaceAvailable('tui', '/plan');
+  const assertCurrent = captureProcessSurfaceAuthority();
   const cwd = resolveWorkingDir();
   const runsRoot = process.env.AGON_HOME?.trim() ? join(process.env.AGON_HOME.trim(), 'runs') : RUNS_DIR;
   const outputDir = join(runsRoot, `plan-exec-${Date.now()}`);
   mkdirSync(outputDir, { recursive: true });
   
-  const wrap = (fn: (step: CesarPlanStep, context: Record<string,string|undefined>, signal?: AbortSignal) => Promise<{result: CesarStepResult, contextExport?: string}>): StepExecutor => ({ execute: fn });
+  const wrap = (type: string, fn: StepExecutor['execute']): StepExecutor => ({
+    execute: async (step, context, signal) => {
+      assertCurrent();
+      assertProcessSurfaceAvailable('tui', '/plan');
+      assertProcessPlanStepAvailable(type);
+      return fn(step, context, signal);
+    },
+  });
   
   // Helper: extract token/cost from tracker delta.
   // meteredCostUsd, NOT totalCostUsd: only real per-token billing counts as a
@@ -214,7 +224,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
   };
   
   return {
-    self: wrap(async (step, context, signal) => {
+    self: wrap('self', async (step, context, signal) => {
       const startTime = Date.now();
       const before = snapshotTokens();
       const task = buildContext(step, context);
@@ -300,6 +310,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
             contextExport: output.slice(0, 500),
           };
         }
+        assertProcessPlanStepAvailable('delegate');
         const result = await runDelegate({ engineId, task: `Analyze and respond:\n${task}`, registry: ctx.registry, adapter: ctx.adapter, timeout: 180, outputDir: join(outputDir, step.id), signal });
         const verifiedDelegate = await runVerifyGate();
         const after = snapshotTokens();
@@ -316,7 +327,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       }
     }),
   
-    forge: wrap(async (step, context, signal) => {
+    forge: wrap('forge', async (step, context, signal) => {
       const startTime = Date.now();
       const before = snapshotTokens();
       const task = buildContext(step, context);
@@ -384,7 +395,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       }
     }),
   
-    teamforge: wrap(async (step, context, signal) => {
+    teamforge: wrap('teamforge', async (step, context, signal) => {
       const startTime = Date.now();
       const before = snapshotTokens();
       const task = buildContext(step, context);
@@ -434,7 +445,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       }
     }),
   
-    brainstorm: wrap(async (step, context, signal) => {
+    brainstorm: wrap('brainstorm', async (step, context, signal) => {
       const startTime = Date.now();
       const before = snapshotTokens();
       const question = buildContext(step, context);
@@ -451,7 +462,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       }
     }),
   
-    tribunal: wrap(async (step, context, signal) => {
+    tribunal: wrap('tribunal', async (step, context, signal) => {
       const startTime = Date.now();
       const before = snapshotTokens();
       const question = buildContext(step, context);
@@ -470,7 +481,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       }
     }),
   
-    campfire: wrap(async (step, context, signal) => {
+    campfire: wrap('campfire', async (step, context, signal) => {
       const startTime = Date.now();
       const before = snapshotTokens();
       const topic = buildContext(step, context);
@@ -488,7 +499,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       }
     }),
   
-    delegate: wrap(async (step, context, signal) => {
+    delegate: wrap('delegate', async (step, context, signal) => {
       const startTime = Date.now();
       const before = snapshotTokens();
       const task = buildContext(step, context);
@@ -505,7 +516,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       }
     }),
   
-    pipeline: wrap(async (step, context, signal) => {
+    pipeline: wrap('pipeline', async (step, context, signal) => {
       // Pipeline = brainstorm → forge → tribunal chain
       // Resolve, compile, and verify the certified workflow spec before executing.
       const pipelineRegistry = getCoreWorkflowRegistry();
@@ -627,7 +638,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
     // does NOT touch ctx.setActiveAbort (which would nuke the plan
     // executor's own abort controller and silently break Ctrl-C for
     // the rest of the plan), ctx.lastReviewResult, or ctx.chatSession.
-    review: wrap(async (step, context, signal) => {
+    review: wrap('review', async (step, context, signal) => {
       const startTime = Date.now();
       const before = snapshotTokens();
       try {
@@ -697,7 +708,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       }
     }),
   
-    agent: wrap(async (step, context, signal) => {
+    agent: wrap('agent', async (step, context, signal) => {
       const startTime = Date.now();
       const before = snapshotTokens();
       const task = buildContext(step, context);
@@ -748,7 +759,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
   
     // Codex P2: wire team-agent to the in-tree runAgentTeam. Same
     // capture-dispatch + parentSignal pattern as the agent executor.
-    'team-agent': wrap(async (step, context, signal) => {
+    'team-agent': wrap('team-agent', async (step, context, signal) => {
       const startTime = Date.now();
       const before = snapshotTokens();
       const task = buildContext(step, context);

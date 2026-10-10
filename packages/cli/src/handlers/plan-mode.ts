@@ -3,7 +3,7 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 
 import { planCostEstimator, resolveWorkingDir, RUNS_DIR, tracker, readPatchFromPath, applyPatchToTree, cesarPlanMarkdownPath, saveCesarPlan, spawnWithTimeout, getCoreWorkflowRegistry, compileWorkflowSpec, verifyWorkflowExecutionPlanFlow, verifyWorkflowRunFlow, throwWorkflowConformance, createWorkflowRun, appendWorkflowPhaseEvent } from '@kernlang/agon-core';
-import { publishPlanProposal, exitPlanSession } from '@kernlang/agon-mod-plan';
+import { publishPlanProposal, exitPlanSession, createPanelStepExecutors, buildPlanStepContext, resolvePlanStepEngines } from '@kernlang/agon-mod-plan';
 import { SurfaceGenerationError } from '@kernlang/agon-kernel';
 
 import type { CesarPlan, CesarPlanStep, CesarStepResult, StepExecutor, WorkflowConformanceIssue, WorkflowPhaseEventType, WorkflowRun } from '@kernlang/agon-core';
@@ -94,23 +94,18 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
     return { tokens: s.totalTokens, cost: s.meteredCostUsd };
   };
   
-  const buildContext = (step: CesarPlanStep, context: Record<string, string | undefined>) => {
-    const contextStr = (step.imports ?? []).map((k: string) => context[k] ? `## ${k}\n${context[k]}` : '').filter(Boolean).join('\n\n');
-    return contextStr ? `${step.description}\n\n${contextStr}` : step.description;
-  };
-  
-  const resolveStepEngines = (step: CesarPlanStep): string[] | undefined => {
-    const explicit = (step.engines ?? []).filter((id: any) => typeof id === 'string' && id.trim().length > 0);
-    if (explicit.length > 0) return explicit;
-    try {
-      const active = ctx.activeEngines?.() ?? [];
-      const clean = active.filter((id: any) => typeof id === 'string' && id.trim().length > 0);
-      if (clean.length > 0) return clean;
-    } catch {
-      // Fall through to runForge's config fallback for non-REPL callers.
-    }
-    return undefined;
-  };
+  const buildContext = buildPlanStepContext;
+  const resolveStepEngines = (step: CesarPlanStep) => resolvePlanStepEngines(step, () => ctx.activeEngines?.() ?? []);
+  const panelExecutors = createPanelStepExecutors({
+    outputDir,
+    assertAvailable: assertStepAvailable,
+    snapshot: snapshotTokens,
+    activeEngines: () => ctx.activeEngines?.() ?? [],
+    brainstorm: options => runBrainstorm({ ...options, registry: ctx.registry, adapter: guardedAdapter('brainstorm', options.signal) }),
+    tribunal: options => runTribunal({ ...options, mode: options.mode as Parameters<typeof runTribunal>[0]['mode'], registry: ctx.registry, adapter: guardedAdapter('tribunal', options.signal) }),
+    campfire: options => runCampfire({ ...options, registry: ctx.registry, adapter: guardedAdapter('campfire', options.signal) }),
+    delegate: options => runDelegate({ ...options, registry: ctx.registry, adapter: guardedAdapter('delegate', options.signal) }),
+  });
   
   const getPlanDispatch = (): Dispatch | undefined => liveDispatch ?? ctx.cesar?.planDispatch ?? ctx.cesar?.lastDispatch ?? undefined;
   
@@ -454,80 +449,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       }
     }),
   
-    brainstorm: wrap('brainstorm', async (step, context, signal) => {
-      const startTime = Date.now();
-      const before = snapshotTokens();
-      const question = buildContext(step, context);
-      try {
-        const result = await runBrainstorm({ question, engines: resolveStepEngines(step) ?? [], registry: ctx.registry, adapter: guardedAdapter('brainstorm', signal), timeout: 120, outputDir: join(outputDir, step.id), signal });
-        assertStepAvailable('brainstorm', signal);
-        const after = snapshotTokens();
-        return {
-          result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: `Winner: ${result.winner}\n${result.response}` },
-          contextExport: result.response,
-        };
-      } catch (err) {
-        const after = snapshotTokens();
-        return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: '', error: err instanceof Error ? err.message : String(err) } };
-      }
-    }),
-  
-    tribunal: wrap('tribunal', async (step, context, signal) => {
-      const startTime = Date.now();
-      const before = snapshotTokens();
-      const question = buildContext(step, context);
-      try {
-        // FU-1: thread signal so plan-level cancel propagates into the
-        // tribunal's per-round dispatch loop.
-        const result = await runTribunal({ question, engines: resolveStepEngines(step) ?? [], rounds: 2, mode: step.tribunalMode as any, registry: ctx.registry, adapter: guardedAdapter('tribunal', signal), timeout: 120, outputDir: join(outputDir, step.id), signal });
-        assertStepAvailable('tribunal', signal);
-        const after = snapshotTokens();
-        return {
-          result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: result.summary },
-          contextExport: result.summary,
-        };
-      } catch (err) {
-        const after = snapshotTokens();
-        return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: '', error: err instanceof Error ? err.message : String(err) } };
-      }
-    }),
-  
-    campfire: wrap('campfire', async (step, context, signal) => {
-      const startTime = Date.now();
-      const before = snapshotTokens();
-      const topic = buildContext(step, context);
-      try {
-        const result = await runCampfire({ topic, engines: resolveStepEngines(step) ?? [], registry: ctx.registry, adapter: guardedAdapter('campfire', signal), strategy: 'all-respond', timeout: 120, outputDir: join(outputDir, step.id), signal });
-        assertStepAvailable('campfire', signal);
-        const after = snapshotTokens();
-        const summary = result.rounds.map((r: any) => `${r.engineId}: ${r.content.slice(0, 200)}`).join('\n');
-        return {
-          result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: summary },
-          contextExport: summary,
-        };
-      } catch (err) {
-        const after = snapshotTokens();
-        return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: '', error: err instanceof Error ? err.message : String(err) } };
-      }
-    }),
-  
-    delegate: wrap('delegate', async (step, context, signal) => {
-      const startTime = Date.now();
-      const before = snapshotTokens();
-      const task = buildContext(step, context);
-      try {
-        const result = await runDelegate({ engineId: step.engine ?? step.engines?.[0] ?? 'claude', task, registry: ctx.registry, adapter: guardedAdapter('delegate', signal), timeout: 120, outputDir: join(outputDir, step.id), signal });
-        assertStepAvailable('delegate', signal);
-        const after = snapshotTokens();
-        return {
-          result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: result.response },
-          contextExport: result.response.slice(0, 500),
-        };
-      } catch (err) {
-        const after = snapshotTokens();
-        return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: '', error: err instanceof Error ? err.message : String(err) } };
-      }
-    }),
+    ...Object.fromEntries(Object.entries(panelExecutors).map(([type, executor]) => [type, wrap(type, executor.execute)])),
   
     pipeline: wrap('pipeline', async (step, context, signal) => {
       const assertPhaseAvailable = (phase: 'brainstorm' | 'forge' | 'tribunal'): void => {

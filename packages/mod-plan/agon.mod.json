@@ -226,6 +226,7 @@
       "dist/execution-store.d.ts",
       "dist/executor.d.ts",
       "dist/formatter.d.ts",
+      "dist/panel-step-execution.d.ts",
       "dist/proposal-workflow.d.ts",
       "dist/resume-policy.d.ts",
       "dist/resume-workflow.d.ts",

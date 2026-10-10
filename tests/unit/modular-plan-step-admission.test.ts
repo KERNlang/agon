@@ -10,6 +10,7 @@ import { SurfaceGeneration } from '@kernlang/agon-kernel';
 import type { CesarPlanStep } from '@kernlang/agon-mod-plan';
 import type { HandlerContext } from '../../packages/cli/src/handlers/types.js';
 import type { DispatchOptions, EngineAdapter, EngineDefinition } from '@kernlang/agon-core';
+import { tracker } from '@kernlang/agon-core';
 
 const effects = vi.hoisted(() => ({ brainstorm: vi.fn(), delegate: vi.fn(), other: vi.fn() }));
 vi.mock('@kernlang/agon-forge', async original => ({
@@ -37,6 +38,7 @@ beforeEach(async () => {
   host = new DurableModHost(root, { kernelVersion: '1.0.0', processIdentity: 'step-admission-test' });
 });
 afterEach(async () => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   await disposeProcessSurfaceAuthority();
   vi.unstubAllEnvs();
@@ -411,4 +413,43 @@ it.each(['brainstorm', 'forge', 'tribunal'])('blocks late provider dispatch insi
   const result = await buildStepExecutors(ctx).pipeline.execute(step('pipeline'), {});
   expect(dispatch).not.toHaveBeenCalled();
   expect(result.result).toMatchObject({ status: 'failure', error: expect.stringContaining('restart') });
+});
+
+it.each(['brainstorm', 'tribunal', 'campfire', 'delegate'].flatMap(type =>
+  ['generation', 'replacement', 'cancellation'].map(fault => ({ type, fault }))))('does not publish stale panel output: $type / $fault', async ({ type, fault }) => {
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  // Keep the monitor pending so only the post-return check can refuse output.
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+  const stats = tracker.getStats();
+  vi.spyOn(tracker, 'getStats').mockReturnValueOnce({ ...stats, totalTokens: 10, meteredCostUsd: 1 })
+    .mockReturnValue({ ...stats, totalTokens: 17, meteredCostUsd: 1.25 });
+  const controller = new AbortController();
+  const run = async () => {
+    if (fault === 'generation') await install('agon.plan');
+    else if (fault === 'replacement') { await disposeProcessSurfaceAuthority(); await initializeProcessSurfaceAuthority(root); }
+    else controller.abort(new Error('cancelled fixture'));
+    return { winner: 'fixture', response: 'stale output', summary: 'stale output', rounds: [{ engineId: 'fixture', content: 'stale output' }] };
+  };
+  if (type === 'brainstorm') effects.brainstorm.mockImplementationOnce(run);
+  else if (type === 'delegate') effects.delegate.mockImplementationOnce(run);
+  else effects.other.mockImplementationOnce(run);
+  const output = await buildStepExecutors(context())[type].execute(step(type), {}, controller.signal);
+  expect(output.result).toMatchObject({ status: 'failure', output: '', actualTokens: 7, actualCostUsd: 0.25 });
+  expect(output.result.error).toMatch(fault === 'generation' ? /restart/ : fault === 'replacement' ? /disposed or replaced/ : /cancelled fixture/);
+  expect(output).not.toHaveProperty('contextExport');
+});
+
+it.each(['brainstorm', 'tribunal', 'campfire', 'delegate'])('preserves healthy %s output formatting', async type => {
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  const text = 'x'.repeat(650);
+  const value = { winner: 'fixture', response: text, summary: text, rounds: [{ engineId: 'speaker', content: text }] };
+  if (type === 'brainstorm') effects.brainstorm.mockResolvedValueOnce(value);
+  else if (type === 'delegate') effects.delegate.mockResolvedValueOnce(value);
+  else effects.other.mockResolvedValueOnce(value);
+  const output = await buildStepExecutors(context())[type].execute(step(type), {});
+  expect(output.result.status).toBe('success');
+  expect(output.result.output).toBe(type === 'brainstorm' ? `Winner: fixture\n${text}` : type === 'campfire' ? `speaker: ${text.slice(0, 200)}` : text);
+  expect(output.contextExport).toBe(type === 'delegate' ? text.slice(0, 500) : type === 'campfire' ? `speaker: ${text.slice(0, 200)}` : text);
 });

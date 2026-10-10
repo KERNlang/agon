@@ -460,6 +460,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       const question = buildContext(step, context);
       try {
         const result = await runBrainstorm({ question, engines: resolveStepEngines(step) ?? [], registry: ctx.registry, adapter: guardedAdapter('brainstorm', signal), timeout: 120, outputDir: join(outputDir, step.id), signal });
+        assertStepAvailable('brainstorm', signal);
         const after = snapshotTokens();
         return {
           result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: `Winner: ${result.winner}\n${result.response}` },
@@ -479,6 +480,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
         // FU-1: thread signal so plan-level cancel propagates into the
         // tribunal's per-round dispatch loop.
         const result = await runTribunal({ question, engines: resolveStepEngines(step) ?? [], rounds: 2, mode: step.tribunalMode as any, registry: ctx.registry, adapter: guardedAdapter('tribunal', signal), timeout: 120, outputDir: join(outputDir, step.id), signal });
+        assertStepAvailable('tribunal', signal);
         const after = snapshotTokens();
         return {
           result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: result.summary },
@@ -496,6 +498,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       const topic = buildContext(step, context);
       try {
         const result = await runCampfire({ topic, engines: resolveStepEngines(step) ?? [], registry: ctx.registry, adapter: guardedAdapter('campfire', signal), strategy: 'all-respond', timeout: 120, outputDir: join(outputDir, step.id), signal });
+        assertStepAvailable('campfire', signal);
         const after = snapshotTokens();
         const summary = result.rounds.map((r: any) => `${r.engineId}: ${r.content.slice(0, 200)}`).join('\n');
         return {
@@ -514,6 +517,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       const task = buildContext(step, context);
       try {
         const result = await runDelegate({ engineId: step.engine ?? step.engines?.[0] ?? 'claude', task, registry: ctx.registry, adapter: guardedAdapter('delegate', signal), timeout: 120, outputDir: join(outputDir, step.id), signal });
+        assertStepAvailable('delegate', signal);
         const after = snapshotTokens();
         return {
           result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: result.response },

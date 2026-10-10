@@ -120,7 +120,12 @@ function schemaGeneratedCommand(publicId: string, description: string, displayNa
   }])) : { input: { type: 'positional', required: false, description: 'Optional JSON object passed to the mod command' } };
   return {
     meta: { name: displayName, description: contribution.description || description }, args: projectedArgs as any,
+    setup: () => { assertInvocation(); },
     run: async (ctx) => {
+      // Citty runs the parent after its child. Authorize in setup, but do not
+      // invoke the parent contribution when Citty selected a nested command.
+      const selectedChild = ctx.rawArgs?.find(arg => !arg.startsWith('-'));
+      if (ctx.cmd?.subCommands && selectedChild) return;
       assertInvocation();
       let input: Json;
       if (projection) input = Object.fromEntries(Object.entries(ctx.args as Record<string, Json | undefined>)

@@ -1,6 +1,9 @@
 
 import { resolveWorkingDir, undoPatch, listSnapshots, revertSnapshot, resumeChatSession, configSet, clearConversation } from '@kernlang/agon-core';
 
+import { runSessionJobAction } from '@kernlang/agon-mod-jobs';
+import { assertProcessSurfaceAvailable } from '../../surface-authority-runtime.js';
+
 import { icons } from '../icons.js';
 
 import { handleForge, handleChat, handleBrainstorm, handleTribunal } from '../../handlers/index.js';
@@ -120,41 +123,15 @@ export async function dispatchMetaIntent(intent: any, input: string, cb: Dispatc
   
     // ── Job commands ──
     case 'jobs': {
-      const jobsIntent = intent as any;
-      if (jobsIntent.action === 'cancel') {
-        if (!jobsIntent.jobId) {
-          cb.dispatch({ type: 'info', message: 'Usage: /jobs cancel <job-id>' });
-          break;
-        }
-        const cancelled = cb.jobManager?.cancel?.(jobsIntent.jobId, 'Cancelled by user') ?? false;
-        if (!cancelled) {
-          const existing = cb.jobManager?.get?.(jobsIntent.jobId);
-          cb.dispatch({
-            type: existing ? 'info' : 'error',
-            message: existing ? `Job ${jobsIntent.jobId} is already ${existing.state}.` : `Job not found: ${jobsIntent.jobId}`,
-          });
-        } else {
-          cb.dispatch({ type: 'success', message: `Cancelled job ${jobsIntent.jobId}.` });
-        }
-        break;
-      }
-      const allJobs = cb.jobManager?.list?.() ?? [];
-      if (allJobs.length === 0) {
-        cb.dispatch({ type: 'info', message: 'No jobs.' });
-      } else {
-        cb.dispatch({ type: 'header', title: 'Jobs' });
-        const rows = allJobs.map((j: any) => [j.id, j.type, j.state, j.label.slice(0, 40), j.startedAt.slice(11, 19)]);
-        cb.dispatch({ type: 'table', headers: ['ID', 'Type', 'State', 'Label', 'Started'], rows });
-      }
+      assertProcessSurfaceAvailable('tui', '/jobs');
+      runSessionJobAction(intent.action === 'cancel' ? 'cancel' : 'list', intent.jobId, {
+        manager: cb.jobManager, dispatch: cb.dispatch,
+      });
       break;
     }
     case 'focus': {
-      const focusId = (intent as any).jobId;
-      if (!focusId) { cb.dispatch({ type: 'info', message: 'Usage: /focus <job-id>' }); break; }
-      const job = cb.jobManager?.get?.(focusId);
-      if (!job) { cb.dispatch({ type: 'error', message: `Job not found: ${focusId}` }); break; }
-      cb.dispatch({ type: 'info', message: `Job ${job.id}: ${job.type} — ${job.state} — ${job.label}` });
-      if (job.error && job.state === 'failed') cb.dispatch({ type: 'error', message: job.error });
+      assertProcessSurfaceAvailable('tui', '/focus');
+      runSessionJobAction('focus', intent.jobId, { manager: cb.jobManager, dispatch: cb.dispatch });
       break;
     }
   

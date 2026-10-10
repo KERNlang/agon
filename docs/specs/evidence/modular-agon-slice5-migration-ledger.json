@@ -362,7 +362,7 @@
         "@kernlang/agon-support-persistence"
       ],
       "assignments": 29,
-      "assignmentHash": "sha256:7ae3aa215c17572e6108ab840b8f2c8fc8e0f172f361c03093ab564e8d70ce95",
+      "assignmentHash": "sha256:cee896a6464924a859d9832108fdbf82e3bf0524106f2336b3af80c6d0ae99f6",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -3830,7 +3830,7 @@
       "physicalPackage": "packages/mod-jobs",
       "physicalEntrypoint": "packages/mod-jobs/src/index.ts",
       "implementationPaths": [
-        "packages/mod-jobs/src/index.ts"
+        "packages/mod-jobs/src/workflow-process.ts"
       ],
       "ownershipAsset": "packages/mod-jobs/ownership.json",
       "compatibilityAdapter": "packages/cli/src/jobs/workflow-job.ts",
@@ -3850,7 +3850,7 @@
       "physicalPackage": "packages/mod-jobs",
       "physicalEntrypoint": "packages/mod-jobs/src/index.ts",
       "implementationPaths": [
-        "packages/mod-jobs/src/index.ts"
+        "packages/mod-jobs/src/daemon-workflow.ts"
       ],
       "ownershipAsset": "packages/mod-jobs/ownership.json",
       "compatibilityAdapter": "packages/cli/src/jobs/workflow-job.ts",
@@ -3890,12 +3890,13 @@
       "physicalPackage": "packages/mod-jobs",
       "physicalEntrypoint": "packages/mod-jobs/src/index.ts",
       "implementationPaths": [
-        "packages/mod-jobs/src/index.ts"
+        "packages/mod-jobs/src/daemon-job-router.ts"
       ],
       "ownershipAsset": "packages/mod-jobs/ownership.json",
-      "compatibilityAdapter": "packages/cli/src/jobs/daemon-job-router.ts",
-      "authority": "legacy-runtime-until-s6",
-      "legacyPresent": true,
+      "compatibilityAdapter": null,
+      "authority": "physical-owner",
+      "legacyPresent": false,
+      "removalEvidence": "tests/unit/daemon-job-router.test.ts",
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4070,7 +4071,7 @@
       "physicalPackage": "packages/mod-jobs",
       "physicalEntrypoint": "packages/mod-jobs/src/index.ts",
       "implementationPaths": [
-        "packages/mod-jobs/src/index.ts"
+        "packages/mod-jobs/src/daemon-workflow.ts"
       ],
       "ownershipAsset": "packages/mod-jobs/ownership.json",
       "compatibilityAdapter": "packages/cli/src/jobs/workflow-job.ts",
@@ -4090,12 +4091,13 @@
       "physicalPackage": "packages/mod-jobs",
       "physicalEntrypoint": "packages/mod-jobs/src/index.ts",
       "implementationPaths": [
-        "packages/mod-jobs/src/index.ts"
+        "packages/mod-jobs/src/job-service.ts"
       ],
       "ownershipAsset": "packages/mod-jobs/ownership.json",
-      "compatibilityAdapter": "packages/core/src/jobs/job-service.ts",
-      "authority": "legacy-runtime-until-s6",
-      "legacyPresent": true,
+      "compatibilityAdapter": null,
+      "authority": "physical-owner",
+      "legacyPresent": false,
+      "removalEvidence": "tests/unit/job-service.test.ts",
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4110,12 +4112,13 @@
       "physicalPackage": "packages/mod-jobs",
       "physicalEntrypoint": "packages/mod-jobs/src/index.ts",
       "implementationPaths": [
-        "packages/mod-jobs/src/index.ts"
+        "packages/mod-jobs/src/job-service.ts"
       ],
       "ownershipAsset": "packages/mod-jobs/ownership.json",
-      "compatibilityAdapter": "packages/core/src/jobs/job-service.ts",
-      "authority": "legacy-runtime-until-s6",
-      "legacyPresent": true,
+      "compatibilityAdapter": null,
+      "authority": "physical-owner",
+      "legacyPresent": false,
+      "removalEvidence": "tests/unit/job-service.test.ts",
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
@@ -4130,12 +4133,13 @@
       "physicalPackage": "packages/mod-jobs",
       "physicalEntrypoint": "packages/mod-jobs/src/index.ts",
       "implementationPaths": [
-        "packages/mod-jobs/src/index.ts"
+        "packages/mod-jobs/src/job-service.ts"
       ],
       "ownershipAsset": "packages/mod-jobs/ownership.json",
-      "compatibilityAdapter": "packages/core/src/jobs/job-service.ts",
-      "authority": "legacy-runtime-until-s6",
-      "legacyPresent": true,
+      "compatibilityAdapter": null,
+      "authority": "physical-owner",
+      "legacyPresent": false,
+      "removalEvidence": "tests/unit/job-service.test.ts",
       "registrationBoundary": "public-mod-api",
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },

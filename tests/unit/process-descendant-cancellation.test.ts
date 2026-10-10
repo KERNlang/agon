@@ -9,6 +9,7 @@ import { spawnStream, spawnWithTimeout } from '../../packages/support-engine-run
 it.each([
   { streaming: false, trigger: 'abort' },
   { streaming: false, trigger: 'timeout' },
+  { streaming: false, trigger: 'overflow' },
   { streaming: true, trigger: 'abort' },
   { streaming: true, trigger: 'timeout' },
 ])('terminates resistant descendants after leader exit (streaming=$streaming, $trigger)', async ({ streaming, trigger }) => {
@@ -17,9 +18,10 @@ it.each([
     const controller = new AbortController();
     let leader: number | undefined;
     const descendant = `const fs = require('node:fs'); process.on('SIGTERM', () => {}); fs.writeFileSync(${JSON.stringify(ready + '.tmp')}, String(process.pid)); fs.renameSync(${JSON.stringify(ready + '.tmp')}, ${JSON.stringify(ready)}); setTimeout(() => process.exit(0), 10000);`;
-    const parent = `require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], {stdio:'ignore'}); process.on('SIGTERM', () => process.exit(0)); setTimeout(() => process.exit(0), 10000);`;
+    const overflow = trigger === 'overflow' ? `const readyTimer = setInterval(() => { if (require('node:fs').existsSync(${JSON.stringify(ready)})) { clearInterval(readyTimer); process.stdout.write('x'.repeat(101)); } }, 10);` : '';
+    const parent = `require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], {stdio:'ignore'}); process.on('SIGTERM', () => process.exit(0)); ${overflow} setTimeout(() => process.exit(0), 10000);`;
     const options = { command: process.execPath, args: ['-e', parent], cwd: scratch,
-      timeout: trigger === 'timeout' ? 1500 : 12000, signal: controller.signal, onSpawn: (pid: number) => { leader = pid; } };
+      timeout: trigger === 'timeout' ? 1500 : 12000, maxOutputBytes: trigger === 'overflow' ? 100 : undefined, signal: controller.signal, onSpawn: (pid: number) => { leader = pid; } };
     const run = streaming ? (async () => {
       const stream = spawnStream(options);
       while (true) {
@@ -39,7 +41,7 @@ it.each([
       try { process.kill(pid, 0); } catch (error) { gone = (error as NodeJS.ErrnoException).code === 'ESRCH'; }
       const diagnostic = gone ? '' : spawnSync('ps', ['-o', 'pid,ppid,pgid,stat,command', '-p', String(pid)], { encoding: 'utf8' });
       expect(gone, JSON.stringify({ targetPid: pid, diagnostic })).toBe(true);
-      expect(result.exitCode).toBe(trigger === 'abort' ? 130 : 124);
+      expect(result.exitCode).toBe(trigger === 'abort' ? 130 : trigger === 'timeout' ? 124 : 1);
       expect(result.timedOut).toBe(trigger === 'timeout');
     } finally {
       controller.abort();

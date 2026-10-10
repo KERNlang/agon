@@ -9,6 +9,7 @@
   "references": [
     { "path": "../forge" },
     { "path": "../mod-kernel" },
+    { "path": "../mod-jobs" },
     { "path": "../mod-rooms" },
     { "path": "../support-engine-runtime" },
     { "path": "../support-verification" },

@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { StringDecoder } from 'node:string_decoder';
 
 import type { DispatchResult } from './types.js';
 
@@ -46,7 +47,10 @@ export interface SpawnOptions {
   onSpawn?: (pid:number)=>void;
 }
 
-export async function spawnWithTimeout(opts: SpawnOptions): Promise<DispatchResult> {
+export async function spawnWithTimeout(opts: SpawnOptions & { maxOutputBytes?: number }): Promise<DispatchResult> {
+  if (opts.maxOutputBytes !== undefined && (!Number.isSafeInteger(opts.maxOutputBytes) || opts.maxOutputBytes < 1)) {
+    throw new Error('maxOutputBytes must be a positive safe integer');
+  }
   if (opts.signal?.aborted) {
     return { exitCode: 130, stdout: '', stderr: 'Aborted', durationMs: 0, timedOut: false };
   }
@@ -55,6 +59,10 @@ export async function spawnWithTimeout(opts: SpawnOptions): Promise<DispatchResu
     const startTime = Date.now();
     let timedOut = false;
     let aborted = false;
+    let outputExceeded = false;
+    let outputBytes = 0;
+    const stdoutDecoder = new StringDecoder('utf8');
+    const stderrDecoder = new StringDecoder('utf8');
     let stdout = '';
     let stderr = '';
     let settled = false;
@@ -68,7 +76,7 @@ export async function spawnWithTimeout(opts: SpawnOptions): Promise<DispatchResu
       if (forceKillTimer) clearTimeout(forceKillTimer);
       if (forceFinishTimer) clearTimeout(forceFinishTimer);
       if (opts.signal) opts.signal.removeEventListener('abort', onAbort);
-      resolve(result);
+      resolve(outputExceeded ? { ...result, exitCode: 1, stderr: `Process output exceeded ${opts.maxOutputBytes} bytes` } : result);
     }
 
     const child = spawn(opts.command, opts.args, {
@@ -133,11 +141,24 @@ export async function spawnWithTimeout(opts: SpawnOptions): Promise<DispatchResu
       }
     }
 
-    child.stdout?.on('data', (data) => { stdout += String(data); });
-    child.stderr?.on('data', (data) => { stderr += String(data); });
+    function collect(data: Buffer, isError: boolean): void {
+      if (outputExceeded) return;
+      outputBytes += data.length;
+      if (opts.maxOutputBytes !== undefined && outputBytes > opts.maxOutputBytes) {
+        outputExceeded = true;
+        killChild();
+        return;
+      }
+      if (isError) stderr += stderrDecoder.write(data);
+      else stdout += stdoutDecoder.write(data);
+    }
+    child.stdout?.on('data', (data: Buffer) => collect(data, false));
+    child.stderr?.on('data', (data: Buffer) => collect(data, true));
 
     child.on('close', (code: number | null) => {
-      if (aborted || timedOut) terminateRemainingGroup(child.pid);
+      stdout += stdoutDecoder.end();
+      stderr += stderrDecoder.end();
+      if (aborted || timedOut || outputExceeded) terminateRemainingGroup(child.pid);
       releaseOwnership();
       finish({
         exitCode: aborted ? 130 : timedOut ? 124 : code ?? 1,

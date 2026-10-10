@@ -1,3 +1,5 @@
+import type { JobCliInvocationContext } from '@kernlang/agon-mod-jobs';
+import { captureProcessSurfaceAuthority } from './surface-authority-runtime.js';
 import type { CommandDef, CommandMeta, SubCommandsDef } from 'citty';
 import type { CommandContribution, CommandResult, Json, ModPlatform } from '@kernlang/agon-mod-api';
 import { assertContributionInput } from '@kernlang/agon-kernel';
@@ -102,6 +104,8 @@ function lazyCommand(
 
 function schemaGeneratedCommand(publicId: string, description: string, displayName = publicId): CommandDef {
   const record = processSurfaceClient('cli').assertAvailable(publicId);
+  const assertSelected = captureProcessSurfaceAuthority();
+  const assertInvocation = () => { assertSelected(); assertProcessSurfaceAvailable('cli', publicId); };
   const contribution = record.payload as CommandContribution;
   const schema = (contribution.inputSchema ?? {}) as Record<string, any>;
   const projection = contribution.cli;
@@ -117,6 +121,7 @@ function schemaGeneratedCommand(publicId: string, description: string, displayNa
   return {
     meta: { name: displayName, description: contribution.description || description }, args: projectedArgs as any,
     run: async (ctx) => {
+      assertInvocation();
       let input: Json;
       if (projection) input = Object.fromEntries(Object.entries(ctx.args as Record<string, Json | undefined>)
         .filter(([name, value]) => name in properties && value !== undefined)) as Json;
@@ -131,11 +136,24 @@ function schemaGeneratedCommand(publicId: string, description: string, displayNa
       assertContributionInput(contribution.inputSchema ?? { type: 'object', additionalProperties: true }, input);
       const platform = `${process.platform}-${process.arch === 'x64' ? 'x64' : process.arch}` as ModPlatform;
       if (!['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'].includes(platform)) throw new TypeError(`unsupported mod platform: ${platform}`);
-      const output = await contribution.run(input, { invocationId: `cli:${process.pid}:${Date.now()}`, cwd: process.cwd(), platform, signal: new AbortController().signal, config: {} });
+      const context: JobCliInvocationContext = { invocationId: `cli:${process.pid}:${Date.now()}`, cwd: process.cwd(), platform, signal: new AbortController().signal, config: {} };
+      if (record.owner.id === 'agon.jobs') {
+        if (publicId === 'daemon') {
+          const { createCliDaemonHost } = await import('./commands/daemon.js');
+          context.daemonCli = createCliDaemonHost(assertInvocation);
+        } else {
+          const { createCliJobHost } = await import('./jobs/cli-host.js');
+          context.jobCli = createCliJobHost(assertInvocation);
+        }
+      }
+      assertInvocation();
+      const output = await contribution.run(input, context);
+      assertInvocation();
       let result: CommandResult = { exitCode: 0 };
       if (output && typeof output === 'object' && Symbol.asyncIterator in output) {
-        for await (const event of output) { if (event.type === 'text') process.stdout.write(event.text); else if (event.type === 'progress') process.stderr.write(`${event.message}\n`); else if (event.type === 'result') result = event.result; }
+        for await (const event of output) { assertInvocation(); if (event.type === 'text') process.stdout.write(event.text); else if (event.type === 'progress') process.stderr.write(`${event.message}\n`); else if (event.type === 'result') result = event.result; }
       } else result = output as CommandResult;
+      assertInvocation();
       if (result.stdout) process.stdout.write(result.stdout); if (result.stderr) process.stderr.write(result.stderr);
       if (result.result !== undefined && !result.stdout) console.log(typeof result.result === 'string' ? result.result : JSON.stringify(result.result, null, 2));
       if (result.exitCode !== 0) process.exitCode = result.exitCode;
@@ -170,17 +188,9 @@ const call = lazyCommand(() => import('./commands/call.js'), 'callCommand', {
   name: 'call',
   description: 'Live bridge for external CLIs to run Agon modes',
 });
-const job = lazyCommand(() => import('./commands/job.js'), 'jobCommand', {
-  name: 'job',
-  description: 'Submit, observe, and cancel daemon-owned autonomous jobs',
-}, { hasSubCommands: true });
 const attach = lazyCommand(() => import('./commands/attach.js'), 'attachCommand', {
   name: 'attach',
   description: 'Attach (read-only) to a session: replay its EventLog and follow live (client/server split M2)',
-});
-const daemon = lazyCommand(() => import('./commands/daemon.js'), 'daemonCommand', {
-  name: 'daemon',
-  description: 'Run a long-lived agon session host (agond) you can attach to (client/server split M3): start | stop | status',
 });
 const login = lazyCommand(() => import('./commands/login.js'), 'loginCommand', {
   name: 'login',
@@ -212,9 +222,7 @@ const kernelLazyCommandImplementations: SubCommandsDef = {
   provider,
   config,
   call,
-  job,
   attach,
-  daemon,
   login,
   update,
   upgrade: update,
@@ -227,7 +235,7 @@ export function createGeneratedLazySubCommands(available: ReadonlySet<string> = 
     .filter(([, command]) => available.has(String(((command as CommandDef).meta as CommandMeta).name))));
   for (const entry of processSurfaceCatalog('cli')) {
     if (!available.has(entry.publicId)) continue;
-    if (!entry.category.startsWith('external:') && !['ask', 'think', 'brainstorm', 'team-brainstorm', 'campfire', 'tribunal', 'team-tribunal', 'review', 'nero', 'council', 'synthesis', 'forge', 'team-forge', 'conquer', 'goal', 'sanitize', 'naturalize', 'mutate', 'rag', 'research', 'history', 'last', 'leaderboard', 'ratings', 'ratings purge-unknown', 'provenance', 'room', 'agent-guide', 'install-agent-prompts', 'worktree', 'wt', 'serve', 'drive', 'chrome', 'ext', 'ext install', 'ext native-host', 'browser-host', 'browser-host install', 'browser-host uninstall', 'browser-host status', 'browser-host stop'].includes(entry.publicId)) continue;
+    if (!entry.category.startsWith('external:') && !['daemon', 'job', 'ask', 'think', 'brainstorm', 'team-brainstorm', 'campfire', 'tribunal', 'team-tribunal', 'review', 'nero', 'council', 'synthesis', 'forge', 'team-forge', 'conquer', 'goal', 'sanitize', 'naturalize', 'mutate', 'rag', 'research', 'history', 'last', 'leaderboard', 'ratings', 'ratings purge-unknown', 'provenance', 'room', 'agent-guide', 'install-agent-prompts', 'worktree', 'wt', 'serve', 'drive', 'chrome', 'ext', 'ext install', 'ext native-host', 'browser-host', 'browser-host install', 'browser-host uninstall', 'browser-host status', 'browser-host stop'].includes(entry.publicId)) continue;
     if (entry.publicId.includes(' ')) continue;
     if (commands[entry.publicId]) continue;
     const command = schemaGeneratedCommand(entry.publicId, entry.description);

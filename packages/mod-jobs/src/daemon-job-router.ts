@@ -1,6 +1,6 @@
-import { JobService } from '@kernlang/agon-core';
+import type { JobService, JobExecutor, JobTaskContext } from './job-service.js';
 
-import type { DaemonRequest, DaemonResponse, JobExecutor, JobTaskContext } from '@kernlang/agon-core';
+import type { DaemonJobRequest, DaemonJobResponse } from './daemon-contract.js';
 
 export interface ResolvedJob {
   label: string;
@@ -11,12 +11,14 @@ export interface DaemonJobResolver {
   resolve: (kind:string,payload:Record<string,unknown>)=>ResolvedJob;
 }
 
-export function isDaemonJobRequest(request: DaemonRequest): boolean {
+/** Select Jobs variants from an already validated request union. */
+export function isDaemonJobRequest<T extends { type: string }>(request: T): request is Extract<T, DaemonJobRequest> {
   return request.type === 'job-submit' || request.type === 'job-list' || request.type === 'job-get'
     || request.type === 'job-events' || request.type === 'job-result' || request.type === 'job-cancel';
 }
 
-export function handleDaemonJobRequest(request: DaemonRequest, jobs: JobService, resolver: DaemonJobResolver): DaemonResponse|null {
+/** Route a validated request. The transport owns decoding and error replies. */
+export function handleDaemonJobRequest(request: DaemonJobRequest, jobs: JobService, resolver: DaemonJobResolver): DaemonJobResponse|null {
   switch (request.type) {
     case 'job-submit': {
       const resolved = resolver.resolve(request.kind, request.payload);

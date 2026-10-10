@@ -1,0 +1,102 @@
+[
+  {
+    "name": "JobSubmit",
+    "description": "Submit an allowlisted Agon workflow to the long-lived daemon and return immediately with its job id.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "description": "Registered workflow kind, such as brainstorm, review, or forge."
+        },
+        "payload": {
+          "type": "object",
+          "description": "Structured workflow payload. The daemon rejects unknown fields and never accepts shell or argv."
+        }
+      },
+      "required": [
+        "kind",
+        "payload"
+      ]
+    }
+  },
+  {
+    "name": "JobList",
+    "description": "List autonomous jobs retained by the Agon daemon.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "JobStatus",
+    "description": "Get one autonomous job snapshot.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "jobId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "jobId"
+      ]
+    }
+  },
+  {
+    "name": "JobEvents",
+    "description": "Replay bounded ordered events for one autonomous job after a sequence cursor.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "jobId": {
+          "type": "string"
+        },
+        "afterSeq": {
+          "type": "number",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "number",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "jobId"
+      ]
+    }
+  },
+  {
+    "name": "JobResult",
+    "description": "Read the terminal result for one autonomous job without blocking.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "jobId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "jobId"
+      ]
+    }
+  },
+  {
+    "name": "JobCancel",
+    "description": "Request idempotent cancellation of one autonomous job.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "jobId": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "jobId"
+      ]
+    }
+  }
+]

@@ -40,11 +40,6 @@ export const MANIFEST = validateManifest({
   },
   "permissions": [
     {
-      "capability": "engine.dispatch",
-      "resources": [],
-      "required": true
-    },
-    {
       "capability": "state.write",
       "resources": [],
       "required": true
@@ -203,6 +198,19 @@ export const MANIFEST = validateManifest({
       "dist/index.js",
       "dist/index.d.ts",
       "dist/implementation.d.ts",
+      "dist/daemon-controller.d.ts",
+      "dist/cli-projection.d.ts",
+      "dist/cli-invocation.d.ts",
+      "dist/cli-client.d.ts",
+      "dist/cli-contract.d.ts",
+      "dist/daemon-contract.d.ts",
+      "dist/daemon-job-router.d.ts",
+      "dist/daemon-workflow.d.ts",
+      "dist/job-service.d.ts",
+      "dist/mcp-contract.d.ts",
+      "dist/persisted-job-service.d.ts",
+      "dist/session-jobs.d.ts",
+      "dist/workflow-process.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],
@@ -447,3 +455,24 @@ export const IMPLEMENTATION_KIND = 'physical' as const;
 export { createMod } from './implementation.js';
 export { createMod as default } from './implementation.js';
 export { ModularJobService } from './implementation.js';
+export { JOB_TOOLS, isJobTool, requiredString, optionalInteger, buildMcpJobCommand } from './mcp-contract.js';
+export { JobService } from './job-service.js';
+export { emitChunks, runWorkflowCommand } from './workflow-process.js';
+export { runSessionJobAction, runSessionJobContribution } from './session-jobs.js';
+export { positiveJobCliInteger, nonNegativeInteger, parsePayload, buildSubmitPayload, jobsCapability, jobOutcomeExitCode, jobSnapshotExitCode, timingFromArgs } from './cli-contract.js';
+export type { JobClientTiming, JobClientConnection } from './cli-contract.js';
+export { createJobCliClient } from './cli-client.js';
+export { createDaemonController, HEARTBEAT_MS, HEARTBEAT_STALE_MS, PING_TIMEOUT_MS } from './daemon-controller.js';
+export type { DaemonControllerHost, DaemonPidInfo, DaemonLiveness } from './daemon-controller.js';
+export { daemonCliCommand, jobCliCommands, jobCliProjection, connectionArgs, waitArgs } from './cli-projection.js';
+export type { JobCliAction, JobCliArgument } from './cli-projection.js';
+export { runJobCliContribution } from './cli-invocation.js';
+export type { JobCliInvocationContext } from './cli-invocation.js';
+export type { JobCliHost, JobCliRequest, JobCliResponse } from './cli-client.js';
+export type { SessionJob, SessionJobEvent, SessionJobsHost, SessionJobsInvocationContext } from './session-jobs.js';
+export { createDaemonWorkflowRuntime, daemonWorkflowKinds, positiveRuntimeInteger, assertWorkingDirectory, SAFE_WORKFLOW_KINDS, PAYLOAD_FIELDS, STRING_PAYLOAD_FIELDS } from './daemon-workflow.js';
+export type { DaemonWorkflowHost, DaemonWorkflowKind, DaemonWorkflowPlan, DaemonWorkflowRuntimeOptions } from './daemon-workflow.js';
+export { handleDaemonJobRequest, isDaemonJobRequest } from './daemon-job-router.js';
+export type { DaemonJobResolver, ResolvedJob } from './daemon-job-router.js';
+export type { DaemonJobRequest, DaemonJobResponse } from './daemon-contract.js';
+export type { JobState, TerminalJobState, JobSnapshot, JobEvent, JobEventPage, JobOutcome, JobObservation, JobTaskContext, JobExecutor, JobServiceOptions } from './job-service.js';

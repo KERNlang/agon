@@ -136,14 +136,12 @@ describe('lazySubCommands — full parity with the real command modules', () => 
     provider: [() => import('./commands/provider.js'), 'providerCommand'],
     config: [() => import('./commands/config.js'), 'configCommand'],
     call: [() => import('./commands/call.js'), 'callCommand'],
-    job: [() => import('./commands/job.js'), 'jobCommand'],
     attach: [() => import('./commands/attach.js'), 'attachCommand'],
-    daemon: [() => import('./commands/daemon.js'), 'daemonCommand'],
     login: [() => import('./commands/login.js'), 'loginCommand'],
     update: [() => import('./commands/update.js'), 'updateCommand'],
   };
   const canonicalKeys = Object.keys(lazySubCommands).filter((k) => k !== 'wt' && k !== 'upgrade');
-  const physicalKeys = new Set(['ask', 'think', 'brainstorm', 'team-brainstorm', 'campfire', 'tribunal', 'team-tribunal', 'review', 'nero', 'council', 'synthesis', 'forge', 'team-forge', 'conquer', 'goal', 'sanitize', 'naturalize', 'mutate', 'rag', 'research', 'history', 'last', 'leaderboard', 'ratings', 'provenance', 'room', 'agent-guide', 'install-agent-prompts', 'worktree', 'serve', 'drive', 'chrome', 'ext', 'browser-host']);
+  const physicalKeys = new Set(['daemon', 'job', 'ask', 'think', 'brainstorm', 'team-brainstorm', 'campfire', 'tribunal', 'team-tribunal', 'review', 'nero', 'council', 'synthesis', 'forge', 'team-forge', 'conquer', 'goal', 'sanitize', 'naturalize', 'mutate', 'rag', 'research', 'history', 'last', 'leaderboard', 'ratings', 'provenance', 'room', 'agent-guide', 'install-agent-prompts', 'worktree', 'serve', 'drive', 'chrome', 'ext', 'browser-host']);
   const legacyKeys = canonicalKeys.filter((key) => !physicalKeys.has(key));
 
   it('the loader table covers every canonical lazy key (completeness guard for the parity tests)', () => {
@@ -164,7 +162,9 @@ describe('lazySubCommands — full parity with the real command modules', () => 
 
   it('physical commands do not retain a legacy dynamic import', () => {
     const sourceText = readFileSync(join(__dirname, 'lazy-commands.ts'), 'utf-8');
+    expect(sourceText).not.toContain("'daemonCommand'");
     expect(sourceText).not.toContain("import('./commands/ask.js')");
+    expect(sourceText).not.toContain("import('./commands/job.js')");
     expect(sourceText).not.toContain("import('./commands/think.js')");
     expect(sourceText).not.toContain("import('./commands/brainstorm.js')");
     expect(sourceText).not.toContain("import('./commands/campfire.js')");

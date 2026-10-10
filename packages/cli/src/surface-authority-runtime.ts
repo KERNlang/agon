@@ -93,6 +93,53 @@ export function assertProcessSurfaceAvailable(surface: Surface, publicId: string
   processSurfaceClient(surface).assertAvailable(publicId);
 }
 
+/** Bind captured host effects to this exact host lifetime, not whichever
+ * generation happens to be globally selected when a cached closure runs. */
+export function captureProcessSurfaceAuthority(): () => void {
+  assertCanonicalSurfaceSelectionCurrent();
+  const selectedBoot = boot;
+  const selectedSelector = selector;
+  return () => {
+    if (boot !== selectedBoot || selector !== selectedSelector) {
+      throw new SurfaceGenerationError('MOD_GENERATION_MISMATCH', 'captured modular host was disposed or replaced; rebuild the invocation after restart', true);
+    }
+    assertCanonicalSurfaceSelectionCurrent();
+  };
+}
+
+/** Keep a running invocation pinned; request cooperative cancellation if its
+ * authority becomes stale. Never switch its registry or abandon its cleanup. */
+export async function withProcessSurfaceAuthority<T>(
+  parentSignal: AbortSignal | undefined,
+  assertAvailable: (signal?: AbortSignal) => void,
+  run: (signal?: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const selected = boot;
+  // The rollback compatibility catalog has no durable generation to monitor.
+  if (!selected) return run(parentSignal);
+  parentSignal?.throwIfAborted();
+  assertAvailable(parentSignal);
+  const child = new AbortController();
+  const cancel = () => child.abort(parentSignal?.reason);
+  parentSignal?.addEventListener('abort', cancel, { once: true });
+  const monitor = setInterval(() => {
+    if (child.signal.aborted) return;
+    try {
+      if (boot !== selected) throw new SurfaceGenerationError('MOD_GENERATION_MISMATCH', 'modular host was disposed or replaced; restart Agon', true);
+      assertAvailable(child.signal);
+    } catch (error) {
+      child.abort(error);
+    }
+  }, 100);
+  monitor.unref();
+  try {
+    return await run(child.signal);
+  } finally {
+    clearInterval(monitor);
+    parentSignal?.removeEventListener('abort', cancel);
+  }
+}
+
 export function processSurfacePublicIds(surface: Surface): ReadonlySet<string> {
   assertCanonicalSurfaceSelectionCurrent();
   return new Set(selector.active.catalog(surface).map(({ publicId }) => publicId));

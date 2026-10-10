@@ -70,6 +70,15 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       return { handled: true, ranAsJob: false };
     }
     const label = marker.publicId.slice(0, 40);
+    if (record.owner.id === 'agon.jobs') {
+      try {
+        await runPhysicalTuiContribution(record, marker.value as any, marker.publicId, cb, new AbortController().signal);
+      } catch (error) {
+        cb.dispatch({ type: 'error', message: error instanceof Error ? error.message : String(error) });
+      }
+      emitPostDispatch(intent, input, cb);
+      return { handled: true, ranAsJob: false };
+    }
     cb.runAsJob(marker.publicId, label, async (signal) => {
       try {
         await runPhysicalTuiContribution(record, marker.value as any, marker.publicId, cb, signal);

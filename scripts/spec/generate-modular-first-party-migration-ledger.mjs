@@ -12,6 +12,8 @@ const shortName = (id) => id.replace('@kernlang/agon-mod-', '');
 const packages = packageMap.packages.filter(({ class: kind }) => kind === 'user-toggleable-mod-package');
 const packageIds = new Set(packages.map(({ id }) => id));
 const removedLegacyEvidence = new Map([
+  ['packages/cli/src/jobs/daemon-job-router.ts', 'tests/unit/daemon-job-router.test.ts'],
+  ['packages/core/src/jobs/job-service.ts', 'tests/unit/job-service.test.ts'],
   ['packages/cli/src/commands/agent-guide-text.ts', 'KL-015'],
   ['packages/core/src/rooms/types.ts', 'tests/unit/modular-no-legacy-orchestration-owner.test.ts:physical-room-owner'],
   ['packages/core/src/rooms/leases.ts', 'tests/unit/modular-no-legacy-orchestration-owner.test.ts:physical-room-owner'],
@@ -34,7 +36,17 @@ const assignments = ownership.assignments
     for (const path of [physicalEntrypoint, ownershipAsset, `${packageRoot}/agon.mod.json`]) {
       if (!existsSync(resolve(root, path))) throw new Error(`${assignment.package}: missing physical destination ${path}`);
     }
-    const implementationPaths = short === 'rag' && legacyPath === 'packages/core/src/rag/store.ts'
+    const implementationPaths = short === 'jobs' && legacyPath === 'packages/cli/src/jobs/daemon-job-router.ts'
+      ? [`${packageRoot}/src/daemon-job-router.ts`]
+      : short === 'jobs' && legacyPath === 'packages/core/src/jobs/job-service.ts'
+      ? [`${packageRoot}/src/job-service.ts`]
+      : short === 'jobs' && legacyPath === 'packages/cli/src/jobs/workflow-job.ts'
+        && assignment.category === 'emittedEvents' && assignment.id === 'command-finished'
+      ? [`${packageRoot}/src/workflow-process.ts`]
+      : short === 'jobs' && legacyPath === 'packages/cli/src/jobs/workflow-job.ts'
+        && (assignment.id === 'command-started' || assignment.id === 'DaemonWorkflowPlan')
+      ? [`${packageRoot}/src/daemon-workflow.ts`]
+      : short === 'rag' && legacyPath === 'packages/core/src/rag/store.ts'
       ? [`${packageRoot}/src/store.ts`, `${packageRoot}/src/types.ts`]
       : short === 'rag' && legacyPath === 'packages/core/src/rag/types.ts'
         ? [`${packageRoot}/src/types.ts`]

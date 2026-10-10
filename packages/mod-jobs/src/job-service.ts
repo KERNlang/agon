@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { DEFAULT_AGON_CONFIG } from '../models/types.js';
+const JOB_DEFAULTS = Object.freeze({ jobEventLimit: 256, jobRetentionLimit: 100, jobMaxConcurrency: 4 });
 
 export type JobState = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
 
@@ -17,35 +17,41 @@ export interface JobSnapshot {
   error?: string;
 }
 
-export interface JobEvent {
+export interface JobEvent<T = unknown> {
   seq: number;
   ts: number;
   type: string;
-  data?: unknown;
+  data?: T | { error: string };
 }
 
-export interface JobEventPage {
+export interface JobEventPage<T = unknown> {
   jobId: string;
-  events: JobEvent[];
+  events: JobEvent<T>[];
   nextSeq: number;
   earliestSeq: number;
   terminal: boolean;
   truncated: boolean;
 }
 
-export interface JobOutcome {
+export interface JobOutcome<T = unknown> {
   state: TerminalJobState;
-  value?: unknown;
+  value?: T;
   error?: string;
 }
 
-export interface JobTaskContext {
-  signal: AbortSignal;
-  emit: (type:string,data?:unknown)=>void;
+export interface JobObservation<T = unknown> {
+  readonly snapshot: JobSnapshot;
+  readonly events: readonly JobEvent<T>[];
+  readonly outcome: JobOutcome<T>|null;
 }
 
-export interface JobExecutor {
-  run: (ctx:JobTaskContext)=>Promise<unknown>;
+export interface JobTaskContext<T = unknown> {
+  signal: AbortSignal;
+  emit: (type:string,data?:T)=>void;
+}
+
+export interface JobExecutor<T = unknown> {
+  run: (ctx:JobTaskContext<T>)=>Promise<T>;
 }
 
 export interface JobServiceOptions {
@@ -54,15 +60,15 @@ export interface JobServiceOptions {
   maxConcurrency?: number;
 }
 
-export interface JobRecord {
+export interface JobRecord<T = unknown> {
   snapshot: JobSnapshot;
-  events: JobEvent[];
+  events: JobEvent<T>[];
   nextSeq: number;
   controller: AbortController;
-  executor: JobExecutor|null;
-  outcome: JobOutcome|null;
+  executor: JobExecutor<T>|null;
+  outcome: JobOutcome<T>|null;
   taskSettled: boolean;
-  waiters: Array<(outcome:JobOutcome)=>void>;
+  waiters: Array<(outcome:JobOutcome<T>)=>void>;
 }
 
 export function isTerminalJobState(state: JobState): boolean {
@@ -81,7 +87,7 @@ export function cloneSnapshot(snapshot: JobSnapshot): JobSnapshot {
   return { ...snapshot };
 }
 
-export function cloneOutcome(outcome: JobOutcome): JobOutcome {
+export function cloneOutcome<T>(outcome: JobOutcome<T>): JobOutcome<T> {
   return { ...outcome };
 }
 
@@ -89,8 +95,8 @@ export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export class JobService {
-  private records: Map<string,JobRecord>;
+export class JobService<T = unknown> {
+  private records: Map<string,JobRecord<T>>;
   private queue: string[];
   private activeCount: number;
   private eventLimit: number;
@@ -103,18 +109,18 @@ export class JobService {
     this.queue = [];
     this.activeCount = 0;
     this.idleWaiters = [];
-    this.eventLimit = positiveJobServiceInteger(options?.eventLimit, DEFAULT_AGON_CONFIG.jobEventLimit, 'jobEventLimit');
-    this.retentionLimit = positiveJobServiceInteger(options?.retentionLimit, DEFAULT_AGON_CONFIG.jobRetentionLimit, 'jobRetentionLimit');
-    this.maxConcurrency = positiveJobServiceInteger(options?.maxConcurrency, DEFAULT_AGON_CONFIG.jobMaxConcurrency, 'jobMaxConcurrency');
+    this.eventLimit = positiveJobServiceInteger(options?.eventLimit, JOB_DEFAULTS.jobEventLimit, 'jobEventLimit');
+    this.retentionLimit = positiveJobServiceInteger(options?.retentionLimit, JOB_DEFAULTS.jobRetentionLimit, 'jobRetentionLimit');
+    this.maxConcurrency = positiveJobServiceInteger(options?.maxConcurrency, JOB_DEFAULTS.jobMaxConcurrency, 'jobMaxConcurrency');
   }
 
-  submit(kind: string, label: string, executor: JobExecutor): JobSnapshot {
+  submit(kind: string, label: string, executor: JobExecutor<T>): JobSnapshot {
     const normalizedKind = String(kind ?? '').trim();
     const normalizedLabel = String(label ?? '').trim();
     if (!normalizedKind) throw new Error('Job kind must not be empty');
     if (!executor || typeof executor.run !== 'function') throw new Error('Job executor must provide run(ctx)');
     const id = randomUUID();
-    const record: JobRecord = {
+    const record: JobRecord<T> = {
       snapshot: {
         id,
         kind: normalizedKind,
@@ -143,7 +149,7 @@ export class JobService {
     if (!normalizedKind) throw new Error('Job kind must not be empty');
     const now = new Date().toISOString();
     const id = randomUUID();
-    const record: JobRecord = {
+    const record: JobRecord<T> = {
       snapshot: { id, kind: normalizedKind, label: normalizedLabel || normalizedKind, state: 'running', createdAt: now, startedAt: now },
       events: [], nextSeq: 1, controller: new AbortController(), executor: null,
       outcome: null, taskSettled: false, waiters: [],
@@ -154,7 +160,7 @@ export class JobService {
     return cloneSnapshot(record.snapshot);
   }
 
-  completeManual(id: string, value?: unknown): boolean {
+  completeManual(id: string, value?: T): boolean {
     const record = this.records.get(id);
     if (!record || record.executor !== null || record.snapshot.state !== 'running') return false;
     this.finish(record, 'succeeded', value);
@@ -191,13 +197,13 @@ export class JobService {
     return this.list().filter((job) => job.state === 'queued' || job.state === 'running');
   }
 
-  result(id: string): JobOutcome|null|undefined {
+  result(id: string): JobOutcome<T>|null|undefined {
     const record = this.records.get(id);
     if (!record) return undefined;
     return record.outcome ? cloneOutcome(record.outcome) : null;
   }
 
-  events(id: string, afterSeq?: number, limit?: number): JobEventPage|undefined {
+  events(id: string, afterSeq?: number, limit?: number): JobEventPage<T>|undefined {
     const record = this.records.get(id);
     if (!record) return undefined;
     const cursor = Number.isFinite(afterSeq) ? Math.max(0, Math.floor(afterSeq as number)) : 0;
@@ -218,7 +224,7 @@ export class JobService {
     };
   }
 
-  wait(id: string): Promise<JobOutcome|undefined> {
+  wait(id: string): Promise<JobOutcome<T>|undefined> {
     const record = this.records.get(id);
     if (!record) return Promise.resolve(undefined);
     if (record.outcome) return Promise.resolve(cloneOutcome(record.outcome));
@@ -285,16 +291,20 @@ export class JobService {
     return cancelled;
   }
 
-  private appendEvent(record: JobRecord, type: string, data?: unknown): void {
-    const event: JobEvent = { seq: record.nextSeq++, ts: Date.now(), type };
+  private appendEvent(record: JobRecord<T>, type: string, data?: T | { error: string }): void {
+    const event: JobEvent<T> = { seq: record.nextSeq++, ts: Date.now(), type };
     if (data !== undefined) event.data = data;
     record.events.push(event);
     if (record.events.length > this.eventLimit) {
       record.events.splice(0, record.events.length - this.eventLimit);
     }
+    this.onRecordChanged(record);
   }
 
-  private finish(record: JobRecord, state: TerminalJobState, value?: unknown, error?: string): void {
+  /** Observe the current record before pruning. Overrides must not mutate it. */
+  protected onRecordChanged(_record: JobObservation<T>): void {}
+
+  private finish(record: JobRecord<T>, state: TerminalJobState, value?: T, error?: string): void {
     if (isTerminalJobState(record.snapshot.state)) return;
     record.snapshot.state = state;
     record.snapshot.finishedAt = new Date().toISOString();
@@ -305,7 +315,7 @@ export class JobService {
     this.appendEvent(record, state, error ? { error } : value);
   }
 
-  private resolveWaiters(record: JobRecord): void {
+  private resolveWaiters(record: JobRecord<T>): void {
     if (!record.outcome) return;
     const waiters = record.waiters.splice(0);
     for (const resolve of waiters) resolve(record.outcome);
@@ -321,7 +331,7 @@ export class JobService {
       record.snapshot.state = 'running';
       record.snapshot.startedAt = new Date().toISOString();
       this.appendEvent(record, 'started');
-      const context: JobTaskContext = {
+      const context: JobTaskContext<T> = {
         signal: record.controller.signal,
         emit: (type, data) => {
           if (!isTerminalJobState(record.snapshot.state)) this.appendEvent(record, type, data);

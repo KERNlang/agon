@@ -4,6 +4,44 @@ import { spawnWithTimeout } from '../../packages/core/src/blocks/process.js';
 // ── Basic spawn behavior ────────────────────────────────────────────
 
 describe('spawnWithTimeout', () => {
+  it('decodes UTF-8 split across output chunks', async () => {
+    const result = await spawnWithTimeout({
+      command: process.execPath,
+      args: ['-e', "process.stdout.write(Buffer.from([0xc3])); setTimeout(() => process.stdout.write(Buffer.from([0xa9])), 50);"],
+      cwd: process.cwd(),
+      timeout: 5000,
+      maxOutputBytes: 2,
+    });
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe('é');
+  });
+
+  it('bounds combined stdout and stderr by bytes', async () => {
+    const result = await spawnWithTimeout({
+      command: process.execPath,
+      args: ['-e', "process.stdout.write('é'.repeat(40)); process.stderr.write('x'.repeat(40));"],
+      cwd: process.cwd(),
+      timeout: 5000,
+      maxOutputBytes: 100,
+    });
+    expect(result.exitCode).toBe(1);
+    expect(result.timedOut).toBe(false);
+    expect(result.stderr).toContain('output exceeded 100 bytes');
+    expect(Buffer.byteLength(result.stdout)).toBeLessThanOrEqual(100);
+  });
+
+  it('preserves output at the exact byte limit', async () => {
+    const result = await spawnWithTimeout({
+      command: process.execPath,
+      args: ['-e', "process.stdout.write('é'.repeat(50));"],
+      cwd: process.cwd(),
+      timeout: 5000,
+      maxOutputBytes: 100,
+    });
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe('é'.repeat(50));
+  });
+
   it('captures stdout from a simple command', async () => {
     let spawnedPid: number | null = null;
     const result = await spawnWithTimeout({

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { createPatchApplicationUi, withPatchApplication } from '../../patch-application-host.js';
 import { escapeLiteralText } from '../../blocks/literal-text.js';
 import { withPlanSession } from '../../plan-session-host.js';
+import type { SessionJobsInvocationContext } from '@kernlang/agon-mod-jobs';
 import { runBrainstormSession } from '../../blocks/brainstorm-session.js';
 
 import { resolveWorkingDir, buildImageAttachment, sessionContext, visionSupportNote } from '@kernlang/agon-core';
@@ -417,12 +418,15 @@ export async function runPhysicalTuiContribution(
   if (!['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'].includes(platform)) {
     throw new TypeError(`unsupported mod platform: ${platform}`);
   }
-  const invocation = {
+  const invocation: SessionJobsInvocationContext = {
     invocationId: `tui:${randomUUID()}`,
     cwd: resolveWorkingDir(),
     platform,
     signal,
     config: cb.ctx.config as unknown as Readonly<Record<string, Json>>,
+    ...(record.owner?.id === 'agon.jobs' ? {
+      sessionJobs: { manager: cb.jobManager, dispatch: cb.dispatch },
+    } : {}),
   };
   if (record.owner?.id === 'agon.brainstorm') {
     await runBrainstormSession(normalized as Record<string, unknown>, cb, signal, async (prepared, context) => {

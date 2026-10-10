@@ -38,11 +38,6 @@
   },
   "permissions": [
     {
-      "capability": "engine.dispatch",
-      "resources": [],
-      "required": true
-    },
-    {
       "capability": "state.write",
       "resources": [],
       "required": true
@@ -201,6 +196,19 @@
       "dist/index.js",
       "dist/index.d.ts",
       "dist/implementation.d.ts",
+      "dist/daemon-controller.d.ts",
+      "dist/cli-projection.d.ts",
+      "dist/cli-invocation.d.ts",
+      "dist/cli-client.d.ts",
+      "dist/cli-contract.d.ts",
+      "dist/daemon-contract.d.ts",
+      "dist/daemon-job-router.d.ts",
+      "dist/daemon-workflow.d.ts",
+      "dist/job-service.d.ts",
+      "dist/mcp-contract.d.ts",
+      "dist/persisted-job-service.d.ts",
+      "dist/session-jobs.d.ts",
+      "dist/workflow-process.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

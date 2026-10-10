@@ -1,12 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { spawn } from 'node:child_process';
-import { connect } from 'node:net';
+import { connect, createServer } from 'node:net';
 import { join } from 'node:path';
-import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 import { replay } from '../../packages/core/src/sessions/event-log.js';
+import { initializeMcpSurfaceAuthority, disposeMcpSurfaceAuthority, invokeActiveMcpSurfaceTool } from '../../packages/mcp/src/surface-authority.js';
+import { handleJobToolCall } from '../../packages/mcp/src/job-tools.js';
+import { DurableModHost, createFirstPartyModCatalog, createFullCompatDesiredState, planDesiredStateChange } from '../../packages/mod-kernel/src/index.js';
+import { surfaceLockFor } from '../helpers/modular-surface-lock.js';
 import {
   encodeDaemonRequest,
   parseDaemonResponse,
@@ -90,13 +94,17 @@ function sendRequest(sockPath: string, req: DaemonRequest, timeoutMs = 3000): Pr
 let home: string;
 let pidPath: string;
 let sockPath: string;
+let previousEnvironment: Record<string, string | undefined>;
 
 beforeEach(() => {
+  previousEnvironment = Object.fromEntries(['AGON_HOME', 'AGON_MODULAR_HOST_ROOT', 'AGON_MOD_SAFE_MODE'].map(key => [key, process.env[key]]));
   lastRequestTrace = undefined;
   home = mkdtempSync(join(tmpdir(), 'agon-daemon-survival-'));
   // Point THIS process's AGON_HOME at the same temp home so the test's own
   // replay() reads the ledger the (separately-spawned, env-passed) daemon wrote.
   process.env.AGON_HOME = home;
+  process.env.AGON_MODULAR_HOST_ROOT = join(home, 'modular-host');
+  delete process.env.AGON_MOD_SAFE_MODE;
   pidPath = join(home, 'daemon', 'agond.pid');
   sockPath = join(home, 'daemon', 'agond.sock');
 });
@@ -113,11 +121,47 @@ afterEach(async () => {
       if (typeof info.pid === 'number') { try { process.kill(info.pid, 'SIGKILL'); } catch { /* gone */ } }
     }
   } catch { /* ignore */ }
+  // The test commits immutable generations. Permit removal of those fixtures.
+  const generations = join(home, 'modular-host', 'generations');
+  if (existsSync(generations)) {
+    for (const entry of readdirSync(generations, { withFileTypes: true })) {
+      if (entry.isDirectory()) chmodSync(join(generations, entry.name), 0o700);
+    }
+  }
   rmSync(home, { recursive: true, force: true });
-  delete process.env.AGON_HOME;
+  for (const [key, value] of Object.entries(previousEnvironment)) {
+    if (value === undefined) delete process.env[key]; else process.env[key] = value;
+  }
 });
 
 describeMaybe('agond survival — the daemon outlives its launcher', () => {
+  it('refuses a second foreground server without damaging the current owner', async () => {
+    const env = { ...process.env, AGON_HOME: home, AGON_DAEMON_ECHO: '1' };
+    const first = spawn(process.execPath, [CLI_ENTRY, 'daemon', 'run', '--foreground'], { env, stdio: 'ignore' });
+    let second: ReturnType<typeof spawn> | undefined;
+    try {
+      expect(await waitFor(() => existsSync(pidPath) && existsSync(sockPath), 10_000)).toBe(true);
+      const original = readFileSync(pidPath, 'utf8');
+      const owner = JSON.parse(original) as { pid: number; sessionId: string };
+      expect(owner.pid).toBe(first.pid);
+      expect(await sendRequest(sockPath, { type: 'ping' })).toMatchObject({ type: 'pong', sessionId: owner.sessionId });
+      second = spawn(process.execPath, [CLI_ENTRY, 'daemon', 'run', '--foreground'], { env, stdio: 'ignore' });
+      expect(await waitFor(() => second!.exitCode !== null, 10_000)).toBe(true);
+      expect(second.exitCode).not.toBe(0);
+      expect(existsSync(pidPath)).toBe(true);
+      expect(readFileSync(pidPath, 'utf8')).toBe(original);
+      expect(await sendRequest(sockPath, { type: 'ping' })).toMatchObject({ type: 'pong', sessionId: owner.sessionId });
+      expect(first.exitCode).toBeNull();
+    } finally {
+      // Both processes belong to this test, even if the broken server loses its PID file.
+      for (const child of [second, first]) {
+        if (child && child.exitCode === null) child.kill('SIGKILL');
+      }
+      await waitFor(() => first.exitCode !== null || first.signalCode !== null);
+      if (second) await waitFor(() => second!.exitCode !== null || second!.signalCode !== null);
+    }
+  }, 30_000);
+
   it('reports the failing transport layer without retrying a refused request', async () => {
     expect(await sendRequest(sockPath, { type: 'ping' })).toBeNull();
     expect(lastRequestTrace).toMatchObject({ request: 'ping', connected: false, bytes: 0 });
@@ -152,6 +196,89 @@ describeMaybe('agond survival — the daemon outlives its launcher', () => {
         value: { ok: true, kind: 'brainstorm', label: 'cold-start job' },
       },
     });
+    // The physical MCP owner must observe the same daemon job after its CLI exits.
+    const originalScript = process.env.AGON_CLI_NODE_SCRIPT;
+    process.env.AGON_CLI_NODE_SCRIPT = CLI_ENTRY;
+    try {
+      await initializeMcpSurfaceAuthority();
+      const jobId = JSON.parse(stdout).job.id as string;
+      const listed = await invokeActiveMcpSurfaceTool('JobList', {});
+      expect(JSON.parse(String(listed))).toEqual(expect.arrayContaining([expect.objectContaining({ id: jobId })]));
+      const status = await invokeActiveMcpSurfaceTool('JobStatus', { jobId });
+      expect(JSON.parse(String(status))).toMatchObject({ id: jobId, kind: 'brainstorm', state: 'succeeded' });
+      const result = await invokeActiveMcpSurfaceTool('JobResult', { jobId });
+      expect(JSON.parse(String(result))).toMatchObject({ job: { id: jobId }, outcome: { state: 'succeeded' } });
+      const events = await invokeActiveMcpSurfaceTool('JobEvents', { jobId, afterSeq: 2, limit: 20 });
+      const replayed = String(events).trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+      expect(replayed.length).toBeGreaterThan(0);
+      expect(replayed.every(event => event.seq > 2)).toBe(true);
+      expect(await invokeActiveMcpSurfaceTool('JobEvents', { jobId, afterSeq: replayed.at(-1).seq, limit: 20 })).toBe('');
+      const cancelled = await invokeActiveMcpSurfaceTool('JobCancel', { jobId, reason: 'already finished' });
+      expect(JSON.parse(String(cancelled))).toMatchObject({ status: 'already-terminal', job: { id: jobId, state: 'succeeded' } });
+      const submitted = await invokeActiveMcpSurfaceTool('JobSubmit', {
+        kind: 'review', payload: { input: 'uncommitted', cwd: process.cwd() },
+      });
+      const mcpJob = JSON.parse(String(submitted));
+      expect(await sendRequest(sockPath, { type: 'job-get', jobId: mcpJob.id }))
+        .toMatchObject({ type: 'job-snapshot', job: { kind: 'review', label: 'uncommitted' } });
+      await expect(invokeActiveMcpSurfaceTool('JobSubmit', { kind: 'shell', payload: { input: 'must not execute' } }))
+        .rejects.toThrow(/not available|failed/i);
+      await expect(invokeActiveMcpSurfaceTool('JobStatus', { jobId: 'missing-job' })).rejects.toThrow(/not found/i);
+      const otherWorkspace = join(home, 'other-workspace');
+      mkdirSync(otherWorkspace);
+      writeFileSync(join(otherWorkspace, '.agon.json'), JSON.stringify({ removedEngines: ['codex'] }));
+      const crossWorkspace = JSON.parse(await handleJobToolCall('JobSubmit', {
+        kind: 'review', payload: { input: 'uncommitted', engine: 'codex' },
+      }, { cwd: otherWorkspace }));
+      expect(crossWorkspace).toMatchObject({ ok: false });
+      expect(crossWorkspace.error).toMatch(/removed|disabled/i);
+    } finally {
+      await disposeMcpSurfaceAuthority();
+      if (originalScript === undefined) delete process.env.AGON_CLI_NODE_SCRIPT;
+      else process.env.AGON_CLI_NODE_SCRIPT = originalScript;
+    }
+  }, 30_000);
+
+  it('rejects Jobs and prompts after disabling Jobs, then shuts down cleanly', async () => {
+    const launcher = spawn(process.execPath, [CLI_ENTRY, 'daemon', 'start'], {
+      env: { ...process.env, AGON_HOME: home, AGON_DAEMON_ECHO: '1' }, stdio: 'ignore',
+    });
+    expect(await waitFor(() => existsSync(pidPath) && existsSync(sockPath), 10_000)).toBe(true);
+    expect(await waitFor(() => launcher.exitCode !== null, 10_000)).toBe(true);
+    expect(launcher.exitCode).toBe(0);
+    const accepted = await sendRequest(sockPath, {
+      type: 'job-submit', kind: 'brainstorm', payload: { input: 'before disable', cwd: process.cwd() },
+    });
+    expect(accepted?.type).toBe('job-accepted');
+    if (accepted?.type !== 'job-accepted') throw new Error('baseline job was not accepted');
+    const jobId = accepted.job.id;
+    const catalog = createFirstPartyModCatalog();
+    const daemon = JSON.parse(readFileSync(pidPath, 'utf8')) as { pid: number; sessionId: string };
+    const full = createFullCompatDesiredState(catalog, '2026-10-10T10:00:00.000Z');
+    const desired = planDesiredStateChange(catalog, full, { kind: 'disable', id: 'agon.jobs' }, '2026-10-10T10:00:01.000Z').nextState;
+    const host = new DurableModHost(join(home, 'modular-host'), { kernelVersion: '1.0.0', processIdentity: 'daemon-disable-test' });
+    await host.commitGeneration({ operation: 'disable', lock: await surfaceLockFor(desired), desiredState: desired, installedIndex: {} });
+    const requests: DaemonRequest[] = [
+      { type: 'job-submit', kind: 'brainstorm', payload: { input: 'must not start', cwd: process.cwd() } },
+      { type: 'job-list' },
+      { type: 'job-get', jobId },
+      { type: 'job-result', jobId },
+      { type: 'job-events', jobId },
+      { type: 'job-cancel', jobId },
+      { type: 'prompt', text: 'must not dispatch after disable' },
+    ];
+    for (const request of requests) {
+      expect(await sendRequest(sockPath, request)).toMatchObject({ type: 'error', message: expect.stringMatching(/generation.*changed.*restart/i) });
+    }
+    // Control traffic must remain usable so the operator can stop the stale host.
+    expect(await sendRequest(sockPath, { type: 'ping' })).toMatchObject({ type: 'pong' });
+    expect(await sendRequest(sockPath, { type: 'shutdown' })).toMatchObject({ type: 'bye' });
+    expect(await waitFor(() => {
+      try { process.kill(daemon.pid, 0); return false; } catch { return true; }
+    }, 8000)).toBe(true);
+    expect(existsSync(sockPath)).toBe(false);
+    expect(existsSync(pidPath)).toBe(false);
+    expect(JSON.stringify(replay(daemon.sessionId, 0))).not.toContain('must not dispatch after disable');
   }, 30_000);
 
   it('survives the launching process exiting, serves over the socket, and a prompt lands in the ledger', async () => {
@@ -256,6 +383,45 @@ describeMaybe('agond survival — the daemon outlives its launcher', () => {
     const cleaned = await waitFor(() => !existsSync(sockPath) && !existsSync(pidPath), 4_000);
     expect(cleaned).toBe(true);
   }, 60_000);
+
+  it('daemon stop preserves a socket-only server that acknowledges before drain completes', async () => {
+    mkdirSync(join(home, 'daemon'), { recursive: true });
+    const server = createServer(socket => {
+      socket.setEncoding('utf8');
+      socket.on('error', () => {});
+      socket.once('data', () => socket.end('{"type":"bye"}\n'));
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(sockPath, resolve);
+    });
+    const stopper = spawn(process.execPath, [CLI_ENTRY, 'daemon', 'stop'], {
+      env: { ...process.env, AGON_HOME: home }, stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let output = '';
+    stopper.stdout?.on('data', chunk => { output += String(chunk); });
+    stopper.stderr?.on('data', chunk => { output += String(chunk); });
+    try {
+      const code = await new Promise<number | null>((resolve, reject) => {
+        stopper.once('error', reject);
+        stopper.once('close', resolve);
+      });
+      expect(code, output).toBe(0);
+      expect(existsSync(sockPath)).toBe(true);
+      expect(output).toContain('shutdown is still pending');
+      const replacement = createServer();
+      try {
+        const error = await new Promise<NodeJS.ErrnoException | null>(resolve => {
+          replacement.once('error', resolve);
+          replacement.listen(sockPath, () => resolve(null));
+        });
+        expect(error?.code).toBe('EADDRINUSE');
+      } finally { replacement.close(); }
+    } finally {
+      if (stopper.exitCode === null) stopper.kill('SIGKILL');
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+  });
 
   it('daemon stop stays alive for its bounded poll and exits cleanly', async () => {
     const env = { ...process.env, AGON_HOME: home, AGON_DAEMON_ECHO: '1' };

@@ -1,4 +1,4 @@
-import type { JobEvent, JobOutcome, JobSnapshot } from '../jobs/job-service.js';
+import type { DaemonJobRequest, DaemonJobResponse, JobEvent, JobOutcome, JobSnapshot } from '@kernlang/agon-mod-jobs';
 
 /**
  * A message a client sends to the daemon over the socket. `prompt` runs one headless turn (the configured cesarEngine answers; all OutputEvents land in the session ledger). `ping` is a cheap liveness probe. `shutdown` asks the daemon to exit cleanly. `error` is what parseDaemonRequest yields for a malformed/unknown line so the server can reply with a clean error instead of crashing on bad input.
@@ -7,12 +7,7 @@ export type DaemonRequest =
   | { type: 'prompt'; text: string }
   | { type: 'ping' }
   | { type: 'shutdown' }
-  | { type: 'job-submit'; kind: string; payload: Record<string,unknown>; clientId?: string }
-  | { type: 'job-list' }
-  | { type: 'job-get'; jobId: string }
-  | { type: 'job-events'; jobId: string; afterSeq?: number; limit?: number }
-  | { type: 'job-result'; jobId: string }
-  | { type: 'job-cancel'; jobId: string; reason?: string }
+  | DaemonJobRequest
   | { type: 'error'; message: string };
 
 /**
@@ -23,13 +18,7 @@ export type DaemonResponse =
   | { type: 'pong'; sessionId: string; uptime: number; capabilities?: string[] }
   | { type: 'busy' }
   | { type: 'bye' }
-  | { type: 'job-accepted'; job: JobSnapshot }
-  | { type: 'job-list'; jobs: JobSnapshot[] }
-  | { type: 'job-snapshot'; job: JobSnapshot }
-  | { type: 'job-events'; jobId: string; events: JobEvent[]; nextSeq: number; earliestSeq: number; terminal: boolean; truncated: boolean }
-  | { type: 'job-result'; job: JobSnapshot; ready: boolean; outcome?: JobOutcome }
-  | { type: 'job-cancelled'; job: JobSnapshot; status: 'accepted'|'already-cancelled'|'already-terminal' }
-  | { type: 'job-not-found'; jobId: string }
+  | DaemonJobResponse
   | { type: 'error'; message: string };
 
 /**

@@ -1,12 +1,13 @@
-import { resolveExplicitReviewEngines } from '@kernlang/agon-support-verification';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve, sep } from 'node:path';
 import { resolveEngineDefinitionsDir } from '@kernlang/agon-support-engine-runtime';
+import { resolveExplicitReviewEngines } from '@kernlang/agon-support-verification';
 
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { createBrainstormHostServices } from '@kernlang/agon-core';
 import { EngineRegistry, createRunDir, getRatings, loadConfig, pickTopRatedEngine, writeRunStatus } from '@kernlang/agon-core';
 import type { Json, ModManifest, ModServices } from '@kernlang/agon-mod-api';
+import { handleJobToolCall } from './job-tools.js';
 
 const excludedExact = new Set(['kimi', 'minimax', 'mistral']);
 const excludedPrefixes = ['qwen', 'ollama', 'opencode', 'open-code'];
@@ -21,6 +22,12 @@ function orchestrationEngines(ids: readonly string[]): string[] {
 export function decorateMcpFirstPartyServices(manifest: ModManifest, base: ModServices): ModServices {
   return Object.freeze({
     ...base,
+    ...(manifest.id === 'agon.jobs' ? { jobs: Object.freeze({
+      async runTool(name: Parameters<NonNullable<ModServices['jobs']>['runTool']>[0], input: Readonly<Record<string, Json>>, context: Parameters<NonNullable<ModServices['jobs']>['runTool']>[2]) {
+        context.signal.throwIfAborted();
+        return handleJobToolCall(name, input, context);
+      },
+    }) } : {}),
     ...(manifest.id === 'agon.brainstorm' || manifest.id === 'agon.pipeline-orchestration' ? { brainstorm: createBrainstormHostServices(() => {
       const registry = new EngineRegistry(); registry.load(resolveEngineDefinitionsDir()); return registry;
     }, createCliAdapter) } : {}),

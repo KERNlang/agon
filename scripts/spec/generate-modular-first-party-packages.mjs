@@ -136,8 +136,11 @@ function expectedFiles(packageRecord) {
   // Brainstorm seats dispatch through host-supplied services, so the source
   // pattern above cannot see an effect the mod still performs.
   if (short === 'brainstorm') inferredPermissions.add('engine.dispatch');
+  // Jobs persists scheduler observations through its separate storage adapter.
+  if (short === 'jobs') inferredPermissions.add('state.write');
   const physicalPackFiles = isPhysical ? ['dist/implementation.d.ts', ...(short === 'rag' ? ['dist/store.d.ts', 'dist/types.d.ts', 'dist/grounding.d.ts']
     : short === 'think' ? ['dist/thinking.d.ts']
+    : short === 'jobs' ? ['dist/daemon-controller.d.ts', 'dist/cli-projection.d.ts', 'dist/cli-invocation.d.ts', 'dist/cli-client.d.ts', 'dist/cli-contract.d.ts', 'dist/daemon-contract.d.ts', 'dist/daemon-job-router.d.ts', 'dist/daemon-workflow.d.ts', 'dist/job-service.d.ts', 'dist/mcp-contract.d.ts', 'dist/persisted-job-service.d.ts', 'dist/session-jobs.d.ts', 'dist/workflow-process.d.ts']
     : short === 'routing-docs' ? ['dist/guide-content.d.ts']
     : short === 'worktrees' ? ['dist/runtime.d.ts', 'dist/workspaces.d.ts']
     : short === 'rooms' ? ['dist/paths.d.ts', 'dist/runtime/index.d.ts', 'dist/runtime/store.d.ts', 'dist/runtime/presence.d.ts', 'dist/runtime/unread.d.ts', 'dist/runtime/locks.d.ts', 'dist/runtime/leases.d.ts', 'dist/runtime/auto-policy.d.ts', 'dist/runtime/tail.d.ts', 'dist/runtime/tasks.d.ts', 'dist/runtime/types.d.ts']
@@ -238,6 +241,27 @@ export { createPlanCoordinator, failedPlanStepIsFallbackRetryable, preparePlanFa
 export type { PlanCoordinatorHost } from './execution-coordinator.js';
 export { getCesarPlansDir, cesarPlanJsonPath, cesarPlanMarkdownPath, saveCesarPlan, loadCesarPlan, listCesarPlans } from './execution-store.js';
 ` : short === 'jobs' ? `export { ModularJobService } from './implementation.js';
+export { JOB_TOOLS, isJobTool, requiredString, optionalInteger, buildMcpJobCommand } from './mcp-contract.js';
+export { JobService } from './job-service.js';
+export { emitChunks, runWorkflowCommand } from './workflow-process.js';
+export { runSessionJobAction, runSessionJobContribution } from './session-jobs.js';
+export { positiveJobCliInteger, nonNegativeInteger, parsePayload, buildSubmitPayload, jobsCapability, jobOutcomeExitCode, jobSnapshotExitCode, timingFromArgs } from './cli-contract.js';
+export type { JobClientTiming, JobClientConnection } from './cli-contract.js';
+export { createJobCliClient } from './cli-client.js';
+export { createDaemonController, HEARTBEAT_MS, HEARTBEAT_STALE_MS, PING_TIMEOUT_MS } from './daemon-controller.js';
+export type { DaemonControllerHost, DaemonPidInfo, DaemonLiveness } from './daemon-controller.js';
+export { daemonCliCommand, jobCliCommands, jobCliProjection, connectionArgs, waitArgs } from './cli-projection.js';
+export type { JobCliAction, JobCliArgument } from './cli-projection.js';
+export { runJobCliContribution } from './cli-invocation.js';
+export type { JobCliInvocationContext } from './cli-invocation.js';
+export type { JobCliHost, JobCliRequest, JobCliResponse } from './cli-client.js';
+export type { SessionJob, SessionJobEvent, SessionJobsHost, SessionJobsInvocationContext } from './session-jobs.js';
+export { createDaemonWorkflowRuntime, daemonWorkflowKinds, positiveRuntimeInteger, assertWorkingDirectory, SAFE_WORKFLOW_KINDS, PAYLOAD_FIELDS, STRING_PAYLOAD_FIELDS } from './daemon-workflow.js';
+export type { DaemonWorkflowHost, DaemonWorkflowKind, DaemonWorkflowPlan, DaemonWorkflowRuntimeOptions } from './daemon-workflow.js';
+export { handleDaemonJobRequest, isDaemonJobRequest } from './daemon-job-router.js';
+export type { DaemonJobResolver, ResolvedJob } from './daemon-job-router.js';
+export type { DaemonJobRequest, DaemonJobResponse } from './daemon-contract.js';
+export type { JobState, TerminalJobState, JobSnapshot, JobEvent, JobEventPage, JobOutcome, JobObservation, JobTaskContext, JobExecutor, JobServiceOptions } from './job-service.js';
 ` : short === 'git-actions' ? `export { runGitAction } from './implementation.js';
 ` : short === 'forge' ? `export { runForgeCompetition } from './implementation.js';
 ` : short === 'brainstorm' ? `export { runBrainstorm } from './implementation.js';

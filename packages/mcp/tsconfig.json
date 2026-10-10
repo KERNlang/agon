@@ -11,6 +11,7 @@
     { "path": "../mod-kernel" },
     { "path": "../mod-rooms" },
     { "path": "../support-engine-runtime" },
+    { "path": "../support-verification" },
     { "path": "../core" },
     { "path": "../adapter-cli" }
   ]

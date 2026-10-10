@@ -1,3 +1,4 @@
+import { resolveExplicitReviewEngines } from '@kernlang/agon-support-verification';
 import { cliRunRecordHost } from './run-record-host.js';
 import { patchApplicationHost } from './patch-application-host.js';
 import { planSessionHost } from './plan-session-host.js';
@@ -89,6 +90,11 @@ export function decorateCliFirstPartyServices(manifest: ModManifest, base: ModSe
 
 export function createCliEngineServices(): ModServices['engines'] {
   return Object.freeze({
+    async resolveRequested(engineIds: readonly string[], context: Parameters<ModServices['engines']['dispatch']>[2]): Promise<readonly string[]> {
+      const registry = new EngineRegistry();
+      registry.load(resolveBuiltinEnginesDir());
+      return resolveExplicitReviewEngines(engineIds, registry, loadConfig(context.cwd) as never);
+    },
     async listActive(context: Parameters<ModServices['engines']['dispatch']>[2]): Promise<readonly string[]> { const registry = new EngineRegistry(); registry.load(resolveBuiltinEnginesDir()); return filterDefaultOrchestrationEngines(registry.activeIds(loadConfig(context.cwd) as never)); },
     async rank(engineIds: readonly string[], scopes: readonly ('forge'|'brainstorm'|'tribunal'|'critique')[]): Promise<readonly {engineId:string;reason:'top-rated'|'random'|'none';scope:'forge'|'brainstorm'|'tribunal'|'critique'|'global'|null}[]> { const remaining=[...engineIds]; const ranked=[]; const ratings=getRatings(); while(remaining.length){ const picked=pickTopRatedEngine(remaining,ratings,{modes:[...scopes],rng:()=>0}); if(!picked.engineId) break; ranked.push(picked); remaining.splice(remaining.indexOf(picked.engineId),1); } return ranked; },
     async dispatch(engineId: string, prompt: string, context: Parameters<ModServices['engines']['dispatch']>[2], options?: Parameters<ModServices['engines']['dispatch']>[3]): Promise<Json> {

@@ -585,7 +585,7 @@ export async function handleDelegatedAction(result: any, input: string, cb: Disp
                     : result.engineId ? [result.engineId as string] : undefined;
                   const review = await runPhysicalCesarWorkflow('review', {
                     target: result.target ?? 'uncommitted',
-                    engines: reviewEngines?.join(',') ?? '',
+                    ...(reviewEngines ? { engines: reviewEngines.join(',') } : {}),
                   }, cb, signal);
                   await continueCesarAfterResult(`Review completed for "${taskInput.slice(0, 200)}".\n\n${JSON.stringify(review, null, 2)}\n\nAssess the findings and take the next concrete step.`, cb, continuationEpoch, continuationUserTurns);
                 }, cb.ctx));
@@ -724,7 +724,7 @@ export async function handleRecoveredDelegation(crashDel: any, input: string, cb
             const reviewEngines = Array.isArray(crashDel.engines) && crashDel.engines.length > 0
               ? crashDel.engines
               : crashDel.engineId ? [crashDel.engineId] : undefined;
-            const review = await runPhysicalCesarWorkflow('review', { target: crashDel.target ?? 'uncommitted', engines: reviewEngines?.join(',') ?? '' }, cb);
+            const review = await runPhysicalCesarWorkflow('review', { target: crashDel.target ?? 'uncommitted', ...(reviewEngines ? { engines: reviewEngines.join(',') } : {}) }, cb);
             await continueCesarAfterResult(`Recovered review completed.\n\n${JSON.stringify(review, null, 2)}\n\nAssess the findings and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
           }, cb.ctx));
           return true;

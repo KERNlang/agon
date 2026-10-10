@@ -124,23 +124,39 @@ export async function runReview(
       stderr: `${error instanceof Error ? error.message : String(error)}\n`,
     };
   }
+  const explicit = input.engine !== undefined || input.engines !== undefined;
+  if (input.engine !== undefined && input.engines !== undefined) {
+    return { exitCode: 1, stderr: 'Use either --engine or --engines, not both.\n' };
+  }
+  const active = (!explicit || !services.engines.resolveRequested) && services.engines.listActive
+    ? [...(await services.engines.listActive(context))]
+    : [];
+  let engines: string[] = [];
+  if (explicit) {
+    const requested = input.engine !== undefined
+      ? [text(input.engine)]
+      : typeof input.engines === 'string' ? input.engines.split(',').map(text) : [];
+    if (!requested.length || requested.some(id => !id)) {
+      return { exitCode: 1, stderr: 'An explicit Review engine list cannot be empty.\n' };
+    }
+    try {
+      if (services.engines.resolveRequested) {
+        engines = [...await services.engines.resolveRequested(requested, context)];
+      } else {
+        const unknown = requested.filter(id => !active.includes(id));
+        if (unknown.length) throw new Error(`Unknown or inactive review engines: ${unknown.join(', ')}`);
+        engines = [...new Set(requested)];
+      }
+    } catch (error) {
+      return { exitCode: 1, stderr: `${error instanceof Error ? error.message : String(error)}\n` };
+    }
+  }
   if (!target.diff.trim())
     return {
       exitCode: 0,
       stdout: `No diff found for ${target.label}.\n`,
       result: { target: target.label, reviews: [], findings: [] } as Json,
     };
-  const run = await services.runs?.start(
-    "review",
-    text(input.label) || undefined,
-    context,
-  );
-  const active = services.engines.listActive
-    ? [...(await services.engines.listActive(context))]
-    : [];
-  let engines = list(input.engines);
-  if (text(input.engine)) engines = [text(input.engine)];
-  const explicit = engines.length > 0;
   if (!explicit) {
     const risk = text(input.risk) || "auto";
     if (!["auto", "low", "medium", "high"].includes(risk))
@@ -165,17 +181,16 @@ export async function runReview(
       .filter((id) => id !== text(input["primary-engine"]))
       .slice(0, count);
   }
-  const unknown = engines.filter((id) => active.length && !active.includes(id));
-  if (unknown.length)
-    return {
-      exitCode: 1,
-      stderr: `Unknown or inactive review engines: ${unknown.join(", ")}\n`,
-    };
   if (!engines.length)
     return { exitCode: 1, stderr: "No active engines available for review.\n" };
-  const timeoutSeconds = Math.max(
-    1,
-    Number.parseInt(text(input.timeout) || "420", 10),
+  const timeoutSeconds = Number(text(input.timeout) || "420");
+  if (!Number.isSafeInteger(timeoutSeconds) || timeoutSeconds < 1) {
+    return { exitCode: 1, stderr: 'Review timeout must be a positive integer in seconds.\n' };
+  }
+  const run = await services.runs?.start(
+    "review",
+    text(input.label) || undefined,
+    context,
   );
   const roles = list(input.roles);
   const assigned = engines.map((engineId, index) => ({
@@ -386,7 +401,8 @@ function parseReviewIntent(input: string) {
     if (
       lower === "uncommitted" ||
       lower.startsWith("branch:") ||
-      lower.startsWith("commit:")
+      lower.startsWith("commit:") ||
+      lower.startsWith("range:")
     ) {
       target ??= part;
       continue;
@@ -419,7 +435,15 @@ export const createMod: AgonModFactory = (services) =>
           description: "Parse review intent",
           inputSchema: schema,
           parse: parseReviewIntent,
-          run: (input, context) => runReview(input, context, services),
+          run: (input, context) => {
+            const parsed = input as Record<string, Json>;
+            return runReview({
+              ...(typeof parsed.target === 'string' ? { target: parsed.target } : {}),
+              ...(Array.isArray(parsed.engineIds) ? { engines: parsed.engineIds.join(',') }
+                : typeof parsed.engineId === 'string' ? { engine: parsed.engineId } : {}),
+              ...(Array.isArray(parsed.roles) ? { roles: parsed.roles.join(',') } : {}),
+            }, context, services);
+          },
         }),
       );
       for (const id of [

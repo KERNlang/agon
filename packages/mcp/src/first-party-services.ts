@@ -1,3 +1,4 @@
+import { resolveExplicitReviewEngines } from '@kernlang/agon-support-verification';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve, sep } from 'node:path';
 import { resolveEngineDefinitionsDir } from '@kernlang/agon-support-engine-runtime';
@@ -43,6 +44,10 @@ export function createMcpEngineServices(): ModServices['engines'] {
     return { registry, config: loadConfig(cwd) };
   };
   return Object.freeze({
+      async resolveRequested(engineIds: readonly string[], context: Parameters<ModServices['engines']['dispatch']>[2]): Promise<readonly string[]> {
+        const { registry, config } = registryFor(context.cwd);
+        return resolveExplicitReviewEngines(engineIds, registry, config as never);
+      },
       async listActive(context: Parameters<ModServices['engines']['dispatch']>[2]): Promise<readonly string[]> {
         const { registry, config } = registryFor(context.cwd);
         return orchestrationEngines(registry.activeIds(config as never));

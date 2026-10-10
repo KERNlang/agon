@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { buildPanelHealth } from '@kernlang/agon-support-panel';
 import type { SeatOutcome } from '@kernlang/agon-support-panel';
+import type { BrainstormResult } from './result.js';
 
 export interface BrainstormDraft {
   approach: string;
@@ -213,7 +214,7 @@ export function createBrainstormWorkflow<Options extends BrainstormWorkflowOptio
       dedup: dedup.status,
       synthesis,
       panelHealth,
-    };
+    } satisfies BrainstormResult;
 
   };
 }

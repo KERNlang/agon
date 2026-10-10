@@ -4,7 +4,7 @@ export type {
   EngineModelConfig, ImageAttachment, SessionBudget, TaskClass,
 } from '@kernlang/agon-support-engine-runtime';
 import type { TaskClass } from '@kernlang/agon-support-engine-runtime';
-import type { BrainstormGroup, BrainstormDedupStatus } from '@kernlang/agon-support-dedup';
+export type { BrainstormResult } from '@kernlang/agon-mod-brainstorm';
 export type { BrainstormGroup, BrainstormDedupStatus } from '@kernlang/agon-support-dedup';
 
 
@@ -517,17 +517,6 @@ export interface PanelHealth {
   degraded: boolean;
   notes: string[];
   banner: string | null;
-}
-
-export interface BrainstormResult {
-  question: string;
-  bids: BrainstormBid[];
-  winner: string;
-  response: string;
-  groups?: BrainstormGroup[];
-  dedup?: BrainstormDedupStatus;
-  synthesis?: BrainstormSynthesisStatus;
-  panelHealth?: PanelHealth;
 }
 
 export interface BreakerArtifact {

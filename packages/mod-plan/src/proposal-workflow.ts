@@ -1,5 +1,6 @@
 import type { CesarPlan } from './execution-model.js';
-import { cancelCesarPlan, createPlanProposal } from './execution-state.js';
+import type { AutoApproveDecision } from './approval-policy.js';
+import { approveCesarPlan, cancelCesarPlan, createPlanProposal } from './execution-state.js';
 import { formatCesarPlanMarkdown } from './formatter.js';
 import { createPlanStepSanitizer } from './step-validation.js';
 import type { PlanStepEstimator } from './step-validation.js';
@@ -40,6 +41,36 @@ export function publishPlanProposal(args: Record<string, unknown>, host: PlanPro
   if (proposed?.state === 'awaiting_approval' && proposed.id !== plan.id) host.clearProposal();
   host.publish(plan, markdown, path);
   return plan;
+}
+
+export interface PlanProposalEffects {
+  policy(plan: CesarPlan): AutoApproveDecision;
+  notify(level: 'info' | 'warning', message: string): void;
+  /** True means authority accepted the invocation, not that execution succeeded. */
+  execute(plan: CesarPlan): Promise<boolean>;
+  setActive(plan: CesarPlan): void;
+  clearProposal(id: string): void;
+}
+
+/** Refused execution returns the unchanged proposal to manual approval. */
+export async function activatePlanProposal(proposed: CesarPlan, host: PlanProposalEffects): Promise<void> {
+  if (proposed.planFilePath) host.notify('info', `Plan saved: ${proposed.planFilePath}`);
+  const policy = host.policy(proposed);
+  let decided = false;
+  if (policy.approve) {
+    host.notify('info', `Plan auto-approved (${policy.reason})`);
+    for (const step of proposed.steps) {
+      if (step.fitnessCmd && step.fitnessCmd.trim().length > 0) host.notify('warning', `fitnessCmd: ${step.fitnessCmd}`);
+    }
+    decided = await host.execute(approveCesarPlan(proposed));
+  } else if (proposed.autoApprove === true) {
+    host.notify('info', `Plan requested autoApprove but policy rejected: ${policy.reason}`);
+  }
+  if (!decided) {
+    host.setActive(proposed);
+    host.clearProposal(proposed.id);
+    host.notify('info', 'Plan awaiting approval. Press Y to approve, N to reject — or type /approve / /cancel.');
+  }
 }
 
 export interface PlanRejectionEffects {

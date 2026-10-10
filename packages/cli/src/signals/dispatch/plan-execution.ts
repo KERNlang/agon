@@ -5,7 +5,7 @@ import { resolveWorkingDir } from '@kernlang/agon-core';
 import { inspectWorkingTree } from '@kernlang/agon-support-worktree';
 
 import { approveCesarPlan, saveCesarPlan, executePlan, formatCesarPlanMarkdown, planCostEstimator, appendMessage } from '@kernlang/agon-core';
-import { rejectPlanProposal } from '@kernlang/agon-mod-plan';
+import { rejectPlanProposal, activatePlanProposal } from '@kernlang/agon-mod-plan';
 
 import type { CesarPlan, CesarStepResult, StepExecutor } from '@kernlang/agon-core';
 
@@ -24,11 +24,31 @@ import { buildResumePromptContext, prepareCesarPlanResume, createPlanCoordinator
 
 import { hostConsoleWarn } from '../../lib/kern-host.js';
 import { takePlanFallback } from '../plan-fallback.js';
+import { assertProcessSurfaceAvailable, captureProcessSurfaceAuthority } from '../../surface-authority-runtime.js';
+
+/** Compatibility entry points must not bypass the selected Plan owner. */
+function planExecutionAvailable(cb: DispatchCallbacks, assertCurrent?: () => void): boolean {
+  try {
+    assertCurrent?.();
+    assertProcessSurfaceAvailable('tui', '/plan');
+    return true;
+  } catch (error) {
+    cb.dispatch({ type: 'error', message: error instanceof Error ? error.message : String(error) });
+    return false;
+  }
+}
 
 /**
  * Resume a paused or stale-running Cesar plan through the shared executor path. Shows a resume prompt with context before executing.
  */
 export async function resumeCesarPlan(plan: CesarPlan, cb: DispatchCallbacks): Promise<void> {
+  if (!planExecutionAvailable(cb)) return;
+  let assertCurrent: () => void;
+  try { assertCurrent = captureProcessSurfaceAuthority(); }
+  catch (error) {
+    cb.dispatch({ type: 'error', message: error instanceof Error ? error.message : String(error) });
+    return;
+  }
   const ctx = buildResumePromptContext(plan);
   const lines = [
     `Resume plan: ${plan.intent}`,
@@ -56,6 +76,7 @@ export async function resumeCesarPlan(plan: CesarPlan, cb: DispatchCallbacks): P
     return;
   }
   
+  if (!planExecutionAvailable(cb, assertCurrent)) return;
   const restart = trimmed === '2' || trimmed === 'r' || trimmed === 'restart';
   const runningPlan = prepareCesarPlanResume(plan, restart ? 'restart' : 'resume');
   if (restart) {
@@ -106,36 +127,21 @@ export function cancelPendingCesarPlan(cb: DispatchCallbacks): boolean {
  * Activate a proposed Cesar plan. Auto-approved plans execute immediately; manual approval is intentionally non-blocking so the REPL returns to idle and accepts go, yes, or /approve through the normal composer.
  */
 export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchCallbacks): Promise<void> {
-  
-  if (proposed.planFilePath) {
-    cb.dispatch({ type: 'info', message: `Plan saved: ${proposed.planFilePath}` });
-  }
-  
-  const policy = isAgenticAutoMode(cb.ctx)
-    ? applyAgenticAutoApprovePolicy(proposed, cb.ctx.config, cb.ctx.cesar?.taskExecutionLease)
-    : applyAutoApprovePolicy(proposed, cb.ctx.config);
-  let decided = false;
-  
-  if (policy.approve) {
-    cb.dispatch({ type: 'info', message: `Plan auto-approved (${policy.reason})` });
-    for (const s of proposed.steps) {
-      if (s.fitnessCmd && s.fitnessCmd.trim().length > 0) {
-        cb.dispatch({ type: 'warning', message: `fitnessCmd: ${s.fitnessCmd}` });
-      }
-    }
-  
-    const approved = approveCesarPlan(proposed);
-    await executeApprovedPlan(approved, cb);
-    decided = true;
-  } else if (proposed.autoApprove === true) {
-    cb.dispatch({ type: 'info', message: `Plan requested autoApprove but policy rejected: ${policy.reason}` });
-  }
-  
-  if (!decided) {
-    cb.setActivePlan(proposed);
-    if (cb.ctx.cesar?.proposedPlan?.id === proposed.id) cb.ctx.cesar.proposedPlan = undefined;
-    cb.dispatch({ type: 'info', message: 'Plan awaiting approval. Press Y to approve, N to reject — or type /approve / /cancel.' });
-  }
+  await activatePlanProposal(proposed, {
+    policy: plan => {
+      if (!planExecutionAvailable(cb)) return { approve: false,
+        reason: 'Plan is unavailable in the selected modular generation', adjustedCostUsd: plan.totalEstimatedCostUsd };
+      return isAgenticAutoMode(cb.ctx)
+        ? applyAgenticAutoApprovePolicy(plan, cb.ctx.config, cb.ctx.cesar?.taskExecutionLease)
+        : applyAutoApprovePolicy(plan, cb.ctx.config);
+    },
+    notify: (type, message) => cb.dispatch({ type, message }),
+    execute: plan => executePlanInvocation(plan, cb),
+    setActive: plan => cb.setActivePlan(plan),
+    clearProposal: id => {
+      if (cb.ctx.cesar?.proposedPlan?.id === id) cb.ctx.cesar.proposedPlan = undefined;
+    },
+  });
 }
 
 /**
@@ -311,8 +317,16 @@ function planCoordinator(cb: DispatchCallbacks) {
   });
 }
 
-export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallbacks): Promise<void> {
+/** Return whether authority accepted the invocation, not whether its work succeeded. */
+async function executePlanInvocation(approved: CesarPlan, cb: DispatchCallbacks): Promise<boolean> {
+  if (!planExecutionAvailable(cb)) return false;
   await planCoordinator(cb).executeApprovedPlan(approved);
+  return true;
+}
+
+/** Preserve the existing public result while sharing the guarded invocation. */
+export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallbacks): Promise<void> {
+  await executePlanInvocation(approved, cb);
 }
 
 export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors: Record<string, StepExecutor>, abortSignal: AbortSignal, cb: DispatchCallbacks): Promise<CesarPlan> {

@@ -84,6 +84,14 @@ export function decorateCliFirstPartyServices(manifest: ModManifest, base: ModSe
   } : undefined;
   return Object.freeze({ ...base, runs, ...(browser ? { browser } : {}), ...(workspace ? { workspace } : {}),
     ...(brainstorm ? { brainstorm } : {}),
+    ...(manifest.id === 'agon.ratings' ? { ratings: {
+      protectedEngineIds(context: Parameters<ModServices['engines']['dispatch']>[2]): readonly string[] {
+        const registry = new EngineRegistry(); registry.load(resolveBuiltinEnginesDir());
+        const config = loadConfig(context.cwd);
+        const configured = Array.isArray(config.ratingsPurgeKeepEngines) ? config.ratingsPurgeKeepEngines : [];
+        return [...new Set([...registry.listIds(), ...configured])];
+      },
+    } } : {}),
     ...(manifest.id === 'agon.forge' ? { patchApplication: patchApplicationHost } : {}),
     ...(manifest.id === 'agon.plan' ? { planSession: planSessionHost } : {}), engines: createCliEngineServices() });
 }

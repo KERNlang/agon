@@ -276,6 +276,10 @@ export interface ModServices {
   readonly runs?: RunRecordHostServices;
   /** Bundled Jobs transport only. It does not grant arbitrary process execution. */
   readonly jobs?: JobsHostServices;
+  /** Bundled ratings maintenance: all registered IDs plus configured keep IDs. */
+  readonly ratings?: {
+    protectedEngineIds(context: InvocationContext): Awaitable<readonly string[]>;
+  };
 }
 
 export interface AgonModV1 {

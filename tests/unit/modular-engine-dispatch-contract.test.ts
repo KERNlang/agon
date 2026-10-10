@@ -13,6 +13,7 @@ vi.mock('@kernlang/agon-core', () => ({
   EngineRegistry: class {
     load() {}
     activeIds() { return ['fixture-engine']; }
+    listIds() { return ['fixture-engine', 'disabled-engine', 'filtered-engine']; }
     get() { return fixture.engine; }
   },
   loadConfig: fixture.loadConfig,
@@ -38,6 +39,26 @@ import { createMcpEngineServices, decorateMcpFirstPartyServices } from '../../pa
 
 const result = { exitCode: 0, stdout: 'fixture answer', stderr: '', durationMs: 4, timedOut: false };
 beforeEach(() => { vi.clearAllMocks(); fixture.dispatch.mockResolvedValue(result); });
+
+describe.each([decorateCliFirstPartyServices, decorateMcpFirstPartyServices])('Ratings protection host', decorate => {
+  it('protects all registered engines plus configured historical IDs, without dispatch', async () => {
+    fixture.loadConfig.mockReturnValueOnce({ ratingsPurgeKeepEngines: ['renamed-engine', 'fixture-engine'] });
+    const services = decorate({ id: 'agon.ratings' } as never, {} as never);
+    const context = { invocationId: 'ratings', cwd: '/fixture/project', platform: 'darwin-arm64' as const, signal: new AbortController().signal, config: {} };
+    expect(await services.ratings?.protectedEngineIds(context)).toEqual(['fixture-engine', 'disabled-engine', 'filtered-engine', 'renamed-engine']);
+    expect(fixture.loadConfig).toHaveBeenCalledWith(context.cwd);
+    expect(fixture.dispatch).not.toHaveBeenCalled();
+  });
+  it('does not add ratings maintenance to an unrelated mod', () => {
+    expect(decorate({ id: 'custom.example' } as never, {} as never)).not.toHaveProperty('ratings');
+  });
+  it.each(['not-an-array', 42])('preserves the legacy non-array config guard (%j)', async invalid => {
+    fixture.loadConfig.mockReturnValueOnce({ ratingsPurgeKeepEngines: invalid });
+    const services = decorate({ id: 'agon.ratings' } as never, {} as never);
+    const context = { invocationId: 'ratings', cwd: '/fixture/project', platform: 'darwin-arm64' as const, signal: new AbortController().signal, config: {} };
+    expect(await services.ratings?.protectedEngineIds(context)).toEqual(['fixture-engine', 'disabled-engine', 'filtered-engine']);
+  });
+});
 
 describe.each([decorateCliFirstPartyServices, decorateMcpFirstPartyServices])('Brainstorm host wiring', decorate => {
   it.each(['agon.brainstorm', 'agon.pipeline-orchestration'])('provides host effects to the bundled %s consumer', id => {

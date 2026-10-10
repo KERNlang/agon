@@ -72,15 +72,29 @@ export async function runRatings(raw:Json, context:InvocationContext, services:M
     return { exitCode:0, stdout:`${JSON.stringify({ratings:rows,receiptId},null,2)}\n`, result:{ratings:rows,receiptId} };
   }
   if (action !== 'purge-unknown' && action !== 'purge') return {exitCode:1,stderr:'Use leaderboard or purge-unknown.\n'};
-  const keep = [...new Set([...(await services.engines.listActive?.(context) ?? []), ...String(input.keep ?? '').split(',').map((v) => v.trim()).filter(Boolean)])];
-  const record = loadRatings(), unknown = computeUnknownEngineIds(record, keep), runs = manifests();
-  const purgeRuns = runs.filter((run) => run.valid && !run.engines.some((engine) => keep.includes(engine)));
+  const targetHome = home();
+  if (!services.ratings) return {exitCode:1,stderr:'Ratings purge requires the protected-engine registry host. No data was changed.\n'};
+  context.signal.throwIfAborted();
+  const protectedIds = await services.ratings.protectedEngineIds(context);
+  context.signal.throwIfAborted();
+  if (home() !== targetHome) return {exitCode:1,stderr:'Ratings storage root changed during registry lookup. No data was changed. Retry the purge.\n'};
+  if (!Array.isArray(protectedIds) || Array.from(protectedIds).some(id => typeof id !== 'string' || !id || id !== id.trim())) {
+    return {exitCode:1,stderr:'Protected-engine registry returned invalid IDs. No data was changed.\n'};
+  }
+  const keep = [...new Set([...protectedIds, ...String(input.keep ?? '').split(',').map((v) => v.trim()).filter(Boolean)])];
+  const record = loadRatings(), unknown = computeUnknownEngineIds(record, keep);
+  let runs = manifests();
+  let purgeRuns = runs.filter((run) => run.valid && !run.engines.some((engine) => keep.includes(engine)));
   const apply = input.apply === true && input['dry-run'] !== true;
   if (!apply) {
     const report = {dryRun:true,keepCount:keep.length,ratingsUnknown:unknown,ratingsRemoved:[],runsScanned:runs.length,runsPurged:purgeRuns,backupDir:null};
     return {exitCode:0,stdout:`${JSON.stringify(report,null,2)}\n`,result:report};
   }
-  if (await services.permissions.check('fs.write', home()) !== 'allow') return {exitCode:1,stderr:'Permission denied: fs.write is required to apply a ratings purge.\n'};
+  if (await services.permissions.check('fs.write', targetHome) !== 'allow') return {exitCode:1,stderr:'Permission denied: fs.write is required to apply a ratings purge.\n'};
+  context.signal.throwIfAborted();
+  if (home() !== targetHome) return {exitCode:1,stderr:'Ratings storage root changed during permission checking. No data was changed. Retry the purge.\n'};
+  runs = manifests();
+  purgeRuns = runs.filter((run) => run.valid && !run.engines.some((engine) => keep.includes(engine)));
   const stamp = new Date().toISOString().replace(/[:.]/g,'-'), backup = join(home(), `purge-backup-${stamp}`);
   let removed:string[] = [];
   withFileLock(ratingsPath() + '.lock', () => {
@@ -90,11 +104,21 @@ export async function runRatings(raw:Json, context:InvocationContext, services:M
     removed = prune(current,now); current.lastUpdated = new Date().toISOString(); mkdirSync(dirname(ratingsPath()),{recursive:true});
     const temporary = ratingsPath() + `.tmp.${process.pid}`; writeFileSync(temporary,JSON.stringify(current,null,2)+'\n'); renameSync(temporary,ratingsPath());
   });
+  const movedRuns: typeof purgeRuns = [];
   if (purgeRuns.length) {
     const destination = join(backup,'runs'); mkdirSync(destination,{recursive:true});
-    for (const run of purgeRuns) try { renameSync(join(home(),'runs',run.file),join(destination,run.file)); } catch { /* vanished concurrently */ }
+    for (const run of purgeRuns) {
+      try {
+        renameSync(join(targetHome,'runs',run.file),join(destination,run.file));
+        movedRuns.push(run);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          throw new Error(`Ratings purge stopped while moving ${run.file}. Earlier changes have backups in ${backup}.`, { cause: error });
+        }
+      }
+    }
   }
-  const result = {dryRun:false,keepCount:keep.length,ratingsUnknown:unknown,ratingsRemoved:removed,runsScanned:runs.length,runsPurged:purgeRuns,backupDir:backup};
+  const result = {dryRun:false,keepCount:keep.length,ratingsUnknown:unknown,ratingsRemoved:removed,runsScanned:runs.length,runsPurged:movedRuns,backupDir:backup};
   const receiptId = await services.receipts.record('ratings-purge', result);
   return {exitCode:0,stdout:`${JSON.stringify({...result,receiptId},null,2)}\n`,result:{...result,receiptId}};
 }

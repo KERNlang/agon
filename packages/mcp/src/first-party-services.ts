@@ -22,6 +22,14 @@ function orchestrationEngines(ids: readonly string[]): string[] {
 export function decorateMcpFirstPartyServices(manifest: ModManifest, base: ModServices): ModServices {
   return Object.freeze({
     ...base,
+    ...(manifest.id === 'agon.ratings' ? { ratings: {
+      protectedEngineIds(context: Parameters<ModServices['engines']['dispatch']>[2]): readonly string[] {
+        const registry = new EngineRegistry(); registry.load(resolveEngineDefinitionsDir());
+        const config = loadConfig(context.cwd);
+        const configured = Array.isArray(config.ratingsPurgeKeepEngines) ? config.ratingsPurgeKeepEngines : [];
+        return [...new Set([...registry.listIds(), ...configured])];
+      },
+    } } : {}),
     ...(manifest.id === 'agon.jobs' ? { jobs: Object.freeze({
       async runTool(name: Parameters<NonNullable<ModServices['jobs']>['runTool']>[0], input: Readonly<Record<string, Json>>, context: Parameters<NonNullable<ModServices['jobs']>['runTool']>[2]) {
         context.signal.throwIfAborted();

@@ -5,10 +5,11 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { DurableModHost, createFirstPartyModCatalog, createFullCompatDesiredState, planDesiredStateChange } from '../../packages/mod-kernel/src/index.js';
 import { surfaceLockFor } from '../helpers/modular-surface-lock.js';
-import { assertProcessPlanStepAvailable, disposeProcessSurfaceAuthority, initializeProcessSurfaceAuthority, processSurfaceCatalog } from '../../packages/cli/src/surface-authority-runtime.js';
+import { assertProcessPlanStepAvailable, disposeProcessSurfaceAuthority, guardProcessEngineAdapter, initializeProcessSurfaceAuthority, processSurfaceCatalog, withProcessSurfaceAuthority } from '../../packages/cli/src/surface-authority-runtime.js';
 import { SurfaceGeneration } from '@kernlang/agon-kernel';
 import type { CesarPlanStep } from '@kernlang/agon-mod-plan';
 import type { HandlerContext } from '../../packages/cli/src/handlers/types.js';
+import type { DispatchOptions, EngineAdapter, EngineDefinition } from '@kernlang/agon-core';
 
 const effects = vi.hoisted(() => ({ brainstorm: vi.fn(), delegate: vi.fn(), other: vi.fn() }));
 vi.mock('@kernlang/agon-forge', async original => ({
@@ -52,7 +53,7 @@ async function install(disabled?: string) {
   const desired = disabled ? planDesiredStateChange(catalog, full, { kind: 'disable', id: disabled }, NOW).nextState : full;
   await host.commitGeneration({ operation: disabled ? 'disable' : 'install', lock: await surfaceLockFor(desired), desiredState: desired, installedIndex: {} });
 }
-function context(): HandlerContext { return { config: {} } as HandlerContext; }
+function context(): HandlerContext { return { config: {}, adapter: {} } as HandlerContext; }
 function step(type: string): CesarPlanStep {
   return { id: 'step', type, description: 'fixture', state: 'pending', estimatedTokens: 0, estimatedCostUsd: 0 };
 }
@@ -262,4 +263,152 @@ it.each(['brainstorm', 'forge', 'tribunal'])('honors cancellation from the %s st
   const terminal = dispatch.mock.calls.map(([event]) => event).filter(event => event.type === 'workflow-run-completed');
   expect(terminal).toHaveLength(1);
   expect(terminal[0]).toMatchObject({ status: 'cancelled' });
+});
+
+it.each(['brainstorm', 'tribunal', 'campfire', 'delegate', 'self', 'forge', 'teamforge'])('blocks a late provider dispatch inside %s', async type => {
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  const dispatch = vi.fn(async () => ({ exitCode: 0, stdout: '', stderr: '', durationMs: 0, timedOut: false }));
+  const ctx = context();
+  ctx.adapter = { dispatch } as EngineAdapter;
+  const run = async (...args: any[]) => {
+    const adapter = type === 'forge' || type === 'teamforge' ? args[2] : args[0].adapter;
+    await install('agon.plan');
+    await adapter.dispatch({ signal: args[0].signal } as DispatchOptions);
+    return { winner: 'fixture', response: 'answer', summary: 'review', rounds: [] };
+  };
+  if (type === 'brainstorm') effects.brainstorm.mockImplementationOnce(run);
+  else if (type === 'delegate' || type === 'self') effects.delegate.mockImplementationOnce(run);
+  else effects.other.mockImplementationOnce(run);
+  const result = await buildStepExecutors(ctx)[type].execute(step(type), {});
+  expect(dispatch).not.toHaveBeenCalled();
+  expect(result.result).toMatchObject({ status: 'failure', error: expect.stringContaining('restart') });
+  expect(ctx.adapter.dispatch).toBe(dispatch);
+});
+
+it.each(['dispatch', 'dispatchAgent', 'dispatchStream', 'dispatchAgentStream', 'isAvailable', 'getVersion'] as const)('preserves and guards adapter %s', async method => {
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  const calls: { receiver: unknown; options: unknown }[] = [];
+  const value = { exitCode: 0, stdout: 'fixture', stderr: '', durationMs: 1, timedOut: false, diff: '', diffLines: 0, filesChanged: 0 };
+  const call = async function(this: unknown, options: unknown) { calls.push({ receiver: this, options }); return value; };
+  const stream = async function*(this: unknown, options: unknown) { calls.push({ receiver: this, options }); yield 'chunk'; return value; };
+  const adapter: EngineAdapter = { dispatch: call, dispatchAgent: call, dispatchStream: stream, dispatchAgentStream: stream,
+    isAvailable: async function(options) { calls.push({ receiver: this, options }); return true; },
+    getVersion: async function(options) { calls.push({ receiver: this, options }); return 'fixture-version'; } };
+  const guarded = guardProcessEngineAdapter(adapter, () => assertProcessPlanStepAvailable('brainstorm'));
+  const options = {} as DispatchOptions & EngineDefinition;
+  const streaming = method === 'dispatchStream' || method === 'dispatchAgentStream';
+  if (streaming) {
+    const iterator = guarded[method]!(options);
+    expect(await iterator.next()).toEqual({ done: false, value: 'chunk' });
+    expect(await iterator.next()).toEqual({ done: true, value });
+  } else {
+    expect(await guarded[method]!(options)).toBe(method === 'isAvailable' ? true : method === 'getVersion' ? 'fixture-version' : value);
+  }
+  expect(calls).toEqual([{ receiver: adapter, options }]);
+  const deferred = streaming ? guarded[method]!(options) : undefined;
+  await install('agon.plan');
+  if (deferred) await expect(deferred.next()).rejects.toThrow('restart');
+  else await expect(guarded[method]!(options)).rejects.toThrow('restart');
+  expect(calls).toHaveLength(1);
+});
+
+it('retains absent optional adapter methods and the bootstrap adapter identity', async () => {
+  const adapter = { dispatch: vi.fn(), isAvailable: vi.fn(), getVersion: vi.fn() };
+  expect(guardProcessEngineAdapter(adapter, () => {})).toBe(adapter);
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  const guarded = guardProcessEngineAdapter(adapter, () => {});
+  for (const key of ['dispatchAgent', 'dispatchStream', 'dispatchAgentStream']) expect(guarded).not.toHaveProperty(key);
+});
+
+it('cancels an outstanding cooperative backend after generation revocation', async () => {
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  let entered!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  let observedSignal: AbortSignal | undefined;
+  effects.brainstorm.mockImplementationOnce(({ signal }: { signal: AbortSignal }) => new Promise((_resolve, reject) => {
+    observedSignal = signal;
+    signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    entered();
+  }));
+  const parent = new AbortController();
+  const pending = buildStepExecutors(context()).brainstorm.execute(step('brainstorm'), {}, parent.signal);
+  await started;
+  await install('agon.plan');
+  const result = await pending;
+  expect(observedSignal?.aborted).toBe(true);
+  expect(parent.signal.aborted).toBe(false);
+  expect(result.result).toMatchObject({ status: 'failure', error: expect.stringContaining('restart') });
+});
+
+it.each([false, true])('rejects a captured adapter after disposal (restart=%s)', async restart => {
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  const adapter = { dispatch: vi.fn(), isAvailable: vi.fn(), getVersion: vi.fn() };
+  const guarded = guardProcessEngineAdapter(adapter, () => {});
+  await disposeProcessSurfaceAuthority();
+  if (restart) await initializeProcessSurfaceAuthority(root);
+  await expect(guarded.dispatch({} as DispatchOptions)).rejects.toThrow('disposed or replaced');
+  expect(adapter.dispatch).not.toHaveBeenCalled();
+});
+
+it.each(['return', 'throw'] as const)('preserves stream cleanup on consumer %s', async exit => {
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  const cleanup = vi.fn();
+  const value = { exitCode: 0, stdout: '', stderr: '', durationMs: 0, timedOut: false };
+  const adapter: EngineAdapter = { dispatch: vi.fn(), isAvailable: vi.fn(), getVersion: vi.fn(),
+    dispatchStream: async function*() { try { yield 'chunk'; return value; } finally { cleanup(); } } };
+  const stream = guardProcessEngineAdapter(adapter, () => {}).dispatchStream!({} as DispatchOptions);
+  expect(await stream.next()).toEqual({ done: false, value: 'chunk' });
+  if (exit === 'return') expect(await stream.return(value)).toEqual({ done: true, value });
+  else await expect(stream.throw(new Error('consumer stopped'))).rejects.toThrow('consumer stopped');
+  expect(cleanup).toHaveBeenCalledOnce();
+});
+
+it.each(['success', 'rejection', 'parent cancellation'])('removes monitor resources after %s', async outcome => {
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  const parent = new AbortController();
+  const intervals = vi.spyOn(globalThis, 'setInterval');
+  const clear = vi.spyOn(globalThis, 'clearInterval');
+  const add = vi.spyOn(parent.signal, 'addEventListener');
+  const remove = vi.spyOn(parent.signal, 'removeEventListener');
+  const pending = withProcessSurfaceAuthority(parent.signal, () => {}, async signal => {
+    if (outcome === 'rejection') throw new Error('backend rejected');
+    if (outcome === 'parent cancellation') {
+      parent.abort(new Error('parent cancelled'));
+      signal!.throwIfAborted();
+    }
+    return 'done';
+  });
+  if (outcome === 'success') await expect(pending).resolves.toBe('done');
+  else await expect(pending).rejects.toThrow(outcome === 'rejection' ? 'backend rejected' : 'parent cancelled');
+  expect(intervals).toHaveBeenCalledOnce();
+  expect(clear).toHaveBeenCalledWith(intervals.mock.results[0].value);
+  expect(add).toHaveBeenCalledOnce();
+  expect(remove).toHaveBeenCalledWith('abort', add.mock.calls[0][1]);
+});
+
+it.each(['brainstorm', 'forge', 'tribunal'])('blocks late provider dispatch inside nested %s', async phase => {
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  const ctx = context();
+  const dispatch = vi.fn();
+  ctx.adapter = { dispatch } as EngineAdapter;
+  const run = async (...args: any[]) => {
+    const adapter = phase === 'forge' ? args[2] : args[0].adapter;
+    await install('agon.plan');
+    await adapter.dispatch({ signal: args[0].signal } as DispatchOptions);
+    return { winner: 'fixture', response: 'answer', summary: 'review' };
+  };
+  if (phase === 'brainstorm') effects.brainstorm.mockImplementationOnce(run);
+  else if (phase === 'forge') effects.other.mockImplementationOnce(run);
+  else effects.other.mockResolvedValueOnce({ winner: 'fixture' }).mockImplementationOnce(run);
+  const result = await buildStepExecutors(ctx).pipeline.execute(step('pipeline'), {});
+  expect(dispatch).not.toHaveBeenCalled();
+  expect(result.result).toMatchObject({ status: 'failure', error: expect.stringContaining('restart') });
 });

@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import type { EngineAdapter } from '@kernlang/agon-core';
 import type { BrainstormWorkflowEvent } from '@kernlang/agon-mod-brainstorm';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -104,6 +105,37 @@ export function captureProcessSurfaceAuthority(): () => void {
       throw new SurfaceGenerationError('MOD_GENERATION_MISMATCH', 'captured modular host was disposed or replaced; rebuild the invocation after restart', true);
     }
     assertCanonicalSurfaceSelectionCurrent();
+  };
+}
+
+/** Guard provider entry points without changing the session's shared adapter. */
+export function guardProcessEngineAdapter(adapter: EngineAdapter, assertAvailable: () => void): EngineAdapter {
+  if (!boot) return adapter;
+  const assertSelected = captureProcessSurfaceAuthority();
+  const check = (signal?: AbortSignal) => {
+    signal?.throwIfAborted();
+    assertSelected();
+    assertAvailable();
+  };
+  return {
+    dispatch: async options => { check(options.signal); return adapter.dispatch(options); },
+    isAvailable: async engine => { check(); return adapter.isAvailable(engine); },
+    getVersion: async engine => { check(); return adapter.getVersion(engine); },
+    ...(adapter.dispatchAgent ? {
+      dispatchAgent: async (options: Parameters<EngineAdapter['dispatch']>[0]) => {
+        check(options.signal); return adapter.dispatchAgent!(options);
+      },
+    } : {}),
+    ...(adapter.dispatchStream ? {
+      dispatchStream: async function* (options: Parameters<EngineAdapter['dispatch']>[0]) {
+        check(options.signal); return yield* adapter.dispatchStream!(options);
+      },
+    } : {}),
+    ...(adapter.dispatchAgentStream ? {
+      dispatchAgentStream: async function* (options: Parameters<EngineAdapter['dispatch']>[0]) {
+        check(options.signal); return yield* adapter.dispatchAgentStream!(options);
+      },
+    } : {}),
   };
 }
 

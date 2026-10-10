@@ -4,6 +4,7 @@ import { join, dirname } from 'node:path';
 
 import { planCostEstimator, resolveWorkingDir, RUNS_DIR, tracker, readPatchFromPath, applyPatchToTree, cesarPlanMarkdownPath, saveCesarPlan, spawnWithTimeout, getCoreWorkflowRegistry, compileWorkflowSpec, verifyWorkflowExecutionPlanFlow, verifyWorkflowRunFlow, throwWorkflowConformance, createWorkflowRun, appendWorkflowPhaseEvent } from '@kernlang/agon-core';
 import { publishPlanProposal, exitPlanSession } from '@kernlang/agon-mod-plan';
+import { SurfaceGenerationError } from '@kernlang/agon-kernel';
 
 import type { CesarPlan, CesarPlanStep, CesarStepResult, StepExecutor, WorkflowConformanceIssue, WorkflowPhaseEventType, WorkflowRun } from '@kernlang/agon-core';
 
@@ -18,7 +19,7 @@ import { runAgentMode, runAgentTeam } from './agent.js';
 import { handleCesarBrain } from '../cesar/brain.js';
 
 import { isAgenticAutoMode } from '../cesar/task-controller.js';
-import { assertProcessPlanStepAvailable, assertProcessSurfaceAvailable, captureProcessSurfaceAuthority } from '../surface-authority-runtime.js';
+import { assertProcessPlanStepAvailable, assertProcessSurfaceAvailable, captureProcessSurfaceAuthority, guardProcessEngineAdapter, withProcessSurfaceAuthority } from '../surface-authority-runtime.js';
 
 export async function handleProposePlan(args: Record<string, unknown>, dispatch: Dispatch, ctx: HandlerContext): Promise<CesarPlan> {
   return publishPlanProposal(args, {
@@ -75,9 +76,13 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
   const wrap = (type: string, fn: StepExecutor['execute']): StepExecutor => ({
     execute: async (step, context, signal) => {
       assertStepAvailable(type, signal);
-      return fn(step, context, signal);
+      return withProcessSurfaceAuthority(signal,
+        childSignal => assertStepAvailable(type, childSignal),
+        childSignal => fn(step, context, childSignal));
     },
   });
+  const guardedAdapter = (type: string, signal?: AbortSignal) =>
+    guardProcessEngineAdapter(ctx.adapter, () => assertStepAvailable(type, signal));
   
   // Helper: extract token/cost from tracker delta.
   // meteredCostUsd, NOT totalCostUsd: only real per-token billing counts as a
@@ -315,7 +320,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
           };
         }
         assertProcessPlanStepAvailable('delegate');
-        const result = await runDelegate({ engineId, task: `Analyze and respond:\n${task}`, registry: ctx.registry, adapter: ctx.adapter, timeout: 180, outputDir: join(outputDir, step.id), signal });
+        const result = await runDelegate({ engineId, task: `Analyze and respond:\n${task}`, registry: ctx.registry, adapter: guardedAdapter('delegate', signal), timeout: 180, outputDir: join(outputDir, step.id), signal });
         const verifiedDelegate = await runVerifyGate();
         const after = snapshotTokens();
         if (!verifiedDelegate.ok) {
@@ -346,7 +351,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
         progressInterval = startPlanForgeProgress(dispatch, engines, engineStatus, startTime);
         const manifest = await runForge(
           { task, fitnessCmd: step.fitnessCmd ?? 'echo "no fitness"', cwd, forgeDir: stepForgeDir, engines, signal },
-          ctx.registry, ctx.adapter,
+          ctx.registry, guardedAdapter('forge', signal),
           dispatch && engines ? (event: any) => notePlanForgeEvent(event, dispatch, engines, engineStatus, startTime) : undefined,
         );
         const after = snapshotTokens();
@@ -414,7 +419,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
         progressInterval = startPlanForgeProgress(dispatch, engines, engineStatus, startTime);
         const manifest = await runForge(
           { task, fitnessCmd: step.fitnessCmd ?? 'echo "no fitness"', cwd, forgeDir: stepForgeDir, engines, hardened: true, signal },
-          ctx.registry, ctx.adapter,
+          ctx.registry, guardedAdapter('teamforge', signal),
           dispatch && engines ? (event: any) => notePlanForgeEvent(event, dispatch, engines, engineStatus, startTime) : undefined,
         );
         const after = snapshotTokens();
@@ -454,7 +459,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       const before = snapshotTokens();
       const question = buildContext(step, context);
       try {
-        const result = await runBrainstorm({ question, engines: resolveStepEngines(step) ?? [], registry: ctx.registry, adapter: ctx.adapter, timeout: 120, outputDir: join(outputDir, step.id), signal });
+        const result = await runBrainstorm({ question, engines: resolveStepEngines(step) ?? [], registry: ctx.registry, adapter: guardedAdapter('brainstorm', signal), timeout: 120, outputDir: join(outputDir, step.id), signal });
         const after = snapshotTokens();
         return {
           result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: `Winner: ${result.winner}\n${result.response}` },
@@ -473,7 +478,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       try {
         // FU-1: thread signal so plan-level cancel propagates into the
         // tribunal's per-round dispatch loop.
-        const result = await runTribunal({ question, engines: resolveStepEngines(step) ?? [], rounds: 2, mode: step.tribunalMode as any, registry: ctx.registry, adapter: ctx.adapter, timeout: 120, outputDir: join(outputDir, step.id), signal });
+        const result = await runTribunal({ question, engines: resolveStepEngines(step) ?? [], rounds: 2, mode: step.tribunalMode as any, registry: ctx.registry, adapter: guardedAdapter('tribunal', signal), timeout: 120, outputDir: join(outputDir, step.id), signal });
         const after = snapshotTokens();
         return {
           result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: result.summary },
@@ -490,7 +495,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       const before = snapshotTokens();
       const topic = buildContext(step, context);
       try {
-        const result = await runCampfire({ topic, engines: resolveStepEngines(step) ?? [], registry: ctx.registry, adapter: ctx.adapter, strategy: 'all-respond', timeout: 120, outputDir: join(outputDir, step.id), signal });
+        const result = await runCampfire({ topic, engines: resolveStepEngines(step) ?? [], registry: ctx.registry, adapter: guardedAdapter('campfire', signal), strategy: 'all-respond', timeout: 120, outputDir: join(outputDir, step.id), signal });
         const after = snapshotTokens();
         const summary = result.rounds.map((r: any) => `${r.engineId}: ${r.content.slice(0, 200)}`).join('\n');
         return {
@@ -508,7 +513,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       const before = snapshotTokens();
       const task = buildContext(step, context);
       try {
-        const result = await runDelegate({ engineId: step.engine ?? step.engines?.[0] ?? 'claude', task, registry: ctx.registry, adapter: ctx.adapter, timeout: 120, outputDir: join(outputDir, step.id), signal });
+        const result = await runDelegate({ engineId: step.engine ?? step.engines?.[0] ?? 'claude', task, registry: ctx.registry, adapter: guardedAdapter('delegate', signal), timeout: 120, outputDir: join(outputDir, step.id), signal });
         const after = snapshotTokens();
         return {
           result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: result.response },
@@ -585,7 +590,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
         currentWorkflowPhase = 'brainstorm';
         if (!emitPipelinePhase('brainstorm', 'started')) return pipelineTrackingFailureResult();
         assertPhaseAvailable('brainstorm');
-        const bsResult = await runBrainstorm({ question: task, engines, registry: ctx.registry, adapter: ctx.adapter, timeout: 120, outputDir: join(outputDir, step.id, 'brainstorm'), signal });
+        const bsResult = await runBrainstorm({ question: task, engines, registry: ctx.registry, adapter: guardedAdapter('brainstorm', signal), timeout: 120, outputDir: join(outputDir, step.id, 'brainstorm'), signal });
         assertPhaseAvailable('brainstorm');
         if (!emitPipelinePhase('brainstorm', 'completed')) return pipelineTrackingFailureResult();
         currentWorkflowPhase = '';
@@ -599,7 +604,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
         assertPhaseAvailable('forge');
         const manifest = await runForge(
           { task: forgeTask, fitnessCmd: step.fitnessCmd ?? 'echo "no fitness"', cwd, forgeDir: join(outputDir, step.id, 'forge'), engines, signal },
-          ctx.registry, ctx.adapter,
+          ctx.registry, guardedAdapter('forge', signal),
           dispatch && engines.length > 0 ? (event: any) => notePlanForgeEvent(event, dispatch, engines, engineStatus, startTime) : undefined,
         );
         assertPhaseAvailable('forge');
@@ -623,7 +628,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
         if (!emitPipelinePhase('tribunal', 'started')) return pipelineTrackingFailureResult();
         const tribunalQ = `Review the implementation from forge winner ${manifest.winner} for: ${task}`;
         assertPhaseAvailable('tribunal');
-        const tResult = await runTribunal({ question: tribunalQ, engines: engines.slice(0, 3), rounds: 2, registry: ctx.registry, adapter: ctx.adapter, timeout: 120, outputDir: join(outputDir, step.id, 'tribunal'), signal });
+        const tResult = await runTribunal({ question: tribunalQ, engines: engines.slice(0, 3), rounds: 2, registry: ctx.registry, adapter: guardedAdapter('tribunal', signal), timeout: 120, outputDir: join(outputDir, step.id, 'tribunal'), signal });
         assertPhaseAvailable('tribunal');
         if (!emitPipelinePhase('tribunal', 'completed')) return pipelineTrackingFailureResult();
         currentWorkflowPhase = '';
@@ -635,11 +640,12 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
           contextExport: `Pipeline result: forge winner ${manifest.winner}. Tribunal: ${tResult.summary.slice(0, 300)}`,
         };
       } catch (err) {
+        const cancelled = signal?.aborted && !(signal.reason instanceof SurfaceGenerationError);
         if (currentWorkflowPhase && !pipelineTrackingFailed) {
-          emitPipelinePhase(currentWorkflowPhase, signal?.aborted ? 'cancelled' : 'failed', signal?.aborted ? 'aborted' : (err instanceof Error ? err.message : String(err)));
+          emitPipelinePhase(currentWorkflowPhase, cancelled ? 'cancelled' : 'failed', cancelled ? 'aborted' : (err instanceof Error ? err.message : String(err)));
           currentWorkflowPhase = '';
         }
-        closePipelineRun(signal?.aborted ? 'cancelled' : 'failed', signal?.aborted ? 'aborted' : (err instanceof Error ? err.message : String(err)));
+        closePipelineRun(cancelled ? 'cancelled' : 'failed', cancelled ? 'aborted' : (err instanceof Error ? err.message : String(err)));
         const after = snapshotTokens();
         return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: pipelineContext ? `Partial pipeline (brainstorm done): ${pipelineContext.slice(0, 200)}` : '', error: err instanceof Error ? err.message : String(err) } };
       } finally {

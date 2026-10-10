@@ -66,11 +66,15 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
   const outputDir = join(runsRoot, `plan-exec-${Date.now()}`);
   mkdirSync(outputDir, { recursive: true });
   
+  const assertStepAvailable = (type: string, signal?: AbortSignal): void => {
+    signal?.throwIfAborted();
+    assertCurrent();
+    assertProcessSurfaceAvailable('tui', '/plan');
+    assertProcessPlanStepAvailable(type);
+  };
   const wrap = (type: string, fn: StepExecutor['execute']): StepExecutor => ({
     execute: async (step, context, signal) => {
-      assertCurrent();
-      assertProcessSurfaceAvailable('tui', '/plan');
-      assertProcessPlanStepAvailable(type);
+      assertStepAvailable(type, signal);
       return fn(step, context, signal);
     },
   });
@@ -517,6 +521,10 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
     }),
   
     pipeline: wrap('pipeline', async (step, context, signal) => {
+      const assertPhaseAvailable = (phase: 'brainstorm' | 'forge' | 'tribunal'): void => {
+        assertStepAvailable('pipeline', signal);
+        assertProcessPlanStepAvailable(phase);
+      };
       // Pipeline = brainstorm → forge → tribunal chain
       // Resolve, compile, and verify the certified workflow spec before executing.
       const pipelineRegistry = getCoreWorkflowRegistry();
@@ -576,7 +584,9 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
         // 1. Brainstorm — get approach bids
         currentWorkflowPhase = 'brainstorm';
         if (!emitPipelinePhase('brainstorm', 'started')) return pipelineTrackingFailureResult();
+        assertPhaseAvailable('brainstorm');
         const bsResult = await runBrainstorm({ question: task, engines, registry: ctx.registry, adapter: ctx.adapter, timeout: 120, outputDir: join(outputDir, step.id, 'brainstorm'), signal });
+        assertPhaseAvailable('brainstorm');
         if (!emitPipelinePhase('brainstorm', 'completed')) return pipelineTrackingFailureResult();
         currentWorkflowPhase = '';
         pipelineContext = bsResult.response;
@@ -586,11 +596,13 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
         if (!emitPipelinePhase('forge', 'started')) return pipelineTrackingFailureResult();
         const forgeTask = `${task}\n\nBrainstorm winner approach:\n${pipelineContext}`;
         progressInterval = startPlanForgeProgress(dispatch, engines, engineStatus, startTime);
+        assertPhaseAvailable('forge');
         const manifest = await runForge(
           { task: forgeTask, fitnessCmd: step.fitnessCmd ?? 'echo "no fitness"', cwd, forgeDir: join(outputDir, step.id, 'forge'), engines, signal },
           ctx.registry, ctx.adapter,
           dispatch && engines.length > 0 ? (event: any) => notePlanForgeEvent(event, dispatch, engines, engineStatus, startTime) : undefined,
         );
+        assertPhaseAvailable('forge');
         if (progressInterval) {
           clearInterval(progressInterval);
           progressInterval = null;
@@ -610,7 +622,9 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
         currentWorkflowPhase = 'tribunal';
         if (!emitPipelinePhase('tribunal', 'started')) return pipelineTrackingFailureResult();
         const tribunalQ = `Review the implementation from forge winner ${manifest.winner} for: ${task}`;
+        assertPhaseAvailable('tribunal');
         const tResult = await runTribunal({ question: tribunalQ, engines: engines.slice(0, 3), rounds: 2, registry: ctx.registry, adapter: ctx.adapter, timeout: 120, outputDir: join(outputDir, step.id, 'tribunal'), signal });
+        assertPhaseAvailable('tribunal');
         if (!emitPipelinePhase('tribunal', 'completed')) return pipelineTrackingFailureResult();
         currentWorkflowPhase = '';
         closePipelineRun('completed');

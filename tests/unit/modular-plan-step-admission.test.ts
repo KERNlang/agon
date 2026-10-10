@@ -30,6 +30,7 @@ beforeEach(async () => {
   vi.clearAllMocks();
   effects.brainstorm.mockResolvedValue({ winner: 'fixture', response: 'answer' });
   effects.delegate.mockResolvedValue({ response: 'answer' });
+  effects.other.mockResolvedValue({ winner: 'fixture', summary: 'review' });
   root = await mkdtemp(join(tmpdir(), 'agon-step-admission-'));
   vi.stubEnv('AGON_HOME', join(root, 'execution-home'));
   host = new DurableModHost(root, { kernelVersion: '1.0.0', processIdentity: 'step-admission-test' });
@@ -147,4 +148,118 @@ it('rejects an alias collision across owners', async () => {
     entry, { ...entry, publicId: 'other-step', aliases: ['self'], owner: { ...entry.owner, id: 'different.owner' } },
   ]);
   expect(() => assertProcessPlanStepAvailable('self')).toThrow('ambiguous owners');
+});
+
+it.each(['brainstorm', 'forge', 'tribunal'])('refuses a disabled nested %s phase', async phase => {
+  await install('agon.' + phase);
+  await initializeProcessSurfaceAuthority(root);
+  const result = await buildStepExecutors(context()).pipeline.execute(step('pipeline'), {});
+  expect(result.result).toMatchObject({ status: 'failure', error: expect.stringContaining('unavailable') });
+  if (phase === 'brainstorm') expect(effects.brainstorm).not.toHaveBeenCalled();
+  else expect(effects.brainstorm).toHaveBeenCalledOnce();
+  expect(effects.other).toHaveBeenCalledTimes(phase === 'tribunal' ? 1 : 0);
+});
+
+it.each(['brainstorm', 'forge', 'tribunal'])('refuses continuation after authority changes during %s', async phase => {
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  const revoke = async () => {
+    await install('agon.plan');
+    return { winner: 'fixture', summary: 'review', response: 'answer' };
+  };
+  if (phase === 'brainstorm') effects.brainstorm.mockImplementationOnce(revoke);
+  else if (phase === 'forge') effects.other.mockImplementationOnce(revoke);
+  else effects.other.mockResolvedValueOnce({ winner: 'fixture' }).mockImplementationOnce(revoke);
+  const dispatch = vi.fn();
+  const result = await buildStepExecutors(context(), dispatch).pipeline.execute(step('pipeline'), {});
+  expect(result.result).toMatchObject({ status: 'failure', error: expect.stringContaining('restart') });
+  expect(effects.other).toHaveBeenCalledTimes(phase === 'brainstorm' ? 0 : phase === 'forge' ? 1 : 2);
+  expect(result.contextExport).toBeUndefined();
+  const events = dispatch.mock.calls.map(([event]) => event);
+  expect(events).not.toContainEqual(expect.objectContaining({ type: 'workflow-phase-completed', phaseId: phase }));
+  const terminal = events.filter(event => event.type === 'workflow-run-completed');
+  expect(terminal).toHaveLength(1);
+  expect(terminal[0]).toMatchObject({ status: 'failed' });
+  expect(events).not.toContainEqual(expect.objectContaining({ type: 'workflow-run-conformance-failed' }));
+  const next = phase === 'brainstorm' ? 'forge' : phase === 'forge' ? 'tribunal' : null;
+  if (next) expect(events).not.toContainEqual(expect.objectContaining({ type: 'workflow-phase-started', phaseId: next }));
+});
+
+it('preserves the enabled three-phase workflow', async () => {
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  const result = await buildStepExecutors(context()).pipeline.execute(step('pipeline'), {});
+  expect(result.result.status).toBe('success');
+  expect(result.contextExport).toContain('Tribunal: review');
+  expect(effects.brainstorm).toHaveBeenCalledOnce();
+  expect(effects.other).toHaveBeenCalledTimes(2);
+});
+
+it('does not start a cancelled step', async () => {
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  const controller = new AbortController();
+  controller.abort(new Error('cancel fixture'));
+  await expect(buildStepExecutors(context()).brainstorm.execute(step('brainstorm'), {}, controller.signal)).rejects.toThrow('cancel fixture');
+  expect(effects.brainstorm).not.toHaveBeenCalled();
+});
+
+it.each(['brainstorm', 'forge', 'tribunal'])('stops after cancellation during %s', async phase => {
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  const controller = new AbortController();
+  const cancel = async () => {
+    controller.abort(new Error('cancel fixture'));
+    return { winner: 'fixture', summary: 'review', response: 'answer' };
+  };
+  if (phase === 'brainstorm') effects.brainstorm.mockImplementationOnce(cancel);
+  else if (phase === 'forge') effects.other.mockImplementationOnce(cancel);
+  else effects.other.mockResolvedValueOnce({ winner: 'fixture' }).mockImplementationOnce(cancel);
+  const dispatch = vi.fn();
+  const result = await buildStepExecutors(context(), dispatch).pipeline.execute(step('pipeline'), {}, controller.signal);
+  expect(result.result).toMatchObject({ status: 'failure', error: 'cancel fixture' });
+  expect(effects.other).toHaveBeenCalledTimes(phase === 'brainstorm' ? 0 : phase === 'forge' ? 1 : 2);
+  expect(result.contextExport).toBeUndefined();
+  const events = dispatch.mock.calls.map(([event]) => event);
+  expect(events).not.toContainEqual(expect.objectContaining({ type: 'workflow-phase-completed', phaseId: phase }));
+  const terminal = events.filter(event => event.type === 'workflow-run-completed');
+  expect(terminal).toHaveLength(1);
+  expect(terminal[0]).toMatchObject({ status: 'cancelled' });
+  expect(events).not.toContainEqual(expect.objectContaining({ type: 'workflow-run-conformance-failed' }));
+  const next = phase === 'brainstorm' ? 'forge' : phase === 'forge' ? 'tribunal' : null;
+  if (next) expect(events).not.toContainEqual(expect.objectContaining({ type: 'workflow-phase-started', phaseId: next }));
+});
+
+it('refuses a nested continuation after host replacement', async () => {
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  effects.brainstorm.mockImplementationOnce(async () => {
+    await disposeProcessSurfaceAuthority();
+    await initializeProcessSurfaceAuthority(root);
+    return { winner: 'fixture', response: 'stale answer' };
+  });
+  const result = await buildStepExecutors(context()).pipeline.execute(step('pipeline'), {});
+  expect(result.result).toMatchObject({ status: 'failure', error: expect.stringContaining('disposed or replaced') });
+  expect(effects.other).not.toHaveBeenCalled();
+});
+
+it.each(['brainstorm', 'forge', 'tribunal'])('honors cancellation from the %s start event', async phase => {
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  const controller = new AbortController();
+  const intervals = vi.spyOn(globalThis, 'setInterval');
+  const clear = vi.spyOn(globalThis, 'clearInterval');
+  const dispatch = vi.fn(event => {
+    if (event.type === 'workflow-phase-started' && event.phaseId === phase) controller.abort(new Error('event cancellation'));
+  });
+  const ctx = context();
+  ctx.activeEngines = () => ['fixture'];
+  const result = await buildStepExecutors(ctx, dispatch).pipeline.execute(step('pipeline'), {}, controller.signal);
+  expect(result.result).toMatchObject({ status: 'failure', error: 'event cancellation' });
+  expect(effects.brainstorm).toHaveBeenCalledTimes(phase === 'brainstorm' ? 0 : 1);
+  expect(effects.other).toHaveBeenCalledTimes(phase === 'tribunal' ? 1 : 0);
+  for (const interval of intervals.mock.results) expect(clear).toHaveBeenCalledWith(interval.value);
+  const terminal = dispatch.mock.calls.map(([event]) => event).filter(event => event.type === 'workflow-run-completed');
+  expect(terminal).toHaveLength(1);
+  expect(terminal[0]).toMatchObject({ status: 'cancelled' });
 });

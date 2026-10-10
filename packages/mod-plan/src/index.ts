@@ -509,6 +509,10 @@ export { createPanelStepExecutors, buildPlanStepContext, resolvePlanStepEngines 
 export { createSelfStepExecutor } from './self-step-execution.js';
 export { createAgentReviewStepExecutors } from './agent-review-step-execution.js';
 export type { PlanAgentReviewHost, PlanAgentReviewStepType, PlanAgentStepOutcome } from './agent-review-step-execution.js';
+export { createForgeStepExecutors } from './forge-step-execution.js';
+export type { PlanForgeHost, PlanForgeEvent, PlanForgeManifest, PlanForgeUiEvent } from './forge-step-execution.js';
+export { createPipelineStepExecutor } from './pipeline-step-execution.js';
+export type { PlanPipelineHost, PlanPipelineRun, PlanPipelineIssue, PlanPipelineUiEvent } from './pipeline-step-execution.js';
 export type { PlanSelfStepHost, PlanSelfEvent, PlanSelfNotice } from './self-step-execution.js';
 export type { PlanPanelStepHost, PlanPanelStepType } from './panel-step-execution.js';
 export { createPlanExecutor, getReadySteps } from './executor.js';

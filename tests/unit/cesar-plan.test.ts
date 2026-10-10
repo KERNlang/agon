@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan, exitCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans, cesarPlanJsonPath, cesarPlanMarkdownPath } from '../../packages/core/src/cesar/plan.js';
 import type { CesarPlan, CesarPlanStep } from '../../packages/core/src/cesar/plan.js';
-import { executePlan } from '../../packages/core/src/cesar/plan-executor.js';
+import { executePlan } from '../../packages/core/src/cesar/plan-cost-estimator.js';
 
 const makeStep = (id: string, overrides?: Partial<CesarPlanStep>): CesarPlanStep => ({
   id,

@@ -284,10 +284,10 @@ export type {
 } from './cesar/context-thread.js';
 export { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan, exitCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans, getCesarPlansDir, cesarPlanJsonPath, cesarPlanMarkdownPath, CESAR_STEP_TYPES } from './cesar/plan.js';
 export type { CesarPlan, CesarPlanStep, CesarStepResult } from './cesar/plan.js';
-export { planCostEstimator, sanitizePlanSteps } from './cesar/plan-cost-estimator.js';
+export { planCostEstimator, sanitizePlanSteps, executePlan } from './cesar/plan-cost-estimator.js';
 export type { CostEstimate } from './cesar/plan-cost-estimator.js';
-export { executePlan, getReadySteps } from './cesar/plan-executor.js';
-export type { StepExecutor, PlanExecutorCallbacks } from './cesar/plan-executor.js';
+export { getReadySteps } from '@kernlang/agon-mod-plan';
+export type { StepExecutor, PlanExecutorCallbacks } from '@kernlang/agon-mod-plan';
 export { AgentSession, makeBudgetError } from './cesar/agent-session.js';
 export type {
   AgentBudget, AgentStepResult, AgentSessionStats, AgentSessionConfig,

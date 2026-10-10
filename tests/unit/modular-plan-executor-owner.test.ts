@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import * as planMod from '../../packages/mod-plan/src/index.js';
 import { createCesarPlan, approveCesarPlan } from '../../packages/core/src/cesar/plan.js';
 import { executePlan as legacy } from '../fixtures/modular-plan-executor-legacy.js';
 import { planCostEstimator } from '../../packages/core/src/cesar/plan-cost-estimator.js';
 import type { CesarPlanStep } from '../../packages/core/src/cesar/plan.js';
-import type { PlanExecutorCallbacks, StepExecutor } from '../../packages/core/src/cesar/plan-executor.js';
+import type { PlanExecutorCallbacks, StepExecutor } from '@kernlang/agon-mod-plan';
 
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
@@ -67,9 +67,10 @@ describe('physical Plan scheduler ownership', () => {
   });
   it('exports the scheduler from Plan and leaves no scheduler loop in core', () => {
     expect(planMod).toHaveProperty('createPlanExecutor');
-    const adapter = readFileSync(new URL('../../packages/core/src/cesar/plan-executor.ts', import.meta.url), 'utf8');
-    expect(adapter).not.toMatch(/while\s*\(|Promise\.all|markStepsRunning/);
-    expect(adapter).toContain('@kernlang/agon-mod-plan');
+    expect(existsSync(new URL('../../packages/core/src/cesar/plan-executor.ts', import.meta.url))).toBe(false);
+    const binding = readFileSync(new URL('../../packages/core/src/cesar/plan-cost-estimator.ts', import.meta.url), 'utf8');
+    expect(binding).not.toMatch(/while\s*\(|Promise\.all|markStepsRunning|createPlanExecutor/);
+    expect(binding).toContain('createPlanRuntime');
     const scheduler = readFileSync(new URL('../../packages/mod-plan/src/executor.ts', import.meta.url), 'utf8');
     expect(scheduler).not.toMatch(/@kernlang\/agon-core|packages\/core|node:fs|planCostEstimator/);
     expect(scheduler).not.toContain('services.advance');

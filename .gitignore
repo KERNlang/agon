@@ -24,6 +24,9 @@ docs/specs/evidence/*
 !docs/specs/evidence/verification-logs/
 docs/specs/evidence/verification-logs/*
 !docs/specs/evidence/verification-logs/*.log
+# Archived historical outputs. Preserve local copies without adding them again.
+/docs/specs/evidence/verification-logs/slice1a-full-repository-suite.log
+/docs/specs/evidence/verification-logs/slice7/host-manifest-c88b2200.json
 !docs/specs/schemas/
 docs/specs/schemas/*
 !docs/specs/schemas/modular-agon-*

@@ -9,6 +9,10 @@ This document supersedes the acceptance conclusion in
 green” heading in `modular-agon-slice1a-implementation.md`. Those files remain
 unchanged as historical evidence; they must not be used as release evidence.
 
+The old full-suite log is retained through the
+[historical archive retrieval guidance](./modular-agon-archive.md). Its path in the immutable
+receipt remains a historical reference. The log is not a clean-checkout input.
+
 ## Verified failures
 
 1. The exact staged index was materialized into an isolated directory and

@@ -349,6 +349,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
           ctx.registry, guardedAdapter('forge', signal),
           dispatch && engines ? (event: any) => notePlanForgeEvent(event, dispatch, engines, engineStatus, startTime) : undefined,
         );
+        assertStepAvailable('forge', signal);
         const after = snapshotTokens();
   
         if (!manifest.winner) {
@@ -417,6 +418,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
           ctx.registry, guardedAdapter('teamforge', signal),
           dispatch && engines ? (event: any) => notePlanForgeEvent(event, dispatch, engines, engineStatus, startTime) : undefined,
         );
+        assertStepAvailable('teamforge', signal);
         const after = snapshotTokens();
         if (!manifest.winner) {
           if (isAlreadySatisfiedNoopForge(manifest)) {

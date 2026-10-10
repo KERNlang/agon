@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
-import { chmod, mkdtemp, readdir, rm } from 'node:fs/promises';
+import { chmod, mkdtemp, readdir, rm, readFile, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -10,7 +11,7 @@ import { SurfaceGeneration } from '@kernlang/agon-kernel';
 import type { CesarPlanStep } from '@kernlang/agon-mod-plan';
 import type { HandlerContext } from '../../packages/cli/src/handlers/types.js';
 import type { DispatchOptions, EngineAdapter, EngineDefinition } from '@kernlang/agon-core';
-import { tracker } from '@kernlang/agon-core';
+import { tracker, setSessionRoot, _resetSessionRootForTests } from '@kernlang/agon-core';
 
 const effects = vi.hoisted(() => ({ brainstorm: vi.fn(), delegate: vi.fn(), other: vi.fn() }));
 vi.mock('@kernlang/agon-forge', async original => ({
@@ -38,6 +39,7 @@ beforeEach(async () => {
   host = new DurableModHost(root, { kernelVersion: '1.0.0', processIdentity: 'step-admission-test' });
 });
 afterEach(async () => {
+  _resetSessionRootForTests();
   vi.useRealTimers();
   vi.restoreAllMocks();
   await disposeProcessSurfaceAuthority();
@@ -452,4 +454,51 @@ it.each(['brainstorm', 'tribunal', 'campfire', 'delegate'])('preserves healthy %
   expect(output.result.status).toBe('success');
   expect(output.result.output).toBe(type === 'brainstorm' ? `Winner: fixture\n${text}` : type === 'campfire' ? `speaker: ${text.slice(0, 200)}` : text);
   expect(output.contextExport).toBe(type === 'delegate' ? text.slice(0, 500) : type === 'campfire' ? `speaker: ${text.slice(0, 200)}` : text);
+});
+
+it.each(['forge', 'teamforge'].flatMap(type =>
+  ['generation', 'replacement', 'cancellation'].flatMap(fault =>
+    ['winner', 'already-satisfied'].map(result => ({ type, fault, result })))))('refuses stale Forge results before patch access: $type / $fault / $result', async ({ type, fault, result }) => {
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+  const stats = tracker.getStats();
+  vi.spyOn(tracker, 'getStats').mockReturnValueOnce({ ...stats, totalTokens: 10, meteredCostUsd: 1 })
+    .mockReturnValue({ ...stats, totalTokens: 17, meteredCostUsd: 1.25 });
+  const controller = new AbortController();
+  const patchAccess = vi.fn(() => ({}));
+  effects.other.mockImplementationOnce(async () => {
+    if (fault === 'generation') await install('agon.plan');
+    else if (fault === 'replacement') { await disposeProcessSurfaceAuthority(); await initializeProcessSurfaceAuthority(root); }
+    else controller.abort(new Error('cancelled fixture'));
+    return { winner: result === 'winner' ? 'fixture' : null,
+      alreadySatisfied: result === 'already-satisfied', results: {}, get patches() { return patchAccess(); } };
+  });
+  const output = await buildStepExecutors(context())[type].execute(step(type), {}, controller.signal);
+  expect(patchAccess).not.toHaveBeenCalled();
+  expect(output.result).toMatchObject({ status: 'failure', output: '', actualTokens: 7, actualCostUsd: 0.25 });
+  expect(output.result.error).toMatch(fault === 'generation' ? /restart/ : fault === 'replacement' ? /disposed or replaced/ : /cancelled fixture/);
+  expect(output).not.toHaveProperty('contextExport');
+});
+
+it.each(['forge', 'teamforge'].flatMap(type =>
+  ['healthy', 'generation', 'cancellation'].map(fault => ({ type, fault }))))('applies a real patch only with current authority: $type / $fault', async ({ type, fault }) => {
+  const workspace = await mkdtemp(join(root, 'patch-workspace-'));
+  execFileSync('git', ['init', '-q', workspace]);
+  await writeFile(join(workspace, 'result.txt'), 'before\n');
+  const patch = join(root, 'winner.patch');
+  await writeFile(patch, 'diff --git a/result.txt b/result.txt\n--- a/result.txt\n+++ b/result.txt\n@@ -1 +1 @@\n-before\n+after\n');
+  setSessionRoot(workspace);
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+  const controller = new AbortController();
+  effects.other.mockImplementationOnce(async () => {
+    if (fault === 'generation') await install('agon.plan');
+    if (fault === 'cancellation') controller.abort(new Error('cancelled fixture'));
+    return { winner: 'fixture', patches: { fixture: patch } };
+  });
+  const output = await buildStepExecutors(context())[type].execute(step(type), {}, controller.signal);
+  expect(output.result.status).toBe(fault === 'healthy' ? 'success' : 'failure');
+  expect(await readFile(join(workspace, 'result.txt'), 'utf8')).toBe(fault === 'healthy' ? 'after\n' : 'before\n');
 });

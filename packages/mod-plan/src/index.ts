@@ -229,6 +229,7 @@ export const MANIFEST = validateManifest({
       "dist/resume-policy.d.ts",
       "dist/runtime.d.ts",
       "dist/session-scope.d.ts",
+      "dist/session-selection.d.ts",
       "dist/session.d.ts",
       "dist/step-validation.d.ts",
       "ownership.json",
@@ -486,6 +487,8 @@ export { createPersistenceEnvelope, unwrapPersistenceEnvelope } from './implemen
 export { PlanCostEstimator } from './cost-estimator.js';
 export { createPlanRuntime } from './runtime.js';
 export { planSessionHost, withPlanSession } from './session-scope.js';
+export { selectPendingPlan, selectResumablePlan, shouldApprovePendingCesarPlanInput, isCesarPlanApprovalInput, isStrongCesarPlanApprovalInput, isCesarPlanResumeInput, isCesarPlanStatusInput, formatCesarPlanRuntimeStatus } from './session-selection.js';
+export type { PlanSessionSnapshot } from './session-selection.js';
 export type { CostEstimate, PlanCostPricing } from './cost-estimator.js';
 export { createPlanStepSanitizer, VALID_STEP_TYPES } from './step-validation.js';
 export type { PlanStepEstimator } from './step-validation.js';

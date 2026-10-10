@@ -227,6 +227,7 @@
       "dist/resume-policy.d.ts",
       "dist/runtime.d.ts",
       "dist/session-scope.d.ts",
+      "dist/session-selection.d.ts",
       "dist/session.d.ts",
       "dist/step-validation.d.ts",
       "ownership.json",

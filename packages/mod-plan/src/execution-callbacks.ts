@@ -71,16 +71,22 @@ export function createPlanCallbacks(initialPlan: CesarPlan, host: PlanCallbackHo
 
   const planStepEngineId = (step: CesarPlanStep | undefined) => step?.engine ?? step?.engines?.[0] ?? 'cesar';
 
+  // Reporting failure must not stop the remaining persistence attempt.
+  const warn = (message: string, error: unknown) => {
+    try { host.warn(message, (error as Error)?.message ?? error); }
+    catch { /* No further reporting sink. */ }
+  };
+
   const flushPersist = () => {
     if (pendingWriteTimer) {
       clearTimeout(pendingWriteTimer);
       pendingWriteTimer = null;
     }
-    try { host.save(currentPlan); } catch (err) { host.warn('[plan] saveCesarPlan failed:', (err as Error).message ?? err); }
+    try { host.save(currentPlan); } catch (err) { warn('[plan] saveCesarPlan failed:', err); }
     if (currentPlan.planFilePath) {
       try {
         host.writeMarkdown(currentPlan.planFilePath, formatCesarPlanMarkdown(currentPlan));
-      } catch (err) { host.warn('[plan] failed to write plan file:', (err as Error).message ?? err); }
+      } catch (err) { warn('[plan] failed to write plan file:', err); }
     }
   };
 

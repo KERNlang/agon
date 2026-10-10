@@ -112,3 +112,79 @@ it('publishes terminal UI state before saving and writing markdown', () => {
   callbacks.onPlanUpdate({ ...plan, state: 'paused' });
   expect(trace).toEqual(['active', 'plan-execution', 'spinner-stop', 'todos', 'todos-set', 'save', 'markdown']);
 });
+
+it.each([
+  { label: 'null', thrown: null, payload: null },
+  { label: 'undefined', thrown: undefined, payload: undefined },
+  { label: 'string', thrown: 'disk', payload: 'disk' },
+  { label: 'number', thrown: 7, payload: 7 },
+  { label: 'zero', thrown: 0, payload: 0 },
+  { label: 'empty', thrown: '', payload: '' },
+  { label: 'false', thrown: false, payload: false },
+  { label: 'plain message', thrown: { message: 'plain' }, payload: 'plain' },
+  { label: 'empty message', thrown: { message: '' }, payload: '' },
+  { label: 'zero message', thrown: { message: 0 }, payload: 0 },
+  { label: 'Error', thrown: Error('failure'), payload: 'failure' },
+])('keeps both storage attempts after a $label error', ({ thrown, payload }) => {
+  for (const phase of ['save', 'markdown'] as const) {
+    const { host, callbacks } = fixture();
+    vi.mocked(phase === 'save' ? host.save : host.writeMarkdown).mockImplementation(() => { throw thrown; });
+    expect(() => callbacks.flush()).not.toThrow();
+    expect(host.save).toHaveBeenCalledOnce();
+    expect(host.writeMarkdown).toHaveBeenCalledOnce();
+    expect(host.warn).toHaveBeenCalledExactlyOnceWith(
+      phase === 'save' ? '[plan] saveCesarPlan failed:' : '[plan] failed to write plan file:', payload);
+  }
+});
+
+it('does not let a warning sink stop the remaining markdown attempt', () => {
+  const { host, callbacks } = fixture();
+  vi.mocked(host.save).mockImplementation(() => { throw Error('disk'); });
+  vi.mocked(host.writeMarkdown).mockImplementation(() => { throw Error('markdown'); });
+  vi.mocked(host.warn).mockImplementation(() => { throw Error('view unavailable'); });
+  expect(() => callbacks.flush()).not.toThrow();
+  expect(host.save).toHaveBeenCalledOnce();
+  expect(host.writeMarkdown).toHaveBeenCalledOnce();
+  expect(host.warn).toHaveBeenCalledTimes(2);
+});
+
+it('reports a failed save without creating an absent markdown path', () => {
+  const { plan, host } = fixture();
+  const callbacks = createPlanCallbacks({ ...plan, planFilePath: undefined }, host);
+  vi.mocked(host.save).mockImplementation(() => { throw null; });
+  expect(() => callbacks.flush()).not.toThrow();
+  expect(host.warn).toHaveBeenCalledExactlyOnceWith('[plan] saveCesarPlan failed:', null);
+  expect(host.writeMarkdown).not.toHaveBeenCalled();
+});
+
+it.each(['save', 'markdown'] as const)('contains a throwing message getter from %s', phase => {
+  const { host, callbacks } = fixture();
+  const failure = { get message(): string { throw Error('getter failed'); } };
+  vi.mocked(phase === 'save' ? host.save : host.writeMarkdown).mockImplementation(() => { throw failure; });
+  expect(() => callbacks.flush()).not.toThrow();
+  expect(host.writeMarkdown).toHaveBeenCalledOnce();
+});
+
+it.each([{}, { message: null }])('preserves the original object when its message is absent: %j', failure => {
+  const { host, callbacks } = fixture();
+  vi.mocked(host.save).mockImplementation(() => { throw failure; });
+  callbacks.flush();
+  expect(vi.mocked(host.warn).mock.calls[0][1]).toBe(failure);
+  expect(host.writeMarkdown).toHaveBeenCalledOnce();
+});
+
+it('recovers after storage and warning failures in the debounce timer', async () => {
+  vi.useFakeTimers();
+  const { plan, host, callbacks } = fixture();
+  vi.mocked(host.save).mockImplementationOnce(() => { throw null; });
+  vi.mocked(host.warn).mockImplementationOnce(() => { throw Error('log failed'); });
+  callbacks.onPlanUpdate(plan);
+  await vi.advanceTimersByTimeAsync(300);
+  expect(host.writeMarkdown).toHaveBeenCalledOnce();
+  callbacks.onPlanUpdate({ ...plan, totalActualTokens: 42 });
+  await vi.advanceTimersByTimeAsync(300);
+  expect(host.save).toHaveBeenCalledTimes(2);
+  expect(host.save).toHaveBeenLastCalledWith(expect.objectContaining({ totalActualTokens: 42 }));
+  expect(host.writeMarkdown).toHaveBeenCalledTimes(2);
+  expect(vi.getTimerCount()).toBe(0);
+});

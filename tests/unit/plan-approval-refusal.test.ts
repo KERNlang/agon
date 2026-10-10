@@ -7,21 +7,58 @@ const effects = vi.hoisted(() => ({
   approve: vi.fn((plan) => ({ ...plan, state: 'approved' })),
   cancel: vi.fn((plan) => ({ ...plan, state: 'cancelled' })),
   save: vi.fn(), saveCesar: vi.fn(),
+  load: vi.fn(),
   execute: vi.fn(async (plan) => ({ ...plan, state: 'paused' })),
 }));
 vi.mock('@kernlang/agon-core', async importOriginal => ({
   ...await importOriginal<Record<string, unknown>>(),
   approvePlan: effects.approve, cancelPlan: effects.cancel, savePlan: effects.save,
+  loadPlan: effects.load,
   saveCesarPlan: effects.saveCesar, executePlan: effects.execute,
   loadConfig: () => ({}), resolveWorkingDir: () => '/fixture', gitChangedFiles: () => [],
 }));
 vi.mock('../../packages/cli/src/handlers/plan-mode.js', () => ({ buildStepExecutors: () => ({}) }));
-import { handlePlanShow } from '../../packages/cli/src/handlers/plan.js';
+import { handlePlanShow, handleApprove } from '../../packages/cli/src/handlers/plan.js';
 import { resumeCesarPlan } from '../../packages/cli/src/signals/dispatch/plan-execution.js';
 
 beforeEach(() => vi.clearAllMocks());
 
 describe('plan approval refuses unrecognized answers', () => {
+  it('keeps /approve bound to the disk draft shown before dismissal', async () => {
+    const oldDraft = { id: 'old', state: 'draft', action: { type: 'build' } };
+    const shownDraft = { id: 'shown', state: 'draft', action: { type: 'build' } };
+    effects.load.mockReturnValue(shownDraft);
+    const ctx = {
+      currentPlan: oldDraft, askQuestion: async () => '',
+      setCurrentPlan: (plan: typeof oldDraft) => { ctx.currentPlan = plan; },
+    };
+    await handlePlanShow(vi.fn(), ctx as unknown as HandlerContext, 'shown');
+    expect(effects.approve).not.toHaveBeenCalled();
+    await handleApprove(vi.fn(), ctx as unknown as HandlerContext);
+    expect(effects.approve).toHaveBeenCalledWith(shownDraft);
+    expect(effects.approve).not.toHaveBeenCalledWith(oldDraft);
+  });
+  it.each([
+    ['', 'replacement'], ['y', 'replacement'], ['n', 'replacement'],
+    ['', 'cancelled'], ['y', 'cancelled'], ['n', 'cancelled'],
+  ])('does not overwrite %s / %s state while a draft question is open', async (answer, change) => {
+    const draft = { id: 'shown', state: 'draft', action: { type: 'build' } };
+    const newer = { ...draft, id: change === 'replacement' ? 'newer' : draft.id,
+      state: change === 'cancelled' ? 'cancelled' : 'draft' };
+    let resolveQuestion!: (answer: string) => void;
+    const question = new Promise<string>(resolve => { resolveQuestion = resolve; });
+    const ctx = { currentPlan: draft, askQuestion: () => question,
+      setCurrentPlan: vi.fn((plan: typeof draft) => { ctx.currentPlan = plan; }) };
+    const pending = handlePlanShow(vi.fn(), ctx as unknown as HandlerContext);
+    ctx.currentPlan = newer;
+    resolveQuestion(answer);
+    await pending;
+    expect(ctx.currentPlan).toBe(newer);
+    expect(ctx.setCurrentPlan).not.toHaveBeenCalled();
+    expect(effects.approve).not.toHaveBeenCalled();
+    expect(effects.cancel).not.toHaveBeenCalled();
+    expect(effects.save).not.toHaveBeenCalled();
+  });
   it.each(['no', 'NO', 'not yet', 'cancel', 'maybe'])('draft approval refuses %s', async answer => {
     const plan = { id: 'fixture', state: 'draft', action: { type: 'build' } };
     const setCurrentPlan = vi.fn();
@@ -31,7 +68,18 @@ describe('plan approval refuses unrecognized answers', () => {
     expect(effects.save).toHaveBeenCalledWith(expect.objectContaining({ state: 'cancelled' }));
   });
 
-  it.each(['', 'y', ' YES '])('draft approval preserves affirmative/default %j', async answer => {
+  it.each(['', '   '])('dismissed draft approval preserves the draft for %j', async answer => {
+    const plan = { id: 'fixture', state: 'draft', action: { type: 'build' } };
+    const setCurrentPlan = vi.fn();
+    await handlePlanShow(vi.fn(), { currentPlan: plan, askQuestion: async () => answer, setCurrentPlan } as unknown as HandlerContext);
+    expect(effects.approve).not.toHaveBeenCalled();
+    expect(effects.cancel).not.toHaveBeenCalled();
+    expect(effects.save).not.toHaveBeenCalled();
+    expect(setCurrentPlan).not.toHaveBeenCalled();
+    expect(plan.state).toBe('draft');
+  });
+
+  it.each(['y', ' YES '])('draft approval preserves explicit affirmative %j', async answer => {
     const plan = { id: 'fixture', state: 'draft', action: { type: 'build' } };
     await handlePlanShow(vi.fn(), { currentPlan: plan, askQuestion: async () => answer, setCurrentPlan: vi.fn() } as unknown as HandlerContext);
     expect(effects.approve).toHaveBeenCalledOnce();

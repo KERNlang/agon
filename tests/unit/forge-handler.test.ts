@@ -9,6 +9,8 @@ const savePlanMock = vi.fn();
 const createPlanMock = vi.fn();
 const dispatchAgentMock = vi.fn();
 const dispatchAgentStreamMock = vi.fn();
+const judgeMock = vi.fn();
+const convergeMock = vi.fn();
 
 vi.mock('@kernlang/agon-forge', () => ({
   runForge: (...args: any[]) => runForgeMock(...args),
@@ -48,6 +50,12 @@ vi.mock('@kernlang/agon-core', async () => ({
 vi.mock('../../packages/cli/src/cesar/brain.js', () => ({
   cesarJudgeForge: vi.fn(async () => null),
   cesarConvergeForge: vi.fn(async () => null),
+}));
+
+vi.mock('../../packages/cli/src/handlers/cesar-brain.js', () => ({
+  cesarJudgeForge: (...args: any[]) => judgeMock(...args),
+  cesarConvergeForge: (...args: any[]) => convergeMock(...args),
+  cesarReviewForgeOutcome: vi.fn(),
 }));
 
 vi.mock('../../packages/cli/src/models/session-results.js', () => ({
@@ -101,6 +109,89 @@ describe('handleForge', () => {
 
     expect(askQuestionMock).not.toHaveBeenCalledWith('Approve plan? [Y/n]');
     expect(runForgeMock).toHaveBeenCalled();
+  });
+
+  it.each(['', ' ', 'no', 'cancel', 'yikes', 'yes please'])('refuses build and forge execution for %j', async answer => {
+    const { handleForge } = await import('../../packages/cli/src/handlers/forge.js');
+    const { handleBuild } = await import('../../packages/cli/src/handlers/build.js');
+    askQuestionMock.mockResolvedValue(answer);
+    const ctx: any = {
+      askQuestion: askQuestionMock, activeEngines: () => ['codex'],
+      config: { approvalLevel: 'plan', forgeEnableSynthesis: false, forgeFixedStarter: 'codex' },
+      registry: { get: vi.fn(() => ({ timeout: 60 })), agentCapableIds: () => ['codex'] },
+      adapter: { dispatchAgent: dispatchAgentMock }, currentPlan: null,
+      setCurrentPlan: setCurrentPlanMock, setActiveAbort: setActiveAbortMock,
+      chatSession: { messages: [] }, cesarSession: null,
+    };
+    await handleBuild('fix fixture', dispatchMock, ctx);
+    await handleForge('fix fixture', 'npm test', dispatchMock, ctx);
+    expect(askQuestionMock).toHaveBeenCalledTimes(2);
+    expect(dispatchAgentMock).not.toHaveBeenCalled();
+    expect(runForgeMock).not.toHaveBeenCalled();
+    if (!answer.trim()) {
+      expect(savePlanMock).toHaveBeenCalledTimes(2);
+      expect(savePlanMock.mock.calls.every(([plan]) => plan.state === 'draft')).toBe(true);
+      expect(setCurrentPlanMock.mock.calls.every(([plan]) => plan.state === 'draft')).toBe(true);
+    } else {
+      expect(savePlanMock).toHaveBeenCalledTimes(2);
+      expect(savePlanMock.mock.calls.every(([plan]) => plan.state === 'cancelled')).toBe(true);
+    }
+  });
+
+  it.each(['y', ' YES '])('accepts explicit build and forge approval %j', async answer => {
+    const { handleForge } = await import('../../packages/cli/src/handlers/forge.js');
+    const { handleBuild } = await import('../../packages/cli/src/handlers/build.js');
+    askQuestionMock.mockResolvedValue(answer);
+    const ctx: any = {
+      askQuestion: askQuestionMock, activeEngines: () => ['codex'],
+      config: { approvalLevel: 'plan', forgeEnableSynthesis: false, forgeFixedStarter: 'codex' },
+      registry: { get: vi.fn(() => ({ timeout: 60 })), agentCapableIds: () => ['codex'] },
+      adapter: { dispatchAgent: dispatchAgentMock }, currentPlan: null,
+      setCurrentPlan: setCurrentPlanMock, setActiveAbort: setActiveAbortMock,
+      chatSession: { messages: [] }, cesarSession: null,
+    };
+    await handleBuild('fix fixture', dispatchMock, ctx);
+    await handleForge('fix fixture', 'npm test', dispatchMock, ctx);
+    expect(dispatchAgentMock).toHaveBeenCalledOnce();
+    expect(runForgeMock).toHaveBeenCalledOnce();
+  });
+
+  it.each(['auto', 'upstream', 'existing'])('preserves the %s approval route', async route => {
+    const { handleForge } = await import('../../packages/cli/src/handlers/forge.js');
+    const { handleBuild } = await import('../../packages/cli/src/handlers/build.js');
+    askQuestionMock.mockImplementation(() => { throw new Error('Unexpected approval question'); });
+    const ctx: any = {
+      askQuestion: askQuestionMock, activeEngines: () => ['codex'],
+      config: { approvalLevel: route === 'auto' ? 'auto' : 'plan', forgeEnableSynthesis: false, forgeFixedStarter: 'codex' },
+      registry: { get: vi.fn(() => ({ timeout: 60 })), agentCapableIds: () => ['codex'] },
+      adapter: { dispatchAgent: dispatchAgentMock }, currentPlan: null,
+      setCurrentPlan: setCurrentPlanMock, setActiveAbort: setActiveAbortMock,
+      chatSession: { messages: [] }, cesarSession: null,
+    };
+    const existing = route === 'existing' ? { ...createPlanMock(), state: 'approved' } : undefined;
+    await handleBuild('fixture', dispatchMock, ctx, existing, route === 'upstream');
+    await handleForge('fixture', 'npm test', dispatchMock, ctx, existing, false, route === 'upstream');
+    expect(askQuestionMock).not.toHaveBeenCalled();
+    expect(dispatchAgentMock).toHaveBeenCalledOnce();
+    expect(runForgeMock).toHaveBeenCalledOnce();
+  });
+
+  it.each(['', 'no', 'cancel', 'yes please', 'y', ' YES '])('requires explicit convergence approval %j', async answer => {
+    const { handleForge } = await import('../../packages/cli/src/handlers/forge.js');
+    askQuestionMock.mockResolvedValue(answer);
+    judgeMock.mockResolvedValue({ winner: 'codex', shouldConverge: true, convergencePlan: ['fixture'] });
+    convergeMock.mockResolvedValue(null);
+    runForgeMock.mockResolvedValue({ results: { codex: { pass: true }, fixture: { pass: true } }, winner: 'codex', patches: {} });
+    const ctx: any = {
+      askQuestion: askQuestionMock, activeEngines: () => ['codex'],
+      config: { approvalLevel: 'plan', forgeEnableSynthesis: false },
+      registry: { get: vi.fn(() => ({})) }, adapter: {}, currentPlan: null,
+      setCurrentPlan: setCurrentPlanMock, setActiveAbort: setActiveAbortMock,
+      chatSession: {}, cesarSession: {},
+    };
+    await handleForge('fixture', 'npm test', dispatchMock, ctx, undefined, false, true);
+    expect(askQuestionMock).toHaveBeenCalledOnce();
+    expect(convergeMock).toHaveBeenCalledTimes(['y', ' YES '].includes(answer) ? 1 : 0);
   });
 
   it('uses Cesar to prepare missing forge fitness before falling back', async () => {

@@ -5,6 +5,7 @@ import { loadConfig, resolveWorkingDir, configGet, appendAttribution, appendCoAu
 import type { Dispatch, HandlerContext } from './types.js';
 
 import { hostPromiseAllValues } from '../lib/kern-host.js';
+import { isExplicitApproval } from '../lib/explicit-approval.js';
 
 function gitExec(cmd: string, cwd: string): string {
   try {
@@ -76,13 +77,13 @@ export async function handleCommit(message: string|undefined, dispatch: Dispatch
     commitMsg = `${changeType}: ${shortSummary}`;
     agonGenerated = true;
     // Ask user to confirm/edit
-    const answer = await ctx.askQuestion(`Commit message: "${commitMsg}" — ok? (y/edit/n)`);
-    if (answer.toLowerCase() === 'n') {
+    const answer = (await ctx.askQuestion(`Commit message: "${commitMsg}" — type y/yes, an edited message, or n to cancel.`)).trim();
+    if (!answer || ['n', 'no', 'cancel'].includes(answer.toLowerCase())) {
       dispatch({ type: 'info', message: 'Commit cancelled.' });
       return;
     }
-    if (answer.toLowerCase() !== 'y' && answer.trim()) {
-      commitMsg = answer.trim();
+    if (!isExplicitApproval(answer)) {
+      commitMsg = answer;
       agonGenerated = false;
     }
   }

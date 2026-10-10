@@ -25,6 +25,7 @@ import { recordRun, formatRunSummary } from '../telemetry/index.js';
 import { filterDefaultOrchestrationEngines } from './engine-filter.js';
 
 import { hostRegexTest, hostStringSet } from '../lib/kern-host.js';
+import { isExplicitApproval } from '../lib/explicit-approval.js';
 
 function handleForgeEvent(event: any, plan: Plan, engineStatus: Record<string,string>, dispatch: Dispatch, ctx: HandlerContext): Plan {
   if (ctx.currentPlan?.state === 'cancelled') return plan;
@@ -624,8 +625,13 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
     
       const approvalLevel = (config.approvalLevel ?? 'plan') as ApprovalLevel;
       if (!skipPlanApproval && approvalLevel !== 'auto') {
-        const answer = await ctx.askQuestion('Approve plan? [Y/n]');
-        if (answer.trim().toLowerCase() === 'n') {
+        const answer = await ctx.askQuestion('Approve plan? Type y or yes to approve.');
+        if (!answer.trim()) {
+          savePlan(plan);
+          dispatch({ type: 'info', message: 'Plan remains draft. Use /approve to approve it explicitly.' });
+          return null;
+        }
+        if (!isExplicitApproval(answer)) {
           plan = cancelPlan(plan);
           ctx.setCurrentPlan(plan);
           savePlan(plan);
@@ -858,8 +864,8 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
     // Convergence: if Cesar says merge best-of-breed, synthesize a converged patch
     if (judgment?.shouldConverge && judgment.convergencePlan.length > 0 && finalWinner) {
       dispatch({ type: 'info', message: 'Cesar recommends convergence — synthesizing best-of-breed…' });
-      const answer = await ctx.askQuestion('Converge best parts from all engines? [Y/n]');
-      if (answer.trim().toLowerCase() !== 'n') {
+      const answer = await ctx.askQuestion('Converge best parts from all engines? Type y or yes to approve.');
+      if (isExplicitApproval(answer)) {
         try {
           const convergedPath = await cesarConvergeForge(manifest, judgment, dispatch, ctx);
           if (convergedPath) {

@@ -17,6 +17,7 @@ import { withThreadOutcome, buildBrainstormContinuationMessage } from './delegat
 import { continueCesarAfterResult } from './cesar-router.js';
 
 import { emitPostDispatch } from './utils.js';
+import { isExplicitApproval } from '../../lib/explicit-approval.js';
 
 export async function dispatchMetaIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult | null> {
   switch (intent.type) {
@@ -139,7 +140,7 @@ export async function dispatchMetaIntent(intent: any, input: string, cb: Dispatc
     case 'suggest-brainstorm': {
       const si = intent as any;
       const answer = await cb.askQuestion('Brainstorm with all engines? (y/n)');
-      if (answer.toLowerCase().startsWith('y')) {
+      if (isExplicitApproval(answer)) {
         const continuationEpoch = cb.ctx.inputEpoch ?? 0;
         const continuationUserTurns = countTrackedUserTurns(cb.ctx);
         const question = si.question ?? si.input;
@@ -160,7 +161,7 @@ export async function dispatchMetaIntent(intent: any, input: string, cb: Dispatc
     case 'suggest-tribunal': {
       const si = intent as any;
       const answer = await cb.askQuestion('Debate with all engines? (y/n)');
-      if (answer.toLowerCase().startsWith('y')) {
+      if (isExplicitApproval(answer)) {
         cb.runAsJob('tribunal', si.question?.slice(0, 40) ?? 'tribunal', () => handleTribunal(si.question ?? si.input, cb.dispatch, cb.ctx));
         return { handled: true, ranAsJob: true };
       }
@@ -170,7 +171,7 @@ export async function dispatchMetaIntent(intent: any, input: string, cb: Dispatc
     case 'suggest-forge': {
       const si = intent as any;
       const answer = await cb.askQuestion('Forge — engines compete to build? (y/n)');
-      if (answer.toLowerCase().startsWith('y')) {
+      if (isExplicitApproval(answer)) {
         cb.runAsJob('forge', si.task?.slice(0, 40) ?? 'forge', async () => { await handleForge(si.task ?? si.input, si.fitnessCmd, cb.dispatch, cb.ctx, undefined, undefined, true); });
         return { handled: true, ranAsJob: true };
       }

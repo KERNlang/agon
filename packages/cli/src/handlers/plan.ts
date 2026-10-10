@@ -4,6 +4,7 @@ import { loadPlan, listPlans, approvePlan, startPlan, cancelPlan, resetStepForRe
 import type { Plan } from '@kernlang/agon-core';
 
 import type { Dispatch, HandlerContext } from './types.js';
+import { isExplicitApproval } from '../lib/explicit-approval.js';
 
 export async function handlePlanShow(dispatch: Dispatch, ctx: HandlerContext, planId?: string): Promise<void> {
   let plan: Plan | null = null;
@@ -30,8 +31,19 @@ export async function handlePlanShow(dispatch: Dispatch, ctx: HandlerContext, pl
   
   // If draft, prompt for approval inline
   if (plan.state === 'draft') {
-    const answer = await ctx.askQuestion('Approve plan? [Y/n]');
-    if (!['', 'y', 'yes'].includes(answer.trim().toLowerCase())) {
+    if (ctx.currentPlan !== plan) ctx.setCurrentPlan(plan);
+    const answer = (await ctx.askQuestion('Approve plan? Type y or yes to approve.')).trim();
+    if (ctx.currentPlan !== plan || plan.state !== 'draft') {
+      dispatch({ type: 'info', message: 'Plan changed while approval was pending. Show the current plan before approving.' });
+      return;
+    }
+    // The question host also returns an empty answer when a permission prompt
+    // dismisses this question. Absence of an answer cannot authorize execution.
+    if (!answer) {
+      dispatch({ type: 'info', message: 'Plan remains draft. Use /approve to approve it explicitly.' });
+      return;
+    }
+    if (!isExplicitApproval(answer)) {
       const cancelled = cancelPlan(plan);
       ctx.setCurrentPlan(cancelled);
       savePlan(cancelled);

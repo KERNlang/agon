@@ -294,7 +294,14 @@ export function App() {
   const [sessionEngines, _setSessionEnginesRaw] = useState<string[]|null>(() => { const cfg = loadConfig(); return cfg.engineActivationMode === 'explicit' ? cfg.forgeEnabledEngines : null; });
   const setSessionEngines = useMemo(() => __inkSafe(_setSessionEnginesRaw), [_setSessionEnginesRaw]);
   const [, _setCurrentPlanRaw] = useState<Plan|null>(null);
-  const setCurrentPlan = useMemo(() => __inkSafe(_setCurrentPlanRaw), [_setCurrentPlanRaw]);
+  const currentPlanRef = useRef<Plan|null>(null);
+  const setCurrentPlan = useMemo(() => {
+    const renderPlan = __inkSafe(_setCurrentPlanRaw);
+    return (plan: Plan|null) => {
+      currentPlanRef.current = plan;
+      renderPlan(plan);
+    };
+  }, [_setCurrentPlanRaw]);
   const [activePlan, _setActivePlanRaw] = useState<CesarPlan|null>(null);
   const setActivePlan = useMemo(() => __inkSafe(_setActivePlanRaw), [_setActivePlanRaw]);
   const [chatSession, _setChatSessionRaw] = useState<ChatSession>(() => { const cwd = resolveWorkingDir(); let branch = 'unknown'; try { branch = currentBranch(cwd); } catch { /* git not available or not a repo */ } const session = startChatSession({ cwd, branch }); if (process.env.AGON_CONTINUE === '1') { try { seedChatSessionFromThread(session, loadOrCreateActiveThread(cwd)); } catch { /* best-effort: a fresh session is fine if no prior thread exists */ } } return session; });
@@ -459,7 +466,6 @@ export function App() {
   const telemetryPollerRef = useRef<any>(null);
   const statusDashboardOpenRef = useRef<boolean>(false);
   const chatStartTimeRef = useRef<number>(0);
-  const currentPlanRef = useRef<Plan|null>(null);
   const activePlanRef = useRef<any>(null);
   const activePlanClearTimerRef = useRef<ReturnType<typeof setTimeout>|null>(null);
   const planWatcherTimerRef = useRef<ReturnType<typeof setInterval>|null>(null);

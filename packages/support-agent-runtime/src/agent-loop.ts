@@ -51,6 +51,8 @@ export interface ApiAgentOptions {
   cwd: string;
   timeout: number;
   signal?: AbortSignal;
+  /** Run-local authority check. Undefined permits execution; a reason refuses it. */
+  executionRefusal?: () => string | undefined;
   maxSteps?: number;
   onChunk?: (text:string)=>void;
   onVisibleChunk?: (text:string,phase:'narration'|'final')=>void;
@@ -149,6 +151,13 @@ export function isTransientDispatchFailure(stderr: string, exitCode?: number): b
  * Run an API engine with full tool loop. Returns final response after all tool calls resolve.
  */
 export async function runApiAgentLoop(opts: ApiAgentOptions, runtime: AgentLoopRuntime): Promise<ApiAgentResult> {
+  const executionRefusal = (): string | undefined => {
+    try {
+      const reason = opts.executionRefusal?.();
+      return reason === undefined ? undefined : reason || 'Agent execution refused';
+    }
+    catch { return 'Agent execution authority check failed'; }
+  };
   // Run-scoped cache ID: prevents concurrent forge runs from colliding
   const runCacheId = `${opts.api.model || 'api-agent'}-${randomUUID().slice(0, 8)}`;
 
@@ -177,6 +186,7 @@ export async function runApiAgentLoop(opts: ApiAgentOptions, runtime: AgentLoopR
     cwd: opts.cwd,
     readFileState: (fsc as any).cache,
     abortSignal: opts.signal,
+    executionRefusal,
     permissionMode: opts.permissionMode ?? 'auto',
     explorationMode: false,
     allowedCommands: opts.allowedCommands ?? [],
@@ -253,6 +263,16 @@ export async function runApiAgentLoop(opts: ApiAgentOptions, runtime: AgentLoopR
   // surface real partial work instead of a bare error string.
   let lastVisibleText = '';
   let emptyDispatchRetries = 0;
+  const refusedResult = (): ApiAgentResult | undefined => {
+    const reason = executionRefusal();
+    if (opts.signal?.aborted) {
+      const errorReason = reason || 'aborted by caller';
+      return { response: `Error: ${errorReason}`, toolCalls: totalToolCalls,
+        steps: step, toolOutcomes, cancelled: true, errorReason };
+    }
+    return reason ? { response: `Error: ${reason}`, toolCalls: totalToolCalls,
+      steps: step, toolOutcomes, failed: true, errorReason: reason } : undefined;
+  };
 
   while (step < MAX_STEPS) {
     step++;
@@ -271,6 +291,8 @@ export async function runApiAgentLoop(opts: ApiAgentOptions, runtime: AgentLoopR
     let dispatchSettled = false;
     let lastTransientTimedOut = false;
     while (!dispatchSettled) {
+      const refusal = refusedResult();
+      if (refusal) return refusal;
       // Per-step timeout, RECOMPUTED every attempt so backoff sleeps + prior
       // failed attempts can never hand a stale (too-large) timeout to dispatch
       // or let a retry overrun totalDeadline.
@@ -289,11 +311,13 @@ export async function runApiAgentLoop(opts: ApiAgentOptions, runtime: AgentLoopR
       dispatchResult = null;
       let transientReason: string | null = null;
 
-      const gen = runtime.apiStreamDispatchWithHistory(opts.api, messageHistory as any, remaining, opts.signal, nativeTools);
       try {
+        const gen = runtime.apiStreamDispatchWithHistory(opts.api, messageHistory as any, remaining, opts.signal, nativeTools);
         while (true) {
           const { value, done } = await gen.next();
           if (done) {
+            const returnedRefusal = refusedResult();
+            if (returnedRefusal) return returnedRefusal;
             dispatchResult = value as any;
             if (dispatchResult?.stderr || (Number(dispatchResult?.exitCode ?? 0) !== 0)) {
               const dispatchError = dispatchResult.stderr || `API dispatch exited with code ${dispatchResult.exitCode}`;
@@ -319,6 +343,8 @@ export async function runApiAgentLoop(opts: ApiAgentOptions, runtime: AgentLoopR
           if (opts.onChunk) opts.onChunk(value as string);
         }
       } catch (err: any) {
+        const returnedRefusal = refusedResult();
+        if (returnedRefusal) return returnedRefusal;
         const msg = err?.message ?? String(err);
         const thrownTimedOut = /timed out|timeout|etimedout/i.test(msg);
         if (opts.signal?.aborted) {
@@ -408,6 +434,8 @@ export async function runApiAgentLoop(opts: ApiAgentOptions, runtime: AgentLoopR
         };
       }
     }
+    const returnedRefusal = refusedResult();
+    if (returnedRefusal) return returnedRefusal;
     emptyDispatchRetries = 0;
 
     // Extract tool calls using the shared parser so API engines with
@@ -623,6 +651,8 @@ export async function runApiAgentLoop(opts: ApiAgentOptions, runtime: AgentLoopR
     break;
   }
 
+  const finalRefusal = refusedResult();
+  if (finalRefusal) return finalRefusal;
   if (!finalResponse && totalToolCalls > 0) {
     const reason = `API engine reached the ${MAX_STEPS}-step tool loop limit (runaway safety ceiling) after ${totalToolCalls} tool calls`;
     return {

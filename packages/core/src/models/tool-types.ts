@@ -41,6 +41,8 @@ export interface ToolContext {
   cwd: string;
   readFileState: Map<string, FileState>;
   abortSignal?: AbortSignal;
+  /** Synchronous host health check at execution boundaries. Must never request approval or execute tools. */
+  executionRefusal?: () => string | undefined;
   permissionMode?: 'auto'|'smart'|'ask'|'deny-all';
   explorationMode?: boolean;
   allowedCommands?: string[];

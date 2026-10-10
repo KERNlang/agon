@@ -57,14 +57,23 @@ export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry
     };
   }
 
-  if (ctx.abortSignal?.aborted) {
+  // Recheck after asynchronous approval/hooks. An earlier approval cannot
+  // authorize execution after the owning turn becomes unhealthy or cancelled.
+  const executionRefusal = (): ToolCallResult | undefined => {
+    let error: string | undefined;
+    try { error = ctx.executionRefusal?.(); }
+    catch { error = 'Tool execution health check failed'; }
+    const cancelled = ctx.abortSignal?.aborted;
+    if (error === undefined && !cancelled) return undefined;
     return {
       toolCallId: call.id,
       toolName: call.name,
-      result: { ok: false, content: '', error: 'Tool call cancelled', terminalReason: 'cancelled' },
+      result: { ok: false, content: '', error: error || (cancelled ? 'Tool call cancelled' : 'Tool execution refused'), terminalReason: cancelled ? 'cancelled' : 'denied' },
       durationMs: Date.now() - start,
     };
-  }
+  };
+  const initialRefusal = executionRefusal();
+  if (initialRefusal) return initialRefusal;
 
   const blockedTools = Array.isArray((ctx as any).blockedTools) ? (ctx as any).blockedTools as string[] : [];
   if (blockedTools.includes(call.name)) {
@@ -134,6 +143,8 @@ export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry
   }
 
   // Phase 2: Permission check
+  const permissionRefusal = executionRefusal();
+  if (permissionRefusal) return permissionRefusal;
   const permission = handler.checkPermission(call.input, ctx);
   if (permission.behavior === 'deny') {
     const terminalReason = permission.reason === 'read-only-mode' ? 'skipped_policy' : 'denied';
@@ -181,6 +192,8 @@ export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry
   // any other non-0 exit fails OPEN (proceeds) with one warning line. A
   // zero-overhead guard skips all of this when no tool hooks are configured.
   const toolHooks = (ctx as any).toolHooks;
+  const hookRefusal = executionRefusal();
+  if (hookRefusal) return hookRefusal;
   const hooksActive = hasToolHooks(toolHooks);
   if (hooksActive) {
     const pre = await runPreToolUseHooks(call.name, call.input, toolHooks, ctx.cwd);
@@ -198,6 +211,8 @@ export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry
   }
 
   // Phase 3: Execute
+  const finalRefusal = executionRefusal();
+  if (finalRefusal) return finalRefusal;
   try {
     const result = await handler.execute(call.input, ctx);
     if (!result.terminalReason) result.terminalReason = result.ok ? 'succeeded' : 'failed';
@@ -208,7 +223,7 @@ export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry
     }
 
     // Phase 4: PostToolUse hooks — never block, result ignored except logging.
-    if (hooksActive) {
+    if (hooksActive && !executionRefusal()) {
       const responsePayload = result.ok ? result.content : { error: result.error ?? '' };
       await runPostToolUseHooks(call.name, call.input, responsePayload, toolHooks, ctx.cwd);
     }

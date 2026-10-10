@@ -40,7 +40,7 @@ beforeEach(async () => {
   effects.verify.mockImplementation((await vi.importActual<typeof import('@kernlang/agon-core')>('@kernlang/agon-core')).spawnWithTimeout);
   effects.brainstorm.mockResolvedValue({ winner: 'fixture', response: 'answer' });
   effects.delegate.mockResolvedValue({ response: 'answer' });
-  effects.other.mockResolvedValue({ winner: 'fixture', summary: 'review' });
+  effects.other.mockResolvedValue({ winner: 'fixture', summary: 'review', status: 'completed' });
   root = await mkdtemp(join(tmpdir(), 'agon-step-admission-'));
   vi.stubEnv('AGON_HOME', join(root, 'execution-home'));
   host = new DurableModHost(root, { kernelVersion: '1.0.0', processIdentity: 'step-admission-test' });
@@ -68,6 +68,59 @@ function context(): HandlerContext { return { config: {}, adapter: {} } as Handl
 function step(type: string): CesarPlanStep {
   return { id: 'step', type, description: 'fixture', state: 'pending', estimatedTokens: 0, estimatedCostUsd: 0 };
 }
+
+it.each(['agent', 'team-agent'].flatMap(type =>
+  ['missing', 'failed', 'cancelled', 'budget_exceeded', 'no-winner', 'completed'].map(status => ({ type, status })),
+))('keeps the real Agent outcome in Plan: $type / $status', async ({ type, status }) => {
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  const stats = tracker.getStats();
+  vi.spyOn(tracker, 'getStats').mockReturnValueOnce({ ...stats, totalTokens: 10, meteredCostUsd: 1 })
+    .mockReturnValue({ ...stats, totalTokens: 17, meteredCostUsd: 1.25 });
+  effects.other.mockImplementationOnce(async (_task, dispatch) => {
+    dispatch({ type: 'info', message: `observed ${status}` });
+    return status === 'missing' ? null : { status, summary: `backend ${status}` };
+  });
+  const result = await buildStepExecutors(context())[type].execute(step(type), {});
+  expect(effects.other).toHaveBeenCalledOnce();
+  expect(result.result).toMatchObject({
+    status: status === 'completed' ? 'success' : 'failure',
+    actualTokens: 7, actualCostUsd: 0.25, output: `observed ${status}`,
+  });
+  if (status === 'completed') expect(result.contextExport).toBe('observed completed');
+  else {
+    expect(result).not.toHaveProperty('contextExport');
+    expect(result.result.error).toBeTruthy();
+  }
+});
+
+it.each(['agent', 'team-agent'].flatMap(type =>
+  ['agon.agent', 'agon.plan', 'healthy'].map(owner => ({ type, owner })),
+))('passes live Plan authority into a running $type: $owner', async ({ type, owner }) => {
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  let received = false;
+  let initial: string | undefined;
+  let after: string | undefined;
+  effects.other.mockImplementationOnce(async (_task, _dispatch, _ctx, options) => {
+    received = typeof options.executionRefusal === 'function';
+    if (!received) return null;
+    initial = options.executionRefusal();
+    if (owner !== 'healthy') await install(owner);
+    after = options.executionRefusal();
+    return { status: 'completed' };
+  });
+  const result = await buildStepExecutors(context())[type].execute(step('self'), {});
+  expect(received).toBe(true);
+  expect(initial).toBeUndefined();
+  if (owner === 'healthy') {
+    expect(after).toBeUndefined();
+    expect(result.result.status).toBe('success');
+  } else {
+    expect(after).toEqual(expect.stringMatching(/restart|unavailable/));
+    expect(result.result.status).toBe('failure');
+  }
+});
 
 it('refuses disabled Plan before creating output storage', async () => {
   await install('agon.plan');
@@ -523,7 +576,8 @@ it.each(['self', 'review', 'agent', 'team-agent'].flatMap(type =>
     if (fault === 'generation') await install('agon.plan');
     else if (fault === 'replacement') { await disposeProcessSurfaceAuthority(); await initializeProcessSurfaceAuthority(root); }
     else if (fault === 'cancellation') controller.abort(new Error('cancelled fixture'));
-    return { response: 'fixture output', blocking: false, parseFailed: false };
+    return { response: 'fixture output', blocking: false, parseFailed: false,
+      ...(['agent', 'team-agent'].includes(type) ? { status: 'completed' } : {}) };
   });
   if (type === 'self') effects.delegate.mockImplementationOnce(run);
   else effects.other.mockImplementationOnce(run);

@@ -83,6 +83,10 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
   });
   const guardedAdapter = (type: string, signal?: AbortSignal) =>
     guardProcessEngineAdapter(ctx.adapter, () => assertStepAvailable(type, signal));
+  const executionRefusal = (type: string, signal?: AbortSignal) => () => {
+    try { assertStepAvailable(type, signal); return undefined; }
+    catch (error) { return error instanceof Error ? error.message : String(error); }
+  };
   
   // Helper: extract token/cost from tracker delta.
   // meteredCostUsd, NOT totalCostUsd: only real per-token billing counts as a
@@ -677,11 +681,15 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
         // Codex P1: thread parentSignal so the plan executor's abort
         // controller propagates into the agent session AND the agent
         // does not clobber ctx.setActiveAbort.
-        await runAgentMode(task, captureDispatch as any, ctx, {
+        const outcome = await runAgentMode(task, captureDispatch as any, ctx, {
           engineId: step.engine ?? step.engines?.[0],
           parentSignal: signal,
+          executionRefusal: executionRefusal('agent', signal),
         });
         assertStepAvailable('agent', signal);
+        if (outcome?.status !== 'completed') {
+          throw new Error(outcome?.summary || `Agent step did not complete (${outcome?.status ?? 'no result'})`);
+        }
         const after = snapshotTokens();
         const summary = captured.slice(-20).join('\n').slice(0, 2000);
         return {
@@ -723,12 +731,16 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
         }
       };
       try {
-        await runAgentTeam(task, captureDispatch as any, ctx, {
+        const outcome = await runAgentTeam(task, captureDispatch as any, ctx, {
           engines: step.engines,
           fitnessCmd: step.fitnessCmd,
           parentSignal: signal,
+          executionRefusal: executionRefusal('team-agent', signal),
         });
         assertStepAvailable('team-agent', signal);
+        if (outcome?.status !== 'completed') {
+          throw new Error(outcome?.summary || `Team-agent step did not complete (${outcome?.status ?? 'no result'})`);
+        }
         const after = snapshotTokens();
         const summary = captured.slice(-20).join('\n').slice(0, 2000);
         return {

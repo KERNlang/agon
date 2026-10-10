@@ -72,6 +72,7 @@ export interface AgentTeamConfig {
   allowedCommands?: string[];
   toolPermissions?: Record<string,'allow'|'ask'|'deny'>;
   onPermissionAsk?: (engineId:string, tool:string, command:string, reason:string)=>Promise<boolean|string>;
+  executionRefusal?: () => string | undefined;
 }
 
 /**
@@ -159,9 +160,17 @@ export class AgentTeam {
     return this.worktrees[engineId] ?? null;
   }
 
+  private assertExecutionAllowed(): void {
+    let reason: string | undefined;
+    try { reason = this.config.executionRefusal?.(); }
+    catch { reason = 'execution authority check failed'; }
+    if (reason !== undefined) throw makeAgentTeamError(reason || 'execution refused');
+  }
+
   async initialize(): Promise<void> {
     if (this.disposed) throw makeAgentTeamDisposedError();
     if (this.initialized) return;
+    this.assertExecutionAllowed();
 
     // PFB-4: capture the user's dirty working tree as a stash-like SHA
     // WITHOUT mutating their working tree. Agents work against this snapshot
@@ -174,6 +183,7 @@ export class AgentTeam {
 
     // PFB-3: janitor sweep — remove any orphaned worktrees from cancelled
     // or crashed prior runs older than 1 hour. Idempotent and cheap.
+    this.assertExecutionAllowed();
     try {
       worktreePruneAll(this.config.cwd, 60 * 60 * 1000);
     } catch (err) {
@@ -192,6 +202,7 @@ export class AgentTeam {
     // was empty and successful worktrees from earlier members leaked.
     const root = repoRoot(this.config.cwd);
     const createPromises = this.config.members.map(async (m: AgentTeamMemberConfig): Promise<{m: AgentTeamMemberConfig, wt: string|null}> => {
+      this.assertExecutionAllowed();
       if (!this.config.isolate) {
         return { m, wt: null };
       }
@@ -247,6 +258,7 @@ export class AgentTeam {
     // members (one Semaphore-per-member would defeat the purpose).
     try {
       for (const { m, wt } of settled) {
+        this.assertExecutionAllowed();
         const memberCwd = wt ?? this.config.cwd;
         const sessionConfig: AgentSessionConfig = {
           engineId: m.engineId,
@@ -260,6 +272,7 @@ export class AgentTeam {
           permissionMode: this.config.permissionMode,
           allowedCommands: this.config.allowedCommands,
           toolPermissions: this.config.toolPermissions,
+          executionRefusal: this.config.executionRefusal,
           onPermissionAsk: this.config.onPermissionAsk
             ? (tool: string, command: string, reason: string) => this.config.onPermissionAsk!(m.engineId, tool, command, reason)
             : undefined,
@@ -274,8 +287,10 @@ export class AgentTeam {
         };
         this.members[m.engineId] = new AgentSession(sessionConfig);
       }
+      this.assertExecutionAllowed();
     } catch (err) {
       // Roll back every worktree we created.
+      this.cancel();
       const rootForCleanup = repoRoot(this.config.cwd);
       for (const eid of Object.keys(this.worktrees)) {
         worktreeRemoveBestEffort(rootForCleanup, this.worktrees[eid]);
@@ -291,6 +306,7 @@ export class AgentTeam {
   async step(prompt: string, opts?: {onEvent?:(event:AgentEvent)=>void}): Promise<AgentTeamResult> {
     if (this.disposed) throw makeAgentTeamDisposedError();
     if (!this.initialized) throw makeAgentTeamError('step() called before initialize()');
+    this.assertExecutionAllowed();
 
     this.startedAt = Date.now();
     const onEvent = opts?.onEvent;
@@ -342,6 +358,7 @@ export class AgentTeam {
         };
       }
       try {
+        this.assertExecutionAllowed();
         const stepResult = await session.step(prompt, { onEvent: wrappedOnEvent });
         return {
           engineId: m.engineId,
@@ -382,7 +399,7 @@ export class AgentTeam {
     let succeeded = 0;
     let failed = 0;
     for (const r of results) {
-      if (r.stepResult && !r.error) succeeded++;
+      if (r.stepResult?.stopReason === 'completed' && !r.error) succeeded++;
       else failed++;
     }
 

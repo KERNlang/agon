@@ -51,7 +51,7 @@
         "@kernlang/agon-support-dedup"
       ],
       "assignments": 12,
-      "assignmentHash": "sha256:3174d4db10d57bf018357f8ad86fbfe570ce574a26f2b09f41177131cbe5b926",
+      "assignmentHash": "sha256:69a227a02470ca94126fb22eb855bffcc2f934d9a95451830e110ca87f935044",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -79,7 +79,7 @@
         "@kernlang/agon-support-judge"
       ],
       "assignments": 12,
-      "assignmentHash": "sha256:4a54e02f66313c88ad0886148d023cb869f808c1e77cac83119818826377b919",
+      "assignmentHash": "sha256:a81c729c107568fd052efad086a38954cfc78cde6471badc70fee83364dff92f",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -106,7 +106,7 @@
         "@kernlang/agon-support-panel"
       ],
       "assignments": 10,
-      "assignmentHash": "sha256:95e019062f3e018945d617361db46aa3891943bdd94f5acca81469a5347edc32",
+      "assignmentHash": "sha256:e08a447d036620c9514db163b0b54c83dad7c97d5abeba40c8937a7b9c7f5b46",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -122,7 +122,7 @@
         "@kernlang/agon-support-verification"
       ],
       "assignments": 51,
-      "assignmentHash": "sha256:ef442ec9db197765871bf3688e2f7bc83574acf7c946db2bd744e26dc8add858",
+      "assignmentHash": "sha256:42784a45ee6b4e4cdd225c34eba11b8297849f40a67d7d74ad2c37661e49f356",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -136,7 +136,7 @@
         "@kernlang/agon-support-panel"
       ],
       "assignments": 6,
-      "assignmentHash": "sha256:957ed6df26dde9cbe49227c1144329df13d7c6798709dc0c9128114eb99306bb",
+      "assignmentHash": "sha256:948af5c38a89704b485657cc7cd742d303e1fd8a12c0270fd5d988378da9052a",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -165,7 +165,7 @@
         "@kernlang/agon-support-worktree"
       ],
       "assignments": 17,
-      "assignmentHash": "sha256:c8051ba33f24919028fc385eaaefd20adc2f822a82c419025d251f40fb794ec1",
+      "assignmentHash": "sha256:6d2d551dc2d4728449fdaa366f89fd95c8b891c8af7da0a4e72903e9eb1c73a1",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -194,7 +194,7 @@
         "@kernlang/agon-mod-review"
       ],
       "assignments": 6,
-      "assignmentHash": "sha256:f3cdbe6c8cf87f08f2010f1c52d9b45eb0d689939b90090ca4115cf587e61e6b",
+      "assignmentHash": "sha256:065ed8e0397da75eb18379e4aed0619fb0b9a026c65e2f71f7a5af69dfee77cd",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -207,7 +207,7 @@
         "@kernlang/agon-support-agent-runtime"
       ],
       "assignments": 37,
-      "assignmentHash": "sha256:bdbeb9ae20d38b305d0ce4e94aa20aab49601d7f71fae2a932f8b37348a4b5d8",
+      "assignmentHash": "sha256:b1eb5c7dd40631c452b131725e09aae48b3966da7e1fff9130f2b54d840affa8",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -646,7 +646,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:1004462152ae05ff146d1d2cc02251adab06b9de83e0dd895969d7d6ea458a91",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:2ccf85d447780419eb0ea0631715a5d5c3a3c9edccac84252ef03de783504e55",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       },
       "registrationBoundary": "public-mod-api",
@@ -739,7 +739,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:1004462152ae05ff146d1d2cc02251adab06b9de83e0dd895969d7d6ea458a91",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:2ccf85d447780419eb0ea0631715a5d5c3a3c9edccac84252ef03de783504e55",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       },
       "registrationBoundary": "public-mod-api",
@@ -832,7 +832,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:1004462152ae05ff146d1d2cc02251adab06b9de83e0dd895969d7d6ea458a91",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:2ccf85d447780419eb0ea0631715a5d5c3a3c9edccac84252ef03de783504e55",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       },
       "registrationBoundary": "public-mod-api",
@@ -1405,7 +1405,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:1004462152ae05ff146d1d2cc02251adab06b9de83e0dd895969d7d6ea458a91",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:2ccf85d447780419eb0ea0631715a5d5c3a3c9edccac84252ef03de783504e55",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       },
       "registrationBoundary": "public-mod-api",
@@ -1998,7 +1998,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:1004462152ae05ff146d1d2cc02251adab06b9de83e0dd895969d7d6ea458a91",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:2ccf85d447780419eb0ea0631715a5d5c3a3c9edccac84252ef03de783504e55",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       },
       "registrationBoundary": "public-mod-api",
@@ -2471,7 +2471,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:1004462152ae05ff146d1d2cc02251adab06b9de83e0dd895969d7d6ea458a91",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:2ccf85d447780419eb0ea0631715a5d5c3a3c9edccac84252ef03de783504e55",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       },
       "registrationBoundary": "public-mod-api",
@@ -4608,7 +4608,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:1004462152ae05ff146d1d2cc02251adab06b9de83e0dd895969d7d6ea458a91",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:2ccf85d447780419eb0ea0631715a5d5c3a3c9edccac84252ef03de783504e55",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       },
       "registrationBoundary": "public-mod-api",
@@ -5901,7 +5901,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:1004462152ae05ff146d1d2cc02251adab06b9de83e0dd895969d7d6ea458a91",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:2ccf85d447780419eb0ea0631715a5d5c3a3c9edccac84252ef03de783504e55",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       },
       "registrationBoundary": "public-mod-api",
@@ -6920,7 +6920,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:1004462152ae05ff146d1d2cc02251adab06b9de83e0dd895969d7d6ea458a91",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:2ccf85d447780419eb0ea0631715a5d5c3a3c9edccac84252ef03de783504e55",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       },
       "registrationBoundary": "public-mod-api",
@@ -7233,7 +7233,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:1004462152ae05ff146d1d2cc02251adab06b9de83e0dd895969d7d6ea458a91",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:2ccf85d447780419eb0ea0631715a5d5c3a3c9edccac84252ef03de783504e55",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       },
       "registrationBoundary": "public-mod-api",
@@ -7543,7 +7543,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:1004462152ae05ff146d1d2cc02251adab06b9de83e0dd895969d7d6ea458a91",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:2ccf85d447780419eb0ea0631715a5d5c3a3c9edccac84252ef03de783504e55",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       }
     },
@@ -7569,7 +7569,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:1004462152ae05ff146d1d2cc02251adab06b9de83e0dd895969d7d6ea458a91",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:2ccf85d447780419eb0ea0631715a5d5c3a3c9edccac84252ef03de783504e55",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       }
     },
@@ -7595,7 +7595,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:1004462152ae05ff146d1d2cc02251adab06b9de83e0dd895969d7d6ea458a91",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:2ccf85d447780419eb0ea0631715a5d5c3a3c9edccac84252ef03de783504e55",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       }
     },
@@ -7621,7 +7621,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:1004462152ae05ff146d1d2cc02251adab06b9de83e0dd895969d7d6ea458a91",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:2ccf85d447780419eb0ea0631715a5d5c3a3c9edccac84252ef03de783504e55",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       }
     },
@@ -7647,7 +7647,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:1004462152ae05ff146d1d2cc02251adab06b9de83e0dd895969d7d6ea458a91",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:2ccf85d447780419eb0ea0631715a5d5c3a3c9edccac84252ef03de783504e55",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       }
     },
@@ -7673,7 +7673,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:1004462152ae05ff146d1d2cc02251adab06b9de83e0dd895969d7d6ea458a91",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:2ccf85d447780419eb0ea0631715a5d5c3a3c9edccac84252ef03de783504e55",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       }
     },
@@ -7699,7 +7699,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:1004462152ae05ff146d1d2cc02251adab06b9de83e0dd895969d7d6ea458a91",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:2ccf85d447780419eb0ea0631715a5d5c3a3c9edccac84252ef03de783504e55",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       }
     },
@@ -7725,7 +7725,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:1004462152ae05ff146d1d2cc02251adab06b9de83e0dd895969d7d6ea458a91",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:2ccf85d447780419eb0ea0631715a5d5c3a3c9edccac84252ef03de783504e55",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       }
     },
@@ -7751,7 +7751,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:1004462152ae05ff146d1d2cc02251adab06b9de83e0dd895969d7d6ea458a91",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:2ccf85d447780419eb0ea0631715a5d5c3a3c9edccac84252ef03de783504e55",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       }
     },
@@ -7777,7 +7777,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:1004462152ae05ff146d1d2cc02251adab06b9de83e0dd895969d7d6ea458a91",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:2ccf85d447780419eb0ea0631715a5d5c3a3c9edccac84252ef03de783504e55",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       }
     },
@@ -7803,7 +7803,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:1004462152ae05ff146d1d2cc02251adab06b9de83e0dd895969d7d6ea458a91",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:2ccf85d447780419eb0ea0631715a5d5c3a3c9edccac84252ef03de783504e55",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       }
     },

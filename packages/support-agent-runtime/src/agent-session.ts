@@ -66,6 +66,7 @@ export interface AgentSessionConfig {
   allowedCommands?: string[];
   toolPermissions?: Record<string,'allow'|'ask'|'deny'>;
   onPermissionAsk?: (tool:string, command:string, reason:string)=>Promise<boolean|string>;
+  executionRefusal?: () => string | undefined;
 }
 
 /**
@@ -103,6 +104,14 @@ export class AgentSession {
     this.abortController = new AbortController();
   }
 
+  private executionRefusal(): string | undefined {
+    try {
+      return this.config.executionRefusal?.();
+    } catch {
+      return 'Execution authority check failed';
+    }
+  }
+
   async step(prompt: string, opts?: {onEvent?:(event:AgentEvent)=>void}): Promise<AgentStepResult> {
     const runtime = this.sessionRuntime;
     // ── Pre-step budget check ─────────────────────────────────
@@ -126,6 +135,15 @@ export class AgentSession {
         costUsd: 0,
         stopReason: 'error',
         error: `Session is in terminal state: ${this.state}`,
+      };
+    }
+
+    const entryRefusal = this.executionRefusal();
+    if (entryRefusal !== undefined) {
+      this.state = 'failed';
+      return {
+        response: '', toolCalls: 0, innerSteps: 0, tokensUsed: 0, costUsd: 0,
+        stopReason: 'error', error: entryRefusal, engineFault: false,
       };
     }
 
@@ -223,7 +241,11 @@ export class AgentSession {
     // into the shared thread so the next step (or a different engine)
     // picks it up automatically.
     const onHistoryEntry = thread
-      ? (entry: Record<string,unknown>) => { thread.appendLoopEntry(entry, this.config.engineId); }
+      ? (entry: Record<string,unknown>) => {
+        if (!this.abortController.signal.aborted && this.executionRefusal() === undefined) {
+          thread.appendLoopEntry(entry, this.config.engineId);
+        }
+      }
       : undefined;
 
     const innerOpts: ApiAgentOptions = {
@@ -233,6 +255,7 @@ export class AgentSession {
       cwd: this.config.cwd,
       timeout: timeoutSec,
       signal: this.abortController.signal,
+      executionRefusal: this.config.executionRefusal,
       maxSteps: this.config.maxInnerSteps,
       onChunk: onEvent ? (text: string) => onEvent(runtime.makeAssistantChunk(this.config.engineId, text)) : undefined,
       onToolCall: onEvent ? (name: string, args: Record<string,unknown>) => onEvent(runtime.makeToolCall(this.config.engineId, name, 'running', { input: args })) : undefined,
@@ -336,6 +359,27 @@ export class AgentSession {
     this.totalToolCalls += result.toolCalls;
     this.totalCostUsd += stepCost;
 
+    // Retain incurred usage, but refuse new persistence and successful completion.
+    const refusedResult = (): AgentStepResult | undefined => {
+      const refusal = this.executionRefusal();
+      if (this.abortController.signal.aborted) {
+        this.state = 'cancelled';
+        return {
+          response: result.response, toolCalls: result.toolCalls, innerSteps: result.steps,
+          tokensUsed: stepTokens, costUsd: stepCost, stopReason: 'cancelled',
+        };
+      }
+      if (refusal === undefined) return undefined;
+      this.state = 'failed';
+      return {
+        response: result.response, toolCalls: result.toolCalls, innerSteps: result.steps,
+        tokensUsed: stepTokens, costUsd: stepCost,
+        stopReason: 'error', error: refusal, engineFault: false,
+      };
+    };
+    const postLoopRefusal = refusedResult();
+    if (postLoopRefusal) return postLoopRefusal;
+
     // ── Post-step budget enforcement (tokens + duration only) ─
     // Turns are a discrete cap that the pre-check already enforces (N steps
     // are allowed when maxTurns=N; the (N+1)-th is refused). But TOKENS and
@@ -380,9 +424,7 @@ export class AgentSession {
     // ── Flush AgentContextThread ───────────────────────────────────────
     // The onHistoryEntry callback already appended entries in-memory
     // during the step. Now mark this engine as caught up and persist.
-    // We do this regardless of stopReason so partial work from a
-    // cancelled or budget-exceeded step is still recorded for the
-    // next run. (Full synchronous flush on abort is a Phase A.5 item.)
+    // Admission permits this save. Recheck after it settles before success.
     if (thread) {
       try {
         thread.markSeen(this.config.engineId);
@@ -394,6 +436,8 @@ export class AgentSession {
       }
     }
 
+    const postSaveRefusal = refusedResult();
+    if (postSaveRefusal) return postSaveRefusal;
     const stateAsString = this.state as string;
     if (stateAsString === 'cancelled' || stateAsString === 'failed') {
       return {
@@ -423,7 +467,7 @@ export class AgentSession {
     // during the in-flight step make it to disk. The abort signal fires
     // after this flush, which is the correct order: save what we have,
     // THEN signal cancellation to the inner loop.
-    if (this.config.thread) {
+    if (this.config.thread && this.executionRefusal() === undefined) {
       try {
         this.config.thread.markSeen(this.config.engineId);
         // Use saveSync() — cancel() may be called from a sync abort handler

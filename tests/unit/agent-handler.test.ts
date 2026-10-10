@@ -11,6 +11,10 @@ const mockState = {
   nextResult: null as AgentStepResult | null,
   stepError: null as Error | null,
   lastStep: null as { prompt: string; opts: { onEvent?: (e: unknown) => void } } | null,
+  lastAuthority: undefined as (() => string | undefined) | undefined,
+  boundary: '',
+  refused: false,
+  continuity: [] as string[],
 };
 
 vi.mock('@kernlang/agon-core', async (importOriginal) => {
@@ -18,10 +22,13 @@ vi.mock('@kernlang/agon-core', async (importOriginal) => {
 
   class MockAgentSession {
     private _state: 'idle'|'running'|'completed'|'cancelled'|'failed' = 'idle';
-    constructor(public config: { budget: { maxTurns: number; maxDurationMs: number; maxTokens?: number } }) {}
+    constructor(public config: { budget: { maxTurns: number; maxDurationMs: number; maxTokens?: number }; executionRefusal?: () => string | undefined }) {
+      mockState.lastAuthority = config.executionRefusal;
+    }
 
     async step(prompt: string, opts?: { onEvent?: (e: unknown) => void }): Promise<AgentStepResult> {
       mockState.lastStep = { prompt, opts: opts ?? {} };
+      if (mockState.boundary === 'step') mockState.refused = true;
       if (mockState.stepError) throw mockState.stepError;
       return mockState.nextResult ?? {
         response: 'default reply',
@@ -58,10 +65,20 @@ vi.mock('@kernlang/agon-core', async (importOriginal) => {
     ...actual,
     AgentSession: MockAgentSession,
     resolveWorkingDir: () => '/tmp/test-cwd',
+    loadOrCreateActiveThread: () => {
+      mockState.continuity.push('load');
+      return {
+        append: () => { mockState.continuity.push('append'); },
+        save: async () => {
+          mockState.continuity.push('save');
+          if (mockState.boundary === 'save') mockState.refused = true;
+        },
+      };
+    },
   };
 });
 
-import { runAgentMode } from '../../packages/cli/src/handlers/agent.js';
+import { runAgentMode, runAgentTeam } from '../../packages/cli/src/handlers/agent.js';
 import type { OutputEvent } from '../../packages/cli/src/models/handler-types.js';
 
 function makeCtx(engineIds: string[] = ['test-engine'], engineHasApi = true) {
@@ -100,6 +117,47 @@ beforeEach(() => {
   mockState.nextResult = null;
   mockState.stepError = null;
   mockState.lastStep = null;
+  mockState.lastAuthority = undefined;
+  mockState.boundary = '';
+  mockState.refused = false;
+  mockState.continuity = [];
+});
+
+it('passes live execution authority to the session without snapshotting it', async () => {
+  const { ctx, dispatch } = makeCtx();
+  let refused = false;
+  const executionRefusal = () => refused ? 'Owner disabled' : undefined;
+  await runAgentMode('fixture task', dispatch, ctx, { executionRefusal });
+  expect(mockState.lastAuthority).toBe(executionRefusal);
+  expect(mockState.lastAuthority?.()).toBeUndefined();
+  refused = true;
+  expect(mockState.lastAuthority?.()).toBe('Owner disabled');
+});
+
+it.each(['one engine', 'short task'])('preserves authority through team fallback: %s', async reason => {
+  const { ctx, dispatch } = makeCtx(reason === 'one engine' ? ['one'] : ['one', 'two']);
+  const executionRefusal = () => undefined;
+  await runAgentTeam(reason === 'short task' ? 'short' : 'A long fixture task that needs multiple agent members.',
+    dispatch, ctx, { executionRefusal });
+  expect(mockState.lastAuthority).toBe(executionRefusal);
+});
+
+it.each(['entry', 'step', 'save', 'healthy'])('guards solo continuity and publication at %s', async boundary => {
+  mockState.boundary = boundary;
+  mockState.refused = boundary === 'entry';
+  const { ctx, events, dispatch } = makeCtx();
+  (ctx as any).config = { sessionContinuity: true };
+  const result = await runAgentMode('fixture task', dispatch, ctx, {
+    executionRefusal: () => mockState.refused ? 'Owner disabled' : undefined,
+  });
+  expect(result?.status).toBe(boundary === 'healthy' ? 'completed' : 'failed');
+  expect(eventsByType(events, 'success')).toHaveLength(boundary === 'healthy' ? 1 : 0);
+  expect(mockState.continuity).toEqual(boundary === 'entry' ? [] : boundary === 'step'
+    ? ['load'] : ['load', 'append', 'save']);
+  expect(mockState.lastStep === null).toBe(boundary === 'entry');
+  for (const type of ['agent-step-start', 'agent-step-end', 'streaming-end']) {
+    expect(eventsByType(events, type)).toHaveLength(boundary === 'entry' ? 0 : 1);
+  }
 });
 
 describe('runAgentMode — happy path', () => {

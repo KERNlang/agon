@@ -21,6 +21,7 @@ export interface RunAgentOptions {
   maxTokens?: number;
   systemPrompt?: string;
   parentSignal?: AbortSignal;
+  executionRefusal?: () => string | undefined;
 }
 
 export interface AgentContinuationResult {
@@ -105,6 +106,26 @@ export function buildAgentApprovalCallback(dispatch: Dispatch, ctx: HandlerConte
  */
 export async function runAgentMode(input: string, dispatch: Dispatch, ctx: HandlerContext, opts?: RunAgentOptions): Promise<AgentContinuationResult|null> {
   const abort = new AbortController();
+  const assertExecutionAllowed = (): void => {
+    opts?.parentSignal?.throwIfAborted();
+    abort.signal.throwIfAborted();
+    let reason: string | undefined;
+    try { reason = opts?.executionRefusal?.(); }
+    catch { reason = 'Agent execution authority check failed'; }
+    if (reason !== undefined) throw new Error(reason || 'Agent execution refused');
+  };
+  try {
+    assertExecutionAllowed();
+  } catch (err) {
+    const status = opts?.parentSignal?.aborted ? 'cancelled' : 'failed';
+    const summary = `Agent ${status} before start: ${err instanceof Error ? err.message : String(err)}`;
+    dispatch({ type: status === 'cancelled' ? 'warning' : 'error', message: summary });
+    return {
+      kind: 'agent', status, task: input, taskKind: 'unknown', summary,
+      engineId: null, winnerId: null, response: null, patchPath: null,
+      patchAvailable: false, workspaceChangedInPlace: false,
+    };
+  }
   // ── Resolve engine ─────────────────────────────────────────
   // Phase 1 scope: agent mode requires an API engine. If the caller
   // specified an engine, use that. Otherwise pick the FIRST active
@@ -227,6 +248,7 @@ export async function runAgentMode(input: string, dispatch: Dispatch, ctx: Handl
     allowedCommands: (ctx.config as any).allowedCommands ?? [],
     toolPermissions: (ctx.config as any).toolPermissions ?? {},
     onPermissionAsk: buildAgentApprovalCallback(dispatch, ctx, engineId),
+    executionRefusal: opts?.executionRefusal,
   });
   
   // Gemini fix (a): build state BEFORE any listener / active-abort
@@ -329,7 +351,15 @@ export async function runAgentMode(input: string, dispatch: Dispatch, ctx: Handl
     const onEvent = bridge.makeOnEvent();
   
     // ── The actual work ────────────────────────────────────────
-    const stepResult = await session.step(input, { onEvent });
+    let stepResult = await session.step(input, { onEvent });
+    try {
+      assertExecutionAllowed();
+    } catch (err) {
+      stepResult = {
+        ...stepResult, stopReason: abort.signal.aborted ? 'cancelled' : 'error',
+        error: err instanceof Error ? err.message : String(err), engineFault: false,
+      };
+    }
     state = completeTurn(state, input, stepResult, Date.now());
     session.complete();
   
@@ -410,12 +440,14 @@ export async function runAgentMode(input: string, dispatch: Dispatch, ctx: Handl
     const summary = summaryLines.join('\n');
     if (agentThread && stepResult.stopReason !== 'cancelled') {
       try {
+        assertExecutionAllowed();
         agentThread.append({ role: 'assistant', content: summary });
         await agentThread.save();
       } catch { /* non-fatal */ }
     }
   
     // ── Final disposition ─────────────────────────────────────
+    assertExecutionAllowed();
     if (stepResult.stopReason === 'completed') {
       if (stepResult.response) {
         dispatch({ type: 'engine-block', engineId, color: 0, content: stepResult.response });
@@ -459,23 +491,25 @@ export async function runAgentMode(input: string, dispatch: Dispatch, ctx: Handl
     // Shouldn't normally reach here — session.step() catches its own errors and
     // returns stopReason='error'. This is a belt-and-suspenders path for
     // exceptions in reducer code or in the dispatch callback.
+    const status = abort.signal.aborted ? 'cancelled' : 'failed';
     state = failAgent(state, 'error', err?.message ?? String(err));
-    dispatch({ type: 'error', message: err?.message ?? String(err) });
+    dispatch({ type: status === 'cancelled' ? 'warning' : 'error', message: err?.message ?? String(err) });
     const errMsg = err?.message ?? String(err);
     const summary = [
-      `[agent] "${input.slice(0, 120)}" — failed`,
+      `[agent] "${input.slice(0, 120)}" — ${status}`,
       `Engine: ${engineId}`,
       `Error: ${errMsg}`,
     ].join('\n');
     if (agentThread) {
       try {
+        assertExecutionAllowed();
         agentThread.append({ role: 'assistant', content: summary });
         await agentThread.save();
       } catch { /* non-fatal */ }
     }
     followUp = {
       kind: 'agent',
-      status: 'failed',
+      status,
       task: input,
       taskKind: 'unknown',
       summary,
@@ -509,6 +543,7 @@ export interface RunAgentTeamOptions {
   systemPrompt?: string;
   parentSignal?: AbortSignal;
   synthesize?: boolean;
+  executionRefusal?: () => string | undefined;
   synthesisTimeoutSec?: number;
   shadowMode?: boolean;
   foregroundEngineId?: string;
@@ -519,6 +554,13 @@ export interface RunAgentTeamOptions {
  */
 export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: HandlerContext, opts?: RunAgentTeamOptions): Promise<AgentContinuationResult|null> {
   const abort = new AbortController();
+  const assertExecutionAllowed = (): void => {
+    abort.signal.throwIfAborted();
+    let reason: string | undefined;
+    try { reason = opts?.executionRefusal?.(); }
+    catch { reason = 'Agent team execution authority check failed'; }
+    if (reason !== undefined) throw new Error(reason || 'Agent team execution refused');
+  };
   // ── Resolve members ───────────────────────────────────────
   const available = ctx.activeEngines();
   if (available.length === 0) {
@@ -569,7 +611,7 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
     if (memberEngines.length === 1) {
       // Only one API engine available — fall back to solo agent mode.
       dispatch({ type: 'warning', message: `Only one API engine available (${memberEngineIds[0]}); falling back to solo agent mode.` });
-      return await runAgentMode(input, dispatch, ctx, { engineId: memberEngineIds[0], maxTurns: opts?.maxTurns, maxDurationMs: opts?.maxDurationMs, systemPrompt: opts?.systemPrompt, parentSignal: opts?.parentSignal });
+      return await runAgentMode(input, dispatch, ctx, { engineId: memberEngineIds[0], maxTurns: opts?.maxTurns, maxDurationMs: opts?.maxDurationMs, systemPrompt: opts?.systemPrompt, parentSignal: opts?.parentSignal, executionRefusal: opts?.executionRefusal });
     }
   }
   
@@ -580,7 +622,7 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
     dispatch({ type: 'warning', message: `Input too short for team mode (${input.length} chars); falling back to solo agent.` });
     // Review #7: thread parentSignal through so plan-mode Ctrl+C reaches
     // the solo fallback. Previously the signal was dropped here.
-    return await runAgentMode(input, dispatch, ctx, { maxTurns: opts?.maxTurns, maxDurationMs: opts?.maxDurationMs, systemPrompt: opts?.systemPrompt, parentSignal: opts?.parentSignal });
+    return await runAgentMode(input, dispatch, ctx, { maxTurns: opts?.maxTurns, maxDurationMs: opts?.maxDurationMs, systemPrompt: opts?.systemPrompt, parentSignal: opts?.parentSignal, executionRefusal: opts?.executionRefusal });
   }
   
   // ── Build team config ─────────────────────────────────────
@@ -595,13 +637,6 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
   // Optional ContextThread continuity — shared across all team members only
   // when the user opts into cross-session memory.
   let teamThread: import('@kernlang/agon-core').ContextThread | undefined;
-  if ((ctx.config as any).sessionContinuity === true) {
-    try {
-      teamThread = loadOrCreateActiveThread(cwd, opts?.systemPrompt);
-    } catch (threadErr) {
-      console.warn(`[agon] context-thread: failed to load active thread for team (running without context): ${threadErr instanceof Error ? threadErr.message : String(threadErr)}`);
-    }
-  }
   
   const members: AgentTeamMemberConfig[] = memberEngines.map((eng, i) => ({
     engineId: memberEngineIds[i],
@@ -629,12 +664,12 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
     },
     costFn,
     heavyToolSemaphorePermits: 1,  // serialize heavy tools across members (RT-26)
-    thread: teamThread,  // shared ContextThread — all members share the same history
     permissionMode: (ctx.config as any).permissionMode ?? 'ask',
     allowedCommands: (ctx.config as any).allowedCommands ?? [],
     toolPermissions: (ctx.config as any).toolPermissions ?? {},
     onPermissionAsk: (engineId: string, tool: string, command: string, reason: string) =>
       buildAgentApprovalCallback(dispatch, ctx, engineId)(tool, command, reason),
+    executionRefusal: opts?.executionRefusal,
   };
   
   // ── Wire abort BEFORE creating team — RT-11 fix ───────────
@@ -642,6 +677,12 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
   // check and addEventListener. Here we do the listener first, then the
   // early check — there's no window where an abort can be missed.
   let team: AgentTeam | null = null;
+  let teamResult: Awaited<ReturnType<AgentTeam['step']>> | undefined;
+  let startedTeamId: string | undefined;
+  let teamFinished = false;
+  let synthesisRan = false;
+  let synthesisCostUsd = 0;
+  const openMemberSteps = new Set<string>();
   let teamCancelled = false;
   const onAbort = () => {
     teamCancelled = true;
@@ -689,6 +730,16 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
   
   try {
     // ── Create + initialize team ──────────────────────────
+    assertExecutionAllowed();
+    if ((ctx.config as any).sessionContinuity === true) {
+      try {
+        teamThread = loadOrCreateActiveThread(cwd, opts?.systemPrompt);
+      } catch (threadErr) {
+        console.warn(`[agon] context-thread: failed to load active thread for team (running without context): ${threadErr instanceof Error ? threadErr.message : String(threadErr)}`);
+      }
+    }
+    teamConfig.thread = teamThread;
+    assertExecutionAllowed();
     team = new AgentTeam(teamConfig);
     await team.initialize();
   
@@ -715,6 +766,7 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
       };
     }
   
+    assertExecutionAllowed();
     const teamId = team.getRunId();
     const shadowMode = opts?.shadowMode === true;
     const foregroundEngineId = opts?.foregroundEngineId ?? memberEngineIds[0];
@@ -727,6 +779,7 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
       task: input,
       taskKind,
     });
+    startedTeamId = teamId;
   
     // Pre-emit step-start for each member so the UI shows N panels
     // immediately, before the first AgentEvent arrives.
@@ -742,6 +795,7 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
         maxTokens: budget.maxTokens ?? null,
         teamId,
       });
+      openMemberSteps.add(id);
     }
   
     // Phase C/D: StreamBridge + shadow-mode filtering.
@@ -772,65 +826,10 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
     const onEvent = teamBridge.makeOnEvent();
   
     // ── Run the team ──────────────────────────────────────
-    const teamResult = await team.step(input, { onEvent });
-  
-    // Codex review fix (P1): post-step cancellation guard. If the user
-    // cancelled mid-run (via Ctrl-C → onAbort → team.cancel()), the team
-    // returns with whatever partial results it has. We must NOT proceed
-    // to fitness gate, scoring, or patch-review — that would surface a
-    // patch from a run the user explicitly aborted.
-    if (teamCancelled || abort.signal.aborted) {
-      // Emit cancelled step-end events for transcript/UI consistency,
-      // then a team-complete with winner=null so the panels clear.
-      for (const m of teamResult.members) {
-        if (shadowMode && m.engineId !== foregroundEngineId) continue;
-        dispatch({
-          type: 'agent-step-end',
-          engineId: m.engineId,
-          turnIndex: 0,
-          outcome: 'cancelled',
-          toolCalls: m.stepResult?.toolCalls ?? 0,
-          tokensUsed: m.stepResult?.tokensUsed ?? 0,
-          stopReason: 'cancelled',
-        });
-        dispatch({ type: 'streaming-end', engineId: m.engineId });
-      }
-      let cancelCost = 0;
-      for (const m of teamResult.members) {
-        cancelCost += costFn(m.engineId, m.stepResult?.tokensUsed ?? 0);
-      }
-      dispatch({
-        type: 'agent-team-complete',
-        teamId,
-        winner: null,
-        synthesizedPatch: null,
-        synthesizedAnalysis: null,
-        memberOutcomes: teamResult.members.map((m) => ({
-          engineId: m.engineId,
-          outcome: 'cancelled',
-          diffLines: 0,
-          passedFitness: false,
-        })),
-        teamCostUsd: cancelCost,
-        teamDurationMs: teamResult.durationMs,
-      });
-      dispatch({ type: 'warning', message: `Agent team cancelled by user \u2014 $${cancelCost.toFixed(2)} spent before cancel` });
-      return {
-        kind: 'team-agent',
-        status: 'cancelled',
-        task: input,
-        taskKind,
-        summary: `[team-agent] "${input.slice(0, 120)}" — cancelled after ${teamResult.members.length} member run(s)`,
-        engineId: null,
-        winnerId: null,
-        response: null,
-        patchPath: null,
-        patchAvailable: false,
-        workspaceChangedInPlace: false,
-      };
-    }
+    teamResult = await team.step(input, { onEvent });
   
     // ── Emit step-end for each member ─────────────────────
+    assertExecutionAllowed();
     for (const m of teamResult.members) {
       if (shadowMode && m.engineId !== foregroundEngineId) continue;
       const outcome: 'completed'|'cancelled'|'failed' =
@@ -848,6 +847,7 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
         stopReason: m.stepResult?.stopReason ?? 'error',
       });
       dispatch({ type: 'streaming-end', engineId: m.engineId });
+      openMemberSteps.delete(m.engineId);
     }
   
     // ── Phase 3 scoring ──────────────────────────────────
@@ -872,11 +872,13 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
           return { engineId: m.engineId, passed: false };
         }
         try {
+          assertExecutionAllowed();
           const fitnessResult = await spawnWithTimeout({
             command: 'sh',
             args: ['-c', fitnessCmd],
             cwd: m.worktreePath,
-            timeout: 60,
+            timeout: 60_000,
+            signal: abort.signal,
           });
           return { engineId: m.engineId, passed: fitnessResult.exitCode === 0 };
         } catch {
@@ -884,6 +886,7 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
         }
       });
       const settledFitness = await Promise.allSettled(fitnessPromises);
+      assertExecutionAllowed();
       for (let i = 0; i < settledFitness.length; i++) {
         const outcome = settledFitness[i];
         const id = teamResult.members[i].engineId;
@@ -918,7 +921,6 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
     // ── Pick winner's initial diff/response ──────────────
     let winnerDiff: string | null = null;
     let winnerAnalysis: string | null = null;
-    let synthesisRan = false;
     let synthesisChanged = false;
     if (winnerInfo.winner) {
       const winnerMember = teamResult.members.find((m) => m.engineId === winnerInfo.winner);
@@ -939,7 +941,6 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
     // the team-complete event is emitted. Post-synthesis fitness re-check
     // (Codex H1): if the winner broke the fitness gate mid-synthesis, we
     // revert winnerDiff to its pre-synthesis value.
-    let synthesisCostUsd = 0;
     let synthesisFitnessRegressed = false;
     const preSynthesisWinnerDiff = winnerDiff;  // Codex H1: save for rollback
     const preSynthesisWinnerAnalysis = winnerAnalysis;
@@ -1013,32 +1014,19 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
                 timeout: opts?.synthesisTimeoutSec ?? 180,
                 signal: abort.signal,
                 maxSteps: 6,
+                executionRefusal: opts?.executionRefusal,
                 // Codex M5: thread winner's systemPrompt so refinement
                 // keeps repo-specific constraints and safety rules.
                 systemPrompt: opts?.systemPrompt,
               });
               synthesisRan = true;
-              // OpenCode H1: re-check abort.signal.aborted after synthesis
-              // returns. runAgentTeamSynthesis also does this, but we
-              // double-check here in case the caller aborted between the
-              // runner's post-abort check and this handler regaining control.
-              if (teamCancelled || abort.signal.aborted) {
-                dispatch({
-                  type: 'warning',
-                  message: `Synthesis cancelled mid-flight; falling back to winner's original diff.`,
-                });
-                winnerDiff = preSynthesisWinnerDiff;
-                synthesisChanged = false;
-              } else if (synthResult.ok) {
-                // Codex M4: meter synthesis cost. runApiAgentLoop doesn't
-                // expose token counts, so estimate from response length
-                // (~4 chars/token). This is an under-estimate since it
-                // misses tool-use output, but it's better than zero and
-                // is capped by the synthesis timeout.
-                const estTokens = Math.ceil((synthResult.responseExcerpt.length * 4) / 4) + 800;
-                synthesisCostUsd = winnerEngine
-                  ? estimatedTokensToCost(winnerEngine, estTokens)
-                  : 0;
+              if (synthResult.ok) {
+                // Preserve the existing response-based estimate even after revocation.
+                const estTokens = Math.ceil(synthResult.responseExcerpt.length) + 800;
+                synthesisCostUsd = winnerEngine ? estimatedTokensToCost(winnerEngine, estTokens) : 0;
+              }
+              assertExecutionAllowed();
+              if (synthResult.ok) {
                 if (synthResult.changed) {
                   synthesisChanged = true;
                   winnerDiff = synthResult.synthesizedDiff;
@@ -1050,7 +1038,9 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
                     fitnessCmd: opts?.fitnessCmd ?? 'npm run typecheck',
                     timeoutSec: 90,
                     signal: abort.signal,
+                    executionRefusal: opts?.executionRefusal,
                   });
+                  assertExecutionAllowed();
                   if (!refit.passed) {
                     synthesisFitnessRegressed = true;
                     winnerDiff = preSynthesisWinnerDiff;
@@ -1135,21 +1125,16 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
               timeout: opts?.synthesisTimeoutSec ?? 180,
               signal: abort.signal,
               maxSteps: 4,
+              executionRefusal: opts?.executionRefusal,
               systemPrompt: opts?.systemPrompt,
             });
             synthesisRan = true;
-            if (teamCancelled || abort.signal.aborted) {
-              dispatch({
-                type: 'warning',
-                message: `Reconciliation cancelled mid-flight; falling back to winner's original report.`,
-              });
-              winnerAnalysis = preSynthesisWinnerAnalysis;
-              synthesisChanged = false;
-            } else if (invResult.ok) {
+            if (invResult.ok) {
               const estTokens = Math.ceil(invResult.report.length) + 800;
-              synthesisCostUsd = winnerEngine
-                ? estimatedTokensToCost(winnerEngine, estTokens)
-                : 0;
+              synthesisCostUsd = winnerEngine ? estimatedTokensToCost(winnerEngine, estTokens) : 0;
+            }
+            assertExecutionAllowed();
+            if (invResult.ok) {
               synthesisChanged = invResult.report !== winnerAnalysis;
               winnerAnalysis = invResult.report;
               dispatch({
@@ -1177,6 +1162,7 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
     }
   
     // ── Persistent synthesis log (OpenCode #7) ───────────
+    assertExecutionAllowed();
     // Write a machine-parseable log of the synthesis outcome so users
     // can trace what happened post-mortem without relying on scrollback.
     // Lives alongside the winner patch at RUNS_DIR/team-agent-<id>/.
@@ -1228,22 +1214,6 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
       };
     });
   
-    // ── Emit team-complete ───────────────────────────────
-    dispatch({
-      type: 'agent-team-complete',
-      teamId,
-      winner: winnerInfo.winner,
-      synthesizedPatch: winnerDiff,
-      synthesizedAnalysis: winnerAnalysis,
-      memberOutcomes,
-      teamCostUsd: teamCost,
-      teamDurationMs: teamResult.durationMs,
-      synthesisRan,
-      synthesisChanged,
-      synthesisCostUsd,
-      synthesisFitnessRegressed,
-    });
-  
     // Append winning team diff to the shared ContextThread so Cesar has
     // the full line-by-line trail of what the team built. teamThread is
     // the shared thread the team members were already writing into.
@@ -1276,7 +1246,8 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
   
     let patchPath = '';
   
-    // ── Surface the result to the user ────────────────────
+    // Persist the patch before the summary records its path.
+    assertExecutionAllowed();
     if (winnerInfo.winner) {
       if (winnerDiff) {
         // Codex P3: persist the winning patch to a real file so
@@ -1295,30 +1266,7 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
           // so they don't hit an empty-buffer surprise on disk-full.
           dispatch({ type: 'warning', message: `Could not persist winning patch (${errMsg}). [E]dit action will be unavailable; the patch is still shown below.` });
         }
-        dispatch({
-          type: 'patch-review',
-          winnerId: winnerInfo.winner,
-          patchPath,
-          patchContent: winnerDiff,
-        } as any);
-      } else if (winnerAnalysis) {
-        dispatch({ type: 'engine-block', engineId: winnerInfo.winner, color: 0x9333ea, content: winnerAnalysis } as any);
       }
-      dispatch({
-        type: 'success',
-        message: `Agent team complete \u2014 winner: ${winnerInfo.winner} | $${teamCost.toFixed(2)} | ${(teamResult.durationMs/1000).toFixed(0)}s`,
-      });
-    } else {
-      // No winner — present all member responses inline so user can pick.
-      for (const m of teamResult.members) {
-        if (m.stepResult?.response) {
-          dispatch({ type: 'engine-block', engineId: m.engineId, color: 0, content: m.stepResult.response } as any);
-        }
-      }
-      dispatch({
-        type: 'warning',
-        message: `Agent team finished with no winner (no member passed the fitness gate). All ${teamResult.members.length} responses shown above.`,
-      });
     }
     const memberSummary = memberOutcomes
       .map((m) => `${m.engineId}:${m.outcome}${m.passedFitness ? ' pass' : ' fail'}`)
@@ -1347,6 +1295,36 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
         await teamThread.save();
       } catch { /* non-fatal */ }
     }
+    assertExecutionAllowed();
+    // Publish only after all asynchronous continuity writes have settled.
+    dispatch({
+      type: 'agent-team-complete', teamId, winner: winnerInfo.winner,
+      synthesizedPatch: winnerDiff, synthesizedAnalysis: winnerAnalysis,
+      memberOutcomes, teamCostUsd: teamCost, teamDurationMs: teamResult.durationMs,
+      synthesisRan, synthesisChanged, synthesisCostUsd, synthesisFitnessRegressed,
+    });
+    teamFinished = true;
+    if (winnerInfo.winner) {
+      if (winnerDiff) {
+        dispatch({ type: 'patch-review', winnerId: winnerInfo.winner, patchPath, patchContent: winnerDiff } as any);
+      } else if (winnerAnalysis) {
+        dispatch({ type: 'engine-block', engineId: winnerInfo.winner, color: 0x9333ea, content: winnerAnalysis } as any);
+      }
+      dispatch({
+        type: 'success',
+        message: `Agent team complete \u2014 winner: ${winnerInfo.winner} | $${teamCost.toFixed(2)} | ${(teamResult.durationMs/1000).toFixed(0)}s`,
+      });
+    } else {
+      for (const m of teamResult.members) {
+        if (m.stepResult?.response) {
+          dispatch({ type: 'engine-block', engineId: m.engineId, color: 0, content: m.stepResult.response } as any);
+        }
+      }
+      dispatch({
+        type: 'warning',
+        message: `Agent team finished with no winner (no member passed the fitness gate). All ${teamResult.members.length} responses shown above.`,
+      });
+    }
     followUp = {
       kind: 'team-agent',
       status: winnerInfo.winner ? 'completed' : 'no-winner',
@@ -1361,22 +1339,47 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
       workspaceChangedInPlace: false,
     };
   } catch (err: any) {
-    dispatch({ type: 'error', message: `Agent team failed: ${err?.message ?? String(err)}` });
+    const status = abort.signal.aborted ? 'cancelled' : 'failed';
+    const members = teamResult?.members ?? [];
+    for (const engineId of openMemberSteps) {
+      const member = members.find(m => m.engineId === engineId);
+      dispatch({
+        type: 'agent-step-end', engineId, turnIndex: 0, outcome: status,
+        toolCalls: member?.stepResult?.toolCalls ?? 0,
+        tokensUsed: member?.stepResult?.tokensUsed ?? 0,
+        stopReason: status === 'cancelled' ? 'cancelled' : 'error',
+      });
+      dispatch({ type: 'streaming-end', engineId });
+    }
+    openMemberSteps.clear();
+    const incurredCost = members.reduce((sum, m) => sum + costFn(m.engineId, m.stepResult?.tokensUsed ?? 0), synthesisCostUsd);
+    if (startedTeamId && !teamFinished) {
+      dispatch({
+        type: 'agent-team-complete', teamId: startedTeamId, winner: null,
+        synthesizedPatch: null, synthesizedAnalysis: null,
+        memberOutcomes: members.map(m => ({ engineId: m.engineId, outcome: status, diffLines: 0, passedFitness: false })),
+        teamCostUsd: incurredCost, teamDurationMs: teamResult?.durationMs ?? 0,
+        synthesisRan, synthesisCostUsd,
+      });
+    }
+    dispatch({ type: status === 'cancelled' ? 'warning' : 'error', message: `Agent team ${status}: ${err?.message ?? String(err)}` });
     const errMsg = err?.message ?? String(err);
     const summary = [
-      `[team-agent] "${input.slice(0, 120)}" — failed`,
+      `[team-agent] "${input.slice(0, 120)}" — ${status}`,
       `Task kind: ${taskKind}`,
       `Error: ${errMsg}`,
+      `Cost: $${incurredCost.toFixed(2)}`,
     ].join('\n');
     if (teamThread) {
       try {
+        assertExecutionAllowed();
         teamThread.append({ role: 'assistant', content: summary });
         await teamThread.save();
       } catch { /* non-fatal */ }
     }
     followUp = {
       kind: 'team-agent',
-      status: 'failed',
+      status,
       task: input,
       taskKind,
       summary,

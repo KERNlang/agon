@@ -9,7 +9,7 @@ import { buildKernDraftPrompt, parseKernDraft } from '@kernlang/protocol';
 
 import type { KernDraft } from '@kernlang/protocol';
 
-import { dedupBrainstormDrafts } from '../../packages/forge/src/dedup-bridge.js';
+import { dedupBrainstormDrafts } from './modular-dedup-legacy.js';
 
 import { preflightHealthFilter } from '../../packages/forge/src/health-check.js';
 

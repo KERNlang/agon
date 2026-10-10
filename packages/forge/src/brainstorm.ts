@@ -9,7 +9,7 @@ import { EngineRegistry, getRatings, createSidechainLogger, updateGlickoRanked, 
 
 import { buildKernDraftPrompt, parseKernDraft } from '@kernlang/protocol';
 
-import { dedupBrainstormDrafts } from './dedup-bridge.js';
+import { dedupBrainstormDrafts } from '@kernlang/agon-support-dedup';
 
 import { preflightHealthFilter } from './health-check.js';
 

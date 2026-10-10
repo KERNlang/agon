@@ -37,7 +37,7 @@ vi.mock('@kernlang/agon-support-dedup', () => ({
     return { groups: null, status: { status: 'unavailable', detail: 'fixture' } };
   },
 }));
-vi.mock('../../packages/forge/src/dedup-bridge.js', async () => ({
+vi.mock('../fixtures/modular-dedup-legacy.js', async () => ({
   dedupBrainstormDrafts: (await import('@kernlang/agon-support-dedup')).dedupBrainstormDrafts,
 }));
 

@@ -292,6 +292,7 @@ export const MANIFEST = validateManifest({
       "dist/index.js",
       "dist/index.d.ts",
       "dist/implementation.d.ts",
+      "dist/apply.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

@@ -1,4 +1,5 @@
-import type { CesarPlan, CesarPlanStep } from './plan.js';
+// Frozen pre-extraction algorithm; only fixture imports adjusted.
+import type { CesarPlan, CesarPlanStep } from '@kernlang/agon-mod-plan';
 
 export function formatStepType(s: CesarPlanStep): string {
   switch (s.type) {

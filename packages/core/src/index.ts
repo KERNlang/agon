@@ -164,7 +164,7 @@ export { isDangerousCommand, isReadOnlyCommand, isPathUnderCwd } from './tools/t
 export { parsePermissionRule, parsePermissionRuleSet, ruleMatches, evaluatePermissionRules, evaluateToolRules, evaluateBashRules, evaluateFilePathRules, hasShellControl, hasRedirection, hasSubstitution, splitShellSegments, resolveRulePath, pathRuleMatches } from './tools/tool-permissions.js';
 export { createReadTool, createEditTool, createMultiEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createReportConfidenceTool, createProposePlanTool, createExitPlanModeTool, createListPlansTool, createRetrieveResultTool, createWebFetchTool, parseAndValidateUrl, htmlToText, createTodoWriteTool, normalizeTodos, createSaveMemoryTool, appendMemoryLine, normalizeMemoryLine, todayPrefix, canonicalMemorySection, MEMORY_SECTIONS, createWebSearchTool, buildSearchRequest, parseSearchResults, formatSearchResults, classifyQuery, cleanQuery, buildAuthoritativeRequest, parseAuthoritativeResults, extractCitations, judgeProbe, formatCitationReport, probeCitation, verifyCitations } from './tools.js';
 export type { SearchResult, SearchRequest, ResearchIntent, CitationStatus, CitationProbe, CitationVerdict, CitationReport } from './tools.js';
-export { formatCesarPlanMarkdown } from './cesar/plan-formatter.js';
+export { formatCesarPlanMarkdown } from '@kernlang/agon-mod-plan';
 export { generateToolPrompt, toolsToOpenAIFormat } from './tools/tool-prompt.js';
 export { parseToolCalls, toolCallsToApiFormat, formatToolResults, formatToolResult } from './tools/tool-parser.js';
 export type { ParsedToolCall, ParseResult } from './tools/tool-parser.js';
@@ -284,8 +284,7 @@ export type {
 } from './cesar/context-thread.js';
 export { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan, exitCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans, getCesarPlansDir, cesarPlanJsonPath, cesarPlanMarkdownPath, CESAR_STEP_TYPES } from './cesar/plan.js';
 export type { CesarPlan, CesarPlanStep, CesarStepResult } from './cesar/plan.js';
-export { sanitizePlanSteps } from './cesar/plan-validation.js';
-export { planCostEstimator } from './cesar/plan-cost-estimator.js';
+export { planCostEstimator, sanitizePlanSteps } from './cesar/plan-cost-estimator.js';
 export type { CostEstimate } from './cesar/plan-cost-estimator.js';
 export { executePlan, getReadySteps } from './cesar/plan-executor.js';
 export type { StepExecutor, PlanExecutorCallbacks } from './cesar/plan-executor.js';

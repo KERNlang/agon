@@ -219,6 +219,16 @@ export const MANIFEST = validateManifest({
       "dist/index.js",
       "dist/index.d.ts",
       "dist/implementation.d.ts",
+      "dist/cost-estimator.d.ts",
+      "dist/execution-coordinator.d.ts",
+      "dist/execution-model.d.ts",
+      "dist/execution-state.d.ts",
+      "dist/execution-store.d.ts",
+      "dist/executor.d.ts",
+      "dist/formatter.d.ts",
+      "dist/resume-policy.d.ts",
+      "dist/session.d.ts",
+      "dist/step-validation.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],
@@ -471,6 +481,11 @@ export const IMPLEMENTATION_KIND = 'physical' as const;
 export { createMod } from './implementation.js';
 export { createMod as default } from './implementation.js';
 export { createPersistenceEnvelope, unwrapPersistenceEnvelope } from './implementation.js';
+export { PlanCostEstimator } from './cost-estimator.js';
+export type { CostEstimate, PlanCostPricing } from './cost-estimator.js';
+export { createPlanStepSanitizer, VALID_STEP_TYPES } from './step-validation.js';
+export type { PlanStepEstimator } from './step-validation.js';
+export { formatCesarPlanMarkdown, formatStepType } from './formatter.js';
 export { createPlanExecutor, getReadySteps } from './executor.js';
 export type { PlanExecutionServices, PlanExecutorCallbacks, StepExecutor } from './executor.js';
 export type { CesarPlan, CesarPlanStep, CesarPlanState, CesarStepState, CesarStepType, CesarStepResult } from './execution-model.js';

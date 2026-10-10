@@ -1,8 +1,9 @@
-import type { CesarPlanStep } from './plan.js';
+// Frozen pre-extraction algorithm; only fixture imports adjusted.
+import type { CesarPlanStep } from '@kernlang/agon-mod-plan';
 
-import { CESAR_STEP_TYPES } from './plan.js';
+const CESAR_STEP_TYPES = ['self', 'forge', 'teamforge', 'delegate', 'brainstorm', 'campfire', 'tribunal', 'pipeline', 'review', 'agent', 'team-agent'];
 
-import { planCostEstimator } from './plan-cost-estimator.js';
+import { planCostEstimator } from './modular-plan-cost-legacy.js';
 
 export const VALID_STEP_TYPES: Set<string> = new Set<string>(CESAR_STEP_TYPES);
 

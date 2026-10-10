@@ -62,15 +62,10 @@ function runsDirPath(): string {
   return persistencePath('runs');
 }
 
-function pruneStampPath(): string {
-  return join(persistencePath('runs'), PRUNE_STAMP_NAME);
-}
-
 /**
  * List *.json run record files with mtimes via node:fs/promises (never blocks the Ink event loop, even on a 40k-entry dir). Returns [] if the dir is missing. Skips the .prune-stamp and any entry that cannot be stat'd.
  */
-async function listRunJsonFiles(): Promise<{ name: string; mtimeMs: number }[]> {
-  const dir = runsDirPath();
+async function listRunJsonFiles(dir: string): Promise<{ name: string; mtimeMs: number }[]> {
   let names: string[];
   try {
     names = await readdir(dir);
@@ -78,14 +73,21 @@ async function listRunJsonFiles(): Promise<{ name: string; mtimeMs: number }[]> 
     return [];
   }
   const out: { name: string; mtimeMs: number }[] = [];
-  for (const entry of names) {
-    if (!entry.endsWith('.json')) continue;
-    try {
-      const st = await stat(join(dir, entry));
-      if (st.isFile()) out.push({ name: entry, mtimeMs: st.mtimeMs });
-    } catch {
-      // entry vanished mid-scan or is unreadable — ignore
-    }
+  const records = names.filter(entry => entry.endsWith('.json'));
+  // Bound filesystem pressure while avoiding one event-loop round trip per
+  // record. Preserve readdir order, including equal-mtime prune tie-breaking.
+  const scanWidth = 8;
+  for (let offset = 0; offset < records.length; offset += scanWidth) {
+    const batch = await Promise.all(records.slice(offset, offset + scanWidth).map(async entry => {
+      try {
+        const st = await stat(join(dir, entry));
+        return st.isFile() ? { name: entry, mtimeMs: st.mtimeMs } : null;
+      } catch {
+        // entry vanished mid-scan or is unreadable — ignore
+        return null;
+      }
+    }));
+    for (const record of batch) if (record) out.push(record);
   }
   return out;
 }
@@ -93,8 +95,7 @@ async function listRunJsonFiles(): Promise<{ name: string; mtimeMs: number }[]> 
 /**
  * Count *.json run record files WITHOUT stat'ing each one. hydrate()/scheduleRefresh only need the count, so on a 40k-file dir this avoids ~40k stat syscalls (one readdir is enough). Returns 0 if the dir is missing. The .prune-stamp has no .json suffix so it's excluded automatically.
  */
-async function countRunJsonFiles(): Promise<number> {
-  const dir = runsDirPath();
+async function countRunJsonFiles(dir: string): Promise<number> {
   let names: string[];
   try {
     names = await readdir(dir);
@@ -111,9 +112,9 @@ async function countRunJsonFiles(): Promise<number> {
 /**
  * Read the last-prune timestamp from .prune-stamp. Returns 0 if absent/unreadable.
  */
-function readPruneStamp(): number {
+function readPruneStamp(stampPath: string): number {
   try {
-    const raw = readFileSync(pruneStampPath(), 'utf-8').trim();
+    const raw = readFileSync(stampPath, 'utf-8').trim();
     const n = Number(raw);
     return Number.isFinite(n) ? n : 0;
   } catch {
@@ -124,9 +125,9 @@ function readPruneStamp(): number {
 /**
  * Persist the last-prune timestamp (best effort).
  */
-function writePruneStamp(ts: number): void {
+function writePruneStamp(stampPath: string, ts: number): void {
   try {
-    writeFileSync(pruneStampPath(), String(ts));
+    writeFileSync(stampPath, String(ts));
   } catch {
     // best effort — a missing stamp just means the next prune isn't rate-limited
   }
@@ -217,7 +218,7 @@ export class RunsStore {
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     // Count-only path: hydrate just needs the file count, so skip the per-file
     // stat() that listRunJsonFiles does (mtime is only needed by the prune).
-    const count = await countRunJsonFiles();
+    const count = await countRunJsonFiles(runsDirPath());
     this.snap = { count, hydratedAt: Date.now() };
     return this.snap;
   }
@@ -247,6 +248,10 @@ export class RunsStore {
     try {
       const force = opts?.force === true;
       const now = Date.now();
+      // Capture once: storage configuration can change while the scan awaits.
+      // Never use names collected in one home to delete records in another.
+      const dir = runsDirPath();
+      const stampPath = join(dir, PRUNE_STAMP_NAME);
 
       // Cooldown check + stamp claim run ATOMICALLY under the cross-process
       // file lock — previously two processes could both read a cold stamp and
@@ -258,10 +263,10 @@ export class RunsStore {
       // prune attempt — never throws into the background caller.
       let claimed = false;
       try {
-        withFileLock(pruneStampPath() + '.lock', () => {
-          const lastPrune = readPruneStamp();
+        withFileLock(stampPath + '.lock', () => {
+          const lastPrune = readPruneStamp(stampPath);
           if (!force && lastPrune > 0 && now - lastPrune < RUN_PRUNE_COOLDOWN_MS) return;
-          writePruneStamp(now);
+          writePruneStamp(stampPath, now);
           claimed = true;
         });
       } catch {
@@ -271,7 +276,7 @@ export class RunsStore {
         return { deleted: 0, skipped: true, reason: 'cooldown' };
       }
 
-      const files = await listRunJsonFiles();
+      const files = await listRunJsonFiles(dir);
       const activeIds = Array.isArray(opts?.activeRunIds) ? opts!.activeRunIds! : [];
       const toDelete = computeRunPruneTargets(files, now, activeIds);
 
@@ -281,7 +286,6 @@ export class RunsStore {
         return { deleted: 0, skipped: true, reason: 'within-policy' };
       }
 
-      const dir = runsDirPath();
       let deleted = 0;
       for (let idx = 0; idx < toDelete.length; idx++) {
         try {
@@ -302,9 +306,9 @@ export class RunsStore {
       // reachable concurrently via force=true, but cheap to close).
       const finishedAt = Date.now();
       try {
-        withFileLock(pruneStampPath() + '.lock', () => writePruneStamp(finishedAt));
+        withFileLock(stampPath + '.lock', () => writePruneStamp(stampPath, finishedAt));
       } catch { /* best effort — a missing completion stamp just shortens the next cooldown */ }
-      const remaining = await countRunJsonFiles();
+      const remaining = await countRunJsonFiles(dir);
       this.snap = { count: remaining, hydratedAt: finishedAt };
 
       if (deleted > 0 && process.env.AGON_DEBUG) {

@@ -164,3 +164,5 @@ export { KERNEL_MANAGEMENT_SURFACE_CATALOG } from './kernel-management-surfaces.
 export { createBuiltInProfileDefinition, createReleaseSetupSelection } from './release-setup.js';
 export type { BuiltInProfileId, ReleaseSetupRequest, ReleaseSetupSelection } from './release-setup.js';
 export { AGON_RUNTIME_VERSION } from './runtime-version.js';
+export { createSidechainLogger } from './sidechain-logger.js';
+export type { SidechainEvent, SidechainLogger } from './sidechain-logger.js';

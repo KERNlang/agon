@@ -7,7 +7,7 @@ import type { EngineRegistry } from '../signals/engine-registry.js';
 import { getRatings, seedNewEnginesFromRegistry, updateGlickoRanked } from '../signals/glicko.js';
 import { loadConfig } from '../signals/config.js';
 import { classifyTask } from './task-classifier.js';
-import { createSidechainLogger } from './sidechain-logger.js';
+import { createSidechainLogger } from '@kernlang/agon-kernel';
 
 /** A06-HOST-CAPABILITIES (KL-011): shared CLI/MCP compatibility wiring.
  * Remove when registry, ratings, protocol and log effects have final host owners.

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, writeFileSync, utimesSync, existsSync, rmSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
+import { mkdir, writeFile, utimes } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
@@ -16,18 +17,23 @@ import {
 const DAY = 24 * 60 * 60 * 1000;
 
 /** Create a runs dir + N run-record .json files with explicit ages (ms-old). */
-function seedRuns(
+async function seedRuns(
   agonHome: string,
   specs: Array<{ name: string; ageMs: number }>,
-): string {
+): Promise<string> {
   const runsDir = join(agonHome, 'runs');
-  mkdirSync(runsDir, { recursive: true });
+  await mkdir(runsDir, { recursive: true });
   const now = Date.now();
-  for (const { name, ageMs } of specs) {
-    const fp = join(runsDir, name);
-    writeFileSync(fp, '{}');
-    const ts = new Date(now - ageMs);
-    utimesSync(fp, ts, ts);
+  // Keep every fixture file without blocking on thousands of serial writes.
+  for (let offset = 0; offset < specs.length; offset += 8) {
+    const results = await Promise.allSettled(specs.slice(offset, offset + 8).map(async ({ name, ageMs }) => {
+      const fp = join(runsDir, name);
+      await writeFile(fp, '{}');
+      const ts = new Date(now - ageMs);
+      await utimes(fp, ts, ts);
+    }));
+    const failed = results.find(result => result.status === 'rejected');
+    if (failed?.status === 'rejected') throw failed.reason;
   }
   return runsDir;
 }
@@ -163,7 +169,7 @@ describe('runs-store — maybePrune (fs)', () => {
       name: `run-${String(i).padStart(5, '0')}.json`,
       ageMs: RUN_KEEP_AGE_MS + (i + 1) * DAY, // run-00000 newest of the old, increasing age
     }));
-    const runsDir = seedRuns(testHome, specs);
+    const runsDir = await seedRuns(testHome, specs);
 
     const result = await runsStore.maybePrune({ force: true });
 
@@ -183,7 +189,7 @@ describe('runs-store — maybePrune (fs)', () => {
       name: `c-${String(i).padStart(5, '0')}.json`,
       ageMs: RUN_KEEP_AGE_MS + (i + 1) * DAY,
     }));
-    seedRuns(testHome, specs);
+    await seedRuns(testHome, specs);
 
     const first = await runsStore.maybePrune({ force: true });
     expect(first.deleted).toBe(5);
@@ -196,7 +202,7 @@ describe('runs-store — maybePrune (fs)', () => {
   });
 
   it('is a no-op (within-policy) when nothing exceeds the caps', async () => {
-    seedRuns(testHome, [
+    await seedRuns(testHome, [
       { name: 'a.json', ageMs: 2 * DAY },
       { name: 'b.json', ageMs: 9 * DAY }, // old but well under the soft cap
     ]);
@@ -212,7 +218,7 @@ describe('runs-store — maybePrune (fs)', () => {
       name: `g-${String(i).padStart(5, '0')}.json`,
       ageMs: RUN_KEEP_AGE_MS + (i + 1) * DAY,
     }));
-    seedRuns(testHome, specs);
+    await seedRuns(testHome, specs);
 
     // Fire two forced prunes WITHOUT awaiting the first — the in-process guard
     // (set at method entry, before the await on the async fs scan) must make
@@ -246,7 +252,7 @@ describe('runs-store — snapshot accessor is fs-free', () => {
   });
 
   it('returns the cached count without touching the fs after hydrate', async () => {
-    const runsDir = seedRuns(testHome, [
+    const runsDir = await seedRuns(testHome, [
       { name: 'one.json', ageMs: DAY },
       { name: 'two.json', ageMs: DAY },
       { name: 'three.json', ageMs: DAY },

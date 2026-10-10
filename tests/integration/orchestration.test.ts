@@ -54,7 +54,7 @@ describe('Config Corruption Handling', () => {
 // ── 2. Manifest/History Writes ─────────────────────────────────────
 describe('Manifest Writes', () => {
   it('sidechain logger creates JSONL file and writes events', async () => {
-    const { createSidechainLogger } = await import('../../packages/core/src/blocks/sidechain-logger.js');
+    const { createSidechainLogger } = await import('../../packages/mod-kernel/src/sidechain-logger.js');
     const tempDir = join(tmpdir(), `agon-test-sidechain-${Date.now()}`);
 
     const logger = createSidechainLogger({
@@ -86,7 +86,7 @@ describe('Manifest Writes', () => {
   });
 
   it('sidechain logger child creates nested log', async () => {
-    const { createSidechainLogger } = await import('../../packages/core/src/blocks/sidechain-logger.js');
+    const { createSidechainLogger } = await import('../../packages/mod-kernel/src/sidechain-logger.js');
     const tempDir = join(tmpdir(), `agon-test-sidechain-child-${Date.now()}`);
 
     const parent = createSidechainLogger({
@@ -166,7 +166,7 @@ describe('Nero ↔ Cesar Confidence Transitions', () => {
 // ── 4. Output Directory Creation ───────────────────────────────────
 describe('Output Directory Creation', () => {
   it('sidechain logger creates nested output dirs', async () => {
-    const { createSidechainLogger } = await import('../../packages/core/src/blocks/sidechain-logger.js');
+    const { createSidechainLogger } = await import('../../packages/mod-kernel/src/sidechain-logger.js');
     const tempDir = join(tmpdir(), `agon-test-outdir-${Date.now()}`, 'nested', 'deep');
 
     // Should create the full path without throwing

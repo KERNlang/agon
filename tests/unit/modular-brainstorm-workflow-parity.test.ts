@@ -8,7 +8,7 @@ vi.mock('../../packages/core/src/signals/glicko.js', () => ({
   updateGlickoRanked: (...args: unknown[]) => { effects.records.push(['ratings', ...args]); },
 }));
 vi.mock('../../packages/core/src/blocks/task-classifier.js', () => ({ classifyTask: () => 'code' }));
-vi.mock('../../packages/core/src/blocks/sidechain-logger.js', () => ({
+vi.mock('../../packages/mod-kernel/src/sidechain-logger.js', () => ({
   createSidechainLogger: (options: unknown) => {
     effects.records.push(['logger', options]);
     return { log: (...args: unknown[]) => { effects.records.push(['log', ...args]); } };
@@ -18,7 +18,11 @@ vi.mock('@kernlang/agon-core', async original => ({
   ...await original<object>(),
   ...await import('../../packages/core/src/signals/glicko.js'),
   ...await import('../../packages/core/src/blocks/task-classifier.js'),
-  ...await import('../../packages/core/src/blocks/sidechain-logger.js'),
+  ...await import('../../packages/mod-kernel/src/sidechain-logger.js'),
+}));
+vi.mock('@kernlang/agon-kernel', async original => ({
+  ...await original<object>(),
+  ...await import('../../packages/mod-kernel/src/sidechain-logger.js'),
 }));
 vi.mock('@kernlang/agon-support-panel', async original => ({
   ...await original<object>(),

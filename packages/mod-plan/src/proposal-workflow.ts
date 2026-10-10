@@ -41,3 +41,36 @@ export function publishPlanProposal(args: Record<string, unknown>, host: PlanPro
   host.publish(plan, markdown, path);
   return plan;
 }
+
+export interface PlanRejectionEffects {
+  clearProposal(id: string): void;
+  setActive(plan: null): void;
+  persist(plan: CesarPlan): void;
+  writeMarkdown(plan: CesarPlan): void;
+  cancelled(plan: CesarPlan): void;
+  notify(message: string): void;
+  recordRejection(message: string): void;
+  warn(message: string): void;
+}
+
+/** Preserve the visible rejection even if a best-effort persistence effect fails. */
+export function rejectPlanProposal(pending: CesarPlan | null, host: PlanRejectionEffects): boolean {
+  if (!pending) return false;
+  host.clearProposal(pending.id);
+  const cancelled = cancelCesarPlan(pending);
+  host.setActive(null);
+  try { host.persist(cancelled); }
+  catch (error) { host.warn(`[plan] failed to persist cancelled Cesar plan: ${(error as Error).message ?? error}`); }
+  if (cancelled.planFilePath) {
+    try { host.writeMarkdown(cancelled); }
+    catch (error) { host.warn(`[plan] failed to write cancelled Cesar plan file: ${(error as Error).message ?? error}`); }
+  }
+  host.cancelled(cancelled);
+  host.notify(`Plan rejected — ${cancelled.intent} (${cancelled.id}) cancelled.`);
+  try {
+    host.recordRejection(`[plan rejected] I rejected the proposed plan "${cancelled.intent}" (${cancelled.id}). Do not re-propose that same plan — ask what should change, or act on my next instruction.`);
+  } catch (error) {
+    host.warn(`[plan] failed to record plan rejection in the chat session: ${(error as Error).message ?? error}`);
+  }
+  return true;
+}

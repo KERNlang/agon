@@ -53,3 +53,27 @@ it('preserves core public parser exports as the same physical functions', () => 
   expect(core.patchSummary).toBe(owner.patchSummary);
   expect(core.invertPatch).toBe(owner.invertPatch);
 });
+
+function corePatchImports(text: string): string[] {
+  const file = ts.createSourceFile('subject.ts', text, ts.ScriptTarget.Latest, true);
+  return file.statements.flatMap(statement => {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)
+      || statement.moduleSpecifier.text !== '@kernlang/agon-core') return [];
+    const bindings = statement.importClause?.namedBindings;
+    if (!bindings || !ts.isNamedImports(bindings)) return [];
+    return bindings.elements.map(element => (element.propertyName ?? element.name).text)
+      .filter(name => name === 'applyPatchWithUndo' || name === 'undoPatch');
+  });
+}
+
+it('keeps CLI apply and undo consumers off the legacy core binding', () => {
+  const violations = sourceFiles(join(root, 'packages/cli/src')).flatMap(path =>
+    corePatchImports(readFileSync(path, 'utf8')).map(name => `${path}: ${name}`));
+  expect(violations).toEqual([]);
+});
+
+it('detects renamed imports of legacy patch operations', () => {
+  expect(corePatchImports("import { undoPatch as undo, applyPatchWithUndo } from '@kernlang/agon-core';"))
+    .toEqual(['undoPatch', 'applyPatchWithUndo']);
+  expect(corePatchImports("import { undoPatch } from '@kernlang/agon-support-worktree';")).toEqual([]);
+});

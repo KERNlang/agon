@@ -12,6 +12,6 @@ export function applyPatchWithUndo(cwd: string, patchContent: string): { ok: boo
   return applyWithUndo(cwd, patchContent, getUndoDir());
 }
 
-export function undoPatch(cwd: string, undoToken: string): { ok: boolean; error?: string } {
+export function undoPatch(cwd: string, undoToken: string): ReturnType<typeof undo> {
   return undo(cwd, undoToken, getUndoDir());
 }

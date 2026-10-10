@@ -1,8 +1,9 @@
 
-import { resolveWorkingDir, undoPatch, listSnapshots, revertSnapshot, resumeChatSession, configSet, clearConversation } from '@kernlang/agon-core';
-
+import { resolveWorkingDir, listSnapshots, revertSnapshot, resumeChatSession, configSet, clearConversation } from '@kernlang/agon-core';
+import { undoPatch } from '@kernlang/agon-support-worktree';
 import { runSessionJobAction } from '@kernlang/agon-mod-jobs';
 import { assertProcessSurfaceAvailable } from '../../surface-authority-runtime.js';
+import { persistencePath } from '@kernlang/agon-support-persistence';
 
 import { icons } from '../icons.js';
 
@@ -60,10 +61,11 @@ export async function dispatchMetaIntent(intent: any, input: string, cb: Dispatc
         break;
       }
       if (cb.lastUndoToken) {
-        const undoResult = undoPatch(cwd, cb.lastUndoToken);
+        const undoResult = undoPatch(cwd, cb.lastUndoToken, persistencePath('undo'));
         if (undoResult.ok) {
           cb.dispatch({ type: 'success', message: 'Patch reverted successfully.' });
           cb.setLastUndoToken(null);
+          if (undoResult.warning) cb.dispatch({ type: 'warning', message: undoResult.warning });
         } else {
           cb.dispatch({ type: 'error', message: undoResult.error ?? 'Undo failed' });
         }

@@ -1,7 +1,8 @@
 import { spawnSync } from 'node:child_process';
 
-import { applyPatchWithUndo, copyToClipboard, resolveWorkingDir } from '@kernlang/agon-core';
-import { parsePatch, patchSummary } from '@kernlang/agon-support-worktree';
+import { copyToClipboard, resolveWorkingDir } from '@kernlang/agon-core';
+import { applyPatchWithUndo, parsePatch, patchSummary } from '@kernlang/agon-support-worktree';
+import { persistencePath } from '@kernlang/agon-support-persistence';
 
 import type { Dispatch } from '../handlers/types.js';
 
@@ -25,7 +26,7 @@ export function handleReviewAction(action: ReviewAction, review: ReviewState, di
       const summary = patchSummary(files);
       dispatch({ type: 'info', message: summary });
   
-      const result = applyPatchWithUndo(resolveWorkingDir(), review.patchContent);
+      const result = applyPatchWithUndo(resolveWorkingDir(), review.patchContent, persistencePath('undo'));
       if (result.ok) {
         dispatch({ type: 'success', message: `Patch applied from ${review.winnerId}` });
         if (result.undoToken) {

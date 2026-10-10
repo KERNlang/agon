@@ -915,7 +915,7 @@ export function App() {
         lastReviewResultRef.current = value;
         setLastReviewResult(value);
       },
-      setCurrentPlan, setActiveAbort: trackAbort,
+      setCurrentPlan, setLastUndoToken, setActiveAbort: trackAbort,
       askQuestion, cesarSession, setCesarSession: setCesarSessionWrapped,
       explorationMode, setExplorationMode,
       neroMode, setNeroMode,
@@ -1065,7 +1065,7 @@ export function App() {
       setPendingImages, setSessionEngines, setEnginePickerOpen, setModelPickerOpen, setModelPickerEntries, setModelPickerLoading, setCesarPickerOpen, setModPickerOpen, setModPickerView, setChatSession, setLastUndoToken, setModelPickerTargetEngine, setModelPickerInitialFilter, setModelPickerTitle, setModelPickerCliGroups, setExplorationMode, setNeroMode,
       dispatch, buildContext, sendBtwMessage, handleSubmit, transition, setActivePlanWrapped, askQuestion, bell,
     }, value);
-  }, [replState,dispatch,buildContext,mode,pendingImages,jobManager,commandRegistry,eventBus,planModeQueued,autoModeQueued,permissionMode,applyPermissionMode,setPersistentAutoMode,setActivePlanWrapped,outputBlocks,btwPanel,sendBtwMessage,pendingBellRef,awaitingPlanAnnouncedRef]);
+  }, [replState,dispatch,buildContext,mode,pendingImages,jobManager,commandRegistry,eventBus,planModeQueued,autoModeQueued,permissionMode,applyPermissionMode,setPersistentAutoMode,setActivePlanWrapped,outputBlocks,btwPanel,sendBtwMessage,pendingBellRef,awaitingPlanAnnouncedRef,lastUndoToken]);
 
   const handleReviewActionCb = useCallback((action:'apply'|'edit'|'reject'|'copy') => {
     if (!reviewEvent) {

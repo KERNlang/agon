@@ -221,6 +221,7 @@ export const MANIFEST = validateManifest({
       "dist/implementation.d.ts",
       "dist/approval-policy.d.ts",
       "dist/cost-estimator.d.ts",
+      "dist/execution-callbacks.d.ts",
       "dist/execution-coordinator.d.ts",
       "dist/execution-model.d.ts",
       "dist/execution-state.d.ts",
@@ -512,6 +513,8 @@ export { buildResumePromptContext, skipCompletedSteps, prepareCesarPlanResume } 
 export type { ResumePromptContext } from './resume-policy.js';
 export { runPlanResumeApproval } from './resume-workflow.js';
 export type { PlanResumeApprovalEffects } from './resume-workflow.js';
+export { createPlanCallbacks } from './execution-callbacks.js';
+export type { PlanCallbackEvent, PlanCallbackHost, PlanCallbacks } from './execution-callbacks.js';
 export { createPlanCoordinator, failedPlanStepIsFallbackRetryable, preparePlanFallbackRetry } from './execution-coordinator.js';
 export type { PlanCoordinatorHost } from './execution-coordinator.js';
 export { getCesarPlansDir, cesarPlanJsonPath, cesarPlanMarkdownPath, saveCesarPlan, loadCesarPlan, listCesarPlans } from './execution-store.js';

@@ -6,7 +6,7 @@ import { join, relative, sep, isAbsolute } from 'node:path';
 
 import { GitError, WorktreeError } from '../models/errors.js';
 
-import { normalizePatchContent } from '../utils/patch.js';
+import { normalizePatchContent } from '@kernlang/agon-support-worktree';
 
 import { hostCreateSet, hostRegexSplit } from './host-runtime.js';
 

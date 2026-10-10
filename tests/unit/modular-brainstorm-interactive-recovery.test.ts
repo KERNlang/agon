@@ -1,17 +1,19 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import type { BrainstormResult } from '@kernlang/agon-mod-brainstorm';
 
 const mocks = vi.hoisted(() => ({ execute: vi.fn(), complete: vi.fn(), fail: vi.fn() }));
 vi.mock('../../packages/cli/src/surface-authority-runtime.js', async importOriginal => ({
   ...await importOriginal<object>(), executeProcessCesarRoute: mocks.execute,
 }));
-vi.mock('../../packages/cli/src/blocks/brainstorm-session-record.js', () => ({
+vi.mock('@kernlang/agon-mod-brainstorm', async original => ({
+  ...await original<object>(),
   createBrainstormSessionRecord: () => ({ complete: mocks.complete, fail: mocks.fail }),
 }));
 import { runPhysicalCesarWorkflow } from '../../packages/cli/src/signals/dispatch/cesar-router.js';
 
 beforeEach(() => { vi.resetAllMocks(); vi.useFakeTimers(); });
 afterEach(() => { vi.useRealTimers(); });
-const result = { winner: 'codex', response: 'recovered answer', bids: [
+const result: BrainstormResult = { question: 'second', winner: 'codex', response: 'recovered answer', bids: [
   { engineId: 'codex', approach: 'fixture approach', reasoning: 'fixture reasoning', score: 71, confidence: 80 },
 ] };
 const callbacks = () => ({ dispatch: vi.fn(), ctx: { activeEngines: () => ['codex'], chatSession: { id: 'fixture' } } });

@@ -163,6 +163,7 @@ export const MANIFEST = validateManifest({
       "dist/runtime.d.ts",
       "dist/scout.d.ts",
       "dist/session-record.d.ts",
+      "dist/session-workflow.d.ts",
       "dist/workflow.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
@@ -287,5 +288,8 @@ export type { BrainstormWorkflowOptions, BrainstormWorkflowServices, BrainstormD
 export { createBrainstormSessionRecord } from './session-record.js';
 export { createBrainstormPresentation } from './presentation.js';
 export type { BrainstormPresentationHost, BrainstormPresentationEvent, BrainstormProgress } from './presentation.js';
-export type { BrainstormResult } from './result.js';
 export type { BrainstormSessionEffects, BrainstormSessionResult } from './session-record.js';
+export { runBrainstormSession } from './session-workflow.js';
+export { parseBrainstormResult } from './result.js';
+export type { BrainstormResult } from './result.js';
+export type { BrainstormSessionHost, BrainstormSessionCommandResult, BrainstormSessionExecutionContext } from './session-workflow.js';

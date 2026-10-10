@@ -44,6 +44,7 @@ vi.mock('../../packages/forge/src/dedup-bridge.js', async () => ({
 import { runBrainstorm, runScout } from '../../packages/forge/src/brainstorm.js';
 import { runBrainstorm as legacy, runScout as legacyScout } from '../fixtures/modular-brainstorm-workflow-legacy.js';
 import { runBrainstorm as generated } from '../../packages/mod-brainstorm/src/implementation.js';
+import { parseBrainstormResult } from '../../packages/mod-brainstorm/src/result.js';
 import { createBrainstormHostServices } from '../../packages/core/src/blocks/brainstorm-host.js';
 import type { BrainstormModServices } from '../../packages/mod-brainstorm/src/host.js';
 afterEach(() => { vi.restoreAllMocks(); effects.quarantine = false; effects.partial = false; effects.dedupThrows = false; });
@@ -81,6 +82,7 @@ it.each(['divergent', 'grounded', 'empty-synthesis', 'failed-synthesis', 'throw-
         const response = await generated({ question: 'build fixture', engines: 'a,b', timeout: 1,
           style: scenario === 'grounded' ? 'grounded' : 'divergent' }, context, services);
         if (response.exitCode !== 0) throw new Error(response.stderr?.trim());
+        expect(parseBrainstormResult(response.result)).toBe(response.result);
         return { result: response.result, calls, events, records: effects.records };
       }
       const result = await run({ question: 'build fixture', engines: ['a', 'b'], style: scenario === 'grounded' ? 'grounded' : undefined,

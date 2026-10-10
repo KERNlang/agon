@@ -161,6 +161,7 @@
       "dist/runtime.d.ts",
       "dist/scout.d.ts",
       "dist/session-record.d.ts",
+      "dist/session-workflow.d.ts",
       "dist/workflow.d.ts",
       "ownership.json",
       "schemas/config.schema.json"

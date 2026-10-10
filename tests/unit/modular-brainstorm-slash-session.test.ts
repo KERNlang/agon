@@ -1,14 +1,15 @@
 import { beforeEach, expect, it, vi } from 'vitest';
+import type { BrainstormResult } from '@kernlang/agon-mod-brainstorm';
 const mocks = vi.hoisted(() => ({ create: vi.fn(), complete: vi.fn(), fail: vi.fn(), scan: vi.fn() }));
 vi.mock('@kernlang/agon-core', async importOriginal => ({ ...await importOriginal<object>(), scanProjectContext: mocks.scan }));
-vi.mock('../../packages/cli/src/blocks/brainstorm-session-record.js', () => ({ createBrainstormSessionRecord: mocks.create }));
+vi.mock('@kernlang/agon-mod-brainstorm', async original => ({ ...await original<object>(), createBrainstormSessionRecord: mocks.create }));
 import { runPhysicalTuiContribution } from '../../packages/cli/src/signals/dispatch/intent-session.js';
 
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.create.mockReturnValue({ complete: mocks.complete, fail: mocks.fail });
 });
-const result = { winner: 'fixture', response: 'readable answer', bids: [
+const result: BrainstormResult = { question: 'Question', winner: 'fixture', response: 'readable answer', bids: [
   { engineId: 'fixture', reasoning: 'why', approach: 'how', score: 71, confidence: 80 },
 ] };
 const callbacks = () => ({ dispatch: vi.fn(), ctx: { config: {}, activeEngines: () => ['fixture'], chatSession: { id: 'session' } } });

@@ -26,6 +26,8 @@ export interface BrainstormSessionEffects<Receipt> {
     durationMs: number; engineIds: string[]; completionState: 'completed' | 'aborted' | 'crashed';
   }): Receipt;
   formatSummary(receipt: Receipt): string | undefined;
+  /** Report optional summary failures without changing the saved receipt. */
+  warn?(message: string): void;
 }
 
 /** Owns recording order and settlement. Host effects bind storage and UI state.
@@ -80,7 +82,12 @@ export function createBrainstormSessionRecord<Receipt>(options: {
       const record = effects.recordRun({ id: runId, mode: 'brainstorm', intent: question, winner: result.winner,
         success: true, durationMs: effects.now() - startedAt, engineIds: engines, completionState: 'completed' });
       settled = true;
-      return effects.formatSummary(record);
+      try { return effects.formatSummary(record); }
+      catch {
+        try { effects.warn?.('Brainstorm receipt saved, but its summary could not be formatted.'); }
+        catch { /* A diagnostic failure must not change the saved outcome. */ }
+        return undefined;
+      }
     },
     fail,
   };

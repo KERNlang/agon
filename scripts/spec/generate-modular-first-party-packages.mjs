@@ -140,7 +140,7 @@ function expectedFiles(packageRecord) {
   if (short === 'jobs') inferredPermissions.add('state.write');
   const physicalPackFiles = isPhysical ? ['dist/implementation.d.ts', ...(short === 'rag' ? ['dist/store.d.ts', 'dist/types.d.ts', 'dist/grounding.d.ts']
     : short === 'think' ? ['dist/thinking.d.ts']
-    : short === 'brainstorm' ? ['dist/collector.d.ts', 'dist/host.d.ts', 'dist/policy.d.ts', 'dist/presentation.d.ts', 'dist/result.d.ts', 'dist/runtime.d.ts', 'dist/scout.d.ts', 'dist/session-record.d.ts', 'dist/workflow.d.ts']
+    : short === 'brainstorm' ? ['dist/collector.d.ts', 'dist/host.d.ts', 'dist/policy.d.ts', 'dist/presentation.d.ts', 'dist/result.d.ts', 'dist/runtime.d.ts', 'dist/scout.d.ts', 'dist/session-record.d.ts', 'dist/session-workflow.d.ts', 'dist/workflow.d.ts']
     : short === 'jobs' ? ['dist/daemon-controller.d.ts', 'dist/cli-projection.d.ts', 'dist/cli-invocation.d.ts', 'dist/cli-client.d.ts', 'dist/cli-contract.d.ts', 'dist/daemon-contract.d.ts', 'dist/daemon-job-router.d.ts', 'dist/daemon-workflow.d.ts', 'dist/job-service.d.ts', 'dist/mcp-contract.d.ts', 'dist/persisted-job-service.d.ts', 'dist/session-jobs.d.ts', 'dist/workflow-process.d.ts']
     : short === 'routing-docs' ? ['dist/guide-content.d.ts']
     : short === 'worktrees' ? ['dist/runtime.d.ts', 'dist/workspaces.d.ts']
@@ -281,8 +281,11 @@ export type { BrainstormWorkflowOptions, BrainstormWorkflowServices, BrainstormD
 export { createBrainstormSessionRecord } from './session-record.js';
 export { createBrainstormPresentation } from './presentation.js';
 export type { BrainstormPresentationHost, BrainstormPresentationEvent, BrainstormProgress } from './presentation.js';
-export type { BrainstormResult } from './result.js';
 export type { BrainstormSessionEffects, BrainstormSessionResult } from './session-record.js';
+export { runBrainstormSession } from './session-workflow.js';
+export { parseBrainstormResult } from './result.js';
+export type { BrainstormResult } from './result.js';
+export type { BrainstormSessionHost, BrainstormSessionCommandResult, BrainstormSessionExecutionContext } from './session-workflow.js';
 ` : short === 'tribunal' ? `export { runTribunal } from './implementation.js';
 ` : short === 'review' ? `export { runReview } from './implementation.js';
 ` : short === 'agent' ? `export { runAgentTask } from './implementation.js';

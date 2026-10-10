@@ -445,6 +445,41 @@ it('cancels an outstanding cooperative backend after generation revocation', asy
   expect(result.result).toMatchObject({ status: 'failure', error: expect.stringContaining('restart') });
 });
 
+it.each(['agent', 'team-agent'])('revokes the retained %s callback and cleans up its monitor', async type => {
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  let entered!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  let observedSignal: AbortSignal | undefined;
+  let refusal: (() => string | undefined) | undefined;
+  const parent = new AbortController();
+  const intervals = vi.spyOn(globalThis, 'setInterval');
+  const clear = vi.spyOn(globalThis, 'clearInterval');
+  const add = vi.spyOn(parent.signal, 'addEventListener');
+  const remove = vi.spyOn(parent.signal, 'removeEventListener');
+  effects.other.mockImplementationOnce((_task, _dispatch, _ctx, options) => new Promise((_resolve, reject) => {
+    observedSignal = options.parentSignal;
+    refusal = options.executionRefusal;
+    observedSignal!.addEventListener('abort', () => reject(observedSignal!.reason), { once: true });
+    entered();
+  }));
+  const pending = buildStepExecutors(context())[type].execute(step(type), {}, parent.signal);
+  await started;
+  expect(refusal).toEqual(expect.any(Function));
+  expect(refusal!()).toBeUndefined();
+  await install('agon.agent');
+  const result = await pending;
+  expect(observedSignal?.aborted).toBe(true);
+  expect(parent.signal.aborted).toBe(false);
+  expect(refusal!()).toMatch(/restart|unavailable/);
+  expect(result.result).toMatchObject({ status: 'failure', error: expect.stringMatching(/restart|unavailable/) });
+  expect(result).not.toHaveProperty('contextExport');
+  expect(intervals).toHaveBeenCalledOnce();
+  expect(clear).toHaveBeenCalledWith(intervals.mock.results[0].value);
+  expect(add).toHaveBeenCalledOnce();
+  expect(remove).toHaveBeenCalledWith('abort', add.mock.calls[0][1]);
+});
+
 it.each([false, true])('rejects a captured adapter after disposal (restart=%s)', async restart => {
   await install();
   await initializeProcessSurfaceAuthority(root);

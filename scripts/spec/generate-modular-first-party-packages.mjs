@@ -250,6 +250,8 @@ export type { PlanStepEstimator } from './step-validation.js';
 export { formatCesarPlanMarkdown, formatStepType } from './formatter.js';
 export { createPanelStepExecutors, buildPlanStepContext, resolvePlanStepEngines } from './panel-step-execution.js';
 export { createSelfStepExecutor } from './self-step-execution.js';
+export { createAgentReviewStepExecutors } from './agent-review-step-execution.js';
+export type { PlanAgentReviewHost, PlanAgentReviewStepType, PlanAgentStepOutcome } from './agent-review-step-execution.js';
 export type { PlanSelfStepHost, PlanSelfEvent, PlanSelfNotice } from './self-step-execution.js';
 export type { PlanPanelStepHost, PlanPanelStepType } from './panel-step-execution.js';
 export { createPlanExecutor, getReadySteps } from './executor.js';

@@ -17,6 +17,9 @@ vi.mock('../../packages/forge/src/quality.js', () => ({
 }));
 
 const tempDirs: string[] = [];
+// This suite checks finalize policy, not subprocess speed. Keep fitness within
+// the test budget without treating full-suite scheduling delay as cancellation.
+const FITNESS_TIMEOUT_SECONDS = 5;
 
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
@@ -34,7 +37,7 @@ function makeRepo(): string {
     forgeRequireBaselineCheck: false,
     forgeEnableSynthesis: false,
     forgeDispatchTimeout: 480,
-    forgeFitnessTimeout: 1,
+    forgeFitnessTimeout: FITNESS_TIMEOUT_SECONDS,
   }, null, 2));
   execFileSync('git', ['init'], { cwd: dir });
   execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: dir });
@@ -320,7 +323,7 @@ describe('caller-driven forge finalize', () => {
       forgeRequireBaselineCheck: false,
       forgeEnableSynthesis: false,
       forgeDispatchTimeout: 480,
-      forgeFitnessTimeout: 1,
+      forgeFitnessTimeout: FITNESS_TIMEOUT_SECONDS,
       forgeEarlyFinalizeEnabled: true,
       forgeEarlyFinalizePassingCount: 3,
       forgeEarlyFinalizeMinScore: 50,
@@ -458,7 +461,10 @@ describe('caller-driven forge finalize', () => {
     // All 4 engines should have published — none aborted.
     expect(Object.keys(manifest.results).sort()).toEqual(['e1', 'e2', 'e3', 'e4']);
     for (const id of ids) {
-      expect(manifest.results[id].pass, `${id} should have completed`).toBe(true);
+      const result = manifest.results[id];
+      const fitnessLog = result.fitnessLogPath ? readFileSync(result.fitnessLogPath, 'utf8') : '';
+      expect(result.engineCompleted, `${id} dispatch must complete`).toBe(true);
+      expect(result.pass, `${id} should have completed: ${JSON.stringify(result)}\n${fitnessLog}`).toBe(true);
     }
   }, 15_000);
 });

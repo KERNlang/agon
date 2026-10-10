@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -24,6 +24,20 @@ afterEach(() => {
 });
 
 describe('physical patch backend ownership', () => {
+  it.each(['', '.', '..', '../outside', 'sub/file', 'sub\\file', 'undo-1\n', 'undo-1\r', 'undo-1\0'])('rejects invalid undo token %j before artifact lookup', token => {
+    expect(physical.undoPatch('/unused', token, '/unused')).toStrictEqual({ ok: false, error: 'Invalid undo token.' });
+  });
+  it.each(['../outside', 'symlink'])('rejects undo artifacts outside its directory: %s', token => {
+    const cwd = fixture();
+    const artifacts = mkdtempSync(join(tmpdir(), 'agon-undo-containment-'));
+    roots.push(artifacts);
+    const undoDir = join(artifacts, 'undo');
+    mkdirSync(undoDir);
+    writeFileSync(join(artifacts, 'outside.patch'), patch);
+    if (token === 'symlink') symlinkSync(join(artifacts, 'outside.patch'), join(undoDir, 'symlink.patch'));
+    expect(physical.undoPatch(cwd, token, undoDir).ok).toBe(false);
+    expect(readFileSync(join(cwd, 'file.txt'), 'utf8')).toBe('before\n');
+  });
   it('exposes the actual backend through the support package, not a second core implementation', () => {
     expect(physical).toHaveProperty('preflightApply', preflightApply);
     expect(physical).toHaveProperty('applyPatchToTree', applyPatchToTree);

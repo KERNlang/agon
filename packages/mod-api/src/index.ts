@@ -231,6 +231,13 @@ export interface RunRecordHostServices {
   writeArtifact(handle: RunRecordHandle, relativePath: string, content: string, context: InvocationContext): Awaitable<void>;
 }
 
+export type JobToolName = 'JobSubmit' | 'JobList' | 'JobStatus' | 'JobEvents' | 'JobResult' | 'JobCancel';
+
+/** Transport to the existing daemon. The Jobs mod owns the tool contract. */
+export interface JobsHostServices {
+  runTool(name: JobToolName, input: Readonly<Record<string, Json>>, context: InvocationContext): Awaitable<string>;
+}
+
 export type EngineRatingScope = 'forge' | 'brainstorm' | 'tribunal' | 'critique';
 export interface RankedEngine {
   readonly engineId: string;
@@ -255,6 +262,8 @@ export interface ModServices {
   readonly engines: {
     dispatch(engineId: string, prompt: string, context: InvocationContext, options?: EngineDispatchOptions): Awaitable<Json>;
     listActive?(context: InvocationContext): Awaitable<readonly string[]>;
+    /** Resolve explicit IDs and aliases. Reject removed or unavailable engines. */
+    resolveRequested?(engineIds: readonly string[], context: InvocationContext): Awaitable<readonly string[]>;
     rank?(engineIds: readonly string[], scopes: readonly EngineRatingScope[], context: InvocationContext): Awaitable<readonly RankedEngine[]>;
   };
   /** Present only for trusted bundled browser integration. Folder mods never receive it. */
@@ -265,6 +274,8 @@ export interface ModServices {
   readonly workspace?: WorkspaceHostServices;
   /** Present only for bundled workflows that participate in the legacy run ledger. */
   readonly runs?: RunRecordHostServices;
+  /** Bundled Jobs transport only. It does not grant arbitrary process execution. */
+  readonly jobs?: JobsHostServices;
 }
 
 export interface AgonModV1 {

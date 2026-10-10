@@ -25,7 +25,7 @@ import { asLiveTodos } from '../signals/todos.js';
 
 import { parseAskMarker } from './ask-marker.js';
 
-import { ensureCesarSession, buildCesarSystemPrompt, resolveCesarBackend, renderToolPermissionCommand } from './session.js';
+import { ensureCesarSession, buildCesarSystemPrompt, resolveCesarBackend, renderToolPermissionCommand, captureToolRefusal } from './session.js';
 
 import { enforceContextBudget } from './context-budget.js';
 
@@ -142,14 +142,40 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
   return { delegated: false, responded: true, decisionReason: 'suggestion-cancelled', ...telemetry ?? {} };
 }
 
-export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<CesarTurnOutcome> {
+export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[], parentSignal?: AbortSignal, assertOwnerAvailable?: () => void): Promise<CesarTurnOutcome> {
+  parentSignal?.throwIfAborted();
+  assertOwnerAvailable?.();
+  const abort = new AbortController();
+  const cancel = () => abort.abort(parentSignal?.reason);
+  parentSignal?.addEventListener('abort', cancel, { once: true });
+  if (parentSignal?.aborted) cancel();
+  try {
+    abort.signal.throwIfAborted();
+    return await runCesarBrain(input, dispatch, ctx, images, abort, !parentSignal, assertOwnerAvailable);
+  } finally {
+    parentSignal?.removeEventListener('abort', cancel);
+  }
+}
+
+async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images: ImageAttachment[] | undefined, abort: AbortController, ownsActiveAbort: boolean, assertOwnerAvailable?: () => void): Promise<CesarTurnOutcome> {
+  let _runtimeHost: any = null;
+  let _turnRuntime: any = null;
+  const assertExecutionAvailable = (): void => {
+    abort.signal.throwIfAborted();
+    if (_turnRuntime && (ctx.cesarRuntimeHost !== _runtimeHost || _runtimeHost.active !== _turnRuntime || _turnRuntime.terminalAccepted)) {
+      const error = new Error('DENIED: Owning workflow turn is no longer active.');
+      abort.abort(error);
+      throw error;
+    }
+    try { assertOwnerAvailable?.(); }
+    catch (error) { abort.abort(error); throw error; }
+  };
   if (sessionCleanupFailed(ctx.cesarSession)) {
     dispatch({ type: 'warning', message: SESSION_CLEANUP_FAILURE_MESSAGE });
     return { terminalState: 'failed', decisionReason: 'session-cleanup-failed', delegated: false, responded: false };
   }
   // Retain the entry session across awaits: detachment does not erase a failure.
   const _entrySession = ctx.cesarSession;
-  const abort = new AbortController();
       const _turnStart = Date.now();
       const _turnId = createCesarTurnId();
       let _turnTerminalState: 'completed' | 'failed' | 'timed_out' = 'completed';
@@ -577,7 +603,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               }
               ctx.cesar!.queue = null;
             }
-            ctx.setActiveAbort(null);
+            if (ownsActiveAbort) ctx.setActiveAbort(null);
             dispatch({ type: 'warning', message: `Recovered a stale Cesar turn after ${Math.round(busyAge / 1000)}s; starting with a fresh lease.` });
           }
         }
@@ -614,18 +640,17 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       ctx.cesar!.readSpiralNoted = false;
       ctx.cesar!.turnIntakeKind = undefined;
       ctx.cesar!.turnId = _turnId;
-      let _runtimeHost: any = null;
-      let _turnRuntime: any = null;
       const _brainStartMs = Date.now();
 
       try {
         _runtimeHost = ctx.cesarRuntimeHost ?? createCesarTurnRuntimeHost(ctx.chatSession.id);
         ctx.cesarRuntimeHost = _runtimeHost;
-        _turnRuntime = beginCesarTurn(_runtimeHost, _turnId, 'cesar-brain');
+        _turnRuntime = beginCesarTurn(_runtimeHost, _turnId, 'cesar-brain', undefined, assertExecutionAvailable);
         ctx.cesar!.planDispatch = dispatch;
         // Claim the steering channel only after the runtime lease exists.
         markSteeringTurn(_turnId);
         if (ctx.eventBus) await ctx.eventBus.emit('pre:cesar-brain', { input });
+        assertExecutionAvailable();
         ensureAgonHome();
         const config = ctx.config;
         const harnessProfile = resolveCesarHarnessProfile(ctx);
@@ -715,7 +740,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         }
 
         const color = ENGINE_COLORS[cesarEngineId] ?? 124;
-        ctx.setActiveAbort(abort);
+        if (ownsActiveAbort) ctx.setActiveAbort(abort);
         // Expose this turn's abort signal on the shared cesar state so a message
         // submitted during teardown can tell "Cesar is busy working" apart from
         // "Cesar was just interrupted" — without a listener (cleared in finally).
@@ -752,15 +777,20 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             return { turnId: _turnId, terminalState: 'failed', delegated: false, responded: false };
           }
         } catch { /* budget gate must never break a turn */ }
+        assertExecutionAvailable();
 
         // Cleanup can fail while the gate or acquisition awaits (telemetry
         // handoff, compaction). Refuse before any replacement session send or
         // adapter fallback; the router's outer guard cannot retract a launch.
+        let _cleanupRefusalWarned = false;
         const hasCleanupFailure = (candidate?: PersistentSession): boolean =>
           [_entrySession, ctx.cesarSession, candidate].some(sessionCleanupFailed);
         const refuseAfterCleanupFailure = (candidate?: PersistentSession): CesarTurnOutcome | null => {
           if (!hasCleanupFailure(candidate)) return null;
-          dispatch({ type: 'warning', message: SESSION_CLEANUP_FAILURE_MESSAGE });
+          if (!_cleanupRefusalWarned) {
+            _cleanupRefusalWarned = true;
+            dispatch({ type: 'warning', message: SESSION_CLEANUP_FAILURE_MESSAGE });
+          }
           _turnTerminalState = 'failed';
           return { turnId: _turnId, terminalState: 'failed', decisionReason: 'session-cleanup-failed', delegated: false, responded: false };
         };
@@ -771,7 +801,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         let session: PersistentSession;
         try {
           session = await ensureCesarSession(ctx);
+          assertExecutionAvailable();
         } catch (err) {
+          assertExecutionAvailable();
           const _refusedAcquisition = refuseAfterCleanupFailure();
           if (_refusedAcquisition) return _refusedAcquisition;
           const errMsg = err instanceof Error ? err.message : String(err);
@@ -803,21 +835,24 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             // and forces a single-pass text answer — exactly why agy could not run tools
             // as Cesar. Fall back to 'exec' for engines without an agent mode (no regression).
             const fallbackMode = ((engine as any)?.agent ? 'agent' : 'exec') as any;
+            assertExecutionAvailable();
             const freshResult = await ctx.adapter.dispatch({
               engine, prompt: primedPrompt, cwd: resolveWorkingDir(), mode: fallbackMode,
               timeout: config.timeout ?? 120, outputDir, signal: abort.signal, systemPrompt: buildCesarSystemPrompt(ctx),
             });
+            // Usage already incurred remains evidence even when publication is refused.
+            if (freshResult.usage && freshResult.usage.totalTokens > 0) {
+              tracker.record(cesarEngineId, { usage: freshResult.usage });
+            } else if (freshResult.stdout.trim()) {
+              tracker.record(cesarEngineId, { prompt: input, response: freshResult.stdout.trim() });
+            }
+            assertExecutionAvailable();
             const refusedResult = refuseAfterCleanupFailure();
             if (refusedResult) return refusedResult;
             dispatch({ type: 'spinner-stop' });
             if (freshResult.stdout.trim()) {
               dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: freshResult.stdout.trim() });
               appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: freshResult.stdout.trim(), timestamp: new Date().toISOString() });
-              if (freshResult.usage && freshResult.usage.totalTokens > 0) {
-                tracker.record(cesarEngineId, { usage: freshResult.usage });
-              } else {
-                tracker.record(cesarEngineId, { prompt: input, response: freshResult.stdout.trim() });
-              }
               return { turnId: _turnId, terminalState: 'completed', delegated: false, responded: true };
             }
             // Empty stdout — persist the user turn idempotently so the next
@@ -848,6 +883,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             _turnTerminalState = 'failed';
             return { turnId: _turnId, terminalState: 'failed', delegated: false, responded: false };
           } catch { /* truly failed */ }
+          assertExecutionAvailable();
           const refusedFallback = refuseAfterCleanupFailure();
           if (refusedFallback) return refusedFallback;
           dispatch({ type: 'spinner-stop' });
@@ -890,19 +926,24 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         // Every provider send funnels through here, so this is the one mid-turn
         // cleanup boundary: a judge or handoff can fail a session while the turn
         // streams. Abort first so each send site unwinds as a cancellation.
-        let _cleanupRefusalWarned = false;
+        const toolExecutionRefusal = captureToolRefusal(ctx);
         const _refuseSendAfterCleanupFailure = (): void => {
-          if (![_entrySession, ctx.cesarSession, session].some(sessionCleanupFailed)) return;
-          if (!_cleanupRefusalWarned) {
-            _cleanupRefusalWarned = true;
-            dispatch({ type: 'warning', message: SESSION_CLEANUP_FAILURE_MESSAGE });
-          }
-          _turnTerminalState = 'failed';
+          if (!refuseAfterCleanupFailure(session)) return;
           abort.abort();
           throw new Error(SESSION_CLEANUP_FAILURE_MESSAGE);
         };
-        const _cesarSend = (opts: any) => {
+        const assertSendAvailable = (): void => {
+          assertExecutionAvailable();
           _refuseSendAfterCleanupFailure();
+          const refusal = toolExecutionRefusal();
+          if (refusal !== undefined) {
+            const error = new Error(refusal);
+            abort.abort(error);
+            throw error;
+          }
+        };
+        const _cesarSend = (opts: any) => {
+          assertSendAvailable();
           const _inner = session.send({
             gateMatchers: _gate.matchers,
             shouldYield: () => hasPendingSteering(_turnId),
@@ -910,10 +951,14 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             controlPlane: nextCesarResponseSeq(_turnRuntime),
           });
           const _wrapped = async function* () {
+            assertSendAvailable();
             for await (const chunk of _inner) {
+              assertSendAvailable();
               _noteDoneChunk(chunk);
               yield chunk;
+              assertSendAvailable();
             }
+            assertSendAvailable();
           };
           return _wrapped();
         };
@@ -1320,6 +1365,14 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   input: reqArgs,
                 });
               };
+              const denyInactiveMcpPermission = (): boolean => {
+                const reason = toolExecutionRefusal();
+                if (reason === undefined) return false;
+                logMcpApproval('blocked', 'mcp.turn-authority', reason);
+                writeFileSync(respPath, JSON.stringify({ type: 'permission-response', id: req.id, approved: false, reason }));
+                return true;
+              };
+              if (denyInactiveMcpPermission()) continue;
               // Unified resolver decision — same seam as the native preflight and
               // buildOnApproval: deny-all kill switch first, then CC-parity rules
               // (deny always wins, F2/F3-hardened), the turn's task lease, allow
@@ -1384,6 +1437,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 catch { /* diff is best-effort — fall back to command preview */ }
               }
               dispatch({ type: 'permission-ask', tool: req.tool, command: askCommand, reason: askReason, diffPreview: permDiffPreview && Array.isArray(permDiffPreview.files) ? permDiffPreview : undefined, fallbackNote: permDiffPreview && typeof permDiffPreview.fallback === 'string' ? permDiffPreview.fallback : undefined, resolve: (approved: boolean | string) => {
+                if (denyInactiveMcpPermission()) return;
                 const wasApproved = isApprovedPermissionResponse(approved);
                 logMcpApproval(wasApproved ? 'approved' : 'denied', 'mcp.user-prompt', wasApproved ? 'user approved' : 'user denied');
                 // Rule persistence for Always/Never is owned by the permission
@@ -1558,7 +1612,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 const eagerMeta = withEagerToolCallId(meta, fallbackId);
                 if (!claimEagerToolExecution(_claimedEagerToolCallIds, eagerMeta.toolCallId)) continue;
                 dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'running' } as any, { toolCallId: eagerMeta.toolCallId as string, eager: true });
-                if (!eagerToolCtx) eagerToolCtx = createEagerToolContext(ctx, config, abort.signal, dispatch);
+                if (!eagerToolCtx) eagerToolCtx = createEagerToolContext(ctx, config, abort.signal, dispatch, toolExecutionRefusal);
                 const eagerPromise = executeEagerTool(toolName, eagerMeta, toolRegistry, eagerToolCtx, dispatch, cesarEngineId);
                 eagerPromises.push(fallbackKey
                   ? eagerPromise.finally(() => {
@@ -1871,7 +1925,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 if (shouldRunEagerRepairTool(toolName, meta, failedTools, repairUsed)) {
                   repairUsed.push(toolName);
                   dispatch({ type: 'spinner-update', message: `Cesar: retrying ${toolName} with corrected input…` });
-                  if (!eagerToolCtx) eagerToolCtx = createEagerToolContext(ctx, config, abort.signal, dispatch);
+                  if (!eagerToolCtx) eagerToolCtx = createEagerToolContext(ctx, config, abort.signal, dispatch, toolExecutionRefusal);
                   repairResults.push(await executeEagerTool(toolName, meta, toolRegistry, eagerToolCtx, dispatch, cesarEngineId));
                   continue;
                 }
@@ -2097,7 +2151,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             reason: taskActionApprovalMessage(evaluation),
             diffPreview: diffPreview && Array.isArray(diffPreview.files) ? diffPreview : undefined,
             fallbackNote: diffPreview && typeof diffPreview.fallback === 'string' ? diffPreview.fallback : undefined,
-            resolve: (approved: boolean | string) => resolve(isApprovedPermissionResponse(approved)),
+            resolve: (approved: boolean | string) => resolve(toolExecutionRefusal() === undefined && isApprovedPermissionResponse(approved)),
           } as any);
         });
         const authorizeXmlTaskAction = async (tool: string, args: Record<string, unknown>): Promise<boolean | string> => {
@@ -2113,6 +2167,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         };
         const toolCtx: ToolContext = {
               cwd, readFileState: (fileStateCache as any).cache, abortSignal: abort.signal,
+              executionRefusal: toolExecutionRefusal,
               permissionMode: (config as any).permissionMode ?? 'ask', explorationMode,
               allowedCommands: (config as any).allowedCommands ?? [], toolPermissions: (config as any).toolPermissions ?? {},
               onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }),
@@ -2152,7 +2207,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           return new Promise<boolean>((resolve) => {
             let command = '';
             try { command = renderToolPermissionCommand(tool, args); } catch { command = lastInput; }
-            dispatch({ type: 'permission-ask', tool, command, reason: message, resolve: (approved: boolean | string) => resolve(isApprovedPermissionResponse(approved)) } as any);
+            dispatch({ type: 'permission-ask', tool, command, reason: message, resolve: (approved: boolean | string) => resolve(toolExecutionRefusal() === undefined && isApprovedPermissionResponse(approved)) } as any);
           });
         };
         const xmlToolBridge = createStreamBridge(dispatch as (event: Record<string,unknown>) => void, { initialEngineId: cesarEngineId });
@@ -3937,7 +3992,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           // Clear them before an idle/late callback can observe stale authority or
           // dispatch into a completed turn; a queued successor installs fresh ones.
           releaseCesarTurnHandles(ctx.cesar!);
-          ctx.setActiveAbort(null);
+          if (ownsActiveAbort) ctx.setActiveAbort(null);
 
           // Release the steering channel for this turn. On a NORMAL end the marker
           // is cleared but any unconsumed steering stays buffered for the app-side

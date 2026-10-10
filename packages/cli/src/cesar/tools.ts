@@ -98,11 +98,11 @@ export function createCesarToolRegistry(engineId?: string, available: ReadonlySe
 /**
  * Create a shared ToolContext for eager tool execution during streaming.
  */
-export function createEagerToolContext(ctx: HandlerContext, config: any, signal: AbortSignal, dispatch: Dispatch): ToolContext {
+export function createEagerToolContext(ctx: HandlerContext, config: any, signal: AbortSignal, dispatch: Dispatch, executionRefusal?: ToolContext['executionRefusal']): ToolContext {
   const cwd = resolveWorkingDir();
   const fsc = getProjectFileStateCache(cwd);
   const explorationMode = (ctx as any).explorationMode ?? false;
-  return { cwd: cwd, readFileState: (fsc as any).cache, abortSignal: signal, permissionMode: (config as any).permissionMode ?? 'ask', explorationMode: explorationMode, allowedCommands: (config as any).allowedCommands ?? [], toolPermissions: (config as any).toolPermissions ?? {}, source: 'orchestrator' as const, permissionRules: parsePermissionRuleSet((config as any).permissions), toolHooks: parseToolHooks((config as any).hooks), taskExecutionLease: ctx.cesar?.taskExecutionLease, onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }), onTodos: (todos: any[]) => dispatch({ type: 'todos-set', todos: asLiveTodos(todos) } as any) } as any;
+  return { cwd: cwd, readFileState: (fsc as any).cache, abortSignal: signal, executionRefusal, permissionMode: (config as any).permissionMode ?? 'ask', explorationMode: explorationMode, allowedCommands: (config as any).allowedCommands ?? [], toolPermissions: (config as any).toolPermissions ?? {}, source: 'orchestrator' as const, permissionRules: parsePermissionRuleSet((config as any).permissions), toolHooks: parseToolHooks((config as any).hooks), taskExecutionLease: ctx.cesar?.taskExecutionLease, onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }), onTodos: (todos: any[]) => dispatch({ type: 'todos-set', todos: asLiveTodos(todos) } as any) } as any;
 }
 
 /**
@@ -179,7 +179,7 @@ export async function executeEagerTool(toolName: string, meta: Record<string,unk
   const requestTaskApproval = (tool: string, message: string) => new Promise<boolean>((resolve) => {
     const command = (parsedInput as any).command ?? (parsedInput as any).file_path ?? toolInput;
     dispatch({ type: 'permission-ask', tool, command, reason: message, resolve: (approved: boolean | string) => {
-      resolve(isApprovedPermissionResponse(approved));
+      resolve(toolCtx.executionRefusal?.() === undefined && !toolCtx.abortSignal?.aborted && isApprovedPermissionResponse(approved));
     } } as any);
   });
   const authorizeEagerTaskAction = async (tool: string, input: Record<string, unknown>): Promise<boolean | string> => {

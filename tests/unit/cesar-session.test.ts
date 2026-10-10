@@ -8,7 +8,7 @@ import { buildCesarConversationSnapshot, buildCesarSystemPrompt, buildOnApproval
 import { applyInvariantsRule1, _resetInvariantsRule1DriftWarning, CESAR_RULE_1_STRICT, CESAR_RULE_1_INVARIANTS, CESAR_SYSTEM_PROMPT } from '../../packages/cli/src/cesar/session.js';
 import { CESAR_AGENTIC_SYSTEM_PROMPT } from '../../packages/cli/src/cesar/session.js';
 import { createTaskExecutionLease } from '../../packages/cli/src/cesar/task-execution-lease.js';
-import { beginCesarTurn, createCesarTurnRuntimeHost } from '../../packages/cli/src/cesar/turn-runtime.js';
+import { beginCesarTurn, createCesarTurnRuntimeHost, transitionCesarTurn } from '../../packages/cli/src/cesar/turn-runtime.js';
 
 const testDirs: string[] = [];
 
@@ -57,6 +57,154 @@ function makePromptContext(): any {
     explorationMode: false,
   };
 }
+
+it.each(['healthy', 'disabled', 'superseded', 'terminal', 'cancelled'])(
+  'binds delayed companion approval to its original owning turn: %s', async change => {
+    const host = createCesarTurnRuntimeHost('approval-owner-fixture');
+    let disabled = false;
+    const runtime = beginCesarTurn(host, 'first', 'fixture', undefined, () => {
+      if (disabled) throw new Error('Owner disabled');
+    });
+    const abort = new AbortController();
+    const events: any[] = [];
+    const ctx: any = { config: { permissionMode: 'ask', cesarToolTimeline: false },
+      cesarRuntimeHost: host, registry: { get: () => ({}) },
+      cesar: { confidenceSatisfied: true, abortSignal: abort.signal,
+        lastDispatch: (event: any) => events.push(event) } };
+    const pending = buildOnApproval(ctx, 'fixture')('Bash', 'rm -rf /fixture-not-executed');
+    await vi.waitFor(() => expect(events.some(event => event.type === 'permission-ask')).toBe(true));
+    if (change === 'disabled') disabled = true;
+    if (change === 'superseded') beginCesarTurn(host, 'second', 'fixture');
+    if (change === 'terminal') transitionCesarTurn(host, runtime.envelope, 'completed');
+    if (change === 'cancelled') abort.abort();
+    events.find(event => event.type === 'permission-ask').resolve(true);
+    expect((await pending) === true).toBe(change === 'healthy');
+  },
+);
+
+it.each(['healthy', 'disabled', 'superseded', 'terminal', 'cancelled'])(
+  'binds delayed native tool execution to its original owning turn: %s', async change => {
+    const host = createCesarTurnRuntimeHost('native-owner-fixture');
+    let disabled = false;
+    const runtime = beginCesarTurn(host, 'first', 'fixture', undefined, () => {
+      if (disabled) throw new Error('Owner disabled');
+    });
+    const abort = new AbortController();
+    const events: any[] = [];
+    const config = { permissionMode: 'ask', cesarToolTimeline: false };
+    const ctx: any = { config, cesarRuntimeHost: host, registry: { get: () => ({}) },
+      cesar: { confidenceSatisfied: true, abortSignal: abort.signal,
+        lastDispatch: (event: any) => events.push(event) } };
+    const tool = makeTool('Bash', { command: { type: 'string' } }, 'command', 'fixture executed');
+    tool.checkPermission = () => ({ behavior: 'ask', message: 'fixture approval' });
+    const execute = vi.spyOn(tool, 'execute');
+    const registry = new ToolRegistry();
+    registry.register(tool);
+    const pending = buildOnToolCall(ctx, registry, config)!('Bash', { command: 'rm -rf /fixture-not-executed' }, 'fixture-call');
+    await vi.waitFor(() => expect(events.some(event => event.type === 'permission-ask')).toBe(true));
+    if (change === 'disabled') disabled = true;
+    if (change === 'superseded') beginCesarTurn(host, 'second', 'fixture');
+    if (change === 'terminal') transitionCesarTurn(host, runtime.envelope, 'completed');
+    if (change === 'cancelled') abort.abort();
+    events.find(event => event.type === 'permission-ask').resolve(true);
+    const result = await pending;
+    expect(execute).toHaveBeenCalledTimes(change === 'healthy' ? 1 : 0);
+    if (change === 'healthy') expect(result).toBe('fixture executed');
+    else expect(result).toContain('DENIED');
+  },
+);
+
+it.each(['companion', 'native'])('rejects a new %s callback after the turn ended', async kind => {
+  const host = createCesarTurnRuntimeHost('ended-turn-fixture');
+  const runtime = beginCesarTurn(host, 'first', 'fixture');
+  const ctx: any = { config: { permissionMode: 'auto', cesarToolTimeline: false },
+    cesarRuntimeHost: host, registry: { get: () => ({}) }, cesar: { confidenceSatisfied: true } };
+  const tool = makeTool('Read', { file_path: { type: 'string' } }, 'file_path', 'fixture read');
+  const execute = vi.spyOn(tool, 'execute');
+  const registry = new ToolRegistry();
+  registry.register(tool);
+  const onTool = buildOnToolCall(ctx, registry, ctx.config)!;
+  const onApproval = buildOnApproval(ctx, 'fixture');
+  transitionCesarTurn(host, runtime.envelope, 'completed');
+  expect(host.active).toBeNull();
+  const result = kind === 'native' ? await onTool('Read', { file_path: 'fixture.txt' }, 'late-call')
+    : await onApproval('Read', 'fixture.txt');
+  expect(result).toEqual(expect.stringContaining('DENIED'));
+  expect(execute).not.toHaveBeenCalled();
+});
+
+it.each(['ProposePlan', 'ExitPlanMode'].flatMap(tool => ['healthy', 'disabled', 'superseded', 'cancelled'].map(change => ({ tool, change }))))(
+  'rechecks $tool authority after loading its handler ($change)', async ({ tool, change }) => {
+    const home = makeTempDir('plan-tool-owner');
+    const previousHome = process.env.AGON_HOME;
+    process.env.AGON_HOME = home;
+    try {
+      const host = createCesarTurnRuntimeHost('plan-tool-owner');
+      const controller = new AbortController();
+      let disabled = false;
+      beginCesarTurn(host, 'first', 'fixture', undefined, () => {
+        if (disabled) throw new Error('Owner disabled');
+      });
+      const dispatch = vi.fn();
+      const setActivePlan = vi.fn();
+      const ctx: any = { config: {}, cesarRuntimeHost: host, setActivePlan,
+        registry: { availableIds: () => [] },
+        cesar: { abortSignal: controller.signal, planDispatch: dispatch },
+        ...(tool === 'ExitPlanMode' ? { activePlan: { id: 'fixture', state: 'paused', steps: [], intent: 'fixture' } } : {}),
+      };
+      const pending = buildOnToolCall(ctx, new ToolRegistry(), {})!(tool, {
+        intent: 'fixture', steps: [{ id: 'step', type: 'self', description: 'fixture' }], reason: 'fixture exit',
+      }, 'fixture-call');
+      if (change === 'disabled') disabled = true;
+      if (change === 'superseded') beginCesarTurn(host, 'replacement', 'fixture');
+      if (change === 'cancelled') controller.abort();
+      const result = await pending;
+      if (change === 'healthy') {
+        expect(result).toContain('[DELEGATION_BREAK]');
+        expect(setActivePlan).toHaveBeenCalledOnce();
+      } else {
+        expect(result).toContain('DENIED');
+        expect(setActivePlan).not.toHaveBeenCalled();
+        expect(dispatch).not.toHaveBeenCalled();
+        expect(ctx.cesar.proposedPlan).toBeUndefined();
+        expect(ctx.cesar.justExitedPlanMode).toBeUndefined();
+      }
+    } finally {
+      if (previousHome === undefined) delete process.env.AGON_HOME;
+      else process.env.AGON_HOME = previousHome;
+    }
+  },
+);
+
+it('does not publish an active plan after proposal display replaces its owning turn', async () => {
+  const home = makeTempDir('plan-publication-owner');
+  const previousHome = process.env.AGON_HOME;
+  process.env.AGON_HOME = home;
+  try {
+    const host = createCesarTurnRuntimeHost('plan-publication-owner');
+    beginCesarTurn(host, 'first', 'fixture');
+    const successor = { id: 'successor' };
+    const setActivePlan = vi.fn();
+    const dispatch = vi.fn((event: any) => {
+      if (event.type === 'plan-proposal') {
+        beginCesarTurn(host, 'replacement', 'fixture');
+        ctx.cesar.proposedPlan = successor;
+      }
+    });
+    const ctx: any = { config: {}, cesarRuntimeHost: host, setActivePlan,
+      registry: { availableIds: () => [] }, cesar: { planDispatch: dispatch } };
+    const result = await buildOnToolCall(ctx, new ToolRegistry(), {})!('ProposePlan', {
+      intent: 'fixture', steps: [{ id: 'step', type: 'self', description: 'fixture' }],
+    }, 'fixture-call');
+    expect(dispatch).toHaveBeenCalledOnce();
+    expect(result).toContain('DENIED');
+    expect(setActivePlan).not.toHaveBeenCalled();
+    expect(ctx.cesar.proposedPlan).toBe(successor);
+  } finally {
+    if (previousHome === undefined) delete process.env.AGON_HOME;
+    else process.env.AGON_HOME = previousHome;
+  }
+});
 
 describe('Cesar KERN context spine', () => {
   it('prepares and stores one compiler-derived map before the engine list', async () => {

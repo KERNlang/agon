@@ -13,7 +13,8 @@ import type { HandlerContext } from '../../packages/cli/src/handlers/types.js';
 import type { DispatchOptions, EngineAdapter, EngineDefinition } from '@kernlang/agon-core';
 import { tracker, setSessionRoot, _resetSessionRootForTests } from '@kernlang/agon-core';
 
-const effects = vi.hoisted(() => ({ brainstorm: vi.fn(), delegate: vi.fn(), other: vi.fn(), verify: vi.fn() }));
+const effects = vi.hoisted(() => ({ brainstorm: vi.fn(), brain: vi.fn(), delegate: vi.fn(), other: vi.fn(), verify: vi.fn() }));
+vi.mock('../../packages/cli/src/cesar/brain.js', () => ({ handleCesarBrain: effects.brain }));
 vi.mock('@kernlang/agon-core', async original => {
   const core = await original<typeof import('@kernlang/agon-core')>();
   return { ...core, spawnWithTimeout: effects.verify.mockImplementation(core.spawnWithTimeout) };
@@ -39,6 +40,7 @@ beforeEach(async () => {
   vi.clearAllMocks();
   effects.verify.mockImplementation((await vi.importActual<typeof import('@kernlang/agon-core')>('@kernlang/agon-core')).spawnWithTimeout);
   effects.brainstorm.mockResolvedValue({ winner: 'fixture', response: 'answer' });
+  effects.brain.mockReset().mockResolvedValue({ terminalState: 'completed', responded: true });
   effects.delegate.mockResolvedValue({ response: 'answer' });
   effects.other.mockResolvedValue({ winner: 'fixture', summary: 'review', status: 'completed' });
   root = await mkdtemp(join(tmpdir(), 'agon-step-admission-'));
@@ -68,6 +70,41 @@ function context(): HandlerContext { return { config: {}, adapter: {} } as Handl
 function step(type: string): CesarPlanStep {
   return { id: 'step', type, description: 'fixture', state: 'pending', estimatedTokens: 0, estimatedCostUsd: 0 };
 }
+
+it.each(['failed', 'timed_out', 'cancelled', 'superseded'])('rejects a live self-step brain outcome of %s', async terminalState => {
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  effects.brain.mockResolvedValue({ terminalState, decisionReason: 'fixture stop' });
+  effects.verify.mockResolvedValue({ exitCode: 0, timedOut: false, stdout: '', stderr: '' });
+  const result = await buildStepExecutors(context(), vi.fn()).self.execute({ ...step('self'), verifyCmd: 'must-not-run' }, {});
+  expect(result.result.status).toBe('failure');
+  expect(result.result.error).toContain(terminalState);
+  expect(result).not.toHaveProperty('contextExport');
+  expect(effects.brain).toHaveBeenCalledOnce();
+  expect(effects.verify).not.toHaveBeenCalled();
+});
+
+it('binds a live self-step brain to the Plan signal and generation', async () => {
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  const controller = new AbortController();
+  const ctx = context();
+  effects.brain.mockImplementationOnce(async (_prompt, _emit, boundContext, images, signal, assertAvailable) => {
+    expect(boundContext).toBe(ctx);
+    expect(images).toEqual([]);
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(signal.aborted).toBe(false);
+    expect(() => assertAvailable()).not.toThrow();
+    await install('agon.plan');
+    expect(() => assertAvailable()).toThrow(/restart/);
+    return { terminalState: 'completed' };
+  });
+  const result = await buildStepExecutors(ctx, vi.fn()).self.execute({ ...step('self'), verifyCmd: 'must-not-run' }, {}, controller.signal);
+  expect(result.result).toMatchObject({ status: 'failure', error: expect.stringMatching(/restart/) });
+  expect(effects.brain).toHaveBeenCalledOnce();
+  expect(effects.verify).not.toHaveBeenCalled();
+  expect(result).not.toHaveProperty('contextExport');
+});
 
 it.each(['agent', 'team-agent'].flatMap(type =>
   ['missing', 'failed', 'cancelled', 'budget_exceeded', 'no-winner', 'completed'].map(status => ({ type, status })),

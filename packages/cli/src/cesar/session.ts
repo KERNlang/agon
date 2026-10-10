@@ -25,7 +25,7 @@ import type { GuardMode } from '@kernlang/agon-core';
 import type { HandlerContext } from '../handlers/types.js';
 
 import { createCesarToolRegistry } from './tools.js';
-import { closeAndDetachSession, sessionCleanupFailed, SESSION_CLEANUP_FAILURE_MESSAGE } from './session-health.js';
+import { closeAndDetachSession, markSessionCleanupFailed, sessionCleanupFailed, SESSION_CLEANUP_FAILURE_MESSAGE } from './session-health.js';
 
 import { getSessionAllowList } from '../signals/output.js';
 
@@ -660,9 +660,29 @@ export function saveCesarConversationSnapshot(session: PersistentSession|null, c
   }
 }
 
-/**
- * Build the onToolCall callback for API engines with native function calling.
- */
+/** Capture invocation authority before an approval or tool can suspend. */
+export function captureToolRefusal(ctx: HandlerContext): () => string | undefined {
+  const original = ctx.cesarSession;
+  const signal = ctx.cesar?.abortSignal;
+  const runtime = ctx.cesarRuntimeHost?.active;
+  return () => {
+    if (ctx.cesarRuntimeHost && !runtime) return 'DENIED: No active owning workflow turn.';
+    if (runtime) {
+      if (ctx.cesarRuntimeHost?.active !== runtime || runtime.terminalAccepted) {
+        return 'DENIED: Owning workflow turn is no longer active.';
+      }
+      try { runtime.assertOwnerAvailable?.(); }
+      catch { return 'DENIED: Owning workflow is unavailable.'; }
+    }
+    if (sessionCleanupFailed(original) || sessionCleanupFailed(ctx.cesarSession)) {
+      return `DENIED: ${SESSION_CLEANUP_FAILURE_MESSAGE}`;
+    }
+    if (signal?.aborted || ctx.cesar?.abortSignal?.aborted) return 'DENIED: Cesar turn was cancelled.';
+    return undefined;
+  };
+}
+
+/** Build the onToolCall callback for API engines with native function calling. */
 export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry, config: any): ((name:string, args:Record<string,unknown>, callId:string, controlPlane?:any) => Promise<string>) | undefined {
   const cwd = resolveWorkingDir();
   const fsc = getProjectFileStateCache(cwd);
@@ -673,7 +693,6 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
   const sharedToolCtx: ToolContext = {
     cwd,
     readFileState: (fsc as any).cache,
-    abortSignal: undefined,
     permissionMode: (config as any).permissionMode ?? 'smart',
     explorationMode,
     allowedCommands: (config as any).allowedCommands ?? [],
@@ -690,6 +709,12 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
     toolHooks: parseToolHooks((config as any).hooks),
   };
   return async (name: string, args: Record<string, unknown>, callId: string, controlPlane?: any) => {
+    const refusal = captureToolRefusal(ctx);
+    const initialRefusal = refusal();
+    if (initialRefusal !== undefined) return initialRefusal;
+    const toolCtx: ToolContext = {
+      ...sharedToolCtx, abortSignal: ctx.cesar?.abortSignal ?? undefined, executionRefusal: refusal,
+    };
     // Fence correlated callbacks before ANY plan, delegation, confidence, or
     // approval state can mutate. Legacy uncorrelated adapters retain their
     // existing path; once an envelope is present it must own the active lease.
@@ -761,7 +786,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
           mode: mode as any,
           timeout: ctx.config.timeout ?? 120,
           outputDir: outDir,
-          signal: sharedToolCtx.abortSignal,
+          signal: toolCtx.abortSignal,
         });
 
         // Delegate tool ledger (2b): the Delegate seam returns only adapter
@@ -808,6 +833,8 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
       // events; pass null when planDispatch is unavailable rather than
       // blocking the exit (state cleanup does not depend on it).
       const { handleExitPlanMode } = await import('../handlers/plan-mode.js');
+      const ownerRefusal = refusal();
+      if (ownerRefusal !== undefined) return ownerRefusal;
       // [DELEGATION_BREAK] stops the persistent tool loop (like ProposePlan) so a
       // native-tools Cesar cannot keep issuing mutating tools in the same turn
       // after the plan guard has been lifted; proceed live on the next turn.
@@ -842,12 +869,16 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
 
       // Wire ProposePlan tool to actual plan creation + display
       const { handleProposePlan } = await import('../handlers/plan-mode.js');
+      const ownerRefusal = refusal();
+      if (ownerRefusal !== undefined) return ownerRefusal;
       const dispatch = ctx.cesar!.planDispatch;
       if (!dispatch) {
         return '[PLAN_ERROR] Internal plan display dispatch unavailable. Retry the plan request so Agon can render the approval panel.';
       }
       try {
         const plan = await handleProposePlan(args, dispatch, ctx);
+        const publicationRefusal = refusal();
+        if (publicationRefusal !== undefined) return publicationRefusal;
         // Set React state for UI
         if (ctx.setActivePlan) {
           ctx.setActivePlan(plan);
@@ -956,7 +987,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
         try { permDiffPreview = buildApprovalDiffPreview(String(tool), args as Record<string, unknown>); }
         catch { /* diff is best-effort — fall back to command preview */ }
       }
-      d({ type: 'permission-ask', tool, command: cmd, reason: taskActionApprovalMessage(evaluation), diffPreview: permDiffPreview && Array.isArray(permDiffPreview.files) ? permDiffPreview : undefined, fallbackNote: permDiffPreview && typeof permDiffPreview.fallback === 'string' ? permDiffPreview.fallback : undefined, resolve: (approved: boolean) => resolve(approved) });
+      d({ type: 'permission-ask', tool, command: cmd, reason: taskActionApprovalMessage(evaluation), diffPreview: permDiffPreview && Array.isArray(permDiffPreview.files) ? permDiffPreview : undefined, fallbackNote: permDiffPreview && typeof permDiffPreview.fallback === 'string' ? permDiffPreview.fallback : undefined, resolve: (approved: boolean) => resolve(refusal() === undefined && approved) });
     });
     // Tool handlers can auto-allow in-workspace writes or permissionMode=auto
     // Bash without invoking their permission callback. Enforce the turn lease
@@ -973,9 +1004,10 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
 
     const executeNativeTool = () => executeToolCall(
         { id: callId, name, input: args },
-        sharedToolCtx,
+        toolCtx,
         toolRegistry,
         async (tool: string, message: string) => {
+        if (refusal() !== undefined) return false;
         const target = tool === 'Bash'
           ? String((args as any).command ?? '')
           : String((args as any).file_path ?? (args as any).path ?? (args as any).task ?? '');
@@ -984,6 +1016,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
             { tool, target, cwd: resolveWorkingDir(), source: 'native', config: ctx.config, lease, sessionAllowList: getSessionAllowList() },
             (evaluation: any) => requestTaskApproval(tool, evaluation),
           );
+          if (refusal() !== undefined) return false;
           if (authorization.decision === 'deny') return false;
           if (authorization.decision === 'allow') return true;
         }
@@ -1004,7 +1037,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
               try { permDiffPreview = buildApprovalDiffPreview(String(tool), args as Record<string, unknown>); }
               catch { /* diff is best-effort — fall back to command preview */ }
             }
-            d({ type: 'permission-ask', tool, command: cmd, reason: message, diffPreview: permDiffPreview && Array.isArray(permDiffPreview.files) ? permDiffPreview : undefined, fallbackNote: permDiffPreview && typeof permDiffPreview.fallback === 'string' ? permDiffPreview.fallback : undefined, resolve } as any);
+            d({ type: 'permission-ask', tool, command: cmd, reason: message, diffPreview: permDiffPreview && Array.isArray(permDiffPreview.files) ? permDiffPreview : undefined, fallbackNote: permDiffPreview && typeof permDiffPreview.fallback === 'string' ? permDiffPreview.fallback : undefined, resolve: (approved: boolean) => resolve(refusal() === undefined && approved) } as any);
           } else {
             resolve(false);
           }
@@ -1016,6 +1049,9 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
     const result = runtime && controlPlane
       ? await runTurnToolOnce(runtime, callId, 'session', mutating ? 'mutation' : 'read_only', executeNativeTool)
       : await executeNativeTool();
+    // Owner revocation is not a user rejection. Preserve completed tool receipts.
+    const ownerRefusal = result.result.ok ? undefined : refusal();
+    if (ownerRefusal !== undefined) return ownerRefusal;
     let output = result.result.ok ? result.result.content : (result.result.error ?? 'Tool execution failed');
     // F6: a permission denial (deny rule / deny-all) is terminal, not a
     // malformed-input retry. Surface it verbatim so the retry wrapper below
@@ -1138,7 +1174,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
  * Build the onApproval callback for engine tool approvals. Returns true to approve, false to deny silently, or a string to deny with a reason the engine can see.
  */
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string, controlPlane?:any) => Promise<boolean|string> {
-  const evaluateApproval = async (tool: string, command: string): Promise<boolean | string> => {
+  const evaluateApproval = async (tool: string, command: string, refusal: () => string | undefined): Promise<boolean | string> => {
     const cfg = ctx.config;
     const perms = (cfg as any).toolPermissions ?? {};
     const allowed = (cfg as any).allowedCommands ?? [];
@@ -1322,6 +1358,12 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
           catch { /* diff is best-effort — fall back to command preview */ }
         }
         dispatch({ type: 'permission-ask', tool: agonTool, command, reason: promptReason, diffPreview: permDiffPreview && Array.isArray(permDiffPreview.files) ? permDiffPreview : undefined, fallbackNote: permDiffPreview && typeof permDiffPreview.fallback === 'string' ? permDiffPreview.fallback : undefined, resolve: (approved: boolean | string) => {
+          const denied = refusal();
+          if (denied !== undefined) {
+            logApproval('blocked', 'turn-authority', denied);
+            resolve(false);
+            return;
+          }
           const wasApproved = isApprovedPermissionResponse(approved);
           if (wasApproved && taskLease) approveTaskAction(taskLease, agonTool, taskTarget);
           logApproval(wasApproved ? 'approved' : 'denied', 'user-prompt', wasApproved ? 'user approved' : 'user denied');
@@ -1334,15 +1376,20 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
     });
   };
   return async (tool: string, command: string, controlPlane?: any): Promise<boolean | string> => {
+    const refusal = captureToolRefusal(ctx);
+    const initialRefusal = refusal();
+    if (initialRefusal !== undefined) return initialRefusal;
     const runtime = ctx.cesarRuntimeHost?.active;
     const requestId = typeof controlPlane?.toolCallId === 'string' ? controlPlane.toolCallId : '';
     if (controlPlane && (!runtime || !requestId || !isActiveCesarTurn(ctx.cesarRuntimeHost, controlPlane))) {
       return 'STALE_TURN_REJECTED: approval denied because its Cesar turn lease expired.';
     }
     if (runtime && requestId) {
-      return runTurnPermissionOnce(runtime, requestId, () => evaluateApproval(tool, command));
+      const decision = await runTurnPermissionOnce(runtime, requestId, () => evaluateApproval(tool, command, refusal));
+      return refusal() ?? decision;
     }
-    return evaluateApproval(tool, command);
+    const decision = await evaluateApproval(tool, command, refusal);
+    return refusal() ?? decision;
   };
 }
 
@@ -1491,12 +1538,15 @@ export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { b
 
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const entrySession = ctx.cesarSession;
-  const assertCleanupHealthy = (): void => {
+  const ownerRefusal = ctx.cesarRuntimeHost?.active ? captureToolRefusal(ctx) : undefined;
+  const assertAcquisitionAvailable = (): void => {
     if (sessionCleanupFailed(entrySession) || sessionCleanupFailed(ctx.cesarSession)) {
       throw new Error(SESSION_CLEANUP_FAILURE_MESSAGE);
     }
+    const refusal = ownerRefusal?.();
+    if (refusal !== undefined) throw new Error(refusal);
   };
-  assertCleanupHealthy();
+  assertAcquisitionAvailable();
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
   const cwd = resolveWorkingDir();
@@ -1542,7 +1592,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
     } catch {
       // Restart failed — fall through to create fresh session
     }
-    assertCleanupHealthy();
+    assertAcquisitionAvailable();
     if (restartingSession.alive && ctx.cesarSession === restartingSession) return restartingSession;
   }
 
@@ -1624,7 +1674,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
 
   // Build system prompt and tool registry
   const systemPrompt = await prepareCesarSystemPrompt(ctx, cwd);
-  assertCleanupHealthy();
+  assertAcquisitionAvailable();
   const toolRegistry = createCesarToolRegistry(cesarEngineId);
 
   // Store registry on context for tool execution during responses
@@ -1676,7 +1726,21 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
   };
 
   const session = createPersistentSession(sessionConfig);
-  await session.start();
+  try {
+    await session.start();
+    assertAcquisitionAvailable();
+  } catch (error) {
+    try {
+      closeAndDetachSession(session, () => {});
+    } catch (cleanupError) {
+      // Keep the host blocked if a candidate may still be running. Do not
+      // detach a successor that now owns the shared session reference.
+      if (ctx.cesarSession) markSessionCleanupFailed(ctx.cesarSession);
+      else ctx.setCesarSession(session);
+      throw cleanupError;
+    }
+    throw error;
+  }
   ctx.setCesarSession(session);
   // Store MCP config fingerprint so we can detect changes on next reuse check
   ctx.cesar!.mcpFingerprint = currentMcpFp;

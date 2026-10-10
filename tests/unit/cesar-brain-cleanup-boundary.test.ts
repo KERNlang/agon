@@ -4,10 +4,14 @@
 // so the brain itself must re-check the entry and current sessions at each of
 // those boundaries and refuse replacement work.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { startChatSession, ToolRegistry } from '@kernlang/agon-core';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { startChatSession, ToolRegistry, tracker } from '@kernlang/agon-core';
 import { handleCesarBrain } from '../../packages/cli/src/cesar/brain.js';
 import { markSessionCleanupFailed, sessionCleanupFailed } from '../../packages/cli/src/cesar/session-health.js';
 import { pushSteering } from '../../packages/cli/src/cesar/steering.js';
+import { beginCesarTurn, transitionCesarTurn } from '../../packages/cli/src/cesar/turn-runtime.js';
 
 const { budget, ensure, backend } = vi.hoisted(() => ({ budget: vi.fn(), ensure: vi.fn(), backend: vi.fn() }));
 vi.mock('../../packages/cli/src/cesar/context-budget.js', async original => {
@@ -68,6 +72,192 @@ beforeEach(() => {
   budget.mockReset().mockResolvedValue({ proceed: true, compacted: false });
   ensure.mockReset().mockRejectedValue(new Error('fixture acquisition must not run'));
   backend.mockReset().mockReturnValue({ backend: 'cli', engine: { id: 'fixture' } });
+});
+
+describe('owning workflow admission', () => {
+  it.each(['cancelled', 'disabled'])('rejects a %s parent before acquiring a session', async reason => {
+    const ctx = createFixtureContext(createFixtureSession());
+    const dispatch = vi.fn();
+    const parent = new AbortController();
+    if (reason === 'cancelled') parent.abort(new Error('Parent cancelled'));
+    const assertOwnerAvailable = () => {
+      if (reason === 'disabled') throw new Error('Owner disabled');
+    };
+    await expect(handleCesarBrain('prompt', dispatch, ctx, [], parent.signal, assertOwnerAvailable))
+      .rejects.toThrow(reason === 'cancelled' ? 'Parent cancelled' : 'Owner disabled');
+    expect(ensure).not.toHaveBeenCalled();
+    expect(ctx.adapter.dispatch).not.toHaveBeenCalled();
+    expect(ctx.chatSession.messages).toEqual([]);
+    expect(ctx.setActiveAbort).not.toHaveBeenCalled();
+  });
+
+  it.each(['budget', 'acquisition'].flatMap(boundary => ['resolved', 'rejected'].flatMap(result =>
+    ['disabled', 'cancelled'].map(reason => ({ boundary, result, reason })),
+  )))('refuses $reason ownership after $boundary is $result', async ({ boundary, result, reason }) => {
+    const original = createFixtureSession();
+    const ctx = createFixtureContext(original);
+    const dispatch = vi.fn();
+    const parent = new AbortController();
+    let disabled = false;
+    const pendingBoundary = createDeferred<any>();
+    if (boundary === 'budget') budget.mockReturnValue(pendingBoundary.promise);
+    else ensure.mockReturnValue(pendingBoundary.promise);
+    const pending = handleCesarBrain('prompt', dispatch, ctx, [], parent.signal, () => {
+      if (disabled) throw new Error('Owner disabled');
+    });
+    const rejected = expect(pending).rejects.toThrow(reason === 'disabled' ? 'Owner disabled' : 'Parent cancelled');
+    await vi.waitFor(() => expect(boundary === 'budget' ? budget : ensure).toHaveBeenCalledOnce());
+    if (reason === 'disabled') disabled = true;
+    else parent.abort(new Error('Parent cancelled'));
+    if (result === 'rejected') pendingBoundary.reject(new Error('fixture boundary failed'));
+    else pendingBoundary.resolve(boundary === 'budget' ? { proceed: true, compacted: false } : original);
+    await rejected;
+    expect(original.send).not.toHaveBeenCalled();
+    expect(ctx.adapter.dispatch).not.toHaveBeenCalled();
+    expect(ctx.chatSession.messages).toEqual([]);
+    expect(ctx.cesar.busy).toBe(false);
+    expect(ctx.setActiveAbort).not.toHaveBeenCalled();
+    if (boundary === 'budget') expect(ensure).not.toHaveBeenCalled();
+  });
+
+  it.each(['disabled', 'cancelled'])('rejects a fallback result after its owner is %s but retains usage', async reason => {
+    const ctx = createFixtureContext(createFixtureSession());
+    const dispatch = vi.fn();
+    const parent = new AbortController();
+    let disabled = false;
+    const result = createDeferred<any>();
+    const record = vi.spyOn(tracker, 'record').mockImplementation(() => {});
+    ctx.adapter.dispatch.mockReturnValue(result.promise);
+    const pending = handleCesarBrain('prompt', dispatch, ctx, [], parent.signal, () => {
+      if (disabled) throw new Error('Owner disabled');
+    });
+    const rejected = expect(pending).rejects.toThrow(reason === 'disabled' ? 'Owner disabled' : 'Parent cancelled');
+    await vi.waitFor(() => expect(ctx.adapter.dispatch).toHaveBeenCalledOnce());
+    if (reason === 'disabled') disabled = true;
+    else parent.abort(new Error('Parent cancelled'));
+    const usage = { inputTokens: 7, outputTokens: 6, totalTokens: 13 };
+    result.resolve({ stdout: 'late answer', stderr: '', usage });
+    await rejected;
+    expect(record).toHaveBeenCalledExactlyOnceWith('fixture', { usage });
+    expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'engine-block' }));
+    expect(ctx.chatSession.messages.map((message: any) => message.role)).toEqual(['user']);
+    expect(ctx.cesar.busy).toBe(false);
+    expect(ctx.setActiveAbort).not.toHaveBeenCalled();
+  });
+
+  it.each(['text', 'end'].flatMap(result => ['disabled', 'cancelled'].map(reason => ({ result, reason }))))(
+    'refuses a late stream $result after ownership is $reason', async ({ result, reason }) => {
+      const session = createFixtureSession();
+      const ctx = createFixtureContext(session);
+      const dispatch = vi.fn();
+      const parent = new AbortController();
+      const resume = createDeferred<void>();
+      let disabled = false;
+      session.send.mockImplementation(async function* () {
+        await resume.promise;
+        if (result === 'text') yield { type: 'text', content: 'LATE_OWNER_RESULT' };
+      });
+      ensure.mockResolvedValue(session);
+      const pending = handleCesarBrain('prompt', dispatch, ctx, [], parent.signal, () => {
+        if (disabled) throw new Error('Owner disabled');
+      });
+      await vi.waitFor(() => expect(session.send).toHaveBeenCalledOnce());
+      if (reason === 'disabled') disabled = true;
+      else parent.abort(new Error('Parent cancelled'));
+      resume.resolve();
+      expect(await pending).toMatchObject({ terminalState: 'cancelled', decisionReason: 'aborted', responded: false });
+      expect(session.send).toHaveBeenCalledOnce();
+      expect(JSON.stringify(dispatch.mock.calls)).not.toContain('LATE_OWNER_RESULT');
+      expect(ctx.chatSession.messages.some((message: any) => message.role === 'engine')).toBe(false);
+      expect(ctx.cesar.busy).toBe(false);
+      expect(ctx.setActiveAbort).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe('tool approval owner boundary', () => {
+  it.each(['eager', 'xml'].flatMap(route => ['healthy', 'disabled', 'cancelled', 'superseded', 'terminal'].map(reason => ({ route, reason }))))(
+    'checks $route authority after delayed approval ($reason)', async ({ route, reason }) => {
+      const session = createFixtureSession();
+      const ctx = createFixtureContext(session);
+      const parent = new AbortController();
+      let disabled = false;
+      const execute = vi.fn(async () => ({ ok: true, content: 'fixture result' }));
+      const registry = new ToolRegistry();
+      registry.register({
+        definition: { name: 'FixtureProbe', description: 'In-memory fixture only', inputSchema: {}, maxResultSizeChars: 1000, isReadOnly: true, isConcurrencySafe: false },
+        validate: () => null,
+        checkPermission: () => ({ behavior: 'ask', message: 'Approve fixture probe' }),
+        execute,
+      });
+      session.send.mockImplementationOnce(async function* () {
+        if (route === 'eager') yield { type: 'tool_call', content: 'FixtureProbe', metadata: { input: {}, status: 'running', toolCallId: 'owner-probe' } };
+        else yield { type: 'text', content: '<tool name="FixtureProbe">{}</tool>' };
+      }).mockImplementation(async function* () {
+        yield { type: 'text', content: 'Fixture probe complete.' };
+      });
+      ensure.mockImplementation(async () => { ctx.cesar.toolRegistry = registry; return session; });
+      const dispatch = vi.fn();
+      const pending = handleCesarBrain('read fixture', dispatch, ctx, [], parent.signal, () => {
+        if (disabled) throw new Error('Owner disabled');
+      });
+      const settled = pending.then(value => ({ value }), error => ({ error }));
+      await vi.waitFor(() => expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'permission-ask' })));
+      if (reason === 'disabled') disabled = true;
+      if (reason === 'cancelled') parent.abort(new Error('Parent cancelled'));
+      if (reason === 'superseded') beginCesarTurn(ctx.cesarRuntimeHost, 'replacement', 'cesar-brain');
+      if (reason === 'terminal') transitionCesarTurn(ctx.cesarRuntimeHost, ctx.cesarRuntimeHost.active.envelope, 'completed');
+      dispatch.mock.calls.find(([event]) => event.type === 'permission-ask')![0].resolve(true);
+      await settled;
+      expect(execute).toHaveBeenCalledTimes(reason === 'healthy' ? 1 : 0);
+      if (reason !== 'healthy') expect(session.send).toHaveBeenCalledOnce();
+      expect(ctx.cesar.busy).toBe(false);
+      expect(ctx.setActiveAbort).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe('MCP approval owner boundary', () => {
+  it.each(['healthy', 'disabled', 'cancelled', 'superseded', 'terminal'])('checks authority before writing a delayed MCP reply (%s)', async reason => {
+    const directory = mkdtempSync(join(tmpdir(), 'agon-mcp-owner-'));
+    const requestPath = join(directory, 'fixture-perm-owner.json');
+    const responsePath = join(directory, 'fixture-perm-owner-response.json');
+    const session = createFixtureSession();
+    const ctx = createFixtureContext(session);
+    const parent = new AbortController();
+    const resume = createDeferred<void>();
+    let disabled = false;
+    session.send.mockImplementation(async function* () {
+      await resume.promise;
+      yield { type: 'done', content: 'end_turn' };
+    });
+    ensure.mockImplementation(async () => {
+      ctx.cesar.mcpSignalPath = join(directory, 'fixture.json');
+      writeFileSync(requestPath, JSON.stringify({ type: 'permission-request', id: 'owner', tool: 'FixtureProbe', args: {}, timestamp: Date.now() }));
+      return session;
+    });
+    const dispatch = vi.fn();
+    const pending = handleCesarBrain('read fixture', dispatch, ctx, [], parent.signal, () => {
+      if (disabled) throw new Error('Owner disabled');
+    });
+    const settled = pending.then(value => ({ value }), error => ({ error }));
+    try {
+      await vi.waitFor(() => expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'permission-ask' })));
+      if (reason === 'disabled') disabled = true;
+      if (reason === 'cancelled') parent.abort(new Error('Parent cancelled'));
+      if (reason === 'superseded') beginCesarTurn(ctx.cesarRuntimeHost, 'replacement', 'cesar-brain');
+      if (reason === 'terminal') transitionCesarTurn(ctx.cesarRuntimeHost, ctx.cesarRuntimeHost.active.envelope, 'completed');
+      dispatch.mock.calls.find(([event]) => event.type === 'permission-ask')![0].resolve(true);
+      const response = JSON.parse(readFileSync(responsePath, 'utf8'));
+      expect(response).toMatchObject({ type: 'permission-response', id: 'owner', approved: reason === 'healthy' });
+      if (reason !== 'healthy') expect(response.reason).toContain('DENIED');
+    } finally {
+      parent.abort();
+      resume.resolve();
+      await settled;
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('budget-gate boundary', () => {

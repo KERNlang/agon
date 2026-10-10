@@ -229,6 +229,7 @@ export const MANIFEST = validateManifest({
       "dist/formatter.d.ts",
       "dist/proposal-workflow.d.ts",
       "dist/resume-policy.d.ts",
+      "dist/resume-workflow.d.ts",
       "dist/runtime.d.ts",
       "dist/session-scope.d.ts",
       "dist/session-selection.d.ts",
@@ -509,6 +510,8 @@ export { CESAR_STEP_TYPES, CESAR_STEP_TYPE_TABLE } from './execution-model.js';
 export { createCesarPlan, createPlanProposal, approveCesarPlan, advanceCesarStep, cancelCesarPlan, exitCesarPlan } from './execution-state.js';
 export { buildResumePromptContext, skipCompletedSteps, prepareCesarPlanResume } from './resume-policy.js';
 export type { ResumePromptContext } from './resume-policy.js';
+export { runPlanResumeApproval } from './resume-workflow.js';
+export type { PlanResumeApprovalEffects } from './resume-workflow.js';
 export { createPlanCoordinator, failedPlanStepIsFallbackRetryable, preparePlanFallbackRetry } from './execution-coordinator.js';
 export type { PlanCoordinatorHost } from './execution-coordinator.js';
 export { getCesarPlansDir, cesarPlanJsonPath, cesarPlanMarkdownPath, saveCesarPlan, loadCesarPlan, listCesarPlans } from './execution-store.js';

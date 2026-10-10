@@ -227,6 +227,7 @@
       "dist/formatter.d.ts",
       "dist/proposal-workflow.d.ts",
       "dist/resume-policy.d.ts",
+      "dist/resume-workflow.d.ts",
       "dist/runtime.d.ts",
       "dist/session-scope.d.ts",
       "dist/session-selection.d.ts",

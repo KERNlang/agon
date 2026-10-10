@@ -20,7 +20,7 @@ import { todosFromPlanSteps } from '../todos.js';
 import type { DispatchCallbacks } from '../dispatch.js';
 
 import { findPendingCesarPlan, askChoiceQuestion } from './plan-queries.js';
-import { buildResumePromptContext, prepareCesarPlanResume, createPlanCoordinator } from '@kernlang/agon-mod-plan';
+import { runPlanResumeApproval, createPlanCoordinator } from '@kernlang/agon-mod-plan';
 
 import { hostConsoleWarn } from '../../lib/kern-host.js';
 import { takePlanFallback } from '../plan-fallback.js';
@@ -49,43 +49,12 @@ export async function resumeCesarPlan(plan: CesarPlan, cb: DispatchCallbacks): P
     cb.dispatch({ type: 'error', message: error instanceof Error ? error.message : String(error) });
     return;
   }
-  const ctx = buildResumePromptContext(plan);
-  const lines = [
-    `Resume plan: ${plan.intent}`,
-    `${ctx.doneCount}/${plan.steps.length} steps completed · ${ctx.remainingCount} remaining`,
-  ];
-  if (ctx.failedCount > 0 && ctx.failedStep) {
-    lines.push(`Failed step: ${ctx.failedStep.description}${ctx.failedStep.result?.error ? ` — ${ctx.failedStep.result.error}` : ''}`);
-  }
-  if (ctx.remainingCostUsd > 0) {
-    lines.push(`Estimated cost to finish: ~${ctx.remainingTokens.toLocaleString()} tokens · $${ctx.remainingCostUsd.toFixed(2)}`);
-  }
-  cb.dispatch({ type: 'info', message: lines.join('\n') });
-  
-  const answer = await askChoiceQuestion(cb, 'Resume this plan?', [
-    { key: '1', label: 'Resume — continue from where it stopped', color: '#4ade80' },
-    { key: '2', label: 'Restart — rerun all steps from the beginning', color: '#fbbf24' },
-    { key: '3', label: 'Cancel — keep the plan paused', color: '#ef4444' },
-  ], '1');
-  const trimmed = answer.trim().toLowerCase();
-  
-  // The choice UI resolves Enter to its selected key. An empty or unexpected
-  // response is not permission to resume (it can also come from dismissal).
-  if (!['1', 'resume', '2', 'r', 'restart'].includes(trimmed)) {
-    cb.dispatch({ type: 'info', message: 'Plan resume cancelled.' });
-    return;
-  }
-  
-  if (!planExecutionAvailable(cb, assertCurrent)) return;
-  const restart = trimmed === '2' || trimmed === 'r' || trimmed === 'restart';
-  const runningPlan = prepareCesarPlanResume(plan, restart ? 'restart' : 'resume');
-  if (restart) {
-    cb.dispatch({ type: 'info', message: `Restarting plan from step 1: ${plan.intent}` });
-  } else {
-    cb.dispatch({ type: 'info', message: `Resuming plan: ${plan.intent} (${plan.id})` });
-  }
-  
-  await executeApprovedPlan(runningPlan, cb);
+  await runPlanResumeApproval(plan, {
+    available: () => planExecutionAvailable(cb, assertCurrent),
+    notify: (type, message) => cb.dispatch({ type, message }),
+    choose: (prompt, choices, defaultKey) => askChoiceQuestion(cb, prompt, choices, defaultKey),
+    execute: value => executeApprovedPlan(value, cb),
+  });
 }
 
 /**

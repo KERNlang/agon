@@ -12,6 +12,9 @@ export interface StepExecutor {
 }
 
 export interface PlanExecutorCallbacks {
+  /** Required storage boundary when supplied by a persistent host. Unlike UI
+   * callbacks, failure must stop execution before another effect starts. */
+  onCheckpoint?: (plan:CesarPlan)=>void;
   onStepStart: (stepId:string)=>void;
   onStepDone: (stepId:string, result:CesarStepResult)=>void;
   onPlanUpdate: (plan:CesarPlan)=>void;
@@ -51,6 +54,47 @@ export function createPlanExecutor(services: PlanExecutionServices) {
       };
     };
 
+    const runStep = async (step: CesarPlanStep) => {
+      let result = cancelledBeforeStart();
+      let contextExport: string | undefined;
+      let executed = false;
+      let attempted = false;
+      if (!signal?.aborted) {
+        callbacks.onStepStart(step.id);
+        if (!signal?.aborted) {
+          const executor = executors[step.type];
+          if (!executor) {
+            result = { ...result, error: `No executor for type: ${step.type}` };
+          } else {
+            attempted = true;
+            try {
+              ({ result, contextExport } = await executor.execute(step, current.stepContext, signal));
+              executed = true;
+            } catch (error) {
+              result = { ...result, error: error instanceof Error ? error.message : String(error) };
+            }
+          }
+        }
+      }
+      const exportContext = (output: string) => {
+        const updates = Object.fromEntries((step.exports ?? []).map(key => [key, output]));
+        current = { ...current, stepContext: { ...current.stepContext, ...updates } };
+      };
+      if (contextExport && step.exports?.length) exportContext(contextExport);
+      current = advanceCesarStep(current, step.id, result);
+      // Save the raw outcome before optional work or slower siblings. A storage
+      // failure must not become a synthetic backend failure.
+      callbacks.onCheckpoint?.(current);
+      if (contextExport && step.exports?.length && callbacks.summarizeStepOutput) {
+        let summary = contextExport;
+        try { summary = await callbacks.summarizeStepOutput(step.id, contextExport); }
+        catch { /* Keep the raw export if summarization fails. */ }
+        exportContext(summary);
+        if (summary !== contextExport && !signal?.aborted) callbacks.onCheckpoint?.(current);
+      }
+      return { stepId: step.id, result, executed, attempted };
+    };
+
     try {
       while (current.state === 'running') {
         if (signal?.aborted) break;
@@ -61,6 +105,7 @@ export function createPlanExecutor(services: PlanExecutionServices) {
           current = { ...current, state: complete ? 'done' : 'paused',
             completedAt: complete ? current.completedAt ?? new Date().toISOString() : undefined,
             activeStepId: null, currentStepId: null };
+          callbacks.onCheckpoint?.(current);
           callbacks.onPlanUpdate(current);
           break;
         }
@@ -71,42 +116,15 @@ export function createPlanExecutor(services: PlanExecutionServices) {
         // Execute parallel steps concurrently
         if (parallelSteps.length > 0) {
           current = markStepsRunning(current, parallelSteps.map((s) => s.id));
+          callbacks.onCheckpoint?.(current);
           callbacks.onPlanUpdate(current);
-          const results = await Promise.all(parallelSteps.map(async (step) => {
-            // FU-3: per-task abort check. Without this the parallel batch
-            // is uninterruptible — a Ctrl-C mid-batch waits for the slowest
-            // task before propagating. Now each task short-circuits immediately.
-            if (signal?.aborted) {
-              return { stepId: step.id, result: cancelledBeforeStart(), executed: false };
-            }
-            callbacks.onStepStart(step.id);
-            if (signal?.aborted) return { stepId: step.id, result: cancelledBeforeStart(), executed: false };
-            const executor = executors[step.type];
-            if (!executor) {
-              return { stepId: step.id, result: { status: 'failure' as const, actualTokens: 0, actualCostUsd: 0, durationMs: 0, output: '', error: `No executor for type: ${step.type}` } as CesarStepResult, executed: false };
-            }
-            try {
-              const { result, contextExport } = await executor.execute(step, current.stepContext, signal);
-              if (contextExport && step.exports && step.exports.length > 0) {
-                let summary = contextExport;
-                if (callbacks.summarizeStepOutput) {
-                  try { summary = await callbacks.summarizeStepOutput(step.id, contextExport); } catch { /* summarizer unavailable — use raw context */ }
-                }
-                const exportUpdates: Record<string, string> = {};
-                for (const key of step.exports) { exportUpdates[key] = summary; }
-                current = { ...current, stepContext: { ...current.stepContext, ...exportUpdates } };
-              }
-              return { stepId: step.id, result, executed: true };
-            } catch (err) {
-              return { stepId: step.id, result: { status: 'failure' as const, actualTokens: 0, actualCostUsd: 0, durationMs: 0, output: '', error: err instanceof Error ? err.message : String(err) } as CesarStepResult, executed: false };
-            }
-          }));
-
-          for (const { stepId, result } of results) {
-            current = advanceCesarStep(current, stepId, result);
-          }
-          // Checkpoint the entire completed batch before an observer can fail.
-          for (const { stepId, result, executed } of results) {
+          // Drain every started backend even if one checkpoint fails.
+          const results = await Promise.allSettled(parallelSteps.map(runStep));
+          const failure = results.find(item => item.status === 'rejected');
+          if (failure?.status === 'rejected') throw failure.reason;
+          for (const item of results) {
+            if (item.status !== 'fulfilled') continue;
+            const { stepId, result, executed } = item.value;
             callbacks.onStepDone(stepId, result);
             const stepType = current.steps.find((s) => s.id === stepId)?.type ?? 'unknown';
             if (executed) recordCompletion(stepType, result);
@@ -117,43 +135,12 @@ export function createPlanExecutor(services: PlanExecutionServices) {
         if (sequentialSteps.length > 0 && current.state === 'running' && !signal?.aborted) {
           const step = sequentialSteps[0];
           current = markStepsRunning(current, [step.id]);
+          callbacks.onCheckpoint?.(current);
           callbacks.onPlanUpdate(current);
-          callbacks.onStepStart(step.id);
-          if (signal?.aborted) {
-            const result = cancelledBeforeStart();
-            current = advanceCesarStep(current, step.id, result);
-            callbacks.onStepDone(step.id, result);
-            continue;
-          }
-          const executor = executors[step.type];
-          if (!executor) {
-            const result: CesarStepResult = { status: 'failure', actualTokens: 0, actualCostUsd: 0, durationMs: 0, output: '', error: `No executor for type: ${step.type}` };
-            current = advanceCesarStep(current, step.id, result);
-            callbacks.onStepDone(step.id, result);
-            continue;
-          }
-          let result: CesarStepResult;
-          let executed = false;
-          try {
-            const output = await executor.execute(step, current.stepContext, signal);
-            result = output.result;
-            const { contextExport } = output;
-            if (contextExport && step.exports && step.exports.length > 0) {
-              let summary = contextExport;
-              if (callbacks.summarizeStepOutput) {
-                try { summary = await callbacks.summarizeStepOutput(step.id, contextExport); } catch { /* summarizer unavailable — use raw context */ }
-              }
-              const exportUpdates: Record<string, string> = {};
-              for (const key of step.exports) { exportUpdates[key] = summary; }
-              current = { ...current, stepContext: { ...current.stepContext, ...exportUpdates } };
-            }
-            executed = true;
-          } catch (err) {
-            result = { status: 'failure', actualTokens: 0, actualCostUsd: 0, durationMs: 0, output: '', error: err instanceof Error ? err.message : String(err) };
-          }
-          current = advanceCesarStep(current, step.id, result);
+          const { result, executed, attempted } = await runStep(step);
           callbacks.onStepDone(step.id, result);
           if (executed) recordCompletion(step.type, result);
+          if (!attempted) continue;
         }
 
         // Budget check
@@ -176,6 +163,7 @@ export function createPlanExecutor(services: PlanExecutionServices) {
           activeStepId: null,
           currentStepId: null,
         };
+        callbacks.onCheckpoint?.(current);
         callbacks.onPlanUpdate(current);
       }
 

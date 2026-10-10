@@ -20,7 +20,7 @@ export interface PlanCallbackHost {
 }
 export interface PlanCallbacks extends PlanExecutorCallbacks {
   summarizeStepOutput(stepId: string, output: string): Promise<string>;
-  flush(): void;
+  flush(snapshot?: CesarPlan): void;
 }
 
 /** Own Plan UI decisions and the existing 300ms write debounce. The host only
@@ -77,7 +77,10 @@ export function createPlanCallbacks(initialPlan: CesarPlan, host: PlanCallbackHo
     catch { /* No further reporting sink. */ }
   };
 
-  const flushPersist = () => {
+  const flushPersist = (snapshot?: CesarPlan) => {
+    // A required checkpoint can fail before the UI sees the newer state.
+    // Never drain an older debounced snapshot over that execution evidence.
+    if (snapshot) currentPlan = snapshot;
     if (pendingWriteTimer) {
       clearTimeout(pendingWriteTimer);
       pendingWriteTimer = null;

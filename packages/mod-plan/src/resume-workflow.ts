@@ -42,7 +42,13 @@ export async function runPlanResumeApproval(plan: CesarPlan, host: PlanResumeApp
   if (!host.available()) return;
 
   const restart = trimmed === '2' || trimmed === 'r' || trimmed === 'restart';
-  const runningPlan = prepareCesarPlanResume(plan, restart ? 'restart' : 'resume');
+  let runningPlan: CesarPlan;
+  try {
+    runningPlan = prepareCesarPlanResume(plan, restart ? 'restart' : 'resume');
+  } catch (error) {
+    host.notify('error', error instanceof Error ? error.message : String(error));
+    return;
+  }
   if (restart) {
     host.notify('info', `Restarting plan from step 1: ${plan.intent}`);
   } else {

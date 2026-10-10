@@ -108,7 +108,8 @@ describe('plan approval refuses unrecognized answers', () => {
     const plan: CesarPlan = {
       id: 'fixture', intent: 'fixture', state: 'paused',
       steps: [
-        { id: 'done', description: 'done', type: 'self', state: 'done', estimatedTokens: 10, estimatedCostUsd: 1 },
+        { id: 'done', description: 'done', type: 'self', state: 'done', estimatedTokens: 10, estimatedCostUsd: 1,
+          result: { status: 'success', output: 'retained context', actualTokens: 17, actualCostUsd: 4, durationMs: 1 } },
         { id: 'review', description: 'review', type: 'review', state: 'failed', estimatedTokens: 20, estimatedCostUsd: 2 },
         { id: 'blocked', description: 'blocked', type: 'self', state: 'blocked', dependsOn: ['review'], estimatedTokens: 30, estimatedCostUsd: 3 },
       ],
@@ -134,5 +135,21 @@ describe('plan approval refuses unrecognized answers', () => {
     expect(effects.saveCesar.mock.calls[0][0]).toStrictEqual(expected);
     expect(effects.execute.mock.calls[0][0]).toStrictEqual(expected);
     expect(plan).toStrictEqual(snapshot);
+  });
+
+  it.each(['running', 'done'] as const)('refuses ordinary resume with a %s step missing its result', async state => {
+    const plan: CesarPlan = {
+      id: 'fixture', intent: 'uncertain effects', state: 'paused',
+      steps: [{ id: 'uncertain', type: 'self', description: 'uncertain', state, estimatedTokens: 1, estimatedCostUsd: 0 }],
+      totalEstimatedTokens: 1, totalEstimatedCostUsd: 0, totalActualTokens: 0, totalActualCostUsd: 0,
+      stepContext: {}, createdAt: '2026-01-01T00:00:00.000Z',
+    };
+    const before = structuredClone(plan);
+    const dispatch = vi.fn(event => { if (event.type === 'question') event.resolve('resume'); });
+    await resumeCesarPlan(plan, { dispatch, setActivePlan: vi.fn(), ctx: { config: {} } } as unknown as DispatchCallbacks);
+    expect(effects.execute).not.toHaveBeenCalled();
+    expect(effects.saveCesar).not.toHaveBeenCalled();
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'error', message: expect.stringContaining('uncertain') }));
+    expect(plan).toStrictEqual(before);
   });
 });

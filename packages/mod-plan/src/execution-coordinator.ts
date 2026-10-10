@@ -31,7 +31,7 @@ function verificationCheckpoint(plan: CesarPlan): CesarPlan {
 export interface PlanCoordinatorHost {
   createExecutors(): Record<string, StepExecutor>;
   executePlan(plan: CesarPlan, executors: Record<string, StepExecutor>, callbacks: PlanExecutorCallbacks, signal: AbortSignal): Promise<CesarPlan>;
-  callbacks(plan: CesarPlan): PlanExecutorCallbacks & { flush(): void };
+  callbacks(plan: CesarPlan): PlanExecutorCallbacks & { flush(snapshot?: CesarPlan): void };
   setActivePlan(plan: CesarPlan): void;
   reportVerifiedPlan?(plan: CesarPlan): void;
   setAbort(controller: AbortController): void;
@@ -134,10 +134,11 @@ export function createPlanCoordinator(host: PlanCoordinatorHost) {
     catch (error) { warn('[plan] failed to persist recovery snapshot:', error); }
   }
   async function executeAndDrain(plan: CesarPlan, executors: Record<string, StepExecutor>,
-    callbacks: PlanExecutorCallbacks & { flush(): void }, signal: AbortSignal,
+    callbacks: PlanExecutorCallbacks & { flush(snapshot?: CesarPlan): void }, signal: AbortSignal,
     failurePrefix = 'Plan execution failed', pendingStepId?: string): Promise<CesarPlan> {
     let latest = plan;
     let settled = false;
+    let checkpointFailed = false;
     const phase = new AbortController();
     const abortPhase = () => phase.abort(signal.reason);
     if (signal.aborted) abortPhase();
@@ -145,9 +146,43 @@ export function createPlanCoordinator(host: PlanCoordinatorHost) {
     const reportedSteps = new Set<string>();
     const startedSteps = new Set<string>();
     const observingCallbacks: PlanExecutorCallbacks = {
+      onCheckpoint(updated) {
+        if (settled) throw new Error('Plan execution phase has settled.');
+        if (latest.state === 'cancelled') {
+          // Cancellation stops admission, not collection of in-flight results.
+          const completed = updated.steps.filter(step => startedSteps.has(step.id) && step.result
+            && !latest.steps.find(previous => previous.id === step.id)?.result);
+          if (completed.length === 0) throw new Error('Plan execution was cancelled.');
+          for (const step of completed) {
+            latest = advanceCesarStep(latest, step.id, step.result!);
+            const exports = Object.fromEntries((step.exports ?? []).filter(key => key in updated.stepContext)
+              .map(key => [key, updated.stepContext[key]]));
+            latest = { ...latest, stepContext: { ...latest.stepContext, ...exports } };
+          }
+          latest = cancelCesarPlan(latest);
+        } else {
+          latest = updated.state === 'cancelled' ? cancelCesarPlan(updated) : updated;
+        }
+        try { persistSnapshot(verificationCheckpoint(latest)); }
+        catch (error) {
+          checkpointFailed = true;
+          phase.abort(error);
+          throw error;
+        }
+        finally {
+          // Refresh the buffered view before its older debounce can fire.
+          report('checkpoint update', () => callbacks.onPlanUpdate(verificationCheckpoint(latest)));
+        }
+      },
       onPlanUpdate(updated) {
         if (settled || latest.state === 'cancelled') return;
-        latest = updated.state === 'cancelled' ? cancelCesarPlan(updated) : updated;
+        if (updated.state === 'cancelled') {
+          // The cancellation request can hold an older view of the plan.
+          latest = cancelCesarPlan({ ...updated, steps: latest.steps,
+            stepContext: latest.stepContext, totalActualTokens: latest.totalActualTokens,
+            totalActualCostUsd: latest.totalActualCostUsd });
+          phase.abort(new Error('Plan execution was cancelled.'));
+        } else latest = updated;
         report('plan update', () => callbacks.onPlanUpdate(verificationCheckpoint(latest)));
       },
       onStepStart(stepId) {
@@ -180,7 +215,8 @@ export function createPlanCoordinator(host: PlanCoordinatorHost) {
         latest = cancelCesarPlan(returned);
         report('cancellation', () => callbacks.onPlanUpdate(latest));
       }
-      return latest.state === 'cancelled' ? latest : returned;
+      latest = latest.state === 'cancelled' ? latest : returned;
+      return latest;
     }
     catch (error) {
       settled = true;
@@ -188,9 +224,16 @@ export function createPlanCoordinator(host: PlanCoordinatorHost) {
       const message = error instanceof Error ? error.message : String(error);
       const failedIds = new Set(latest.steps.filter(step => step.state === 'running'
         || (step.id === pendingStepId && (step.state === 'pending' || step.state === 'blocked' || !step.state))).map(step => step.id));
-      const terminal = latest.state === 'cancelled' || latest.state === 'done';
-      if (terminal) failedIds.clear();
-      const paused: CesarPlan = terminal ? latest : { ...latest, state: 'paused', completedAt: undefined,
+      const terminal = !checkpointFailed && (latest.state === 'cancelled' || latest.state === 'done');
+      if (terminal || checkpointFailed) failedIds.clear();
+      // A failed result write is not an execution failure. Retain known results;
+      // an interrupted started step must remain distinguishable from a retryable
+      // failure. Steps whose intent write failed never reached onStepStart.
+      const paused: CesarPlan = checkpointFailed ? {
+        ...latest, state: latest.state === 'cancelled' ? 'cancelled' : 'paused', completedAt: undefined, activeStepId: null, currentStepId: null,
+        steps: latest.steps.map(step => step.state === 'running' && !startedSteps.has(step.id)
+          ? { ...step, state: 'pending', startedAt: undefined } : step),
+      } : terminal ? latest : { ...latest, state: 'paused', completedAt: undefined,
         activeStepId: null, currentStepId: null,
         steps: latest.steps.map(step => !failedIds.has(step.id) ? step : {
           ...step, state: 'failed', result: { status: 'failure',
@@ -198,6 +241,7 @@ export function createPlanCoordinator(host: PlanCoordinatorHost) {
             durationMs: step.result?.durationMs ?? 0, output: step.result?.output ?? '', error: message },
         }),
       };
+      latest = paused;
       // Settle the domain callbacks too: the UI must not keep a running spinner
       // or todo after the stored plan becomes paused. Preserve completed steps.
       for (const step of paused.steps) {
@@ -216,7 +260,7 @@ export function createPlanCoordinator(host: PlanCoordinatorHost) {
       signal.removeEventListener('abort', abortPhase);
       // Finish this phase's writer before its caller persists the returned
       // state or starts another phase. An older writer must never run last.
-      try { callbacks.flush(); }
+      try { callbacks.flush(verificationCheckpoint(latest)); }
       catch (error) { warn('[plan] failed to flush plan callbacks:', error); }
     }
   }

@@ -70,7 +70,7 @@ export function advanceCesarStep(plan: CesarPlan, stepId: string, result: CesarS
       if (!s.dependsOn || s.dependsOn.length === 0) return s;
       const allDepsDone = s.dependsOn.every(depId => {
         const dep = newSteps.find(d => d.id === depId);
-        return dep && dep.state === 'done';
+        return dep && (dep.state === 'done' || (dep.state === 'skipped' && dep.result?.status === 'success'));
       });
       return allDepsDone ? { ...s, state: 'pending' as CesarStepState } : s;
     });

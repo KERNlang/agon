@@ -27,6 +27,15 @@ export function buildResumePromptContext(plan: CesarPlan): ResumePromptContext {
 
 /** Preserve completed work, dependency blocks and exhausted review failures. */
 export function skipCompletedSteps(plan: CesarPlan): CesarPlan {
+  const interrupted = plan.steps.find(step => !step.result && (step.state === 'running'
+    || (step.state === 'cancelled' && step.startedAt)));
+  if (interrupted) {
+    throw new Error(`Cannot resume: step '${interrupted.id}' has an outcome that is unknown. Saved plan unchanged. Inspect its effects before choosing an explicit restart; restarting can repeat completed work.`);
+  }
+  const incomplete = plan.steps.find(step => step.state === 'done' && !step.result);
+  if (incomplete) {
+    throw new Error(`Cannot resume: completed step '${incomplete.id}' is missing its result. Saved plan unchanged. Inspect the workspace and saved plan before choosing an explicit restart.`);
+  }
   const cyclesUsedAtResume = plan.reviewCyclesUsed ?? 0;
   const steps = plan.steps.map((step): CesarPlanStep => {
     if (step.state === 'done' || step.state === 'skipped') return { ...step, state: 'skipped' };
@@ -38,7 +47,7 @@ export function skipCompletedSteps(plan: CesarPlan): CesarPlan {
   return { ...plan, steps };
 }
 
-/** Prepare an already-approved choice. The host still owns approval and effects. */
+/** Prepare an already-approved choice without mutating the saved plan. */
 export function prepareCesarPlanResume(plan: CesarPlan, mode: 'resume' | 'restart'): CesarPlan {
   if (mode === 'resume') return { ...skipCompletedSteps(plan), state: 'running' };
   const steps = plan.steps.map((step): CesarPlanStep => ({

@@ -57,7 +57,7 @@ it('preserves checkpoint, history, tracker, result and completed telemetry paylo
   ]);
   expect(effects.track.mock.calls).toEqual([['a', { prompt: 'Question', response: 'why' }], ['a', { prompt: 'Question', response: 'answer' }]]);
   expect(effects.addResult).toHaveBeenCalledWith({ type: 'brainstorm', timestamp: '1970-01-01T00:00:01.000Z', question: 'Question', engines: ['a', 'b'], winner: 'a', data: { bids: result.bids, response: 'answer', dedup: result.dedup, synthesis: result.synthesis } });
-  expect(effects.recordRun).toHaveBeenCalledExactlyOnceWith({ mode: 'brainstorm', intent: 'Question', winner: 'a', success: true, durationMs: 0, engineIds: ['a', 'b'], completionState: 'completed' });
+  expect(effects.recordRun).toHaveBeenCalledExactlyOnceWith({ id: expect.any(String), mode: 'brainstorm', intent: 'Question', winner: 'a', success: true, durationMs: 0, engineIds: ['a', 'b'], completionState: 'completed' });
   session.complete(result as never); session.fail();
   expect(effects.recordRun).toHaveBeenCalledTimes(1);
   expect(effects.appendMessage).toHaveBeenCalledTimes(2);
@@ -68,7 +68,7 @@ it.each([false, true])('records only failure telemetry when aborted=%s', aborted
   if (aborted) controller.abort();
   session.fail(); session.fail();
   session.complete({ winner: 'a', response: 'late', bids: [] });
-  expect(effects.recordRun).toHaveBeenCalledExactlyOnceWith({ mode: 'brainstorm', intent: 'Question', success: false, durationMs: 0, engineIds: ['a', 'b'], completionState: aborted ? 'aborted' : 'crashed' });
+  expect(effects.recordRun).toHaveBeenCalledExactlyOnceWith({ id: expect.any(String), mode: 'brainstorm', intent: 'Question', success: false, durationMs: 0, engineIds: ['a', 'b'], completionState: aborted ? 'aborted' : 'crashed' });
   expect(effects.appendMessage).not.toHaveBeenCalled();
   expect(effects.addResult).not.toHaveBeenCalled();
   expect(effects.checkpoint).toHaveBeenCalledTimes(1);

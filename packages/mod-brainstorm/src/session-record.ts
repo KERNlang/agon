@@ -21,6 +21,7 @@ export interface BrainstormSessionEffects<Receipt> {
     data: Omit<BrainstormSessionResult, 'winner' | 'bids'> & { bids: BrainstormSessionResult['bids'][number][] };
   }): void;
   recordRun(result: {
+    id: string;
     mode: 'brainstorm'; intent: string; winner?: string; success: boolean;
     durationMs: number; engineIds: string[]; completionState: 'completed' | 'aborted' | 'crashed';
   }): Receipt;
@@ -39,28 +40,44 @@ export function createBrainstormSessionRecord<Receipt>(options: {
   const runId = `brainstorm-${randomUUID()}`;
   const startedAt = effects.now();
   let settled = false;
+  let recordingStarted = false;
   effects.checkpoint(runId, 'pre-dispatch', engines, { question });
   const timestamp = () => new Date(effects.now()).toISOString();
   function fail(): void {
     if (settled) return;
-    effects.recordRun({ mode: 'brainstorm', intent: question, success: false,
+    effects.recordRun({ id: runId, mode: 'brainstorm', intent: question, success: false,
       durationMs: effects.now() - startedAt, engineIds: engines,
       completionState: signal.aborted ? 'aborted' : 'crashed' });
     settled = true;
   }
+  function checkCancellation(): void {
+    if (!signal.aborted) return;
+    fail();
+    signal.throwIfAborted();
+  }
   return {
     complete(result: BrainstormSessionResult): string | undefined {
       if (settled) return;
-      if (signal.aborted) { fail(); signal.throwIfAborted(); }
+      if (recordingStarted) throw new Error('Brainstorm recording already started. Do not repeat partial history writes.');
+      recordingStarted = true;
+      checkCancellation();
       effects.checkpoint(runId, 'post-dispatch', engines, { winner: result.winner, question });
+      checkCancellation();
       effects.appendMessage({ role: 'user', content: `[brainstorm] ${question}`, timestamp: timestamp() });
+      checkCancellation();
       effects.appendMessage({ role: 'engine', engineId: result.winner, content: result.response, timestamp: timestamp() });
-      for (const bid of result.bids) effects.track(bid.engineId, { prompt: question, response: bid.reasoning });
+      checkCancellation();
+      for (const bid of result.bids) {
+        effects.track(bid.engineId, { prompt: question, response: bid.reasoning });
+        checkCancellation();
+      }
       effects.track(result.winner, { prompt: question, response: result.response });
+      checkCancellation();
       effects.addResult({ type: 'brainstorm', timestamp: timestamp(), question, engines, winner: result.winner,
         data: { bids: result.bids.map(({ engineId, reasoning, approach, score }) => ({ engineId, reasoning, approach, score })),
           response: result.response, dedup: result.dedup, synthesis: result.synthesis } });
-      const record = effects.recordRun({ mode: 'brainstorm', intent: question, winner: result.winner,
+      checkCancellation();
+      const record = effects.recordRun({ id: runId, mode: 'brainstorm', intent: question, winner: result.winner,
         success: true, durationMs: effects.now() - startedAt, engineIds: engines, completionState: 'completed' });
       settled = true;
       return effects.formatSummary(record);

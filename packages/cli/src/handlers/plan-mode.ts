@@ -316,7 +316,9 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
         }
         assertProcessPlanStepAvailable('delegate');
         const result = await runDelegate({ engineId, task: `Analyze and respond:\n${task}`, registry: ctx.registry, adapter: guardedAdapter('delegate', signal), timeout: 180, outputDir: join(outputDir, step.id), signal });
+        assertStepAvailable('delegate', signal);
         const verifiedDelegate = await runVerifyGate();
+        assertStepAvailable('delegate', signal);
         const after = snapshotTokens();
         if (!verifiedDelegate.ok) {
           return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: result.response, error: verifiedDelegate.error } };
@@ -617,6 +619,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
         // abortable signal that could hang the plan if the runtime ever
         // omitted the executor signal.
         const { response, blocking, parseFailed } = await runReviewCore(diff, enrichedLabel, engineId, ctx, signal);
+        assertStepAvailable('review', signal);
         const after = snapshotTokens();
         if (blocking || parseFailed) {
           return {
@@ -678,6 +681,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
           engineId: step.engine ?? step.engines?.[0],
           parentSignal: signal,
         });
+        assertStepAvailable('agent', signal);
         const after = snapshotTokens();
         const summary = captured.slice(-20).join('\n').slice(0, 2000);
         return {
@@ -724,6 +728,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
           fitnessCmd: step.fitnessCmd,
           parentSignal: signal,
         });
+        assertStepAvailable('team-agent', signal);
         const after = snapshotTokens();
         const summary = captured.slice(-20).join('\n').slice(0, 2000);
         return {

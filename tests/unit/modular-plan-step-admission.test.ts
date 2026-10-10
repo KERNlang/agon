@@ -13,7 +13,11 @@ import type { HandlerContext } from '../../packages/cli/src/handlers/types.js';
 import type { DispatchOptions, EngineAdapter, EngineDefinition } from '@kernlang/agon-core';
 import { tracker, setSessionRoot, _resetSessionRootForTests } from '@kernlang/agon-core';
 
-const effects = vi.hoisted(() => ({ brainstorm: vi.fn(), delegate: vi.fn(), other: vi.fn() }));
+const effects = vi.hoisted(() => ({ brainstorm: vi.fn(), delegate: vi.fn(), other: vi.fn(), verify: vi.fn() }));
+vi.mock('@kernlang/agon-core', async original => {
+  const core = await original<typeof import('@kernlang/agon-core')>();
+  return { ...core, spawnWithTimeout: effects.verify.mockImplementation(core.spawnWithTimeout) };
+});
 vi.mock('@kernlang/agon-forge', async original => ({
   ...await original<Record<string, unknown>>(), runBrainstorm: effects.brainstorm,
   runDelegate: effects.delegate, runForge: effects.other, runTribunal: effects.other, runCampfire: effects.other,
@@ -23,6 +27,8 @@ vi.mock('../../packages/cli/src/handlers/agent.js', async original => ({
 }));
 vi.mock('../../packages/cli/src/handlers/review.js', async original => ({
   ...await original<Record<string, unknown>>(), runReviewCore: effects.other,
+  resolveReviewTarget: () => ({ diff: 'fixture diff', label: 'fixture' }),
+  selectReviewEngine: () => 'fixture',
 }));
 import { buildStepExecutors } from '../../packages/cli/src/handlers/plan-mode.js';
 
@@ -31,6 +37,7 @@ let root: string;
 let host: DurableModHost;
 beforeEach(async () => {
   vi.clearAllMocks();
+  effects.verify.mockImplementation((await vi.importActual<typeof import('@kernlang/agon-core')>('@kernlang/agon-core')).spawnWithTimeout);
   effects.brainstorm.mockResolvedValue({ winner: 'fixture', response: 'answer' });
   effects.delegate.mockResolvedValue({ response: 'answer' });
   effects.other.mockResolvedValue({ winner: 'fixture', summary: 'review' });
@@ -501,4 +508,65 @@ it.each(['forge', 'teamforge'].flatMap(type =>
   const output = await buildStepExecutors(context())[type].execute(step(type), {}, controller.signal);
   expect(output.result.status).toBe(fault === 'healthy' ? 'success' : 'failure');
   expect(await readFile(join(workspace, 'result.txt'), 'utf8')).toBe(fault === 'healthy' ? 'after\n' : 'before\n');
+});
+
+it.each(['self', 'review', 'agent', 'team-agent'].flatMap(type =>
+  ['healthy', 'generation', 'replacement', 'cancellation'].map(fault => ({ type, fault }))))('publishes step output only with current authority: $type / $fault', async ({ type, fault }) => {
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+  const stats = tracker.getStats();
+  vi.spyOn(tracker, 'getStats').mockReturnValueOnce({ ...stats, totalTokens: 10, meteredCostUsd: 1 })
+    .mockReturnValue({ ...stats, totalTokens: 17, meteredCostUsd: 1.25 });
+  const controller = new AbortController();
+  const run = vi.fn(async () => {
+    if (fault === 'generation') await install('agon.plan');
+    else if (fault === 'replacement') { await disposeProcessSurfaceAuthority(); await initializeProcessSurfaceAuthority(root); }
+    else if (fault === 'cancellation') controller.abort(new Error('cancelled fixture'));
+    return { response: 'fixture output', blocking: false, parseFailed: false };
+  });
+  if (type === 'self') effects.delegate.mockImplementationOnce(run);
+  else effects.other.mockImplementationOnce(run);
+  const verificationMarker = join(root, 'verified');
+  const selectedStep = { ...step(type), ...(type === 'self' ? { verifyCmd: `touch '${verificationMarker}'` } : {}) };
+  const output = await buildStepExecutors(context())[type].execute(selectedStep, {}, controller.signal);
+  expect(run).toHaveBeenCalledOnce();
+  if (type === 'self') expect(existsSync(verificationMarker)).toBe(fault === 'healthy');
+  expect(output.result).toMatchObject({ status: fault === 'healthy' ? 'success' : 'failure', actualTokens: 7, actualCostUsd: 0.25 });
+  if (fault === 'healthy') expect(output).toHaveProperty('contextExport');
+  else {
+    expect(output).not.toHaveProperty('contextExport');
+    expect(output.result.error).toMatch(fault === 'generation' ? /restart/ : fault === 'replacement' ? /disposed or replaced/ : /cancelled fixture/);
+  }
+});
+
+it.each(['generation', 'replacement', 'cancellation'])('rejects self completion after authority changes during verification: %s', async fault => {
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+  const stats = tracker.getStats();
+  vi.spyOn(tracker, 'getStats').mockReturnValueOnce({ ...stats, totalTokens: 10, meteredCostUsd: 1 })
+    .mockReturnValue({ ...stats, totalTokens: 17, meteredCostUsd: 1.25 });
+  let entered!: () => void;
+  let release!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const finish = new Promise<void>(resolve => { release = resolve; });
+  effects.verify.mockImplementationOnce(async () => {
+    entered();
+    await finish;
+    return { exitCode: 0, timedOut: false, stdout: 'verified', stderr: '' };
+  });
+  const controller = new AbortController();
+  const pending = buildStepExecutors(context()).self.execute({ ...step('self'), verifyCmd: 'fixture command' }, {}, controller.signal);
+  await started;
+  try {
+    if (fault === 'generation') await install('agon.plan');
+    else if (fault === 'replacement') { await disposeProcessSurfaceAuthority(); await initializeProcessSurfaceAuthority(root); }
+    else controller.abort(new Error('cancelled fixture'));
+  } finally { release(); }
+  const output = await pending;
+  expect(effects.verify).toHaveBeenCalledOnce();
+  expect(output.result).toMatchObject({ status: 'failure', actualTokens: 7, actualCostUsd: 0.25 });
+  expect(output).not.toHaveProperty('contextExport');
+  expect(output.result.error).toMatch(fault === 'generation' ? /restart/ : fault === 'replacement' ? /disposed or replaced/ : /cancelled fixture/);
 });

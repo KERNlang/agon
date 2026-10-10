@@ -6,4 +6,5 @@ export * from './guard-types.js';
 export * from './information-gain.js';
 export * from './pipeline-types.js';
 export * from './review-target.js';
+export * from './review-engines.js';
 export * from './fitness-command.js';

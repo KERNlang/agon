@@ -27,7 +27,6 @@ vi.mock('@kernlang/agon-support-engine-runtime', () => ({ resolveEngineDefinitio
 vi.mock('../../packages/cli/src/lib/engines-dir.js', () => ({ resolveBuiltinEnginesDir: () => '/fixture/engines' }));
 vi.mock('../../packages/cli/src/handlers/engine-filter.js', () => ({ filterDefaultOrchestrationEngines: (ids: string[]) => ids }));
 vi.mock('../../packages/cli/src/patch-application-host.js', () => ({ patchApplicationHost: {} }));
-vi.mock('../../packages/cli/src/plan-session-host.js', () => ({ planSessionHost: {} }));
 vi.mock('../../packages/cli/src/bridge/serve-runtime.js', () => ({}));
 vi.mock('../../packages/cli/src/commands/chrome.js', () => ({}));
 vi.mock('../../packages/cli/src/commands/drive.js', () => ({}));

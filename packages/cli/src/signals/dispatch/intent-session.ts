@@ -2,7 +2,7 @@ import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createPatchApplicationUi, withPatchApplication } from '../../patch-application-host.js';
 import { escapeLiteralText } from '../../blocks/literal-text.js';
-import { withPlanSession } from '../../plan-session-host.js';
+import { withPlanSession } from '@kernlang/agon-mod-plan';
 import type { SessionJobsInvocationContext } from '@kernlang/agon-mod-jobs';
 import { runBrainstormSession } from '../../blocks/brainstorm-session.js';
 

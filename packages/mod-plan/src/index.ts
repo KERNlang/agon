@@ -228,6 +228,7 @@ export const MANIFEST = validateManifest({
       "dist/formatter.d.ts",
       "dist/resume-policy.d.ts",
       "dist/runtime.d.ts",
+      "dist/session-scope.d.ts",
       "dist/session.d.ts",
       "dist/step-validation.d.ts",
       "ownership.json",
@@ -484,6 +485,7 @@ export { createMod as default } from './implementation.js';
 export { createPersistenceEnvelope, unwrapPersistenceEnvelope } from './implementation.js';
 export { PlanCostEstimator } from './cost-estimator.js';
 export { createPlanRuntime } from './runtime.js';
+export { planSessionHost, withPlanSession } from './session-scope.js';
 export type { CostEstimate, PlanCostPricing } from './cost-estimator.js';
 export { createPlanStepSanitizer, VALID_STEP_TYPES } from './step-validation.js';
 export type { PlanStepEstimator } from './step-validation.js';

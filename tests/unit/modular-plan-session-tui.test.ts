@@ -5,7 +5,7 @@ import type { DispatchCallbacks } from '../../packages/cli/src/signals/dispatch.
 const router = vi.hoisted(() => ({ run: vi.fn(async () => false) }));
 vi.mock('../../packages/cli/src/signals/dispatch/cesar-router.js', () => ({ routeWithCesar: router.run }));
 import { createMod } from '../../packages/mod-plan/src/implementation.js';
-import { planSessionHost } from '../../packages/cli/src/plan-session-host.js';
+import { planSessionHost } from '@kernlang/agon-mod-plan';
 import { runPhysicalTuiContribution } from '../../packages/cli/src/signals/dispatch/intent-session.js';
 
 it('routes a task through Plan mode and does not resume disk state without an explicit ID', async () => {

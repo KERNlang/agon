@@ -4,7 +4,7 @@ import type { PlanSessionHostServices } from '@kernlang/agon-mod-api';
 type Run = PlanSessionHostServices['run'];
 const scope = new AsyncLocalStorage<{ invocationId: string; run: Run; active: boolean }>();
 
-/** A05 compatibility adapter: session/UI ownership remains in CLI until extracted. */
+/** Bind host effects to one Plan invocation; inherited work expires on return. */
 export async function withPlanSession<T>(invocationId: string, run: Run, invoke: () => Promise<T>): Promise<T> {
   const session = { invocationId, run, active: true };
   try { return await scope.run(session, invoke); }

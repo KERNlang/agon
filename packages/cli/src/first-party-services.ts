@@ -1,7 +1,7 @@
 import { resolveExplicitReviewEngines } from '@kernlang/agon-support-verification';
 import { cliRunRecordHost } from './run-record-host.js';
 import { patchApplicationHost } from './patch-application-host.js';
-import { planSessionHost } from './plan-session-host.js';
+import { planSessionHost } from '@kernlang/agon-mod-plan';
 import { EngineRegistry, createRunDir, eventLogFlush, getRatings, loadConfig, pickTopRatedEngine, setSessionRoot } from '@kernlang/agon-core';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { createBrainstormHostServices } from '@kernlang/agon-core';

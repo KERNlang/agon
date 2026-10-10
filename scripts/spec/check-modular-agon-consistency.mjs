@@ -73,8 +73,18 @@ for (const cell of ledger.cells) {
 check(ledger.cells.length === 1480, `coverage cell count is ${ledger.cells.length}, expected 1480`);
 
 function slug(value) {
-  return value.trim().toLowerCase().replace(/<[^>]+>/g, '').replace(/[^\p{L}\p{N}\s-]/gu, '').replace(/\s+/g, '-').replace(/-+/g, '-');
+  return value.trim().toLowerCase().replace(/<[^>]+>/g, '').replace(/[^\p{L}\p{N}\s-]/gu, '').replace(/ /g, '-').replace(/\s/g, '');
 }
+// Check the anchor oracle on every run, including clean-checkout qualification.
+for (const [heading, expected] of [
+  ['Apply workflow extraction — development qualification', 'apply-workflow-extraction--development-qualification'],
+  ['Two  spaces', 'two--spaces'],
+  ['A - B', 'a---b'],
+  ['a\tb', 'ab'],
+  ['a\u00a0b', 'ab'],
+  ['  Simple heading!  ', 'simple-heading'],
+]) check(slug(heading) === expected, `heading anchor regression: ${heading}`);
+check(slug('Two  spaces') !== 'two-spaces', 'collapsed anchor must not be accepted');
 const markdownFiles = readdirSync(specDir).filter((file) => /^modular-agon-.*\.md$/.test(file)).map((file) => join(specDir, file));
 for (const file of markdownFiles) {
   const source = readFileSync(file, 'utf8');

@@ -45,6 +45,7 @@ function cleanSubjectSteps(subject) {
       ['legacy-oracle', 'node', ['scripts/spec/verify-modular-legacy-oracle.mjs']],
       ['legacy-oracle-negative-controls', 'node', ['scripts/spec/verify-modular-legacy-oracle-negative-controls.mjs']],
       ['roadmap-contract', 'node', ['scripts/spec/verify-modular-agon-roadmap.mjs']],
+      ['modular-runtime-build', 'npm', ['run', 'build:cli:workspaces']],
       ['contract-tests', 'npm', ['run', 'test:modular-slice1a']],
     ]) {
       const result = run(command, args, checkout);

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ManagedLifecyclePlan } from './managed-lifecycle.js';
 import type { HostIo } from './host-io.js';
@@ -9,6 +10,8 @@ import { assertMigrationSourceRevision, migrateStagedCopy, type MigrationReceipt
 import { projectLegacyModSettings, readLegacyConfigAliases } from './mod-settings.js';
 import type { DurableModHost, GenerationPointer } from './durable-host.js';
 import { LEGACY_MOD_SETTING_OWNERS } from './legacy-config-assignments.generated.js';
+import { parseGenerationPointer, validateGenerationContents } from './host-contracts.js';
+import { AGON_RUNTIME_VERSION } from './runtime-version.js';
 
 interface ConfigurationOwner {
   readonly ownerId: string;
@@ -25,8 +28,44 @@ export interface GenerationConfiguration {
 
 /** Missing legacy artifacts require qualification. Partial artifacts are corrupt. */
 export async function readGenerationConfiguration(host: DurableModHost, pointer: GenerationPointer): Promise<GenerationConfiguration | undefined> {
-  const paths = ['config/index.json', 'config/source-global.json', 'config/selected-global.json', 'config/owners.json', 'config/migration-receipts.json'];
-  const files = await host.readGenerationArtifacts(pointer, paths);
+  return parseGenerationConfiguration(await host.readGenerationArtifacts(pointer, CONFIGURATION_PATHS));
+}
+
+const CONFIGURATION_PATHS = ['config/index.json', 'config/source-global.json', 'config/selected-global.json', 'config/owners.json', 'config/migration-receipts.json'];
+
+/** Read selected rules for the synchronous public config API without changing authority. */
+export function readSelectedGenerationConfigurationSync(hostRoot: string): GenerationConfiguration | undefined {
+  const pointerPath = join(hostRoot, 'current-generation.json');
+  let pointerBytes: Buffer;
+  try { pointerBytes = readFileSync(pointerPath); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined; throw error; }
+  try {
+    const pointer = parseGenerationPointer(JSON.parse(pointerBytes.toString('utf8')));
+    const root = join(hostRoot, 'generations', String(pointer.generation).padStart(16, '0'));
+    const files: Record<string, Uint8Array> = Object.create(null);
+    function readDirectory(prefix: string): void {
+      for (const entry of readdirSync(join(root, prefix), { withFileTypes: true })) {
+        const path = prefix ? `${prefix}/${entry.name}` : entry.name;
+        if (entry.isDirectory()) readDirectory(path);
+        else if (entry.isFile()) files[path] = readFileSync(join(root, path));
+        else throw new Error('unsupported generation entry');
+      }
+    }
+    readDirectory('');
+    const manifestBytes = files['generation.json'];
+    delete files['generation.json'];
+    const manifest = validateGenerationContents(JSON.parse(new TextDecoder().decode(manifestBytes)), pointer.generation, AGON_RUNTIME_VERSION, files);
+    if (manifest.graphHash !== pointer.graphHash || manifest.lockHash !== pointer.lockHash) throw new Error('pointer does not bind selected generation');
+    if (!readFileSync(pointerPath).equals(pointerBytes)) throw new DurableHostError('MOD_TRANSACTION_CONFLICT', 'selected configuration changed during read');
+    return parseGenerationConfiguration(files);
+  } catch (error) {
+    if (error instanceof DurableHostError) throw error;
+    throw new DurableHostError('MOD_GENERATION_CORRUPT', 'selected configuration generation failed validation');
+  }
+}
+
+function parseGenerationConfiguration(files: Readonly<Record<string, Uint8Array | undefined>>): GenerationConfiguration | undefined {
+  const paths = CONFIGURATION_PATHS;
   if (paths.every(path => files[path] === undefined)) return undefined;
   if (paths.some(path => files[path] === undefined)) throw new DurableHostError('MOD_GENERATION_CORRUPT', 'selected configuration artifacts are incomplete');
   try {

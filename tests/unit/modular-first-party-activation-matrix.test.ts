@@ -21,14 +21,21 @@ describe('every first-party mod through durable activation and fresh surface boo
     const root = await mkdtemp(join(tmpdir(), 'agon-mod-artifact-copy-'));
     const desired = createFullCompatDesiredState(catalog, '2026-09-05T00:00:00.000Z');
     let armed = false;
+    let copying = false;
     let reads = 0;
     const host = new DurableModHost(root, { kernelVersion: '1.0.0', io: { ...nodeHostIo,
       readFile: async path => {
         const bytes = await nodeHostIo.readFile(path);
-        if (armed && path.endsWith('/' + name) && ++reads === (name === 'mods.lock.json' ? 3 : 2)) return Buffer.from('{"version":999}');
+        if (copying && path.endsWith('/' + name)) { reads++; return Buffer.from('{"version":999}'); }
         return bytes;
       },
     } });
+    const validateGeneration = host.validateGeneration.bind(host);
+    host.validateGeneration = async generation => {
+      const manifest = await validateGeneration(generation);
+      if (armed) copying = true;
+      return manifest;
+    };
     await host.commitGeneration({ operation: 'install', lock: await surfaceLockFor(desired), desiredState: desired, installedIndex: {}, files: { 'snapshot.json': '{"version":1}' } });
     const normal = createFirstPartyActivationService(host);
     const service = new ModActivationService(host, catalog, async (...args) => {
@@ -37,7 +44,7 @@ describe('every first-party mod through durable activation and fresh surface boo
     });
     const plan = await service.preview({ kind: 'disable', id: 'agon.forge' });
     await expect(service.apply(plan)).rejects.toThrow(/artifact.*changed/);
-    expect(reads).toBe(name === 'mods.lock.json' ? 3 : 2);
+    expect(reads).toBe(1);
     expect((await host.readCurrentPointer())?.generation).toBe(1);
   });
 

@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { canonicalJson, sha256Canonical } from './lock.js';
 import type {
   GenerationLease,
   GenerationManifest,
@@ -7,6 +9,28 @@ import type {
   HostTransactionJournal,
   HostTransactionOperation,
 } from './durable-host.js';
+
+/** Check one captured generation. Both synchronous and asynchronous readers use this. */
+export function validateGenerationContents(
+  manifestInput: unknown,
+  generation: number,
+  kernelVersion: string,
+  files: Readonly<Record<string, Uint8Array>>,
+): GenerationManifest {
+  const manifest = parseGenerationManifest(manifestInput);
+  const { contentHash, ...unsigned } = manifest;
+  if (manifest.generation !== generation || manifest.kernelVersion !== kernelVersion) throw new Error('generation identity or kernel mismatch');
+  if (sha256Canonical(unsigned) !== contentHash) throw new Error('generation manifest hash mismatch');
+  if (canonicalJson(Object.keys(files).sort()) !== canonicalJson(Object.keys(manifest.files).sort())) throw new Error('generation contains undeclared or missing files');
+  for (const [path, expected] of Object.entries(manifest.files)) {
+    if (`sha256:${createHash('sha256').update(files[path]).digest('hex')}` !== expected) throw new Error(`content hash mismatch: ${path}`);
+  }
+  const lockBytes = files['mods.lock.json'];
+  if (!lockBytes || `sha256:${createHash('sha256').update(lockBytes).digest('hex')}` !== manifest.lockHash) throw new Error('generation lock hash mismatch');
+  const lock = JSON.parse(new TextDecoder().decode(lockBytes));
+  if (lock.graphHash !== manifest.graphHash) throw new Error('generation graph hash mismatch');
+  return Object.freeze(manifest);
+}
 
 const OPERATIONS = new Set<HostTransactionOperation>([
   'install', 'update', 'enable', 'disable', 'remove', 'import', 'profile-update',

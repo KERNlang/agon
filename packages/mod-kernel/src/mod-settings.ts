@@ -129,6 +129,15 @@ function combineDefaults(left: Json, right: Json): Json {
   throw new TypeError('configuration schemas propose conflicting defaults');
 }
 
+/** Apply defaults only. Validation remains scoped to the invoked owner. */
+export function applyModSettingsDefaults(schema: Record<string, unknown>, selected: Record<string, unknown>): Record<string, unknown> {
+  if (schema.type !== 'object') throw new TypeError('configuration schema must describe an object');
+  readLegacyConfigAliases(schema);
+  if (Object.hasOwn(schema, 'default') && !record(schema.default)) throw new TypeError('configuration default must be an object');
+  const defaults = record(schema.default) ? { ...snapshot(schema.default) as Record<string, Json>, ...selected } : selected;
+  return withDefaults(schema, defaults) as Record<string, unknown>;
+}
+
 /** Apply committed owner schemas without writing configuration or changing authority. */
 export function resolveRegisteredModSettings(ownerId: string, settings: unknown, schemas: readonly unknown[]): Readonly<Record<string, Json>> {
   try {
@@ -136,10 +145,7 @@ export function resolveRegisteredModSettings(ownerId: string, settings: unknown,
     const proposed = new Map<string, Json>();
     for (const schema of schemas) {
       if (!record(schema) || schema.type !== 'object') throw new TypeError('configuration schema must describe an object');
-      readLegacyConfigAliases(schema);
-      if (Object.hasOwn(schema, 'default') && !record(schema.default)) throw new TypeError('configuration default must be an object');
-      const defaults = record(schema.default) ? { ...snapshot(schema.default) as Record<string, Json>, ...selected } : selected;
-      const candidate = snapshot(withDefaults(schema, defaults)) as Record<string, Json>;
+      const candidate = snapshot(applyModSettingsDefaults(schema, selected)) as Record<string, Json>;
       for (const [key, value] of Object.entries(candidate)) {
         if (Object.hasOwn(selected, key) && canonicalJson(selected[key]) === canonicalJson(value)) continue;
         proposed.set(key, proposed.has(key) ? combineDefaults(proposed.get(key)!, value) : value);

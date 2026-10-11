@@ -1,7 +1,7 @@
 import { mkdirSync, readdirSync, statSync, rmSync } from 'node:fs';
 
 import { join } from 'node:path';
-import { createScopedConfigStore, normalizeKernelSettings, mergeModSettingsLayers, selectModSettings, projectLegacyModSettings, withSynchronousWriterFence } from '@kernlang/agon-kernel';
+import { createScopedConfigStore, normalizeKernelSettings, mergeModSettingsLayers, selectModSettings, projectLegacyModSettings, withSynchronousWriterFence, readSelectedGenerationConfigurationSync, applyModSettingsDefaults, readLegacyConfigAliases, resolveRegisteredModSettings } from '@kernlang/agon-kernel';
 import { normalizeBrowserSettings } from '@kernlang/agon-support-browser-bridge';
 import { normalizeEngineSettings } from '@kernlang/agon-support-engine-runtime';
 
@@ -43,7 +43,13 @@ const configStore = createScopedConfigStore<Required<AgonConfig>>({
     const owner = LEGACY_MOD_SETTING_OWNERS[key as keyof typeof LEGACY_MOD_SETTING_OWNERS];
     const namespace = selectModSettings(existing, owner);
     const mods = { ...mergeModSettingsLayers(existing), [owner]: { ...namespace, [key]: value } };
-    return Object.assign(updated, { mods });
+    const proposed = Object.assign(updated, { mods });
+    const descriptor = selectedConfiguration()?.owners.find(candidate => candidate.ownerId === owner);
+    if (descriptor) {
+      const effective = projectLegacyModSettings(proposed, LEGACY_MOD_SETTING_OWNERS);
+      resolveRegisteredModSettings(owner, selectModSettings(effective, owner), [descriptor.schema]);
+    }
+    return proposed;
   },
 });
 
@@ -56,8 +62,38 @@ export function invalidateConfigCache(): void {
   configStore.invalidate();
 }
 
+function selectedConfiguration() {
+  // Safe mode must remain usable when the selected mod generation is corrupt.
+  if (process.env.AGON_MOD_SAFE_MODE === '1') return undefined;
+  const hostRoot = process.env.AGON_MODULAR_HOST_ROOT ?? join(getAgonHome(), 'modular-host');
+  const generation = readSelectedGenerationConfigurationSync(hostRoot);
+  if (generation && generation.source.path !== agonPath('config.json')) throw new ConfigError('Selected configuration belongs to another source path. Requalify this installation.');
+  return generation;
+}
+
 export function loadConfig(cwd?: string): Required<AgonConfig> {
-  return configStore.load(cwd);
+  const config = configStore.load(cwd);
+  const generation = selectedConfiguration();
+  if (!generation) return config;
+  const mods = { ...mergeModSettingsLayers(config) };
+  for (const owner of generation.owners) {
+    const selected = mods[owner.ownerId];
+    // Retain inactive malformed values. The registry validates the invoked owner.
+    if (Object.hasOwn(mods, owner.ownerId) && (!selected || typeof selected !== 'object' || Array.isArray(selected))) continue;
+    let settings: Record<string, unknown>;
+    try { settings = applyModSettingsDefaults(owner.schema, (selected ?? {}) as Record<string, unknown>); }
+    catch (error) {
+      // Defer owner-local validation errors to invocation, not unrelated reads.
+      if (error instanceof TypeError) continue;
+      throw error;
+    }
+    mods[owner.ownerId] = settings;
+    for (const key of readLegacyConfigAliases(owner.schema)) {
+      if (Object.hasOwn(settings, key)) Object.assign(config, { [key]: settings[key] });
+    }
+  }
+  Object.assign(config, { mods });
+  return config;
 }
 
 function mergeConfig(global: Partial<AgonConfig>, local: Partial<AgonConfig>, localPrivate: Partial<AgonConfig>): Required<AgonConfig> {

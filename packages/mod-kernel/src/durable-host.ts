@@ -5,7 +5,7 @@ import { DurableHostError, SimulatedHostCrash } from './host-errors.js';
 import { atomicWrite, nodeHostIo, pathExists, readJson, writeNewImmutableFile, type HostIo } from './host-io.js';
 import { createDoctorReport, createHostEvent, redactHostValue, type HostBlockedReason, type HostDoctorReport, type HostEvent } from './host-observability.js';
 import { WriterFence, type WriterLockOptions } from './writer-lock.js';
-import { parseGenerationManifest, parseGenerationPointer, parseHostTransactionJournal } from './host-contracts.js';
+import { validateGenerationContents, parseGenerationPointer, parseHostTransactionJournal } from './host-contracts.js';
 import { makeTreeRemovable } from './removable-tree.js';
 import { GenerationLeaseStore } from './generation-leases.js';
 import { disposeGenerationOwners } from './generation-disposal.js';
@@ -314,22 +314,11 @@ export class DurableModHost {
   async validateGeneration(generation: number): Promise<GenerationManifest> {
     const root = this.generationPath(generation);
     try {
-      const manifest = parseGenerationManifest(await readJson<unknown>(this.#io, join(root, 'generation.json')));
-      const { contentHash, ...unsigned } = manifest;
-      if (manifest.schemaVersion !== 1 || manifest.generation !== generation || manifest.kernelVersion !== this.#options.kernelVersion) throw new Error('generation identity or kernel mismatch');
-      if (sha256Canonical(unsigned) !== contentHash) throw new Error('generation manifest hash mismatch');
+      const manifestInput = await readJson<unknown>(this.#io, join(root, 'generation.json'));
       const actualFiles = (await listFiles(this.#io, root)).filter((path) => path !== 'generation.json');
-      const declaredFiles = Object.keys(manifest.files).sort();
-      if (canonicalJson(actualFiles) !== canonicalJson(declaredFiles)) throw new Error('generation contains undeclared or missing files');
-      const lockBytes = await this.#io.readFile(join(root, 'mods.lock.json'));
-      const generationLock = JSON.parse(new TextDecoder().decode(lockBytes)) as CanonicalModLock;
-      if (hashBytes(lockBytes) !== manifest.lockHash) throw new Error('generation lock hash mismatch');
-      if (generationLock.graphHash !== manifest.graphHash) throw new Error('generation graph hash mismatch');
-      for (const [path, expected] of Object.entries(manifest.files)) {
-        const actual = hashBytes(await this.#io.readFile(join(root, safeRelativePath(path))));
-        if (actual !== expected) throw new Error(`content hash mismatch: ${path}`);
-      }
-      return Object.freeze(manifest);
+      const files: Record<string, Uint8Array> = Object.create(null);
+      for (const path of actualFiles) files[path] = await this.#io.readFile(join(root, safeRelativePath(path)));
+      return validateGenerationContents(manifestInput, generation, this.#options.kernelVersion, files);
     } catch (error) {
       if (error instanceof DurableHostError) throw error;
       throw new DurableHostError('MOD_GENERATION_CORRUPT', `generation ${generation} failed validation`, { cause: error instanceof Error ? error.message : String(error) });

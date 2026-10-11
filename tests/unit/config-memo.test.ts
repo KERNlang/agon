@@ -45,7 +45,7 @@ describe('loadConfig() memoization', () => {
 
     expect(second).toEqual(first); // same content — served from cache…
     expect(second).not.toBe(first); // …but a fresh clone, never the cached instance
-    expect(readFileSync).toHaveBeenCalledExactlyOnceWith(agonHomePath('config.json'));
+    expect(vi.mocked(readFileSync).mock.calls).toEqual([[agonHomePath('config.json')], [agonHomePath('modular-host/current-generation.json')]]);
     expect([..._configMemoCache.values()].every((entry, index) => entry === entries[index])).toBe(true);
   });
 
@@ -102,7 +102,7 @@ describe('loadConfig() memoization', () => {
     vi.mocked(readFileSync).mockClear();
     const second = loadConfig();
     expect(second).toEqual(first);
-    expect(readFileSync).toHaveBeenCalledExactlyOnceWith(agonHomePath('config.json'));
+    expect(vi.mocked(readFileSync).mock.calls).toEqual([[agonHomePath('config.json')], [agonHomePath('modular-host/current-generation.json')]]);
   });
 
   it('keys the cache per-cwd: a project .agon.json changing invalidates only that cwd', async () => {
@@ -124,7 +124,7 @@ describe('loadConfig() memoization', () => {
     vi.mocked(readFileSync).mockClear();
     const globalAgain = loadConfig();
     expect(globalAgain).toEqual(globalOnly);
-    expect(readFileSync).toHaveBeenCalledExactlyOnceWith(agonHomePath('config.json'));
+    expect(vi.mocked(readFileSync).mock.calls).toEqual([[agonHomePath('config.json')], [agonHomePath('modular-host/current-generation.json')]]);
   });
 
   it('invalidateConfigCache() forces a fresh read even when mtime hasn\'t changed', async () => {

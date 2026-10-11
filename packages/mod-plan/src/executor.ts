@@ -1,5 +1,6 @@
 import type { CesarPlan, CesarPlanStep, CesarStepResult } from './execution-model.js';
 import { advanceCesarStep } from './execution-state.js';
+import { assertExecutablePlan } from './execution-record.js';
 
 export interface PlanExecutionServices {
   /** Best-effort estimation history, not billing or required result storage. */
@@ -39,6 +40,7 @@ export function createPlanExecutor(services: PlanExecutionServices) {
     }
   };
   return async function executePlan(plan: CesarPlan, executors: Record<string,StepExecutor>, callbacks: PlanExecutorCallbacks, signal?: AbortSignal): Promise<CesarPlan> {
+    assertExecutablePlan(plan);
     let current = plan;
     const markStepsRunning = (target: CesarPlan, stepIds: string[]) => {
       if (stepIds.length === 0) return target;

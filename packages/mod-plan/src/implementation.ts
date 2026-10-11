@@ -5,6 +5,7 @@ import type { AgonModFactory, CommandResult, Dispose, Json, ModServices, Registr
 import { listCesarPlans, loadCesarPlan, saveCesarPlan } from './execution-store.js';
 import { createPlanProposal, exitCesarPlan } from './execution-state.js';
 import { planExitRefusal } from './session-workflow.js';
+import { planGraphError } from './dependency-graph.js';
 import { CESAR_PLAN_STATES, CESAR_STEP_TYPES } from './execution-model.js';
 import type { CesarPlan, CesarPlanStep, CesarStepType } from './execution-model.js';
 export { createPersistenceEnvelope, unwrapPersistenceEnvelope } from '@kernlang/agon-support-persistence';
@@ -33,10 +34,8 @@ function validateSteps(raw: Json): { steps?: CesarPlanStep[]; error?: string } {
     for (const field of ['result', 'startedAt', 'completedAt', 'runDir', 'selfReviewCycle']) delete proposal[field];
     steps.push({ ...proposal, id, type: type as CesarStepType, description, dependsOn, parallel: item.parallel === true, state: dependsOn.length ? 'blocked' : 'pending', estimatedTokens, estimatedCostUsd });
   }
-  for (const step of steps) for (const dependency of step.dependsOn ?? []) if (!ids.has(dependency)) return { error: `step "${step.id}" depends on unknown step "${dependency}"` };
-  const visiting = new Set<string>(); const visited = new Set<string>(); const byId = new Map(steps.map((step) => [step.id, step]));
-  const cycle = (id: string): boolean => { if (visiting.has(id)) return true; if (visited.has(id)) return false; visiting.add(id); for (const dependency of byId.get(id)?.dependsOn ?? []) if (cycle(dependency)) return true; visiting.delete(id); visited.add(id); return false; };
-  for (const step of steps) if (cycle(step.id)) return { error: `circular dependency involving step "${step.id}"` };
+  const graphError = planGraphError(steps);
+  if (graphError) return { error: graphError };
   const parallelWriters = steps.filter((step) => step.parallel && ['forge','teamforge','pipeline','agent','team-agent'].includes(step.type));
   if (parallelWriters.length > 1) return { error: `parallel workspace writers require explicit serialization: ${parallelWriters.map((step) => step.id).join(', ')}` };
   return { steps };

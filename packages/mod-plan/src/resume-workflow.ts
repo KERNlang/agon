@@ -1,5 +1,6 @@
 import type { CesarPlan } from './execution-model.js';
 import { buildResumePromptContext, prepareCesarPlanResume } from './resume-policy.js';
+import { assertExecutablePlan } from './execution-record.js';
 
 export interface PlanResumeApprovalEffects {
   available(): boolean;
@@ -11,6 +12,11 @@ export interface PlanResumeApprovalEffects {
 /** Approval is valid only while the selected host generation remains available. */
 export async function runPlanResumeApproval(plan: CesarPlan, host: PlanResumeApprovalEffects): Promise<void> {
   if (!host.available()) return;
+  try { assertExecutablePlan(plan); }
+  catch (error) {
+    host.notify('error', error instanceof Error ? error.message : String(error));
+    return;
+  }
   const ctx = buildResumePromptContext(plan);
   const lines = [
     `Resume plan: ${plan.intent}`,

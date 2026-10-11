@@ -1,4 +1,5 @@
 import { beforeEach, expect, it, vi } from 'vitest';
+import { createCesarPlan } from '@kernlang/agon-mod-plan';
 const effects = vi.hoisted(() => ({ execute: vi.fn(), save: vi.fn() }));
 vi.mock('@kernlang/agon-core', async original => ({
   ...await original<Record<string, unknown>>(), executePlan: effects.execute, saveCesarPlan: effects.save,
@@ -12,9 +13,8 @@ import { requestPlanFallback, revokePlanFallback, takePlanFallback } from '../..
 beforeEach(() => vi.resetAllMocks());
 
 function plan() {
-  return { id: 'fixture-plan', intent: 'fixture', state: 'running', selfReview: false,
-    steps: [{ id: 's1', type: 'self', engine: 'a', state: 'pending', description: 'fixture step' }],
-    stepContext: {}, totalActualCostUsd: 0, totalActualTokens: 0 } as any;
+  return { ...createCesarPlan('fixture', [{ id: 's1', type: 'self', engine: 'a', description: 'fixture step', estimatedTokens: 1, estimatedCostUsd: 0 }]),
+    id: 'fixture-plan', state: 'running', selfReview: false } as any;
 }
 
 it.each(['user cancellation', 'timeout text', 'cancelled plan'])('does not authorize another execution from %s', async scenario => {

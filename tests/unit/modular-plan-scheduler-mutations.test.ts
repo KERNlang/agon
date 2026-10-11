@@ -8,8 +8,10 @@ const source = readFileSync(new URL('../../packages/mod-plan/src/executor.ts', i
 function compile(candidate: string): string {
   // Compile the scheduler and its canonical state transitions in memory. No provider, installer,
   // subprocess, personal state or production-file mutation is involved.
-  const state = readFileSync(new URL('../../packages/mod-plan/src/execution-state.ts', import.meta.url), 'utf8');
-  const combined = state + '\n' + candidate.replace("import { advanceCesarStep } from './execution-state.js';", '');
+  const dependencies = ['execution-model', 'dependency-graph', 'execution-record', 'execution-state']
+    .map(name => readFileSync(new URL(`../../packages/mod-plan/src/${name}.ts`, import.meta.url), 'utf8'));
+  const combined = [...dependencies, candidate].join('\n')
+    .replace(/^import .* from '\.\/(?:execution-model|dependency-graph|execution-record|execution-state)\.js';\n/gm, '');
   const { outputText } = transpileModule(combined, { compilerOptions: { module: ModuleKind.ESNext, target: ScriptTarget.ES2022 } });
   return `data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`;
 }

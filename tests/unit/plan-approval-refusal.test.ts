@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HandlerContext } from '../../packages/cli/src/handlers/types.js';
 import type { DispatchCallbacks } from '../../packages/cli/src/signals/dispatch.js';
 import type { CesarPlan } from '@kernlang/agon-core';
+import { createCesarPlan } from '@kernlang/agon-mod-plan';
 
 const effects = vi.hoisted(() => ({
   approve: vi.fn((plan) => ({ ...plan, state: 'approved' })),
@@ -87,7 +88,7 @@ describe('plan approval refuses unrecognized answers', () => {
   });
 
   it.each(['no', 'n', 'not yet', 'maybe', '3', 'cancel', ''])('resume refuses %j without persisting or executing', async answer => {
-    const plan = { id: 'fixture', intent: 'fixture', state: 'paused', steps: [], totalActualCostUsd: 0 } as unknown as CesarPlan;
+    const plan: CesarPlan = { ...createCesarPlan('fixture', []), id: 'fixture', state: 'paused' };
     const setActivePlan = vi.fn();
     const dispatch = vi.fn((event) => { if (event.type === 'question') event.resolve(answer); });
     await resumeCesarPlan(plan, { dispatch, setActivePlan, ctx: { config: {} } } as unknown as DispatchCallbacks);
@@ -98,7 +99,7 @@ describe('plan approval refuses unrecognized answers', () => {
   });
 
   it.each(['1', 'resume', '2', 'restart'])('resume accepts explicit choice %s', async answer => {
-    const plan = { id: 'fixture', intent: 'fixture', state: 'paused', steps: [], totalActualCostUsd: 0 } as unknown as CesarPlan;
+    const plan: CesarPlan = { ...createCesarPlan('fixture', []), id: 'fixture', state: 'paused' };
     const dispatch = vi.fn((event) => { if (event.type === 'question') event.resolve(answer); });
     await resumeCesarPlan(plan, { dispatch, setActivePlan: vi.fn(), ctx: { config: {} } } as unknown as DispatchCallbacks);
     expect(effects.execute).toHaveBeenCalledOnce();

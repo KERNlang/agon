@@ -28,8 +28,10 @@ function fixture(changed: string[] = ['file.txt']) {
 describe('physical Plan execution coordinator', () => {
   it('does not demote verified work when terminal cost formatting fails', async () => {
     const { coordinator, host } = fixture([]);
-    const value = { ...plan(), selfReview: false, totalActualCostUsd: null } as unknown as CesarPlan;
-    await coordinator.executeApprovedPlan(value);
+    const value = { ...plan(), selfReview: false };
+    const formatting = vi.spyOn(Number.prototype, 'toFixed').mockImplementationOnce(() => { throw new TypeError('fixture formatting failure'); });
+    try { await coordinator.executeApprovedPlan(value); }
+    finally { formatting.mockRestore(); }
     expect(host.save.mock.calls.at(-1)![0].state).toBe('done');
     expect(host.notify.mock.calls.some(([level]) => level === 'error')).toBe(false);
     expect(host.warn).toHaveBeenCalledWith('[plan] failed to report completion message:', expect.any(TypeError));

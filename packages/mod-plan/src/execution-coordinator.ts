@@ -1,6 +1,7 @@
 import type { CesarPlan, CesarPlanStep } from './execution-model.js';
 import type { PlanExecutorCallbacks, StepExecutor } from './executor.js';
 import { advanceCesarStep, cancelCesarPlan } from './execution-state.js';
+import { assertExecutablePlan } from './execution-record.js';
 
 const MUTATING = new Set(['forge', 'teamforge', 'pipeline', 'agent', 'team-agent', 'delegate', 'self']);
 const FORGE_LIKE = new Set(['forge', 'teamforge', 'pipeline']);
@@ -268,6 +269,11 @@ export function createPlanCoordinator(host: PlanCoordinatorHost) {
    * FU-4: shared executor for the auto-approve, manual-approve, and plan-resume paths. Wires the abort controller, builds callbacks (with debounced persistence), runs executePlan, runs finalizePlanWithReviewGate, and dispatches the terminal status. Eliminates the ~60 lines of triplication that lived in dispatch.kern and forced future changes (e.g., new callback hooks, new finalize behavior) to be applied to all three sites.
    */
   async function executeApprovedPlan(approved: CesarPlan): Promise<void> {
+    try { assertExecutablePlan(approved); }
+    catch (error) {
+      emit({ type: 'error', message: error instanceof Error ? error.message : String(error) });
+      return;
+    }
     let lastKnown = approved;
     let initialPersisted = false;
     let abortController = new AbortController();
@@ -339,6 +345,7 @@ export function createPlanCoordinator(host: PlanCoordinatorHost) {
    * Single source of truth for the post-execution self-review gate. Called from BOTH the plan-task and plan-resume terminal paths so resume cannot bypass the gate or the cycle cap (tribunal fix #4).
    */
   async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors: Record<string,StepExecutor>, abortSignal: AbortSignal): Promise<CesarPlan> {
+    assertExecutablePlan(finalPlan);
     let lastKnown = finalPlan;
     try {
       return await finalizeReview(finalPlan, executors, abortSignal, snapshot => { lastKnown = snapshot; });

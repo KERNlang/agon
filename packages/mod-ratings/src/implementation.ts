@@ -1,10 +1,12 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import type { AgonModFactory, CommandResult, Dispose, InvocationContext, Json, ModServices, Registrar } from '@kernlang/agon-mod-api';
 import { purgeRatingsStore } from './maintenance.js';
 import type { PurgeReport, RatingsMaintenanceStore } from './maintenance.js';
+import { readRatingsFile, writeRatingsFile } from './storage.js';
+import type { GlickoRating } from './types.js';
 
-export interface GlickoRating { mu:number; phi:number; sigma:number; wins:number; losses:number; lastActive:string }
+export type { GlickoRating } from './types.js';
 export interface RatingRecord {
   global:Record<string,GlickoRating>;
   byMode:Record<string,Record<string,GlickoRating>>;
@@ -14,26 +16,18 @@ export interface RatingRecord {
 }
 const home = () => resolve(process.env.AGON_HOME?.trim() || resolve(process.env.HOME || '.', '.agon'));
 const ratingsPath = () => join(home(), 'ratings.json');
-const empty = ():RatingRecord => ({ global:{}, byMode:{forge:{},brainstorm:{},tribunal:{},critique:{}}, byTaskClass:{}, engineMeta:{}, lastUpdated:new Date().toISOString() });
 
 export function loadRatings():RatingRecord {
-  try {
-    const record = JSON.parse(readFileSync(ratingsPath(), 'utf8')) as RatingRecord;
-    record.global ??= {}; record.byMode ??= {};
-    for (const mode of ['forge','brainstorm','tribunal','critique']) record.byMode[mode] ??= {};
-    record.byTaskClass ??= {}; record.engineMeta ??= {};
-    return record;
-  } catch { return empty(); }
+  return readRatingsFile(ratingsPath) as RatingRecord;
 }
 const maintenanceStore: RatingsMaintenanceStore<RatingRecord> = {
   path: (...parts) => join(home(), ...parts),
   load: loadRatings,
   save(record) {
     record.lastUpdated = new Date().toISOString();
-    mkdirSync(dirname(ratingsPath()), { recursive: true });
-    const temporary = ratingsPath() + `.tmp.${process.pid}`;
-    writeFileSync(temporary, JSON.stringify(record, null, 2) + '\n');
-    renameSync(temporary, ratingsPath());
+    const path = ratingsPath();
+    mkdirSync(dirname(path), { recursive: true });
+    writeRatingsFile(path, record, path + `.tmp.${process.pid}`);
   },
 };
 

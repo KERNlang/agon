@@ -128,6 +128,9 @@
       "dist/index.d.ts",
       "dist/implementation.d.ts",
       "dist/maintenance.d.ts",
+      "dist/glicko.d.ts",
+      "dist/types.d.ts",
+      "dist/storage.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

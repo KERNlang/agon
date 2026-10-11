@@ -3,5 +3,8 @@
   "$id": "https://kernlang.dev/schemas/mutate/config.schema.json",
   "title": "mutate configuration",
   "type": "object",
+  "properties": {
+    "cesarMutateReflex": { "type": "boolean", "default": true }
+  },
   "additionalProperties": true
 }

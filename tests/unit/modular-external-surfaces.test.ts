@@ -107,7 +107,7 @@ describe.sequential('S8 external generated surface execution', () => {
       ? { ...services, engines: { dispatch } } : services);
     const route = processSurfaceCatalog('cesar').find(entry => entry.kind === 'plan-step' && entry.owner.id === 'agon.agent')!;
     await executeProcessCesarRoute(route.publicId, { task: 'fixture task', engine: 'fixture' }, { cwd: paths.root, signal: new AbortController().signal });
-    expect(dispatch).toHaveBeenCalledWith('fixture', expect.any(String), expect.objectContaining({ config: { selected: true } }), expect.anything());
+    expect(dispatch).toHaveBeenCalledWith('fixture', expect.any(String), expect.objectContaining({ config: { selected: true, cesarAgenticContinuationLimit: 12 } }), expect.anything());
   });
   it('delivers only layered owner settings through CLI, MCP and Cesar', async () => {
     const paths = await fixture(true);

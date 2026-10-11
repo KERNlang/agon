@@ -48,15 +48,7 @@ export interface ScoreComponents {
 
 export type { GlickoRating, EngineMeta, RatingRecord } from '@kernlang/agon-mod-ratings';
 
-export interface AgonConfig extends EngineSettings, KernelSettings, PersistenceSettings, BrowserSettings, FirstPartyLegacySettings {
-  forgeEnableSynthesis?: boolean;
-  goalReviewEngines?: string[];
-  forgeSynthesisTimeout?: number;
-  skillSynthesisThreshold?: number;
-  cesarAgenticContinuationLimit?: number;
-  cesarMutateReflex?: boolean;
-  autoReviewAfterImpl?: boolean;
-}
+export interface AgonConfig extends EngineSettings, KernelSettings, PersistenceSettings, BrowserSettings, FirstPartyLegacySettings {}
 
 export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   debug: DEFAULT_KERNEL_SETTINGS.debug,
@@ -65,17 +57,17 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   forgeDispatchTimeout: DEFAULT_ENGINE_SETTINGS.forgeDispatchTimeout,
   forgeAutoAcceptScore: DEFAULT_KERNEL_SETTINGS.forgeAutoAcceptScore,
   forgeClearWinnerSpread: DEFAULT_KERNEL_SETTINGS.forgeClearWinnerSpread,
-  forgeEnableSynthesis: false,
+  forgeEnableSynthesis: DEFAULT_FIRST_PARTY_SETTINGS.forgeEnableSynthesis,
   forgeMaxCritiques: DEFAULT_KERNEL_SETTINGS.forgeMaxCritiques,
   forgeStarterStrategy: DEFAULT_KERNEL_SETTINGS.forgeStarterStrategy,
   forgeFixedStarter: DEFAULT_KERNEL_SETTINGS.forgeFixedStarter,
   reviewDefaultEngine: DEFAULT_ENGINE_SETTINGS.reviewDefaultEngine,
-  goalReviewEngines: [],
+  goalReviewEngines: [...DEFAULT_FIRST_PARTY_SETTINGS.goalReviewEngines],
   forgeRequireBaselineCheck: DEFAULT_KERNEL_SETTINGS.forgeRequireBaselineCheck,
   engineActivationMode: DEFAULT_ENGINE_SETTINGS.engineActivationMode,
   forgeEnabledEngines: DEFAULT_ENGINE_SETTINGS.forgeEnabledEngines,
   forgeFitnessTimeout: DEFAULT_FIRST_PARTY_SETTINGS.forgeFitnessTimeout,
-  forgeSynthesisTimeout: 300,
+  forgeSynthesisTimeout: DEFAULT_FIRST_PARTY_SETTINGS.forgeSynthesisTimeout,
   forgeEarlyFinalizeEnabled: DEFAULT_KERNEL_SETTINGS.forgeEarlyFinalizeEnabled,
   forgeEarlyFinalizePassingCount: DEFAULT_KERNEL_SETTINGS.forgeEarlyFinalizePassingCount,
   forgeEarlyFinalizeMinScore: DEFAULT_KERNEL_SETTINGS.forgeEarlyFinalizeMinScore,
@@ -107,7 +99,7 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   gauntletMaxBreakers: DEFAULT_KERNEL_SETTINGS.gauntletMaxBreakers,
   gauntletRepairTimeout: DEFAULT_KERNEL_SETTINGS.gauntletRepairTimeout,
   corpusReplayLimit: DEFAULT_KERNEL_SETTINGS.corpusReplayLimit,
-  skillSynthesisThreshold: 3,
+  skillSynthesisThreshold: DEFAULT_FIRST_PARTY_SETTINGS.skillSynthesisThreshold,
   cesarEnabled: DEFAULT_KERNEL_SETTINGS.cesarEnabled,
   cesarScoutCount: DEFAULT_KERNEL_SETTINGS.cesarScoutCount,
   cesarScoutTimeout: DEFAULT_KERNEL_SETTINGS.cesarScoutTimeout,
@@ -126,7 +118,7 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   cesarAutoApproveMaxCostUsd: DEFAULT_KERNEL_SETTINGS.cesarAutoApproveMaxCostUsd,
   cesarAutoMode: DEFAULT_KERNEL_SETTINGS.cesarAutoMode,
   cesarAutoHarnessProfile: DEFAULT_KERNEL_SETTINGS.cesarAutoHarnessProfile,
-  cesarAgenticContinuationLimit: 12,
+  cesarAgenticContinuationLimit: DEFAULT_FIRST_PARTY_SETTINGS.cesarAgenticContinuationLimit,
   cesarImportantTaskPattern: DEFAULT_KERNEL_SETTINGS.cesarImportantTaskPattern,
   cesarDangerousTaskPattern: DEFAULT_KERNEL_SETTINGS.cesarDangerousTaskPattern,
   cesarDestructiveActionPattern: DEFAULT_KERNEL_SETTINGS.cesarDestructiveActionPattern,
@@ -144,7 +136,7 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   cesarExperienceTopK: DEFAULT_KERNEL_SETTINGS.cesarExperienceTopK,
   cesarExperienceWindow: DEFAULT_KERNEL_SETTINGS.cesarExperienceWindow,
   cesarDelegationReflex: DEFAULT_KERNEL_SETTINGS.cesarDelegationReflex,
-  cesarMutateReflex: true,
+  cesarMutateReflex: DEFAULT_FIRST_PARTY_SETTINGS.cesarMutateReflex,
   cesarGateAutoRun: DEFAULT_KERNEL_SETTINGS.cesarGateAutoRun,
   cesarGateAutoRunLimit: DEFAULT_KERNEL_SETTINGS.cesarGateAutoRunLimit,
   cesarGateTimeoutSec: DEFAULT_KERNEL_SETTINGS.cesarGateTimeoutSec,
@@ -171,7 +163,7 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   iconTheme: DEFAULT_KERNEL_SETTINGS.iconTheme,
   narrationFold: DEFAULT_KERNEL_SETTINGS.narrationFold,
   autoReviewAfterForge: DEFAULT_FIRST_PARTY_SETTINGS.autoReviewAfterForge,
-  autoReviewAfterImpl: true,
+  autoReviewAfterImpl: DEFAULT_FIRST_PARTY_SETTINGS.autoReviewAfterImpl,
   buddyTimeout: DEFAULT_KERNEL_SETTINGS.buddyTimeout,
   speculativeThresholdUsd: DEFAULT_KERNEL_SETTINGS.speculativeThresholdUsd,
   speculativeEloSpreadThreshold: DEFAULT_KERNEL_SETTINGS.speculativeEloSpreadThreshold,

@@ -9,8 +9,19 @@ import { ModRegistry } from '../../packages/mod-kernel/src/index.js';
 import { resolveRegisteredModSettings } from '../../packages/mod-kernel/src/mod-settings.js';
 import { createMod, MANIFEST } from '../../packages/mod-forge/src/index.js';
 import { DEFAULT_FIRST_PARTY_SETTINGS } from '../../packages/core/src/models/first-party-settings.generated.js';
+import { DEFAULT_AGON_CONFIG } from '../../packages/core/src/models/types.js';
 
 describe('Forge configuration ownership', () => {
+  it('keeps mutable compatibility defaults independent of generated defaults', () => {
+    const compatibility = DEFAULT_AGON_CONFIG.goalReviewEngines;
+    const generated = DEFAULT_FIRST_PARTY_SETTINGS.goalReviewEngines;
+    expect(compatibility).not.toBe(generated);
+    const before = [...generated];
+    try {
+      generated.push('fixture-mutation');
+      expect(compatibility).not.toContain('fixture-mutation');
+    } finally { generated.splice(0, generated.length, ...before); }
+  });
   it('ships its assigned defaults in the owner schema', () => {
     const schema = JSON.parse(readFileSync(new URL('../../packages/mod-forge/schemas/config.schema.json', import.meta.url), 'utf8'));
     const ledger = JSON.parse(readFileSync(new URL('../../docs/specs/evidence/modular-agon-ownership.json', import.meta.url), 'utf8'));
@@ -21,9 +32,61 @@ describe('Forge configuration ownership', () => {
       autoReviewAfterForge: { type: 'boolean', default: true },
       forgeFitnessTimeout: { type: 'number', default: 120 },
     });
-    expect(DEFAULT_FIRST_PARTY_SETTINGS).toEqual(Object.fromEntries(
+    expect(DEFAULT_FIRST_PARTY_SETTINGS).toMatchObject(Object.fromEntries(
       Object.entries(schema.properties as Record<string, { default: unknown }>).map(([key, property]) => [key, property.default]),
     ));
+  });
+
+  it.each([
+    ['review', () => import('../../packages/mod-review/src/index.js'), { autoReviewAfterImpl: true, goalReviewEngines: [] }],
+    ['agent', () => import('../../packages/mod-agent/src/index.js'), { cesarAgenticContinuationLimit: 12 }],
+    ['mutate', () => import('../../packages/mod-mutate/src/index.js'), { cesarMutateReflex: true }],
+    ['synthesis', () => import('../../packages/mod-synthesis/src/index.js'), { forgeEnableSynthesis: false, forgeSynthesisTimeout: 300, skillSynthesisThreshold: 3 }],
+  ] as const)('%s owns and registers its configuration', async (name, load, expected) => {
+    const { MANIFEST: declaration, createMod: factory } = await load();
+    const owner = { id: declaration.id, version: declaration.version, contentHash: `sha256:${'a'.repeat(64)}` as const };
+    const registry = new ModRegistry({ generation: 'remaining-settings', activeOwners: [owner] });
+    const session = registry.beginRegistration(declaration);
+    const mod = await factory(new Proxy({} as ModServices, { get() { throw new Error('unexpected host effect'); } }));
+    await mod.activate(session.registrar);
+    session.commit();
+    const schema = JSON.parse(readFileSync(new URL(`../../packages/mod-${name}/schemas/config.schema.json`, import.meta.url), 'utf8'));
+    const schemas = declaration.contributes.configKeys.map(({ id }) => registry.resolve('config', id)!.payload);
+    const { $id: _schemaId, ...registeredSchema } = schema;
+    for (const payload of schemas) expect(payload).toEqual(registeredSchema);
+    expect(Object.keys(schema.properties ?? {}).sort()).toEqual(Object.keys(expected).sort());
+    expect(resolveRegisteredModSettings(owner.id, {}, schemas)).toEqual(expected);
+    const explicit = Object.fromEntries(Object.entries(expected).map(([key, value]) => [key, Array.isArray(value) ? ['fixture-engine'] : typeof value === 'boolean' ? false : 0]));
+    expect(resolveRegisteredModSettings(owner.id, { ...explicit, future: 'keep' }, schemas)).toEqual({ ...explicit, future: 'keep' });
+    const command = (registry.project('cli').entries[0] ?? registry.project('tui').entries[0]).payload as CommandContribution;
+    const context: InvocationContext = { invocationId: 'remaining-invalid', cwd: '/fixture', platform: 'darwin-arm64', signal: new AbortController().signal, config: { [Object.keys(expected)[0]]: null } };
+    expect(() => command.run({}, context)).toThrow(/mod settings for agon\./);
+    for (const key of Object.keys(expected)) {
+      expect(() => command.run({}, { ...context, config: { [key]: null } })).toThrow(/mod settings for agon\./);
+    }
+    if (name === 'review') {
+      expect(() => command.run({}, { ...context, config: { goalReviewEngines: ['valid', 3] } })).toThrow(/mod settings/);
+      const first = resolveRegisteredModSettings(owner.id, {}, schemas).goalReviewEngines;
+      const second = resolveRegisteredModSettings(owner.id, {}, schemas).goalReviewEngines;
+      expect(first).not.toBe(second);
+      expect(first).not.toBe(schema.properties.goalReviewEngines.default);
+      expect(Object.isFrozen(first)).toBe(true);
+    }
+    await registry.disposeOwner(owner.id);
+    expect(() => command.run({}, { ...context, config: {} })).toThrow(/unavailable/);
+  });
+
+  it('generates exactly the defaults assigned to the five mod owners', () => {
+    const ledger = JSON.parse(readFileSync(new URL('../../docs/specs/evidence/modular-agon-ownership.json', import.meta.url), 'utf8'));
+    const expected: Record<string, unknown> = {};
+    for (const name of ['forge', 'review', 'agent', 'mutate', 'synthesis']) {
+      const schema = JSON.parse(readFileSync(new URL(`../../packages/mod-${name}/schemas/config.schema.json`, import.meta.url), 'utf8'));
+      const keys = ledger.assignments.filter((item: { category: string; package: string }) => item.category === 'configKeys' && item.package === `@kernlang/agon-mod-${name}`)
+        .map((item: { id: string }) => item.id).sort();
+      expect(Object.keys(schema.properties ?? {}).sort()).toEqual(keys);
+      for (const key of keys) expected[key] = schema.properties[key].default;
+    }
+    expect(DEFAULT_FIRST_PARTY_SETTINGS).toEqual(expected);
   });
 
   it('registers executable defaults and rejects invalid settings before effects', async () => {
@@ -75,7 +138,7 @@ describe('Forge configuration ownership', () => {
       expect(run(true).status).toBe(0);
       const generatedPath = join(fixture, 'packages/core/src/models/first-party-settings.generated.ts');
       const generated = readFileSync(generatedPath, 'utf8');
-      expect(generated).not.toMatch(/foreignSetting|goalReviewEngines/);
+      expect(generated).not.toMatch(/foreignSetting|not-forge-owned/);
       expect(generated).toContain('forgeFitnessTimeout?: number');
       expect(generated).toContain('autoReviewAfterForge?: boolean');
       schema.properties.forgeFitnessTimeout.default = 121;
@@ -99,6 +162,17 @@ describe('Forge configuration ownership', () => {
       const duplicate = run();
       expect(duplicate.status).toBe(1);
       expect(duplicate.stderr).toContain('duplicate settings owner');
+      ledger.assignments.pop();
+      const assignment = ledger.assignments.find((item: { category: string; id: string }) => item.category === 'configKeys' && item.id === 'forgeFitnessTimeout');
+      ledger.assignments.push({ ...assignment, package: '@kernlang/agon-mod-review' });
+      writeFileSync(ledgerPath, JSON.stringify(ledger));
+      const reviewPath = join(fixture, 'packages/mod-review/schemas/config.schema.json');
+      const reviewSchema = JSON.parse(readFileSync(reviewPath, 'utf8'));
+      reviewSchema.properties = { ...reviewSchema.properties, forgeFitnessTimeout: { type: 'number', default: 120 } };
+      writeFileSync(reviewPath, JSON.stringify(reviewSchema));
+      const crossOwner = run();
+      expect(crossOwner.status).toBe(1);
+      expect(crossOwner.stderr).toContain('duplicate settings owner');
     } finally { rmSync(fixture, { recursive: true, force: true }); }
   });
 });

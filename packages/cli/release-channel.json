@@ -370,9 +370,9 @@
         "agon.panel"
       ],
       "sourceLocator": "@kernlang/agon-mod-synthesis@1.0.0",
-      "integrity": "sha512-mgLMKmV9rnu9WCCFOgj6Qz5ZQ3TBAHcBK5Z58dw/4oy0tI319umTcl29uR4vWFGBj3qMPFTz6roxFu2Y2r/Uuw==",
-      "contentHash": "sha256:c827dff74b2150cec2f1e6215f13afb4f8a18fc0014d36989285c50f63fe0809",
-      "manifestHash": "sha256:388701758ab0410d797211e1c3b7a2675b9c3e63648a4868bc6a17d031f90df0"
+      "integrity": "sha512-8wAS2vJ66TLyk9m4xt4bVjFUEIVliE7rVsZXfL8u3U10WDknZxgWrr0BwROuN2Zukkwc+gsqrcRu7qzVEzqVew==",
+      "contentHash": "sha256:010d05942d934adf058b7aa486b14534ab11ac7daa62f92577c1d690d956d3dc",
+      "manifestHash": "sha256:b8e3432495b16ce1c5f8fed1c9a2b15072502a844b72b21f561794e9be7c275a"
     },
     {
       "id": "@kernlang/agon-mod-review",
@@ -393,9 +393,9 @@
         "agon.worktree"
       ],
       "sourceLocator": "@kernlang/agon-mod-review@1.0.0",
-      "integrity": "sha512-be/T5dqHaxnNqNd9JAkTrX2GQWAOuZZoLuIovevtRjFACu/cuB9VBWJJ02rG2m7J81As0hZiS4zAbl0blEN19A==",
-      "contentHash": "sha256:e4323c71ad3c57d4c5ea820c56981a19e4278dc49bbd9b46ea8dac226f7b5f10",
-      "manifestHash": "sha256:aa5f44c7b6f2f24916123a05b363c7fe6bf0821500d787c6fc7e33bfaf1c37c3"
+      "integrity": "sha512-JdO28yO7nfQ0im1KEAv1qJ6eIjkbitkEw3cfMZ0Ha0pu6OEu24VoEeEaqLURCVUNIvIErwvJBPSFZX9CEr2Jrw==",
+      "contentHash": "sha256:0b063807ae53f5e4b1d686c3c2a8fcc78ec1aadee608ab05b66ffac968b21e68",
+      "manifestHash": "sha256:0681b0e19c1d3604af9be4b737e4f8c44759a24ac49132da17af6d8bfd6907aa"
     },
     {
       "id": "@kernlang/agon-mod-pipeline-orchestration",
@@ -456,9 +456,9 @@
         "agon.engine-runtime"
       ],
       "sourceLocator": "@kernlang/agon-mod-agent@1.0.0",
-      "integrity": "sha512-Nb7uoz1m4arfum6/fYrwpi9dSV0j8v1SJlmqE8WLRhRy/fQoBhiDRNT2+3Ya6XdfSxrnyDAhx/FdQrk1BKJCdQ==",
-      "contentHash": "sha256:d48d53d94637bdb867d291e4f0d0f34b0181844f565f1ff05435002533093d1a",
-      "manifestHash": "sha256:968c2f47b7fbfb208ba657fe48103d1caccc73f47ac9c6817a201783aaf157b4"
+      "integrity": "sha512-oEQm0xTR9tx57iI0mJFHF4RowDweJsiSEV6dmgqOHnuWeSq2kUkOHV1NHtaWUCMyfschE3O/Aqrc67Rvk4+pKw==",
+      "contentHash": "sha256:3404cfe88b8677b15536ec474bd067df58aa516e70ff6292f8021b0966282912",
+      "manifestHash": "sha256:3003aca2a05556ee8f491fe73674594172ce833b723683003784e57202521282"
     },
     {
       "id": "@kernlang/agon-mod-goal",
@@ -615,9 +615,9 @@
         "agon.worktree"
       ],
       "sourceLocator": "@kernlang/agon-mod-mutate@1.0.0",
-      "integrity": "sha512-LpQcgU14UtwSMVFJlDEEM8eWxUYxuiaQCCzYWc+U0IF2LtBiiqYEZ3SPM4AlJnHBAOIfC8RaXeyKz1oSQ8J9tw==",
-      "contentHash": "sha256:9b046bc8587869acc2fcb115dd82a4d91b3a096ee0967ff181a2a3771f9d9de6",
-      "manifestHash": "sha256:3a3357380037021765378a9b19f88bbb34ff6d286707ee8d319580627ec6981c"
+      "integrity": "sha512-sSBc0O9hYMqAtNbRSMcoKZ2noSN5hm9eprtzPUh42hTqDhNHJta0lNIXGAXCwKPJ1h/oumPko8wS2D6+gx53PQ==",
+      "contentHash": "sha256:86bc2735a51151c990cbe72254dad1bb9020a39f906d3b34774791eef0105bcf",
+      "manifestHash": "sha256:7a17046a41d2e318c45ec257f121e325bb4032617e6742c4ee578e47b1276910"
     },
     {
       "id": "@kernlang/agon-mod-naturalize",

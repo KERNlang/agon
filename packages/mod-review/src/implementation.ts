@@ -1,3 +1,8 @@
+import ownerConfigSchema from '../schemas/config.schema.json' with { type: 'json' };
+
+// Resource identity is not part of the executable schema subset.
+const { $id: _configSchemaId, ...configSchema } = ownerConfigSchema;
+
 import { commandResultToToolResult } from '@kernlang/agon-mod-api';
 import type {
   AgonModFactory,
@@ -506,7 +511,7 @@ export const createMod: AgonModFactory = (services) =>
         );
       for (const id of ["configKeys:0007", "configKeys:0087"])
         d.push(
-          registrar.config(id, { type: "object", additionalProperties: true }),
+          registrar.config(id, configSchema),
         );
       return async () => {
         for (const x of [...d].reverse()) await x();

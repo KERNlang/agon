@@ -1,3 +1,8 @@
+import ownerConfigSchema from '../schemas/config.schema.json' with { type: 'json' };
+
+// Resource identity is not part of the executable schema subset.
+const { $id: _configSchemaId, ...configSchema } = ownerConfigSchema;
+
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -155,7 +160,7 @@ export const createMod: AgonModFactory = (services) => Object.freeze({
     const disposers = [
       registrar.command('cli', { id: 'cliCommands:0054', ...command }),
       registrar.command('tui', { id: 'tuiSlashCommands:0045', ...command, parse: (value: string) => ({ input: value.replace(/^\/mutate\s*/i, '') }) }),
-      registrar.config('configKeys:0041', { type: 'object', additionalProperties: true }),
+      registrar.config('configKeys:0041', configSchema),
     ];
     return async () => { for (const dispose of [...disposers].reverse()) await dispose(); };
   },

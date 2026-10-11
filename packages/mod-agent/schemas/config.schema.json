@@ -3,5 +3,8 @@
   "$id": "https://kernlang.dev/schemas/agent/config.schema.json",
   "title": "agent configuration",
   "type": "object",
+  "properties": {
+    "cesarAgenticContinuationLimit": { "type": "number", "default": 12 }
+  },
   "additionalProperties": true
 }

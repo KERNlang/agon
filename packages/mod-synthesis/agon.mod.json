@@ -72,8 +72,8 @@
       "path": "schemas/config.schema.json",
       "kind": "schema",
       "mediaType": "application/schema+json",
-      "contentHash": "sha256:7052783e2fb284beae69acbe4c7d6a47088de0b85166c2db6b85adc1e378c515",
-      "bytes": 224,
+      "contentHash": "sha256:1fe7cbedca0c562c94ae052cb4d18d78d8b97c9d9037c7bdca2d2ff6e8c0c596",
+      "bytes": 449,
       "executable": false,
       "platforms": [
         "darwin-arm64",

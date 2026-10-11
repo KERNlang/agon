@@ -1,7 +1,8 @@
 import { mkdirSync, readdirSync, statSync, rmSync } from 'node:fs';
 
 import { join } from 'node:path';
-import { createScopedConfigStore } from '@kernlang/agon-kernel';
+import { createScopedConfigStore, normalizeKernelSettings } from '@kernlang/agon-kernel';
+import { normalizeBrowserSettings } from '@kernlang/agon-support-browser-bridge';
 import { normalizeEngineSettings } from '@kernlang/agon-support-engine-runtime';
 
 import {
@@ -51,43 +52,8 @@ function mergeConfig(global: Partial<AgonConfig>, local: Partial<AgonConfig>, lo
   const merged = { ...DEFAULT_AGON_CONFIG, ...global, ...local, ...localPrivate } as Required<AgonConfig>;
   // Compiler can't emit object/array defaults for Record types — ensure correct runtime types
   normalizeEngineSettings(merged);
-  if (!Array.isArray((merged as any).browserExtensionIds)) (merged as any).browserExtensionIds = [];
-  if (!['auto', 'native', 'fullscreen'].includes(String(merged.terminalMode))) merged.terminalMode = 'auto';
-  if (!['full', 'reduced', 'off'].includes(String((merged as any).uiMotion))) (merged as any).uiMotion = 'reduced';
-  if (!merged.hooks || typeof merged.hooks === 'string') (merged as any).hooks = {};
-  if (!merged.allowedCommands || typeof merged.allowedCommands === 'string') (merged as any).allowedCommands = [];
-  // Default tool permissions — same model as Claude Code:
-  // Read/search = auto-allow, Write/Edit/Bash = ask
-  if (!merged.toolPermissions || typeof merged.toolPermissions === 'string') {
-    (merged as any).toolPermissions = {
-      Read: 'allow',
-      Grep: 'allow',
-      Glob: 'allow',
-      Edit: 'ask',
-      Write: 'ask',
-      Bash: 'ask',
-    };
-  }
-  if (!(merged as any).permissionMode) (merged as any).permissionMode = 'smart';
-  // CC-parity permissions: deep-merge allow/deny across scopes so deny from
-  // ANY scope (global/project/local) wins, instead of an outer scope's
-  // `permissions` object wholesale-replacing an inner one. Fail-safe:
-  // non-array / non-object entries collapse to empty arrays, never throw.
-  const collectRules = (src: any): { allow: string[]; deny: string[] } => {
-    const p = src?.permissions;
-    if (!p || typeof p !== 'object' || Array.isArray(p)) return { allow: [], deny: [] };
-    const allow = Array.isArray(p.allow) ? p.allow.filter((x: unknown) => typeof x === 'string') : [];
-    const deny = Array.isArray(p.deny) ? p.deny.filter((x: unknown) => typeof x === 'string') : [];
-    return { allow, deny };
-  };
-  const dedup = (arr: string[]): string[] => Array.from(new Set(arr));
-  const g = collectRules(global);
-  const l = collectRules(local);
-  const lp = collectRules(localPrivate);
-  (merged as any).permissions = {
-    allow: dedup([...g.allow, ...l.allow, ...lp.allow]),
-    deny: dedup([...g.deny, ...l.deny, ...lp.deny]),
-  };
+  normalizeBrowserSettings(merged);
+  normalizeKernelSettings(merged, global, local, localPrivate);
   return merged;
 }
 

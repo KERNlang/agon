@@ -1,3 +1,9 @@
+import type { KernelSettings } from '@kernlang/agon-kernel';
+import { DEFAULT_KERNEL_SETTINGS } from '@kernlang/agon-kernel';
+import type { PersistenceSettings } from '@kernlang/agon-support-persistence';
+import { DEFAULT_PERSISTENCE_SETTINGS } from '@kernlang/agon-support-persistence';
+import type { BrowserSettings } from '@kernlang/agon-support-browser-bridge';
+import { DEFAULT_BROWSER_SETTINGS } from '@kernlang/agon-support-browser-bridge';
 export type {
   AgentDispatchResult, CliModelEntry, CompanionConfig, DispatchOptions, DispatchResult, EngineAdapter,
   EngineCliModelConfig, EngineDefinition, EngineEffortConfig, EngineEnvVar, EngineMode, EngineModeConfig,
@@ -40,239 +46,140 @@ export interface ScoreComponents {
 
 export type { GlickoRating, EngineMeta, RatingRecord } from '@kernlang/agon-mod-ratings';
 
-export interface AgonConfig extends EngineSettings {
-  debug?: boolean;
-  timeout?: number;
-  forgeTimeout?: number;
-  forgeAutoAcceptScore?: number;
-  forgeClearWinnerSpread?: number;
+export interface AgonConfig extends EngineSettings, KernelSettings, PersistenceSettings, BrowserSettings {
   forgeEnableSynthesis?: boolean;
-  forgeMaxCritiques?: number;
-  forgeStarterStrategy?: 'fixed'|'rotate';
-  forgeFixedStarter?: string;
   goalReviewEngines?: string[];
-  forgeRequireBaselineCheck?: boolean;
   forgeFitnessTimeout?: number;
   forgeSynthesisTimeout?: number;
-  forgeEarlyFinalizeEnabled?: boolean;
-  forgeEarlyFinalizePassingCount?: number;
-  forgeEarlyFinalizeMinScore?: number;
-  forgeHealthCheckEnabled?: boolean;
-  forgeHealthCheckTimeoutSec?: number;
-  forgeHealthCheckApiTimeoutSec?: number;
-  forgeMaxParallelApi?: number;
-  reviewMaxTokens?: number;
-  reviewFileContext?: boolean;
-  ratingsEnabled?: boolean;
-  contextSummary?: boolean;
-  sessionContinuity?: boolean;
-  onboarded?: boolean;
-  projectContext?: string;
-  contextFormat?: 'plain'|'kern';
-  approvalLevel?: 'plan'|'task'|'write'|'none';
-  agentTimeout?: number;
-  agentPermissionLevel?: 'full'|'plan'|'read-only';
-  jobEventLimit?: number;
-  jobRetentionLimit?: number;
-  jobMaxConcurrency?: number;
-  jobLabelMaxChars?: number;
-  jobOutputChunkChars?: number;
-  jobCancelGraceMs?: number;
-  jobShutdownTimeoutMs?: number;
-  daemonFrameMaxBytes?: number;
-  gauntletEnabled?: boolean;
-  gauntletMaxBreakers?: number;
-  gauntletRepairTimeout?: number;
-  corpusReplayLimit?: number;
   skillSynthesisThreshold?: number;
-  cesarEnabled?: boolean;
-  cesarScoutCount?: number;
-  cesarScoutTimeout?: number;
-  cesarDirectThreshold?: number;
-  cesarDisagreementSpread?: number;
-  cesarCodeFastPathChars?: number;
-  cesarAutoPipeline?: boolean;
-  cesarPipelineThreshold?: number;
-  cesarBackend?: 'cli'|'api'|'auto';
-  claudeBackend?: 'print'|'pty';
-  cesarActingFallback?: 'ask'|'auto'|'off';
-  cesarMcpEnabled?: boolean;
-  cesarMcpConfigPath?: string;
-  cesarAutoApproveMode?: 'off'|'safe-only'|'cost-bounded'|'always';
-  cesarAutoApproveMaxCostUsd: number;
-  cesarAutoMode?: boolean;
-  cesarAutoHarnessProfile?: 'legacy'|'agentic';
   cesarAgenticContinuationLimit?: number;
-  cesarImportantTaskPattern: string;
-  cesarDangerousTaskPattern: string;
-  cesarDestructiveActionPattern: string;
-  cesarSensitivePathPatterns: string[];
-  cesarAutoModePrompted?: boolean;
-  resumePausedPlanOnStartup?: boolean;
-  cesarSelfTurnAutoApprove?: boolean;
-  cesarSelfTurnAutoApproveMaxDiffTokens?: number;
-  cesarApprovalLedger?: boolean;
-  cesarToolTimeline?: boolean;
-  protectedPushBranches: string[];
-  cesarExperience?: boolean;
-  cesarExperienceMinSimilarity: number;
-  cesarExperienceMinEpisodes: number;
-  cesarExperienceTopK: number;
-  cesarExperienceWindow: number;
-  cesarDelegationReflex?: boolean;
   cesarMutateReflex?: boolean;
-  cesarGateAutoRun?: boolean;
-  cesarGateAutoRunLimit?: number;
-  cesarGateTimeoutSec?: number;
-  cesarGateOutputTailChars?: number;
-  cesarSearchNudgeThreshold: number;
-  cesarReadSpiralThreshold: number;
-  cesarReadRepeatThreshold: number;
-  cesarStreamingXmlTools?: boolean;
-  campfireObserverStrategy?: 'lead-first'|'all-respond';
-  hooks: Record<string,Array<{command:string,engines?:string[],matcher?:string,timeout?:number}>>;
-  permissionMode?: 'auto'|'smart'|'ask'|'deny-all';
-  agonPermissionMode: string;
-  allowedCommands: string[];
-  toolPermissions: Record<string,'allow'|'ask'|'deny'>;
-  permissions: {allow?:string[],deny?:string[]};
-  terminalMode?: 'auto'|'native'|'fullscreen';
-  uiMotion?: 'full'|'reduced'|'off';
-  statusLine?: string;
-  iconTheme?: 'roman'|'classic';
-  narrationFold?: 'off'|'safe'|'aggressive';
   autoReviewAfterForge?: boolean;
   autoReviewAfterImpl?: boolean;
-  buddyTimeout?: number;
-  speculativeThresholdUsd?: number;
-  speculativeEloSpreadThreshold?: number;
-  neroExplorationRate?: number;
-  autoCredit?: boolean;
-  browserExtensionIds: string[];
 }
 
 export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
-  debug: false,
-  timeout: 360,
-  forgeTimeout: 1800,
+  debug: DEFAULT_KERNEL_SETTINGS.debug,
+  timeout: DEFAULT_KERNEL_SETTINGS.timeout,
+  forgeTimeout: DEFAULT_KERNEL_SETTINGS.forgeTimeout,
   forgeDispatchTimeout: DEFAULT_ENGINE_SETTINGS.forgeDispatchTimeout,
-  forgeAutoAcceptScore: 88,
-  forgeClearWinnerSpread: 8,
+  forgeAutoAcceptScore: DEFAULT_KERNEL_SETTINGS.forgeAutoAcceptScore,
+  forgeClearWinnerSpread: DEFAULT_KERNEL_SETTINGS.forgeClearWinnerSpread,
   forgeEnableSynthesis: false,
-  forgeMaxCritiques: 3,
-  forgeStarterStrategy: 'fixed',
-  forgeFixedStarter: 'claude',
+  forgeMaxCritiques: DEFAULT_KERNEL_SETTINGS.forgeMaxCritiques,
+  forgeStarterStrategy: DEFAULT_KERNEL_SETTINGS.forgeStarterStrategy,
+  forgeFixedStarter: DEFAULT_KERNEL_SETTINGS.forgeFixedStarter,
   reviewDefaultEngine: DEFAULT_ENGINE_SETTINGS.reviewDefaultEngine,
   goalReviewEngines: [],
-  forgeRequireBaselineCheck: true,
+  forgeRequireBaselineCheck: DEFAULT_KERNEL_SETTINGS.forgeRequireBaselineCheck,
   engineActivationMode: DEFAULT_ENGINE_SETTINGS.engineActivationMode,
   forgeEnabledEngines: DEFAULT_ENGINE_SETTINGS.forgeEnabledEngines,
   forgeFitnessTimeout: 120,
   forgeSynthesisTimeout: 300,
-  forgeEarlyFinalizeEnabled: true,
-  forgeEarlyFinalizePassingCount: 3,
-  forgeEarlyFinalizeMinScore: 70,
-  forgeHealthCheckEnabled: true,
-  forgeHealthCheckTimeoutSec: 20,
-  forgeHealthCheckApiTimeoutSec: 45,
-  forgeMaxParallelApi: 2,
+  forgeEarlyFinalizeEnabled: DEFAULT_KERNEL_SETTINGS.forgeEarlyFinalizeEnabled,
+  forgeEarlyFinalizePassingCount: DEFAULT_KERNEL_SETTINGS.forgeEarlyFinalizePassingCount,
+  forgeEarlyFinalizeMinScore: DEFAULT_KERNEL_SETTINGS.forgeEarlyFinalizeMinScore,
+  forgeHealthCheckEnabled: DEFAULT_KERNEL_SETTINGS.forgeHealthCheckEnabled,
+  forgeHealthCheckTimeoutSec: DEFAULT_KERNEL_SETTINGS.forgeHealthCheckTimeoutSec,
+  forgeHealthCheckApiTimeoutSec: DEFAULT_KERNEL_SETTINGS.forgeHealthCheckApiTimeoutSec,
+  forgeMaxParallelApi: DEFAULT_KERNEL_SETTINGS.forgeMaxParallelApi,
   forgeJudgeEngine: DEFAULT_ENGINE_SETTINGS.forgeJudgeEngine,
-  reviewMaxTokens: 0,
-  reviewFileContext: true,
-  ratingsEnabled: true,
-  contextSummary: true,
-  sessionContinuity: false,
-  onboarded: false,
-  projectContext: '',
-  contextFormat: 'plain',
-  approvalLevel: 'plan',
-  agentTimeout: 600,
-  agentPermissionLevel: 'full',
-  jobEventLimit: 256,
-  jobRetentionLimit: 100,
-  jobMaxConcurrency: 4,
-  jobLabelMaxChars: 120,
-  jobOutputChunkChars: 16000,
-  jobCancelGraceMs: 2000,
-  jobShutdownTimeoutMs: 10000,
-  daemonFrameMaxBytes: 1048576,
-  gauntletEnabled: false,
-  gauntletMaxBreakers: 3,
-  gauntletRepairTimeout: 300,
-  corpusReplayLimit: 5,
+  reviewMaxTokens: DEFAULT_KERNEL_SETTINGS.reviewMaxTokens,
+  reviewFileContext: DEFAULT_KERNEL_SETTINGS.reviewFileContext,
+  ratingsEnabled: DEFAULT_KERNEL_SETTINGS.ratingsEnabled,
+  contextSummary: DEFAULT_KERNEL_SETTINGS.contextSummary,
+  sessionContinuity: DEFAULT_PERSISTENCE_SETTINGS.sessionContinuity,
+  onboarded: DEFAULT_KERNEL_SETTINGS.onboarded,
+  projectContext: DEFAULT_KERNEL_SETTINGS.projectContext,
+  contextFormat: DEFAULT_KERNEL_SETTINGS.contextFormat,
+  approvalLevel: DEFAULT_KERNEL_SETTINGS.approvalLevel,
+  agentTimeout: DEFAULT_KERNEL_SETTINGS.agentTimeout,
+  agentPermissionLevel: DEFAULT_KERNEL_SETTINGS.agentPermissionLevel,
+  jobEventLimit: DEFAULT_KERNEL_SETTINGS.jobEventLimit,
+  jobRetentionLimit: DEFAULT_KERNEL_SETTINGS.jobRetentionLimit,
+  jobMaxConcurrency: DEFAULT_KERNEL_SETTINGS.jobMaxConcurrency,
+  jobLabelMaxChars: DEFAULT_KERNEL_SETTINGS.jobLabelMaxChars,
+  jobOutputChunkChars: DEFAULT_KERNEL_SETTINGS.jobOutputChunkChars,
+  jobCancelGraceMs: DEFAULT_KERNEL_SETTINGS.jobCancelGraceMs,
+  jobShutdownTimeoutMs: DEFAULT_KERNEL_SETTINGS.jobShutdownTimeoutMs,
+  daemonFrameMaxBytes: DEFAULT_KERNEL_SETTINGS.daemonFrameMaxBytes,
+  gauntletEnabled: DEFAULT_KERNEL_SETTINGS.gauntletEnabled,
+  gauntletMaxBreakers: DEFAULT_KERNEL_SETTINGS.gauntletMaxBreakers,
+  gauntletRepairTimeout: DEFAULT_KERNEL_SETTINGS.gauntletRepairTimeout,
+  corpusReplayLimit: DEFAULT_KERNEL_SETTINGS.corpusReplayLimit,
   skillSynthesisThreshold: 3,
-  cesarEnabled: true,
-  cesarScoutCount: 2,
-  cesarScoutTimeout: 18,
-  cesarDirectThreshold: 85,
-  cesarDisagreementSpread: 20,
-  cesarCodeFastPathChars: 180,
-  cesarAutoPipeline: false,
-  cesarPipelineThreshold: 93,
+  cesarEnabled: DEFAULT_KERNEL_SETTINGS.cesarEnabled,
+  cesarScoutCount: DEFAULT_KERNEL_SETTINGS.cesarScoutCount,
+  cesarScoutTimeout: DEFAULT_KERNEL_SETTINGS.cesarScoutTimeout,
+  cesarDirectThreshold: DEFAULT_PERSISTENCE_SETTINGS.cesarDirectThreshold,
+  cesarDisagreementSpread: DEFAULT_KERNEL_SETTINGS.cesarDisagreementSpread,
+  cesarCodeFastPathChars: DEFAULT_PERSISTENCE_SETTINGS.cesarCodeFastPathChars,
+  cesarAutoPipeline: DEFAULT_KERNEL_SETTINGS.cesarAutoPipeline,
+  cesarPipelineThreshold: DEFAULT_KERNEL_SETTINGS.cesarPipelineThreshold,
   cesarEngine: DEFAULT_ENGINE_SETTINGS.cesarEngine,
-  cesarBackend: 'auto',
-  claudeBackend: 'print',
-  cesarActingFallback: 'auto',
-  cesarMcpEnabled: false,
-  cesarMcpConfigPath: '',
-  cesarAutoApproveMode: 'safe-only',
-  cesarAutoApproveMaxCostUsd: 0,
-  cesarAutoMode: false,
-  cesarAutoHarnessProfile: 'agentic',
+  cesarBackend: DEFAULT_KERNEL_SETTINGS.cesarBackend,
+  claudeBackend: DEFAULT_KERNEL_SETTINGS.claudeBackend,
+  cesarActingFallback: DEFAULT_KERNEL_SETTINGS.cesarActingFallback,
+  cesarMcpEnabled: DEFAULT_KERNEL_SETTINGS.cesarMcpEnabled,
+  cesarMcpConfigPath: DEFAULT_PERSISTENCE_SETTINGS.cesarMcpConfigPath,
+  cesarAutoApproveMode: DEFAULT_KERNEL_SETTINGS.cesarAutoApproveMode,
+  cesarAutoApproveMaxCostUsd: DEFAULT_KERNEL_SETTINGS.cesarAutoApproveMaxCostUsd,
+  cesarAutoMode: DEFAULT_KERNEL_SETTINGS.cesarAutoMode,
+  cesarAutoHarnessProfile: DEFAULT_KERNEL_SETTINGS.cesarAutoHarnessProfile,
   cesarAgenticContinuationLimit: 12,
-  cesarImportantTaskPattern: '',
-  cesarDangerousTaskPattern: '',
-  cesarDestructiveActionPattern: '',
-  cesarSensitivePathPatterns: [],
-  cesarAutoModePrompted: false,
-  resumePausedPlanOnStartup: false,
-  cesarSelfTurnAutoApprove: true,
-  cesarSelfTurnAutoApproveMaxDiffTokens: 1200,
-  cesarApprovalLedger: true,
-  cesarToolTimeline: true,
-  protectedPushBranches: [],
-  cesarExperience: true,
-  cesarExperienceMinSimilarity: 0,
-  cesarExperienceMinEpisodes: 0,
-  cesarExperienceTopK: 0,
-  cesarExperienceWindow: 0,
-  cesarDelegationReflex: true,
+  cesarImportantTaskPattern: DEFAULT_KERNEL_SETTINGS.cesarImportantTaskPattern,
+  cesarDangerousTaskPattern: DEFAULT_KERNEL_SETTINGS.cesarDangerousTaskPattern,
+  cesarDestructiveActionPattern: DEFAULT_KERNEL_SETTINGS.cesarDestructiveActionPattern,
+  cesarSensitivePathPatterns: DEFAULT_PERSISTENCE_SETTINGS.cesarSensitivePathPatterns,
+  cesarAutoModePrompted: DEFAULT_KERNEL_SETTINGS.cesarAutoModePrompted,
+  resumePausedPlanOnStartup: DEFAULT_KERNEL_SETTINGS.resumePausedPlanOnStartup,
+  cesarSelfTurnAutoApprove: DEFAULT_KERNEL_SETTINGS.cesarSelfTurnAutoApprove,
+  cesarSelfTurnAutoApproveMaxDiffTokens: DEFAULT_KERNEL_SETTINGS.cesarSelfTurnAutoApproveMaxDiffTokens,
+  cesarApprovalLedger: DEFAULT_PERSISTENCE_SETTINGS.cesarApprovalLedger,
+  cesarToolTimeline: DEFAULT_KERNEL_SETTINGS.cesarToolTimeline,
+  protectedPushBranches: DEFAULT_KERNEL_SETTINGS.protectedPushBranches,
+  cesarExperience: DEFAULT_KERNEL_SETTINGS.cesarExperience,
+  cesarExperienceMinSimilarity: DEFAULT_KERNEL_SETTINGS.cesarExperienceMinSimilarity,
+  cesarExperienceMinEpisodes: DEFAULT_KERNEL_SETTINGS.cesarExperienceMinEpisodes,
+  cesarExperienceTopK: DEFAULT_KERNEL_SETTINGS.cesarExperienceTopK,
+  cesarExperienceWindow: DEFAULT_KERNEL_SETTINGS.cesarExperienceWindow,
+  cesarDelegationReflex: DEFAULT_KERNEL_SETTINGS.cesarDelegationReflex,
   cesarMutateReflex: true,
-  cesarGateAutoRun: true,
-  cesarGateAutoRunLimit: 3,
-  cesarGateTimeoutSec: 300,
-  cesarGateOutputTailChars: 2000,
-  cesarSearchNudgeThreshold: 0,
-  cesarReadSpiralThreshold: 0,
-  cesarReadRepeatThreshold: 0,
-  cesarStreamingXmlTools: true,
-  campfireObserverStrategy: 'lead-first',
-  hooks: {} as any,
-  permissionMode: 'smart',
-  agonPermissionMode: '',
-  allowedCommands: [],
-  toolPermissions: {} as any,
-  permissions: {} as any,
+  cesarGateAutoRun: DEFAULT_KERNEL_SETTINGS.cesarGateAutoRun,
+  cesarGateAutoRunLimit: DEFAULT_KERNEL_SETTINGS.cesarGateAutoRunLimit,
+  cesarGateTimeoutSec: DEFAULT_KERNEL_SETTINGS.cesarGateTimeoutSec,
+  cesarGateOutputTailChars: DEFAULT_KERNEL_SETTINGS.cesarGateOutputTailChars,
+  cesarSearchNudgeThreshold: DEFAULT_KERNEL_SETTINGS.cesarSearchNudgeThreshold,
+  cesarReadSpiralThreshold: DEFAULT_KERNEL_SETTINGS.cesarReadSpiralThreshold,
+  cesarReadRepeatThreshold: DEFAULT_KERNEL_SETTINGS.cesarReadRepeatThreshold,
+  cesarStreamingXmlTools: DEFAULT_KERNEL_SETTINGS.cesarStreamingXmlTools,
+  campfireObserverStrategy: DEFAULT_KERNEL_SETTINGS.campfireObserverStrategy,
+  hooks: DEFAULT_KERNEL_SETTINGS.hooks,
+  permissionMode: DEFAULT_KERNEL_SETTINGS.permissionMode,
+  agonPermissionMode: DEFAULT_KERNEL_SETTINGS.agonPermissionMode,
+  allowedCommands: DEFAULT_KERNEL_SETTINGS.allowedCommands,
+  toolPermissions: DEFAULT_KERNEL_SETTINGS.toolPermissions,
+  permissions: DEFAULT_KERNEL_SETTINGS.permissions,
   hiddenEngines: DEFAULT_ENGINE_SETTINGS.hiddenEngines,
   removedEngines: DEFAULT_ENGINE_SETTINGS.removedEngines,
   engineModels: DEFAULT_ENGINE_SETTINGS.engineModels,
   engineEfforts: DEFAULT_ENGINE_SETTINGS.engineEfforts,
   engineIsolation: DEFAULT_ENGINE_SETTINGS.engineIsolation,
-  terminalMode: 'auto',
-  uiMotion: 'reduced',
-  statusLine: '',
-  iconTheme: 'roman',
-  narrationFold: 'safe',
+  terminalMode: DEFAULT_KERNEL_SETTINGS.terminalMode,
+  uiMotion: DEFAULT_KERNEL_SETTINGS.uiMotion,
+  statusLine: DEFAULT_KERNEL_SETTINGS.statusLine,
+  iconTheme: DEFAULT_KERNEL_SETTINGS.iconTheme,
+  narrationFold: DEFAULT_KERNEL_SETTINGS.narrationFold,
   autoReviewAfterForge: true,
   autoReviewAfterImpl: true,
-  buddyTimeout: 420,
-  speculativeThresholdUsd: 0.50,
-  speculativeEloSpreadThreshold: 15,
-  neroExplorationRate: 0.2,
+  buddyTimeout: DEFAULT_KERNEL_SETTINGS.buddyTimeout,
+  speculativeThresholdUsd: DEFAULT_KERNEL_SETTINGS.speculativeThresholdUsd,
+  speculativeEloSpreadThreshold: DEFAULT_KERNEL_SETTINGS.speculativeEloSpreadThreshold,
+  neroExplorationRate: DEFAULT_KERNEL_SETTINGS.neroExplorationRate,
   ratingsPurgeKeepEngines: DEFAULT_ENGINE_SETTINGS.ratingsPurgeKeepEngines,
-  autoCredit: true,
+  autoCredit: DEFAULT_KERNEL_SETTINGS.autoCredit,
   commitCoAuthor: DEFAULT_ENGINE_SETTINGS.commitCoAuthor,
-  browserExtensionIds: [],
+  browserExtensionIds: DEFAULT_BROWSER_SETTINGS.browserExtensionIds,
 };
 
 export interface ScoutBid {

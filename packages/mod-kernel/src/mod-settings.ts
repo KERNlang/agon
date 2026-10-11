@@ -7,6 +7,26 @@ function record(value: unknown): value is Record<string, unknown> {
     && [Object.prototype, null].includes(Object.getPrototypeOf(value));
 }
 
+/** Parse the one supported static migration descriptor. */
+export function readLegacyConfigAliases(schema: Record<string, unknown>): readonly string[] {
+  const descriptor = schema['x-agon-config'];
+  if (descriptor === undefined) return [];
+  if (!record(descriptor) || descriptor.version !== 1 || !Array.isArray(descriptor.legacyAliases)
+    || descriptor.legacyAliases.length > 256 || Object.keys(descriptor).some(key => !['version', 'legacyAliases'].includes(key))) {
+    throw new TypeError('unsupported configuration migration descriptor');
+  }
+  const aliases = new Set<string>();
+  for (const key of descriptor.legacyAliases) {
+    if (typeof key !== 'string' || !/^[A-Za-z][A-Za-z0-9_]{0,127}$/.test(key)
+      || ['__proto__', 'prototype', 'constructor', 'mods'].includes(key)
+      || !record(schema.properties) || !Object.hasOwn(schema.properties, key) || aliases.has(key)) {
+      throw new TypeError('invalid or duplicate legacy configuration alias');
+    }
+    aliases.add(key);
+  }
+  return Object.freeze([...aliases]);
+}
+
 function snapshot(value: unknown, depth = 0): Json {
   if (depth > 32) throw new TypeError('mod settings exceed the maximum depth');
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
@@ -42,6 +62,22 @@ export function mergeModSettingsLayers(...layers: readonly unknown[]): Record<st
     }
   }
   return present ? Object.fromEntries(owners) : undefined;
+}
+
+/** Copy explicit legacy values to their owners. Do not materialize defaults. */
+export function projectLegacyModSettings<T extends object>(layer: T, aliases: Readonly<Record<string, string>>): T {
+  const projected = { ...layer };
+  const originalMods = mergeModSettingsLayers(layer);
+  const mods = { ...originalMods };
+  for (const [key, owner] of Object.entries(aliases)) {
+    const namespace = mods[owner];
+    const settings = record(namespace) ? namespace : null;
+    if (Object.hasOwn(layer, key) && (!Object.hasOwn(mods, owner) || (settings && !Object.hasOwn(settings, key)))) {
+      mods[owner] = { ...settings, [key]: Reflect.get(layer, key) };
+    }
+  }
+  // Retain malformed inactive namespaces until their owner is invoked.
+  return originalMods !== undefined || Object.keys(mods).length ? Object.assign(projected, { mods }) : projected;
 }
 
 /** Select data only. The caller must authorize the owner before invoking it. */
@@ -100,6 +136,7 @@ export function resolveRegisteredModSettings(ownerId: string, settings: unknown,
     const proposed = new Map<string, Json>();
     for (const schema of schemas) {
       if (!record(schema) || schema.type !== 'object') throw new TypeError('configuration schema must describe an object');
+      readLegacyConfigAliases(schema);
       if (Object.hasOwn(schema, 'default') && !record(schema.default)) throw new TypeError('configuration default must be an object');
       const defaults = record(schema.default) ? { ...snapshot(schema.default) as Record<string, Json>, ...selected } : selected;
       const candidate = snapshot(withDefaults(schema, defaults)) as Record<string, Json>;
@@ -110,7 +147,8 @@ export function resolveRegisteredModSettings(ownerId: string, settings: unknown,
     }
     const resolved = { ...selected, ...Object.fromEntries(proposed) };
     for (const schema of schemas) {
-      const failure = validateContributionInput(schema as Record<string, unknown>, resolved);
+      const valueSchema = Object.fromEntries(Object.entries(schema as Record<string, unknown>).filter(([key]) => key !== 'x-agon-config'));
+      const failure = validateContributionInput(valueSchema, resolved);
       if (failure) throw new TypeError(failure);
     }
     return snapshot(resolved) as Readonly<Record<string, Json>>;

@@ -12,6 +12,7 @@ import { referencedInstallations } from './lifecycle-recovery.js';
 import { makeTreeRemovable } from './removable-tree.js';
 import { WriterFence, type WriterLockOptions } from './writer-lock.js';
 import { assertMigrationSourceRevision, type MigrationSourceRevision } from './migration-engine.js';
+import { stageConfigurationMigration } from './configuration-migration.js';
 import { evaluateThirdPartyAuthority, TrustGrantStore, type TrustPublisher } from './trust-authority.js';
 
 export type ManagedLifecycleOperation = 'install' | 'update' | 'downgrade';
@@ -554,6 +555,8 @@ export class ManagedLifecycleService {
       }
       steps.push({ id: 'stage-complete-closure', state: 'passed' });
       await this.#fault('after-packages-staged');
+      const configurationFiles = await stageConfigurationMigration(plan, staging, this.#io);
+      if (plan.configSource) steps.push({ id: 'stage-config-migration', state: 'passed' });
       const verification = freeze(await verifier.verify(staging, plan));
       if (!verification.passed || verification.checks.some((check) => !check.passed)) {
         const failedChecks = verification.checks.filter((check) => !check.passed);
@@ -600,7 +603,7 @@ export class ManagedLifecycleService {
           packages: plan.packages,
           planHash: plan.planHash,
         },
-        files: { 'installation.json': `${canonicalJson(installation)}\n` },
+        files: { ...configurationFiles, 'installation.json': `${canonicalJson(installation)}\n` },
         configSource: plan.configSource,
       });
       selectedGeneration = result.pointer.generation;
@@ -683,8 +686,10 @@ export class ManagedLifecycleService {
   async readSelectedInstallation(): Promise<ManagedInstallationRecord | null> {
     const pointer = await this.host.readCurrentPointer();
     if (!pointer) return null;
-    await this.host.validateGeneration(pointer.generation);
-    const record = await readJson<ManagedInstallationRecord>(this.#io, join(this.host.generationPath(pointer.generation), 'installation.json'));
+    const files = await this.host.readGenerationArtifacts(pointer, ['installation.json']);
+    const bytes = files['installation.json'];
+    if (!bytes) throw new DurableHostError('MOD_GENERATION_CORRUPT', 'selected installation record is missing');
+    const record = JSON.parse(new TextDecoder().decode(bytes)) as ManagedInstallationRecord;
     const prefix = resolve(this.host.root, record.prefix);
     if (relative(this.host.root, prefix).startsWith('..') || !await pathExists(this.#io, prefix)) {
       throw new DurableHostError('MOD_GENERATION_CORRUPT', 'selected installation prefix is missing or escapes the managed host');

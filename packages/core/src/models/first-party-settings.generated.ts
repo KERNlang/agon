@@ -23,14 +23,4 @@ export const DEFAULT_FIRST_PARTY_SETTINGS: Required<FirstPartyLegacySettings> = 
   "skillSynthesisThreshold": 3
 };
 
-export const LEGACY_MOD_SETTING_OWNERS: Readonly<Record<keyof FirstPartyLegacySettings, string>> = Object.freeze({
-  "autoReviewAfterForge": "agon.forge",
-  "autoReviewAfterImpl": "agon.review",
-  "cesarAgenticContinuationLimit": "agon.agent",
-  "cesarMutateReflex": "agon.mutate",
-  "forgeEnableSynthesis": "agon.synthesis",
-  "forgeFitnessTimeout": "agon.forge",
-  "forgeSynthesisTimeout": "agon.synthesis",
-  "goalReviewEngines": "agon.review",
-  "skillSynthesisThreshold": "agon.synthesis"
-});
+export { LEGACY_MOD_SETTING_OWNERS } from '@kernlang/agon-kernel';

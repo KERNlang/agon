@@ -123,6 +123,16 @@ function expectedFiles(packageRecord) {
     if (!validDefault) throw new Error(`legacy setting default has the wrong type: ${assignment.id}`);
     legacySettings.set(assignment.id, { type, value: property.default, owner: ownerId(packageName) });
   }
+  const expectedAliases = packageAssignments.filter(entry => entry.category === 'configKeys'
+    && Object.hasOwn(configDefinition.properties ?? {}, entry.id)).map(entry => entry.id).sort(compareAscii);
+  const descriptor = configDefinition['x-agon-config'];
+  if (expectedAliases.length || descriptor !== undefined) {
+    if (!descriptor || descriptor.version !== 1 || !Array.isArray(descriptor.legacyAliases)
+      || Object.keys(descriptor).some(key => !['version', 'legacyAliases'].includes(key))
+      || JSON.stringify([...descriptor.legacyAliases].sort(compareAscii)) !== JSON.stringify(expectedAliases)) {
+      throw new Error(`legacy migration aliases differ from assigned settings: ${packageName}`);
+    }
+  }
   const contributions = contributionsFor(packageName);
   const byManifestKind = Object.fromEntries([
     'cliCommands', 'tuiActions', 'mcpTools', 'cesarTools', 'lifecycleHooks',
@@ -381,8 +391,11 @@ generated.set(resolve(root, 'packages/core/src/models/first-party-settings.gener
   + settings.map(([key, value]) => `  ${key}?: ${value.type};`).join('\n')
   + '\n}\n\nexport const DEFAULT_FIRST_PARTY_SETTINGS: Required<FirstPartyLegacySettings> = '
   + JSON.stringify(Object.fromEntries(settings.map(([key, value]) => [key, value.value])), null, 2) + ';\n\n'
-  + 'export const LEGACY_MOD_SETTING_OWNERS: Readonly<Record<keyof FirstPartyLegacySettings, string>> = Object.freeze('
-  + JSON.stringify(Object.fromEntries(settings.map(([key, value]) => [key, value.owner])), null, 2) + ');\n');
+  + 'export { LEGACY_MOD_SETTING_OWNERS } from \'@kernlang/agon-kernel\';\n');
+generated.set(resolve(root, 'packages/mod-kernel/src/legacy-config-assignments.generated.ts'),
+  '// Generated from assigned owner configuration schemas. Run generate-modular-first-party-packages.mjs.\n'
+  + 'export const LEGACY_MOD_SETTING_OWNERS = Object.freeze('
+  + JSON.stringify(Object.fromEntries(settings.map(([key, value]) => [key, value.owner])), null, 2) + ' as const);\n');
 
 const rootPackagePath = resolve(root, 'package.json');
 const rootPackage = JSON.parse(readFileSync(rootPackagePath, 'utf8'));

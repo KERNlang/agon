@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { createGeneratedLazySubCommands, lazySubCommands } from '../../packages/cli/src/lazy-commands.js';
 import { createCesarToolRegistry } from '../../packages/cli/src/cesar/tools.js';
@@ -21,6 +21,25 @@ const projectedMcpTools = FIRST_PARTY_SURFACE_CATALOG.filter(({ category }) => c
 }));
 
 describe('generated surface cutover', () => {
+  it.each(['commands', 'authority'] as const)('does not load Core while preparing %s metadata', async target => {
+    vi.resetModules();
+    const loadCore = vi.fn(() => { throw new Error('Core must remain lazy for metadata'); });
+    vi.doMock('@kernlang/agon-core', loadCore);
+    try {
+      if (target === 'commands') {
+        const commands = await import('../../packages/cli/src/lazy-commands.js');
+        expect(Object.keys(commands.createGeneratedLazySubCommands())).toContain('forge');
+      } else {
+        const authority = await import('../../packages/cli/src/surface-authority-runtime.js');
+        expect(authority.processSurfacePublicIds('cli').has('forge')).toBe(true);
+      }
+      expect(loadCore).not.toHaveBeenCalled();
+    } finally {
+      vi.doUnmock('@kernlang/agon-core');
+      vi.resetModules();
+    }
+  });
+
   it('keeps CLI top-level exposure equal to the generated catalog', () => {
     const expected = FIRST_PARTY_SURFACE_CATALOG
       .filter(({ category, source }) => category === 'cliCommands' && source.includes('/lazy-commands.ts:'))

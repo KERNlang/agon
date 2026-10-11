@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto';
-import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { defineCommand } from 'citty';
 import { persistencePath } from '@kernlang/agon-support-persistence';
 import {
   DurableModHost,
+  assertContainedPackagePath,
+  inspectStaticManifest,
   ManagedLifecycleService,
   canonicalJson,
   createManagedLifecyclePlan,
@@ -12,6 +14,7 @@ import {
   createReleaseSetupSelection,
   parseDesiredState,
   readMigrationSourceRevision,
+  readGenerationConfiguration,
   resolveDesiredState,
   runBoundedCandidateProcess,
   sha256Canonical,
@@ -75,14 +78,20 @@ export async function runManagedSetup(args: ManagedSetupArgs, options: { preserv
   await verifyLocalSpecs(artifacts);
   const lock = buildLock(artifacts, selection.desiredState, release);
   const desiredShape = (value: any) => value ? { selected: value.selected, disabled: value.disabled, constraints: value.constraints } : null;
-  const packageShape = (values: readonly { id: string; version: string }[]) => values.map(({ id, version }) => ({ id, version })).sort((left, right) => left.id.localeCompare(right.id));
+  const packageShape = (values: readonly ManagedLifecyclePackagePlan[]) => values.map(({ id, version, source, sourceLocator, integrity, contentHash, manifestHash, dependencies, provenance }) =>
+    ({ id, version, source, sourceLocator, integrity, contentHash, manifestHash, dependencies, provenance })).sort((left, right) => left.id.localeCompare(right.id));
   if (!args.plan && existing && existing.kernelVersion === VERSION
     && canonicalJson(packageShape(existing.packages)) === canonicalJson(packageShape(artifacts))
     && canonicalJson(desiredShape(currentDesiredInput)) === canonicalJson(desiredShape(selection.desiredState))) {
-    await assertSelectionCurrent();
-    const launcher = await writeStableLauncher(hostRoot);
-    console.log(JSON.stringify({ status: 'already-qualified', profile: selection.profile, generationUnchanged: true, launcher, packageCount: artifacts.length }, null, 2));
-    return;
+    const configuration = selectedPointer ? await readGenerationConfiguration(host, selectedPointer) : undefined;
+    const expectedOwners = release.packages.filter(entry => entry.modId && selection.effectivePackageIds.includes(entry.id)).map(entry => entry.modId!).sort();
+    if (configuration && configuration.source.path === persistencePath('config.json')
+      && canonicalJson(configuration.owners.map(owner => owner.ownerId).sort()) === canonicalJson(expectedOwners)) {
+      await assertSelectionCurrent();
+      const launcher = await writeStableLauncher(hostRoot);
+      console.log(JSON.stringify({ status: 'already-qualified', profile: selection.profile, generationUnchanged: true, launcher, packageCount: artifacts.length }, null, 2));
+      return;
+    }
   }
   const configSource = await readMigrationSourceRevision(persistencePath('config.json'));
   const plan = await createManagedLifecyclePlan(host, { operation: existing ? 'update' : 'install', networkPolicy: args.offline ? 'frozen-offline' : 'online', kernelVersion: VERSION, apiVersion: VERSION, configSource,
@@ -158,19 +167,34 @@ class ReleaseSetInstaller implements CandidateInstaller {
     if (result.exitCode !== 0 || result.timedOut || result.outputTruncated) throw new Error(`release-set npm staging failed: exit=${result.exitCode} timeout=${result.timedOut} truncated=${result.outputTruncated} ${result.stderr.slice(0, 1000)}`);
   }
 }
-class ReleaseSetVerifier implements CandidateVerifier {
+export class ReleaseSetVerifier implements CandidateVerifier {
   async verify(candidatePrefix: string, plan: ManagedLifecyclePlan): Promise<CandidateVerificationResult> {
     const checks: Array<{ id: string; passed: boolean; detail?: string }> = [];
     try {
       for (const entry of plan.packages) {
-        let installedVersion = 'missing';
-        try { installedVersion = JSON.parse(await readFile(join(candidatePrefix, 'node_modules', ...entry.id.split('/'), 'package.json'), 'utf8')).version ?? 'missing'; } catch {}
-        checks.push({ id: `package:${entry.id}`, passed: installedVersion === entry.version, detail: installedVersion });
+        const root = await assertContainedPackagePath(candidatePrefix, join('node_modules', ...entry.id.split('/')));
+        const packagePath = await assertContainedPackagePath(root, 'package.json');
+        const bytes = await readFile(packagePath);
+        const metadata = JSON.parse(bytes.toString('utf8'));
+        checks.push({ id: `package:${entry.id}`, passed: metadata.name === entry.id && metadata.version === entry.version,
+          detail: `${metadata.name}@${metadata.version}` });
+        let hasManifest = true;
+        try { await stat(join(root, 'agon.mod.json')); }
+        catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+          hasManifest = false;
+        }
+        // The release channel hashes mod manifests and support package metadata.
+        const manifestHash = hasManifest ? (await inspectStaticManifest(root)).manifestHash
+          : `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+        checks.push({ id: `static-identity:${entry.id}`, passed: manifestHash === entry.manifestHash });
       }
-      let launcherVersion = 'missing';
-      try { launcherVersion = JSON.parse(await readFile(join(candidatePrefix, 'node_modules', '@kernlang', 'agon', 'package.json'), 'utf8')).version ?? 'missing'; } catch {}
-      checks.push({ id: 'launcher-package', passed: launcherVersion === VERSION, detail: launcherVersion });
-      const executable = join(candidatePrefix, 'node_modules', '@kernlang', 'agon', 'dist', 'index.js');
+      const launcherRoot = await assertContainedPackagePath(candidatePrefix, join('node_modules', '@kernlang', 'agon'));
+      const launcherMetadata = JSON.parse(await readFile(await assertContainedPackagePath(launcherRoot, 'package.json'), 'utf8'));
+      checks.push({ id: 'launcher-package', passed: launcherMetadata.name === '@kernlang/agon' && launcherMetadata.version === VERSION,
+        detail: `${launcherMetadata.name}@${launcherMetadata.version}` });
+      if (checks.some(check => !check.passed)) return Object.freeze({ passed: false, checks: Object.freeze(checks.map(check => Object.freeze(check))) });
+      const executable = await assertContainedPackagePath(launcherRoot, 'dist/index.js');
       const smoke = await runBoundedCandidateProcess({ executable: process.execPath, args: [executable, '--version'], cwd: candidatePrefix,
         env: { AGON_HOME: join(candidatePrefix, '.qualification-home'), AGON_MOD_SAFE_MODE: '1' }, timeoutMs: 30_000, maxOutputBytes: 128 * 1024 });
       checks.push({ id: 'kernel-safe-mode-smoke', passed: smoke.exitCode === 0 && smoke.stdout.includes(VERSION), detail: `exit=${smoke.exitCode}` });

@@ -12,6 +12,16 @@ import { DEFAULT_FIRST_PARTY_SETTINGS } from '../../packages/core/src/models/fir
 import { DEFAULT_AGON_CONFIG } from '../../packages/core/src/models/types.js';
 
 describe('Forge configuration ownership', () => {
+  it('validates migration metadata without allowing unknown value-schema keywords', () => {
+    const base = { type: 'object', properties: { enabled: { type: 'boolean', default: true } } };
+    const resolve = (schema: object) => resolveRegisteredModSettings('example.settings', {}, [schema]);
+    expect(resolve({ ...base, 'x-agon-config': { version: 1, legacyAliases: ['enabled'] } })).toEqual({ enabled: true });
+    for (const descriptor of [null, { version: 2, legacyAliases: [] }, { version: 1, legacyAliases: ['enabled', 'enabled'] },
+      { version: 1, legacyAliases: ['constructor'] }, { version: 1, legacyAliases: ['unknown'] }, { version: 1, legacyAliases: [], run: 'code' }]) {
+      expect(() => resolve({ ...base, 'x-agon-config': descriptor })).toThrow(/descriptor|alias/);
+    }
+    expect(() => resolve({ ...base, 'x-unknown': {} })).toThrow(/unsupported schema keyword/);
+  });
   it('keeps mutable compatibility defaults independent of generated defaults', () => {
     const compatibility = DEFAULT_AGON_CONFIG.goalReviewEngines;
     const generated = DEFAULT_FIRST_PARTY_SETTINGS.goalReviewEngines;
@@ -136,6 +146,13 @@ describe('Forge configuration ownership', () => {
       writeFileSync(schemaPath, JSON.stringify(schema));
       expect(run().status).toBe(0);
       expect(run(true).status).toBe(0);
+      for (const aliases of [[], ['forgeFitnessTimeout'], ['forgeFitnessTimeout', 'forgeFitnessTimeout'], ['foreignSetting']]) {
+        writeFileSync(schemaPath, JSON.stringify({ ...schema, 'x-agon-config': { version: 1, legacyAliases: aliases } }));
+        const invalid = run();
+        expect(invalid.status).toBe(1);
+        expect(invalid.stderr).toContain('legacy migration aliases differ');
+      }
+      writeFileSync(schemaPath, JSON.stringify(schema));
       const generatedPath = join(fixture, 'packages/core/src/models/first-party-settings.generated.ts');
       const generated = readFileSync(generatedPath, 'utf8');
       expect(generated).not.toMatch(/foreignSetting|not-forge-owned/);

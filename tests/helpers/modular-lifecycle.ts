@@ -1,4 +1,5 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import type { CanonicalModLock, LockedModPackage } from '../../packages/mod-kernel/src/lock.js';
 import type {
@@ -23,7 +24,7 @@ export function artifact(
     sourceLocator: `cache:${id}@1.0.0`,
     integrity: integrity(),
     contentHash: hash(id.includes('child') ? 'b' : 'a'),
-    manifestHash: hash(id.includes('child') ? 'd' : 'c'),
+    manifestHash: `sha256:${createHash('sha256').update(JSON.stringify({ name: id, version: overrides.version ?? '1.0.0' })).digest('hex')}`,
     dependencies: Object.freeze([...dependencies]),
     lifecycleScripts: Object.freeze([]),
     available: true,

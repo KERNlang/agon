@@ -3,6 +3,7 @@
   "$id": "https://kernlang.dev/schemas/synthesis/config.schema.json",
   "title": "synthesis configuration",
   "type": "object",
+  "x-agon-config": { "version": 1, "legacyAliases": ["forgeEnableSynthesis", "forgeSynthesisTimeout", "skillSynthesisThreshold"] },
   "properties": {
     "forgeEnableSynthesis": { "type": "boolean", "default": false },
     "forgeSynthesisTimeout": { "type": "number", "default": 300 },

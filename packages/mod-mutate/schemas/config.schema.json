@@ -3,6 +3,7 @@
   "$id": "https://kernlang.dev/schemas/mutate/config.schema.json",
   "title": "mutate configuration",
   "type": "object",
+  "x-agon-config": { "version": 1, "legacyAliases": ["cesarMutateReflex"] },
   "properties": {
     "cesarMutateReflex": { "type": "boolean", "default": true }
   },

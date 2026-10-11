@@ -232,15 +232,30 @@ export class DurableModHost {
 
   /** Read authoritative desired state. Mutable mirrors are recovery outputs. */
   async readGenerationDesiredState(pointer: GenerationPointer): Promise<unknown> {
+    const files = await this.readGenerationArtifacts(pointer, ['desired-state.json']);
+    const bytes = files['desired-state.json'];
+    if (!bytes) throw new DurableHostError('MOD_GENERATION_CORRUPT', 'selected desired state is missing');
+    return JSON.parse(new TextDecoder().decode(bytes));
+  }
+
+  /** Return only bytes checked against the selected immutable manifest. */
+  async readGenerationArtifacts(pointer: GenerationPointer, paths: readonly string[]): Promise<Readonly<Record<string, Uint8Array | undefined>>> {
+    const selectedPaths = [...new Set(paths.map(safeRelativePath))];
     const manifest = await this.validateGeneration(pointer.generation);
     if (pointer.graphHash !== manifest.graphHash || pointer.lockHash !== manifest.lockHash) {
       throw new DurableHostError('MOD_GENERATION_CORRUPT', 'canonical pointer does not bind the selected generation');
     }
-    const bytes = await this.#io.readFile(join(this.generationPath(pointer.generation), 'desired-state.json'));
-    if (hashBytes(bytes) !== manifest.files['desired-state.json']) {
-      throw new DurableHostError('MOD_GENERATION_CORRUPT', 'selected desired state changed after verification; recover the modular host before setup');
+    const files: Array<[string, Uint8Array | undefined]> = [];
+    for (const path of selectedPaths) {
+      if (!Object.hasOwn(manifest.files, path)) { files.push([path, undefined]); continue; }
+      const bytes = await this.#io.readFile(join(this.generationPath(pointer.generation), path));
+      if (hashBytes(bytes) !== manifest.files[path]) {
+        const label = path === 'desired-state.json' ? 'desired state' : path;
+        throw new DurableHostError('MOD_GENERATION_CORRUPT', `selected ${label} changed after verification; recover the modular host before setup`);
+      }
+      files.push([path, bytes]);
     }
-    return JSON.parse(new TextDecoder().decode(bytes));
+    return Object.freeze(Object.fromEntries(files));
   }
 
   #transition(journal: HostTransactionJournal, state: HostJournalState, steps: readonly HostJournalStep[], rollback = journal.rollback): HostTransactionJournal {

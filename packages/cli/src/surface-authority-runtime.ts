@@ -1,6 +1,5 @@
 import { readFileSync } from 'node:fs';
 import type { EngineAdapter } from '@kernlang/agon-core';
-import { loadConfig } from '@kernlang/agon-core';
 import type { BrainstormWorkflowEvent } from '@kernlang/agon-mod-brainstorm';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -208,7 +207,7 @@ export async function executeProcessCesarRoute(
   input: Record<string, unknown>,
   context: { readonly cwd: string; readonly signal: AbortSignal; readonly onWorkflowEvent?: (event: BrainstormWorkflowEvent) => void },
 ): Promise<unknown> {
-  assertCanonicalSurfaceSelectionCurrent();
+  const assertSelected = captureProcessSurfaceAuthority();
   if (!boot) throw new SurfaceGenerationError('MOD_GENERATION_MISMATCH', 'modular surface authority is not initialized', true);
   const entry = selector.active.catalog('cesar').find((candidate) =>
     candidate.kind === 'plan-step'
@@ -222,6 +221,8 @@ export async function executeProcessCesarRoute(
   const platform = `${process.platform}-${process.arch}`;
   if (!['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'].includes(platform))
     throw new Error(`unsupported platform: ${platform}`);
+  const { loadConfig } = await import('@kernlang/agon-core');
+  assertSelected();
   return payload.run(input, {
     invocationId: `cesar-route-${Date.now()}`,
     onWorkflowEvent: context.onWorkflowEvent,

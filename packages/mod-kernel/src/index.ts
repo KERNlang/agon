@@ -2,9 +2,12 @@ export { validatePersistedEnvelope } from '@kernlang/agon-mod-api';
 export type { Json, PersistedEnvelope } from '@kernlang/agon-mod-api';
 export { createScopedConfigStore } from './scoped-config-store.js';
 export type { ConfigMemoEntry, ScopedConfigStoreOptions } from './scoped-config-store.js';
+export { readGenerationConfiguration } from './configuration-migration.js';
+export { LEGACY_MOD_SETTING_OWNERS } from './legacy-config-assignments.generated.js';
+export type { GenerationConfiguration } from './configuration-migration.js';
 export { DEFAULT_KERNEL_SETTINGS, normalizeKernelSettings } from './settings.js';
 export type { KernelSettings } from './settings.js';
-export { selectModSettings, mergeModSettingsLayers } from './mod-settings.js';
+export { selectModSettings, mergeModSettingsLayers, projectLegacyModSettings } from './mod-settings.js';
 
 export {
   ModResolutionError,

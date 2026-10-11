@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmdirSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as kernel from '../../packages/mod-kernel/src/index.js';
 import { setupTestAgonHome, cleanupTestAgonHome } from '../helpers/agon-home.js';
@@ -28,6 +28,36 @@ function fixture() {
 }
 
 describe('Kernel configuration storage', () => {
+  it('refuses invalid UTF-8 without rewriting the original bytes', async () => {
+    home = setupTestAgonHome('config-write-invalid-utf8');
+    const path = join(home, 'config.json');
+    const bytes = Buffer.concat([Buffer.from('{"private":"fixture-private'), Buffer.from([0xff]), Buffer.from('"}')]);
+    writeFileSync(path, bytes);
+    const core = await import('../../packages/core/src/signals/config.js');
+    let failure: unknown;
+    try { core.configSet('debug', true); } catch (error) { failure = error; }
+    expect(failure).toBeInstanceOf(Error);
+    expect(String(failure)).not.toContain('fixture-private');
+    expect(readFileSync(path)).toEqual(bytes);
+    expect(existsSync(path + '.tmp')).toBe(false);
+    expect(existsSync(join(home, 'modular-host', 'locks', 'writer.json'))).toBe(false);
+  });
+
+  it.each(['{"private":"fixture-private",', 'null', '[]', '"fixture-private"', 'false', '12'])
+    ('refuses to replace invalid global configuration: %s', async bytes => {
+      home = setupTestAgonHome('config-write-invalid-source');
+      const path = join(home, 'config.json');
+      writeFileSync(path, bytes);
+      const core = await import('../../packages/core/src/signals/config.js');
+      let failure: unknown;
+      try { core.configSet('debug', true); } catch (error) { failure = error; }
+      expect(failure).toBeInstanceOf(Error);
+      expect(String(failure)).not.toContain('fixture-private');
+      expect(readFileSync(path, 'utf8')).toBe(bytes);
+      expect(existsSync(path + '.tmp')).toBe(false);
+      expect(existsSync(join(home, 'modular-host', 'locks', 'writer.json'))).toBe(false);
+    });
+
   it('follows changed home and host roots after Core has been imported', async () => {
     home = setupTestAgonHome('config-fence-dynamic-home');
     const firstHost = join(home, 'first-host');
@@ -219,18 +249,33 @@ describe('Kernel configuration storage', () => {
     expect(store.load().label).toBe('saved');
   });
 
-  it('explicit invalidation rereads changed bytes with the same mtime', () => {
-    const { store } = fixture();
-    const path = join(home, 'config.json');
+  it.each(['config.json', '.agon.json', '.agon.local.json'])('detects changed %s bytes with the same mtime and size', (name) => {
+    const { store, merge } = fixture();
+    const path = join(home, name);
     const sameTime = new Date(1700000000000);
     writeFileSync(path, '{"label":"first"}');
     utimesSync(path, sameTime, sameTime);
-    expect(store.load().label).toBe('first');
-    writeFileSync(path, '{"label":"second"}');
+    expect(store.load(home).label).toBe('first');
+    writeFileSync(path, '{"label":"other"}');
     utimesSync(path, sameTime, sameTime);
-    expect(store.load().label).toBe('first');
+    expect(store.load(home).label).toBe('other');
+    expect(merge).toHaveBeenCalledTimes(2);
+    expect(store.load(home).label).toBe('other');
+    expect(merge).toHaveBeenCalledTimes(2);
     store.invalidate();
-    expect(store.load().label).toBe('second');
+    expect(store.load(home).label).toBe('other');
+    expect(merge).toHaveBeenCalledTimes(3);
+  });
+
+  it.each(['config.json', '.agon.json', '.agon.local.json'])('distinguishes missing %s from epoch-mtime content', (name) => {
+    const { store } = fixture();
+    const path = join(home, name);
+    expect(store.load(home).label).toBe('default');
+    writeFileSync(path, '{"label":"present"}');
+    utimesSync(path, new Date(0), new Date(0));
+    expect(store.load(home).label).toBe('present');
+    unlinkSync(path);
+    expect(store.load(home).label).toBe('default');
   });
 
   it.each(['.agon.json', '.agon.local.json'])('rereads when %s changes its mtime', (name) => {
@@ -247,6 +292,32 @@ describe('Kernel configuration storage', () => {
     utimesSync(path, after, after);
     expect(store.load(project).label).toBe('second');
     expect(merge).toHaveBeenCalledTimes(2);
+  });
+
+  it('reuses the merge when only timestamps change', () => {
+    const { store, merge } = fixture();
+    const path = join(home, 'config.json');
+    writeFileSync(path, '{"label":"unchanged"}');
+    expect(store.load().label).toBe('unchanged');
+    utimesSync(path, new Date(0), new Date(0));
+    expect(store.load().label).toBe('unchanged');
+    expect(merge).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reuse or retain cached values after a read failure', () => {
+    const { store } = fixture();
+    const path = join(home, 'config.json');
+    writeFileSync(path, '{"label":"prior"}');
+    expect(store.load().label).toBe('prior');
+    unlinkSync(path);
+    mkdirSync(path);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(store.load().label).toBe('default');
+    expect(store.cache.size).toBe(0);
+    expect(warn).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('failed to read config'));
+    rmdirSync(path);
+    writeFileSync(path, '{"label":"recovered"}');
+    expect(store.load().label).toBe('recovered');
   });
 
   it('propagates lock failures without writing or clearing the cache', () => {

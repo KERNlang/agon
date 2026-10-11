@@ -3,6 +3,7 @@
   "$id": "https://kernlang.dev/schemas/agent/config.schema.json",
   "title": "agent configuration",
   "type": "object",
+  "x-agon-config": { "version": 1, "legacyAliases": ["cesarAgenticContinuationLimit"] },
   "properties": {
     "cesarAgenticContinuationLimit": { "type": "number", "default": 12 }
   },

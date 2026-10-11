@@ -30,8 +30,8 @@
         "@kernlang/agon-kernel"
       ],
       "sourceLocator": "@kernlang/agon-support-engine-runtime@1.0.0",
-      "integrity": "sha512-fKovCwdx9tmAA+hAh+Ua8+j5x3x1grgi0n273UuPLJbYkLC19sipjXRKz+R20FS1N8/D/2pXlp1xn6mcNcd7iw==",
-      "contentHash": "sha256:8d9e3a2e90c96a61f5bad4e20db4ee810aa1db6fc4fdcbe1f06d8f4bdee0de28",
+      "integrity": "sha512-A2JH4gJ5OnjnnvG8Q7l+L6Mk1P9V2utTo+YxnzijuaYFK08osxfsyhf91wzoYGkWy6NoTb5YqMKxLzPqahOmBg==",
+      "contentHash": "sha256:817135657f3ea2667d54c88d1258ec2e62c2dc3f9a6020a4b5893a54722a422a",
       "manifestHash": "sha256:ceb6dc581e02ccfabe5d4fd042fcbab72d2b0fc3b64a34feedb155c0d9fa4362"
     },
     {

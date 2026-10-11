@@ -3,7 +3,8 @@ export type {
   EngineCliModelConfig, EngineDefinition, EngineEffortConfig, EngineEnvVar, EngineMode, EngineModeConfig,
   EngineModelConfig, ImageAttachment, SessionBudget, TaskClass,
 } from '@kernlang/agon-support-engine-runtime';
-import type { TaskClass } from '@kernlang/agon-support-engine-runtime';
+import type { TaskClass, EngineSettings } from '@kernlang/agon-support-engine-runtime';
+import { DEFAULT_ENGINE_SETTINGS } from '@kernlang/agon-support-engine-runtime';
 export type { BrainstormResult } from '@kernlang/agon-mod-brainstorm';
 export type { BrainstormGroup, BrainstormDedupStatus } from '@kernlang/agon-support-dedup';
 
@@ -39,22 +40,18 @@ export interface ScoreComponents {
 
 export type { GlickoRating, EngineMeta, RatingRecord } from '@kernlang/agon-mod-ratings';
 
-export interface AgonConfig {
+export interface AgonConfig extends EngineSettings {
   debug?: boolean;
   timeout?: number;
   forgeTimeout?: number;
-  forgeDispatchTimeout?: number;
   forgeAutoAcceptScore?: number;
   forgeClearWinnerSpread?: number;
   forgeEnableSynthesis?: boolean;
   forgeMaxCritiques?: number;
   forgeStarterStrategy?: 'fixed'|'rotate';
   forgeFixedStarter?: string;
-  reviewDefaultEngine?: string;
   goalReviewEngines?: string[];
   forgeRequireBaselineCheck?: boolean;
-  engineActivationMode?: 'auto'|'explicit';
-  forgeEnabledEngines?: string[];
   forgeFitnessTimeout?: number;
   forgeSynthesisTimeout?: number;
   forgeEarlyFinalizeEnabled?: boolean;
@@ -64,7 +61,6 @@ export interface AgonConfig {
   forgeHealthCheckTimeoutSec?: number;
   forgeHealthCheckApiTimeoutSec?: number;
   forgeMaxParallelApi?: number;
-  forgeJudgeEngine?: string;
   reviewMaxTokens?: number;
   reviewFileContext?: boolean;
   ratingsEnabled?: boolean;
@@ -97,7 +93,6 @@ export interface AgonConfig {
   cesarCodeFastPathChars?: number;
   cesarAutoPipeline?: boolean;
   cesarPipelineThreshold?: number;
-  cesarEngine?: string;
   cesarBackend?: 'cli'|'api'|'auto';
   claudeBackend?: 'print'|'pty';
   cesarActingFallback?: 'ask'|'auto'|'off';
@@ -141,11 +136,6 @@ export interface AgonConfig {
   allowedCommands: string[];
   toolPermissions: Record<string,'allow'|'ask'|'deny'>;
   permissions: {allow?:string[],deny?:string[]};
-  hiddenEngines: string[];
-  removedEngines: string[];
-  engineModels: Record<string,string>;
-  engineEfforts: Record<string,string>;
-  engineIsolation?: 'workspace-pure'|'inherit';
   terminalMode?: 'auto'|'native'|'fullscreen';
   uiMotion?: 'full'|'reduced'|'off';
   statusLine?: string;
@@ -157,9 +147,7 @@ export interface AgonConfig {
   speculativeThresholdUsd?: number;
   speculativeEloSpreadThreshold?: number;
   neroExplorationRate?: number;
-  ratingsPurgeKeepEngines?: string[];
   autoCredit?: boolean;
-  commitCoAuthor?: string;
   browserExtensionIds: string[];
 }
 
@@ -167,18 +155,18 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   debug: false,
   timeout: 360,
   forgeTimeout: 1800,
-  forgeDispatchTimeout: 480,
+  forgeDispatchTimeout: DEFAULT_ENGINE_SETTINGS.forgeDispatchTimeout,
   forgeAutoAcceptScore: 88,
   forgeClearWinnerSpread: 8,
   forgeEnableSynthesis: false,
   forgeMaxCritiques: 3,
   forgeStarterStrategy: 'fixed',
   forgeFixedStarter: 'claude',
-  reviewDefaultEngine: '',
+  reviewDefaultEngine: DEFAULT_ENGINE_SETTINGS.reviewDefaultEngine,
   goalReviewEngines: [],
   forgeRequireBaselineCheck: true,
-  engineActivationMode: 'auto',
-  forgeEnabledEngines: ['claude','codex','agy'],
+  engineActivationMode: DEFAULT_ENGINE_SETTINGS.engineActivationMode,
+  forgeEnabledEngines: DEFAULT_ENGINE_SETTINGS.forgeEnabledEngines,
   forgeFitnessTimeout: 120,
   forgeSynthesisTimeout: 300,
   forgeEarlyFinalizeEnabled: true,
@@ -188,7 +176,7 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   forgeHealthCheckTimeoutSec: 20,
   forgeHealthCheckApiTimeoutSec: 45,
   forgeMaxParallelApi: 2,
-  forgeJudgeEngine: '',
+  forgeJudgeEngine: DEFAULT_ENGINE_SETTINGS.forgeJudgeEngine,
   reviewMaxTokens: 0,
   reviewFileContext: true,
   ratingsEnabled: true,
@@ -221,7 +209,7 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   cesarCodeFastPathChars: 180,
   cesarAutoPipeline: false,
   cesarPipelineThreshold: 93,
-  cesarEngine: 'claude',
+  cesarEngine: DEFAULT_ENGINE_SETTINGS.cesarEngine,
   cesarBackend: 'auto',
   claudeBackend: 'print',
   cesarActingFallback: 'auto',
@@ -265,11 +253,11 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   allowedCommands: [],
   toolPermissions: {} as any,
   permissions: {} as any,
-  hiddenEngines: [],
-  removedEngines: [],
-  engineModels: {} as any,
-  engineEfforts: {} as any,
-  engineIsolation: 'workspace-pure',
+  hiddenEngines: DEFAULT_ENGINE_SETTINGS.hiddenEngines,
+  removedEngines: DEFAULT_ENGINE_SETTINGS.removedEngines,
+  engineModels: DEFAULT_ENGINE_SETTINGS.engineModels,
+  engineEfforts: DEFAULT_ENGINE_SETTINGS.engineEfforts,
+  engineIsolation: DEFAULT_ENGINE_SETTINGS.engineIsolation,
   terminalMode: 'auto',
   uiMotion: 'reduced',
   statusLine: '',
@@ -281,9 +269,9 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   speculativeThresholdUsd: 0.50,
   speculativeEloSpreadThreshold: 15,
   neroExplorationRate: 0.2,
-  ratingsPurgeKeepEngines: [],
+  ratingsPurgeKeepEngines: DEFAULT_ENGINE_SETTINGS.ratingsPurgeKeepEngines,
   autoCredit: true,
-  commitCoAuthor: 'agon (KERN) <292465531+KERN-Agon@users.noreply.github.com>',
+  commitCoAuthor: DEFAULT_ENGINE_SETTINGS.commitCoAuthor,
   browserExtensionIds: [],
 };
 

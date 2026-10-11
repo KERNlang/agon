@@ -2,6 +2,7 @@ import { mkdirSync, readdirSync, statSync, rmSync } from 'node:fs';
 
 import { join } from 'node:path';
 import { createScopedConfigStore } from '@kernlang/agon-kernel';
+import { normalizeEngineSettings } from '@kernlang/agon-support-engine-runtime';
 
 import {
   AGON_HOME, CORPUS_PATH, GLOBAL_CONFIG_PATH, RATINGS_PATH, RUNS_DIR, SKILLS_DIR, TEAM_ELO_PATH,
@@ -49,16 +50,12 @@ export function loadConfig(cwd?: string): Required<AgonConfig> {
 function mergeConfig(global: Partial<AgonConfig>, local: Partial<AgonConfig>, localPrivate: Partial<AgonConfig>): Required<AgonConfig> {
   const merged = { ...DEFAULT_AGON_CONFIG, ...global, ...local, ...localPrivate } as Required<AgonConfig>;
   // Compiler can't emit object/array defaults for Record types — ensure correct runtime types
-  if (!Array.isArray((merged as any).forgeEnabledEngines)) (merged as any).forgeEnabledEngines = [];
-  if (!Array.isArray((merged as any).hiddenEngines)) (merged as any).hiddenEngines = [];
-  if (!Array.isArray((merged as any).removedEngines)) (merged as any).removedEngines = [];
+  normalizeEngineSettings(merged);
   if (!Array.isArray((merged as any).browserExtensionIds)) (merged as any).browserExtensionIds = [];
-  if (!['auto', 'explicit'].includes(String((merged as any).engineActivationMode))) (merged as any).engineActivationMode = 'auto';
   if (!['auto', 'native', 'fullscreen'].includes(String(merged.terminalMode))) merged.terminalMode = 'auto';
   if (!['full', 'reduced', 'off'].includes(String((merged as any).uiMotion))) (merged as any).uiMotion = 'reduced';
   if (!merged.hooks || typeof merged.hooks === 'string') (merged as any).hooks = {};
   if (!merged.allowedCommands || typeof merged.allowedCommands === 'string') (merged as any).allowedCommands = [];
-  if (!merged.engineModels || typeof merged.engineModels === 'string') (merged as any).engineModels = {};
   // Default tool permissions — same model as Claude Code:
   // Read/search = auto-allow, Write/Edit/Bash = ask
   if (!merged.toolPermissions || typeof merged.toolPermissions === 'string') {

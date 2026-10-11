@@ -12,6 +12,45 @@ vi.mock('node:fs', async importOriginal => {
 });
 
 describe('writer liveness fails closed', () => {
+  it('retries synchronous release durability without removing a successor lock', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-writer-release-sync-retry-'));
+    const path = join(root, 'writer.json');
+    const actual = await vi.importActual<typeof import('node:fs')>('node:fs');
+    const owner = WriterFence.acquireSync(path, 'first');
+    const failure = new Error('fixture release fsync failed');
+    vi.mocked(fsyncSync).mockImplementationOnce(() => { throw failure; });
+    try {
+      expect(() => owner.releaseSync()).toThrow(failure);
+      const next = await WriterFence.acquire(path, 'next');
+      try {
+        owner.releaseSync();
+        expect(JSON.parse(await readFile(path, 'utf8'))).toEqual(next.record);
+      } finally { await next.release(); }
+    } finally { vi.mocked(fsyncSync).mockImplementation(actual.fsyncSync); }
+  });
+
+  it('retries release directory sync without removing the next writer', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-writer-release-retry-'));
+    const path = join(root, 'writer.json');
+    let failRelease = false;
+    const failure = new Error('fixture release sync failed');
+    const owner = await WriterFence.acquire(path, 'first', { io: {
+      ...nodeHostIo,
+      syncDirectory: async directory => {
+        if (failRelease) { failRelease = false; throw failure; }
+        await nodeHostIo.syncDirectory(directory);
+      },
+    } });
+    failRelease = true;
+    await expect(owner.release()).rejects.toBe(failure);
+    const next = await WriterFence.acquire(path, 'next');
+    try {
+      await owner.release();
+      expect(JSON.parse(await readFile(path, 'utf8'))).toEqual(next.record);
+      await expect(owner.heartbeat()).rejects.toMatchObject({ code: 'MOD_FENCE_LOST' });
+    } finally { await next.release(); }
+  });
+
   it('reports a completed action when release durability fails', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agon-writer-release-sync-'));
     const path = join(root, 'writer.json');

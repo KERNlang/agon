@@ -10,8 +10,8 @@
         "@kernlang/agon-mod-api"
       ],
       "sourceLocator": "@kernlang/agon-kernel@1.0.0",
-      "integrity": "sha512-QvTn0t4KvtPPCgVVGLX7MhEUHt4v5bjxTrqh4w2Gx983I62veTsh6SteCDcf/fUogRFjw1WjhVi+n1ll7rFWmA==",
-      "contentHash": "sha256:2625732198381b44e9b60373ec1879f8c0d9403bc84cd228c2d771ba022104c0",
+      "integrity": "sha512-nbVLTU1uSU4MFSTwlv8ugoLvWKpvTJHcEvwbu0yTP6yHMrV76RQOgaQbfyfdFmKwcLTBRXPOpkWmzF0M3pO0hg==",
+      "contentHash": "sha256:2e5dc2c7f459b27d5789148c80ea120413ab3be9fce09566dbbce86972fb7579",
       "manifestHash": "sha256:583381b00786c2729a1e32eb2d42f6324cb58df263378f0d0ad57a1401970f17"
     },
     {

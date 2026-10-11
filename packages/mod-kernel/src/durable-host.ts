@@ -175,6 +175,7 @@ export class DurableModHost {
   readonly #options: DurableHostOptions;
   readonly #processIdentity: string;
   readonly #events: HostEvent[] = [];
+  #leases: GenerationLeaseStore | undefined;
   readonly paths: Readonly<{
     generations: string; staging: string; transactions: string; leases: string; receipts: string;
     current: string; installedIndex: string; desiredState: string; writerLock: string;
@@ -662,14 +663,14 @@ export class DurableModHost {
   }
 
   #generationLeaseStore(): GenerationLeaseStore {
-    return new GenerationLeaseStore({
+    return this.#leases ??= new GenerationLeaseStore({
       directory: this.paths.leases, writerLockPath: this.paths.writerLock, processIdentity: this.#processIdentity,
       validateGeneration: (generation) => this.validateGeneration(generation), io: this.#io, now: this.#now,
     });
   }
 
-  async leaseGeneration(generation: number, ownerId: string): Promise<GenerationLease> {
-    return this.#generationLeaseStore().acquire(generation, ownerId);
+  async leaseGeneration(generation: number, ownerId: string, signal?: AbortSignal): Promise<GenerationLease> {
+    return this.#generationLeaseStore().acquire(generation, ownerId, signal);
   }
 
   async heartbeatGenerationLease(leaseId: string): Promise<GenerationLease> {
@@ -678,6 +679,10 @@ export class DurableModHost {
 
   async releaseGenerationLease(leaseId: string): Promise<GenerationLease> {
     return this.#generationLeaseStore().release(leaseId);
+  }
+
+  async retryGenerationLeaseCleanup(): Promise<void> {
+    await this.#leases?.retryPendingCleanup();
   }
 
   async recoverDeadGenerationLease(leaseId: string, isProcessAlive: (pid: number) => Promise<boolean>): Promise<GenerationLease> {

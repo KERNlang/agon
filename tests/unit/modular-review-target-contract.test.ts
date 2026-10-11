@@ -1,30 +1,34 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import { resolveReviewTarget } from '../../packages/support-verification/src/review-target.js';
 import { resolveReviewTarget as cliResolveReviewTarget } from '../../packages/cli/src/handlers/review.js';
 import { resolveReviewTarget as publicResolveReviewTarget } from '@kernlang/agon-support-verification';
 
 let root: string;
 const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-const commitFile = (name: string, content: string) => {
+const execFileAsync = promisify(execFile);
+const gitFixture = (...args: string[]) => execFileAsync('git', args, { cwd: root, encoding: 'utf8' });
+const commitFile = async (name: string, content: string) => {
   writeFileSync(join(root, name), content);
-  git('add', '--', name);
-  git('commit', '-m', name);
+  await gitFixture('add', '--', name);
+  await gitFixture('commit', '-m', name);
 };
 
-beforeEach(() => {
+beforeEach(async () => {
   root = mkdtempSync(join(tmpdir(), 'agon-review-contract-'));
-  git('init', '-b', 'main');
-  git('config', 'user.name', 'Review fixture');
-  git('config', 'user.email', 'review@example.test');
-  commitFile('base.txt', 'base\n');
-  git('switch', '-c', 'feature');
-  commitFile('feature.txt', 'requested branch\n');
-  git('switch', '-c', 'other', 'main');
-  commitFile('other.txt', 'ambient checkout\n');
+  // Let the worker receive runner acknowledgments between fixture commands.
+  await gitFixture('init', '-b', 'main');
+  await gitFixture('config', 'user.name', 'Review fixture');
+  await gitFixture('config', 'user.email', 'review@example.test');
+  await commitFile('base.txt', 'base\n');
+  await gitFixture('switch', '-c', 'feature');
+  await commitFile('feature.txt', 'requested branch\n');
+  await gitFixture('switch', '-c', 'other', 'main');
+  await commitFile('other.txt', 'ambient checkout\n');
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
@@ -103,8 +107,8 @@ describe('shared Review target contract', () => {
     expect(() => resolveReviewTarget('commit:HEAD:base.txt', root)).toThrow();
   });
 
-  it('resolves a valid base even when a working-tree path has the same name', () => {
-    commitFile('main', 'path named main\n');
+  it('resolves a valid base even when a working-tree path has the same name', async () => {
+    await commitFile('main', 'path named main\n');
     expect(resolveReviewTarget('uncommitted', root, 'main').diff).toBe(git('diff', 'main', '--'));
   });
 

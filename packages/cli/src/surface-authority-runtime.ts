@@ -6,6 +6,9 @@ import { join } from 'node:path';
 
 import {
   FIRST_PARTY_SURFACE_CATALOG,
+  AGON_RUNTIME_VERSION,
+  DurableModHost,
+  DurableHostError,
   SurfaceGeneration,
   SurfaceGenerationError,
   SurfaceGenerationSelector,
@@ -17,6 +20,7 @@ import type {
   FirstPartySurfaceBoot,
   GeneratedSurfaceCatalogEntry,
   GeneratedSurfaceRuntime,
+  GenerationPointer,
   Surface,
   SurfaceClient,
 } from '@kernlang/agon-kernel';
@@ -36,6 +40,42 @@ let selector = new SurfaceGenerationSelector(new SurfaceGeneration({
 }));
 let boot: FirstPartySurfaceBoot | undefined;
 const clients = new Map<Surface, SurfaceClient>();
+const pendingLeaseCleanup = new Set<DurableModHost>();
+let leaseCleanupTimer: ReturnType<typeof setTimeout> | undefined;
+let leaseCleanupDrain: Promise<void> | undefined;
+
+function scheduleLeaseCleanup(): void {
+  if (!pendingLeaseCleanup.size || leaseCleanupTimer || leaseCleanupDrain) return;
+  leaseCleanupTimer = setTimeout(() => {
+    leaseCleanupTimer = undefined;
+    void drainLeaseCleanup().catch(error => {
+      console.warn(`[agon] generation lease cleanup remains pending: ${error instanceof Error ? error.message : String(error)}`);
+    });
+  }, 1_000);
+  leaseCleanupTimer.unref();
+}
+
+function retainLeaseCleanup(host: DurableModHost): void {
+  pendingLeaseCleanup.add(host);
+  scheduleLeaseCleanup();
+}
+
+function drainLeaseCleanup(): Promise<void> {
+  if (leaseCleanupDrain) return leaseCleanupDrain;
+  if (leaseCleanupTimer) { clearTimeout(leaseCleanupTimer); leaseCleanupTimer = undefined; }
+  leaseCleanupDrain = (async () => {
+    const errors: unknown[] = [];
+    for (const host of [...pendingLeaseCleanup]) {
+      try { await host.retryGenerationLeaseCleanup(); pendingLeaseCleanup.delete(host); }
+      catch (error) { errors.push(error); }
+    }
+    if (errors.length) throw new AggregateError(errors, 'generation lease cleanup needs recovery');
+  })().finally(() => {
+    leaseCleanupDrain = undefined;
+    scheduleLeaseCleanup();
+  });
+  return leaseCleanupDrain;
+}
 
 export function modularHostRoot(): string {
   return process.env.AGON_MODULAR_HOST_ROOT ?? join(process.env.AGON_HOME ?? join(homedir(), '.agon'), 'modular-host');
@@ -64,7 +104,13 @@ export async function disposeProcessSurfaceAuthority(): Promise<void> {
   const selected = boot;
   boot = undefined;
   clients.clear();
-  if (selected) await selected.activated.dispose();
+  const outcomes = await Promise.allSettled([
+    selected?.activated.dispose(),
+    drainLeaseCleanup(),
+  ]);
+  const errors = outcomes.flatMap(outcome => outcome.status === 'rejected' ? [outcome.reason] : []);
+  if (errors.length === 1) throw errors[0];
+  if (errors.length) throw new AggregateError(errors, 'modular host disposal and lease cleanup failed');
 }
 
 export function assertCanonicalSurfaceSelectionCurrent(): void {
@@ -150,8 +196,19 @@ export async function withProcessSurfaceAuthority<T>(
   const selected = boot;
   // The rollback compatibility catalog has no durable generation to monitor.
   if (!selected) return run(parentSignal);
+  if (pendingLeaseCleanup.size) await drainLeaseCleanup();
   parentSignal?.throwIfAborted();
   assertAvailable(parentSignal);
+  const host = selected.pointerCanonical && selected.activated.generation.id !== 'kernel-safe-mode'
+    ? new DurableModHost(selected.hostRoot, { kernelVersion: AGON_RUNTIME_VERSION }) : undefined;
+  const pointer = selected.pointerCanonical ? JSON.parse(selected.pointerCanonical) as GenerationPointer : undefined;
+  let lease;
+  try {
+    lease = host && pointer ? await host.leaseGeneration(pointer.generation, 'agon.kernel.invocation', parentSignal) : undefined;
+  } catch (error) {
+    if (host) retainLeaseCleanup(host);
+    throw error;
+  }
   const child = new AbortController();
   const cancel = () => child.abort(parentSignal?.reason);
   parentSignal?.addEventListener('abort', cancel, { once: true });
@@ -165,12 +222,34 @@ export async function withProcessSurfaceAuthority<T>(
     }
   }, 100);
   monitor.unref();
+  let outcome: { completed: true; value: T } | { completed: false; error: unknown };
   try {
-    return await run(child.signal);
+    // Lease acquisition can wait for a writer. Recheck authority before effects.
+    parentSignal?.throwIfAborted();
+    if (boot !== selected) throw new SurfaceGenerationError('MOD_GENERATION_MISMATCH', 'modular host was disposed or replaced; restart Agon', true);
+    assertAvailable(child.signal);
+    const value = await run(child.signal);
+    // The caller owns result semantics, including structured cancellation results.
+    outcome = { completed: true, value };
+  } catch (error) {
+    outcome = { completed: false, error };
   } finally {
     clearInterval(monitor);
     parentSignal?.removeEventListener('abort', cancel);
   }
+  if (host && lease) {
+    try { await host.releaseGenerationLease(lease.leaseId); }
+    catch (cleanup) {
+      retainLeaseCleanup(host);
+      if (!outcome.completed) throw new AggregateError([outcome.error, cleanup], 'invocation and generation lease cleanup failed');
+      throw new DurableHostError('MOD_RESTART_REQUIRED', 'invocation completed but generation lease cleanup failed; do not repeat its effects', {
+        outcome: 'invocation-completed', leaseId: lease.leaseId, generation: lease.generation,
+        cause: cleanup instanceof Error ? cleanup.message : String(cleanup),
+      });
+    }
+  }
+  if (!outcome.completed) throw outcome.error;
+  return outcome.value;
 }
 
 export function processSurfacePublicIds(surface: Surface): ReadonlySet<string> {

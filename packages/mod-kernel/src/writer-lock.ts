@@ -59,6 +59,7 @@ export class WriterFence {
   readonly #io: HostIo;
   readonly #now: () => Date;
   #released = false;
+  #removed = false;
 
   private constructor(path: string, record: WriterLockRecord, io: HostIo, now: () => Date) {
     this.path = path;
@@ -158,7 +159,7 @@ export class WriterFence {
   }
 
   async assertOwned(): Promise<void> {
-    if (this.#released) throw new DurableHostError('MOD_FENCE_LOST', 'writer fence was already released');
+    if (this.#released || this.#removed) throw new DurableHostError('MOD_FENCE_LOST', 'writer fence was already released');
     const current = await readJson<WriterLockRecord>(this.#io, this.path).catch(() => undefined);
     assertRecordOwned(current, this.record);
   }
@@ -175,19 +176,25 @@ export class WriterFence {
 
   async release(): Promise<void> {
     if (this.#released) return;
-    await this.assertOwned();
-    await this.#io.rm(this.path);
+    if (!this.#removed) {
+      await this.assertOwned();
+      await this.#io.rm(this.path);
+      this.#removed = true;
+    }
     await this.#io.syncDirectory(dirname(this.path));
     this.#released = true;
   }
 
   releaseSync(): void {
     if (this.#released) return;
-    let current: WriterLockRecord | undefined;
-    try { current = JSON.parse(readFileSync(this.path, 'utf8')) as WriterLockRecord; }
-    catch { /* Missing or malformed ownership never permits deletion. */ }
-    assertRecordOwned(current, this.record);
-    unlinkSync(this.path);
+    if (!this.#removed) {
+      let current: WriterLockRecord | undefined;
+      try { current = JSON.parse(readFileSync(this.path, 'utf8')) as WriterLockRecord; }
+      catch { /* Missing or malformed ownership never permits deletion. */ }
+      assertRecordOwned(current, this.record);
+      unlinkSync(this.path);
+      this.#removed = true;
+    }
     syncPath(dirname(this.path));
     this.#released = true;
   }

@@ -171,7 +171,6 @@ export function App() {
   const setInputValue = composerInput.set;
   const inputValueRef = composerInput.ref;
   const inputIsEmpty = useComposerInputEmpty(composerInput);
-  const [uiInteractionActive, setUiInteractionActive] = useState<boolean>(false);
   const [inputHistory, _setInputHistoryRaw] = useState<string[]>(loadComposerInputHistory());
   const setInputHistory = useMemo(() => __inkSafe(_setInputHistoryRaw), [_setInputHistoryRaw]);
   const [inputQueue, _setInputQueueRaw] = useState<QueuedInput[]>([]);
@@ -479,7 +478,6 @@ export function App() {
   const lastReviewResultRef = useRef<{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | null>(null);
   const modeRef = useRef<'chat'|'campfire'|'brainstorm'|'tribunal'>('chat');
   const inputEpochRef = useRef<number>(0);
-  const uiInteractionTimerRef = useRef<ReturnType<typeof setTimeout>|null>(null);
   const atPickerPrefixRef = useRef<string>('');
   const keyT0Ref = useRef<number>(0);
   const perfCountsRef = useRef<{blocks:number,archive:number,live:number}>({ blocks: 0, archive: 0, live: 0 });
@@ -534,10 +532,6 @@ export function App() {
   const uiMotion = useMemo(() => {
           return normalizeUiMotion((config as any).uiMotion);
   }, [config]);
-
-  const cosmeticUiPaused = useMemo(() => {
-          return uiInteractionActive;
-  }, [uiInteractionActive]);
 
   const nativeTranscriptBlocks = useMemo(() => {
           return nativeTranscriptBlocksForStatic(outputBlocks);
@@ -600,10 +594,6 @@ export function App() {
           }
           return { engineId: activeStream.engineId, line: lines[lines.length - 1].trim() };
   }, [activeStream]);
-
-  const chromeStreamSnippet = useMemo(() => {
-          return cosmeticUiPaused ? null : streamSnippet;
-  }, [streamSnippet,cosmeticUiPaused]);
 
   const newestLiveToolStreamId = useMemo(() => {
           let newestId = '';
@@ -956,13 +946,6 @@ export function App() {
   const handleInputChange = useCallback((value:string) => {
     // Diagnostic: stamp keystroke arrival; read post-commit by the AGON_PERF effect (0 when off).
     keyT0Ref.current = perfNow();
-    // Freeze cosmetic clocks while the user is actively typing. Semantic
-    // streaming/tool events continue; only timer-driven chrome is paused.
-    setUiInteractionActive(true);
-    if (uiInteractionTimerRef.current) {
-      clearTimeout(uiInteractionTimerRef.current);
-    }
-    uiInteractionTimerRef.current = setTimeout(() => { uiInteractionTimerRef.current = null; setUiInteractionActive(false); }, 350);
     // User is back at the keyboard — clear the pending bell so the NEXT await
     // (after this turn) can ring again, and announce this new plan approval.
     pendingBellRef.current = false;
@@ -1640,13 +1623,6 @@ export function App() {
   }, [replState,inputQueue]);
 
   useEffect(() => {
-    return () => {
-      if (uiInteractionTimerRef.current) clearTimeout(uiInteractionTimerRef.current);
-      uiInteractionTimerRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
     perfCountsRef.current = { blocks: outputBlocks.length, archive: effectiveNativeArchiveCount, live: nativeLiveBlocks.length };
   }, [outputBlocks,effectiveNativeArchiveCount,nativeLiveBlocks]);
 
@@ -2002,15 +1978,14 @@ export function App() {
         liveProgress={liveProgress}
         runningJobs={runningJobs}
         chatStartTime={chatStartTimeRef.current || 0}
-        streamSnippet={chromeStreamSnippet}
+        streamSnippet={streamSnippet}
         statusStats={statusStats}
         statusCwd={statusCwd}
         statusBranch={statusBranch}
         explorationMode={explorationMode}
         toolOutputExpanded={toolOutputExpanded}
         fullscreenEnabled={terminalMode === 'fullscreen'}
-        uiMotion={uiMotion}
-        interactionActive={cosmeticUiPaused} />
+        uiMotion={uiMotion} />
     )}
   </Box>
   );

@@ -6,8 +6,9 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { DurableModHost, createFirstPartyModCatalog, createFullCompatDesiredState, planDesiredStateChange } from '../../packages/mod-kernel/src/index.js';
 import { surfaceLockFor } from '../helpers/modular-surface-lock.js';
+import { GenerationLeaseStore } from '../../packages/mod-kernel/src/generation-leases.js';
 import { assertProcessPlanStepAvailable, disposeProcessSurfaceAuthority, guardProcessEngineAdapter, initializeProcessSurfaceAuthority, processSurfaceCatalog, withProcessSurfaceAuthority } from '../../packages/cli/src/surface-authority-runtime.js';
-import { SurfaceGeneration } from '@kernlang/agon-kernel';
+import { DurableModHost as RuntimeDurableModHost, SurfaceGeneration } from '@kernlang/agon-kernel';
 import type { CesarPlanStep } from '@kernlang/agon-mod-plan';
 import type { HandlerContext } from '../../packages/cli/src/handlers/types.js';
 import type { DispatchOptions, EngineAdapter, EngineDefinition } from '@kernlang/agon-core';
@@ -528,6 +529,111 @@ it.each(['success', 'rejection', 'parent cancellation'])('removes monitor resour
   expect(clear).toHaveBeenCalledWith(intervals.mock.results[0].value);
   expect(add).toHaveBeenCalledOnce();
   expect(remove).toHaveBeenCalledWith('abort', add.mock.calls[0][1]);
+});
+
+it.each([false, true])('preserves the invocation outcome when lease cleanup fails: %s', async failed => {
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  const executionError = new Error('fixture execution failed');
+  const cleanupError = new Error('fixture lease cleanup failed');
+  const release = vi.spyOn(RuntimeDurableModHost.prototype, 'releaseGenerationLease').mockRejectedValueOnce(cleanupError);
+  const pending = withProcessSurfaceAuthority(undefined, () => {}, async () => {
+    if (failed) throw executionError;
+    return 'effects completed';
+  });
+  if (failed) await expect(pending).rejects.toMatchObject({ errors: [executionError, cleanupError] });
+  else await expect(pending).rejects.toMatchObject({
+    code: 'MOD_RESTART_REQUIRED', details: { outcome: 'invocation-completed', leaseId: expect.any(String) },
+  });
+  expect(release).toHaveBeenCalledOnce();
+});
+
+it.each(['acquisition', 'release'])('recovers a failed lease %s while the process stays alive', async phase => {
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  const failure = new Error(`fixture ${phase} durability failed`);
+  const acquire = RuntimeDurableModHost.prototype.leaseGeneration;
+  let broken = phase === 'acquisition';
+  let runtimeHost: RuntimeDurableModHost | undefined;
+  vi.spyOn(RuntimeDurableModHost.prototype, 'leaseGeneration').mockImplementation(function (...args) {
+    runtimeHost = this;
+    const io = this.hostIo;
+    const leases = this.paths.leases;
+    const sync = io.syncDirectory;
+    const rename = io.rename;
+    vi.spyOn(io, 'syncDirectory').mockImplementation(async path => {
+      if (broken && phase === 'acquisition' && path === leases) { broken = false; throw failure; }
+      await sync(path);
+    });
+    vi.spyOn(io, 'rename').mockImplementation(async (from, to) => {
+      if (broken && phase === 'release' && to.startsWith(leases + '/')) { broken = false; throw failure; }
+      await rename(from, to);
+    });
+    return acquire.apply(this, args);
+  });
+  const run = vi.fn(async () => { broken = true; return 'effects completed'; });
+  const pending = withProcessSurfaceAuthority(undefined, () => {}, run);
+  if (phase === 'acquisition') await expect(pending).rejects.toBe(failure);
+  else await expect(pending).rejects.toMatchObject({ code: 'MOD_RESTART_REQUIRED' });
+  expect(run).toHaveBeenCalledTimes(phase === 'acquisition' ? 0 : 1);
+  const paths = await readdir(runtimeHost!.paths.leases);
+  expect(paths).toHaveLength(1);
+  const path = join(runtimeHost!.paths.leases, paths[0]);
+  expect(JSON.parse(await readFile(path, 'utf8')).releasedAt).toBeNull();
+  await vi.waitFor(async () => {
+    expect(JSON.parse(await readFile(path, 'utf8')).releasedAt).not.toBeNull();
+  }, { timeout: 4_000, interval: 50 });
+  expect(run).toHaveBeenCalledTimes(phase === 'acquisition' ? 0 : 1);
+});
+
+it('preserves a structured cancellation result after backend cleanup', async () => {
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  const parent = new AbortController();
+  const reason = new Error('fixture cancelled');
+  let cleaned = false;
+  const result = { status: 'failure', error: reason.message };
+  const pending = withProcessSurfaceAuthority(parent.signal, () => {}, async signal => {
+    parent.abort(reason);
+    expect(signal?.aborted).toBe(true);
+    cleaned = true;
+    return result;
+  });
+  await expect(pending).resolves.toBe(result);
+  expect(cleaned).toBe(true);
+  const leases = await readdir(host.paths.leases);
+  expect(leases.length).toBe(1);
+  expect(JSON.parse(await readFile(join(host.paths.leases, leases[0]), 'utf8')).releasedAt).not.toBeNull();
+});
+
+it.each(['success', 'rejection', 'parent cancellation'])('retains a durable generation lease until invocation cleanup: %s', async outcome => {
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  const leases = new GenerationLeaseStore({
+    directory: host.paths.leases,
+    writerLockPath: host.paths.writerLock,
+    processIdentity: 'observer',
+    validateGeneration: generation => host.validateGeneration(generation),
+  });
+  const parent = new AbortController();
+  const observed: number[] = [];
+  const pending = withProcessSurfaceAuthority(parent.signal, () => {}, async signal => {
+    observed.push((await leases.active(1)).length);
+    try {
+      if (outcome === 'rejection') throw new Error('backend rejected');
+      if (outcome === 'parent cancellation') {
+        parent.abort(new Error('parent cancelled'));
+        signal!.throwIfAborted();
+      }
+      return 'done';
+    } finally {
+      observed.push((await leases.active(1)).length);
+    }
+  });
+  if (outcome === 'success') await expect(pending).resolves.toBe('done');
+  else await expect(pending).rejects.toThrow(outcome === 'rejection' ? 'backend rejected' : 'parent cancelled');
+  expect(observed).toEqual([1, 1]);
+  expect(await leases.active(1)).toEqual([]);
 });
 
 it.each(['brainstorm', 'forge', 'tribunal'])('blocks late provider dispatch inside nested %s', async phase => {

@@ -73,8 +73,11 @@ describe('transcript frame commit batcher', () => {
 
   it('generates stable mount-only React effects instead of nested dependency arrays', () => {
     const source = readFileSync(new URL('../../packages/cli/src/surfaces/app.tsx', import.meta.url), 'utf8');
+    const chrome = readFileSync(new URL('../../packages/cli/src/surfaces/app-views.tsx', import.meta.url), 'utf8');
     expect(source).not.toContain('}, [[]]);');
-    expect(source).toContain('if (uiInteractionTimerRef.current) clearTimeout(uiInteractionTimerRef.current);');
+    expect(chrome).not.toContain('}, [[]]);');
+    expect(source).not.toContain('uiInteractionTimerRef');
+    expect(chrome).toContain('if (interactionTimer.current) clearTimeout(interactionTimer.current);');
   });
 
   it('threads the visible persistent AUTO state into Cesar task contexts', () => {

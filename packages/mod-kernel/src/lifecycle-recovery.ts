@@ -6,6 +6,7 @@ import { canonicalJson, sha256Canonical } from './lock.js';
 import type { ManagedInstallationRecord } from './managed-lifecycle.js';
 import { makeTreeRemovable } from './removable-tree.js';
 import { WriterFence } from './writer-lock.js';
+import { parseHostTransactionJournal } from './host-contracts.js';
 
 interface RecoverableLifecycleJournal {
   readonly schemaVersion: 1;
@@ -88,8 +89,12 @@ export async function recoverManagedLifecycle(
     : WriterFence.acquire(lockPath, 'agon.kernel.lifecycle.recovery', lockOptions));
   const recoveredCommitted: string[] = [];
   const recoveredRolledBack: string[] = [];
+  let hostFence: WriterFence | undefined;
   try {
+    // Match lifecycle apply: installation lock first, then generation lock.
+    hostFence = await WriterFence.acquire(host.paths.writerLock, 'agon.kernel.lifecycle.recovery', lockOptions);
     const selected = await selectedInstallationId(host, io);
+    const referenced = await referencedInstallations(host, io);
     const entries = await io.readdir(journals, { withFileTypes: true });
     for (const entry of entries) {
       if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
@@ -104,13 +109,18 @@ export async function recoverManagedLifecycle(
       if (journal.state === 'committed' || journal.state === 'failed') continue;
       const stagedPath = join(staging, journal.transactionId);
       const installedPath = join(installations, journal.installationId);
-      const committed = selected.installationId === journal.installationId;
+      const retained = referenced.get(journal.installationId);
+      const committed = selected.installationId === journal.installationId || retained?.committed === true;
+      if (!committed && retained) throw new DurableHostError('MOD_RESTART_REQUIRED', 'recover host generations before installation cleanup', {
+        installationId: journal.installationId, generation: retained.generation,
+      });
       if (committed) {
+        const committedGeneration = selected.installationId === journal.installationId ? selected.generation : retained!.generation;
         const recovered = Object.freeze({
           ...journal,
           state: 'committed' as const,
           updatedAt: now().toISOString(),
-          selectedGeneration: selected.generation,
+          selectedGeneration: committedGeneration,
           steps: Object.freeze([...journal.steps, 'recovered-selected-generation']),
         });
         await atomicWrite(io, join(journals, entry.name), `${canonicalJson(recovered)}\n`);
@@ -119,7 +129,7 @@ export async function recoverManagedLifecycle(
           schemaVersion: 1,
           transactionId: journal.transactionId,
           outcome: 'recovered-committed',
-          selectedGeneration: selected.generation,
+          selectedGeneration: committedGeneration,
           installationId: journal.installationId,
           recoveredAt: now().toISOString(),
         })}\n`);
@@ -157,6 +167,7 @@ export async function recoverManagedLifecycle(
       selectedGeneration: selected.generation,
     });
   } finally {
+    await hostFence?.release().catch(() => undefined);
     await fence.release().catch(() => undefined);
   }
 }
@@ -176,15 +187,30 @@ function assertManagedPath(hostRoot: string, path: string): string {
   return absolute;
 }
 
-async function referencedInstallationIds(host: DurableModHost): Promise<Set<string>> {
-  const result = new Set<string>();
-  const entries = await host.hostIo.readdir(host.paths.generations, { withFileTypes: true }).catch(() => []);
+async function referencedInstallations(host: DurableModHost, io: HostIo = host.hostIo): Promise<Map<string, { generation: number; committed: boolean }>> {
+  const result = new Map<string, { generation: number; committed: boolean }>();
+  const entries = await io.readdir(host.paths.generations, { withFileTypes: true }).catch(error => {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw error;
+  });
   for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
+    if (!entry.isDirectory() || !/^\d{16}$/.test(entry.name)) continue;
+    let record: ManagedInstallationRecord;
     try {
-      const record = await readJson<ManagedInstallationRecord>(host.hostIo, join(host.paths.generations, entry.name, 'installation.json'));
-      result.add(record.installationId);
-    } catch { /* legacy or incomplete generation */ }
+      record = await readJson<ManagedInstallationRecord>(io, join(host.paths.generations, entry.name, 'installation.json'));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+      throw new DurableHostError('MOD_SAFE_MODE', 'cannot determine retained installation ownership');
+    }
+    if (!record || !/^[a-f0-9]{32}$/.test(record.installationId)) throw new DurableHostError('MOD_SAFE_MODE', 'retained installation identity is invalid');
+    const generation = Number(entry.name);
+    const manifest = await host.validateGeneration(generation);
+    const transaction = parseHostTransactionJournal(await readJson<unknown>(io, host.journalPath(manifest.transactionId)));
+    const committed = transaction.state === 'committed';
+    const previous = result.get(record.installationId);
+    if (!previous || (committed && !previous.committed) || (committed === previous.committed && generation > previous.generation)) {
+      result.set(record.installationId, { generation, committed });
+    }
   }
   return result;
 }
@@ -201,7 +227,7 @@ export async function previewManagedPurge(
   const ids = [...new Set(options.installationIds ?? [])].sort();
   for (const id of ids) if (!/^[a-f0-9]{32}$/.test(id)) throw new TypeError(`invalid installation ID: ${id}`);
   if (selectedId && ids.includes(selectedId)) throw new DurableHostError('MOD_TRANSACTION_FAILED', 'purge cannot target the selected installation');
-  const referenced = await referencedInstallationIds(host);
+  const referenced = await referencedInstallations(host);
   const retained = ids.filter((id) => referenced.has(id));
   if (retained.length > 0) throw new DurableHostError('MOD_TRANSACTION_FAILED', 'purge cannot target an installation retained by a generation', { installationIds: retained });
   const installationPaths = ids.map((id) => assertManagedPath(host.root, join(host.root, 'installations', id)));
@@ -221,7 +247,7 @@ export async function applyManagedPurge(host: DurableModHost, plan: ManagedPurge
   try {
     const current = await host.readCurrentPointer();
     if ((current?.generation ?? null) !== plan.selectedGeneration) throw new DurableHostError('MOD_TRANSACTION_CONFLICT', 'selected generation changed after purge preview');
-    const referenced = await referencedInstallationIds(host);
+    const referenced = await referencedInstallations(host);
     const targetedIds = plan.installationPaths.map((path) => basename(path));
     const retained = targetedIds.filter((id) => referenced.has(id));
     if (retained.length > 0) throw new DurableHostError('MOD_TRANSACTION_CONFLICT', 'installation became retained after purge preview', { installationIds: retained });

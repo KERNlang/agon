@@ -516,6 +516,7 @@ export class ManagedLifecycleService {
       processIdentity: this.#options.processIdentity ?? `lifecycle-${process.pid}`,
     });
     let promoted = false;
+    let generationAttempted = false;
     let selectedGeneration: number | null = null;
     let journal: LifecycleJournal = freeze({
       schemaVersion: 1,
@@ -568,13 +569,14 @@ export class ManagedLifecycleService {
       await this.#fault('after-candidate-verified');
       await fence.assertOwned();
       await this.#io.rename(staging, destination);
+      promoted = true;
       await freezePrefix(this.#io, destination);
       await this.#io.syncDirectory(this.installationsRoot);
-      promoted = true;
       steps.push({ id: 'promote-immutable-prefix', state: 'passed' });
       await this.#fault('after-prefix-promoted');
       journal = freeze({ ...journal, state: 'verified', updatedAt: this.#now().toISOString(), steps: steps.map((step) => step.id) });
       await this.#writeJournal(journal);
+      generationAttempted = true;
       const result = await this.host.commitGeneration({
         operation: plan.operation === 'downgrade' ? 'update' : plan.operation,
         expectedBaseGeneration: plan.baseGeneration,
@@ -612,14 +614,34 @@ export class ManagedLifecycleService {
       return freeze({ pointer: result.pointer, installation, receipt, restartRequired: true });
     } catch (error) {
       steps.push({ id: 'transaction', state: 'failed', detail: error instanceof Error ? error.message : String(error) });
-      if (selectedGeneration === null) {
+      let canDiscard = selectedGeneration === null;
+      if (promoted && generationAttempted && selectedGeneration === null) {
+        try {
+          const pointer = await this.host.readCurrentPointer();
+          if (pointer) {
+            await this.host.validateGeneration(pointer.generation);
+            const selected = await readJson<ManagedInstallationRecord>(this.#io, join(this.host.generationPath(pointer.generation), 'installation.json'));
+            if (selected.installationId === installationId && selected.planHash === plan.planHash) selectedGeneration = pointer.generation;
+          }
+          canDiscard = selectedGeneration === null;
+          const candidateGeneration = plan.baseGeneration + 1;
+          if (canDiscard && await pathExists(this.#io, this.host.generationPath(candidateGeneration))) {
+            const candidate = await readJson<ManagedInstallationRecord>(this.#io, join(this.host.generationPath(candidateGeneration), 'installation.json'));
+            if (candidate.installationId === installationId) canDiscard = false;
+          }
+        } catch {
+          // Recovery must resolve uncertain ownership before deleting a prefix.
+          canDiscard = false;
+        }
+      }
+      if (canDiscard) {
         await this.#io.rm(staging, { recursive: true, force: true }).catch(() => undefined);
         if (promoted) {
           await makeTreeRemovable(this.#io, destination).catch(() => undefined);
           await this.#io.rm(destination, { recursive: true, force: true }).catch(() => undefined);
         }
       }
-      journal = freeze({ ...journal, state: 'failed', updatedAt: this.#now().toISOString(), steps: steps.map((step) => step.id), selectedGeneration });
+      journal = freeze({ ...journal, state: canDiscard ? 'failed' : 'verified', updatedAt: this.#now().toISOString(), steps: steps.map((step) => step.id), selectedGeneration });
       await this.#writeJournal(journal).catch(() => undefined);
       const receipt: ManagedLifecycleReceipt = freeze({
         schemaVersion: 1,
@@ -636,6 +658,9 @@ export class ManagedLifecycleService {
         error: error instanceof Error ? error.message : String(error),
       });
       await this.#writeReceipt(receipt).catch(() => undefined);
+      if (!canDiscard) throw new DurableHostError('MOD_RESTART_REQUIRED', 'managed installation retained; restart to finish transaction recovery', {
+        transactionId, selectedGeneration, cause: error instanceof Error ? error.message : String(error),
+      });
       if (error instanceof DurableHostError) throw error;
       throw new DurableHostError(selectedGeneration === null ? 'MOD_TRANSACTION_FAILED' : 'MOD_RESTART_REQUIRED', 'managed lifecycle transaction failed', {
         transactionId,

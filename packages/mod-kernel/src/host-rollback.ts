@@ -40,6 +40,7 @@ export async function rollbackGeneration(
   const transactionId = randomUUID();
   const startedAt = now().toISOString();
   let committed = false;
+  let proposedPointer: GenerationPointer | null = null;
   let journal: HostTransactionJournal = Object.freeze({
     schemaVersion: 1,
     transactionId,
@@ -71,6 +72,7 @@ export async function rollbackGeneration(
       transactionId,
       selectedAt: now().toISOString(),
     });
+    proposedPointer = pointer;
     await atomicWrite(host.hostIo, host.paths.current, canonicalJson(pointer) + String.fromCharCode(10));
     committed = true;
     await options.faultAfterPointer?.();
@@ -95,6 +97,16 @@ export async function rollbackGeneration(
     }, null, 2) + String.fromCharCode(10));
     return Object.freeze({ pointer, journal });
   } catch (error) {
+    if (proposedPointer && !committed) {
+      try {
+        const selected = await host.readCurrentPointer();
+        committed = selected !== null && canonicalJson(selected) === canonicalJson(proposedPointer);
+      } catch {
+        throw new DurableHostError('MOD_RESTART_REQUIRED', 'rollback selection requires recovery before snapshot restoration', {
+          transactionId, targetGeneration, outcome: 'unknown',
+        });
+      }
+    }
     if (committed) throw new DurableHostError('MOD_RESTART_REQUIRED', 'rollback pointer committed but snapshot restoration did not finish', {
       transactionId,
       targetGeneration,

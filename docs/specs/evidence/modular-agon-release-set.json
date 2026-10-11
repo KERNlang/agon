@@ -231,7 +231,7 @@
         "range": "^19.2.0"
       }
     ],
-    "packedBytes": 1282241,
+    "packedBytes": 1282249,
     "unpackedBytes": 5762593,
     "fileCount": 101,
     "files": [
@@ -640,9 +640,9 @@
         "size": 36190
       }
     ],
-    "integrity": "sha512-oL2Ar+gy/TN90p4zDWBDhg+y3lJ+Izz39RczWS0mwzqCj+gX95FQ/Wu/rMrSj0FKHAQBxGbkqntR5jnXv3Ccig==",
-    "shasum": "3a3bb3a44924f4df1b47d8b2da7f840c17a69ccd",
-    "tarballHash": "sha256:e29b82551a74de848591d396820f17c8b7e5602572b0810fdd4eab099c2bfcf1",
+    "integrity": "sha512-Qcoxm9ALOUsoyKwhd7uqJyHKCVPJprawFX0fRhYjgKoEGBKDGMz4lMhKdKpAIMxr3OoqoFDAGbE5Gp2PquHGjw==",
+    "shasum": "b172549d5f1c0f94d4638fe9a88e221ff8ca7825",
+    "tarballHash": "sha256:44e36b6d7b1674d29121b18a474390599047e4a60db07f7ca4190d09744d24aa",
     "packageJsonHash": "sha256:8905f40d1f1eef07d64063cd9ce8f783f828292654a2731fb52bab3328959ac2"
   },
   "packages": [
@@ -657,8 +657,8 @@
         "@kernlang/agon-mod-api"
       ],
       "peerDependencies": {},
-      "packedBytes": 158547,
-      "unpackedBytes": 1415172,
+      "packedBytes": 159421,
+      "unpackedBytes": 1420241,
       "fileCount": 70,
       "files": [
         {
@@ -803,7 +803,7 @@
         },
         {
           "path": "dist/index.js",
-          "size": 895636
+          "size": 900705
         },
         {
           "path": "dist/json-schema-input.d.ts",
@@ -942,9 +942,9 @@
           "size": 548
         }
       ],
-      "integrity": "sha512-qncvkop2TG1eIwdPME9oIZBtdPhonRd3Xc7zQJxNciROAbSct5ibnOV4vGfOzHCzX4js0paP3u7kuxdxLGVF0w==",
-      "shasum": "ab33b2065a991796ea08878937ee3bc4b2ce127f",
-      "tarballHash": "sha256:b8bd32c56a337dabda3e142bf21cd64c4373e6d9fc68a631d00ce7d74831fe3f",
+      "integrity": "sha512-szT+UB3hHFKFcq9ATBTVBoWGG1cu7s9dKPxrlwnBBa9P5GdcyEG0V8gwbBCA7KNsymIEVQcRBrW4lI/gmXbmTw==",
+      "shasum": "4bda41521a86107c3667f12ff43a80ca963303cc",
+      "tarballHash": "sha256:213941fa536af452e802d38dd7dccca607e0de908cb79479b95c712634bd826f",
       "packageJsonHash": "sha256:583381b00786c2729a1e32eb2d42f6324cb58df263378f0d0ad57a1401970f17",
       "manifestHash": "sha256:583381b00786c2729a1e32eb2d42f6324cb58df263378f0d0ad57a1401970f17"
     },

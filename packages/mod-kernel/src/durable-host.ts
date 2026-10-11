@@ -400,6 +400,19 @@ export class DurableModHost {
       return Object.freeze({ pointer, journal, events });
     } catch (error) {
       if (error instanceof SimulatedHostCrash) { simulatedCrash = true; throw error; }
+      if (selectedPointer && !committed) {
+        try {
+          const current = await this.readCurrentPointer();
+          committed = current !== null && canonicalJson(current) === canonicalJson(selectedPointer);
+        } catch {
+          // Keep the verified generation when the commit outcome is unknown.
+          throw new DurableHostError('MOD_RESTART_REQUIRED', 'generation selection requires recovery before cleanup', {
+            transactionId: selectedPointer.transactionId,
+            generation: selectedPointer.generation,
+            outcome: 'unknown',
+          });
+        }
+      }
       if (journal && !committed) {
         await this.#io.rm(staging, { recursive: true, force: true }).catch(() => undefined);
         if (candidatePath && await pathExists(this.#io, candidatePath)) {
@@ -477,17 +490,23 @@ export class DurableModHost {
       .filter((entry: any) => entry.isFile() && entry.name.endsWith('.json'))
       .map((entry: any) => entry.name).sort();
     let pointer: GenerationPointer | null = null;
-    try { pointer = await this.readCurrentPointer(); } catch { /* boot selects safe mode later */ }
+    try { pointer = await this.readCurrentPointer(); } catch {
+      // Boot can select safe mode, but uncertainty cannot authorize deletion.
+      return Object.freeze(recovered);
+    }
+    const journals: HostTransactionJournal[] = [];
     for (const file of files) {
-      let journal: HostTransactionJournal;
       try {
-        journal = parseHostTransactionJournal(await readJson<unknown>(this.#io, join(this.paths.transactions, file)));
+        journals.push(parseHostTransactionJournal(await readJson<unknown>(this.#io, join(this.paths.transactions, file))));
       } catch (error) {
         this.#event('journal.corrupt', 'error', (this.#options.ownerId ?? 'agon.kernel') + '.recovery', null, file.slice(0, -5), {
           error: error instanceof Error ? error.message : String(error),
         });
         continue;
       }
+    }
+    const observedGenerations = new Set(journals.map(journal => journal.baseGeneration));
+    for (let journal of journals) {
       const terminalStep = journal.steps.find((step) => step.id === 'cleanup') ?? journal.steps.find((step) => step.id === 'restore-snapshots');
       const cleanupComplete = terminalStep?.state === 'passed';
       if (journal.state === 'committed' && cleanupComplete) {
@@ -516,16 +535,25 @@ export class DurableModHost {
       }
       const needsCommittedCleanup = journal.state === 'committed' && !cleanupComplete;
       if (journal.state !== 'preparing' && journal.state !== 'verified' && !needsCommittedCleanup) continue;
-      if (pointer?.generation === journal.candidateGeneration && pointer.transactionId === journal.transactionId) {
+      const selected = pointer?.generation === journal.candidateGeneration && pointer.transactionId === journal.transactionId;
+      const historicallyCommitted = journal.state === 'committed'
+        || (journal.operation !== 'rollback' && observedGenerations.has(journal.candidateGeneration));
+      let receiptPointer = selected ? pointer : null;
+      if (selected || historicallyCommitted) {
+        const manifest = await this.validateGeneration(journal.candidateGeneration);
+        receiptPointer ??= Object.freeze({ schemaVersion: 1, generation: journal.candidateGeneration,
+          graphHash: manifest.graphHash, lockHash: manifest.lockHash, transactionId: journal.transactionId, selectedAt: journal.updatedAt });
         journal = this.#transition(journal, 'committed', journal.steps.map((step) => step.id === 'select-generation' || step.id === 'cleanup' || step.id === 'restore-snapshots' ? { ...step, state: 'passed' } : step));
-        const selectedRoot = this.generationPath(journal.candidateGeneration);
-        await atomicWrite(this.#io, this.paths.installedIndex, await this.#io.readFile(join(selectedRoot, 'installed-index.json')));
-        await atomicWrite(this.#io, this.paths.desiredState, await this.#io.readFile(join(selectedRoot, 'desired-state.json')));
+        if (selected) {
+          const selectedRoot = this.generationPath(journal.candidateGeneration);
+          await atomicWrite(this.#io, this.paths.installedIndex, await this.#io.readFile(join(selectedRoot, 'installed-index.json')));
+          await atomicWrite(this.#io, this.paths.desiredState, await this.#io.readFile(join(selectedRoot, 'desired-state.json')));
+        }
       } else {
         const staging = join(this.paths.staging, journal.transactionId);
         await this.#io.rm(staging, { recursive: true, force: true }).catch(() => undefined);
         const candidate = this.generationPath(journal.candidateGeneration);
-        if (await pathExists(this.#io, candidate)) {
+        if (journal.operation !== 'rollback' && pointer?.generation !== journal.candidateGeneration && await pathExists(this.#io, candidate)) {
           await makeTreeRemovable(this.#io, candidate).catch(() => undefined);
           await this.#io.rm(candidate, { recursive: true, force: true }).catch(() => undefined);
         }
@@ -539,7 +567,7 @@ export class DurableModHost {
       if (!recoveryEvent) throw new DurableHostError('MOD_TRANSACTION_FAILED', 'recovery event was not recorded');
       await this.#writeReceipt(Object.freeze({
         schemaVersion: 1, transactionId: journal.transactionId, ownerId, outcome,
-        pointer: pointer?.transactionId === journal.transactionId ? pointer : null,
+        pointer: receiptPointer,
         journal, events: Object.freeze([recoveryEvent]),
       }));
       recovered.push(journal.transactionId);

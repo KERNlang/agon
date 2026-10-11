@@ -6,8 +6,8 @@
   "sourceOccurrences": 262,
   "counts": {
     "byte-verified-compatibility-mirror": 24,
-    "compatibility-adapter": 90,
-    "compatibility-consumer": 58,
+    "compatibility-adapter": 93,
+    "compatibility-consumer": 55,
     "physical-owner": 90
   },
   "entries": [
@@ -115,6 +115,7 @@
       "disposition": "compatibility-adapter",
       "destination": [
         "src/dedup-resolver.ts",
+        "src/task-classifier.ts",
         "python/"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
@@ -129,6 +130,7 @@
       "disposition": "compatibility-adapter",
       "destination": [
         "src/dedup-resolver.ts",
+        "src/task-classifier.ts",
         "python/"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
@@ -143,6 +145,7 @@
       "disposition": "byte-verified-compatibility-mirror",
       "destination": [
         "src/dedup-resolver.ts",
+        "src/task-classifier.ts",
         "python/"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
@@ -157,6 +160,7 @@
       "disposition": "byte-verified-compatibility-mirror",
       "destination": [
         "src/dedup-resolver.ts",
+        "src/task-classifier.ts",
         "python/"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
@@ -171,6 +175,7 @@
       "disposition": "byte-verified-compatibility-mirror",
       "destination": [
         "src/dedup-resolver.ts",
+        "src/task-classifier.ts",
         "python/"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
@@ -185,6 +190,7 @@
       "disposition": "byte-verified-compatibility-mirror",
       "destination": [
         "src/dedup-resolver.ts",
+        "src/task-classifier.ts",
         "python/"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
@@ -199,6 +205,7 @@
       "disposition": "physical-owner",
       "destination": [
         "src/dedup-resolver.ts",
+        "src/task-classifier.ts",
         "python/"
       ],
       "removalCondition": null,
@@ -213,6 +220,7 @@
       "disposition": "physical-owner",
       "destination": [
         "src/dedup-resolver.ts",
+        "src/task-classifier.ts",
         "python/"
       ],
       "removalCondition": null,
@@ -227,6 +235,7 @@
       "disposition": "physical-owner",
       "destination": [
         "src/dedup-resolver.ts",
+        "src/task-classifier.ts",
         "python/"
       ],
       "removalCondition": null,
@@ -241,6 +250,7 @@
       "disposition": "physical-owner",
       "destination": [
         "src/dedup-resolver.ts",
+        "src/task-classifier.ts",
         "python/"
       ],
       "removalCondition": null,
@@ -2414,7 +2424,7 @@
     {
       "owner": "@kernlang/agon-support-persistence",
       "source": "packages/cli/src/telemetry/index.ts:39",
-      "disposition": "compatibility-consumer",
+      "disposition": "compatibility-adapter",
       "destination": [
         "src/paths.ts",
         "src/file-history.ts",
@@ -5192,7 +5202,7 @@
     {
       "owner": "@kernlang/agon-support-worktree",
       "source": "packages/core/src/blocks/git.ts:420",
-      "disposition": "compatibility-consumer",
+      "disposition": "compatibility-adapter",
       "destination": [
         "src/plan.ts",
         "src/worktree-lock.ts",
@@ -5222,7 +5232,7 @@
     {
       "owner": "@kernlang/agon-support-worktree",
       "source": "packages/core/src/blocks/workspace.ts:37",
-      "disposition": "compatibility-consumer",
+      "disposition": "compatibility-adapter",
       "destination": [
         "src/plan.ts",
         "src/worktree-lock.ts",

@@ -14,7 +14,7 @@ const destinations = {
   '@kernlang/agon-support-panel': ['src/health-check.ts', 'src/seat-dispatch.ts'],
   '@kernlang/agon-support-judge': ['src/contracts.ts', 'src/judge.ts'],
   '@kernlang/agon-support-agent-runtime': ['src/agent-loop.ts', 'src/agent-session.ts'],
-  '@kernlang/agon-support-dedup': ['src/dedup-resolver.ts', 'python/'],
+  '@kernlang/agon-support-dedup': ['src/dedup-resolver.ts', 'src/task-classifier.ts', 'python/'],
   '@kernlang/agon-support-browser-bridge': ['src/syntax-validator-bridge.ts', 'src/browser-host.ts'],
   '@kernlang/agon-support-saas-api': ['python/'],
 };

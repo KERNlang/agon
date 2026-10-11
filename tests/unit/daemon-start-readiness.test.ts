@@ -104,6 +104,9 @@ it('publishes readiness only after listening and securing the socket', async () 
     expect(existsSync(pidFilePath())).toBe(false);
     expect(existsSync(heartbeatPath())).toBe(false);
     writeFileSync(socketPath(), 'fixture socket');
+    // A socket path alone does not prove that the server can accept requests.
+    expect(existsSync(socketPath())).toBe(true);
+    expect(existsSync(pidFilePath())).toBe(false);
     listening();
     expect(JSON.parse(readFileSync(pidFilePath(), 'utf8')).ready).toBe(true);
     expect(existsSync(heartbeatPath())).toBe(true);

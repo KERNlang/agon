@@ -156,7 +156,9 @@ describeMaybe('agond survival — the daemon outlives its launcher', () => {
     daemon.stderr?.on('data', (chunk: string) => { daemonStderr = (daemonStderr + chunk).slice(-8192); });
     let enginePid: number | undefined;
     try {
-      expect(await waitFor(() => existsSync(sockPath), 10_000)).toBe(true);
+      // The socket path can exist before listen completes. The PID file follows readiness.
+      expect(await waitFor(() => existsSync(pidPath) && existsSync(sockPath), 10_000)).toBe(true);
+      expect(JSON.parse(readFileSync(pidPath, 'utf8'))).toMatchObject({ pid: daemon.pid, ready: true });
       const accepted = await sendRequest(sockPath, { type: 'job-submit', kind: 'think',
         payload: { input: 'Local cancellation fixture', engine: 'load-fixture', steps: '1', cwd: home } });
       expect(accepted?.type, JSON.stringify({ response: accepted, trace: lastRequestTrace,

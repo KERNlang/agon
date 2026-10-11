@@ -49,7 +49,7 @@ function cleanSteps(subject) {
     ['release-set', 'npm', ['run', 'test:modular-release']],
     ['supply-chain', 'npm', ['run', 'test:modular-supply-chain']],
     ['npx-install', 'npm', ['run', 'test:modular-npx', '--', '--no-write']],
-    ['platform-matrix', 'npm', ['run', 'test:modular-platform-matrix', '--', '--no-write']],
+    ['platform-matrix', 'node', ['scripts/spec/verify-modular-platform-matrix.mjs', '--no-write', '--json', ...(process.argv.includes('--native-runner') ? ['--native-runner'] : [])]],
     ['state-migrations', 'npm', ['run', 'test:modular-state-migrations', '--', '--no-write']],
     ['physical-cutover', 'npm', ['run', 'test:modular-physical-cutover', '--', '--no-write']],
     ['manifest-capabilities', 'npm', ['run', 'test:modular-manifest-capabilities']],
@@ -68,7 +68,8 @@ function cleanSteps(subject) {
     for (const [id, command, args] of commands) {
       const result = run(command, args, checkout);
       const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
-      steps.push({ id, command: [command, ...args], status: result.status, passed: result.status === 0, outputTail: output.slice(-4000) });
+      const evidence = id === 'platform-matrix' && result.status === 0 ? JSON.parse(result.stdout) : undefined;
+      steps.push({ id, command: [command, ...args], status: result.status, passed: result.status === 0, outputTail: output.slice(-4000), ...(evidence ? { evidence } : {}) });
       if (result.status !== 0) break;
     }
     if (steps.every(({ passed }) => passed)) {
@@ -95,11 +96,17 @@ const reviewEvidence = validateStoredSubjectBoundReview(root, reviewPath, { kind
 const packageMap = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-package-map.json'), 'utf8'));
 const ownership = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-ownership.json'), 'utf8'));
 const release = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-release-set.json'), 'utf8'));
-const platform = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-platform-matrix.json'), 'utf8'));
+const storedPlatform = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-platform-matrix.json'), 'utf8'));
 const physical = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-physical-cutover.json'), 'utf8'));
 const performances = ['1a', '2', '3', '4', '5', '6', '7', '8'].map((slice) => JSON.parse(readFileSync(join(root, `docs/specs/evidence/modular-agon-slice${slice}-performance.json`), 'utf8')));
 const graph = validateDependencyGraph(packageMap.packages);
 const steps = process.argv.includes('--run-clean') ? cleanSteps(subjectKind) : [];
+const platformStep = steps.find(({ id }) => id === 'platform-matrix');
+const platform = platformStep?.evidence ?? storedPlatform;
+const freshPlatformPassed = platformStep?.passed === true && platformStep.evidence?.passed === true
+  && platformStep.evidence?.status === 'completed'
+  && platformStep.evidence?.runnerProvenance === 'caller-attested-native'
+  && platformStep.evidence?.cells?.filter(cell => cell.status === 'passed' && cell.native === true).length === 3;
 const coverage = { packages: packageMap.packages.length, firstPartyMods: packageMap.packages.filter(({ class: kind }) => kind === 'user-toggleable-mod-package').length, ownershipAssignments: ownership.assignments.length,
   releaseArtifacts: release.artifactCount, physicalMods: physical.counts.physical, platformPassed: platform.summary.passed, platformExternallyBlocked: platform.summary.externallyBlocked,
   platformFailed: platform.summary.failed, measuredPerformanceSlices: performances.length };
@@ -124,7 +131,7 @@ if (process.argv.includes('--self-test')) {
 }
 const receipt = { schemaVersion: 1, qualification: 'modular-agon-slice9-release-candidate', subject: { kind: subjectKind, hash: expectedHash, indexHash, commitHash, indexEqualsCommit: indexHash === commitHash }, contamination, graph, coverage, reviewEvidence, cleanCheckoutSteps: steps };
 receipt.passed = Object.values(contamination).every((paths) => paths.length === 0) && (subjectKind === 'index' || indexHash === commitHash) && reviewEvidence.passed
-  && graph.duplicateEdges.length === 0 && graph.uniqueEdges === 151 && coveragePasses(coverage)
+  && graph.duplicateEdges.length === 0 && graph.uniqueEdges === 151 && coveragePasses(coverage) && freshPlatformPassed
   && performances.every(performancePasses)
   && steps.length > 0 && steps.every(({ passed }) => passed);
 console.log(JSON.stringify(receipt, null, 2));

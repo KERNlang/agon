@@ -108,6 +108,16 @@ notarized macOS application or systemd service; shipped native helpers still nee
 architecture and integrity evidence. Signing/publishing credentials, registry
 rehearsal, and unavailable native runners are genuine external blockers.
 
+The platform checker defaults to diagnostic evidence. `--native-runner` records
+the runner operator's attestation that execution is native, not under Rosetta,
+emulation, or a container. It does not detect hardware or prove that attestation.
+Retain the runner inventory/job evidence with the qualification receipt. The S9
+qualifier forwards this flag to its clean-checkout platform check and requires
+fresh native-attested results for Node 22, 24, and 26; an old stored matrix or a
+diagnostic run cannot satisfy that gate. Use `--no-write --json` on the platform
+checker to inspect full results without replacing tracked evidence. Standalone
+matrix output is not a source-bound release approval.
+
 Release requires S1B–S9 clean receipts; 49 packages/151 edges/872 frozen legacy assignments;
 all enable/disable/dependency/failure/rollback cases on five surfaces; complete
 kill-list removal; install/update/interruption/downgrade/offline/safe-mode tests;

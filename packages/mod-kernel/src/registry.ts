@@ -12,6 +12,7 @@ import type {
   ResultContribution,
   ToolContribution,
 } from '@kernlang/agon-mod-api';
+import { resolveRegisteredModSettings } from './mod-settings.js';
 
 export type RegistryKind =
   | 'cli-command'
@@ -288,7 +289,22 @@ export class ModRegistry {
       const aliasKey = registryKey(kind, alias);
       if (this.#records.has(aliasKey) || this.#aliases.has(aliasKey)) throw new RegistryInvariantError(`alias collision: ${kind}/${alias}`);
     }
-    const record = Object.freeze({ kind, id, aliases: Object.freeze([...aliases]), owner, payload: freezeCompatibilityPayload(payload) });
+    const original = freezeCompatibilityPayload(payload);
+    const executable = original as { run?: (input: unknown, context: Record<string, unknown>) => unknown };
+    const invoke = executable?.run;
+    const guarded = !compatibility && ['cli-command', 'tui-action', 'intent', 'mcp-tool', 'cesar-tool', 'plan-step'].includes(kind) && typeof invoke === 'function'
+      ? { ...original, run: (input: unknown, context: Record<string, unknown>) => {
+        if (!this.#activeOwners.has(owner.id) || this.#records.get(key)?.payload !== guarded) {
+          throw new RegistryInvariantError(`contribution is unavailable: ${owner.id}/${id}`);
+        }
+        const schemas = (this.#ownerKeys.get(owner.id) ?? []).map(ownerKey => this.#records.get(ownerKey))
+          .filter(entry => entry?.kind === 'config').map(entry => entry!.payload);
+        if (!schemas.length) return invoke.call(original, input, context);
+        const config = resolveRegisteredModSettings(owner.id, context.config, schemas);
+        return invoke.call(original, input, { ...context, config });
+      } }
+      : original;
+    const record = Object.freeze({ kind, id, aliases: Object.freeze([...aliases]), owner, payload: freezeCompatibilityPayload(guarded) });
     this.#records.set(key, record);
     for (const alias of aliases) this.#aliases.set(registryKey(kind, alias), key);
     const ownerKeys = this.#ownerKeys.get(owner.id) ?? [];

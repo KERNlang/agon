@@ -25,7 +25,7 @@ async function fixture(captureSettings = false) {
   await mkdir(join(packageRoot, 'dist'), { recursive: true });
   const shape = manifest('example.surfaces', '1.0.0', { compatibility: { kernelRange: '>=1 <2', nodeRange: '>=22 <27' }, contributes: {
     cliCommands: [{ id: 'external-settings', aliases: [] }], tuiActions: [], mcpTools: [{ id: 'ExternalMcp', aliases: ['external-mcp-alias'] }],
-    cesarTools: [{ id: 'ExternalCesar', aliases: ['external-cesar-alias'] }], lifecycleHooks: [], resultTypes: [], configKeys: [], generatedDocs: [],
+    cesarTools: [{ id: 'ExternalCesar', aliases: ['external-cesar-alias'] }], lifecycleHooks: [], resultTypes: [], configKeys: captureSettings ? [{ id: 'example.surfaces', aliases: [] }] : [], generatedDocs: [],
   } });
   await writeFile(join(packageRoot, 'agon.mod.json'), JSON.stringify(shape));
   await writeFile(join(packageRoot, 'dist/index.d.ts'), 'export {};\n');
@@ -33,6 +33,7 @@ async function fixture(captureSettings = false) {
   await writeFile(join(packageRoot, 'dist/index.js'), `
 globalThis.${marker} = (globalThis.${marker} ?? 0) + 1;
 export default async () => ({ apiVersion: '1', activate(registrar) {
+  if (${captureSettings}) registrar.config('example.surfaces', { type: 'object', properties: { value: { type: 'string' }, mode: { type: 'string', default: 'schema default' } }, additionalProperties: true });
   registrar.command('cli', { id: 'external-settings', description: 'inspect own settings', inputSchema: { type: 'object' }, async run(input, context) { return { exitCode: 0, stdout: JSON.stringify(context.config) }; } });
   registrar.tool('mcp', { id: 'ExternalMcp', aliases: ['external-mcp-alias'], description: 'external mcp', inputSchema: { type: 'object', required: ['value'], properties: { value: { type: 'integer' } }, additionalProperties: false }, effect: 'read', async run(input, context) { return { source: 'mcp', input, ...(${captureSettings} ? { config: context.config } : {}) }; } });
   registrar.tool('cesar', { id: 'ExternalCesar', aliases: ['external-cesar-alias'], description: 'external cesar', inputSchema: { type: 'object', required: ['value'], properties: { value: { type: 'integer' } }, additionalProperties: false }, effect: 'read', async run(input, context) { return { source: 'cesar', input, ...(${captureSettings} ? { config: context.config } : {}) }; } });
@@ -55,6 +56,29 @@ afterEach(async () => {
 });
 
 describe.sequential('S8 external generated surface execution', () => {
+  it('rejects schema-invalid owner values through CLI, MCP and Cesar without exposing values', async () => {
+    const paths = await fixture(true);
+    vi.stubEnv('AGON_HOME', paths.root); vi.stubEnv('AGON_CWD', paths.root);
+    process.env.AGON_MODULAR_HOST_ROOT = paths.hostRoot;
+    await writeFile(join(paths.root, 'config.json'), JSON.stringify({ mods: {
+      'example.surfaces': { value: { privateValue: 'must not appear in errors' } },
+    } }));
+    await initializeProcessSurfaceAuthority(paths.hostRoot);
+    await initializeMcpSurfaceAuthority();
+    vi.spyOn(process, 'cwd').mockReturnValue(paths.root);
+    const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const command = createGeneratedLazySubCommands()['external-settings'] as { run(context: unknown): Promise<void> };
+    const tool = createCesarToolRegistry().get('ExternalCesar')!;
+    for (const invoke of [
+      () => command.run({ args: {} }),
+      () => invokeActiveMcpSurfaceTool('ExternalMcp', { value: 1 }),
+      () => tool.execute({ value: 1 }, { cwd: paths.root, readFileState: new Map() }),
+    ]) {
+      await expect(invoke()).rejects.toThrow(/mod settings for example\.surfaces are invalid/);
+      await expect(invoke()).rejects.not.toThrow(/must not appear in errors/);
+    }
+    expect(write).not.toHaveBeenCalled();
+  });
   it('rejects malformed selected settings before any of the four invocation paths runs', async () => {
     const paths = await fixture(true);
     vi.stubEnv('AGON_HOME', paths.root); vi.stubEnv('AGON_CWD', paths.root);
@@ -95,7 +119,7 @@ describe.sequential('S8 external generated surface execution', () => {
       'example.surfaces': { inherited: true, value: 'global' }, 'example.other': { secret: 'other' },
     } }));
     await writeFile(join(project, '.agon.json'), JSON.stringify({ mods: { 'example.surfaces': { value: 'project' } } }));
-    const expected = { inherited: true, value: 'project' };
+    const expected = { inherited: true, value: 'project', mode: 'schema default' };
     await initializeMcpSurfaceAuthority();
     await expect(invokeActiveMcpSurfaceTool('ExternalMcp', { value: 1 })).resolves.toEqual({ source: 'mcp', input: { value: 1 }, config: expected });
     await initializeProcessSurfaceAuthority(paths.hostRoot);

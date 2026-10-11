@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ModRegistry, RegistryInvariantError } from '../../packages/mod-kernel/src/index.js';
 import type { LegacyRegistryEntry } from '../../packages/mod-kernel/src/index.js';
-import type { ModIdentity } from '../../packages/mod-api/src/index.js';
+import type { CommandContribution, InvocationContext, ModIdentity } from '../../packages/mod-api/src/index.js';
 import { manifest } from '../helpers/modular-agon.js';
+import { resolveRegisteredModSettings } from '../../packages/mod-kernel/src/mod-settings.js';
 
 const hash = `sha256:${'a'.repeat(64)}` as const;
 const active: ModIdentity = { id: 'example.active', version: '1.0.0', contentHash: hash };
@@ -10,6 +11,132 @@ const disabled: ModIdentity = { id: 'example.disabled', version: '1.0.0', conten
 const competitor: ModIdentity = { id: 'example.competitor', version: '1.0.0', contentHash: hash };
 
 describe('owner-tagged ModRegistry', () => {
+  it.each(['cli-command', 'tui-action', 'intent', 'mcp-tool', 'cesar-tool', 'plan-step'] as const)(
+    'enforces only the owner schema for %s and rejects retained handles after disposal', async kind => {
+      const registry = new ModRegistry({ generation: 'settings:kinds', activeOwners: [active, competitor] });
+      const declaration = kind === 'cli-command' ? 'cliCommands' : kind === 'mcp-tool' ? 'mcpTools'
+        : kind === 'cesar-tool' || kind === 'plan-step' ? 'cesarTools' : 'tuiActions';
+      const session = registry.beginRegistration(manifest(active.id, active.version, { contributes: {
+        cliCommands: [], tuiActions: [], mcpTools: [], cesarTools: [], lifecycleHooks: [], resultTypes: [],
+        configKeys: [{ id: active.id, aliases: [] }], generatedDocs: [], [declaration]: [{ id: 'configured', aliases: [] }],
+      } }));
+      const run = vi.fn((_input, context) => ({ exitCode: 0, result: context.config }));
+      const contribution = { id: 'configured', description: 'fixture', inputSchema: { type: 'object' }, run };
+      if (kind === 'cli-command' || kind === 'tui-action') session.registrar.command(kind === 'cli-command' ? 'cli' : 'tui', contribution);
+      else if (kind === 'intent') session.registrar.intent({ ...contribution, parse: () => ({}) });
+      else if (kind === 'plan-step') session.registrar.planStep({ ...contribution, resultSchema: { type: 'object' }, risk: 'read' });
+      else session.registrar.tool(kind === 'mcp-tool' ? 'mcp' : 'cesar', { ...contribution, effect: 'read' });
+      session.registrar.config(active.id, { type: 'object', properties: { count: { type: 'integer', default: 2 } } });
+      session.commit();
+      const other = registry.beginRegistration(manifest(competitor.id, competitor.version, { contributes: {
+        cliCommands: [], tuiActions: [], mcpTools: [], cesarTools: [], lifecycleHooks: [], resultTypes: [],
+        configKeys: [{ id: competitor.id, aliases: [] }], generatedDocs: [],
+      } }));
+      other.registrar.config(competitor.id, { type: 'object', required: ['otherOwnerOnly'] });
+      other.commit();
+      const captured = registry.resolve(kind, 'configured')!.payload as CommandContribution;
+      const context: InvocationContext = { invocationId: 'kinds', cwd: '/fixture', platform: 'darwin-arm64', signal: new AbortController().signal, config: {} };
+      expect(captured.run({}, context)).toEqual({ exitCode: 0, result: { count: 2 } });
+      expect(() => captured.run({}, { ...context, config: { count: 'invalid' } })).toThrow(/mod settings/);
+      expect(run).toHaveBeenCalledTimes(1);
+      await registry.disposeOwner(active.id);
+      expect(() => captured.run({}, context)).toThrow(/unavailable/);
+      expect(run).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('combines disjoint nested defaults and rejects only conflicting leaves in either order', () => {
+    const schema = (key: string, value: number) => ({ type: 'object', properties: {
+      nested: { type: 'object', properties: { [key]: { type: 'integer', default: value } } },
+    } });
+    const first = schema('a', 1); const second = schema('b', 2);
+    for (const schemas of [[first, second], [second, first]]) {
+      expect(resolveRegisteredModSettings(active.id, { nested: {} }, schemas)).toEqual({ nested: { a: 1, b: 2 } });
+      expect(resolveRegisteredModSettings(active.id, { nested: { a: 0 } }, schemas)).toEqual({ nested: { a: 0, b: 2 } });
+    }
+    const conflict = schema('a', 2);
+    for (const schemas of [[first, conflict], [conflict, first]]) {
+      expect(() => resolveRegisteredModSettings(active.id, { nested: {} }, schemas)).toThrow(/conflicting defaults/);
+    }
+    const arraySchema = (key: string, value: number) => ({ type: 'object', properties: {
+      rows: { type: 'array', items: { type: 'object', properties: { [key]: { type: 'integer', default: value } } } },
+    } });
+    for (const schemas of [[arraySchema('a', 1), arraySchema('b', 2)], [arraySchema('b', 2), arraySchema('a', 1)]]) {
+      expect(resolveRegisteredModSettings(active.id, { rows: [{ a: 0 }, {}] }, schemas))
+        .toEqual({ rows: [{ a: 0, b: 2 }, { a: 1, b: 2 }] });
+    }
+  });
+
+  it('applies defaults within existing additional properties without changing explicit values', () => {
+    const schema = { type: 'object', additionalProperties: { type: 'object', required: ['retries'],
+      properties: { retries: { type: 'integer', default: 3 } },
+    } };
+    expect(resolveRegisteredModSettings(active.id, { worker: {}, other: { retries: 0 } }, [schema]))
+      .toEqual({ worker: { retries: 3 }, other: { retries: 0 } });
+  });
+
+  it('resolves nested defaults, rejects conflicting proposals independently of order, and preserves explicit null', () => {
+    const schema = { type: 'object', default: { nested: {} }, properties: {
+      nested: { type: 'object', properties: { size: { type: 'integer', default: 2 } } },
+      optional: { type: 'null', default: null },
+    } };
+    expect(resolveRegisteredModSettings(active.id, { optional: null }, [schema])).toEqual({ nested: { size: 2 }, optional: null });
+    const first = { type: 'object', properties: { size: { type: 'integer', default: 1 } } };
+    const second = { type: 'object', properties: { size: { type: 'integer', default: 2 } } };
+    for (const schemas of [[first, second], [second, first]]) {
+      expect(() => resolveRegisteredModSettings(active.id, {}, schemas)).toThrow(/conflicting defaults/);
+      expect(resolveRegisteredModSettings(active.id, { size: 0 }, schemas)).toEqual({ size: 0 });
+    }
+    expect(() => resolveRegisteredModSettings(active.id, {}, [{ type: 'object', default: 'wrong' }])).toThrow(/default must be an object/);
+  });
+
+  it('keeps command streams lazy and preserves cancellation context', async () => {
+    const registry = new ModRegistry({ generation: 'settings:stream', activeOwners: [active] });
+    const session = registry.beginRegistration(manifest(active.id, active.version, { contributes: {
+      cliCommands: [{ id: 'stream', aliases: [] }], configKeys: [{ id: active.id, aliases: [] }],
+      tuiActions: [], mcpTools: [], cesarTools: [], lifecycleHooks: [], resultTypes: [], generatedDocs: [],
+    } }));
+    const signal = new AbortController().signal;
+    let started = false;
+    session.registrar.command('cli', { id: 'stream', description: 'stream', async *run(_input, context) {
+      started = true;
+      expect(context.signal).toBe(signal);
+      expect(context.invocationId).toBe('stream');
+      yield { type: 'text', text: String(context.config.label) };
+    } });
+    session.registrar.config(active.id, { type: 'object', properties: { label: { type: 'string', default: 'default label' } } });
+    session.commit();
+    const contribution = registry.resolve('cli-command', 'stream')!.payload as CommandContribution;
+    const output = contribution.run({}, { invocationId: 'stream', cwd: '/fixture', platform: 'darwin-arm64', signal, config: {} });
+    expect(started).toBe(false);
+    const events = [];
+    for await (const event of output as AsyncIterable<unknown>) events.push(event);
+    expect(events).toEqual([{ type: 'text', text: 'default label' }]);
+  });
+  it('applies owner schema defaults and rejects invalid settings before execution', async () => {
+    const registry = new ModRegistry({ generation: 'settings:1', activeOwners: [active] });
+    const session = registry.beginRegistration(manifest(active.id, active.version, { contributes: {
+      cliCommands: [{ id: 'configured', aliases: [] }], configKeys: [{ id: active.id, aliases: [] }],
+      tuiActions: [], mcpTools: [], cesarTools: [], lifecycleHooks: [], resultTypes: [], generatedDocs: [],
+    } }));
+    const run = vi.fn(async (_input, context) => ({ exitCode: 0, result: context.config }));
+    const dispose = session.registrar.command('cli', { id: 'configured', description: 'fixture', run });
+    session.registrar.config(active.id, { type: 'object', properties: {
+      retries: { type: 'integer', minimum: 0, default: 3 }, enabled: { type: 'boolean', default: true },
+    }, additionalProperties: false });
+    session.commit();
+    const command = registry.resolve('cli-command', 'configured')!.payload as CommandContribution;
+    const context: InvocationContext = { invocationId: 'settings', cwd: '/fixture', platform: 'darwin-arm64', signal: new AbortController().signal, config: {} };
+    expect(await command.run({}, context)).toEqual({ exitCode: 0, result: { retries: 3, enabled: true } });
+    expect(context.config).toEqual({});
+    expect(Object.isFrozen(run.mock.calls[0][1].config)).toBe(true);
+    expect(await command.run({}, { ...context, config: { retries: 0, enabled: false } })).toEqual({ exitCode: 0, result: { retries: 0, enabled: false } });
+    run.mockClear();
+    expect(() => command.run({}, { ...context, config: { retries: -1 } })).toThrow(/example.active.*config|settings.*example.active/);
+    expect(run).not.toHaveBeenCalled();
+    await dispose();
+    expect(() => command.run({}, context)).toThrow(/unavailable|inactive/);
+  });
   it('projects one registry into all five surfaces and excludes disabled owners', () => {
     const entries: LegacyRegistryEntry[] = [
       { surface: 'cli', kind: 'cli-command', id: 'active-cli', owner: active },

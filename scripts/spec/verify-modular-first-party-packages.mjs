@@ -3,6 +3,17 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
+import assert from 'node:assert/strict';
+
+function verifyMetadata(module, manifest, assignments) {
+  if (!isDeepStrictEqual(module.MANIFEST, manifest) || !Object.isFrozen(module.MANIFEST) || module.IMPLEMENTATION_KIND !== 'physical') {
+    throw new Error(`${manifest.id}: physical runtime manifest mismatch`);
+  }
+  if (!isDeepStrictEqual(module.SOURCE_OCCURRENCES, assignments) || !Object.isFrozen(module.SOURCE_OCCURRENCES)) {
+    throw new Error(`${manifest.id}: ownership occurrence mismatch`);
+  }
+}
 const root=resolve(import.meta.dirname,'../..'),packageMap=JSON.parse(readFileSync(resolve(root,'docs/specs/evidence/modular-agon-package-map.json'),'utf8')),ownership=JSON.parse(readFileSync(resolve(root,'docs/specs/evidence/modular-agon-ownership.json'),'utf8')),mods=packageMap.packages.filter((entry)=>entry.class==='user-toggleable-mod-package'),packageById=new Map(packageMap.packages.map((entry)=>[entry.id,entry])),sha256=(value)=>`sha256:${createHash('sha256').update(value).digest('hex')}`;
 const run=(command,args)=>execFileSync(command,args,{cwd:root,encoding:'utf8',env:{...process.env,npm_config_ignore_scripts:'true',npm_config_cache:process.env.AGON_S5_NPM_CACHE??'/private/tmp/modular-agon-s5-npm-cache'}}),shortName=(id)=>id.replace('@kernlang/agon-mod-','');
 function topologicalMods(){const pending=new Map(mods.map((entry)=>[entry.id,entry])),ordered=[];while(pending.size){const ready=[...pending.values()].filter((entry)=>entry.dependencies.filter((dependency)=>pending.has(dependency)||mods.some((mod)=>mod.id===dependency)).every((dependency)=>!pending.has(dependency))).sort((a,b)=>a.id.localeCompare(b.id));if(!ready.length)throw new Error(`first-party mod cycle: ${[...pending.keys()].join(', ')}`);for(const entry of ready){pending.delete(entry.id);ordered.push(entry);}}return ordered;}
@@ -18,7 +29,8 @@ for(const record of topologicalMods()){
   for(const asset of manifest.assets){const bytes=readFileSync(resolve(directory,asset.path));if(bytes.length!==asset.bytes||sha256(bytes)!==asset.contentHash)throw new Error(`${record.id}: asset hash mismatch ${asset.path}`);}
   const packed=JSON.parse(run('npm',['pack','--json','--dry-run',directory]))[0],packedFiles=packed.files.map(({path})=>path).sort(),expectedFiles=['package.json',...manifest.pack.include].sort();
   if(JSON.stringify(packedFiles)!==JSON.stringify(expectedFiles))throw new Error(`${record.id}: packed files ${packedFiles.join(', ')} != ${expectedFiles.join(', ')}`);
-  const module=await import(pathToFileURL(resolve(directory,'dist/index.js')).href);if(module.MANIFEST.id!==manifest.id||!Object.isFrozen(module.MANIFEST)||module.IMPLEMENTATION_KIND!=='physical')throw new Error(`${record.id}: physical runtime manifest mismatch`);
+  const module=await import(pathToFileURL(resolve(directory,'dist/index.js')).href);
+  verifyMetadata(module, manifest, JSON.parse(readFileSync(resolve(directory,'ownership.json'),'utf8')).assignments);
   const expectedOccurrences=ownership.assignments.filter((entry)=>entry.package===record.id).length;if(module.SOURCE_OCCURRENCES.length!==expectedOccurrences)throw new Error(`${record.id}: ownership occurrence mismatch`);
   const owner={id:manifest.id,version:manifest.version,contentHash:sha256(JSON.stringify(manifest))},services=Object.freeze({identity:Object.freeze(owner),source:'bundled',logger:Object.freeze({debug(){},info(){},warn(){}}),receipts:Object.freeze({async record(){return'receipt';}}),permissions:Object.freeze({async check(){return'allow';}}),state:Object.freeze({async read(){return undefined;},async write(){}}),engines:Object.freeze({async dispatch(){return null;},async listActive(){return[];}})}),registry=new ModRegistry({generation:'s5-verification',activeOwners:[owner]}),session=registry.beginRegistration(manifest),mod=await module.createMod(services);
   await mod.activate(session.registrar,services);session.commit();
@@ -29,4 +41,23 @@ for(const record of topologicalMods()){
   results.push({id:record.id,occurrences:expectedOccurrences,contributions:Object.values(expected).reduce((a,b)=>a+b,0),packedFiles:packedFiles.length});
 }
 if(process.argv.includes('--self-test')){const first=JSON.parse(readFileSync(resolve(root,'packages/mod-ask/agon.mod.json'),'utf8'));first.dependencies.required.push(first.dependencies.required[0]);let rejected=false;try{validateManifest(first);}catch{rejected=true;}if(!rejected)throw new Error('negative control: duplicate dependency survived manifest validation');console.log('first-party package negative control passed');}
+if (process.argv.includes('--self-test')) {
+  const directory = resolve(root, 'packages/mod-ask');
+  const module = await import(pathToFileURL(resolve(directory, 'dist/index.js')).href);
+  const manifest = validateManifest(JSON.parse(readFileSync(resolve(directory, 'agon.mod.json'), 'utf8')));
+  const assignments = JSON.parse(readFileSync(resolve(directory, 'ownership.json'), 'utf8')).assignments;
+  verifyMetadata(module, manifest, assignments);
+  assert(assignments.length > 0, 'metadata negative control needs an assignment');
+  const changed = structuredClone(assignments);
+  changed[0].source += ':incorrect';
+  for (const mutant of [
+    { ...module, MANIFEST: Object.freeze({ ...manifest, name: manifest.name + ' incorrect' }) },
+    { ...module, SOURCE_OCCURRENCES: Object.freeze(changed) },
+    { ...module, MANIFEST: { ...manifest } },
+    { ...module, SOURCE_OCCURRENCES: [...assignments] },
+  ]) {
+    assert.throws(() => verifyMetadata(mutant, manifest, assignments), /mismatch/);
+  }
+  console.log('first-party metadata negative controls passed (same ID/count and freeze defects)');
+}
 console.log(JSON.stringify({packages:results.length,occurrences:results.reduce((sum,entry)=>sum+entry.occurrences,0),contributions:results.reduce((sum,entry)=>sum+entry.contributions,0),status:'passed'},null,2));

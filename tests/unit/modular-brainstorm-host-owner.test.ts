@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest';
 import type { InvocationContext } from '@kernlang/agon-mod-api';
 import type { DispatchOptions, EngineAdapter, EngineDefinition } from '@kernlang/agon-support-engine-runtime';
 import * as panel from '@kernlang/agon-support-panel';
-import { createBrainstormHostServices } from '../../packages/mod-brainstorm/src/host.js';
+import { createBrainstormHostServices, createBrainstormEngineServices } from '../../packages/mod-brainstorm/src/host.js';
 import type { BrainstormHostEffects } from '../../packages/mod-brainstorm/src/host.js';
 
 function fixture() {
@@ -170,4 +170,82 @@ it('exports a working host factory from the independently built package', async 
   expect(result.stdout).toBe('fixture result');
   expect(f.dispatch).toHaveBeenCalledWith(expect.objectContaining({ cwd: '/invocation',
     signal: f.context.signal, prompt: 'built package prompt', engine: f.engine }));
+});
+
+it('keeps engine-option dispatch late-bound while capturing the selected engine', async () => {
+  const f = fixture();
+  const services = createBrainstormEngineServices(f.effects);
+  const options = { ...f.options, registry: f.registry, adapter: f.adapter };
+  expect(f.effects.openRegistry).not.toHaveBeenCalled();
+  expect(f.effects.createAdapter).not.toHaveBeenCalled();
+  const seat = services.selectSeat(options, 'fixture');
+  const winner = services.selectWinner(options, 'fixture');
+  f.registry.get.mockImplementation(() => { throw new Error('lookup repeated'); });
+  const cwd = vi.spyOn(process, 'cwd').mockReturnValue('/dispatch-time');
+  try {
+    f.dispatch.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0, durationMs: 0, timedOut: false });
+    expect(await seat('seat prompt', 'seat system')).toMatchObject({ ok: true, attempts: 2 });
+    await winner('winner prompt');
+    expect(f.registry.get).toHaveBeenCalledTimes(2);
+    expect(f.dispatch.mock.calls.map(([call]) => call.timeout)).toEqual([80, 40, 80]);
+    for (const [call] of f.dispatch.mock.calls) {
+      expect(call).toMatchObject({ engine: f.engine, cwd: '/dispatch-time', signal: options.signal,
+        textOnly: true, mode: 'exec', outputDir: '/output' });
+    }
+    const aborted = new AbortController();
+    aborted.abort();
+    options.signal = aborted.signal;
+    expect(await seat('cancelled', 'system')).toMatchObject({ ok: false, attempts: 0 });
+    expect(f.dispatch).toHaveBeenCalledTimes(3);
+  } finally {
+    cwd.mockRestore();
+  }
+});
+
+it('uses engine-option preflight and the panel-requested config cwd', async () => {
+  const f = fixture();
+  const services = createBrainstormEngineServices(f.effects);
+  const options = { ...f.options, registry: f.registry, adapter: f.adapter };
+  const preflight = vi.spyOn(panel, 'preflightHealthFilter').mockImplementation(async value => {
+    expect(value).toMatchObject({ engineIds: options.engines, registry: f.registry,
+      adapter: f.adapter, signal: options.signal });
+    value.runtime?.loadConfig('/panel-cwd');
+    return { healthy: value.engineIds, skipped: [] };
+  });
+  try {
+    services.seed(options);
+    expect(f.effects.seedRegistry).toHaveBeenCalledExactlyOnceWith(f.registry);
+    expect(await services.preflight(options)).toEqual({ healthy: ['fixture'], skipped: [] });
+    expect(f.effects.loadConfig).toHaveBeenCalledExactlyOnceWith('/panel-cwd');
+  } finally {
+    preflight.mockRestore();
+  }
+});
+
+it('preserves classification-before-score order for the engine-options API', () => {
+  const f = fixture();
+  const trace: string[] = [];
+  const services = createBrainstormEngineServices(f.effects);
+  const bid = { engineId: 'fixture', confidence: 80, reasoning: '', approach: '',
+    get score() { trace.push('score'); return 2; } };
+  f.effects.classifyTask.mockImplementation(() => { trace.push('classify'); return 'other'; });
+  f.effects.updateRanked.mockImplementation(() => { trace.push('update'); });
+  services.updateRatings([bid], 'question');
+  expect(trace).toEqual(['classify', 'score', 'update']);
+  expect(f.effects.updateRanked).toHaveBeenCalledWith([{ engineId: 'fixture', score: 2 }], 'other', 'brainstorm');
+  trace.length = 0;
+  f.effects.classifyTask.mockImplementation(() => { throw new Error('classification failed'); });
+  expect(() => services.updateRatings([bid], 'question')).toThrow('classification failed');
+  expect(trace).toEqual([]);
+  expect(f.effects.updateRanked).toHaveBeenCalledTimes(1);
+});
+
+it('exports engine-bound services from the independently built package', async () => {
+  const built = await import('../../packages/mod-brainstorm/dist/index.js');
+  const f = fixture();
+  const services = built.createBrainstormEngineServices(f.effects);
+  const options = { ...f.options, registry: f.registry, adapter: f.adapter };
+  expect(await services.selectWinner(options, 'fixture')('built engine prompt')).toMatchObject({ stdout: 'fixture result' });
+  expect(f.dispatch).toHaveBeenCalledWith(expect.objectContaining({ cwd: process.cwd(),
+    signal: options.signal, prompt: 'built engine prompt', engine: f.engine }));
 });

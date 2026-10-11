@@ -14,6 +14,8 @@ export { createBrainstormRuntime } from './runtime.js';
 export type { BrainstormRuntimeServices } from './runtime.js';
 export type { BrainstormHostServices, BrainstormModServices } from './host.js';
 export { createBrainstormHostServices } from './host.js';
+export { createBrainstormEngineServices } from './host.js';
+export type { BrainstormEngineOptions, BrainstormEngineEffects } from './host.js';
 export type { BrainstormHostEffects } from './host.js';
 export type { BrainstormInvocationContext, BrainstormWorkflowEvent } from './host.js';
 export { createBrainstormCollector } from './collector.js';

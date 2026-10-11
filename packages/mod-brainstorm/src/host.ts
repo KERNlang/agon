@@ -34,6 +34,54 @@ export interface BrainstormHostEffects<Registry extends PanelEngineRegistry>
   updateRanked(ranked: Array<{ engineId: string; score: number }>, taskClass: TaskClass, mode: 'brainstorm'): void;
 }
 
+export interface BrainstormEngineOptions<Registry extends PanelEngineRegistry> extends BrainstormWorkflowOptions {
+  registry: Registry;
+  adapter: EngineAdapter;
+}
+
+export type BrainstormEngineEffects<Registry extends PanelEngineRegistry> =
+  Omit<BrainstormHostEffects<Registry>, 'openRegistry' | 'createAdapter'>;
+
+/** Bind the public engine-options API without capturing a process cwd at construction. */
+export function createBrainstormEngineServices<Registry extends PanelEngineRegistry>(
+  effects: BrainstormEngineEffects<Registry>,
+): BrainstormRuntimeServices<BrainstormEngineOptions<Registry>> {
+  return {
+    readRatings: effects.readRatings,
+    buildPrompt: effects.buildPrompt,
+    parseDraft: effects.parseDraft,
+    selectSeat: (options, engineId) => {
+      const engine = options.registry.get(engineId);
+      return (prompt, systemPrompt) => dispatchSeatWithRetry(options.adapter, {
+        engineId, engine, prompt, systemPrompt, textOnly: true,
+        cwd: process.cwd(), mode: 'exec', timeout: options.timeout,
+        outputDir: options.outputDir, signal: options.signal,
+      });
+    },
+    seed: options => { effects.seedRegistry(options.registry); },
+    preflight: options => preflightHealthFilter({
+      engineIds: options.engines, registry: options.registry, adapter: options.adapter,
+      signal: options.signal, runtime: { loadConfig: effects.loadConfig },
+    }),
+    createLogger: createSidechainLogger,
+    deduplicate: dedupBrainstormDrafts,
+    updateRatings: (bids, question) => {
+      const taskClass = effects.classifyTask(question);
+      const ranked = bids.map(bid => ({ engineId: bid.engineId, score: bid.score ?? 0 }));
+      effects.updateRanked(ranked, taskClass, 'brainstorm');
+    },
+    selectWinner: (options, engineId) => {
+      const engine = options.registry.get(engineId);
+      return prompt => options.adapter.dispatch({
+        engine, prompt,
+        systemPrompt: 'You are expanding on a winning brainstorm approach. Respond directly with your detailed analysis as plain text. Do NOT use tools, read files, or run commands.',
+        textOnly: true, cwd: process.cwd(), mode: 'exec', timeout: options.timeout,
+        outputDir: options.outputDir, signal: options.signal,
+      });
+    },
+  };
+}
+
 /** Open per-invocation effects lazily. Construction starts no provider work. */
 export function createBrainstormHostServices<Registry extends PanelEngineRegistry>(
   effects: BrainstormHostEffects<Registry>,

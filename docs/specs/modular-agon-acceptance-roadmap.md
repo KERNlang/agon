@@ -1,7 +1,11 @@
 # Modular Agon acceptance roadmap
 
-**Status:** implementation-ready plan; production extraction is not authorized
-**Date:** 2026-08-23
+**Status:** implementation in progress; release acceptance remains unproven
+**Date:** 2026-10-11 (status reconciled against `f11c6602`)
+
+The original plan was frozen on 2026-08-23. Raphael subsequently authorized
+implementation in an isolated worktree. This status update does not authorize
+installation, promotion, or changes to the active/global Agon.
 
 The machine source of truth is
 [`evidence/modular-agon-implementation-roadmap.json`](./evidence/modular-agon-implementation-roadmap.json).
@@ -15,19 +19,22 @@ claims.
 | Capability | State |
 |---|---|
 | Public API, manifest validator, resolver, registry, compatibility metadata | implemented |
-| Slice 1A acceptance | partially implemented; red and [superseded](./evidence/modular-agon-slice1a-audit-supersession.md) |
-| 49-package DAG | partial: IDs exist; authoritative input still has four duplicate entries |
-| Durable host/state/profiles/activation | specified only |
-| Physical extraction beyond API/kernel | specified only |
-| Runtime-generated CLI/TUI/MCP/Cesar/docs | specified only; current projections are metadata |
-| Installer/update/rollback/safe mode | specified only |
-| Trust/grants/third-party folder mods | specified only |
-| npm/npx release | specified only |
+| Slice 1A acceptance | original receipt [superseded](./evidence/modular-agon-slice1a-audit-supersession.md); current clean-subject acceptance remains unproven |
+| 49-package DAG | implemented structural map: 151 declared and unique edges; no duplicates in the observed subject |
+| Durable host/state/profiles/activation | implementation exists; current-subject slice qualification still required |
+| Physical extraction beyond API/kernel | partial: physical packages exist; remaining ownership and host adapters are not retired |
+| Runtime-generated CLI/TUI/MCP/Cesar/docs | partial: executable generated activation exists; complete legacy-owner retirement is not proven |
+| Installer/update/rollback/safe mode | implementation exists; fresh-install and release qualification remain incomplete |
+| Trust/grants/third-party folder mods | implementation exists; complete security/release acceptance remains unproven |
+| npm/npx release | candidate machinery exists; not a qualified or promoted release |
 | Native release/signing/publish evidence | externally blocked |
 | Future preset composition/default-enabled policy | future product decision |
 
-No locally answerable architecture question remains. “Specified only” denotes
-implementation work, not an unresolved decision.
+These are source-state observations, not accepted slice receipts. The JSON claims
+link implementation evidence and state the limits of each conclusion. Structural
+roadmap validation checks coverage; it does not prove the truth of prose, runtime
+ownership, or release readiness. Remaining implementation and qualification work
+must satisfy the unchanged criteria below.
 
 ## Dependency-ordered slices
 
@@ -89,11 +96,19 @@ unrecoverable operation.
 - Removal requires its kill-list guard plus zero remaining imports, generated
   owners, assets, config/state readers, or documentation owners.
 
-The executable staged-index diagnostic is
-`node scripts/spec/qualify-modular-agon-clean-checkout.mjs --run-clean`. Its
-current expected result is red: clean install passes, `mod-api` build fails
-TS7016, two ignored declaration files are detected, four duplicate edges are
-reported, and the staged index differs from `HEAD`.
+The read-only committed-subject diagnostic is
+`node scripts/spec/qualify-modular-agon-clean-checkout.mjs --subject=commit`.
+On `f11c6602` it reports equal index/commit hashes, no source contamination, and
+151 unique dependency edges. It remains red: stored review evidence has a subject
+mismatch and no clean-checkout steps ran. The original TS7016, ignored declaration,
+duplicate-edge, and dirty-index findings remain historical evidence in the
+supersession record; they are not the diagnostic observed at `f11c6602`.
+
+Adding `--run-clean` performs a clean dependency installation and qualification.
+It requires installation authority; the current remediation goal forbids installs.
+Neither a read-only diagnostic nor a previous subject's passing tests replaces
+that gate. `node scripts/spec/assess-modular-agon-slices.mjs` separately checks
+availability of each slice's commands and exact clean-HEAD receipt requirements.
 
 ## Platform and release matrix
 

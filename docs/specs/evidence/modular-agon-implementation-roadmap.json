@@ -2823,34 +2823,40 @@
       "claim": "Public Mod API, manifest validator, resolver, registry and compatibility projections exist.",
       "state": "implemented",
       "evidence": [
-        "packages/mod-api",
-        "packages/mod-kernel",
-        "tests/unit/modular-*.test.ts"
+        "packages/mod-api/src/manifest.ts",
+        "packages/mod-kernel/src/resolver.ts",
+        "packages/mod-kernel/src/registry.ts",
+        "tests/unit/modular-manifest.test.ts",
+        "tests/unit/modular-resolver.test.ts",
+        "tests/unit/modular-registry.test.ts"
       ]
     },
     {
       "id": "C02",
       "claim": "Slice 1A is acceptance green.",
       "state": "partially-implemented",
+      "limitations": "Original Slice 1A acceptance is superseded. At f11c6602 the committed-subject diagnostic has no contamination or duplicate edges, but stored review evidence has a subject mismatch and clean-checkout steps have not run. Historical TS7016 findings are not current evidence.",
       "evidence": [
-        "clean-index build fails TS7016",
-        "ignored semver.d.ts files contaminate dirty success",
-        "docs/specs/evidence/modular-agon-slice1a-audit-supersession.md"
+        "docs/specs/evidence/modular-agon-slice1a-audit-supersession.md",
+        "scripts/spec/qualify-modular-agon-clean-checkout.mjs",
+        "package.json"
       ]
     },
     {
       "id": "C03",
-      "claim": "The 49-package DAG is frozen.",
-      "state": "partially-implemented",
+      "claim": "The 49-package declared-dependency structural map exists.",
+      "state": "implemented",
+      "limitations": "Structural map at f11c6602: 49 packages and 151 unique declared dependency edges. This count excludes peer and launcher relations; it does not prove runtime extraction or acceptance.",
       "evidence": [
-        "49 IDs exist",
-        "148 declared edges include four duplicates; corrected roadmap has 144 unique edges"
+        "docs/specs/evidence/modular-agon-package-map.json",
+        "scripts/spec/verify-modular-agon-roadmap.mjs"
       ]
     },
     {
       "id": "C04",
       "claim": "Durable desired state, host generation, journal, profiles and activation exist.",
       "state": "implemented",
+      "limitations": "Implementation existence is verified. Fresh current-subject qualification, failure recovery, rollback and re-entry evidence remain required by the slice gates.",
       "evidence": [
         "docs/specs/modular-agon-slice2-implementation.md",
         "docs/specs/modular-agon-slice3-implementation.md",
@@ -2861,52 +2867,72 @@
     {
       "id": "C05",
       "claim": "First-party code is physically extracted into 49 packages.",
-      "state": "specified-only",
+      "state": "partially-implemented",
+      "limitations": "Physical packages exist, but remaining Plan and Brainstorm host adapters and legacy ownership are not retired. Brainstorm owns runtime bindings and dispatch policy; its Core facade still supplies host effects. Package counts and file-existence ledger states do not prove runtime ownership.",
       "evidence": [
-        "only packages/mod-api and packages/mod-kernel exist as target packages",
-        "roadmap package records map all legacy sources"
+        "docs/specs/evidence/modular-agon-package-map.json",
+        "docs/specs/evidence/modular-agon-slice5-migration-ledger.json",
+        "packages/core/src/blocks/brainstorm-host.ts",
+        "packages/cli/src/signals/dispatch/plan-execution.ts"
       ]
     },
     {
       "id": "C06",
       "claim": "Generated surfaces are runtime-authoritative.",
-      "state": "specified-only",
+      "state": "partially-implemented",
+      "limitations": "Generated activation and executable surface clients exist. Complete legacy-owner retirement and all-surface reachability qualification are not established by metadata or projection counts.",
       "evidence": [
-        "Slice 1A compatibility projections are metadata-only",
-        "legacy dispatch remains authoritative"
+        "packages/mod-kernel/src/first-party-surface-bootstrap.ts",
+        "packages/mod-kernel/src/surface-generation.ts",
+        "tests/unit/modular-production-surface-bootstrap.test.ts",
+        "tests/unit/modular-surface-cutover.test.ts"
       ]
     },
     {
       "id": "C07",
       "claim": "Installer, updater, rollback and safe mode are implemented.",
-      "state": "specified-only",
+      "state": "partially-implemented",
+      "limitations": "Lifecycle and safe-mode code exists. This is not fresh-install, platform, rollback or current-subject release acceptance. The remediation goal does not authorize installations.",
       "evidence": [
-        "docs/specs/modular-agon-security-and-distribution.md"
+        "packages/mod-kernel/src/managed-lifecycle.ts",
+        "packages/mod-kernel/src/lifecycle-recovery.ts",
+        "packages/mod-kernel/src/first-party-surface-bootstrap.ts",
+        "tests/unit/modular-lifecycle-fault-injection.test.ts",
+        "scripts/spec/qualify-modular-agon-slice7.mjs"
       ]
     },
     {
       "id": "C08",
       "claim": "Trust, grants and third-party folder mods execute safely.",
-      "state": "specified-only",
+      "state": "partially-implemented",
+      "limitations": "Trust, grants, discovery and activation are implemented, not merely schemas. Complete security qualification remains required. Full-code trust is not an OS sandbox or an unconditional safety guarantee.",
       "evidence": [
-        "schemas exist; no third-party execution is authorized in Slice 1A"
+        "packages/mod-kernel/src/trust-authority.ts",
+        "packages/mod-kernel/src/folder-mod-manager.ts",
+        "packages/mod-kernel/src/third-party-activation.ts",
+        "tests/unit/modular-trust-authority.test.ts",
+        "docs/specs/modular-agon-slice8-implementation.md"
       ]
     },
     {
       "id": "C09",
       "claim": "Linux native release qualification is complete.",
       "state": "externally-blocked",
+      "limitations": "Native Linux x64/arm64 runner evidence is unavailable locally. Containers and emulation are diagnostic only; native qualification cannot be inferred from macOS tests.",
       "evidence": [
-        "native Linux x64/arm64 release runners and signing environment are unavailable locally"
+        "scripts/spec/verify-modular-platform-matrix.mjs",
+        "scripts/spec/qualify-modular-agon-slice9.mjs"
       ]
     },
     {
       "id": "C10",
       "claim": "Future profile preset composition and eventual default-leaning policy are frozen.",
       "state": "future-product-decision",
+      "limitations": "Later preset composition and future default-enabled policy remain product choices. Existing profiles and built-in selections do not decide that future policy. Node 22/24/26 qualification remains required while engines.node is >=22.",
       "evidence": [
-        "architecture supports profile lists; preset composition and future defaults intentionally defer until usage evidence exists",
-        "Node support is not part of this deferral: package engines >=22 makes tested Node 22/24/26 release gates"
+        "docs/specs/modular-agon-acceptance-roadmap.md",
+        "packages/mod-kernel/src/release-setup.ts",
+        "package.json"
       ]
     }
   ]

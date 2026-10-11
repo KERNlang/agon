@@ -1,5 +1,5 @@
 import { CESAR_PLAN_STATES, CESAR_STEP_TYPE_TABLE } from './execution-model.js';
-import type { CesarPlan, CesarPlanStep } from './execution-model.js';
+import type { CesarPlan, CesarPlanStep, CesarStepResult } from './execution-model.js';
 import { planGraphError, planParallelWriterError } from './dependency-graph.js';
 
 type RecordValue = Record<string, unknown>;
@@ -21,7 +21,7 @@ const strings = (value: unknown): boolean => array(value, string);
 const dictionary = (value: unknown, accepts: (item: unknown) => boolean): boolean =>
   object(value) && Object.values(value).every(accepts);
 
-function result(value: unknown): boolean {
+export function isCesarStepResult(value: unknown): value is CesarStepResult {
   return object(value) && string(value.status) && ['success', 'failure', 'paused'].includes(value.status)
     && ['actualTokens', 'actualCostUsd', 'durationMs'].every(key => nonnegative(value[key]))
     && string(value.output) && optional(value, ['error'], string);
@@ -37,7 +37,15 @@ export function isPersistedCesarPlanStep(value: unknown): value is CesarPlanStep
     && optional(value, ['eloSpread'], number)
     && optional(value, ['selfReviewCycle'], counter)
     && optional(value, ['state'], item => string(item) && ['pending', 'blocked', 'running', 'done', 'failed', 'skipped', 'cancelled'].includes(item))
-    && optional(value, ['result'], result);
+    && optional(value, ['result'], isCesarStepResult);
+}
+
+/** A returned value did not prove the outcome of an attempted effect. */
+export class UnknownPlanOutcomeError extends Error {
+  constructor() {
+    super('Plan backend returned an invalid outcome. Work may have run. Inspect its artifacts before retrying; no result or cost was invented.');
+    this.name = 'UnknownPlanOutcomeError';
+  }
 }
 
 /** Validate the execution shape without normalizing, repairing, or rewriting it.

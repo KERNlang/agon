@@ -26,6 +26,44 @@ function fixture(changed: string[] = ['file.txt']) {
 }
 
 describe('physical Plan execution coordinator', () => {
+  it.each([undefined, { result: { status: 'success', output: 'effect ran' } },
+    { result: { status: 'success', output: 'effect ran', actualTokens: 1, actualCostUsd: NaN, durationMs: 1 } },
+    { result: { status: 'success', output: 'effect ran', actualTokens: 1, actualCostUsd: 0, durationMs: 1 }, contextExport: 42 },
+  ])('preserves an unknown backend outcome without inventing a retryable failure: %j', async response => {
+      const { coordinator, host } = fixture([]);
+      const execute = vi.fn(async () => response as Awaited<ReturnType<physical.StepExecutor['execute']>>);
+      host.createExecutors.mockReturnValue({ self: { execute } });
+      host.executePlan.mockImplementation(physical.createPlanExecutor({ recordStepCompletion: vi.fn() }));
+      const value = { ...plan(), state: 'running' as const, selfReview: false };
+      value.steps[0].state = 'pending';
+      await coordinator.executeApprovedPlan(value);
+      const saved = host.save.mock.calls.at(-1)![0];
+      expect(saved.state).toBe('paused');
+      expect(saved.steps[0].state).toBe('running');
+      expect(saved.steps[0].result).toBeUndefined();
+      expect(saved.totalActualCostUsd).toBe(value.totalActualCostUsd);
+      expect(physical.preparePlanFallbackRetry(saved, 'fallback')).toBeNull();
+      expect(() => physical.prepareCesarPlanResume(saved, 'resume')).toThrow(/unknown/);
+      expect(execute).toHaveBeenCalledOnce();
+  });
+  it.each([
+    { tokens: 20, costUsd: NaN }, { tokens: 20, costUsd: Infinity }, { tokens: 20, costUsd: -1 },
+    { tokens: NaN, costUsd: 0 }, { tokens: Infinity, costUsd: 0 }, { tokens: -1, costUsd: 0 },
+  ])('rejects an invalid review estimate before persisting the review: %j', async estimate => {
+      const { coordinator, host } = fixture();
+      host.estimateReview.mockReturnValue(estimate);
+      await expect(coordinator.finalizePlanWithReviewGate(plan(), {}, new AbortController().signal)).rejects.toThrow();
+      expect(host.executePlan).not.toHaveBeenCalled();
+      for (const [saved] of host.save.mock.calls) {
+        expect(saved.state).toBe('paused');
+        expect(saved.steps).toHaveLength(1);
+        expect(saved.reviewCyclesUsed).toBeUndefined();
+      }
+      for (const [published] of host.setActivePlan.mock.calls) {
+        expect(published.state).toBe('paused');
+        expect(published.steps).toHaveLength(1);
+      }
+  });
   it('does not demote verified work when terminal cost formatting fails', async () => {
     const { coordinator, host } = fixture([]);
     const value = { ...plan(), selfReview: false };

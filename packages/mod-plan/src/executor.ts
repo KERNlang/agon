@@ -1,6 +1,6 @@
 import type { CesarPlan, CesarPlanStep, CesarStepResult } from './execution-model.js';
 import { advanceCesarStep } from './execution-state.js';
-import { assertExecutablePlan } from './execution-record.js';
+import { assertExecutablePlan, isCesarStepResult, UnknownPlanOutcomeError } from './execution-record.js';
 
 export interface PlanExecutionServices {
   /** Best-effort estimation history, not billing or required result storage. */
@@ -76,11 +76,19 @@ export function createPlanExecutor(services: PlanExecutionServices) {
             result = { ...result, error: `No executor for type: ${step.type}` };
           } else {
             attempted = true;
+            let response: Awaited<ReturnType<StepExecutor['execute']>> | undefined;
             try {
-              ({ result, contextExport } = await executor.execute(step, current.stepContext, signal));
+              response = await executor.execute(step, current.stepContext, signal);
               executed = true;
             } catch (error) {
               result = { ...result, error: error instanceof Error ? error.message : String(error) };
+            }
+            if (executed) {
+              if (!response || !isCesarStepResult(response.result)
+                || (response.contextExport !== undefined && typeof response.contextExport !== 'string')) {
+                throw new UnknownPlanOutcomeError();
+              }
+              ({ result, contextExport } = response);
             }
           }
         }
@@ -129,7 +137,8 @@ export function createPlanExecutor(services: PlanExecutionServices) {
           callbacks.onPlanUpdate(current);
           // Drain every started backend even if one checkpoint fails.
           const results = await Promise.allSettled(parallelSteps.map(runStep));
-          const failure = results.find(item => item.status === 'rejected');
+          const failure = results.find(item => item.status === 'rejected' && item.reason instanceof UnknownPlanOutcomeError)
+            ?? results.find(item => item.status === 'rejected');
           if (failure?.status === 'rejected') throw failure.reason;
           for (const item of results) {
             if (item.status !== 'fulfilled') continue;

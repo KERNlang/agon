@@ -59,6 +59,101 @@ it('rejects a retained checkpoint callback after its execution phase settles', a
   expect(loadCesarPlan(plan.id)).toEqual(saved);
 });
 
+it.each([false, true])('drains mixed parallel outcomes without enabling resume, invalid finishes last=%s', async invalidLast => {
+  const { plan, execute, coordinator } = fixture(true);
+  let release!: () => void;
+  let entered!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const waiting = new Promise<void>(resolve => { release = resolve; });
+  execute.mockImplementation(async step => {
+    if ((step.id === 'first') === invalidLast) {
+      entered();
+      await waiting;
+    }
+    if (step.id === 'first') return { result: {} as CesarStepResult, contextExport: 'unproven' };
+    return { result, contextExport: 'proven' };
+  });
+  let settled = false;
+  const task = coordinator.executeApprovedPlan(plan).finally(() => { settled = true; });
+  await started;
+  expect(settled).toBe(false);
+  release();
+  await task;
+  const saved = loadCesarPlan(plan.id)!;
+  expect(saved.state).toBe('paused');
+  expect(saved.steps[0].state).toBe('running');
+  expect(saved.steps[0].result).toBeUndefined();
+  expect(saved.steps[1]).toMatchObject({ state: 'done', result });
+  expect(saved.stepContext.proof).toBeUndefined();
+  expect(saved.totalActualCostUsd).toBe(result.actualCostUsd);
+  expect(() => prepareCesarPlanResume(saved, 'resume')).toThrow(/unknown/);
+  expect(execute).toHaveBeenCalledTimes(2);
+});
+
+it('retains unknown outcome evidence when cancelled during a malformed return', async () => {
+  const { plan, execute, coordinator, run } = fixture();
+  let entered!: () => void;
+  let release!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const waiting = new Promise<void>(resolve => { release = resolve; });
+  execute.mockImplementationOnce(async () => {
+    entered();
+    await waiting;
+    return { result: {} as CesarStepResult, contextExport: '' };
+  });
+  const task = coordinator.executeApprovedPlan(plan);
+  await started;
+  run.mock.calls[0][2].onPlanUpdate(cancelCesarPlan(plan));
+  release();
+  await task;
+  const saved = loadCesarPlan(plan.id)!;
+  expect(saved.state).toBe('cancelled');
+  expect(saved.steps[0].startedAt).toBeTruthy();
+  expect(saved.steps[0].result).toBeUndefined();
+  expect(() => prepareCesarPlanResume(saved, 'resume')).toThrow(/unknown/);
+  expect(execute).toHaveBeenCalledOnce();
+});
+
+it('blocks mixed-outcome fallback before a failed intent write can erase earlier uncertainty', async () => {
+  const { plan, execute, coordinator, host, save, run, notify } = fixture(true);
+  execute.mockImplementation(async step => ({ result: step.id === 'first' ? {} as CesarStepResult
+    : { ...result, status: 'failure', error: 'timeout' }, contextExport: '' }));
+  host.takeFallback = () => ({ engine: 'fallback', stepId: 'second' });
+  let failed = false;
+  save.mockImplementation(value => {
+    if (!failed && value.fallbackRetriesUsed?.second && value.steps[1].state === 'running') {
+      failed = true;
+      throw new Error('fallback intent write failed');
+    }
+    saveCesarPlan(value);
+  });
+  await coordinator.executeApprovedPlan(plan);
+  const saved = loadCesarPlan(plan.id)!;
+  expect(saved.steps[0].state).toBe('running');
+  expect(() => prepareCesarPlanResume(saved, 'resume')).toThrow(/unknown/);
+  expect(run).toHaveBeenCalledOnce();
+  expect(failed).toBe(false);
+  expect(notify.mock.calls.some(([, message]) => message.includes('Use /plan resume to retry'))).toBe(false);
+});
+
+it('does not reset a previously started unknown step when a new intent checkpoint fails', async () => {
+  const { plan, coordinator, save } = fixture();
+  plan.steps[0] = { ...plan.steps[0], state: 'running', startedAt: '2026-01-01T00:00:00Z' };
+  let failed = false;
+  save.mockImplementation(value => {
+    if (!failed && value.steps[1].state === 'running') {
+      failed = true;
+      throw new Error('new intent write failed');
+    }
+    saveCesarPlan(value);
+  });
+  await coordinator.executeApprovedPlan(plan);
+  const saved = loadCesarPlan(plan.id)!;
+  expect(saved.steps[0].state).toBe('running');
+  expect(saved.steps[1].state).toBe('pending');
+  expect(() => prepareCesarPlanResume(saved, 'resume')).toThrow(/unknown/);
+});
+
 it('does not let a checkpoint revive a cancelled phase', async () => {
   const { plan, execute, coordinator, run } = fixture();
   let release!: () => void;

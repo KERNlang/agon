@@ -27,8 +27,7 @@ export function buildResumePromptContext(plan: CesarPlan): ResumePromptContext {
 
 /** Preserve completed work, dependency blocks and exhausted review failures. */
 export function skipCompletedSteps(plan: CesarPlan): CesarPlan {
-  const interrupted = plan.steps.find(step => !step.result && (step.state === 'running'
-    || (step.state === 'cancelled' && step.startedAt)));
+  const interrupted = findUnknownPlanOutcome(plan);
   if (interrupted) {
     throw new Error(`Cannot resume: step '${interrupted.id}' has an outcome that is unknown. Saved plan unchanged. Inspect its effects before choosing an explicit restart; restarting can repeat completed work.`);
   }
@@ -45,6 +44,12 @@ export function skipCompletedSteps(plan: CesarPlan): CesarPlan {
     return { ...step, state: 'pending' };
   });
   return { ...plan, steps };
+}
+
+/** Locate started work without a known result before offering any retry. */
+export function findUnknownPlanOutcome(plan: CesarPlan): CesarPlanStep | undefined {
+  return plan.steps.find(step => !step.result && (step.state === 'running'
+    || (step.state === 'cancelled' && !!step.startedAt)));
 }
 
 /** Prepare an already-approved choice without mutating the saved plan. */

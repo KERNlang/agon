@@ -1,7 +1,8 @@
 import type { CesarPlan, CesarPlanStep } from './execution-model.js';
 import type { PlanExecutorCallbacks, StepExecutor } from './executor.js';
 import { advanceCesarStep, cancelCesarPlan } from './execution-state.js';
-import { assertExecutablePlan } from './execution-record.js';
+import { assertExecutablePlan, UnknownPlanOutcomeError } from './execution-record.js';
+import { findUnknownPlanOutcome } from './resume-policy.js';
 
 const MUTATING = new Set(['forge', 'teamforge', 'pipeline', 'agent', 'team-agent', 'delegate', 'self']);
 const FORGE_LIKE = new Set(['forge', 'teamforge', 'pipeline']);
@@ -66,6 +67,7 @@ export function failedPlanStepIsFallbackRetryable(step: CesarPlanStep | null | u
 export function preparePlanFallbackRetry(plan: CesarPlan, fallbackEngine: string, stepId?: string): CesarPlan|null {
   const engine = String(fallbackEngine ?? '').trim();
   if (!engine || !Array.isArray(plan.steps)) return null;
+  if (findUnknownPlanOutcome(plan)) return null;
   const failedIndex = plan.steps.findIndex(step => (!stepId || step.id === stepId) && failedPlanStepIsFallbackRetryable(step));
   if (failedIndex < 0) return null;
   const failedStep = plan.steps[failedIndex];
@@ -146,6 +148,7 @@ export function createPlanCoordinator(host: PlanCoordinatorHost) {
     else signal.addEventListener('abort', abortPhase, { once: true });
     const reportedSteps = new Set<string>();
     const startedSteps = new Set<string>();
+    const previouslyRunning = new Set(plan.steps.filter(step => step.state === 'running').map(step => step.id));
     const observingCallbacks: PlanExecutorCallbacks = {
       onCheckpoint(updated) {
         if (settled) throw new Error('Plan execution phase has settled.');
@@ -223,16 +226,17 @@ export function createPlanCoordinator(host: PlanCoordinatorHost) {
       settled = true;
       phase.abort(error);
       const message = error instanceof Error ? error.message : String(error);
+      const preserveUnknownOutcome = checkpointFailed || error instanceof UnknownPlanOutcomeError;
       const failedIds = new Set(latest.steps.filter(step => step.state === 'running'
         || (step.id === pendingStepId && (step.state === 'pending' || step.state === 'blocked' || !step.state))).map(step => step.id));
-      const terminal = !checkpointFailed && (latest.state === 'cancelled' || latest.state === 'done');
-      if (terminal || checkpointFailed) failedIds.clear();
+      const terminal = !preserveUnknownOutcome && (latest.state === 'cancelled' || latest.state === 'done');
+      if (terminal || preserveUnknownOutcome) failedIds.clear();
       // A failed result write is not an execution failure. Retain known results;
       // an interrupted started step must remain distinguishable from a retryable
       // failure. Steps whose intent write failed never reached onStepStart.
-      const paused: CesarPlan = checkpointFailed ? {
+      const paused: CesarPlan = preserveUnknownOutcome ? {
         ...latest, state: latest.state === 'cancelled' ? 'cancelled' : 'paused', completedAt: undefined, activeStepId: null, currentStepId: null,
-        steps: latest.steps.map(step => step.state === 'running' && !startedSteps.has(step.id)
+        steps: latest.steps.map(step => step.state === 'running' && !startedSteps.has(step.id) && !previouslyRunning.has(step.id)
           ? { ...step, state: 'pending', startedAt: undefined } : step),
       } : terminal ? latest : { ...latest, state: 'paused', completedAt: undefined,
         activeStepId: null, currentStepId: null,
@@ -326,7 +330,9 @@ export function createPlanCoordinator(host: PlanCoordinatorHost) {
         } else {
           emit({ type: 'warning', message: 'Plan paused.' });
         }
-        emit({ type: 'info', message: 'Use /plan resume to retry, or /cancel to abort' });
+        emit({ type: 'info', message: findUnknownPlanOutcome(finalPlan)
+          ? 'A started step has an unknown outcome. Inspect its artifacts and workspace before choosing an explicit restart; restart can repeat completed work. Ordinary resume is blocked.'
+          : 'Use /plan resume to retry, or /cancel to abort' });
       }
     } catch (err) {
       // Setup and required persistence failures must stop execution, not leave
@@ -416,6 +422,7 @@ export function createPlanCoordinator(host: PlanCoordinatorHost) {
     };
 
     const cycleNum = replanned.reviewCyclesUsed ?? 1;
+    assertExecutablePlan(replanned);
     emit({ type: 'info', message: `Self-review gate: appending review step (cycle ${cycleNum}/2)` });
 
     // Tribunal fix #10: build fresh callbacks against the replanned plan so

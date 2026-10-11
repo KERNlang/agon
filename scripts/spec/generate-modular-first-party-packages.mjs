@@ -121,7 +121,7 @@ function expectedFiles(packageRecord) {
     const validDefault = type === 'string[]' ? Array.isArray(property.default) && property.default.every(value => typeof value === 'string')
       : typeof property.default === type && (type !== 'number' || Number.isFinite(property.default));
     if (!validDefault) throw new Error(`legacy setting default has the wrong type: ${assignment.id}`);
-    legacySettings.set(assignment.id, { type, value: property.default });
+    legacySettings.set(assignment.id, { type, value: property.default, owner: ownerId(packageName) });
   }
   const contributions = contributionsFor(packageName);
   const byManifestKind = Object.fromEntries([
@@ -380,7 +380,9 @@ generated.set(resolve(root, 'packages/core/src/models/first-party-settings.gener
   + 'export interface FirstPartyLegacySettings {\n'
   + settings.map(([key, value]) => `  ${key}?: ${value.type};`).join('\n')
   + '\n}\n\nexport const DEFAULT_FIRST_PARTY_SETTINGS: Required<FirstPartyLegacySettings> = '
-  + JSON.stringify(Object.fromEntries(settings.map(([key, value]) => [key, value.value])), null, 2) + ';\n');
+  + JSON.stringify(Object.fromEntries(settings.map(([key, value]) => [key, value.value])), null, 2) + ';\n\n'
+  + 'export const LEGACY_MOD_SETTING_OWNERS: Readonly<Record<keyof FirstPartyLegacySettings, string>> = Object.freeze('
+  + JSON.stringify(Object.fromEntries(settings.map(([key, value]) => [key, value.owner])), null, 2) + ');\n');
 
 const rootPackagePath = resolve(root, 'package.json');
 const rootPackage = JSON.parse(readFileSync(rootPackagePath, 'utf8'));

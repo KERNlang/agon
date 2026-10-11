@@ -1,7 +1,7 @@
 import { mkdirSync, readdirSync, statSync, rmSync } from 'node:fs';
 
 import { join } from 'node:path';
-import { createScopedConfigStore, normalizeKernelSettings, mergeModSettingsLayers } from '@kernlang/agon-kernel';
+import { createScopedConfigStore, normalizeKernelSettings, mergeModSettingsLayers, selectModSettings } from '@kernlang/agon-kernel';
 import { normalizeBrowserSettings } from '@kernlang/agon-support-browser-bridge';
 import { normalizeEngineSettings } from '@kernlang/agon-support-engine-runtime';
 
@@ -14,6 +14,7 @@ export { AGON_HOME, CORPUS_PATH, GLOBAL_CONFIG_PATH, RATINGS_PATH, RUNS_DIR, SKI
 import type { AgonConfig } from '../models/types.js';
 
 import { DEFAULT_AGON_CONFIG } from '../models/types.js';
+import { LEGACY_MOD_SETTING_OWNERS } from '../models/first-party-settings.generated.js';
 
 import { ConfigError } from '../models/errors.js';
 
@@ -33,6 +34,14 @@ const configStore = createScopedConfigStore<Required<AgonConfig>>({
   privateLocalName: LOCAL_PRIVATE_CONFIG_NAME,
   merge: mergeConfig,
   withLock: (path, action) => withFileLock(path, action),
+  prepareWrite: (existing, key, value) => {
+    const updated = { ...existing, [key]: value };
+    if (!Object.hasOwn(LEGACY_MOD_SETTING_OWNERS, key)) return updated;
+    const owner = LEGACY_MOD_SETTING_OWNERS[key as keyof typeof LEGACY_MOD_SETTING_OWNERS];
+    const namespace = selectModSettings(existing, owner);
+    const mods = { ...mergeModSettingsLayers(existing), [owner]: { ...namespace, [key]: value } };
+    return Object.assign(updated, { mods });
+  },
 });
 
 export const _configMemoCache = configStore.cache;
@@ -48,10 +57,36 @@ export function loadConfig(cwd?: string): Required<AgonConfig> {
   return configStore.load(cwd);
 }
 
+function projectLegacyModSettings(layer: Partial<AgonConfig>): Partial<AgonConfig> {
+  const projected = { ...layer };
+  const originalMods = mergeModSettingsLayers(layer);
+  const mods = { ...originalMods };
+  for (const [key, owner] of Object.entries(LEGACY_MOD_SETTING_OWNERS)) {
+    const namespace = mods[owner];
+    const settings = namespace !== null && typeof namespace === 'object' && !Array.isArray(namespace)
+      ? namespace as Record<string, unknown> : null;
+    if (Object.hasOwn(layer, key) && (!Object.hasOwn(mods, owner) || (settings && !Object.hasOwn(settings, key)))) {
+      mods[owner] = { ...settings, [key]: layer[key as keyof AgonConfig] };
+    }
+  }
+  // Keep malformed/inactive namespaces as data until their owner is invoked.
+  return originalMods !== undefined || Object.keys(mods).length ? Object.assign(projected, { mods }) : projected;
+}
+
 function mergeConfig(global: Partial<AgonConfig>, local: Partial<AgonConfig>, localPrivate: Partial<AgonConfig>): Required<AgonConfig> {
-  const merged = { ...DEFAULT_AGON_CONFIG, ...global, ...local, ...localPrivate } as Required<AgonConfig>;
-  const mods = mergeModSettingsLayers(global, local, localPrivate);
-  if (mods !== undefined) Object.assign(merged, { mods });
+  const layers = [global, local, localPrivate].map(projectLegacyModSettings);
+  const merged = { ...DEFAULT_AGON_CONFIG, ...layers[0], ...layers[1], ...layers[2] } as Required<AgonConfig>;
+  const mods = mergeModSettingsLayers(...layers);
+  if (mods !== undefined) {
+    Object.assign(merged, { mods });
+    for (const [key, owner] of Object.entries(LEGACY_MOD_SETTING_OWNERS)) {
+      if (!Object.hasOwn(mods, owner)) continue;
+      const namespace = mods[owner];
+      const value = namespace !== null && typeof namespace === 'object' && !Array.isArray(namespace) && Object.hasOwn(namespace, key)
+        ? (namespace as Record<string, unknown>)[key] : DEFAULT_AGON_CONFIG[key as keyof AgonConfig];
+      Object.assign(merged, { [key]: value });
+    }
+  }
   // Compiler can't emit object/array defaults for Record types — ensure correct runtime types
   normalizeEngineSettings(merged);
   normalizeBrowserSettings(merged);

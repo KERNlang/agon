@@ -16,6 +16,8 @@ export interface ScopedConfigStoreOptions<T extends object> {
   merge(global: Partial<T>, local: Partial<T>, privateLocal: Partial<T>): T;
   /** Keep the existing synchronous cross-process lock at the host boundary. */
   withLock(path: string, action: () => void): void;
+  /** Apply owner policy inside the lock, before the atomic write. */
+  prepareWrite?(existing: Readonly<Partial<T>>, key: keyof T, value: Partial<T>[keyof T]): Partial<T>;
 }
 
 function statMtimeOrZero(path: string): number {
@@ -64,10 +66,10 @@ export function createScopedConfigStore<T extends object>(options: ScopedConfigS
     const globalPath = options.globalPath();
     options.withLock(globalPath + '.lock', () => {
       const existing: Partial<T> = readJsonSafe<Partial<T>>(globalPath) ?? {};
-      existing[key] = value;
+      const updated = options.prepareWrite ? options.prepareWrite(existing, key, value) : { ...existing, [key]: value };
       mkdirSync(dirname(globalPath), { recursive: true });
       const temporaryPath = globalPath + '.tmp';
-      writeFileSync(temporaryPath, JSON.stringify(existing, null, 2) + '\n');
+      writeFileSync(temporaryPath, JSON.stringify(updated, null, 2) + '\n');
       renameSync(temporaryPath, globalPath);
     });
     invalidate();

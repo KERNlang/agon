@@ -1,4 +1,5 @@
-export type CesarPlanState = 'planning' | 'awaiting_approval' | 'running' | 'paused' | 'done' | 'cancelled';
+export const CESAR_PLAN_STATES = ['planning', 'awaiting_approval', 'running', 'paused', 'done', 'cancelled'] as const;
+export type CesarPlanState = typeof CESAR_PLAN_STATES[number];
 
 export type CesarStepState = 'pending' | 'blocked' | 'running' | 'done' | 'failed' | 'skipped' | 'cancelled';
 

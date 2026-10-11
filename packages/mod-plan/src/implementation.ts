@@ -1,32 +1,39 @@
 import { commandResultToToolResult } from '@kernlang/agon-mod-api';
-import { randomUUID } from 'node:crypto';
 import { runPlanSession } from './session.js';
 import type { InvocationContext } from '@kernlang/agon-mod-api';
 import type { AgonModFactory, CommandResult, Dispose, Json, ModServices, Registrar } from '@kernlang/agon-mod-api';
-import { listPersistedPlans, loadPersistedPlan, savePersistedPlan } from '@kernlang/agon-support-persistence';
+import { listCesarPlans, loadCesarPlan, saveCesarPlan } from './execution-store.js';
+import { createPlanProposal, exitCesarPlan } from './execution-state.js';
+import { planExitRefusal } from './session-workflow.js';
+import { CESAR_PLAN_STATES, CESAR_STEP_TYPES } from './execution-model.js';
+import type { CesarPlan, CesarPlanStep, CesarStepType } from './execution-model.js';
 export { createPersistenceEnvelope, unwrapPersistenceEnvelope } from '@kernlang/agon-support-persistence';
 
-type PlanState = 'awaiting_approval' | 'running' | 'paused' | 'done' | 'cancelled';
-type Step = { id: string; type: string; description: string; dependsOn: string[]; parallel: boolean; state: 'pending' | 'blocked' | 'done' | 'failed' | 'cancelled'; estimatedTokens: number; estimatedCostUsd: number; [key: string]: Json };
-type Plan = { id: string; state: PlanState; intent: string; steps: Step[]; autoApprove: boolean; selfReview: boolean; createdAt: string; updatedAt: string; approvedAt?: string; exitReason?: string };
-const states: PlanState[] = ['awaiting_approval','running','paused','done','cancelled'];
+const states = [...CESAR_PLAN_STATES];
 const proposalSchema = Object.freeze({ type: 'object', additionalProperties: true, required: ['intent','steps'], properties: { intent: { type: 'string', minLength: 1 }, autoApprove: { type: 'boolean', default: false }, selfReview: { type: 'boolean', default: true }, steps: { type: 'array', minItems: 1, items: { type: 'object', required: ['id','type','description'], properties: { id: { type: 'string' }, type: { type: 'string' }, description: { type: 'string' }, dependsOn: { type: 'array', items: { type: 'string' } }, parallel: { type: 'boolean' }, estimatedTokens: { type: 'number' }, estimatedCostUsd: { type: 'number' } } } } } }) as Readonly<Record<string, Json>>;
 const controlSchema = Object.freeze({ type: 'object', additionalProperties: true, properties: { planId: { type: 'string' }, reason: { type: 'string' }, limit: { type: 'number' }, state: { type: 'string', enum: states }, task: { type: 'string' }, _: { type: 'array', items: { type: 'string' } } } }) as Readonly<Record<string, Json>>;
 const text = (value: Json | undefined): string => typeof value === 'string' ? value.trim() : '';
 
-function validateSteps(raw: Json): { steps?: Step[]; error?: string } {
+function validateSteps(raw: Json): { steps?: CesarPlanStep[]; error?: string } {
   if (!Array.isArray(raw) || raw.length === 0) return { error: 'steps must be a non-empty array' };
-  const steps: Step[] = [];
+  const steps: CesarPlanStep[] = [];
   const ids = new Set<string>();
   for (const value of raw) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return { error: 'every step must be an object' };
     const item = value as Record<string, Json>; const id = text(item.id); const type = text(item.type); const description = text(item.description);
     if (!id || !type || !description) return { error: 'every step requires id, type, and description' };
+    if (!CESAR_STEP_TYPES.includes(type as CesarStepType)) return { error: `unknown step type: ${type}` };
     if (ids.has(id)) return { error: `duplicate step ID: ${id}` }; ids.add(id);
     const dependsOn = Array.isArray(item.dependsOn) ? item.dependsOn.filter((entry): entry is string => typeof entry === 'string') : [];
-    steps.push({ ...item, id, type, description, dependsOn, parallel: item.parallel === true, state: dependsOn.length ? 'blocked' : 'pending', estimatedTokens: Number(item.estimatedTokens ?? 0), estimatedCostUsd: Number(item.estimatedCostUsd ?? 0) });
+    const estimatedTokens = Number(item.estimatedTokens ?? 0);
+    const estimatedCostUsd = Number(item.estimatedCostUsd ?? 0);
+    if (![estimatedTokens, estimatedCostUsd].every(value => Number.isFinite(value) && value >= 0)) return { error: `invalid estimate for step: ${id}` };
+    const proposal = { ...item };
+    // A proposal cannot supply evidence owned by the executor.
+    for (const field of ['result', 'startedAt', 'completedAt', 'runDir', 'selfReviewCycle']) delete proposal[field];
+    steps.push({ ...proposal, id, type: type as CesarStepType, description, dependsOn, parallel: item.parallel === true, state: dependsOn.length ? 'blocked' : 'pending', estimatedTokens, estimatedCostUsd });
   }
-  for (const step of steps) for (const dependency of step.dependsOn) if (!ids.has(dependency)) return { error: `step "${step.id}" depends on unknown step "${dependency}"` };
+  for (const step of steps) for (const dependency of step.dependsOn ?? []) if (!ids.has(dependency)) return { error: `step "${step.id}" depends on unknown step "${dependency}"` };
   const visiting = new Set<string>(); const visited = new Set<string>(); const byId = new Map(steps.map((step) => [step.id, step]));
   const cycle = (id: string): boolean => { if (visiting.has(id)) return true; if (visited.has(id)) return false; visiting.add(id); for (const dependency of byId.get(id)?.dependsOn ?? []) if (cycle(dependency)) return true; visiting.delete(id); visited.add(id); return false; };
   for (const step of steps) if (cycle(step.id)) return { error: `circular dependency involving step "${step.id}"` };
@@ -35,30 +42,31 @@ function validateSteps(raw: Json): { steps?: Step[]; error?: string } {
   return { steps };
 }
 
-function recent(planId?: string): Plan | null { return planId ? loadPersistedPlan<Plan>(planId) : listPersistedPlans<Plan>(1)[0] ?? null; }
-function summary(plan: Plan): Json { return { id: plan.id, state: plan.state, intent: plan.intent, steps: plan.steps.length, done: plan.steps.filter((step) => step.state === 'done').length, estimatedTokens: plan.steps.reduce((sum, step) => sum + step.estimatedTokens, 0), estimatedCostUsd: plan.steps.reduce((sum, step) => sum + step.estimatedCostUsd, 0), createdAt: plan.createdAt, updatedAt: plan.updatedAt }; }
+function recentPlans(): CesarPlan[] { return listCesarPlans().sort((a, b) => String(b.updatedAt ?? b.createdAt).localeCompare(String(a.updatedAt ?? a.createdAt))); }
+function recent(planId?: string): CesarPlan | null { return planId ? loadCesarPlan(planId) : recentPlans()[0] ?? null; }
+function summary(plan: CesarPlan): Json { return { id: plan.id, state: plan.state, intent: plan.intent, steps: plan.steps.length, done: plan.steps.filter((step) => step.state === 'done').length, estimatedTokens: plan.steps.reduce((sum, step) => sum + step.estimatedTokens, 0), estimatedCostUsd: plan.steps.reduce((sum, step) => sum + step.estimatedCostUsd, 0), createdAt: plan.createdAt, updatedAt: plan.updatedAt ?? plan.createdAt }; }
 
 async function propose(raw: Json, services: ModServices): Promise<CommandResult> {
   const input = raw as Record<string, Json>; const intent = text(input.intent); if (!intent) return { exitCode: 1, stderr: 'Plan intent is required.\n' };
   const checked = validateSteps(input.steps ?? null); if (!checked.steps) return { exitCode: 1, stderr: `${checked.error}\n`, failure: { code: 'INVALID_PLAN', message: checked.error!, retryable: false } };
-  const now = new Date().toISOString(); const plan: Plan = { id: `cplan-${randomUUID()}`, state: input.autoApprove === true ? 'running' : 'awaiting_approval', intent, steps: checked.steps, autoApprove: input.autoApprove === true, selfReview: input.selfReview !== false, createdAt: now, updatedAt: now, ...(input.autoApprove === true ? { approvedAt: now } : {}) };
-  savePersistedPlan(plan); const receiptId = await services.receipts.record('plan-proposed', plan as unknown as Json); const result = { plan, receiptId };
+  const plan = createPlanProposal(intent, checked.steps, { autoApprove: input.autoApprove === true, selfReview: input.selfReview !== false });
+  if (![plan.totalEstimatedTokens, plan.totalEstimatedCostUsd].every(Number.isFinite)) return { exitCode: 1, stderr: 'Total plan estimate exceeds the supported numeric range.\n' };
+  saveCesarPlan(plan); const receiptId = await services.receipts.record('plan-proposed', plan as unknown as Json); const result = { plan, receiptId };
   return { exitCode: 0, stdout: `${JSON.stringify(result, null, 2)}\n`, result: result as unknown as Json };
 }
 
 async function control(action: string, raw: Json, services: ModServices): Promise<CommandResult> {
   const input = raw as Record<string, Json>;
-  if (action === 'plans') { const limit = Math.max(1, Math.min(100, Number(input.limit ?? 20))); const filter = text(input.state); const plans = listPersistedPlans<Plan>(limit * 2).filter((plan) => !filter || plan.state === filter).slice(0, limit).map(summary); return { exitCode: 0, stdout: `${JSON.stringify(plans, null, 2)}\n`, result: plans }; }
+  if (action === 'plans') { const limit = Math.max(1, Math.min(100, Number(input.limit ?? 20))); const filter = text(input.state); const plans = recentPlans().filter((plan) => !filter || plan.state === filter).slice(0, limit).map(summary); return { exitCode: 0, stdout: `${JSON.stringify(plans, null, 2)}\n`, result: plans }; }
   if (action === 'propose') return propose(raw, services);
   const plan = recent(text(input.planId) || undefined); if (!plan) return { exitCode: 1, stderr: 'No matching plan found.\n' };
   if (action === 'plan') return { exitCode: 0, stdout: `${JSON.stringify(plan, null, 2)}\n`, result: plan as unknown as Json };
-  const now = new Date().toISOString(); let next: Plan;
-  if (action === 'approve') { if (plan.state !== 'awaiting_approval') return { exitCode: 1, stderr: `Plan is ${plan.state}, not awaiting_approval.\n` }; next = { ...plan, state: 'running', approvedAt: now, updatedAt: now }; }
-  else if (action === 'cancel' || action === 'exit') { if (plan.state === 'done' || plan.state === 'cancelled') return { exitCode: 1, stderr: `Plan is already ${plan.state}.\n` }; next = { ...plan, state: 'cancelled', steps: plan.steps.map((step) => step.state === 'done' || step.state === 'failed' ? step : { ...step, state: 'cancelled' }), updatedAt: now, ...(action === 'exit' ? { exitReason: text(input.reason) || 'plan mode exited' } : {}) }; }
-  else if (action === 'retry') { if (!['paused'].includes(plan.state)) return { exitCode: 1, stderr: `Plan is ${plan.state}; only paused plans can retry.\n` }; next = { ...plan, state: 'running', steps: plan.steps.map((step) => step.state === 'failed' ? { ...step, state: 'pending' } : step), updatedAt: now }; }
-  else if (action === 'auto') { next = { ...plan, autoApprove: !plan.autoApprove, updatedAt: now }; }
-  else return { exitCode: 1, stderr: `Unknown plan action: ${action}\n` };
-  savePersistedPlan(next); const receiptId = await services.receipts.record(`plan-${action}`, { planId: next.id, previousState: plan.state, state: next.state }); return { exitCode: 0, stdout: `${JSON.stringify({ plan: next, receiptId }, null, 2)}\n`, result: { plan: next, receiptId } as unknown as Json };
+  if (action !== 'exit') return { exitCode: 1, stderr: `Unknown plan action: ${action}\n` };
+  const refusal = planExitRefusal(plan);
+  if (refusal) return { exitCode: 1, stderr: `${refusal}\n` };
+  if (plan.state === 'done' || plan.state === 'cancelled') return { exitCode: 1, stderr: `Plan is already ${plan.state}.\n` };
+  const next = exitCesarPlan(plan, text(input.reason) || 'plan mode exited');
+  saveCesarPlan(next); const receiptId = await services.receipts.record(`plan-${action}`, { planId: next.id, previousState: plan.state, state: next.state }); return { exitCode: 0, stdout: `${JSON.stringify({ plan: next, receiptId }, null, 2)}\n`, result: { plan: next, receiptId } as unknown as Json };
 }
 
 const actions: Record<string, string> = { 'intentVariants:0003':'approve','intentVariants:0004':'auto','intentVariants:0008':'cancel','intentVariants:0046':'plan','intentVariants:0047':'plans','intentVariants:0050':'retry','builtinCommandMetadata:0003':'approve','builtinCommandMetadata:0004':'auto','builtinCommandMetadata:0009':'cancel','builtinCommandMetadata:0035':'plan','builtinCommandMetadata:0036':'plans','builtinCommandMetadata:0039':'retry','tuiKeyboardActions:0022':'approve','tuiKeyboardActions:0026':'cancel','tuiKeyboardActions:0038':'auto','tuiKeyboardActions:0041':'retry','tuiSlashCommands:0003':'approve','tuiSlashCommands:0004':'auto','tuiSlashCommands:0009':'cancel','tuiSlashCommands:0051':'plan','tuiSlashCommands:0052':'plans','tuiSlashCommands:0056':'retry' };

@@ -51,7 +51,7 @@
         "@kernlang/agon-support-dedup"
       ],
       "assignments": 12,
-      "assignmentHash": "sha256:a117d83c1cff0f1159bc16a0f0193f98361fd75960249c7c1906ae7b2c7b63f0",
+      "assignmentHash": "sha256:78a5f234c1b30b6a262df32ef4dde43479744f7188e1a4801736f4c0560b5fe2",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -79,7 +79,7 @@
         "@kernlang/agon-support-judge"
       ],
       "assignments": 12,
-      "assignmentHash": "sha256:2a360bfd0401dc1613ce3a9dcf4ec077bfd112b479a4d701af6f9c51026215a1",
+      "assignmentHash": "sha256:f346ee2a8a6d7ff5800bc0e463dc0a7f8f746a1fe10c6f29dde06914d40e8017",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -106,7 +106,7 @@
         "@kernlang/agon-support-panel"
       ],
       "assignments": 10,
-      "assignmentHash": "sha256:562626870dd4ccccb452d0d230723fce22f6d82c48e842262f8e31351afce493",
+      "assignmentHash": "sha256:327679a7c73ed86b47a4261180b19309ebd7d3bc092edcd56260aba4f8f2316c",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -122,7 +122,7 @@
         "@kernlang/agon-support-verification"
       ],
       "assignments": 51,
-      "assignmentHash": "sha256:520d5839a0faa59bf39441803bfec3afc88363a262333ed368295b585ddc5011",
+      "assignmentHash": "sha256:6014dbfa072c6f206bd0bd7ec6243888050cfa98f8145f05fe0c7f85ce4d27c2",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -136,7 +136,7 @@
         "@kernlang/agon-support-panel"
       ],
       "assignments": 6,
-      "assignmentHash": "sha256:07f55cf6fed06ec55b7a85b762ff95d00b351f30a2f5ef7cc6bcb5da2a533db0",
+      "assignmentHash": "sha256:11f98e12173473d56803d138d3af713da32dd24834edb0e70386bfb6dfa41f2f",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -165,7 +165,7 @@
         "@kernlang/agon-support-worktree"
       ],
       "assignments": 17,
-      "assignmentHash": "sha256:3231135f3ad95a68fd73446a1505cf6573145c691cb4c054b153fad68edfa0f7",
+      "assignmentHash": "sha256:15025517958ef14abd2c1194fcedb6623be68739ead77f1ccfde15ec53d64f94",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -194,7 +194,7 @@
         "@kernlang/agon-mod-review"
       ],
       "assignments": 6,
-      "assignmentHash": "sha256:2ed9e404d85bc3e8cfc6ea38861a3e18aa90531fc3f7c69f5f2ec0ba8976b3fa",
+      "assignmentHash": "sha256:d2b71949109b9a0ff1fbce46415a60d7c33747be285f90b6ba12d237a414cb3d",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -207,7 +207,7 @@
         "@kernlang/agon-support-agent-runtime"
       ],
       "assignments": 37,
-      "assignmentHash": "sha256:55681b115970446f745b4917d76d4894fa45315a0fe4afdc56a0d91cf78e30b9",
+      "assignmentHash": "sha256:0aaba7988a71edcfebabf9a92b7b67986d99277b202991ea3039792066100417",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -638,7 +638,7 @@
       "legacyPresent": false,
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "definitionOwner": "@kernlang/agon-mod-plan",
-      "definitionHash": "sha256:4e85010bb08bb5ba58509453739abd9d78edc6bac753ae4eae927c92982d0f42",
+      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
       "remainingRuntimeBindings": [
@@ -731,7 +731,7 @@
       "legacyPresent": false,
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "definitionOwner": "@kernlang/agon-mod-plan",
-      "definitionHash": "sha256:4e85010bb08bb5ba58509453739abd9d78edc6bac753ae4eae927c92982d0f42",
+      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
       "remainingRuntimeBindings": [
@@ -824,7 +824,7 @@
       "legacyPresent": false,
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "definitionOwner": "@kernlang/agon-mod-plan",
-      "definitionHash": "sha256:4e85010bb08bb5ba58509453739abd9d78edc6bac753ae4eae927c92982d0f42",
+      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
       "remainingRuntimeBindings": [
@@ -1397,7 +1397,7 @@
       "legacyPresent": false,
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "definitionOwner": "@kernlang/agon-mod-plan",
-      "definitionHash": "sha256:4e85010bb08bb5ba58509453739abd9d78edc6bac753ae4eae927c92982d0f42",
+      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
       "remainingRuntimeBindings": [
@@ -1990,7 +1990,7 @@
       "legacyPresent": false,
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "definitionOwner": "@kernlang/agon-mod-plan",
-      "definitionHash": "sha256:4e85010bb08bb5ba58509453739abd9d78edc6bac753ae4eae927c92982d0f42",
+      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
       "remainingRuntimeBindings": [
@@ -2463,7 +2463,7 @@
       "legacyPresent": false,
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "definitionOwner": "@kernlang/agon-mod-plan",
-      "definitionHash": "sha256:4e85010bb08bb5ba58509453739abd9d78edc6bac753ae4eae927c92982d0f42",
+      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
       "remainingRuntimeBindings": [
@@ -4600,7 +4600,7 @@
       "legacyPresent": false,
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "definitionOwner": "@kernlang/agon-mod-plan",
-      "definitionHash": "sha256:4e85010bb08bb5ba58509453739abd9d78edc6bac753ae4eae927c92982d0f42",
+      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
       "remainingRuntimeBindings": [
@@ -5893,7 +5893,7 @@
       "legacyPresent": false,
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "definitionOwner": "@kernlang/agon-mod-plan",
-      "definitionHash": "sha256:4e85010bb08bb5ba58509453739abd9d78edc6bac753ae4eae927c92982d0f42",
+      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
       "remainingRuntimeBindings": [
@@ -6912,7 +6912,7 @@
       "legacyPresent": false,
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "definitionOwner": "@kernlang/agon-mod-plan",
-      "definitionHash": "sha256:4e85010bb08bb5ba58509453739abd9d78edc6bac753ae4eae927c92982d0f42",
+      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
       "remainingRuntimeBindings": [
@@ -7225,7 +7225,7 @@
       "legacyPresent": false,
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "definitionOwner": "@kernlang/agon-mod-plan",
-      "definitionHash": "sha256:4e85010bb08bb5ba58509453739abd9d78edc6bac753ae4eae927c92982d0f42",
+      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
       "remainingRuntimeBindings": [
@@ -7534,7 +7534,7 @@
       "implementationPaths": [
         "packages/mod-plan/src/execution-model.ts"
       ],
-      "definitionHash": "sha256:4e85010bb08bb5ba58509453739abd9d78edc6bac753ae4eae927c92982d0f42",
+      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
@@ -7560,7 +7560,7 @@
       "implementationPaths": [
         "packages/mod-plan/src/execution-model.ts"
       ],
-      "definitionHash": "sha256:4e85010bb08bb5ba58509453739abd9d78edc6bac753ae4eae927c92982d0f42",
+      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
@@ -7586,7 +7586,7 @@
       "implementationPaths": [
         "packages/mod-plan/src/execution-model.ts"
       ],
-      "definitionHash": "sha256:4e85010bb08bb5ba58509453739abd9d78edc6bac753ae4eae927c92982d0f42",
+      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
@@ -7612,7 +7612,7 @@
       "implementationPaths": [
         "packages/mod-plan/src/execution-model.ts"
       ],
-      "definitionHash": "sha256:4e85010bb08bb5ba58509453739abd9d78edc6bac753ae4eae927c92982d0f42",
+      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
@@ -7638,7 +7638,7 @@
       "implementationPaths": [
         "packages/mod-plan/src/execution-model.ts"
       ],
-      "definitionHash": "sha256:4e85010bb08bb5ba58509453739abd9d78edc6bac753ae4eae927c92982d0f42",
+      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
@@ -7664,7 +7664,7 @@
       "implementationPaths": [
         "packages/mod-plan/src/execution-model.ts"
       ],
-      "definitionHash": "sha256:4e85010bb08bb5ba58509453739abd9d78edc6bac753ae4eae927c92982d0f42",
+      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
@@ -7690,7 +7690,7 @@
       "implementationPaths": [
         "packages/mod-plan/src/execution-model.ts"
       ],
-      "definitionHash": "sha256:4e85010bb08bb5ba58509453739abd9d78edc6bac753ae4eae927c92982d0f42",
+      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
@@ -7716,7 +7716,7 @@
       "implementationPaths": [
         "packages/mod-plan/src/execution-model.ts"
       ],
-      "definitionHash": "sha256:4e85010bb08bb5ba58509453739abd9d78edc6bac753ae4eae927c92982d0f42",
+      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
@@ -7742,7 +7742,7 @@
       "implementationPaths": [
         "packages/mod-plan/src/execution-model.ts"
       ],
-      "definitionHash": "sha256:4e85010bb08bb5ba58509453739abd9d78edc6bac753ae4eae927c92982d0f42",
+      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
@@ -7768,7 +7768,7 @@
       "implementationPaths": [
         "packages/mod-plan/src/execution-model.ts"
       ],
-      "definitionHash": "sha256:4e85010bb08bb5ba58509453739abd9d78edc6bac753ae4eae927c92982d0f42",
+      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
@@ -7794,7 +7794,7 @@
       "implementationPaths": [
         "packages/mod-plan/src/execution-model.ts"
       ],
-      "definitionHash": "sha256:4e85010bb08bb5ba58509453739abd9d78edc6bac753ae4eae927c92982d0f42",
+      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
@@ -7820,7 +7820,7 @@
       "implementationPaths": [
         "packages/mod-plan/src/execution-model.ts"
       ],
-      "definitionHash": "sha256:4e85010bb08bb5ba58509453739abd9d78edc6bac753ae4eae927c92982d0f42",
+      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
@@ -7840,7 +7840,7 @@
       "implementationPaths": [
         "packages/mod-plan/src/execution-model.ts"
       ],
-      "definitionHash": "sha256:4e85010bb08bb5ba58509453739abd9d78edc6bac753ae4eae927c92982d0f42",
+      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",

@@ -146,7 +146,7 @@ describe('setup preserves selected desired state', () => {
     expect(await new DurableModHost(join(home, 'probe-host'), { kernelVersion: '1.0.0' }).readCurrentPointer()).toBeNull();
   });
 
-  it.each(['current', 'legacy', 'changed-package'] as const)('qualifies the idempotence shortcut against %s state', async scenario => {
+  it.each(['current', 'legacy', 'changed-package', 'modified-bytes', 'extra-file', 'missing-file', 'scope-link', 'prefix-link', 'internal-prefix-link'] as const)('qualifies the idempotence shortcut against %s state', async scenario => {
     const home = await mkdtemp(join(tmpdir(), 'agon-setup-qualified-'));
     vi.stubEnv('AGON_HOME', home);
     vi.stubEnv('AGON_MODULAR_HOST_ROOT', join(home, 'modular-host'));
@@ -163,17 +163,41 @@ describe('setup preserves selected desired state', () => {
     }
     const plan = { ...unsigned, planHash: sha256Canonical(unsigned) };
     const host = new DurableModHost(join(home, 'modular-host'), { kernelVersion: '1.0.0' });
-    const workspacePaths: string[] = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8')).workspaces;
-    const metadata = await Promise.all(workspacePaths.map(async path => {
-      const bytes = await readFile(new URL(`../../${path}/package.json`, import.meta.url));
-      return { name: JSON.parse(bytes.toString('utf8')).name as string, bytes };
-    }));
-    await new ManagedLifecycleService(host).apply(plan, { async install(entry, prefix, context) {
-      await installer.install(entry, prefix, context);
-      const owner = metadata.find(owner => owner.name === entry.id);
+    const release = JSON.parse(await readFile(new URL('../../docs/specs/evidence/modular-agon-release-set.json', import.meta.url), 'utf8'));
+    const result = await new ManagedLifecycleService(host).apply(plan, { async install(entry, prefix) {
+      const owner = release.packages.find((owner: { id: string }) => owner.id === entry.id);
       expect(owner).toBeDefined();
-      await writeFile(join(prefix, 'node_modules', entry.id, 'package.json'), owner!.bytes);
+      const root = join(prefix, 'node_modules', entry.id);
+      for (const { path } of owner.files) {
+        await mkdir(dirname(join(root, path)), { recursive: true });
+        await cp(new URL(`../../${owner.directory}/${path}`, import.meta.url), join(root, path));
+      }
+      expect(await hashInstalledPackagePayload(root)).toBe(entry.payloadHash);
     } }, verifier);
+    const prefix = join(host.root, result.installation.prefix);
+    const packageRoot = join(prefix, 'node_modules', plan.packages[0].id);
+    const entrypoint = join(packageRoot, 'dist/index.js');
+    if (scenario === 'modified-bytes') {
+      await chmod(entrypoint, 0o600);
+      await writeFile(entrypoint, 'throw new Error("changed after qualification");');
+    } else if (scenario === 'extra-file') {
+      await chmod(packageRoot, 0o700);
+      await writeFile(join(packageRoot, 'unexpected.js'), 'export {};');
+    } else if (scenario === 'missing-file') {
+      await chmod(dirname(entrypoint), 0o700);
+      await unlink(entrypoint);
+    } else if (scenario === 'scope-link') {
+      const modules = join(prefix, 'node_modules');
+      await chmod(modules, 0o700);
+      await chmod(join(modules, '@kernlang'), 0o700);
+      await rename(join(modules, '@kernlang'), join(modules, 'moved-scope'));
+      await symlink(join(modules, 'moved-scope'), join(modules, '@kernlang'));
+    } else if (scenario === 'prefix-link' || scenario === 'internal-prefix-link') {
+      await chmod(prefix, 0o700);
+      const moved = join(scenario === 'internal-prefix-link' ? host.root : home, 'moved-installation');
+      await rename(prefix, moved);
+      await symlink(moved, prefix);
+    }
     const before = await readFile(host.paths.current);
     output.mockClear();
     const apply = vi.spyOn(SetupLifecycleService.prototype, 'apply').mockRejectedValue(new Error('fixture-requalification-required'));

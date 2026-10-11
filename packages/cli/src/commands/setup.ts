@@ -88,7 +88,8 @@ export async function runManagedSetup(args: ManagedSetupArgs, options: { preserv
     const configuration = selectedPointer ? await readGenerationConfiguration(host, selectedPointer) : undefined;
     const expectedOwners = release.packages.filter(entry => entry.modId && selection.effectivePackageIds.includes(entry.id)).map(entry => entry.modId!).sort();
     if (configuration && configuration.source.path === persistencePath('config.json')
-      && canonicalJson(configuration.owners.map(owner => owner.ownerId).sort()) === canonicalJson(expectedOwners)) {
+      && canonicalJson(configuration.owners.map(owner => owner.ownerId).sort()) === canonicalJson(expectedOwners)
+      && await installedPayloadsMatch(hostRoot, existing.prefix, artifacts)) {
       await assertSelectionCurrent();
       const launcher = await writeStableLauncher(hostRoot);
       console.log(JSON.stringify({ status: 'already-qualified', profile: selection.profile, generationUnchanged: true, launcher, packageCount: artifacts.length }, null, 2));
@@ -169,12 +170,28 @@ class ReleaseSetInstaller implements CandidateInstaller {
     if (result.exitCode !== 0 || result.timedOut || result.outputTruncated) throw new Error(`release-set npm staging failed: exit=${result.exitCode} timeout=${result.timedOut} truncated=${result.outputTruncated} ${result.stderr.slice(0, 1000)}`);
   }
 }
-export class ReleaseSetVerifier implements CandidateVerifier {
-  async #packageRoot(candidatePrefix: string, id: string): Promise<string> {
-    const root = await assertContainedPackagePath(candidatePrefix, join('node_modules', id));
-    if (root !== join(candidatePrefix, 'node_modules', id)) throw new Error('candidate package path contains symbolic links');
-    return root;
+async function packageRootWithinPrefix(prefix: string, id: string): Promise<string> {
+  const root = await assertContainedPackagePath(prefix, join('node_modules', id));
+  if (root !== join(prefix, 'node_modules', id)) throw new Error('candidate package path contains symbolic links');
+  return root;
+}
+
+async function installedPayloadsMatch(hostRoot: string, relativePrefix: string, packages: readonly ManagedLifecyclePackagePlan[]): Promise<boolean> {
+  try {
+    const canonicalHost = await realpath(hostRoot);
+    const prefix = await assertContainedPackagePath(canonicalHost, relativePrefix);
+    if (prefix !== resolve(canonicalHost, relativePrefix)) return false;
+    for (const entry of packages) {
+      if (!entry.payloadHash || await hashInstalledPackagePayload(await packageRootWithinPrefix(prefix, entry.id)) !== entry.payloadHash) return false;
+    }
+    return true;
+  } catch {
+    // Unreadable or changed files require fresh staging, not shortcut approval.
+    return false;
   }
+}
+
+export class ReleaseSetVerifier implements CandidateVerifier {
 
   async verify(candidatePrefix: string, plan: ManagedLifecyclePlan,
     context: { readonly configurationFiles: Readonly<Record<string, Uint8Array>> } = { configurationFiles: {} }): Promise<CandidateVerificationResult> {
@@ -183,7 +200,7 @@ export class ReleaseSetVerifier implements CandidateVerifier {
     try {
       candidatePrefix = await realpath(candidatePrefix);
       for (const entry of plan.packages) {
-        const root = await this.#packageRoot(candidatePrefix, entry.id);
+        const root = await packageRootWithinPrefix(candidatePrefix, entry.id);
         checks.push({ id: `installed-payload:${entry.id}`, passed: entry.payloadHash !== undefined
           && await hashInstalledPackagePayload(root) === entry.payloadHash });
         const packagePath = await assertContainedPackagePath(root, 'package.json');
@@ -202,14 +219,14 @@ export class ReleaseSetVerifier implements CandidateVerifier {
           : `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
         checks.push({ id: `static-identity:${entry.id}`, passed: manifestHash === entry.manifestHash });
       }
-      const launcherRoot = await this.#packageRoot(candidatePrefix, '@kernlang/agon');
+      const launcherRoot = await packageRootWithinPrefix(candidatePrefix, '@kernlang/agon');
       const launcherMetadata = JSON.parse(await readFile(await assertContainedPackagePath(launcherRoot, 'package.json'), 'utf8'));
       checks.push({ id: 'launcher-package', passed: launcherMetadata.name === '@kernlang/agon' && launcherMetadata.version === VERSION,
         detail: `${launcherMetadata.name}@${launcherMetadata.version}` });
       if (checks.some(check => !check.passed)) return Object.freeze({ passed: false, checks: Object.freeze(checks.map(check => Object.freeze(check))) });
       const kernelId = '@kernlang/agon-kernel';
       if (!plan.packages.some(entry => entry.id === kernelId)) throw new Error('candidate plan lacks a verified kernel');
-      const kernelRoot = await this.#packageRoot(candidatePrefix, kernelId);
+      const kernelRoot = await packageRootWithinPrefix(candidatePrefix, kernelId);
       const activationRunner = await assertContainedPackagePath(kernelRoot, 'dist/candidate-activation-runner.js');
       qualificationHome = await mkdtemp(join(candidatePrefix, '.qualification-'));
       const isolatedEnvironment = { HOME: qualificationHome, AGON_HOME: join(qualificationHome, 'agon'),
@@ -233,7 +250,7 @@ export class ReleaseSetVerifier implements CandidateVerifier {
         && ['cli', 'tui', 'mcp', 'cesar', 'docs'].every(surface => Number.isSafeInteger(receipt.surfaceCounts?.[surface]) && receipt.surfaceCounts[surface] >= 0),
         detail: `exit=${activation.exitCode} signal=${activation.signal} timeout=${activation.timedOut} truncated=${activation.outputTruncated} completionRecords=${records.length}` });
       for (const entry of plan.packages) {
-        const root = await this.#packageRoot(candidatePrefix, entry.id);
+        const root = await packageRootWithinPrefix(candidatePrefix, entry.id);
         checks.push({ id: `post-activation-payload:${entry.id}`, passed: await hashInstalledPackagePayload(root) === entry.payloadHash });
       }
       if (checks.some(check => !check.passed)) return Object.freeze({ passed: false, checks: Object.freeze(checks.map(check => Object.freeze(check))) });
@@ -245,7 +262,7 @@ export class ReleaseSetVerifier implements CandidateVerifier {
         passed: smoke.exitCode === 0 && smoke.signal === null && !smoke.timedOut && !smoke.outputTruncated && smoke.stdout.includes(VERSION),
         detail: `exit=${smoke.exitCode} signal=${smoke.signal} timeout=${smoke.timedOut} truncated=${smoke.outputTruncated}` });
       for (const entry of plan.packages) {
-        const root = await this.#packageRoot(candidatePrefix, entry.id);
+        const root = await packageRootWithinPrefix(candidatePrefix, entry.id);
         checks.push({ id: `post-smoke-payload:${entry.id}`, passed: await hashInstalledPackagePayload(root) === entry.payloadHash });
       }
     } catch (error) { checks.push({ id: 'candidate-inspection', passed: false, detail: String(error) }); }

@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import assert from 'node:assert/strict';
 
 const root = resolve(import.meta.dirname, '../..');
 const version = '1.0.0';
@@ -19,15 +20,25 @@ const canonical = (value) => value === null || typeof value !== 'object' ? JSON.
 const directory = (id) => id === '@kernlang/agon-kernel' ? 'mod-kernel' : id === '@kernlang/agon-mod-api' ? 'mod-api' : id.replace('@kernlang/agon-', '');
 const fail = (message) => { throw new Error(message); };
 
+function validatePackage(record, pkg) {
+  if (pkg.name !== record.id || pkg.version !== version || pkg.private !== false || pkg.license !== 'MIT') fail(`${record.id}: release identity/version/license mismatch`);
+  const dependencies = { ...pkg.dependencies, ...pkg.optionalDependencies };
+  const peers = pkg.peerDependencies ?? {};
+  const declared = Object.keys(dependencies).filter((id) => releaseNames.has(id)).sort();
+  // The shared kernel is a peer, not a second installed kernel instance.
+  const expected = record.dependencies.filter((id) => !Object.hasOwn(peers, id)).sort();
+  assert.deepEqual(declared, expected, `${record.id}: package dependencies differ from architectural map`);
+  for (const section of ['dependencies', 'optionalDependencies']) for (const [name, range] of Object.entries(pkg[section] ?? {})) {
+    if (releaseNames.has(name) && range !== version) fail(`${record.id}: ${name} must use exact lockstep ${version}`);
+  }
+}
+
 function inspect(record) {
   const dir = directory(record.id);
   const packageRoot = join(root, 'packages', dir);
   const pkg = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'));
-  if (pkg.name !== record.id || pkg.version !== version || pkg.private !== false || pkg.license !== 'MIT') fail(`${record.id}: release identity/version/license mismatch`);
+  validatePackage(record, pkg);
   if (!pkg.files?.includes('LICENSE') || !existsSync(join(packageRoot, 'LICENSE'))) fail(`${record.id}: MIT license is not packed`);
-  for (const section of ['dependencies', 'optionalDependencies']) for (const [name, range] of Object.entries(pkg[section] ?? {})) {
-    if (releaseNames.has(name) && range !== version) fail(`${record.id}: ${name} must use exact lockstep ${version}`);
-  }
   const packDestination = join(scratch, 'tarballs');
   mkdirSync(packDestination, { recursive: true });
   const packed = spawnSync('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', packDestination], {
@@ -51,7 +62,7 @@ function inspect(record) {
   }
   const tarball = join(packDestination, result.filename);
   if (!existsSync(tarball)) fail(`${record.id}: npm pack did not create ${result.filename}`);
-  return { id: record.id, modId, manifestDependencies, directory: `packages/${dir}`, version, class: record.class, dependencies: record.dependencies, packedBytes: result.size, unpackedBytes: result.unpackedSize, fileCount: files.length, files, integrity: result.integrity, shasum: result.shasum, tarballHash: sha256(readFileSync(tarball)), packageJsonHash: sha256(readFileSync(join(packageRoot, 'package.json'))), manifestHash: existsSync(manifestPath) ? sha256(canonical(JSON.parse(readFileSync(manifestPath, 'utf8')))) : sha256(readFileSync(join(packageRoot, 'package.json'))) };
+  return { id: record.id, modId, manifestDependencies, directory: `packages/${dir}`, version, class: record.class, dependencies: record.dependencies, peerDependencies: pkg.peerDependencies ?? {}, packedBytes: result.size, unpackedBytes: result.unpackedSize, fileCount: files.length, files, integrity: result.integrity, shasum: result.shasum, tarballHash: sha256(readFileSync(tarball)), packageJsonHash: sha256(readFileSync(join(packageRoot, 'package.json'))), manifestHash: existsSync(manifestPath) ? sha256(canonical(JSON.parse(readFileSync(manifestPath, 'utf8')))) : sha256(readFileSync(join(packageRoot, 'package.json'))) };
 }
 
 function inspectLauncher() {
@@ -71,11 +82,23 @@ function inspectLauncher() {
   if (forbidden.length) fail(`CLI launcher contains forbidden packed content: ${forbidden.map(({ path }) => path).join(', ')}`);
   for (const required of ['dist/index.js', 'package.json', 'LICENSE']) if (!files.some(({ path }) => path === required)) fail(`CLI launcher lacks ${required}`);
   const tarball = join(packDestination, result.filename);
-  return { id: pkg.name, version: pkg.version, role: 'managed-launcher', dependencies: Object.entries(pkg.dependencies ?? {}).map(([id, range]) => ({ id, range })).sort((a, b) => a.id.localeCompare(b.id)), packedBytes: result.size, unpackedBytes: result.unpackedSize, fileCount: files.length, files, integrity: result.integrity, shasum: result.shasum, tarballHash: sha256(readFileSync(tarball)), packageJsonHash: sha256(readFileSync(join(packageRoot, 'package.json'))) };
+  for (const path of ['release-channel.json', 'dist/release-channel.json']) {
+    const extracted = spawnSync('tar', ['-xOf', tarball, `package/${path}`], { encoding: 'utf8' });
+    if (extracted.status !== 0 || extracted.stdout !== readFileSync(channelOutput, 'utf8')) fail(`CLI launcher packed ${path} differs from qualified channel`);
+  }
+  return { id: pkg.name, version: pkg.version, role: 'managed-launcher', dependencies: Object.entries({ ...pkg.dependencies, ...pkg.optionalDependencies }).map(([id, range]) => ({ id, range })).sort((a, b) => a.id.localeCompare(b.id)), packedBytes: result.size, unpackedBytes: result.unpackedSize, fileCount: files.length, files, integrity: result.integrity, shasum: result.shasum, tarballHash: sha256(readFileSync(tarball)), packageJsonHash: sha256(readFileSync(join(packageRoot, 'package.json'))) };
 }
 
 try {
   if (map.packages.length !== 49 || releaseNames.size !== 49) fail('release set must contain 49 unique modular packages');
+  if (selfTest) {
+    const record = map.packages.find(({ id }) => id === '@kernlang/agon-kernel');
+    const pkg = JSON.parse(readFileSync(join(root, 'packages', directory(record.id), 'package.json'), 'utf8'));
+    validatePackage(record, pkg);
+    assert.throws(() => validatePackage(record, { ...pkg, version: '9.9.9' }), /identity\/version\/license/);
+    assert.throws(() => validatePackage(record, { ...pkg, dependencies: {} }), /dependencies differ/);
+    assert.throws(() => validatePackage(record, { ...pkg, dependencies: { ...pkg.dependencies, '@kernlang/agon-mod-api': '^1.0.0' } }), /exact lockstep/);
+  }
   const packages = map.packages.map(inspect);
   const channel = { schemaVersion: 1, channel: 'local-release-candidate', version, packages: packages.map((pkg) => ({ id: pkg.id, version: pkg.version, dependencies: pkg.dependencies, ...(pkg.modId ? { modId: pkg.modId, manifestDependencies: pkg.manifestDependencies } : {}), sourceLocator: `${pkg.id}@${pkg.version}`, integrity: pkg.integrity, contentHash: pkg.tarballHash, manifestHash: pkg.manifestHash })) };
   const channelText = `${JSON.stringify(channel, null, 2)}\n`;
@@ -85,10 +108,6 @@ try {
   const launcher = inspectLauncher();
   const bom = { schemaVersion: 1, releaseSet: '@kernlang/agon-modular', version, packageCount: packages.length, artifactCount: packages.length + 1, dependencyEdgeCount: map.dependencyEdges.length, launcher, packages };
   const text = `${JSON.stringify(bom, null, 2)}\n`;
-  if (selfTest) {
-    const mutated = structuredClone(bom); mutated.packages[0].version = '9.9.9';
-    if (mutated.packages.every((entry) => entry.version === version)) fail('release version negative control failed');
-  }
   if (check) {
     if (!existsSync(output) || readFileSync(output, 'utf8') !== text) fail('release-set/BOM drift');
   } else writeFileSync(output, text);

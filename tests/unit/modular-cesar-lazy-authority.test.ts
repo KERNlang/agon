@@ -11,8 +11,13 @@ it.each(['intact', 'disposed', 'replaced', 'pointer-changed'] as const)
     const hostRoot = join(root, 'host');
     const core = await import('@kernlang/agon-core');
     const authority = await import('../../packages/cli/src/surface-authority-runtime.js');
-    const dispatch = vi.fn(async (engineId: string) => ({ engineId, exitCode: 0,
-      stdout: '{"approach":"fixture","confidence":91,"steps":[],"tradeoffs":[]}', stderr: '', timedOut: false }));
+    const { currentInvocationConfiguration } = await import('@kernlang/agon-kernel');
+    const observedScopes: unknown[] = [];
+    const dispatch = vi.fn(async (engineId: string) => {
+      observedScopes.push(currentInvocationConfiguration());
+      return { engineId, exitCode: 0,
+        stdout: '{"approach":"fixture","confidence":91,"steps":[],"tradeoffs":[]}', stderr: '', timedOut: false };
+    });
     const initialize = () => authority.initializeProcessSurfaceAuthority(hostRoot, (_manifest, base) => withBrainstormFixtureHost({
       ...base, engines: { listActive: async () => ['fixture-engine'], dispatch },
     }));
@@ -40,6 +45,9 @@ it.each(['intact', 'disposed', 'replaced', 'pointer-changed'] as const)
         expect(result.error).toBeUndefined();
         expect(result.result).toMatchObject({ exitCode: 0 });
         expect(dispatch).toHaveBeenCalled();
+        expect(observedScopes.length).toBeGreaterThan(0);
+        expect(observedScopes.every(scope => !!scope && (scope as { hostRoot: string }).hostRoot === hostRoot)).toBe(true);
+        expect(currentInvocationConfiguration()).toBeUndefined();
       } else {
         expect(result.error).toMatchObject({ code: 'MOD_GENERATION_MISMATCH' });
         expect(dispatch).not.toHaveBeenCalled();

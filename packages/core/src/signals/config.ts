@@ -1,7 +1,7 @@
 import { mkdirSync, readdirSync, statSync, rmSync } from 'node:fs';
 
 import { join } from 'node:path';
-import { createScopedConfigStore, normalizeKernelSettings, mergeModSettingsLayers, selectModSettings, projectLegacyModSettings, withSynchronousWriterFence, readSelectedGenerationConfigurationSync, applyModSettingsDefaults, readLegacyConfigAliases, resolveRegisteredModSettings } from '@kernlang/agon-kernel';
+import { createScopedConfigStore, normalizeKernelSettings, mergeModSettingsLayers, selectModSettings, projectLegacyModSettings, withSynchronousWriterFence, readSelectedGenerationConfigurationSync, applyModSettingsDefaults, readLegacyConfigAliases, resolveRegisteredModSettings, currentInvocationConfiguration } from '@kernlang/agon-kernel';
 import { normalizeBrowserSettings } from '@kernlang/agon-support-browser-bridge';
 import { normalizeEngineSettings } from '@kernlang/agon-support-engine-runtime';
 
@@ -44,7 +44,7 @@ const configStore = createScopedConfigStore<Required<AgonConfig>>({
     const namespace = selectModSettings(existing, owner);
     const mods = { ...mergeModSettingsLayers(existing), [owner]: { ...namespace, [key]: value } };
     const proposed = Object.assign(updated, { mods });
-    const descriptor = selectedConfiguration()?.owners.find(candidate => candidate.ownerId === owner);
+    const descriptor = selectedConfiguration(false)?.owners.find(candidate => candidate.ownerId === owner);
     if (descriptor) {
       const effective = projectLegacyModSettings(proposed, LEGACY_MOD_SETTING_OWNERS);
       resolveRegisteredModSettings(owner, selectModSettings(effective, owner), [descriptor.schema]);
@@ -62,11 +62,12 @@ export function invalidateConfigCache(): void {
   configStore.invalidate();
 }
 
-function selectedConfiguration() {
+function selectedConfiguration(useInvocation = true) {
   // Safe mode must remain usable when the selected mod generation is corrupt.
   if (process.env.AGON_MOD_SAFE_MODE === '1') return undefined;
   const hostRoot = process.env.AGON_MODULAR_HOST_ROOT ?? join(getAgonHome(), 'modular-host');
-  const generation = readSelectedGenerationConfigurationSync(hostRoot);
+  const invocation = useInvocation ? currentInvocationConfiguration() : undefined;
+  const generation = invocation ? invocation.configuration : readSelectedGenerationConfigurationSync(hostRoot);
   if (generation && generation.source.path !== agonPath('config.json')) throw new ConfigError('Selected configuration belongs to another source path. Requalify this installation.');
   return generation;
 }

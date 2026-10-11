@@ -10,6 +10,7 @@ import type {
 
 import { ModRegistry } from './registry.js';
 import type { RegistryKind, RegistryRecord, Surface, SurfaceProjection } from './registry.js';
+import type { InvocationConfigurationScope } from './configuration-scope.js';
 
 export interface SurfaceAccessibility {
   readonly label: string;
@@ -137,6 +138,7 @@ export class SurfaceGeneration {
     readonly runtime: GeneratedSurfaceRuntime;
     readonly disabledOwnerIds?: readonly string[];
     readonly syntheticOwnerIds?: readonly string[];
+    readonly configurationScope?: InvocationConfigurationScope;
   }) {
     this.id = options.id;
     this.mode = options.mode;
@@ -145,7 +147,7 @@ export class SurfaceGeneration {
       .filter((entry) => !disabled.has(entry.owner.id))
       .sort((left, right) => compareAscii(left.surface, right.surface) || compareAscii(left.kind, right.kind) || compareAscii(left.registryId, right.registryId));
     const ownerMap = new Map(catalog.map(({ owner }) => [owner.id, owner]));
-    this.registry = new ModRegistry({ generation: this.id, activeOwners: [...ownerMap.values()] });
+    this.registry = new ModRegistry({ generation: this.id, activeOwners: [...ownerMap.values()], configurationScope: options.configurationScope });
     const syntheticOwners = options.syntheticOwnerIds ? new Set(options.syntheticOwnerIds) : undefined;
     for (const owner of ownerMap.values()) {
       if (syntheticOwners && !syntheticOwners.has(owner.id)) continue;

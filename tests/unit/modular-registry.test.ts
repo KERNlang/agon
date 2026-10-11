@@ -4,6 +4,7 @@ import type { LegacyRegistryEntry } from '../../packages/mod-kernel/src/index.js
 import type { CommandContribution, InvocationContext, ModIdentity } from '../../packages/mod-api/src/index.js';
 import { manifest } from '../helpers/modular-agon.js';
 import { resolveRegisteredModSettings } from '../../packages/mod-kernel/src/mod-settings.js';
+import { currentInvocationConfiguration, runWithInvocationConfiguration } from '../../packages/mod-kernel/src/configuration-scope.js';
 
 const hash = `sha256:${'a'.repeat(64)}` as const;
 const active: ModIdentity = { id: 'example.active', version: '1.0.0', contentHash: hash };
@@ -11,6 +12,106 @@ const disabled: ModIdentity = { id: 'example.disabled', version: '1.0.0', conten
 const competitor: ModIdentity = { id: 'example.competitor', version: '1.0.0', contentHash: hash };
 
 describe('owner-tagged ModRegistry', () => {
+  it('assimilates custom thenables and iterable getters within selected rules', async () => {
+    const selected = { hostRoot: 'selected', configuration: undefined };
+    const current = () => currentInvocationConfiguration()?.hostRoot;
+    const result = runWithInvocationConfiguration(selected, () => ({
+      then(resolve: (value: unknown) => void) { resolve(current()); },
+    }));
+    expect(await result).toBe('selected');
+    const observations: Array<string | undefined> = [];
+    const output = runWithInvocationConfiguration(selected, () => ({
+      get [Symbol.asyncIterator]() {
+        observations.push(current());
+        return async function* () { yield current(); };
+      },
+    })) as AsyncIterable<string>;
+    for await (const value of output) expect(value).toBe('selected');
+    expect(observations.length).toBeGreaterThan(0);
+    expect(observations.every(value => value === 'selected')).toBe(true);
+    expect(current()).toBeUndefined();
+  });
+
+  it('preserves direct async-generator cancellation and iterable iterators', async () => {
+    const cleanup: Array<string | undefined> = [];
+    const output = runWithInvocationConfiguration({ hostRoot: 'selected', configuration: undefined }, () => (async function* () {
+      try { yield currentInvocationConfiguration()?.hostRoot; }
+      finally { cleanup.push(currentInvocationConfiguration()?.hostRoot); }
+    })()) as AsyncGenerator<string, void, unknown>;
+    expect(typeof output.return).toBe('function');
+    expect(output[Symbol.asyncIterator]()).toBe(output);
+    expect(await output.next()).toEqual({ done: false, value: 'selected' });
+    await output.return();
+    expect(cleanup).toEqual(['selected']);
+    expect(currentInvocationConfiguration()).toBeUndefined();
+  });
+
+  it.each(['complete', 'return', 'throw'] as const)('isolates concurrent lazy iterators through %s', async finish => {
+    const events: string[] = [];
+    const context = () => currentInvocationConfiguration()?.hostRoot ?? 'outside';
+    const make = (hostRoot: string) => runWithInvocationConfiguration({ hostRoot, configuration: undefined }, () => ({
+      [Symbol.asyncIterator]() {
+        events.push(context());
+        return (async function* () {
+          try { await Promise.resolve(); yield context(); yield context(); }
+          finally { events.push(context()); }
+        })();
+      },
+    })) as AsyncIterable<string>;
+    const left = make('left')[Symbol.asyncIterator]();
+    const right = make('right')[Symbol.asyncIterator]();
+    expect(await Promise.all([left.next(), right.next()])).toEqual([{ value: 'left', done: false }, { value: 'right', done: false }]);
+    expect(context()).toBe('outside');
+    if (finish === 'complete') {
+      expect((await left.next()).value).toBe('left');
+      expect((await right.next()).value).toBe('right');
+      await left.next(); await right.next();
+    } else if (finish === 'return') {
+      await left.return!(); await right.return!();
+    } else {
+      await expect(left.throw!(new Error('left failure'))).rejects.toThrow('left failure');
+      await expect(right.throw!(new Error('right failure'))).rejects.toThrow('right failure');
+    }
+    expect(events).toEqual(['left', 'right', 'left', 'right']);
+    expect(context()).toBe('outside');
+  });
+
+  it.each(['promise', 'stream', 'promised-stream'] as const)('keeps generation rules local across %s and cleanup', async outputKind => {
+    const selected = { hostRoot: '/fixture/old', configuration: undefined };
+    const registry = new ModRegistry({ generation: 'old', activeOwners: [active], configurationScope: selected });
+    const registration = registry.beginRegistration(manifest(active.id, active.version, { contributes: {
+      cliCommands: [{ id: 'scoped', aliases: [] }], tuiActions: [], mcpTools: [], cesarTools: [],
+      lifecycleHooks: [], resultTypes: [], configKeys: [], generatedDocs: [],
+    } }));
+    const seen: string[] = [];
+    const observe = () => seen.push(currentInvocationConfiguration()?.hostRoot ?? 'outside');
+    async function* stream() {
+      try { observe(); yield { type: 'text' as const, text: 'fixture' }; await Promise.resolve(); observe(); }
+      finally { observe(); }
+    }
+    registration.registrar.command('cli', { id: 'scoped', description: 'fixture', run: () => {
+      observe();
+      if (outputKind === 'stream') return stream();
+      if (outputKind === 'promised-stream') return Promise.resolve(stream());
+      return Promise.resolve().then(() => { observe(); return { exitCode: 0 }; });
+    } });
+    registration.commit();
+    selected.hostRoot = '/fixture/mutated';
+    const command = registry.resolve('cli-command', 'scoped')!.payload as CommandContribution;
+    const context: InvocationContext = { invocationId: 'scope', cwd: '/fixture', platform: 'darwin-arm64', signal: new AbortController().signal, config: {} };
+    const result = await command.run({}, context);
+    expect(currentInvocationConfiguration()).toBeUndefined();
+    if (Symbol.asyncIterator in result) {
+      const iterator = result[Symbol.asyncIterator]();
+      await iterator.next();
+      expect(currentInvocationConfiguration()).toBeUndefined();
+      await iterator.return!();
+    }
+    expect(seen).toEqual(outputKind === 'promise' ? ['/fixture/old', '/fixture/old'] : ['/fixture/old', '/fixture/old', '/fixture/old']);
+    await registry.disposeOwner(active.id);
+    expect(currentInvocationConfiguration()).toBeUndefined();
+  });
+
   it.each(['cli-command', 'tui-action', 'intent', 'mcp-tool', 'cesar-tool', 'plan-step'] as const)(
     'enforces only the owner schema for %s and rejects retained handles after disposal', async kind => {
       const registry = new ModRegistry({ generation: 'settings:kinds', activeOwners: [active, competitor] });

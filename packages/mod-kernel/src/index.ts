@@ -5,6 +5,8 @@ export type { ConfigMemoEntry, ScopedConfigStoreOptions } from './scoped-config-
 export { readGenerationConfiguration, readSelectedGenerationConfigurationSync } from './configuration-migration.js';
 export { LEGACY_MOD_SETTING_OWNERS } from './legacy-config-assignments.generated.js';
 export type { GenerationConfiguration } from './configuration-migration.js';
+export { currentInvocationConfiguration } from './configuration-scope.js';
+export type { InvocationConfigurationScope } from './configuration-scope.js';
 export { DEFAULT_KERNEL_SETTINGS, normalizeKernelSettings } from './settings.js';
 export type { KernelSettings } from './settings.js';
 export { selectModSettings, mergeModSettingsLayers, projectLegacyModSettings, applyModSettingsDefaults, readLegacyConfigAliases, resolveRegisteredModSettings } from './mod-settings.js';

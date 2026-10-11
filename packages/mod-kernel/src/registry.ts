@@ -13,6 +13,7 @@ import type {
   ToolContribution,
 } from '@kernlang/agon-mod-api';
 import { resolveRegisteredModSettings } from './mod-settings.js';
+import { runWithInvocationConfiguration, type InvocationConfigurationScope } from './configuration-scope.js';
 
 export type RegistryKind =
   | 'cli-command'
@@ -52,6 +53,7 @@ export interface ModRegistryOptions {
   readonly generation: string;
   readonly activeOwners: readonly ModIdentity[];
   readonly reservedIds?: Readonly<Partial<Record<RegistryKind, readonly string[]>>>;
+  readonly configurationScope?: InvocationConfigurationScope;
 }
 
 export interface LegacyRegistryEntry {
@@ -125,10 +127,16 @@ export class ModRegistry {
   readonly #aliases = new Map<string, string>();
   readonly #ownerKeys = new Map<string, string[]>();
   readonly #reservedIds: Readonly<Partial<Record<RegistryKind, readonly string[]>>>;
+  readonly #configurationScope: InvocationConfigurationScope | undefined;
 
   constructor(options: ModRegistryOptions) {
     this.generation = options.generation;
     this.#reservedIds = options.reservedIds ?? {};
+    const selected = options.configurationScope;
+    this.#configurationScope = selected ? freezeCompatibilityPayload(structuredClone({
+      hostRoot: selected.hostRoot,
+      configuration: selected.configuration ? { source: selected.configuration.source, owners: selected.configuration.owners } : undefined,
+    })) : undefined;
     for (const owner of options.activeOwners) {
       if (this.#activeOwners.has(owner.id)) throw new RegistryInvariantError(`duplicate active owner: ${owner.id}`);
       this.#activeOwners.set(owner.id, Object.freeze({ ...owner }));
@@ -299,9 +307,8 @@ export class ModRegistry {
         }
         const schemas = (this.#ownerKeys.get(owner.id) ?? []).map(ownerKey => this.#records.get(ownerKey))
           .filter(entry => entry?.kind === 'config').map(entry => entry!.payload);
-        if (!schemas.length) return invoke.call(original, input, context);
-        const config = resolveRegisteredModSettings(owner.id, context.config, schemas);
-        return invoke.call(original, input, { ...context, config });
+        const invocation = schemas.length ? { ...context, config: resolveRegisteredModSettings(owner.id, context.config, schemas) } : context;
+        return runWithInvocationConfiguration(this.#configurationScope, () => invoke.call(original, input, invocation));
       } }
       : original;
     const record = Object.freeze({ kind, id, aliases: Object.freeze([...aliases]), owner, payload: freezeCompatibilityPayload(guarded) });

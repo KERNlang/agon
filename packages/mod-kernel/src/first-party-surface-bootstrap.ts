@@ -26,6 +26,7 @@ import { createSafeExternalModServices } from './external-mod-services-safe.js';
 import { HOST_PROVIDED_DEPENDENCY_IDS } from './package-activation-order.js';
 import { AGON_RUNTIME_VERSION } from './runtime-version.js';
 import { createModObservability } from './mod-observability.js';
+import { readGenerationConfiguration, type GenerationConfiguration } from './configuration-migration.js';
 
 interface FirstPartyModule {
   readonly MANIFEST: ModManifest;
@@ -62,6 +63,7 @@ async function selectedDesiredState(hostRoot: string): Promise<{
   readonly pointerPath: string;
   readonly pointerCanonical: string | null;
   readonly lock: CanonicalModLock | null;
+  readonly configuration: GenerationConfiguration | undefined;
 }> {
   const catalog = createFirstPartyModCatalog();
   const pointerPath = join(hostRoot, 'current-generation.json');
@@ -75,6 +77,7 @@ async function selectedDesiredState(hostRoot: string): Promise<{
       pointerPath,
       pointerCanonical: null,
       lock: null,
+      configuration: undefined,
     };
   }
   const pointer = pointerInput as Record<string, unknown>;
@@ -98,6 +101,7 @@ async function selectedDesiredState(hostRoot: string): Promise<{
     pointerPath,
     pointerCanonical: canonicalJson(parsedPointer),
     lock,
+    configuration: await readGenerationConfiguration(host, parsedPointer),
   };
 }
 
@@ -176,6 +180,7 @@ export async function bootstrapFirstPartySurfaceGeneration(options: {
       packages: [],
       providedDependencyIds: HOST_PROVIDED_DEPENDENCY_IDS,
       disabledOwnerIds,
+      configurationScope: { hostRoot: options.hostRoot, configuration: undefined },
     });
     return Object.freeze({
       activated,
@@ -328,6 +333,7 @@ export async function bootstrapFirstPartySurfaceGeneration(options: {
       packages: [...firstPartyPackages, ...externalPackages],
       providedDependencyIds: HOST_PROVIDED_DEPENDENCY_IDS,
       disabledOwnerIds,
+      configurationScope: { hostRoot: options.hostRoot, configuration: selection.configuration },
       isolatePackageFailure: async (candidate, error) => {
         const entry = prepared.find(({ manifest }) => manifest.id === candidate.manifest.id);
         if (!entry) return false;

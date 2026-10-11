@@ -7,6 +7,7 @@ import {
   type SurfaceGenerationMode,
 } from './surface-generation.js';
 import { orderPhysicalSurfacePackages } from './package-activation-order.js';
+import type { InvocationConfigurationScope } from './configuration-scope.js';
 
 export interface FirstPartySurfacePackage {
   readonly manifest: ModManifest;
@@ -38,6 +39,7 @@ export async function activateFirstPartySurfaceGeneration(options: {
   readonly packages: readonly FirstPartySurfacePackage[];
   readonly providedDependencyIds?: readonly string[];
   readonly disabledOwnerIds?: readonly string[];
+  readonly configurationScope?: InvocationConfigurationScope;
   readonly isolatePackageFailure?: (candidate: FirstPartySurfacePackage, error: unknown) => boolean | Promise<boolean>;
 }): Promise<ActivatedSurfaceGeneration> {
   const disabled = new Set(options.disabledOwnerIds ?? []);
@@ -54,6 +56,7 @@ export async function activateFirstPartySurfaceGeneration(options: {
     runtime: options.runtime,
     disabledOwnerIds: options.disabledOwnerIds,
     syntheticOwnerIds,
+    configurationScope: options.configurationScope,
   });
   const disposers: Dispose[] = [];
   const failedOwnerIds = new Set<string>();

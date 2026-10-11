@@ -50,8 +50,12 @@ it.each([false, true])('binds a cached executable to the verified archive (match
   expect(receipt!.passed).toBe(matching);
 });
 
-it.each([[0, false], [1, true], [3, false], [3, true]] as const)('qualifies fresh %i-cell coverage with native attestation=%s', (passed, native) => {
-  let receipt: { passed: boolean; coverage: { platformPassed: number } } | undefined;
+it.each([
+  [0, false, true, 'valid'], [1, true, true, 'valid'], [3, false, true, 'valid'],
+  [3, true, true, 'valid'], [3, true, false, 'valid'],
+  ...['aggregate', 'step', 'child', 'missing', 'reordered', 'malformed', 'contradictory'].map(fault => [3, true, true, fault] as const),
+] as const)('qualifies fresh %i-cell coverage with native attestation=%s and fresh performance=%s (%s)', (passed, native, performancePassed, fault) => {
+  let receipt: { passed: boolean; coverage: { platformPassed: number }; cleanCheckoutSteps: Array<{ id: string; evidence?: { steps: Array<{ evidence: { diagnostic?: string } }> } }> } | undefined;
   const fresh = { status: 'completed', passed: passed > 0, runnerProvenance: native ? 'caller-attested-native' : 'diagnostic',
     cells: Array.from({ length: passed }, () => ({ status: 'passed', native })),
     summary: { passed, externallyBlocked: 12 - passed, failed: 0 } };
@@ -73,6 +77,15 @@ it.each([[0, false], [1, true], [3, false], [3, true]] as const)('qualifies fres
       throw new Error(`unexpected fixture read: ${path}`);
     },
     spawnSync: (_command: string, args: string[]) => {
+      if (args[0] === 'scripts/spec/measure-modular-release.mjs') {
+        const steps = ['1a', '2', '3', '4', '5', '6', '7', '8'].map(slice => ({ slice,
+          passed: performancePassed && fault !== 'step', evidence: { passed: performancePassed && fault !== 'child',
+            budgets: { rssGreen: fault !== 'contradictory' }, diagnostic: slice === '1a' ? 'early failure' : 'padding'.repeat(1000) } }));
+        if (fault === 'missing') steps.pop();
+        if (fault === 'reordered') steps.reverse();
+        return { status: performancePassed ? 0 : 1, stderr: '', stdout: fault === 'malformed' ? '{'
+          : JSON.stringify({ passed: performancePassed && fault !== 'aggregate', steps }) };
+      }
       if (args[0] === 'scripts/spec/verify-modular-platform-matrix.mjs') {
         expect(args.includes('--native-runner')).toBe(native);
         return { status: 0, stderr: '', stdout: JSON.stringify(fresh) };
@@ -82,7 +95,8 @@ it.each([[0, false], [1, true], [3, false], [3, true]] as const)('qualifies fres
     console: { log: (text: string) => { receipt = JSON.parse(text); } },
   });
   expect(receipt!.coverage.platformPassed).toBe(passed);
-  expect(receipt!.passed).toBe(passed === 3 && native);
+  expect(receipt!.passed).toBe(passed === 3 && native && performancePassed && fault === 'valid');
+  if (fault === 'valid') expect(receipt!.cleanCheckoutSteps.find(step => step.id === 'performance-release')?.evidence?.steps[0].evidence.diagnostic).toBe('early failure');
 });
 
 it.each([['linux', 'x64', 'v26.3.0', false], ['linux', 'arm64', 'v26.3.0', false], ['darwin', 'x64', 'v26.3.0', false], ['darwin', 'arm64', 'v26.3.0', false],

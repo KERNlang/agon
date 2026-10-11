@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { createGeneratedLazySubCommands } from './lazy-commands.js';
 import { initializeProcessSurfaceAuthority, modularHostRoot, processSurfacePublicIds } from './surface-authority-runtime.js';
-import { loadConfig, loadAllAuthKeys } from '@kernlang/agon-core';
+import { loadAllAuthKeys } from '@kernlang/agon-support-engine-runtime';
 
 // `surfaces/app.js` (the whole interactive Cesar/Ink surface — ~2k lines
 // pulling in React/Ink + the full tool/agent stack) and
@@ -191,6 +191,7 @@ function runOnboardingThenRepl(): void {
 if (isInteractiveSetup && isTty) {
   runOnboardingThenRepl();
 } else if (noArgs && isTty) {
+  const { loadConfig } = await import('@kernlang/agon-core');
   const config = loadConfig();
   if (!config.onboarded) {
     runOnboardingThenRepl();

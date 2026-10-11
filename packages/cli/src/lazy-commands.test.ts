@@ -234,6 +234,12 @@ describe('index.ts — the REPL surface and onboarding stay dynamically imported
     expect(indexSource).not.toMatch(/^import .*from ['"]\.\/onboarding\.js['"];?$/m);
   });
 
+  it('loads config lazily and uses the public auth owner without eager Core import', () => {
+    expect(indexSource).not.toMatch(/^import .*from ['"]@kernlang\/agon-core['"];?$/m);
+    expect(indexSource).toMatch(/import\(['"]@kernlang\/agon-core['"]\)/);
+    expect(indexSource).toMatch(/import \{ loadAllAuthKeys \} from ['"]@kernlang\/agon-support-engine-runtime['"]/);
+  });
+
   it('still references both modules via dynamic import()', () => {
     expect(indexSource).toMatch(/import\(['"]\.\/surfaces\/app\.js['"]\)/);
     expect(indexSource).toMatch(/import\(['"]\.\/onboarding\.js['"]\)/);

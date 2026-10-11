@@ -61,16 +61,23 @@ function cleanSteps(subject) {
     ['full-repository-suite', 'npm', ['run', 'test:ts']],
     ['spec-consistency', 'node', ['scripts/spec/check-modular-agon-consistency.mjs']],
     ['roadmap-contract', 'node', ['scripts/spec/verify-modular-agon-roadmap.mjs']],
-    ...['1a', '2', '3', '4', '5', '6', '7', '8'].map((slice) => [`performance-s${slice}`, 'npm', ['run', `perf:modular-slice${slice}`, '--', '--no-write']]),
+    ['performance-release', 'node', ['scripts/spec/measure-modular-release.mjs']],
   ];
   try {
     materialize(checkout, subject);
     for (const [id, command, args] of commands) {
       const result = run(command, args, checkout);
       const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
-      const evidence = id === 'platform-matrix' && result.status === 0 ? JSON.parse(result.stdout) : undefined;
-      steps.push({ id, command: [command, ...args], status: result.status, passed: result.status === 0, outputTail: output.slice(-4000), ...(evidence ? { evidence } : {}) });
-      if (result.status !== 0) break;
+      let evidence;
+      let evidenceError;
+      if (['platform-matrix', 'performance-release'].includes(id)) {
+        try { evidence = JSON.parse(result.stdout); }
+        catch (error) { evidenceError = String(error); }
+      }
+      const passed = result.status === 0 && evidenceError === undefined;
+      steps.push({ id, command: [command, ...args], status: result.status, passed, outputTail: output.slice(-4000),
+        ...(evidence ? { evidence } : {}), ...(evidenceError ? { evidenceError } : {}) });
+      if (!passed) break;
     }
     if (steps.every(({ passed }) => passed)) {
       const ignored = collectSubjectContamination(checkout, ['.']).ignored.filter((path) => isSourceBearingPath(path));
@@ -98,9 +105,15 @@ const ownership = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modula
 const release = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-release-set.json'), 'utf8'));
 const storedPlatform = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-platform-matrix.json'), 'utf8'));
 const physical = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-physical-cutover.json'), 'utf8'));
-const performances = ['1a', '2', '3', '4', '5', '6', '7', '8'].map((slice) => JSON.parse(readFileSync(join(root, `docs/specs/evidence/modular-agon-slice${slice}-performance.json`), 'utf8')));
+const storedPerformances = ['1a', '2', '3', '4', '5', '6', '7', '8'].map((slice) => JSON.parse(readFileSync(join(root, `docs/specs/evidence/modular-agon-slice${slice}-performance.json`), 'utf8')));
 const graph = validateDependencyGraph(packageMap.packages);
 const steps = process.argv.includes('--run-clean') ? cleanSteps(subjectKind) : [];
+const performanceStep = steps.find(({ id }) => id === 'performance-release');
+const freshPerformanceSteps = performanceStep?.evidence?.steps;
+const freshPerformancePassed = performanceStep?.passed === true && performanceStep.evidence?.passed === true
+  && Array.isArray(freshPerformanceSteps) && freshPerformanceSteps.length === 8
+  && ['1a', '2', '3', '4', '5', '6', '7', '8'].every((slice, index) => freshPerformanceSteps[index]?.slice === slice && freshPerformanceSteps[index]?.passed === true);
+const performances = Array.isArray(freshPerformanceSteps) ? freshPerformanceSteps.map(step => step?.evidence) : storedPerformances;
 const platformStep = steps.find(({ id }) => id === 'platform-matrix');
 const platform = platformStep?.evidence ?? storedPlatform;
 const freshPlatformPassed = platformStep?.passed === true && platformStep.evidence?.passed === true
@@ -114,10 +127,10 @@ const coveragePasses = (candidate) => candidate.packages === 49 && candidate.fir
   && candidate.releaseArtifacts === 50 && candidate.physicalMods === 36 && candidate.platformPassed === 3 && candidate.platformExternallyBlocked === 9
   && candidate.platformFailed === 0 && candidate.measuredPerformanceSlices === 8;
 const performancePasses = (evidence) => {
-  if (evidence.passed === true) return true;
-  if (evidence.passed !== undefined) return false;
+  if (!evidence || typeof evidence !== 'object' || Array.isArray(evidence)) return false;
+  if (Object.hasOwn(evidence, 'passed') && evidence.passed !== true) return false;
   const greenBudgets = Object.entries(evidence.budgets ?? {}).filter(([key]) => key.endsWith('Green'));
-  return greenBudgets.length > 0 && greenBudgets.every(([, value]) => value === true);
+  return (evidence.passed === true || greenBudgets.length > 0) && greenBudgets.every(([, value]) => value === true);
 };
 if (process.argv.includes('--self-test')) {
   if (!coveragePasses(coverage)) throw new Error('S9 coverage baseline is not green');
@@ -132,7 +145,7 @@ if (process.argv.includes('--self-test')) {
 const receipt = { schemaVersion: 1, qualification: 'modular-agon-slice9-release-candidate', subject: { kind: subjectKind, hash: expectedHash, indexHash, commitHash, indexEqualsCommit: indexHash === commitHash }, contamination, graph, coverage, reviewEvidence, cleanCheckoutSteps: steps };
 receipt.passed = Object.values(contamination).every((paths) => paths.length === 0) && (subjectKind === 'index' || indexHash === commitHash) && reviewEvidence.passed
   && graph.duplicateEdges.length === 0 && graph.uniqueEdges === 151 && coveragePasses(coverage) && freshPlatformPassed
-  && performances.every(performancePasses)
+  && freshPerformancePassed && performances.every(performancePasses)
   && steps.length > 0 && steps.every(({ passed }) => passed);
 console.log(JSON.stringify(receipt, null, 2));
 rmSync(runtimeRoot, { recursive: true, force: true });

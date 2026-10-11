@@ -129,6 +129,7 @@ export const MANIFEST = validateManifest({
       "dist/index.js",
       "dist/index.d.ts",
       "dist/implementation.d.ts",
+      "dist/maintenance.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],
@@ -220,4 +221,6 @@ export const SOURCE_OCCURRENCES = Object.freeze([
 export const IMPLEMENTATION_KIND = 'physical' as const;
 export { createMod } from './implementation.js';
 export { createMod as default } from './implementation.js';
-export { runRatings, loadRatings, computeUnknownEngineIds } from './implementation.js';
+export { runRatings, loadRatings } from './implementation.js';
+export { computeUnknownEngineIds, computeRunManifestPurge, purgeRatingsStore } from './maintenance.js';
+export type { PurgeReport, RatingsMaintenanceStore } from './maintenance.js';

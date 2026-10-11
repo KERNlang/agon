@@ -1,7 +1,8 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import type { AgonModFactory, CommandResult, Dispose, InvocationContext, Json, ModServices, Registrar } from '@kernlang/agon-mod-api';
-import { withFileLock } from '@kernlang/agon-support-persistence';
+import { purgeRatingsStore } from './maintenance.js';
+import type { PurgeReport, RatingsMaintenanceStore } from './maintenance.js';
 
 export interface GlickoRating { mu:number; phi:number; sigma:number; wins:number; losses:number; lastActive:string }
 export interface RatingRecord {
@@ -24,36 +25,24 @@ export function loadRatings():RatingRecord {
     return record;
   } catch { return empty(); }
 }
-function ratedIds(record:RatingRecord):string[] {
-  const ids = new Set([...Object.keys(record.global), ...Object.keys(record.engineMeta)]);
-  for (const scope of [...Object.values(record.byMode), ...Object.values(record.byTaskClass)]) for (const id of Object.keys(scope)) ids.add(id);
-  return [...ids].sort();
+const maintenanceStore: RatingsMaintenanceStore<RatingRecord> = {
+  path: (...parts) => join(home(), ...parts),
+  load: loadRatings,
+  save(record) {
+    record.lastUpdated = new Date().toISOString();
+    mkdirSync(dirname(ratingsPath()), { recursive: true });
+    const temporary = ratingsPath() + `.tmp.${process.pid}`;
+    writeFileSync(temporary, JSON.stringify(record, null, 2) + '\n');
+    renameSync(temporary, ratingsPath());
+  },
+};
+
+function modPurgeReport(report: PurgeReport, ratingsUnknown: string[], backupDir: string | null) {
+  return { dryRun: report.dryRun, keepCount: report.keepCount, ratingsUnknown,
+    ratingsRemoved: report.ratingsRemoved, runsScanned: report.runsScanned,
+    runsPurged: report.runsPurged.map(({ file, engines }) => ({ file, engines, valid: true })), backupDir };
 }
-export function computeUnknownEngineIds(record:RatingRecord, keep:string[]):string[] {
-  const allowed = new Set(keep); return ratedIds(record).filter((id) => !allowed.has(id));
-}
-function prune(record:RatingRecord, ids:string[]):string[] {
-  const remove = new Set(ids), removed = new Set<string>();
-  for (const bag of [record.global, record.engineMeta, ...Object.values(record.byMode), ...Object.values(record.byTaskClass)]) {
-    for (const id of Object.keys(bag)) if (remove.has(id)) { delete bag[id]; removed.add(id); }
-  }
-  for (const meta of Object.values(record.engineMeta)) {
-    if (meta.derivedFrom && remove.has(meta.derivedFrom)) meta.derivedFrom = null;
-    if (Array.isArray(meta.versions)) meta.versions = meta.versions.filter((id) => !remove.has(id));
-  }
-  return [...removed].sort();
-}
-function manifests():Array<{file:string;engines:string[];valid:boolean}> {
-  const directory = join(home(), 'runs');
-  try {
-    return readdirSync(directory).filter((file) => file.endsWith('.json')).map((file) => {
-      try {
-        const manifest = JSON.parse(readFileSync(join(directory, file), 'utf8'));
-        return { file, engines:Array.isArray(manifest.engines) ? manifest.engines.filter((v:unknown):v is string => typeof v === 'string') : [], valid:Array.isArray(manifest.engines) };
-      } catch { return { file, engines:[], valid:false }; }
-    });
-  } catch { return []; }
-}
+
 function leaderboard(record:RatingRecord, input:Record<string,Json>) {
   const mode = typeof input.mode === 'string' ? input.mode : '', task = typeof input.taskClass === 'string' ? input.taskClass : '';
   const scope = task ? record.byTaskClass[task] ?? {} : mode ? record.byMode[mode] ?? {} : record.global;
@@ -82,43 +71,17 @@ export async function runRatings(raw:Json, context:InvocationContext, services:M
     return {exitCode:1,stderr:'Protected-engine registry returned invalid IDs. No data was changed.\n'};
   }
   const keep = [...new Set([...protectedIds, ...String(input.keep ?? '').split(',').map((v) => v.trim()).filter(Boolean)])];
-  const record = loadRatings(), unknown = computeUnknownEngineIds(record, keep);
-  let runs = manifests();
-  let purgeRuns = runs.filter((run) => run.valid && !run.engines.some((engine) => keep.includes(engine)));
+  const preview = purgeRatingsStore({ registryIds: keep, dryRun: true }, maintenanceStore).report;
   const apply = input.apply === true && input['dry-run'] !== true;
   if (!apply) {
-    const report = {dryRun:true,keepCount:keep.length,ratingsUnknown:unknown,ratingsRemoved:[],runsScanned:runs.length,runsPurged:purgeRuns,backupDir:null};
+    const report = modPurgeReport(preview, preview.ratingsUnknown, null);
     return {exitCode:0,stdout:`${JSON.stringify(report,null,2)}\n`,result:report};
   }
   if (await services.permissions.check('fs.write', targetHome) !== 'allow') return {exitCode:1,stderr:'Permission denied: fs.write is required to apply a ratings purge.\n'};
   context.signal.throwIfAborted();
   if (home() !== targetHome) return {exitCode:1,stderr:'Ratings storage root changed during permission checking. No data was changed. Retry the purge.\n'};
-  runs = manifests();
-  purgeRuns = runs.filter((run) => run.valid && !run.engines.some((engine) => keep.includes(engine)));
-  const stamp = new Date().toISOString().replace(/[:.]/g,'-'), backup = join(home(), `purge-backup-${stamp}`);
-  let removed:string[] = [];
-  withFileLock(ratingsPath() + '.lock', () => {
-    const current = loadRatings(), now = computeUnknownEngineIds(current, keep);
-    if (!now.length || !existsSync(ratingsPath())) return;
-    mkdirSync(backup,{recursive:true}); copyFileSync(ratingsPath(),join(backup,'ratings.json'));
-    removed = prune(current,now); current.lastUpdated = new Date().toISOString(); mkdirSync(dirname(ratingsPath()),{recursive:true});
-    const temporary = ratingsPath() + `.tmp.${process.pid}`; writeFileSync(temporary,JSON.stringify(current,null,2)+'\n'); renameSync(temporary,ratingsPath());
-  });
-  const movedRuns: typeof purgeRuns = [];
-  if (purgeRuns.length) {
-    const destination = join(backup,'runs'); mkdirSync(destination,{recursive:true});
-    for (const run of purgeRuns) {
-      try {
-        renameSync(join(targetHome,'runs',run.file),join(destination,run.file));
-        movedRuns.push(run);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-          throw new Error(`Ratings purge stopped while moving ${run.file}. Earlier changes have backups in ${backup}.`, { cause: error });
-        }
-      }
-    }
-  }
-  const result = {dryRun:false,keepCount:keep.length,ratingsUnknown:unknown,ratingsRemoved:removed,runsScanned:runs.length,runsPurged:movedRuns,backupDir:backup};
+  const { report, backupCandidate } = purgeRatingsStore({ registryIds: keep, dryRun: false }, maintenanceStore);
+  const result = modPurgeReport(report, preview.ratingsUnknown, backupCandidate);
   const receiptId = await services.receipts.record('ratings-purge', result);
   return {exitCode:0,stdout:`${JSON.stringify({...result,receiptId},null,2)}\n`,result:{...result,receiptId}};
 }

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import type { ForgeManifest } from '@kernlang/agon-core';
 
-import { RUNS_DIR } from '@kernlang/agon-core';
+import { RUNS_DIR, withFileLock } from '@kernlang/agon-core';
 
 /**
  * Atomic manifest write. Writing to .tmp then renameSync avoids leaving a half-written manifest.json if the process is killed (SIGINT) mid-write — a real risk because forge writes the manifest incrementally on every engine settle.
@@ -18,8 +18,11 @@ export function writeManifest(manifest: ForgeManifest): string {
   mkdirSync(RUNS_DIR, { recursive: true });
   const historyPath = join(RUNS_DIR, `${manifest.forgeId}.json`);
   const historyTmp = historyPath + '.tmp';
-  writeFileSync(historyTmp, body);
-  renameSync(historyTmp, historyPath);
+  // Serialize history replacement with ratings-maintenance eligibility checks.
+  withFileLock(historyPath + '.lock', () => {
+    writeFileSync(historyTmp, body);
+    renameSync(historyTmp, historyPath);
+  });
   return manifestPath;
 }
 

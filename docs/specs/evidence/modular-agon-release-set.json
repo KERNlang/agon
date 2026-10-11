@@ -231,17 +231,17 @@
         "range": "^19.2.0"
       }
     ],
-    "packedBytes": 1283318,
-    "unpackedBytes": 5762545,
+    "packedBytes": 1283345,
+    "unpackedBytes": 5762700,
     "fileCount": 103,
     "files": [
       {
-        "path": "dist/app-HZC6C7QF.js",
-        "size": 410909
+        "path": "dist/app-YLIGSZYX.js",
+        "size": 411002
       },
       {
-        "path": "dist/app-HZC6C7QF.js.map",
-        "size": 276447
+        "path": "dist/app-YLIGSZYX.js.map",
+        "size": 276509
       },
       {
         "path": "dist/attach-JY2W27QO.js",
@@ -648,9 +648,9 @@
         "size": 36190
       }
     ],
-    "integrity": "sha512-Td+An42k9Ja2VFQfobhE90n+YP/U0GINVOJzcL7YKigQOC3/JMAdZQ25Dfxz9tRoT6oFpSHOjW7jLG4u1QRtoA==",
-    "shasum": "7476537b2828ff3def7319faf4378915c4804058",
-    "tarballHash": "sha256:98f04f35f884301b783418425a65a6a46f497da1137083585a149d9b13a6b783",
+    "integrity": "sha512-4BI3AAciokwfwR7YtHwf/bjPoaCrX09sXZQ5v2BdtiE3dklkxTA0gjedhQhQr/Ltc039+NaWU7FszVdYDDVRSg==",
+    "shasum": "7e63993ba0dc10485e76fd7474430fdc6a4511ad",
+    "tarballHash": "sha256:e7e5e30f02a02a8718fed5ced2733a17977418bb1ce2a4b345b6f893bfece7ac",
     "packageJsonHash": "sha256:8905f40d1f1eef07d64063cd9ce8f783f828292654a2731fb52bab3328959ac2"
   },
   "packages": [
@@ -665,9 +665,9 @@
         "@kernlang/agon-mod-api"
       ],
       "peerDependencies": {},
-      "packedBytes": 157059,
-      "unpackedBytes": 1407510,
-      "fileCount": 69,
+      "packedBytes": 157620,
+      "unpackedBytes": 1409634,
+      "fileCount": 70,
       "files": [
         {
           "path": "dist/activated-surface-generation.d.ts",
@@ -807,11 +807,11 @@
         },
         {
           "path": "dist/index.d.ts",
-          "size": 9099
+          "size": 9154
         },
         {
           "path": "dist/index.js",
-          "size": 888747
+          "size": 890562
         },
         {
           "path": "dist/json-schema-input.d.ts",
@@ -844,6 +844,10 @@
         {
           "path": "dist/mod-observability.d.ts",
           "size": 717
+        },
+        {
+          "path": "dist/mod-settings.d.ts",
+          "size": 254
         },
         {
           "path": "dist/mod-state-store.d.ts",
@@ -946,9 +950,9 @@
           "size": 548
         }
       ],
-      "integrity": "sha512-1sw6rPOJynLNAPLhWVAutfH79JpEX9u6JsYMkZ4CBBtK0PFs+aEguV28QWvQftVgNbcL7oMZEW7ehrVXdV7J7A==",
-      "shasum": "d8b9f98df4d5fc04a9d8e889b85479717c791874",
-      "tarballHash": "sha256:be2f4fac57ae95b31d00dd6c32bcb3e99c7fdd495f8bd5a9361861d1fcc69bf4",
+      "integrity": "sha512-u42DN/812D1g4yaQnptlZl6L2QRT6x2HRXSxT6R/fdFDdlJSgjiVWum7LprGu66Z7zrhmtKhMwLSNdWMQ9JJvw==",
+      "shasum": "abf0e816f3d591927a08755778f163d1e2d98a79",
+      "tarballHash": "sha256:5b062507aac388b40442021ded9f9d68fece61d8495d2e6ba4a9e5f09a61e462",
       "packageJsonHash": "sha256:583381b00786c2729a1e32eb2d42f6324cb58df263378f0d0ad57a1401970f17",
       "manifestHash": "sha256:583381b00786c2729a1e32eb2d42f6324cb58df263378f0d0ad57a1401970f17"
     },

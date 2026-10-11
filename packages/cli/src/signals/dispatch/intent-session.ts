@@ -13,7 +13,7 @@ import { invalidateCwdCache } from '../../handlers/chat.js';
 import type { ImageAttachment } from '@kernlang/agon-core';
 import type { CommandResult, IntentContribution, Json, ModPlatform } from '@kernlang/agon-mod-api';
 
-import { assertContributionInput } from '@kernlang/agon-kernel';
+import { assertContributionInput, selectModSettings } from '@kernlang/agon-kernel';
 import { assertProcessSurfaceAvailable, modularHostRoot, processSurfaceCatalog, processSurfaceClient } from '../../surface-authority-runtime.js';
 
 import { ENGINE_COLORS } from '../../blocks/output-format.js';
@@ -187,7 +187,7 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
           cwd: resolveWorkingDir(),
           platform,
           signal: new AbortController().signal,
-          config: cb.ctx.config as unknown as Readonly<Record<string, Json>>,
+          config: selectModSettings(cb.ctx.config, record.owner?.id),
         });
         let result: CommandResult = { exitCode: 0 };
         if (output && typeof output === 'object' && Symbol.asyncIterator in output) {
@@ -395,7 +395,7 @@ export async function runPhysicalTuiContribution(
     cwd: resolveWorkingDir(),
     platform,
     signal,
-    config: cb.ctx.config as unknown as Readonly<Record<string, Json>>,
+    config: selectModSettings(cb.ctx.config, record.owner?.id),
     ...(record.owner?.id === 'agon.jobs' ? {
       sessionJobs: { manager: cb.jobManager, dispatch: cb.dispatch },
     } : {}),

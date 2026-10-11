@@ -2,6 +2,7 @@ import { statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { JobExecutor, JobTaskContext } from './job-service.js';
 import { runWorkflowCommand } from './workflow-process.js';
+import type { WorkflowProcessAuthority } from './workflow-handshake.js';
 
 export type DaemonWorkflowKind = 'brainstorm' | 'team-brainstorm' | 'tribunal' | 'team-tribunal' | 'campfire' | 'think' | 'nero' | 'council' | 'research' | 'synthesis' | 'review' | 'doctor' | 'forge' | 'team-forge' | 'pipeline';
 
@@ -14,6 +15,7 @@ export interface DaemonWorkflowPlan {
 
 export interface DaemonWorkflowRuntimeOptions {
   script: string;
+  authority?: WorkflowProcessAuthority;
   outputChunkChars?: number;
   cancelGraceMs?: number;
 }
@@ -105,7 +107,7 @@ export function createDaemonWorkflowRuntime(host: DaemonWorkflowHost) {
         for (const args of plan.commands) {
           if (ctx.signal.aborted) throw new Error('Cancelled');
           ctx.emit('command-started', { command: args[0], args });
-          const exitCode = await runWorkflowCommand(ctx, script, args, plan.cwd, outputChunkChars, cancelGraceMs);
+          const exitCode = await runWorkflowCommand(ctx, script, args, plan.cwd, outputChunkChars, cancelGraceMs, options.authority);
           phases.push({ command: args[0] ?? '', exitCode });
           if (exitCode !== 0) throw new Error(`${args[0] ?? 'workflow'} exited with code ${exitCode}`);
         }

@@ -8,6 +8,29 @@ vi.mock('node:child_process', () => ({ spawn: vi.fn() }));
 describe('Jobs subprocess output boundary', () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it.each([NaN, Infinity, 0, -1, 0.5, 2 ** 31])('rejects invalid admission timeout %s before spawning', async timeoutMs => {
+    await expect(runWorkflowCommand({ signal: new AbortController().signal, emit: vi.fn() },
+      'fixture.mjs', [], process.cwd(), 32, 20,
+      { generation: 'generation-one', assertCurrent: vi.fn(), timeoutMs })).rejects.toThrow(/timeout/);
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it('refuses a child from another generation before granting execution', async () => {
+    const child = Object.assign(new EventEmitter(), {
+      stdout: new EventEmitter(), stderr: new EventEmitter(),
+      send: vi.fn(), kill: vi.fn(),
+    });
+    vi.mocked(spawn).mockReturnValue(child as ReturnType<typeof spawn>);
+    const pending = runWorkflowCommand({ signal: new AbortController().signal, emit: vi.fn() },
+      'fixture.mjs', [], process.cwd(), 32, 20,
+      { generation: 'parent-generation', assertCurrent: vi.fn() });
+    const result = expect(pending).rejects.toThrow(/generation/i);
+    child.emit('message', { event: 'agon-job-ready', protocolVersion: 1, generation: 'other-generation' });
+    child.emit('close', 0, null);
+    await result;
+    expect(child.send).not.toHaveBeenCalled();
+  });
+
   it('decodes split UTF-8 independently on stdout and stderr, including a final partial character', async () => {
     const child = Object.assign(new EventEmitter(), {
       stdout: new EventEmitter(), stderr: new EventEmitter(),

@@ -2,7 +2,7 @@ import { defineCommand, runMain } from 'citty';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { createGeneratedLazySubCommands } from './lazy-commands.js';
-import { initializeProcessSurfaceAuthority, modularHostRoot, processSurfacePublicIds } from './surface-authority-runtime.js';
+import { captureProcessSurfaceAuthority, initializeProcessSurfaceAuthority, modularHostRoot, processSurfaceClient, processSurfacePublicIds } from './surface-authority-runtime.js';
 import { loadAllAuthKeys } from '@kernlang/agon-support-engine-runtime';
 import { installCliExitSignals } from './lib/exit-signals.js';
 
@@ -159,8 +159,13 @@ const hostRoot = modularHostRoot();
 // the full authoritative bootstrap so disabled and external commands cannot
 // be misrepresented. Version output is state-independent.
 const mayUsePristineCatalog = !existsSync(hostRoot) && !existsSync(join(dirname(hostRoot), 'mods'));
-if (!topLevelMetadataOnly || (!process.argv.includes('--version') && !process.argv.includes('-v') && !mayUsePristineCatalog)) {
+if (process.env.AGON_JOB_GENERATION !== undefined || !topLevelMetadataOnly || (!process.argv.includes('--version') && !process.argv.includes('-v') && !mayUsePristineCatalog)) {
   await initializeProcessSurfaceAuthority();
+}
+
+if (process.env.AGON_JOB_GENERATION !== undefined) {
+  const { confirmWorkflowGeneration } = await import('@kernlang/agon-mod-jobs');
+  await confirmWorkflowGeneration(processSurfaceClient('cli').generation, captureProcessSurfaceAuthority());
 }
 
 const main = defineCommand({

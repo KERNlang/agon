@@ -1,6 +1,9 @@
 import { spawn } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
 import type { JobTaskContext } from './job-service.js';
+import { matchesWorkflowHandshake, workflowHandshakeMessage, WorkflowHandshakeError,
+  WORKFLOW_GENERATION_ENV, WORKFLOW_HANDSHAKE_TIMEOUT_MS } from './workflow-handshake.js';
+import type { WorkflowProcessAuthority } from './workflow-handshake.js';
 
 function validateChunkLimit(maxChars: number): void {
   if (!Number.isSafeInteger(maxChars) || maxChars <= 0) {
@@ -23,12 +26,20 @@ export function emitChunks(ctx: JobTaskContext, type: string, text: string, maxC
   }
 }
 
-export async function runWorkflowCommand(ctx: JobTaskContext, script: string, args: string[], cwd: string, outputChunkChars: number, cancelGraceMs: number): Promise<number> {
+export async function runWorkflowCommand(ctx: JobTaskContext, script: string, args: string[], cwd: string, outputChunkChars: number, cancelGraceMs: number, authority?: WorkflowProcessAuthority): Promise<number> {
   if (ctx.signal.aborted) throw new Error('Cancelled before workflow command started');
   validateChunkLimit(outputChunkChars);
+  const handshakeTimeout = authority?.timeoutMs ?? WORKFLOW_HANDSHAKE_TIMEOUT_MS;
+  if (authority && (!authority.generation || !Number.isSafeInteger(handshakeTimeout) || handshakeTimeout <= 0 || handshakeTimeout > 2 ** 31 - 1)) {
+    throw new WorkflowHandshakeError('job generation and handshake timeout must be valid');
+  }
+  authority?.assertCurrent();
   return await new Promise<number>((resolvePromise, rejectPromise) => {
     let settled = false;
     let forceTimer: ReturnType<typeof setTimeout> | undefined;
+    let handshakeTimer: ReturnType<typeof setTimeout> | undefined;
+    let admitted = !authority;
+    let admissionError: Error | undefined;
     const stdoutDecoder = new StringDecoder('utf8');
     const stderrDecoder = new StringDecoder('utf8');
     const child = spawn(process.execPath, [script, ...args], {
@@ -38,8 +49,9 @@ export async function runWorkflowCommand(ctx: JobTaskContext, script: string, ar
         ...process.env,
         AGON_CALL_DEPTH: String(Number(process.env.AGON_CALL_DEPTH ?? '0') + 1),
         AGON_CWD: cwd,
+        [WORKFLOW_GENERATION_ENV]: authority?.generation,
       },
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: authority ? ['ignore', 'pipe', 'pipe', 'ipc'] : ['ignore', 'pipe', 'pipe'],
     });
     const signalTree = (signal: NodeJS.Signals): void => {
       if (!child.pid) return;
@@ -53,6 +65,9 @@ export async function runWorkflowCommand(ctx: JobTaskContext, script: string, ar
     const cleanup = (): void => {
       ctx.signal.removeEventListener('abort', onAbort);
       if (forceTimer) clearTimeout(forceTimer);
+      if (handshakeTimer) clearTimeout(handshakeTimer);
+      child.removeListener('message', onMessage);
+      child.removeListener('disconnect', onDisconnect);
     };
     const finish = (error: Error | null, code = 1): void => {
       if (settled) return;
@@ -62,9 +77,41 @@ export async function runWorkflowCommand(ctx: JobTaskContext, script: string, ar
     };
     const onAbort = (): void => {
       signalTree('SIGTERM');
+      if (forceTimer) return;
       forceTimer = setTimeout(() => signalTree('SIGKILL'), cancelGraceMs);
       forceTimer.unref?.();
     };
+    const refuseAdmission = (error: Error): void => {
+      admissionError ??= error;
+      if (handshakeTimer) clearTimeout(handshakeTimer);
+      onAbort();
+    };
+    const onMessage = (message: unknown): void => {
+      if (!authority || admissionError) return;
+      if (admitted || !matchesWorkflowHandshake(message, 'agon-job-ready', authority.generation)) {
+        refuseAdmission(new WorkflowHandshakeError('job worker generation handshake does not match its parent'));
+        return;
+      }
+      try {
+        ctx.signal.throwIfAborted();
+        authority.assertCurrent();
+        admitted = true;
+        if (handshakeTimer) clearTimeout(handshakeTimer);
+        child.send(workflowHandshakeMessage('agon-job-start', authority.generation), error => {
+          if (error) refuseAdmission(error);
+        });
+      } catch (error) {
+        refuseAdmission(error instanceof Error ? error : new Error(String(error)));
+      }
+    };
+    const onDisconnect = (): void => {
+      if (!admitted) refuseAdmission(new WorkflowHandshakeError('job worker disconnected before its generation handshake'));
+    };
+    if (authority) {
+      child.on('message', onMessage);
+      child.once('disconnect', onDisconnect);
+      handshakeTimer = setTimeout(() => refuseAdmission(new WorkflowHandshakeError('job worker generation handshake timed out')), handshakeTimeout);
+    }
     ctx.signal.addEventListener('abort', onAbort, { once: true });
     child.stdout?.on('data', (chunk: Buffer) => emitChunks(ctx, 'stdout', stdoutDecoder.write(chunk), outputChunkChars));
     child.stderr?.on('data', (chunk: Buffer) => emitChunks(ctx, 'stderr', stderrDecoder.write(chunk), outputChunkChars));
@@ -73,7 +120,7 @@ export async function runWorkflowCommand(ctx: JobTaskContext, script: string, ar
       emitChunks(ctx, 'stdout', stdoutDecoder.end(), outputChunkChars);
       emitChunks(ctx, 'stderr', stderrDecoder.end(), outputChunkChars);
       ctx.emit('command-finished', { command: args[0], exitCode: typeof code === 'number' ? code : 1, signal });
-      finish(null, typeof code === 'number' ? code : 1);
+      finish(admissionError ?? (!admitted ? new WorkflowHandshakeError('job worker exited before its generation handshake') : null), typeof code === 'number' ? code : 1);
     });
     if (ctx.signal.aborted) onAbort();
   });

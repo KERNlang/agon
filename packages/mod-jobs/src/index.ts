@@ -12,6 +12,8 @@ export { ModularJobService } from './implementation.js';
 export { JOB_TOOLS, isJobTool, requiredString, optionalInteger, buildMcpJobCommand } from './mcp-contract.js';
 export { JobService } from './job-service.js';
 export { emitChunks, runWorkflowCommand } from './workflow-process.js';
+export { confirmWorkflowGeneration } from './workflow-handshake.js';
+export type { WorkflowProcessAuthority } from './workflow-handshake.js';
 export { runSessionJobAction, runSessionJobContribution } from './session-jobs.js';
 export { positiveJobCliInteger, nonNegativeInteger, parsePayload, buildSubmitPayload, jobsCapability, jobOutcomeExitCode, jobSnapshotExitCode, timingFromArgs } from './cli-contract.js';
 export type { JobClientTiming, JobClientConnection } from './cli-contract.js';

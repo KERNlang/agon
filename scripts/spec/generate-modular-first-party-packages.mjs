@@ -163,7 +163,7 @@ function expectedFiles(packageRecord) {
     : short === 'forge' ? ['dist/apply.d.ts']
     : short === 'plan' ? ['dist/agent-review-step-execution.d.ts', 'dist/forge-step-execution.d.ts', 'dist/pipeline-step-execution.d.ts', 'dist/self-step-execution.d.ts', 'dist/approval-policy.d.ts', 'dist/cost-estimator.d.ts', 'dist/execution-callbacks.d.ts', 'dist/execution-coordinator.d.ts', 'dist/execution-model.d.ts', 'dist/execution-state.d.ts', 'dist/execution-store.d.ts', 'dist/executor.d.ts', 'dist/formatter.d.ts', 'dist/panel-step-execution.d.ts', 'dist/proposal-workflow.d.ts', 'dist/resume-policy.d.ts', 'dist/resume-workflow.d.ts', 'dist/runtime.d.ts', 'dist/session-scope.d.ts', 'dist/session-selection.d.ts', 'dist/session-workflow.d.ts', 'dist/session.d.ts', 'dist/step-validation.d.ts']
     : short === 'brainstorm' ? ['dist/collector.d.ts', 'dist/host.d.ts', 'dist/policy.d.ts', 'dist/presentation.d.ts', 'dist/result.d.ts', 'dist/runtime.d.ts', 'dist/scout.d.ts', 'dist/session-record.d.ts', 'dist/session-workflow.d.ts', 'dist/workflow.d.ts']
-    : short === 'jobs' ? ['dist/daemon-controller.d.ts', 'dist/cli-projection.d.ts', 'dist/cli-invocation.d.ts', 'dist/cli-client.d.ts', 'dist/cli-contract.d.ts', 'dist/daemon-contract.d.ts', 'dist/daemon-job-router.d.ts', 'dist/daemon-workflow.d.ts', 'dist/job-service.d.ts', 'dist/mcp-contract.d.ts', 'dist/persisted-job-service.d.ts', 'dist/session-jobs.d.ts', 'dist/workflow-process.d.ts']
+    : short === 'jobs' ? ['dist/daemon-controller.d.ts', 'dist/cli-projection.d.ts', 'dist/cli-invocation.d.ts', 'dist/cli-client.d.ts', 'dist/cli-contract.d.ts', 'dist/daemon-contract.d.ts', 'dist/daemon-job-router.d.ts', 'dist/daemon-workflow.d.ts', 'dist/job-service.d.ts', 'dist/mcp-contract.d.ts', 'dist/persisted-job-service.d.ts', 'dist/session-jobs.d.ts', 'dist/workflow-process.d.ts', 'dist/workflow-handshake.d.ts']
     : short === 'ratings' ? ['dist/maintenance.d.ts', 'dist/glicko.d.ts', 'dist/types.d.ts', 'dist/storage.d.ts']
     : short === 'routing-docs' ? ['dist/guide-content.d.ts']
     : short === 'worktrees' ? ['dist/runtime.d.ts', 'dist/workspaces.d.ts']
@@ -303,6 +303,8 @@ export { getCesarPlansDir, cesarPlanJsonPath, cesarPlanMarkdownPath, saveCesarPl
 export { JOB_TOOLS, isJobTool, requiredString, optionalInteger, buildMcpJobCommand } from './mcp-contract.js';
 export { JobService } from './job-service.js';
 export { emitChunks, runWorkflowCommand } from './workflow-process.js';
+export { confirmWorkflowGeneration } from './workflow-handshake.js';
+export type { WorkflowProcessAuthority } from './workflow-handshake.js';
 export { runSessionJobAction, runSessionJobContribution } from './session-jobs.js';
 export { positiveJobCliInteger, nonNegativeInteger, parsePayload, buildSubmitPayload, jobsCapability, jobOutcomeExitCode, jobSnapshotExitCode, timingFromArgs } from './cli-contract.js';
 export type { JobClientTiming, JobClientConnection } from './cli-contract.js';

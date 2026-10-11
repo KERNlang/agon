@@ -209,6 +209,7 @@
       "dist/persisted-job-service.d.ts",
       "dist/session-jobs.d.ts",
       "dist/workflow-process.d.ts",
+      "dist/workflow-handshake.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

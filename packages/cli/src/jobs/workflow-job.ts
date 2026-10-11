@@ -11,6 +11,7 @@ import { resolve } from 'node:path';
 import { DEFAULT_AGON_CONFIG, loadConfig } from '@kernlang/agon-core';
 import type { AgonConfig, JobExecutor, JobTaskContext } from '@kernlang/agon-core';
 import { buildCallCommands, validateCallEngineRoster } from '../commands/call.js';
+import { captureProcessSurfaceAuthority, processSurfaceClient } from '../surface-authority-runtime.js';
 
 export interface ResolvedDaemonWorkflowJob {
   label: string;
@@ -24,9 +25,10 @@ const workflowRuntime = createDaemonWorkflowRuntime({
 });
 export const { buildDaemonWorkflowPlan, validateDaemonWorkflowEngines, createDaemonWorkflowExecutor } = workflowRuntime;
 
-export function daemonJobConfig(cwd: string): Pick<Required<AgonConfig>,'jobEventLimit'|'jobRetentionLimit'|'jobMaxConcurrency'|'jobLabelMaxChars'|'jobOutputChunkChars'|'jobCancelGraceMs'|'jobShutdownTimeoutMs'|'daemonFrameMaxBytes'> {
+export function daemonJobConfig(cwd: string): Pick<Required<AgonConfig>,'timeout'|'jobEventLimit'|'jobRetentionLimit'|'jobMaxConcurrency'|'jobLabelMaxChars'|'jobOutputChunkChars'|'jobCancelGraceMs'|'jobShutdownTimeoutMs'|'daemonFrameMaxBytes'> {
   const config = { ...DEFAULT_AGON_CONFIG, ...loadConfig(cwd) } as Required<AgonConfig>;
   return {
+    timeout: config.timeout,
     jobEventLimit: config.jobEventLimit,
     jobRetentionLimit: config.jobRetentionLimit,
     jobMaxConcurrency: config.jobMaxConcurrency,
@@ -63,6 +65,12 @@ export function resolveDaemonWorkflowJob(kind: string, payload: Record<string,un
     label: plan.label,
     executor: createDaemonWorkflowExecutor(plan, {
       script,
+      authority: {
+        generation: processSurfaceClient('cli').generation,
+        assertCurrent: captureProcessSurfaceAuthority(),
+        // Bootstrap shares the configured seconds budget, not the IPC reply window.
+        timeoutMs: config.timeout * 1_000,
+      },
       outputChunkChars: config.jobOutputChunkChars,
       cancelGraceMs: config.jobCancelGraceMs,
     }),

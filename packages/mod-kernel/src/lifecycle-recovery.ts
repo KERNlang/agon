@@ -1,4 +1,4 @@
-import { basename, join, relative, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { DurableModHost } from './durable-host.js';
 import { DurableHostError } from './host-errors.js';
 import { atomicWrite, nodeHostIo, pathExists, readJson, writeNewImmutableFile, type HostIo } from './host-io.js';
@@ -7,6 +7,8 @@ import type { ManagedInstallationRecord } from './managed-lifecycle.js';
 import { makeTreeRemovable } from './removable-tree.js';
 import { WriterFence } from './writer-lock.js';
 import { parseHostTransactionJournal } from './host-contracts.js';
+import { assertNoSymlinkComponents } from './folder-mod-bounds.js';
+import { TrustGrantStore } from './trust-authority.js';
 
 interface RecoverableLifecycleJournal {
   readonly schemaVersion: 1;
@@ -187,6 +189,37 @@ function assertManagedPath(hostRoot: string, path: string): string {
   return absolute;
 }
 
+function assertPurgeDataPath(host: DurableModHost, path: string): string {
+  const absolute = assertManagedPath(host.root, path);
+  const protectedPaths = [...Object.values(host.paths),
+    ...Object.values(new TrustGrantStore(host.root, host.hostIo).paths), dirname(host.paths.writerLock),
+    ...['installations', 'installation-staging', 'installation-transactions', 'installation-receipts']
+      .map(name => join(host.root, name))];
+  if (protectedPaths.some(protectedPath => absolute === protectedPath
+    || absolute.startsWith(protectedPath + sep) || protectedPath.startsWith(absolute + sep))) {
+    throw new DurableHostError('MOD_TRANSACTION_FAILED', `purge cannot target kernel-managed state: ${path}`);
+  }
+  return absolute;
+}
+
+function assertPurgeInstallationPath(host: DurableModHost, path: string): string {
+  const absolute = assertManagedPath(host.root, path);
+  if (dirname(absolute) !== join(host.root, 'installations') || !/^[a-f0-9]{32}$/.test(basename(absolute))) {
+    throw new DurableHostError('MOD_TRANSACTION_FAILED', `invalid purge installation path: ${path}`);
+  }
+  return absolute;
+}
+
+async function assertPurgeNoLinks(host: DurableModHost, path: string): Promise<void> {
+  try {
+    await assertNoSymlinkComponents(host.root, relative(host.root, path));
+  } catch (error) {
+    // An absent target needs no deletion. Existing ancestors were checked.
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw new DurableHostError('MOD_TRANSACTION_FAILED', `purge target inspection failed: ${String(error)}`, { path });
+  }
+}
+
 export async function referencedInstallations(host: DurableModHost, io: HostIo = host.hostIo): Promise<Map<string, { generation: number; committed: boolean }>> {
   const result = new Map<string, { generation: number; committed: boolean }>();
   const entries = await io.readdir(host.paths.generations, { withFileTypes: true }).catch(error => {
@@ -231,7 +264,8 @@ export async function previewManagedPurge(
   const retained = ids.filter((id) => referenced.has(id));
   if (retained.length > 0) throw new DurableHostError('MOD_TRANSACTION_FAILED', 'purge cannot target an installation retained by a generation', { installationIds: retained });
   const installationPaths = ids.map((id) => assertManagedPath(host.root, join(host.root, 'installations', id)));
-  const dataPaths = [...new Set(options.dataPaths ?? [])].sort().map((path) => assertManagedPath(host.root, path));
+  const dataPaths = [...new Set(options.dataPaths ?? [])].sort().map((path) => assertPurgeDataPath(host, path));
+  for (const path of [...installationPaths, ...dataPaths]) await assertPurgeNoLinks(host, path);
   const unsigned = Object.freeze({
     schemaVersion: 1 as const,
     selectedGeneration: pointer?.generation ?? null,
@@ -241,26 +275,40 @@ export async function previewManagedPurge(
   return Object.freeze({ ...unsigned, planHash: sha256Canonical(unsigned) });
 }
 
-export async function applyManagedPurge(host: DurableModHost, plan: ManagedPurgePlan, approvedPlanHash: string): Promise<readonly string[]> {
-  if (approvedPlanHash !== plan.planHash) throw new DurableHostError('MOD_TRANSACTION_CONFLICT', 'purge approval does not match exact preview');
+export async function applyManagedPurge(host: DurableModHost, input: ManagedPurgePlan, approvedPlanHash: string): Promise<readonly string[]> {
+  // Retain approved targets across caller callbacks and asynchronous work.
+  const plan = structuredClone(input);
+  const { planHash, ...unsignedPlan } = plan;
+  if (approvedPlanHash !== planHash || planHash !== sha256Canonical(unsignedPlan)) {
+    throw new DurableHostError('MOD_TRANSACTION_CONFLICT', 'purge approval does not match exact preview');
+  }
+  // Validate both namespaces before deleting any approved target.
+  const installationPaths = plan.installationPaths.map(path => assertPurgeInstallationPath(host, path));
+  const dataPaths = plan.dataPaths.map(path => assertPurgeDataPath(host, path));
   const fence = await WriterFence.acquire(join(host.root, 'locks', 'lifecycle-writer.json'), 'agon.kernel.lifecycle.purge', { io: host.hostIo });
+  let hostFence: WriterFence | undefined;
   try {
+    // Match lifecycle apply and recovery lock order.
+    hostFence = await WriterFence.acquire(host.paths.writerLock, 'agon.kernel.lifecycle.purge', { io: host.hostIo });
     const current = await host.readCurrentPointer();
     if ((current?.generation ?? null) !== plan.selectedGeneration) throw new DurableHostError('MOD_TRANSACTION_CONFLICT', 'selected generation changed after purge preview');
     const referenced = await referencedInstallations(host);
-    const targetedIds = plan.installationPaths.map((path) => basename(path));
+    const targetedIds = installationPaths.map((path) => basename(path));
     const retained = targetedIds.filter((id) => referenced.has(id));
     if (retained.length > 0) throw new DurableHostError('MOD_TRANSACTION_CONFLICT', 'installation became retained after purge preview', { installationIds: retained });
+    for (const path of [...installationPaths, ...dataPaths]) await assertPurgeNoLinks(host, path);
     const removed: string[] = [];
-    for (const path of [...plan.installationPaths, ...plan.dataPaths]) {
+    for (const path of [...installationPaths, ...dataPaths]) {
       const exact = assertManagedPath(host.root, path);
       if (!await pathExists(host.hostIo, exact)) continue;
+      await assertPurgeNoLinks(host, exact);
       await makeTreeRemovable(host.hostIo, exact).catch(() => undefined);
       await host.hostIo.rm(exact, { recursive: true, force: false });
       removed.push(exact);
     }
     return Object.freeze(removed);
   } finally {
+    await hostFence?.release().catch(() => undefined);
     await fence.release().catch(() => undefined);
   }
 }
